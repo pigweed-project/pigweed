@@ -315,6 +315,48 @@
         "recordedRepoMappingEntries": []
       }
     },
+    "//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
+      "general": {
+        "bzlTransitiveDigest": "Ra/Vtw43gGL83DZW8FsxeeY8A98P3aHzSmg4dX/QNNk=",
+        "usagesDigest": "vXgQxd1DWWnvHPiRPrPUG0rVlDWBVcjbz652u6AA4iM=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "gcc_arm_none_eabi_toolchain": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/build_external:arm_none_eabi_gcc.BUILD",
+              "path": "fuchsia/third_party/armgcc/${os}-${arch}",
+              "tag": "version:2@12.2.MPACBTI-Rel1.1"
+            }
+          },
+          "llvm_toolchain": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/build_external:llvm_clang.BUILD",
+              "path": "fuchsia/third_party/clang/${os}-${arch}",
+              "tag": "git_revision:5bf5657a97d9c0efc0f18826ca9ee9db17acb514"
+            }
+          },
+          "zephyr_toolchain": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/build_external:zephyr.BUILD",
+              "path": "infra/3pp/tools/zephyr_sdk/${os}-${arch}",
+              "tag": "version:3@0.17.0"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
     "//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "+GbeEfcV2l7J6eSb6X7OCVpNEObHA5OEog8Q1AATOIc=",

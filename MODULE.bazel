@@ -143,7 +143,7 @@ cipd_client_repository(name = "cipd_client")
 
 cipd_repository = use_repo_rule("//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl", "cipd_repository")
 
-cipd_composite_repository = use_repo_rule("//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl", "cipd_composite_repository")
+pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
 
 # Fetch llvm toolchain.
 # ROLL: Warning: this variable is automatically updated.
@@ -151,15 +151,10 @@ cipd_composite_repository = use_repo_rule("//pw_env_setup/bazel/cipd_setup:cipd_
 # ROLL: By https://cr-buildbucket.appspot.com/build/8693208335718132913.
 LLVM_VERSION = "git_revision:5bf5657a97d9c0efc0f18826ca9ee9db17acb514"
 
-cipd_composite_repository(
-    name = "llvm_toolchain",
-    build_file = "//pw_toolchain/build_external:llvm_clang.BUILD",
-    packages = [
-        "fuchsia/third_party/clang/${os}-${arch}",
-        "fuchsia/third_party/clang/target/riscv32-unknown-elf",
-    ],
-    tag = LLVM_VERSION,
-)
+pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
+pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@12.2.MPACBTI-Rel1.1")
+pw_cxx_toolchain.zephyr(cipd_tag = "version:3@0.17.0")
+use_repo(pw_cxx_toolchain, "gcc_arm_none_eabi_toolchain", "llvm_toolchain", "zephyr_toolchain")
 
 # Fetch linux sysroot for host builds.
 cipd_repository(
@@ -167,22 +162,6 @@ cipd_repository(
     build_file = "//pw_toolchain/host_clang:linux_sysroot.BUILD",
     path = "fuchsia/third_party/sysroot/bionic",
     tag = "git_revision:702eb9654703a7cec1cadf93a7e3aa269d053943",
-)
-
-# Fetch gcc-arm-none-eabi toolchain.
-cipd_repository(
-    name = "gcc_arm_none_eabi_toolchain",
-    build_file = "//pw_toolchain/build_external:arm_none_eabi_gcc.BUILD",
-    path = "fuchsia/third_party/armgcc/${os}-${arch}",
-    tag = "version:2@12.2.MPACBTI-Rel1.1",
-)
-
-# Fetch the Zephyr toolchain
-cipd_repository(
-    name = "zephyr_toolchain",
-    build_file = "//pw_toolchain/build_external:zephyr.BUILD",
-    path = "infra/3pp/tools/zephyr_sdk/${os}-${arch}",
-    tag = "version:3@0.17.0",
 )
 
 register_toolchains(
