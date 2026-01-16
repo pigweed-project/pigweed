@@ -35,7 +35,6 @@ cc_library(
     ],
     deps = [
         "//pw_clock_tree",
-        "//pw_function:scope_guard",
         "//pw_preprocessor",
         "//pw_stream",
         "//targets:mcuxpresso_sdk",
