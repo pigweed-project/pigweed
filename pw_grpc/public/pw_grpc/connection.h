@@ -22,7 +22,7 @@
 #include "pw_bytes/span.h"
 #include "pw_containers/dynamic_queue.h"
 #include "pw_function/function.h"
-#include "pw_grpc/default_send_queue.h"  // TODO(b/475261598): remove after intergrating
+#include "pw_grpc/default_send_queue.h"
 #include "pw_grpc/send_queue.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
@@ -114,14 +114,8 @@ class Connection {
     virtual void OnCancel(StreamId id) = 0;
   };
 
-  // TODO(b/475261598): remove after transitioning
-  Connection(stream::ReaderWriter& socket,
-             RequestCallbacks& callbacks,
-             Allocator* message_assembly_allocator,
-             Allocator& send_allocator);
-
   Connection(stream::Reader& reader,
-             SendQueueBase& send_queue,
+             SendQueue& send_queue,
              RequestCallbacks& callbacks,
              Allocator* message_assembly_allocator,
              Allocator& send_allocator);
@@ -165,11 +159,6 @@ class Connection {
   Status SendResponseComplete(StreamId stream_id, pw::Status response_code) {
     return writer_.SendResponseComplete(stream_id, response_code);
   }
-
-  // Access SendQueue for this connection. Should be used to start and stop the
-  // thread.
-  // TODO(b/475261598): remove after transition
-  SendQueueBase& send_queue() { return send_queue_; }
 
  private:
   // RFC 9113 §6.9.2. Flow control windows are unsigned 31-bit numbers, but
@@ -258,7 +247,7 @@ class Connection {
    public:
     SharedState(allocator::Allocator* message_assembly_allocator,
                 Allocator& send_allocator,
-                SendQueueBase& send_queue);
+                SendQueue& send_queue);
 
     // Create stream if space available.
     pw::Status CreateStream(StreamId id, int32_t initial_send_window);
@@ -329,7 +318,7 @@ class Connection {
     // Allocator for creating send buffers to queue.
     Allocator& send_allocator_;
 
-    SendQueueBase& send_queue_;
+    SendQueue& send_queue_;
   };
 
   class Writer {
@@ -390,10 +379,6 @@ class Connection {
     static_cast<void>(moved_state);
   }
 
-  // TODO(b/475261598): remove after transition
-  std::optional<DefaultSendQueue> default_send_queue_;
-  SendQueueBase& send_queue_;
-
   // Shared state that is thread-safe.
   allocator::SynchronizedAllocator<sync::Mutex> send_allocator_;
   sync::InlineBorrowable<SharedState> shared_state_;
@@ -425,7 +410,8 @@ class ConnectionThread : public Connection, public thread::ThreadCore {
 
   // Process the connection. Does not return until the connection is closed.
   void Run() override {
-    Thread send_thread(send_queue_thread_options_, send_queue_);
+    Thread send_thread(send_queue_thread_options_,
+                       [this]() { send_queue_.Run(); });
     Status status = ProcessConnectionPreface();
     while (status.ok()) {
       status = ProcessFrame();

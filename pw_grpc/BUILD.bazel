@@ -69,6 +69,7 @@ cc_library(
     strip_include_prefix = "public",
     target_compatible_with = [":enabled"],
     deps = [
+        ":default_send_queue",
         ":hpack",
         ":send_queue",
         "//pw_allocator:allocator",
@@ -93,17 +94,30 @@ cc_library(
     ],
 )
 
-#TODO(b/475261598): split into send_queue and default_send_queue after the transition
 cc_library(
     name = "send_queue",
-    srcs = ["default_send_queue.cc"],
     hdrs = [
-        "public/pw_grpc/default_send_queue.h",
         "public/pw_grpc/send_queue.h",
     ],
     local_defines = log_defines,
     strip_include_prefix = "public",
     deps = [
+        "//pw_allocator",
+        "//pw_function",
+        "//pw_status",
+    ],
+)
+
+cc_library(
+    name = "default_send_queue",
+    srcs = ["default_send_queue.cc"],
+    hdrs = [
+        "public/pw_grpc/default_send_queue.h",
+    ],
+    local_defines = log_defines,
+    strip_include_prefix = "public",
+    deps = [
+        ":send_queue",
         "//pw_allocator",
         "//pw_async:dispatcher",
         "//pw_async_basic:dispatcher",

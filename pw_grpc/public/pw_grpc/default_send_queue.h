@@ -31,7 +31,7 @@ namespace pw::grpc {
 // queue+thread to serialize buffer write onto a blocking stream. The queue
 // length is implicitly limited by the allocator that creates the buffers to
 // send.
-class DefaultSendQueue : public SendQueueBase {
+class DefaultSendQueue : public SendQueue {
  public:
   DefaultSendQueue(stream::ReaderWriter& socket, Allocator& allocator)
       : socket_(socket),
@@ -67,8 +67,5 @@ class DefaultSendQueue : public SendQueueBase {
   sync::Mutex send_mutex_;
   DynamicDeque<UniquePtr<std::byte[]>> queue_ PW_GUARDED_BY(send_mutex_);
 };
-
-// TODO(tombergan): remove after migrating callers
-using SendQueue = DefaultSendQueue;
 
 }  // namespace pw::grpc

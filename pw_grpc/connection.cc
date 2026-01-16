@@ -176,29 +176,12 @@ constexpr std::array<T, N> MakeArrayWithValue(Args&&... args) {
 
 }  // namespace
 
-// TODO(b/475261598): remove after transitioning
-Connection::Connection(stream::ReaderWriter& socket,
-                       RequestCallbacks& callbacks,
-                       Allocator* message_assembly_allocator,
-                       Allocator& send_allocator)
-    : default_send_queue_(std::in_place, socket, send_allocator_),
-      send_queue_(*default_send_queue_),
-      send_allocator_(send_allocator),
-      shared_state_(std::in_place,
-                    message_assembly_allocator,
-                    send_allocator_,
-                    *default_send_queue_),
-      reader_(*this, callbacks, socket.as_reader()),
-      writer_(*this) {}
-
 Connection::Connection(stream::Reader& reader,
-                       SendQueueBase& send_queue,
+                       SendQueue& send_queue,
                        RequestCallbacks& callbacks,
                        Allocator* message_assembly_allocator,
                        Allocator& send_allocator)
-    : default_send_queue_(std::nullopt),
-      send_queue_(send_queue),
-      send_allocator_(send_allocator),
+    : send_allocator_(send_allocator),
       shared_state_(std::in_place,
                     message_assembly_allocator,
                     send_allocator_,
@@ -209,7 +192,7 @@ Connection::Connection(stream::Reader& reader,
 Connection::SharedState::SharedState(
     allocator::Allocator* message_assembly_allocator,
     Allocator& send_allocator,
-    SendQueueBase& send_queue)
+    SendQueue& send_queue)
     : streams_(
           MakeArrayWithValue<Stream, kMaxConcurrentStreams>(send_allocator)),
       message_assembly_allocator_(message_assembly_allocator),

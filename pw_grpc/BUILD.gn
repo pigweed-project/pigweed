@@ -28,6 +28,7 @@ pw_source_set("connection") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_grpc/connection.h" ]
   deps = [
+    ":default_send_queue",
     ":hpack",
     ":send_queue",
     "$dir_pw_allocator",
@@ -51,13 +52,21 @@ pw_source_set("connection") {
 }
 
 pw_source_set("send_queue") {
-  sources = [ "default_send_queue.cc" ]
-  public = [
-    "public/pw_grpc/default_send_queue.h",
-    "public/pw_grpc/send_queue.h",
-  ]
+  public = [ "public/pw_grpc/send_queue.h" ]
   public_configs = [ ":public_include_path" ]
   deps = [
+    "$dir_pw_allocator",
+    "$dir_pw_function",
+    "$dir_pw_status",
+  ]
+}
+
+pw_source_set("default_send_queue") {
+  sources = [ "default_send_queue.cc" ]
+  public = [ "public/pw_grpc/default_send_queue.h" ]
+  public_configs = [ ":public_include_path" ]
+  deps = [
+    ":send_queue",
     "$dir_pw_allocator",
     "$dir_pw_async:dispatcher",
     "$dir_pw_async_basic:dispatcher",

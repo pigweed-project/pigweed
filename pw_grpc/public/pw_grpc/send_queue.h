@@ -21,14 +21,11 @@ namespace pw::grpc {
 
 // Abstract interface for sending response buffers. Buffers are written to the
 // response in the order they are queued.
-//
-// TODO(b/475261598): during the transition, this is named SendQueueBase. A
-// follow-up change will rename this interface to SendQueue.
-class SendQueueBase {
+class SendQueue {
  public:
   using ErrorHandler = pw::Function<void(pw::Status)>;
 
-  virtual ~SendQueueBase() {}
+  virtual ~SendQueue() {}
 
   // Thread safe. Queues buffer to be sent on send thread. Returns false if
   // there was no queue space available from allocator.
@@ -43,11 +40,9 @@ class SendQueueBase {
 
   // Stops the current Run() call.
   virtual void RequestStop() = 0;
-
-  // TODO(b/475261598): temporary, for compatibility with ThreadCore.
-  operator Function<void()>() {
-    return [this]() { Run(); };
-  }
 };
+
+// TODO(b/475261598): will be removed after transitioning
+using SendQueueBase = SendQueue;
 
 }  // namespace pw::grpc
