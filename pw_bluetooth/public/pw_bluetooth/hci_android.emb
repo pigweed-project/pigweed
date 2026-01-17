@@ -1292,3 +1292,169 @@ struct LEBatchScanReadResultsCommandCompleteEvent:
 
   if read_mode == BatchScanReadMode.TRUNCATED:
     results_offset [+LEBatchScanTruncatedResult.$size_in_bytes]  LEBatchScanTruncatedResult[num_records]  truncated_results
+
+# ----------------------------- Sniff Offload ----------------------------------
+
+
+enum SniffOffloadEventSuppression:
+  [maximum_bits: 8]
+
+  REPORT   = 0x00
+    -- The Bluetooth controller shall report the associated event to the host
+    -- subject to the configuration set in the HCI_Set_Event_Mask command.
+
+  SUPPRESS = 0x01
+    -- The Bluetooth controller shall not report the associated event to the
+    -- host.
+
+
+enum SniffOffloadAllowExit:
+  [maximum_bits: 8]
+
+  DO_NOT_EXIT = 0x00
+    -- Do not exit sniff mode on HCI-ACL transaction in the associated
+    -- direction.
+
+  ALLOW_EXIT  = 0x01
+    -- Attempt to exit sniff mode on HCI-ACL transaction in the associated
+    -- direction.
+
+
+struct WriteSniffOffloadEnableCommand:
+  -- This command sets the sniff offload state.
+  --
+  -- A Bluetooth controller is considered to be in a 'Sniff Offload Disabled'
+  -- state by default. It is expected that the Bluetooth controller shall handle
+  -- the HCI_Sniff_Mode, HCI_Exit_Sniff_Mode and HCI_Sniff_Subrating commands
+  -- issued from a Bluetooth host. The Bluetooth controller shall also forward
+  -- the HCI_Mode_Change and HCI_Sniff_Subrating events to a Bluetooth host as
+  -- per the event mask set by the Bluetooth host.
+  --
+  -- A Bluetooth controller is considered to be in a ‘Sniff Offload Enabled’
+  -- state after it has successfully handled a ‘WriteSniffOffloadEnable’ to
+  -- enable Sniff Offload. In this state the Bluetooth controller is expected to
+  -- forward the HCI_Mode_Change and HCI_Sniff_Subrating events to a Bluetooth
+  -- host as decided by a logical-AND function of the event mask set by the
+  -- Bluetooth host and the Event Suppression Flags.
+
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+
+  0     [+hdr_size]  hci.CommandHeader             header
+    -- Unlike other Android vendor commands, the sniff offload commands do *not*
+    -- use a sub-opcode, instead opting to use separate command opcodes for each
+    -- command.
+
+  $next [+1]         hci.GenericEnableParam        enable
+    -- Flag indicating the sniff offload state to transition the controller to.
+
+  $next [+2]         UInt                          max_latency
+    -- Maximum latency.
+    -- Time = N * 0.625 ms
+    [requires: 0x0002 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                          min_remote_timeout
+    -- Minimum sniff mode timeout that the remote device may use.
+    -- Time = N * 0.625 ms
+    [requires: 0x0000 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                          min_local_timeout
+    -- Minimum sniff mode timeout that the local device may use.
+    -- Time = N * 0.625 ms
+    [requires: 0x0000 <= this <= 0xFFFE]
+
+  $next [+1]         SniffOffloadEventSuppression  suppress_mode_change_event
+    -- Flag indicating suppression of the HCI_Mode_Change event.
+
+  $next [+1]         SniffOffloadEventSuppression  suppress_sniff_subrating_event
+    -- Flag indicating suppression of the HCI_Sniff_Subrating event.
+
+
+struct WriteSniffOffloadParametersCommand:
+  -- When a Bluetooth controller is in a 'Sniff Offload Enabled' state, each
+  -- active ACL can be in one of the two described below states.
+  --
+  -- Pending-Parameter State
+  -- An ACL is considered to be in a 'Pending-Parameters' state when the
+  -- Bluetooth controller is in 'Sniff Offload Enabled' state, but a
+  -- 'WriteSniffOffloadParameters' vendor specific command has not been issued at
+  -- least once by the Bluetooth host for the present ACL.
+  --
+  -- Control-Started State
+  -- An ACL is considered to be in a 'Control-Started' state when the Bluetooth
+  -- controller is in 'Sniff Offload Enabled' state, and a
+  -- 'WriteSniffOffloadParameters' vendor specific command has been issued at
+  -- least once by the Bluetooth host for the present ACL.
+
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+
+  0     [+hdr_size]  hci.CommandHeader      header
+    -- Unlike other Android vendor commands, the sniff offload commands do *not*
+    -- use a sub-opcode, instead opting to use separate command opcodes for each
+    -- command.
+
+  $next [+2]         UInt                   connection_handle
+    -- ACL Connection_Handle (only the lower 12-bits are meaningful).
+    --   Range: 0x0000 to 0x0EFF
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]         UInt                   max_interval
+    -- Max interval
+    -- Range: 0x0002 to 0xFFFE; only even values are valid
+    -- Mandatory Range: 0x0006 to 0x0540
+    -- Time = N × 0.625 ms
+    -- Time Range: 1.25 ms to 40.9 s
+    [requires: 0x0002 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                   min_interval
+    -- Min interval
+    -- Range: 0x0002 to 0xFFFE; only even values are valid
+    -- Mandatory Range: 0x0006 to 0x0540
+    -- Time = N × 0.625 ms
+    -- Time Range: 1.25 ms to 40.9 s
+    [requires: 0x0002 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                   attempts
+    -- Number of Baseband receive slots for sniff attempt.
+    -- Length = N × 1.25 ms
+    -- Range: 0x0001 to 0x7FFF
+    -- Time Range: 1.25 ms to 40.9 s
+    -- Mandatory Range for Controller: 1 to Tsniff/2
+    [requires: 0x0001 <= this <= 0x7FFF]
+
+  $next [+2]         UInt                   sniff_timeout
+    -- Number of Baseband receive slots for sniff timeout.
+    -- Length = N × 1.25 ms
+    -- Range: 0x0000 to 0x7FFF
+    -- Time Range: 0 ms to 40.9 s
+    -- Mandatory Range for Controller: 0 to 0x0028
+    [requires: 0x0000 <= this <= 0x7FFF]
+
+  $next [+2]         UInt                   link_inactivity_timeout
+    -- Timeout value in milliseconds.
+    -- Link inactivity timer started/reset at every HCI-ACL transaction. At the
+    -- expiry of this timer, the controller shall initiate entry to sniff mode.
+
+  $next [+2]         UInt                   max_latency
+    -- Maximum latency.
+    -- Time = N * 0.625 ms
+    [requires: 0x0002 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                   min_remote_timeout
+    -- Minimum sniff mode timeout that the remote device may use.
+    -- Time = N * 0.625 ms
+    [requires: 0x0000 <= this <= 0xFFFE]
+
+  $next [+2]         UInt                   min_local_timeout
+    -- Minimum sniff mode timeout that the local device may use.
+    -- Time = N * 0.625 ms
+    [requires: 0x0000 <= this <= 0xFFFE]
+
+  $next [+1]         SniffOffloadAllowExit  allow_exit_sniff_on_rx
+    -- Flag indicating exit sniff mode behavior in receive direction.
+    -- Receive-direction HCI-ACL is defined as ACL packet transmission from
+    -- controller to host over HCI.
+
+  $next [+1]         SniffOffloadAllowExit  allow_exit_sniff_on_tx
+    -- Flag indicating exit sniff mode behavior in transmit direction.
+    -- Transmit-direction HCI-ACL is defined as ACL packet transmission from
+    -- host to controller over HCI.

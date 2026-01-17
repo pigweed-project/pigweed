@@ -737,6 +737,12 @@ enum OpCode:
   ANDROID_DYNAMIC_AUDIO_BUFFER                                 = 0xFD5F
     -- Dynamic Audio Buffer Command
 
+  ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE                           = 0xFF10
+    -- Write Sniff Offload Enable Command
+
+  ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS                       = 0xFF11
+    -- Write Sniff Offload Parameters Command
+
 
 enum EventCode:
   -- HCI Event Codes. See Core Spec v5.0 Vol 2, Part E, Section 7.7.
