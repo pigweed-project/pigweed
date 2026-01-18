@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:01f10193a13523f0d196ce57232d4107d231427e"
+        "git_revision:024ed25d16a92776fc368c53e141a7e4a6b5dae1"
       ],
       "version_file": ".versions/bb.cipd_version"
     },
@@ -80,7 +80,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:01f10193a13523f0d196ce57232d4107d231427e"
+        "git_revision:024ed25d16a92776fc368c53e141a7e4a6b5dae1"
       ],
       "version_file": ".versions/led.cipd_version"
     },
@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:01f10193a13523f0d196ce57232d4107d231427e"
+        "git_revision:024ed25d16a92776fc368c53e141a7e4a6b5dae1"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
@@ -146,7 +146,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revision:01f10193a13523f0d196ce57232d4107d231427e"
+        "git_revision:024ed25d16a92776fc368c53e141a7e4a6b5dae1"
       ],
       "version_file": ".versions/luci-cv.cipd_version"
     }
