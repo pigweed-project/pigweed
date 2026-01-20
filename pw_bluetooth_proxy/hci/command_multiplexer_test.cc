@@ -21,6 +21,7 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/pend_func_task.h"
 #include "pw_async2/simulated_time_provider.h"
+#include "pw_bluetooth/hci_h4.emb.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
@@ -231,11 +232,85 @@ TEST_F(CommandMultiplexerTest, SendCommandTimer) {
 }
 
 void TestSendEvent(Accessor test) {
-  MultiBuf::Instance buffer(test.allocator());
-  // Not yet implemented.
-  auto result = test.hci_cmd_mux().SendEvent({std::move(buffer)});
-  ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().status(), Status::Unimplemented());
+  // Try sending empty buffer.
+  {
+    MultiBuf::Instance buffer(test.allocator());
+
+    auto result = test.hci_cmd_mux().SendEvent({std::move(buffer)});
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().status(), Status::InvalidArgument());
+  }
+
+  // Try sending buffer containing a valid event.
+  {
+    std::array<std::byte, 5> command_complete_packet_bytes{
+        // Event code (Command Complete)
+        std::byte(0x0E),
+        // Parameter size
+        std::byte(0x03),
+        // Num_HCI_Command_Packets
+        std::byte(0x01),
+        // OpCode (Reset)
+        std::byte(0x03),
+        std::byte(0x0C),
+    };
+
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), command_complete_packet_bytes);
+
+    auto result = test.hci_cmd_mux().SendEvent({std::move(buf)});
+    EXPECT_TRUE(result.has_value());
+    ASSERT_EQ(test.packets_to_host().size(), 1u);
+    std::array<std::byte, 1> out_h4_header{};
+    std::array<std::byte, command_complete_packet_bytes.size()> out_payload{};
+    test.packets_to_host().front()->CopyTo(out_h4_header);
+    test.packets_to_host().front()->CopyTo(out_payload, 1);
+    EXPECT_EQ(out_h4_header[0], std::byte(emboss::H4PacketType::EVENT));
+    EXPECT_EQ(command_complete_packet_bytes, out_payload);
+    test.packets_to_host().pop_front();
+  }
+
+  // Register an event interceptor and ensure that SendEvent bypasses it.
+  {
+    std::optional<EventPacket> intercepted;
+    auto result = test.hci_cmd_mux().RegisterEventInterceptor(
+        emboss::EventCode::HARDWARE_ERROR,
+        [&](EventPacket&& packet)
+            -> CommandMultiplexer::EventInterceptorReturn {
+          intercepted = std::move(packet);
+          return {};
+        });
+    EXPECT_EQ(result.status(), OkStatus());
+    EXPECT_TRUE(result.ok());
+
+    std::array<std::byte, 4> hardware_error_packet_bytes{
+        // Packet type (event)
+        std::byte(0x04),
+        // Event code (Hardware Error)
+        std::byte(0x10),
+        // Parameter size
+        std::byte(0x01),
+        // Hardware_Code
+        std::byte(0x01),
+    };
+
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), hardware_error_packet_bytes);
+
+    auto send_result = test.hci_cmd_mux().SendEvent({std::move(buf)});
+    EXPECT_TRUE(send_result.has_value());
+
+    // SendEvent should bypass interceptors.
+    EXPECT_FALSE(intercepted.has_value());
+    ASSERT_EQ(test.packets_to_host().size(), 1u);
+    std::array<std::byte, 1> out_h4_header{};
+    std::array<std::byte, hardware_error_packet_bytes.size()> out_payload{};
+    test.packets_to_host().front()->CopyTo(out_h4_header);
+    test.packets_to_host().front()->CopyTo(out_payload, 1);
+    EXPECT_EQ(out_h4_header[0], std::byte(emboss::H4PacketType::EVENT));
+    EXPECT_EQ(hardware_error_packet_bytes, out_payload);
+    test.packets_to_host().pop_front();
+  }
 }
 
 TEST_F(CommandMultiplexerTest, SendEventAsync) {

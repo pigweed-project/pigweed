@@ -23,6 +23,13 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::bluetooth::proxy::hci {
+namespace {
+
+constexpr std::array<std::byte, 1> kH4EventHeader{
+    std::byte(emboss::H4PacketType::EVENT),
+};
+
+}
 
 class CommandMultiplexer::InterceptorStateWrapper
     : public InterceptorMap::Pair {
@@ -284,9 +291,20 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
 
 expected<void, FailureWithBuffer> CommandMultiplexer::SendEvent(
     EventPacket&& event) {
-  // Not implemented.
-  return unexpected(
-      FailureWithBuffer{Status::Unimplemented(), std::move(event.buffer)});
+  if (event.buffer->empty()) {
+    return unexpected(
+        FailureWithBuffer{Status::InvalidArgument(), std::move(event.buffer)});
+  }
+
+  if (!event.buffer->TryReserveForInsert(event.buffer->begin())) {
+    return unexpected(
+        FailureWithBuffer{Status::Unavailable(), std::move(event.buffer)});
+  }
+  event.buffer->Insert(event.buffer->begin(), kH4EventHeader);
+
+  // No buffering of events is needed.
+  send_to_host_fn_(std::move(event.buffer));
+  return {};
 }
 
 Result<EventInterceptor> CommandMultiplexer::RegisterEventInterceptor(
