@@ -100,6 +100,8 @@ class TestFuture {
     return number_one_ + number_two_;
   }
 
+  bool is_pendable() const { return state_.is_pendable(); }
+
   bool is_complete() const { return state_.is_complete(); }
 
  private:

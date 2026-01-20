@@ -14,6 +14,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 
 #include "pw_allocator/allocator.h"
 #include "pw_async2/callback_task.h"
@@ -58,11 +59,16 @@ class BaseChannel;
 
 class BaseChannelFuture {
  public:
+  constexpr BaseChannelFuture() : channel_(nullptr) {}
+
   BaseChannelFuture(const BaseChannelFuture&) = delete;
   BaseChannelFuture& operator=(const BaseChannelFuture&) = delete;
 
   // Derived classes call MoveAssignFrom to move rather than use the operator.
   BaseChannelFuture& operator=(BaseChannelFuture&&) = delete;
+
+  /// True if the `Pend` can be called on the future.
+  [[nodiscard]] bool is_pendable() const { return core_.is_pendable(); }
 
   /// True if the future has returned `Ready()`.
   [[nodiscard]] bool is_complete() const { return core_.is_complete(); }
@@ -133,6 +139,8 @@ class ChannelFuture : public BaseChannelFuture {
   }
 
  protected:
+  constexpr ChannelFuture() = default;
+
   explicit ChannelFuture(Channel<T>* channel) : BaseChannelFuture(channel) {}
 
   ChannelFuture(Channel<T>* channel, AllowClosed)
@@ -965,6 +973,8 @@ class [[nodiscard]] SendFuture final
   using Base = internal::ChannelFuture<SendFuture, T, bool>;
 
  public:
+  constexpr SendFuture() = default;
+
   SendFuture(SendFuture&& other) PW_LOCKS_EXCLUDED(*other.channel())
       : Base(static_cast<Base&&>(other)), value_(std::move(other.value_)) {}
 
@@ -1009,12 +1019,12 @@ class [[nodiscard]] SendFuture final
       return Pending();
     }
 
-    this->channel()->PushAndWake(std::move(value_));
+    this->channel()->PushAndWake(std::move(*value_));
     this->Complete();
     return Ready(true);
   }
 
-  T value_;
+  std::optional<T> value_;
 };
 
 /// A reservation for sending values to a channel, returned from a
@@ -1083,6 +1093,8 @@ class [[nodiscard]] ReserveSendFuture final
       ChannelFuture<ReserveSendFuture, T, std::optional<SendReservation<T>>>;
 
  public:
+  constexpr ReserveSendFuture() = default;
+
   ReserveSendFuture(ReserveSendFuture&& other) : Base(std::move(other)) {}
 
   ReserveSendFuture& operator=(ReserveSendFuture&& other) {

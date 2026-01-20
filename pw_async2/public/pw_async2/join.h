@@ -21,36 +21,42 @@ namespace pw::async2 {
 /// @submodule{pw_async2,combinators}
 
 template <typename... Futures>
-class JoinFuture : public internal::FutureBase<
-                       JoinFuture<Futures...>,
-                       std::tuple<typename Futures::value_type&&...>> {
+class JoinFuture {
+ public:
+  using value_type = std::tuple<typename Futures::value_type&&...>;
+
+  constexpr JoinFuture() : outputs_{} {}
+
+  [[nodiscard]] bool is_pendable() const { return state_.is_pendable(); }
+
+  [[nodiscard]] bool is_complete() const { return state_.is_complete(); }
+
+  /// Attempts to complete all of the futures, returning ``Ready``
+  /// with their results if all are complete.
+  Poll<value_type> Pend(Context& cx) {
+    PW_ASSERT(is_pendable());
+    if (!PendElements(cx, kTupleIndexSequence)) {
+      return Pending();
+    }
+
+    state_.MarkComplete();
+    return TakeOutputs(kTupleIndexSequence);
+  }
+
  private:
+  static_assert(sizeof...(Futures) > 0u, "Cannot join an empty set of futures");
+
   static constexpr auto kTupleIndexSequence =
       std::make_index_sequence<sizeof...(Futures)>();
   using TupleOfOutputRvalues = std::tuple<typename Futures::value_type&&...>;
-
-  using Base =
-      internal::FutureBase<JoinFuture<Futures...>, TupleOfOutputRvalues>;
-  friend Base;
 
   template <typename... Fs>
   friend constexpr auto Join(Fs&&...);
 
   explicit constexpr JoinFuture(Futures&&... futures)
-      : futures_(std::in_place, std::move(futures)...),
-        outputs_(Poll<typename Futures::value_type>(Pending())...) {}
-
-  /// Attempts to complete all of the futures, returning ``Ready``
-  /// with their results if all are complete.
-  Poll<TupleOfOutputRvalues> DoPend(Context& cx) {
-    if (!PendElements(cx, kTupleIndexSequence)) {
-      return Pending();
-    }
-    return TakeOutputs(kTupleIndexSequence);
-  }
-
-  void DoMarkComplete() { futures_.reset(); }
-  bool DoIsComplete() const { return !futures_.has_value(); }
+      : futures_(std::move(futures)...),
+        outputs_(Poll<typename Futures::value_type>(Pending())...),
+        state_(FutureState::kPending) {}
 
   /// Pends all non-completed futures at indices ``Is...`.
   ///
@@ -67,7 +73,7 @@ class JoinFuture : public internal::FutureBase<
   void PendElement(Context& cx) {
     auto& output = std::get<kTupleIndex>(outputs_);
     if (!output.IsReady()) {
-      output = std::get<kTupleIndex>(*futures_).Pend(cx);
+      output = std::get<kTupleIndex>(futures_).Pend(cx);
     }
   }
 
@@ -89,8 +95,9 @@ class JoinFuture : public internal::FutureBase<
 
   static_assert((Future<Futures> && ...),
                 "All types in JoinFuture must be Future types");
-  std::optional<std::tuple<Futures...>> futures_;
+  std::tuple<Futures...> futures_;
   std::tuple<Poll<internal::PendOutputOf<Futures>>...> outputs_;
+  FutureState state_;
 };
 
 template <typename... Futures>

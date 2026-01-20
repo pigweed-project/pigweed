@@ -32,6 +32,8 @@ using ::pw::chrono::SystemClock;
 using ::std::chrono_literals::operator""min;
 using ::std::chrono_literals::operator""h;
 
+static_assert(pw::async2::Future<TimeFuture<SystemClock>>);
+
 // We can't control the SystemClock's period configuration, so just in case
 // 42 hours cannot be accurately expressed in integer ticks, round the
 // duration up.

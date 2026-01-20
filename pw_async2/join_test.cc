@@ -27,6 +27,10 @@ using ::pw::async2::Join;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 
+static_assert(
+    pw::async2::Future<pw::async2::JoinFuture<pw::async2::VoidFuture,
+                                              pw::async2::ValueFuture<int>>>);
+
 TEST(JoinFuture, ReturnsReadyWhenAllPendablesAreReady) {
   DispatcherForTest dispatcher;
 

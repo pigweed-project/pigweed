@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <optional>
 #include <type_traits>
 
 #include "pw_assert/assert.h"

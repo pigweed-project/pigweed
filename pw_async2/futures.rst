@@ -28,6 +28,9 @@ with a common interface, but no shared base. In C++20 and later,
 
 A ``Future<T>`` exposes the following API:
 
+- A default constructor that initializes the future to an empty state. An empty
+  future does not represent an asynchronous and cannot be pended.
+- A destructor that cancels the future.
 - ``value_type``: Type alias for the value produced by the future.
 - ``Poll<value_type> Pend(Context& cx)``: Calling ``Pend`` advances the
   asynchronous operation until no further progress is possible. Returns

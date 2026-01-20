@@ -68,6 +68,15 @@ TEST(ValueFuture, Resolved) {
   EXPECT_EQ(result, 42);
 }
 
+struct CannotConstruct {
+  CannotConstruct() = delete;
+};
+
+TEST(ValueFuture, Default) {
+  PW_CONSTINIT static ValueFuture<CannotConstruct> future;
+  EXPECT_FALSE(future.is_complete());
+}
+
 TEST(ValueFuture, ResolvedInPlace) {
   DispatcherForTest dispatcher;
   auto future = ValueFuture<std::pair<int, int>>::Resolved(9, 3);
@@ -90,12 +99,12 @@ TEST(ValueProvider, VendsAndResolvesFuture) {
   DispatcherForTest dispatcher;
   ValueProvider<int> provider;
 
-  std::optional<ValueFuture<int>> future = provider.Get();
-  ASSERT_TRUE(future.has_value());
+  ValueFuture<int> future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
 
   int result = -1;
   PendFuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future->Pend(cx));
+    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
   });
@@ -120,12 +129,12 @@ TEST(ValueProvider, OnlyAllowsOneFutureToExist) {
   }
 
   // `future1` went out of scope, so we should be allowed to get a new one.
-  std::optional<ValueFuture<int>> future = provider.Get();
-  ASSERT_TRUE(future.has_value());
+  ValueFuture<int> future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
 
   int result = -1;
   PendFuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future->Pend(cx));
+    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
   });
@@ -138,20 +147,20 @@ TEST(ValueProvider, OnlyAllowsOneFutureToExist) {
   EXPECT_EQ(result, 82);
 
   // The operation has resolved, so a new future should be obtainable.
-  std::optional<ValueFuture<int>> new_future = provider.Get();
-  EXPECT_TRUE(new_future.has_value());
+  ValueFuture<int> new_future = provider.Get();
+  EXPECT_FALSE(new_future.is_complete());
 }
 
 TEST(ValueProvider, ResolveInPlace) {
   DispatcherForTest dispatcher;
   ValueProvider<std::pair<int, int>> provider;
 
-  std::optional<ValueFuture<std::pair<int, int>>> future = provider.Get();
-  ASSERT_TRUE(future.has_value());
+  ValueFuture<std::pair<int, int>> future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
 
   std::optional<std::pair<int, int>> result;
   PendFuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future->Pend(cx));
+    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
     result = value;
     return Ready();
   });
@@ -206,16 +215,21 @@ TEST(VoidFuture, Resolved) {
   EXPECT_TRUE(completed);
 }
 
+TEST(VoidFuture, Default) {
+  PW_CONSTINIT static VoidFuture future;
+  EXPECT_FALSE(future.is_complete());
+}
+
 TEST(ValueProviderVoid, VendsAndResolvesFuture) {
   DispatcherForTest dispatcher;
   ValueProvider<void> provider;
 
-  std::optional<VoidFuture> future = provider.Get();
-  ASSERT_TRUE(future.has_value());
+  VoidFuture future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
 
   bool completed = false;
   PendFuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY(future->Pend(cx));
+    PW_TRY_READY(future.Pend(cx));
     completed = true;
     return Ready();
   });

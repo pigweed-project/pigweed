@@ -91,10 +91,30 @@ TEST(FutureTimeout, IntValueTimeoutOrResolvesWithoutTimeoutRealClock) {
 
   BroadcastValueProvider<int> value_provider;
   auto future = TimeoutOr(value_provider.Get(), large_timeout, 9999);
+  static_assert(pw::async2::Future<decltype(future)>);
 
   const int result =
       DoDispatchCommon(std::move(future), [&] { value_provider.Resolve(27); });
   EXPECT_EQ(result, 27);
+}
+
+TEST(FutureTimeout, DefaultConstructAndAssign) {
+  BroadcastValueProvider<int> value_provider;
+  SimulatedTimeProvider<SystemClock> time_provider;
+  auto future =
+      TimeoutOr(value_provider.Get(), time_provider, 30s, [] { return 9999; });
+
+  decltype(future) other;
+  EXPECT_FALSE(other.is_pendable());
+  EXPECT_FALSE(other.is_complete());
+
+  other = std::move(future);
+
+  EXPECT_FALSE(future.is_pendable());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(future.is_complete());  // NOLINT(bugprone-use-after-move)
+
+  EXPECT_TRUE(other.is_pendable());
+  EXPECT_FALSE(other.is_complete());
 }
 
 TEST(FutureTimeout, IntValueTimeoutOrFunctionReturnResolvesOnTimeout) {

@@ -52,6 +52,10 @@ struct EmptyReadyResolution {
 template <typename T>
 struct ReadyFunctionResultResolution {
   using value_type = T;
+
+  /// Cannot be invoked when default constructed; will crash.
+  constexpr ReadyFunctionResultResolution() = default;
+
   constexpr explicit ReadyFunctionResultResolution(
       pw::Function<T()> ready_value_fn)
       : ready_(std::move(ready_value_fn)) {}
@@ -130,10 +134,7 @@ template <
     typename = std::enable_if_t<!std::is_lvalue_reference_v<PrimaryFuture>>,
     typename = std::enable_if_t<!std::is_lvalue_reference_v<TimeoutFuture>>,
     typename = std::enable_if_t<!std::is_lvalue_reference_v<TimeoutResolution>>>
-class [[nodiscard]] FutureWithTimeout
-    : public internal::FutureBase<
-          FutureWithTimeout<T, PrimaryFuture, TimeoutFuture, TimeoutResolution>,
-          T> {
+class [[nodiscard]] FutureWithTimeout {
   static_assert(
       Future<PrimaryFuture>,
       "FutureWithTimeout can only be used when PrimaryFuture is a Future type");
@@ -142,44 +143,47 @@ class [[nodiscard]] FutureWithTimeout
       "FutureWithTimeout can only be used when TimeoutFuture is a Future type");
 
  public:
+  using value_type = T;
+
+  constexpr FutureWithTimeout() = default;
+
   FutureWithTimeout(PrimaryFuture&& primary_future,
                     TimeoutFuture&& timeout_future,
                     TimeoutResolution&& timeout_resolution)
-      : state_{std::in_place,
-               State{.primary_future = std::move(primary_future),
-                     .timeout_future_ = std::move(timeout_future),
-                     .timeout_resolution_ = std::move(timeout_resolution)}} {}
+      : primary_future_(std::move(primary_future)),
+        timeout_future_(std::move(timeout_future)),
+        timeout_resolution_(std::move(timeout_resolution)),
+        state_(FutureState::kPending) {}
 
- private:
-  using Base = internal::FutureBase<
-      FutureWithTimeout<T, PrimaryFuture, TimeoutFuture, TimeoutResolution>,
-      T>;
-  friend Base;
+  [[nodiscard]] constexpr bool is_pendable() const {
+    return state_.is_pendable();
+  }
 
-  Poll<typename Base::value_type> DoPend(Context& cx) {
-    PW_DASSERT(state_.has_value());
-    auto result = state_->primary_future.Pend(cx);
+  [[nodiscard]] constexpr bool is_complete() const {
+    return state_.is_complete();
+  }
+
+  Poll<value_type> Pend(Context& cx) {
+    PW_ASSERT(is_pendable());
+    auto result = primary_future_.Pend(cx);
     if (result.IsReady()) {
-      return Ready<typename Base::value_type>(std::in_place_t{},
-                                              std::move(result).value());
+      state_.MarkComplete();
+      return Ready<value_type>(std::in_place_t{}, std::move(result).value());
     }
 
-    if (state_->timeout_future_.Pend(cx).IsReady()) {
-      return state_->timeout_resolution_();
+    if (timeout_future_.Pend(cx).IsReady()) {
+      state_.MarkComplete();
+      return timeout_resolution_();
     }
 
     return Pending();
   }
 
-  void DoMarkComplete() { state_.reset(); }
-  [[nodiscard]] bool DoIsComplete() const { return !state_.has_value(); }
-
-  struct State {
-    PrimaryFuture primary_future;
-    TimeoutFuture timeout_future_;
-    PW_NO_UNIQUE_ADDRESS TimeoutResolution timeout_resolution_;
-  };
-  std::optional<State> state_;
+ private:
+  PrimaryFuture primary_future_;
+  TimeoutFuture timeout_future_;
+  PW_NO_UNIQUE_ADDRESS TimeoutResolution timeout_resolution_;
+  FutureState state_;
 };
 
 /// Helper class to construct a `FutureWithTimeout` instance given the value

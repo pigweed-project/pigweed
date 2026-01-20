@@ -56,7 +56,7 @@ int SingleTypeJoin(uint32_t mask) {
 
 int MultiTypeJoin(uint32_t mask) {
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
-  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ff);
+  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
   auto future =
       Join(std::move(value_1), std::move(value_2), std::move(value_3));
@@ -84,7 +84,7 @@ int MultiTypeJoin(uint32_t mask) {
 // are in the base binary.
 void SetBaselineValueFutures(uint32_t mask) {
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
-  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ff);
+  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
 
   PendFuncTask task([v1 = std::move(value_1),

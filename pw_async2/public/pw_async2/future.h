@@ -48,6 +48,9 @@ concept Future = requires {
   /// value_type refers to the type produced by the future.
   typename T::value_type;
 
+  /// `bool is_pendable() const` returns whether `Pend` can be called.
+  static_cast<bool (T::*)() const>(&T::is_pendable);
+
   /// `bool is_complete() const` returns whether the future completed.
   static_cast<bool (T::*)() const>(&T::is_complete);
 
@@ -56,7 +59,10 @@ concept Future = requires {
   /// returns `Pending` if there is more work to do. Must not be called again
   /// after completing.
   static_cast<Poll<typename T::value_type> (T::*)(Context&)>(&T::Pend);
-} && std::movable<T>;
+
+  /// Futures must have a default constructor that initializes them to an empty
+  /// state, and a destructor that cancels them.
+} && std::default_initializable<T> && std::destructible<T> && std::movable<T>;
 
 #else  // C++17 version
 
@@ -70,12 +76,15 @@ struct is_future<
     T,
     std::void_t<typename T::value_type,
                 decltype(std::declval<T&>().Pend(std::declval<Context&>())),
+                decltype(std::declval<const T&>().is_pendable()),
                 decltype(std::declval<const T&>().is_complete())>>
     : std::conjunction<
+          std::is_convertible<decltype(&T::is_pendable), bool (T::*)() const>,
           std::is_convertible<decltype(&T::is_complete), bool (T::*)() const>,
           std::is_convertible<decltype(&T::Pend),
-                              Poll<typename T::value_type> (T::*)(Context&)>> {
-};
+                              Poll<typename T::value_type> (T::*)(Context&)>,
+          std::is_default_constructible<T>,
+          std::is_destructible<T>> {};
 
 }  // namespace internal
 
@@ -86,47 +95,6 @@ constexpr bool Future =
     internal::is_future<std::remove_cv_t<std::remove_reference_t<T>>>::value;
 
 #endif  // __cpp_concepts
-
-namespace internal {
-
-/// Optional future base class for future implementations. Provides
-/// `value_type`, `Pend()`, and `is_complete()`. Requires the derived class to
-/// implement `DoPend(), `DoMarkComplete()`, and `DoIsComplete()`.
-template <typename Derived, typename T>
-class FutureBase {
- public:
-  using value_type = std::conditional_t<std::is_void_v<T>, ReadyType, T>;
-
-  /// Polls the future to advance its state.
-  ///
-  /// Returns `Pending` if the future is not yet complete, or `Ready` with
-  /// its result if it is.
-  ///
-  /// If this future has already completed, calling `Pend` will trigger an
-  /// assertion.
-  Poll<value_type> Pend(Context& cx) {
-    PW_ASSERT(!is_complete());
-    Poll<value_type> poll = derived().DoPend(cx);
-    if (poll.IsReady()) {
-      derived().DoMarkComplete();
-    }
-    return poll;
-  }
-
-  /// Returns `true` if the future has already returned a `Ready` result.
-  ///
-  /// Calling `Pend` on a completed future will trigger an assertion.
-  bool is_complete() const { return derived().DoIsComplete(); }
-
- protected:
-  constexpr FutureBase() = default;
-
- private:
-  Derived& derived() { return static_cast<Derived&>(*this); }
-  const Derived& derived() const { return static_cast<const Derived&>(*this); }
-};
-
-}  // namespace internal
 
 /// Standard pw_async2 future states. Used by `FutureCore` and may be used by
 /// custom future implementations.

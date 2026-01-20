@@ -374,6 +374,8 @@ class SimpleFuture {
     return core_.DoPend(*this, cx);
   }
 
+  bool is_pendable() const { return core_.is_pendable(); }
+
   bool is_complete() const { return core_.is_complete(); }
 
  private:
