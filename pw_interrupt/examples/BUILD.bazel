@@ -1,4 +1,4 @@
-# Copyright 2021 The Pigweed Authors
+# Copyright 2026 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -12,23 +12,25 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
-include($ENV{PW_ROOT}/pw_interrupt/backend.cmake)
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
-pw_add_facade(pw_interrupt.context INTERFACE
-  BACKEND
-    pw_interrupt.context_BACKEND
-  HEADERS
-    public/pw_interrupt/context.h
-  PUBLIC_INCLUDES
-    public
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+cc_library(
+    name = "context_usage",
+    srcs = ["context_usage.cc"],
+    hdrs = ["context_usage.h"],
+    implementation_deps = ["//pw_interrupt:context"],
 )
 
-pw_add_library(pw_interrupt.fake_context STATIC
-  PUBLIC_DEPS
-    pw_interrupt.context.facade
-  HEADERS
-    public/pw_interrupt/fake_context.h
-  SOURCES
-    fake_context.cc
+pw_cc_test(
+    name = "context_usage_test",
+    srcs = ["context_usage_test.cc"],
+    deps = [
+        ":context_usage",
+        "//pw_interrupt:fake_context",
+    ],
 )

@@ -12,8 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:compatibility.bzl", "host_backend_alias", "incompatible_with_mcu")
 load("//pw_build:pw_facade.bzl", "pw_facade")
 
 package(default_visibility = ["//visibility:public"])
@@ -38,12 +39,31 @@ label_flag(
     build_setting_default = ":backend_multiplexer",
 )
 
+cc_library(
+    name = "fake_context",
+    srcs = ["fake_context.cc"],
+    hdrs = [
+        "public/pw_interrupt/context.h",
+        "public/pw_interrupt/fake_context.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":context.facade",
+        "//pw_function",
+    ],
+)
+
+host_backend_alias(
+    name = "unspecified_backend_context",
+    backend = ":fake_context",
+)
+
 alias(
     name = "backend_multiplexer",
     actual = select({
         "//pw_interrupt_cortex_m:backend": "//pw_interrupt_cortex_m:context",
         "//pw_interrupt_freertos:backend": "//pw_interrupt_freertos:context",
-        "//conditions:default": "//pw_build:unspecified_backend",
+        "//conditions:default": ":unspecified_backend_context",
     }),
     visibility = ["//targets:__pkg__"],
 )
@@ -52,6 +72,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_interrupt/context.h",
+        "public/pw_interrupt/fake_context.h",
     ],
 )
 
@@ -60,6 +81,7 @@ sphinx_docs_library(
     srcs = [
         "backends.rst",
         "docs.rst",
+        "fake_backend.rst",
     ],
     prefix = "pw_interrupt/",
     target_compatible_with = incompatible_with_mcu(),

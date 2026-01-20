@@ -16,7 +16,6 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_unit_test/test.gni")
-import("$dir_pw_unit_test/test.gni")
 import("backend.gni")
 
 config("public_include_path") {
@@ -28,6 +27,12 @@ pw_facade("context") {
   backend = pw_interrupt_CONTEXT_BACKEND
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_interrupt/context.h" ]
+}
+
+pw_source_set("fake_context") {
+  sources = [ "fake_context.cc" ]
+  public = [ "public/pw_interrupt/fake_context.h" ]
+  deps = [ ":context.facade" ]
 }
 
 pw_test_group("tests") {
