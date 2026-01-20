@@ -360,5 +360,8 @@ pw_test_group("tests") {
     ":pw_bluetooth_proxy_async_mbv2_test",
   ]
 
-  group_deps = [ "gatt:tests" ]
+  group_deps = [
+    "gatt:tests",
+    "hci:tests",
+  ]
 }

@@ -27,7 +27,7 @@ class IdentifierMint;
 
 /// Type safe, move-only unforgeable identifier.
 template <typename Int, Int ReservedInvalidId = 0>
-class Identifier {
+class Identifier final {
  public:
   using ValueType = Int;
   using Mint = IdentifierMint<Int, ReservedInvalidId>;
@@ -67,7 +67,8 @@ class Identifier {
 template <typename Int, Int ReservedInvalidId>
 class IdentifierMint final {
  public:
-  using Identifier = Identifier<Int, ReservedInvalidId>;
+  using Identifier =
+      ::pw::bluetooth::proxy::hci::Identifier<Int, ReservedInvalidId>;
 
   // Generate a new (valid) unique Identifier, or std::nullopt if not possible.
   // Callers must supply a `bool(Int) is_used` function, which will check if an

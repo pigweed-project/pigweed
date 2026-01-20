@@ -16,6 +16,8 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_thread/backend.cmake)
 include($ENV{PW_ROOT}/third_party/emboss/emboss.cmake)
 
+add_subdirectory(hci)
+
 ###############################################################################
 ##          Everything below here is intended to be emboss only              ##
 ##          and will be skipped if emboss isn't enabled.                     ##

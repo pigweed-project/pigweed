@@ -23,18 +23,20 @@ if("${dir_pw_third_party_emboss}" STREQUAL "")
   return()
 endif()
 
-pw_add_library(pw_bluetooth_proxy.hci_command_multiplexer STATIC
+pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
 # LINT.IfChange
   HEADERS
     public/pw_bluetooth_proxy/hci/command_multiplexer.h
     public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h
   PUBLIC_DEPS
+    pw_bluetooth.emboss_hci_common
     pw_bluetooth.emboss_hci_commands
     pw_bluetooth.emboss_hci_events
     pw_bluetooth.emboss_hci_h4
     pw_containers.flat_map
     pw_function
     pw_result
+    pw_result.expected
     pw_span
     pw_status
     pw_sync.mutex
@@ -45,10 +47,10 @@ pw_add_library(pw_bluetooth_proxy.hci_command_multiplexer STATIC
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
 
-pw_add_test(pw_bluetooth_proxy.hci_command_multiplexer_test
+pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
 # LINT.IfChange
   PRIVATE_DEPS
-    pw_bluetooth_proxy.command_multiplexer
+    pw_bluetooth_proxy.hci.command_multiplexer
     pw_allocator.testing
     pw_async2.pend_func_task
     pw_async2.simulated_time_provider

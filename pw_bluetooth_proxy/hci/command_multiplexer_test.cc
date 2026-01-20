@@ -29,6 +29,8 @@
 namespace pw::bluetooth::proxy::hci {
 namespace {
 
+constexpr size_t kAllocatorSize = 256;
+
 TEST(IdentifierTest, UniqueIdentifier) {
   using Int = uint8_t;
   constexpr size_t kMax = std::numeric_limits<Int>::max();
@@ -167,7 +169,7 @@ class CommandMultiplexerTest : public ::testing::Test {
 
   async2::DispatcherForTest dispatcher_{};
   async2::SimulatedTimeProvider<chrono::SystemClock> time_provider_{};
-  pw::allocator::test::AllocatorForTest<216> allocator_{};
+  pw::allocator::test::AllocatorForTest<kAllocatorSize> allocator_{};
 
   pw::DynamicDeque<MultiBuf::Instance> packets_to_host_{allocator_};
   pw::DynamicDeque<MultiBuf::Instance> packets_to_controller_{allocator_};
@@ -507,13 +509,20 @@ void TestInterceptCommands(Accessor test) {
 
   // Replace with an interceptor that removes itself.
   result = Status::Cancelled();
+  struct {
+    decltype(result)& result_;
+    decltype(intercepted)& intercepted_;
+  } capture{
+      .result_ = result,
+      .intercepted_ = intercepted,
+  };
   result = test.hci_cmd_mux().RegisterCommandInterceptor(
       emboss::OpCode::RESET,
-      [&](CommandPacket&& packet)
+      [&capture](CommandPacket&& packet)
           -> CommandMultiplexer::CommandInterceptorReturn {
-        intercepted = std::move(packet.buffer);
+        capture.intercepted_ = std::move(packet.buffer);
         return {.action = CommandMultiplexer::RemoveThisInterceptor{
-                    std::move(result.value().id())}};
+                    std::move(capture.result_.value().id())}};
       });
 
   {
@@ -772,12 +781,20 @@ void TestInterceptEvents(Accessor test) {
 
   // Replace with an interceptor that removes itself.
   result = Status::Cancelled();
+  struct {
+    decltype(result)& result_;
+    decltype(intercepted)& intercepted_;
+  } capture{
+      .result_ = result,
+      .intercepted_ = intercepted,
+  };
   result = test.hci_cmd_mux().RegisterEventInterceptor(
       CommandCompleteOpcode{emboss::OpCode::RESET},
-      [&](EventPacket&& packet) -> CommandMultiplexer::EventInterceptorReturn {
-        intercepted = std::move(packet.buffer);
+      [&capture](
+          EventPacket&& packet) -> CommandMultiplexer::EventInterceptorReturn {
+        capture.intercepted_ = std::move(packet.buffer);
         return {.action = CommandMultiplexer::RemoveThisInterceptor{
-                    std::move(result.value().id())}};
+                    std::move(capture.result_.value().id())}};
       });
 
   {

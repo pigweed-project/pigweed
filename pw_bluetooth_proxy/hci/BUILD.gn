@@ -14,6 +14,8 @@
 
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pigweed/third_party/emboss/emboss.gni")
+import("$dir_pw_chrono/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -43,6 +45,8 @@ pw_source_set("command_multiplexer") {
     "$dir_pw_function",
     "$dir_pw_log",
     "$dir_pw_multibuf:multibuf_v2",
+    "$dir_pw_result",
+    "$dir_pw_result:expected",
     "$dir_pw_span",
     "$dir_pw_status",
     "$dir_pw_sync:lock_annotations",
@@ -55,6 +59,12 @@ pw_source_set("command_multiplexer") {
 }
 
 pw_test("command_multiplexer_test") {
+  # For now, disable if there's no system timer backend. In the future we will
+  # want to remove this restriction since async2 will be the normal way to
+  # handle timeouts.
+  enable_if =
+      pw_chrono_SYSTEM_TIMER_BACKEND != "" && dir_pw_third_party_emboss != ""
+
   # LINT.IfChange
   sources = [ "command_multiplexer_test.cc" ]
   deps = [
@@ -67,4 +77,8 @@ pw_test("command_multiplexer_test") {
   ]
 
   # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+}
+
+pw_test_group("tests") {
+  tests = [ ":command_multiplexer_test" ]
 }
