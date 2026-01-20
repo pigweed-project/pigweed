@@ -214,7 +214,7 @@ more details.
 
    Controls the default value of ``PW_LOG_LEVEL``. Setting
    ``PW_LOG_LEVEL_DEFAULT`` will change the behavior of all source files that
-   have not explicitly set ``PW_LOG_LEVEL``. Defaults to ``PW_LOG_LEVEL_DEBUG``.
+   have not explicitly set ``PW_LOG_LEVEL``. Defaults to ``PW_LOG_LEVEL_INFO``.
 
 .. c:macro:: PW_LOG_FLAGS_DEFAULT
 
