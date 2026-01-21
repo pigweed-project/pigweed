@@ -141,7 +141,7 @@ struct FrameEncoder {
 
   static bool CheckFrameIsValidForBaseProtocol(const Frame& frame,
                                                bool disable_logging) {
-    if (frame.payload.size() > kSizeBit63) {
+    if (static_cast<uint64_t>(frame.payload.size()) > kSizeBit63) {
       PW_LOG_DEBUG_IF(!disable_logging, "illegal payload length");
       return false;
     }
