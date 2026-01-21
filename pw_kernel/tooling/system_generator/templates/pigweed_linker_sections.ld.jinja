@@ -62,4 +62,14 @@ SECTIONS
   {
     KEEP(*(.pw_kernel.annotations.stack.*))
   }
+
+  .pw_kernel.annotations.thread 0x0 (INFO) :
+  {
+    KEEP(*(.pw_kernel.annotations.thread.*))
+  }
+
+  .pw_kernel.annotations.process 0x0 (INFO) :
+  {
+    KEEP(*(.pw_kernel.annotations.process.*))
+  }
 }

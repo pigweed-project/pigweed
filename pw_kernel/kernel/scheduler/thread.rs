@@ -324,7 +324,21 @@ impl<K: Kernel> Process<K> {
     /// provenance.
     #[must_use]
     pub fn id(&self) -> usize {
+        // Note: any changes to this also need to be reflected in
+        // `const_id_from_process_address`.
         core::ptr::from_ref(self).addr()
+    }
+
+    /// Computes the ID of a process from its address.
+    ///
+    /// # Safety
+    ///
+    /// This exists to allow process annotations to be generated at compile time
+    /// for static processes that are initialized at runtime. This should not be
+    /// called in any other circumstance.
+    #[must_use]
+    pub const unsafe fn const_id_from_process_address(addr: *const ()) -> *const () {
+        addr
     }
 
     pub fn dump(&self) {
@@ -661,7 +675,21 @@ impl<K: Kernel> Thread<K> {
     /// provenance.
     #[must_use]
     pub fn id(&self) -> usize {
+        // Note: any changes to this also need to be reflected in
+        // `const_id_from_thread_address`.
         self.arch_thread_state.get().addr()
+    }
+
+    /// Computes the ID of a thread from its address.
+    ///
+    /// # Safety
+    ///
+    /// This exists to allow thread annotations to be generated at compile time
+    /// for static threads that are initialized at runtime. This should not be
+    /// called in any other circumstance.
+    #[must_use]
+    pub const unsafe fn const_id_from_thread_address(addr: *const ()) -> *const () {
+        unsafe { addr.byte_add(core::mem::offset_of!(Self, arch_thread_state)) }
     }
 
     // An ID that can not be assigned to any thread in the system.
@@ -785,26 +813,87 @@ mod arg {
     }
 }
 
+/// Add debug annotations for a static thread
+///
+/// This macro is called by `init_non_priv_thread` and should not be called
+/// directly.
+#[macro_export]
+macro_rules! annotate_thread_from_address {
+    ($name:expr, $arch:ty, $thread_address:expr, $parent_id: expr) => {{
+        #[repr(C, packed(1))]
+        struct ThreadAnnotation {
+            name: &'static str,
+            id: *const (),
+            parent_id: *const (),
+        }
+        unsafe impl Sync for ThreadAnnotation {};
+
+        #[unsafe(link_section = ".pw_kernel.annotations.thread")]
+        #[used]
+        static _THREAD_ANNOTATION: ThreadAnnotation = ThreadAnnotation {
+            name: $name,
+            id: unsafe {
+                $crate::Thread::<$arch>::const_id_from_thread_address($thread_address as *const ())
+            },
+            parent_id: $parent_id as *const (),
+        };
+    }};
+}
+
+/// Add debug annotations for a static process
+///
+/// This macro is called by `init_non_priv_process` and should not be called
+/// directly.
+#[macro_export]
+macro_rules! annotate_process_from_address {
+    ($name:expr, $arch:ty, $process_address:expr) => {{
+        #[repr(C, packed(1))]
+        struct ProcessAnnotation {
+            name: &'static str,
+            id: *const (),
+        }
+        unsafe impl Sync for ProcessAnnotation {};
+
+        #[unsafe(link_section = ".pw_kernel.annotations.process")]
+        #[used]
+        static _PROCESS_ANNOTATION: ProcessAnnotation = ProcessAnnotation {
+            name: $name,
+            id: unsafe {
+                $crate::Process::<$arch>::const_id_from_process_address(
+                    $process_address as *const (),
+                )
+            },
+        };
+    }};
+}
+
+/// Add debug annotations for a stack.
+///
+/// This macro is called by `init_process` and should not be called directly.
 #[macro_export]
 macro_rules! annotate_stack {
     ($name:expr, $addr:expr, $size:expr) => {{
         #[repr(C, packed(1))]
         struct StackAnnotation {
             name: &'static str,
-            addr: *const u8,
+            addr: *const (),
             size: usize,
         }
+        unsafe impl Sync for StackAnnotation {};
 
         #[unsafe(link_section = ".pw_kernel.annotations.stack")]
         #[used]
-        static mut _STACK_ANNOTATION: StackAnnotation = StackAnnotation {
+        static _STACK_ANNOTATION: StackAnnotation = StackAnnotation {
             name: $name,
-            addr: $addr as *const u8,
+            addr: $addr as *const (),
             size: $size,
         };
     }};
 }
 
+/// Declare a static stack.
+///
+/// This macro is called by `init_process` and should not be called directly.
 #[macro_export]
 macro_rules! static_stack {
     ($thread_name:expr, $stack_size:expr) => {{
@@ -862,7 +951,34 @@ macro_rules! init_thread {
     }};
 }
 
-/// Constructs a new [`Process`] in global static storage and registers it.
+/// Declare static storage for a non-privileged process.
+///
+/// Creates a static in named `storage_ident` in the calling scope which holds
+/// the storage for a static process.
+#[cfg(feature = "user_space")]
+#[macro_export]
+macro_rules! declare_non_priv_process_storage {
+    ($storage_ident:ident) => {
+        static $storage_ident: $crate::__private::foreign_box::StaticStorage<
+            $crate::scheduler::thread::Process<arch::Arch>,
+        > = $crate::__private::foreign_box::StaticStorage::new();
+    };
+}
+
+/// Get the constant process ID of a non-privileged process.
+#[cfg(feature = "user_space")]
+#[macro_export]
+macro_rules! non_priv_process_id {
+    ($storage:expr) => {{
+        use $crate::scheduler::thread::Process;
+        unsafe {
+            Process::<arch::Arch>::const_id_from_process_address(unsafe { $storage.address() })
+        }
+    }};
+}
+
+/// Initializes and registers a new [`Process`] in a previously declared static
+/// process storage.
 ///
 /// # Safety
 ///
@@ -871,13 +987,19 @@ macro_rules! init_thread {
 #[cfg(feature = "user_space")]
 #[macro_export]
 macro_rules! init_non_priv_process {
-    ($name:literal, $memory_config:expr, $object_table:expr $(,)?) => {{
-        use $crate::scheduler::thread::Process;
-        use $crate::object::ObjectTable;
+    ($storage:expr, $name:literal, $memory_config:expr, $object_table:expr $(,)?) => {{
+        use $crate::__private::foreign_box::StaticStorage;
         use $crate::Kernel;
+        use $crate::object::ObjectTable;
+        use $crate::scheduler::thread::Process;
 
-        /// SAFETY: This must be executed at most once at run time.
-        unsafe fn __init_non_priv_process(object_table: ForeignBox<dyn ObjectTable<arch::Arch>>) -> &'static mut Process<arch::Arch> {
+        /// SAFETY: This must be executed at most once at run time.  See
+        /// StaticStorage::init() for more details.
+        #[allow(clippy::mut_from_ref)]
+        unsafe fn __init_non_priv_process(
+            storage: &'static StaticStorage<Process<arch::Arch>>,
+            object_table: ForeignBox<dyn ObjectTable<arch::Arch>>,
+        ) -> &'static mut Process<arch::Arch> {
             use pw_log::info;
             info!(
                 "Allocating non-privileged process '{}'",
@@ -886,16 +1008,13 @@ macro_rules! init_non_priv_process {
 
             // SAFETY: The caller promises that this function will be executed
             // at most once.
-            let proc =
-                unsafe {
-                    $crate::static_mut_ref!(Process<arch::Arch> =
-                         Process::new($name, $memory_config, object_table))
-                };
+            let proc = unsafe { storage.init(Process::new($name, $memory_config, object_table)) };
             proc.register(arch::Arch);
             proc
         }
 
-        __init_non_priv_process($object_table)
+        $crate::annotate_process_from_address!($name, arch::Arch, unsafe { $storage.address() });
+        __init_non_priv_process(&$storage, $object_table)
     }};
 }
 
@@ -908,9 +1027,9 @@ macro_rules! init_non_priv_process {
 #[cfg(feature = "user_space")]
 #[macro_export]
 macro_rules! init_non_priv_thread {
-    ($name:literal, $priority:expr, $process:expr, $entry:expr, $initial_sp:expr, $kernel_stack_size:expr  $(,)?) => {{
+    ($name:literal, $priority:expr, $process:expr, $process_id:expr, $entry:expr, $initial_sp:expr, $kernel_stack_size:expr  $(,)?) => {{
         use core::mem::MaybeUninit;
-        use $crate::static_mut_ref;
+
         use $crate::__private::foreign_box::ForeignBox;
         use $crate::scheduler::thread::{Process, Stack, StackStorage, StackStorageExt, Thread};
 
@@ -927,7 +1046,15 @@ macro_rules! init_non_priv_thread {
             );
             // SAFETY: The caller promises that this function will be executed
             // at most once.
-            let thread = unsafe { static_mut_ref!(Thread<arch::Arch> = Thread::new($name, $priority)) };
+            use $crate::__private::foreign_box::StaticStorage;
+            static mut __STATIC: StaticStorage<Thread<arch::Arch>> = StaticStorage::new();
+            $crate::annotate_thread_from_address!(
+                $name,
+                arch::Arch,
+                unsafe { __STATIC.address() },
+                $process_id
+            );
+            let thread = __STATIC.init(Thread::new($name, $priority));
             let mut thread = ForeignBox::from(thread);
 
             info!(
@@ -943,7 +1070,7 @@ macro_rules! init_non_priv_thread {
                 initial_sp,
                 proc,
                 entry,
-                (0, 0, 0)
+                (0, 0, 0),
             ) {
                 $crate::macro_exports::pw_assert::panic!(
                     "Error initializing thread: {}: {}",

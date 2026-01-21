@@ -57,6 +57,30 @@ fn print_image_info(path: &Path) -> Result<()> {
             stack.name, stack.stack_addr, stack.stack_size
         );
     }
+
+    println!();
+    println!("Threads:");
+    println!("  {:<30} {:<12} {:<12}", "Name", "Id", "Parent");
+    println!("  {:-<30} {:-<12} {:-<12}", "", "", "");
+    for thread in info.threads {
+        if thread.parent_id == 0x0 {
+            println!("  {:<30} 0x{:08x}   kernel", thread.name, thread.id);
+        } else {
+            println!(
+                "  {:<30} 0x{:08x}   0x{:08x}",
+                thread.name, thread.id, thread.parent_id
+            );
+        }
+    }
+
+    println!();
+    println!("Processes:");
+    println!("  {:<30} {:<12}", "Name", "Id");
+    println!("  {:-<30} {:-<12}", "", "");
+    for process in info.processes {
+        println!("  {:<30} 0x{:08x}", process.name, process.id);
+    }
+
     Ok(())
 }
 

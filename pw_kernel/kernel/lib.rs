@@ -180,6 +180,20 @@ macro_rules! static_init_state {
                 },
             }
         };
+
+        // A null address is used as the ID of the kernel process for annotations
+        // due to not being able to access the address of the kernel process
+        // from here.
+        $crate::annotate_thread_from_address!(
+            "bootstrap",
+            $kernel,
+            &raw const $name.bootstrap_thread.thread,
+            core::ptr::null());
+        $crate::annotate_thread_from_address!(
+            "idle",
+            $kernel,
+            &raw const $name.idle_thread.thread,
+            core::ptr::null());
     };
 }
 

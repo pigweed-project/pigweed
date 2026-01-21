@@ -349,6 +349,20 @@ impl<T> StaticStorage<T> {
     pub unsafe fn init(&self, val: T) -> &mut T {
         unsafe { (*self.inner.get()).write(val) }
     }
+
+    /// Return the address of the underlying storage as an untyped pointer.
+    ///
+    /// There are circumstances where the address of the static storage needs to
+    /// be known at `const` time. One example of this is adding debug annotation
+    /// to an image.
+    ///
+    /// # Safety
+    ///
+    /// It is up to the caller to ensure that all uses of the returned addresses
+    /// are safe and sound with respect to uses of `init()`
+    pub const unsafe fn address(&self) -> *const () {
+        self.inner.get() as *const ()
+    }
 }
 
 // SAFETY: By contract, the user will only call `init()` once therefore only

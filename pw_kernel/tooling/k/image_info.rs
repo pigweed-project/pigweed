@@ -16,7 +16,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
-use object::{Endian, Object, ObjectSection};
+use object::{Endian, File, Object, ObjectSection};
 
 pub struct StackInfo {
     pub name: String,
@@ -24,8 +24,21 @@ pub struct StackInfo {
     pub stack_size: u64,
 }
 
+pub struct ThreadInfo {
+    pub name: String,
+    pub id: u64,
+    pub parent_id: u64,
+}
+
+pub struct ProcessInfo {
+    pub name: String,
+    pub id: u64,
+}
+
 pub struct ImageInfo {
     pub stacks: Vec<StackInfo>,
+    pub threads: Vec<ThreadInfo>,
+    pub processes: Vec<ProcessInfo>,
     pub endian: object::Endianness,
 }
 
@@ -34,42 +47,97 @@ impl ImageInfo {
         let bin_data = fs::read(path).context("Failed to read ELF file")?;
         let obj_file = object::File::parse(&*bin_data).context("Failed to parse ELF file")?;
 
+        let endian = obj_file.endianness();
+        let stacks = Self::extract_stacks(&obj_file)?;
+        let threads = Self::extract_threads(&obj_file)?;
+        let processes = Self::extract_processes(&obj_file)?;
+
+        Ok(ImageInfo {
+            stacks,
+            threads,
+            endian,
+            processes,
+        })
+    }
+
+    fn get_section_data<'a>(obj_file: &File<'a>, section_name: &str) -> Result<&'a [u8]> {
         let section = obj_file
-            .section_by_name(".pw_kernel.annotations.stack")
+            .section_by_name(section_name)
             .context("Failed to find .pw_kernel.annotations.stack section")?;
 
         let data = section.data().context("Failed to read section data")?;
+        Ok(data)
+    }
 
+    fn extract_stacks(obj_file: &File<'_>) -> Result<Vec<StackInfo>> {
+        Self::extract_entries(obj_file, ".pw_kernel.annotations.stack", 4, |fields| {
+            let name = Self::read_string(obj_file, fields[0], fields[1])
+                .context("Failed to read stack name")?;
+            Ok(StackInfo {
+                name,
+                stack_addr: fields[2],
+                stack_size: fields[3],
+            })
+        })
+    }
+
+    fn extract_threads(obj_file: &File<'_>) -> Result<Vec<ThreadInfo>> {
+        Self::extract_entries(obj_file, ".pw_kernel.annotations.thread", 4, |fields| {
+            let name = Self::read_string(obj_file, fields[0], fields[1])
+                .context("Failed to read thread name")?;
+            Ok(ThreadInfo {
+                name,
+                id: fields[2],
+                parent_id: fields[3],
+            })
+        })
+    }
+
+    fn extract_processes(obj_file: &File<'_>) -> Result<Vec<ProcessInfo>> {
+        Self::extract_entries(obj_file, ".pw_kernel.annotations.process", 3, |fields| {
+            let name = Self::read_string(obj_file, fields[0], fields[1])
+                .context("Failed to read process name")?;
+            Ok(ProcessInfo {
+                name,
+                id: fields[2],
+            })
+        })
+    }
+
+    fn extract_entries<T, F>(
+        obj_file: &File<'_>,
+        section_name: &str,
+        num_fields: usize,
+        mapper: F,
+    ) -> Result<Vec<T>>
+    where
+        F: Fn(&[u64]) -> Result<T>,
+    {
+        let data = Self::get_section_data(obj_file, section_name)?;
         let is_64 = obj_file.is_64();
-        let entry_size = if is_64 { 32 } else { 16 };
+        let field_size = if is_64 { 8 } else { 4 };
+        let entry_size = num_fields * field_size;
 
         if data.len() % entry_size != 0 {
             return Err(anyhow!(
-                "Stack annotation section size is not a multiple of {}",
+                "{} section size is not a multiple of {}",
+                section_name,
                 entry_size
             ));
         }
 
         let endian = obj_file.endianness();
-        let mut stacks = Vec::new();
+        let mut entries = Vec::new();
 
         for entry_data in data.chunks(entry_size) {
-            let name_addr = Self::extract_usize_field(endian, entry_data, 0, is_64)?;
-            let name_len = Self::extract_usize_field(endian, entry_data, 1, is_64)?;
-            let stack_addr = Self::extract_usize_field(endian, entry_data, 2, is_64)?;
-            let stack_size = Self::extract_usize_field(endian, entry_data, 3, is_64)?;
-
-            let name = Self::read_string(&obj_file, name_addr, name_len)
-                .context("Failed to read stack name")?;
-
-            stacks.push(StackInfo {
-                name,
-                stack_addr,
-                stack_size,
-            });
+            let mut fields = Vec::with_capacity(num_fields);
+            for i in 0..num_fields {
+                fields.push(Self::extract_usize_field(endian, entry_data, i, is_64)?);
+            }
+            entries.push(mapper(&fields)?);
         }
 
-        Ok(ImageInfo { stacks, endian })
+        Ok(entries)
     }
 
     fn extract_usize_field(

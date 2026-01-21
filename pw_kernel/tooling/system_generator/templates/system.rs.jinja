@@ -93,7 +93,13 @@ pub fn start() {
         )
     };
 
+
+    kernel::declare_non_priv_process_storage!(PROCESS_STORAGE_{{app.name | upper}});
+    const PROCESS_ID_{{app.name | upper}}: *const () =
+        kernel::non_priv_process_id!(PROCESS_STORAGE_{{app.name | upper}});
+    #[allow(unused_variables)]
     let process_{{app.name}} = unsafe { kernel::init_non_priv_process!(
+        PROCESS_STORAGE_{{app.name | upper}},
         "{{app.process.name}}",
         MEMORY_CONFIG_{{app.name | upper}},
         object_table_{{app.name}}
@@ -110,6 +116,7 @@ pub fn start() {
             kernel::Priority::DEFAULT_PRIORITY,
             {%- endif %}
             process_{{app.name}},
+            PROCESS_ID_{{app.name | upper}},
             start_fn_{{app.name}},
             {{app.initial_sp | hex}},
             {{thread.stack_size_bytes}}
