@@ -34,7 +34,7 @@ bazel_dep(name = "picotool", version = "2.2.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 
 # LINT.IfChange(protobuf)
-bazel_dep(name = "protobuf", version = "29.0", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "29.1", repo_name = "com_google_protobuf")
 # LINT.ThenChange(pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json,pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list:protobuf)
 
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
@@ -52,6 +52,7 @@ bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_probe_rs", version = "0.0.6")
 bazel_dep(name = "rules_python", version = "1.1.0")
 bazel_dep(name = "rules_rust", version = "0.65.0")
+bazel_dep(name = "rules_rust_prost", version = "0.65.0")
 bazel_dep(name = "rules_shell", version = "0.4.0")
 
 bazel_dep(name = "rules_doxygen", version = "2.4.2", dev_dependency = True)
@@ -236,6 +237,12 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "crates_std")
+
+crate.annotation(
+    crate = "protoc-gen-prost",
+    gen_binaries = ["protoc-gen-prost"],
+    repositories = ["crates_std"],
+)
 
 pw_rust_crates = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 use_repo(pw_rust_crates, "rust_crates")
