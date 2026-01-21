@@ -52,8 +52,8 @@ pw_add_library(pw_async2 STATIC
     public/pw_async2/context.h
     public/pw_async2/dispatcher.h
     public/pw_async2/future.h
-    public/pw_async2/internal/config.h
     public/pw_async2/internal/lock.h
+    public/pw_async2/internal/logging.h
     public/pw_async2/owned_task.h
     public/pw_async2/runnable_dispatcher.h
     public/pw_async2/task.h
@@ -62,6 +62,7 @@ pw_add_library(pw_async2 STATIC
     public
   PUBLIC_DEPS
     pw_assert.assert
+    pw_async2.config
     pw_async2.poll
     pw_chrono.system_clock
     pw_containers.intrusive_forward_list
@@ -75,10 +76,8 @@ pw_add_library(pw_async2 STATIC
     pw_third_party.fuchsia.stdcompat
     pw_tokenizer
     pw_toolchain.no_destructor
-
   PRIVATE_DEPS
     pw_assert.check
-    pw_async2.config
     pw_thread.sleep
   SOURCES
     context.cc

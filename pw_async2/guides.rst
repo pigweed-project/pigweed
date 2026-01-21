@@ -276,3 +276,13 @@ Poll aliases
 
    :cc:`PollResult <pw::async2::PollResult>`, ``Poll<pw::Result<T>>``
    :cc:`PollOptional <pw::async2::PollOptional>`, ``Poll<std::optional<T>>``
+
+---------------------
+Configuring pw_async2
+---------------------
+``pw_async2`` offers compile-time configuration options to adapt to different
+platforms and constraints.
+
+- :cc:`PW_ASYNC2_LOG_LEVEL` sets the log level for ``pw_async2``.
+- :cc:`PW_ASYNC2_DEBUG_WAIT_REASON` controls whether to include debug
+  information for blocked tasks.

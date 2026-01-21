@@ -106,6 +106,7 @@ pw_source_set("internal") {
   public = [
     "public/pw_async2/internal/config.h",
     "public/pw_async2/internal/lock.h",
+    "public/pw_async2/internal/logging.h",
   ]
   public_deps = [
     "$dir_pw_sync:interrupt_spin_lock",
@@ -406,6 +407,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     public_configs = [ ":public_include_path" ]
     public = [ "public/pw_async2/coro.h" ]
     public_deps = [
+      ":internal",
       ":pw_async2",
       "$dir_pw_allocator:allocator",
       "$dir_pw_status",

@@ -193,6 +193,11 @@
 /// @brief Queue work in response to async events
 /// @details Learn more: [Wakers](../../pw_async2/informed_poll.html#wakers-progress-updates-for-the-dispatcher)
 
+/// @defgroup pw_async2_config Configuration
+/// @ingroup pw_async2
+/// @brief Compile-time configuration
+/// @details Learn more: [Configuration](../../pw_async2/guides.html#configuring-pw-async2)
+
 /// @defgroup pw_async_basic pw_async_basic
 /// @maindocs
 /// [Home](../../pw_async_basic/docs.html)

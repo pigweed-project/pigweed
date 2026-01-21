@@ -103,6 +103,7 @@ cc_library(
     hdrs = [
         "public/pw_async2/internal/config.h",
         "public/pw_async2/internal/lock.h",
+        "public/pw_async2/internal/logging.h",
     ],
     # LINT.IfChange
     defines = select({
@@ -541,6 +542,7 @@ cc_library(
     strip_include_prefix = "public",
     target_compatible_with = minimum_cxx_20(),
     deps = [
+        ":internal",
         ":pw_async2",
         "//pw_allocator:allocator",
         "//pw_function",

@@ -12,15 +12,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#define PW_LOG_MODULE_NAME "PW_ASYNC2"
-
-#include "pw_async2/task.h"
+#include "pw_async2/internal/logging.h"
+// logging.h must be included first
 
 #include <mutex>
 
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
+#include "pw_async2/task.h"
 #include "pw_log/log.h"
 #include "pw_thread/sleep.h"
 

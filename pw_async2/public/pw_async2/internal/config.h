@@ -15,25 +15,29 @@
 // Configuration macros for the pw_async2 module.
 #pragma once
 
-/// @submodule{pw_async2,wakers}
+/// @submodule{pw_async2,config}
 
-/// Controls how the ``wait_reason_string`` argument to
-/// ``PW_ASYNC_STORE_WAKER`` and ``PW_ASYNC_CLONE_WAKER`` is used.
-/// If enabled, wait reasons are stored within their wakers, allowing easier
-/// debugging of sleeping tasks.
+/// Controls how the `wait_reason_string` argument to `PW_ASYNC_STORE_WAKER` and
+/// `PW_ASYNC_CLONE_WAKER` is used.  If enabled, wait reasons are stored within
+/// their wakers, allowing easier debugging of sleeping tasks.
 ///
 /// Enabled by default.
 ///
-/// Note: The module dependencies of ``pw_async2`` vary based on on the value of
-/// ``PW_ASYNC2_DEBUG_WAIT_REASON``.
-/// When building pw_async2 with Bazel, you should NOT set this module config
-// value directly. Instead, tell the build system which value you wish to select
-/// by adding one of the following constraint_values to the target platform:
+/// Note: The module dependencies of `pw_async2` vary based on on the value of
+/// `PW_ASYNC2_DEBUG_WAIT_REASON`.  When building pw_async2 with Bazel, you
+/// should NOT set this module config value directly. Instead, tell the build
+/// system which value you wish to select by adding one of the following
+/// constraint_values to the target platform:
 ///
-///   - ``@pigweed//pw_async2:debug_wait_reason_disabled`` (default)
-///   - ``@pigweed//pw_async2:debug_wait_reason_enabled``
+///   - `@pigweed//pw_async2:debug_wait_reason_disabled` (default)
+///   - `@pigweed//pw_async2:debug_wait_reason_enabled`
 #ifndef PW_ASYNC2_DEBUG_WAIT_REASON
 #define PW_ASYNC2_DEBUG_WAIT_REASON 1
 #endif  // PW_ASYNC2_DEBUG_WAIT_REASON
+
+/// The log level to use for this module. Logs below this level are omitted.
+#ifndef PW_ASYNC2_LOG_LEVEL
+#define PW_ASYNC2_LOG_LEVEL PW_LOG_LEVEL_INFO
+#endif  // PW_ASYNC2_LOG_LEVEL
 
 /// @endsubmodule

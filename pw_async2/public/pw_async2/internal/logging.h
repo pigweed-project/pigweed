@@ -1,4 +1,4 @@
-// Copyright 2024 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -11,18 +11,16 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+#pragma once
 
-#include "pw_async2/internal/logging.h"
-// logging.h must be included first
+#include "pw_async2/internal/config.h"
 
-#include "pw_async2/coro.h"
-#include "pw_log/log.h"
+// pw_log configuration for in pw_async2.
+//
+// Important:
+//
+// - This header may only be included in a .cc file.
+// - This header must be included before any other includes.
 
-namespace pw::async2::internal {
-
-void LogCoroAllocationFailure(size_t requested_size) {
-  PW_LOG_ERROR("Failed to allocate space for a coroutine of size %zu.",
-               requested_size);
-}
-
-}  // namespace pw::async2::internal
+#define PW_LOG_MODULE_NAME "PW_ASYNC2"
+#define PW_LOG_LEVEL PW_ASYNC2_LOG_LEVEL
