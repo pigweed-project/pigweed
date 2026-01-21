@@ -14,6 +14,8 @@
 
 #include "pw_grpc/default_send_queue.h"
 
+#include <mutex>
+
 #include "pw_log/log.h"
 
 namespace pw::grpc {
