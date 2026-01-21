@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #pragma once
+
+#include <cstdlib>
+
 #include "pw_analog/analog_input.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_result/result.h"
