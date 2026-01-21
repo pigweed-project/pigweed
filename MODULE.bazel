@@ -223,11 +223,6 @@ crate.from_cargo(
 )
 use_repo(crate, "crates_no_std")
 
-# Enable necessary features for `compiler_builtins` to build.
-crate.annotation(
-    crate = "compiler_builtins",
-    rustc_flags = ["-Zallow-features=abi_unadjusted,asm_experimental_arch,naked_functions,repr_simd,cfg_target_has_atomic,compiler_builtins,core_intrinsics,linkage"],
-)
 crate.from_cargo(
     name = "crates_std",
     cargo_lockfile = "//third_party/crates_io/crates_std:Cargo.lock",

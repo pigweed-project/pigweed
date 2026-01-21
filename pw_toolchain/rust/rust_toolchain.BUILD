@@ -40,6 +40,28 @@ filegroup(
 )
 
 rust_library(
+    name = "compiler_builtins",
+    srcs = glob([
+        "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/src/**/*.rs",
+        "lib/rustlib/src/rust/library/compiler-builtins/libm/src/**/*.rs",
+    ]),
+    compile_data = glob(
+        [
+            "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/src/**/*.md",
+            "lib/rustlib/src/rust/library/compiler-builtins/libm/src/**/*.md",
+        ],
+        allow_empty = True,
+    ),
+    crate_features = [
+        "compiler-builtins",
+        "mem",
+        "no-f16-f128",
+    ],
+    crate_root = "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/src/lib.rs",
+    edition = "2024",
+)
+
+rust_library(
     name = "libcore",
     srcs = glob([
         "lib/rustlib/src/rust/library/core/src/**/*.rs",
@@ -80,7 +102,7 @@ build_with_core_only(
     name = "rust_libs_compiler_builtin_files",
     visibility = ["//visibility:public"],
     deps = [
-        "@rust_crates//:compiler_builtins",
+        ":compiler_builtins",
     ],
 )
 
@@ -116,8 +138,8 @@ rust_library(
         "--cap-lints=allow",
     ],
     deps = [
+        ":compiler_builtins",
         ":libcore",
-        "@rust_crates//:compiler_builtins",
     ],
 )
 

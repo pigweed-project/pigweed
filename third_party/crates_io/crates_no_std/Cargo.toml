@@ -23,7 +23,6 @@ path = "fake.rs"
 
 [dependencies]
 bitflags = "2.9.1"
-compiler_builtins = { version = "0.1.160", features = ["no-f16-f128"] }
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 cortex-m-semihosting = "0.5.0"

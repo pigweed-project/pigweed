@@ -79,20 +79,6 @@ alias(
 )
 
 alias(
-    name = "compiler_builtins",
-    target_compatible_with = select({
-        "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    actual = select({
-        "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:compiler_builtins",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:compiler_builtins",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-alias(
     name = "cortex-m",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
