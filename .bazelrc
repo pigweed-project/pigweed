@@ -272,8 +272,8 @@ common:remote_cache --remote_upload_local_results=false
 common --remote_default_exec_properties=cache-silo-key=20240918
 
 # Sets the credential helper script to generate an auth token when connecting
-# to the us-python.pkg.dev pypi repository.
-common --credential_helper=us-python.pkg.dev=%workspace%/pw_build/cred_helper.sh
+# to the AirLock registry.
+common --credential_helper=*.pkg.dev=%workspace%/pw_build/cred_helper.sh
 
 # Configs for experimental //pw_kernel
 import %workspace%/pw_kernel/kernel.bazelrc
