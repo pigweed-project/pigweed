@@ -114,7 +114,7 @@ pw_add_test(pw_allocator.examples.metrics
     pw_allocator.metrics
     pw_allocator.testing
     pw_allocator.tracking_allocator
-    pw_tokenizer
+    pw_metric
   SOURCES
     metrics.cc
 )

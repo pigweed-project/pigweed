@@ -68,7 +68,6 @@ cc_library(
         "//pw_allocator:test_harness",
         "//pw_chrono:system_clock",
         "//pw_metric:metric",
-        "//pw_tokenizer",
     ],
 )
 
@@ -84,6 +83,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:best_fit",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )
@@ -98,6 +98,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:first_fit",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )
@@ -112,6 +113,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:first_fit",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )
@@ -126,6 +128,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:first_fit",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )
@@ -140,6 +143,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:tlsf_allocator",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )
@@ -154,6 +158,7 @@ cc_binary(
     deps = [
         ":benchmark",
         "//pw_allocator:worst_fit",
+        "//pw_metric:metric",
         "//pw_random",
     ],
 )

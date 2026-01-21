@@ -323,4 +323,15 @@ class Group : public IntrusiveList<Group>::Item {
   static_def ::pw::metric::Group variable_name = {variable_name##_token,  \
                                                   parent.children()}
 
+// Similar to PW_TOKENIZE_STRING_EXPR, converts a string literal to a
+// ``uint32_t`` token within an expression.
+// Requires C++.
+//
+//   // Tokenizes a string literal in the metric domain within an expression.
+//   DoSomethingWithToken(PW_METRIC_TOKEN_EXPR("Succeed"));
+//
+// @endcode
+#define PW_METRIC_TOKEN_EXPR(metric_name) \
+  PW_TOKENIZE_STRING_MASK_EXPR("metrics", _PW_METRIC_TOKEN_MASK, metric_name)
+
 }  // namespace pw::metric

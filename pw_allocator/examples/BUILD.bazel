@@ -137,7 +137,7 @@ pw_cc_test(
         "//pw_allocator:metrics",
         "//pw_allocator:testing",
         "//pw_allocator:tracking_allocator",
-        "//pw_tokenizer",
+        "//pw_metric:metric",
     ],
 )
 

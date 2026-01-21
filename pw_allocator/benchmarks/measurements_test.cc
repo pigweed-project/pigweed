@@ -23,7 +23,7 @@ using pw::allocator::Measurement;
 using pw::allocator::Measurements;
 using pw::allocator::internal::BenchmarkSample;
 
-constexpr pw::metric::Token kName = PW_TOKENIZE_STRING("test");
+constexpr pw::metric::Token kName = PW_METRIC_TOKEN("test");
 
 TEST(MeasurementTest, Construct_Default) {
   Measurement<size_t> measurement(kName, 0);

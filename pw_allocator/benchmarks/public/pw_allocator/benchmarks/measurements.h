@@ -145,30 +145,30 @@ class DefaultMeasurements final : public Measurements {
  private:
   static constexpr size_t kNumByCount = 5;
   std::array<Measurement<size_t>, kNumByCount> by_count_{{
-      {PW_TOKENIZE_STRING_EXPR("allocation count in [0, 10)"), 0},
-      {PW_TOKENIZE_STRING_EXPR("allocation count in [10, 100)"), 10},
-      {PW_TOKENIZE_STRING_EXPR("allocation count in [100, 1,000)"), 100},
-      {PW_TOKENIZE_STRING_EXPR("allocation count in [1,000, 10,000)"), 1000},
-      {PW_TOKENIZE_STRING_EXPR("allocation count in [10,000, inf)"), 10000},
+      {PW_METRIC_TOKEN_EXPR("allocation count in [0, 10)"), 0},
+      {PW_METRIC_TOKEN_EXPR("allocation count in [10, 100)"), 10},
+      {PW_METRIC_TOKEN_EXPR("allocation count in [100, 1,000)"), 100},
+      {PW_METRIC_TOKEN_EXPR("allocation count in [1,000, 10,000)"), 1000},
+      {PW_METRIC_TOKEN_EXPR("allocation count in [10,000, inf)"), 10000},
   }};
 
   static constexpr size_t kNumByFragmentation = 5;
   std::array<Measurement<float>, kNumByFragmentation> by_fragmentation_ = {{
-      {PW_TOKENIZE_STRING_EXPR("fragmentation in [0.0, 0.2)"), 0.0f},
-      {PW_TOKENIZE_STRING_EXPR("fragmentation in [0.2, 0.4)"), 0.2f},
-      {PW_TOKENIZE_STRING_EXPR("fragmentation in [0.4, 0.6)"), 0.4f},
-      {PW_TOKENIZE_STRING_EXPR("fragmentation in [0.6, 0.8)"), 0.6f},
-      {PW_TOKENIZE_STRING_EXPR("fragmentation in [0.8, 1.0]"), 0.8f},
+      {PW_METRIC_TOKEN_EXPR("fragmentation in [0.0, 0.2)"), 0.0f},
+      {PW_METRIC_TOKEN_EXPR("fragmentation in [0.2, 0.4)"), 0.2f},
+      {PW_METRIC_TOKEN_EXPR("fragmentation in [0.4, 0.6)"), 0.4f},
+      {PW_METRIC_TOKEN_EXPR("fragmentation in [0.6, 0.8)"), 0.6f},
+      {PW_METRIC_TOKEN_EXPR("fragmentation in [0.8, 1.0]"), 0.8f},
   }};
 
   static constexpr size_t kNumBySize = 6;
   std::array<Measurement<size_t>, kNumBySize> by_size_ = {{
-      {PW_TOKENIZE_STRING_EXPR("usable size in [0, 16)"), 0},
-      {PW_TOKENIZE_STRING_EXPR("usable size in [16, 64)"), 16},
-      {PW_TOKENIZE_STRING_EXPR("usable size in [64, 256)"), 64},
-      {PW_TOKENIZE_STRING_EXPR("usable size in [256, 1024)"), 256},
-      {PW_TOKENIZE_STRING_EXPR("usable size in [1024, 4096)"), 1024},
-      {PW_TOKENIZE_STRING_EXPR("usable size in [4096, inf)"), 4096},
+      {PW_METRIC_TOKEN_EXPR("usable size in [0, 16)"), 0},
+      {PW_METRIC_TOKEN_EXPR("usable size in [16, 64)"), 16},
+      {PW_METRIC_TOKEN_EXPR("usable size in [64, 256)"), 64},
+      {PW_METRIC_TOKEN_EXPR("usable size in [256, 1024)"), 256},
+      {PW_METRIC_TOKEN_EXPR("usable size in [1024, 4096)"), 1024},
+      {PW_METRIC_TOKEN_EXPR("usable size in [4096, inf)"), 4096},
   }};
 };
 

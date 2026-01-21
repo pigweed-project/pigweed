@@ -20,7 +20,7 @@
 #include "examples/named_u32.h"
 #include "pw_allocator/testing.h"
 #include "pw_allocator/tracking_allocator.h"
-#include "pw_tokenizer/tokenize.h"
+#include "pw_metric/metric.h"
 
 namespace examples {
 
@@ -34,7 +34,7 @@ struct CustomMetrics : public ::pw::allocator::NoMetrics {
 
 void CollectCustomMetrics(pw::Allocator& allocator) {
   // DOCSTAG: [pw_allocator-examples-metrics-custom_metrics2]
-  constexpr pw::metric::Token kToken = PW_TOKENIZE_STRING("CustomMetrics");
+  constexpr pw::metric::Token kToken = PW_METRIC_TOKEN("CustomMetrics");
   pw::allocator::TrackingAllocatorImpl<CustomMetrics> tracker(kToken,
                                                               allocator);
   // DOCSTAG: [pw_allocator-examples-metrics-custom_metrics2]
@@ -53,13 +53,13 @@ void CollectMultipleTrackers(pw::Allocator& allocator) {
   using MyTrackingAllocator =
       pw::allocator::TrackingAllocatorImpl<pw::allocator::internal::AllMetrics>;
 
-  constexpr pw::metric::Token kToken0 = PW_TOKENIZE_STRING("Combined");
+  constexpr pw::metric::Token kToken0 = PW_METRIC_TOKEN("Combined");
   MyTrackingAllocator combined(kToken0, allocator);
 
-  constexpr pw::metric::Token kToken1 = PW_TOKENIZE_STRING("Tracker1");
+  constexpr pw::metric::Token kToken1 = PW_METRIC_TOKEN("Tracker1");
   MyTrackingAllocator tracker1(kToken1, combined);
 
-  constexpr pw::metric::Token kToken2 = PW_TOKENIZE_STRING("Tracker2");
+  constexpr pw::metric::Token kToken2 = PW_METRIC_TOKEN("Tracker2");
   MyTrackingAllocator tracker2(kToken2, combined);
 
   combined.metric_group().Add(tracker1.metric_group());

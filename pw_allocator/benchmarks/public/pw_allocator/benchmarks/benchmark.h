@@ -22,7 +22,6 @@
 #include "pw_allocator/test_harness.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_metric/metric.h"
-#include "pw_tokenizer/tokenize.h"
 
 namespace pw::allocator {
 namespace internal {

@@ -61,7 +61,6 @@ pw_source_set("benchmark") {
     dir_pw_allocator,
     dir_pw_assert,
     dir_pw_metric,
-    dir_pw_tokenizer,
   ]
   sources = [ "benchmark.cc" ]
 }
@@ -82,6 +81,7 @@ pw_executable("dual_first_fit_benchmark") {
   deps = [
     ":benchmark",
     "$dir_pw_allocator:first_fit",
+    dir_pw_metric,
     dir_pw_random,
   ]
 }
@@ -91,6 +91,7 @@ pw_executable("first_fit_benchmark") {
   deps = [
     ":benchmark",
     "$dir_pw_allocator:first_fit",
+    dir_pw_metric,
     dir_pw_random,
   ]
 }
@@ -100,6 +101,7 @@ pw_executable("last_fit_benchmark") {
   deps = [
     ":benchmark",
     "$dir_pw_allocator:first_fit",
+    dir_pw_metric,
     dir_pw_random,
   ]
 }
@@ -109,6 +111,7 @@ pw_executable("tlsf_benchmark") {
   deps = [
     ":benchmark",
     "$dir_pw_allocator:tlsf_allocator",
+    dir_pw_metric,
     dir_pw_random,
   ]
 }
@@ -118,6 +121,7 @@ pw_executable("worst_fit_benchmark") {
   deps = [
     ":benchmark",
     "$dir_pw_allocator:worst_fit",
+    dir_pw_metric,
     dir_pw_random,
   ]
 }

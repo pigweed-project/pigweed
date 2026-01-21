@@ -19,11 +19,12 @@
 #include "pw_allocator/benchmarks/benchmark.h"
 #include "pw_allocator/benchmarks/config.h"
 #include "pw_allocator/tlsf_allocator.h"
+#include "pw_metric/metric.h"
 
 namespace pw::allocator {
 
 constexpr metric::Token kTlsfBenchmark =
-    PW_TOKENIZE_STRING("two-layer, segregated-fit benchmark");
+    PW_METRIC_TOKEN("two-layer, segregated-fit benchmark");
 
 std::array<std::byte, benchmarks::kCapacity> buffer;
 

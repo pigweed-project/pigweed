@@ -19,11 +19,12 @@
 #include "pw_allocator/benchmarks/benchmark.h"
 #include "pw_allocator/benchmarks/config.h"
 #include "pw_allocator/first_fit.h"
+#include "pw_metric/metric.h"
 
 namespace pw::allocator {
 
 constexpr metric::Token kDualFirstFitBenchmark =
-    PW_TOKENIZE_STRING("dual first fit benchmark");
+    PW_METRIC_TOKEN("dual first fit benchmark");
 
 std::array<std::byte, benchmarks::kCapacity> buffer;
 
