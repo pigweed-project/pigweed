@@ -21,4 +21,9 @@
 
 // When using assert_basic, don't fflush and instead just exit.
 #define PW_ASSERT_BASIC_ACTION PW_ASSERT_BASIC_ACTION_EXIT
+
+// TestThreadContextNative in pw_thread_freertos uses a 32Kb stack, increasing
+// the size of test fixtures such as some in pw_bluetooth_proxy which use it by
+// that amount.
+#define PW_UNIT_TEST_CONFIG_MEMORY_POOL_SIZE 49152
 // LINT.ThenChange(//targets/rp2040/BUILD.bazel)
