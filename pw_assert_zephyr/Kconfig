@@ -14,10 +14,33 @@
 
 menu "pw_assert"
 
+config PIGWEED_ASSERT_PIGWEED_OVERRIDES
+    bool
+    select ASSERT_CUSTOM_HEADER
+    help
+      Map all the Zephyr assert macros to use Pigweed's PW_ASSERT* macros, so
+      that all asserts are consumed by the same assert backend, provided by the
+      user. The user must also provide the assert backend header indirection.
+
 config PIGWEED_ASSERT_ZEPHYR
     bool "Link pw_assert_zephyr library"
     select PIGWEED_PREPROCESSOR
     default y
     help
       See :ref:`module-pw_assert` for module details.
+
+menuconfig PIGWEED_ASSERT_TOKENIZED
+    bool "Maps all Zephyr assert macros to use pw_assert_tokenized as the backend"
+    select PIGWEED_ASSERT_PIGWEED_OVERRIDES
+    select PIGWEED_PREPROCESSOR
+    select PIGWEED_TOKENIZER
+    help
+      Map all the Zephyr assert macros to use Pigweed's then use the
+      :ref:`module-pw_assert_tokenized` target as the assert backend in order to
+      automatically tokenize all the assert strings. This means that Pigweed
+      will also tokenize all of Zephyr's assert statements.  Assert failures are
+      forwarded to the log system. The tokenizer handler should check for
+      ``LOG_LEVEL_FATAL`` and properly divert to a crash handler. Make sure an
+      appropriate PIGWEED_LOG_TOKENIZED* configuration is set.
+
 endmenu

@@ -21,3 +21,19 @@ and CONFIG_ASSERT_LEVEL_.
 
 .. _CONFIG_ASSERT: https://docs.zephyrproject.org/latest/kconfig.html#CONFIG_ASSERT
 .. _CONFIG_ASSERT_LEVEL: https://docs.zephyrproject.org/latest/kconfig.html#CONFIG_ASSERT_LEVEL
+
+Using Pigweed tokenized asserts
+-------------------------------
+Using the pigweed tokenized assert can be done by enabling
+``CONFIG_PIGWEED_ASSERT_TOKENIZED=y``. At that point ``pw_assert_tokenized`` is
+set as the backend for ``pw_assert`` and all Zephyr asserts are routed to
+Pigweed's assert/check facade. This means that any assert statements made in
+Zephyr itself are also tokenized.
+
+When enabled, the tokenized crash is forwarded to the log system where
+``LOG_LEVEL_FATAL`` will need to be handled by the user. The assert will then
+need to be properly diverted to a crash handler for processing.
+
+Zephyr asserts need to be turned on with ``CONFIG_ASSERT=y``. Without asserts
+enabled in zephyr, the zephyr asserts will not be active and only the
+application calls to ``pw_assert`` will be active.

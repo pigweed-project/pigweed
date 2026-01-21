@@ -24,6 +24,10 @@ if(CONFIG_ZEPHYR_PIGWEED_MODULE)
       pw_assert.assert pw_assert_zephyr.assert pw_assert/backend.cmake)
   pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_ASSERT_ZEPHYR
       pw_assert.check pw_assert_zephyr.check pw_assert/backend.cmake)
+  pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_ASSERT_TOKENIZED
+      pw_assert.assert pw_assert_tokenized.assert_backend pw_assert/backend.cmake)
+  pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_ASSERT_TOKENIZED
+      pw_assert.check pw_assert_tokenized.check_backend pw_assert/backend.cmake)
   pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_CHRONO_SYSTEM_CLOCK
       pw_chrono.system_clock pw_chrono_zephyr.system_clock pw_chrono/backend.cmake)
   pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_CHRONO_SYSTEM_TIMER
@@ -86,6 +90,7 @@ add_subdirectory(pw_assert EXCLUDE_FROM_ALL)
 add_subdirectory(pw_assert_basic EXCLUDE_FROM_ALL)
 add_subdirectory(pw_assert_fuchsia EXCLUDE_FROM_ALL)
 add_subdirectory(pw_assert_log EXCLUDE_FROM_ALL)
+add_subdirectory(pw_assert_tokenized EXCLUDE_FROM_ALL)
 add_subdirectory(pw_assert_zephyr EXCLUDE_FROM_ALL)
 add_subdirectory(pw_async EXCLUDE_FROM_ALL)
 add_subdirectory(pw_async_basic EXCLUDE_FROM_ALL)
