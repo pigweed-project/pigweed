@@ -21,31 +21,67 @@ use crate::packet::Packet;
 /// A client for interacting with a GDB server.
 pub struct Client<S> {
     stream: BufReader<S>,
+    max_packet_size: usize,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     /// Creates a new `Client` with the given stream.
+    ///
+    /// Max packet size defaults to 400 bytes per the max packet size mentioned
+    /// at https://sourceware.org/gdb/current/onlinedocs/gdb.html/Remote-Protocol.html.
     pub fn new(stream: S) -> Self {
         Self {
             stream: BufReader::new(stream),
+            max_packet_size: 400,
         }
+    }
+
+    /// Sets the maximum packet size in bytes.
+    pub fn set_max_packet_size(&mut self, size: usize) {
+        self.max_packet_size = size;
     }
 
     /// Reads memory from the target at the specified address and length.
     ///
-    /// Sends a `m` packet and waits for the response.
+    /// Sends one or more `m` packets and waits for the responses.
     pub async fn read_memory(&mut self, addr: u64, length: u64) -> io::Result<Vec<u8>> {
-        let packet = Packet::ReadMemory { addr, length };
-        self.send_packet(&packet).await?;
-        let response = self.receive_packet().await?;
+        let length = usize::try_from(length)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Length is too large"))?;
 
-        match response {
-            Packet::ReadMemoryResponse(data) => Ok(data),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Unexpected packet type",
-            )),
+        let max_chunk_size = Packet::max_payload_size(self.max_packet_size)?;
+
+        let mut data = Vec::with_capacity(length);
+        let mut current_addr = addr;
+        let mut remaining_length = length;
+
+        while remaining_length > 0 {
+            let chunk_length = core::cmp::min(remaining_length, max_chunk_size);
+            self.send_packet(&Packet::ReadMemory {
+                addr: current_addr,
+                length: chunk_length as u64,
+            })
+            .await?;
+
+            let response = self.receive_packet().await?;
+            let Packet::ReadMemoryResponse(chunk_data) = response else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid response",
+                ));
+            };
+
+            if chunk_data.len() != chunk_length {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "ReadMemoryResponse has incorrect length",
+                ));
+            }
+
+            data.extend(chunk_data);
+            current_addr += chunk_length as u64;
+            remaining_length -= chunk_length;
         }
+        Ok(data)
     }
 
     async fn send_packet(&mut self, packet: &Packet) -> io::Result<()> {
@@ -214,5 +250,61 @@ mod tests {
 
         let expected_sent = b"$m1000,4#8e+"; // + is ACK for response
         assert_eq!(stream.write_data, expected_sent);
+    }
+
+    #[tokio::test]
+    async fn test_read_memory_chunking() {
+        // limit = 6 bytes -> max data len = (6-4)/2 = 1 byte
+        // We want to read 2 bytes: [0xaa, 0xbb]
+
+        let chunk1_payload = b"aa"; // Hex encoding of 0xaa
+        let chunk2_payload = b"bb"; // Hex encoding of 0xbb
+
+        // Packet 1 response
+        let c1_sum = Packet::calculate_checksum(chunk1_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(chunk1_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", c1_sum).as_bytes());
+
+        // Packet 2 response
+        let c2_sum = Packet::calculate_checksum(chunk2_payload);
+        input.push(b'+'); // ACK for 2nd command
+        input.push(b'$');
+        input.extend_from_slice(chunk2_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", c2_sum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+        client.set_max_packet_size(6);
+
+        let result = client.read_memory(0x1000, 2).await.unwrap();
+        assert_eq!(result, &[0xaa, 0xbb]);
+
+        // Verify sent packets
+        // Packet 1: $m1000,1#...
+        // Packet 2: $m1001,1#...
+
+        let p1 = Packet::ReadMemory {
+            addr: 0x1000,
+            length: 1,
+        };
+        let p2 = Packet::ReadMemory {
+            addr: 0x1001,
+            length: 1,
+        };
+
+        let mut expected = Vec::new();
+        // Packet 1
+        expected.extend_from_slice(p1.encode().as_bytes());
+        // ACK for Response 1
+        expected.push(b'+');
+        // Packet 2
+        expected.extend_from_slice(p2.encode().as_bytes());
+        // ACK for Response 2
+        expected.push(b'+');
+
+        assert_eq!(stream.write_data, expected);
     }
 }
