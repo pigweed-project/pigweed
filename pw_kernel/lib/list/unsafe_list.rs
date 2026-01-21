@@ -661,7 +661,7 @@ mod tests {
 
     impl PartialOrd for TestMember {
         fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-            Some(self.value.cmp(&other.value))
+            Some(self.cmp(other))
         }
     }
 
