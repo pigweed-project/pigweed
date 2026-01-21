@@ -414,7 +414,7 @@ cipd_repository(
 cipd_repository(
     name = "buildifier",
     path = "infra/3pp/tools/buildifier/${platform}",
-    tag = "version:3@v8.0.3",
+    tag = "version:3@v8.2.1",
 )
 
 # GN is only used to format GN build files.
