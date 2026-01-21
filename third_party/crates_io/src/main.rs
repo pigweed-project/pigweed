@@ -31,6 +31,8 @@ struct Args {
 pub struct Config {
     manifests: HashSet<String>,
     bazel_aliases: HashMap<String, Mapping>,
+    #[serde(default)]
+    extra_targets: HashMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]

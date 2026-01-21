@@ -61,6 +61,27 @@ pub fn generate(config: &Config) {
         }
     }
 
+    for (alias_name, repos) in &config.extra_targets {
+        let alias = aliases.entry(alias_name.clone()).or_insert(Alias {
+            name: alias_name.clone(),
+            target_compatible_with: BTreeSet::new(),
+            actual: BTreeMap::new(),
+        });
+
+        for repo in repos {
+            let mapping = config
+                .bazel_aliases
+                .get(repo)
+                .expect("Repo listed in extra_targets exists in bazel_aliases");
+            alias
+                .target_compatible_with
+                .insert(mapping.constraint.clone());
+
+            let dep_path = format!("{}:{alias_name}", mapping.path);
+            alias.actual.insert(mapping.constraint.clone(), dep_path);
+        }
+    }
+
     let template = r#"
 # Copyright 2025 The Pigweed Authors
 #
