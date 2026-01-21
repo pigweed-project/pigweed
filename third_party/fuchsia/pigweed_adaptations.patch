@@ -1,4 +1,4 @@
-# Copyright 2025 The Pigweed Authors
+# Copyright 2026 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -24,7 +24,7 @@
 diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/function.h b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/function.h
 --- a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/function.h
 +++ b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/function.h
-@@ -18,6 +18,8 @@
+@@ -20,6 +20,8 @@
  #include <utility>
 
  #include "../nullable.h"
@@ -33,7 +33,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
 
  namespace fit {
  namespace internal {
-@@ -88,7 +90,7 @@ inline const void* unshared_target_type_id(void* /*bits*/, const void* impl_ops)
+@@ -90,7 +92,7 @@ inline const void* unshared_target_type_id(void* /*bits*/, const void* impl_ops)
  // elsewhere in the header as an inline variable.
  template <typename Unused = void>
  struct null_target {
@@ -42,7 +42,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
 
    static const target_ops<void> ops;
 
-@@ -540,7 +542,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
+@@ -542,7 +544,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
    template <typename SharedFunction>
    void copy_shared_target_to(SharedFunction& copy) {
      copy.destroy_target();
@@ -51,7 +51,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
      shared_target_type<SharedFunction>::copy_shared_ptr(base::bits(), copy.bits());
      copy.set_ops(base::ops());
    }
-@@ -570,7 +572,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
+@@ -572,7 +574,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
    void check_target_type() const {
      if (target_type<Callable>::ops.target_type_id(nullptr, &target_type<Callable>::ops) !=
          base::target_type_id()) {
@@ -75,16 +75,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/resul
  namespace fit {
 
  // Forward declarations.
-@@ -60,7 +65,7 @@ struct template_matcher {
- };
-
- template <typename T, template <typename...> class U, typename = bool>
--struct is_match : decltype(template_matcher<U>::match(std::declval<T>())) {};
-+struct is_match : decltype(template_matcher<U>::match(std::declval<T>())){};
-
- template <typename T, template <typename...> class U>
- struct is_match<T, U, requires_conditions<std::is_void<T>>> : std::false_type {};
-@@ -441,4 +446,6 @@ using storage = storage_type<storage_class_trait<E, Ts...>, E, Ts...>;
+@@ -440,4 +445,6 @@ using storage = storage_type<storage_class_trait<E, Ts...>, E, Ts...>;
  }  // namespace internal
  }  // namespace fit
 
@@ -94,7 +85,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/resul
 diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/nullable.h b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/nullable.h
 --- a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/nullable.h
 +++ b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/nullable.h
-@@ -11,6 +11,8 @@
+@@ -10,6 +10,8 @@
  #include <type_traits>
  #include <utility>
 
@@ -103,7 +94,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/nullable.h b/t
  namespace fit {
 
  // Determines whether a type can be compared with nullptr.
-@@ -130,25 +132,25 @@ class nullable<T, true> final {
+@@ -132,25 +134,25 @@ class nullable<T, true> final {
      if (has_value()) {
        return value_;
      }
@@ -149,7 +140,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
  namespace fit {
 
  // Convenience type to indicate failure without elaboration.
-@@ -286,25 +292,25 @@ class [[nodiscard]] result<E, T> {
+@@ -278,25 +284,25 @@ class [[nodiscard]] result<E, T> {
      if (is_error()) {
        return storage_.error_or_value.error;
      }
@@ -179,7 +170,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Moves the underlying error and returns it as an instance of fit::error, simplifying
-@@ -315,7 +321,7 @@ class [[nodiscard]] result<E, T> {
+@@ -307,7 +313,7 @@ class [[nodiscard]] result<E, T> {
      if (is_error()) {
        return error<E>(std::move(storage_.error_or_value.error));
      }
@@ -188,7 +179,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Accessors for the underlying value.
-@@ -325,25 +331,25 @@ class [[nodiscard]] result<E, T> {
+@@ -317,25 +323,25 @@ class [[nodiscard]] result<E, T> {
      if (is_ok()) {
        return storage_.error_or_value.value;
      }
@@ -218,7 +209,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Moves the underlying value and returns it as an instance of fit::success, simplifying
-@@ -354,7 +360,7 @@ class [[nodiscard]] result<E, T> {
+@@ -346,7 +352,7 @@ class [[nodiscard]] result<E, T> {
      if (is_ok()) {
        return success<T>(std::move(storage_.error_or_value.value));
      }
@@ -227,7 +218,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Contingent accessors for the underlying value.
-@@ -383,13 +389,13 @@ class [[nodiscard]] result<E, T> {
+@@ -375,13 +381,13 @@ class [[nodiscard]] result<E, T> {
      if (is_ok()) {
        return ::fit::internal::arrow_operator<T>::forward(storage_.error_or_value.value);
      }
@@ -243,7 +234,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Accessors for the underlying value. This is a syntax sugar for value().
-@@ -412,7 +418,7 @@ class [[nodiscard]] result<E, T> {
+@@ -404,7 +410,7 @@ class [[nodiscard]] result<E, T> {
        storage_.error_or_value.error += std::move(error.value_);
        return *this;
      }
@@ -252,7 +243,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Maps a result<E, T> to a result<E2, T> by transforming the error through
-@@ -523,25 +529,25 @@ class [[nodiscard]] result<E> {
+@@ -515,25 +521,25 @@ class [[nodiscard]] result<E> {
      if (is_error()) {
        return storage_.error_or_value.error;
      }
@@ -282,7 +273,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Moves the underlying error and returns it as an instance of fit::error, simplifying
-@@ -552,7 +558,7 @@ class [[nodiscard]] result<E> {
+@@ -544,7 +550,7 @@ class [[nodiscard]] result<E> {
      if (is_error()) {
        return error<E>(std::move(storage_.error_or_value.error));
      }
@@ -291,7 +282,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Augments the error value of the result with the given value. The operator E::operator+=(F) must
-@@ -566,7 +572,7 @@ class [[nodiscard]] result<E> {
+@@ -558,7 +564,7 @@ class [[nodiscard]] result<E> {
        storage_.error_or_value.error += std::move(error.value_);
        return *this;
      }
@@ -300,7 +291,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/result.h b/thi
    }
 
    // Maps a result<E, T> to a result<E2, T> by transforming the error through
-@@ -801,4 +807,6 @@ constexpr bool operator>=(const T& lhs, const result<F, U>& rhs) {
+@@ -793,4 +799,6 @@ constexpr bool operator>=(const T& lhs, const result<F, U>& rhs) {
 
  }  // namespace fit
 
