@@ -42,7 +42,4 @@ class SendQueue {
   virtual void RequestStop() = 0;
 };
 
-// TODO(b/475261598): will be removed after transitioning
-using SendQueueBase = SendQueue;
-
 }  // namespace pw::grpc
