@@ -17,3 +17,6 @@ manifests = ["crates_no_std/Cargo.toml", "crates_std/Cargo.toml"]
 [bazel_aliases]
 crates_no_std = { constraint = "@pigweed//pw_build/constraints/rust:no_std", path = "@crates_no_std//" }
 crates_std = { constraint = "@pigweed//pw_build/constraints/rust:std", path = "@crates_std//" }
+
+[extra_targets]
+protoc-gen-prost__protoc-gen-prost = ["crates_std"]

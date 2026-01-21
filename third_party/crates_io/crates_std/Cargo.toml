@@ -44,6 +44,9 @@ object = { version = "0.36.7", features = ["build", "elf", "read", "write"] }
 panic-halt = "1.0.0"
 paste = "1.0.15"
 proc-macro2 = "1.0.92"
+prost = { version = "0.14.1", features = ["derive"] }
+prost-types = "0.14.1"
+protoc-gen-prost = "0.5.0"
 quote = "1.0.37"
 riscv = "0.12.1"
 riscv-rt = "0.12.2"

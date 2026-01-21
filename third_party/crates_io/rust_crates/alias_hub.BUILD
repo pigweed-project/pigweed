@@ -299,6 +299,56 @@ alias(
 )
 
 alias(
+    name = "prost",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:prost",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "prost-types",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:prost-types",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "protoc-gen-prost",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:no_std": [],
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:protoc-gen-prost",
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:protoc-gen-prost",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "protoc-gen-prost__protoc-gen-prost",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:protoc-gen-prost__protoc-gen-prost",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "quote",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:std": [],
