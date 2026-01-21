@@ -23,6 +23,7 @@ path = "fake.rs"
 
 [dependencies]
 bitflags = "2.9.1"
+byteorder = { version = "1.5.0", default-features = false }
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 cortex-m-semihosting = "0.5.0"

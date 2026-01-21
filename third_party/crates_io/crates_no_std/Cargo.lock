@@ -93,6 +93,7 @@ name = "crates_no_std"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "byteorder",
  "cortex-m",
  "cortex-m-rt",
  "cortex-m-semihosting",

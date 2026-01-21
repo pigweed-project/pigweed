@@ -25,6 +25,7 @@ path = "fake.rs"
 anyhow = "1.0.95"
 bitfield-struct = "0.12.1"
 bitflags = "2.9.1"
+byteorder = "1.5.0"
 clap = { version = "4.5.23", features = ["derive"] }
 cliclack = "0.3.5"
 cortex-m = "0.7.7"
