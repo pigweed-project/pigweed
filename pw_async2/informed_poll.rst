@@ -30,8 +30,8 @@ operations communicate whether or not their values are ready via :ref:`futures
 none of the future values are ready, the task notifies the dispatcher that it
 can't progress, and the dispatcher sleeps the task. When a future's value
 becomes ready, the future uses a :cc:`Waker <pw::async2::Waker>` to *inform* the
-dispatcher that its parent task can make more progress and therefore should be
-polled again.
+dispatcher that the task associated with the :cc:`Waker <pw::async2::Waker>`
+can make more progress and therefore should be polled again.
 
 .. mermaid::
 
