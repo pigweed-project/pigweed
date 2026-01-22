@@ -13,6 +13,7 @@
 // the License.
 
 #include <chrono>
+#include <optional>
 
 #include "pw_chrono/system_clock.h"
 #include "pw_chrono/system_timer.h"
@@ -113,7 +114,11 @@ TEST(SystemTimer, InvokeAt) {
     SystemClock::time_point expected_deadline;
     sync::ThreadNotification callback_ran_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static TimerWithContext uut;
 
   uut.expected_deadline = SystemClock::now() + kRoundedArbitraryShortDuration;
   uut.timer().InvokeAt(uut.expected_deadline);
@@ -142,7 +147,11 @@ TEST(SystemTimer, InvokeAfter) {
     SystemClock::time_point expected_min_deadline;
     sync::ThreadNotification callback_ran_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static TimerWithContext uut;
 
   uut.expected_min_deadline =
       SystemClock::TimePointAfterAtLeast(kRoundedArbitraryShortDuration);
@@ -171,7 +180,11 @@ TEST(SystemTimer, CancelFromCallback) {
 
     sync::ThreadNotification callback_ran_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static TimerWithContext uut;
 
   uut.timer().InvokeAfter(kRoundedArbitraryShortDuration);
   uut.callback_ran_notification.acquire();
@@ -188,7 +201,11 @@ TEST(SystemTimer, RescheduleAndCancelFromCallback) {
 
     sync::ThreadNotification callback_ran_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static TimerWithContext uut;
 
   uut.timer().InvokeAfter(kRoundedArbitraryShortDuration);
   uut.callback_ran_notification.acquire();
@@ -217,7 +234,13 @@ TEST(SystemTimer, RescheduleFromCallback) {
     SystemClock::time_point expected_deadline;
     sync::ThreadNotification callbacks_done_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static std::optional<TimerWithContext> uut_storage;
+  uut_storage.emplace();
+  TimerWithContext& uut = *uut_storage;
 
   uut.expected_deadline = SystemClock::now() + kRoundedArbitraryShortDuration;
   uut.timer().InvokeAt(uut.expected_deadline);
@@ -248,7 +271,13 @@ TEST(SystemTimer, DoubleRescheduleFromCallback) {
     SystemClock::time_point expected_deadline;
     sync::ThreadNotification callbacks_done_notification;
   };
-  TimerWithContext uut;
+  // Some platform have strict Memory Protect Unit(MPU) implemented, restricting
+  // the timer callback thread from accessing the timer instantiation thread's
+  // stack memory. Making TimerWithContext static to allow callback access the
+  // object.
+  static std::optional<TimerWithContext> uut_storage;
+  uut_storage.emplace();
+  TimerWithContext& uut = *uut_storage;
 
   uut.expected_deadline = SystemClock::now() + kRoundedArbitraryShortDuration;
   uut.timer().InvokeAt(uut.expected_deadline);
