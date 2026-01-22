@@ -204,6 +204,9 @@ def _pw_rust_toolchain(
 def _BUILD_for_toolchain_repo():
     # Declare rust toolchains
     build_file = """load("@rules_rust//rust:toolchain.bzl", "rust_analyzer_toolchain", "rustfmt_toolchain", "rust_toolchain")\n"""
+    build_file += """load("@rules_rust//rust:defs.bzl", "rust_library_group")\n"""
+    build_file += """load("@rules_rust_prost//:defs.bzl", "rust_prost_toolchain")\n"""
+
     for channel in CHANNELS:
         for host in HOSTS:
             build_file += _pw_rust_toolchain(
@@ -246,6 +249,31 @@ def _BUILD_for_toolchain_repo():
                     extra_rustc_flags = channel["extra_rustc_flags"],
                     build_std = target.get("build_std", False),
                 )
+
+    build_file += """
+rust_library_group(
+    name = "prost_runtime",
+    deps = [
+        "@rust_crates//:prost",
+    ],
+)
+
+rust_prost_toolchain(
+    name = "prost_toolchain_impl",
+    prost_plugin = "@rust_crates//:protoc-gen-prost__protoc-gen-prost",
+    prost_runtime = ":prost_runtime",
+    prost_types = "@rust_crates//:prost-types",
+    tonic_plugin_flag = "",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "prost_toolchain",
+    toolchain = "prost_toolchain_impl",
+    toolchain_type = "@rules_rust_prost//:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+"""
     return build_file
 
 def _toolchain_repository_hub_impl(repository_ctx):
