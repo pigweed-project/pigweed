@@ -13,37 +13,4 @@
 // the License.
 #pragma once
 
-#ifdef __cplusplus
-
-namespace pw {
-
-/// @module{pw_toolchain}
-
-/// Loops infinitely. Call as `pw_BusyWaitForever()` in C.
-///
-/// Infinite loops without side effects are undefined behavior. Use
-/// `pw::BusyWaitForever` in place of an empty `while (true) {}` or `for (;;)
-/// {}`.
-[[noreturn]] inline void BusyWaitForever() {
-  while (true) {
-    asm volatile("");
-  }
-}
-
-}  // namespace pw
-
-// pw_BusyWaitForever is the C name for pw::BusyWaitForever. Only use this alias
-// for code that must compile in C and C++.
-[[noreturn]] inline void pw_BusyWaitForever() { ::pw::BusyWaitForever(); }
-
-#else
-
-#include "pw_preprocessor/compiler.h"
-
-PW_NO_RETURN static inline void pw_BusyWaitForever(void) {
-  while (1) {
-    __asm__ volatile("");
-  }
-}
-
-#endif  // __cplusplus
+#include "pw_memory/busy_wait_forever.h"

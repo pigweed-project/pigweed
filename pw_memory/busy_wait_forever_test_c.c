@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_toolchain/busy_wait_forever.h"
+#include "pw_memory/busy_wait_forever.h"
 
 int pw_TestBusyWaitForeverC(int loop_infinitely_if_0) {
   if (loop_infinitely_if_0 != 0) {

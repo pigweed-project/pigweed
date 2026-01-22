@@ -20,11 +20,11 @@
 
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
+#include "pw_memory/internal/sibling_cast.h"
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
-#include "pw_toolchain/internal/sibling_cast.h"
 
 namespace pw::stream {
 

@@ -38,11 +38,11 @@ cc_library(
         "//pw_async2",
         "//pw_async2:poll",
         "//pw_bytes",
+        "//pw_memory:sibling_cast",
         "//pw_multibuf",
         "//pw_result",
         "//pw_span",
         "//pw_status",
-        "//pw_toolchain:sibling_cast",
     ],
 )
 

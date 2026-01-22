@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_toolchain/no_destructor.h"
+#include "pw_memory/no_destructor.h"
 
 #include "pw_assert/check.h"
 #include "pw_polyfill/language_feature_macros.h"

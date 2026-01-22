@@ -17,7 +17,6 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -103,13 +102,14 @@ cc_library(
     name = "no_destructor",
     hdrs = ["public/pw_toolchain/no_destructor.h"],
     strip_include_prefix = "public",
-    deps = ["//pw_polyfill"],
+    deps = ["//pw_memory:no_destructor"],
 )
 
 cc_library(
     name = "globals",
     hdrs = ["public/pw_toolchain/globals.h"],
     strip_include_prefix = "public",
+    deps = ["//pw_memory:globals"],
 )
 
 cc_library(
@@ -119,7 +119,7 @@ cc_library(
         "public/pw_toolchain/infinite_loop.h",
     ],
     strip_include_prefix = "public",
-    deps = ["//pw_preprocessor"],
+    deps = ["//pw_memory:busy_wait_forever"],
 )
 
 alias(
@@ -127,54 +127,6 @@ alias(
     actual = ":busy_wait_forever",
     deprecation = ":infinite_loop has been renamed to :busy_wait_forever",
     tags = ["manual"],
-)
-
-pw_cc_test(
-    name = "no_destructor_test",
-    srcs = ["no_destructor_test.cc"],
-    deps = [
-        ":no_destructor",
-        "//pw_assert:check",
-        "//pw_polyfill",
-    ],
-)
-
-pw_cc_test(
-    name = "globals_test",
-    srcs = ["globals_test.cc"],
-    deps = [
-        ":globals",
-        "//pw_assert:check",
-        "//pw_polyfill",
-    ],
-)
-
-pw_cc_test(
-    name = "busy_wait_forever_test",
-    srcs = [
-        "busy_wait_forever_test.cc",
-        "busy_wait_forever_test_c.c",
-    ],
-    deps = [
-        ":busy_wait_forever",
-        "//pw_unit_test",
-    ],
-)
-
-cc_library(
-    name = "sibling_cast",
-    hdrs = ["public/pw_toolchain/internal/sibling_cast.h"],
-    strip_include_prefix = "public",
-    visibility = ["//:__subpackages__"],  # Restrict to Pigweed
-)
-
-pw_cc_test(
-    name = "sibling_cast_test",
-    srcs = ["sibling_cast_test.cc"],
-    has_nc_test = True,
-    deps = [
-        ":sibling_cast",
-    ],
 )
 
 cc_library(
@@ -209,12 +161,7 @@ build_test(
 
 filegroup(
     name = "doxygen",
-    srcs = [
-        "public/pw_toolchain/busy_wait_forever.h",
-        "public/pw_toolchain/constexpr_tag.h",
-        "public/pw_toolchain/globals.h",
-        "public/pw_toolchain/no_destructor.h",
-    ],
+    srcs = ["public/pw_toolchain/constexpr_tag.h"],
 )
 
 sphinx_docs_library(
@@ -222,7 +169,6 @@ sphinx_docs_library(
     srcs = [
         "bazel.rst",
         "docs.rst",
-        "globals_test.cc",
         "gn.rst",
     ],
     prefix = "pw_toolchain/",

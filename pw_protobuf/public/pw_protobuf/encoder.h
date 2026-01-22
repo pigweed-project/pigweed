@@ -25,6 +25,7 @@
 #include "pw_bytes/endian.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
+#include "pw_memory/internal/sibling_cast.h"
 #include "pw_protobuf/config.h"
 #include "pw_protobuf/internal/codegen.h"
 #include "pw_protobuf/wire_format.h"
@@ -33,7 +34,6 @@
 #include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
-#include "pw_toolchain/internal/sibling_cast.h"
 #include "pw_varint/varint.h"
 
 namespace pw::protobuf {

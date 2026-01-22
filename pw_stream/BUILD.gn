@@ -36,7 +36,7 @@ pw_source_set("pw_stream") {
   ]
   sources = [ "memory_stream.cc" ]
   public_deps = [
-    "$dir_pw_toolchain:sibling_cast",
+    "$dir_pw_memory:sibling_cast",
     dir_pw_assert,
     dir_pw_bytes,
     dir_pw_polyfill,

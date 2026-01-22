@@ -27,11 +27,72 @@ pw_source_set("pw_memory") {
   public = [ "public/pw_memory/container_of.h" ]
 }
 
+pw_source_set("no_destructor") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_memory/no_destructor.h" ]
+  public_deps = [ dir_pw_polyfill ]
+}
+
+pw_source_set("globals") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_memory/globals.h" ]
+}
+
+pw_source_set("busy_wait_forever") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_memory/busy_wait_forever.h" ]
+  public_deps = [ dir_pw_preprocessor ]
+}
+
+pw_source_set("sibling_cast") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_memory/internal/sibling_cast.h" ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
 pw_test_group("tests") {
-  tests = [ ":container_of_test" ]
+  tests = [
+    ":container_of_test",
+    ":no_destructor_test",
+    ":globals_test",
+    ":busy_wait_forever_test",
+    ":sibling_cast_test",
+  ]
 }
 
 pw_test("container_of_test") {
   deps = [ ":pw_memory" ]
   sources = [ "container_of_test.cc" ]
+}
+
+pw_test("no_destructor_test") {
+  sources = [ "no_destructor_test.cc" ]
+  deps = [
+    ":no_destructor",
+    dir_pw_assert,
+    dir_pw_polyfill,
+  ]
+}
+
+pw_test("globals_test") {
+  sources = [ "globals_test.cc" ]
+  deps = [
+    ":globals",
+    dir_pw_assert,
+    dir_pw_polyfill,
+  ]
+}
+
+pw_test("busy_wait_forever_test") {
+  sources = [
+    "busy_wait_forever_test.cc",
+    "busy_wait_forever_test_c.c",
+  ]
+  deps = [ ":busy_wait_forever" ]
+}
+
+pw_test("sibling_cast_test") {
+  sources = [ "sibling_cast_test.cc" ]
+  deps = [ ":sibling_cast" ]
+  negative_compilation_tests = true
 }

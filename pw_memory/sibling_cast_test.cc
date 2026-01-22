@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_toolchain/internal/sibling_cast.h"
+#include "pw_memory/internal/sibling_cast.h"
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"

@@ -15,7 +15,7 @@
 
 #include <type_traits>
 
-#include "pw_toolchain/internal/sibling_cast.h"
+#include "pw_memory/internal/sibling_cast.h"
 
 namespace pw::digital_io {
 namespace internal {

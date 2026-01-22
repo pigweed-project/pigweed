@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_toolchain/globals.h"
+#include "pw_memory/globals.h"
 
 #include <cstdint>
 
@@ -25,7 +25,7 @@ namespace {
 #if PW_CXX_STANDARD_IS_SUPPORTED(20)
 
 // Constant initialization example for the docs.
-// DOCSTAG[pw_toolchain-globals-init]
+// DOCSTAG[pw_memory-globals-init]
 // This function initializes an array to non-zero values.
 constexpr std::array<uint8_t, 4096> InitializedArray() {
   std::array<uint8_t, 4096> data{};
@@ -46,7 +46,7 @@ pw::RuntimeInitGlobal<std::array<uint8_t, 4096>> runtime_initialized(
 // This array is zero-initialized and takes no space in the binary. It must be
 // manually initialized.
 std::array<uint8_t, 4096> zero_initialized;
-// DOCSTAG[pw_toolchain-globals-init]
+// DOCSTAG[pw_memory-globals-init]
 
 TEST(RuntimeInitGlobal, BigArrayExample) {
   EXPECT_EQ(constant_initialized[255], 255u);

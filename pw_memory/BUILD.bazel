@@ -29,15 +29,93 @@ cc_library(
     strip_include_prefix = "public",
 )
 
+cc_library(
+    name = "no_destructor",
+    hdrs = ["public/pw_memory/no_destructor.h"],
+    strip_include_prefix = "public",
+    deps = ["//pw_polyfill"],
+)
+
+cc_library(
+    name = "globals",
+    hdrs = ["public/pw_memory/globals.h"],
+    strip_include_prefix = "public",
+)
+
+cc_library(
+    name = "busy_wait_forever",
+    hdrs = ["public/pw_memory/busy_wait_forever.h"],
+    strip_include_prefix = "public",
+    deps = ["//pw_preprocessor"],
+)
+
+cc_library(
+    name = "sibling_cast",
+    hdrs = ["public/pw_memory/internal/sibling_cast.h"],
+    strip_include_prefix = "public",
+    visibility = ["//:__subpackages__"],
+)
+
 pw_cc_test(
     name = "container_of_test",
     srcs = ["container_of_test.cc"],
     deps = [":pw_memory"],
 )
 
+pw_cc_test(
+    name = "no_destructor_test",
+    srcs = ["no_destructor_test.cc"],
+    deps = [
+        ":no_destructor",
+        "//pw_assert:check",
+        "//pw_polyfill",
+    ],
+)
+
+pw_cc_test(
+    name = "globals_test",
+    srcs = ["globals_test.cc"],
+    deps = [
+        ":globals",
+        "//pw_assert:check",
+        "//pw_polyfill",
+    ],
+)
+
+pw_cc_test(
+    name = "busy_wait_forever_test",
+    srcs = [
+        "busy_wait_forever_test.cc",
+        "busy_wait_forever_test_c.c",
+    ],
+    deps = [
+        ":busy_wait_forever",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "sibling_cast_test",
+    srcs = ["sibling_cast_test.cc"],
+    has_nc_test = True,
+    deps = [":sibling_cast"],
+)
+
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_memory/busy_wait_forever.h",
+        "public/pw_memory/globals.h",
+        "public/pw_memory/no_destructor.h",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
-    srcs = ["docs.rst"],
+    srcs = [
+        "docs.rst",
+        "globals_test.cc",
+    ],
     prefix = "pw_memory/",
     target_compatible_with = incompatible_with_mcu(),
 )

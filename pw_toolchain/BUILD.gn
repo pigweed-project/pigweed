@@ -56,31 +56,20 @@ pw_source_set("constexpr_tag") {
 pw_source_set("no_destructor") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_toolchain/no_destructor.h" ]
-  public_deps = [ dir_pw_polyfill ]
+  public_deps = [ "$dir_pw_memory:no_destructor" ]
 }
 
 pw_source_set("globals") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_toolchain/globals.h" ]
+  public_deps = [ "$dir_pw_memory:globals" ]
 }
 
 pw_source_set("busy_wait_forever") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_toolchain/busy_wait_forever.h" ]
-  public_deps = [ dir_pw_preprocessor ]
+  public_deps = [ "$dir_pw_memory:busy_wait_forever" ]
   sources = [ "public/pw_toolchain/infinite_loop.h" ]
-}
-
-pw_source_set("sibling_cast") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_toolchain/internal/sibling_cast.h" ]
-  visibility = [ "$dir_pigweed/*" ]
-}
-
-pw_test("sibling_cast_test") {
-  sources = [ "sibling_cast_test.cc" ]
-  deps = [ ":sibling_cast" ]
-  negative_compilation_tests = true
 }
 
 config("wrap_abort_config") {
@@ -95,36 +84,5 @@ pw_source_set("wrap_abort") {
 }
 
 pw_test_group("tests") {
-  tests = [
-    ":globals_test",
-    ":no_destructor_test",
-    ":sibling_cast_test",
-    ":busy_wait_forever_test",
-  ]
-}
-
-pw_test("no_destructor_test") {
-  sources = [ "no_destructor_test.cc" ]
-  deps = [
-    ":no_destructor",
-    dir_pw_assert,
-    dir_pw_polyfill,
-  ]
-}
-
-pw_test("globals_test") {
-  sources = [ "globals_test.cc" ]
-  deps = [
-    ":globals",
-    dir_pw_assert,
-    dir_pw_polyfill,
-  ]
-}
-
-pw_test("busy_wait_forever_test") {
-  sources = [
-    "busy_wait_forever_test.cc",
-    "busy_wait_forever_test_c.c",
-  ]
-  deps = [ ":busy_wait_forever" ]
+  tests = []
 }

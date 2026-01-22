@@ -42,9 +42,9 @@ cc_library(
     deps = [
         "//pw_assert:check",
         "//pw_function",
+        "//pw_memory:sibling_cast",
         "//pw_result",
         "//pw_status",
-        "//pw_toolchain:sibling_cast",
     ],
 )
 
