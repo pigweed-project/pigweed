@@ -51,11 +51,13 @@ cc_library {
     srcs: [
         "allocator.cc",
         "allocator_as_pool.cc",
+        "block/basic.cc",
         "block/contiguous.cc",
         "block/poisonable.cc",
         "block_allocator.cc",
         "chunk_pool.cc",
         "control_block.cc",
+        "fragmentation.cc",
         "libc_allocator.cc",
         "managed_ptr.cc",
     ],
