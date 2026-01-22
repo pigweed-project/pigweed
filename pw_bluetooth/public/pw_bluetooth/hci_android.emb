@@ -790,7 +790,7 @@ struct LEApcfSetFilteringParametersCommand:
     -- ApcfFeatureFilterLogic is always AND. This bitmask is only applicable
     -- for bits 3 to 6 (four fields) of ApcfFeatureFilterLogic.
 
-  $next [+1]                            UInt                    rssi_high_threshold
+  $next [+1]                            Int                    rssi_high_threshold
     -- An advertiser is considered seen only if the signal is higher than the
     -- RSSI high threshold. RSSI values must use 2's complement to represent
     -- negative values.
@@ -810,7 +810,7 @@ struct LEApcfSetFilteringParametersCommand:
     -- advertising packets even in onfound_timeout hasn't been reached. Valid
     -- only if delivery_mode is ON_FOUND.
 
-  $next [+1]                            UInt                    rssi_low_threshold
+  $next [+1]                            Int                    rssi_low_threshold
     -- If the RSSI of the received packet is below the RSSI low threshold, the
     -- advertising packet is considered as not seen. RSSI values must use 2's
     -- complement to represent negative values. Valid

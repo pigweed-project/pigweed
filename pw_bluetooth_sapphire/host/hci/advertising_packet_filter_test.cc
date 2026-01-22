@@ -428,4 +428,20 @@ TEST_F(AdvertisingPacketFilterTest, UnsetFiltersDoesntEnableWhenFeatureOff) {
   ASSERT_FALSE(test_device()->packet_filter_state().enabled);
 }
 
+// An offloaded filter with no rssi threhsold set should have the rssi threshold
+// set to the lowest possible 8-bit two's complement signed integer
+TEST_F(AdvertisingPacketFilterTest, OffloadingSetsDefaultRssiThreshold) {
+  AdvertisingPacketFilter packet_filter({true, 1}, transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  filter.set_name_substring("bluetooth");
+  packet_filter.SetPacketFilters(0, {filter});
+  RunUntilIdle();
+
+  uint8_t filter_index = packet_filter.last_filter_index();
+  const FakeController::PacketFilter& controller_filter =
+      test_device()->packet_filter_state().filters.at(filter_index);
+  ASSERT_EQ(controller_filter.rssi_high_threshold, 0x80);
+}
+
 }  // namespace bt::hci

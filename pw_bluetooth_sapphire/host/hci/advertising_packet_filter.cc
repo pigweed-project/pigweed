@@ -64,7 +64,10 @@ void AdvertisingPacketFilter::SetPacketFilters(
 
   if (filtering_state_ == FilteringState::kHostFiltering) {
     bt_log(INFO, "hci-le", "controller filter memory available");
-    UseOffloadedFiltering();
+    bool success = UseOffloadedFiltering();
+    if (!success) {
+      UseHostFiltering();
+    }
     return;
   }
 
@@ -105,7 +108,11 @@ void AdvertisingPacketFilter::UnsetPacketFilters(ScanId scan_id) {
 
   if (filtering_state_ == FilteringState::kHostFiltering && MemoryAvailable()) {
     bt_log(INFO, "hci-le", "controller filter memory available");
-    UseOffloadedFiltering();
+    bool success = UseOffloadedFiltering();
+    if (!success) {
+      UseHostFiltering();
+      return;
+    }
   }
 }
 
@@ -138,7 +145,7 @@ void AdvertisingPacketFilter::UnsetPacketFiltersInternal(ScanId scan_id,
   });
 }
 
-void AdvertisingPacketFilter::UseOffloadedFiltering() {
+bool AdvertisingPacketFilter::UseOffloadedFiltering() {
   ResetOpenSlots();
   last_filter_index_ = kStartFilterIndex;
   scan_id_to_index_.clear();
@@ -156,9 +163,7 @@ void AdvertisingPacketFilter::UseOffloadedFiltering() {
     for (const DiscoveryFilter& filter : filters) {
       bool success = QueueOffloadFilterCommands(scan_id, filter);
       if (!success) {
-        bt_log(WARN, "hci-le", "filter offload failed, using host filtering");
-        UseHostFiltering();
-        return;
+        return false;
       }
     }
   }
@@ -172,6 +177,8 @@ void AdvertisingPacketFilter::UseOffloadedFiltering() {
       UseHostFiltering();
     }
   });
+
+  return true;
 }
 
 void AdvertisingPacketFilter::UseHostFiltering() {
@@ -588,6 +595,13 @@ CommandPacket AdvertisingPacketFilter::BuildSetParametersCommand(
 
   if (filter.rssi().has_value() && !filter.pathloss().has_value()) {
     view.rssi_high_threshold().Write(filter.rssi().value());
+  } else {
+    // The rssi high threshold instructs the firmware to consider an
+    // advertiser seen only if the signal is higher than the threshold. By
+    // default, Emboss packet memory is zeroed out when allocated. If the user
+    // hasn't requested an rssi filter, we specifically set the high threshold
+    // to the lowest possible 8-bit two's complement signed integer value.
+    view.rssi_high_threshold().Write(std::numeric_limits<int8_t>::min());
   }
 
   view.delivery_mode().Write(android_emb::ApcfDeliveryMode::IMMEDIATE);
