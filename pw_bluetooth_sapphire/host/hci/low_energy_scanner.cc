@@ -133,15 +133,6 @@ LowEnergyScanner::RemovePendingResult(const DeviceAddress& address) {
 void LowEnergyScanner::SetPacketFilters(
     uint16_t scan_id, const std::vector<DiscoveryFilter>& filters) {
   packet_filter_.SetPacketFilters(scan_id, filters);
-
-  // If there are cached scan results, a scan is currently ongoing. If a scan
-  // session is joining in during an ongoing scan, the cached peers it receives
-  // will be based on the filters which were previously offloaded. We will have
-  // potentially kicked out peers that the new scan session may have been
-  // interested in.
-  if (packet_filter_.IsUsingOffloadedFiltering()) {
-    cached_scan_results_.clear();
-  }
 }
 
 void LowEnergyScanner::UnsetPacketFilters(uint16_t scan_id) {

@@ -139,18 +139,19 @@ class AdvertisingPacketFilter {
   // Enable Controller based filtering. After the commands this method issues
   // are run, all advertising packet filtering will occur on the Controller
   // before we perform any secondary filtering on the Host.
-  void EnableOffloadedFiltering();
+  void UseOffloadedFiltering();
 
   // Disable all Controller based filtering and fall back to Host level
   // filtering.
-  void DisableOffloadedFiltering();
+  void UseHostFiltering();
 
   // Determine if the this filter contains any predicates that can be offloaded
   // to the Controller.
   bool IsOffloadable(const DiscoveryFilter& filter);
 
   // Queue HCI commands necessary to offload the given filter to the Controller.
-  bool Offload(ScanId scan_id, const DiscoveryFilter& filter);
+  bool QueueOffloadFilterCommands(ScanId scan_id,
+                                  const DiscoveryFilter& filter);
 
   // Reset the number of open slots of Controller memory per filter type we
   // track to the default value.

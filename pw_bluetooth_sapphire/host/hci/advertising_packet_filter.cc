@@ -56,59 +56,42 @@ void AdvertisingPacketFilter::SetPacketFilters(
     return;
   }
 
-  if (filters.empty()) {
-    return;
-  }
-
-  // If none of our filters are offloadable and we turn on scan filter
-  // offloading, we will get no results.
-  bool any_filters_offloadable = false;
-  for (const DiscoveryFilter& filter : filters) {
-    if (IsOffloadable(filter)) {
-      any_filters_offloadable = true;
-      break;
-    }
-  }
-  if (!any_filters_offloadable) {
-    bt_log(INFO, "hci-le", "no filters can be offloaded");
-    return;
-  }
-
   if (!MemoryAvailableForFilters(filters)) {
-    bt_log(INFO,
-           "hci-le",
-           "controller out of offloaded filter memory (scan id: %d)",
-           scan_id);
-    DisableOffloadedFiltering();
+    bt_log(INFO, "hci-le", "controller out of offloaded filter memory");
+    UseHostFiltering();
     return;
   }
 
   if (filtering_state_ == FilteringState::kHostFiltering) {
     bt_log(INFO, "hci-le", "controller filter memory available");
-    EnableOffloadedFiltering();
+    UseOffloadedFiltering();
     return;
   }
 
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
+  for (FilterIndex filter_index : scan_id_to_index_[scan_id]) {
+    CommandPacket packet = BuildUnsetParametersCommand(filter_index);
+    hci_cmd_runner_->QueueCommand(std::move(packet));
+  }
+  scan_id_to_index_.erase(scan_id);
+
   for (const DiscoveryFilter& filter : filters) {
-    bool success = Offload(scan_id, filter);
+    bool success = QueueOffloadFilterCommands(scan_id, filter);
     if (!success) {
-      bt_log(WARN, "hci-le", "failed enabling offloaded filtering");
-      DisableOffloadedFiltering();
+      bt_log(WARN, "hci-le", "filter offload failed, using host filtering");
+      UseHostFiltering();
       return;
     }
   }
 
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
   if (!hci_cmd_runner_->IsReady()) {
     return;
   }
 
-  hci_cmd_runner_->RunCommands([this, scan_id](Result<> result) {
-    if (bt_is_error(result,
-                    WARN,
-                    "hci-le",
-                    "failed offloading filters (scan id: %d)",
-                    scan_id)) {
-      DisableOffloadedFiltering();
+  hci_cmd_runner_->RunCommands([this](Result<> result) {
+    if (bt_is_error(result, WARN, "hci-le", "failed offloading filters")) {
+      UseHostFiltering();
     }
   });
 }
@@ -122,7 +105,7 @@ void AdvertisingPacketFilter::UnsetPacketFilters(ScanId scan_id) {
 
   if (filtering_state_ == FilteringState::kHostFiltering && MemoryAvailable()) {
     bt_log(INFO, "hci-le", "controller filter memory available");
-    EnableOffloadedFiltering();
+    UseOffloadedFiltering();
   }
 }
 
@@ -145,22 +128,189 @@ void AdvertisingPacketFilter::UnsetPacketFiltersInternal(ScanId scan_id,
   }
   scan_id_to_index_.erase(scan_id);
 
-  if (!hci_cmd_runner_->IsReady()) {
+  if (!hci_cmd_runner_->IsReady() || !run_commands) {
     return;
   }
 
-  if (!run_commands) {
-    return;
-  }
-
-  hci_cmd_runner_->RunCommands([this, scan_id](Result<> result) {
-    bt_is_error(result,
-                WARN,
-                "hci-le",
-                "failed removing offloaded filters (scan id: %d)",
-                scan_id);
-    DisableOffloadedFiltering();
+  hci_cmd_runner_->RunCommands([this](Result<> result) {
+    bt_is_error(result, WARN, "hci-le", "failed removing offloaded filters");
+    UseHostFiltering();
   });
+}
+
+void AdvertisingPacketFilter::UseOffloadedFiltering() {
+  ResetOpenSlots();
+  last_filter_index_ = kStartFilterIndex;
+  scan_id_to_index_.clear();
+  filtering_state_ = FilteringState::kOffloadedFiltering;
+
+  if (!hci_cmd_runner_->IsReady()) {
+    hci_cmd_runner_->Cancel();
+  }
+
+  bt_log(INFO, "hci-le", "using offloaded advertising packet filtering");
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
+  hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
+
+  for (const auto& [scan_id, filters] : scan_id_to_filters_) {
+    for (const DiscoveryFilter& filter : filters) {
+      bool success = QueueOffloadFilterCommands(scan_id, filter);
+      if (!success) {
+        bt_log(WARN, "hci-le", "filter offload failed, using host filtering");
+        UseHostFiltering();
+        return;
+      }
+    }
+  }
+
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
+  hci_cmd_runner_->RunCommands([this](Result<> result) {
+    if (bt_is_error(result,
+                    WARN,
+                    "hci-le",
+                    "failed switching to offloaded filtering")) {
+      UseHostFiltering();
+    }
+  });
+}
+
+void AdvertisingPacketFilter::UseHostFiltering() {
+  ResetOpenSlots();
+  last_filter_index_ = kStartFilterIndex;
+  scan_id_to_index_.clear();
+  filtering_state_ = FilteringState::kHostFiltering;
+
+  if (!config_.offloading_supported()) {
+    return;
+  }
+
+  if (!hci_cmd_runner_->IsReady()) {
+    hci_cmd_runner_->Cancel();
+  }
+
+  bt_log(INFO, "hci-le", "using host advertising packet filtering");
+  FilterIndex filter_index = NextFilterIndex().value();
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
+  hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
+  hci_cmd_runner_->QueueCommand(BuildSetParametersCommand(filter_index, {}));
+  hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
+  hci_cmd_runner_->RunCommands([](Result<> result) {
+    bt_is_error(result, WARN, "hci-le", "failed switching to host filtering");
+  });
+}
+
+bool AdvertisingPacketFilter::IsOffloadable(const DiscoveryFilter& filter) {
+  return !filter.service_uuids().empty() ||
+         !filter.service_data_uuids().empty() ||
+         !filter.solicitation_uuids().empty() ||
+         !filter.name_substring().empty() ||
+         filter.manufacturer_code().has_value();
+}
+
+bool AdvertisingPacketFilter::QueueOffloadFilterCommands(
+    ScanId scan_id, const DiscoveryFilter& filter) {
+  std::optional<FilterIndex> filter_index_opt = NextFilterIndex();
+  if (!filter_index_opt.has_value()) {
+    bt_log(
+        WARN, "hci-le", "filter index unavailable, unable to offload filter");
+    return false;
+  }
+
+  FilterIndex filter_index = filter_index_opt.value();
+  scan_id_to_index_[scan_id].insert(filter_index);
+
+  CommandPacket set_parameters =
+      BuildSetParametersCommand(filter_index, filter);
+  hci_cmd_runner_->QueueCommand(set_parameters);
+
+  if (!filter.service_uuids().empty()) {
+    std::vector<CommandPacket> packets =
+        BuildSetServiceUUIDCommands(filter_index, filter.service_uuids());
+    for (const CommandPacket& packet : packets) {
+      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
+        hci::Result<> result = event.ToResult();
+        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
+          return;
+        }
+        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
+        uint8_t available_spaces = view.available_spaces().Read();
+        open_slots_[OffloadedFilterType::kServiceUUID] = available_spaces;
+      });
+    }
+  }
+
+  if (!filter.service_data_uuids().empty()) {
+    std::vector<CommandPacket> packets = BuildSetServiceDataUUIDCommands(
+        filter_index, filter.service_data_uuids());
+    for (const CommandPacket& packet : packets) {
+      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
+        hci::Result<> result = event.ToResult();
+        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
+          return;
+        }
+        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
+        uint8_t available_spaces = view.available_spaces().Read();
+        open_slots_[OffloadedFilterType::kServiceDataUUID] = available_spaces;
+      });
+    }
+  }
+
+  if (!filter.solicitation_uuids().empty()) {
+    std::vector<CommandPacket> packets = BuildSetSolicitationUUIDCommands(
+        filter_index, filter.solicitation_uuids());
+    for (const CommandPacket& packet : packets) {
+      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
+        hci::Result<> result = event.ToResult();
+        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
+          return;
+        }
+        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
+        uint8_t available_spaces = view.available_spaces().Read();
+        open_slots_[OffloadedFilterType::kSolicitationUUID] = available_spaces;
+      });
+    }
+  }
+
+  if (!filter.name_substring().empty()) {
+    std::optional<CommandPacket> packet =
+        BuildSetLocalNameCommand(filter_index, filter.name_substring());
+    if (packet) {
+      hci_cmd_runner_->QueueCommand(
+          packet.value(), [this](const EventPacket& event) {
+            hci::Result<> result = event.ToResult();
+            if (bt_is_error(
+                    result, WARN, "hci-le", "failed offloading filter")) {
+              return;
+            }
+            auto view =
+                event.view<android_emb::LEApcfCommandCompleteEventView>();
+            uint8_t available_spaces = view.available_spaces().Read();
+            open_slots_[OffloadedFilterType::kLocalName] = available_spaces;
+          });
+    }
+  }
+
+  if (filter.manufacturer_code().has_value()) {
+    std::optional<CommandPacket> packet = BuildSetManufacturerCodeCommand(
+        filter_index, filter.manufacturer_code().value());
+    if (packet) {
+      hci_cmd_runner_->QueueCommand(
+          packet.value(), [this](const EventPacket& event) {
+            hci::Result<> result = event.ToResult();
+            if (bt_is_error(
+                    result, WARN, "hci-le", "failed offloading filter")) {
+              return;
+            }
+            auto view =
+                event.view<android_emb::LEApcfCommandCompleteEventView>();
+            uint8_t available_spaces = view.available_spaces().Read();
+            open_slots_[OffloadedFilterType::kManufacturerCode] =
+                available_spaces;
+          });
+    }
+  }
+
+  return true;
 }
 
 std::unordered_set<AdvertisingPacketFilter::ScanId>
@@ -368,183 +518,6 @@ bool AdvertisingPacketFilter::MemoryAvailableForSlots(
   uint8_t available = itr->second;
   if (available - slots < 0) {
     return false;
-  }
-
-  return true;
-}
-
-void AdvertisingPacketFilter::EnableOffloadedFiltering() {
-  if (filtering_state_ == FilteringState::kOffloadedFiltering) {
-    return;
-  }
-
-  if (!hci_cmd_runner_->IsReady()) {
-    hci_cmd_runner_->Cancel();
-  }
-
-  bt_log(INFO, "hci-le", "enabling offloaded controller packet filtering");
-  hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
-
-  for (const auto& [scan_id, filters] : scan_id_to_filters_) {
-    for (const DiscoveryFilter& filter : filters) {
-      bool success = Offload(scan_id, filter);
-      if (!success) {
-        bt_log(WARN, "hci-le", "failed enabling offloaded filtering");
-        DisableOffloadedFiltering();
-        return;
-      }
-    }
-  }
-
-  hci_cmd_runner_->RunCommands([this](Result<> result) {
-    if (bt_is_error(
-            result, WARN, "hci-le", "failed enabling offloaded filtering")) {
-      DisableOffloadedFiltering();
-    }
-  });
-
-  filtering_state_ = FilteringState::kOffloadedFiltering;
-}
-
-void AdvertisingPacketFilter::DisableOffloadedFiltering() {
-  if (filtering_state_ == FilteringState::kHostFiltering) {
-    return;
-  }
-
-  if (!hci_cmd_runner_->IsReady()) {
-    hci_cmd_runner_->Cancel();
-  }
-
-  bt_log(INFO, "hci-le", "disabling offloaded filtering, using host filtering");
-  hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
-  hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
-
-  hci_cmd_runner_->RunCommands([](Result<> result) {
-    bt_is_error(result, WARN, "hci-le", "failed disabling offloaded filtering");
-  });
-
-  ResetOpenSlots();
-  last_filter_index_ = kStartFilterIndex;
-  scan_id_to_index_.clear();
-  filtering_state_ = FilteringState::kHostFiltering;
-}
-
-bool AdvertisingPacketFilter::IsOffloadable(const DiscoveryFilter& filter) {
-  return !filter.service_uuids().empty() ||
-         !filter.service_data_uuids().empty() ||
-         !filter.solicitation_uuids().empty() ||
-         !filter.name_substring().empty() ||
-         filter.manufacturer_code().has_value();
-}
-
-bool AdvertisingPacketFilter::Offload(ScanId scan_id,
-                                      const DiscoveryFilter& filter) {
-  std::optional<FilterIndex> filter_index_opt = NextFilterIndex();
-  if (!filter_index_opt.has_value()) {
-    bt_log(WARN,
-           "hci-le",
-           "filter index unavailable, unable to offload filter (scan id: %d)",
-           scan_id);
-    return false;
-  }
-
-  FilterIndex filter_index = filter_index_opt.value();
-  scan_id_to_index_[scan_id].insert(filter_index);
-
-  CommandPacket set_parameters =
-      BuildSetParametersCommand(filter_index, filter);
-  hci_cmd_runner_->QueueCommand(set_parameters);
-
-  if (!filter.service_uuids().empty()) {
-    std::vector<CommandPacket> packets =
-        BuildSetServiceUUIDCommands(filter_index, filter.service_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
-        hci::Result<> result = event.ToResult();
-        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
-          DisableOffloadedFiltering();
-          return;
-        }
-        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
-        uint8_t available_spaces = view.available_spaces().Read();
-        open_slots_[OffloadedFilterType::kServiceUUID] = available_spaces;
-      });
-    }
-  }
-
-  if (!filter.service_data_uuids().empty()) {
-    std::vector<CommandPacket> packets = BuildSetServiceDataUUIDCommands(
-        filter_index, filter.service_data_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
-        hci::Result<> result = event.ToResult();
-        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
-          DisableOffloadedFiltering();
-          return;
-        }
-        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
-        uint8_t available_spaces = view.available_spaces().Read();
-        open_slots_[OffloadedFilterType::kServiceDataUUID] = available_spaces;
-      });
-    }
-  }
-
-  if (!filter.solicitation_uuids().empty()) {
-    std::vector<CommandPacket> packets = BuildSetSolicitationUUIDCommands(
-        filter_index, filter.solicitation_uuids());
-    for (const CommandPacket& packet : packets) {
-      hci_cmd_runner_->QueueCommand(packet, [this](const EventPacket& event) {
-        hci::Result<> result = event.ToResult();
-        if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
-          DisableOffloadedFiltering();
-          return;
-        }
-        auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
-        uint8_t available_spaces = view.available_spaces().Read();
-        open_slots_[OffloadedFilterType::kSolicitationUUID] = available_spaces;
-      });
-    }
-  }
-
-  if (!filter.name_substring().empty()) {
-    std::optional<CommandPacket> packet =
-        BuildSetLocalNameCommand(filter_index, filter.name_substring());
-    if (packet) {
-      hci_cmd_runner_->QueueCommand(
-          packet.value(), [this](const EventPacket& event) {
-            hci::Result<> result = event.ToResult();
-            if (bt_is_error(
-                    result, WARN, "hci-le", "failed offloading filter")) {
-              DisableOffloadedFiltering();
-              return;
-            }
-            auto view =
-                event.view<android_emb::LEApcfCommandCompleteEventView>();
-            uint8_t available_spaces = view.available_spaces().Read();
-            open_slots_[OffloadedFilterType::kLocalName] = available_spaces;
-          });
-    }
-  }
-
-  if (filter.manufacturer_code().has_value()) {
-    std::optional<CommandPacket> packet = BuildSetManufacturerCodeCommand(
-        filter_index, filter.manufacturer_code().value());
-    if (packet) {
-      hci_cmd_runner_->QueueCommand(
-          packet.value(), [this](const EventPacket& event) {
-            hci::Result<> result = event.ToResult();
-            if (bt_is_error(
-                    result, WARN, "hci-le", "failed offloading filter")) {
-              DisableOffloadedFiltering();
-              return;
-            }
-            auto view =
-                event.view<android_emb::LEApcfCommandCompleteEventView>();
-            uint8_t available_spaces = view.available_spaces().Read();
-            open_slots_[OffloadedFilterType::kManufacturerCode] =
-                available_spaces;
-          });
-    }
   }
 
   return true;
