@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <utility>
 
+#include "pw_allocator/libc_allocator.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
 #include "pw_bluetooth_proxy/proxy_host.h"
@@ -43,7 +44,8 @@ void UsePassthroughProxy() {
   ProxyHost proxy = ProxyHost(std::move(container_send_to_host_fn),
                               std::move(container_send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/0,
-                              /*br_edr_acl_credits_to_reserve=*/0);
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              &allocator::GetLibCAllocator());
 
   proxy.HandleH4HciFromHost(std::move(h4_span_from_host));
 

@@ -38,7 +38,7 @@ ProxyHost::ProxyHost(
                         le_acl_credits_to_reserve,
                         br_edr_acl_credits_to_reserve,
                         /*on_tx_credits_fn=*/[this]() { OnAclTxCredits(); }),
-      l2cap_channel_manager_(acl_data_channel_, allocator) {
+      l2cap_channel_manager_(acl_data_channel_, *allocator) {
   PW_LOG_INFO(
       "btproxy: ProxyHost ctor - le_acl_credits_to_reserve: %u, "
       "br_edr_acl_credits_to_reserve: %u",

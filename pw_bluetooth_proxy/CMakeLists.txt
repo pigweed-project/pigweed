@@ -99,7 +99,6 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
   pw_containers.vector
   pw_function
   pw_bluetooth_proxy.multibuf
-  pw_bluetooth_proxy.proxy_allocator
   pw_result
   pw_span
   pw_span.cast
@@ -199,21 +198,6 @@ pw_add_library(pw_bluetooth_proxy.multibuf STATIC
   SOURCES
     multibuf_v1.cc
     multibuf_v2.cc
-# LINT.ThenChange(Android.bp, bt-proxy.bzl, BUILD.gn)
-
-)
-
-pw_add_library(pw_bluetooth_proxy.proxy_allocator INTERFACE
-
-# LINT.IfChange
-  HEADERS
-    public/pw_bluetooth_proxy/internal/proxy_allocator.h
-  PUBLIC_DEPS
-    pw_allocator.best_fit
-    pw_allocator.synchronized_allocator
-    pw_assert
-    pw_bluetooth_proxy.config
-    pw_sync.mutex
 # LINT.ThenChange(Android.bp, bt-proxy.bzl, BUILD.gn)
 
 )

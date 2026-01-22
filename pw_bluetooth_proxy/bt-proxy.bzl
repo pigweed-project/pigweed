@@ -100,7 +100,6 @@ def pw_bluetooth_proxy_library(name, versioned_deps, **kwargs):
             "public/pw_bluetooth_proxy/internal/logical_transport.h",
             "public/pw_bluetooth_proxy/internal/multibuf.h",
             "public/pw_bluetooth_proxy/internal/mutex.h",
-            "public/pw_bluetooth_proxy/internal/proxy_allocator.h",
             "public/pw_bluetooth_proxy/internal/proxy_host_async.h",
             "public/pw_bluetooth_proxy/internal/proxy_host_sync.h",
             "public/pw_bluetooth_proxy/internal/recombiner.h",

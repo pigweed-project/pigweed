@@ -25,7 +25,6 @@
 #include "pw_bluetooth_proxy/internal/l2cap_status_tracker.h"
 #include "pw_bluetooth_proxy/internal/locked_l2cap_channel.h"
 #include "pw_bluetooth_proxy/internal/mutex.h"
-#include "pw_bluetooth_proxy/internal/proxy_allocator.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_channel_manager_interface.h"
 #include "pw_bluetooth_proxy/l2cap_coc.h"
@@ -62,10 +61,9 @@ namespace pw::bluetooth::proxy {
 class L2capChannelManager final : public L2capChannelManagerInterface {
  public:
   /// @param[in] allocator - General purpose allocator to use for internal
-  /// packet buffers and objects. If null, an internal allocator and memory pool
-  /// will be used.
+  /// packet buffers and objects.
   L2capChannelManager(AclDataChannel& acl_data_channel,
-                      pw::Allocator* allocator);
+                      pw::Allocator& allocator);
 
   ~L2capChannelManager() override;
 

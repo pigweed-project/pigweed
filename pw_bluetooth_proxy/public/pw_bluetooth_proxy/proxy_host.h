@@ -57,14 +57,13 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// @param[in] br_edr_acl_credits_to_reserve - How many buffers to reserve for
   /// the proxy out of any BR/EDR ACL buffers received from controller.
   /// @param[in] allocator - General purpose allocator to use for internal
-  /// packet buffers and objects. If null, an internal allocator and memory pool
-  /// will be used. On multi-threaded systems this should be a
-  /// SynchronizedAllocator.
+  /// packet buffers and objects. On multi-threaded systems this should be a
+  /// SynchronizedAllocator. Must not be null.
   ProxyHost(pw::Function<void(H4PacketWithHci&& packet)>&& send_to_host_fn,
             pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
             uint16_t le_acl_credits_to_reserve,
             uint16_t br_edr_acl_credits_to_reserve,
-            pw::Allocator* allocator = nullptr);
+            pw::Allocator* allocator);
 
   ProxyHost() = delete;
   ProxyHost(const ProxyHost&) = delete;

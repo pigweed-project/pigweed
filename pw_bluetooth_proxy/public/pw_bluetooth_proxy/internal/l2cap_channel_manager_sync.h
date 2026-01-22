@@ -24,7 +24,6 @@
 #include "pw_allocator/best_fit.h"
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
-#include "pw_bluetooth_proxy/internal/proxy_allocator.h"
 #include "pw_containers/intrusive_map.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
@@ -48,7 +47,7 @@ class L2capChannelManagerImpl {
   using L2capChannelMap = IntrusiveMap<uint32_t, L2capChannel::Handle>;
   using L2capChannelIterator = L2capChannelMap::iterator;
 
-  L2capChannelManagerImpl(L2capChannelManager& manager, Allocator* allocator);
+  L2capChannelManagerImpl(L2capChannelManager& manager, Allocator& allocator);
   ~L2capChannelManagerImpl();
 
   constexpr L2capChannelManager& manager() { return manager_; }
@@ -87,7 +86,7 @@ class L2capChannelManagerImpl {
 
   L2capChannelManager& manager_;
 
-  ProxyAllocator allocator_;
+  Allocator& allocator_;
 
   // Iterator to "least recently drained" channel.
   L2capChannelIterator lrd_channel_ PW_GUARDED_BY(channels_mutex_);

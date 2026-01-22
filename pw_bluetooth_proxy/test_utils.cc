@@ -630,8 +630,6 @@ L2capChannel::State GetState(const internal::GenericL2capChannel& channel) {
   return l2cap == nullptr ? L2capChannel::State::kClosed : l2cap->state();
 }
 
-#if PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE == 0
-
 Allocator* ProxyHostTest::GetProxyHostAllocator() {
   // This is static as it is too large to fit in the test fixture when using the
   // "light" backend.
@@ -639,12 +637,6 @@ Allocator* ProxyHostTest::GetProxyHostAllocator() {
   static allocator::SynchronizedAllocator<sync::Mutex> sync{alloc};
   return &sync;
 }
-
-#else  // PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE != 0
-
-Allocator* ProxyHostTest::GetProxyHostAllocator() { return nullptr; }
-
-#endif  // PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE
 
 pw::Result<L2capCoc> ProxyHostTest::BuildCocWithResult(ProxyHost& proxy,
                                                        CocParameters params) {

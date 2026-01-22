@@ -43,14 +43,10 @@ namespace internal {
 /// runs concurrent tasks sequentially.
 class L2capChannelManagerImpl {
  public:
-  static_assert(PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE == 0,
-                "No internal allocator is provided when "
-                "PW_BLUETOOTH_PROXY_ASYNC enabled.");
-
   using L2capChannelMap = IntrusiveMap<uint32_t, L2capChannel::Handle>;
   using L2capChannelIterator = L2capChannelMap::iterator;
 
-  L2capChannelManagerImpl(L2capChannelManager& manager, Allocator* allocator);
+  L2capChannelManagerImpl(L2capChannelManager& manager, Allocator& allocator);
 
   constexpr Allocator& allocator() { return allocator_; }
 

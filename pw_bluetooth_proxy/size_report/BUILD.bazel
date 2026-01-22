@@ -26,6 +26,7 @@ pw_cc_size_binary(
     srcs = ["use_passthrough_proxy.cc"],
     features = ["-conversion_warnings"],
     deps = [
+        "//pw_allocator:libc_allocator",
         "//pw_bloat:bloat_this_binary",
         "//pw_bluetooth_proxy",
     ],

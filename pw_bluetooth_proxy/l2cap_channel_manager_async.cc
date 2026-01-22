@@ -26,17 +26,15 @@
 namespace pw::bluetooth::proxy {
 
 L2capChannelManager::L2capChannelManager(AclDataChannel& acl_data_channel,
-                                         Allocator* allocator)
-    : acl_data_channel_(acl_data_channel), impl_(*this, allocator) {
-  PW_CHECK_NOTNULL(allocator);
-}
+                                         Allocator& allocator)
+    : acl_data_channel_(acl_data_channel), impl_(*this, allocator) {}
 
 namespace internal {
 
 L2capChannelManagerImpl::L2capChannelManagerImpl(L2capChannelManager& manager,
-                                                 Allocator* allocator)
+                                                 Allocator& allocator)
     : manager_(manager),
-      allocator_(*allocator),
+      allocator_(allocator),
       drain_task_(*this),
       lrd_channel_(manager.channels_by_local_cid_.end()),
       round_robin_terminus_(manager.channels_by_local_cid_.end()) {}

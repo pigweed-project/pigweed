@@ -80,6 +80,8 @@ Status CreateNonInteractingToHostBuffer(H4PacketWithHci& h4_packet) {
 // Skip when using async mode.
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
 TEST(Example, ExampleUsage) {
+  pw::allocator::test::AllocatorForTest<4096> allocator;
+
   // Populate H4 buffer to send towards controller.
   std::array<uint8_t, emboss::InquiryCommandView::SizeInBytes() + 1>
       h4_array_from_host{};
@@ -111,7 +113,8 @@ TEST(Example, ExampleUsage) {
   ProxyHost proxy = ProxyHost(std::move(container_send_to_host_fn),
                               std::move(container_send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0);
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              &allocator);
 
   // Container passes H4 packets from host through proxy. Proxy will in turn
   // call the container-provided `container_send_to_controller_fn` to pass them
