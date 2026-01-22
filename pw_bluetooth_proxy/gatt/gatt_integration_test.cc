@@ -61,6 +61,30 @@ class FakeClientDelegate final : public Client::Delegate {
   Vector<std::pair<Error, ConnectionHandle>, 10> errors_;
 };
 
+class FakeServerDelegate final : public Server::Delegate {
+ public:
+  FakeServerDelegate() = default;
+
+  FakeServerDelegate(Function<void(ConnectionHandle)> write_available_fn)
+      : write_available_fn_(std::move(write_available_fn)) {}
+
+ private:
+  void DoHandleWriteWithoutResponse(ConnectionHandle,
+                                    AttributeHandle,
+                                    FlatConstMultiBuf&&) override {}
+
+  void DoHandleWriteAvailable(ConnectionHandle connection_handle) override {
+    if (write_available_fn_) {
+      write_available_fn_(connection_handle);
+    }
+  }
+
+  void DoHandleError(Error /*error*/,
+                     ConnectionHandle /*connection_handle*/) override {}
+
+  Function<void(ConnectionHandle)> write_available_fn_;
+};
+
 class GattIntegrationTest : public ProxyHostTest {};
 
 TEST_F(GattIntegrationTest, ReceiveNotification) {
@@ -113,6 +137,92 @@ TEST_F(GattIntegrationTest, ReceiveNotification) {
   span<const uint8_t> received_value =
       MultiBufAdapter::AsSpan(delegate.notifications()[0].value);
   EXPECT_EQ(received_value[0], expected_value);
+}
+
+TEST_F(GattIntegrationTest, SendNotifications) {
+  allocator::test::AllocatorForTest<4000> allocator;
+  pw::bluetooth::proxy::MultiBufAllocator multibuf_allocator{allocator,
+                                                             allocator};
+
+  struct {
+    Vector<H4PacketWithH4, 20> packets_sent_to_controller;
+  } capture;
+  Function<void(H4PacketWithH4&&)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& h4) {
+        capture.packets_sent_to_controller.emplace_back(std::move(h4));
+      });
+  Function<void(H4PacketWithHci&&)> send_to_host_fn([](H4PacketWithHci&&) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/1,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              &allocator);
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  PW_TEST_ASSERT_OK(
+      SendLeConnectionCompleteEvent(proxy,
+                                    cpp23::to_underlying(kConnectionHandle1),
+                                    emboss::StatusCode::SUCCESS));
+
+  Gatt gatt(proxy, allocator, multibuf_allocator);
+  std::array<CharacteristicInfo, 1> characteristic_info = {
+      CharacteristicInfo{kAttributeHandle1}};
+
+  int write_available_count = 0;
+  auto write_available_fn = [&write_available_count](ConnectionHandle) {
+    ++write_available_count;
+  };
+  FakeServerDelegate delegate(std::move(write_available_fn));
+  Result<Server> server =
+      gatt.CreateServer(kConnectionHandle1, characteristic_info, delegate);
+  PW_TEST_ASSERT_OK(server);
+
+  FlatConstMultiBuf::Instance buffer(allocator);
+  std::array<std::byte, 2> data = {std::byte{0x09}, std::byte{0x0a}};
+  buffer->PushBack(data);
+
+  StatusWithMultiBuf send_result =
+      server->SendNotification(kAttributeHandle1, std::move(buffer));
+  PW_TEST_EXPECT_OK(send_result.status);
+  RunDispatcher();
+  ASSERT_EQ(capture.packets_sent_to_controller.size(), 1u);
+
+  std::array<uint8_t, 14> kExpected = {
+      0x02,  // H4 indicator (ACL)
+             // ACL header
+      0x01,
+      0x00,  // connection handle
+      0x09,
+      0x00,  // data total length
+             // L2CAP header
+      0x05,
+      0x00,  // length
+      0x04,
+      0x00,  // channel ID (ATT)
+             // ATT header
+      0x1b,  //  opcode (ATT_HANDLE_VALUE_NTF)
+      0x01,
+      0x00,  // attribute handle
+      0x09,
+      0x0a,  // payload
+  };
+  auto sent = capture.packets_sent_to_controller.front().GetH4Span();
+  EXPECT_TRUE(
+      std::equal(sent.begin(), sent.end(), kExpected.begin(), kExpected.end()));
+
+  do {
+    FlatConstMultiBuf::Instance temp_buffer(allocator);
+    temp_buffer->PushBack(data);
+    send_result =
+        server->SendNotification(kAttributeHandle1, std::move(temp_buffer));
+  } while (send_result.status.ok());
+
+  EXPECT_EQ(write_available_count, 0);
+  PW_TEST_EXPECT_OK(SendNumberOfCompletedPackets(
+      proxy, {{cpp23::to_underlying(kConnectionHandle1), 1}}));
+  EXPECT_EQ(write_available_count, 1);
+  capture.packets_sent_to_controller.clear();
 }
 
 }  // namespace
