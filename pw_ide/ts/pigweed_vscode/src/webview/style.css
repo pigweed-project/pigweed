@@ -447,3 +447,32 @@
   background-color: var(--vscode-list-activeSelectionBackground) !important;
   color: var(--vscode-list-activeSelectionForeground) !important;
 }
+
+.blur-content {
+  filter: blur(5px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.disabled-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  text-align: center;
+  color: var(--vscode-editor-foreground);
+  background-color: rgba(0, 0, 0, 0.1);
+  /* Semi-transparent background */
+}
+
+.disabled-overlay p {
+  margin-bottom: 20px;
+  font-weight: bold;
+  padding: 0 20px;
+}

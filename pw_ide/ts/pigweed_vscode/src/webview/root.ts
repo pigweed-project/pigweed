@@ -453,13 +453,40 @@ export class Root extends LitElement {
     </div>`;
   }
 
+  @state() isExtensionDisabled = false;
+
   render() {
     const currentManualTarget =
       this.manualBazelTarget ??
       (this.cipdReport.bazelCompileCommandsManualBuildCommand || '');
 
     return html`
-      <div>
+      ${this.isExtensionDisabled
+        ? html`
+            <div class="disabled-overlay">
+              <p>
+                This doesn't look like a Pigweed or a Bazel project.<br />
+                Extension is disabled.
+              </p>
+              <div
+                class="vscode-button"
+                role="button"
+                @click="${() => {
+                  vscode.postMessage({ type: 'fileBug' });
+                }}"
+                @keydown="${(e: KeyboardEvent) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    vscode.postMessage({ type: 'fileBug' });
+                  }
+                }}"
+                tabindex="0"
+              >
+                File Bug
+              </div>
+            </div>
+          `
+        : ''}
+      <div class="${this.isExtensionDisabled ? 'blur-content' : ''}">
         ${this._renderCodeIntelligenceStatus()}
         <details id="code-intelligence-details" class="vscode-collapsible">
           <summary>
@@ -779,6 +806,9 @@ export class Root extends LitElement {
         const { type } = message;
         if (type === 'extensionData') {
           this.extensionData = message.data;
+        } else if (type === 'extensionDisabled') {
+          this.isExtensionDisabled = message.data;
+          this.requestUpdate();
         } else if (type === 'cipdReport') {
           this.cipdReport = message.data;
           this.manualBazelTarget =

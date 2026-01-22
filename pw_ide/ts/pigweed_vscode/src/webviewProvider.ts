@@ -145,6 +145,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'pigweed.webview';
 
   private _view?: vscode.WebviewView;
+  private _isExtensionDisabled = false;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -157,6 +158,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  public setExtensionDisabled(disabled: boolean) {
+    this._isExtensionDisabled = disabled;
+    this._view?.webview.postMessage({
+      type: 'extensionDisabled',
+      data: disabled,
+    });
+  }
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -165,6 +174,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ) {
     this._view = webviewView;
+
+    // Send the disabled state immediately upon resolution
+    if (this._isExtensionDisabled) {
+      webviewView.webview.postMessage({
+        type: 'extensionDisabled',
+        data: this._isExtensionDisabled,
+      });
+    }
 
     webviewView.webview.options = {
       // Allow scripts in the webview
@@ -183,6 +200,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           this._view?.webview.postMessage({
             type: 'extensionData',
             data: report,
+          });
+          this._view?.webview.postMessage({
+            type: 'extensionDisabled',
+            data: this._isExtensionDisabled,
           });
           break;
         }

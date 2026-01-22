@@ -268,41 +268,8 @@ async function configureProject(
         });
     }
   } else {
-    vscode.window
-      .showErrorMessage(
-        "I couldn't automatically determine the location of the  Pigweed " +
-          'root directory. Enter it manually, or get more help.',
-        'Browse',
-        'Get Help',
-      )
-      .then((selection) => {
-        switch (selection) {
-          case 'Browse': {
-            vscode.window
-              .showOpenDialog({
-                canSelectFiles: false,
-                canSelectFolders: true,
-                canSelectMany: false,
-              })
-              .then((result) => {
-                // The user can cancel, making result undefined
-                if (result) {
-                  const [uri] = result;
-                  settings.projectRoot(uri.fsPath);
-                  vscode.window.showInformationMessage(
-                    `Set the Pigweed project root to: ${uri.fsPath}`,
-                  );
-                  tryAgain = true;
-                }
-              });
-            break;
-          }
-          case 'Get Help': {
-            launchTroubleshootingLink('project-root');
-            break;
-          }
-        }
-      });
+    // If we can't find the root, we silently fail and let the webview show the disabled state.
+    return undefined;
   }
 
   // This should only re-run if something has materially changed, e.g., the user
@@ -462,18 +429,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   if (projectType === undefined) {
-    vscode.window
-      .showErrorMessage(
-        'A fatal error occurred while initializing the project. ' +
-          'This was unexpected. The Pigweed extension will not function. ' +
-          'Please file a bug with details about your project structure.',
-        'File Bug',
-        'Dismiss',
-      )
-      .then((selection) => {
-        if (selection === 'File Bug') fileBug();
-      });
-
+    provider.setExtensionDisabled(true);
     return;
   }
 
