@@ -14,7 +14,6 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import * as os from 'os';
 import { loadLegacySettings, loadLegacySettingsFile } from '../settings/legacy';
 import { settings, workingDir } from '../settings/vscode';
 import { globStream } from 'glob';
@@ -174,7 +173,6 @@ export async function processCompDbs() {
   };
 }
 
-const SHELL = os.userInfo().shell || '/bin/sh';
 export function getBazelInterceptorPath() {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders) return false;
@@ -196,73 +194,42 @@ export async function createBazelInterceptorFile() {
     );
   }
 
-  let bazelInterceptorScript;
-
-  if (SHELL.endsWith('fish')) {
-    bazelInterceptorScript = `#!/usr/bin/env fish
+  const bazelInterceptorScript = `#!/bin/sh
 set -u
-
-set OVERWRITE_THRESHOLD (date +%s)
-
-$BAZEL_REAL $argv
-set BAZEL_EXIT_CODE $status
-
-if test -n "$PW_IDE_VERBOSE"
-  set QUIET_BUILD
-  set VERBOSE_FLAG --verbose
-else
-  set QUIET_BUILD --quiet
-  set VERBOSE_FLAG
-end
-
-if contains -- $argv[1] build run test
-  if [ $BAZEL_EXIT_CODE -eq 0 ];
-    echo "🔄 Refreshing compile commands..." >&2
-    $BAZEL_REAL $QUIET_BUILD run --show_result=0 --experimental_convenience_symlinks=ignore @pigweed//pw_ide/bazel:update_compile_commands -- $VERBOSE_FLAG --overwrite-threshold=$OVERWRITE_THRESHOLD -- $argv
-    if [ $status -eq 0 ];
-      mkdir -p ${CDB_FILE_DIR}
-      echo $argv > ${CDB_FILE_DIR}/${LAST_BAZEL_COMMAND_FILE_NAME}
-    else
-      echo "⚠️ Compile commands generation failed (exit code $status)" >&2
-    end
-  end
-end
-
-exit $BAZEL_EXIT_CODE
-`;
-  } else {
-    bazelInterceptorScript = `#!${SHELL}
-set -uo pipefail
 
 OVERWRITE_THRESHOLD=$(date +%s)
 
-$BAZEL_REAL "$@"
+"$BAZEL_REAL" "$@"
 BAZEL_EXIT_CODE=$?
 
-if [[ -n "\${PW_IDE_VERBOSE-}" ]]; then
-  QUIET_BUILD=
-  VERBOSE_FLAG=--verbose
+if [ -n "\${PW_IDE_VERBOSE-}" ]; then
+  QUIET_BUILD=""
+  VERBOSE_FLAG="--verbose"
 else
-  QUIET_BUILD=--quiet
-  VERBOSE_FLAG=
+  QUIET_BUILD="--quiet"
+  VERBOSE_FLAG=""
 fi
 
-if [[ $# -gt 0 && ( "$1" == "build" || "$1" == "run" || "$1" == "test" ) ]]; then
-  if [ $BAZEL_EXIT_CODE -eq 0 ]; then
-    echo "🔄 Refreshing compile commands..." >&2
-    $BAZEL_REAL \${QUIET_BUILD} run --show_result=0 --experimental_convenience_symlinks=ignore @pigweed//pw_ide/bazel:update_compile_commands -- \${VERBOSE_FLAG} --overwrite-threshold=\${OVERWRITE_THRESHOLD} -- "$@"
-    if [ $? -eq 0 ]; then
-      mkdir -p ${CDB_FILE_DIR}
-      echo "$*" > ${CDB_FILE_DIR}/${LAST_BAZEL_COMMAND_FILE_NAME}
-    else
-      echo "⚠️ Compile commands generation failed (exit code $?)" >&2
-    fi
-  fi
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    build|run|test)
+      if [ "$BAZEL_EXIT_CODE" -eq 0 ]; then
+        echo "🔄 Refreshing compile commands..." >&2
+        "$BAZEL_REAL" \${QUIET_BUILD} run --show_result=0 --experimental_convenience_symlinks=ignore @pigweed//pw_ide/bazel:update_compile_commands -- \${VERBOSE_FLAG} --overwrite-threshold="\${OVERWRITE_THRESHOLD}" -- "$@"
+        STATUS=$?
+        if [ "$STATUS" -eq 0 ]; then
+          mkdir -p "${CDB_FILE_DIR}"
+          echo "$*" > "${CDB_FILE_DIR}/${LAST_BAZEL_COMMAND_FILE_NAME}"
+        else
+          echo "⚠️ Compile commands generation failed (exit code $STATUS)" >&2
+        fi
+      fi
+      ;;
+  esac
 fi
 
-exit $BAZEL_EXIT_CODE
+exit "$BAZEL_EXIT_CODE"
 `;
-  }
 
   writeFileSync(pathForBazelBuildInterceptor, bazelInterceptorScript);
   chmodSync(pathForBazelBuildInterceptor, 0o755);
