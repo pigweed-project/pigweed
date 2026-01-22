@@ -309,29 +309,6 @@ pw_add_test(pw_async2.callback_task_test
     pw_function
 )
 
-pw_add_library(pw_async2.waker_queue STATIC
-  HEADERS
-    public/pw_async2/waker_queue.h
-  PUBLIC_DEPS
-    pw_async2
-    pw_containers.inline_queue
-  PUBLIC_INCLUDES
-    public
-  SOURCES
-    waker_queue.cc
-  PRIVATE_DEPS
-    pw_log
-)
-
-pw_add_test(pw_async2.waker_queue_test
-  SOURCES
-    waker_queue_test.cc
-  PRIVATE_DEPS
-    pw_async2.pend_func_task
-    pw_async2.testing
-    pw_async2.waker_queue
-)
-
 pw_add_library(pw_async2.allocate_task INTERFACE
   HEADERS
     public/pw_async2/allocate_task.h

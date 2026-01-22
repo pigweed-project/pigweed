@@ -27,8 +27,6 @@ class Waker;
 
 namespace internal {
 
-class WakerQueueBase;
-
 template <typename Callable>
 [[nodiscard]] constexpr auto InvokeWithNodiscard(Callable&& callable) {
   return callable();
@@ -160,7 +158,6 @@ template <typename Callable>
 class Waker : public pw::IntrusiveForwardList<Waker>::Item {
   friend class Task;
   friend class Dispatcher;
-  friend class internal::WakerQueueBase;
 
  public:
   constexpr Waker() = default;

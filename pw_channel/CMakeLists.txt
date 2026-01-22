@@ -230,7 +230,6 @@ pw_add_library(pw_channel.packet_proxy STATIC
     pw_allocator.chunk_pool
     pw_async2
     pw_async2.poll
-    pw_async2.waker_queue
     pw_channel.packet_channel
     pw_containers.inline_async_queue
   PUBLIC_INCLUDES

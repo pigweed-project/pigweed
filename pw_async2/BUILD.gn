@@ -381,27 +381,6 @@ pw_test("once_sender_test") {
   sources = [ "once_sender_test.cc" ]
 }
 
-pw_source_set("waker_queue") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async2/waker_queue.h" ]
-  deps = [ "$dir_pw_log:args" ]
-  public_deps = [
-    ":pw_async2",
-    "$dir_pw_containers:inline_queue",
-  ]
-  sources = [ "waker_queue.cc" ]
-}
-
-pw_test("waker_queue_test") {
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-  deps = [
-    ":pend_func_task",
-    ":testing",
-    ":waker_queue",
-  ]
-  sources = [ "waker_queue_test.cc" ]
-}
-
 if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
   pw_source_set("coro") {
     public_configs = [ ":public_include_path" ]
@@ -725,7 +704,6 @@ pw_test_group("tests") {
     ":system_time_provider_test",
     ":task_test",
     ":value_future_test",
-    ":waker_queue_test",
   ]
   if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     tests += [

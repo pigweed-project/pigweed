@@ -276,7 +276,6 @@ pw_source_set("packet_proxy") {
     "$dir_pw_allocator:chunk_pool",
     "$dir_pw_async2:poll",
     "$dir_pw_async2:pw_async2",
-    "$dir_pw_async2:waker_queue",
     "$dir_pw_containers:inline_async_queue",
     dir_pw_allocator,
   ]

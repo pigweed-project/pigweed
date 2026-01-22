@@ -17,7 +17,6 @@
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/waker.h"
-#include "pw_async2/waker_queue.h"
 #include "pw_channel/packet_channel.h"
 
 namespace pw::channel {
@@ -67,7 +66,10 @@ class BasicProxy {
     if (!IsConnected()) {
       return async2::Ready();
     }
-    PW_ASYNC_STORE_WAKER(context, cancel_tasks_, "proxy reset signal");
+    if (!PW_ASYNC_TRY_STORE_WAKER(
+            context, cancel_task_1_, "proxy reset signal")) {
+      PW_ASYNC_STORE_WAKER(context, cancel_task_2_, "proxy reset signal");
+    }
     return async2::Pending();
   }
 
@@ -79,7 +81,8 @@ class BasicProxy {
 
   // Wakers to cancel the two tasks so they don't have to wait for a packet when
   // `Reset` is called.
-  async2::WakerQueue<2> cancel_tasks_;
+  async2::Waker cancel_task_1_;
+  async2::Waker cancel_task_2_;
 
   State state_ = State::kDisconnected;
 

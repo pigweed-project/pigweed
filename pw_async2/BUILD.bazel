@@ -471,35 +471,6 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "waker_queue",
-    srcs = [
-        "waker_queue.cc",
-    ],
-    hdrs = [
-        "public/pw_async2/waker_queue.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":pw_async2",
-        "//pw_containers:inline_queue",
-        "//pw_log:args",
-    ],
-)
-
-pw_cc_test(
-    name = "waker_queue_test",
-    srcs = [
-        "waker_queue_test.cc",
-    ],
-    deps = [
-        ":pend_func_task",
-        ":pw_async2",
-        ":testing",
-        ":waker_queue",
-    ],
-)
-
-cc_library(
     name = "coro",
     srcs = [
         "coro.cc",
@@ -887,6 +858,5 @@ filegroup(
         "public/pw_async2/try.h",
         "public/pw_async2/value_future.h",
         "public/pw_async2/waker.h",
-        "public/pw_async2/waker_queue.h",
     ],
 )

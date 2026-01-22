@@ -27,7 +27,8 @@ async2::Poll<> BasicProxy::Reset(async2::Context& context) {
            "Only one task can call Reset at a time");
   state_ = State::kResetPending;
   PW_ASYNC_STORE_WAKER(context, reset_waker_, "waiting for tasks to complete");
-  cancel_tasks_.WakeAll();  // Wake the tasks so they can disconnect.
+  cancel_task_1_.Wake();  // Wake the tasks so they can disconnect.
+  cancel_task_2_.Wake();
   return async2::Pending();
 }
 
@@ -36,7 +37,8 @@ void BasicProxy::DisconnectTask() {
     case State::kConnected:
     case State::kResetPending:
       state_ = State::kDisconnecting;
-      cancel_tasks_.WakeAll();  // Wake the other task so it can disconnect.
+      cancel_task_1_.Wake();  // Wake the other task so it can disconnect.
+      cancel_task_2_.Wake();
       break;
     case State::kDisconnecting:
       state_ = State::kDisconnected;

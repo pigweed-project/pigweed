@@ -15,7 +15,7 @@
 
 #include "pw_async2/context.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/waker_queue.h"
+#include "pw_async2/waker.h"
 #include "pw_containers/internal/count_and_capacity.h"
 
 namespace pw::containers::internal {
@@ -31,7 +31,7 @@ namespace pw::containers::internal {
 /// pending on the container at any one time. The `kMaxWakers` template
 /// parameter may be set to allow additional pending tasks, e.g. for a multi-
 /// producer, single consumer queue.
-template <typename SizeType, size_t kMaxWakers = 1>
+template <typename SizeType>
 class AsyncCountAndCapacity {
  public:
   using size_type = SizeType;
@@ -46,7 +46,7 @@ class AsyncCountAndCapacity {
     count_and_capacity_ = std::move(other.count_and_capacity_);
     pushes_reserved_ = std::exchange(other.pushes_reserved_, 0);
     pop_reserved_ = std::exchange(other.pop_reserved_, false);
-    wakers_ = std::move(other.wakers_);
+    waker_ = std::move(other.waker_);
     return *this;
   }
 
@@ -59,21 +59,21 @@ class AsyncCountAndCapacity {
 
   constexpr void SetCount(size_type count) {
     count_and_capacity_.SetCount(count);
-    wakers_.WakeAll();
+    waker_.Wake();
   }
 
   // Called by GenericDeque::PushBack/PushFront
   constexpr void IncrementCount(size_type n = 1) {
     count_and_capacity_.IncrementCount(n);
     pushes_reserved_ -= std::min(n, pushes_reserved_);
-    wakers_.WakeAll();
+    waker_.Wake();
   }
 
   // Called by GenericDeque::PopBack/PopFront
   constexpr void DecrementCount(size_type n = 1) {
     count_and_capacity_.DecrementCount(n);
     pop_reserved_ = false;
-    wakers_.WakeAll();
+    waker_.Wake();
   }
 
   /// Waits until enough room is available in the container.
@@ -86,7 +86,7 @@ class AsyncCountAndCapacity {
       return async2::Ready();
     }
     PW_ASYNC_STORE_WAKER(
-        context, wakers_, "waiting for space for items in container");
+        context, waker_, "waiting for space for items in container");
     return async2::Pending();
   }
 
@@ -96,20 +96,20 @@ class AsyncCountAndCapacity {
       pop_reserved_ = true;
       return async2::Ready();
     }
-    PW_ASYNC_STORE_WAKER(context, wakers_, "waiting for items in container");
+    PW_ASYNC_STORE_WAKER(context, waker_, "waiting for items in container");
     return async2::Pending();
   }
 
   constexpr void SetCapacity(size_type capacity) {
     count_and_capacity_.SetCapacity(capacity);
-    wakers_.WakeAll();
+    waker_.Wake();
   }
 
  private:
   CountAndCapacity<size_type> count_and_capacity_;
   size_type pushes_reserved_ = 0;
   bool pop_reserved_ = false;
-  async2::WakerQueue<kMaxWakers> wakers_;
+  async2::Waker waker_;
 };
 
 }  // namespace pw::containers::internal
