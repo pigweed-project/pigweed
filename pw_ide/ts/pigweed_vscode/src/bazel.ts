@@ -217,40 +217,9 @@ export async function setBazelRecommendedSettings() {
 export async function configureBazelSettings() {
   if (settings.disableBazelSettingsRecommendations()) return;
 
-  return new Promise((resolve) => {
-    const timeoutId = setTimeout(async () => {
-      logger.info('Auto-configuring Pigweed Bazel settings.');
-      await setBazelRecommendedSettings();
-      await settings.disableBazelSettingsRecommendations(true);
-      vscode.window.showInformationMessage(
-        "Configuring Pigweed's Bazel settings automatically...",
-      );
-      resolve(undefined);
-    }, 10000);
-    vscode.window
-      .showInformationMessage(
-        'Configure Pigweed with recommended Bazel settings?',
-        'Yes',
-        'No',
-        'Disable',
-      )
-      .then(async (value) => {
-        clearTimeout(timeoutId);
-        switch (value) {
-          case 'Yes': {
-            await setBazelRecommendedSettings();
-            await settings.disableBazelSettingsRecommendations(true);
-            break;
-          }
-          case 'Disable': {
-            await settings.disableBazelSettingsRecommendations(true);
-            vscode.window.showInformationMessage("Okay, I won't ask again.");
-            break;
-          }
-        }
-        resolve(undefined);
-      });
-  });
+  logger.info('Auto-configuring Pigweed Bazel settings.');
+  await setBazelRecommendedSettings();
+  await settings.disableBazelSettingsRecommendations(true);
 }
 
 export async function updateVendoredBazelisk() {
