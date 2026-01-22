@@ -42,10 +42,8 @@ The following code example demonstrates basic usage:
    :start-after: [pw_async2-examples-basic-coro]
    :end-before: [pw_async2-examples-basic-coro]
 
-Any value with a ``Poll<T> Pend(Context&)`` method can be passed to
-``co_await``, which will return with a ``T`` when the result is ready. The
-:cc:`PendFuncAwaitable <pw::async2::PendFuncAwaitable>` class can also be
-used to ``co_await`` on a provided delegate function.
+Any :ref:`future <module-pw_async2-futures>` can be passed to ``co_await``,
+which will return with a ``T`` when the result is ready.
 
 To return from a coroutine, ``co_return <expression>`` must be used instead of
 the usual ``return <expression>`` syntax. Because of this, the

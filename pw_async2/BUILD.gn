@@ -454,32 +454,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_status",
     ]
   }
-
-  pw_source_set("pend_func_awaitable") {
-    public_configs = [ ":public_include_path" ]
-    public = [ "public/pw_async2/pend_func_awaitable.h" ]
-    public_deps = [
-      ":poll",
-      ":pw_async2",
-      dir_pw_function,
-    ]
-  }
-
-  pw_test("pend_func_awaitable_test") {
-    enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-    deps = [
-      ":coro",
-      ":coro_or_else_task",
-      ":pend_func_awaitable",
-      ":poll",
-      ":pw_async2",
-      ":testing",
-      "$dir_pw_allocator:testing",
-      "$dir_pw_status",
-      dir_pw_function,
-    ]
-    sources = [ "pend_func_awaitable_test.cc" ]
-  }
 }
 
 pw_source_set("time_provider") {
@@ -758,7 +732,6 @@ pw_test_group("tests") {
       ":channel_coro_test",
       ":coro_test",
       ":coro_or_else_task_test",
-      ":pend_func_awaitable_test",
     ]
   }
 }

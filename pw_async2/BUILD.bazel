@@ -376,35 +376,6 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "pend_func_awaitable",
-    hdrs = [
-        "public/pw_async2/pend_func_awaitable.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":poll",
-        ":pw_async2",
-        "//pw_function",
-    ],
-)
-
-pw_cc_test(
-    name = "pend_func_awaitable_test",
-    srcs = ["pend_func_awaitable_test.cc"],
-    deps = [
-        ":coro",
-        ":coro_or_else_task",
-        ":pend_func_awaitable",
-        ":poll",
-        ":pw_async2",
-        ":testing",
-        "//pw_allocator:testing",
-        "//pw_function",
-        "//pw_status",
-    ],
-)
-
-cc_library(
     name = "pend_func_task",
     hdrs = [
         "public/pw_async2/pend_func_task.h",
@@ -904,7 +875,6 @@ filegroup(
         "public/pw_async2/notified_dispatcher.h",
         "public/pw_async2/once_sender.h",
         "public/pw_async2/owned_task.h",
-        "public/pw_async2/pend_func_awaitable.h",
         "public/pw_async2/pend_func_task.h",
         "public/pw_async2/pendable.h",
         "public/pw_async2/poll.h",
