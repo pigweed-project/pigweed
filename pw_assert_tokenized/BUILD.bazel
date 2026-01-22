@@ -93,6 +93,7 @@ cc_library(
     hdrs = [
         "public/pw_assert_tokenized/check_tokenized.h",
     ],
+    strip_include_prefix = "public",
     visibility = ["//visibility:private"],
     deps = [
         ":handler",

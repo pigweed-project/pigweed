@@ -88,6 +88,7 @@ cc_binary(
     ],
     deps = [
         ":initiator",
+        "//pw_assert:check",
         "//pw_build:default_link_extra_lib",
         "//pw_log",
         "//pw_preprocessor",

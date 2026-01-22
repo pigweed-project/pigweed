@@ -110,7 +110,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":address",
-        "//pw_assert:check",
+        "//pw_assert:assert",
         "//pw_bytes",
         "//pw_status",
     ],
