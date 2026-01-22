@@ -27,16 +27,30 @@ class AdvertisingPacketFilter {
   // filtering on if this feature is enabled for the current Controller or not.
   class Config {
    public:
-    Config(bool offloading_supported, uint8_t max_filters)
+    // Maps to the delivery mode we instruct the controller to use when
+    // reporting back peers while packet filters are offloaded. See
+    // https://source.android.com/docs/core/connect/bluetooth/hci_requirements
+    // for details (LE_APCF_Command: set_filtering_parameters_sub_cmd).
+    enum class DeliveryMode {
+      kImmediate,
+      kBatched,
+    };
+
+    Config(bool offloading_supported,
+           uint8_t max_filters,
+           DeliveryMode peer_delivery_mode)
         : offloading_supported_(offloading_supported),
-          max_filters_(max_filters) {}
+          max_filters_(max_filters),
+          delivery_mode_(peer_delivery_mode) {}
 
     bool offloading_supported() const { return offloading_supported_; }
     uint8_t max_filters() const { return max_filters_; }
+    DeliveryMode delivery_mode() const { return delivery_mode_; }
 
    private:
     bool offloading_supported_ = false;
     uint8_t max_filters_ = 0;
+    DeliveryMode delivery_mode_ = DeliveryMode::kImmediate;
   };
 
   using ScanId = uint16_t;

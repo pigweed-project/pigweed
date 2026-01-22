@@ -108,7 +108,10 @@ class PeriodicAdvertisingSyncManagerTest : public TestingBase {
         [this](bool enabled) { scan_states_.push_back(enabled); });
 
     hci::AdvertisingPacketFilter::Config packet_filter_config(
-        /*offloading_enabled=*/false, /*max_filters=*/0);
+        /*offloading_enabled=*/false,
+        /*max_filters=*/0,
+        /*peer_delivery_mode=*/
+        hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate);
     scanner_.emplace(&address_delegate_,
                      packet_filter_config,
                      transport()->GetWeakPtr(),

@@ -117,7 +117,10 @@ class LowEnergyConnectionManagerTest : public TestingBase {
     gatt_ = std::make_unique<gatt::testing::FakeLayer>(dispatcher());
     sm_factory_ = std::make_unique<TestSmFactory>();
 
-    hci::AdvertisingPacketFilter::Config packet_filter_config(false, 0);
+    hci::AdvertisingPacketFilter::Config packet_filter_config(
+        false,
+        0,
+        hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate);
 
     address_manager_ = std::make_unique<LowEnergyAddressManager>(
         kAdapterAddress,

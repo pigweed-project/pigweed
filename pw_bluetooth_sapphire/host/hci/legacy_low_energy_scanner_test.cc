@@ -54,7 +54,10 @@ class LegacyLowEnergyScannerTest : public TestingBase,
 
     scanner_ = std::make_unique<LegacyLowEnergyScanner>(
         fake_address_delegate(),
-        AdvertisingPacketFilter::Config(false, 0),
+        AdvertisingPacketFilter::Config(
+            false,
+            0,
+            AdvertisingPacketFilter::Config::DeliveryMode::kImmediate),
         transport()->GetWeakPtr(),
         dispatcher());
     scanner_->SetPacketFilters(0, {});

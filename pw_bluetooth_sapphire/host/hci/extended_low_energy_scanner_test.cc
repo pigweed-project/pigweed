@@ -64,7 +64,10 @@ class ExtendedLowEnergyScannerTest : public TestingBase,
 
     scanner_ = std::make_unique<ExtendedLowEnergyScanner>(
         &fake_address_delegate_,
-        AdvertisingPacketFilter::Config(false, 0),
+        AdvertisingPacketFilter::Config(
+            false,
+            0,
+            AdvertisingPacketFilter::Config::DeliveryMode::kImmediate),
         transport()->GetWeakPtr(),
         dispatcher());
     scanner_->SetPacketFilters(0, {});

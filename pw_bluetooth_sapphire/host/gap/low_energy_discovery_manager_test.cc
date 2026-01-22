@@ -91,7 +91,10 @@ class LowEnergyDiscoveryManagerTest : public TestingBase {
  protected:
   void SetupDiscoveryManager(
       bool extended = false,
-      hci::AdvertisingPacketFilter::Config packet_filter_config = {false, 0}) {
+      hci::AdvertisingPacketFilter::Config packet_filter_config = {
+          false,
+          0,
+          hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate}) {
     discovery_manager_ = nullptr;
     if (extended) {
       scanner_ = std::make_unique<hci::ExtendedLowEnergyScanner>(
@@ -1243,7 +1246,11 @@ TEST_F(LowEnergyDiscoveryManagerTest, StartActiveScanDuringPassiveScan) {
 
 TEST_F(LowEnergyDiscoveryManagerTest,
        DISABLED_StartScanDuringOffloadedFilters) {
-  SetupDiscoveryManager(/*extended=*/false, {true, 8});
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {true,
+       8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
 
   auto session_a = StartDiscoverySession(false);
   RunUntilIdle();

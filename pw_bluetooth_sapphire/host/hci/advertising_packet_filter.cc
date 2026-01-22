@@ -604,7 +604,18 @@ CommandPacket AdvertisingPacketFilter::BuildSetParametersCommand(
     view.rssi_high_threshold().Write(std::numeric_limits<int8_t>::min());
   }
 
-  view.delivery_mode().Write(android_emb::ApcfDeliveryMode::IMMEDIATE);
+  android_emb::ApcfDeliveryMode delivery_mode =
+      android_emb::ApcfDeliveryMode::IMMEDIATE;
+  switch (config_.delivery_mode()) {
+    case AdvertisingPacketFilter::Config::DeliveryMode::kImmediate:
+      delivery_mode = android_emb::ApcfDeliveryMode::IMMEDIATE;
+      break;
+    case AdvertisingPacketFilter::Config::DeliveryMode::kBatched:
+      delivery_mode = android_emb::ApcfDeliveryMode::BATCHED;
+      break;
+  }
+
+  view.delivery_mode().Write(delivery_mode);
 
   // The rest of the packet contains configuration for, and is only valid
   // when, the delivery mode is ON_FOUND. We aren't using that delivery mode

@@ -103,19 +103,25 @@ class LowEnergyScannerTest : public TestingBase,
   template <bool same = std::is_same_v<T, ExtendedLowEnergyScanner>>
   std::enable_if_t<same, ExtendedLowEnergyScanner>* CreateScannerInternal(
       bool enable_offloading = false, uint8_t max_filters = 4) {
-    return new ExtendedLowEnergyScanner(fake_address_delegate(),
-                                        {enable_offloading, max_filters},
-                                        transport()->GetWeakPtr(),
-                                        dispatcher());
+    return new ExtendedLowEnergyScanner(
+        fake_address_delegate(),
+        {enable_offloading,
+         max_filters,
+         AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+        transport()->GetWeakPtr(),
+        dispatcher());
   }
 
   template <bool same = std::is_same_v<T, LegacyLowEnergyScanner>>
   std::enable_if_t<same, LegacyLowEnergyScanner>* CreateScannerInternal(
       bool enable_offloading = false, uint8_t max_filters = 4) {
-    return new LegacyLowEnergyScanner(fake_address_delegate(),
-                                      {enable_offloading, max_filters},
-                                      transport()->GetWeakPtr(),
-                                      dispatcher());
+    return new LegacyLowEnergyScanner(
+        fake_address_delegate(),
+        {enable_offloading,
+         max_filters,
+         AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+        transport()->GetWeakPtr(),
+        dispatcher());
   }
 
   void EnableOffloading(uint8_t max_filters = 4) {

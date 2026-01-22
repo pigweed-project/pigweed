@@ -32,6 +32,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
+#include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
 
 namespace bt::testing {
 namespace {
@@ -191,6 +192,7 @@ void FakeController::Settings::ApplyAndroidVendorExtensionDefaults() {
   view.max_advt_instances().Write(3);
   view.version_supported().major_number().Write(0);
   view.version_supported().minor_number().Write(55);
+  view.total_scan_results_storage().Write(1);
 }
 
 bool FakeController::Settings::is_event_unmasked(
@@ -4629,6 +4631,20 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandAdd(
   filter.filter_logic_type = params.filter_logic_type().Read();
   filter.rssi_high_threshold = params.rssi_high_threshold().Read();
   filter.rssi_low_threshold = params.rssi_low_threshold().Read();
+
+  switch (params.delivery_mode().Read()) {
+    case android_emb::ApcfDeliveryMode::IMMEDIATE:
+      filter.delivery_mode =
+          hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate;
+      break;
+    case android_emb::ApcfDeliveryMode::BATCHED:
+      filter.delivery_mode =
+          hci::AdvertisingPacketFilter::Config::DeliveryMode::kBatched;
+      break;
+    case android_emb::ApcfDeliveryMode::ON_FOUND:
+      PW_CRASH("fake controller doesn't support the on_found delivery mode");
+      break;
+  }
 
   // We ignore devliery modes other than immediate delivery for testing
   // purposes: fields related to a delivery mode of ON_FOUND aren't read

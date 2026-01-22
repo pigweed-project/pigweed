@@ -460,8 +460,11 @@ class AdapterImpl final : public Adapter {
       const hci::EventPacket& event);
 
   hci::AdvertisingPacketFilter::Config GetPacketFilterConfig() const {
+    using PeerDeliveryMode = hci::AdvertisingPacketFilter::Config::DeliveryMode;
+
     bool offloading_enabled = false;
     uint8_t max_filters = 0;
+    PeerDeliveryMode peer_delivery_mode = PeerDeliveryMode::kImmediate;
 
     // TODO(b/448475405): We suspect there is a bug with advertising packet
     // filtering where we don't get scan results on time from the Controller. So
@@ -483,8 +486,8 @@ class AdapterImpl final : public Adapter {
            offloading_enabled ? "yes" : "no",
            max_filters);
 
-    return hci::AdvertisingPacketFilter::Config(offloading_enabled,
-                                                max_filters);
+    return hci::AdvertisingPacketFilter::Config(
+        offloading_enabled, max_filters, peer_delivery_mode);
   }
 
   std::unique_ptr<hci::LowEnergyAdvertiser> CreateAdvertiser(bool extended) {

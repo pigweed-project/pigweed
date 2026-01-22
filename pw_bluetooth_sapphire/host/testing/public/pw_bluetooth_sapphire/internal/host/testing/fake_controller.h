@@ -26,6 +26,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/le_connection_parameters.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
+#include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_advertiser.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test_double_base.h"
@@ -194,6 +195,9 @@ class FakeController final : public ControllerTestDoubleBase,
 
     std::optional<uint8_t> rssi_high_threshold = 0;
     std::optional<uint8_t> rssi_low_threshold = 0;
+
+    hci::AdvertisingPacketFilter::Config::DeliveryMode delivery_mode =
+        hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate;
   };
 
   struct PacketFilterState final {
