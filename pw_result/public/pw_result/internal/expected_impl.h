@@ -378,6 +378,7 @@ class expected<T, E, std::enable_if_t<!std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) & {
     using U = remove_cvref_t<std::invoke_result_t<F, decltype(value())>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f), value());
     } else {
@@ -387,6 +388,7 @@ class expected<T, E, std::enable_if_t<!std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) && {
     using U = remove_cvref_t<std::invoke_result_t<F, decltype(value())>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f), std::move(value()));
     } else {
@@ -396,6 +398,7 @@ class expected<T, E, std::enable_if_t<!std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) const& {
     using U = remove_cvref_t<std::invoke_result_t<F, decltype(value())>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f), value());
     } else {
@@ -405,6 +408,7 @@ class expected<T, E, std::enable_if_t<!std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) const&& {
     using U = remove_cvref_t<std::invoke_result_t<F, decltype(value())>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f), std::move(value()));
     } else {
@@ -825,6 +829,7 @@ class expected<T, E, std::enable_if_t<std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) & {
     using U = remove_cvref_t<std::invoke_result_t<F>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f));
     } else {
@@ -834,6 +839,7 @@ class expected<T, E, std::enable_if_t<std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) && {
     using U = remove_cvref_t<std::invoke_result_t<F>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f));
     } else {
@@ -843,6 +849,7 @@ class expected<T, E, std::enable_if_t<std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) const& {
     using U = remove_cvref_t<std::invoke_result_t<F>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f));
     } else {
@@ -852,6 +859,7 @@ class expected<T, E, std::enable_if_t<std::is_void_v<T>>> {
   template <class F>
   constexpr auto and_then(F&& f) const&& {
     using U = remove_cvref_t<std::invoke_result_t<F>>;
+    static_assert(std::is_same_v<typename U::error_type, error_type>);
     if (has_value()) {
       return std::invoke(std::forward<F>(f));
     } else {

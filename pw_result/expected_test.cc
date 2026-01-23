@@ -177,21 +177,21 @@ expected<SmallString, std::string_view> FailableFunction2(bool fail, int num) {
   return Itoa(num);
 }
 
-expected<int, std::string_view> FailOnOdd(int x) {
+expected<int, const char*> FailOnOdd(int x) {
   if (x % 2) {
     return unexpected("odd");
   }
   return x;
 }
 
-expected<SmallString, std::string_view> ItoaFailOnNegative(int x) {
+expected<SmallString, const char*> ItoaFailOnNegative(int x) {
   if (x < 0) {
     return unexpected("negative");
   }
   return Itoa(x);
 }
 
-expected<char, std::string_view> GetSecondChar(std::string_view s) {
+expected<char, const char*> GetSecondChar(std::string_view s) {
   if (s.size() < 2) {
     return unexpected("string too small");
   }
