@@ -93,6 +93,7 @@ sphinx_docs_library(
         "build/bazel/integration/modules.rst",
         "build/bazel/integration/setup.rst",
         "build/bazel/dependencies.rst",
+        "build/bazel/mcu-setup.rst",
         "build/bazel/quickstart.rst",
         "build/index.rst",
         "build/cmake/index.rst",

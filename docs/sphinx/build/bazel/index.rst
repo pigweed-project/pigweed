@@ -39,13 +39,12 @@ Explore other Bazel topics
       Learn how to use and control Bazel's powerful project system to
       manage externally-provided resources and package managers.
 
-   .. grid-item-card:: :octicon:`rocket` Bazel build compatibility patterns
-      :link: docs-bazel-compatibility
+   .. grid-item-card:: :octicon:`rocket` Set up a MCU platform
+      :link: docs-bazel-mcu-setup
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      A deep-dive into the Bazel patterns Pigweed uses to express that a build
-      target is compatible with a platform
+      Learn how to set up a MCU platform and bind it to a toolchain.
 
 .. grid:: 2
 
@@ -58,6 +57,14 @@ Explore other Bazel topics
       as a dependency, start using Pigweed modules, and set up static and
       runtime analysis.
 
+   .. grid-item-card:: :octicon:`rocket` Bazel build compatibility patterns
+      :link: docs-bazel-compatibility
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      A deep-dive into the Bazel patterns Pigweed uses to express that a build
+      target is compatible with a platform
+
 .. toctree::
    :maxdepth: 2
    :hidden:
@@ -67,4 +74,5 @@ Explore other Bazel topics
    quickstart
    integration/index
    dependencies
+   mcu-setup
    compatibility
