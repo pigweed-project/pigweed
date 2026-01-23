@@ -1,7 +1,15 @@
 # Change Log
 
+## [1.10.2] - 2026-01-21
 
-## [1.10.0] - 2025-12-19
+### 🐛 Bug Fixes
+
+ * Fix where a subdir of the workspace was being treated as the workspace root.
+ * Simplify Bazel wrapper script generation.
+ * Handle non-Pigweed or non-Bazel workspaces more gracefully.
+ * Remove unneeded user confirmation prompt on first run.
+
+## [1.10.1] - 2025-12-19
 
 ### 🐛 Bug Fixes
 

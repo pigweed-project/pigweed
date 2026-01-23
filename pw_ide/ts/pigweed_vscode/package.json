@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://pigweed.googlesource.com/pigweed/pigweed"
   },
-  "version": "1.10.1",
+  "version": "1.10.2",
   "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.75.0"
