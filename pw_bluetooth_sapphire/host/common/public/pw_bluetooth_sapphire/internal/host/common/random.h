@@ -11,11 +11,13 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-
 #pragma once
-#include <pw_assert/check.h>
 
+#include <type_traits>
+
+#include "pw_assert/check.h"
 #include "pw_random/random.h"
+
 namespace bt {
 
 // Returns the global random number generator. This returns nullptr until it is

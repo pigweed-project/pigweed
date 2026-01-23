@@ -49,9 +49,7 @@ class Service final {
   }
 
   // Adds the given characteristic to this service.
-  inline void AddCharacteristic(CharacteristicPtr&& chr) {
-    characteristics_.push_back(std::forward<CharacteristicPtr>(chr));
-  }
+  void AddCharacteristic(CharacteristicPtr&& chr);
 
   // TODO(armansito): Support included services.
 
@@ -105,9 +103,7 @@ class Characteristic final {
     return std::move(descriptors_);
   }
 
-  inline void AddDescriptor(DescriptorPtr&& desc) {
-    descriptors_.push_back(std::forward<DescriptorPtr>(desc));
-  }
+  void AddDescriptor(DescriptorPtr&& desc);
 
  private:
   IdType id_;
@@ -152,5 +148,15 @@ class Descriptor final {
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Descriptor);
 };
+
+// Define after the class definitions since deleting incomplete types is not
+// permitted in C++23.
+inline void Service::AddCharacteristic(CharacteristicPtr&& chr) {
+  characteristics_.push_back(std::forward<CharacteristicPtr>(chr));
+}
+
+inline void Characteristic::AddDescriptor(DescriptorPtr&& desc) {
+  descriptors_.push_back(std::forward<DescriptorPtr>(desc));
+}
 
 }  // namespace bt::gatt
