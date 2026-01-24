@@ -686,6 +686,84 @@ class MergerTest(fake_filesystem_unittest.TestCase):
             data = json.load(f)
         self.assertEqual(len(data), 2)
 
+    @mock.patch('pw_ide.merger._run_bazel_build_for_fragments')
+    def test_merge_groups_conflict_skip(self, mock_build):
+        """Tests that conflicting fragments from groups are skipped."""
+        fragment_path = self.output_path / f'target.p1{_FRAGMENT_SUFFIX}'
+        safe_fragment_path = self.output_path / f'safe.p1{_FRAGMENT_SUFFIX}'
+
+        def side_effect(build_args, _verbose, _execution_root):
+            # Simulate different content for different calls
+            if self.fs.exists(fragment_path):
+                self.fs.remove_object(str(fragment_path))
+
+            # Always create the safe fragment
+            if not self.fs.exists(safe_fragment_path):
+                self.fs.create_file(
+                    safe_fragment_path,
+                    contents=(
+                        '[{"file": "safe.cc", '
+                        '"directory": "__WORKSPACE_ROOT__", '
+                        '"arguments": ["3"]}]'
+                    ),
+                )
+
+            if '//t1' in build_args:
+                self.fs.create_file(
+                    fragment_path,
+                    contents=(
+                        '[{"file": "a.cc", '
+                        '"directory": "__WORKSPACE_ROOT__", '
+                        '"arguments": ["1"]}]'
+                    ),
+                )
+            else:
+                self.fs.create_file(
+                    fragment_path,
+                    contents=(
+                        '[{"file": "a.cc", '
+                        '"directory": "__WORKSPACE_ROOT__", '
+                        '"arguments": ["2"]}]'
+                    ),
+                )
+            return {fragment_path, safe_fragment_path}
+
+        mock_build.side_effect = side_effect
+
+        groups_file = self.workspace_root / 'groups.json'
+        self.fs.create_file(
+            groups_file,
+            contents=json.dumps(
+                {
+                    'compile_commands_patterns': [
+                        {'platform': 'p1', 'target_patterns': ['//t1']},
+                        {'platform': 'p1', 'target_patterns': ['//t2']},
+                    ]
+                }
+            ),
+        )
+
+        with mock.patch.object(
+            sys,
+            'argv',
+            ['merger.py', f'--compile-command-groups={groups_file}'],
+        ):
+            with io.StringIO() as buf, redirect_stderr(buf):
+                self.assertEqual(merger.main(), 0)
+                self.assertIn('Skipping this fragment', buf.getvalue())
+
+        merged_path = (
+            self.workspace_root
+            / '.compile_commands'
+            / 'p1'
+            / 'compile_commands.json'
+        )
+        with open(merged_path, 'r') as f:
+            data = json.load(f)
+        # Should contain ONLY safe.cc
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['file'], 'safe.cc')
+
 
 if __name__ == '__main__':
     unittest.main()
