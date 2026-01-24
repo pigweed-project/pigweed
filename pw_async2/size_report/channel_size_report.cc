@@ -16,7 +16,7 @@
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 namespace pw::async2::size_report {

@@ -15,7 +15,7 @@
 #include "pw_async2/future.h"
 
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/try.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"

@@ -378,7 +378,7 @@ pw_cc_test(
 cc_library(
     name = "pend_func_task",
     hdrs = [
-        "public/pw_async2/pend_func_task.h",
+        "public/pw_async2/func_task.h",
     ],
     strip_include_prefix = "public",
     deps = [
@@ -388,8 +388,8 @@ cc_library(
 )
 
 pw_cc_test(
-    name = "pend_func_task_test",
-    srcs = ["pend_func_task_test.cc"],
+    name = "func_task_test",
+    srcs = ["func_task_test.cc"],
     deps = [
         ":pend_func_task",
         ":pw_async2",
@@ -839,6 +839,7 @@ filegroup(
         "public/pw_async2/dispatcher_for_test.h",
         "public/pw_async2/enqueue_heap_func.h",
         "public/pw_async2/epoll_dispatcher.h",
+        "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
         "public/pw_async2/future_timeout.h",
         "public/pw_async2/internal/config.h",
@@ -846,7 +847,6 @@ filegroup(
         "public/pw_async2/notified_dispatcher.h",
         "public/pw_async2/once_sender.h",
         "public/pw_async2/owned_task.h",
-        "public/pw_async2/pend_func_task.h",
         "public/pw_async2/pendable.h",
         "public/pw_async2/poll.h",
         "public/pw_async2/runnable_dispatcher.h",

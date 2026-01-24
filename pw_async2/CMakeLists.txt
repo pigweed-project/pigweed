@@ -271,19 +271,41 @@ pw_add_test(pw_async2.value_future_thread_test
     pw_thread.thread
 )
 
+# Temporarily generate a symlink for pw_async2/pend_func_task.h for backwards
+# compatibility.
+set(compat_dir "${CMAKE_CURRENT_BINARY_DIR}/pend_func_task_compat")
+
+add_custom_command(
+  COMMAND
+    ${CMAKE_COMMAND} -E create_symlink
+    "${CMAKE_CURRENT_LIST_DIR}/public/pw_async2/func_task.h"
+    "${compat_dir}/pw_async2/pend_func_task.h"
+  OUTPUT
+    "${compat_dir}/pw_async2/pend_func_task.h"
+)
+
+add_custom_target(pw_async2._func_task_compat
+  DEPENDS
+    "${compat_dir}/pw_async2/pend_func_task.h"
+)
+
 pw_add_library(pw_async2.pend_func_task INTERFACE
   HEADERS
-    public/pw_async2/pend_func_task.h
+    public/pw_async2/func_task.h
+  GENERATED_HEADERS
+    "${compat_dir}/pw_async2/pend_func_task.h"
   PUBLIC_DEPS
     pw_async2
     pw_function
   PUBLIC_INCLUDES
     public
+    "${compat_dir}"
 )
+add_dependencies(pw_async2.pend_func_task pw_async2._func_task_compat)
 
-pw_add_test(pw_async2.pend_func_task_test
+pw_add_test(pw_async2.func_task_test
   SOURCES
-    pend_func_task_test.cc
+    func_task_test.cc
   PRIVATE_DEPS
     pw_async2.testing
     pw_async2.pend_func_task

@@ -16,7 +16,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/task.h"
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/comms2/h4_packet.h"

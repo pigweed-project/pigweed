@@ -19,7 +19,7 @@
 #include "pw_assert/assert.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/context.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/try.h"
 #include "pw_async2/waker.h"

@@ -14,8 +14,8 @@
 
 #include "pw_assert/check.h"
 #include "pw_async2/basic_dispatcher.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/future.h"
-#include "pw_async2/pend_func_task.h"
 #include "pw_digital_io/digital_io.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"

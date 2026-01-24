@@ -303,21 +303,21 @@ pw_test("value_future_thread_test") {
 
 pw_source_set("pend_func_task") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async2/pend_func_task.h" ]
+  public = [ "public/pw_async2/func_task.h" ]
   public_deps = [
     ":pw_async2",
     dir_pw_function,
   ]
 }
 
-pw_test("pend_func_task_test") {
+pw_test("func_task_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
     ":pend_func_task",
     ":pw_async2",
     ":testing",
   ]
-  sources = [ "pend_func_task_test.cc" ]
+  sources = [ "func_task_test.cc" ]
 }
 
 pw_source_set("callback_task") {
@@ -696,7 +696,7 @@ pw_test_group("tests") {
     ":future_test",
     ":join_test",
     ":poll_test",
-    ":pend_func_task_test",
+    ":func_task_test",
     ":pendable_test",
     ":once_sender_test",
     ":select_test",

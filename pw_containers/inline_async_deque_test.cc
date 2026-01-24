@@ -16,7 +16,7 @@
 
 #include "pw_async2/context.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/try.h"
 #include "pw_containers/internal/container_tests.h"
 #include "pw_containers/internal/test_helpers.h"

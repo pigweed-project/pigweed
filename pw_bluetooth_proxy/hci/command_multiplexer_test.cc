@@ -19,7 +19,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_bluetooth/hci_h4.emb.h"
 #include "pw_chrono/system_clock.h"

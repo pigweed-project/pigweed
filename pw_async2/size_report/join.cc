@@ -16,7 +16,7 @@
 
 #include "public/pw_async2/size_report/size_report.h"
 #include "pw_async2/basic_dispatcher.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_async2/size_report/size_report.h"
 #include "pw_async2/value_future.h"
 #include "pw_bloat/bloat_this_binary.h"

@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 
 #include <optional>
 #include <utility>

@@ -23,7 +23,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/allocate_task.h"
 #include "pw_async2/basic_dispatcher.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_log/log.h"
 #include "pw_rpc/echo_service_pwpb.h"
 #include "pw_sync/interrupt_spin_lock.h"

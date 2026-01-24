@@ -18,7 +18,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_channel/packet_proxy_task.h"
 #include "pw_channel/test_packet_channel.h"
 #include "pw_unit_test/framework.h"

@@ -16,7 +16,7 @@
 
 #include "pw_async/fake_dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pend_func_task.h"
+#include "pw_async2/func_task.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/fake_adapter.h"
 #include "pw_unit_test/framework.h"
 
