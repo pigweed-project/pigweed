@@ -31,7 +31,7 @@ TEST(CoinSlotTest, PendAndDeposit) {
   CoinSlot coin_slot;
   unsigned int coins = 0;
 
-  pw::async2::PendFuncTask task([&](Context& context) -> Poll<> {
+  pw::async2::FuncTask task([&](Context& context) -> Poll<> {
     PW_TRY_READY_ASSIGN(coins, coin_slot.Pend(context));
     return Ready();
   });

@@ -22,7 +22,7 @@
 
 namespace {
 
-using ::pw::async2::PendFuncTask;
+using ::pw::async2::FuncTask;
 using ::pw::channel::PendingWrite;
 
 class TestPacketReaderWriterTest : public ::testing::Test {
@@ -36,7 +36,7 @@ class TestPacketReaderWriterTest : public ::testing::Test {
 
 TEST_F(TestPacketReaderWriterTest, Read) {
   int completed = 0;
-  PendFuncTask task([&](pw::async2::Context& cx) -> pw::async2::Poll<> {
+  FuncTask task([&](pw::async2::Context& cx) -> pw::async2::Poll<> {
     PW_TRY_READY_ASSIGN(pw::Result<const char*> result, channel_.PendRead(cx));
     EXPECT_STREQ(result.value(), "hello");
     completed += 1;
@@ -53,7 +53,7 @@ TEST_F(TestPacketReaderWriterTest, Read) {
 
 TEST_F(TestPacketReaderWriterTest, Write) {
   int completed = 0;
-  PendFuncTask task([&](pw::async2::Context& cx) -> pw::async2::Poll<> {
+  FuncTask task([&](pw::async2::Context& cx) -> pw::async2::Poll<> {
     PW_TRY_READY_ASSIGN(pw::Result<PendingWrite<const char*>> pending_write,
                         channel_.PendReadyToWrite(cx, 3));
     EXPECT_EQ(pending_write.status(), pw::OkStatus());

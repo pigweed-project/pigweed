@@ -31,7 +31,7 @@
 namespace {
 
 using ::pw::async2::Context;
-using ::pw::async2::PendFuncTask;
+using ::pw::async2::FuncTask;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
@@ -80,7 +80,7 @@ TEST(StreamChannel, ReadsAndWritesData) {
       test_data->channel_output_writer,
       test_data->write_thread_cx.options());
 
-  PendFuncTask read_task([&](Context& cx) -> Poll<> {
+  FuncTask read_task([&](Context& cx) -> Poll<> {
     auto read = stream_channel->PendRead(cx);
     if (read.IsPending()) {
       return Pending();
@@ -93,7 +93,7 @@ TEST(StreamChannel, ReadsAndWritesData) {
   });
 
   MultiBuf to_send = test_data->allocator.BufWith({4_b, 5_b, 6_b});
-  PendFuncTask write_task([&](Context& cx) -> Poll<> {
+  FuncTask write_task([&](Context& cx) -> Poll<> {
     if (stream_channel->PendReadyToWrite(cx).IsPending()) {
       return Pending();
     }

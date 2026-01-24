@@ -41,7 +41,7 @@ int SingleTypeSelect(uint32_t mask) {
                     PendableFor<&PendableInt::Get>(value_2),
                     PendableFor<&PendableInt::Get>(value_3));
   decltype(selector.Pend(std::declval<Context&>())) result = Pending();
-  PendFuncTask task([&](Context& cx) {
+  FuncTask task([&](Context& cx) {
     result = selector.Pend(cx);
     return result.Readiness();
   });
@@ -80,7 +80,7 @@ int MultiTypeSelect(uint32_t mask) {
                     PendableFor<&PendableUint::Get>(value_2),
                     PendableFor<&PendableChar::Get>(value_3));
   decltype(selector.Pend(std::declval<Context&>())) result = Pending();
-  PendFuncTask task([&](Context& cx) {
+  FuncTask task([&](Context& cx) {
     result = selector.Pend(cx);
     return result.Readiness();
   });
@@ -203,14 +203,12 @@ int Measure() {
 #if defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL) || \
     defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER)
   PendableInt pendable_int(47);
-  PendFuncTask task2(
-      [&](Context& cx) { return pendable_int.Get(cx).Readiness(); });
+  FuncTask task2([&](Context& cx) { return pendable_int.Get(cx).Readiness(); });
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
 
   SelectComparison comparison;
-  PendFuncTask task3(
-      [&](Context& cx) { return comparison.Pend(cx).Readiness(); });
+  FuncTask task3([&](Context& cx) { return comparison.Pend(cx).Readiness(); });
   dispatcher.Post(task3);
   dispatcher.RunUntilStalled();
 #endif

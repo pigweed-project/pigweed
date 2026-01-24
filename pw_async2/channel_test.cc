@@ -31,11 +31,11 @@ using pw::async2::CreateMpscChannel;
 using pw::async2::CreateSpmcChannel;
 using pw::async2::CreateSpscChannel;
 using pw::async2::DispatcherForTest;
+using pw::async2::FuncTask;
 using pw::async2::McChannelHandle;
 using pw::async2::MpChannelHandle;
 using pw::async2::MpmcChannelHandle;
 using pw::async2::MpscChannelHandle;
-using pw::async2::PendFuncTask;
 using pw::async2::Pending;
 using pw::async2::Poll;
 using pw::async2::Ready;
@@ -454,7 +454,7 @@ TEST(StaticChannel, ReserveSendReservesSpace) {
   static constexpr int kFirstSendValue = 40;
   static constexpr int kSecondSendValue = 43;
 
-  PendFuncTask reserved_sender_task(
+  FuncTask reserved_sender_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         // This task runs once without sleeping.
         // The channel has two slots. First, we reserve a slot through
@@ -501,7 +501,7 @@ TEST(StaticChannel, ReserveSendReleasesSpaceWhenDropped) {
   static constexpr int kFirstSendValue = 40;
   static constexpr int kSecondSendValue = 43;
 
-  PendFuncTask reserved_sender_task(
+  FuncTask reserved_sender_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         // This task runs once without sleeping.
         // The channel has two slots. First, we reserve a slot through
@@ -552,7 +552,7 @@ TEST(StaticChannel, ReserveSendManualCancel) {
   static constexpr int kFirstSendValue = 40;
   static constexpr int kSecondSendValue = 43;
 
-  PendFuncTask reserved_sender_task(
+  FuncTask reserved_sender_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         // This task runs once without sleeping.
         // The channel has two slots. First, we reserve a slot through
@@ -636,7 +636,7 @@ TEST(StaticChannel, MoveOnly) {
   Receiver<MoveOnly> channel_receiver = channel.CreateReceiver();
   channel.Release();
 
-  PendFuncTask sender_task(
+  FuncTask sender_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         MoveOnly move_only_1(1);
         auto send_future = sender.Send(std::move(move_only_1));
@@ -658,7 +658,7 @@ TEST(StaticChannel, MoveOnly) {
         return Ready();
       });
 
-  PendFuncTask receiver_task(
+  FuncTask receiver_task(
       [receiver = std::move(channel_receiver)](Context& cx) mutable -> Poll<> {
         auto receive_future = receiver.Receive();
         auto poll1 = receive_future.Pend(cx);
@@ -689,7 +689,7 @@ TEST(StaticChannel, CanPollReceiveFuturesTwice) {
   auto [channel, channel_sender, channel_receiver] = CreateSpscChannel(storage);
   channel.Release();
 
-  PendFuncTask poll_task(
+  FuncTask poll_task(
       [receiver = std::move(channel_receiver)](Context& cx) mutable -> Poll<> {
         auto future = receiver.Receive();
         EXPECT_EQ(future.Pend(cx), Pending());
@@ -714,7 +714,7 @@ TEST(StaticChannel, CanPollSendFuturesTwice) {
   ASSERT_TRUE(channel_sender.TrySend(1).ok());
   ASSERT_TRUE(channel_sender.TrySend(2).ok());
 
-  PendFuncTask poll_task(
+  FuncTask poll_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         auto future = sender.Send(3);
         EXPECT_EQ(future.Pend(cx), Pending());
@@ -742,7 +742,7 @@ TEST(StaticChannel, CanPollReserveSendFutureTwice) {
   ASSERT_TRUE(channel_sender.TrySend(1).ok());
   ASSERT_TRUE(channel_sender.TrySend(2).ok());
 
-  PendFuncTask poll_task(
+  FuncTask poll_task(
       [sender = std::move(channel_sender)](Context& cx) mutable -> Poll<> {
         auto future = sender.ReserveSend();
         EXPECT_EQ(future.Pend(cx), Pending());
@@ -857,7 +857,7 @@ TEST(StaticChannel, SendOnClosedReturnsFalse) {
   EXPECT_EQ(sender.TrySend(1), pw::Status::FailedPrecondition());
   EXPECT_EQ(sender.TryReserveSend().status(), pw::Status::FailedPrecondition());
 
-  PendFuncTask task([&sender](Context& cx) -> Poll<> {
+  FuncTask task([&sender](Context& cx) -> Poll<> {
     auto send_future = sender.Send(1);
     PW_TRY_READY_ASSIGN(bool sent, send_future.Pend(cx));
     EXPECT_FALSE(sent);
@@ -885,7 +885,7 @@ TEST(StaticChannel, Receive_Closed) {
 
   EXPECT_EQ(receiver.TryReceive().status(), pw::Status::FailedPrecondition());
 
-  PendFuncTask task([&receiver](Context& cx) -> Poll<> {
+  FuncTask task([&receiver](Context& cx) -> Poll<> {
     auto receive_future = receiver.Receive();
     PW_TRY_READY_ASSIGN(auto result, receive_future.Pend(cx));
     EXPECT_FALSE(result.has_value());
@@ -929,7 +929,7 @@ TEST(StaticChannel, Receive_ClosedWithData) {
   sender.Disconnect();
   EXPECT_FALSE(channel.is_open());
 
-  PendFuncTask task([&receiver](Context& cx) -> Poll<> {
+  FuncTask task([&receiver](Context& cx) -> Poll<> {
     auto result = receiver.Receive().Pend(cx);
     EXPECT_TRUE(result.IsReady());
     EXPECT_TRUE(result->has_value());

@@ -34,7 +34,7 @@ Pigweed provides the following concrete subclasses of ``Task``:
   when the task is :cc:`posted <pw::async2::Dispatcher::Post>`. The task must
   implement :cc:`DoDestroy() <pw::async2::OwnedTask::DoDestroy>`, which the
   dispatcher invokes after the task completes.
-* :cc:`PendFuncTask <pw::async2::PendFuncTask>`: Delegates to a provided
+* :cc:`FuncTask <pw::async2::FuncTask>`: Delegates to a provided
   function.
 
 You can also :ref:`create your own subclass

@@ -31,7 +31,7 @@ using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::Context;
 using ::pw::async2::DispatcherForTest;
 
-using ::pw::async2::PendFuncTask;
+using ::pw::async2::FuncTask;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::PollResult;
@@ -156,7 +156,7 @@ void ExpectSendAndReceive(
 
   std::array<std::byte, kDecodeBufferSize> decode_buffer;
   Router router(io_loopback.channel(), decode_buffer);
-  PendFuncTask router_task([&router](Context& cx) { return router.Pend(cx); });
+  FuncTask router_task([&router](Context& cx) { return router.Pend(cx); });
 
   SendDatagrams send_task(datagrams_to_send, outgoing_pair.first());
   ReceiveDatagramsUntilClosed recv_task(incoming_pair.first());
@@ -220,7 +220,7 @@ TEST(Router, PendOnClosedIoChannelReturnsReady) {
                               /*arbitrary outgoing address*/ 2019),
             OkStatus());
 
-  PendFuncTask router_task([&router](Context& cx) { return router.Pend(cx); });
+  FuncTask router_task([&router](Context& cx) { return router.Pend(cx); });
 
   DispatcherForTest dispatcher;
   dispatcher.Post(router_task);

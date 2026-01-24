@@ -420,7 +420,7 @@ TEST_F(PeripheralTest,
 
   advertised_peripheral->StopAdvertising();
 
-  pw::async2::PendFuncTask stop_task(
+  pw::async2::FuncTask stop_task(
       [&advertised_peripheral](pw::async2::Context& cx) -> pw::async2::Poll<> {
         pw::async2::Poll<pw::Status> pend = advertised_peripheral->PendStop(cx);
         if (pend.IsReady()) {

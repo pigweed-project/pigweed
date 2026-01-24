@@ -27,7 +27,7 @@ TEST(Async2UnitTest, MinimalExample) {
   pw::async2::DispatcherForTest dispatcher;
 
   // Create a test task to run the pw_async2 code under test.
-  pw::async2::PendFuncTask task([](Context&) { return Ready(); });
+  pw::async2::FuncTask task([](Context&) { return Ready(); });
 
   // Post and run the task on the dispatcher.
   dispatcher.Post(task);
@@ -88,7 +88,7 @@ TEST(Async2UnitTest, MultiStepExample) {
 
   // This task gets a fortune and checks that it matches the expected value.
   // The task may need to execute multiple times if the fortune is not ready.
-  pw::async2::PendFuncTask task([&](Context& context) -> Poll<> {
+  pw::async2::FuncTask task([&](Context& context) -> Poll<> {
     if (!future.has_value()) {
       future = oracle.WaitForFortune();
     }

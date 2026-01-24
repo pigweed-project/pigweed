@@ -58,8 +58,8 @@ using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
 using ::pw::async2::CoroOrElseTask;
+using ::pw::async2::FuncTask;
 using ::pw::async2::GetSystemTimeProvider;
-using ::pw::async2::PendFuncTask;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
 using ::pw::async2::SelectFuture;
@@ -85,7 +85,7 @@ Result<T> RunFutureToCompletionWithTimeout(
   typename decltype(select)::value_type select_result;
 
   BasicDispatcher dispatcher;
-  auto task = PendFuncTask([&](Context cx) -> Poll<> {
+  auto task = FuncTask([&](Context cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(select_result, select.Pend(cx));
     return Ready();
   });

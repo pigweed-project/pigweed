@@ -185,7 +185,7 @@ TEST_F(CommandMultiplexerTest, AsyncTimeout) {
   auto& hci_cmd_mux = hci_cmd_mux_async2();
 
   std::optional<Result<async2::Poll<>>> pend_result;
-  async2::PendFuncTask task{[&](async2::Context& cx) {
+  async2::FuncTask task{[&](async2::Context& cx) {
     pend_result = hci_cmd_mux.PendCommandTimeout(cx);
     return async2::Ready();
   }};
@@ -203,7 +203,7 @@ TEST_F(CommandMultiplexerTest, AsyncTimeoutFailsSync) {
   auto& hci_cmd_mux = hci_cmd_mux_timer();
 
   std::optional<Result<async2::Poll<>>> pend_result;
-  async2::PendFuncTask task{[&](async2::Context& cx) {
+  async2::FuncTask task{[&](async2::Context& cx) {
     pend_result = hci_cmd_mux.PendCommandTimeout(cx);
     return async2::Ready();
   }};

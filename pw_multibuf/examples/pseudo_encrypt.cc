@@ -466,27 +466,25 @@ TEST(PseudoEncrypt, RoundTrip) {
   // Define a task that sends messages.
   size_t tx_index = 0;
   uint64_t segment_id = 0x1000;
-  async2::PendFuncTask msg_sender(
-      [&](async2::Context& context) -> async2::Poll<> {
-        auto& queue = encryptor.rx();
-        while (tx_index < kNumLines) {
-          PW_TRY_READY(
-              allocator.PendCanAllocate(context, kMaxDemoLinkFrameLength));
-          PW_TRY_READY(queue.PendHasSpace(context));
-          auto segment = TransportSegment::Create(allocator, segment_id++);
-          PW_CHECK_OK(segment.status());
-          const char* line = kTheAmaranth[tx_index];
-          segment->CopyFrom(line, strlen(line) + 1);
-          queue.push(std::move(*segment));
-          ++tx_index;
-        }
-        queue.Close();
-        return Ready();
-      });
+  async2::FuncTask msg_sender([&](async2::Context& context) -> async2::Poll<> {
+    auto& queue = encryptor.rx();
+    while (tx_index < kNumLines) {
+      PW_TRY_READY(allocator.PendCanAllocate(context, kMaxDemoLinkFrameLength));
+      PW_TRY_READY(queue.PendHasSpace(context));
+      auto segment = TransportSegment::Create(allocator, segment_id++);
+      PW_CHECK_OK(segment.status());
+      const char* line = kTheAmaranth[tx_index];
+      segment->CopyFrom(line, strlen(line) + 1);
+      queue.push(std::move(*segment));
+      ++tx_index;
+    }
+    queue.Close();
+    return Ready();
+  });
 
   // Define a task that receives messages.
   size_t rx_index = 0;
-  async2::PendFuncTask msg_receiver(
+  async2::FuncTask msg_receiver(
       [&](async2::Context& context) -> async2::Poll<> {
         auto& queue = decryptor.tx();
         while (true) {

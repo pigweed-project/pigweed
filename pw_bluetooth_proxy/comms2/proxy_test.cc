@@ -95,7 +95,7 @@ TEST_F(ProxyTest, Passthrough) {
   EXPECT_EQ(GetOpCode(controller_channel_.written_packets().front()),
             OpCode::REMOTE_NAME_REQUEST);
 
-  pw::async2::PendFuncTask reset(
+  pw::async2::FuncTask reset(
       [this](pw::async2::Context& context) { return proxy_.Reset(context); });
   dispatcher_.Post(reset);
   dispatcher_.RunToCompletion();
@@ -124,7 +124,7 @@ TEST_F(ProxyTest, ResetProxy) {
   proxy_.Run(dispatcher_);
   EXPECT_TRUE(dispatcher_.RunUntilStalled());
 
-  pw::async2::PendFuncTask reset(
+  pw::async2::FuncTask reset(
       [this](pw::async2::Context& context) { return proxy_.Reset(context); });
   dispatcher_.Post(reset);
   dispatcher_.RunToCompletion();

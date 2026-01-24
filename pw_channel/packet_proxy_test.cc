@@ -105,7 +105,7 @@ TEST_F(PacketProxyTest, ForwardPacketsBothDirections) {
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   ASSERT_EQ(channel_2_.written_packets().size(), 1u);
 
-  pw::async2::PendFuncTask reset(
+  pw::async2::FuncTask reset(
       [this](pw::async2::Context& context) { return proxy_.Reset(context); });
   dispatcher.Post(reset);
   dispatcher.RunToCompletion();

@@ -24,8 +24,8 @@ namespace {
 
 using pw::async2::Context;
 using pw::async2::DispatcherForTest;
+using pw::async2::FuncTask;
 using pw::async2::Future;
-using pw::async2::PendFuncTask;
 using pw::async2::Pending;
 using pw::async2::Poll;
 using pw::async2::Ready;
@@ -167,7 +167,7 @@ class BadFuture {
 
 [[maybe_unused]] void ShouldAssert() {
   BadFuture future;
-  PendFuncTask task([&](Context& cx) { return future.Pend(cx).Readiness(); });
+  FuncTask task([&](Context& cx) { return future.Pend(cx).Readiness(); });
 }
 #endif  // PW_NC_TEST
 
@@ -276,7 +276,7 @@ TEST(FutureCore, Pend) {
   EXPECT_FALSE(future.core().is_ready());
   EXPECT_FALSE(future.core().is_complete());
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     EXPECT_EQ(value, 42);
     return Ready();
@@ -301,7 +301,7 @@ TEST(FutureCore, PendReady) {
   EXPECT_TRUE(future.core().is_ready());
   EXPECT_FALSE(future.core().is_complete());
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     EXPECT_EQ(value, 65535);
     return Ready();
@@ -324,7 +324,7 @@ TEST(FutureCore, MoveAssign) {
   future1 = std::move(future2);
 
   int result = -1;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future1.Pend(cx));
     result = value;
     return Ready();
@@ -346,7 +346,7 @@ TEST(FutureCore, MoveConstruct) {
   TestIntFuture future2(std::move(future1));
 
   int result = -1;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future2.Pend(cx));
     result = value;
     return Ready();
@@ -369,13 +369,13 @@ TEST(FutureCore, MultipleFutures) {
   int result1 = -1;
   int result2 = -1;
 
-  PendFuncTask task1([&](Context& cx) -> Poll<> {
+  FuncTask task1([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future1.Pend(cx));
     result1 = value;
     return Ready();
   });
 
-  PendFuncTask task2([&](Context& cx) -> Poll<> {
+  FuncTask task2([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future2.Pend(cx));
     result2 = value;
     return Ready();
@@ -398,7 +398,7 @@ TEST(FutureCore, RelistsItselfOnPending) {
   TestIntFuture future = provider.Get();
 
   int result = -1;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();

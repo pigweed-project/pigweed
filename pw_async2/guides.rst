@@ -95,7 +95,7 @@ To test ``pw_async2`` code:
 #. Declare a :cc:`pw::async2::DispatcherForTest`.
 #. Create a task to run the async code under test. Either implement
    :cc:`Task <pw::async2::Task>` or use
-   :cc:`PendFuncTask <pw::async2::PendFuncTask>` to wrap a lambda.
+   :cc:`FuncTask <pw::async2::FuncTask>` to wrap a lambda.
 #. Post the task to the dispatcher.
 #. Call :cc:`RunUntilStalled <pw::async2::RunnableDispatcher::RunUntilStalled>`
    to execute the task until it can make no further progress, or

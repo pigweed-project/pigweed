@@ -132,7 +132,7 @@ int Measure() {
 
   dispatcher.RunUntilStalled();
 
-  PendFuncTask task3([&](Context& cx) { return value.Get(cx).Readiness(); });
+  FuncTask task3([&](Context& cx) { return value.Get(cx).Readiness(); });
   dispatcher.Post(task3);
   dispatcher.RunUntilStalled();
 

@@ -35,7 +35,7 @@ int MeasureStatic() {
   Receiver<T> receiver = channel.CreateReceiver();
   channel.Release();
 
-  PendFuncTask send_task([&](Context& cx) -> Poll<> {
+  FuncTask send_task([&](Context& cx) -> Poll<> {
     auto future = sender.Send(T());
     if (future.Pend(cx).IsReady()) {
       return Ready();
@@ -44,7 +44,7 @@ int MeasureStatic() {
   });
   dispatcher.Post(send_task);
 
-  PendFuncTask receive_task([&](Context& cx) -> Poll<> {
+  FuncTask receive_task([&](Context& cx) -> Poll<> {
     auto future = receiver.Receive();
     if (future.Pend(cx).IsReady()) {
       return Ready();
@@ -86,7 +86,7 @@ struct MoveOnly {
     Receiver<int> receiver = channel->CreateReceiver();
     channel->Release();
 
-    PendFuncTask send_task([&](Context& cx) -> Poll<> {
+    FuncTask send_task([&](Context& cx) -> Poll<> {
       auto future = sender.Send(1);
       if (future.Pend(cx).IsReady()) {
         return Ready();
@@ -95,7 +95,7 @@ struct MoveOnly {
     });
     dispatcher.Post(send_task);
 
-    PendFuncTask receive_task([&](Context& cx) -> Poll<> {
+    FuncTask receive_task([&](Context& cx) -> Poll<> {
       auto future = receiver.Receive();
       if (future.Pend(cx).IsReady()) {
         return Ready();

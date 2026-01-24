@@ -24,7 +24,7 @@ namespace {
 using pw::async2::BroadcastValueProvider;
 using pw::async2::Context;
 using pw::async2::DispatcherForTest;
-using pw::async2::PendFuncTask;
+using pw::async2::FuncTask;
 using pw::async2::Poll;
 using pw::async2::Ready;
 using pw::async2::ValueFuture;
@@ -38,7 +38,7 @@ TEST(ValueFuture, Pend) {
   ValueFuture<int> future = provider.Get();
   int result = -1;
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
@@ -57,7 +57,7 @@ TEST(ValueFuture, Resolved) {
   auto future = ValueFuture<int>::Resolved(42);
   int result = -1;
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
@@ -82,7 +82,7 @@ TEST(ValueFuture, ResolvedInPlace) {
   auto future = ValueFuture<std::pair<int, int>>::Resolved(9, 3);
 
   std::optional<std::pair<int, int>> result;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
     result = value;
     return Ready();
@@ -103,7 +103,7 @@ TEST(ValueProvider, VendsAndResolvesFuture) {
   ASSERT_FALSE(future.is_complete());
 
   int result = -1;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
@@ -133,7 +133,7 @@ TEST(ValueProvider, OnlyAllowsOneFutureToExist) {
   ASSERT_FALSE(future.is_complete());
 
   int result = -1;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
     result = value;
     return Ready();
@@ -159,7 +159,7 @@ TEST(ValueProvider, ResolveInPlace) {
   ASSERT_FALSE(future.is_complete());
 
   std::optional<std::pair<int, int>> result;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
     result = value;
     return Ready();
@@ -184,7 +184,7 @@ TEST(VoidFuture, Pend) {
   VoidFuture future = provider.Get();
   bool completed = false;
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY(future.Pend(cx));
     completed = true;
     return Ready();
@@ -204,7 +204,7 @@ TEST(VoidFuture, Resolved) {
   auto future = VoidFuture::Resolved();
   bool completed = false;
 
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY(future.Pend(cx));
     completed = true;
     return Ready();
@@ -228,7 +228,7 @@ TEST(ValueProviderVoid, VendsAndResolvesFuture) {
   ASSERT_FALSE(future.is_complete());
 
   bool completed = false;
-  PendFuncTask task([&](Context& cx) -> Poll<> {
+  FuncTask task([&](Context& cx) -> Poll<> {
     PW_TRY_READY(future.Pend(cx));
     completed = true;
     return Ready();

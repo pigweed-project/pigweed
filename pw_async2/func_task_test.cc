@@ -26,20 +26,21 @@ namespace {
 using ::pw::Function;
 using ::pw::async2::Context;
 using ::pw::async2::DispatcherForTest;
-using ::pw::async2::PendFuncTask;
+using ::pw::async2::FuncTask;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
+using ::pw::async2::Task;
 using ::pw::async2::Waker;
 
-TEST(PendFuncTask, PendDelegatesToFunc) {
+TEST(FuncTask, PendDelegatesToFunc) {
   DispatcherForTest dispatcher;
 
   Waker waker;
   int poll_count = 0;
   bool allow_completion = false;
 
-  PendFuncTask func_task([&](Context& cx) -> Poll<> {
+  FuncTask func_task([&](Context& cx) -> Poll<> {
     ++poll_count;
     if (allow_completion) {
       return Ready();
@@ -64,55 +65,62 @@ TEST(PendFuncTask, PendDelegatesToFunc) {
   EXPECT_EQ(poll_count, 2);
 }
 
-TEST(PendFuncTask, HoldsCallableByDefault) {
+TEST(FuncTask, HoldsCallableByDefault) {
   auto callable = [](Context&) -> Poll<> { return Ready(); };
-  PendFuncTask func_task(std::move(callable));
-  static_assert(std::is_same<decltype(func_task),
-                             PendFuncTask<decltype(callable)>>::value);
+  FuncTask func_task(std::move(callable));
+  static_assert(
+      std::is_same<decltype(func_task), FuncTask<decltype(callable)>>::value);
 }
 
-TEST(PendFuncTask, HoldsPwFunctionWithEmptyTypeList) {
-  PendFuncTask<> func_task([](Context&) -> Poll<> { return Ready(); });
+TEST(FuncTask, HoldsPwFunctionWithEmptyTypeList) {
+  FuncTask<> func_task([](Context&) -> Poll<> { return Ready(); });
   static_assert(std::is_same<decltype(func_task),
-                             PendFuncTask<Function<Poll<>(Context&)>>>::value);
+                             FuncTask<Function<Poll<>(Context&)>>>::value);
 }
 
 Poll<> ReturnsReady(Context&) { return Ready(); }
 
-TEST(PendFuncTask, TestTemplateDeductionAndSize) {
-  // A PendFuncTask with an unspecified Func template parameter will default
+// Simulates the size of a FuncTask for testing purposes.
+template <typename Func>
+struct SizeHelper : public Task {
+  Func func;
+};
+
+TEST(FuncTask, TestTemplateDeductionAndSize) {
+  // A FuncTask with an unspecified Func template parameter will default
   // to pw::Function. This allows the same container to hold a variety of
   // different callables, but it may either reserve extra inline storage or
   // dynamically allocate memory, depending on how pw::Function is configured.
-  std::optional<PendFuncTask<>> a;
+  std::optional<FuncTask<>> a;
   a.emplace([](Context&) -> Poll<> { return Ready(); });
   a.emplace(&ReturnsReady);
-  static_assert(sizeof(decltype(a)::value_type::CallableType) ==
-                sizeof(Function<Poll<>(Context&)>));
+  static_assert(sizeof(decltype(a)::value_type) ==
+                sizeof(SizeHelper<Function<Poll<>(Context&)>>));
 
-  // When constructing a PendFuncTask directly from a callable, CTAD will match
+  // When constructing a FuncTask directly from a callable, CTAD will match
   // the Func template parameter to that of the callable. This has the
   // benefit of reducing the amount of storage needed vs that of a pw::Function.
   //
   // A lambda without any captures doesn't require any storage.
-  auto b = PendFuncTask([](Context&) -> Poll<> { return Ready(); });
-  static_assert(sizeof(decltype(b)::CallableType) <= 1);
+  auto b = FuncTask([](Context&) -> Poll<> { return Ready(); });
+  static_assert(sizeof(decltype(b)) <= sizeof(SizeHelper<char>));
 
   // A lambda with captures requires storage to hold the captures.
   int scratch = 6;
-  auto c = PendFuncTask(
+  auto c = FuncTask(
       [&scratch](Context&) -> Poll<> { return scratch ? Ready() : Pending(); });
-  static_assert(sizeof(decltype(c)::CallableType) == sizeof(&scratch));
+  static_assert(sizeof(decltype(c)) == sizeof(SizeHelper<int*>));
 
   // A raw function pointer just needs storage for the pointer value.
-  auto d = PendFuncTask(&ReturnsReady);
-  static_assert(sizeof(decltype(d)::CallableType) == sizeof(&ReturnsReady));
+  auto d = FuncTask(&ReturnsReady);
+  static_assert(sizeof(decltype(d)) ==
+                sizeof(SizeHelper<decltype(&ReturnsReady)>));
 }
 
-TEST(PendFuncTask, DeregistersInDestructor) {
+TEST(FuncTask, DeregistersInDestructor) {
   DispatcherForTest dispatcher;
   {
-    PendFuncTask task([](Context&) { return Pending(); });
+    FuncTask task([](Context&) { return Pending(); });
     dispatcher.Post(task);
   }
   EXPECT_FALSE(dispatcher.RunUntilStalled());

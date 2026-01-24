@@ -46,7 +46,7 @@ using pw::async2::ChannelStorage;
 using pw::async2::Context;
 using pw::async2::CreateSpscChannel;
 using pw::async2::DispatcherForTest;
-using pw::async2::PendFuncTask;
+using pw::async2::FuncTask;
 using pw::async2::Poll;
 using pw::async2::Ready;
 using pw::async2::ReadyType;
@@ -69,8 +69,8 @@ typename FutureType::value_type DoDispatchCommon(
   DispatcherForTest dispatcher;
 
   typename FutureType::value_type result{};
-  PendFuncTask task([&result, pend_future = std::move(future)](
-                        Context& cx) mutable -> Poll<> {
+  FuncTask task([&result, pend_future = std::move(future)](
+                    Context& cx) mutable -> Poll<> {
     PW_TRY_READY_ASSIGN(result, pend_future.Pend(cx));
     return Ready();
   });
@@ -221,8 +221,8 @@ void DrainChannelToAvoidAssertOnDestruction(Receiver<T>&& channel_receiver) {
   DispatcherForTest dispatcher;
   std::optional<ReceiveFuture<T>> receive_future;
   auto drain_task =
-      PendFuncTask([&receive_future, receiver = std::move(channel_receiver)](
-                       Context& cx) mutable -> Poll<> {
+      FuncTask([&receive_future, receiver = std::move(channel_receiver)](
+                   Context& cx) mutable -> Poll<> {
         while (true) {
           if (!receive_future.has_value()) {
             receive_future = receiver.Receive();
@@ -251,7 +251,7 @@ TEST(FutureTimeout, SendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
 
   std::optional<SendFutureWithTimeoutOrClosed<int>> send_future;
   int send_count = 0;
-  PendFuncTask send_task([&](Context& cx) -> Poll<> {
+  FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!send_future.has_value()) {
         send_future =
@@ -295,7 +295,7 @@ TEST(FutureTimeout, SendFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
   std::optional<SendFutureWithTimeout<int>> send_future;
   int send_count = 0;
   Status send_status = {};
-  PendFuncTask send_task([&](Context& cx) -> Poll<> {
+  FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!send_future.has_value()) {
         send_future = Timeout(sender.Send(send_count), time_provider, 30s);
@@ -344,7 +344,7 @@ TEST(FutureTimeout, ReserveSendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
 
   std::optional<ReserveSendFutureWithTimeoutOrClosed<int>> send_reservation;
   int send_count = 0;
-  PendFuncTask send_task([&](Context& cx) -> Poll<> {
+  FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!send_reservation.has_value()) {
         send_reservation =
@@ -391,7 +391,7 @@ TEST(FutureTimeout,
   std::optional<ReserveSendFutureWithTimeout<int>> send_reservation;
   int send_count = 0;
   Status send_status = {};
-  PendFuncTask send_task([&](Context& cx) -> Poll<> {
+  FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!send_reservation.has_value()) {
         send_reservation = Timeout(sender.ReserveSend(), time_provider, 30s);
@@ -447,7 +447,7 @@ TEST(FutureTimeout, ReceiveFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
 
   std::optional<ReceiveFutureWithTimeoutOrClosed<int>> receive_future;
   int receive_count = 0;
-  PendFuncTask receive_task([&](Context& cx) -> Poll<> {
+  FuncTask receive_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!receive_future.has_value()) {
         receive_future =
@@ -497,7 +497,7 @@ TEST(FutureTimeout, ReceiveFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
   std::optional<ReceiveFutureWithTimeout<int>> receive_future;
   int receive_count = 0;
   Status receive_status = {};
-  PendFuncTask receive_task([&](Context& cx) -> Poll<> {
+  FuncTask receive_task([&](Context& cx) -> Poll<> {
     while (true) {
       if (!receive_future.has_value()) {
         receive_future = Timeout(receiver.Receive(), time_provider, 30s);

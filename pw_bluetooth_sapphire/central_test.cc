@@ -37,7 +37,7 @@ using Ready = pw::async2::ReadyType;
 using Context = pw::async2::Context;
 using ScanHandle = Central::ScanHandle;
 using ScanResult = Central::ScanResult;
-using pw::async2::PendFuncTask;
+using pw::async2::FuncTask;
 using pw::async2::Poll;
 using pw::async2::PollResult;
 using pw::bluetooth_sapphire::internal::UuidFrom;
@@ -57,7 +57,7 @@ const bt::StaticByteBuffer kAdvDataWithName(0x05,  // length
 auto MakePendResultTask(
     ScanHandle::Ptr& scan_handle,
     std::optional<pw::Result<ScanResult>>& scan_result_out) {
-  return PendFuncTask([&scan_handle, &scan_result_out](Context& cx) -> Poll<> {
+  return FuncTask([&scan_handle, &scan_result_out](Context& cx) -> Poll<> {
     PollResult<ScanResult> pend = scan_handle->PendResult(cx);
     if (pend.IsPending()) {
       return Pending();
@@ -79,7 +79,7 @@ class CentralTest : public ::testing::Test {
         central().Scan(options);
 
     std::optional<pw::Result<ScanStartResult>> scan_pend_result;
-    PendFuncTask scan_receiver_task(
+    FuncTask scan_receiver_task(
         [&scan_receiver, &scan_pend_result](Context& cx) -> Poll<> {
           PollResult<ScanStartResult> scan_pend = scan_receiver.Pend(cx);
           if (scan_pend.IsPending()) {
@@ -149,7 +149,7 @@ TEST_F(CentralTest, ScanOneResultAndStopScanSuccess) {
   EXPECT_TRUE((*adapter().fake_le()->discovery_sessions().cbegin())->active());
 
   std::optional<pw::Result<ScanResult>> scan_result_result;
-  PendFuncTask scan_handle_task =
+  FuncTask scan_handle_task =
       MakePendResultTask(scan_handle, scan_result_result);
   async2_dispatcher().Post(scan_handle_task);
   EXPECT_TRUE(async2_dispatcher().RunUntilStalled());
@@ -239,7 +239,7 @@ TEST_F(CentralTest, ScanErrorReceivedByScanHandle) {
   EXPECT_TRUE((*adapter().fake_le()->discovery_sessions().cbegin())->active());
 
   std::optional<pw::Result<ScanResult>> scan_result_result;
-  PendFuncTask scan_handle_task =
+  FuncTask scan_handle_task =
       MakePendResultTask(scan_handle, scan_result_result);
   async2_dispatcher().Post(scan_handle_task);
   EXPECT_TRUE(async2_dispatcher().RunUntilStalled());
@@ -260,7 +260,7 @@ TEST_F(CentralTest, ScanWithoutFiltersFails) {
       central().Scan(options);
 
   std::optional<pw::Result<ScanStartResult>> scan_pend_result;
-  PendFuncTask scan_receiver_task(
+  FuncTask scan_receiver_task(
       [&scan_receiver, &scan_pend_result](Context& cx) -> Poll<> {
         PollResult<ScanStartResult> scan_pend = scan_receiver.Pend(cx);
         if (scan_pend.IsPending()) {
@@ -293,8 +293,8 @@ TEST_F(CentralTest, QueueMoreThanMaxScanResultsInScanHandleDropsOldest) {
   EXPECT_TRUE((*adapter().fake_le()->discovery_sessions().cbegin())->active());
 
   std::vector<pw::Result<ScanResult>> scan_result_results;
-  PendFuncTask scan_handle_task =
-      PendFuncTask([&scan_handle, &scan_result_results](Context& cx) -> Poll<> {
+  FuncTask scan_handle_task =
+      FuncTask([&scan_handle, &scan_result_results](Context& cx) -> Poll<> {
         while (true) {
           PollResult<ScanResult> pend = scan_handle->PendResult(cx);
           if (pend.IsPending()) {
@@ -340,7 +340,7 @@ TEST_F(CentralTest, CentralDestroyedBeforeScanHandle) {
   ASSERT_EQ(adapter().fake_le()->discovery_sessions().size(), 1u);
 
   std::optional<pw::Result<ScanResult>> scan_result_result;
-  PendFuncTask scan_handle_task =
+  FuncTask scan_handle_task =
       MakePendResultTask(scan_handle, scan_result_result);
   async2_dispatcher().Post(scan_handle_task);
   EXPECT_TRUE(async2_dispatcher().RunUntilStalled());
@@ -360,8 +360,8 @@ TEST_F(CentralTest, ConnectAndDisconnectSuccess) {
   std::optional<pw::Result<Central::ConnectResult>> connect_result;
   pw::async2::OnceReceiver<Central::ConnectResult> receiver =
       central().Connect(peer->identifier().value(), options);
-  PendFuncTask connect_task =
-      PendFuncTask([&connect_result, &receiver](Context& cx) -> Poll<> {
+  FuncTask connect_task =
+      FuncTask([&connect_result, &receiver](Context& cx) -> Poll<> {
         PollResult<Central::ConnectResult> poll = receiver.Pend(cx);
         if (poll.IsPending()) {
           return Pending();
@@ -393,8 +393,8 @@ TEST_F(CentralTest, PendDisconnect) {
   std::optional<pw::Result<Central::ConnectResult>> connect_result;
   pw::async2::OnceReceiver<Central::ConnectResult> receiver =
       central().Connect(peer->identifier().value(), options);
-  PendFuncTask connect_task =
-      PendFuncTask([&connect_result, &receiver](Context& cx) -> Poll<> {
+  FuncTask connect_task =
+      FuncTask([&connect_result, &receiver](Context& cx) -> Poll<> {
         PollResult<Central::ConnectResult> poll = receiver.Pend(cx);
         if (poll.IsPending()) {
           return Pending();
@@ -414,8 +414,8 @@ TEST_F(CentralTest, PendDisconnect) {
       std::move(connect_result->value().value());
 
   std::optional<DisconnectReason> disconnect_reason;
-  PendFuncTask disconnect_task =
-      PendFuncTask([&connection, &disconnect_reason](Context& cx) -> Poll<> {
+  FuncTask disconnect_task =
+      FuncTask([&connection, &disconnect_reason](Context& cx) -> Poll<> {
         Poll<DisconnectReason> poll = connection->PendDisconnect(cx);
         if (poll.IsPending()) {
           return Pending();

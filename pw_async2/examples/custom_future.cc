@@ -159,7 +159,7 @@ TEST(CustomFuture, CompilesAndRuns) {
   ButtonReceiver receiver(line);
   ButtonFuture future = receiver.WaitForPress();
 
-  pw::async2::PendFuncTask function_task([&future](pw::async2::Context& cx) {
+  pw::async2::FuncTask function_task([&future](pw::async2::Context& cx) {
     return future.Pend(cx).Readiness();
   });
 

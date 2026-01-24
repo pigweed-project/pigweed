@@ -70,7 +70,7 @@ internal::PacketIO& InitializePacketIoGlobal(
 // be moved to `pw::system::AsyncCore`.
 template <typename Func>
 [[nodiscard]] bool PostTaskFunction(Func&& func) {
-  async2::Task* task = async2::AllocateTask<async2::PendFuncTask<Func>>(
+  async2::Task* task = async2::AllocateTask<async2::FuncTask<Func>>(
       System().allocator(), std::forward<Func>(func));
   if (task == nullptr) {
     return false;

@@ -20,31 +20,38 @@ namespace pw::async2 {
 
 /// @submodule{pw_async2,tasks}
 
-/// A ``Task`` that delegates to a provided function ``func``.
+/// A `Task` that delegates to a provided function `func`.
 ///
-/// The provided ``func`` may be any callable (function, lambda, or similar)
-/// which accepts a ``Context&`` and returns a ``Poll<>``.
+/// The provided `func` may be any callable (function, lambda, or similar) which
+/// accepts a `Context&` and returns a `Poll<>`.
 ///
-/// The resulting ``Task`` will implement ``Pend`` by invoking ``func``.
+/// The resulting `Task` implements `Pend` by invoking `func`.
 template <typename Func = Function<Poll<>(Context&)> >
-class PendFuncTask final : public Task {
+class FuncTask final : public Task {
  public:
-  using CallableType = Func;
+  /// Creates a new `Task` that delegates `Pend` to `func`.
+  explicit constexpr FuncTask(Func&& func) : func_(std::forward<Func>(func)) {}
 
-  /// Create a new ``Task`` which delegates ``Pend`` to ``func``.
-  ///
-  /// See class docs for more details.
-  explicit PendFuncTask(Func&& func) : func_(std::forward<Func>(func)) {}
+  FuncTask(const FuncTask&) = delete;
+  FuncTask& operator=(const FuncTask&) = delete;
 
-  ~PendFuncTask() override { Deregister(); }
+  FuncTask(FuncTask&&) = delete;
+  FuncTask& operator=(FuncTask&&) = delete;
+
+  ~FuncTask() override { Deregister(); }
 
  private:
   Poll<> DoPend(Context& cx) final { return func_(cx); }
+
   Func func_;
 };
 
 template <typename Func>
-PendFuncTask(Func&&) -> PendFuncTask<Func>;
+FuncTask(Func&&) -> FuncTask<Func>;
+
+// Temporary alias for backwards compatibility.
+template <typename Func = Function<Poll<>(Context&)> >
+using PendFuncTask = FuncTask<Func>;
 
 /// @endsubmodule
 

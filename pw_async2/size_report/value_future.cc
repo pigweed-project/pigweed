@@ -36,7 +36,7 @@ int SingleTypeValueFuture(uint32_t mask) {
   ValueFuture<int> future = provider.Get();
 
   Poll<int> result = Pending();
-  PendFuncTask task([&](Context& cx) {
+  FuncTask task([&](Context& cx) {
     result = future.Pend(cx);
     return result.Readiness();
   });
@@ -65,7 +65,7 @@ int MultiTypeValueFuture(uint32_t mask) {
   ValueFuture<float> future = provider.Get();
 
   Poll<float> result = Pending();
-  PendFuncTask task([&](Context& cx) {
+  FuncTask task([&](Context& cx) {
     result = future.Pend(cx);
     return result.Readiness();
   });
@@ -97,7 +97,7 @@ int VoidFutureReport(uint32_t mask) {
   ValueFuture<void> future = provider.Get();
 
   Poll<> result = Pending();
-  PendFuncTask task([&](Context& cx) {
+  FuncTask task([&](Context& cx) {
     result = future.Pend(cx);
     return result.Readiness();
   });

@@ -65,7 +65,7 @@ TEST(AsyncPoolTest, PendAllocateIsNotReadyUntilDeallocate) {
 
   pw::async2::DispatcherForTest dispatcher;
   void* async_ptr = nullptr;
-  pw::async2::PendFuncTask task(
+  pw::async2::FuncTask task(
       [&](pw::async2::Context& context) -> pw::async2::Poll<> {
         auto poll = pool.PendAllocate(context);
         if (poll.IsPending()) {

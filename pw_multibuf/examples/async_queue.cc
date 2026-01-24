@@ -104,33 +104,31 @@ TEST(RingBufferTest, CanPushAndPop) {
 
   // DOCSTAG: [pw_multibuf-examples-async_queue-producer]
   size_t producer_index = 0;
-  async2::PendFuncTask producer(
-      [&](async2::Context& context) -> async2::Poll<> {
-        while (producer_index < kNumMsgs) {
-          PW_TRY_READY(queue.PendNotFull(context));
-          auto s = allocator.MakeUnique<std::byte[]>(4);
-          const char* word = kWords[producer_index % kWords.size()];
-          std::strncpy(reinterpret_cast<char*>(s.get()), word, s.size());
-          queue.push_back(std::move(s));
-          ++producer_index;
-        }
-        return async2::Ready();
-      });
+  async2::FuncTask producer([&](async2::Context& context) -> async2::Poll<> {
+    while (producer_index < kNumMsgs) {
+      PW_TRY_READY(queue.PendNotFull(context));
+      auto s = allocator.MakeUnique<std::byte[]>(4);
+      const char* word = kWords[producer_index % kWords.size()];
+      std::strncpy(reinterpret_cast<char*>(s.get()), word, s.size());
+      queue.push_back(std::move(s));
+      ++producer_index;
+    }
+    return async2::Ready();
+  });
   // DOCSTAG: [pw_multibuf-examples-async_queue-producer]
 
   // DOCSTAG: [pw_multibuf-examples-async_queue-consumer]
   size_t consumer_index = 0;
-  async2::PendFuncTask consumer(
-      [&](async2::Context& context) -> async2::Poll<> {
-        while (consumer_index < kNumMsgs) {
-          PW_TRY_READY(queue.PendNotEmpty(context));
-          auto s = queue.pop_front();
-          const char* word = kWords[consumer_index % kWords.size()];
-          EXPECT_STREQ(reinterpret_cast<const char*>(s.get()), word);
-          ++consumer_index;
-        }
-        return async2::Ready();
-      });
+  async2::FuncTask consumer([&](async2::Context& context) -> async2::Poll<> {
+    while (consumer_index < kNumMsgs) {
+      PW_TRY_READY(queue.PendNotEmpty(context));
+      auto s = queue.pop_front();
+      const char* word = kWords[consumer_index % kWords.size()];
+      EXPECT_STREQ(reinterpret_cast<const char*>(s.get()), word);
+      ++consumer_index;
+    }
+    return async2::Ready();
+  });
   // DOCSTAG: [pw_multibuf-examples-async_queue-consumer]
 
   async2::BasicDispatcher dispatcher;
