@@ -274,19 +274,19 @@ void ChannelManagerImpl::AssignLinkSecurityProperties(
          "received new security properties (handle: %#.4x)",
          handle);
 
-  auto iter = ll_map_.find(handle);
-  if (iter == ll_map_.end()) {
+  auto link = GetLogicalLink(handle);
+  if (!link.has_value()) {
     bt_log(DEBUG, "l2cap", "ignoring new security properties on unknown link");
     return;
   }
 
-  iter->second->AssignSecurityProperties(security);
+  link.value()->AssignSecurityProperties(security);
 }
 
 Channel::WeakPtr ChannelManagerImpl::OpenFixedChannel(
     hci_spec::ConnectionHandle handle, ChannelId channel_id) {
-  auto iter = ll_map_.find(handle);
-  if (iter == ll_map_.end()) {
+  auto link = GetLogicalLink(handle);
+  if (!link.has_value()) {
     bt_log(ERROR,
            "l2cap",
            "cannot open fixed channel on unknown connection handle: %#.4x",
@@ -294,15 +294,15 @@ Channel::WeakPtr ChannelManagerImpl::OpenFixedChannel(
     return Channel::WeakPtr();
   }
 
-  return iter->second->OpenFixedChannel(channel_id);
+  return link.value()->OpenFixedChannel(channel_id);
 }
 
 void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle,
                                           Psm psm,
                                           ChannelParameters params,
                                           ChannelCallback cb) {
-  auto iter = ll_map_.find(handle);
-  if (iter == ll_map_.end()) {
+  auto link = GetLogicalLink(handle);
+  if (!link.has_value()) {
     bt_log(ERROR,
            "l2cap",
            "Cannot open channel on unknown connection handle: %#.4x",
@@ -311,7 +311,7 @@ void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle,
     return;
   }
 
-  iter->second->OpenChannel(psm, params, std::move(cb));
+  link.value()->OpenChannel(psm, params, std::move(cb));
 }
 
 bool ChannelManagerImpl::RegisterService(Psm psm,
@@ -343,15 +343,15 @@ void ChannelManagerImpl::RequestConnectionParameterUpdate(
     hci_spec::ConnectionHandle handle,
     hci_spec::LEPreferredConnectionParameters params,
     ConnectionParameterUpdateRequestCallback request_cb) {
-  auto iter = ll_map_.find(handle);
-  if (iter == ll_map_.end()) {
+  auto link = GetLogicalLink(handle);
+  if (!link.has_value()) {
     bt_log(DEBUG,
            "l2cap",
            "ignoring Connection Parameter Update request on unknown link");
     return;
   }
 
-  iter->second->SendConnectionParameterUpdateRequest(params,
+  link.value()->SendConnectionParameterUpdateRequest(params,
                                                      std::move(request_cb));
 }
 
@@ -406,12 +406,12 @@ void ChannelManagerImpl::OnACLDataReceived(hci::ACLDataPacketPtr packet) {
   TRACE_DURATION(
       "bluetooth", "ChannelManagerImpl::OnDataReceived", "handle", handle);
 
-  auto iter = ll_map_.find(handle);
+  auto link = GetLogicalLink(handle);
   PendingPacketMap::iterator pp_iter;
 
   // If a LogicalLink does not exist, we set up a queue for its packets to be
   // delivered when the LogicalLink gets created.
-  if (iter == ll_map_.end()) {
+  if (!link.has_value()) {
     pp_iter =
         pending_packets_.emplace(handle, std::queue<hci::ACLDataPacketPtr>())
             .first;
@@ -431,7 +431,7 @@ void ChannelManagerImpl::OnACLDataReceived(hci::ACLDataPacketPtr packet) {
     return;
   }
 
-  iter->second->HandleRxPacket(std::move(packet));
+  link.value()->HandleRxPacket(std::move(packet));
 }
 
 internal::LogicalLink* ChannelManagerImpl::RegisterInternal(
@@ -444,10 +444,9 @@ internal::LogicalLink* ChannelManagerImpl::RegisterInternal(
 
   // TODO(armansito): Return nullptr instead of asserting. Callers shouldn't
   // assume this will succeed.
-  auto iter = ll_map_.find(handle);
-  PW_DCHECK(iter == ll_map_.end(),
-            "connection handle re-used! (handle=%#.4x)",
-            handle);
+  auto link = GetLogicalLink(handle);
+  PW_DCHECK(
+      !link.has_value(), "connection handle re-used! (handle=%#.4x)", handle);
 
   auto ll = std::make_unique<internal::LogicalLink>(
       handle,
