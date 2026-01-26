@@ -244,7 +244,15 @@ void Autosniff::RemoveSuppression() {
 }  // namespace internal
 AutosniffSuppressInterest::AutosniffSuppressInterest(
     internal::Autosniff::WeakPtr autosniff, const char* reason)
-    : reason_(reason), autosniff_(std::move(autosniff)) {}
+    : reason_(reason), autosniff_(std::move(autosniff)) {
+  if (autosniff.is_alive()) {
+    bt_log(DEBUG,
+           "autosniff",
+           "Autosniff suppress interest (handle %#x): %s",
+           autosniff->handle_,
+           reason_);
+  }
+}
 
 void AutosniffSuppressInterest::AttachInspect(inspect::Node& parent,
                                               std::string name) {
@@ -256,6 +264,7 @@ void AutosniffSuppressInterest::AttachInspect(inspect::Node& parent,
 
 void AutosniffSuppressInterest::Release() {
   if (autosniff_.is_alive()) {
+    bt_log(DEBUG, "autosniff", "Removing autosniff suppression: %s", reason_);
     autosniff_->RemoveSuppression();
     autosniff_.reset();
   }
