@@ -63,34 +63,22 @@ def _pylint_aspect_impl(target, ctx):
         ctx.expand_make_variables("bindir_for_pythonpath", "$(BINDIR)", ctx.var),
     ]
     for path in target[_PyInfo].imports.to_list():
-        if "/_virtual_imports" in path:
-            # Proto generated code. (The leading / distinguishes this from
-            # pw_py_importable_runfile, handled next.)
-            python_path.append(
-                ctx.expand_make_variables(
-                    "proto_virtual_imports",
-                    "$(BINDIR)/" + _extract_import_dir(path),
-                    ctx.var,
-                ),
-            )
-        elif "_virtual_imports" in path:
+        if "_virtual_imports" in path:
+            # Proto generated code or pw_py_importable_runfile in an external
+            # repository. See https://pwbug.dev/248343713#comment10 and
+            # following.
             if "+" in path:
-                # Super-special case: pw_py_importable_runfile in an external
-                # repository. See https://pwbug.dev/248343713#comment10 and
-                # following.
                 python_path.append(
                     ctx.expand_make_variables(
-                        "external_repo_importable_runfile_virtual_imports",
+                        "external_virtual_imports",
                         "$(BINDIR)/external/" + path,
                         ctx.var,
                     ),
                 )
             else:
-                # pw_py_importable_runfile in the same repository follows the
-                # pattern of proto generated code.
                 python_path.append(
                     ctx.expand_make_variables(
-                        "same_repo_importable_runfile_virtual_imports",
+                        "virtual_imports",
                         "$(BINDIR)/" + _extract_import_dir(path),
                         ctx.var,
                     ),
@@ -101,6 +89,22 @@ def _pylint_aspect_impl(target, ctx):
         else:
             # Non-generated Python dependency within this repository.
             python_path.append(_extract_import_dir(path))
+
+    # Ensure all transitive_sources workspace roots are in the PYTHONPATH so
+    # they can be imported.
+    workspace_roots = {}
+    for src in target[_PyInfo].transitive_sources.to_list():
+        if src.owner.workspace_root:
+            workspace_roots[src.owner.workspace_root] = True
+    for root in workspace_roots.keys():
+        python_path.append(root)
+        python_path.append(
+            ctx.expand_make_variables(
+                "transitive_src_workspace_root_bindir",
+                "$(BINDIR)/" + root,
+                ctx.var,
+            ),
+        )
 
     outputs = []
     for src in direct_srcs:
