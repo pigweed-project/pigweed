@@ -72,7 +72,7 @@ pw_cc_test(
     deps = [
         ":command_multiplexer",
         "//pw_allocator:testing",
-        "//pw_async2:pend_func_task",
+        "//pw_async2:func_task",
         "//pw_async2:simulated_time_provider",
         "//pw_async2:testing",
         "//pw_chrono:system_clock",

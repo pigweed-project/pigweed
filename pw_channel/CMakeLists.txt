@@ -180,7 +180,7 @@ pw_add_test(pw_channel.stream_channel_test
     stream_channel_test.cc
   PRIVATE_DEPS
     pw_channel.stream_channel
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_multibuf.allocator_async
     pw_multibuf.testing
     pw_async2.testing
@@ -211,7 +211,7 @@ pw_add_test(pw_channel.test_packet_channel_test
   PRIVATE_DEPS
     pw_allocator.testing
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.testing
     pw_channel.test_packet_channel
@@ -241,7 +241,7 @@ pw_add_test(pw_channel.packet_proxy_test
     packet_proxy_test.cc
   PRIVATE_DEPS
     pw_allocator.testing
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.testing
     pw_channel.packet_proxy
     pw_channel.test_packet_channel

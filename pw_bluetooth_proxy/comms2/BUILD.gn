@@ -86,7 +86,7 @@ pw_cc_test("proxy_test") {
   deps = [
     ":proxy",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
     "$dir_pw_channel:packet_channel",
     "$dir_pw_channel:test_packet_channel",

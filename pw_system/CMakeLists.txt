@@ -408,7 +408,7 @@ pw_add_library(pw_system.async STATIC
     pw_allocator.synchronized_allocator
     pw_async2.allocate_task
     pw_async2.basic_dispatcher
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_hdlc.router
     pw_multibuf.simple_allocator
     pw_rpc.pwpb.echo_service

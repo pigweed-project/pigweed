@@ -286,7 +286,7 @@ pw_cc_test(
     srcs = ["future_test.cc"],
     has_nc_test = True,
     deps = [
-        ":pend_func_task",
+        ":func_task",
         ":poll",
         ":pw_async2",
         ":select",
@@ -322,8 +322,8 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":channel",
+        ":func_task",
         ":future_timeout",
-        ":pend_func_task",
         ":poll",
         ":pw_async2",
         ":simulated_time_provider",
@@ -352,7 +352,7 @@ pw_cc_test(
     name = "value_future_test",
     srcs = ["value_future_test.cc"],
     deps = [
-        ":pend_func_task",
+        ":func_task",
         ":poll",
         ":pw_async2",
         ":testing",
@@ -376,7 +376,7 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "pend_func_task",
+    name = "func_task",
     hdrs = [
         "public/pw_async2/func_task.h",
     ],
@@ -391,7 +391,7 @@ pw_cc_test(
     name = "func_task_test",
     srcs = ["func_task_test.cc"],
     deps = [
-        ":pend_func_task",
+        ":func_task",
         ":pw_async2",
         ":testing",
         "//pw_function",
@@ -736,7 +736,7 @@ pw_cc_test(
     ],
     deps = [
         ":channel",
-        ":pend_func_task",
+        ":func_task",
         ":poll",
         ":pw_async2",
         ":testing",
@@ -771,7 +771,7 @@ pw_cc_test(
     deps = [
         ":channel",
         ":dispatcher",
-        ":pend_func_task",
+        ":func_task",
         ":poll",
         ":testing",
         "//pw_allocator:testing",

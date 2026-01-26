@@ -158,7 +158,7 @@ pw_test("router_test") {
   deps = [
     ":router",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
     "$dir_pw_bytes",
     "$dir_pw_channel:forwarding_channel",

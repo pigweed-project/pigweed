@@ -177,7 +177,7 @@ pw_test("stream_channel_test") {
   sources = [ "stream_channel_test.cc" ]
   deps = [
     ":stream_channel",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
     "$dir_pw_multibuf:allocator_async",
     "$dir_pw_multibuf:testing",
@@ -255,7 +255,7 @@ pw_test("test_packet_channel_test") {
   deps = [
     ":test_packet_channel",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:poll",
     "$dir_pw_async2:testing",
     dir_pw_result,
@@ -288,7 +288,7 @@ pw_test("packet_proxy_test") {
     ":packet_proxy",
     ":test_packet_channel",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
   ]
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""

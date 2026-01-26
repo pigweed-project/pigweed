@@ -191,7 +191,7 @@ pw_add_test(pw_async2.future_test
     future_test.cc
   PRIVATE_DEPS
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.select
     pw_async2.testing
@@ -225,7 +225,7 @@ pw_add_test(pw_async2.future_timeout_test
     pw_async2.channel
     pw_async2
     pw_async2.future_timeout
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.simulated_time_provider
     pw_async2.testing
@@ -252,7 +252,7 @@ pw_add_test(pw_async2.value_future_test
     value_future_test.cc
   PRIVATE_DEPS
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.testing
     pw_async2.value_future
@@ -289,7 +289,7 @@ add_custom_target(pw_async2._func_task_compat
     "${compat_dir}/pw_async2/pend_func_task.h"
 )
 
-pw_add_library(pw_async2.pend_func_task INTERFACE
+pw_add_library(pw_async2.func_task INTERFACE
   HEADERS
     public/pw_async2/func_task.h
   GENERATED_HEADERS
@@ -301,14 +301,19 @@ pw_add_library(pw_async2.pend_func_task INTERFACE
     public
     "${compat_dir}"
 )
-add_dependencies(pw_async2.pend_func_task pw_async2._func_task_compat)
+add_dependencies(pw_async2.func_task pw_async2._func_task_compat)
+
+pw_add_library(pw_async2.pend_func_task INTERFACE
+  PUBLIC_DEPS
+    pw_async2.func_task
+)
 
 pw_add_test(pw_async2.func_task_test
   SOURCES
     func_task_test.cc
   PRIVATE_DEPS
     pw_async2.testing
-    pw_async2.pend_func_task
+    pw_async2.func_task
 )
 
 pw_add_library(pw_async2.callback_task INTERFACE
@@ -603,7 +608,7 @@ pw_add_test(pw_async2.channel_test
   PRIVATE_DEPS
     pw_async2.channel
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.testing
     pw_allocator.testing
@@ -631,7 +636,7 @@ pw_add_test(pw_async2.channel_typed_test
   PRIVATE_DEPS
     pw_async2.channel
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.testing
     pw_allocator.testing

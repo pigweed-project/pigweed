@@ -188,7 +188,7 @@ pw_add_test(pw_hdlc.router_test
   SOURCES
     router_test.cc
   PRIVATE_DEPS
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.testing
     pw_hdlc.router
     pw_allocator.testing

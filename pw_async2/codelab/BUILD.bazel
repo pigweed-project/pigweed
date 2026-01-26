@@ -97,7 +97,7 @@ pw_cc_test(
     deps = [
         ":sensors",
         "//pw_async2",
-        "//pw_async2:pend_func_task",
+        "//pw_async2:func_task",
         "//pw_async2:poll",
         "//pw_async2:testing",
         "//pw_unit_test",

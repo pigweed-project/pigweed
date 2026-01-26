@@ -231,7 +231,7 @@ pw_cc_test(
     ],
     deps = [
         ":stream_channel",
-        "//pw_async2:pend_func_task",
+        "//pw_async2:func_task",
         "//pw_async2:testing",
         "//pw_bytes",
         "//pw_multibuf:allocator_async",
@@ -304,7 +304,7 @@ pw_cc_test(
         ":test_packet_channel",
         "//pw_allocator:testing",
         "//pw_assert:assert",
-        "//pw_async2:pend_func_task",
+        "//pw_async2:func_task",
         "//pw_async2:poll",
         "//pw_async2:testing",
         "//pw_result",
@@ -346,7 +346,7 @@ pw_cc_test(
         ":packet_proxy",
         ":test_packet_channel",
         "//pw_allocator:testing",
-        "//pw_async2:pend_func_task",
+        "//pw_async2:func_task",
         "//pw_async2:testing",
     ],
 )

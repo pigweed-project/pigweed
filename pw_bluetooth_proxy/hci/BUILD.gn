@@ -70,7 +70,7 @@ pw_test("command_multiplexer_test") {
   deps = [
     ":command_multiplexer",
     "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:simulated_time_provider",
     "$dir_pw_async2:testing",
     "$dir_pw_containers:vector",

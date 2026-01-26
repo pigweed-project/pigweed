@@ -596,7 +596,7 @@ pw_test("async_pool_test") {
     ":chunk_pool",
     ":pw_allocator",
     ":testing",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
   ]
   sources = [ "async_pool_test.cc" ]

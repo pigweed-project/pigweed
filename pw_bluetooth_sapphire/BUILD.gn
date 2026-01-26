@@ -147,7 +147,7 @@ pw_test("central_test") {
     ":central",
     ":discovery_filter",
     "$dir_pw_async:fake_dispatcher",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
     "$dir_pw_multibuf:testing",
     "host/gap:testing",
@@ -161,7 +161,7 @@ pw_test("peripheral_test") {
   deps = [
     ":peripheral",
     "$dir_pw_async:fake_dispatcher",
-    "$dir_pw_async2:pend_func_task",
+    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
     "host/gap:testing",
   ]

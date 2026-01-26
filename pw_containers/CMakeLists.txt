@@ -576,7 +576,7 @@ pw_add_test(pw_containers.inline_async_deque_test
     inline_async_deque_test.cc
   PRIVATE_DEPS
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_containers.inline_async_deque
     pw_containers._test_helpers
@@ -670,7 +670,7 @@ pw_add_test(pw_containers.inline_async_queue_test
   PRIVATE_DEPS
     pw_containers.inline_async_queue
     pw_async2
-    pw_async2.pend_func_task
+    pw_async2.func_task
     pw_async2.poll
     pw_async2.testing
     pw_preprocessor
