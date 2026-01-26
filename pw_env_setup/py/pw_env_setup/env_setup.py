@@ -183,7 +183,6 @@ class EnvSetup:
         cipd_only,
         trust_cipd_hash,
         additional_cipd_file,
-        disable_rosetta,
     ):
         self._env = environment.Environment()
         self._project_root = project_root
@@ -202,7 +201,6 @@ class EnvSetup:
         self._cipd_only = cipd_only
         self._trust_cipd_hash = trust_cipd_hash
         self._additional_cipd_file = additional_cipd_file
-        self._disable_rosetta = disable_rosetta
 
         if os.path.isfile(shell_file):
             os.unlink(shell_file)
@@ -304,14 +302,6 @@ class EnvSetup:
                     os.path.relpath(pigweed_root, self._project_root),
                 )
             )
-
-        rosetta = config.pop('rosetta', 'never')
-        if rosetta not in ('never', 'allow', 'force'):
-            raise ValueError(rosetta)
-        self._rosetta = rosetta in ('allow', 'force')
-        if self._disable_rosetta:
-            self._rosetta = False
-        self._env.set('_PW_ROSETTA', str(int(self._rosetta)))
 
         if 'json_file' in config:
             self._json_file = config.pop('json_file')
@@ -693,11 +683,7 @@ Then use `set +x` to go back to normal.
 
         else:
             try:
-                cipd_client = cipd_wrapper.init(
-                    install_dir,
-                    silent=True,
-                    rosetta=self._rosetta,
-                )
+                cipd_client = cipd_wrapper.init(install_dir, silent=True)
             except cipd_wrapper.UnsupportedPlatform as exc:
                 return result_func(('    {!r}'.format(exc),))(
                     _Result.Status.SKIPPED,
@@ -718,7 +704,6 @@ Then use `set +x` to go back to normal.
             package_files=package_files,
             cache_dir=self._cipd_cache_dir,
             env_vars=self._env,
-            rosetta=self._rosetta,
             spin=spin,
             trust_hash=self._trust_cipd_hash,
         ):
@@ -992,15 +977,6 @@ def parse(argv=None):
         help='Skip checking for submodule presence.',
         dest='check_submodules',
         action='store_false',
-    )
-
-    parser.add_argument(
-        '--disable-rosetta',
-        help=(
-            "Disable Rosetta on ARM Macs, regardless of what's in "
-            'pigweed.json.'
-        ),
-        action='store_true',
     )
 
     args = parser.parse_args(argv)

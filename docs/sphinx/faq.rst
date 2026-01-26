@@ -115,10 +115,9 @@ We support the following platforms:
 |                               | will work.                            |
 +-------------------------------+---------------------------------------+
 | macOS on arm64                | Support in progress, file bugs for    |
-|                               | any issues. Control whether Rosetta   |
-|                               | is used via ``pigweed.json``.         |
+|                               | any issues.                           |
 +-------------------------------+---------------------------------------+
-| macOS on x86-64               | Mojave or newer should work.          |
+| macOS on x86-64               | Not actively maintained.              |
 +-------------------------------+---------------------------------------+
 | Windows 10 on x86-64          | Native Windows only; WSL1 or 2 not    |
 |                               | supported.                            |

@@ -134,7 +134,7 @@ def check_auth(cipd, package_files, cipd_service_account, spin):
     return True
 
 
-def platform(rosetta=False):
+def platform():
     """Return the CIPD platform string of the current system."""
     osname = {
         'darwin': 'mac',
@@ -151,13 +151,7 @@ def platform(rosetta=False):
     else:
         arch = platform_module.machine()
 
-    platform_arch = '{}-{}'.format(osname, arch).lower()
-
-    # Support `mac-arm64` through Rosetta until `mac-arm64` binaries are ready
-    if platform_arch == 'mac-arm64' and rosetta:
-        return 'mac-amd64'
-
-    return platform_arch
+    return '{}-{}'.format(osname, arch).lower()
 
 
 def all_package_files(env_vars, package_files):
@@ -288,7 +282,6 @@ def update(  # pylint: disable=too-many-locals
     package_files,
     root_install_dir,
     cache_dir,
-    rosetta=False,
     env_vars=None,
     spin=None,
     trust_hash=False,
@@ -322,7 +315,7 @@ def update(  # pylint: disable=too-many-locals
     if not pw_root:
         pw_root = os.environ['PW_ROOT']
 
-    plat = platform(rosetta)
+    plat = platform()
 
     ensure_file = os.path.join(root_install_dir, 'packages.ensure')
     write_ensure_file(package_files, ensure_file, plat)

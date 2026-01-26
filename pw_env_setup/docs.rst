@@ -395,11 +395,6 @@ here.
   the environment, for reading by tools that don't inherit an environment from
   a sourced ``bootstrap.sh``.
 
-``pw.pw_env_setup.rosetta``
-  Whether to use Rosetta to use amd64 packages on arm64 Macs. Accepted values
-  are  ``never``, ``allow``, and ``force``. For now, ``allow`` means ``force``.
-  The default value is ``never``.
-
 An example of a config file is below.
 
 .. code-block:: json
@@ -426,8 +421,7 @@ An example of a config file is below.
            "optional/submodule/two"
          ],
          "gni_file": "tools/environment.gni",
-         "json_file": "tools/environment.json",
-         "rosetta": "allow"
+         "json_file": "tools/environment.json"
        }
      }
    }

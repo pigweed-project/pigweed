@@ -124,12 +124,10 @@ def platform_normalized():
         raise Exception('unrecognized os: {}'.format(os_name))
 
 
-def arch_normalized(rosetta=False):
+def arch_normalized():
     """Normalize arch into format expected in CIPD paths."""
 
     machine = platform.machine()
-    if platform_normalized() == 'mac' and rosetta:
-        return 'amd64'
     if machine.startswith(('arm', 'aarch')):
         machine = machine.replace('aarch', 'arm')
         if machine == 'arm64':
@@ -142,8 +140,8 @@ def arch_normalized(rosetta=False):
     raise Exception('unrecognized arch: {}'.format(machine))
 
 
-def platform_arch_normalized(rosetta=False):
-    return '{}-{}'.format(platform_normalized(), arch_normalized(rosetta))
+def platform_arch_normalized():
+    return '{}-{}'.format(platform_normalized(), arch_normalized())
 
 
 def user_agent():
@@ -173,10 +171,10 @@ def actual_hash(path):
     return hasher.hexdigest()
 
 
-def expected_hash(rosetta=False):
+def expected_hash():
     """Pulls expected hash from digests file."""
 
-    expected_plat = platform_arch_normalized(rosetta)
+    expected_plat = platform_arch_normalized()
 
     with open(DIGESTS_FILE, 'r') as ins:
         for line in ins:
@@ -241,7 +239,7 @@ Python 3.
 """
 
 
-def client_bytes(rosetta=False):
+def client_bytes():
     """Pull down the CIPD client and return it as a bytes object.
 
     Often CIPD_HOST returns a 302 FOUND with a pointer to
@@ -260,7 +258,7 @@ def client_bytes(rosetta=False):
         print('=' * 70, file=sys.stderr)
         raise
 
-    full_platform = platform_arch_normalized(rosetta)
+    full_platform = platform_arch_normalized()
     if full_platform not in SUPPORTED_PLATFORMS:
         raise UnsupportedPlatform(full_platform)
 
@@ -301,7 +299,6 @@ def client_bytes(rosetta=False):
 def bootstrap(
     client,
     silent=('PW_ENVSETUP_QUIET' in os.environ),
-    rosetta=False,
 ):
     """Bootstrap cipd client installation."""
 
@@ -312,15 +309,15 @@ def bootstrap(
     if not silent:
         print(
             'Bootstrapping cipd client for {}'.format(
-                platform_arch_normalized(rosetta)
+                platform_arch_normalized()
             )
         )
 
     tmp_path = client + '.tmp'
     with open(tmp_path, 'wb') as tmp:
-        tmp.write(client_bytes(rosetta))
+        tmp.write(client_bytes())
 
-    expected = expected_hash(rosetta=rosetta)
+    expected = expected_hash()
     actual = actual_hash(tmp_path)
 
     if expected != actual:
@@ -358,7 +355,6 @@ def init(
     install_dir=DEFAULT_INSTALL_DIR,
     silent=False,
     client=None,
-    rosetta=False,
 ):
     """Install/update cipd client."""
 
@@ -368,28 +364,16 @@ def init(
     os.environ['CIPD_HTTP_USER_AGENT_PREFIX'] = user_agent()
 
     if not os.path.isfile(client):
-        bootstrap(client, silent, rosetta=rosetta)
+        bootstrap(client, silent)
 
     try:
         selfupdate(client)
     except subprocess.CalledProcessError:
-        if platform_normalized() == 'mac':
-            print('rosetta', rosetta, file=sys.stderr)
-            print(
-                'w/ rosetta',
-                platform_arch_normalized(rosetta=True),
-                file=sys.stderr,
-            )
-            print(
-                'w/o rosetta',
-                platform_arch_normalized(rosetta=False),
-                file=sys.stderr,
-            )
         print(
             'CIPD selfupdate failed. Bootstrapping then retrying...',
             file=sys.stderr,
         )
-        bootstrap(client, rosetta=rosetta)
+        bootstrap(client)
         selfupdate(client)
 
     return client
