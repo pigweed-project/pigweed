@@ -19,6 +19,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/a2dp_offload_manager.h"
+#include "pw_bluetooth_sapphire/internal/host/l2cap/autosniff.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/logical_link.h"
 
 namespace bt::l2cap {
@@ -88,6 +89,9 @@ class ChannelManagerImpl final : public ChannelManager {
   internal::LogicalLink::WeakPtr LogicalLinkForTesting(
       hci_spec::ConnectionHandle handle) override;
 
+  std::optional<std::unique_ptr<AutosniffSuppressInterface>> SuppressAutosniff(
+      hci_spec::ConnectionHandle handle, const char* reason) override;
+
  private:
   // Returns a handler for data packets received from the Bluetooth controller
   // bound to this object.
@@ -104,6 +108,9 @@ class ChannelManagerImpl final : public ChannelManager {
       bt::LinkType ll_type,
       pw::bluetooth::emboss::ConnectionRole role,
       size_t max_payload_size);
+
+  std::optional<internal::LogicalLink::WeakPtr> GetLogicalLink(
+      hci_spec::ConnectionHandle handle);
 
   // If a service (identified by |psm|) requested has been registered, return a
   // ServiceInfo object containing preferred channel parameters and a callback
@@ -368,13 +375,28 @@ void ChannelManagerImpl::AttachInspect(inspect::Node& parent,
   }
 }
 
-internal::LogicalLink::WeakPtr ChannelManagerImpl::LogicalLinkForTesting(
-    hci_spec::ConnectionHandle handle) {
+std::optional<internal::LogicalLink::WeakPtr>
+ChannelManagerImpl::GetLogicalLink(hci_spec::ConnectionHandle handle) {
   auto iter = ll_map_.find(handle);
   if (iter == ll_map_.end()) {
-    return internal::LogicalLink::WeakPtr();
+    return std::nullopt;
   }
   return iter->second->GetWeakPtr();
+}
+
+internal::LogicalLink::WeakPtr ChannelManagerImpl::LogicalLinkForTesting(
+    hci_spec::ConnectionHandle handle) {
+  return GetLogicalLink(handle).value_or(internal::LogicalLink::WeakPtr());
+}
+
+std::optional<std::unique_ptr<AutosniffSuppressInterface>>
+ChannelManagerImpl::SuppressAutosniff(hci_spec::ConnectionHandle handle,
+                                      const char* reason) {
+  std::optional<internal::LogicalLink::WeakPtr> link = GetLogicalLink(handle);
+  if (!link.has_value() || !link->is_alive()) {
+    return std::nullopt;
+  }
+  return link->get().SuppressAutosniff(reason);
 }
 
 // Called when an ACL data packet is received from the controller. This method

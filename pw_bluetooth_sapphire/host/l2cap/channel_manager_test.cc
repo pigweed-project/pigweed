@@ -3185,6 +3185,20 @@ TEST_F(ChannelManagerRealAclChannelTest,
   EXPECT_FALSE(link.is_alive());
 }
 
+TEST_F(ChannelManagerRealAclChannelTest, AutosniffSuppression) {
+  QueueAclConnection(kTestHandle1);
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  auto link = chanmgr()->LogicalLinkForTesting(kTestHandle1);
+  ASSERT_TRUE(link.is_alive());
+
+  ASSERT_TRUE(!link->AutosniffIsSuppressed());
+  auto suppression =
+      chanmgr()->SuppressAutosniff(kTestHandle1, "autosniff test");
+  ASSERT_TRUE(link->AutosniffIsSuppressed());
+}
+
 TEST_F(ChannelManagerMockAclChannelTest, RequestAclPriorityNormal) {
   QueueRegisterACL(kTestHandle1,
                    pw::bluetooth::emboss::ConnectionRole::CENTRAL);
@@ -3681,8 +3695,8 @@ TEST_F(ChannelManagerMockAclChannelTest, InspectHierarchy) {
   ReceiveAclDataPacket(InboundConfigurationResponse(config_req_id));
 
   auto link = chanmgr()->LogicalLinkForTesting(kTestHandle1);
-  auto suppress1 = link->AutosniffSuppress("test1");
-  auto suppress2 = link->AutosniffSuppress("test2");
+  auto suppress1 = link->SuppressAutosniff("test1");
+  auto suppress2 = link->SuppressAutosniff("test2");
 
   auto signaling_chan_matcher = NodeMatches(AllOf(
       NameMatches("channel_0x2"),

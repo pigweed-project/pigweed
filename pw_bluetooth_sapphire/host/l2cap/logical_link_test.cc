@@ -681,7 +681,7 @@ TEST_F(LogicalLinkTest, SniffSuppression) {
   EXPECT_CMD_PACKET_OUT(
       test_device(), exit_sniff_cmd, &kExitSniffCommandComplete);
 
-  auto suppression = link()->AutosniffSuppress("testing");
+  auto suppression = link()->SuppressAutosniff("testing");
 
   RunUntilIdle();
 
@@ -704,7 +704,7 @@ TEST_F(LogicalLinkTest, SniffSuppression) {
   ASSERT_EQ(link()->AutosniffMode(),
             pw::bluetooth::emboss::AclConnectionMode::ACTIVE);
 
-  auto suppression2 = link()->AutosniffSuppress("second testing");
+  auto suppression2 = link()->SuppressAutosniff("second testing");
 
   // ==== Stage 5: an idle link will NOT cause sniff to happen.
   RunFor(LogicalLink::kAutosniffTimeout + std::chrono::milliseconds(1));

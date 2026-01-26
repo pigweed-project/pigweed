@@ -196,6 +196,13 @@ class ChannelManager {
   // link.
   virtual WeakSelf<internal::LogicalLink>::WeakPtr LogicalLinkForTesting(
       hci_spec::ConnectionHandle handle) = 0;
+
+  // Suppresses autosniff on the given connection |handle|. Returns an RAII
+  // object that, upon destruction, will notify the autosniff manager that this
+  // particular suppression is now gone. The |reason| is used for logging only
+  // and must be a static-life C-string.
+  virtual std::optional<std::unique_ptr<AutosniffSuppressInterface>>
+  SuppressAutosniff(hci_spec::ConnectionHandle handle, const char* reason) = 0;
 };
 
 }  // namespace bt::l2cap

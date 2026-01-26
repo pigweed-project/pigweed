@@ -50,7 +50,7 @@ class A2dpOffloadManager {
       : cmd_channel_(std::move(cmd_channel)) {}
 
   using SniffSuppressCallback =
-      fit::function<std::unique_ptr<internal::AutosniffSuppressInterest>(
+      fit::function<std::unique_ptr<AutosniffSuppressInterest>(
           const char* reason)>;
 
   void SetSniffSuppress(SniffSuppressCallback cb) {
@@ -105,7 +105,7 @@ class A2dpOffloadManager {
 
   // Pointer to the autosniff suppression interest.  This prevents entering
   // sniff mode while offload is active.
-  std::unique_ptr<internal::AutosniffSuppressInterest> autosniff_suppress_;
+  std::unique_ptr<AutosniffSuppressInterest> autosniff_suppress_;
 
   WeakSelf<A2dpOffloadManager> weak_self_{this};
 };

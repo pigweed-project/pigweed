@@ -13,12 +13,31 @@
 // the License.
 
 #pragma once
+#include "pw_bluetooth_sapphire/internal/host/l2cap/autosniff.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/types.h"
 
 namespace bt::l2cap::testing {
+
+class FakeL2cap;
+
+class FakeAutosniffSuppression : public AutosniffSuppressInterface {
+ public:
+  ~FakeAutosniffSuppression() override { Release(); }
+
+  void Release() override;
+
+ private:
+  friend class FakeL2cap;
+
+  FakeL2cap* l2cap_;
+  hci_spec::ConnectionHandle handle_;
+
+  FakeAutosniffSuppression(FakeL2cap* l2cap, hci_spec::ConnectionHandle handle)
+      : l2cap_(l2cap), handle_(handle) {}
+};
 
 // This is a fake version of the ChannelManager class that can be injected into
 // other layers for unit testing.
@@ -103,6 +122,18 @@ class FakeL2cap final : public ChannelManager {
     return WeakSelf<internal::LogicalLink>::WeakPtr();
   }
 
+  std::optional<std::unique_ptr<AutosniffSuppressInterface>> SuppressAutosniff(
+      hci_spec::ConnectionHandle handle, const char* /*reason*/) override {
+    autosniff_suppressions_.insert(handle);
+    return std::unique_ptr<AutosniffSuppressInterface>(
+        new FakeAutosniffSuppression(this, handle));
+  }
+
+  bool AutosniffIsSuppressed(hci_spec::ConnectionHandle handle) {
+    return autosniff_suppressions_.find(handle) !=
+           autosniff_suppressions_.end();
+  }
+
   // Called when a new channel gets opened. Tests can use this to obtain a
   // reference to all channels.
   using FakeChannelCallback =
@@ -177,6 +208,10 @@ class FakeL2cap final : public ChannelManager {
   std::unordered_map<Psm, ServiceInfo> registered_services_;
 
   pw::async::HeapDispatcher heap_dispatcher_;
+
+  std::unordered_multiset<hci_spec::ConnectionHandle> autosniff_suppressions_;
+
+  friend class FakeAutosniffSuppression;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(FakeL2cap);
 };

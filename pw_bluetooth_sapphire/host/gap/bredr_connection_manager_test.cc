@@ -4370,11 +4370,14 @@ TEST_F(BrEdrConnectionManagerTest, Pair) {
     pairing_status = status;
   };
 
+  ASSERT_FALSE(l2cap()->AutosniffIsSuppressed(kConnectionHandle));
   connmgr()->Pair(
       peer->identifier(), kNoSecurityRequirements, pairing_complete_cb);
+  ASSERT_TRUE(l2cap()->AutosniffIsSuppressed(kConnectionHandle));
   ASSERT_TRUE(IsInitializing(peer));
   ASSERT_FALSE(peer->bonded());
   RunUntilIdle();
+  ASSERT_FALSE(l2cap()->AutosniffIsSuppressed(kConnectionHandle));
 
   ASSERT_EQ(fit::ok(), pairing_status);
   ASSERT_TRUE(IsConnected(peer));

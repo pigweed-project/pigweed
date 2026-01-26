@@ -17,7 +17,8 @@
 #include <lib/fit/function.h>
 #include <pw_log/log.h>
 
-namespace bt::l2cap::internal {
+namespace bt::l2cap {
+namespace internal {
 namespace {
 using pw::bluetooth::emboss::AclConnectionMode;
 
@@ -240,9 +241,10 @@ void Autosniff::RemoveSuppression() {
   }
 }
 
+}  // namespace internal
 AutosniffSuppressInterest::AutosniffSuppressInterest(
-    Autosniff::WeakPtr autosniff, const char* reason)
-    : reason_(reason), autosniff_(autosniff) {}
+    internal::Autosniff::WeakPtr autosniff, const char* reason)
+    : reason_(reason), autosniff_(std::move(autosniff)) {}
 
 void AutosniffSuppressInterest::AttachInspect(inspect::Node& parent,
                                               std::string name) {
@@ -261,4 +263,4 @@ void AutosniffSuppressInterest::Release() {
 
 AutosniffSuppressInterest::~AutosniffSuppressInterest() { Release(); }
 
-}  // namespace bt::l2cap::internal
+}  // namespace bt::l2cap

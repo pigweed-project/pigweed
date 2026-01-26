@@ -195,11 +195,14 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // Returns true if autosniff is enabled
   bool AutosniffEnabled() const;
 
+  // Returns true if autosniff is disabled or suppressed.
+  bool AutosniffIsSuppressed() const;
+
   // Returns the current connection mode as per autosniff. This will always
   // return ACTIVE if autosniff is not enabled.
   pw::bluetooth::emboss::AclConnectionMode AutosniffMode() const;
 
-  std::unique_ptr<AutosniffSuppressInterest> AutosniffSuppress(
+  std::unique_ptr<AutosniffSuppressInterest> SuppressAutosniff(
       const char* reason);
 
   // Duration to wait without events before switching into sniff mode.

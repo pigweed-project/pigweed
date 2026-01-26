@@ -17,7 +17,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/smart_task.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/command_channel.h"
 
-namespace bt::l2cap::internal {
+namespace bt::l2cap {
 
 struct SniffModeParams {
   uint16_t min_interval;
@@ -28,9 +28,17 @@ struct SniffModeParams {
 
 class AutosniffSuppressInterest;
 
+namespace internal {
+
 /// Implements autosniff functionality for a logical link
 class Autosniff {
  public:
+  // |params|: Sniff mode parameters.
+  // |channel|: The HCI command channel to send commands on.
+  // |handle|: The connection handle for this ACL link.
+  // |dispatcher|: The async dispatcher for scheduling tasks.
+  // |idle_timeout|: The duration of inactivity after which the link will
+  //     transition to sniff mode.
   Autosniff(SniffModeParams params,
             hci::CommandChannel* channel,
             hci_spec::ConnectionHandle handle,
@@ -53,10 +61,12 @@ class Autosniff {
     return connection_mode_;
   }
 
+  inline bool IsSuppressed() const { return suppression_count_ > 0; }
+
   using WeakPtr = WeakSelf<Autosniff>::WeakPtr;
 
  private:
-  friend class AutosniffSuppressInterest;
+  friend class ::bt::l2cap::AutosniffSuppressInterest;
 
   RecurringDisposition OnTimeout();
   void ResetTimeout();
@@ -88,34 +98,44 @@ class Autosniff {
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
   WeakSelf<Autosniff> weak_self_;
 };
+}  // namespace internal
 
-class AutosniffSuppressInterest final {
+class AutosniffSuppressInterface {
+ public:
+  virtual void Release() = 0;
+  virtual void AttachInspect(inspect::Node& /*parent*/, std::string /*name*/) {}
+  // Destroying the suppress interest will clear out this suppression,
+  // possibly restarting the autosniff timer.
+  virtual ~AutosniffSuppressInterface() {}
+};
+
+class AutosniffSuppressInterest final : public AutosniffSuppressInterface {
  public:
   // Destroying the suppress interest will clear out this suppression,
   // possibly restarting the autosniff timer.
-  ~AutosniffSuppressInterest();
+  ~AutosniffSuppressInterest() override;
 
   // Attach as a child of |parent| with the given |name|.
-  void AttachInspect(inspect::Node& parent, std::string name);
+  void AttachInspect(inspect::Node& parent, std::string name) override;
 
   // Releasing the suppression interest will clear out this suppression,
   // possibly restarting the autosniff timer.
   // This function is idempotent.
-  void Release();
+  void Release() override;
 
  private:
-  friend class Autosniff;
+  friend class bt::l2cap::internal::Autosniff;
 
   // Used by Autosniff to create a SuppressInterest.
-  explicit AutosniffSuppressInterest(Autosniff::WeakPtr autosniff,
+  explicit AutosniffSuppressInterest(internal::Autosniff::WeakPtr autosniff,
                                      const char* reason);
 
   const char* reason_;
-  Autosniff::WeakPtr autosniff_;
+  internal::Autosniff::WeakPtr autosniff_;
 
   inspect::StringProperty inspect_reason_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(AutosniffSuppressInterest);
 };
 
-}  // namespace bt::l2cap::internal
+}  // namespace bt::l2cap

@@ -32,6 +32,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/bredr_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/sequential_command_runner.h"
+#include "pw_bluetooth_sapphire/internal/host/l2cap/autosniff.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/types.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/command_channel.h"
@@ -338,7 +339,11 @@ void BrEdrConnectionManager::Pair(PeerId peer_id,
   }
 
   auto& [handle, connection] = *conn_pair;
-  auto pairing_callback = [pair_callback = std::move(callback)](
+  std::optional<std::unique_ptr<l2cap::AutosniffSuppressInterface>>
+      autosniff_suppression =
+          l2cap_->SuppressAutosniff(handle, "during pairing request");
+  auto pairing_callback = [pair_callback = std::move(callback),
+                           suppression = std::move(autosniff_suppression)](
                               auto, hci::Result<> status) {
     pair_callback(status);
   };

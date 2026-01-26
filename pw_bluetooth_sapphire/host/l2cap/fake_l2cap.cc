@@ -34,6 +34,10 @@ constexpr uint16_t kMaxTxPduPayloadSize = 1024;
 
 }  // namespace
 
+void FakeAutosniffSuppression::Release() {
+  l2cap_->autosniff_suppressions_.erase(handle_);
+}
+
 bool FakeL2cap::IsLinkConnected(hci_spec::ConnectionHandle handle) const {
   auto link_iter = links_.find(handle);
   if (link_iter == links_.end()) {
