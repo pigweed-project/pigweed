@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cerrno>
 #include <cstring>  // strerror()
 
 #include "pw_log/log.h"
