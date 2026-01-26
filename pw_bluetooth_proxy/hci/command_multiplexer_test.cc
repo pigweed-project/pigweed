@@ -232,6 +232,29 @@ TEST_F(CommandMultiplexerTest, SendCommandTimer) {
 }
 
 void TestSendEvent(Accessor test) {
+  static constexpr std::array<std::byte, 5> command_complete_packet_bytes{
+      // Event code (Command Complete)
+      std::byte(0x0E),
+      // Parameter size
+      std::byte(0x03),
+      // Num_HCI_Command_Packets
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+  };
+
+  static constexpr std::array<std::byte, 4> hardware_error_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Hardware Error)
+      std::byte(0x10),
+      // Parameter size
+      std::byte(0x01),
+      // Hardware_Code
+      std::byte(0x01),
+  };
+
   // Try sending empty buffer.
   {
     MultiBuf::Instance buffer(test.allocator());
@@ -243,18 +266,6 @@ void TestSendEvent(Accessor test) {
 
   // Try sending buffer containing a valid event.
   {
-    std::array<std::byte, 5> command_complete_packet_bytes{
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), command_complete_packet_bytes);
 
@@ -282,17 +293,6 @@ void TestSendEvent(Accessor test) {
         });
     EXPECT_EQ(result.status(), OkStatus());
     EXPECT_TRUE(result.ok());
-
-    std::array<std::byte, 4> hardware_error_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Hardware Error)
-        std::byte(0x10),
-        // Parameter size
-        std::byte(0x01),
-        // Hardware_Code
-        std::byte(0x01),
-    };
 
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), hardware_error_packet_bytes);
@@ -409,17 +409,17 @@ TEST_F(CommandMultiplexerTest, RegisterCommandInterceptorTimer) {
 }
 
 void TestInterceptCommands(Accessor test) {
-  {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
 
+  {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -444,16 +444,6 @@ void TestInterceptCommands(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -471,16 +461,6 @@ void TestInterceptCommands(Accessor test) {
 
   // Ensure continuing to intercept.
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -497,16 +477,6 @@ void TestInterceptCommands(Accessor test) {
   intercepted = std::nullopt;
 
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -532,16 +502,6 @@ void TestInterceptCommands(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -559,16 +519,6 @@ void TestInterceptCommands(Accessor test) {
 
   // Ensure continuing to intercept.
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -601,16 +551,6 @@ void TestInterceptCommands(Accessor test) {
       });
 
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -627,16 +567,6 @@ void TestInterceptCommands(Accessor test) {
 
   // Ensure the next one is not intercepted.
   {
-    std::array<std::byte, 4> reset_packet_bytes{
-        // Packet type (command)
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-        // Parameter size
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
     test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
@@ -659,30 +589,123 @@ TEST_F(CommandMultiplexerTest, InterceptCommandsTimer) {
 }
 
 void TestInterceptEvents(Accessor test) {
-  {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
+  static constexpr std::array<std::byte, 6> reset_command_complete_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Command Complete)
+      std::byte(0x0E),
+      // Parameter size
+      std::byte(0x03),
+      // Num_HCI_Command_Packets
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+  };
+  static constexpr std::array<std::byte, 6> vendor_debug_subevent1_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Vendor Debug)
+      std::byte(0xFF),
+      // Parameter size
+      std::byte(0x03),
+      // Subevent code (0x01)
+      std::byte(0x01),
+      std::byte(0x00),
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 6> vendor_debug_subevent2_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Vendor Debug)
+      std::byte(0xFF),
+      // Parameter size
+      std::byte(0x03),
+      // Subevent code (0x02)
+      std::byte(0x02),
+      std::byte(0x00),
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 6> le_meta_subevent1_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code
+      std::byte(0x3E),
+      // Parameter size
+      std::byte(0x03),
+      // Subevent code (0x01)
+      std::byte(0x01),
+      std::byte(0x00),
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 6> le_meta_subevent2_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code
+      std::byte(0x3E),
+      // Parameter size
+      std::byte(0x03),
+      // Subevent code (0x02)
+      std::byte(0x02),
+      std::byte(0x00),
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 6>
+      inquiry_command_complete_packet_bytes{
+          // Packet type (event)
+          std::byte(0x04),
+          // Event code (Command Complete)
+          std::byte(0x0E),
+          // Parameter size
+          std::byte(0x03),
+          // Num_HCI_Command_Pack
+          std::byte(0x01),
+          // OpCode (Inquiry)
+          std::byte(0x01),
+          std::byte(0x04),
+      };
+  static constexpr std::array<std::byte, 7> inquiry_command_status_packet_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Command Status)
+      std::byte(0x0F),
+      // Parameter size
+      std::byte(0x04),
+      // Status (Success)
+      std::byte(0x00),
+      // Num_HCI_Command_Packets
+      std::byte(0x01),
+      // OpCode (Inquiry)
+      std::byte(0x01),
+      std::byte(0x04),
+  };
+  static constexpr std::array<std::byte, 7>
+      disconnect_command_status_packet_bytes{
+          // Packet type
+          std::byte(0x04),
+          // Event code (Command Status)
+          std::byte(0x0F),
+          // Parameter size
+          std::byte(0x04),
+          // Status (Success)
+          std::byte(0x00),
+          // Num_HCI_Command_Packets
+          std::byte(0x01),
+          // OpCode (Disconnect)
+          std::byte(0x06),
+          std::byte(0x0C),
+      };
 
+  {
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -697,22 +720,8 @@ void TestInterceptEvents(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -720,7 +729,7 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 6> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
   }
 
   // Clear the result, but keep interceptor active.
@@ -728,22 +737,8 @@ void TestInterceptEvents(Accessor test) {
 
   // Ensure continuing to intercept.
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -751,29 +746,15 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 6> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
   }
 
   result = Status::Cancelled();  // Unregister the interceptor.
   intercepted = std::nullopt;
 
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
@@ -781,7 +762,7 @@ void TestInterceptEvents(Accessor test) {
     EXPECT_FALSE(intercepted.has_value());
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -796,22 +777,8 @@ void TestInterceptEvents(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets returned from interceptor.
@@ -819,7 +786,7 @@ void TestInterceptEvents(Accessor test) {
     EXPECT_TRUE(peeked);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -827,22 +794,8 @@ void TestInterceptEvents(Accessor test) {
 
   // Ensure continuing to intercept.
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets returned from interceptor.
@@ -850,7 +803,7 @@ void TestInterceptEvents(Accessor test) {
     EXPECT_TRUE(peeked);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -873,22 +826,8 @@ void TestInterceptEvents(Accessor test) {
       });
 
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -896,29 +835,15 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 6> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
   }
 
   intercepted = std::nullopt;
 
   // Ensure the next one is not intercepted.
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Reset)
-        std::byte(0x03),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), reset_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
@@ -926,7 +851,7 @@ void TestInterceptEvents(Accessor test) {
     EXPECT_FALSE(intercepted.has_value());
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(reset_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -944,28 +869,15 @@ void TestInterceptEvents(Accessor test) {
   EXPECT_EQ(result.status(), Status::InvalidArgument());
 
   {
-    std::array<std::byte, 6> vendor_debug_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Vendor Debug)
-        std::byte(0xFF),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x01)
-        std::byte(0x01),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), vendor_debug_packet_bytes);
+    buf->Insert(buf->end(), vendor_debug_subevent1_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(vendor_debug_packet_bytes, out);
+    EXPECT_EQ(vendor_debug_subevent1_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -980,21 +892,8 @@ void TestInterceptEvents(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 6> vendor_debug_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Vendor Debug)
-        std::byte(0xFF),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x01)
-        std::byte(0x01),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), vendor_debug_packet_bytes);
+    buf->Insert(buf->end(), vendor_debug_subevent1_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -1002,62 +901,36 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 6> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(vendor_debug_packet_bytes, out);
+    EXPECT_EQ(vendor_debug_subevent1_packet_bytes, out);
   }
 
   intercepted = std::nullopt;
 
   // Test a different vendor debug subevent code (should not be intercepted).
   {
-    std::array<std::byte, 6> vendor_debug_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Vendor Debug)
-        std::byte(0xFF),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x02)
-        std::byte(0x02),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), vendor_debug_packet_bytes);
+    buf->Insert(buf->end(), vendor_debug_subevent2_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(vendor_debug_packet_bytes, out);
+    EXPECT_EQ(vendor_debug_subevent2_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
   // Test LE Meta Event subevent code.
   {
-    std::array<std::byte, 6> le_meta_event_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code
-        std::byte(0x3E),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x01)
-        std::byte(0x01),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), le_meta_event_packet_bytes);
+    buf->Insert(buf->end(), le_meta_subevent1_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(le_meta_event_packet_bytes, out);
+    EXPECT_EQ(le_meta_subevent1_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -1085,21 +958,8 @@ void TestInterceptEvents(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 6> le_meta_event_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code
-        std::byte(0x3E),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x01)
-        std::byte(0x01),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), le_meta_event_packet_bytes);
+    buf->Insert(buf->end(), le_meta_subevent1_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -1107,35 +967,22 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 6> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(le_meta_event_packet_bytes, out);
+    EXPECT_EQ(le_meta_subevent1_packet_bytes, out);
   }
 
   intercepted = std::nullopt;
 
   // Test a different LE Meta Event subevent code (should not be intercepted).
   {
-    std::array<std::byte, 6> le_meta_event_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code
-        std::byte(0x3E),
-        // Parameter size
-        std::byte(0x03),
-        // Subevent code (0x02)
-        std::byte(0x02),
-        std::byte(0x00),
-        std::byte(0x00),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), le_meta_event_packet_bytes);
+    buf->Insert(buf->end(), le_meta_subevent2_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Packet should not be intercepted.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(le_meta_event_packet_bytes, out);
+    EXPECT_EQ(le_meta_subevent2_packet_bytes, out);
     test.packets_to_host().pop_front();
     EXPECT_FALSE(intercepted.has_value());
   }
@@ -1156,29 +1003,15 @@ void TestInterceptEvents(Accessor test) {
   EXPECT_EQ(result.status(), Status::InvalidArgument());
 
   {
-    std::array<std::byte, 6> command_complete_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Complete)
-        std::byte(0x0E),
-        // Parameter size
-        std::byte(0x03),
-        // Num_HCI_Command_Pack
-        std::byte(0x01),
-        // OpCode (Inquiry)
-        std::byte(0x01),
-        std::byte(0x04),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_complete_packet_bytes);
+    buf->Insert(buf->end(), inquiry_command_complete_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 6> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_complete_packet_bytes, out);
+    EXPECT_EQ(inquiry_command_complete_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -1197,31 +1030,15 @@ void TestInterceptEvents(Accessor test) {
   EXPECT_EQ(result.status(), Status::InvalidArgument());
 
   {
-    std::array<std::byte, 7> command_status_packet_bytes{
-        // Packet type (event)
-        std::byte(0x04),
-        // Event code (Command Status)
-        std::byte(0x0F),
-        // Parameter size
-        std::byte(0x04),
-        // Status (Success)
-        std::byte(0x00),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Inquiry)
-        std::byte(0x01),
-        std::byte(0x04),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_status_packet_bytes);
+    buf->Insert(buf->end(), inquiry_command_status_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 7> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_status_packet_bytes, out);
+    EXPECT_EQ(inquiry_command_status_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 
@@ -1236,24 +1053,8 @@ void TestInterceptEvents(Accessor test) {
   ASSERT_TRUE(result.ok());
 
   {
-    std::array<std::byte, 7> command_status_packet_bytes{
-        // Packet type
-        std::byte(0x04),
-        // Event code (Command Status)
-        std::byte(0x0F),
-        // Parameter size
-        std::byte(0x04),
-        // Status (Success)
-        std::byte(0x00),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Inquiry)
-        std::byte(0x01),
-        std::byte(0x04),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_status_packet_bytes);
+    buf->Insert(buf->end(), inquiry_command_status_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Ensure not forwarded.
@@ -1261,38 +1062,22 @@ void TestInterceptEvents(Accessor test) {
     ASSERT_TRUE(intercepted.has_value());
     std::array<std::byte, 7> out;
     intercepted.value()->CopyTo(out);
-    EXPECT_EQ(command_status_packet_bytes, out);
+    EXPECT_EQ(inquiry_command_status_packet_bytes, out);
   }
 
   intercepted = std::nullopt;
 
   // Test a different Command Status opcode (should not be intercepted).
   {
-    std::array<std::byte, 7> command_status_packet_bytes{
-        // Packet type
-        std::byte(0x04),
-        // Event code (Command Status)
-        std::byte(0x0F),
-        // Parameter size
-        std::byte(0x04),
-        // Status (Success)
-        std::byte(0x00),
-        // Num_HCI_Command_Packets
-        std::byte(0x01),
-        // OpCode (Disconnect)
-        std::byte(0x06),
-        std::byte(0x0C),
-    };
-
     MultiBuf::Instance buf(test.allocator());
-    buf->Insert(buf->end(), command_status_packet_bytes);
+    buf->Insert(buf->end(), disconnect_command_status_packet_bytes);
     test.hci_cmd_mux().HandleH4FromController(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_host().size(), 1u);
     std::array<std::byte, 7> out;
     test.packets_to_host().front()->CopyTo(out);
-    EXPECT_EQ(command_status_packet_bytes, out);
+    EXPECT_EQ(disconnect_command_status_packet_bytes, out);
     test.packets_to_host().pop_front();
   }
 }
