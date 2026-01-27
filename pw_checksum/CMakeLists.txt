@@ -18,6 +18,7 @@ pw_add_library(pw_checksum STATIC
   HEADERS
     public/pw_checksum/crc16_ccitt.h
     public/pw_checksum/crc32.h
+    public/pw_checksum/crc8.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
@@ -70,6 +71,16 @@ pw_add_test(pw_checksum.crc32_test
   PRIVATE_DEPS
     pw_checksum
     pw_random
+  GROUPS
+    modules
+    pw_checksum
+)
+
+pw_add_test(pw_checksum.crc8_test
+  SOURCES
+    crc8_test.cc
+  PRIVATE_DEPS
+    pw_checksum
   GROUPS
     modules
     pw_checksum

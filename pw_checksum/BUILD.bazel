@@ -35,6 +35,7 @@ cc_library(
     hdrs = [
         "public/pw_checksum/crc16_ccitt.h",
         "public/pw_checksum/crc32.h",
+        "public/pw_checksum/crc8.h",
         "public/pw_checksum/internal/config.h",
     ],
     strip_include_prefix = "public",
@@ -74,6 +75,12 @@ pw_cc_test(
         "//pw_bytes",
         "//pw_span",
     ],
+)
+
+pw_cc_test(
+    name = "crc8_test",
+    srcs = ["crc8_test.cc"],
+    deps = [":pw_checksum"],
 )
 
 pw_cc_perf_test(
@@ -153,4 +160,13 @@ sphinx_docs_library(
     ],
     prefix = "pw_checksum/",
     target_compatible_with = incompatible_with_mcu(),
+)
+
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_checksum/crc16_ccitt.h",
+        "public/pw_checksum/crc32.h",
+        "public/pw_checksum/crc8.h",
+    ],
 )

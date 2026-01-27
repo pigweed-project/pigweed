@@ -50,6 +50,7 @@ filegroup(
         "//pw_build:doxygen",
         "//pw_bytes:doxygen",
         "//pw_channel:doxygen",
+        "//pw_checksum:doxygen",
         "//pw_chre:doxygen",
         "//pw_chrono:doxygen",
         "//pw_clock_tree:doxygen",

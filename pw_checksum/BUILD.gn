@@ -44,6 +44,7 @@ pw_source_set("pw_checksum") {
   public = [
     "public/pw_checksum/crc16_ccitt.h",
     "public/pw_checksum/crc32.h",
+    "public/pw_checksum/crc8.h",
   ]
   sources = [
     "crc16_ccitt.cc",
@@ -63,6 +64,7 @@ pw_test_group("tests") {
   tests = [
     ":crc16_ccitt_test",
     ":crc32_test",
+    ":crc8_test",
   ]
 }
 
@@ -92,6 +94,11 @@ pw_test("crc32_test") {
 
   # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
   configs = [ "$dir_pw_build:conversion_warnings" ]
+}
+
+pw_test("crc8_test") {
+  deps = [ ":pw_checksum" ]
+  sources = [ "crc8_test.cc" ]
 }
 
 pw_perf_test("crc32_perf_tests") {

@@ -79,15 +79,17 @@ static inline uint32_t pw_checksum_Crc32Append(const void* data,
 /// Checksum calculation library
 namespace pw::checksum {
 
-// Calculates the CRC32 for all data passed to Update.
-//
-// This class is more efficient than the CRC32 C functions since it doesn't
-// finalize the value each time it is appended to.
+/// Calculates the CRC32 for all data passed to Update.
+///
+/// This class is more efficient than the CRC32 C functions since it doesn't
+/// finalize the value each time it is appended to.
 template <uint32_t (*kChecksumFunction)(const void*, size_t, uint32_t)>
 class Crc32Impl {
  public:
-  // Calculates the CRC32 for the provided data and returns it as a uint32_t.
-  // To update a CRC in multiple pieces, use an instance of the Crc32 class.
+  /// @brief Calculates the CRC32 for the provided data and returns it as a
+  /// uint32_t.
+  ///
+  /// To update a CRC in multiple pieces, use an instance of the Crc32 class.
   static uint32_t Calculate(span<const std::byte> data) {
     return ~kChecksumFunction(
         data.data(), data.size_bytes(), _PW_CHECKSUM_CRC32_INITIAL_STATE);
@@ -95,16 +97,18 @@ class Crc32Impl {
 
   constexpr Crc32Impl() : state_(kInitialValue) {}
 
+  /// Updates the CRC with the provided data.
   void Update(span<const std::byte> data) {
     state_ = kChecksumFunction(data.data(), data.size(), state_);
   }
 
+  /// Updates the CRC with the provided byte.
   void Update(std::byte data) { Update(span(&data, 1)); }
 
-  // Returns the value of the CRC32 for all data passed to Update.
+  /// Returns the value of the CRC32 for all data passed to Update.
   uint32_t value() const { return ~state_; }
 
-  // Resets the CRC to the initial value.
+  /// Resets the CRC to the initial value.
   void clear() { state_ = kInitialValue; }
 
  private:
@@ -113,9 +117,16 @@ class Crc32Impl {
   uint32_t state_;
 };
 
+/// CRC-32: 8 bits per loop, initial value 0xFFFFFFFF.
 using Crc32 = Crc32Impl<_pw_checksum_InternalCrc32>;
+
+/// CRC-32: 8 bits per loop, initial value 0xFFFFFFFF.
 using Crc32EightBit = Crc32Impl<_pw_checksum_InternalCrc32EightBit>;
+
+/// CRC-32: 4 bits per loop, initial value 0xFFFFFFFF.
 using Crc32FourBit = Crc32Impl<_pw_checksum_InternalCrc32FourBit>;
+
+/// CRC-32: 1 bit per loop, initial value 0xFFFFFFFF.
 using Crc32OneBit = Crc32Impl<_pw_checksum_InternalCrc32OneBit>;
 
 }  // namespace pw::checksum
