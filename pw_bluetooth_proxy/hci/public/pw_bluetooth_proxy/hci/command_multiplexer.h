@@ -249,6 +249,8 @@ class CommandMultiplexer final {
       Function<void()> timeout_fn,
       chrono::SystemClock::duration command_timeout = kDefaultCommandTimeout);
 
+  ~CommandMultiplexer();
+
   /// Asynchronously poll/pend for a command timeout. Only 1 client/waker is
   /// supported at a time.
   ///
@@ -395,7 +397,24 @@ class CommandMultiplexer final {
 
   void RemoveInterceptor(InterceptorMap::iterator iterator)
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void SendToControllerOrQueue(MultiBuf::Instance&& buf);
+  void SendToHost(MultiBuf::Instance&& buf) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void SendToControllerOrQueue(MultiBuf::Instance&& buf)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  uint8_t UpdateNumHciCommandPackets(uint8_t num_hci_command_packets)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  uint8_t TryReserveQueueSpace(uint8_t requested)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void ProcessQueue() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  // Internal data for queued commands.
+  struct QueuedCommandState {
+    CommandPacket packet;
+  };
+  using CommandQueue = pw::DynamicDeque<QueuedCommandState>;
+  using QueueSize = CommandQueue::size_type;
+
+  // Space reserved in the command queue, clamped to the range of a `uint8_t`.
+  uint8_t reserved_queue_space() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Allocator& allocator_;
   pw::sync::Mutex mutex_;
@@ -406,6 +425,10 @@ class CommandMultiplexer final {
   EventInterceptorMap event_interceptors_ PW_GUARDED_BY(mutex_);
   CommandInterceptorMap command_interceptors_ PW_GUARDED_BY(mutex_);
   IdentifierMint<InterceptorId::ValueType> id_mint_ PW_GUARDED_BY(mutex_);
+
+  // Outgoing command queue.
+  CommandQueue command_queue_ PW_GUARDED_BY(mutex_);
+  size_t command_credits_ PW_GUARDED_BY(mutex_) = 1u;
 
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_host_fn_;
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_controller_fn_;

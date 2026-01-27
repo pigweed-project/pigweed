@@ -113,6 +113,7 @@ CommandMultiplexer::CommandMultiplexer(
     [[maybe_unused]] async2::TimeProvider<chrono::SystemClock>& time_provider,
     [[maybe_unused]] chrono::SystemClock::duration command_timeout)
     : allocator_(allocator),
+      command_queue_(allocator),
       send_to_host_fn_(std::move(send_to_host_fn)),
       send_to_controller_fn_(std::move(send_to_controller_fn)) {}
 
@@ -123,8 +124,11 @@ CommandMultiplexer::CommandMultiplexer(
     [[maybe_unused]] Function<void()> timeout_fn,
     [[maybe_unused]] chrono::SystemClock::duration command_timeout)
     : allocator_(allocator),
+      command_queue_(allocator),
       send_to_host_fn_(std::move(send_to_host_fn)),
       send_to_controller_fn_(std::move(send_to_controller_fn)) {}
+
+CommandMultiplexer::~CommandMultiplexer() = default;
 
 Result<async2::Poll<>> CommandMultiplexer::PendCommandTimeout(
     [[maybe_unused]] async2::Context& cx) {
@@ -155,6 +159,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
       bytes.size());
   if (!view.Ok()) {
     // View is malformed, don't intercept.
+    std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
   }
@@ -215,7 +220,8 @@ void CommandMultiplexer::HandleH4FromController(
 
   // Only intercept event packets from controller.
   if (*buf->begin() != std::byte(emboss::H4PacketType::EVENT)) {
-    send_to_host_fn_(std::move(buf));
+    std::lock_guard lock(mutex_);
+    SendToHost(std::move(buf));
     return;
   }
 
@@ -226,7 +232,7 @@ void CommandMultiplexer::HandleH4FromController(
       static_cast<const uint8_t*>(static_cast<const void*>(bytes.data())),
       bytes.size());
   if (!view.Ok()) {
-    // View is malformed, don't intercept.
+    // View is malformed, don't intercept, don't process.
     send_to_host_fn_(std::move(buf));
     return;
   }
@@ -237,14 +243,14 @@ void CommandMultiplexer::HandleH4FromController(
   auto iter = FindEventInterceptor(event_code, bytes);
 
   if (iter == event_interceptors_.end()) {
-    send_to_host_fn_(std::move(buf));
+    SendToHost(std::move(buf));
     return;
   }
 
   auto& handler = iter->handler();
   if (!handler) {
     // Interceptor doesn't have a handler.
-    send_to_host_fn_(std::move(buf));
+    SendToHost(std::move(buf));
     return;
   }
 
@@ -269,12 +275,10 @@ void CommandMultiplexer::HandleH4FromController(
     PW_CHECK(&std::get<EventInterceptorWrapper*>(downcast)->state() == &*iter);
 
     RemoveInterceptor(interceptors_iter);
-  } else {
-    // Only other valid action is to continue, so no need to do anything.
   }
 
   if (result.event.has_value()) {
-    send_to_host_fn_(std::move(result.event->buffer));
+    SendToHost(std::move(result.event->buffer));
   }
 }
 
@@ -302,8 +306,9 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendEvent(
   }
   event.buffer->Insert(event.buffer->begin(), kH4EventHeader);
 
+  std::lock_guard lock(mutex_);
   // No buffering of events is needed.
-  send_to_host_fn_(std::move(event.buffer));
+  SendToHost(std::move(event.buffer));
   return {};
 }
 
@@ -490,9 +495,114 @@ void CommandMultiplexer::RemoveInterceptor(InterceptorMap::iterator iterator) {
   allocator_.Delete(&interceptor);
 }
 
+void CommandMultiplexer::SendToHost(MultiBuf::Instance&& buf) {
+  if (*buf->begin() != std::byte(emboss::H4PacketType::EVENT)) {
+    send_to_host_fn_(std::move(buf));
+    return;
+  }
+
+  std::array<std::byte, kMaxEventHeaderSize> header_buf;
+  auto bytes = ByteSpan(
+      header_buf.data(),
+      buf->CopyTo(header_buf, /*offset=*/sizeof(emboss::H4PacketType)));
+
+  emboss::EventHeaderView view(
+      static_cast<const uint8_t*>(static_cast<const void*>(bytes.data())),
+      bytes.size());
+  if (!view.Ok()) {
+    send_to_host_fn_(std::move(buf));
+    return;
+  }
+
+  switch (cpp23::to_underlying(view.event_code().Read())) {
+    case cpp23::to_underlying(emboss::EventCode::COMMAND_COMPLETE): {
+      emboss::CommandCompleteEventWriter cmd_complete_view(
+          static_cast<uint8_t*>(static_cast<void*>(bytes.data())),
+          bytes.size());
+      if (!cmd_complete_view.Ok()) {
+        send_to_host_fn_(std::move(buf));
+        return;
+      }
+
+      auto num_hci_cmd_pkt = cmd_complete_view.num_hci_command_packets().Read();
+      auto new_num_hci_cmd_pkt = UpdateNumHciCommandPackets(num_hci_cmd_pkt);
+
+      if (new_num_hci_cmd_pkt > num_hci_cmd_pkt) {
+        cmd_complete_view.num_hci_command_packets().Write(new_num_hci_cmd_pkt);
+        buf->CopyFrom(bytes, /*offset=*/sizeof(emboss::H4PacketType));
+      }
+
+      break;
+    }
+    case cpp23::to_underlying(emboss::EventCode::COMMAND_STATUS): {
+      emboss::CommandStatusEventWriter cmd_status_view(
+          static_cast<uint8_t*>(static_cast<void*>(bytes.data())),
+          bytes.size());
+      if (!cmd_status_view.Ok()) {
+        send_to_host_fn_(std::move(buf));
+        return;
+      }
+
+      auto num_hci_cmd_pkt = cmd_status_view.num_hci_command_packets().Read();
+      auto new_num_hci_cmd_pkt = UpdateNumHciCommandPackets(num_hci_cmd_pkt);
+
+      if (new_num_hci_cmd_pkt > num_hci_cmd_pkt) {
+        cmd_status_view.num_hci_command_packets().Write(new_num_hci_cmd_pkt);
+        buf->CopyFrom(bytes, /*offset=*/sizeof(emboss::H4PacketType));
+      }
+
+      break;
+    }
+  }
+
+  send_to_host_fn_(std::move(buf));
+}
+
+uint8_t CommandMultiplexer::UpdateNumHciCommandPackets(
+    uint8_t num_hci_command_packets) {
+  command_credits_ = num_hci_command_packets;
+  ProcessQueue();
+
+  return TryReserveQueueSpace(num_hci_command_packets);
+}
+
+uint8_t CommandMultiplexer::TryReserveQueueSpace(uint8_t requested) {
+  if (requested > reserved_queue_space()) {
+    // Ignoring return value, this is best-effort reservation.
+    (void)command_queue_.try_reserve(requested + command_queue_.size());
+  }
+  return reserved_queue_space();
+}
+
 void CommandMultiplexer::SendToControllerOrQueue(MultiBuf::Instance&& buf) {
-  // Queuing not yet supported.
-  send_to_controller_fn_(std::move(buf));
+  if (command_queue_.empty() && command_credits_ > 0) {
+    --command_credits_;
+    send_to_controller_fn_(std::move(buf));
+    return;
+  }
+
+  // Using the asserting version of push_back. We reserve queue space for
+  // however many credits we send to the host, so there should always be space.
+  command_queue_.push_back(QueuedCommandState{
+      .packet = {std::move(buf)},
+  });
+}
+
+void CommandMultiplexer::ProcessQueue() {
+  while (!command_queue_.empty() && command_credits_ > 0) {
+    auto& state = command_queue_.front();
+    --command_credits_;
+    send_to_controller_fn_(std::move(state.packet.buffer));
+    command_queue_.pop_front();
+  }
+}
+
+uint8_t CommandMultiplexer::reserved_queue_space() {
+  // Theoretically the queue could reserve > uint8_t::max, this is unlikely
+  // in reality, but we should guard against it nonetheless.
+  return static_cast<uint8_t>(
+      std::min<QueueSize>(command_queue_.capacity() - command_queue_.size(),
+                          std::numeric_limits<uint8_t>::max()));
 }
 
 }  // namespace pw::bluetooth::proxy::hci

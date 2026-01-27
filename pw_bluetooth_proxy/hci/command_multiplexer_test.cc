@@ -14,10 +14,12 @@
 
 #include "pw_bluetooth_proxy/hci/command_multiplexer.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 
 #include "pw_allocator/testing.h"
+#include "pw_assert/check.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/simulated_time_provider.h"
@@ -25,12 +27,55 @@
 #include "pw_chrono/system_clock.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
+#include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::bluetooth::proxy::hci {
 namespace {
 
-constexpr size_t kAllocatorSize = 256;
+constexpr size_t kCommandCompleteHeaderSize = 6;
+constexpr size_t kCommandCompleteParameterSize = 3;
+constexpr size_t kAllocatorSize = 2048;
+
+struct GiveCommandCreditParams {
+  // An opcode of 0 is used to indicate commands can/cannot be sent without
+  // necessarily being associated with a particular command.
+  uint16_t opcode = 0;
+
+  // By default allow a single additional command to be sent.
+  uint8_t count = 1;
+
+  // By default, remove the resulting event from the host buffer.
+  bool remove_from_host_buffer = true;
+};
+
+template <size_t kPayloadSize = 0>
+std::array<std::byte, kCommandCompleteHeaderSize + kPayloadSize>
+MakeCommandCompletePacket(uint16_t opcode,
+                          uint8_t credits,
+                          span<const std::byte, kPayloadSize> payload = {}) {
+  static_assert(kPayloadSize + kCommandCompleteParameterSize <=
+                std::numeric_limits<uint8_t>::max());
+  std::byte opcode_lower{static_cast<uint8_t>(opcode >> 0 & 0xFF)};
+  std::byte opcode_upper{static_cast<uint8_t>(opcode >> 8 & 0xFF)};
+  std::array<std::byte, kCommandCompleteHeaderSize + kPayloadSize> packet{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Command Complete)
+      std::byte(0x0E),
+      // Parameter size
+      std::byte(kCommandCompleteParameterSize + kPayloadSize),
+      // Num_HCI_Command_Packets
+      std::byte(credits),
+      // OpCode
+      opcode_lower,
+      opcode_upper,
+  };
+  std::copy_n(payload.begin(),
+              payload.size(),
+              packet.begin() + kCommandCompleteHeaderSize);
+  return packet;
+}
 
 TEST(IdentifierTest, UniqueIdentifier) {
   using Int = uint8_t;
@@ -95,8 +140,14 @@ class CommandMultiplexerTest : public ::testing::Test {
   class Accessor {
    public:
     CommandMultiplexer& hci_cmd_mux() { return hci_cmd_mux_; }
-    Allocator& allocator() { return test_.allocator(); }
+    allocator::test::AllocatorForTest<kAllocatorSize>& allocator() {
+      return test_.allocator();
+    }
     async2::DispatcherForTest& dispatcher() { return test_.dispatcher(); }
+
+    void set_auto_command_complete(bool value = true) {
+      auto_command_complete_ = value;
+    }
 
     pw::DynamicDeque<MultiBuf::Instance>& packets_to_host() {
       return test_.packets_to_host();
@@ -105,39 +156,59 @@ class CommandMultiplexerTest : public ::testing::Test {
       return test_.packets_to_controller();
     }
 
+    void SendFromHost(MultiBuf::Instance&& packet) {
+      bool give_credit =
+          auto_command_complete_ && *packet->begin() == std::byte(0x01);
+      hci_cmd_mux_.HandleH4FromHost(std::move(packet));
+      if (give_credit) {
+        GiveCommandCredit();
+      }
+    }
+
+    void GiveCommandCredit(GiveCommandCreditParams params = {}) {
+      return test_.GiveCommandCredit(params);
+    }
+
    private:
     Accessor(CommandMultiplexerTest& test, CommandMultiplexer& hci_cmd_mux)
         : test_(test), hci_cmd_mux_(hci_cmd_mux) {}
     friend CommandMultiplexerTest;
 
+    bool auto_command_complete_{false};
     CommandMultiplexerTest& test_;
     CommandMultiplexer& hci_cmd_mux_;
   };
 
  protected:
   CommandMultiplexer& hci_cmd_mux_async2() {
-    if (!hci_cmd_mux_async2_.has_value()) {
-      hci_cmd_mux_async2_.emplace(allocator_,
-                                  make_send_to_host_cb(),
-                                  make_send_to_controller_cb(),
-                                  time_provider_);
+    PW_CHECK(is_async_.value_or(true));
+    is_async_ = true;
+    if (!cmd_mux_.has_value()) {
+      cmd_mux_.emplace(allocator_,
+                       make_send_to_host_cb(),
+                       make_send_to_controller_cb(),
+                       time_provider_);
     }
-    return *hci_cmd_mux_async2_;
+    return *cmd_mux_;
   }
 
   CommandMultiplexer& hci_cmd_mux_timer() {
-    if (!hci_cmd_mux_async2_.has_value()) {
+    PW_CHECK(!is_async_.value_or(false));
+    is_async_ = false;
+    if (!cmd_mux_.has_value()) {
       Function<void()> timeout_fn = [this] { OnTimeout(); };
-      hci_cmd_mux_async2_.emplace(allocator_,
-                                  make_send_to_host_cb(),
-                                  make_send_to_controller_cb(),
-                                  std::move(timeout_fn),
-                                  kTestTimeoutDuration);
+      cmd_mux_.emplace(allocator_,
+                       make_send_to_host_cb(),
+                       make_send_to_controller_cb(),
+                       std::move(timeout_fn),
+                       kTestTimeoutDuration);
     }
-    return *hci_cmd_mux_async2_;
+    return *cmd_mux_;
   }
 
-  Allocator& allocator() { return allocator_; }
+  allocator::test::AllocatorForTest<kAllocatorSize>& allocator() {
+    return allocator_;
+  }
   async2::DispatcherForTest& dispatcher() { return dispatcher_; }
 
   Accessor accessor_async2() { return Accessor(*this, hci_cmd_mux_async2()); }
@@ -149,6 +220,35 @@ class CommandMultiplexerTest : public ::testing::Test {
   }
   pw::DynamicDeque<MultiBuf::Instance>& packets_to_controller() {
     return packets_to_controller_;
+  }
+
+  pw::Result<MultiBuf::Instance> AllocBuf(ConstByteSpan span) {
+    MultiBuf::Instance buf(allocator());
+    if (!buf->TryReserveForPushBack()) {
+      return Status::ResourceExhausted();
+    }
+
+    auto alloc = allocator().MakeUnique<std::byte[]>(span.size());
+    if (alloc == nullptr) {
+      return Status::ResourceExhausted();
+    }
+
+    std::memcpy(alloc.get(), span.data(), span.size());
+    buf->PushBack(std::move(alloc));
+    return buf;
+  }
+
+  void GiveCommandCredit(GiveCommandCreditParams params) {
+    auto host_packets_count = packets_to_host_.size();
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto buf,
+        AllocBuf(MakeCommandCompletePacket(params.opcode, params.count)));
+    cmd_mux_->HandleH4FromController(std::move(buf));
+
+    PW_CHECK(packets_to_host_.size() == host_packets_count + 1);
+    if (params.remove_from_host_buffer) {
+      packets_to_host_.pop_back();
+    }
   }
 
  private:
@@ -175,8 +275,8 @@ class CommandMultiplexerTest : public ::testing::Test {
   pw::DynamicDeque<MultiBuf::Instance> packets_to_host_{allocator_};
   pw::DynamicDeque<MultiBuf::Instance> packets_to_controller_{allocator_};
 
-  std::optional<CommandMultiplexer> hci_cmd_mux_async2_{std::nullopt};
-  std::optional<CommandMultiplexer> hci_cmd_mux_timer_{std::nullopt};
+  std::optional<CommandMultiplexer> cmd_mux_{std::nullopt};
+  std::optional<bool> is_async_{std::nullopt};
 };
 
 using Accessor = CommandMultiplexerTest::Accessor;
@@ -419,10 +519,12 @@ void TestInterceptCommands(Accessor test) {
       std::byte(0x00),
   };
 
+  test.set_auto_command_complete();
+
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_controller().size(), 1u);
@@ -441,12 +543,12 @@ void TestInterceptCommands(Accessor test) {
         intercepted = std::move(packet.buffer);
         return {};
       });
-  ASSERT_TRUE(result.ok());
+  ASSERT_EQ(result.status(), OkStatus());
 
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Ensure not forwarded.
     EXPECT_TRUE(test.packets_to_controller().empty());
@@ -463,7 +565,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Ensure not forwarded.
     EXPECT_TRUE(test.packets_to_controller().empty());
@@ -479,7 +581,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_controller().size(), 1u);
@@ -504,7 +606,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Forwards packets returned from interceptor.
     ASSERT_EQ(test.packets_to_controller().size(), 1u);
@@ -521,7 +623,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Forwards packets returned from interceptor.
     ASSERT_EQ(test.packets_to_controller().size(), 1u);
@@ -553,7 +655,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Ensure not forwarded.
     EXPECT_TRUE(test.packets_to_controller().empty());
@@ -569,7 +671,7 @@ void TestInterceptCommands(Accessor test) {
   {
     MultiBuf::Instance buf(test.allocator());
     buf->Insert(buf->end(), reset_packet_bytes);
-    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    test.SendFromHost(std::move(buf));
 
     // Forwards packets if no interceptor.
     ASSERT_EQ(test.packets_to_controller().size(), 1u);
@@ -1087,6 +1189,215 @@ TEST_F(CommandMultiplexerTest, InterceptEventsAsync) {
 }
 TEST_F(CommandMultiplexerTest, InterceptEventsTimer) {
   TestInterceptEvents(accessor_timer());
+}
+
+void TestQueueCommands(Accessor test) {
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Inquiry)
+      std::byte(0x01),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 7> disconnect_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Disconnect)
+      std::byte(0x06),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x03),
+      // Command handle
+      std::byte(0x00),
+      std::byte(0x00),
+      // Status code
+      std::byte(0x00),
+  };
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.SendFromHost(std::move(buf));
+
+    // Packet should have been sent.
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, reset_packet_bytes.size()> out;
+    test.packets_to_controller().front()->CopyTo(out);
+    EXPECT_EQ(reset_packet_bytes, out);
+    test.packets_to_controller().pop_front();
+  }
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), inquiry_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), disconnect_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+
+  // Packet should have been queued and not yet sent to the controller.
+  ASSERT_EQ(test.packets_to_controller().size(), 0u);
+
+  // Give credit, confirm the queued packet was sent.
+  test.GiveCommandCredit({.opcode = 0x0C03});
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, inquiry_packet_bytes.size()> out;
+  EXPECT_EQ(test.packets_to_controller().front()->size(), 4u);
+  test.packets_to_controller().front()->CopyTo(out);
+  EXPECT_EQ(inquiry_packet_bytes, out);
+  test.packets_to_controller().pop_front();
+
+  // Give last credit, confirm the second queued packet was sent.
+  test.GiveCommandCredit({.opcode = 0x0401});
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, disconnect_packet_bytes.size()> out2;
+  EXPECT_EQ(test.packets_to_controller().front()->size(), 7u);
+  test.packets_to_controller().front()->CopyTo(out2);
+  EXPECT_EQ(disconnect_packet_bytes, out2);
+  test.packets_to_controller().pop_front();
+
+  // Give four credits.
+  test.GiveCommandCredit({.opcode = 0x0406, .count = 4});
+  ASSERT_EQ(test.packets_to_controller().size(), 0u);
+
+  // Send a couple commands, ensuring they get sent immediately.
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), inquiry_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, 4> out3;
+  EXPECT_EQ(test.packets_to_controller().front()->size(), 4u);
+  test.packets_to_controller().front()->CopyTo(out3);
+  EXPECT_EQ(inquiry_packet_bytes, out3);
+  test.packets_to_controller().pop_front();
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), disconnect_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, 7> out4;
+  EXPECT_EQ(test.packets_to_controller().front()->size(), 7u);
+  test.packets_to_controller().front()->CopyTo(out4);
+  EXPECT_EQ(disconnect_packet_bytes, out4);
+  test.packets_to_controller().pop_front();
+
+  // Send a command credit packet with 0 credits, ensuring it is overridden.
+  test.GiveCommandCredit({.count = 0});
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+
+  // Packet should have been queued and not yet sent to the controller.
+  ASSERT_EQ(test.packets_to_controller().size(), 0u);
+
+  // Give credit, confirm the queued packet was sent.
+  test.GiveCommandCredit({.opcode = 0x0C03});
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, reset_packet_bytes.size()> out5;
+  EXPECT_EQ(test.packets_to_controller().front()->size(), 4u);
+  test.packets_to_controller().front()->CopyTo(out5);
+  EXPECT_EQ(reset_packet_bytes, out5);
+  test.packets_to_controller().pop_front();
+}
+
+TEST_F(CommandMultiplexerTest, QueueCommandsAsync) {
+  TestQueueCommands(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, QueueCommandsTimer) {
+  TestQueueCommands(accessor_timer());
+}
+
+void TestNumHciCommands(Accessor test) {
+  constexpr uint8_t kTestNumHciCommands = 5;
+  constexpr size_t kNumHciCommandsByte = 3;
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+  }
+
+  // Packet should have been sent.
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, reset_packet_bytes.size()> out;
+  test.packets_to_controller().front()->CopyTo(out);
+  EXPECT_EQ(reset_packet_bytes, out);
+  test.packets_to_controller().pop_front();
+
+  // Give credit, confirm the queued packet was sent.
+  test.GiveCommandCredit({.opcode = 0x0C03,
+                          .count = kTestNumHciCommands,
+                          .remove_from_host_buffer = false});
+  ASSERT_EQ(test.packets_to_controller().size(), 0u);
+
+  // Check that the num_hci_commands field of the command complete packet is >=
+  // the value sent from.
+  ASSERT_EQ(test.packets_to_host().size(), 1u);
+  std::array<std::byte, kCommandCompleteHeaderSize> command_complete_header;
+  test.packets_to_host().front()->CopyTo(command_complete_header);
+  uint8_t actual_num_hci_commands =
+      static_cast<uint8_t>(command_complete_header[kNumHciCommandsByte]);
+  EXPECT_GE(actual_num_hci_commands, kTestNumHciCommands);
+  test.packets_to_host().pop_front();
+
+  for (size_t i = 0; i < kTestNumHciCommands; ++i) {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    ASSERT_EQ(test.packets_to_controller().size(), 1);
+    std::array<std::byte, reset_packet_bytes.size()> out_packet;
+    test.packets_to_controller().front()->CopyTo(out_packet);
+    EXPECT_EQ(reset_packet_bytes, out_packet);
+    test.packets_to_controller().clear();
+  }
+
+  if (actual_num_hci_commands > kTestNumHciCommands) {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.hci_cmd_mux().HandleH4FromHost(std::move(buf));
+    // All further packets should be buffered.
+    EXPECT_EQ(test.packets_to_controller().size(), 0u);
+  }
+}
+
+TEST_F(CommandMultiplexerTest, NumHciCommandsAsync) {
+  TestNumHciCommands(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, NumHciCommandsTimer) {
+  TestNumHciCommands(accessor_timer());
 }
 
 }  // namespace
