@@ -13,8 +13,11 @@
 // the License.
 #pragma once
 
+#include <optional>
+
 #include "coin_slot.h"
 #include "pw_async2/context.h"
+#include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
@@ -22,28 +25,82 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace codelab {
+namespace internal {
+
+inline pw::sync::InterruptSpinLock& KeypadLock() {
+  static pw::sync::InterruptSpinLock lock;
+  return lock;
+}
+
+}  // namespace internal
+
+class KeyPressFuture;
 
 class Keypad {
  public:
-  constexpr Keypad() : key_pressed_(kNone) {}
-
-  // Pends until a key has been pressed, returning the key number.
+  // Returns a future that resolves when a key is pressed with the value
+  // of the key.
   //
   // May only be called by one task.
-  pw::async2::Poll<int> Pend(pw::async2::Context& cx);
+  KeyPressFuture WaitForKeyPress();
 
   // Record a key press. Typically called from the keypad ISR.
   void Press(int key);
 
  private:
-  // A special internal value to indicate no keypad button has yet been
-  // pressed.
-  static constexpr int kNone = -1;
+  friend class KeyPressFuture;
 
-  pw::sync::InterruptSpinLock lock_;
-  int key_pressed_ PW_GUARDED_BY(lock_);
-  pw::async2::Waker waker_;  // No guard needed!
+  // The future that will be resolved when a key is pressed.
+  KeyPressFuture* key_press_future_ PW_GUARDED_BY(internal::KeypadLock()) =
+      nullptr;
 };
+
+class KeyPressFuture {
+ public:
+  // The type returned by the future when it completes.
+  using value_type = int;
+
+  KeyPressFuture() : state_(kDefaultConstructed) {}
+
+  KeyPressFuture(const KeyPressFuture&) = delete;
+  KeyPressFuture& operator=(const KeyPressFuture&) = delete;
+
+  KeyPressFuture(KeyPressFuture&& other) noexcept;
+  KeyPressFuture& operator=(KeyPressFuture&& other) noexcept;
+
+  // Pends until a key is pressed, returning the key number.
+  pw::async2::Poll<value_type> Pend(pw::async2::Context& cx);
+
+  bool is_pendable() const { return state_ == kInitialized; }
+  bool is_complete() const { return state_ == kCompleted; }
+
+ private:
+  friend class Keypad;
+
+  explicit KeyPressFuture(Keypad& keypad)
+      : state_(kInitialized), keypad_(&keypad) {
+    std::lock_guard lock(internal::KeypadLock());
+    keypad_->key_press_future_ = this;
+  }
+
+  // Possible states of the future.
+  enum {
+    kDefaultConstructed,
+    kInitialized,
+    kCompleted,
+  } state_;
+
+  Keypad* keypad_;
+
+  // When present, holds the key that was pressed.
+  // If absent, the future is still pending.
+  std::optional<int> key_pressed_;
+
+  pw::async2::Waker waker_;
+};
+
+// Ensure that KeyPressFuture satisfies the Future concept.
+static_assert(pw::async2::Future<KeyPressFuture>);
 
 // The main task that drives the vending machine.
 class VendingMachineTask : public pw::async2::Task {
@@ -51,7 +108,6 @@ class VendingMachineTask : public pw::async2::Task {
   VendingMachineTask(CoinSlot& coin_slot, Keypad& keypad)
       : pw::async2::Task(PW_ASYNC_TASK_NAME("VendingMachineTask")),
         coin_slot_(coin_slot),
-        displayed_welcome_message_(false),
         keypad_(keypad),
         coins_inserted_(0) {}
 
@@ -61,8 +117,9 @@ class VendingMachineTask : public pw::async2::Task {
   pw::async2::Poll<> DoPend(pw::async2::Context& cx) override;
 
   CoinSlot& coin_slot_;
-  bool displayed_welcome_message_;
+  CoinFuture coin_future_;
   Keypad& keypad_;
+  KeyPressFuture key_future_;
   unsigned coins_inserted_;
 };
 

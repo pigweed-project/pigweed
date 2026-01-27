@@ -37,19 +37,9 @@ deps = [
     "//pw_sync:lock_annotations",
 ]
 
-pw_cc_binary(
+alias(
     name = "step3",
-    srcs = [
-        "checkpoint4/main.cc",
-        "checkpoint4/vending_machine.cc",
-        "checkpoint4/vending_machine.h",
-    ],
-    copts = [
-        "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
-    ],
-    deps = deps,
+    actual = ":checkpoint5",
 )
 
 pw_cc_binary(
@@ -61,6 +51,7 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
+        "-Wno-unused-private-field",
         # TODO: b/457508399 - Remove once migrated onto futures.
         "-Wno-deprecated-declarations",
     ],
@@ -97,6 +88,36 @@ pw_cc_binary(
     deps = deps,
 )
 
+pw_cc_binary(
+    name = "checkpoint4",
+    srcs = [
+        "checkpoint4/main.cc",
+        "checkpoint4/vending_machine.cc",
+        "checkpoint4/vending_machine.h",
+    ],
+    copts = [
+        "-Wno-unused-parameter",
+        # TODO: b/457508399 - Remove once migrated onto futures.
+        "-Wno-deprecated-declarations",
+    ],
+    deps = deps,
+)
+
+pw_cc_binary(
+    name = "checkpoint5",
+    srcs = [
+        "checkpoint5/main.cc",
+        "checkpoint5/vending_machine.cc",
+        "checkpoint5/vending_machine.h",
+    ],
+    copts = [
+        "-Wno-unused-parameter",
+        # TODO: b/457508399 - Remove once migrated onto futures.
+        "-Wno-deprecated-declarations",
+    ],
+    deps = deps,
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
@@ -112,6 +133,9 @@ sphinx_docs_library(
         "checkpoint4/main.cc",
         "checkpoint4/vending_machine.cc",
         "checkpoint4/vending_machine.h",
+        "checkpoint5/main.cc",
+        "checkpoint5/vending_machine.cc",
+        "checkpoint5/vending_machine.h",
         "docs.rst",
     ],
     target_compatible_with = incompatible_with_mcu(),

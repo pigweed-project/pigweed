@@ -1,4 +1,4 @@
-// Copyright 2025 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -33,7 +33,41 @@ inline pw::sync::InterruptSpinLock& KeypadLock() {
 
 }  // namespace internal
 
-class KeyPressFuture;
+class Keypad;
+
+class KeyPressFuture {
+ public:
+  // The type returned by the future when it completes.
+  using value_type = int;
+
+  KeyPressFuture() : core_(), keypad_(nullptr) {}
+
+  // Pends until a key is pressed, returning the key number.
+  pw::async2::Poll<value_type> Pend(pw::async2::Context& cx);
+
+  [[nodiscard]] bool is_pendable() const { return core_.is_pendable(); }
+  [[nodiscard]] bool is_complete() const { return core_.is_complete(); }
+
+ private:
+  friend class Keypad;
+  friend class pw::async2::FutureCore;
+
+  static constexpr const char kWaitReason[] = "Waiting for keypad press";
+
+  explicit KeyPressFuture(Keypad& keypad);
+
+  pw::async2::Poll<value_type> DoPend(pw::async2::Context& cx);
+
+  pw::async2::FutureCore core_;
+  Keypad* keypad_;
+
+  // When present, holds the key that was pressed.
+  // If absent, the future is still pending.
+  std::optional<int> key_pressed_ PW_GUARDED_BY(internal::KeypadLock());
+};
+
+// Ensure that KeyPressFuture satisfies the Future concept.
+static_assert(pw::async2::Future<KeyPressFuture>);
 
 class Keypad {
  public:
@@ -49,55 +83,10 @@ class Keypad {
  private:
   friend class KeyPressFuture;
 
-  // The future that will be resolved when a key is pressed.
-  KeyPressFuture* key_press_future_ PW_GUARDED_BY(internal::KeypadLock()) =
-      nullptr;
+  // The list of futures waiting for a key press.
+  pw::async2::FutureList<&KeyPressFuture::core_> futures_
+      PW_GUARDED_BY(internal::KeypadLock());
 };
-
-class KeyPressFuture {
- public:
-  // The type returned by the future when it completes.
-  using value_type = int;
-
-  KeyPressFuture() : state_(kDefaultConstructed) {}
-
-  KeyPressFuture(const KeyPressFuture&) = delete;
-  KeyPressFuture& operator=(const KeyPressFuture&) = delete;
-
-  KeyPressFuture(KeyPressFuture&& other) noexcept;
-  KeyPressFuture& operator=(KeyPressFuture&& other) noexcept;
-
-  // Pends until a key is pressed, returning the key number.
-  pw::async2::Poll<value_type> Pend(pw::async2::Context& cx);
-
-  bool is_pendable() const { return state_ == kInitialized; }
-  bool is_complete() const { return state_ == kCompleted; }
-
- private:
-  friend class Keypad;
-
-  explicit KeyPressFuture(Keypad& keypad)
-      : state_(kInitialized), keypad_(&keypad) {
-    std::lock_guard lock(internal::KeypadLock());
-    keypad_->key_press_future_ = this;
-  }
-
-  // Possible states of the future.
-  enum {
-    kDefaultConstructed,
-    kInitialized,
-    kCompleted,
-  } state_;
-
-  Keypad* keypad_;
-
-  // When present, holds the key that was pressed.
-  // If absent, the future is still pending.
-  std::optional<int> key_pressed_;
-};
-
-// Ensure that KeyPressFuture satisfies the Future concept.
-static_assert(pw::async2::Future<KeyPressFuture>);
 
 // The main task that drives the vending machine.
 class VendingMachineTask : public pw::async2::Task {

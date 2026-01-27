@@ -1,4 +1,4 @@
-// Copyright 2025 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -14,21 +14,40 @@
 
 #include "vending_machine.h"
 
+#include <mutex>
+
 #include "pw_async2/try.h"
 #include "pw_log/log.h"
 
 namespace codelab {
 
+KeyPressFuture::KeyPressFuture(Keypad& keypad)
+    : core_(pw::async2::FutureState::kPending), keypad_(&keypad) {
+  std::lock_guard lock(internal::KeypadLock());
+  keypad_->futures_.Push(*this);
+}
+
 pw::async2::Poll<int> KeyPressFuture::Pend(pw::async2::Context& cx) {
+  return core_.DoPend(*this, cx);
+}
+
+pw::async2::Poll<int> KeyPressFuture::DoPend(pw::async2::Context&) {
+  std::lock_guard lock(internal::KeypadLock());
   if (key_pressed_.has_value()) {
-    return pw::async2::Ready(key_pressed_.value());
+    return pw::async2::Ready(*key_pressed_);
   }
   return pw::async2::Pending();
 }
 
-KeyPressFuture Keypad::WaitForKeyPress() { return KeyPressFuture(-1); }
+KeyPressFuture Keypad::WaitForKeyPress() { return KeyPressFuture(*this); }
 
-void Keypad::Press(int key) {}
+void Keypad::Press(int key) {
+  std::lock_guard lock(internal::KeypadLock());
+  if (auto future = futures_.PopIfAvailable()) {
+    future->key_pressed_ = key;
+    future->core_.Wake();
+  }
+}
 
 pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
   if (coins_inserted_ == 0) {

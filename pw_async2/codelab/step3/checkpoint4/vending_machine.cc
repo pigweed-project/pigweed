@@ -21,37 +21,75 @@
 
 namespace codelab {
 
-pw::async2::Poll<int> Keypad::Pend(pw::async2::Context& cx) {
-  std::lock_guard lock(lock_);
-  int key = std::exchange(key_pressed_, kNone);
-  if (key != kNone) {
-    return key;
+KeyPressFuture::KeyPressFuture(KeyPressFuture&& other) noexcept
+    : state_(std::exchange(other.state_, kDefaultConstructed)),
+      keypad_(std::exchange(other.keypad_, nullptr)),
+      key_pressed_(std::exchange(other.key_pressed_, std::nullopt)),
+      waker_(std::move(other.waker_)) {
+  std::lock_guard lock(internal::KeypadLock());
+  if (keypad_ != nullptr) {
+    if (keypad_->key_press_future_ == &other) {
+      keypad_->key_press_future_ = this;
+    }
   }
-  PW_ASYNC_STORE_WAKER(cx, waker_, "keypad press");
+}
+
+KeyPressFuture& KeyPressFuture::operator=(KeyPressFuture&& other) noexcept {
+  if (this != &other) {
+    state_ = std::exchange(other.state_, kDefaultConstructed);
+    keypad_ = std::exchange(other.keypad_, nullptr);
+    key_pressed_ = std::exchange(other.key_pressed_, std::nullopt);
+    waker_ = std::move(other.waker_);
+
+    std::lock_guard lock(internal::KeypadLock());
+    if (keypad_ != nullptr) {
+      if (keypad_->key_press_future_ == &other) {
+        keypad_->key_press_future_ = this;
+      } else if (keypad_->key_press_future_ == this) {
+        keypad_->key_press_future_ = nullptr;
+      }
+    }
+  }
+  return *this;
+}
+
+pw::async2::Poll<int> KeyPressFuture::Pend(pw::async2::Context& cx) {
+  if (key_pressed_.has_value()) {
+    return pw::async2::Ready(key_pressed_.value());
+  }
+  PW_ASYNC_STORE_WAKER(cx, waker_, "Waiting for keypad press");
   return pw::async2::Pending();
 }
 
+KeyPressFuture Keypad::WaitForKeyPress() { return KeyPressFuture(*this); }
+
 void Keypad::Press(int key) {
-  std::lock_guard lock(lock_);
-  key_pressed_ = key;
-  waker_.Wake();
+  std::lock_guard lock(internal::KeypadLock());
+  if (key_press_future_ != nullptr) {
+    key_press_future_->key_pressed_ = key;
+    key_press_future_->waker_.Wake();
+  }
 }
 
 pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
-  if (!displayed_welcome_message_) {
-    PW_LOG_INFO("Welcome to the Pigweed Vending Machine!");
-    PW_LOG_INFO("Please insert a coin.");
-    displayed_welcome_message_ = true;
-  }
-
   if (coins_inserted_ == 0) {
-    PW_TRY_READY_ASSIGN(unsigned coins, coin_slot_.Pend(cx));
+    if (!coin_future_.is_pendable()) {
+      PW_LOG_INFO("Welcome to the Pigweed Vending Machine!");
+      PW_LOG_INFO("Please insert a coin.");
+      coin_future_ = coin_slot_.GetCoins();
+    }
+
+    PW_TRY_READY_ASSIGN(unsigned coins, coin_future_.Pend(cx));
     PW_LOG_INFO("Received %u coin%s.", coins, coins > 1 ? "s" : "");
     PW_LOG_INFO("Please press a keypad key.");
     coins_inserted_ += coins;
   }
 
-  PW_TRY_READY_ASSIGN(int key, keypad_.Pend(cx));
+  if (!key_future_.is_pendable()) {
+    key_future_ = keypad_.WaitForKeyPress();
+  }
+
+  PW_TRY_READY_ASSIGN(int key, key_future_.Pend(cx));
   PW_LOG_INFO("Keypad %d was pressed. Dispensing an item.", key);
 
   return pw::async2::Ready();
