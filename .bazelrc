@@ -51,6 +51,7 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 
 # C++ standard compatibility configs.
 common:cxx17 --//pw_toolchain/cc:cxx_standard=17
+common:cxx23 --//pw_toolchain/cc:cxx_standard=23
 
 # Silence compiler warnings from external repositories.
 #

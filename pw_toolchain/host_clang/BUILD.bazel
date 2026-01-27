@@ -420,6 +420,9 @@ cc_toolchain(
         "//pw_toolchain/cc:c++20_enabled": ["//pw_toolchain/cc/args:c++20_feature"],
         "//conditions:default": [],
     }) + select({
+        "//pw_toolchain/cc:c++23_enabled": ["//pw_toolchain/cc/args:c++23_feature"],
+        "//conditions:default": [],
+    }) + select({
         ":fuzztest_enabled": [":fuzztest_feature"],
         "//conditions:default": [],
     }) + [

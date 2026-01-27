@@ -339,6 +339,22 @@ cc_args(
     args = ["-std=c++20"],
 )
 
+cc_feature(
+    name = "c++23_feature",
+    args = [":c++23"],
+    feature_name = "c++23",
+)
+
+# Compile for the C++23 standard.
+cc_args(
+    name = "c++23",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["-std=c++23"],
+)
+
 cc_args(
     name = "asan",
     actions = [

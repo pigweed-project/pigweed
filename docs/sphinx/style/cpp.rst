@@ -20,10 +20,11 @@ embedded development beyond just C++ style.
 
 C++ standard
 ============
-All Pigweed C++ code must compile with ``-std=c++17`` in Clang and GCC. C++20
-features may be used as long as the code still compiles unmodified with C++17.
-See ``pw_polyfill/language_feature_macros.h`` for macros that provide C++20
-features when supported.
+Pigweed C++ code must compile with ``-std=c++17`` in Clang and GCC. C++20 or
+newer features may be used as long as the code still compiles unmodified with
+C++17 or the features are restricted to specific libraries (e.g.
+``//pw_async2:coro``). See ``pw_polyfill/language_feature_macros.h`` for macros
+that provide newer C++ features when supported.
 
 Compiler extensions should not be used unless wrapped in a macro or properly
 guarded in the preprocessor. See ``pw_processor/compiler.h`` for macros that

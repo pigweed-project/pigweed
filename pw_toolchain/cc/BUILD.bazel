@@ -23,6 +23,7 @@ string_flag(
     values = [
         "17",
         "20",
+        "23",
     ],
 )
 
@@ -37,6 +38,13 @@ config_setting(
     name = "c++20_enabled",
     flag_values = {
         ":cxx_standard": "20",
+    },
+)
+
+config_setting(
+    name = "c++23_enabled",
+    flag_values = {
+        ":cxx_standard": "23",
     },
 )
 

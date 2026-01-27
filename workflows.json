@@ -54,6 +54,20 @@
       ]
     },
     {
+      "name": "all_host_cpp23",
+      "build_config": {
+        "name": "bazel_default_cpp23",
+        "description": "Host C++23 build",
+        "build_type": "bazel",
+        "args": [
+          "--//pw_toolchain/cc:cxx_standard=23"
+        ]
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
       "name": "docs",
       "use_config": "bazel_default_notest",
       "targets": [
@@ -642,6 +656,7 @@
       "builds": [
         "all_host",
         "all_host_cpp17",
+        "all_host_cpp23",
         "docs"
       ]
     },

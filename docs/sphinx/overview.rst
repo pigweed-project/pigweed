@@ -169,7 +169,7 @@ Benefits of this approach:
 * Unit tests are fast and reliable enough to run after every code iteration.
 * It becomes possible to thoroughly test your software against modern code
   analysis tools like `ASan`_, `TSan`_, `MSan`_, and
-  :ref:`fuzzers <module-pw_fuzzer>`.  These tools usually don't work correctly in
+  :ref:`fuzzers <module-pw_fuzzer>`. These tools usually don't work correctly in
   on-device embedded contexts.
 
 Product lifecycle tooling
@@ -197,7 +197,7 @@ Examples:
 ---------------------------
 Typical new project journey
 ---------------------------
-Here is the typical journey for starting a new project with Pigweed.  We'll
+Here is the typical journey for starting a new project with Pigweed. We'll
 assume that you also need to integrate a vendor SDK such as Espressif's
 ESP-IDF, STMicroelectronics's STM32Cube, or Raspberry Pi's C/C++ SDK.
 
@@ -228,18 +228,17 @@ to see if someone else has already provided a module for your dependency.
 
 3. Create Pigweed wrappers around vendor SDKs
 =============================================
-Next, create Pigweed wrappers that invoke your vendor SDK as needed.  The
-primary interfaces for most Pigweed :ref:`modules <docs-glossary-module>` are
+Next, create Pigweed wrappers that invoke your vendor SDK as needed. The primary
+interfaces for most Pigweed :ref:`modules <docs-glossary-module>` are
 hardware-agnostic. Sometimes, an implementation for a particular vendor SDK
 already exists in :ref:`docs-glossary-upstream`. If an implementation already
 exists in Upstream Pigweed, you're welcome to use that. Otherwise, you'll need
 to implement the wrapper yourself. See :ref:`module-pw_spi` for an example of a
-hardware-agnostic module and :ref:`pw_spi backends <module-pw_spi-backends>`
-for a list of implementations.  We encourage Pigweed clients to contribute
-their general-purpose implementations for popular vendor SDKs to Upstream
-Pigweed so that the whole Pigweed community can benefit from them and improve
-them. But that is totally optional. You can keep your implementations
-private, if needed.
+hardware-agnostic module and :ref:`pw_spi backends <module-pw_spi-backends>` for
+a list of implementations. We encourage Pigweed clients to contribute their
+general-purpose implementations for popular vendor SDKs to Upstream Pigweed so
+that the whole Pigweed community can benefit from them and improve them. But
+that is totally optional. You can keep your implementations private, if needed.
 
 4. Set up device builds
 =======================
@@ -326,9 +325,9 @@ Language support
 
 C++
 ---
-Pigweed has an extensive collection of C++ libraries. See :ref:`docs-module-guides`.
-All Pigweed code requires C++17 and is fully compatible with C++20. We expect to
-support C++ indefinitely.
+Pigweed has an extensive collection of C++ libraries. See
+:ref:`docs-module-guides`. All Pigweed code requires C++17 and is fully
+compatible with C++20 and C++23. We expect to support C++ indefinitely.
 
 Rust
 ----

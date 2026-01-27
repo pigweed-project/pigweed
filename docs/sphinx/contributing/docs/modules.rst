@@ -79,7 +79,7 @@ Create your module's metadata:
           "tagline": "Natural object alignment, guaranteed",
           "status": "stable",
           "languages": [
-            "C++17"
+            "C++"
           ]
         }
       }
