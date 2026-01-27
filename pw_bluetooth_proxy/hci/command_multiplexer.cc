@@ -286,15 +286,15 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
     CommandPacket&& command,
     EventHandler&& event_handler,
     EventCodeVariant complete_event_code,
-    pw::span<pw::bluetooth::emboss::OpCode> exclusions) {
+    pw::span<const pw::bluetooth::emboss::OpCode> exclusions) {
   if (command.buffer->empty()) {
     EventHandler _(std::move(event_handler));
     return unexpected(FailureWithBuffer{Status::InvalidArgument(),
                                         std::move(command.buffer)});
   }
 
-  if (complete_event_code ==
-      EventCodeVariant{emboss::EventCode::COMMAND_COMPLETE}) {
+  pw::bluetooth::emboss::OpCode command_opcode;
+  {
     std::array<std::byte, emboss::CommandHeader::IntrinsicSizeInBytes()>
         header_buf;
     auto bytes = command.buffer->Get(header_buf);
@@ -307,14 +307,12 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
       return unexpected(FailureWithBuffer{Status::InvalidArgument(),
                                           std::move(command.buffer)});
     }
-    complete_event_code = CommandCompleteOpcode{view.opcode().Read()};
+    command_opcode = view.opcode().Read();
   }
 
-  if (!exclusions.empty()) {
-    EventHandler _(std::move(event_handler));
-    // Exclusions not yet implemented.
-    return unexpected(
-        FailureWithBuffer{Status::Unimplemented(), std::move(command.buffer)});
+  if (complete_event_code ==
+      EventCodeVariant{emboss::EventCode::COMMAND_COMPLETE}) {
+    complete_event_code = CommandCompleteOpcode{command_opcode};
   }
 
   auto data = allocator_.MakeUnique<QueuedSentCommandData>();
@@ -325,6 +323,17 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
   }
   data->external_handler = std::move(event_handler);
   data->completion_event = complete_event_code;
+  data->command_opcode = command_opcode;
+
+  if (!exclusions.empty()) {
+    data->exclusions = allocator_.MakeUnique<pw::bluetooth::emboss::OpCode[]>(
+        exclusions.size());
+    if (data->exclusions == nullptr) {
+      return unexpected(
+          FailureWithBuffer{Status::Unavailable(), std::move(command.buffer)});
+    }
+    std::copy(exclusions.begin(), exclusions.end(), data->exclusions.get());
+  }
 
   if (!command.buffer->TryReserveForInsert(command.buffer->begin())) {
     return unexpected(FailureWithBuffer{Status::ResourceExhausted(),
@@ -692,6 +701,19 @@ bool CommandMultiplexer::SendQueuedCommand(QueuedCommandState& command) {
     return true;
   }
 
+  if (command.sent_command_data->exclusions != nullptr) {
+    for (size_t i = 0; i < command.sent_command_data->exclusions.size(); ++i) {
+      for (auto iter = active_command_queue_.begin();
+           iter != active_command_queue_.end();
+           ++iter) {
+        if ((*iter)->command_opcode() ==
+            command.sent_command_data->exclusions[i]) {
+          return false;
+        }
+      }
+    }
+  }
+
   if (active_command_queue_.capacity() == active_command_queue_.size() &&
       !active_command_queue_.try_reserve(active_command_queue_.size() + 1)) {
     return false;
@@ -757,19 +779,22 @@ CommandMultiplexer::EventInterceptorReturn
 CommandMultiplexer::ActiveSentCommandData::HandleEvent(EventPacket&& event) {
   EventInterceptorReturn result = external_handler_(std::move(event));
 
-  // Store cmd_mux as local since we intend to delete ourself below.
-  auto& cmd_mux = cmd_mux_;
-
-  std::lock_guard lock(cmd_mux.mutex_);
+  std::lock_guard lock(cmd_mux_.mutex_);
 
   CommandMultiplexer::ActiveCommandQueue::iterator self_iter = std::find_if(
-      cmd_mux.active_command_queue_.begin(),
-      cmd_mux.active_command_queue_.end(),
+      cmd_mux_.active_command_queue_.begin(),
+      cmd_mux_.active_command_queue_.end(),
       [this](const auto& unique_ptr) { return unique_ptr.get() == this; });
-  PW_CHECK(self_iter != cmd_mux.active_command_queue_.end());
+  PW_CHECK(self_iter != cmd_mux_.active_command_queue_.end());
 
   result.action = RemoveThisInterceptor{std::move(completer_->id())};
-  cmd_mux.active_command_queue_.erase(self_iter);
+
+  // Keep self alive through erasure until this function is completed.
+  auto temporary = std::move(*self_iter);
+  cmd_mux_.active_command_queue_.erase(self_iter);
+
+  cmd_mux_.ProcessQueue();
+
   return result;
 }
 
@@ -786,9 +811,11 @@ CommandMultiplexer::ActiveSentCommandData::From(CommandMultiplexer& parent,
   // Register an event interceptor for the completion event.
   // This interceptor will call the external handler and then remove itself.
   auto completer = parent.RegisterEventInterceptorLocked(
-      data.completion_event, [self = active.get()](EventPacket&& event_packet) {
-        return self->HandleEvent(std::move(event_packet));
-      });
+      data.completion_event,
+      [self = active.get()](EventPacket&& event_packet)
+          PW_NO_LOCK_SAFETY_ANALYSIS {
+            return self->HandleEvent(std::move(event_packet));
+          });
   if (!completer.ok()) {
     PW_LOG_WARN(
         "Failed to register event interceptor for completion event, got status "

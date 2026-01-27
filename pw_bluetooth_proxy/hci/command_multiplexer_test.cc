@@ -1713,5 +1713,207 @@ TEST_F(CommandMultiplexerTest, HostCommandThenSendCommandIntermingleTimer) {
   TestHostCommandThenSendCommandIntermingle(accessor_timer());
 }
 
+void TestSendCommandExclusions(Accessor test) {
+  static constexpr std::array<std::byte, 3>
+      read_local_version_information_packet_bytes{
+          // OpCode (Read Local Version Information)
+          std::byte(0x01),
+          std::byte(0x10),
+          // Parameter size
+          std::byte(0x00),
+      };
+  static constexpr std::array<std::byte, 3> read_bd_addr_packet_bytes{
+      // OpCode (Read BD_ADDR)
+      std::byte(0x09),
+      std::byte(0x10),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 3> inquiry_packet_bytes{
+      // OpCode (Inquiry)
+      std::byte(0x01),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  // Send a command with no exclusions. This should be sent immediately.
+  bool read_local_version_information_handler_called = false;
+  {
+    MultiBuf::Instance send_cmd_buf(test.allocator());
+    send_cmd_buf->Insert(send_cmd_buf->end(),
+                         read_local_version_information_packet_bytes);
+    auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+        {std::move(send_cmd_buf)},
+        [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          read_local_version_information_handler_called = true;
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE);
+    EXPECT_TRUE(send_cmd_result.has_value());
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, 1> send_cmd_h4_header{};
+    std::array<std::byte, read_local_version_information_packet_bytes.size()>
+        send_cmd_out{};
+    test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+    test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+    EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+    EXPECT_EQ(read_local_version_information_packet_bytes, send_cmd_out);
+    test.packets_to_controller().pop_front();
+  }
+
+  EXPECT_FALSE(read_local_version_information_handler_called);
+  test.GiveCommandCredit();
+
+  // Send a command with an exclusion set that includes the previous command.
+  // This should be queued.
+  bool read_bd_addr_handler_called = false;
+  {
+    static constexpr std::array<emboss::OpCode, 1> exclusions{
+        emboss::OpCode::READ_LOCAL_VERSION_INFO};
+    MultiBuf::Instance send_cmd_buf(test.allocator());
+    send_cmd_buf->Insert(send_cmd_buf->end(), read_bd_addr_packet_bytes);
+    auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+        {std::move(send_cmd_buf)},
+        [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          read_bd_addr_handler_called = true;
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE,
+        exclusions);
+    EXPECT_TRUE(send_cmd_result.has_value());
+    EXPECT_TRUE(test.packets_to_controller().empty());
+  }
+
+  // Send command complete for first command, should see second command sent.
+  {
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto command_complete,
+        test.AllocBuf(MakeCommandCompletePacket(0x1001, 1)));
+    test.hci_cmd_mux().HandleH4FromController(std::move(command_complete));
+    EXPECT_TRUE(read_local_version_information_handler_called);
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, 1> send_cmd_h4_header{};
+    std::array<std::byte, read_bd_addr_packet_bytes.size()> send_cmd_out{};
+    test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+    test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+    EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+    EXPECT_EQ(read_bd_addr_packet_bytes, send_cmd_out);
+    test.packets_to_controller().pop_front();
+  }
+
+  EXPECT_FALSE(read_bd_addr_handler_called);
+  test.GiveCommandCredit();
+
+  // Send a command with an exclusion set that includes the first command again,
+  // ensuring that this is sent immediately since that command is complete.
+  bool inquiry_handler_called = false;
+  {
+    static constexpr std::array<emboss::OpCode, 1> exclusions{
+        emboss::OpCode::RESET};
+    MultiBuf::Instance send_cmd_buf(test.allocator());
+    send_cmd_buf->Insert(send_cmd_buf->end(), inquiry_packet_bytes);
+    auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+        {std::move(send_cmd_buf)},
+        [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          inquiry_handler_called = true;
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE,
+        exclusions);
+    EXPECT_TRUE(send_cmd_result.has_value());
+
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, 1> send_cmd_h4_header{};
+    std::array<std::byte, inquiry_packet_bytes.size()> send_cmd_out{};
+    test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+    test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+    EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+    EXPECT_EQ(inquiry_packet_bytes, send_cmd_out);
+    test.packets_to_controller().pop_front();
+  }
+
+  EXPECT_FALSE(read_bd_addr_handler_called);
+  EXPECT_FALSE(inquiry_handler_called);
+  test.GiveCommandCredit();
+
+  // Send another command excluding both active commands.
+  read_local_version_information_handler_called = false;
+  {
+    static constexpr std::array<emboss::OpCode, 2> exclusions{
+        emboss::OpCode::READ_BD_ADDR,
+        emboss::OpCode::INQUIRY,
+    };
+    MultiBuf::Instance send_cmd_buf(test.allocator());
+    send_cmd_buf->Insert(send_cmd_buf->end(),
+                         read_local_version_information_packet_bytes);
+    auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+        {std::move(send_cmd_buf)},
+        [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          read_local_version_information_handler_called = true;
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE,
+        exclusions);
+    EXPECT_TRUE(send_cmd_result.has_value());
+    EXPECT_TRUE(test.packets_to_controller().empty());
+  }
+
+  EXPECT_FALSE(read_bd_addr_handler_called);
+  EXPECT_FALSE(inquiry_handler_called);
+  EXPECT_FALSE(read_local_version_information_handler_called);
+
+  // Send a command complete for inquiry.
+  {
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto command_complete,
+        test.AllocBuf(MakeCommandCompletePacket(0x0401, 1)));
+    test.hci_cmd_mux().HandleH4FromController(std::move(command_complete));
+    EXPECT_TRUE(inquiry_handler_called);
+    EXPECT_TRUE(test.packets_to_controller().empty());
+  }
+
+  EXPECT_FALSE(read_bd_addr_handler_called);
+  EXPECT_FALSE(read_local_version_information_handler_called);
+
+  // Send a command complete for read_bd_addr, expect the last command to be
+  // sent.
+  {
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto command_complete,
+        test.AllocBuf(MakeCommandCompletePacket(0x1009, 1)));
+    test.hci_cmd_mux().HandleH4FromController(std::move(command_complete));
+    EXPECT_TRUE(read_bd_addr_handler_called);
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, 1> send_cmd_h4_header{};
+    std::array<std::byte, read_local_version_information_packet_bytes.size()>
+        send_cmd_out{};
+    test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+    test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+    EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+    EXPECT_EQ(read_local_version_information_packet_bytes, send_cmd_out);
+    test.packets_to_controller().pop_front();
+  }
+
+  EXPECT_FALSE(read_local_version_information_handler_called);
+
+  // Send the last command complete
+  {
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto command_complete,
+        test.AllocBuf(MakeCommandCompletePacket(0x1001, 1)));
+    test.hci_cmd_mux().HandleH4FromController(std::move(command_complete));
+    EXPECT_TRUE(read_local_version_information_handler_called);
+    EXPECT_TRUE(test.packets_to_controller().empty());
+  }
+}
+
+TEST_F(CommandMultiplexerTest, SendCommandExclusionsAsync) {
+  TestSendCommandExclusions(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, SendCommandExclusionsTimer) {
+  TestSendCommandExclusions(accessor_timer());
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy::hci

@@ -310,7 +310,7 @@ class CommandMultiplexer final {
       EventHandler&& event_handler,
       EventCodeVariant complete_event_code =
           pw::bluetooth::emboss::EventCode::COMMAND_COMPLETE,
-      pw::span<pw::bluetooth::emboss::OpCode> exclusions = {});
+      pw::span<const pw::bluetooth::emboss::OpCode> exclusions = {});
 
   /// Send an HCI event towards the host. This method will bypass event
   /// interceptors registered with `RegisterEventInterceptor`.
@@ -396,6 +396,7 @@ class CommandMultiplexer final {
   // A command injected by a call to SendCommand that has been queued and not
   // yet sent to the controller.
   struct QueuedSentCommandData {
+    pw::UniquePtr<pw::bluetooth::emboss::OpCode[]> exclusions;
     pw::bluetooth::emboss::OpCode command_opcode;
     EventHandler external_handler;
     EventCodeVariant completion_event;
@@ -418,13 +419,18 @@ class CommandMultiplexer final {
         PW_EXCLUSIVE_LOCKS_REQUIRED(parent.event_interceptors_mutex_,
                                     parent.mutex_);
 
+    pw::bluetooth::emboss::OpCode command_opcode() const {
+      return command_opcode_;
+    }
+
    private:
     static constexpr Private kPrivateValue{};
 
-    EventInterceptorReturn HandleEvent(EventPacket&& event);
+    EventInterceptorReturn HandleEvent(EventPacket&& event)
+        PW_EXCLUSIVE_LOCKS_REQUIRED(cmd_mux_.event_interceptors_mutex_);
 
     CommandMultiplexer& cmd_mux_;
-    [[maybe_unused]] pw::bluetooth::emboss::OpCode command_opcode_;
+    pw::bluetooth::emboss::OpCode command_opcode_;
     std::optional<EventInterceptor> completer_;
     EventHandler external_handler_;
   };
