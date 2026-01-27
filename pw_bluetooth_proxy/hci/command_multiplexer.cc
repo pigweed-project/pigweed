@@ -30,6 +30,10 @@ enum class InterceptorType {
   kEvent,
 };
 
+constexpr std::array<std::byte, 1> kH4CommandHeader{
+    std::byte(emboss::H4PacketType::COMMAND),
+};
+
 constexpr std::array<std::byte, 1> kH4EventHeader{
     std::byte(emboss::H4PacketType::EVENT),
 };
@@ -164,6 +168,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
       bytes.size());
   if (!view.Ok()) {
     // View is malformed, don't intercept.
+    std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
     std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
@@ -174,6 +179,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
   auto iter = command_interceptors_.find(view.opcode().Read());
   if (iter == command_interceptors_.end()) {
     // No registered interceptors.
+    std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
     std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
@@ -182,6 +188,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
   auto& handler = iter->handler();
   if (!handler) {
     // Interceptor doesn't have a handler.
+    std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
     std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
@@ -203,6 +210,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
 
   // Only other action is continue.
   if (result.command.has_value()) {
+    std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
     std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(result.command->buffer));
   }
@@ -218,6 +226,7 @@ void CommandMultiplexer::HandleH4FromController(
 
   // Only intercept event packets from controller.
   if (*buf->begin() != std::byte(emboss::H4PacketType::EVENT)) {
+    std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
     std::lock_guard lock(mutex_);
     SendToHost(std::move(buf));
     return;
@@ -276,12 +285,57 @@ void CommandMultiplexer::HandleH4FromController(
 expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
     CommandPacket&& command,
     EventHandler&& event_handler,
-    [[maybe_unused]] EventCodeVariant complete_event_code,
-    [[maybe_unused]] pw::span<pw::bluetooth::emboss::OpCode> exclusions) {
-  EventHandler _(std::move(event_handler));
-  // Not implemented.
-  return unexpected(
-      FailureWithBuffer{Status::Unimplemented(), std::move(command.buffer)});
+    EventCodeVariant complete_event_code,
+    pw::span<pw::bluetooth::emboss::OpCode> exclusions) {
+  if (command.buffer->empty()) {
+    EventHandler _(std::move(event_handler));
+    return unexpected(FailureWithBuffer{Status::InvalidArgument(),
+                                        std::move(command.buffer)});
+  }
+
+  if (complete_event_code ==
+      EventCodeVariant{emboss::EventCode::COMMAND_COMPLETE}) {
+    std::array<std::byte, emboss::CommandHeader::IntrinsicSizeInBytes()>
+        header_buf;
+    auto bytes = command.buffer->Get(header_buf);
+
+    emboss::CommandHeaderView view(
+        static_cast<const uint8_t*>(static_cast<const void*>(bytes.data())),
+        bytes.size());
+    if (!view.Ok()) {
+      EventHandler _(std::move(event_handler));
+      return unexpected(FailureWithBuffer{Status::InvalidArgument(),
+                                          std::move(command.buffer)});
+    }
+    complete_event_code = CommandCompleteOpcode{view.opcode().Read()};
+  }
+
+  if (!exclusions.empty()) {
+    EventHandler _(std::move(event_handler));
+    // Exclusions not yet implemented.
+    return unexpected(
+        FailureWithBuffer{Status::Unimplemented(), std::move(command.buffer)});
+  }
+
+  auto data = allocator_.MakeUnique<QueuedSentCommandData>();
+  if (data == nullptr) {
+    EventHandler _(std::move(event_handler));
+    return unexpected(FailureWithBuffer{Status::ResourceExhausted(),
+                                        std::move(command.buffer)});
+  }
+  data->external_handler = std::move(event_handler);
+  data->completion_event = complete_event_code;
+
+  if (!command.buffer->TryReserveForInsert(command.buffer->begin())) {
+    return unexpected(FailureWithBuffer{Status::ResourceExhausted(),
+                                        std::move(command.buffer)});
+  }
+  command.buffer->Insert(command.buffer->begin(), kH4CommandHeader);
+
+  std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
+  std::lock_guard lock(mutex_);
+  SendToControllerOrQueue(std::move(command.buffer), std::move(data));
+  return {};
 }
 
 expected<void, FailureWithBuffer> CommandMultiplexer::SendEvent(
@@ -297,6 +351,7 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendEvent(
   }
   event.buffer->Insert(event.buffer->begin(), kH4EventHeader);
 
+  std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
   std::lock_guard lock(mutex_);
   // No buffering of events is needed.
   SendToHost(std::move(event.buffer));
@@ -305,43 +360,9 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendEvent(
 
 Result<EventInterceptor> CommandMultiplexer::RegisterEventInterceptor(
     EventCodeVariant event_code, EventHandler&& handler) {
-  static_assert(std::variant_size_v<EventCodeVariant> == 5,
-                "Event code may need special casing.");
-  if (auto* event = std::get_if<emboss::EventCode>(&event_code)) {
-    switch (cpp23::to_underlying(*event)) {
-      case cpp23::to_underlying(emboss::EventCode::LE_META_EVENT):
-      case cpp23::to_underlying(emboss::EventCode::VENDOR_DEBUG):
-      case cpp23::to_underlying(emboss::EventCode::COMMAND_STATUS):
-      case cpp23::to_underlying(emboss::EventCode::COMMAND_COMPLETE):
-        return Status::InvalidArgument();
-      default:
-        break;
-    }
-  }
-
   std::lock_guard event_lock(event_interceptors_mutex_);
-  if (event_interceptors_.find(event_code) != event_interceptors_.end()) {
-    return Status::AlreadyExists();
-  }
-
   std::lock_guard lock(mutex_);
-  std::optional<InterceptorId> id = AllocateInterceptorId();
-  if (!id.has_value() || !id->is_valid()) {
-    // Exhausted ID space.
-    return Status::Unavailable();
-  }
-
-  auto* interceptor = allocator_.New<EventInterceptorWrapper>(
-      id->value(), event_code, std::move(handler));
-  if (!interceptor) {
-    // Exhausted allocator space.
-    return Status::Unavailable();
-  }
-
-  interceptors_.insert(*interceptor);
-  event_interceptors_.insert(interceptor->state());
-
-  return EventInterceptor(*this, std::move(*id));
+  return RegisterEventInterceptorLocked(event_code, std::move(handler));
 }
 
 Result<CommandInterceptor> CommandMultiplexer::RegisterCommandInterceptor(
@@ -623,26 +644,36 @@ uint8_t CommandMultiplexer::TryReserveQueueSpace(uint8_t requested) {
   return reserved_queue_space();
 }
 
-void CommandMultiplexer::SendToControllerOrQueue(MultiBuf::Instance&& buf) {
-  if (command_queue_.empty() && command_credits_ > 0) {
-    --command_credits_;
-    send_to_controller_fn_(std::move(buf));
-    return;
-  }
-
-  // Using the asserting version of push_back. We reserve queue space for
-  // however many credits we send to the host, so there should always be space.
+void CommandMultiplexer::SendToControllerOrQueue(
+    MultiBuf::Instance&& buf,
+    UniquePtr<QueuedSentCommandData> sent_command_data) {
   command_queue_.push_back(QueuedCommandState{
       .packet = {std::move(buf)},
+      .sent_command_data = std::move(sent_command_data),
   });
+
+  ProcessQueue();
 }
 
 void CommandMultiplexer::ProcessQueue() {
-  while (!command_queue_.empty() && command_credits_ > 0) {
-    auto& state = command_queue_.front();
+  bool send_injected_commands = true;
+  CommandQueue::iterator iter = command_queue_.begin();
+  while (iter != command_queue_.end() && command_credits_ > 0) {
+    if (iter->sent_command_data != nullptr && !send_injected_commands) {
+      ++iter;
+      continue;
+    }
+
+    if (!SendQueuedCommand(*iter)) {
+      // Cannot send an injected command right now, continue scanning queue for
+      // host commands to send.
+      send_injected_commands = false;
+      ++iter;
+      continue;
+    }
+
     --command_credits_;
-    send_to_controller_fn_(std::move(state.packet.buffer));
-    command_queue_.pop_front();
+    iter = command_queue_.erase(iter);
   }
 }
 
@@ -652,6 +683,123 @@ uint8_t CommandMultiplexer::reserved_queue_space() {
   return static_cast<uint8_t>(
       std::min<QueueSize>(command_queue_.capacity() - command_queue_.size(),
                           std::numeric_limits<uint8_t>::max()));
+}
+
+bool CommandMultiplexer::SendQueuedCommand(QueuedCommandState& command) {
+  if (command.sent_command_data == nullptr) {
+    // Commands from the host do not need any further processing.
+    send_to_controller_fn_(std::move(command.packet.buffer));
+    return true;
+  }
+
+  if (active_command_queue_.capacity() == active_command_queue_.size() &&
+      !active_command_queue_.try_reserve(active_command_queue_.size() + 1)) {
+    return false;
+  }
+
+  auto active_command =
+      ActiveSentCommandData::From(*this, *command.sent_command_data);
+  if (active_command == nullptr) {
+    return false;
+  }
+  active_command_queue_.push_back(std::move(active_command));
+
+  send_to_controller_fn_(std::move(command.packet.buffer));
+  return true;
+}
+
+Result<EventInterceptor> CommandMultiplexer::RegisterEventInterceptorLocked(
+    EventCodeVariant event_code, EventHandler&& handler) {
+  static_assert(std::variant_size_v<EventCodeVariant> == 5,
+                "Event code may need special casing.");
+  if (auto* event = std::get_if<emboss::EventCode>(&event_code)) {
+    switch (cpp23::to_underlying(*event)) {
+      case cpp23::to_underlying(emboss::EventCode::LE_META_EVENT):
+      case cpp23::to_underlying(emboss::EventCode::VENDOR_DEBUG):
+      case cpp23::to_underlying(emboss::EventCode::COMMAND_STATUS):
+      case cpp23::to_underlying(emboss::EventCode::COMMAND_COMPLETE):
+        return Status::InvalidArgument();
+      default:
+        break;
+    }
+  }
+
+  if (event_interceptors_.find(event_code) != event_interceptors_.end()) {
+    return Status::AlreadyExists();
+  }
+
+  std::optional<InterceptorId> id = AllocateInterceptorId();
+  if (!id.has_value() || !id->is_valid()) {
+    // Exhausted ID space.
+    return Status::Unavailable();
+  }
+
+  auto* interceptor = allocator_.New<EventInterceptorWrapper>(
+      id->value(), event_code, std::move(handler));
+  if (!interceptor) {
+    // Exhausted allocator space.
+    return Status::Unavailable();
+  }
+
+  interceptors_.insert(*interceptor);
+  event_interceptors_.insert(interceptor->state());
+
+  return EventInterceptor(*this, std::move(*id));
+}
+
+CommandMultiplexer::ActiveSentCommandData::ActiveSentCommandData(
+    Private,
+    CommandMultiplexer& cmd_mux,
+    pw::bluetooth::emboss::OpCode command_opcode)
+    : cmd_mux_(cmd_mux), command_opcode_(command_opcode) {}
+
+CommandMultiplexer::EventInterceptorReturn
+CommandMultiplexer::ActiveSentCommandData::HandleEvent(EventPacket&& event) {
+  EventInterceptorReturn result = external_handler_(std::move(event));
+
+  // Store cmd_mux as local since we intend to delete ourself below.
+  auto& cmd_mux = cmd_mux_;
+
+  std::lock_guard lock(cmd_mux.mutex_);
+
+  CommandMultiplexer::ActiveCommandQueue::iterator self_iter = std::find_if(
+      cmd_mux.active_command_queue_.begin(),
+      cmd_mux.active_command_queue_.end(),
+      [this](const auto& unique_ptr) { return unique_ptr.get() == this; });
+  PW_CHECK(self_iter != cmd_mux.active_command_queue_.end());
+
+  result.action = RemoveThisInterceptor{std::move(completer_->id())};
+  cmd_mux.active_command_queue_.erase(self_iter);
+  return result;
+}
+
+UniquePtr<CommandMultiplexer::ActiveSentCommandData>
+CommandMultiplexer::ActiveSentCommandData::From(CommandMultiplexer& parent,
+                                                QueuedSentCommandData& data) {
+  auto active = parent.allocator_.MakeUnique<ActiveSentCommandData>(
+      kPrivateValue, parent, data.command_opcode);
+  if (active == nullptr) {
+    PW_LOG_WARN("Failed to allocate ActiveSentCommandData.");
+    return nullptr;
+  }
+
+  // Register an event interceptor for the completion event.
+  // This interceptor will call the external handler and then remove itself.
+  auto completer = parent.RegisterEventInterceptorLocked(
+      data.completion_event, [self = active.get()](EventPacket&& event_packet) {
+        return self->HandleEvent(std::move(event_packet));
+      });
+  if (!completer.ok()) {
+    PW_LOG_WARN(
+        "Failed to register event interceptor for completion event, got status "
+        "'%s'.",
+        completer.status().str());
+    return nullptr;
+  }
+
+  active->completer_ = std::move(completer.value());
+  active->external_handler_ = std::move(data.external_handler);
+  return active;
 }
 
 }  // namespace pw::bluetooth::proxy::hci

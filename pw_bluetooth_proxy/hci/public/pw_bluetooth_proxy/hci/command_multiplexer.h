@@ -294,14 +294,16 @@ class CommandMultiplexer final {
   /// events report an error, no further events will be sent.
   /// @param[in] complete_event_code - The event code of the event that will
   /// complete the command procedure with the controller. This is
-  /// Command_Complete for most commands.
+  /// Command_Complete for most commands. If set to the generic COMMAND_COMPLETE
+  /// event code, this will be updated to the specific command complete opcode
+  /// of the event provided.
   /// @param[in] exclusions - Opcodes for commands that this command cannot run
   /// concurrently with.
   /// @returns A pw::expected<void, FailureWithBuffer> where either:
   /// * has_value(): Command was successfully queued.
   /// * error().status():
-  ///   * @UNAVAILABLE: The resources (e.g. memory) required to queue this
-  ///     command are not available.
+  ///   * @RESOURCE_EXHAUSTED: The resources (e.g. memory) required to queue
+  ///     this command are not available.
   ///   * @INVALID_ARGUMENT: Command buffer is invalid.
   pw::expected<void, FailureWithBuffer> SendCommand(
       CommandPacket&& command,
@@ -391,6 +393,48 @@ class CommandMultiplexer final {
   using CommandInterceptorMap =
       pw::IntrusiveMap<pw::bluetooth::emboss::OpCode, CommandInterceptorState>;
 
+  // A command injected by a call to SendCommand that has been queued and not
+  // yet sent to the controller.
+  struct QueuedSentCommandData {
+    pw::bluetooth::emboss::OpCode command_opcode;
+    EventHandler external_handler;
+    EventCodeVariant completion_event;
+  };
+
+  // A command injected by a call to SendCommand that has been sent to the
+  // controller and awaiting a response.
+  class ActiveSentCommandData {
+    struct Private {};
+
+   public:
+    // Must be public for `allocator.New` and `allocator.MakeUnique`, but should
+    // not be constructed directly. The private tag guards against this.
+    ActiveSentCommandData(Private,
+                          CommandMultiplexer& cmd_mux,
+                          pw::bluetooth::emboss::OpCode command_opcode);
+
+    static UniquePtr<ActiveSentCommandData> From(CommandMultiplexer& parent,
+                                                 QueuedSentCommandData& data)
+        PW_EXCLUSIVE_LOCKS_REQUIRED(parent.event_interceptors_mutex_,
+                                    parent.mutex_);
+
+   private:
+    static constexpr Private kPrivateValue{};
+
+    EventInterceptorReturn HandleEvent(EventPacket&& event);
+
+    CommandMultiplexer& cmd_mux_;
+    [[maybe_unused]] pw::bluetooth::emboss::OpCode command_opcode_;
+    std::optional<EventInterceptor> completer_;
+    EventHandler external_handler_;
+  };
+
+  // Internal data for queued commands.
+  struct QueuedCommandState {
+    CommandPacket packet;
+    UniquePtr<QueuedSentCommandData> sent_command_data;
+  };
+
   EventInterceptorMap::iterator FindEventInterceptor(EventCodeValue event,
                                                      ConstByteSpan span)
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
@@ -409,20 +453,26 @@ class CommandMultiplexer final {
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, event_interceptors_mutex_);
   void DeleteInterceptor(InterceptorMap::iterator iterator)
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void SendToHost(MultiBuf::Instance&& buf) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void SendToControllerOrQueue(MultiBuf::Instance&& buf)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void SendToHost(MultiBuf::Instance&& buf)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, event_interceptors_mutex_);
+  void SendToControllerOrQueue(
+      MultiBuf::Instance&& buf,
+      UniquePtr<QueuedSentCommandData> sent_command_data = nullptr)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
   uint8_t UpdateNumHciCommandPackets(uint8_t num_hci_command_packets)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
   uint8_t TryReserveQueueSpace(uint8_t requested)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void ProcessQueue() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
+  void ProcessQueue()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
+  bool SendQueuedCommand(QueuedCommandState& command)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
+  Result<EventInterceptor> RegisterEventInterceptorLocked(
+      EventCodeVariant event_code, EventHandler&& handler)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
 
-  // Internal data for queued commands.
-  struct QueuedCommandState {
-    CommandPacket packet;
-  };
   using CommandQueue = pw::DynamicDeque<QueuedCommandState>;
+  using ActiveCommandQueue = pw::DynamicDeque<UniquePtr<ActiveSentCommandData>>;
   using QueueSize = CommandQueue::size_type;
 
   // Space reserved in the command queue, clamped to the range of a `uint8_t`.
@@ -446,6 +496,9 @@ class CommandMultiplexer final {
   // Outgoing command queue.
   CommandQueue command_queue_ PW_GUARDED_BY(mutex_);
   size_t command_credits_ PW_GUARDED_BY(mutex_) = 1u;
+
+  // Active command queue (injected commands being processed by the controller).
+  ActiveCommandQueue active_command_queue_ PW_GUARDED_BY(mutex_){allocator_};
 
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_host_fn_;
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_controller_fn_;

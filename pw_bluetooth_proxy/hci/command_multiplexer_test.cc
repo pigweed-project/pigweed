@@ -169,6 +169,10 @@ class CommandMultiplexerTest : public ::testing::Test {
       return test_.GiveCommandCredit(params);
     }
 
+    pw::Result<MultiBuf::Instance> AllocBuf(ConstByteSpan span) {
+      return test_.AllocBuf(span);
+    }
+
    private:
     Accessor(CommandMultiplexerTest& test, CommandMultiplexer& hci_cmd_mux)
         : test_(test), hci_cmd_mux_(hci_cmd_mux) {}
@@ -317,11 +321,60 @@ TEST_F(CommandMultiplexerTest, AsyncTimeoutFailsSync) {
 }
 
 void TestSendCommand(Accessor test) {
-  MultiBuf::Instance buffer(test.allocator());
-  // Not yet implemented.
-  auto result = test.hci_cmd_mux().SendCommand({std::move(buffer)}, nullptr);
-  ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error().status(), Status::Unimplemented());
+  static constexpr std::array<std::byte, 3> reset_command_packet_bytes{
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  // Try sending empty buffer.
+  {
+    MultiBuf::Instance buffer(test.allocator());
+
+    auto result = test.hci_cmd_mux().SendCommand(
+        {std::move(buffer)},
+        [](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().status(), Status::InvalidArgument());
+  }
+
+  // Try sending buffer containing a valid command.
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_command_packet_bytes);
+
+    bool event_handler_called = false;
+    auto result = test.hci_cmd_mux().SendCommand(
+        {std::move(buf)},
+        [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          event_handler_called = true;
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE);
+    EXPECT_TRUE(result.has_value());
+    ASSERT_EQ(test.packets_to_controller().size(), 1u);
+    std::array<std::byte, 1> out_h4_header{};
+    std::array<std::byte, reset_command_packet_bytes.size()> out_payload{};
+    test.packets_to_controller().front()->CopyTo(out_h4_header);
+    test.packets_to_controller().front()->CopyTo(out_payload, 1);
+    EXPECT_EQ(out_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+    EXPECT_EQ(reset_command_packet_bytes, out_payload);
+    test.packets_to_controller().pop_front();
+
+    EXPECT_FALSE(event_handler_called);
+    EXPECT_TRUE(test.packets_to_host().empty());
+    PW_TEST_ASSERT_OK_AND_ASSIGN(
+        auto command_complete,
+        test.AllocBuf(MakeCommandCompletePacket(0x0C03, 1)));
+    test.hci_cmd_mux().HandleH4FromController(std::move(command_complete));
+    EXPECT_TRUE(event_handler_called);
+    EXPECT_TRUE(test.packets_to_host().empty());
+  }
 }
 
 TEST_F(CommandMultiplexerTest, SendCommandAsync) {
@@ -1480,6 +1533,184 @@ TEST_F(CommandMultiplexerTest, DeadlockAsync) {
 }
 TEST_F(CommandMultiplexerTest, DeadlockTimer) {
   TestDeadlock(accessor_timer());
+}
+
+void TestSendCommandThenHostCommandIntermingle(Accessor test) {
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 3>
+      read_local_version_information_packet_bytes{
+          // OpCode (Read Local Version Information)
+          std::byte(0x01),
+          std::byte(0x10),
+          // Parameter size
+          std::byte(0x00),
+      };
+  static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Inquiry)
+      std::byte(0x01),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  // Send the first command to use up the initial command credit.
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, reset_packet_bytes.size()> out;
+  test.packets_to_controller().front()->CopyTo(out);
+  EXPECT_EQ(reset_packet_bytes, out);
+  test.packets_to_controller().pop_front();
+
+  // Send a command via SendCommand. This should be queued.
+  MultiBuf::Instance send_cmd_buf(test.allocator());
+  send_cmd_buf->Insert(send_cmd_buf->end(),
+                       read_local_version_information_packet_bytes);
+  bool send_cmd_event_handler_called = false;
+  auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+      {std::move(send_cmd_buf)},
+      [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+        send_cmd_event_handler_called = true;
+        return {};
+      },
+      emboss::EventCode::COMMAND_COMPLETE);
+  EXPECT_TRUE(send_cmd_result.has_value());
+  EXPECT_TRUE(test.packets_to_controller().empty());
+
+  // Send a command via HandleH4FromHost. This should also be queued.
+  MultiBuf::Instance host_cmd_buf(test.allocator());
+  host_cmd_buf->Insert(host_cmd_buf->end(), inquiry_packet_bytes);
+  test.SendFromHost(std::move(host_cmd_buf));
+  EXPECT_TRUE(test.packets_to_controller().empty());
+
+  // Give credit. The command from SendCommand should be sent first.
+  test.GiveCommandCredit();
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, 1> send_cmd_h4_header{};
+  std::array<std::byte, read_local_version_information_packet_bytes.size()>
+      send_cmd_out{};
+  test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+  test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+  EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+  EXPECT_EQ(read_local_version_information_packet_bytes, send_cmd_out);
+  test.packets_to_controller().pop_front();
+
+  // Give another credit. The command from HandleH4FromHost should be sent.
+  test.GiveCommandCredit();
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, inquiry_packet_bytes.size()> host_cmd_out{};
+  test.packets_to_controller().front()->CopyTo(host_cmd_out);
+  EXPECT_EQ(inquiry_packet_bytes, host_cmd_out);
+  test.packets_to_controller().pop_front();
+}
+
+TEST_F(CommandMultiplexerTest, SendCommandThenHostCommandIntermingleAsync) {
+  TestSendCommandThenHostCommandIntermingle(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, SendCommandThenHostCommandIntermingleTimer) {
+  TestSendCommandThenHostCommandIntermingle(accessor_timer());
+}
+
+void TestHostCommandThenSendCommandIntermingle(Accessor test) {
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 3>
+      read_local_version_information_packet_bytes{
+          // OpCode (Read Local Version Information)
+          std::byte(0x01),
+          std::byte(0x10),
+          // Parameter size
+          std::byte(0x00),
+      };
+  static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Inquiry)
+      std::byte(0x01),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  // Send the first command to use up the initial command credit.
+  {
+    MultiBuf::Instance buf(test.allocator());
+    buf->Insert(buf->end(), reset_packet_bytes);
+    test.SendFromHost(std::move(buf));
+  }
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, reset_packet_bytes.size()> out;
+  test.packets_to_controller().front()->CopyTo(out);
+  EXPECT_EQ(reset_packet_bytes, out);
+  test.packets_to_controller().pop_front();
+
+  // Send a command via HandleH4FromHost. This should be queued.
+  MultiBuf::Instance host_cmd_buf(test.allocator());
+  host_cmd_buf->Insert(host_cmd_buf->end(), inquiry_packet_bytes);
+  test.SendFromHost(std::move(host_cmd_buf));
+  EXPECT_TRUE(test.packets_to_controller().empty());
+
+  // Send a command via SendCommand. This should also be queued.
+  MultiBuf::Instance send_cmd_buf(test.allocator());
+  send_cmd_buf->Insert(send_cmd_buf->end(),
+                       read_local_version_information_packet_bytes);
+  bool send_cmd_event_handler_called = false;
+  auto send_cmd_result = test.hci_cmd_mux().SendCommand(
+      {std::move(send_cmd_buf)},
+      [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+        send_cmd_event_handler_called = true;
+        return {};
+      },
+      emboss::EventCode::COMMAND_COMPLETE);
+  EXPECT_TRUE(send_cmd_result.has_value());
+  EXPECT_TRUE(test.packets_to_controller().empty());
+
+  // Give credit. The command from HandleH4FromHost should be sent first.
+  test.GiveCommandCredit();
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, inquiry_packet_bytes.size()> host_cmd_out{};
+  test.packets_to_controller().front()->CopyTo(host_cmd_out);
+  EXPECT_EQ(inquiry_packet_bytes, host_cmd_out);
+  test.packets_to_controller().pop_front();
+
+  // Give another credit. The command from SendCommand should be sent.
+  test.GiveCommandCredit();
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, 1> send_cmd_h4_header{};
+  std::array<std::byte, read_local_version_information_packet_bytes.size()>
+      send_cmd_out{};
+  test.packets_to_controller().front()->CopyTo(send_cmd_h4_header);
+  test.packets_to_controller().front()->CopyTo(send_cmd_out, 1);
+  EXPECT_EQ(send_cmd_h4_header[0], std::byte(emboss::H4PacketType::COMMAND));
+  EXPECT_EQ(read_local_version_information_packet_bytes, send_cmd_out);
+  test.packets_to_controller().pop_front();
+}
+
+TEST_F(CommandMultiplexerTest, HostCommandThenSendCommandIntermingleAsync) {
+  TestHostCommandThenSendCommandIntermingle(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, HostCommandThenSendCommandIntermingleTimer) {
+  TestHostCommandThenSendCommandIntermingle(accessor_timer());
 }
 
 }  // namespace
