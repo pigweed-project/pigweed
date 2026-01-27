@@ -37,14 +37,9 @@ deps = [
     "//pw_sync:lock_annotations",
 ]
 
-pw_cc_binary(
+alias(
     name = "step4",
-    srcs = [
-        "checkpoint2/main.cc",
-        "checkpoint2/vending_machine.cc",
-        "checkpoint2/vending_machine.h",
-    ],
-    deps = deps,
+    actual = ":checkpoint2",
 )
 
 pw_cc_binary(
@@ -53,6 +48,16 @@ pw_cc_binary(
         "checkpoint1/main.cc",
         "checkpoint1/vending_machine.cc",
         "checkpoint1/vending_machine.h",
+    ],
+    deps = deps,
+)
+
+pw_cc_binary(
+    name = "checkpoint2",
+    srcs = [
+        "checkpoint2/main.cc",
+        "checkpoint2/vending_machine.cc",
+        "checkpoint2/vending_machine.h",
     ],
     deps = deps,
 )

@@ -29,6 +29,8 @@ class CoinFuture {
 
   constexpr CoinFuture() : coin_slot_(nullptr) {}
 
+  ~CoinFuture() { core_.Unlist(); }
+
   CoinFuture(CoinFuture&& other) noexcept : CoinFuture() {
     *this = std::move(other);
   }

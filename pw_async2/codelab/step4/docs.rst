@@ -30,7 +30,7 @@ Refactor your task as a state machine
    * Declare a private ``State`` enum in ``VendingMachineTask`` that represents
      all possible states:
 
-     * ``kWelcome``
+     * ``kWelcome`` (to explicitly handle the welcome message)
 
      * ``kAwaitingPayment``
 
@@ -41,9 +41,6 @@ Refactor your task as a state machine
 
    * Initialize ``state_`` in the ``VendingMachineTask`` constructor
 
-   * Remove the ``displayed_welcome_message_`` data member which is no longer
-     needed (a good sign!) and remove its initialization in the constructor
-
    .. dropdown:: Hint
 
       .. literalinclude:: ./checkpoint1/vending_machine.h
@@ -51,7 +48,7 @@ Refactor your task as a state machine
          :start-at: class VendingMachineTask
          :end-before: }  // namespace codelab
          :linenos:
-         :emphasize-lines: 6,9,17,21-26
+         :emphasize-lines: 8,21-26
 
 #. Refactor the ``DoPend()`` implementation in ``vending_machine.cc`` as an
    explicit state machine:
@@ -66,7 +63,6 @@ Refactor your task as a state machine
          :start-at: pw::async2::Poll<> VendingMachineTask::DoPend
          :end-before: }  // namespace codelab
          :linenos:
-         :emphasize-lines: 2-24
 
    This isn't the only way to do it, but it is perhaps the easiest to understand
    since there isn't a lot of hidden machinery.
@@ -88,8 +84,8 @@ Refactor your task as a state machine
 Problem with linear flow
 ------------------------
 Even with the task refactored as an explicit state machine, there's still a
-problem with the simple linear flow we've implemented so far. Watch what
-happens when you make a selection before inserting coins:
+problem with the simple linear flow we've implemented so far. For example,
+what happens when you make a selection before inserting coins?
 
 #. Press :kbd:`1` :kbd:`c` :kbd:`Enter`.
 
@@ -99,184 +95,124 @@ happens when you make a selection before inserting coins:
 
       INF  Welcome to the Pigweed Vending Machine!
       INF  Please insert a coin.
-      1c
+      1
+      c
       INF  Received 1 coin.
       INF  Please press a keypad key.
-      INF  Keypad 1 was pressed. Dispensing an item.
 
-When the vending machine received a coin, it immediately dispensed an item
-based on keypad input that occurred before the coin insertion. Imagine inserting
-money into a real vending machine, and then it automatically dispenses some
-random item, because someone else had previously come along an hour ago and
-touched the button for that item!
+After pressing :kbd:`1`, nothing happens. You get no feedback, and it's not
+clear whether the machine is still waiting or stuck. Ideally, the machine would
+detect the keypress and tell the user that it still needs coins.
 
 In other words, how do you make your task better at handling multiple inputs
-when ``CoinSlot`` and ``Keypad`` can each only wait on one thing?
+when ``CoinFuture`` and ``KeyPressFuture`` can each only wait on one thing?
 
-The answer is to use the :cc:`Selector <pw::async2::Selector>` class and
-the :cc:`Select <pw::async2::Select>` helper function to wait on multiple
-pendables, along with the :cc:`VisitSelectResult
-<pw::async2::VisitSelectResult>` helper that allows you to unpack the
-completion result value when one of those pendables returns ``Ready()``.
+The answer is to use the :cc:`Select <pw::async2::Select>` helper function
+to wait on multiple futures, returing a result whenever the first future
+is ``Ready()``.
 
---------------------------
-Wait on a set of pendables
---------------------------
-When multiple states use the same set of pendables (e.g. ``kAwaitingPayment``
-and ``kAwaitingSelection`` both use ``CoinSlot`` and ``Keypad``) it's best to
-encapsulate the calls into a function that both states can use. The code for
-waiting on a set of pendables is template-heavy, which can lead to lots of
-compiler-generated code. Encapsulating the calls into a function reduces the
-number of times that templates need to be expanded.
+------------------------
+Wait on a set of futures
+------------------------
+When multiple states use the same set of futures (e.g. ``kAwaitingPayment``
+and ``kAwaitingSelection`` both use ``CoinSlot`` and ``Keypad``) it's efficient
+to combine them into a single future that pends on both.
 
 For the vending machine, we can unify coin insertions and keypad selections
-using an ``Input`` enum, and a function ``PendInput`` for pending on either.
+using :cc:`SelectFuture <pw::async2::SelectFuture>`, which completes when the
+first of the input futures completes, returning an
+:cc:`OptionalTuple <pw::OptionalTuple>` of results.
 
-#. Set up the ``Input`` enum in ``vending_machine.h``:
+#. Include ``"pw_async2/select.h"`` in ``vending_machine.h``.
 
-   * Add an ``Input`` enum with the following states:
+#. Add a ``select_future_`` data member to ``VendingMachineTask`` to hold both
+   a ``CoinFuture`` and a ``KeyPressFuture``:
 
-     * ``kNone``
+   .. literalinclude:: ./checkpoint2/vending_machine.h
+      :language: cpp
+      :start-at: CoinSlot& coin_slot_;
+      :end-at: pw::async2::SelectFuture<CoinFuture, KeyPressFuture> select_future_;
+      :linenos:
+      :emphasize-lines: 3
 
-     * ``kCoinInserted``
+   Just as with the separate futures, we store the ``SelectFuture`` as a member
+   to hold the state of the operations across ``Pend()`` calls.
 
-     * ``kKeyPressed``
-
-   * Declare a new ``PendInput()`` method:
-
-     .. literalinclude:: ./checkpoint2/vending_machine.h
-        :language: cpp
-        :start-at: Waits for either an inserted coin or keypress
-        :end-at: pw::async2::Poll<Input> PendInput(pw::async2::Context& cx);
-        :linenos:
-        :emphasize-lines: 3
-
-   * Include the ``<optional>`` header
-
-   * Add a new ``std::optional<int> selected_item_`` data member
-
-   .. dropdown:: Hint
-
-      .. literalinclude:: ./checkpoint2/vending_machine.h
-         :language: cpp
-         :start-at: class VendingMachineTask
-         :end-before: }  // namespace codelab
-         :linenos:
-         :emphasize-lines: 11-15,23,36
+   .. note::
+      ``SelectFuture`` automatically resets all of its child futures when it
+      returns ``Ready()``, so we must assign a new one (using
+      :cc:`Select <pw::async2::Select>`) when we want to wait again.
 
 #. Update the ``VendingMachineTask`` implementation in ``vending_machine.cc``:
 
-   * Implement ``PendInput()``:
+   *  Refactor ``DoPend()`` to use ``select_future_``:
 
-     .. literalinclude:: ./checkpoint2/vending_machine.cc
-        :language: cpp
-        :start-at: pw::async2::Poll<VendingMachineTask::Input> VendingMachineTask::PendInput
-        :end-before: pw::async2::Poll<> VendingMachineTask::DoPend
-        :linenos:
-        :emphasize-lines: 3
+      .. literalinclude:: ./checkpoint2/vending_machine.cc
+         :language: cpp
+         :start-at: pw::async2::Poll<> VendingMachineTask::DoPend
+         :end-before: }  // namespace codelab
+         :linenos:
 
-   * Refactor ``DoPend()`` to use ``Input``:
+Grab yourself a ``$FAVORITE_BEVERAGE`` and let's dig into our new ``DoPend()``
+implementation.
 
-     .. literalinclude:: ./checkpoint2/vending_machine.cc
-        :language: cpp
-        :start-at: pw::async2::Poll<> VendingMachineTask::DoPend
-        :end-before: }  // namespace codelab
-        :linenos:
-
-Get yourself a ``$FAVORITE_BEVERAGE``. There's a lot to explain.
-
-Let's start with the ``PendInput()`` implementation. The
-:cc:`PW_TRY_READY_ASSIGN` invocation uses :cc:`Select() <pw::async2::Select>`
-to wait on the coin insertion and keypad press pendables:
+In the ``kAwaitingPayment`` state, we first check if ``select_future_`` can be
+pended. If not, we initialize it using :cc:`Select <pw::async2::Select>`,
+providing a new ``CoinFuture`` and ``KeyPressFuture``.
 
 .. literalinclude:: ./checkpoint2/vending_machine.cc
-  :language: cpp
-  :start-after: selected_item_ = std::nullopt;
-  :end-before: pw::async2::VisitSelectResult(
-  :linenos:
+   :language: cpp
+   :start-at: if (!select_future_.is_pendable()) {
+   :end-at: }
+   :linenos:
 
-As usual, we're using ``PW_TRY_READY_ASSIGN`` so that if all the pendables are
-pending then the current function will return ``Pending()``.
-
-We use ``auto`` for the result return type because the actual type is very
-complicated. Typing out the entire type would be laborious and would reduce
-code readability.
-
-``Select()`` checks the pendables in the order provided. ``result`` will only
-contain a single result, from whatever pendable was ready. To get another
-result you'd have to call ``Select()`` again.
-
-Note that each pendable doesn't have a fair chance to do work. The first
-pendable gets polled first, and if it's ready, it takes precedence.
-
-.. note::
-
-   :cc:`Selector <pw::async2::Selector>` is another way to wait on a set of
-   pendables. It's a pendable class that polls an ordered set of pendables you
-   provide to determine which (if any) are ready.
-
-   If you construct and store a ``Selector`` instance yourself, you can give all
-   the pendables in the poll set a chance to return ``Ready()``, since each will
-   be polled until the first time it returns ``Ready()``. However you must
-   arrange to invoke the ``Pend()`` function on the same ``Selector`` instance
-   yourself in a loop.
-
-   Once you process the ``AllPendablesCompleted`` result when using
-   ``VisitSelectResult()`` (explained below), you could then reset the
-   ``Selector`` to once again try all the pendables again.
-
-The :cc:`PendableFor <pw::async2::PendableFor>` helper function used in the
-``Select()`` invocation constructs a type-erased wrapper that makes it easy to
-call the ``Pend()`` method from any pendable.
-
-Moving on, :cc:`VisitSelectResult <pw::async2::VisitSelectResult>` is a helper
-for processing the result of the ``Select`` function or the ``Selector::Pend()``
-member function call:
+Then, we pend the ``select_future_``:
 
 .. literalinclude:: ./checkpoint2/vending_machine.cc
-  :language: cpp
-  :start-at: pw::async2::VisitSelectResult(
-  :end-before: return input;
-  :linenos:
+   :language: cpp
+   :start-at: PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+   :end-at: PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+   :linenos:
 
-``result`` contains a single ``Ready()`` result, but because of how the result
-is stored, there is a bit of C++ template magic to unpack it for each possible
-type. ``VisitSelectResult()`` does its best to hide most of the details, but you
-need to specify an ordered list of lambda functions to handle each specific
-pendable result. The order must match the ordering that was used in the
-``Select()`` call:
+Previously, we used ``PW_TRY_READY_ASSIGN`` to wait for a single future. Here,
+we use it to wait for both the ``CoinFuture`` and ``KeyPressFuture`` at once.
+When the first of these futures completes, ``SelectFuture`` also completes and
+returns its result.
 
-.. code-block:: cpp
+The type of this result is a ``pw::OptionalTuple<unsigned, int>``, where
+``unsigned`` and ``int`` are the return types of ``CoinFuture`` and
+``KeyPressFuture``, respectively. This utility behaves similarly to a
+``std::tuple<std::optional<unsigned>, std::optional<int>>``, but is optimized
+for space by using a bitfield to track presence.
 
-   pw::async2::VisitSelectResult(
-       result,
-       [](pw::async2::AllPendablesCompleted) {
-         // Special lambda that's only needed when using `Selector::Pend()`, and
-         // which is invoked when all the other pendables have completed.
-         // This can be left blank when using `Select()` as it is not used.
-       },
-       [&](unsigned coins) {
-         // This is the first lambda after the `AllPendablesCompleted`` case as
-         // `CoinSlot::Pend()` was in the first argument to `Select`.
-         // Invoked if the `CoinSlot::Pend()` is ready, with the count of coins
-         // returned as part of the `Poll` result from that call.
-       },
-       [&](int key) {
-         // This is the second lambda after the `AllPendablesCompleted`` case as
-         // `Keypad::Pend()` was in the second argument to `Select()`.
-         // Invoked if the `Keypad::Pend()` is ready, with the key number
-         // returned as part of the `Poll` result from that call.
-       });
+We then check which future completed using ``has_value()``. There are two
+overloads of this method:
 
-.. note::
+- ``has_value<size_t>()``: Returns true if the future at the given index
+  (in the order they were passed to ``Select()``) completed.
+- ``has_value<T>()``: Returns true if the future with return type ``T``
+  completed. This can only be used if each future has a distinct return type.
 
-   In case you were curious about the syntax, behind the scenes a ``std::visit``
-   is used with a ``std::variant``, and lambdas like these are how you can deal
-   with the alternative values.
+Once we know which future completed, we can retrieve its result using
+``result.value<T>()`` (or ``result.value<size_t>()``) and act on it:
 
-As for the updates to ``DoPend()``, it's mostly the same logic as before, with
-the addition of some more ``switch`` logic to handle the new ``Input``
-encapsulation.
+.. literalinclude:: ./checkpoint2/vending_machine.cc
+   :language: cpp
+   :start-at: if (result.has_value<0>()) {
+   :end-before: break;
+   :linenos:
+
+The logic for ``kAwaitingSelection`` is similar, but we first check for
+the result of ``KeyPressFuture``:
+
+.. literalinclude:: ./checkpoint2/vending_machine.cc
+   :language: cpp
+   :start-at: if (result.has_value<1>()) {
+   :end-at: break;
+   :linenos:
+
+By using ``Select``, we can now handle either coin insertions or keypad
+selections no matter which state the vending machine is in.
 
 ----------
 Next steps

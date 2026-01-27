@@ -21,20 +21,36 @@
 
 namespace codelab {
 
-pw::async2::Poll<int> Keypad::Pend(pw::async2::Context& cx) {
-  std::lock_guard lock(lock_);
-  int key = std::exchange(key_pressed_, kNone);
-  if (key != kNone) {
-    return key;
+pw::async2::Poll<int> KeyPressFuture::Pend(pw::async2::Context& cx) {
+  return core_.DoPend(*this, cx);
+}
+
+KeyPressFuture::~KeyPressFuture() {
+  std::lock_guard lock(internal::KeypadLock());
+  core_.Unlist();
+}
+
+pw::async2::Poll<int> KeyPressFuture::DoPend(pw::async2::Context&) {
+  std::lock_guard lock(internal::KeypadLock());
+  if (key_pressed_.has_value()) {
+    return pw::async2::Ready(*key_pressed_);
   }
-  PW_ASYNC_STORE_WAKER(cx, waker_, "keypad press");
   return pw::async2::Pending();
 }
 
+KeyPressFuture Keypad::WaitForKeyPress() {
+  std::lock_guard lock(internal::KeypadLock());
+  KeyPressFuture future(pw::async2::FutureState::kPending);
+  futures_.Push(future.core_);
+  return future;
+}
+
 void Keypad::Press(int key) {
-  std::lock_guard lock(lock_);
-  key_pressed_ = key;
-  waker_.Wake();
+  std::lock_guard lock(internal::KeypadLock());
+  if (auto future = futures_.PopIfAvailable()) {
+    future->key_pressed_ = key;
+    future->core_.Wake();
+  }
 }
 
 pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
@@ -46,16 +62,24 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
         state_ = kAwaitingPayment;
         break;
       }
+
       case kAwaitingPayment: {
-        PW_TRY_READY_ASSIGN(unsigned coins, coin_slot_.Pend(cx));
+        if (!coin_future_.is_pendable()) {
+          coin_future_ = coin_slot_.GetCoins();
+        }
+        PW_TRY_READY_ASSIGN(unsigned coins, coin_future_.Pend(cx));
         PW_LOG_INFO("Received %u coin%s.", coins, coins > 1 ? "s" : "");
         PW_LOG_INFO("Please press a keypad key.");
         coins_inserted_ += coins;
         state_ = kAwaitingSelection;
         break;
       }
+
       case kAwaitingSelection: {
-        PW_TRY_READY_ASSIGN(int key, keypad_.Pend(cx));
+        if (!key_future_.is_pendable()) {
+          key_future_ = keypad_.WaitForKeyPress();
+        }
+        PW_TRY_READY_ASSIGN(int key, key_future_.Pend(cx));
         PW_LOG_INFO("Keypad %d was pressed. Dispensing an item.", key);
         return pw::async2::Ready();
       }
