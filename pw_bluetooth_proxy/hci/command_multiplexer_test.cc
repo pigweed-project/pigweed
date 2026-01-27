@@ -1400,5 +1400,87 @@ TEST_F(CommandMultiplexerTest, NumHciCommandsTimer) {
   TestNumHciCommands(accessor_timer());
 }
 
+void TestDeadlock(Accessor test) {
+  static constexpr std::array<std::byte, 5> command_complete_packet_bytes{
+      // Event code (Command Complete)
+      std::byte(0x0E),
+      // Parameter size
+      std::byte(0x03),
+      // Num_HCI_Command_Packets
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+  };
+
+  // Used to make sure the callback only takes one local reference
+  struct CallbackData {
+    MultiBuf::Instance event_buf;
+    Accessor& test;
+    std::optional<MultiBuf::Instance> intercepted;
+  };
+
+  CallbackData callback_data{
+      .event_buf = MultiBuf::Instance(test.allocator()),
+      .test = test,
+      .intercepted = std::nullopt,
+  };
+  auto& intercepted = callback_data.intercepted;
+
+  callback_data.event_buf->Insert(callback_data.event_buf->end(),
+                                  command_complete_packet_bytes);
+
+  auto result = test.hci_cmd_mux().RegisterCommandInterceptor(
+      emboss::OpCode::RESET,
+      [&callback_data](CommandPacket&& packet)
+          -> CommandMultiplexer::CommandInterceptorReturn {
+        // This will acquire `mutex_` to send an event.
+        EXPECT_TRUE(callback_data.test.hci_cmd_mux()
+                        .SendEvent({std::move(callback_data.event_buf)})
+                        .has_value());
+        callback_data.intercepted = std::move(packet.buffer);
+        return {};
+      });
+  ASSERT_EQ(result.status(), OkStatus());
+
+  static constexpr std::array<std::byte, 4> reset_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Reset)
+      std::byte(0x03),
+      std::byte(0x0C),
+      // Parameter size
+      std::byte(0x00),
+  };
+
+  MultiBuf::Instance buf(test.allocator());
+  buf->Insert(buf->end(), reset_packet_bytes);
+  test.SendFromHost(std::move(buf));
+
+  // Ensure not forwarded.
+  EXPECT_TRUE(test.packets_to_controller().empty());
+  ASSERT_TRUE(intercepted.has_value());
+  std::array<std::byte, 4> out;
+  intercepted.value()->CopyTo(out);
+  EXPECT_EQ(reset_packet_bytes, out);
+
+  // Ensure event was sent.
+  ASSERT_EQ(test.packets_to_host().size(), 1u);
+  std::array<std::byte, 1> h4_header{};
+  test.packets_to_host().front()->CopyTo(h4_header);
+  EXPECT_EQ(h4_header[0], std::byte(emboss::H4PacketType::EVENT));
+  std::array<std::byte, command_complete_packet_bytes.size()> event_payload{};
+  test.packets_to_host().front()->CopyTo(event_payload, 1);
+  EXPECT_EQ(command_complete_packet_bytes, event_payload);
+  test.packets_to_host().pop_front();
+}
+
+TEST_F(CommandMultiplexerTest, DeadlockAsync) {
+  TestDeadlock(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, DeadlockTimer) {
+  TestDeadlock(accessor_timer());
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy::hci

@@ -196,7 +196,11 @@ class CommandMultiplexer final {
   };
 
   // Destroying the EventInterceptor object will unregister the interceptor.
-  // Must not outlive the CommandMultiplexer that created it.
+  // Must not outlive the CommandMultiplexer that created it. Do not destroy an
+  // interceptor in an interception callback, instead return a
+  // `RemoveThisInterceptor` value with the interceptor's ID to remove it. An
+  // interceptor which has had its ID moved from can be destroyed at any time
+  // with no effect.
   class EventInterceptor final : public Interceptor {
    private:
     friend class CommandMultiplexer;
@@ -206,7 +210,11 @@ class CommandMultiplexer final {
   };
 
   // Destroying the CommandInterceptor object will unregister the interceptor.
-  // Must not outlive the CommandMultiplexer that created it.
+  // Must not outlive the CommandMultiplexer that created it. Do not destroy an
+  // interceptor in an interception callback, instead return a
+  // `RemoveThisInterceptor` value with the interceptor's ID to remove it. An
+  // interceptor which has had its ID moved from can be destroyed at any time
+  // with no effect.
   class CommandInterceptor final : public Interceptor {
    private:
     friend class CommandMultiplexer;
@@ -385,17 +393,21 @@ class CommandMultiplexer final {
 
   EventInterceptorMap::iterator FindEventInterceptor(EventCodeValue event,
                                                      ConstByteSpan span)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
   EventInterceptorMap::iterator FindCommandComplete(ConstByteSpan span)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
   EventInterceptorMap::iterator FindCommandStatus(ConstByteSpan span)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
   EventInterceptorMap::iterator FindLeMetaEvent(ConstByteSpan span)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
   EventInterceptorMap::iterator FindVendorDebug(ConstByteSpan span)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
 
-  void RemoveInterceptor(InterceptorMap::iterator iterator)
+  void RemoveCommandInterceptor(InterceptorId id)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, command_interceptors_mutex_);
+  void RemoveEventInterceptor(InterceptorId id)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, event_interceptors_mutex_);
+  void DeleteInterceptor(InterceptorMap::iterator iterator)
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void SendToHost(MultiBuf::Instance&& buf) PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void SendToControllerOrQueue(MultiBuf::Instance&& buf)
@@ -418,12 +430,17 @@ class CommandMultiplexer final {
 
   Allocator& allocator_;
   pw::sync::Mutex mutex_;
+  pw::sync::Mutex event_interceptors_mutex_ PW_ACQUIRED_BEFORE(mutex_);
+  pw::sync::Mutex command_interceptors_mutex_
+      PW_ACQUIRED_BEFORE(mutex_, event_interceptors_mutex_);
 
   // Owning map, use DynamicMap if/when available, this would also let us unwrap
   // the "Wrapper" classes above and use state directly.
   InterceptorMap interceptors_ PW_GUARDED_BY(mutex_);
-  EventInterceptorMap event_interceptors_ PW_GUARDED_BY(mutex_);
-  CommandInterceptorMap command_interceptors_ PW_GUARDED_BY(mutex_);
+  EventInterceptorMap event_interceptors_
+      PW_GUARDED_BY(event_interceptors_mutex_);
+  CommandInterceptorMap command_interceptors_
+      PW_GUARDED_BY(command_interceptors_mutex_);
   IdentifierMint<InterceptorId::ValueType> id_mint_ PW_GUARDED_BY(mutex_);
 
   // Outgoing command queue.

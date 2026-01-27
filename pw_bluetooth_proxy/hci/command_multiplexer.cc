@@ -25,11 +25,16 @@
 namespace pw::bluetooth::proxy::hci {
 namespace {
 
+enum class InterceptorType {
+  kCommand,
+  kEvent,
+};
+
 constexpr std::array<std::byte, 1> kH4EventHeader{
     std::byte(emboss::H4PacketType::EVENT),
 };
 
-}
+}  // namespace
 
 class CommandMultiplexer::InterceptorStateWrapper
     : public InterceptorMap::Pair {
@@ -164,10 +169,12 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
     return;
   }
 
-  std::lock_guard lock(mutex_);
+  std::lock_guard command_interceptors_lock(command_interceptors_mutex_);
+
   auto iter = command_interceptors_.find(view.opcode().Read());
   if (iter == command_interceptors_.end()) {
     // No registered interceptors.
+    std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
   }
@@ -175,6 +182,7 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
   auto& handler = iter->handler();
   if (!handler) {
     // Interceptor doesn't have a handler.
+    std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(buf));
     return;
   }
@@ -184,28 +192,18 @@ void CommandMultiplexer::HandleH4FromHost(MultiBuf::Instance&& h4_packet) {
   static_assert(std::variant_size_v<decltype(result.action)> == 2,
                 "Unhandled variant members.");
   if (auto* action = std::get_if<RemoveThisInterceptor>(&result.action)) {
+    std::lock_guard lock(mutex_);
     if (!action->id.is_valid()) {
       // Ignoring RemoveThisInterceptor action for invalid ID.
+      PW_LOG_WARN("Interceptor resulted in removal request, but ID invalid.");
       return;
     }
-    auto interceptors_iter = interceptors_.find(action->id.value());
-
-    // Should be impossible to fail this check from type safety, failing
-    // would require forging or reusing an ID.
-    PW_CHECK(interceptors_iter != interceptors_.end());
-
-    // Ensure the action didn't provide a different interceptor's ID.
-    auto downcast = interceptors_iter->Downcast();
-    PW_CHECK(std::holds_alternative<CommandInterceptorWrapper*>(downcast));
-    PW_CHECK(&std::get<CommandInterceptorWrapper*>(downcast)->state() ==
-             &*iter);
-
-    RemoveInterceptor(interceptors_iter);
+    RemoveCommandInterceptor(std::move(action->id));
   }
 
   // Only other action is continue.
-
   if (result.command.has_value()) {
+    std::lock_guard lock(mutex_);
     SendToControllerOrQueue(std::move(result.command->buffer));
   }
 }
@@ -237,12 +235,13 @@ void CommandMultiplexer::HandleH4FromController(
     return;
   }
 
-  std::lock_guard lock(mutex_);
+  std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
 
   auto event_code = EventCodeValue(view.event_code().Read());
   auto iter = FindEventInterceptor(event_code, bytes);
 
   if (iter == event_interceptors_.end()) {
+    std::lock_guard lock(mutex_);
     SendToHost(std::move(buf));
     return;
   }
@@ -250,6 +249,7 @@ void CommandMultiplexer::HandleH4FromController(
   auto& handler = iter->handler();
   if (!handler) {
     // Interceptor doesn't have a handler.
+    std::lock_guard lock(mutex_);
     SendToHost(std::move(buf));
     return;
   }
@@ -263,21 +263,12 @@ void CommandMultiplexer::HandleH4FromController(
       // Ignoring RemoveThisInterceptor action for invalid ID.
       return;
     }
-    auto interceptors_iter = interceptors_.find(action->id.value());
-
-    // Should be impossible to fail this check from type safety, failing
-    // would require forging or reusing an ID.
-    PW_CHECK(interceptors_iter != interceptors_.end());
-
-    // Ensure the action didn't provide a different interceptor's ID.
-    auto downcast = interceptors_iter->Downcast();
-    PW_CHECK(std::holds_alternative<EventInterceptorWrapper*>(downcast));
-    PW_CHECK(&std::get<EventInterceptorWrapper*>(downcast)->state() == &*iter);
-
-    RemoveInterceptor(interceptors_iter);
+    std::lock_guard lock(mutex_);
+    RemoveEventInterceptor(std::move(action->id));
   }
 
   if (result.event.has_value()) {
+    std::lock_guard lock(mutex_);
     SendToHost(std::move(result.event->buffer));
   }
 }
@@ -328,11 +319,12 @@ Result<EventInterceptor> CommandMultiplexer::RegisterEventInterceptor(
     }
   }
 
-  std::lock_guard lock(mutex_);
+  std::lock_guard event_lock(event_interceptors_mutex_);
   if (event_interceptors_.find(event_code) != event_interceptors_.end()) {
     return Status::AlreadyExists();
   }
 
+  std::lock_guard lock(mutex_);
   std::optional<InterceptorId> id = AllocateInterceptorId();
   if (!id.has_value() || !id->is_valid()) {
     // Exhausted ID space.
@@ -354,6 +346,7 @@ Result<EventInterceptor> CommandMultiplexer::RegisterEventInterceptor(
 
 Result<CommandInterceptor> CommandMultiplexer::RegisterCommandInterceptor(
     pw::bluetooth::emboss::OpCode op_code, CommandHandler&& handler) {
+  std::lock_guard cmd_interceptors_lock(command_interceptors_mutex_);
   std::lock_guard lock(mutex_);
   if (command_interceptors_.find(op_code) != command_interceptors_.end()) {
     return Status::AlreadyExists();
@@ -380,13 +373,46 @@ Result<CommandInterceptor> CommandMultiplexer::RegisterCommandInterceptor(
 
 void CommandMultiplexer::UnregisterInterceptor(InterceptorId id) {
   PW_CHECK(id.is_valid(), "Attempt to unregister invalid ID.");
-  std::lock_guard lock(mutex_);
-  auto iter = interceptors_.find(id.value());
-  // Should be impossible to fail this check from type safety, failing would
-  // require forging or reusing an ID.
-  PW_CHECK(iter != interceptors_.end());
+  InterceptorType interceptor_type;
+  // Because of lock acquisition order, to avoid deadlock we have to determine
+  // the interceptor type while holding `mutex_`, then release and reacquire
+  // while holding the appropriate map lock.
+  {
+    std::lock_guard lock(mutex_);
+    auto iter = interceptors_.find(id.value());
+    // Should be impossible to fail this check from type safety, failing would
+    // require forging or reusing an ID.
+    PW_CHECK(iter != interceptors_.end());
 
-  RemoveInterceptor(iter);
+    interceptor_type = std::visit(
+        [](const auto& interceptor) {
+          using T = std::remove_reference_t<decltype(*interceptor)>;
+          if (std::is_same_v<T, CommandInterceptorWrapper>) {
+            return InterceptorType::kCommand;
+          } else if (std::is_same_v<T, EventInterceptorWrapper>) {
+            return InterceptorType::kEvent;
+          }
+        },
+        iter->Downcast());
+  }
+
+  switch (interceptor_type) {
+    // Unfortunately we have to use two separate lock objects here rather than
+    // a single `std::scoped_lock` to satisfy thread safety analysis in clang.
+    // See https://github.com/llvm/llvm-project/issues/42000
+    case InterceptorType::kCommand: {
+      std::lock_guard cmd_lock(command_interceptors_mutex_);
+      std::lock_guard lock(mutex_);
+      RemoveCommandInterceptor(std::move(id));
+      break;
+    }
+    case InterceptorType::kEvent: {
+      std::lock_guard event_lock(event_interceptors_mutex_);
+      std::lock_guard lock(mutex_);
+      RemoveEventInterceptor(std::move(id));
+      break;
+    }
+  }
 }
 
 std::optional<CommandMultiplexer::InterceptorId>
@@ -478,21 +504,44 @@ CommandMultiplexer::FindVendorDebug(ConstByteSpan span) {
   return event_interceptors_.find(VendorDebugSubEventCode{subevent_code});
 }
 
-void CommandMultiplexer::RemoveInterceptor(InterceptorMap::iterator iterator) {
-  auto downcast = iterator->Downcast();
-  static_assert(std::variant_size_v<decltype(downcast)> == 2,
-                "Unhandled variant members.");
-  if (auto** event = std::get_if<EventInterceptorWrapper*>(&downcast)) {
-    event_interceptors_.erase((*event)->state().key());
-  } else if (auto** cmd = std::get_if<CommandInterceptorWrapper*>(&downcast)) {
-    command_interceptors_.erase((*cmd)->state().key());
-  } else {
-    PW_UNREACHABLE;
-  }
-
+void CommandMultiplexer::DeleteInterceptor(InterceptorMap::iterator iterator) {
   auto& interceptor = *iterator;
   interceptors_.erase(iterator);
   allocator_.Delete(&interceptor);
+}
+
+void CommandMultiplexer::RemoveCommandInterceptor(InterceptorId id) {
+  auto interceptors_iter = interceptors_.find(id.value());
+
+  // Should be impossible to fail this check from type safety, failing
+  // would require forging or reusing an ID.
+  PW_CHECK(interceptors_iter != interceptors_.end());
+
+  auto downcast = interceptors_iter->Downcast();
+  auto** cmd = std::get_if<CommandInterceptorWrapper*>(&downcast);
+
+  // Should be impossible with locking + type safety.
+  PW_CHECK(cmd);
+
+  command_interceptors_.erase((*cmd)->state().key());
+  DeleteInterceptor(interceptors_iter);
+}
+
+void CommandMultiplexer::RemoveEventInterceptor(InterceptorId id) {
+  auto interceptors_iter = interceptors_.find(id.value());
+
+  // Should be impossible to fail this check from type safety, failing
+  // would require forging or reusing an ID.
+  PW_CHECK(interceptors_iter != interceptors_.end());
+
+  auto downcast = interceptors_iter->Downcast();
+  auto** event = std::get_if<EventInterceptorWrapper*>(&downcast);
+
+  // Should be impossible with locking + type safety.
+  PW_CHECK(event);
+
+  event_interceptors_.erase((*event)->state().key());
+  DeleteInterceptor(interceptors_iter);
 }
 
 void CommandMultiplexer::SendToHost(MultiBuf::Instance&& buf) {
