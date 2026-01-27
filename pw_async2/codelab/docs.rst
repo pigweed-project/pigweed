@@ -18,12 +18,12 @@ such as:
 
 * Implementing a ``Task`` as a state machine
 
-* Calling async functions and managing state across suspension points
+* Calling async operations and managing state across suspension points
 
-* Writing your own pendable functions that use a ``Waker`` to handle external
+* Writing your own async operation that uses a ``Waker`` to handle external
   events
 
-* Using ``InlineAsyncQueue`` for basic inter-task communication
+* Using ``Channel`` for inter-task communication
 
 * Using ``TimeProvider`` and ``Select`` to implement timeouts
 

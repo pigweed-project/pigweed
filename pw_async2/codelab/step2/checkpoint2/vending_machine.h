@@ -33,6 +33,7 @@ class VendingMachineTask : public pw::async2::Task {
   pw::async2::Poll<> DoPend(pw::async2::Context& cx) override;
 
   CoinSlot& coin_slot_;
+  CoinFuture coin_future_;
 };
 
 }  // namespace codelab

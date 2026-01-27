@@ -25,8 +25,7 @@ class VendingMachineTask : public pw::async2::Task {
  public:
   VendingMachineTask(CoinSlot& coin_slot)
       : pw::async2::Task(PW_ASYNC_TASK_NAME("VendingMachineTask")),
-        coin_slot_(coin_slot),
-        displayed_welcome_message_(false) {}
+        coin_slot_(coin_slot) {}
 
  private:
   // This is the core of the asynchronous task. The dispatcher calls this method
@@ -34,7 +33,7 @@ class VendingMachineTask : public pw::async2::Task {
   pw::async2::Poll<> DoPend(pw::async2::Context& cx) override;
 
   CoinSlot& coin_slot_;
-  bool displayed_welcome_message_;
+  CoinFuture coin_future_;
 };
 
 }  // namespace codelab

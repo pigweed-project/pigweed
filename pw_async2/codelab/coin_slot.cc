@@ -17,22 +17,40 @@
 #include <mutex>
 #include <utility>
 
+#include "pw_assert/assert.h"
+#include "pw_assert/check.h"
+
 namespace codelab {
 
-pw::async2::Poll<unsigned> CoinSlot::Pend(pw::async2::Context& context) {
+CoinFuture CoinSlot::GetCoins() {
   std::lock_guard lock(lock_);
-  unsigned coins = std::exchange(coins_deposited_, 0);
-  if (coins > 0) {
-    return coins;
-  }
-  PW_ASYNC_STORE_WAKER(context, waker_, "coin deposit");
-  return pw::async2::Pending();
+  PW_CHECK(futures_.empty(),
+           "Called GetCoins() while a CoinFuture is already active");
+  return CoinFuture(*this);
 }
 
 void CoinSlot::Deposit() {
   std::lock_guard lock(lock_);
   coins_deposited_ += 1;
-  waker_.Wake();
+  if (CoinFuture* future = futures_.PopIfAvailable(); future != nullptr) {
+    future->Wake();
+  }
+}
+
+CoinFuture::CoinFuture(CoinSlot& coin_slot)
+    : core_(pw::async2::FutureState::kPending), coin_slot_(&coin_slot) {
+  coin_slot_->futures_.Push(core_);
+}
+
+pw::async2::Poll<unsigned> CoinFuture::DoPend(pw::async2::Context&) {
+  PW_ASSERT(!is_complete());
+
+  std::lock_guard lock(coin_slot_->lock_);
+  unsigned coins = std::exchange(coin_slot_->coins_deposited_, 0);
+  if (coins > 0) {
+    return pw::async2::Ready(coins);
+  }
+  return pw::async2::Pending();
 }
 
 }  // namespace codelab

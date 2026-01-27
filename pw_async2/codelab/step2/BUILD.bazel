@@ -98,3 +98,8 @@ sphinx_docs_library(
     ],
     target_compatible_with = incompatible_with_mcu(),
 )
+
+alias(
+    name = "checkpoint3",
+    actual = ":step2",
+)

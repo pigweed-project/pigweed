@@ -31,10 +31,13 @@ TEST(CoinSlotTest, PendAndDeposit) {
   CoinSlot coin_slot;
   unsigned int coins = 0;
 
-  pw::async2::FuncTask task([&](Context& context) -> Poll<> {
-    PW_TRY_READY_ASSIGN(coins, coin_slot.Pend(context));
-    return Ready();
-  });
+  CoinFuture coin_future = coin_slot.GetCoins();
+
+  pw::async2::FuncTask task(
+      [&coin_future, &coins](Context& context) mutable -> Poll<> {
+        PW_TRY_READY_ASSIGN(coins, coin_future.Pend(context));
+        return Ready();
+      });
 
   pw::async2::DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -51,15 +54,23 @@ TEST(CoinSlotTest, PendAndDeposit) {
 TEST(CoinSlotTest, MultipleDeposits) {
   struct : pw::async2::Task {
     pw::async2::Poll<> DoPend(Context& context) override {
-      while (true) {
+      while (!stopped) {
+        if (!coin_future.is_pendable()) {
+          coin_future = coin_slot.GetCoins();
+        }
+
         unsigned int coins;
-        PW_TRY_READY_ASSIGN(coins, coin_slot.Pend(context));
+        PW_TRY_READY_ASSIGN(coins, coin_future.Pend(context));
         total_coins += coins;
       }
+
+      return Ready();
     }
 
     CoinSlot coin_slot;
+    CoinFuture coin_future;
     unsigned int total_coins = 0;
+    bool stopped = false;
   } task;
 
   pw::async2::DispatcherForTest dispatcher;
@@ -85,6 +96,11 @@ TEST(CoinSlotTest, MultipleDeposits) {
 
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   EXPECT_EQ(task.total_coins, 5u);
+
+  task.stopped = true;
+  task.coin_slot.Deposit();  // Wake the task so it can exit
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
 }
 
 }  // namespace codelab
