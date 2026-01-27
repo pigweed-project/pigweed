@@ -178,13 +178,13 @@ clock.
 
 .. _module-pw_async2-guides-time-and-timers-time-future:
 
-TimeFuture, time-bound pendable objects
-=======================================
-A :cc:`TimeFuture <pw::async2::TimeFuture>` is a pendable object that
-completes at a specific time. A task can ``Pend`` on a ``TimeFuture`` to
-suspend itself until the time designated by the future. When the time is
-reached, the ``TimeProvider`` wakes the task, and its next poll of the
-``TimeFuture`` will return ``Ready(timestamp)``.
+TimeFuture, time-bound futures
+==============================
+A :cc:`TimeFuture <pw::async2::TimeFuture>` is a future that completes at a
+specific time. A task can ``Pend`` on a ``TimeFuture`` to suspend itself until
+the time designated by the future. When the time is reached, the
+``TimeProvider`` wakes the task, and its next poll of the ``TimeFuture`` will
+return ``Ready(timestamp)``.
 
 .. _module-pw_async2-guides-time-and-timers-example:
 

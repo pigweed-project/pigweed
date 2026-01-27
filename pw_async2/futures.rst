@@ -29,8 +29,8 @@ with a common interface, but no shared base. In C++20 and later,
 A ``Future<T>`` exposes the following API:
 
 - A default constructor that initializes the future to an empty state. An empty
-  future does not represent an asynchronous and cannot be pended.
-- A destructor that cancels the future.
+  future does not represent an asynchronous operation and cannot be pended.
+- A destructor that abandons the future so no further operations will access it.
 - ``value_type``: Type alias for the value produced by the future.
 - ``Poll<value_type> Pend(Context& cx)``: Calling ``Pend`` advances the
   asynchronous operation until no further progress is possible. Returns
@@ -406,7 +406,9 @@ completing the task re-running, the tuple stores all of their results.
 
 Setting up wakers
 =================
-You can set up a waker to a non-empty value using one of four macros we provide:
+Futures typically store a waker. When the future is ready to advance, that wake
+the task that pended them with this waker. Wakers can be set using one of these
+four macros:
 
 - :cc:`PW_ASYNC_STORE_WAKER` and :cc:`PW_ASYNC_CLONE_WAKER`
 
@@ -419,9 +421,10 @@ You can set up a waker to a non-empty value using one of four macros we provide:
 
 - :cc:`PW_ASYNC_TRY_STORE_WAKER` and :cc:`PW_ASYNC_TRY_CLONE_WAKER`
 
-  This is an alternative to `PW_ASYNC_STORE_WAKER`, and returns ``false``
-  instead of crashing. This lets the pendable to signal to the caller that the
-  ``Pend()`` operation failed, so it can be handled in some other way.
+  These are alternatives to :cc:`PW_ASYNC_STORE_WAKER` and
+  cc:`PW_ASYNC_CLONE_WAKER` that return ``false`` instead of crashing if the
+  waker is already set. This allows the caller to handle cases when the waker is
+  already in use.
 
 .. _module-pw_async2-futures-timeout:
 
