@@ -49,6 +49,8 @@ enum class L2capChannelEvent {
   kWriteAvailable,
 };
 
+// TODO: https://pwbug.dev/400536541 - Pass connection handle and channel
+// IDs to event_fn.
 /// Event callback from channels.
 using ChannelEventCallback = pw::InlineFunction<
     void(L2capChannelEvent event),
@@ -84,5 +86,8 @@ using OptionalBufferReceiveFunction =
         ConnectionHandle connection_handle,
         uint16_t local_channel_id,
         uint16_t remote_channel_id)>;
+
+/// Client provided callback for data received from a channel.
+using MultiBufReceiveFunction = Function<void(FlatConstMultiBuf&& payload)>;
 
 }  // namespace pw::bluetooth::proxy

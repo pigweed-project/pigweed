@@ -85,6 +85,7 @@ Result<L2capCoc> L2capChannelManager::AcquireL2capCoc(
   if (channel == nullptr) {
     return Status::ResourceExhausted();
   }
+
   PW_TRY(channel->InitCreditBasedFlowControl(
       rx_config, tx_config, std::move(receive_fn)));
   L2capCoc client_channel(*channel, tx_config.mtu);
@@ -531,6 +532,64 @@ L2capChannelManager::DoInterceptBasicModeChannel(
           std::move(payload_from_controller_fn)),
       variant_cast<L2capChannel::FromHostFn>(std::move(payload_from_host_fn))));
 
+  PW_TRY(channel_proxy->Init());
+  channel.Release();
+  return channel_proxy;
+}
+
+Result<UniquePtr<ChannelProxy>>
+L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
+    ConnectionHandle connection_handle,
+    ConnectionOrientedChannelConfig rx_config,
+    ConnectionOrientedChannelConfig tx_config,
+    MultiBufReceiveFunction&& receive_fn,
+    ChannelEventCallback&& event_fn) {
+  std::lock_guard links_lock(links_mutex_);
+  auto link_iter = logical_links_.find(cpp23::to_underlying(connection_handle));
+  if (link_iter == logical_links_.end()) {
+    PW_LOG_WARN("Attempt to create L2capCoc for non-existent connection: %#x",
+                cpp23::to_underlying(connection_handle));
+    return Status::InvalidArgument();
+  }
+  if (!acl_data_channel_.HasAclConnection(
+          cpp23::to_underlying(connection_handle))) {
+    return Status::Unavailable();
+  }
+
+  if (!L2capChannel::AreValidParameters(cpp23::to_underlying(connection_handle),
+                                        /*local_cid=*/rx_config.cid,
+                                        /*remote_cid=*/tx_config.cid)) {
+    return Status::InvalidArgument();
+  }
+
+  UniquePtr<L2capChannel> channel = impl_.allocator().MakeUnique<L2capChannel>(
+      *this,
+      /*rx_multibuf_allocator=*/&multibuf_allocator_,
+      cpp23::to_underlying(connection_handle),
+      AclTransportType::kLe,
+      /*local_cid=*/rx_config.cid,
+      /*remote_cid=*/tx_config.cid,
+      std::move(event_fn));
+  if (channel == nullptr) {
+    return Status::ResourceExhausted();
+  }
+
+  std::optional<uint16_t> max_l2cap_payload_size =
+      channel->MaxL2capPayloadSize();
+  if (!max_l2cap_payload_size.has_value()) {
+    PW_LOG_ERROR("Maximum L2CAP payload size is not set.");
+    return Status::FailedPrecondition();
+  }
+
+  UniquePtr<internal::ChannelProxyImpl> channel_proxy =
+      impl_.allocator().MakeUnique<internal::ChannelProxyImpl>(
+          max_l2cap_payload_size.value(), *channel);
+  if (channel_proxy == nullptr) {
+    return Status::ResourceExhausted();
+  }
+
+  PW_TRY(channel->InitCreditBasedFlowControl(
+      rx_config, tx_config, std::move(receive_fn)));
   PW_TRY(channel_proxy->Init());
   channel.Release();
   return channel_proxy;

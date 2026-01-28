@@ -21,6 +21,7 @@
 #include "pw_bluetooth_proxy/connection_handle.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
+#include "pw_bluetooth_proxy/l2cap_coc_config.h"
 #include "pw_bytes/span.h"
 #include "pw_function/function.h"
 
@@ -49,8 +50,48 @@ class L2capChannelManagerInterface {
   using BufferReceiveFunction =
       std::variant<OptionalBufferReceiveFunction, SpanReceiveFunction>;
 
-  // TODO: https://pwbug.dev/400536541 - Pass connection handle and channel IDs
-  // to event_fn.
+  /// Returns an L2CAP channel operating in basic mode that supports writing to
+  /// and reading from a remote peer.
+  ///
+  /// @param[in] connection_handle          The connection handle of the remote
+  ///                                       peer.
+  ///
+  /// @param[in] local_cid                  L2CAP channel ID of the local
+  ///                                       endpoint.
+  ///
+  /// @param[in] remote_cid                 L2CAP channel ID of the remote
+  ///                                       endpoint.
+  ///
+  /// @param[in] transport                  Logical link transport type.
+  ///
+  /// @param[in] payload_from_controller_fn Read callback to be invoked on Rx
+  ///                                       SDUs. If a multibuf is returned by
+  ///                                       the callback, it is copied into the
+  ///                                       payload to be forwarded to the host.
+  ///                                       Optional null return indicates
+  ///                                       packet was handled and no forwarding
+  ///                                       is required.
+  ///
+  /// @param[in] payload_from_host_fn       Read callback to be invoked on Tx
+  ///                                       SDUs. If a multibuf is returned by
+  ///                                       the callback, it is copied into the
+  ///                                       payload to be forwarded to the
+  ///                                       controller. Optional null return
+  ///                                       indicates packet was handled and no
+  ///                                       forwarding is required.
+  ///
+  /// @param[in] event_fn                   Handle asynchronous events such as
+  ///                                       errors and flow control events
+  ///                                       encountered by the channel. See
+  ///                                       `l2cap_channel_common.h`.
+  ///                                       Must outlive the channel and remain
+  ///                                       valid until the channel destructor
+  ///                                       returns.
+  ///
+  /// @returns @Result{the channel}
+  /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
+  /// * @UNAVAILABLE: A channel could not be created because no memory was
+  ///   available to accommodate an additional ACL connection.
   Result<UniquePtr<ChannelProxy>> InterceptBasicModeChannel(
       ConnectionHandle connection_handle,
       uint16_t local_channel_id,
@@ -68,6 +109,47 @@ class L2capChannelManagerInterface {
                                        std::move(event_fn));
   }
 
+  /// Returns an L2CAP credit-based flow control channel that supports writing
+  /// to and reading from a remote peer.
+  ///
+  /// @param[in] connection_handle      The connection handle of the remote
+  ///                                   peer.
+  ///
+  /// @param[in] rx_config              Parameters applying to reading packets.
+  ///                                   See @ref ConnectionOrientedChannelConfig
+  ///                                   for details.
+  ///
+  /// @param[in] tx_config              Parameters applying to writing packets.
+  ///                                   See @ref ConnectionOrientedChannelConfig
+  ///                                   for details.
+  ///
+  /// @param[in] receive_fn             Read callback to be invoked on Rx SDUs.
+  ///
+  /// @param[in] event_fn               Handle asynchronous events such as
+  ///                                   errors and flow control events
+  ///                                   encountered by the channel. See
+  ///                                   `l2cap_channel_common.h`.
+  ///                                   Must outlive the channel and remain
+  ///                                   valid until the channel destructor
+  ///                                   returns.
+  ///
+  /// @returns @Result{the channel}
+  /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
+  /// * @UNAVAILABLE: A channel could not be created because no memory was
+  ///   available to accommodate an additional ACL connection.
+  Result<UniquePtr<ChannelProxy>> InterceptCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      ConnectionOrientedChannelConfig rx_config,
+      ConnectionOrientedChannelConfig tx_config,
+      MultiBufReceiveFunction&& receive_fn,
+      ChannelEventCallback&& event_fn) {
+    return DoInterceptCreditBasedFlowControlChannel(connection_handle,
+                                                    rx_config,
+                                                    tx_config,
+                                                    std::move(receive_fn),
+                                                    std::move(event_fn));
+  }
+
  private:
   virtual Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
       ConnectionHandle connection_handle,
@@ -76,6 +158,14 @@ class L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
+      ChannelEventCallback&& event_fn) = 0;
+
+  virtual Result<UniquePtr<ChannelProxy>>
+  DoInterceptCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      ConnectionOrientedChannelConfig rx_config,
+      ConnectionOrientedChannelConfig tx_config,
+      Function<void(FlatConstMultiBuf&& payload)>&& receive_fn,
       ChannelEventCallback&& event_fn) = 0;
 };
 

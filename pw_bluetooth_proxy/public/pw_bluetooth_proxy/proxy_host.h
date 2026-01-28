@@ -194,6 +194,8 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
   ///   available to accommodate an additional ACL connection.
+  ///
+  /// @deprecated use InterceptCreditBasedFlowControlChannel instead.
   pw::Result<L2capCoc> AcquireL2capCoc(
       MultiBufAllocator& rx_multibuf_allocator,
       uint16_t connection_handle,
@@ -249,6 +251,8 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
   ///   available to accommodate an additional ACL connection.
+  ///
+  /// @deprecated use InterceptBasicModeChannel instead.
   pw::Result<BasicL2capChannel> AcquireBasicL2capChannel(
       MultiBufAllocator& rx_multibuf_allocator,
       uint16_t connection_handle,
@@ -409,6 +413,13 @@ class ProxyHost : public L2capChannelManagerInterface {
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
       ChannelEventCallback&& event_fn);
+
+  Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      ConnectionOrientedChannelConfig rx_config,
+      ConnectionOrientedChannelConfig tx_config,
+      MultiBufReceiveFunction&& receive_fn,
+      ChannelEventCallback&& event_fn) override;
 
   // Implementation-specific details that may vary between sync and async modes.
   internal::ProxyHostImpl impl_;

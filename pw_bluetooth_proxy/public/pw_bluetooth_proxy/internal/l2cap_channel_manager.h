@@ -264,6 +264,13 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       BufferReceiveFunction&& payload_from_host_fn,
       ChannelEventCallback&& event_fn) override
       PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
+  Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      ConnectionOrientedChannelConfig rx_config,
+      ConnectionOrientedChannelConfig tx_config,
+      MultiBufReceiveFunction&& receive_fn,
+      ChannelEventCallback&& event_fn) override
+      PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
 
   // Reference to the ACL data channel owned by the proxy.
   AclDataChannel& acl_data_channel_;

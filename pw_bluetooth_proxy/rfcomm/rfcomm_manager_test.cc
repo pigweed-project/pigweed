@@ -87,6 +87,15 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
   uint32_t intercept_channel_count() const { return intercept_channel_count_; }
 
  private:
+  Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
+      ConnectionHandle,
+      ConnectionOrientedChannelConfig,
+      ConnectionOrientedChannelConfig,
+      MultiBufReceiveFunction&&,
+      ChannelEventCallback&&) override {
+    return Status::Unimplemented();
+  }
+
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
       ConnectionHandle /*connection_handle*/,
       uint16_t /*local_channel_id*/,

@@ -219,6 +219,15 @@ class GattTest : public ::testing::Test, public L2capChannelManagerInterface {
   }
 
  private:
+  Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
+      ConnectionHandle,
+      ConnectionOrientedChannelConfig,
+      ConnectionOrientedChannelConfig,
+      Function<void(FlatConstMultiBuf&& payload)>&&,
+      ChannelEventCallback&&) override {
+    return Status::Unimplemented();
+  }
+
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
       ConnectionHandle /*connection_handle*/,
       uint16_t local_channel_id,

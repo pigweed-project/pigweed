@@ -148,7 +148,7 @@ bool L2capChannel::HandlePduFromController(pw::span<uint8_t> l2cap_pdu) {
             // MultiBufs are only returned by CreditBasedFlowControlRxEngine,
             // which is used with PayloadReceiveCallback.
             if (auto* receive_fn =
-                    std::get_if<PayloadReceiveCallback>(&from_controller_fn_);
+                    std::get_if<MultiBufReceiveFunction>(&from_controller_fn_);
                 *receive_fn != nullptr) {
               (*receive_fn)(std::move(MultiBufAdapter::Unwrap(buffer)));
             }
@@ -172,7 +172,7 @@ bool L2capChannel::HandlePduFromController(pw::span<uint8_t> l2cap_pdu) {
                                      local_cid(),
                                      remote_cid());
                          },
-                         [](PayloadReceiveCallback&) {
+                         [](MultiBufReceiveFunction&) {
                            // CreditBasedFlowControlRxEngine only uses MultiBufs
                            PW_CRASH("Invalid from controller callback");
                            return false;
@@ -428,7 +428,7 @@ Status L2capChannel::InitBasic(FromControllerFn&& from_controller_fn,
 Status L2capChannel::InitCreditBasedFlowControl(
     ConnectionOrientedChannelConfig rx_config,
     ConnectionOrientedChannelConfig tx_config,
-    Function<void(FlatConstMultiBuf&& payload)>&& receive_fn) {
+    MultiBufReceiveFunction&& receive_fn) {
   if (tx_config.mps < emboss::L2capLeCreditBasedConnectionReq::min_mps() ||
       tx_config.mps > emboss::L2capLeCreditBasedConnectionReq::max_mps()) {
     PW_LOG_ERROR("Tx MPS (%" PRIu16
@@ -445,7 +445,7 @@ Status L2capChannel::InitCreditBasedFlowControl(
     return Status::FailedPrecondition();
   }
 
-  from_controller_fn_.emplace<PayloadReceiveCallback>(std::move(receive_fn));
+  from_controller_fn_.emplace<MultiBufReceiveFunction>(std::move(receive_fn));
 
   {
     std::lock_guard rx_lock(rx_mutex_);

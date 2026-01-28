@@ -180,6 +180,7 @@ def pw_bluetooth_proxy_test(name, versioned_deps, **kwargs):
             "basic_mode_rx_engine_test.cc",
             "basic_mode_channel_proxy_test.cc",
             "channel_proxy_test.cc",
+            "credit_based_flow_control_channel_proxy_test.cc",
             "credit_based_flow_control_tx_engine_test.cc",
             "credit_based_flow_control_rx_engine_test.cc",
             "gatt_notify_test.cc",

@@ -356,6 +356,7 @@ set(PW_BLUETOOTH_PROXY_TEST_SOURCES
   basic_mode_tx_engine_test.cc
   basic_mode_rx_engine_test.cc
   channel_proxy_test.cc
+  credit_based_flow_control_channel_proxy_test.cc
   credit_based_flow_control_tx_engine_test.cc
   credit_based_flow_control_rx_engine_test.cc
   gatt_notify_test.cc

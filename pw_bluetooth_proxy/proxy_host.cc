@@ -412,4 +412,19 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::InternalDoInterceptBasicModeChannel(
       std::move(event_fn));
 }
 
+Result<UniquePtr<ChannelProxy>>
+ProxyHost::DoInterceptCreditBasedFlowControlChannel(
+    ConnectionHandle connection_handle,
+    ConnectionOrientedChannelConfig rx_config,
+    ConnectionOrientedChannelConfig tx_config,
+    MultiBufReceiveFunction&& receive_fn,
+    ChannelEventCallback&& event_fn) {
+  return l2cap_channel_manager_.InterceptCreditBasedFlowControlChannel(
+      connection_handle,
+      rx_config,
+      tx_config,
+      std::move(receive_fn),
+      std::move(event_fn));
+}
+
 }  // namespace pw::bluetooth::proxy

@@ -74,14 +74,12 @@ class L2capChannel final : public internal::TxEngine::Delegate {
                                             uint16_t local_channel_id,
                                             uint16_t remote_channel_id)>;
 
-  using PayloadReceiveCallback = Function<void(FlatConstMultiBuf&& payload)>;
-
   using FromControllerFn = std::variant<std::monostate,
                                         OptionalPayloadReceiveCallback,
                                         OptionalBufferReceiveFunction,
                                         PayloadSpanReceiveCallback,
                                         SpanReceiveFunction,
-                                        PayloadReceiveCallback>;
+                                        MultiBufReceiveFunction>;
 
   using FromHostFn = std::variant<std::monostate,
                                   OptionalPayloadReceiveCallback,
@@ -124,10 +122,9 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   // Initialize the channel for Credit Based Flow Control mode. Must be called
   // before `Start`.
-  Status InitCreditBasedFlowControl(
-      ConnectionOrientedChannelConfig rx_config,
-      ConnectionOrientedChannelConfig tx_config,
-      Function<void(FlatConstMultiBuf&& payload)>&& receive_fn);
+  Status InitCreditBasedFlowControl(ConnectionOrientedChannelConfig rx_config,
+                                    ConnectionOrientedChannelConfig tx_config,
+                                    MultiBufReceiveFunction&& receive_fn);
 
   // Initialize the channel for GATT Notify mode. Must be called before `Start`.
   Status InitGattNotify(uint16_t attribute_handle);
