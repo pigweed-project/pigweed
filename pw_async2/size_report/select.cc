@@ -19,8 +19,9 @@
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
-#include "pw_async2/pendable.h"
 #include "pw_async2/size_report/size_report.h"
+#include "pw_async2/try.h"
+#include "pw_async2/value_future.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_log/log.h"
 
@@ -34,38 +35,31 @@ BasicDispatcher dispatcher;
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT
 
 int SingleTypeSelect(uint32_t mask) {
-  PendableInt value_1(47);
-  PendableInt value_2(52);
-  PendableInt value_3(57);
-  Selector selector(PendableFor<&PendableInt::Get>(value_1),
-                    PendableFor<&PendableInt::Get>(value_2),
-                    PendableFor<&PendableInt::Get>(value_3));
-  decltype(selector.Pend(std::declval<Context&>())) result = Pending();
-  FuncTask task([&](Context& cx) {
-    result = selector.Pend(cx);
-    return result.Readiness();
+  ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
+  ValueFuture<int> value_2 = ValueFuture<int>::Resolved(52);
+  ValueFuture<int> value_3 = ValueFuture<int>::Resolved(57);
+  auto future =
+      Select(std::move(value_1), std::move(value_2), std::move(value_3));
+
+  int value = -1;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
+
+    if (result.has_value<0>()) {
+      value = result.value<0>();
+    } else if (result.has_value<1>()) {
+      value = result.value<1>();
+    } else if (result.has_value<2>()) {
+      value = result.value<2>();
+    }
+
+    return Ready();
   });
+
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  PW_BLOAT_COND(result.IsReady(), mask);
 
-  value_1.allow_completion = true;
-
-  bool completed = false;
-  int value = -1;
-
-  VisitSelectResult(
-      *result,
-      [&](AllPendablesCompleted) { completed = true; },
-      [&](int v) {
-        value = v;  // value_1
-      },
-      [&](int v) {
-        value = v;  // value_2
-      },
-      [&](int v) {
-        value = v;  // value_3
-      });
+  PW_BLOAT_COND(value != -1, mask);
 
   return value;
 }
@@ -73,32 +67,30 @@ int SingleTypeSelect(uint32_t mask) {
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL
 
 int MultiTypeSelect(uint32_t mask) {
-  PendableInt value_1(47);
-  PendableUint value_2(0xffffffff);
-  PendableChar value_3('c');
-  Selector selector(PendableFor<&PendableInt::Get>(value_1),
-                    PendableFor<&PendableUint::Get>(value_2),
-                    PendableFor<&PendableChar::Get>(value_3));
-  decltype(selector.Pend(std::declval<Context&>())) result = Pending();
-  FuncTask task([&](Context& cx) {
-    result = selector.Pend(cx);
-    return result.Readiness();
+  ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
+  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0xffffffff);
+  ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
+  auto future =
+      Select(std::move(value_1), std::move(value_2), std::move(value_3));
+
+  int value = -1;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
+
+    if (result.has_value<0>()) {
+      value = result.value<0>();
+    } else if (result.has_value<1>()) {
+      value = static_cast<int>(result.value<1>());
+    } else if (result.has_value<2>()) {
+      value = static_cast<int>(result.value<2>());
+    }
+
+    return Ready();
   });
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  PW_BLOAT_COND(result.IsReady(), mask);
 
-  value_3.allow_completion = true;
-
-  bool completed = false;
-  int value = -1;
-
-  VisitSelectResult(
-      *result,
-      [&](AllPendablesCompleted) { completed = true; },
-      [&](int i) { value = i; },
-      [&](unsigned int u) { value = static_cast<int>(u); },
-      [&](char c) { value = static_cast<int>(c); });
+  PW_BLOAT_COND(value != -1, mask);
 
   return value;
 }
@@ -108,25 +100,28 @@ int MultiTypeSelect(uint32_t mask) {
 
 #ifdef _PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL
 
-class SelectComparison {
+class SelectComparisonTask : public Task {
  public:
-  SelectComparison() : value_1_(47), value_2_(0xffffffff), value_3_('c') {}
+  SelectComparisonTask()
+      : value_1_(ValueFuture<int>::Resolved(47)),
+        value_2_(ValueFuture<uint32_t>::Resolved(0xffffffff)),
+        value_3_(ValueFuture<char>::Resolved('c')) {}
 
   // Implements the logic of Select() by manually polling each pendable.
-  Poll<> Pend(Context& cx) {
-    Poll<int> poll_1 = value_1_.Get(cx);
+  Poll<> DoPend(Context& cx) override {
+    Poll<int> poll_1 = value_1_.Pend(cx);
     if (poll_1.IsReady()) {
       PW_LOG_INFO("Value 1 ready: %d", *poll_1);
       return Ready();
     }
 
-    Poll<unsigned int> poll_2 = value_2_.Get(cx);
+    Poll<uint32_t> poll_2 = value_2_.Pend(cx);
     if (poll_2.IsReady()) {
       PW_LOG_INFO("Value 2 ready: %u", *poll_2);
       return Ready();
     }
 
-    Poll<char> poll_3 = value_3_.Get(cx);
+    Poll<char> poll_3 = value_3_.Pend(cx);
     if (poll_3.IsReady()) {
       PW_LOG_INFO("Value 3 ready: %c", *poll_3);
       return Ready();
@@ -136,49 +131,76 @@ class SelectComparison {
   }
 
  private:
-  PendableInt value_1_;
-  PendableUint value_2_;
-  PendableChar value_3_;
+  ValueFuture<int> value_1_;
+  ValueFuture<uint32_t> value_2_;
+  ValueFuture<char> value_3_;
 };
 
 #endif  // _PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL
 
 #ifdef _PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER
 
-class SelectComparison {
+class SelectComparisonTask : public Task {
  public:
-  SelectComparison() : value_1_(47), value_2_(0xffffffff), value_3_('c') {}
+  SelectComparisonTask()
+      : value_1_(ValueFuture<int>::Resolved(47)),
+        value_2_(ValueFuture<uint32_t>::Resolved(0xffffffff)),
+        value_3_(ValueFuture<char>::Resolved('c')) {}
 
   // Calls Select() with the pendables.
-  Poll<> Pend(Context& cx) {
-    Selector selector(PendableFor<&PendableInt::Get>(value_1_),
-                      PendableFor<&PendableUint::Get>(value_2_),
-                      PendableFor<&PendableChar::Get>(value_3_));
-    auto result = selector.Pend(cx);
-    if (result.IsPending()) {
-      return Pending();
-    }
+  Poll<> DoPend(Context& cx) override {
+    auto future =
+        Select(std::move(value_1_), std::move(value_2_), std::move(value_3_));
+    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
 
-    VisitSelectResult(
-        *result,
-        [](AllPendablesCompleted) {},
-        [](int i) { PW_LOG_INFO("Value 1 ready: %d", i); },
-        [](unsigned int u) { PW_LOG_INFO("Value 2 ready: %u", u); },
-        [](char c) { PW_LOG_INFO("Value 3 ready: %c", c); });
+    if (result.has_value<0>()) {
+      PW_LOG_INFO("Value 1 ready: %d", result.value<0>());
+    } else if (result.has_value<1>()) {
+      PW_LOG_INFO("Value 2 ready: %u", result.value<1>());
+    } else if (result.has_value<2>()) {
+      PW_LOG_INFO("Value 3 ready: %c", result.value<2>());
+    }
     return Ready();
   }
 
  private:
-  PendableInt value_1_;
-  PendableUint value_2_;
-  PendableChar value_3_;
+  ValueFuture<int> value_1_;
+  ValueFuture<uint32_t> value_2_;
+  ValueFuture<char> value_3_;
 };
 
 #endif  // _PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER
 
+// Ensure all ValueFuture types and their core operations (construct/move/Pend)
+// are in the base binary.
+void SetBaselineValueFutures(uint32_t mask) {
+  ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
+  ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
+  ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
+
+  FuncTask task([v1 = std::move(value_1),
+                 v2 = std::move(value_2),
+                 v3 = std::move(value_3),
+                 &mask](Context& cx) mutable -> Poll<> {
+    auto result_1 = v1.Pend(cx);
+    auto result_2 = v2.Pend(cx);
+    auto result_3 = v3.Pend(cx);
+    bool all_ready =
+        result_1.IsReady() && result_2.IsReady() && result_3.IsReady();
+    PW_BLOAT_COND(all_ready, mask);
+    if (all_ready) {
+      return Ready();
+    }
+    return Pending();
+  });
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+}
+
 int Measure() {
   volatile uint32_t mask = bloat::kDefaultMask;
   SetBaseline(mask);
+  SetBaselineValueFutures(mask);
 
   MockTask task;
   dispatcher.Post(task);
@@ -202,17 +224,16 @@ int Measure() {
 
 #if defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL) || \
     defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER)
-  PendableInt pendable_int(47);
-  FuncTask task2([&](Context& cx) { return pendable_int.Get(cx).Readiness(); });
+  ValueFuture<int> pendable_int = ValueFuture<int>::Resolved(47);
+  FuncTask task2(
+      [&](Context& cx) { return pendable_int.Pend(cx).Readiness(); });
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
 
-  SelectComparison comparison;
-  FuncTask task3([&](Context& cx) { return comparison.Pend(cx).Readiness(); });
-  dispatcher.Post(task3);
+  SelectComparisonTask comparison;
+  dispatcher.Post(comparison);
   dispatcher.RunUntilStalled();
 #endif
-
   return result;
 }
 

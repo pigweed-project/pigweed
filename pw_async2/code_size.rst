@@ -74,20 +74,20 @@ specialization on top of this to demonstrate the incremental cost.
 async2 utilities
 ----------------
 Pigweed provides several utilities to simplify writing asynchronous code. Among
-these are combinators which operate over several pendables, such as ``Join``
-which waits for all pendables to complete, and ``Select`` which waits for the
-first pendable to complete.
+these are combinators which operate over several futures, such as ``Join`` which
+waits for all futures to complete, and ``Select`` which waits for the first
+future to complete.
 
 The table below demonstrates the code size impact of using these utilities.
 For both ``Join`` and ``Select``, the report shows:
 
-*  The initial cost of using the utility with multiple pendables of the same
-   type.
-*  The incremental cost of adding a second call with pendables of *different*
-   types, which demonstrates the overhead of template specialization.
+* The initial cost of using the utility with multiple futures of the same
+  type.
+* The incremental cost of adding a second call with futures of *different*
+  types, which demonstrates the overhead of template specialization.
 
 Additionally, the table includes a comparison showing the code size difference
-between using the ``Select`` helper versus manually polling each pendable.
+between using the ``Select`` helper versus manually polling each future.
 
 .. include:: size_report/utilities_size_report
 

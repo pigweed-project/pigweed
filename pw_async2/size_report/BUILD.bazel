@@ -134,6 +134,24 @@ pw_cc_size_binary(
 )
 
 pw_cc_size_binary(
+    name = "select_size_report_base",
+    srcs = ["select.cc"],
+    defines = [],
+    deps = [
+        ":size_report",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_async2:func_task",
+        "//pw_async2:poll",
+        "//pw_async2:select",
+        "//pw_async2:value_future",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_log",
+    ],
+)
+
+pw_cc_size_binary(
     name = "select_size_report",
     srcs = ["select.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_SELECT=1"],
@@ -143,8 +161,9 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
+        "//pw_async2:poll",
         "//pw_async2:select",
+        "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
         "//pw_log",
     ],
@@ -163,8 +182,9 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
+        "//pw_async2:poll",
         "//pw_async2:select",
+        "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
         "//pw_log",
     ],
@@ -180,8 +200,9 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
+        "//pw_async2:poll",
         "//pw_async2:select",
+        "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
         "//pw_log",
     ],
@@ -197,8 +218,9 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
+        "//pw_async2:poll",
         "//pw_async2:select",
+        "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
         "//pw_log",
     ],
@@ -343,22 +365,22 @@ pw_size_diff(
 
 pw_size_diff(
     name = "select_row",
-    base = ":async2_core",
-    label = "Size of calling Select() with several pendables of the same type",
+    base = ":select_size_report_base",
+    label = "Size of calling Select() with several futures of the same type",
     target = ":select_size_report",
 )
 
 pw_size_diff(
     name = "incremental_select_row",
     base = ":select_size_report",
-    label = "Size of an additional a call to Select() with pendables of different types",
+    label = "Size of an additional a call to Select() with futures of different types",
     target = ":incremental_select_size_report",
 )
 
 pw_size_diff(
     name = "select_comparison_row",
     base = ":select_comparison_manual_size_report",
-    label = "Cost of using Select() versus manually polling each pendable",
+    label = "Cost of using Select() versus manually polling each future",
     target = ":select_comparison_helper_size_report",
 )
 
