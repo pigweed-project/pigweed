@@ -182,6 +182,57 @@ function cleanly. Additionally, returning a ``Future`` directly is essential to
 be able to work with coroutines: ``co_await`` can be used directly and will
 resolve to a ``Result<T>``.
 
+Naming conventions
+------------------
+Follow these conventions for naming functions that interact with ``pw_async2``
+futures.
+
+- Name functions that return futures for the operation represented by the
+  future, rather than the future itself.
+
+  .. admonition:: **Yes**: Function is named for the Read operation.
+     :class: checkmark
+
+     .. code-block:: cpp
+
+        ReadFuture<T> Read();
+
+  .. admonition:: **No**: Function is named for the future it returns.
+     :class: error
+
+     .. code-block:: cpp
+
+        ReadFuture<T> GetReadFuture();
+
+- Do not label future-returning functions as "async". Asynchronicity is implied
+  by the future return value.
+
+  .. admonition:: **No**: Future-returning function is named as ``Async``.
+     :class: error
+
+     .. code-block:: cpp
+
+        ReadFuture<T> AsyncRead();
+
+- Prefix non-blocking functions with ``Try`` to distinguish then from
+  future-returning functions.
+
+  .. admonition:: **Yes**: Non-blocking function starts with ``Try``.
+     :class: checkmark
+
+     .. code-block:: cpp
+
+        std::optional<T> TryRead();
+
+- Prefix functions that block the current thread with ``Blocking``.
+
+  .. admonition:: **Yes**: Blocking function starts with ``Blocking``.
+     :class: checkmark
+
+     .. code-block:: cpp
+
+        std::optional<T> BlockingRead();
+
 .. _module-pw_async2-futures-implementing:
 
 ---------------------
