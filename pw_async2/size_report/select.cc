@@ -107,7 +107,7 @@ class SelectComparisonTask : public Task {
         value_2_(ValueFuture<uint32_t>::Resolved(0xffffffff)),
         value_3_(ValueFuture<char>::Resolved('c')) {}
 
-  // Implements the logic of Select() by manually polling each pendable.
+  // Implements the logic of Select() by manually polling each future.
   Poll<> DoPend(Context& cx) override {
     Poll<int> poll_1 = value_1_.Pend(cx);
     if (poll_1.IsReady()) {

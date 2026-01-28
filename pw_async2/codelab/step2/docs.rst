@@ -289,7 +289,7 @@ Next steps
 ----------
 You've now implemented a task that waits for an asynchronous event and
 correctly manages its state. In :ref:`module-pw_async2-codelab-step3`, you'll
-learn how to write your own pendable functions.
+learn how to write your own futures.
 
 .. _module-pw_async2-codelab-step2-checkpoint:
 
