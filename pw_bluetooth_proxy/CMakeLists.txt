@@ -313,6 +313,7 @@ target_compile_definitions(pw_bluetooth_proxy._async_mbv2 PUBLIC
 
 # GATT depends on the above targets, so add_subdirectory() must be called last.
 add_subdirectory(gatt)
+add_subdirectory(rfcomm)
 
 # Tests
 

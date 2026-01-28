@@ -174,7 +174,10 @@ pw_source_set("pw_bluetooth_proxy_sync_mbv1") {
   public_deps = _pw_bluetooth_proxy_public_deps
   deps = _pw_bluetooth_proxy_deps
   sources = _pw_bluetooth_proxy_sources
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "rfcomm:*",
+  ]
 }
 
 pw_source_set("pw_bluetooth_proxy_sync_mbv2") {
@@ -187,7 +190,10 @@ pw_source_set("pw_bluetooth_proxy_sync_mbv2") {
   public_deps = _pw_bluetooth_proxy_public_deps
   deps = _pw_bluetooth_proxy_deps
   sources = _pw_bluetooth_proxy_sources
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "rfcomm:*",
+  ]
 }
 
 pw_source_set("pw_bluetooth_proxy_async_mbv1") {
@@ -200,7 +206,10 @@ pw_source_set("pw_bluetooth_proxy_async_mbv1") {
   public_deps = _pw_bluetooth_proxy_public_deps
   deps = _pw_bluetooth_proxy_deps
   sources = _pw_bluetooth_proxy_sources
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "rfcomm:*",
+  ]
 }
 
 pw_source_set("pw_bluetooth_proxy_async_mbv2") {
@@ -216,6 +225,7 @@ pw_source_set("pw_bluetooth_proxy_async_mbv2") {
   visibility = [
     ":*",
     "gatt:*",
+    "rfcomm:*",
   ]
 }
 
@@ -308,6 +318,7 @@ pw_source_set("test_utils_async_mbv2") {
   visibility = [
     ":*",
     "gatt:*",
+    "rfcomm:*",
   ]
 }
 
@@ -362,5 +373,6 @@ pw_test_group("tests") {
   group_deps = [
     "gatt:tests",
     "hci:tests",
+    "rfcomm:tests",
   ]
 }

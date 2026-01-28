@@ -1,0 +1,59 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("//pw_bluetooth_proxy/rfcomm:rfcomm.bzl", "pw_bluetooth_proxy_rfcomm_library", "pw_bluetooth_proxy_rfcomm_test")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = [
+        "-layering_check",
+        "-ctad_warnings",
+    ],
+)
+
+licenses(["notice"])
+
+pw_bluetooth_proxy_rfcomm_library(
+    name = "rfcomm",
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy"],
+)
+
+pw_bluetooth_proxy_rfcomm_library(
+    name = "rfcomm_v1",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_mbv1"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_rfcomm_library(
+    name = "rfcomm_v2",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_mbv2"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_rfcomm_test(
+    name = "rfcomm_v1_test",
+    versioned_deps = [
+        ":rfcomm_v1",
+        "//pw_multibuf:simple_allocator",
+    ],
+)
+
+pw_bluetooth_proxy_rfcomm_test(
+    name = "rfcomm_v2_test",
+    versioned_deps = [
+        ":rfcomm_v2",
+    ],
+)

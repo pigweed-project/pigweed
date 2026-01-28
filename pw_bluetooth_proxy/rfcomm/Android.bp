@@ -1,0 +1,59 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+package {
+    default_applicable_licenses: ["external_pigweed_license"],
+}
+
+cc_library_static {
+    name: "rfcomm",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    // LINT.IfChange
+    srcs: [
+        "rfcomm_channel_internal.cc",
+        "rfcomm_channel.cc",
+        "rfcomm_manager.cc",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+    static_libs: [
+        "pw_bluetooth_proxy",
+        "pw_checksum",
+        "pw_multibuf",
+        "pw_bluetooth.emboss_util",
+        "pw_bluetooth.emboss_rfcomm_frames",
+    ],
+    export_static_lib_headers: [
+        "pw_bluetooth_proxy",
+        "pw_checksum",
+        "pw_multibuf",
+    ],
+    header_libs: [
+        "emboss_runtime_headers",
+        "fuchsia_sdk_lib_stdcompat",
+        "pw_assert",
+        "pw_bluetooth_emboss_util_include_dirs",
+        "pw_log",
+    ],
+    export_header_lib_headers: [
+        "pw_assert",
+        "pw_log",
+    ],
+
+    // LINT.ThenChange(BUILD.gn, rfcomm.bzl, CMakeLists.txt)
+}

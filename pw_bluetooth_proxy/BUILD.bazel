@@ -46,7 +46,10 @@ pw_bluetooth_proxy_library(
     versioned_deps = [
         "//pw_multibuf:simple_allocator",
     ],
-    visibility = ["//pw_bluetooth_proxy/gatt:__pkg__"],
+    visibility = [
+        "//pw_bluetooth_proxy/gatt:__pkg__",
+        "//pw_bluetooth_proxy/rfcomm:__pkg__",
+    ],
 )
 
 pw_bluetooth_proxy_library(
@@ -57,7 +60,10 @@ pw_bluetooth_proxy_library(
         "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2",
     ],
     versioned_deps = [],
-    visibility = ["//pw_bluetooth_proxy/gatt:__pkg__"],
+    visibility = [
+        "//pw_bluetooth_proxy/gatt:__pkg__",
+        "//pw_bluetooth_proxy/rfcomm:__pkg__",
+    ],
 )
 
 pw_bluetooth_proxy_library(
@@ -81,7 +87,10 @@ pw_bluetooth_proxy_library(
         "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2",
     ],
     versioned_deps = [],
-    visibility = ["//pw_bluetooth_proxy/gatt:__pkg__"],
+    visibility = [
+        "//pw_bluetooth_proxy/gatt:__pkg__",
+        "//pw_bluetooth_proxy/rfcomm:__pkg__",
+    ],
 )
 
 # Module configuration
