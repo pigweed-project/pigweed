@@ -21,8 +21,8 @@
 namespace {
 
 codelab::CoinSlot coin_slot;
-codelab::ItemDropSensor item_drop_sensor;
 codelab::Keypad keypad;
+codelab::ItemDropSensor item_drop_sensor;
 
 }  // namespace
 
@@ -43,15 +43,25 @@ int main() {
   pw::async2::BasicDispatcher dispatcher;
   codelab::HardwareInit(&dispatcher);
 
-  codelab::DispenseRequestQueue dispense_requests;
-  codelab::DispenseResponseQueue dispense_responses;
+  pw::async2::ChannelStorage<int, 1> dispense_requests;
+  pw::async2::ChannelStorage<bool, 1> dispense_responses;
 
-  codelab::VendingMachineTask task(
-      coin_slot, keypad, dispense_requests, dispense_responses);
+  auto [req_handle, dispense_requests_sender, dispense_requests_receiver] =
+      pw::async2::CreateSpscChannel(dispense_requests);
+  auto [res_handle, dispense_responses_sender, dispense_responses_receiver] =
+      pw::async2::CreateSpscChannel(dispense_responses);
+  req_handle.Release();
+  res_handle.Release();
+
+  codelab::VendingMachineTask task(coin_slot,
+                                   keypad,
+                                   std::move(dispense_requests_sender),
+                                   std::move(dispense_responses_receiver));
   dispatcher.Post(task);
 
-  codelab::DispenserTask dispenser_task(
-      item_drop_sensor, dispense_requests, dispense_responses);
+  codelab::DispenserTask dispenser_task(item_drop_sensor,
+                                        std::move(dispense_requests_receiver),
+                                        std::move(dispense_responses_sender));
   dispatcher.Post(dispenser_task);
 
   dispatcher.RunToCompletion();

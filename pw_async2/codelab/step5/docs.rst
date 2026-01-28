@@ -40,7 +40,7 @@ The ``ItemDropSensor`` class that we've provided is similar to the
          :linenos:
          :start-after: // the License.
          :end-before: int main() {
-         :emphasize-lines: 3,10,26
+         :emphasize-lines: 3,11,26
 
 -----------------------------
 Set up communication channels
@@ -48,39 +48,68 @@ Set up communication channels
 We'll be adding a new ``DispenserTask`` soon. To get ready for that, let's set
 up communications channels between ``VendingMachineTask`` and the new task.
 
-There are many ways to use a :cc:`Waker <pw::async2::Waker>` to
-communicate between tasks. For this step, we'll use a one-deep
-:cc:`pw::InlineAsyncQueue` to send events between the two tasks.
+The mechanism through which async tasks communicate in ``pw_async2`` is
+``pw::async2::Channel``. At its core, a channel is a asynchronous, threadsafe
+queue that can have one or more senders and one or more receivers.
 
-#. Set up the queues in ``vending_machine.h``:
+For our vending machine, we'll use two channels:
 
-   * Include ``pw_containers/inline_async_queue.h``
+* A ``Channel<int>`` for the vending machine to send dispense requests (item
+  numbers) to the dispenser task.
 
-   * Create a ``DispenseRequestQueue`` alias for ``pw::InlineAsyncQueue<int, 1>``
-     and a ``DispenseResponseQueue`` alias for ``pw::InlineAsyncQueue<bool, 1>``
+* A ``Channel<bool>`` for the dispenser task to send dispense responses (success
+  or failure) back to the vending machine task.
 
-   You'll use ``DispenseRequestQueue`` to send dispense requests (item numbers)
-   from ``VendingMachineTask`` to ``DispenserTask``. ``DispenseResponseQueue``
-   is for sending dispense responses (success or failure) from ``DispenserTask``
-   to ``VendingMachineTask``.
+#. Update ``vending_machine.h`` to allow communications:
+
+   * Include ``pw_async2/channel.h``
+
+   * Update your ``VendingMachineTask`` to accept and store a
+     ``pw::async2::Sender<int>`` to send requests and a
+     ``pw::async2::Receiver<bool>`` to receive responses.
 
    .. dropdown:: Hint
 
       .. literalinclude:: ./checkpoint1/vending_machine.h
          :language: cpp
-         :start-after: #pragma once
-         :end-at: using DispenseResponseQueue
          :linenos:
-         :emphasize-lines: 9,15,16
+         :lines: 1-24,27-38
+         :emphasize-lines: 5-6,10-11,23-24
+         :start-at: class VendingMachineTask
+         :end-before: class DispenserTask
 
-#. Back in ``main.cc``, set up the queues:
+#. Create the channels in ``main.cc``:
 
-   * Declare a ``dispense_requests`` queue and a ``dispense_response`` queue
+   * Define a local ``pw::async2::ChannelStorage<int, 1> dispense_requests``
+     and a ``pw::async2::ChannelStorage<bool, 1> dispense_responses`` in your
+     ``main()`` function. These serve as the buffers for the channels.
 
-   * Provide the queues to ``VendingMachineTask`` when the task is created
+     .. note:: Channels optionally can dynamically allocate their storage,
+       removing the need for a ChannelStorage declaration. Refer to the
+       :ref:`Channel docs <module-pw_async2-channels>` for more details.
 
-   * Create a ``DispenserTask`` instance (we'll implement this in the next
-     section)
+   * Create the channels themselves using the ``pw::async2::CreateSpscChannel()``
+     function. ``Spsc`` means "single producer, single consumer", which is what
+     we need to communicate between the two tasks.
+
+     ``CreateSpscChannel`` returns a tuple of three items: a handle to the
+     channel, a sender, and a receiver.
+
+     The channel handle is used if you need to close the channel early, and to
+     create additional senders and receivers if the channel supports it.
+
+     Since we have an SPSC channel, no new senders or receivers can be created,
+     and we don't need to close our channels, we don't need the handle here.
+     To indicate this, we immediately call ``Release`` on the two handles we
+     created, telling the channel that it should manage its lifetime
+     automatically via its active senders and receivers.
+
+   * Pass the sender for the requests channel and the receiver for the
+     responses channel to the ``VendingMachineTask`` constructor
+
+   * Create a ``DispenserTask`` instance (we'll define this in the next
+     section), passing the drop sensor and the opposite sender/receiver pair
+     to its constructor
 
    * Post the new ``DispenserTask`` to the dispatcher
 
@@ -90,30 +119,35 @@ communicate between tasks. For this step, we'll use a one-deep
          :language: cpp
          :linenos:
          :start-at: int main() {
-         :emphasize-lines: 5,6,9,10,12-14
+         :emphasize-lines: 5-13,17-18,21-24
 
-.. topic:: ``pw::InlineAsyncQueue`` async member functions
+.. topic:: Lifecycle of an async2 Channel
 
-   :cc:`pw::InlineAsyncQueue` adds two async member functions to
-   :cc:`pw::InlineQueue`:
+   Channels begin open when created through ``CreateSpscChannel``,
+   ``CreateMpscChannel``, ``CreateSpmcChannel``, or ``CreateMpmcChannel``.
+   Each of these functions returns a handle to the channel, optionally alongside
+   a sender and/or a receiver depending on the channel type.
 
-   * :cc:`PendHasSpace() <pw::BasicInlineAsyncQueue::PendHasSpace>`:
-     Producers call this to ensure the queue has room before producing more
-     data.
+   Senders and receivers are movable but not copyable. If a specific channel
+   type supports multiple senders or receivers, they are created by calling
+   ``CreateSender()`` or ``CreateReceiver()`` on the handle.
 
-     .. code-block:: c++
+   In addition to creating senders and receivers, the channel handle has a
+   ``Close()`` function which is used to close the channel early, bypassing its
+   natural lifecycle. Channel handles are copyable, so they can be handed out
+   to different parts of the system that need to manage the channel.
 
-        PW_TRY_READY(async_queue.PendHasSpace(context));
-        async_queue.push_back(item);
+   As long as handles exist, the channel remains open. When the last handle is
+   released or destroyed, the channel's lifecycle is controlled by the active
+   senders and receivers. As long as at least one sender and one receiver
+   exists, the channel is open. When either side fully hangs up, the channel
+   closes. Receivers can drain the channel of all buffered messages even after
+   the senders have hung up.
 
-   * :cc:`PendNotEmpty() <pw::BasicInlineAsyncQueue::PendNotEmpty>`:
-     Consumers call this to block until data is available to consume.
-
-     .. code-block:: c++
-
-        PW_TRY_READY(async_queue.PendNotEmpty(context));
-        Item& item = async_queue.front();
-        async_queue.pop();  // Remove the item when done with it.
+   Since channel handles keep a channel alive, it is important to get rid of
+   them when they're no longer needed. The ``Release()`` function is used for
+   this purpose. It is common to immediately release the handle returned by a
+   channel creation function if you don't need to close the channel early.
 
 -----------------------------
 Create the new dispenser task
@@ -124,7 +158,8 @@ dispense requests from the ``VendingMachineTask``.
 #. Declare a new ``DispenserTask`` class in ``vending_machine.h``:
 
    * The ``DispenserTask`` constructor should accept references to the drop
-     sensor and both comms queues as args
+     sensor, the requests channel receiver, and the responses channel sender
+     as args.
 
    * Create a ``State`` enum member with these states:
 
@@ -136,6 +171,8 @@ dispense requests from the ``VendingMachineTask``.
 
    * Create a data member to store the current state
 
+   * Remember to define your ``DoPend`` override
+
    .. dropdown:: Hint
 
       .. literalinclude:: ./checkpoint1/vending_machine.h
@@ -143,15 +180,18 @@ dispense requests from the ``VendingMachineTask``.
          :start-at: class DispenserTask
          :end-before: }  // namespace codelab
          :linenos:
-         :emphasize-lines: 1-25
 
 #. Implement the dispenser's state machine in ``vending_machine.cc``:
 
-   * Handle the ``kIdle``, ``kDispensing``, and ``kReportDispenseSuccess``
-     states (as well as the transitions between them)
+   * In ``kIdle``, call ``Receive`` to get a future for the next dispense
+     request and pend it to completion, then turn on the dispenser motor
+     using ``SetDispenserMotorState``, which is provided in ``hardware.h``.
 
-   * Use the ``SetDispenserMotorState`` function that's provided in
-     ``hardware.h`` to control the dispenser's motor
+   * In ``kDispensing``, wait for the item drop sensor to trigger then turn
+     off the dispenser motor and transition to ``kReportDispenseSuccess``.
+
+   * In ``kReportDispenseSuccess``, use the response channel sender to send
+     ``true`` to the ``VendingMachineTask`` and transition to ``kIdle``.
 
    .. note::
 
@@ -164,7 +204,6 @@ dispense requests from the ``VendingMachineTask``.
          :start-at: pw::async2::Poll<> DispenserTask::DoPend
          :end-before: }  // namespace codelab
          :linenos:
-         :emphasize-lines: 1-41
 
 -------------------------
 Communicate between tasks
@@ -173,18 +212,15 @@ Now, let's get ``VendingMachineTask`` communicating with ``DispenserTask``.
 
 Instead of just logging when a purchase is made, ``VendingMachineTask`` will
 send the selected item to the ``DispenserTask`` through the dispense requests
-queue. Then it will wait for a response with the dispense responses queue.
+channel. Then it will wait for a response with the dispense responses channel.
 
 #. Prepare ``VendingMachineTask`` for comms in ``vending_machine.h``:
-
-   * Add the communication queues as parameters to the ``VendingMachineTask``
-     constructor
 
    * Add new states: ``kAwaitingDispenseIdle`` (dispenser is ready for a request)
      and ``kAwaitingDispense`` (waiting for dispenser to finish dispensing an
      item)
 
-   * Add data members for storing the communication queues
+   * Define member variables for the request send and response receive futures.
 
    .. dropdown:: Hint
 
@@ -193,13 +229,22 @@ queue. Then it will wait for a response with the dispense responses queue.
          :start-at: class VendingMachineTask
          :end-before: class DispenserTask
          :linenos:
-         :emphasize-lines: 5-6,12-13,38-39,45-46
+         :emphasize-lines: 25-26,34-35
 
 #. Update the vending machine task's state machine in ``vending_machine.cc``:
 
-   * Transition the ``kAwaitingSelection`` state to ``kAwaitingDispenseIdle``
+   * Transition the ``kAwaitingSelection`` state to ``kAwaitingDispenseIdle``,
+     storing the selected item in a member variable.
 
-   * Implement the ``kAwaitingDispenseIdle`` and ``kAwaitingDispense`` states
+   * Implement the ``kAwaitingDispenseIdle`` and ``kAwaitingDispense`` states:
+
+     * In ``kAwaitingDispenseIdle``, send the selected item to the
+       ``DispenserTask`` using the dispense requests sender.
+
+     * In ``kAwaitingDispense``, wait for a response from the ``DispenserTask``
+       and log whether the dispense was successful.
+
+       Once complete, you can return to ``kWelcome`` to start the process over.
 
    .. dropdown:: Hint
 
@@ -208,7 +253,7 @@ queue. Then it will wait for a response with the dispense responses queue.
          :start-at: case kAwaitingSelection: {
          :end-before: pw::async2::Poll<> DispenserTask::DoPend
          :linenos:
-         :emphasize-lines: 18,26-48
+         :emphasize-lines: 8-11,22-33,35-53
 
 ------------------
 Test the dispenser
@@ -259,18 +304,15 @@ machine will eat your money while you go hungry.
 Let's fix this. We can add a timeout to the ``kDispensing`` state. If the
 ``ItemDropSensor`` hasn't triggered after a certain amount of time, then
 something has gone wrong. The ``DispenserTask`` should stop the motor and tell
-the ``VendingMachineTask`` what happened. You can implement a timeout with
-:cc:`TimeFuture <pw::async2::TimeFuture>`.
+the ``VendingMachineTask`` what happened. Pigweed provides a
+:cc:`Timeout <pw::async2::Timeout>` helper which works with various common
+future types.
 
 #. Prepare ``DispenserTask`` to support timeouts in ``vending_machine.h``:
 
-   * Include the headers that provide timeout-related features:
+   * Include the header that provides timeout-related features:
 
-     * ``pw_async2/system_time_provider.h``
-
-     * ``pw_async2/time_provider.h``
-
-     * ``pw_chrono/system_clock.h``
+     * ``pw_async2/future_timeout.h``
 
      .. dropdown:: Hint
 
@@ -279,13 +321,13 @@ the ``VendingMachineTask`` what happened. You can implement a timeout with
            :start-after: // the License.
            :end-before: namespace codelab {
            :linenos:
-           :emphasize-lines: 9,11,13
+           :emphasize-lines: 11
 
    * Create a new ``kReportDispenseFailure`` state to represent dispense
      failures, a new ``kDispenseTimeout`` data member in ``DispenserTask`` that
      holds the timeout duration (``std::chrono::seconds(5)`` is a good value),
-     and a ``pw::async2::TimeFuture<pw::chrono::SystemClock> timeout_future_``
-     member for holding the timeout future:
+     and update the ``drop_future_`` member to be a
+     :cc:`ValueFutureWithTimeout <pw::async2::ValueFutureWithTimeout>`:
 
      .. dropdown:: Hint
 
@@ -294,7 +336,7 @@ the ``VendingMachineTask`` what happened. You can implement a timeout with
            :start-at: class DispenserTask
            :end-before: }  // namespace codelab
            :linenos:
-           :emphasize-lines: 17,27,28
+           :emphasize-lines: 17,27,31
 
      For testing purposes, make sure that the timeout period is long enough for
      a human to respond.
@@ -302,24 +344,23 @@ the ``VendingMachineTask`` what happened. You can implement a timeout with
 #. Implement the timeout support in ``vending_machine.cc``:
 
    * When you start dispensing an item (in your transition from ``kIdle`` to
-     ``kDispensing``), initialize the :cc:`TimeFuture <pw::async2::TimeFuture>`
-     to your timeout.
+     ``kDispensing``), initialize ``drop_future_`` using
+     :cc:`Timeout <pw::async2::Timeout>`.
 
-   * In the ``kDispensing`` state, use :cc:`Select <pw::async2::Select>`
-     to wait for either the timeout or the item drop signal, whichever comes first.
+     ``Timeout`` takes the future to wrap and the timeout duration as arguments.
 
-   * Use :cc:`VisitSelectResult <pw::async2::VisitSelectResult>` to take action
-     based on the result:
+   * In the ``kDispensing`` state, pend the ``drop_future_``.
 
-     * If the item drop interrupt arrives first, clear the timeout with
-       ``timeout_future_ = {}``. If the timer isn't cleared, it will fire later and
-       wake ``DispenserTask`` unnecessarily, wasting time and power. After that,
-       proceed to the ``kReportDispenseSuccess`` state.
+   * Check the result of the future:
 
-     * If the timeout arrives first, proceed to the ``kReportDispenseFailure`` state.
+     * If the result is OK, then the item dropped successfully.
+       Proceed to the ``kReportDispenseSuccess`` state.
 
-     * In either case, be sure to turn off the motor and ``pop()`` the dispense request
-       from the queue.
+     * If the result status is ``DeadlineExceeded``, then the timeout occurred.
+       Proceed to the ``kReportDispenseFailure`` state.
+
+     * In either case, be sure to turn off the motor and clear the dispense
+       request.
 
    * Handle the dispense failure state.
 
@@ -330,7 +371,7 @@ the ``VendingMachineTask`` what happened. You can implement a timeout with
          :start-at: pw::async2::Poll<> DispenserTask::DoPend
          :end-at: }  // namespace codelab
          :linenos:
-         :emphasize-lines: 15-18,24-32,39-50,62-66
+         :emphasize-lines: 21-22,27-31,48-59
 
 --------------------------------
 Test the dispenser with timeouts

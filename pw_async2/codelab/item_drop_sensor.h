@@ -13,10 +13,7 @@
 // the License.
 #pragma once
 
-#include <atomic>
-
-#include "pw_async2/context.h"
-#include "pw_async2/waker.h"
+#include "pw_async2/value_future.h"
 
 namespace codelab {
 
@@ -25,17 +22,13 @@ class ItemDropSensor {
   constexpr ItemDropSensor() = default;
 
   // Pends until the item drop sensor triggers.
-  pw::async2::Poll<> Pend(pw::async2::Context& cx);
+  pw::async2::ValueFuture<void> Wait();
 
   // Records an item drop event. Typically called from the drop sensor ISR.
   void Drop();
 
-  // Clears any latched drop events.
-  void Clear() { drop_detected_.store(false, std::memory_order_relaxed); }
-
  private:
-  std::atomic<bool> drop_detected_ = false;
-  pw::async2::Waker waker_;
+  pw::async2::BroadcastValueProvider<void> provider_;
 };
 
 }  // namespace codelab

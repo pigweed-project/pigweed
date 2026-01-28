@@ -14,23 +14,10 @@
 
 #include "item_drop_sensor.h"
 
-#include <mutex>
-#include <utility>
-
 namespace codelab {
 
-pw::async2::Poll<> ItemDropSensor::Pend(pw::async2::Context& cx) {
-  if (drop_detected_.exchange(false, std::memory_order_relaxed)) {
-    return pw::async2::Ready();
-  }
-  PW_ASYNC_STORE_WAKER(cx, waker_, "item drop");
-  return pw::async2::Pending();
-}
+pw::async2::ValueFuture<void> ItemDropSensor::Wait() { return provider_.Get(); }
 
-void ItemDropSensor::Drop() {
-  if (!drop_detected_.exchange(true, std::memory_order_relaxed)) {
-    waker_.Wake();
-  }
-}
+void ItemDropSensor::Drop() { provider_.Resolve(); }
 
 }  // namespace codelab

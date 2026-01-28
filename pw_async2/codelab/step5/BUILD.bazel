@@ -23,30 +23,25 @@ licenses(["notice"])
 deps = [
     "//pw_async2:basic_dispatcher",
     "//pw_async2",
+    "//pw_async2:channel",
     "//pw_async2:pendable",
     "//pw_async2:poll",
+    "//pw_async2:future_timeout",
     "//pw_async2:select",
     "//pw_async2:system_time_provider",
     "//pw_async2:time_provider",
     "//pw_async2/codelab:hardware",
     "//pw_async2/codelab:sensors",
     "//pw_chrono:system_clock",
-    "//pw_containers:inline_async_queue",
     "//pw_log",
+    "//pw_result",
     "//pw_sync:interrupt_spin_lock",
     "//pw_sync:lock_annotations",
 ]
 
-pw_cc_binary(
+alias(
     name = "step5",
-    srcs = [
-        "checkpoint2/main.cc",
-        "checkpoint2/vending_machine.cc",
-        "checkpoint2/vending_machine.h",
-    ],
-    # TODO: b/457508399 - Remove once migrated onto futures.
-    copts = ["-Wno-deprecated-declarations"],
-    deps = deps,
+    actual = ":checkpoint2",
 )
 
 pw_cc_binary(
@@ -56,8 +51,16 @@ pw_cc_binary(
         "checkpoint1/vending_machine.cc",
         "checkpoint1/vending_machine.h",
     ],
-    # TODO: b/457508399 - Remove once migrated onto futures.
-    copts = ["-Wno-deprecated-declarations"],
+    deps = deps,
+)
+
+pw_cc_binary(
+    name = "checkpoint2",
+    srcs = [
+        "checkpoint2/main.cc",
+        "checkpoint2/vending_machine.cc",
+        "checkpoint2/vending_machine.h",
+    ],
     deps = deps,
 )
 
