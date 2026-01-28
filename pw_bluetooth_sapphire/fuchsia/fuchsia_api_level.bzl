@@ -13,4 +13,4 @@
 # the License.
 """Shared Fuchsia API level for Fuchsia component, drivers, and tests."""
 
-FUCHSIA_API_LEVEL = "29"
+FUCHSIA_API_LEVEL = "30"
