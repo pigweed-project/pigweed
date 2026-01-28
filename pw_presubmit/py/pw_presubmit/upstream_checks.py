@@ -144,15 +144,27 @@ def commit_message_format(ctx: PresubmitContext):
 
     errors = 0
 
+    # Check that the first line matches the expected pattern.
+    match = re.match(
+        r'^(?P<prefix>[.\w*/]+(?:{[\w* ,]+})?[\w*/]*|SEED-\d+|clang-\w+): '
+        r'(?P<desc>.+)$',
+        lines[0],
+    )
+
     if len(lines[0]) > 72:
-        _LOG.warning(
-            "The commit message's first line must be no longer than "
-            '72 characters.'
-        )
-        _LOG.warning(
-            'The first line is %d characters:\n  %s', len(lines[0]), lines[0]
-        )
-        errors += 1
+        if match and match.group('prefix') == 'roll':
+            _LOG.debug('Allowing long first line for roll commit')
+        else:
+            _LOG.warning(
+                "The commit message's first line must be no longer than "
+                '72 characters.'
+            )
+            _LOG.warning(
+                'The first line is %d characters:\n  %s',
+                len(lines[0]),
+                lines[0],
+            )
+            errors += 1
 
     if lines[0].endswith('.'):
         _LOG.warning(
@@ -161,12 +173,6 @@ def commit_message_format(ctx: PresubmitContext):
         )
         errors += 1
 
-    # Check that the first line matches the expected pattern.
-    match = re.match(
-        r'^(?P<prefix>[.\w*/]+(?:{[\w* ,]+})?[\w*/]*|SEED-\d+|clang-\w+): '
-        r'(?P<desc>.+)$',
-        lines[0],
-    )
     if not match:
         _LOG.warning('The first line does not match the expected format')
         _LOG.warning(
