@@ -84,26 +84,13 @@ constexpr const char kCsvBadFormat[] =
     "2,, \n"
     "3,          , D3, Goodbye!\n";
 
-class Detokenize : public ::testing::Test {
- protected:
-  Detokenize() : detok_(TokenDatabase::Create<kTestDatabase>()) {}
-  Detokenizer detok_;
-};
-
-TEST_F(Detokenize, NoFormatting) {
-  EXPECT_EQ(detok_.Detokenize("\1\0\0\0"sv).BestString(), "One");
-  EXPECT_EQ(detok_.Detokenize("\5\0\0\0"sv).BestString(), "TWO");
-  EXPECT_EQ(detok_.Detokenize("\xff\x00\x00\x00"sv).BestString(), "333");
-  EXPECT_EQ(detok_.Detokenize("\xff\xee\xee\xdd"sv).BestString(), "FOUR");
-}
-
-TEST_F(Detokenize, FromCsvFile_DefaultDomain) {
+TEST(DetokenizeFromCsv, DefaultDomain) {
   pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(kCsvDefaultDomain);
   PW_TEST_ASSERT_OK(detok_csv);
   EXPECT_EQ(detok_csv->Detokenize("\1\0\0\0"sv).BestString(), "Hello World!");
 }
 
-TEST_F(Detokenize, FromCsvFile_DifferentDomains_IgnoreWhitespace) {
+TEST(DetokenizeFromCsv, DifferentDomains_IgnoreWhitespace) {
   pw::Result<Detokenizer> detok_csv =
       Detokenizer::FromCsv(kCsvDifferentDomains);
   PW_TEST_ASSERT_OK(detok_csv);
@@ -115,7 +102,7 @@ TEST_F(Detokenize, FromCsvFile_DifferentDomains_IgnoreWhitespace) {
   EXPECT_EQ(it->first, "domain1");
 }
 
-TEST_F(Detokenize, FromCsvFile_CountDomains) {
+TEST(DetokenizeFromCsv, CountDomains) {
   pw::Result<Detokenizer> detok_csv1 = Detokenizer::FromCsv(kCsvDefaultDomain);
   pw::Result<Detokenizer> detok_csv2 =
       Detokenizer::FromCsv(kCsvDifferentDomains);
@@ -125,26 +112,27 @@ TEST_F(Detokenize, FromCsvFile_CountDomains) {
   EXPECT_EQ(detok_csv2->database().size(), 3u);
 }
 
-TEST_F(Detokenize, FromCsvFile_BadCsv_Date) {
+TEST(DetokenizeFromCsv, BadCsv_Date) {
   pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(kCsvBadDates);
   EXPECT_FALSE(detok_csv.ok());
 }
 
-TEST_F(Detokenize, FromCsvFile_BadCsv_Token) {
+TEST(DetokenizeFromCsv, BadCsv_Token) {
   pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(kCsvBadToken);
   EXPECT_FALSE(detok_csv.ok());
 }
 
-TEST_F(Detokenize, FromCsvFile_BadCsv_Format) {
+TEST(DetokenizeFromCsv, BadCsv_Format) {
   pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(kCsvBadFormat);
   // Will give warning but continue as expected:
   // WRN  Skipped 1 of 3 lines because they did not have 4 columns as expected.
   EXPECT_TRUE(detok_csv.ok());
 }
 
-TEST_F(Detokenize, FromCsvFile_WithExplicitDomain) {
+TEST(DetokenizeFromCsv, WithExplicitDomain) {
   pw::Result<Detokenizer> detok_csv =
       Detokenizer::FromCsv(kCsvDifferentDomains);
+  PW_TEST_ASSERT_OK(detok_csv);
   EXPECT_EQ(detok_csv->Detokenize("\1\0\0\0"sv, "domain1").BestString(),
             "Hello");
   EXPECT_EQ(detok_csv->Detokenize("\2\0\0\0"sv, "domain2").BestString(), "");
@@ -152,15 +140,56 @@ TEST_F(Detokenize, FromCsvFile_WithExplicitDomain) {
             "World!");
 }
 
-TEST_F(Detokenize, FromCsvFile_DomainIgnoresWhitespace) {
+TEST(DetokenizeFromCsv, DomainIgnoresWhitespace) {
   pw::Result<Detokenizer> detok_csv =
       Detokenizer::FromCsv(kCsvDifferentDomains);
+  PW_TEST_ASSERT_OK(detok_csv);
   EXPECT_EQ(detok_csv->Detokenize("\1\0\0\0"sv, "dom\n  ain1").BestString(),
             "Hello");
   EXPECT_EQ(detok_csv->Detokenize("\2\0\0\0"sv, " domain2").BestString(), "");
   EXPECT_EQ(
       detok_csv->Detokenize("\3\0\0\0"sv, " d\toma\r\vin  3\n").BestString(),
       "World!");
+}
+
+TEST(DetokenizeFromCsv, DuplicateEntriesAreIgnored) {
+  pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(
+      "1,,,Hello World!\n"
+      "2,,,another entry\n"
+      "1,,,Hello World!\n"
+      "3,,,Goodbye!\n");
+  PW_TEST_ASSERT_OK(detok_csv);
+
+  EXPECT_EQ(detok_csv->database().at("").at(1).size(), 1u);
+}
+
+TEST(DetokenizeFromCsv, DuplicateEntriesUsesNewestRemovalDate) {
+  pw::Result<Detokenizer> detok_csv = Detokenizer::FromCsv(
+      "1,2001-01-01,,Hello World!\n"
+      "2,,,another entry\n"
+      "1,2000-01-01,,Hello World!\n"
+      "1,2002-01-01,,Hello World!\n"
+      "3,,,Goodbye!\n");
+  PW_TEST_ASSERT_OK(detok_csv);
+
+  ASSERT_EQ(detok_csv->database().at("").at(1).size(), 1u);
+  const uint32_t date = detok_csv->database().at("").at(1).front().second;
+  EXPECT_EQ((date & 0xFFFF0000) >> 16, 2002u);
+  EXPECT_EQ((date & 0x0000FF00) >> 8, 1u);
+  EXPECT_EQ((date & 0x000000FF) >> 0, 1u);
+}
+
+class Detokenize : public ::testing::Test {
+ protected:
+  Detokenize() : detok_(TokenDatabase::Create<kTestDatabase>()) {}
+  Detokenizer detok_;
+};
+
+TEST_F(Detokenize, NoFormatting) {
+  EXPECT_EQ(detok_.Detokenize("\1\0\0\0"sv).BestString(), "One");
+  EXPECT_EQ(detok_.Detokenize("\5\0\0\0"sv).BestString(), "TWO");
+  EXPECT_EQ(detok_.Detokenize("\xff\x00\x00\x00"sv).BestString(), "333");
+  EXPECT_EQ(detok_.Detokenize("\xff\xee\xee\xdd"sv).BestString(), "FOUR");
 }
 
 TEST_F(Detokenize, BestString_MissingToken_IsEmpty) {

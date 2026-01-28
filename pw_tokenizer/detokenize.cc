@@ -391,18 +391,21 @@ constexpr bool IsPrintableAscii(std::string_view data) {
 }
 
 void AddEntryIfUnique(std::vector<TokenizedStringEntry>& entries,
-                      std::string_view new_entry) {
+                      std::string_view new_entry,
+                      uint32_t date_removed) {
   // TODO(b/326365218): Construct FormatString with string_view to avoid
   // creating a copy here.
   FormatString format_string(std::string(new_entry).c_str());
-  for (const TokenizedStringEntry& entry : entries) {
+  for (TokenizedStringEntry& entry : entries) {
     if (format_string == entry.first) {
-      return;  // An identical string is already present
+      if (date_removed > entry.second) {
+        entry.second = date_removed;
+      }
+      return;
     }
   }
 
-  entries.emplace_back(std::move(format_string),
-                       TokenDatabase::kDateRemovedNever);
+  entries.emplace_back(std::move(format_string), date_removed);
 }
 
 }  // namespace
@@ -479,7 +482,9 @@ Result<Detokenizer> Detokenizer::FromElfSection(
           header.string_length - 1);
       index += header.string_length;
 
-      AddEntryIfUnique(database[std::move(domain)][header.token], entry);
+      AddEntryIfUnique(database[std::move(domain)][header.token],
+                       entry,
+                       TokenDatabase::kDateRemovedNever);
     }
   }
   return Detokenizer(std::move(database));
@@ -573,9 +578,10 @@ Result<Detokenizer> Detokenizer::FromCsv(std::string_view csv) {
     }
 
     // Add to database.
-    database[std::move(domain)]
-            [static_cast<uint32_t>(std::stoul(token, nullptr, 16))]
-                .emplace_back(row[3].c_str(), date);
+    AddEntryIfUnique(database[std::move(domain)][static_cast<uint32_t>(
+                         std::stoul(token, nullptr, 16))],
+                     row[3],
+                     date);
   }
 
   // Log warning if any data lines were skipped.
