@@ -168,24 +168,6 @@ pw_add_library(pw_async2.epoll_dispatcher_for_test INTERFACE
     epoll_dispatcher_for_test_public_overrides
 )
 
-pw_add_library(pw_async2.pendable INTERFACE
-  HEADERS
-    public/pw_async2/pendable.h
-  PUBLIC_DEPS
-    pw_async2.poll
-    pw_async2
-  PUBLIC_INCLUDES
-    public
-)
-
-pw_add_test(pw_async2.pendable_test
-  SOURCES
-    pendable_test.cc
-  PRIVATE_DEPS
-    pw_async2.pendable
-    pw_async2.testing
-)
-
 pw_add_test(pw_async2.future_test
   SOURCES
     future_test.cc
@@ -552,7 +534,6 @@ pw_add_test(pw_async2.select_test
     select_test.cc
   PRIVATE_DEPS
     pw_async2
-    pw_async2.pendable
     pw_async2.select
     pw_async2.testing
     pw_async2.value_future
@@ -577,7 +558,6 @@ pw_add_test(pw_async2.cancellable_task_test
   PRIVATE_DEPS
     pw_async2.cancellable_task
     pw_async2
-    pw_async2.pendable
     pw_async2.poll
     pw_async2.testing
     pw_function

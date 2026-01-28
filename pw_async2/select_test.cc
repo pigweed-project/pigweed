@@ -17,7 +17,6 @@
 #include <variant>
 
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/pendable.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/value_future.h"
 #include "pw_unit_test/constexpr.h"

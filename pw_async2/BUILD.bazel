@@ -258,29 +258,6 @@ pw_cc_test(
     ],
 )
 
-cc_library(
-    name = "pendable",
-    hdrs = [
-        "public/pw_async2/pendable.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":poll",
-        ":pw_async2",
-    ],
-)
-
-pw_cc_test(
-    name = "pendable_test",
-    srcs = ["pendable_test.cc"],
-    deps = [
-        ":pendable",
-        ":poll",
-        ":pw_async2",
-        ":testing",
-    ],
-)
-
 pw_cc_test(
     name = "future_test",
     srcs = ["future_test.cc"],
@@ -625,7 +602,6 @@ pw_cc_test(
     ],
     deps = [
         ":cancellable_task",
-        ":pendable",
         ":poll",
         ":pw_async2",
         ":testing",
@@ -699,7 +675,6 @@ pw_cc_test(
         "select_test.cc",
     ],
     deps = [
-        ":pendable",
         ":poll",
         ":pw_async2",
         ":select",
@@ -847,7 +822,6 @@ filegroup(
         "public/pw_async2/notified_dispatcher.h",
         "public/pw_async2/once_sender.h",
         "public/pw_async2/owned_task.h",
-        "public/pw_async2/pendable.h",
         "public/pw_async2/poll.h",
         "public/pw_async2/runnable_dispatcher.h",
         "public/pw_async2/select.h",

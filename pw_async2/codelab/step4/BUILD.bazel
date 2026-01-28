@@ -23,7 +23,6 @@ licenses(["notice"])
 deps = [
     "//pw_async2:basic_dispatcher",
     "//pw_async2",
-    "//pw_async2:pendable",
     "//pw_async2:poll",
     "//pw_async2:select",
     "//pw_async2:system_time_provider",

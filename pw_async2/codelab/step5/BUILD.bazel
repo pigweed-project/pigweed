@@ -24,7 +24,6 @@ deps = [
     "//pw_async2:basic_dispatcher",
     "//pw_async2",
     "//pw_async2:channel",
-    "//pw_async2:pendable",
     "//pw_async2:poll",
     "//pw_async2:future_timeout",
     "//pw_async2:select",

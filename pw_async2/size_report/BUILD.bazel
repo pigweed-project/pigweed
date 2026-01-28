@@ -33,7 +33,6 @@ cc_library(
         "//pw_allocator:allocator",
         "//pw_allocator:first_fit",
         "//pw_async2",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:intrusive_forward_list",
         "//pw_log",
@@ -62,7 +61,6 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -77,7 +75,6 @@ pw_cc_size_binary(
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -93,7 +90,6 @@ pw_cc_size_binary(
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
         "//pw_async2:once_sender",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -112,7 +108,6 @@ pw_cc_size_binary(
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
         "//pw_async2:once_sender",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
     ],
 )
@@ -128,7 +123,6 @@ pw_cc_size_binary(
         "//pw_async2:basic_dispatcher",
         "//pw_async2:coro",
         "//pw_async2:func_task",
-        "//pw_async2:pendable",
         "//pw_bloat:bloat_this_binary",
     ],
 )

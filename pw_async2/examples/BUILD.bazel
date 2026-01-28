@@ -99,7 +99,6 @@ pw_cc_test(
         "//pw_async2:coro_or_else_task",
         "//pw_async2:func_task",
         "//pw_async2:future_timeout",
-        "//pw_async2:pendable",
         "//pw_async2:select",
         "//pw_async2:system_time_provider",
         "//pw_containers:vector",

@@ -31,7 +31,7 @@ static_assert(
     pw::async2::Future<pw::async2::JoinFuture<pw::async2::VoidFuture,
                                               pw::async2::ValueFuture<int>>>);
 
-TEST(JoinFuture, ReturnsReadyWhenAllPendablesAreReady) {
+TEST(JoinFuture, ReturnsReadyWhenAllFuturesAreReady) {
   DispatcherForTest dispatcher;
 
   BroadcastValueProvider<int> int_provider;
