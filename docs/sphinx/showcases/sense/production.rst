@@ -167,33 +167,39 @@ The next video is an example of what you should see.
 Adjust the alarm sensitivity
 ----------------------------
 You can adjust the sensitivity i.e. thresholds of the alarm with
-the **A** and **B** buttons on your Enviro+ Pack:
-
-* Press the **A** button repeatedly to increase the sensitivity
-  of the alarm. In other words, with only a slight change in
-  air quality the LED will shift to orange (meh air quality) or
-  red (bad air quality).
-* Press the **B** button repeatedly to decrease the sensitivity
-  of the alarm. In other words, it takes a bigger change in
-  air quality for the LED to shift to orange or red.
+the :kbd:`A` or :kbd:`B` buttons on your Enviro+ Pack:
 
 .. note::
 
-   The "threshold adjustment" mode that you enter after pressing
-   **A** or **B** will automatically exit after 3 seconds of
-   inactivity.
+   The first press of :kbd:`A` or :kbd:`B` switches the app to threshold
+   adjustment mode, but won't actually change the threshold. The app logs a
+   message to confirm a mode change:
 
-In the **Device Logs** of ``pw_console`` you should see the
-air quality thresholds change as you press **A** and **B**.
-For example, if you quickly press **A** twice (i.e. in less
-than a second) you should see a log like this:
+   .. code-block:: text
+
+      19:38:14  INF  00:00:16.180  STATE  StateManager: MonitorMode -> ThresholdMode
+
+   The app exits threshold mode after three seconds of no input. To make a
+   change to the sensitivity, you need to press :kbd:`A` or :kbd:`B` again
+   before it exits threshold mode. If you press if after the timeout, the button
+   press will just switch the app back to threshold mode from the current mode.
+
+* The :kbd:`A` button increases the sensitivity of the alarm, up to a
+  maximum setting. As it increases, the LED should shift towards orange
+  (meh air quality) then red (bad air quality).
+* The :kbd:`B` button decreases the sensitivity of the alarm, down to a
+  minimum setting. The LED should shift towards green (good air quality), and
+  it will take a larger decrease in air quality for it to show orange or red.
+
+In the **Device Logs** of ``pw_console`` you should see a message logged when
+you change the setting, unless you've the allowed limits.
 
 .. code-block:: text
 
    19:38:23  INF  00:00:25.758  STATE  Air quality thresholds set: alarm at 384, silence at 512
 
 That log is telling you that the LED will change to red and start
-blinking when the air quality value is less than ``384``.
+blinking when the air quality sensor reading is less than ``384``.
 
 -------------------------------------------
 View more information in the custom web app
