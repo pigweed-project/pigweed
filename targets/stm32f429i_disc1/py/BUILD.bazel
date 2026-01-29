@@ -12,14 +12,14 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_library")
 
 package(default_visibility = ["//visibility:public"])
 
 # Allow other packages to use this configuration file.
 exports_files(["stm32f429i_disc1_utils/openocd_stm32f4xx.cfg"])
 
-py_library(
+pw_py_library(
     name = "stm32f429i_disc1_utils",
     srcs = [
         "stm32f429i_disc1_utils/__init__.py",

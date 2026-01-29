@@ -12,12 +12,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//pw_build:python.bzl", "pw_py_binary")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
 
 licenses(["notice"])
 
-py_library(
+pw_py_library(
     name = "lib",
     srcs = [
         "__init__.py",
@@ -26,6 +25,13 @@ py_library(
         "story.py",
     ],
     imports = ["."],
+    # The google_genai Python package is not available on macOS with recent
+    # versions of Python
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "@platforms//os:none": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:private"],
     deps = [
         "//pw_cli/py:pw_cli",

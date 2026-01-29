@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 import importlib.resources
 import logging
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -177,8 +178,18 @@ def main() -> None:
         cmd = args.generator_command.split(sep=" ")
         _LOG.info("Running generator %s", cmd)
 
+        # TODO: https://pwbug.dev/479246810 - After the rolling rules_python
+        # past 1.7.0, if we don't remove RUNFILES_DIR from the environment (if
+        # present), the generator's bootstrap may not correctly configure the
+        # Python environment to use its runfiles directory, leading to import
+        # errors.
+        env = os.environ.copy()
+        if "RUNFILES_DIR" in env:
+            del env["RUNFILES_DIR"]
+
         with subprocess.Popen(
             cmd,
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

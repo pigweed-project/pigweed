@@ -13,7 +13,7 @@
 # the License.
 """Pigweed python build environment for bazel."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 def pw_py_test(**kwargs):
@@ -53,3 +53,22 @@ def pw_py_binary(**kwargs):
         kwargs["target_compatible_with"] = incompatible_with_mcu()
 
     py_binary(**kwargs)
+
+def pw_py_library(**kwargs):
+    """Wrapper for py_library providing some defaults.
+
+    Specifically, this wrapper,
+
+    * Defaults to setting `target_compatible_with` to
+      `incompatible_with_mcu()`.
+
+    Args:
+      **kwargs: Passed to py_library.
+    """
+
+    # Python binaries are always host only, but allow a user to override the
+    # default value.
+    if kwargs.get("target_compatible_with") == None:
+        kwargs["target_compatible_with"] = incompatible_with_mcu()
+
+    py_library(**kwargs)

@@ -12,10 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//pw_build:python.bzl", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
-py_library(
+pw_py_library(
     name = "pw_log_tokenized",
     srcs = ["pw_log_tokenized/__init__.py"],
     imports = ["."],
