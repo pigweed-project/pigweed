@@ -202,6 +202,25 @@ class BroadcastValueProvider {
  public:
   constexpr BroadcastValueProvider() = default;
 
+  BroadcastValueProvider(BroadcastValueProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    list_ = std::move(other.list_);
+  }
+
+  BroadcastValueProvider& operator=(BroadcastValueProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      PW_ASSERT(list_.empty());  // ensure any futures were resolved
+      list_ = std::move(other.list_);
+    }
+    return *this;
+  }
+
+  BroadcastValueProvider(const BroadcastValueProvider&) = delete;
+  BroadcastValueProvider& operator=(const BroadcastValueProvider&) = delete;
+
   ~BroadcastValueProvider() { PW_ASSERT(list_.empty()); }
 
   /// Returns a `ValueFuture` that will be completed when `Resolve` is called.
@@ -247,6 +266,25 @@ template <typename T>
 class ValueProvider {
  public:
   constexpr ValueProvider() = default;
+
+  ValueProvider(ValueProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    list_ = std::move(other.list_);
+  }
+
+  ValueProvider& operator=(ValueProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      PW_ASSERT(list_.empty());  // ensure any futures were resolved
+      list_ = std::move(other.list_);
+    }
+    return *this;
+  }
+
+  ValueProvider(const ValueProvider&) = delete;
+  ValueProvider& operator=(const ValueProvider&) = delete;
 
   ~ValueProvider() { PW_ASSERT(list_.empty()); }
 

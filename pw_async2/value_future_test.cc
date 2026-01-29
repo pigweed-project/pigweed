@@ -177,6 +177,59 @@ TEST(ValueProvider, ResolveInPlace) {
 
 }  // namespace
 
+TEST(ValueProvider, Move) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+
+  ValueFuture<int> future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
+
+  ValueProvider<int> provider2 = std::move(provider);
+  EXPECT_FALSE(provider.has_future());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(provider2.has_future());
+
+  int result = -1;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    result = value;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider2.Resolve(82);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result, 82);
+}
+
+TEST(ValueProvider, MoveAssignment) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+
+  ValueFuture<int> future = provider.Get();
+  ASSERT_FALSE(future.is_complete());
+
+  ValueProvider<int> provider2;
+  provider2 = std::move(provider);
+  EXPECT_FALSE(provider.has_future());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(provider2.has_future());
+
+  int result = -1;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    result = value;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider2.Resolve(82);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result, 82);
+}
+
 TEST(VoidFuture, Pend) {
   DispatcherForTest dispatcher;
   BroadcastValueProvider<void> provider;
