@@ -1384,6 +1384,10 @@ fuchsia::bluetooth::sys::BondingData PeerToFidlBondingData(
     out.set_name(*peer.name());
   }
 
+  if (peer.bredr() && peer.bredr()->device_class()) {
+    out.set_device_class(DeviceClassToFidl(*peer.bredr()->device_class()));
+  }
+
   // LE
   if (peer.le() && peer.le()->bond_data()) {
     fsys::LeBondData out_le;

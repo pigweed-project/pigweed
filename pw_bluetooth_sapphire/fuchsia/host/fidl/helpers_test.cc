@@ -1844,12 +1844,15 @@ TEST_F(HelpersAdapterTest, PeerToFidlBondingData_BredrData) {
   auto* peer =
       adapter()->peer_cache()->NewPeer(kTestPeerAddr, /*connectable=*/true);
   EXPECT_TRUE(peer->MutBrEdr().SetBondData(kTestLtk));
+  peer->MutBrEdr().SetDeviceClass(bt::DeviceClass(0x080424));
 
   fsys::BondingData data = PeerToFidlBondingData(adapter().get(), *peer);
   EXPECT_FALSE(data.has_le_bond());
   ASSERT_TRUE(data.has_bredr_bond());
   ASSERT_TRUE(data.bredr_bond().has_link_key());
   EXPECT_TRUE(fidl::Equals(kTestKeyFidl, data.bredr_bond().link_key()));
+  ASSERT_TRUE(data.has_device_class());
+  EXPECT_EQ(0x080424, data.device_class().value);
 }
 
 TEST_F(HelpersAdapterTest, PeerToFidlBondingData_IncludesBredrServices) {

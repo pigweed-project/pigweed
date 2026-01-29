@@ -1453,6 +1453,41 @@ TEST_F(HostServerTest, RestoreBondsDualModeSuccess) {
   EXPECT_EQ(bt::DeviceAddress::Type::kBREDR, peer->address().type());
 }
 
+TEST_F(HostServerTest, RestoreBondsDeviceClass) {
+  fhost::BondingDelegatePtr delegate;
+  host_server()->SetBondingDelegate(delegate.NewRequest());
+
+  fsys::BondingData bond;
+  bond.set_identifier(fbt::PeerId{kTestId.value()});
+  bond.set_address(kTestFidlAddrPublic);
+  bond.set_name("peer-with-device-class");
+  bond.set_device_class(fuchsia::bluetooth::DeviceClass(0x200101));
+
+  fsys::BredrBondData bredr;
+  bredr.set_link_key(fsys::PeerKey{
+      .security =
+          fsys::SecurityProperties{
+              .authenticated = true,
+              .secure_connections = true,
+              .encryption_key_size = 16,
+          },
+      .data =
+          fsys::Key{
+              .value = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+          },
+  });
+  bond.set_bredr_bond(std::move(bredr));
+
+  TestRestoreBonds(
+      delegate, MakeClonedVector(bond), {} /* no errors expected */);
+
+  auto* peer = adapter()->peer_cache()->FindById(kTestId);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(peer->bredr());
+  ASSERT_TRUE(peer->bredr()->device_class());
+  EXPECT_EQ(bt::DeviceClass(0x200101), *peer->bredr()->device_class());
+}
+
 TEST_F(HostServerTest, SetHostData) {
   EXPECT_FALSE(adapter()->le()->irk());
 

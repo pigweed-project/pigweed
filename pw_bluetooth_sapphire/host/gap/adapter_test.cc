@@ -573,6 +573,7 @@ TEST_F(AdapterTest, LeAutoConnect) {
       BondingData{.identifier = kPeerId,
                   .address = kTestAddr,
                   .name = std::nullopt,
+                  .device_class = {},
                   .le_pairing_data = pdata,
                   .bredr_link_key = std::nullopt,
                   .bredr_services = {}});
@@ -627,6 +628,7 @@ TEST_F(AdapterTest, LeSkipAutoConnectBehavior) {
       BondingData{.identifier = kPeerId,
                   .address = kTestAddr,
                   .name = std::nullopt,
+                  .device_class = {},
                   .le_pairing_data = pdata,
                   .bredr_link_key = std::nullopt,
                   .bredr_services = {}});

@@ -577,6 +577,7 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithExistingId) {
       cache()->AddBondedPeer(BondingData{.identifier = peer()->identifier(),
                                          .address = kAddrLeRandom,
                                          .name = {},
+                                         .device_class = {},
                                          .le_pairing_data = data,
                                          .bredr_link_key = {},
                                          .bredr_services = {}}));
@@ -590,6 +591,7 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithExistingAddress) {
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = peer()->address(),
                                                   .name = {},
+                                                  .device_class = {},
                                                   .le_pairing_data = data,
                                                   .bredr_link_key = {},
                                                   .bredr_services = {}}));
@@ -605,6 +607,7 @@ TEST_F(PeerCacheTestBondingTest,
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = kAddrLeAlias,
                                                   .name = {},
+                                                  .device_class = {},
                                                   .le_pairing_data = data,
                                                   .bredr_link_key = {},
                                                   .bredr_services = {}}));
@@ -617,6 +620,7 @@ TEST_F(PeerCacheTestBondingTest,
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = kAddrBrEdr,
                                                   .name = {},
+                                                  .device_class = {},
                                                   .le_pairing_data = {},
                                                   .bredr_link_key = kBrEdrKey,
                                                   .bredr_services = {}}));
@@ -628,6 +632,7 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithoutMandatoryKeys) {
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = kAddrLeAlias,
                                                   .name = {},
+                                                  .device_class = {},
                                                   .le_pairing_data = data,
                                                   .bredr_link_key = kBrEdrKey,
                                                   .bredr_services = {}}));
@@ -636,6 +641,7 @@ TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithoutMandatoryKeys) {
   EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                   .address = kAddrBrEdr,
                                                   .name = {},
+                                                  .device_class = {},
                                                   .le_pairing_data = data,
                                                   .bredr_link_key = {},
                                                   .bredr_services = {}}));
@@ -650,6 +656,7 @@ TEST_F(PeerCacheTestBondingTest, AddLowEnergyBondedPeerSuccess) {
   EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                  .address = kAddrLeRandom,
                                                  .name = kName,
+                                                 .device_class = {},
                                                  .le_pairing_data = data,
                                                  .bredr_link_key = {},
                                                  .bredr_services = {}}));
@@ -680,6 +687,7 @@ TEST_F(PeerCacheTestBondingTest, AddBrEdrBondedPeerSuccess) {
       cache()->AddBondedPeer(BondingData{.identifier = kId,
                                          .address = kAddrBrEdr,
                                          .name = {},
+                                         .device_class = {},
                                          .le_pairing_data = data,
                                          .bredr_link_key = kBrEdrKey,
                                          .bredr_services = kBrEdrServices}));
@@ -714,6 +722,7 @@ TEST_F(PeerCacheTest, AddBondedPeerWithIrkIsAddedToResolvingList) {
   EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
                                                  .address = kAddrLeRandom,
                                                  .name = {},
+                                                 .device_class = {},
                                                  .le_pairing_data = data,
                                                  .bredr_link_key = {},
                                                  .bredr_services = {}}));
@@ -737,6 +746,7 @@ TEST_F(PeerCacheTest, AddBondedPeerWithIrkButWithoutIdentityAddressPanics) {
       cache()->AddBondedPeer(BondingData{.identifier = kId,
                                          .address = kAddrLeRandom,
                                          .name = {},
+                                         .device_class = {},
                                          .le_pairing_data = data,
                                          .bredr_link_key = {},
                                          .bredr_services = {}}),
@@ -1091,6 +1101,7 @@ TEST_P(DualModeBondingTest, AddBondedPeerSuccess) {
       cache()->AddBondedPeer(BondingData{.identifier = kId,
                                          .address = address,
                                          .name = kName,
+                                         .device_class = kTestDeviceClass,
                                          .le_pairing_data = data,
                                          .bredr_link_key = kBrEdrKey,
                                          .bredr_services = kBrEdrServices}));
@@ -1112,6 +1123,8 @@ TEST_P(DualModeBondingTest, AddBondedPeerSuccess) {
   EXPECT_TRUE(peer->bredr()->bonded());
   ASSERT_TRUE(peer->bredr()->link_key());
   EXPECT_EQ(kBrEdrKey, *peer->bredr()->link_key());
+  ASSERT_TRUE(peer->bredr()->device_class());
+  EXPECT_EQ(kTestDeviceClass, *peer->bredr()->device_class());
   EXPECT_THAT(peer->bredr()->services(),
               testing::UnorderedElementsAreArray(kBrEdrServices));
   EXPECT_EQ(TechnologyType::kDualMode, peer->technology());

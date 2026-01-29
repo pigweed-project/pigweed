@@ -15,6 +15,7 @@
 #pragma once
 #include <vector>
 
+#include "pw_bluetooth_sapphire/internal/host/common/device_class.h"
 #include "pw_bluetooth_sapphire/internal/host/common/uuid.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/peer.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/types.h"
@@ -27,6 +28,9 @@ struct BondingData {
   PeerId identifier;
   DeviceAddress address;
   std::optional<std::string> name;
+
+  // Class of device of the peer, if known.
+  std::optional<DeviceClass> device_class;
 
   // TODO(fxbug.dev/42102158): This should be optional to represent whether the
   // FIDL bonding data has LE data, instead of using DeviceAddresss's type()

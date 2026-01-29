@@ -366,6 +366,9 @@ void HostServer::RestoreBonds(
     if (bond.has_name()) {
       bd.name = {bond.name()};
     }
+    if (bond.has_device_class()) {
+      bd.device_class = bt::DeviceClass(bond.device_class().value);
+    }
 
     if (bond.has_le_bond()) {
       bd.le_pairing_data =

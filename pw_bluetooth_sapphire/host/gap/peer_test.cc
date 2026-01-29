@@ -707,6 +707,41 @@ TEST_F(PeerTest, SettingBrEdrBondDataUpdatesLastUpdated) {
   EXPECT_GE(notify_count, 1);
 }
 
+TEST_F(PeerTest, BrEdrDataSetDeviceClassNotifiesListeners) {
+  // Initialize BrEdrData.
+  peer().MutBrEdr();
+  ASSERT_FALSE(peer().bredr()->device_class().has_value());
+  EXPECT_EQ(peer().last_updated(),
+            pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));
+
+  bool listener_notified = false;
+  set_notify_listeners_cb([&](auto&, Peer::NotifyListenersChange change) {
+    listener_notified = true;
+    EXPECT_EQ(Peer::NotifyListenersChange::kBondNotUpdated, change);
+    EXPECT_EQ(peer().last_updated(),
+              pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
+  });
+
+  RunFor(pw::chrono::SystemClock::duration(2));
+  DeviceClass kDeviceClass(0x123456);
+  peer().MutBrEdr().SetDeviceClass(kDeviceClass);
+  EXPECT_TRUE(listener_notified);
+  ASSERT_TRUE(peer().bredr()->device_class().has_value());
+  EXPECT_EQ(kDeviceClass, *peer().bredr()->device_class());
+
+  // Subsequent setting of the same device class should not notify.
+  listener_notified = false;
+  peer().MutBrEdr().SetDeviceClass(kDeviceClass);
+  EXPECT_FALSE(listener_notified);
+
+  // Changing device class should notify.
+  listener_notified = false;
+  DeviceClass kNewDeviceClass(0x654321);
+  peer().MutBrEdr().SetDeviceClass(kNewDeviceClass);
+  EXPECT_TRUE(listener_notified);
+  EXPECT_EQ(kNewDeviceClass, *peer().bredr()->device_class());
+}
+
 TEST_F(PeerTest, SettingAddingBrEdrServiceUpdatesLastUpdated) {
   EXPECT_EQ(peer().last_updated(),
             pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(0)));

@@ -595,6 +595,14 @@ void Peer::BrEdrData::AddService(UUID uuid) {
   }
 }
 
+void Peer::BrEdrData::SetDeviceClass(DeviceClass device_class) {
+  if (device_class_ && *device_class_ == device_class) {
+    return;
+  }
+  device_class_ = device_class;
+  peer_->UpdatePeerAndNotifyListeners(NotifyListenersChange::kBondNotUpdated);
+}
+
 Peer::Peer(NotifyListenersCallback notify_listeners_callback,
            PeerCallback update_expiry_callback,
            PeerCallback dual_mode_callback,

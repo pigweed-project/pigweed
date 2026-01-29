@@ -554,6 +554,9 @@ class Peer final {
     // notifies listeners. No-op if already present.
     void AddService(UUID uuid);
 
+    // Sets the device class of the peer.
+    void SetDeviceClass(DeviceClass device_class);
+
     // TODO(armansito): Store BD_ADDR here, once PeerCache can index
     // devices by multiple addresses.
 

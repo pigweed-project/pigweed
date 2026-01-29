@@ -1116,6 +1116,7 @@ TEST_F(BrEdrConnectionManagerLegacyPairingTest,
       peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
                                               .address = kTestDevAddr,
                                               .name = std::nullopt,
+                                              .device_class = {},
                                               .le_pairing_data = {},
                                               .bredr_link_key = kLinkKey,
                                               .bredr_services = {}}));
@@ -1938,6 +1939,7 @@ TEST_F(BrEdrConnectionManagerTest, RecallLinkKeyForBondedPeer) {
       peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
                                               .address = kTestDevAddr,
                                               .name = std::nullopt,
+                                              .device_class = {},
                                               .le_pairing_data = {},
                                               .bredr_link_key = kLinkKey,
                                               .bredr_services = {}}));
@@ -2825,6 +2827,7 @@ TEST_F(BrEdrConnectionManagerTest, OpenL2capEncryptsForBondedPeerThenRetries) {
       peer_cache()->AddBondedPeer(BondingData{.identifier = PeerId(999),
                                               .address = kTestDevAddr,
                                               .name = std::nullopt,
+                                              .device_class = {},
                                               .le_pairing_data = {},
                                               .bredr_link_key = kLinkKey,
                                               .bredr_services = {}}));

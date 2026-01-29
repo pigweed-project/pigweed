@@ -96,6 +96,10 @@ bool PeerCache::AddBondedPeer(BondingData bd) {
     peer->RegisterName(bd.name.value(), Peer::NameSource::kUnknown);
   }
 
+  if (bd.device_class.has_value()) {
+    peer->MutBrEdr().SetDeviceClass(*bd.device_class);
+  }
+
   if (bond_le) {
     PW_CHECK(bd.le_pairing_data.irk.has_value() ==
              bd.le_pairing_data.identity_address.has_value());
