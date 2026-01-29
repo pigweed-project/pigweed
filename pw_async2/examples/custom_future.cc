@@ -28,8 +28,12 @@ class ButtonReceiver;
 
 class ButtonFuture {
  public:
-  // Provide a descriptive reason which can be used to debug blocked tasks.
-  static constexpr const char kWaitReason[] = "Waiting for button press";
+  // All futures must define `value_type` as the return type from `Pend()`.
+  // Futures that don't return a value use `ReadyType`.
+  using value_type = pw::async2::ReadyType;
+
+  // Futures must be default constructible.
+  constexpr ButtonFuture() = default;
 
   // FutureCore is movable and handles list management automatically.
   ButtonFuture(ButtonFuture&&) = default;
@@ -40,12 +44,19 @@ class ButtonFuture {
     return core_.DoPend(*this, cx);
   }
 
+  bool is_pendable() const { return core_.is_pendable(); }
+  bool is_complete() const { return core_.is_complete(); }
+
  private:
   friend class ButtonReceiver;
   friend class pw::async2::FutureCore;
 
+  // Provide a descriptive reason which can be used to debug blocked tasks.
+  static constexpr const char kWaitReason[] = "Waiting for button press";
+
   // Private constructor used by ButtonReceiver.
-  explicit ButtonFuture() : core_(pw::async2::FutureState::kPending) {}
+  explicit ButtonFuture(pw::async2::FutureState::Pending)
+      : core_(pw::async2::FutureState::kPending) {}
 
   // Callback invoked by FutureCore::DoPend.
   pw::async2::Poll<> DoPend(pw::async2::Context&) {
@@ -57,6 +68,8 @@ class ButtonFuture {
 
   pw::async2::FutureCore core_;
 };
+
+static_assert(pw::async2::Future<ButtonFuture>);
 
 class ButtonReceiver {
  public:
@@ -71,7 +84,7 @@ class ButtonReceiver {
   // Returns a future that completes when the button is pressed.
   ButtonFuture WaitForPress() {
     std::lock_guard lock(lock_);
-    ButtonFuture future;
+    ButtonFuture future(pw::async2::FutureState::kPending);
     // Only allow one waiter at a time.
     list_.PushRequireEmpty(future);
     return future;

@@ -29,7 +29,8 @@ with a common interface, but no shared base. In C++20 and later,
 A ``Future<T>`` exposes the following API:
 
 - A default constructor that initializes the future to an empty state. An empty
-  future does not represent an asynchronous operation and cannot be pended.
+  future does not represent an asynchronous operation and is neither pendable
+  nor complete.
 - A destructor that abandons the future so no further operations will access it.
 - ``value_type``: Type alias for the value produced by the future.
 - ``Poll<value_type> Pend(Context& cx)``: Calling ``Pend`` advances the
@@ -38,6 +39,8 @@ A ``Future<T>`` exposes the following API:
   the provided :cc:`Context <pw::async2::Context>` to store a waker and returns
   :cc:`Pending <pw::async2::Pending>`. The waker wakes the task when ``Pend``
   should be called again.
+- ``bool is_pendable()``: Returns whether the future represents an active
+  asynchronous operation which can be pended.
 - ``bool is_complete()``: Returns whether the future has already completed and
   had its result consumed.
 
@@ -129,22 +132,20 @@ You would write a task that calls this operation as follows:
          class MyTask : public pw::async2::Task {
           private:
            pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             // Obtain and store the future, then poll it to completion.
-             if (!future_.has_value()) {
-               future_.emplace(generator_.GetNextNumber());
+             // The future begins in a default-constructed state, which is not
+             // pendable. Initialize it on the task's first run.
+             if (!future_.is_pendable()) {
+               future_ = generator_.GetNextNumber();
              }
 
-             PW_TRY_READY_ASSIGN(int number, future_->Pend(cx));
+             PW_TRY_READY_ASSIGN(int number, future_.Pend(cx));
              PW_LOG_INFO("Received number: %d", number);
 
              return pw::async2::Ready();
            }
 
            NumberGenerator& generator_;
-
-           // The future is stored in an optional so it can be lazily initialized
-           // inside DoPend. Most concrete futures are not default constructible.
-           std::optional<ValueFuture<int>> future_;
+           ValueFuture<int> future_;
          };
 
    .. tab-item:: C++20 coroutines
@@ -258,7 +259,7 @@ Future implementations typically have a :cc:`FutureCore
 <pw::async2::FutureCore>` member.
 
 FutureList
-----------
+==========
 After you vend a future from an asynchronous operation, you need a way to track
 and resolve it once the operation has completed. :cc:`FutureCore
 <pw::async2::FutureCore>`\s can be stored in a :cc:`FutureList
@@ -342,13 +343,13 @@ results.
          class JoinTask : public pw::async2::Task {
           private:
            pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             if (!future_.has_value()) {
+             if (!future_.is_pendable()) {
                // Start three futures concurrently and wait for all of them
                // to complete.
-               future_.emplace(pw::async2::Join(DoWork(1), DoWork(2), DoWork(3)));
+               future_ = pw::async2::Join(DoWork(1), DoWork(2), DoWork(3));
              }
 
-             PW_TRY_READY_ASSIGN(auto results, future_->Pend(cx));
+             PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
              auto [status1, status2, status3] = *results;
 
              if (!status1.ok() || !status2.ok() || !status3.ok()) {
@@ -360,9 +361,9 @@ results.
              return pw::async2::Ready();
            }
 
-           std::optional<JoinFuture<ValueFuture<pw::Status>,
-                                    ValueFuture<pw::Status>,
-                                    ValueFuture<pw::Status>>>
+           JoinFuture<ValueFuture<pw::Status>,
+                      ValueFuture<pw::Status>,
+                      ValueFuture<pw::Status>>
                future_;
          };
 
@@ -406,12 +407,12 @@ completing the task re-running, the tuple stores all of their results.
          class SelectTask : public pw::async2::Task {
           private:
            pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             if (!future_.has_value()) {
+             if (!future_.is_pendable()) {
                // Race two futures and wait for the first one to complete.
-               future_.emplace(pw::async2::Select(DoWork(), DoOtherWork()));
+               future_ = pw::async2::Select(DoWork(), DoOtherWork());
              }
 
-             PW_TRY_READY_ASSIGN(auto results, future_->Pend(cx));
+             PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
 
              // Check which future(s) completed.
              // In this example, we check all of them, but it's common to return
@@ -426,7 +427,7 @@ completing the task re-running, the tuple stores all of their results.
              return pw::async2::Ready();
            }
 
-           std::optional<SelectFuture<ValueFuture<int>, ValueFuture<int>>> future_;
+           SelectFuture<ValueFuture<int>, ValueFuture<int>> future_;
          };
 
    .. tab-item:: C++20 coroutines
