@@ -51,6 +51,7 @@ cc_library(
     deps = [
         ":connection",
         ":uuid",
+        "//pw_async2:value_future",
         "//pw_bluetooth:pw_bluetooth2",
         "//pw_bluetooth_sapphire/host/gap",
         "//pw_multibuf:allocator",
@@ -73,6 +74,7 @@ cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":uuid",
+        "//pw_async2:value_future",
         "//pw_bluetooth:pw_bluetooth2",
         "//pw_bluetooth_sapphire/host/gap",
     ],
@@ -206,6 +208,7 @@ cc_library(
     includes = ["public"],
     tags = ["noclangtidy"],
     deps = [
+        "//pw_async2:value_future",
         "//pw_bluetooth:pw_bluetooth2",
         "//pw_bluetooth_sapphire/host/gap",
         "//pw_sync:mutex",

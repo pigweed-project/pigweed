@@ -17,7 +17,7 @@
 #include <memory>
 
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/internal/raii_ptr.h"
 #include "pw_bluetooth/low_energy/advertising_data.h"
 #include "pw_bluetooth/low_energy/connection2.h"
@@ -218,7 +218,7 @@ class Peripheral2 {
   /// @return Asynchronously returns a result once advertising has started or
   /// failed. On success, returns an `AdvertisedPeripheral2` that models the
   /// lifetime of the advertisement. Destroying it will stop advertising.
-  virtual async2::OnceReceiver<AdvertiseResult> Advertise(
+  virtual async2::OptionalValueFuture<AdvertiseResult> Advertise(
       const AdvertisingParameters& parameters) = 0;
 };
 

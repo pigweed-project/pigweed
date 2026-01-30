@@ -93,7 +93,7 @@ pw_add_library(pw_bluetooth.pw_bluetooth2 INTERFACE
   PUBLIC_DEPS
     pw_bluetooth.config
     pw_async2
-    pw_async2.once_sender
+    pw_async2.value_future
     pw_result.expected
     pw_channel
     pw_containers

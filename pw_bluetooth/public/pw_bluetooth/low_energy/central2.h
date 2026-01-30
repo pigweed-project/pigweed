@@ -15,7 +15,7 @@
 
 #include <optional>
 
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/internal/raii_ptr.h"
 #include "pw_bluetooth/low_energy/connection2.h"
 #include "pw_bluetooth/low_energy/phy.h"
@@ -219,7 +219,7 @@ class Central2 {
   /// an error occurs.
   ///
   /// Possible errors are documented in `ConnectError`.
-  virtual async2::OnceReceiver<ConnectResult> Connect(
+  virtual async2::OptionalValueFuture<ConnectResult> Connect(
       PeerId peer_id, Connection2::ConnectionOptions options) = 0;
 
   /// Scans for nearby LE peripherals and broadcasters. The lifetime of the scan
@@ -236,7 +236,7 @@ class Central2 {
   /// peers that satisfy the filters indicated in `options`. The initial results
   /// may report recently discovered peers. Subsequent results will be reported
   /// only when peers have been scanned or updated since the last call.
-  virtual async2::OnceReceiver<ScanStartResult> Scan(
+  virtual async2::OptionalValueFuture<ScanStartResult> Scan(
       const ScanOptions& options) = 0;
 };
 

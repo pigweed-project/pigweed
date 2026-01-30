@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/low_energy/central2.h"
 #include "pw_bluetooth_sapphire/internal/connection.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/adapter.h"
@@ -38,12 +39,12 @@ class Central final : public pw::bluetooth::low_energy::Central2 {
           pw::multibuf::MultiBufAllocator& allocator);
   ~Central() override;
 
-  async2::OnceReceiver<ConnectResult> Connect(
+  async2::OptionalValueFuture<ConnectResult> Connect(
       pw::bluetooth::PeerId peer_id,
       bluetooth::low_energy::Connection2::ConnectionOptions options) override
       PW_LOCKS_EXCLUDED(lock());
 
-  async2::OnceReceiver<ScanStartResult> Scan(
+  async2::OptionalValueFuture<ScanStartResult> Scan(
       const ScanOptions& options) override PW_LOCKS_EXCLUDED(lock());
 
   static pw::sync::Mutex& lock();
@@ -121,9 +122,10 @@ class Central final : public pw::bluetooth::low_energy::Central2 {
   // clears `ScanState.scan_handle_`.
   void StopScanLocked(uint16_t scan_id) PW_EXCLUSIVE_LOCKS_REQUIRED(lock());
 
-  void OnConnectionResult(bt::PeerId peer_id,
-                          bt::gap::Adapter::LowEnergy::ConnectionResult result,
-                          async2::OnceSender<ConnectResult> result_sender)
+  void OnConnectionResult(
+      bt::PeerId peer_id,
+      bt::gap::Adapter::LowEnergy::ConnectionResult result,
+      async2::OptionalValueProvider<ConnectResult> result_provider)
       PW_LOCKS_EXCLUDED(lock());
 
   std::unordered_map<uint16_t, ScanState> scans_ PW_GUARDED_BY(lock());

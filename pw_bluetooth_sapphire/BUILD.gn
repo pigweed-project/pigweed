@@ -37,6 +37,7 @@ pw_source_set("peripheral") {
   public = [ "public/pw_bluetooth_sapphire/peripheral.h" ]
   sources = [ "peripheral.cc" ]
   public_deps = [
+    "$dir_pw_async2:value_future",
     "$dir_pw_bluetooth:pw_bluetooth2",
     "$dir_pw_sync:mutex",
     "host/gap",
@@ -50,6 +51,7 @@ pw_source_set("central") {
   public_deps = [
     ":connection",
     ":uuid",
+    "$dir_pw_async2:value_future",
     "$dir_pw_bluetooth:pw_bluetooth2",
     "$dir_pw_multibuf:allocator",
     "host/gap",
@@ -69,6 +71,7 @@ pw_source_set("connection") {
   ]
   public_deps = [
     ":uuid",
+    "$dir_pw_async2:value_future",
     "$dir_pw_bluetooth:pw_bluetooth2",
     "host/gap",
   ]

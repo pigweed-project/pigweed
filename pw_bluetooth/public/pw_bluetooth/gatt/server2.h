@@ -16,7 +16,7 @@
 #include <cstdint>
 
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/gatt/error.h"
 #include "pw_bluetooth/gatt/types.h"
 #include "pw_bluetooth/internal/raii_ptr.h"
@@ -76,7 +76,7 @@ class LocalServiceDelegate2 {
   /// @param offset The offset at which to start reading the requested value.
   /// @return Returns the value of the characteristic on success, or an Error on
   /// failure. The value will be truncated to fit in the MTU if necessary.
-  virtual async2::OnceReceiver<pw::expected<multibuf::MultiBuf, Error>>
+  virtual async2::ValueFuture<pw::expected<multibuf::MultiBuf, Error>>
   ReadValue(PeerId peer_id, Handle handle, uint32_t offset) = 0;
 
   /// Called when a peer issues a request to write the value of a characteristic
@@ -91,7 +91,7 @@ class LocalServiceDelegate2 {
   /// len(value))` should be changed to `value`.
   /// @param value The new value for the descriptor/characteristic.
   /// @return The result of the write.
-  virtual async2::OnceReceiver<pw::expected<void, Error>> WriteValue(
+  virtual async2::ValueFuture<pw::expected<void, Error>> WriteValue(
       PeerId peer_id,
       Handle handle,
       uint32_t offset,
@@ -156,7 +156,7 @@ class LocalService2 {
   /// per-peer basis, they should send this event with a single PeerId in
   /// `parameters.peer_ids`. Additional values should not be notified until
   /// this notification completes.
-  virtual async2::OnceReceiver<ValueChangedResult> NotifyValue(
+  virtual async2::ValueFuture<ValueChangedResult> NotifyValue(
       ValueChangedParameters&& parameters) = 0;
 
   /// Sends an indication to peers. Indications should be used instead of
@@ -186,7 +186,7 @@ class LocalService2 {
   /// basis, they should send this event with a single PeerId in
   /// `parameters.peer_ids`. Additional values should not be indicated until
   /// this procedure completes.
-  virtual async2::OnceReceiver<ValueChangedResult> IndicateValue(
+  virtual async2::ValueFuture<ValueChangedResult> IndicateValue(
       ValueChangedParameters&& parameters) = 0;
 
  private:
@@ -258,7 +258,7 @@ class Server2 {
   /// @return On success, a `LocalService::Ptr` is returned via
   /// `result_sender`. When the `LocalService::Ptr` is destroyed or an error
   /// occurs (LocalServiceDelegate.OnError), the service will be unpublished.
-  virtual async2::OnceReceiver<PublishServiceResult> PublishService(
+  virtual async2::ValueFuture<PublishServiceResult> PublishService(
       const LocalServiceInfo& info, LocalServiceDelegate2& delegate) = 0;
 };
 

@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/internal/raii_ptr.h"
 #include "pw_channel/channel.h"
 #include "pw_result/result.h"
@@ -111,7 +111,7 @@ class ChannelListenerRegistry {
   /// @param parameters Parameters for the local side of the channel.
   /// @return The result of starting the listener. On success, contains a
   /// `ChannelListener` that can be used to receive new channels.
-  virtual async2::OnceReceiver<pw::Result<ChannelListener::Ptr>> ListenL2cap(
+  virtual async2::ValueFuture<pw::Result<ChannelListener::Ptr>> ListenL2cap(
       ListenParameters parameters) = 0;
 };
 

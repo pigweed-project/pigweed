@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/gatt/constants.h"
 #include "pw_bluetooth/gatt/error.h"
 #include "pw_bluetooth/gatt/types.h"
@@ -79,7 +79,7 @@ class RemoteService2 {
   /// descriptors to the server.
   enum class WriteMode : uint8_t {
     /// Wait for a response from the server before returning but do not verify
-    /// the echo response. Supported for both characteristics and descriptors.
+    /// the echo response. Supported both for characteristics and descriptors.
     kDefault,
 
     /// Every value blob is verified against an echo response from the server.
@@ -122,9 +122,8 @@ class RemoteService2 {
   /// Asynchronously sends the characteristics in this service, up to
   /// `Vector::.max_size()`. May perform service discovery if the
   /// characteristics are not yet known.
-  virtual void DiscoverCharacteristics(
-      async2::OnceRefSender<Vector<Characteristic2>>
-          characteristics_sender) = 0;
+  virtual async2::ValueFuture<Vector<Characteristic2>>
+  DiscoverCharacteristics() = 0;
 
   /// Reads characteristics and descriptors with the specified type. This method
   /// is useful for reading values before discovery has completed, thereby
@@ -142,7 +141,8 @@ class RemoteService2 {
   /// discovery.
   /// - `kFailure`: The server returned an error not specific to a single
   /// result.
-  virtual async2::OnceReceiver<pw::expected<Vector<ReadByTypeResult, 5>, Error>>
+  virtual async2::ValueFuture<
+      std::optional<pw::expected<Vector<ReadByTypeResult, 5>, Error>>>
   ReadByType(Uuid uuid) = 0;
 
   /// Reads the value of a characteristic.
@@ -160,7 +160,7 @@ class RemoteService2 {
   /// - kApplicationError* An application error was returned by the GATT
   ///     profile.
   /// - kFailure The server returned an error not covered by the above.
-  virtual async2::OnceReceiver<pw::expected<ReadValue, Error>>
+  virtual async2::OptionalValueFuture<pw::expected<ReadValue, Error>>
   ReadCharacteristic(Handle handle, std::optional<LongReadOptions> options) = 0;
 
   /// Writes `value` to the characteristic with `handle` using the provided
@@ -181,8 +181,10 @@ class RemoteService2 {
   ///     profile.
   /// - kFailure The server returned an error not covered by the above
   /// errors.
-  virtual async2::OnceReceiver<pw::expected<void, Error>> WriteCharacteristic(
-      Handle handle, pw::multibuf::MultiBuf&& value, WriteOptions options) = 0;
+  virtual async2::OptionalValueFuture<pw::expected<void, Error>>
+  WriteCharacteristic(Handle handle,
+                      pw::multibuf::MultiBuf&& value,
+                      WriteOptions options) = 0;
 
   /// Reads the value of the characteristic descriptor with `handle` and
   /// returns it in the reply.
@@ -198,8 +200,8 @@ class RemoteService2 {
   ///     profile.
   /// @retval kFailure The server returned an error not covered by the above
   /// errors.
-  virtual async2::OnceReceiver<pw::expected<ReadValue, Error>> ReadDescriptor(
-      Handle handle, std::optional<LongReadOptions> options) = 0;
+  virtual async2::OptionalValueFuture<pw::expected<ReadValue, Error>>
+  ReadDescriptor(Handle handle, std::optional<LongReadOptions> options) = 0;
 
   /// Writes `value` to the descriptor with `handle` using the provided. It is
   /// not recommended to send additional writes while a write is already in
@@ -217,8 +219,8 @@ class RemoteService2 {
   ///     profile.
   /// - kFailure The server returned an error not covered by the above
   /// errors.
-  virtual async2::OnceReceiver<pw::expected<void, Error>> WriteDescriptor(
-      Handle handle, pw::multibuf::MultiBuf&& value) = 0;
+  virtual async2::OptionalValueFuture<pw::expected<void, Error>>
+  WriteDescriptor(Handle handle, pw::multibuf::MultiBuf&& value) = 0;
 
   /// Subscribe to notifications & indications from the characteristic with
   /// the given `handle`.
@@ -246,8 +248,8 @@ class RemoteService2 {
   /// - kWriteNotPermitted CCC descriptor write error.
   /// - kInsufficient*  Insufficient security properties to write to CCC
   ///     descriptor.
-  virtual async2::OnceReceiver<pw::expected<void, Error>> EnableNotifications(
-      Handle handle) = 0;
+  virtual async2::OptionalValueFuture<pw::expected<void, Error>>
+  EnableNotifications(Handle handle) = 0;
 
   /// After notifications have been enabled with `EnableNotifications`, this
   /// method can be used to check for notifications. This method will safely
@@ -267,8 +269,8 @@ class RemoteService2 {
   /// - kInvalidHandle `handle` is invalid.
   /// - kWriteNotPermitted CCC descriptor write error.
   /// - Insufficient* CCC descriptor write error.
-  virtual async2::OnceReceiver<pw::expected<void, Error>> StopNotifications(
-      Handle handle) = 0;
+  virtual async2::OptionalValueFuture<pw::expected<void, Error>>
+  StopNotifications(Handle handle) = 0;
 
  private:
   /// Disconnect from the remote service. This method is called by the

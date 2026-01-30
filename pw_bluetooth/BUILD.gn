@@ -113,8 +113,8 @@ pw_source_set("pw_bluetooth2") {
   ]
   public_deps = [
     ":config",
-    "$dir_pw_async2:once_sender",
     "$dir_pw_async2:pw_async2",
+    "$dir_pw_async2:value_future",
     "$dir_pw_chrono:system_clock",
     "$dir_pw_result:expected",
     "$dir_pw_string:hex",

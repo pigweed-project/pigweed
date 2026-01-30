@@ -28,11 +28,11 @@ using AdvertiseError = pw::bluetooth::low_energy::Peripheral2::AdvertiseError;
 template <typename T>
 class ReceiverTask final : public pw::async2::Task {
  public:
-  ReceiverTask(pw::async2::OnceReceiver<T> receiver)
-      : receiver_(std::move(receiver)) {}
+  ReceiverTask(pw::async2::OptionalValueFuture<T> future)
+      : future_(std::move(future)) {}
 
   pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-    pw::async2::PollResult<T> pend = receiver_.Pend(cx);
+    pw::async2::Poll<std::optional<T>> pend = future_.Pend(cx);
     if (pend.IsPending()) {
       return pw::async2::Pending();
     }
@@ -40,11 +40,11 @@ class ReceiverTask final : public pw::async2::Task {
     return pw::async2::Ready();
   }
 
-  pw::Result<T>& result() { return result_; }
+  std::optional<T>& result() { return result_; }
 
  private:
-  pw::async2::OnceReceiver<T> receiver_;
-  pw::Result<T> result_;
+  pw::async2::OptionalValueFuture<T> future_;
+  std::optional<T> result_;
 };
 
 class PeripheralTest : public ::testing::Test {
@@ -53,19 +53,19 @@ class PeripheralTest : public ::testing::Test {
 
   void TearDown() override {}
 
-  // Returns nullopt if OnceReceiver received no result or a OnceReceiver error.
+  // Returns nullopt if ValueFuture received no result or a nullopt result.
   std::optional<Peripheral2::AdvertiseResult> Advertise(
       Peripheral2::AdvertisingParameters& parameters) {
-    pw::async2::OnceReceiver<Peripheral2::AdvertiseResult> receiver =
+    pw::async2::OptionalValueFuture<Peripheral2::AdvertiseResult> future =
         peripheral().Advertise(parameters);
 
-    ReceiverTask<Peripheral2::AdvertiseResult> task(std::move(receiver));
+    ReceiverTask<Peripheral2::AdvertiseResult> task(std::move(future));
     dispatcher2().Post(task);
-    EXPECT_TRUE(task.result().status().IsUnknown());
+    EXPECT_FALSE(task.result().has_value());
 
     dispatcher().RunUntilIdle();
     dispatcher2().RunToCompletion();
-    if (!task.result().status().ok()) {
+    if (!task.result().has_value()) {
       return std::nullopt;
     }
     return std::move(task.result().value());

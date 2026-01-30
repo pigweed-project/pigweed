@@ -15,6 +15,7 @@
 #pragma once
 
 #include "pw_async/heap_dispatcher.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/low_energy/connection2.h"
 #include "pw_bluetooth_sapphire/internal/host/common/identifier.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connection_handle.h"
@@ -37,9 +38,11 @@ class Connection final : public pw::bluetooth::low_energy::Connection2 {
   uint16_t AttMtu() override;
   async2::Poll<uint16_t> PendAttMtuChange(async2::Context& cx) override;
   ConnectionParameters Parameters() override;
-  async2::OnceReceiver<pw::expected<void, ConnectionParameterUpdateError>>
+  async2::ValueFuture<
+      std::optional<pw::expected<void, ConnectionParameterUpdateError>>>
   RequestParameterUpdate(RequestedConnectionParameters parameters) override;
-  async2::OnceReceiver<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>
+  async2::ValueFuture<
+      std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>
   ConnectL2cap(ConnectL2capParameters parameters) override;
 
  private:

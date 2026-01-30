@@ -84,23 +84,24 @@ Connection::Parameters() {
   return pw::bluetooth::low_energy::Connection2::ConnectionParameters();
 }
 
-async2::OnceReceiver<pw::expected<
+async2::OptionalValueFuture<pw::expected<
     void,
     pw::bluetooth::low_energy::Connection2::ConnectionParameterUpdateError>>
 Connection::RequestParameterUpdate(RequestedConnectionParameters) {
   // TODO: https://pwbug.dev/396449684 - Update the parameters.
-  return async2::OnceReceiver<
-      pw::expected<void,
-                   pw::bluetooth::low_energy::Connection2::
-                       ConnectionParameterUpdateError>>();
+  return async2::OptionalValueFuture<pw::expected<
+      void,
+      pw::bluetooth::low_energy::Connection2::ConnectionParameterUpdateError>>::
+      Resolved(std::nullopt);
 }
 
-async2::OnceReceiver<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>
+async2::ValueFuture<
+    std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>
 Connection::ConnectL2cap(ConnectL2capParameters) {
   // TODO: https://pwbug.dev/396449684 - Open an L2CAP channel.
-  return async2::OnceReceiver<
-      pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>(
-      pw::Status::Unimplemented());
+  return async2::ValueFuture<
+      std::optional<pw::Result<pw::bluetooth::low_energy::Channel::Ptr>>>::
+      Resolved(pw::Status::Unimplemented());
 }
 
 }  // namespace pw::bluetooth_sapphire::internal

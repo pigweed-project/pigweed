@@ -15,7 +15,7 @@
 #pragma once
 
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/once_sender.h"
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/vendor.h"
 #include "pw_channel/channel.h"
 #include "pw_function/function.h"
@@ -72,7 +72,7 @@ class Controller2
   /// Asynchronously returns the result of initialization.
   ///
   /// On success, HCI packets may now be sent and received with this object.
-  virtual async2::OnceReceiver<Status> Initialize() = 0;
+  virtual async2::ValueFuture<Status> Initialize() = 0;
 
   /// Configure the HCI for a SCO connection with the indicated parameters.
   /// @returns
@@ -81,7 +81,7 @@ class Controller2
   ///     HCI
   /// * ALREADY_EXISTS - a SCO connection is already configured
   /// * INTERNAL - an internal error occurred
-  virtual async2::OnceReceiver<Status> ConfigureSco(
+  virtual async2::ValueFuture<Status> ConfigureSco(
       ScoCodingFormat coding_format,
       ScoEncoding encoding,
       ScoSampleRate sample_rate) = 0;
@@ -93,17 +93,17 @@ class Controller2
   /// * OK - success, the SCO configuration was reset.
   /// * UNIMPLEMENTED - the implementation/controller does not support SCO over
   /// * HCI INTERNAL - an internal error occurred
-  virtual async2::OnceReceiver<Status> ResetSco() = 0;
+  virtual async2::ValueFuture<Status> ResetSco() = 0;
 
   /// @returns A bitmask of features supported by the controller.
-  virtual async2::OnceReceiver<FeaturesBits> GetFeatures() = 0;
+  virtual async2::ValueFuture<pw::Result<FeaturesBits>> GetFeatures() = 0;
 
   /// Encode the vendor-specific HCI command for a generic type of vendor
   /// command, and return the encoded command in a buffer.
   /// @param parameters Vendor command to encode.
   /// @returns Returns the result of the encoding request. On success, contains
   /// the command buffer.
-  virtual async2::OnceReceiver<Result<multibuf::MultiBuf>> EncodeVendorCommand(
+  virtual async2::ValueFuture<Result<multibuf::MultiBuf>> EncodeVendorCommand(
       VendorCommandParameters parameters) = 0;
 };
 

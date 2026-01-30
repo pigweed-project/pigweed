@@ -118,25 +118,25 @@ Central::~Central() {
   scans_.clear();
 }
 
-async2::OnceReceiver<Central::ConnectResult> Central::Connect(
+async2::OptionalValueFuture<Central::ConnectResult> Central::Connect(
     pw::bluetooth::PeerId peer_id,
     bluetooth::low_energy::Connection2::ConnectionOptions options) {
   bt::PeerId internal_peer_id(peer_id);
   bt::gap::LowEnergyConnectionOptions connection_options =
       internal::ConnectionOptionsFrom(options);
 
-  auto [result_sender, result_receiver] =
-      async2::MakeOnceSenderAndReceiver<ConnectResult>();
+  async2::OptionalValueProvider<ConnectResult> result_provider;
+  auto result_future = result_provider.Get();
 
   bt::gap::Adapter::LowEnergy::ConnectionResultCallback result_cb =
       [self = self_,
        peer = internal_peer_id,
-       sender = std::move(result_sender)](
+       provider = std::move(result_provider)](
           bt::gap::Adapter::LowEnergy::ConnectionResult result) mutable {
         if (!self.is_alive()) {
           return;
         }
-        self->OnConnectionResult(peer, std::move(result), std::move(sender));
+        self->OnConnectionResult(peer, std::move(result), std::move(provider));
       };
 
   async::TaskFunction task_fn = [self = self_,
@@ -153,36 +153,36 @@ async2::OnceReceiver<Central::ConnectResult> Central::Connect(
   Status post_status = heap_dispatcher_.Post(std::move(task_fn));
   PW_CHECK_OK(post_status);
 
-  return std::move(result_receiver);
+  return result_future;
 }
 
-async2::OnceReceiver<Central::ScanStartResult> Central::Scan(
+async2::OptionalValueFuture<Central::ScanStartResult> Central::Scan(
     const ScanOptions& options) {
   // TODO: https://pwbug.dev/377301546 - Support the different types of active
   // scans.
   bool active = (options.scan_type != ScanType::kPassive);
 
   if (options.filters.empty()) {
-    return async2::OnceReceiver<ScanStartResult>(
+    return async2::OptionalValueFuture<Central::ScanStartResult>::Resolved(
         pw::unexpected(StartScanError::kInvalidParameters));
   }
 
-  auto [result_sender, result_receiver] =
-      async2::MakeOnceSenderAndReceiver<Central::ScanStartResult>();
+  async2::OptionalValueProvider<Central::ScanStartResult> result_provider;
+  auto result_future = result_provider.Get();
 
   auto callback =
-      [self = self_, sender = std::move(result_sender)](
+      [self = self_, provider = std::move(result_provider)](
           std::unique_ptr<bt::gap::LowEnergyDiscoverySession> session) mutable {
         // callback will always be run on the Bluetooth thread
 
         if (!self.is_alive()) {
-          sender.emplace(pw::unexpected(StartScanError::kInternal));
+          provider.Resolve(pw::unexpected(StartScanError::kInternal));
           return;
         }
 
         if (!session) {
           bt_log(WARN, "api", "failed to start LE discovery session");
-          sender.emplace(pw::unexpected(StartScanError::kInternal));
+          provider.Resolve(pw::unexpected(StartScanError::kInternal));
           return;
         }
 
@@ -199,7 +199,7 @@ async2::OnceReceiver<Central::ScanStartResult> Central::Scan(
           PW_CHECK(emplaced);
         }
 
-        sender.emplace(std::move(scan_handle_ptr));
+        provider.Resolve(std::move(scan_handle_ptr));
       };
 
   // Convert options to filters now because options contains non-owning views
@@ -224,7 +224,7 @@ async2::OnceReceiver<Central::ScanStartResult> Central::Scan(
   Status post_status = heap_dispatcher_.Post(std::move(task_fn));
   PW_CHECK_OK(post_status);
 
-  return std::move(result_receiver);
+  return result_future;
 }
 
 pw::sync::Mutex& Central::lock() { return g_peripheral_lock; }
@@ -333,12 +333,12 @@ void Central::StopScanLocked(uint16_t scan_id) {
 void Central::OnConnectionResult(
     bt::PeerId peer_id,
     bt::gap::Adapter::LowEnergy::ConnectionResult result,
-    async2::OnceSender<ConnectResult> result_sender) {
+    async2::OptionalValueProvider<ConnectResult> result_provider) {
   if (result.is_error()) {
     if (result.error_value() == bt::HostError::kNotFound) {
-      result_sender.emplace(pw::unexpected(ConnectError::kUnknownPeer));
+      result_provider.Resolve(pw::unexpected(ConnectError::kUnknownPeer));
     } else {
-      result_sender.emplace(
+      result_provider.Resolve(
           pw::unexpected(ConnectError::kCouldNotBeEstablished));
     }
     return;
@@ -347,7 +347,7 @@ void Central::OnConnectionResult(
   pw::bluetooth::low_energy::Connection2::Ptr connection_ptr(
       new internal::Connection(
           peer_id, std::move(result.value()), dispatcher_));
-  result_sender.emplace(std::move(connection_ptr));
+  result_provider.Resolve(std::move(connection_ptr));
 }
 
 }  // namespace pw::bluetooth_sapphire

@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "pw_async2/value_future.h"
 #include "pw_bluetooth/low_energy/peripheral2.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/adapter.h"
 
@@ -34,7 +35,7 @@ class Peripheral final : public pw::bluetooth::low_energy::Peripheral2 {
 
   /// Thread safe.
   /// The AdvertisedPeripheral2 returned on success is thread safe.
-  async2::OnceReceiver<AdvertiseResult> Advertise(
+  async2::OptionalValueFuture<AdvertiseResult> Advertise(
       const AdvertisingParameters& parameters) override
       PW_LOCKS_EXCLUDED(lock());
 
@@ -119,9 +120,10 @@ class Peripheral final : public pw::bluetooth::low_energy::Peripheral2 {
   void StopAdvertising(bt::gap::AdvertisementId advertisement_id);
 
   // Always called on Bluetooth thread.
-  void OnAdvertiseResult(bt::gap::AdvertisementInstance instance,
-                         bt::hci::Result<> result,
-                         async2::OnceSender<AdvertiseResult> result_sender);
+  void OnAdvertiseResult(
+      bt::gap::AdvertisementInstance instance,
+      bt::hci::Result<> result,
+      async2::OptionalValueProvider<AdvertiseResult> result_provider);
 
   // Always called on Bluetooth thread.
   void OnConnection(bt::gap::AdvertisementId advertisement_id,
