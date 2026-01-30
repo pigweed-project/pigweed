@@ -22,6 +22,7 @@ import logging
 from pathlib import Path
 import sys
 
+from google.protobuf import text_format
 import pw_cli.color
 from pw_cli import multitool
 
@@ -43,13 +44,14 @@ class WorkflowBuildPlugin(multitool.MultitoolPlugin):
     def __init__(
         self,
         manager: WorkflowsManager | None,
+        artifacts_manifest: Path | None = None,
     ):
         self._manager = manager
         if self._manager is None:
             raise AssertionError(
                 'Internal error: failed to initialize workflows manager'
             )
-        self._artifacts_manifest: Path | None = None
+        self._artifacts_manifest = artifacts_manifest
 
     def name(self) -> str:
         return 'build'
@@ -248,5 +250,16 @@ class WorkflowBuildPlugin(multitool.MultitoolPlugin):
                 workers = args.parallel_workers
 
         result = builder.run_builds(workers)
+
+        if self._artifacts_manifest and len(selected_workflows) == 1:
+            try:
+                artifacts = self._manager.collect_artifacts(
+                    selected_workflows[0]
+                )
+                self._artifacts_manifest.write_text(
+                    text_format.MessageToString(artifacts),
+                )
+            except TypeError:
+                pass
 
         return result

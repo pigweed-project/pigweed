@@ -76,10 +76,11 @@ class _WorkflowToolPlugin(multitool.MultitoolPlugin):
         self,
         fragment: workflows_pb2.Tool,
         manager: WorkflowsManager,
+        artifacts_manifest: Path | None = None,
     ):
         self._fragment = fragment
         self._manager = manager
-        self._artifacts_manifest: Path | None = None
+        self._artifacts_manifest = artifacts_manifest
 
     def name(self) -> str:
         return self._fragment.name
@@ -117,9 +118,11 @@ class _WorkflowGroupPlugin(multitool.MultitoolPlugin):
         self,
         fragment: workflows_pb2.TaskGroup,
         manager: WorkflowsManager,
+        artifacts_manifest: Path | None = None,
     ):
         self._fragment = fragment
         self._manager = manager
+        self._artifacts_manifest = artifacts_manifest
 
     def name(self) -> str:
         return self._fragment.name
@@ -171,7 +174,15 @@ class _WorkflowGroupPlugin(multitool.MultitoolPlugin):
                 build_recipes=recipes,
                 root_logger=_PROJECT_BUILDER_LOGGER,
             )
-            return builder.run_builds()
+            result = builder.run_builds()
+
+            if self._artifacts_manifest:
+                artifacts = self._manager.collect_artifacts(args.step)
+                self._artifacts_manifest.write_text(
+                    text_format.MessageToString(artifacts),
+                )
+
+            return result
 
         recipes = self._manager.program_group(self.name())
         _PROJECT_BUILDER_LOGGER.propagate = True
@@ -343,7 +354,7 @@ class WorkflowsCli(multitool.MultitoolCli):
 
     def _builtin_plugins(self) -> list[multitool.MultitoolPlugin]:
         return [
-            WorkflowBuildPlugin(self._workflows),
+            WorkflowBuildPlugin(self._workflows, self._artifacts_manifest),
             _BuiltinPlugin(
                 name='describe',
                 description='Describe a build, tool, or group',
@@ -377,11 +388,22 @@ class WorkflowsCli(multitool.MultitoolCli):
         all_plugins = []
         all_plugins.extend(self._builtin_plugins())
         all_plugins.extend(
-            [_WorkflowToolPlugin(t, self._workflows) for t in self.config.tools]
+            [
+                _WorkflowToolPlugin(
+                    t,
+                    self._workflows,
+                    self._artifacts_manifest,
+                )
+                for t in self.config.tools
+            ]
         )
         all_plugins.extend(
             [
-                _WorkflowGroupPlugin(g, self._workflows)
+                _WorkflowGroupPlugin(
+                    g,
+                    self._workflows,
+                    self._artifacts_manifest,
+                )
                 for g in self.config.groups
             ]
         )
