@@ -109,21 +109,6 @@ pw_cc_test(
     ],
 )
 
-pw_cc_test(
-    name = "once_send_recv_test",
-    srcs = ["once_send_recv_test.cc"],
-    deps = [
-        "//pw_allocator:libc_allocator",
-        "//pw_allocator:testing",
-        "//pw_assert:check",
-        "//pw_async2:basic_dispatcher",
-        "//pw_async2:coro",
-        "//pw_async2:coro_or_else_task",
-        "//pw_async2:once_sender",
-        "//pw_async2:testing",
-    ],
-)
-
 pw_cc_binary(
     name = "interrupt",
     srcs = ["interrupt.cc"],
@@ -191,7 +176,6 @@ sphinx_docs_library(
         "count.cc",
         "custom_future.cc",
         "interrupt.cc",
-        "once_send_recv_test.cc",
         "quickstart.cc",
         "unit_test.cc",
     ],

@@ -20,10 +20,6 @@
 #include "pw_async2/size_report/size_report.h"
 #include "pw_bloat/bloat_this_binary.h"
 
-#ifdef _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-#include "pw_async2/once_sender.h"
-#endif  // _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 #include "pw_async2/coro.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
@@ -34,44 +30,6 @@ namespace {
 BasicDispatcher dispatcher;
 
 }  // namespace
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-
-OnceReceiver<uint32_t> SenderAdd(uint32_t a, uint32_t b) {
-  auto [result_sender, result_receiver] = MakeOnceSenderAndReceiver<uint32_t>();
-  result_sender.emplace(a + b);
-  return std::move(result_receiver);
-}
-
-template <typename T>
-class ReceiverTask : public Task {
- public:
-  ReceiverTask(OnceReceiver<T>&& receiver) : receiver_(std::move(receiver)) {}
-
- private:
-  Poll<> DoPend(Context& cx) override {
-    PollResult<T> result = receiver_.Pend(cx);
-    if (result.IsPending()) {
-      return Pending();
-    }
-
-    return Ready();
-  }
-
-  OnceReceiver<T> receiver_;
-};
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER_INCREMENTAL
-
-OnceReceiver<int32_t> SenderSub(int32_t a, int32_t b) {
-  auto [result_sender, result_receiver] = MakeOnceSenderAndReceiver<int32_t>();
-  result_sender.emplace(a - b);
-  return std::move(result_receiver);
-}
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER_INCREMENTAL
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
@@ -141,22 +99,6 @@ int Measure() {
   PW_BLOAT_EXPR((waker = std::move(task.last_waker)), mask);
   waker.Wake();
   dispatcher.RunToCompletion();
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-
-  ReceiverTask add_receiver_task(SenderAdd(1, 2));
-  dispatcher.Post(add_receiver_task);
-  dispatcher.RunUntilStalled();
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER_INCREMENTAL
-
-  ReceiverTask sub_receiver_task(SenderSub(1, 2));
-  dispatcher.Post(sub_receiver_task);
-  dispatcher.RunUntilStalled();
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_ONCE_SENDER_INCREMENTAL
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 

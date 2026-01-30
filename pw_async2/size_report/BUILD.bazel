@@ -80,39 +80,6 @@ pw_cc_size_binary(
 )
 
 pw_cc_size_binary(
-    name = "async2_core_once_sender",
-    srcs = ["async2_core.cc"],
-    defines = ["_PW_ASYNC2_SIZE_REPORT_ONCE_SENDER=1"],
-    deps = [
-        ":size_report",
-        "//pw_assert:check",
-        "//pw_async2",
-        "//pw_async2:basic_dispatcher",
-        "//pw_async2:func_task",
-        "//pw_async2:once_sender",
-        "//pw_bloat:bloat_this_binary",
-    ],
-)
-
-pw_cc_size_binary(
-    name = "async2_core_once_sender_incremental",
-    srcs = ["async2_core.cc"],
-    defines = [
-        "_PW_ASYNC2_SIZE_REPORT_ONCE_SENDER=1",
-        "_PW_ASYNC2_SIZE_REPORT_ONCE_SENDER_INCREMENTAL=1",
-    ],
-    deps = [
-        ":size_report",
-        "//pw_assert:check",
-        "//pw_async2",
-        "//pw_async2:basic_dispatcher",
-        "//pw_async2:func_task",
-        "//pw_async2:once_sender",
-        "//pw_bloat:bloat_this_binary",
-    ],
-)
-
-pw_cc_size_binary(
     name = "async2_core_coroutine",
     srcs = ["async2_core.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_COROUTINE=1"],
@@ -337,20 +304,6 @@ pw_size_diff(
 )
 
 pw_size_diff(
-    name = "once_sender_row",
-    base = ":async2_core",
-    label = "Size of OnceSender / OnceReceiver",
-    target = ":async2_core_once_sender",
-)
-
-pw_size_diff(
-    name = "incremental_once_sender_row",
-    base = ":async2_core_once_sender",
-    label = "Cost of additional OnceSender / OnceReceiver template specialization",
-    target = ":async2_core_once_sender_incremental",
-)
-
-pw_size_diff(
     name = "coroutine_row",
     base = ":async2_core",
     label = "Size of pw_async2's C++ coroutine adapters",
@@ -401,14 +354,6 @@ pw_size_table(
         "//pw_toolchain/cc:c++20_enabled": [":coroutine_row"],
         "//conditions:default": [],
     }),
-)
-
-pw_size_table(
-    name = "once_sender_size_report",
-    reports = [
-        ":once_sender_row",
-        ":incremental_once_sender_row",
-    ],
 )
 
 pw_size_table(

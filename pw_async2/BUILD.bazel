@@ -422,32 +422,6 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "once_sender",
-    hdrs = [
-        "public/pw_async2/once_sender.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":pw_async2",
-        "//pw_function",
-        "//pw_sync:mutex",
-    ],
-)
-
-pw_cc_test(
-    name = "once_sender_test",
-    srcs = [
-        "once_sender_test.cc",
-    ],
-    deps = [
-        ":once_sender",
-        ":pw_async2",
-        ":testing",
-        "//pw_containers:vector",
-    ],
-)
-
-cc_library(
     name = "coro",
     srcs = [
         "coro.cc",
@@ -791,7 +765,6 @@ sphinx_docs_library(
         "//pw_async2/examples:docs",
         "//pw_async2/size_report:channel_size_report",
         "//pw_async2/size_report:full_size_report",
-        "//pw_async2/size_report:once_sender_size_report",
         "//pw_async2/size_report:utilities_size_report",
         "//pw_async2/size_report:value_future_table",
     ],
@@ -820,7 +793,6 @@ filegroup(
         "public/pw_async2/internal/config.h",
         "public/pw_async2/join.h",
         "public/pw_async2/notified_dispatcher.h",
-        "public/pw_async2/once_sender.h",
         "public/pw_async2/owned_task.h",
         "public/pw_async2/poll.h",
         "public/pw_async2/runnable_dispatcher.h",

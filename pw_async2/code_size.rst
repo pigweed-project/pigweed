@@ -57,19 +57,6 @@ value.
 
 .. include:: size_report/value_future_table
 
----------------------------
-OnceSender and OnceReceiver
----------------------------
-The next table shows sizes of the pair of ``OnceSender`` and ``OnceReceiver``
-types, which allow for returning a delayed result from an async function,
-similar to a ``Future`` type in other languages. This type is templated on its
-stored value, causing specialization overhead for each type sent through the
-sender/receiver pair. The first row showcases the base cost of using a
-``OnceSender`` and ``OnceReceiver``; the second row adds another template
-specialization on top of this to demonstrate the incremental cost.
-
-.. include:: size_report/once_sender_size_report
-
 ----------------
 async2 utilities
 ----------------

@@ -341,26 +341,6 @@ pw_test("allocate_task_test") {
   sources = [ "allocate_task_test.cc" ]
 }
 
-pw_source_set("once_sender") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async2/once_sender.h" ]
-  public_deps = [
-    ":pw_async2",
-    "$dir_pw_function",
-    "$dir_pw_sync:mutex",
-  ]
-}
-
-pw_test("once_sender_test") {
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-  deps = [
-    ":once_sender",
-    ":testing",
-    "$dir_pw_containers:vector",
-  ]
-  sources = [ "once_sender_test.cc" ]
-}
-
 if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
   pw_source_set("coro") {
     public_configs = [ ":public_include_path" ]
@@ -675,7 +655,7 @@ pw_test_group("tests") {
     ":join_test",
     ":poll_test",
     ":func_task_test",
-    ":once_sender_test",
+
     ":select_test",
     ":simulated_time_provider_test",
     ":system_time_provider_test",

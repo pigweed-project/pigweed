@@ -80,24 +80,3 @@ patterns for sending data between coroutines, with very much the same solutions.
 This section just briefly describes how to ``co_await`` the data, as all the
 details around construction and sending a value are the same as
 :ref:`module-pw_async2-guides-passing-data`.
-
-.. _module-pw_async2-coro-passing-single-values:
-
-Single values
-=============
-As with the non-coroutine case, ``pw_async2`` provides the
-:cc:`OnceSender <pw::async2::OnceSender>` and :cc:`OnceReceiver
-<pw::async2::OnceReceiver>` helpers for sending and receiving a one-time value.
-
-As :cc:`OnceReceiver <pw::async2::OnceReceiver>` satisfies the ``Pend()``
-interface. This means your coroutine can just ``co_await`` the receiver instance
-to obtain the value.
-
-.. literalinclude:: examples/once_send_recv_test.cc
-   :language: cpp
-   :linenos:
-   :start-after: [pw_async2-examples-once-send-recv-coro-await]
-   :end-before: [pw_async2-examples-once-send-recv-coro-await]
-
-Like in the non-coroutine case, the value is wrapped as a ``Result<T>`` in case
-of error.
