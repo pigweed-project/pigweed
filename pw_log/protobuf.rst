@@ -86,6 +86,13 @@ field.
     return true;
   }
 
+Extending ``LogEntry``
+----------------------
+The ``pw_log`` ``LogEntry`` message has fields reserved for Pigweed and users
+to extend the proto. Downstream users must not use any of the Pigweed reserved
+fields and vice versa. Consider consulting the Pigweed team if there are fields
+that can be added to the field that all users could benefit from.
+
 Log encoding helpers
 --------------------
 Encoding logs to the ``log.proto`` format can be performed using the helpers

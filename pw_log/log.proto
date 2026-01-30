@@ -142,21 +142,25 @@ message LogEntry {
   // created on a thread, it should use a name appropriate to that context.
   bytes thread = 9 [(tokenizer.format) = TOKENIZATION_OPTIONAL];
 
-  // The following fields are planned but will not be added until they are
-  // needed. Protobuf field numbers over 15 use an extra byte, so these fields
-  // are left out for now to avoid reserving field numbers unnecessarily.
+  // Note: Proto tags 1-15 encode with one byte of overhead, and tags 16-2047
+  // with two.
 
-  // Represents the device from which the log originated. The meaning of this
-  // field is implementation defined
-  // uint32 source_id = ?;
+  // RESERVED FOR PIGWEED. Downstream projects may NOT write to these fields.
+  // Encodes to a single byte of tag overhead.
+  reserved 10 to 12;
 
-  // Some messages are associated with trace events, which may carry additional
-  // contextual data. This is a tuple of a data format string which could be
-  // used by the decoder to identify the data (e.g. printf-style tokens) and the
-  // data itself in bytes.
-  // bytes data_format = ?
-  //     [(tokenizer.format) = TOKENIZATION_OPTIONAL];
-  // bytes data = ?;
+  // RESERVED FOR USERS. These field numbers should be used for writing
+  // project-specific proto messages that repeat in high quantity to reduce
+  // proto encoding overhead. Pigweed must not write to these fields.
+  // Encodes to a single byte of tag overhead.
+  reserved 13 to 15;
+
+  // RESERVED FOR PIGWEED. Downstream projects may NOT write to these fields.
+  // Encodes to two bytes of tag overhead.
+  reserved 16 to 1031;
+
+  // RESERVED FOR USERS. Encodes to two or more bytes of tag overhead.
+  reserved 1032 to max;
 }
 
 message LogRequest {}
