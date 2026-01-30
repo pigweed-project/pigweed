@@ -112,8 +112,8 @@ Working with futures
 Calling functions that return futures
 =====================================
 Consider some asynchronous call which produces a simple value on completion.
-Pigweed provides ``ValueFuture<T>`` for this common case. The async function has
-the following signature:
+Pigweed provides :cc:`ValueFuture<T> <pw::async2::ValueFuture>` for this common
+case. The async function has the following signature:
 
 .. code-block:: c++
 
@@ -169,8 +169,8 @@ All future-based ``pw_async2`` APIs have the signature
    Future<T> DoThing(Args... args);
 
 Where ``Future<T>`` is some concrete future implementation (e.g.
-``ValueFuture``) which resolves to a value of type ``T`` and ``Args``
-represents any arguments to the operation.
+:cc:`ValueFuture <pw::async2::ValueFuture>`) which resolves to a value of type
+``T`` and ``Args`` represents any arguments to the operation.
 
 When defining an asynchronous API, the function should always return a
 ``Future`` directly --- not a ``Result<Future>`` or
@@ -239,10 +239,11 @@ futures.
 ---------------------
 Implementing a future
 ---------------------
-``pw_async2`` provides futures like ``ValueFuture`` for common asynchronous
-patterns. However, you may want to implement a custom leaf future if your
-operation has complex logic where ``Pend()`` would benefit from reaching deeper
-into the underlying system, e.g. waiting for a hardware interrupt.
+``pw_async2`` provides futures like `ValueFuture <pw::async2::ValueFuture>` for
+common asynchronous patterns. However, you may want to implement a custom leaf
+future if your operation has complex logic where ``Pend()`` would benefit from
+reaching deeper into the underlying system, e.g. waiting for a hardware
+interrupt.
 
 :cc:`FutureCore <pw::async2::FutureCore>` is the primary tool for creating
 futures.
@@ -309,11 +310,14 @@ interfaces from ``pw_digital_io``.
    :start-after: // DOCSTAG: [pw_async2-examples-custom-future]
    :end-before: // DOCSTAG: [pw_async2-examples-custom-future]
 
-This example demonstrates the core mechanics of creating a custom future.
-This pattern of waiting for a single value from a producer is so common that
-``pw_async2`` provides ``ValueFuture`` and ``ValueProvider`` to handle it.
-In practice, you would return a ``VoidFuture`` (alias for ``ValueFuture<void>``)
-from ``WaitForPress`` instead of writing a custom ``ButtonFuture``.
+This example demonstrates the core mechanics of creating a custom future.  This
+pattern of waiting for a single value from a producer is so common that
+``pw_async2`` provides :cc:`ValueFuture <pw::async2::ValueFuture>`, which is
+produced by a :cc:`ValueProvider <pw::async2::ValueProvider>` or
+:cc:`OptionalValueProvider <pw::async2::OptionalValueProvider>`, to handle it.
+In practice, you would return a :cc:`VoidFuture <pw::async2::VoidFuture>` (alias
+for ``ValueFuture<void>``) from ``WaitForPress`` instead of writing a custom
+``ButtonFuture``.
 
 .. _module-pw_async2-futures-combinators:
 

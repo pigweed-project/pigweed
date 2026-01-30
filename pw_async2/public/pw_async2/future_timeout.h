@@ -444,6 +444,28 @@ using ValueFutureWithTimeoutOr =
                        std::declval<typename Clock::duration>(),
                        std::declval<U&&>()));
 
+/// `OptionalValueFutureWithTimeout<T>` is an alias for the type you get if you
+/// invoke `Timeout()` with `OptionalValueFuture<T>` as the future to add a
+/// timeout to.
+template <typename T, typename Clock = chrono::SystemClock>
+using OptionalValueFutureWithTimeout =
+    decltype(Timeout(std::declval<OptionalValueFuture<T>&&>(),
+                     std::declval<TimeProvider<Clock>&>(),
+                     std::declval<typename Clock::duration>()));
+
+/// `OptionalValueFutureWithTimeoutOr<T, U>` is an alias for the type you get if
+/// you invoke `TimeoutOr(..., U&&)` with `OptionalValueFuture<T>` as the future
+/// to add a timeout to.
+///
+/// `U` is either the sentinel value type if you specify a constant value, or
+/// `Function<T()>` if you use a function to generate the sentinel value.
+template <typename T, typename U, typename Clock = chrono::SystemClock>
+using OptionalValueFutureWithTimeoutOr =
+    decltype(TimeoutOr(std::declval<OptionalValueFuture<T>&&>(),
+                       std::declval<TimeProvider<Clock>&>(),
+                       std::declval<typename Clock::duration>(),
+                       std::declval<U&&>()));
+
 /// `SendFutureWithTimeout<T>` is an alias for the type you get if you invoke
 /// `Timeout()` with `SendFuture<T>` as the future to add a timeout to.
 template <typename T, typename Clock = chrono::SystemClock>

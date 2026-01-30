@@ -189,6 +189,10 @@ class ValueFuture<void> {
 /// A `ValueFuture` that does not return any value, just a completion signal.
 using VoidFuture = ValueFuture<void>;
 
+/// A `ValueFuture` that wraps a `std::optional`.
+template <typename T>
+using OptionalValueFuture = ValueFuture<std::optional<T>>;
+
 /// A one-to-many provider for a single value.
 ///
 /// A `BroadcastValueProvider` can vend multiple `ValueFuture` objects. When the
@@ -197,6 +201,12 @@ using VoidFuture = ValueFuture<void>;
 ///
 /// This provider is multi-shot: after `Resolve` is called, new futures can
 /// be retrieved with `Get` to wait for the next `Resolve` event.
+///
+/// `BroadcastValueProvider` must resolve all futures it has vended before it is
+/// destroyed. `OptionalBroadcastValueProvider`, in contrast, supports
+/// cancelling its futures.
+///
+/// @tparam T The type of value to provide.
 template <typename T>
 class BroadcastValueProvider {
  public:
@@ -262,6 +272,11 @@ class BroadcastValueProvider {
 ///
 /// This provider is multi-shot: after `Resolve` is called, a new future can
 /// be retrieved with `Get` to wait for the next `Resolve` event.
+///
+/// `ValueProvider` must resolve its future, if any, before it is destroyed.
+/// `OptionalValueProvider`, in contrast, supports cancelling its future.
+///
+/// @tparam T The type of value to provide.
 template <typename T>
 class ValueProvider {
  public:
@@ -343,6 +358,82 @@ class ValueProvider {
  private:
   FutureList<&ValueFuture<T>::core_> list_
       PW_GUARDED_BY(internal::ValueProviderLock());
+};
+
+/// A `ValueProvider` that may or may not produce a value.
+///
+/// Adds a `Cancel()` function that resolves the pending future with
+/// `std::nullopt`.
+template <typename T>
+class OptionalValueProvider {
+ public:
+  OptionalValueProvider() = default;
+
+  OptionalValueProvider(OptionalValueProvider&&) = default;
+  OptionalValueProvider& operator=(OptionalValueProvider&& other) {
+    Cancel();
+    provider_ = std::move(other.provider_);
+    return *this;
+  }
+
+  OptionalValueProvider(const OptionalValueProvider&) = delete;
+  OptionalValueProvider& operator=(const OptionalValueProvider&) = delete;
+
+  ~OptionalValueProvider() { Cancel(); }
+
+  /// Returns a `ValueFuture` that will be completed when `Resolve` or `Cancel`
+  /// is called.
+  OptionalValueFuture<T> Get() { return provider_.Get(); }
+
+  /// Resolves the pending `ValueFuture` by constructing it in-place.
+  template <typename... Args>
+  void Resolve(Args&&... args) {
+    provider_.Resolve(std::in_place, std::forward<Args>(args)...);
+  }
+
+  /// Resolves the pending `ValueFuture` with `std::nullopt`.
+  void Cancel() { provider_.Resolve(std::nullopt); }
+
+ private:
+  ValueProvider<std::optional<T>> provider_;
+};
+
+/// A `BroadcastValueProvider` that may or may not produce a value.
+///
+/// Adds a `Cancel()` function that resolves all pending futures with
+/// `std::nullopt`.
+template <typename T>
+class OptionalBroadcastValueProvider {
+ public:
+  OptionalBroadcastValueProvider() = default;
+
+  OptionalBroadcastValueProvider(OptionalBroadcastValueProvider&&) = default;
+  OptionalBroadcastValueProvider& operator=(
+      OptionalBroadcastValueProvider&& other) {
+    Cancel();
+    provider_ = std::move(other.provider_);
+    return *this;
+  }
+
+  OptionalBroadcastValueProvider(const OptionalBroadcastValueProvider&) =
+      delete;
+  OptionalBroadcastValueProvider& operator=(
+      const OptionalBroadcastValueProvider&) = delete;
+
+  ~OptionalBroadcastValueProvider() { Cancel(); }
+
+  /// Returns a `ValueFuture` that will be completed when `Resolve` or `Cancel`
+  /// is called.
+  OptionalValueFuture<T> Get() { return provider_.Get(); }
+
+  /// Resolves all pending `ValueFuture`s with the provided value.
+  void Resolve(const T& value) { provider_.Resolve(value); }
+
+  /// Resolves all pending `ValueFuture`s with `std::nullopt`.
+  void Cancel() { provider_.Resolve(std::nullopt); }
+
+ private:
+  BroadcastValueProvider<std::optional<T>> provider_;
 };
 
 /// @endsubmodule

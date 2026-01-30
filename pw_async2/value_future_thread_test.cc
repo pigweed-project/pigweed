@@ -25,6 +25,8 @@ namespace {
 using pw::async2::BroadcastValueProvider;
 using pw::async2::CallbackTask;
 using pw::async2::DispatcherForTest;
+using pw::async2::OptionalBroadcastValueProvider;
+using pw::async2::OptionalValueProvider;
 using pw::async2::ValueProvider;
 
 using namespace std::chrono_literals;
@@ -100,4 +102,158 @@ TEST(ValueFuture, Void_ResolveFromOtherThread) {
   EXPECT_TRUE(completed);
 }
 
+TEST(OptionalValueProvider, ResolveFromOtherThread) {
+  DispatcherForTest dispatcher;
+  OptionalValueProvider<int> provider;
+
+  std::optional<int> result;
+  CallbackTask task([&](std::optional<int> value) { result = value; },
+                    provider.Get());
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.Resolve(42);
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(*result, 42);
+}
+
+TEST(OptionalValueProvider, CancelFromOtherThread) {
+  DispatcherForTest dispatcher;
+  OptionalValueProvider<int> provider;
+
+  std::optional<int> result = 5;
+  CallbackTask task([&](std::optional<int> value) { result = value; },
+                    provider.Get());
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.Cancel();
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  EXPECT_FALSE(result.has_value());
+}
+
+TEST(ValueProvider, MoveToThread) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+
+  std::optional<int> result;
+  CallbackTask task([&](int value) { result = value; }, provider.Get());
+  dispatcher.Post(task);
+
+  // Move the provider into the thread lambda.
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(),
+                             [moved_provider = std::move(provider)]() mutable {
+                               pw::this_thread::sleep_for(1ms);
+                               moved_provider.Resolve(42);
+                             });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(*result, 42);
+}
+
 }  // namespace
+
+TEST(OptionalBroadcastValueProvider, ResolveFromOtherThread) {
+  DispatcherForTest dispatcher;
+  OptionalBroadcastValueProvider<int> provider;
+
+  std::optional<int> result1;
+  CallbackTask task1([&](std::optional<int> value) { result1 = value; },
+                     provider.Get());
+
+  std::optional<int> result2;
+  CallbackTask task2([&](std::optional<int> value) { result2 = value; },
+                     provider.Get());
+
+  dispatcher.Post(task1);
+  dispatcher.Post(task2);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.Resolve(42);
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  ASSERT_TRUE(result1.has_value());
+  EXPECT_EQ(*result1, 42);
+
+  ASSERT_TRUE(result2.has_value());
+  EXPECT_EQ(*result2, 42);
+}
+
+TEST(OptionalBroadcastValueProvider, CancelFromOtherThread) {
+  DispatcherForTest dispatcher;
+  OptionalBroadcastValueProvider<int> provider;
+
+  std::optional<int> result1 = 5;
+  CallbackTask task1([&](std::optional<int> value) { result1 = value; },
+                     provider.Get());
+
+  std::optional<int> result2 = 5;
+  CallbackTask task2([&](std::optional<int> value) { result2 = value; },
+                     provider.Get());
+
+  dispatcher.Post(task1);
+  dispatcher.Post(task2);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.Cancel();
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  EXPECT_FALSE(result1.has_value());
+
+  EXPECT_FALSE(result2.has_value());
+}
+
+TEST(OptionalValueProvider, DestructFromOtherThread) {
+  DispatcherForTest dispatcher;
+  std::optional<OptionalValueProvider<int>> provider;
+  provider.emplace();
+
+  std::optional<int> result = 5;  // nullopt after provider is destroyed
+  CallbackTask task([&](std::optional<int> value) { result = value; },
+                    provider->Get());
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.reset();
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  EXPECT_FALSE(result.has_value());
+}
