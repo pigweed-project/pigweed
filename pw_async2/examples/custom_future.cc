@@ -29,8 +29,7 @@ class ButtonReceiver;
 class ButtonFuture {
  public:
   // All futures must define `value_type` as the return type from `Pend()`.
-  // Futures that don't return a value use `ReadyType`.
-  using value_type = pw::async2::ReadyType;
+  using value_type = void;
 
   // Futures must be default constructible.
   constexpr ButtonFuture() = default;

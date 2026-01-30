@@ -32,7 +32,11 @@ A ``Future<T>`` exposes the following API:
   future does not represent an asynchronous operation and is neither pendable
   nor complete.
 - A destructor that abandons the future so no further operations will access it.
-- ``value_type``: Type alias for the value produced by the future.
+- ``value_type``: Type alias for the value produced by the future; ``void`` if
+  the future produces no value. The :cc:`FutureValue<Future>
+  <pw::async2::FutureValue>` helper resolves to the future's ``value_type``, but
+  maps ``void`` to :cc:`ReadyType <pw::async2::ReadyType>` so that a
+  ``FutureValue<Future>`` can always be instantiated and referenced.
 - ``Poll<value_type> Pend(Context& cx)``: Calling ``Pend`` advances the
   asynchronous operation until no further progress is possible. Returns
   :cc:`Ready <pw::async2::Ready>` if the operation completes. Otherwise, uses

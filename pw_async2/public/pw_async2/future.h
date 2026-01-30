@@ -45,7 +45,9 @@ namespace pw::async2 {
 /// must satisfy this concept.
 template <typename T>
 concept Future = requires {
-  /// value_type refers to the type produced by the future.
+  /// `value_type` is the type produced by the future, which may be `void`.
+  /// `pw::async2::FutureValue` maps `void` to `ReadyType`, to simplify working
+  /// with futures generically.
   typename T::value_type;
 
   /// `bool is_pendable() const` returns whether `Pend` can be called.
@@ -95,6 +97,14 @@ constexpr bool Future =
     internal::is_future<std::remove_cv_t<std::remove_reference_t<T>>>::value;
 
 #endif  // __cpp_concepts
+
+/// The value type of the future. Maps `void` to `ReadyType`, so that
+/// `FutureValue<Future>` can always be instantiated and referenced. Use
+/// `Future::value_type` directly if `void` is preferable.
+template <typename T>
+using FutureValue = std::conditional_t<std::is_void_v<typename T::value_type>,
+                                       ReadyType,
+                                       typename T::value_type>;
 
 /// Standard pw_async2 future states. Used by `FutureCore` and may be used by
 /// custom future implementations.

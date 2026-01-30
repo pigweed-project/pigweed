@@ -39,7 +39,7 @@ namespace pw::async2 {
 /// When used as the `TimeoutResolution` type parameter, causes the
 /// `FutureWithTimeout` wrapper to return `Ready()` when there is a timeout.
 struct EmptyReadyResolution {
-  using value_type = ReadyType;
+  using value_type = void;
   constexpr Poll<> operator()() const { return Ready(); }
 };
 
@@ -168,7 +168,7 @@ class [[nodiscard]] FutureWithTimeout {
     auto result = primary_future_.Pend(cx);
     if (result.IsReady()) {
       state_.MarkComplete();
-      return Ready<value_type>(std::in_place_t{}, std::move(result).value());
+      return Ready<value_type>(std::in_place, std::move(result).value());
     }
 
     if (timeout_future_.Pend(cx).IsReady()) {
@@ -232,7 +232,7 @@ template <
 auto Timeout(PrimaryFuture&& primary_future,
              TimeProvider& time_provider,
              Duration delay) {
-  using ResultType = Result<typename std::decay_t<PrimaryFuture>::value_type>;
+  using ResultType = Result<FutureValue<std::decay_t<PrimaryFuture>>>;
   return CreateFutureWithTimeout<ResultType>(
       std::forward<PrimaryFuture>(primary_future),
       time_provider.WaitFor(delay),
@@ -256,7 +256,7 @@ template <
     typename = std::enable_if_t<!std::is_lvalue_reference_v<PrimaryFuture>>>
 auto Timeout(PrimaryFuture&& primary_future,
              typename chrono::SystemClock::duration delay) {
-  using ResultType = Result<typename std::decay_t<PrimaryFuture>::value_type>;
+  using ResultType = Result<FutureValue<std::decay_t<PrimaryFuture>>>;
   return CreateFutureWithTimeout<ResultType>(
       std::forward<PrimaryFuture>(primary_future),
       GetSystemTimeProvider().WaitFor(delay),

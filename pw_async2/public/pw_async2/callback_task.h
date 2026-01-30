@@ -25,10 +25,10 @@ namespace pw::async2 {
 namespace internal {
 
 template <typename FutureType>
-using CallbackType = std::conditional_t<
-    std::is_same_v<typename FutureType::value_type, ReadyType>,
-    Function<void()>,
-    Function<void(typename FutureType::value_type)>>;
+using CallbackType =
+    std::conditional_t<std::is_void_v<typename FutureType::value_type>,
+                       Function<void()>,
+                       Function<void(FutureValue<FutureType>)>>;
 
 }  // namespace internal
 
@@ -84,7 +84,7 @@ class CallbackTask final : public Task {
       return Pending();
     }
 
-    if constexpr (std::is_same_v<value_type, ReadyType>) {
+    if constexpr (std::is_void_v<value_type>) {
       callback_();
     } else {
       callback_(std::move(*poll));

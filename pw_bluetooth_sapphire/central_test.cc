@@ -32,9 +32,9 @@ namespace {
 
 using pw::bluetooth_sapphire::Central;
 using ScanStartResult = Central::ScanStartResult;
-using Pending = pw::async2::PendingType;
-using Ready = pw::async2::ReadyType;
-using Context = pw::async2::Context;
+using pw::async2::Context;
+using pw::async2::Pending;
+using pw::async2::Ready;
 using ScanHandle = Central::ScanHandle;
 using ScanResult = Central::ScanResult;
 using pw::async2::FuncTask;

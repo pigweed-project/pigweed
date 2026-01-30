@@ -23,7 +23,7 @@ namespace pw::async2 {
 template <typename... Futures>
 class JoinFuture {
  public:
-  using value_type = std::tuple<typename Futures::value_type&&...>;
+  using value_type = std::tuple<FutureValue<Futures>&&...>;
 
   constexpr JoinFuture() : outputs_{} {}
 
@@ -48,7 +48,7 @@ class JoinFuture {
 
   static constexpr auto kTupleIndexSequence =
       std::make_index_sequence<sizeof...(Futures)>();
-  using TupleOfOutputRvalues = std::tuple<typename Futures::value_type&&...>;
+  using TupleOfOutputRvalues = std::tuple<FutureValue<Futures>&&...>;
 
   template <typename... Fs>
   friend constexpr auto Join(Fs&&...);

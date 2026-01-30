@@ -139,7 +139,7 @@ class ValueFuture {
 template <>
 class ValueFuture<void> {
  public:
-  using value_type = ReadyType;
+  using value_type = void;
 
   constexpr ValueFuture() = default;
 

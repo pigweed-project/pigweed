@@ -24,8 +24,8 @@
 namespace pw::async2 {
 namespace {
 
-static_assert(std::is_same_v<Poll<>::value_type, ReadyType>,
-              "Default Poll<> type is ReadyType");
+static_assert(std::is_void_v<Poll<>::value_type>,
+              "Default Poll<> type is void");
 
 static_assert(std::is_same_v<Poll<Result<int>>, PollResult<int>>);
 static_assert(std::is_same_v<Poll<std::optional<int>>, PollOptional<int>>);
