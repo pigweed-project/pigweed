@@ -12,7 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,7 +33,7 @@ filegroup(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "plugin_library",
     srcs = [":pw_protobuf_common_sources"],
     imports = [
@@ -60,7 +61,7 @@ pw_py_binary(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "pw_protobuf",
     srcs = [":pw_protobuf_common_sources"],
     imports = ["."],

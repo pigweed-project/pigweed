@@ -13,7 +13,8 @@
 # the License.
 
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -37,7 +38,7 @@ copy_file(
     is_executable = True,
 )
 
-pw_py_library(
+py_library(
     name = "pw_symbolizer",
     srcs = [
         "pw_symbolizer/__init__.py",

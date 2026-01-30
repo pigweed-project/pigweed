@@ -14,7 +14,8 @@
 
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_binary")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -42,7 +43,7 @@ pw_py_binary(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "lm3s6965evb_qemu_utils",
     srcs = [
         "lm3s6965evb_qemu_utils/__init__.py",

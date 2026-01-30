@@ -13,16 +13,17 @@
 # the License.
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-pw_py_library(
+py_library(
     name = "pw_build",
     srcs = [
         "pw_build/__init__.py",
@@ -79,7 +80,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "workflows",
     srcs = [
         "pw_build/workflows/bazel_driver.py",
@@ -109,7 +110,7 @@ pw_py_library(
 
 # This is separate to isolate pw_presubmit-related dependencies, which tend to
 # rely on pw_env_setup, which tends to be leaky when used from Bazel.
-pw_py_library(
+py_library(
     name = "presubmit_runner",
     srcs = [
         "pw_build/project_builder_presubmit_runner.py",
@@ -124,7 +125,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "pw_project_builder",
     srcs = [
         "pw_build/project_builder.py",
@@ -139,7 +140,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "python_runfiles",
     srcs = ["pw_build/python_runfiles.py"],
     imports = ["."],

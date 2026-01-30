@@ -12,19 +12,20 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-pw_py_library(
+py_library(
     name = "pw_containers",
     srcs = ["pw_containers/__init__.py"],
     imports = ["."],
 )
 
-pw_py_library(
+py_library(
     name = "inline_var_len_entry_queue",
     srcs = [
         "pw_containers/inline_var_len_entry_queue.py",
@@ -33,7 +34,7 @@ pw_py_library(
     deps = [":var_len_entry_queue"],
 )
 
-pw_py_library(
+py_library(
     name = "var_len_entry_queue",
     srcs = [
         "pw_containers/var_len_entry_queue.py",

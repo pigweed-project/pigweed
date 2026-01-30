@@ -12,18 +12,19 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-pw_py_library(
+py_library(
     name = "event_count_history",
     srcs = ["pw_console/widgets/event_count_history.py"],
 )
 
-pw_py_library(
+py_library(
     name = "pyserial_wrapper",
     srcs = ["pw_console/pyserial_wrapper.py"],
     # TODO: b/434772781 - This target's dependencies are not quite correct.
@@ -34,7 +35,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "pw_console",
     srcs = [
         "pw_console/__init__.py",

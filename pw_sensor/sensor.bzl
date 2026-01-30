@@ -48,11 +48,13 @@ def _pw_sensor_library_impl(ctx):
 
     # Run the generator
     ctx.actions.run(
-        inputs = sources + inputs,
+        inputs = (
+            sources + inputs + generator_target.files.to_list() +
+            sensor_desc_target.files.to_list()
+        ),
         outputs = [out_header],
         executable = sensor_desc_target.files_to_run.executable,
         arguments = args,
-        tools = [ctx.executable.generator],
         mnemonic = "SensorCodeGen",
         progress_message = "Generating " + out_header.path,
     )

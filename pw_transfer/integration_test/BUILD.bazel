@@ -16,10 +16,11 @@ load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:java_proto_library.bzl", "java_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:proto.bzl", "py_proto_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_cc_binary.bzl", "pw_cc_binary")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 
 package(features = ["-layering_check"])
 
@@ -136,7 +137,7 @@ pw_cc_binary(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "integration_test_fixture",
     testonly = True,
     srcs = [

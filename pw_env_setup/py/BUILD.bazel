@@ -12,7 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:python.bzl", "pw_py_test")
 
 # Unlike most Pigweed modules, this package is private by default. This is
 # because use of pw_env_setup in the Bazel ecosystem is largely nonsense, so
@@ -43,7 +44,7 @@ label_flag(
     build_setting_default = "//pw_build:unspecified_backend",
 )
 
-pw_py_library(
+py_library(
     name = "pw_env_setup",
     srcs = [
         "pw_env_setup/config_file.py",
@@ -62,7 +63,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "pw_env_setup_private",
     srcs = [
         "pw_env_setup/__init__.py",

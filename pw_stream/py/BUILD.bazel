@@ -12,15 +12,16 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-pw_py_library(
+py_library(
     name = "pw_stream",
     srcs = [
         "pw_stream/__init__.py",

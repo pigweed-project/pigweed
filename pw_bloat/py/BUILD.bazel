@@ -12,13 +12,15 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-pw_py_library(
+py_library(
     name = "pw_bloat",
     srcs = [
         "pw_bloat/__init__.py",
@@ -50,6 +52,7 @@ pw_py_binary(
     name = "bloat",
     srcs = ["pw_bloat/__main__.py"],
     main = "pw_bloat/__main__.py",
+    target_compatible_with = incompatible_with_mcu(),
     deps = [":pw_bloat"],
 )
 

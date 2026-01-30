@@ -13,8 +13,9 @@
 # the License.
 
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:proto.bzl", "py_proto_library")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,7 +25,7 @@ exports_files(
     visibility = ["//pw_elf:__pkg__"],
 )
 
-pw_py_library(
+py_library(
     name = "pw_tokenizer",
     srcs = [
         "pw_tokenizer/__init__.py",
@@ -47,19 +48,19 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "generate_argument_types_macro",
     srcs = ["generate_argument_types_macro.py"],
     imports = ["."],
 )
 
-pw_py_library(
+py_library(
     name = "generate_hash_macro",
     srcs = ["generate_hash_macro.py"],
     imports = ["."],
 )
 
-pw_py_library(
+py_library(
     name = "generate_hash_test_data",
     srcs = ["generate_hash_test_data.py"],
     imports = ["."],
@@ -115,7 +116,7 @@ pw_py_binary(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "data_driven_detokenize_test_lib",
     srcs = ["data_driven_detokenize_test.py"],
     deps = [

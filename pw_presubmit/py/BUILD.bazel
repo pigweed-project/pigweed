@@ -15,15 +15,16 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python/entry_points:py_console_script_binary.bzl", "py_console_script_binary")
 load("//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-pw_py_library(
+py_library(
     name = "pw_presubmit",
     srcs = [
         "pw_presubmit/__init__.py",
@@ -75,7 +76,7 @@ pw_py_library(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "format_core",
     srcs = [
         "pw_presubmit/format/__init__.py",
@@ -405,7 +406,7 @@ write_file(
     visibility = ["//visibility:private"],
 )
 
-pw_py_library(
+py_library(
     name = "formatters",
     srcs = ["pw_presubmit/format/formatters.py"],
     data = [
@@ -468,7 +469,7 @@ pw_py_test(
     ],
 )
 
-pw_py_library(
+py_library(
     name = "format_testing_utils",
     srcs = ["format_testing_utils.py"],
     deps = ["//pw_cli/py:pw_cli"],
