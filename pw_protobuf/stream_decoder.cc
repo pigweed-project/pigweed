@@ -52,15 +52,15 @@ Status StreamDecoder::BytesReader::DoSeek(ptrdiff_t offset, Whence origin) {
   // proto stream.
   switch (origin) {
     case Whence::kBeginning:
-      absolute_position = start_offset_ + offset;
+      absolute_position = static_cast<ptrdiff_t>(start_offset_) + offset;
       break;
 
     case Whence::kCurrent:
-      absolute_position = decoder_.position_ + offset;
+      absolute_position = static_cast<ptrdiff_t>(decoder_.position_) + offset;
       break;
 
     case Whence::kEnd:
-      absolute_position = end_offset_ + offset;
+      absolute_position = static_cast<ptrdiff_t>(end_offset_) + offset;
       break;
   }
 
@@ -74,7 +74,7 @@ Status StreamDecoder::BytesReader::DoSeek(ptrdiff_t offset, Whence origin) {
   }
 
   PW_TRY(decoder_.reader_.Seek(absolute_position, Whence::kBeginning));
-  decoder_.position_ = absolute_position;
+  decoder_.position_ = static_cast<size_t>(absolute_position);
   return OkStatus();
 }
 
@@ -172,7 +172,8 @@ StreamDecoder StreamDecoder::GetNestedDecoder() {
 
 Status StreamDecoder::Advance(size_t end_position) {
   if (reader_.seekable()) {
-    PW_TRY(reader_.Seek(end_position - position_, stream::Stream::kCurrent));
+    PW_TRY(reader_.Seek(static_cast<ptrdiff_t>(end_position - position_),
+                        stream::Stream::kCurrent));
     position_ = end_position;
     return OkStatus();
   }
@@ -455,9 +456,11 @@ StatusWithSize StreamDecoder::ReadPackedFixedField(span<std::byte> out,
 
   // Decode little-endian serialized packed fields.
   if (endian::native != endian::little) {
+    auto element_size =
+        static_cast<span<std::byte>::difference_type>(elem_size);
     for (auto out_start = out.begin(); out_start != out.end();
-         out_start += elem_size) {
-      std::reverse(out_start, out_start + elem_size);
+         out_start += element_size) {
+      std::reverse(out_start, out_start + element_size);
     }
   }
 

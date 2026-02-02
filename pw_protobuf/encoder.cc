@@ -292,15 +292,16 @@ Status StreamEncoder::WritePackedFixed(uint32_t field_number,
   WriteVarint(values.size_bytes())
       .IgnoreError();  // TODO: b/242598609 - Handle Status properly
 
+  auto element_size = static_cast<span<std::byte>::difference_type>(elem_size);
   for (auto val_start = values.begin(); val_start != values.end();
-       val_start += elem_size) {
+       val_start += element_size) {
     // Allocates 8 bytes so both 4-byte and 8-byte types can be encoded as
     // little-endian for serialization.
     std::array<std::byte, sizeof(uint64_t)> data;
     if (endian::native == endian::little) {
-      std::copy(val_start, val_start + elem_size, std::begin(data));
+      std::copy(val_start, val_start + element_size, std::begin(data));
     } else {
-      std::reverse_copy(val_start, val_start + elem_size, std::begin(data));
+      std::reverse_copy(val_start, val_start + element_size, std::begin(data));
     }
     status_.Update(writer_.Write(span(data).first(elem_size)));
     PW_TRY(status_);
@@ -534,7 +535,7 @@ Status StreamEncoder::Write(span<const std::byte> message,
               }
               value = field.varint_type() == VarintType::kZigZag
                           ? varint::ZigZagEncode(optional->value())
-                          : optional->value();
+                          : static_cast<uint64_t>(optional->value());
             }
           } else if (field.elem_size() == sizeof(uint32_t)) {
             if (field.varint_type() == VarintType::kUnsigned) {
@@ -554,7 +555,7 @@ Status StreamEncoder::Write(span<const std::byte> message,
               }
               value = field.varint_type() == VarintType::kZigZag
                           ? varint::ZigZagEncode(optional->value())
-                          : optional->value();
+                          : static_cast<uint64_t>(optional->value());
             }
           } else if (field.elem_size() == sizeof(bool)) {
             const auto* optional =
@@ -579,7 +580,7 @@ Status StreamEncoder::Write(span<const std::byte> message,
               value = varint::ZigZagEncode(
                   *reinterpret_cast<const int64_t*>(values.data()));
             } else if (field.varint_type() == VarintType::kNormal) {
-              value = *reinterpret_cast<const int64_t*>(values.data());
+              value = *reinterpret_cast<const uint64_t*>(values.data());
             } else {
               value = *reinterpret_cast<const uint64_t*>(values.data());
             }
@@ -591,7 +592,8 @@ Status StreamEncoder::Write(span<const std::byte> message,
               value = varint::ZigZagEncode(
                   *reinterpret_cast<const int32_t*>(values.data()));
             } else if (field.varint_type() == VarintType::kNormal) {
-              value = *reinterpret_cast<const int32_t*>(values.data());
+              value = static_cast<uint64_t>(
+                  *reinterpret_cast<const int32_t*>(values.data()));
             } else {
               value = *reinterpret_cast<const uint32_t*>(values.data());
             }

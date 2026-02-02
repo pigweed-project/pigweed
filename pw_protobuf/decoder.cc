@@ -79,7 +79,7 @@ Status Decoder::ReadSint32(int32_t* out) {
   if (value > std::numeric_limits<int32_t>::max()) {
     return Status::OutOfRange();
   }
-  *out = static_cast<uint32_t>(value);
+  *out = static_cast<int32_t>(value);
   return OkStatus();
 }
 
