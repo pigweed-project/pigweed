@@ -32,6 +32,7 @@ cc_library_static {
     ],
     static_libs: [
         "pw_allocator",
+        "pw_async2",
         "pw_containers",
         "pw_function",
         "pw_multibuf_v2",
@@ -42,6 +43,7 @@ cc_library_static {
     ],
     export_static_lib_headers: [
         "pw_allocator",
+        "pw_async2",
         "pw_function",
         "pw_multibuf_v2",
         "pw_result",
