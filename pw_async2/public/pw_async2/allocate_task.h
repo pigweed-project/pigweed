@@ -15,7 +15,7 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/owned_task.h"
+#include "pw_async2/internal/owned_task.h"
 
 namespace pw::async2 {
 namespace internal {

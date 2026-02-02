@@ -21,7 +21,7 @@
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
-#include "pw_async2/owned_task.h"
+#include "pw_async2/internal/owned_task.h"
 #include "pw_async2/waker.h"
 #include "pw_log/log.h"
 #include "pw_log/tokenized_args.h"
@@ -81,7 +81,7 @@ Dispatcher::RunTaskResult Dispatcher::RunTask(Task& task) {
   // If this is an OwnedTask, then no other threads should be accessing it, so
   // it is safe to destroy it without holding internal::lock().
   if (run_result == Task::kCompletedNeedsDestroy) {
-    static_cast<OwnedTask&>(task).Destroy();
+    static_cast<internal::OwnedTask&>(task).Destroy();
     return RunTaskResult::kCompleted;
   }
   return static_cast<RunTaskResult>(run_result);

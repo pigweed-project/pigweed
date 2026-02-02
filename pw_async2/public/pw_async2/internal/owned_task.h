@@ -18,7 +18,7 @@
 
 /// @submodule{pw_async2,tasks}
 
-namespace pw::async2 {
+namespace pw::async2::internal {
 
 /// A `Task` that the `Dispatcher` takes ownership of when it is posted.
 ///
@@ -59,4 +59,4 @@ class OwnedTask : public Task {
 
 /// @endsubmodule
 
-}  // namespace pw::async2
+}  // namespace pw::async2::internal

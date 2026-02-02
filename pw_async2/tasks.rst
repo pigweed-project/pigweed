@@ -30,10 +30,6 @@ Pigweed provides the following concrete subclasses of ``Task``:
   provided coroutine and executes an ``or_else`` handler function on failure.
 * :cc:`CallbackTask <pw::async2::CallbackTask>`: Invokes a callback after a
   future is ready. See :ref:`module-pw_async2-tasks-callbacks`.
-* :cc:`OwnedTask <pw::async2::OwnedTask>`: Gives ownership to the dispatcher
-  when the task is :cc:`posted <pw::async2::Dispatcher::Post>`. The task must
-  implement :cc:`DoDestroy() <pw::async2::OwnedTask::DoDestroy>`, which the
-  dispatcher invokes after the task completes.
 * :cc:`FuncTask <pw::async2::FuncTask>`: Delegates to a provided
   function.
 

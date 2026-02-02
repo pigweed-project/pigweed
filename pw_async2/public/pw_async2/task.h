@@ -23,6 +23,11 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
+namespace internal {
+
+class OwnedTask;
+
+}  // namespace internal
 
 /// @submodule{pw_async2,tasks}
 
@@ -132,7 +137,7 @@ class Task : public IntrusiveList<Task>::Item {
 
  private:
   friend class Dispatcher;
-  friend class OwnedTask;
+  friend internal::OwnedTask;
   friend class Waker;
 
   static constexpr log::Token kDefaultName =
