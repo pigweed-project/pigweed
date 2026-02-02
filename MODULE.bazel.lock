@@ -325,7 +325,7 @@
     "//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "Ra/Vtw43gGL83DZW8FsxeeY8A98P3aHzSmg4dX/QNNk=",
-        "usagesDigest": "W9Pn5s+tLiTHleAuw95v1Wo98TpFbRqQidfG+WlV0aE=",
+        "usagesDigest": "xBejh00VslqCUaVZ5WH+H8AvgFneiGY1isrkxbIUQ5Y=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -343,7 +343,7 @@
             "attributes": {
               "build_file": "@@//pw_toolchain/build_external:llvm_clang.BUILD",
               "path": "fuchsia/third_party/clang/${os}-${arch}",
-              "tag": "git_revision:b153f17b8aeb23ae45b05d8f5e6b4dfd76442dc4"
+              "tag": "git_revision:6a18039298174562a38f28ca06d12dcbf7f14f06"
             }
           },
           "zephyr_toolchain": {
