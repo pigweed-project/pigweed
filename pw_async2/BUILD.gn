@@ -458,22 +458,6 @@ pw_test("simulated_time_provider_test") {
   ]
 }
 
-pw_source_set("enqueue_heap_func") {
-  public = [ "public/pw_async2/enqueue_heap_func.h" ]
-  public_configs = [ ":public_include_path" ]
-  public_deps = [ ":pw_async2" ]
-}
-
-pw_test("enqueue_heap_func_test") {
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-  sources = [ "enqueue_heap_func_test.cc" ]
-  deps = [
-    ":enqueue_heap_func",
-    ":pw_async2",
-    ":testing",
-  ]
-}
-
 pw_source_set("join") {
   public = [ "public/pw_async2/join.h" ]
   public_configs = [ ":public_include_path" ]
@@ -650,7 +634,6 @@ pw_test_group("tests") {
     ":channel_test",
     ":dispatcher_test",
     ":dispatcher_thread_test",
-    ":enqueue_heap_func_test",
     ":future_test",
     ":join_test",
     ":poll_test",

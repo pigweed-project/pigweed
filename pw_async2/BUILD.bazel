@@ -584,29 +584,6 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "enqueue_heap_func",
-    hdrs = [
-        "public/pw_async2/enqueue_heap_func.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":pw_async2",
-    ],
-)
-
-pw_cc_test(
-    name = "enqueue_heap_func_test",
-    srcs = [
-        "enqueue_heap_func_test.cc",
-    ],
-    deps = [
-        ":enqueue_heap_func",
-        ":pw_async2",
-        ":testing",
-    ],
-)
-
-cc_library(
     name = "join",
     hdrs = [
         "public/pw_async2/join.h",
@@ -785,7 +762,6 @@ filegroup(
         "public/pw_async2/coro_or_else_task.h",
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/dispatcher_for_test.h",
-        "public/pw_async2/enqueue_heap_func.h",
         "public/pw_async2/epoll_dispatcher.h",
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",

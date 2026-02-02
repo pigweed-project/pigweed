@@ -463,25 +463,6 @@ if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
   )
 endif()
 
-pw_add_library(pw_async2.enqueue_heap_func INTERFACE
-  HEADERS
-    public/pw_async2/enqueue_heap_func.h
-  PUBLIC_DEPS
-    pw_async2
-)
-
-pw_add_test(pw_async2.enqueue_heap_func_test
-  SOURCES
-    enqueue_heap_func_test.cc
-  PRIVATE_DEPS
-    pw_async2
-    pw_async2.enqueue_heap_func
-    pw_async2.testing
-  GROUPS
-    modules
-    pw_async2
-)
-
 pw_add_library(pw_async2.join INTERFACE
   HEADERS
     public/pw_async2/join.h
