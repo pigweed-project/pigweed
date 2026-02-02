@@ -20,6 +20,161 @@
 
 namespace {
 
+TEST(Hash, BasicTypes) {
+  pw::Hash hasher;
+
+  EXPECT_NE(hasher(1), hasher(2));
+  EXPECT_NE(hasher(1.0), hasher(2.0));
+  EXPECT_NE(hasher('a'), hasher('b'));
+  EXPECT_NE(hasher(true), hasher(false));
+
+  EXPECT_EQ(hasher(1), hasher(1));
+  EXPECT_EQ(hasher(1.0), hasher(1.0));
+  EXPECT_EQ(hasher('a'), hasher('a'));
+  EXPECT_EQ(hasher(true), hasher(true));
+}
+
+TEST(Hash, String) {
+  pw::Hash hasher;
+  const char* str1 = "hello";
+  const char* str2 = "hello";
+  const char* str3 = "world";
+
+  EXPECT_EQ(hasher(std::string(str1)), hasher(std::string(str2)));
+  EXPECT_NE(hasher(std::string(str1)), hasher(std::string(str3)));
+}
+
+TEST(Hash, Pointers) {
+  pw::Hash hasher;
+  int x = 5;
+  int y = 5;
+  int* p1 = &x;
+  int* p2 = &x;
+  int* p3 = &y;
+  int* null_ptr = nullptr;
+
+  EXPECT_EQ(hasher(p1), hasher(p2));
+  EXPECT_NE(hasher(p1), hasher(p3));
+  EXPECT_EQ(hasher(null_ptr), hasher(nullptr));
+  EXPECT_NE(hasher(p1), hasher(null_ptr));
+}
+
+TEST(Hash, DifferentSeeds) {
+  pw::Hash hasher1(17);
+  pw::Hash hasher2(42);
+
+  EXPECT_NE(hasher1(123), hasher2(123));
+  EXPECT_NE(hasher1(std::string("hello")), hasher2(std::string("hello")));
+}
+
+struct CustomTypeA {
+  int x;
+  double y;
+
+  template <typename H>
+  friend H PwHashValue(H h, const CustomTypeA& t) {
+    return H::combine(std::move(h), t.x, t.y);
+  }
+};
+
+TEST(Hash, CustomTypePwHashValue) {
+  pw::Hash hasher;
+  CustomTypeA p1{1, 2.0};
+  CustomTypeA p2{1, 2.0};
+  CustomTypeA p3{2, 1.0};
+
+  EXPECT_EQ(hasher(p1), hasher(p2));
+  EXPECT_NE(hasher(p1), hasher(p3));
+}
+
+struct CustomTypeB {
+  int x;
+  double y;
+};
+
+}  // namespace
+
+namespace std {
+template <>
+struct hash<CustomTypeB> {
+  size_t operator()(const CustomTypeB& t) const {
+    pw::Hash hasher;
+    return hasher(t.x) ^ hasher(t.y);
+  }
+};
+}  // namespace std
+
+namespace {
+
+TEST(Hash, CustomTypeStdHash) {
+  pw::Hash hasher;
+  CustomTypeB p1{1, 2};
+  CustomTypeB p2{1, 2};
+  CustomTypeB p3{2, 1};
+
+  EXPECT_EQ(hasher(p1), hasher(p2));
+  EXPECT_NE(hasher(p1), hasher(p3));
+}
+
+TEST(Hash, Combine) {
+  pw::HashState h1 = pw::HashState();
+  h1 = pw::HashState::combine(std::move(h1), 1);
+  h1 = pw::HashState::combine(std::move(h1), 2);
+  h1 = pw::HashState::combine(std::move(h1), 3);
+  size_t hash1 = h1.finalize();
+
+  pw::HashState h2 = pw::HashState();
+  h2 = pw::HashState::combine(std::move(h2), 1);
+  h2 = pw::HashState::combine(std::move(h2), 2);
+  h2 = pw::HashState::combine(std::move(h2), 3);
+  size_t hash2 = h2.finalize();
+
+  pw::HashState h3 = pw::HashState();
+  h3 = pw::HashState::combine(std::move(h3), 3);
+  h3 = pw::HashState::combine(std::move(h3), 2);
+  h3 = pw::HashState::combine(std::move(h3), 1);
+  size_t hash3 = h3.finalize();
+
+  EXPECT_EQ(hash1, hash2);
+  EXPECT_NE(hash1, hash3);
+
+  std::string s1 = "hello";
+  std::string s2 = "world";
+
+  pw::HashState h4 = pw::HashState();
+  h4 = pw::HashState::combine(std::move(h4), s1);
+  h4 = pw::HashState::combine(std::move(h4), 5);
+  size_t hash4 = h4.finalize();
+
+  pw::HashState h5 = pw::HashState();
+  h5 = pw::HashState::combine(std::move(h5), s1);
+  h5 = pw::HashState::combine(std::move(h5), 5);
+  size_t hash5 = h5.finalize();
+
+  pw::HashState h6 = pw::HashState();
+  h6 = pw::HashState::combine(std::move(h6), s2);
+  h6 = pw::HashState::combine(std::move(h6), 5);
+  size_t hash6 = h6.finalize();
+
+  pw::HashState h7 = pw::HashState();
+  h7 = pw::HashState::combine(std::move(h7), s1);
+  h7 = pw::HashState::combine(std::move(h7), 6);
+  size_t hash7 = h7.finalize();
+
+  EXPECT_EQ(hash4, hash5);
+  EXPECT_NE(hash4, hash6);
+  EXPECT_NE(hash4, hash7);
+}
+
+enum class MyEnum { kValue1, kValue2 };
+
+TEST(Hash, Enum) {
+  pw::Hash hasher;
+
+  EXPECT_EQ(hasher(MyEnum::kValue1), hasher(MyEnum::kValue1));
+  EXPECT_NE(hasher(MyEnum::kValue1), hasher(MyEnum::kValue2));
+}
+
 TEST(EqualTo, BasicTypes) {
   pw::EqualTo equal_to;
 
