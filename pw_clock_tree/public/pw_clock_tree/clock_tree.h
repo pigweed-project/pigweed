@@ -285,6 +285,16 @@ class ClockSourceNoOp : public ClockSource<ElementNonBlockingCannotFail> {
   pw::Status DoDisable() final { return pw::OkStatus(); }
 };
 
+/// Class that represents a no-op clock source clock tree element that can
+/// be used to satisfy the dependent source clock tree element dependency
+/// for clock source classes that expect a source clock tree element.
+class ClockSourceNoOpBlocking : public ClockSource<ElementBlocking> {
+ private:
+  pw::Status DoEnable() final { return pw::OkStatus(); }
+
+  pw::Status DoDisable() final { return pw::OkStatus(); }
+};
+
 /// Abstract class template of a clock tree element that depends on another
 /// clock tree element.
 ///

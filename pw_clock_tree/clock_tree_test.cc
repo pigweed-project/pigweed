@@ -992,6 +992,71 @@ TEST(ClockTree, ClockSourceNoOp) {
   EXPECT_EQ(test_data.num_calls, test_data.num_expected_calls);
 }
 
+// Validate the behavior of the ClockSourceNoOpBlocking class
+TEST(ClockTree, ClockSourceNoOpBlocking) {
+  const uint32_t kClockDividerA = 23;
+  const uint32_t kClockDividerB = 42;
+
+  struct clock_divider_test_call_data call_data[] = {
+      {kClockDividerA, 2, ClockOperation::kAcquire, pw::OkStatus()},
+      {kClockDividerB, 4, ClockOperation::kAcquire, pw::OkStatus()},
+      {kClockDividerB, 4, ClockOperation::kRelease, pw::OkStatus()},
+      {kClockDividerA, 2, ClockOperation::kRelease, pw::OkStatus()}};
+
+  struct clock_divider_test_data test_data;
+  INIT_TEST_DATA(test_data, call_data);
+
+  ClockSourceNoOpBlocking clock_source_no_op_blocking;
+  ClockDividerTest<ElementBlocking> clock_divider_a(
+      clock_source_no_op_blocking, kClockDividerA, 2, test_data);
+  ClockDividerTest<ElementBlocking> clock_divider_b(
+      clock_source_no_op_blocking, kClockDividerB, 4, test_data);
+
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  pw::Status status;
+
+  status = clock_divider_a.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_b.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 1u);
+
+  status = clock_divider_b.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(clock_source_no_op_blocking.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  EXPECT_EQ(test_data.num_calls, test_data.num_expected_calls);
+}
+
 // Validate that AcquireWith acquires the element_with during
 // acquisition of element.
 TEST(ClockTree, AcquireWith) {
