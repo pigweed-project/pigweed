@@ -87,7 +87,7 @@ cc_library(
         "//pw_assert:assert",
         "//pw_bytes",
         "//pw_chrono:system_clock",
-        "//pw_containers:intrusive_list",
+        "//pw_containers:intrusive_forward_list",
         "//pw_log",
         "//pw_log:rate_limited",
         "//pw_preprocessor",

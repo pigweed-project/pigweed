@@ -16,7 +16,7 @@
 #include <limits>
 
 #include "pw_assert/assert.h"
-#include "pw_containers/intrusive_list.h"
+#include "pw_containers/intrusive_forward_list.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
 #include "pw_transfer/internal/event.h"
@@ -34,7 +34,7 @@ class Context;
 //
 // Handlers use a stream::Reader or stream::Writer to do the reads and writes.
 // They also provide optional Prepare and Finalize functions.
-class Handler : public IntrusiveList<Handler>::Item {
+class Handler : public IntrusiveForwardList<Handler>::Item {
  public:
   virtual ~Handler() = default;
 

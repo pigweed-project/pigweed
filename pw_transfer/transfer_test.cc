@@ -1589,6 +1589,8 @@ TEST_F(ReadTransfer, PrepareError) {
                   chunk.payload().data(), kData.data(), chunk.payload().size()),
               0);
   }
+
+  ctx_.service().UnregisterHandler(unavailable_handler);
 }
 
 TEST_F(WriteTransferMaxBytes16, Service_SetMaxPendingBytes) {
@@ -2001,6 +2003,8 @@ TEST_F(ReadTransfer, Version2_PrepareError) {
   EXPECT_EQ(chunk.session_id(), kArbitrarySessionId);
   EXPECT_EQ(chunk.resource_id(), 99u);
   EXPECT_EQ(chunk.status().value(), Status::DataLoss());
+
+  ctx_.service().UnregisterHandler(unavailable_handler);
 }
 
 TEST_F(ReadTransfer, Version2_HandlerSetsTransferSize) {
