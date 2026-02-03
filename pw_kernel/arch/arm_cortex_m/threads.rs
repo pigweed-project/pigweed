@@ -121,7 +121,7 @@ impl Arch for crate::Arch {
         mut sched_state: SpinLockGuard<'a, Self, SchedulerState<Self>>,
         old_thread_state: *mut ArchThreadState,
         new_thread_state: *mut ArchThreadState,
-    ) -> SpinLockGuard<'a, Self, SchedulerState<Self>> {
+    ) -> (SpinLockGuard<'a, Self, SchedulerState<Self>>, bool) {
         pw_assert::assert!(unsafe {
             new_thread_state == sched_state.get_current_arch_thread_state()
         });
@@ -158,11 +158,12 @@ impl Arch for crate::Arch {
             // old thread is context switched back to.
 
             sched_state = crate::Arch::get_scheduler(crate::Arch).lock(crate::Arch);
+            (sched_state, true)
         } else {
             // in interrupt context the pendsv should have already triggered it
             pw_assert::assert!(SCB::is_pendsv_pending());
+            (sched_state, false)
         }
-        sched_state
     }
 
     fn thread_local_state(self) -> &'static ThreadLocalState<Self> {

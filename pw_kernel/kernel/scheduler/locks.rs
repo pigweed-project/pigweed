@@ -60,11 +60,11 @@ impl<'lock, K: Kernel, T> SchedLockGuard<'lock, K, T> {
         &mut self.guard
     }
 
-    #[allow(clippy::return_self_not_must_use)]
-    pub fn reschedule(self, current_thread_id: usize) -> Self {
+    #[must_use]
+    pub fn block(self, current_thread_id: usize) -> Self {
         let inner = self.inner;
         let kernel = self.kernel;
-        let guard = super::reschedule(kernel, self.guard, current_thread_id);
+        let guard = super::block(kernel, self.guard, current_thread_id);
         Self {
             guard,
             inner,

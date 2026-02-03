@@ -125,7 +125,7 @@ impl Arch for super::Arch {
         sched_state: SpinLockGuard<'a, Self, SchedulerState<Self>>,
         old_thread_state: *mut ArchThreadState,
         new_thread_state: *mut ArchThreadState,
-    ) -> SpinLockGuard<'a, Self, SchedulerState<Self>> {
+    ) -> (SpinLockGuard<'a, Self, SchedulerState<Self>>, bool) {
         debug_if!(
             LOG_CONTEXT_SWITCH,
             "context switch from frame {:#08x} to frame {:#08x}",
@@ -163,7 +163,7 @@ impl Arch for super::Arch {
         let new_thread_frame = unsafe { (*new_thread_state).frame };
         riscv_context_switch(old_thread_frame, new_thread_frame);
 
-        sched_state
+        (sched_state, true)
     }
 
     fn thread_local_state(self) -> &'static ThreadLocalState<Self> {

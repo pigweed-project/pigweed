@@ -54,13 +54,23 @@ pub trait Arch: 'static + Copy + thread::ThreadArg {
     /// - `old_thread_state`: The thread we're moving away from
     /// - `new_thread_state`: The thread we're moving to; must match
     ///   `current_thread` and the container for this `ThreadState`
+    ///
+    /// Returns:
+    /// - `sched_state`: A guard for the global `SchedulerState`
+    /// - `switched`: `true` if a context switch happened, `false` otherwise.
+    ///
+    /// If `switched` is `false`, the implementation guarantees that forward
+    /// progress will be made. For example, a context switch may be deferred
+    /// to an interrupt handler (like PendSV) which is pending. The caller
+    /// does not need to retry or take further action to ensure the switch
+    /// occurs.
     #[allow(clippy::missing_safety_doc)]
     unsafe fn context_switch(
         self,
         sched_state: SpinLockGuard<'_, Self, SchedulerState<Self>>,
         old_thread_state: *mut Self::ThreadState,
         new_thread_state: *mut Self::ThreadState,
-    ) -> SpinLockGuard<'_, Self, SchedulerState<Self>>
+    ) -> (SpinLockGuard<'_, Self, SchedulerState<Self>>, bool)
     where
         Self: Kernel;
 

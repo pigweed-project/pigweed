@@ -46,7 +46,7 @@ impl Arch for HostArch {
         _sched_state: SpinLockGuard<'_, Self, SchedulerState<Self>>,
         _old_thread_state: *mut ArchThreadState,
         _new_thread_state: *mut ArchThreadState,
-    ) -> SpinLockGuard<'_, Self, SchedulerState<Self>> {
+    ) -> (SpinLockGuard<'_, Self, SchedulerState<Self>>, bool) {
         pw_assert::panic!("Unimplemented: context_switch");
     }
 
