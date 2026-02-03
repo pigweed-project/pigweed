@@ -240,6 +240,7 @@ coverage = PigweedGnGenNinja(
     name='coverage',
     doc='Run coverage for the host build.',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
+    packages=('emboss',),
     ninja_targets=('coverage',),
     coverage_options=build.CoverageOptions(
         common=build.CommonCoverageOptions(
@@ -260,6 +261,11 @@ coverage = PigweedGnGenNinja(
         ),
         gerrit=build.GerritCoverageOptions(
             project='pigweed/pigweed',
+        ),
+    ),
+    gn_args=dict(
+        dir_pw_third_party_emboss=lambda ctx: '"{}"'.format(
+            ctx.package_root / 'emboss'
         ),
     ),
 )
