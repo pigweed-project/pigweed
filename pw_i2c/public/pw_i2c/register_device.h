@@ -126,22 +126,22 @@ class RegisterDevice : public Device {
                         ByteSpan buffer,
                         chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that requires
-  /// `register_data` to be exactly 8 bits.
+  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that writes
+  /// `register_data`, a span of 8-bit values, to the bus.
   Status WriteRegisters8(uint32_t register_address,
                          span<const uint8_t> register_data,
                          ByteSpan buffer,
                          chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that requires
-  /// `register_data` to be exactly 16 bits.
+  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that writes
+  /// `register_data`, a span of 16-bit values, to the bus.
   Status WriteRegisters16(uint32_t register_address,
                           span<const uint16_t> register_data,
                           ByteSpan buffer,
                           chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that requires
-  /// `register_data` to be exactly 32 bits.
+  /// Variant of `pw::i2c::RegisterDevice::WriteRegisters()` that writes
+  /// `register_data`, a span of 32-bit values, to the bus.
   Status WriteRegisters32(uint32_t register_address,
                           span<const uint32_t> register_data,
                           ByteSpan buffer,
@@ -178,20 +178,20 @@ class RegisterDevice : public Device {
                        ByteSpan return_data,
                        chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that requires
-  /// `return_data` to be exactly 8 bits.
+  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that reads from the
+  /// bus into `return_data`, which is a span of 8-bit values.
   Status ReadRegisters8(uint32_t register_address,
                         span<uint8_t> return_data,
                         chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that requires
-  /// `return_data` to be exactly 16 bits.
+  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that reads from the
+  /// bus into `return_data`, which is a span of 16-bit values.
   Status ReadRegisters16(uint32_t register_address,
                          span<uint16_t> return_data,
                          chrono::SystemClock::duration timeout);
 
-  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that requires
-  /// `return_data` to be exactly 32 bits.
+  /// Variant of `pw::i2c::RegisterDevice::ReadRegisters()` that reads from the
+  /// bus into `return_data`, which is a span of 32-bit values.
   Status ReadRegisters32(uint32_t register_address,
                          span<uint32_t> return_data,
                          chrono::SystemClock::duration timeout);
@@ -226,19 +226,19 @@ class RegisterDevice : public Device {
                        chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::WriteRegister()` that writes exactly
-  /// 8 bits.
+  /// 8 bits to the bus.
   Status WriteRegister8(uint32_t register_address,
                         uint8_t register_data,
                         chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::WriteRegister()` that writes exactly
-  /// 16 bits.
+  /// 16 bits to the bus.
   Status WriteRegister16(uint32_t register_address,
                          uint16_t register_data,
                          chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::WriteRegister()` that writes exactly
-  /// 32 bits.
+  /// 32 bits to the bus.
   Status WriteRegister32(uint32_t register_address,
                          uint32_t register_data,
                          chrono::SystemClock::duration timeout);
@@ -269,17 +269,17 @@ class RegisterDevice : public Device {
                                  chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::ReadRegister()` that returns exactly
-  /// 8 bits.
+  /// 8 bits read from the bus.
   Result<uint8_t> ReadRegister8(uint32_t register_address,
                                 chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::ReadRegister()` that returns exactly
-  /// 16 bits.
+  /// 16 bits read from the bus.
   Result<uint16_t> ReadRegister16(uint32_t register_address,
                                   chrono::SystemClock::duration timeout);
 
   /// Variant of `pw::i2c::RegisterDevice::ReadRegister()` that returns exactly
-  /// 32 bits.
+  /// 32 bits read from the bus.
   Result<uint32_t> ReadRegister32(uint32_t register_address,
                                   chrono::SystemClock::duration timeout);
 
