@@ -35,8 +35,6 @@ cc_library_static {
         "pw_bluetooth_proxy",
         "pw_checksum",
         "pw_multibuf",
-        "pw_bluetooth.emboss_util",
-        "pw_bluetooth.emboss_rfcomm_frames",
     ],
     export_static_lib_headers: [
         "pw_bluetooth_proxy",
@@ -53,6 +51,12 @@ cc_library_static {
     export_header_lib_headers: [
         "pw_assert",
         "pw_log",
+    ],
+    generated_headers: [
+        "pw_bluetooth_generate_emboss_rfcomm_frames",
+    ],
+    export_generated_headers: [
+        "pw_bluetooth_generate_emboss_rfcomm_frames",
     ],
 
     // LINT.ThenChange(BUILD.gn, rfcomm.bzl, CMakeLists.txt)
