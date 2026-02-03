@@ -23,6 +23,12 @@ package(
 
 licenses(["notice"])
 
+hosts_lin_mac = {
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+}
+
 cc_library(
     name = "pw_clock_tree",
     hdrs = [
@@ -38,10 +44,29 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "external_source",
+    hdrs = [
+        "public/pw_clock_tree/external_source.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":pw_clock_tree",
+        "//pw_assert:assert",
+        "//pw_digital_io",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:mutex",
+        "//pw_thread:sleep",
+    ],
+)
+
 pw_cc_test(
     name = "clock_tree_test",
     srcs = ["clock_tree_test.cc"],
+    target_compatible_with = select(hosts_lin_mac),
     deps = [
+        ":external_source",
         ":pw_clock_tree",
         "//pw_preprocessor",
     ],
@@ -60,6 +85,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_clock_tree/clock_tree.h",
+        "public/pw_clock_tree/external_source.h",
     ],
 )
 

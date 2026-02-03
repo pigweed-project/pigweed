@@ -14,8 +14,11 @@
 
 #include "pw_clock_tree/clock_tree.h"
 
+#include "pw_clock_tree/external_source.h"
 #include "pw_preprocessor/util.h"
 #include "pw_unit_test/framework.h"
+
+using namespace std::chrono_literals;
 
 namespace pw::clock_tree {
 namespace {
@@ -1284,5 +1287,109 @@ TEST(ClockTreeDeathTest, ReleaseWithoutAcquireCrashes) {
   EXPECT_DEATH_IF_SUPPORTED(clock_b.Release().IgnoreError(), ".*");
 }
 
+class TestDigitalOut : public pw::digital_io::DigitalOut {
+ public:
+  TestDigitalOut() {}
+
+ private:
+  Status DoEnable(bool) override { return OkStatus(); }
+  Status DoSetState(pw::digital_io::State) override { return OkStatus(); }
+};
+
+static void TestExternalClockSource(
+    ExternalClockSource& external_clock_source) {
+  const uint32_t kClockDividerA = 23;
+  const uint32_t kClockDividerB = 42;
+
+  struct clock_divider_test_call_data call_data[] = {
+      {kClockDividerA, 2, ClockOperation::kAcquire, pw::OkStatus()},
+      {kClockDividerB, 4, ClockOperation::kAcquire, pw::OkStatus()},
+      {kClockDividerB, 4, ClockOperation::kRelease, pw::OkStatus()},
+      {kClockDividerA, 2, ClockOperation::kRelease, pw::OkStatus()}};
+
+  struct clock_divider_test_data test_data;
+  INIT_TEST_DATA(test_data, call_data);
+
+  ClockDividerTest<ElementBlocking> clock_divider_a(
+      external_clock_source, kClockDividerA, 2, test_data);
+  ClockDividerTest<ElementBlocking> clock_divider_b(
+      external_clock_source, kClockDividerB, 4, test_data);
+
+  EXPECT_EQ(external_clock_source.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  pw::Status status;
+
+  status = clock_divider_a.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_b.Acquire();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 1u);
+
+  status = clock_divider_b.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 2u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 1u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  status = clock_divider_a.Release();
+  EXPECT_EQ(status.code(), PW_STATUS_OK);
+  EXPECT_EQ(external_clock_source.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+
+  EXPECT_EQ(test_data.num_calls, test_data.num_expected_calls);
+  EXPECT_EQ(external_clock_source.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_a.ref_count(), 0u);
+  EXPECT_EQ(clock_divider_b.ref_count(), 0u);
+}
+
+TEST(ExternalClockSource, AcquireRelease) {
+  TestDigitalOut digital_io_line;
+  EXPECT_EQ(digital_io_line.Enable(), PW_STATUS_OK);
+  EXPECT_EQ(digital_io_line.SetStateInactive(), PW_STATUS_OK);
+
+  ExternalClockSource external_clock_source(digital_io_line, 10ms, 5ms);
+
+  TestExternalClockSource(external_clock_source);
+}
+
+TEST(ExternalClockSource, SetOutLineAcquireRelease) {
+  TestDigitalOut digital_io_line;
+  EXPECT_EQ(digital_io_line.Enable(), PW_STATUS_OK);
+  EXPECT_EQ(digital_io_line.SetStateInactive(), PW_STATUS_OK);
+
+  ExternalClockSource external_clock_source(10ms, 5ms);
+  external_clock_source.SetOutLine(digital_io_line);
+
+  TestExternalClockSource(external_clock_source);
+}
+
+TEST(ExternalClockSource, NoOutLineSet) {
+  ExternalClockSource external_clock_source;
+
+  EXPECT_EQ(external_clock_source.ref_count(), 0u);
+  EXPECT_EQ(external_clock_source.Acquire(), PW_STATUS_FAILED_PRECONDITION);
+  EXPECT_EQ(external_clock_source.ref_count(), 0u);
+}
 }  // namespace
 }  // namespace pw::clock_tree

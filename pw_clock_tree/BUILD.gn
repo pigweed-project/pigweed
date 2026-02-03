@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_thread/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("default_config") {
@@ -35,9 +36,23 @@ pw_source_set("pw_clock_tree") {
   ]
 }
 
+pw_source_set("external_source") {
+  public_configs = [ ":default_config" ]
+  public = [ "public/pw_clock_tree/external_source.h" ]
+  public_deps = [
+    ":pw_clock_tree",
+    "$dir_pw_digital_io",
+    "$dir_pw_thread:sleep",
+  ]
+}
+
 pw_test("clock_tree_test") {
+  enable_if = pw_thread_THREAD_BACKEND != ""
   sources = [ "clock_tree_test.cc" ]
-  deps = [ ":pw_clock_tree" ]
+  deps = [
+    ":external_source",
+    ":pw_clock_tree",
+  ]
   public_deps = [ "$dir_pw_preprocessor" ]
 }
 
