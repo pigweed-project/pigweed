@@ -71,6 +71,10 @@ class McuxpressoInitiator final : public Initiator {
                        chrono::SystemClock::duration timeout) override
       PW_LOCKS_EXCLUDED(mutex_);
 
+  Status TransferSequenceUntilLocked(span<const Message> messages,
+                                     chrono::SystemClock::time_point deadline)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
   // inclusive-language: disable
   Status InitiateNonBlockingTransferUntil(
       chrono::SystemClock::time_point deadline, i2c_master_transfer_t* transfer)

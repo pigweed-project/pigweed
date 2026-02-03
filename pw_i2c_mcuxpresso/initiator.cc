@@ -40,6 +40,8 @@ Status HalStatusToPwStatus(status_t status) {
       return Status::InvalidArgument();
     case kStatus_I2C_Timeout:
       return Status::DeadlineExceeded();
+    case kStatus_I2C_ArbitrationLost:
+      return Status::Aborted();
     default:
       return Status::Unknown();
   }
@@ -146,17 +148,8 @@ Status McuxpressoInitiator::InitiateNonBlockingTransferUntil(
   return HalStatusToPwStatus(transfer_status);
 }
 
-// Performs a sequence of non-blocking I2C reads and writes.
-Status McuxpressoInitiator::DoTransferFor(
-    span<const Message> messages, chrono::SystemClock::duration timeout) {
-  chrono::SystemClock::time_point deadline =
-      chrono::SystemClock::TimePointAfterAtLeast(timeout);
-
-  std::lock_guard lock(mutex_);
-  if (!enabled_) {
-    return Status::FailedPrecondition();
-  }
-
+Status McuxpressoInitiator::TransferSequenceUntilLocked(
+    span<const Message> messages, chrono::SystemClock::time_point deadline) {
   for (unsigned int i = 0; i < messages.size(); ++i) {
     const Message& msg = messages[i];
 
@@ -183,32 +176,49 @@ Status McuxpressoInitiator::DoTransferFor(
         // Cast GetData() here because GetMutableData() is for Writes only.
         .data = const_cast<std::byte*>(msg.GetData().data()),
         .dataSize = msg.GetData().size()};
-    auto status = InitiateNonBlockingTransferUntil(deadline, &transfer);
 
-    if (!status.ok()) {
-      if (status.IsDeadlineExceeded()) {
-        if (config_.auto_restart_interface) {
-          // If we've exceeded our deadline, that means our transaction
-          // request never received a callback, indicating a stuck I2C
-          // interface (or a device that stretched the clock beyond the
-          // deadline).
+    PW_TRY(InitiateNonBlockingTransferUntil(deadline, &transfer));
+  }
+  return pw::OkStatus();
+}
 
-          // Unfortunately, we have observed on RT595 platforms that the I2C
-          // interface can get stuck and fail to transmit at all, with no
-          // indication in the status registers that anything is wrong,
-          // requiring a full reset.
-          ResetLocked();
-        }
+// Performs a sequence of non-blocking I2C reads and writes.
+Status McuxpressoInitiator::DoTransferFor(
+    span<const Message> messages, chrono::SystemClock::duration timeout) {
+  chrono::SystemClock::time_point deadline =
+      chrono::SystemClock::TimePointAfterAtLeast(timeout);
 
-        return Status::DeadlineExceeded();
-      } else {
-        // All other error statuses we return to the caller
-        return status;
-      }
-    }
+  std::lock_guard lock(mutex_);
+  if (!enabled_) {
+    return Status::FailedPrecondition();
   }
 
-  return pw::OkStatus();
+  do {
+    auto status = TransferSequenceUntilLocked(messages, deadline);
+
+    if (status.IsAborted()) {
+      // Arbitration loss. Attempt the transaction again.
+      continue;
+    }
+
+    if (status.IsDeadlineExceeded() && config_.auto_restart_interface) {
+      // If we've exceeded our deadline, our transaction never
+      // successfully completed. This could indicate a stuck I2C
+      // interface, a device that stretched the clock beyond the deadline,
+      // or repeated arbitration losses (followed by one of the previous
+      // issues).
+      //
+      // Unfortunately, we have observed on RT595 platforms that the I2C
+      // interface can get stuck and fail to transmit at all, with no
+      // indication in the status registers that anything is wrong,
+      // requiring a full reset.
+      ResetLocked();
+    }
+
+    return status;
+  } while (chrono::SystemClock::now() < deadline);
+
+  return Status::DeadlineExceeded();
 }
 // inclusive-language: enable
 
