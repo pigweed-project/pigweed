@@ -150,7 +150,7 @@ pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_c
 # ROLL: Warning: this variable is automatically updated.
 # ROLL: Last updated 2026-01-21.
 # ROLL: By https://cr-buildbucket.appspot.com/build/8692029222103556049.
-LLVM_VERSION = "git_revision:6a18039298174562a38f28ca06d12dcbf7f14f06"
+LLVM_VERSION = "git_revision:b153f17b8aeb23ae45b05d8f5e6b4dfd76442dc4"
 
 pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
 pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@12.2.MPACBTI-Rel1.1")
