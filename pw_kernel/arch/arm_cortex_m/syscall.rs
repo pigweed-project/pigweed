@@ -13,7 +13,7 @@
 // the License.
 
 use kernel::SyscallArgs;
-use kernel::syscall::raw_handle_syscall;
+use kernel::syscall::handle_syscall;
 use pw_cast::CastInto as _;
 use pw_status::{Error, Result};
 
@@ -254,13 +254,12 @@ extern "C" fn handle_svc(frame_ptr: *mut KernelExceptionFrame) -> *mut KernelExc
     let id = frame.r11 as u16;
 
     let args = CortexMSyscallArgs::new(frame);
-    let ret_val = raw_handle_syscall(super::Arch, id, args);
-    let ret_val = ret_val.cast_unsigned();
+    let ret_val = handle_syscall(super::Arch, id, args);
     // Intentionally truncate ret_val to marshal return value into r4 and r5
     #[expect(clippy::cast_possible_truncation)]
     {
-        frame.r4 = ret_val as u32;
-        frame.r5 = (ret_val >> 32) as u32;
+        frame.r4 = ret_val.value[0] as u32;
+        frame.r5 = ret_val.value[1] as u32;
     }
 
     frame_ptr

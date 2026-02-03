@@ -14,14 +14,18 @@
 
 use pw_cast::CastInto;
 use pw_status::{Result, StatusCode};
-pub use syscall_defs::Signals;
 use syscall_defs::SysCallInterface;
+pub use syscall_defs::{Signals, WaitReturn};
 use syscall_user::SysCall;
 
 use crate::time::Instant;
 
 #[inline(always)]
-pub fn object_wait(object_handle: u32, signal_mask: Signals, deadline: Instant) -> Result<Signals> {
+pub fn object_wait(
+    object_handle: u32,
+    signal_mask: Signals,
+    deadline: Instant,
+) -> Result<WaitReturn> {
     SysCall::object_wait(object_handle, signal_mask.bits(), deadline.ticks())
 }
 

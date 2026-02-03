@@ -17,7 +17,7 @@ use memory_config::MemoryRegionType;
 use pw_cast::CastInto as _;
 use pw_log::info;
 use pw_status::{Error, Result};
-use syscall_defs::{Signals, SysCallId, SysCallReturnValue};
+use syscall_defs::{Signals, SysCallId, SysCallReturnValue, WaitReturn};
 use time::{Clock, Instant};
 
 use crate::Kernel;
@@ -65,8 +65,8 @@ pub fn lookup_handle<K: Kernel>(
     else {
         log_if::debug_if!(
             SYSCALL_DEBUG,
-            "sycall: ObjectWait can't access handle {}",
-            handle as usize
+            "sycall: ObjectWait can't access handle {:#010x}",
+            handle as u32
         );
         return Err(Error::OutOfRange);
     };
@@ -74,24 +74,27 @@ pub fn lookup_handle<K: Kernel>(
     Ok(object)
 }
 
-fn handle_object_wait<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
+fn handle_object_wait<'a, K: Kernel>(
+    kernel: K,
+    mut args: K::SyscallArgs<'a>,
+) -> Result<WaitReturn> {
     let handle = args.next_u32()?;
-    let signals = args.next_usize()?;
+    let signals = args.next_u32()?;
     let deadline = args.next_instant()?;
     log_if::debug_if!(
         SYSCALL_DEBUG,
-        "syscall: handling object_wait {:x} {:x} {:x}",
+        "syscall: handling object_wait {:#010x} {:#010x} {:#018x}",
         handle as u32,
-        signals as usize,
+        signals as u32,
         deadline.ticks() as u64
     );
 
     let object = lookup_handle(kernel, handle)?;
-    let Some(signal_mask) = Signals::from_bits(u32::try_from(signals).unwrap()) else {
+    let Some(signal_mask) = Signals::from_bits(signals) else {
         log_if::debug_if!(
             SYSCALL_DEBUG,
             "syscall: ObjectWait invalid signal mask: {:#010x}",
-            signals as usize
+            signals as u32
         );
 
         return Err(Error::InvalidArgument);
@@ -99,7 +102,7 @@ fn handle_object_wait<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) ->
 
     let ret = object.object_wait(kernel, signal_mask, deadline);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: object_wait complete");
-    ret.map(|s| s.bits().into())
+    ret
 }
 
 fn handle_channel_transact<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
@@ -187,7 +190,7 @@ fn handle_interrupt_ack<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) 
         log_if::debug_if!(
             SYSCALL_DEBUG,
             "syscall: InterruptAck invalid signal mask: {:#010x}",
-            signals as usize
+            signals as u32
         );
 
         return Err(Error::InvalidArgument);
@@ -197,6 +200,24 @@ fn handle_interrupt_ack<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) 
     let ret = object.interrupt_ack(kernel, signal_mask);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: interrupt_ack complete");
     ret.map(|_| 0)
+}
+
+// TODO: Remove this syscall when logging is added.
+fn handle_debug_putc<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling debug_putc");
+    let arg = args.next_u32()?;
+    let c = char::from_u32(arg).ok_or(Error::InvalidArgument)?;
+    let sched = kernel.get_scheduler().lock(kernel);
+    info!("{}: {}", sched.current_thread().name as &str, c as char);
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: debug_putc complete");
+    Ok(u64::from(arg))
+}
+
+// TODO: Consider adding an feature flagged PowerManager object and move this shutdown call to it.
+fn handle_debug_shutdown<'a, K: Kernel>(_kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling debug_shutdown");
+    let exit_code = args.next_u32()?;
+    crate::target::shutdown(exit_code);
 }
 
 fn handle_debug_log<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
@@ -227,8 +248,8 @@ fn handle_debug_trigger_interrupt<'a, K: Kernel>(
 pub fn handle_syscall<'a, K: Kernel>(
     kernel: K,
     id: u16,
-    mut args: K::SyscallArgs<'a>,
-) -> Result<u64> {
+    args: K::SyscallArgs<'a>,
+) -> SysCallReturnValue {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: {:#06x}", id as usize);
 
     // Instead of having a architecture independent match here, an array of
@@ -238,41 +259,24 @@ pub fn handle_syscall<'a, K: Kernel>(
     // This allows [`arch::arm_cortex_m::in_interrupt_handler()`] to treat
     // active SVCalls as not in interrupt context.
     let id: SysCallId = id.into();
-    let res = match id {
-        SysCallId::ObjectWait => handle_object_wait(kernel, args),
-        SysCallId::ChannelTransact => handle_channel_transact(kernel, args),
-        SysCallId::ChannelRead => handle_channel_read(kernel, args),
-        SysCallId::ChannelRespond => handle_channel_respond(kernel, args),
-        SysCallId::InterruptAck => handle_interrupt_ack(kernel, args),
-        // TODO: Remove this syscall when logging is added.
-        SysCallId::DebugPutc => {
-            let arg = args.next_u32()?;
-            let c = char::from_u32(arg).ok_or(Error::InvalidArgument)?;
-            let sched = kernel.get_scheduler().lock(kernel);
-            info!("{}: {}", sched.current_thread().name as &str, c as char);
-            Ok(arg.cast_into())
-        }
-        // TODO: Consider adding an feature flagged PowerManager object and move
-        // this shutdown call to it.
-        SysCallId::DebugShutdown => {
-            let exit_code = args.next_u32()?;
-            log_if::debug_if!(SYSCALL_DEBUG, "sycall: Shutdown {}", exit_code as u32);
-            crate::target::shutdown(exit_code);
-        }
-        SysCallId::DebugLog => handle_debug_log(kernel, args),
-        SysCallId::DebugNop => Ok(0),
-        SysCallId::DebugTriggerInterrupt => handle_debug_trigger_interrupt(kernel, args),
-        _ => {
-            log_if::debug_if!(SYSCALL_DEBUG, "syscall: log");
-            Err(Error::InvalidArgument)
+    let res = {
+        match id {
+            SysCallId::ObjectWait => handle_object_wait(kernel, args).into(),
+            SysCallId::ChannelTransact => handle_channel_transact(kernel, args).into(),
+            SysCallId::ChannelRead => handle_channel_read(kernel, args).into(),
+            SysCallId::ChannelRespond => handle_channel_respond(kernel, args).into(),
+            SysCallId::InterruptAck => handle_interrupt_ack(kernel, args).into(),
+            SysCallId::DebugPutc => handle_debug_putc(kernel, args).into(),
+            SysCallId::DebugShutdown => handle_debug_shutdown(kernel, args).into(),
+            SysCallId::DebugLog => handle_debug_log(kernel, args).into(),
+            SysCallId::DebugNop => 0.into(),
+            SysCallId::DebugTriggerInterrupt => handle_debug_trigger_interrupt(kernel, args).into(),
+            _ => {
+                log_if::debug_if!(SYSCALL_DEBUG, "syscall: unknown syscall {}", id as u32);
+                SysCallReturnValue::from(-(Error::InvalidArgument as isize) as i64)
+            }
         }
     };
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: {:#06x} returning", id as usize);
     res
-}
-
-#[allow(dead_code)]
-pub fn raw_handle_syscall<'a, K: Kernel>(kernel: K, id: u16, args: K::SyscallArgs<'a>) -> i64 {
-    let ret_val: SysCallReturnValue = handle_syscall(kernel, id, args).into();
-    ret_val.0
 }

@@ -24,7 +24,12 @@ fn handle_uppercase_ipcs() -> Result<()> {
     pw_log::info!("IPC service starting");
     loop {
         // Wait for an IPC to come in.
-        syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
+        let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)
+            .map_err(|_| Error::Internal)?;
+
+        if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
+            return Err(Error::Internal);
+        }
 
         // Read the payload.
         let mut buffer = [0u8; size_of::<char>()];

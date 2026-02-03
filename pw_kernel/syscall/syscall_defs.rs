@@ -133,7 +133,7 @@
 
 //! Each interrupt source handled by an Interrupt object is mapped to a unique
 //! signal bit within the higher 16 bits of `Signals`. These signals
-//! range from `Signals::INTERRUPT_A` (bit 16) to `Signals::INTERRUPT_P` (bit 31).
+//! range from `Signals::INTERRUPT_A` (bit 16) to `Signals::INTERRUPT_O` (bit 30).
 //!
 //! When a interrupt occurs for a source handled by an Interrupt object, the kernel
 //! masks the interrupt and then signals the corresponding `INTERRUPT_` bit on the
@@ -184,47 +184,52 @@
 use bitflags::bitflags;
 use pw_status::{Error, Result};
 
-pub struct SysCallReturnValue(pub i64);
+pub struct SysCallReturnValue {
+    // The return value representing the two return registers.
+    pub value: [usize; 2],
+}
 
-impl SysCallReturnValue {
-    pub fn to_result_unit(self) -> Result<()> {
-        let value = self.0;
-        if value < 0 {
+impl From<SysCallReturnValue> for Result<()> {
+    fn from(ret_value: SysCallReturnValue) -> Result<()> {
+        let val = ret_value.value[0].cast_signed();
+        if val < 0 {
             // TODO debug assert if error number is out of range
-            let value = (-value).cast_unsigned();
+            let val = (-val).cast_unsigned();
             // TODO(421404517): Avoid the lossy cast
             #[allow(clippy::cast_possible_truncation)]
-            Err(unsafe { core::mem::transmute::<u32, Error>(value as u32) })
+            Err(unsafe { core::mem::transmute::<u32, Error>(val as u32) })
         } else {
             Ok(())
         }
     }
-    pub fn to_result_u32(self) -> Result<u32> {
-        let value = self.0;
-        if value < 0 {
+}
+
+impl From<SysCallReturnValue> for Result<u32> {
+    fn from(ret_value: SysCallReturnValue) -> Result<u32> {
+        let val = ret_value.value[0].cast_signed();
+        if val < 0 {
             // TODO debug assert if error number is out of range
-            let value = (-value).cast_unsigned();
+            let val = (-val).cast_unsigned();
             // TODO(421404517): Avoid the lossy cast
             #[allow(clippy::cast_possible_truncation)]
-            Err(unsafe { core::mem::transmute::<u32, Error>(value as u32) })
+            Err(unsafe { core::mem::transmute::<u32, Error>(val as u32) })
         } else {
             // TODO(421404517): Avoid the lossy cast
             #[allow(clippy::cast_possible_truncation)]
-            Ok(value.cast_unsigned() as u32)
+            Ok(ret_value.value[0] as u32)
         }
     }
-    pub fn to_result_signals(self) -> Result<Signals> {
-        let value = self.0;
-        if value < 0 {
-            // TODO debug assert if error number is out of range
-            let value = (-value).cast_unsigned();
-            // TODO(421404517): Avoid the lossy cast
-            #[allow(clippy::cast_possible_truncation)]
-            Err(unsafe { core::mem::transmute::<u32, Error>(value as u32) })
-        } else {
-            // TODO(421404517): Avoid the lossy cast
-            #[allow(clippy::cast_possible_truncation)]
-            Ok(Signals(value.cast_unsigned() as u32))
+}
+
+impl From<i64> for SysCallReturnValue {
+    fn from(value: i64) -> Self {
+        let unsigned_value = value.cast_unsigned();
+        Self {
+            #[expect(clippy::cast_possible_truncation)]
+            value: [
+                unsigned_value as u32 as usize,
+                (unsigned_value >> 32) as u32 as usize,
+            ],
         }
     }
 }
@@ -232,9 +237,52 @@ impl SysCallReturnValue {
 impl From<Result<u64>> for SysCallReturnValue {
     fn from(value: Result<u64>) -> Self {
         match value {
-            // TODO - konkers: Debug assert on high bit of value being set.
-            Ok(val) => Self(val.cast_signed()),
-            Err(error) => Self(-(error as i64)),
+            Ok(val) => {
+                #[expect(clippy::cast_possible_truncation)]
+                let low = val as u32 as usize;
+                let high = (val >> 32) as u32 as usize;
+                Self { value: [low, high] }
+            }
+            Err(error) => Self {
+                #[expect(clippy::cast_sign_loss)]
+                value: [-(error as isize) as usize, 0],
+            },
+        }
+    }
+}
+
+impl From<SysCallReturnValue> for Result<WaitReturn> {
+    fn from(ret: SysCallReturnValue) -> Result<WaitReturn> {
+        // TODO(421404517): Avoid the lossy cast
+        #[allow(clippy::cast_possible_truncation)]
+        let val = ret.value[1] as u32;
+        let signals = Signals::from_bits_truncate(val);
+        // Encode that there was an error in the reserved high bit of
+        // the signal mask, and store the error in the data field.
+        if signals.contains(Signals::RESERVED) {
+            // TODO(421404517): Avoid the lossy cast
+            #[allow(clippy::cast_possible_truncation)]
+            Err(unsafe { core::mem::transmute::<u32, Error>(ret.value[0] as u32) })
+        } else {
+            Ok(WaitReturn {
+                user_data: ret.value[0],
+                pending_signals: signals,
+            })
+        }
+    }
+}
+
+impl From<Result<WaitReturn>> for SysCallReturnValue {
+    fn from(value: Result<WaitReturn>) -> Self {
+        match value {
+            Ok(val) => Self {
+                value: [val.user_data, val.pending_signals.bits() as usize],
+            },
+            Err(error) => Self {
+                // Error value is saved in the data field and the reserved bit
+                // is used to indicate an error in the signal mask.
+                value: [error as usize, Signals::RESERVED.bits() as usize],
+            },
         }
     }
 }
@@ -284,7 +332,7 @@ bitflags! {
         /// Object has a protocol specific user signal pending.
         const USER = 1 << 15;
 
-        /// Bits 16-31 are used to denote which interrupt on the
+        /// Bits 16-30 are used to denote which interrupt on the
         /// interrupt object was signaled.  They are intentionally
         /// named by letter not number so as not to confuse the
         /// position within an object mask to the IRQ number.
@@ -303,7 +351,9 @@ bitflags! {
         const INTERRUPT_M = 1 << 28;
         const INTERRUPT_N = 1 << 29;
         const INTERRUPT_O = 1 << 30;
-        const INTERRUPT_P = 1 << 31;
+
+        /// Reserved for internal kernel use.
+        const RESERVED = 1 << 31;
     }
 }
 
@@ -317,19 +367,14 @@ impl Signals {
 /// Return value from the [`object_wait()`] syscall.
 ///
 /// TODO: This is a bit heavy.  Define exact syscall ABI for this data.
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct WaitReturn {
-    /// Status of the [`object_wait()`] syscall.
-    pub status: isize,
-
-    /// Signals pending on this object.
-    pub pending_signals: Signals,
-
     /// `user_data` of the wait group member.
-    pub wait_group_user_data: usize,
+    pub user_data: usize,
 
     /// Signals pending on the wait group member.
-    pub wait_group_pending_signals: Signals,
+    pub pending_signals: Signals,
 }
 
 unsafe extern "C" {
@@ -514,7 +559,7 @@ unsafe extern "C" {
 }
 
 pub trait SysCallInterface {
-    fn object_wait(handle: u32, signal_mask: u32, deadline: u64) -> Result<Signals>;
+    fn object_wait(handle: u32, signal_mask: u32, deadline: u64) -> Result<WaitReturn>;
 
     #[expect(clippy::missing_safety_doc)]
     unsafe fn channel_transact(

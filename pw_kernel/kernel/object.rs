@@ -19,7 +19,7 @@ use core::ptr::NonNull;
 use foreign_box::{ForeignBox, ForeignRc};
 use list::{self, Link, RandomAccessForeignList};
 use pw_status::{Error, Result};
-use syscall_defs::Signals;
+pub use syscall_defs::{Signals, WaitReturn};
 use time::Instant;
 
 use crate::Kernel;
@@ -48,7 +48,7 @@ pub trait KernelObject<K: Kernel>: Any + Send + Sync {
         kernel: K,
         signal_mask: Signals,
         deadline: Instant<K::Clock>,
-    ) -> Result<Signals> {
+    ) -> Result<WaitReturn> {
         Err(Error::Unimplemented)
     }
 
@@ -82,7 +82,7 @@ pub trait KernelObject<K: Kernel>: Any + Send + Sync {
 list::define_adapter!(pub ObjectWaiterListAdapter<K: Kernel> => ObjectWaiter<K>::link);
 
 struct WaitResult {
-    result: UnsafeCell<Result<Signals>>,
+    result: UnsafeCell<Result<WaitReturn>>,
 }
 
 impl WaitResult {
@@ -94,13 +94,13 @@ impl WaitResult {
 
     /// Safety: Users of [`WaitResult::get()`] and [`WaitResult::set()`] must
     /// ensure that their calls into them are not done concurrently.
-    unsafe fn get(&self) -> Result<Signals> {
+    unsafe fn get(&self) -> Result<WaitReturn> {
         unsafe { *self.result.get() }
     }
 
     /// Safety: Users of [`WaitResult::get()`] and [`WaitResult::set()`] must
     /// ensure that their calls into them are not done concurrently.
-    unsafe fn set(&self, result: Result<Signals>) {
+    unsafe fn set(&self, result: Result<WaitReturn>) {
         unsafe { (*self.result.get()) = result }
     }
 }
@@ -193,12 +193,15 @@ impl<K: Kernel> ObjectBase<K> {
         kernel: K,
         signal_mask: Signals,
         deadline: Instant<K::Clock>,
-    ) -> Result<Signals> {
+    ) -> Result<WaitReturn> {
         let mut state = self.state.lock(kernel);
 
         // Skip waiting if signals are already pending.
         if state.active_signals.contains(signal_mask) {
-            return Ok(state.active_signals);
+            return Ok(WaitReturn {
+                user_data: 0,
+                pending_signals: state.active_signals,
+            });
         }
 
         let event = Event::new(kernel, EventConfig::ManualReset);
@@ -248,7 +251,12 @@ impl<K: Kernel> ObjectBase<K> {
                 // Safety: While a waiter is in an object's `waiters` list, that
                 // object has exclusive access to the waiter.  The below
                 // operation is done with the object's spinlock held.
-                unsafe { waiter.wait_result.set(Ok(active_signals)) };
+                unsafe {
+                    waiter.wait_result.set(Ok(WaitReturn {
+                        user_data: 0,
+                        pending_signals: active_signals,
+                    }))
+                };
                 waiter.signaler.signal();
             }
             Ok(())

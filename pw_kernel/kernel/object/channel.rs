@@ -17,7 +17,7 @@ use pw_status::{Error, Result};
 use time::Instant;
 
 use crate::Kernel;
-use crate::object::{KernelObject, ObjectBase, Signals, SyscallBuffer};
+use crate::object::{KernelObject, ObjectBase, Signals, SyscallBuffer, WaitReturn};
 use crate::sync::mutex::Mutex;
 
 struct Transaction<K: Kernel> {
@@ -46,7 +46,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         kernel: K,
         signal_mask: Signals,
         deadline: Instant<<K>::Clock>,
-    ) -> Result<Signals> {
+    ) -> Result<WaitReturn> {
         self.base.wait_until(kernel, signal_mask, deadline)
     }
 
@@ -102,7 +102,7 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
         kernel: K,
         signal_mask: Signals,
         deadline: Instant<<K>::Clock>,
-    ) -> Result<Signals> {
+    ) -> Result<WaitReturn> {
         self.base.wait_until(kernel, signal_mask, deadline)
     }
 

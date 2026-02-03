@@ -23,7 +23,11 @@ use userspace::{entry, syscall};
 
 fn read_expected_value(expected_value: u8) -> Result<()> {
     // the UART listener responds on IPC with the value written to the UART.
-    syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
+    let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
+
+    if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
+        return Err(Error::Internal);
+    }
 
     let mut buffer = [0u8; 1];
     let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;

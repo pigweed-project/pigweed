@@ -67,7 +67,16 @@ fn entry() -> ! {
     loop {
         let res =
             match syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX) {
-                Ok(interrupts) => handle_interrupt(interrupts),
+                Ok(wait_return) => {
+                    if !wait_return.pending_signals.contains(signals::TEST_IRQ)
+                        || wait_return.user_data != 0
+                    {
+                        pw_log::error!("Incorrect WaitReturn values");
+                        Err(Error::Internal)
+                    } else {
+                        handle_interrupt(wait_return.pending_signals)
+                    }
+                }
                 Err(err) => {
                     pw_log::error!("Failed to wait on interrupt");
                     Err(err)

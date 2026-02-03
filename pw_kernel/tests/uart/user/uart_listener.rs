@@ -72,7 +72,16 @@ fn entry() -> ! {
     loop {
         let res = match syscall::object_wait(handle::UART_INTERRUPTS, signals::UART0, Instant::MAX)
         {
-            Ok(interrupts) => handle_interrupt(&mut uart, interrupts),
+            Ok(wait_return) => {
+                if !wait_return.pending_signals.contains(signals::UART0)
+                    || wait_return.user_data != 0
+                {
+                    pw_log::error!("Incorrect WaitReturn values");
+                    Err(Error::Internal)
+                } else {
+                    handle_interrupt(&mut uart, wait_return.pending_signals)
+                }
+            }
             Err(err) => {
                 pw_log::error!("Failed to wait on interrupt");
                 Err(err)

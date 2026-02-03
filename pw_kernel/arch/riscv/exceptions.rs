@@ -14,7 +14,7 @@
 
 #[cfg(feature = "exceptions_reload_pmp")]
 use kernel::Kernel;
-use kernel::syscall::{SyscallArgs, raw_handle_syscall};
+use kernel::syscall::{SyscallArgs, handle_syscall};
 use kernel_config::{ExceptionMode, KernelConfig, RiscVKernelConfigInterface};
 use log_if::debug_if;
 #[cfg(feature = "exceptions_reload_pmp")]
@@ -127,15 +127,9 @@ fn handle_ecall(frame: &mut TrapFrame) {
     #[expect(clippy::cast_possible_truncation)]
     let id = frame.t0 as u16;
     let args = RiscVSyscallArgs::new(frame);
-    let ret_val = raw_handle_syscall(super::Arch, id, args);
-
-    // Explicit truncation is assumed when packing a u64 into two u32 (usize)
-    // registers.
-    #[expect(clippy::cast_possible_truncation)]
-    {
-        frame.a0 = ret_val.cast_unsigned() as usize;
-        frame.a1 = (ret_val.cast_unsigned() >> 32) as usize;
-    }
+    let ret_val = handle_syscall(super::Arch, id, args);
+    frame.a0 = ret_val.value[0];
+    frame.a1 = ret_val.value[1];
 
     // ECALL exceptions do not "retire the instruction" requiring the advancing
     // of the PC past the ECALL instruction.  ECALLs are encoded as 4 byte
