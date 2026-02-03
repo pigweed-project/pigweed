@@ -16,6 +16,8 @@
 #
 # TODO(b/422199556): Contribute this to upstream TinyUSB.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 # buildifier: disable=module-docstring
 package(default_visibility = ["//visibility:public"])
 

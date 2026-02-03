@@ -44,7 +44,7 @@ def _pw_cc_nc_test_impl(ctx):
 
     generate_and_run_args = [
         "--name",
-        str(ctx.label).replace("@@//", "//"),
+        str(ctx.label).replace("@@//", "//"),  # buildifier: disable=canonical-repository
         "--results",
         result_script.path,
     ]

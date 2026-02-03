@@ -14,6 +14,8 @@
 
 # BUILD.bazel file for cmsis_device_xxx.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 # buildifier: disable=module-docstring
 # Should point to the corresponding cmsis_core library. Hidden behind a label
 # flag so that it can be overriden in projects that build for more than one

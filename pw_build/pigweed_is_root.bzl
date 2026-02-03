@@ -35,4 +35,4 @@ def pigweed_is_root():
     Returns:
         ``True`` if Pigweed is the root module.
     """
-    return Label("@@//:__pkg__").repo_name == Label("@pigweed//:__pkg__").repo_name
+    return Label("@@//:__pkg__").repo_name == Label("@pigweed//:__pkg__").repo_name  # buildifier: disable=canonical-repository

@@ -71,7 +71,7 @@ def _pylint_aspect_impl(target, ctx):
                 python_path.append(
                     ctx.expand_make_variables(
                         "external_virtual_imports",
-                        "$(BINDIR)/external/" + path,
+                        "$(BINDIR)/external/" + path,  # buildifier: disable=external-path
                         ctx.var,
                     ),
                 )
