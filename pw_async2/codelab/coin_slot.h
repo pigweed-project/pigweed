@@ -73,12 +73,6 @@ class CoinSlot {
   // May only be called by one task.
   CoinFuture GetCoins();
 
-  // Stub for backward compatibility with later codelab steps.
-  // TODO: pwbug.dev/457508399 - remove this once all steps use futures.
-  pw::async2::Poll<unsigned> Pend(pw::async2::Context&) {
-    return pw::async2::Ready(1);
-  }
-
   // Report that a coin was received by the coin slot.
   // Typically called from the coin slot ISR.
   void Deposit();

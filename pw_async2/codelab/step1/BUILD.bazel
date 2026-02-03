@@ -30,8 +30,6 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = [
         "//pw_async2",

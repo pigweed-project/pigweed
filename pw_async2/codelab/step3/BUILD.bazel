@@ -51,8 +51,6 @@ pw_cc_binary(
     copts = [
         "-Wno-unused-parameter",
         "-Wno-unused-private-field",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = deps,
 )
@@ -66,8 +64,6 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = deps,
 )
@@ -81,8 +77,6 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = deps,
 )
@@ -96,8 +90,6 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = deps,
 )
@@ -111,8 +103,6 @@ pw_cc_binary(
     ],
     copts = [
         "-Wno-unused-parameter",
-        # TODO: b/457508399 - Remove once migrated onto futures.
-        "-Wno-deprecated-declarations",
     ],
     deps = deps,
 )
