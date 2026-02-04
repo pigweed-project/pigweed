@@ -49,10 +49,6 @@ class FuncTask final : public Task {
 template <typename Func>
 FuncTask(Func&&) -> FuncTask<Func>;
 
-// Temporary alias for backwards compatibility.
-template <typename Func = Function<Poll<>(Context&)> >
-using PendFuncTask = FuncTask<Func>;
-
 /// @endsubmodule
 
 }  // namespace pw::async2
