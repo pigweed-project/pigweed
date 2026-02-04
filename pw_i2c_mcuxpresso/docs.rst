@@ -12,6 +12,22 @@ NXP MCUXpresso SDK.
 The implementation is based on the i2c driver in SDK. I2C transfers use
 non-blocking driver API.
 
+``McuxpressoInitiator`` implements the ``pw_i2c`` initiator interface using the
+MCUXpresso FlexComm driver.
+
+``FlexIoMcuxpressoInitiator`` implements the ``pw_i2c`` initiator interface
+using the MCUXpresso FlexIo driver. As the FlexIo peripheral emulates I2C, it
+has a few limitations:
+
+1. No Clock Stretching support.
+2. No Arbitration support in multi-controller buses.
+3. No proper differentiation between overflow and ``NACK``.
+4. No I2C transfer-flag support, i.e. no support for ``NO_START``,
+   ``REPEATED_START`` and ``NO_STOP`` flags. This only allows support for:
+
+  * Single Read or Write operations.
+  * Write+Read, for example to query a register value on the device.
+
 ``I3cMcuxpressoInitiator`` implements the ``pw_i2c`` initiator interface using
 the MCUXpresso I3C driver. It exposes a few I3C specific API's for setting up
 the bus, allowing normal I2C API's to work after setup.
@@ -34,6 +50,8 @@ This module requires following setup:
 -----
 Usage
 -----
+``McuxpressoInitiator`` example usage.
+
 .. code-block:: cpp
 
    pw::clock_tree::Element& flexcomm11_clock;
@@ -45,6 +63,30 @@ Usage
        .baud_rate_bps = kI2CBaudRate,
    };
    McuxpressoInitiator initiator{kConfig, flexcomm11_clock};
+   initiator.Enable();
+
+``FlexIoMcuxpressoInitiator`` example usage.
+
+.. note::
+
+  The ``flexio_sda_channel`` and ``flexio_scl_channel`` are platform-specific.
+  The NXP MCUXpresso ConfigTool can be used to auto-generate a definition after
+  setting an "identifier" to the associated FlexIo pins. The value is an
+  enumeration from 0 to the max number of FlexIo pins supported by the MCU.
+
+.. code-block:: cpp
+
+   pw::clock_tree::Element& flexio_clock;
+
+   constexpr uint32_t kI2CBaudRate = 100000;
+   constexpr FlexIoMcuxpressoInitiator::Config kFlexioConfig = {
+       .flexio_address = FLEXIO0_BASE,
+       .clock_name = kCLOCK_FlexioClk,
+       .baud_rate_bps = kI2CBaudRate,
+       .flexio_sda_channel = BOARD_FLEXIO_I2C_SDA_CHANNEL,
+       .flexio_scl_channel = BOARD_FLEXIO_I2C_SCL_CHANNEL,
+   };
+   FlexIoMcuxpressoInitiator initiator{kFlexioConfig, flexio_clock};
    initiator.Enable();
 
 ``I3cMcuxpressoInitiator`` example usage.

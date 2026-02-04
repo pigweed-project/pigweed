@@ -50,6 +50,35 @@ pw_cc_test(
 )
 
 cc_library(
+    name = "flexio_i2c_initiator",
+    srcs = ["flexio_initiator.cc"],
+    hdrs = ["public/pw_i2c_mcuxpresso/flexio_initiator.h"],
+    implementation_deps = ["//pw_assert:check"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_chrono:system_clock",
+        "//pw_clock_tree",
+        "//pw_function:scope_guard",
+        "//pw_i2c:address",
+        "//pw_i2c:initiator",
+        "//pw_log",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:timed_thread_notification",
+        "//targets:mcuxpresso_sdk",
+    ],
+)
+
+pw_cc_test(
+    name = "flexio_initiator_test",
+    srcs = ["flexio_initiator_test.cc"],
+    tags = ["manual"],
+    deps = [":flexio_i2c_initiator"],
+)
+
+cc_library(
     name = "i3c_ccc",
     hdrs = [
         "public/pw_i2c_mcuxpresso/i3c_ccc.h",
