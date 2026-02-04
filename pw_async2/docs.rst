@@ -26,10 +26,15 @@ Benefits
 Example
 -------
 :ref:`module-pw_async2-informed-poll` is the core design philosophy behind
-``pw_async2``. :cc:`Task <pw::async2::Task>` is the main async primitive.
-It's a cooperatively scheduled "thread" which yields to the
-:cc:`Dispatcher <pw::async2::Dispatcher>` when waiting. When a ``Task``
-is able to make progress, the ``Dispatcher`` runs it again:
+``pw_async2``. A system consists of cooperatively scheduled :cc:`Task
+<pw::async2::Task>` implementations, which are run by a :cc:`Dispatcher
+<pw::async2::Dispatcher>`. Each task makes as much progress as possible when it
+runs, yielding back to the dispatcher when it needs to wait for something. While
+waiting, the dispatcher runs other tasks. Once a task is able to make progress,
+the dispatcher runs it again.
+
+Tasks are written as state machines which poll :ref:`Futures
+<module-pw_async2-futures>` to completion:
 
 .. literalinclude:: examples/basic_manual.cc
    :language: cpp
@@ -37,8 +42,8 @@ is able to make progress, the ``Dispatcher`` runs it again:
    :start-after: [pw_async2-examples-basic-manual]
    :end-before: [pw_async2-examples-basic-manual]
 
-Tasks can then be run on a :cc:`Dispatcher <pw::async2::Dispatcher>`
-using the :cc:`Post() <pw::async2::Dispatcher::Post>` method:
+Tasks are added to a :cc:`Dispatcher <pw::async2::Dispatcher>` by calling
+:cc:`Post() <pw::async2::Dispatcher::Post>`:
 
 .. literalinclude:: examples/basic_manual.cc
    :language: cpp
@@ -90,29 +95,6 @@ Learn more
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`code-square` Reference
-      :link: ../api/cc/group__pw__async2.html
-      :link-type: url
-      :class-item: sales-pitch-cta-secondary
-
-      C/C++ API reference for ``Task``, ``Dispatcher``, ``Coro``, and more.
-
-   .. grid-item-card:: :octicon:`pencil` Code size analysis
-      :link: module-pw_async2-size-reports
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Reports on the code size cost of adding ``pw_async2`` to a system.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`code-square` Dispatchers
-      :link: module-pw_async2-dispatcher
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      You can use a Pigweed-provided dispatcher or roll your own.
-
    .. grid-item-card:: :octicon:`container` Futures
       :link: module-pw_async2-futures
       :link-type: ref
@@ -120,6 +102,13 @@ Learn more
 
       Futures are the basic async primitive in ``pw_async2``. Learn about
       future ownership, lifetimes, polling, composability, and more.
+
+   .. grid-item-card:: :octicon:`code-square` Dispatchers
+      :link: module-pw_async2-dispatcher
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      You can use a Pigweed-provided dispatcher or roll your own.
 
 .. grid:: 2
 
@@ -139,6 +128,22 @@ Learn more
 
       How to define tasks with coroutines, allocate memory, perform async
       operations from coroutines, and more.
+
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`code-square` Reference
+      :link: ../api/cc/group__pw__async2.html
+      :link-type: url
+      :class-item: sales-pitch-cta-secondary
+
+      C/C++ API reference for ``Task``, ``Dispatcher``, ``Coro``, and more.
+
+   .. grid-item-card:: :octicon:`pencil` Code size analysis
+      :link: module-pw_async2-size-reports
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Reports on the code size cost of adding ``pw_async2`` to a system.
 
 .. toctree::
    :hidden:
