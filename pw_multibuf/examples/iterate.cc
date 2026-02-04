@@ -23,7 +23,7 @@
 #include "pw_multibuf/multibuf.h"
 #include "pw_random/xor_shift.h"
 
-namespace pw::multibuf::examples {
+namespace examples {
 
 constexpr size_t kMaxSize = 256;
 
@@ -32,9 +32,9 @@ std::array<std::byte, kMaxSize> static_buffer;
 // DOCSTAG: [pw_multibuf-examples-iterate-create]
 /// Creates a MultiBuf that holds non-contiguous memory regions with different
 /// memory ownership.
-ConstMultiBuf::Instance CreateMultiBuf(Allocator& allocator) {
-  ConstMultiBuf::Instance mbuf(allocator);
-  random::XorShiftStarRng64 rng(1);
+pw::ConstMultiBuf::Instance CreateMultiBuf(pw::Allocator& allocator) {
+  pw::ConstMultiBuf::Instance mbuf(allocator);
+  pw::random::XorShiftStarRng64 rng(1);
   size_t size;
 
   // Add some owned data.
@@ -45,7 +45,7 @@ ConstMultiBuf::Instance CreateMultiBuf(Allocator& allocator) {
 
   // Add some static data.
   rng.GetInt(size, kMaxSize);
-  ByteSpan static_data(static_buffer.data(), size);
+  pw::ByteSpan static_data(static_buffer.data(), size);
   rng.Get(static_data);
   mbuf->PushBack(static_data);
 
@@ -61,8 +61,8 @@ ConstMultiBuf::Instance CreateMultiBuf(Allocator& allocator) {
 
 // DOCSTAG: [pw_multibuf-examples-iterate-bytes]
 /// Calculates the CRC32 checksum of a MultiBuf one byte at a time.
-uint32_t BytesChecksum(const ConstMultiBuf& mbuf) {
-  checksum::Crc32 crc32;
+uint32_t BytesChecksum(const pw::ConstMultiBuf& mbuf) {
+  pw::checksum::Crc32 crc32;
   for (std::byte b : mbuf) {
     crc32.Update(b);
   }
@@ -72,9 +72,9 @@ uint32_t BytesChecksum(const ConstMultiBuf& mbuf) {
 
 // DOCSTAG: [pw_multibuf-examples-iterate-chunks]
 /// Calculates the CRC32 checksum of a MultiBuf one chunk at a time.
-uint32_t ChunksChecksum(const ConstMultiBuf& mbuf) {
-  checksum::Crc32 crc32;
-  for (ConstByteSpan s : mbuf.ConstChunks()) {
+uint32_t ChunksChecksum(const pw::ConstMultiBuf& mbuf) {
+  pw::checksum::Crc32 crc32;
+  for (pw::ConstByteSpan s : mbuf.ConstChunks()) {
     crc32.Update(s);
   }
   return crc32.value();
@@ -82,9 +82,9 @@ uint32_t ChunksChecksum(const ConstMultiBuf& mbuf) {
 // DOCSTAG: [pw_multibuf-examples-iterate-chunks]
 
 TEST(IterateTest, BytesChecksumMatchesChunksChecksum) {
-  allocator::test::AllocatorForTest<512> allocator;
+  pw::allocator::test::AllocatorForTest<512> allocator;
   auto mbuf = CreateMultiBuf(allocator);
   EXPECT_EQ(BytesChecksum(mbuf), ChunksChecksum(mbuf));
 }
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples

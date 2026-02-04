@@ -31,27 +31,40 @@
 #include "pw_random/xor_shift.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::examples {
+namespace examples {
 
-using async2::Context;
-using async2::Pending;
-using async2::Poll;
-using async2::Ready;
-using async2::Task;
-using async2::Waker;
+struct DemoLinkHeader : pw::multibuf::examples::DemoLinkHeader {
+  static constexpr size_t kLength = pw::multibuf::examples::kDemoLinkHeaderLen;
+};
 
+struct DemoLinkFooter : pw::multibuf::examples::DemoLinkFooter {
+  static constexpr size_t kLength = pw::multibuf::examples::kDemoLinkFooterLen;
+};
+
+struct DemoNetworkHeader : pw::multibuf::examples::DemoNetworkHeader {
+  static constexpr size_t kLength =
+      pw::multibuf::examples::kDemoNetworkHeaderLen;
+};
+
+struct DemoTransportHeader : pw::multibuf::examples::DemoTransportHeader {
+  static constexpr size_t kLength =
+      pw::multibuf::examples::kDemoTransportHeaderLen;
+};
+
+constexpr size_t kMaxDemoLinkFrameLength =
+    pw::multibuf::examples::kMaxDemoLinkFrameLength;
 constexpr size_t kCapacity = 4;
 
 template <typename T>
-constexpr T GetHeaderField(const ConstMultiBuf& mbuf, size_t offset) {
-  ConstByteSpan header = *(mbuf.ConstChunks().cbegin());
-  return bytes::ReadInOrder<T>(endian::little, &header[offset]);
+constexpr T GetHeaderField(const pw::ConstMultiBuf& mbuf, size_t offset) {
+  pw::ConstByteSpan header = *(mbuf.ConstChunks().cbegin());
+  return pw::bytes::ReadInOrder<T>(pw::endian::little, &header[offset]);
 }
 
 template <typename T>
-constexpr void SetHeaderField(MultiBuf& mbuf, size_t offset, T value) {
-  ByteSpan header = *(mbuf.Chunks().begin());
-  return bytes::CopyInOrder<T>(endian::little, value, &header[offset]);
+constexpr void SetHeaderField(pw::MultiBuf& mbuf, size_t offset, T value) {
+  pw::ByteSpan header = *(mbuf.Chunks().begin());
+  return pw::bytes::CopyInOrder<T>(pw::endian::little, value, &header[offset]);
 }
 
 class TransportSegment;
@@ -68,21 +81,21 @@ class LinkFrame {
  private:
   friend class NetworkPacket;
 
-  constexpr explicit LinkFrame(MultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {
+  constexpr explicit LinkFrame(pw::MultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {
     SetHeaderField<uint16_t>(*mbuf_,
                              offsetof(DemoLinkHeader, length),
                              static_cast<uint16_t>(mbuf_->size()));
   }
 
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-link_frame-create]
-  static Result<LinkFrame> Create(Allocator& allocator) {
-    MultiBuf::Instance mbuf(allocator);
+  static pw::Result<LinkFrame> Create(pw::Allocator& allocator) {
+    pw::MultiBuf::Instance mbuf(allocator);
     if (!mbuf->TryReserveLayers(4)) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     auto buffer = allocator.MakeUnique<std::byte[]>(kMaxDemoLinkFrameLength);
     if (buffer == nullptr) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     mbuf->PushBack(std::move(buffer));
     PW_CHECK(mbuf->AddLayer(0));
@@ -90,7 +103,7 @@ class LinkFrame {
   }
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-link_frame-create]
 
-  MultiBuf::Instance mbuf_;
+  pw::MultiBuf::Instance mbuf_;
 };
 
 class NetworkPacket {
@@ -107,10 +120,11 @@ class NetworkPacket {
   friend class LinkFrame;
   friend class TransportSegment;
 
-  constexpr explicit NetworkPacket(MultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {}
+  constexpr explicit NetworkPacket(pw::MultiBuf&& mbuf)
+      : mbuf_(std::move(mbuf)) {}
 
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-network_packet-create]
-  static Result<NetworkPacket> Create(Allocator& allocator) {
+  static pw::Result<NetworkPacket> Create(pw::Allocator& allocator) {
     auto frame = LinkFrame::Create(allocator);
     if (!frame.ok()) {
       return frame.status();
@@ -119,13 +133,14 @@ class NetworkPacket {
   }
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-network_packet-create]
 
-  MultiBuf::Instance mbuf_;
+  pw::MultiBuf::Instance mbuf_;
 };
 
 class TransportSegment {
  public:
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-transport_segment-create]
-  static Result<TransportSegment> Create(Allocator& allocator, uint64_t id) {
+  static pw::Result<TransportSegment> Create(pw::Allocator& allocator,
+                                             uint64_t id) {
     auto packet = NetworkPacket::Create(allocator);
     if (!packet.ok()) {
       return packet.status();
@@ -149,15 +164,15 @@ class TransportSegment {
                                     offsetof(DemoTransportHeader, length));
   }
 
-  constexpr ByteSpan payload() {
-    return mbuf_->Chunks().begin()->subspan(kDemoTransportHeaderLen);
+  constexpr pw::ByteSpan payload() {
+    return mbuf_->Chunks().begin()->subspan(DemoTransportHeader::kLength);
   }
 
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-transport_segment-payload]
   void CopyFrom(const char* msg, size_t msg_len) {
-    uint32_t length = kDemoTransportHeaderLen;
+    uint32_t length = DemoTransportHeader::kLength;
     size_t copied =
-        mbuf_->CopyFrom(as_bytes(span<const char>(msg, msg_len)), length);
+        mbuf_->CopyFrom(as_bytes(pw::span<const char>(msg, msg_len)), length);
     PW_CHECK_UINT_EQ(copied, msg_len);
     length += static_cast<uint32_t>(msg_len);
     mbuf_->TruncateTopLayer(length);
@@ -166,8 +181,8 @@ class TransportSegment {
   }
 
   const char* AsCString() const {
-    ConstByteSpan bytes = *(mbuf_->ConstChunks().cbegin());
-    bytes = bytes.subspan(kDemoTransportHeaderLen);
+    pw::ConstByteSpan bytes = *(mbuf_->ConstChunks().cbegin());
+    bytes = bytes.subspan(DemoTransportHeader::kLength);
     return reinterpret_cast<const char*>(bytes.data());
   }
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-transport_segment-payload]
@@ -175,15 +190,16 @@ class TransportSegment {
  private:
   friend class NetworkPacket;
 
-  constexpr explicit TransportSegment(MultiBuf&& mbuf)
+  constexpr explicit TransportSegment(pw::MultiBuf&& mbuf)
       : mbuf_(std::move(mbuf)) {}
 
-  MultiBuf::Instance mbuf_;
+  pw::MultiBuf::Instance mbuf_;
 };
 
 // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-from]
 LinkFrame LinkFrame::From(NetworkPacket&& packet) {
-  size_t length = packet.length() + kDemoLinkHeaderLen + kDemoLinkFooterLen;
+  size_t length =
+      packet.length() + DemoLinkHeader::kLength + DemoLinkFooter::kLength;
   PW_CHECK_UINT_LE(length, std::numeric_limits<uint16_t>::max());
   LinkFrame frame(std::move(*packet.mbuf_));
   frame.mbuf_->PopLayer();
@@ -195,9 +211,10 @@ LinkFrame LinkFrame::From(NetworkPacket&& packet) {
 }
 
 NetworkPacket NetworkPacket::From(LinkFrame&& frame) {
-  size_t length = frame.length() - (kDemoLinkHeaderLen + kDemoLinkFooterLen);
+  size_t length =
+      frame.length() - (DemoLinkHeader::kLength + DemoLinkFooter::kLength);
   NetworkPacket packet(std::move(*frame.mbuf_));
-  PW_CHECK(packet.mbuf_->AddLayer(kDemoLinkHeaderLen, length));
+  PW_CHECK(packet.mbuf_->AddLayer(DemoLinkHeader::kLength, length));
   SetHeaderField<uint32_t>(*packet.mbuf_,
                            offsetof(DemoNetworkHeader, length),
                            static_cast<uint32_t>(length));
@@ -205,7 +222,7 @@ NetworkPacket NetworkPacket::From(LinkFrame&& frame) {
 }
 
 NetworkPacket NetworkPacket::From(TransportSegment&& segment) {
-  size_t length = segment.length() + kDemoNetworkHeaderLen;
+  size_t length = segment.length() + DemoNetworkHeader::kLength;
   PW_CHECK_UINT_LE(length, std::numeric_limits<uint32_t>::max());
   NetworkPacket packet(std::move(*segment.mbuf_));
   packet.mbuf_->PopLayer();
@@ -217,9 +234,9 @@ NetworkPacket NetworkPacket::From(TransportSegment&& segment) {
 }
 
 TransportSegment TransportSegment::From(NetworkPacket&& packet) {
-  size_t length = packet.length() - kDemoNetworkHeaderLen;
+  size_t length = packet.length() - DemoNetworkHeader::kLength;
   TransportSegment segment(std::move(*packet.mbuf_));
-  PW_CHECK(segment.mbuf_->AddLayer(kDemoNetworkHeaderLen, length));
+  PW_CHECK(segment.mbuf_->AddLayer(DemoNetworkHeader::kLength, length));
   SetHeaderField<uint32_t>(*segment.mbuf_,
                            offsetof(DemoTransportHeader, length),
                            static_cast<uint32_t>(length));
@@ -231,9 +248,12 @@ TransportSegment TransportSegment::From(NetworkPacket&& packet) {
 template <typename T>
 class Closeable {
  public:
-  constexpr explicit Closeable(InlineAsyncQueue<T>& queue) : queue_(queue) {}
+  constexpr explicit Closeable(pw::InlineAsyncQueue<T>& queue)
+      : queue_(queue) {}
 
-  Poll<> PendHasSpace(Context& context) { return queue_.PendHasSpace(context); }
+  pw::async2::Poll<> PendHasSpace(pw::async2::Context& context) {
+    return queue_.PendHasSpace(context);
+  }
 
   void push(T&& t) { queue_.push(std::move(t)); }
 
@@ -241,16 +261,16 @@ class Closeable {
 
   void pop() { queue_.pop(); }
 
-  Poll<Status> PendNotEmpty(Context& context) {
+  pw::async2::Poll<pw::Status> PendNotEmpty(pw::async2::Context& context) {
     auto poll_result = queue_.PendNotEmpty(context);
     if (poll_result.IsReady()) {
-      return Ready(OkStatus());
+      return pw::async2::Ready(pw::OkStatus());
     }
     if (closed_) {
-      return Ready(Status::ResourceExhausted());
+      return pw::async2::Ready(pw::Status::ResourceExhausted());
     }
     PW_ASYNC_STORE_WAKER(context, waker_, "waiting for data or close");
-    return Pending();
+    return pw::async2::Pending();
   }
 
   void Close() {
@@ -259,22 +279,22 @@ class Closeable {
   }
 
  private:
-  InlineAsyncQueue<T>& queue_;
+  pw::InlineAsyncQueue<T>& queue_;
   bool closed_ = false;
-  Waker waker_;
+  pw::async2::Waker waker_;
 };
 
 // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-relay]
 template <typename FromProtocol, typename ToProtocol>
-class Relay : public Task {
+class Relay : public pw::async2::Task {
  public:
   Relay(pw::log::Token name,
         Closeable<FromProtocol>& rx,
         Closeable<ToProtocol>& tx)
-      : Task(name), rx_(rx), tx_(tx) {}
+      : pw::async2::Task(name), rx_(rx), tx_(tx) {}
 
  private:
-  Poll<> DoPend(Context& context) override {
+  pw::async2::Poll<> DoPend(pw::async2::Context& context) override {
     while (true) {
       if (pending_.has_value()) {
         PW_TRY_READY(tx_.PendHasSpace(context));
@@ -284,7 +304,7 @@ class Relay : public Task {
       PW_TRY_READY_ASSIGN(auto status, rx_.PendNotEmpty(context));
       if (!status.ok()) {
         tx_.Close();
-        return Ready();
+        return pw::async2::Ready();
       }
       FromProtocol from(std::move(rx_.front()));
       rx_.pop();
@@ -313,7 +333,7 @@ class Sender : public Relay<NestedProtocol, OuterProtocol> {  //...
   constexpr Closeable<OuterProtocol>& queue() { return tx_; }
 
  private:
-  InlineAsyncQueue<OuterProtocol, kCapacity> tx_queue_;
+  pw::InlineAsyncQueue<OuterProtocol, kCapacity> tx_queue_;
   Closeable<OuterProtocol> tx_;
 };
 
@@ -328,7 +348,7 @@ class Receiver : public Relay<OuterProtocol, NestedProtocol> {  //...
   constexpr Closeable<OuterProtocol>& queue() { return rx_; }
 
  private:
-  InlineAsyncQueue<OuterProtocol, kCapacity> rx_queue_;
+  pw::InlineAsyncQueue<OuterProtocol, kCapacity> rx_queue_;
   Closeable<OuterProtocol> rx_;
 };
 
@@ -339,16 +359,16 @@ class Link : public Relay<LinkFrame, LinkFrame> {
 };
 
 // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-encryptor]
-class Encryptor : public Task {
+class Encryptor : public pw::async2::Task {
  public:
   constexpr explicit Encryptor(pw::log::Token name, uint64_t key)
-      : Task(name), key_(key), rx_(rx_queue_), tx_(tx_queue_) {}
+      : pw::async2::Task(name), key_(key), rx_(rx_queue_), tx_(tx_queue_) {}
 
   Closeable<TransportSegment>& rx() { return rx_; }
   Closeable<TransportSegment>& tx() { return tx_; }
 
  private:
-  Poll<> DoPend(Context& context) override {
+  pw::async2::Poll<> DoPend(pw::async2::Context& context) override {
     std::array<std::byte, sizeof(uint64_t)> pad;
     while (true) {
       if (segment_.has_value()) {
@@ -360,15 +380,15 @@ class Encryptor : public Task {
       PW_TRY_READY_ASSIGN(auto status, rx_.PendNotEmpty(context));
       if (!status.ok()) {
         tx_.Close();
-        return Ready();
+        return pw::async2::Ready();
       }
       segment_ = std::move(rx_.front());
       rx_.pop();
 
       // "Encrypt" the message. "Encrypting" again with the same key is
       // equivalent to decrypting.
-      random::XorShiftStarRng64 rng(key_ ^ segment_->id());
-      ByteSpan payload = segment_->payload();
+      pw::random::XorShiftStarRng64 rng(key_ ^ segment_->id());
+      pw::ByteSpan payload = segment_->payload();
       for (size_t i = 0; i < payload.size(); ++i) {
         if ((i % pad.size()) == 0) {
           rng.Get(pad);
@@ -381,10 +401,10 @@ class Encryptor : public Task {
   const uint64_t key_;
   std::optional<TransportSegment> segment_;
 
-  InlineAsyncQueue<TransportSegment, kCapacity> rx_queue_;
+  pw::InlineAsyncQueue<TransportSegment, kCapacity> rx_queue_;
   Closeable<TransportSegment> rx_;
 
-  InlineAsyncQueue<TransportSegment, kCapacity> tx_queue_;
+  pw::InlineAsyncQueue<TransportSegment, kCapacity> tx_queue_;
   Closeable<TransportSegment> tx_;
 };
 // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-encryptor]
@@ -413,21 +433,22 @@ const char* kTheAmaranth[] = {
 constexpr size_t kNumLines = sizeof(kTheAmaranth) / sizeof(kTheAmaranth[0]);
 
 /// A simple allocator wrapper that facilitates asynchronous allocations.
-class SimpleAsyncAllocator : public Allocator {
+class SimpleAsyncAllocator : public pw::Allocator {
  public:
   static constexpr size_t kAllocatorCapacity = 4096;
 
-  Poll<> PendCanAllocate(async2::Context& context, size_t num_bytes) {
+  pw::async2::Poll<> PendCanAllocate(pw::async2::Context& context,
+                                     size_t num_bytes) {
     size_t available = kAllocatorCapacity - allocator_.GetAllocated();
     if (num_bytes <= available) {
-      return Ready();
+      return pw::async2::Ready();
     }
     PW_ASYNC_STORE_WAKER(context, waker_, "waiting for memory");
-    return Pending();
+    return pw::async2::Pending();
   }
 
  private:
-  void* DoAllocate(Layout layout) override {
+  void* DoAllocate(pw::allocator::Layout layout) override {
     return allocator_.Allocate(layout);
   }
 
@@ -436,13 +457,13 @@ class SimpleAsyncAllocator : public Allocator {
     waker_.Wake();
   }
 
-  allocator::test::AllocatorForTest<kAllocatorCapacity> allocator_;
-  async2::Waker waker_;
+  pw::allocator::test::AllocatorForTest<kAllocatorCapacity> allocator_;
+  pw::async2::Waker waker_;
 };
 
 TEST(PseudoEncrypt, RoundTrip) {
   SimpleAsyncAllocator allocator;
-  async2::BasicDispatcher dispatcher;
+  pw::async2::BasicDispatcher dispatcher;
   constexpr uint64_t kKey = 0xDEADBEEFFEEDFACEull;
 
   // DOCSTAG: [pw_multibuf-examples-pseudo_encrypt-e2e]
@@ -466,31 +487,33 @@ TEST(PseudoEncrypt, RoundTrip) {
   // Define a task that sends messages.
   size_t tx_index = 0;
   uint64_t segment_id = 0x1000;
-  async2::FuncTask msg_sender([&](async2::Context& context) -> async2::Poll<> {
-    auto& queue = encryptor.rx();
-    while (tx_index < kNumLines) {
-      PW_TRY_READY(allocator.PendCanAllocate(context, kMaxDemoLinkFrameLength));
-      PW_TRY_READY(queue.PendHasSpace(context));
-      auto segment = TransportSegment::Create(allocator, segment_id++);
-      PW_CHECK_OK(segment.status());
-      const char* line = kTheAmaranth[tx_index];
-      segment->CopyFrom(line, strlen(line) + 1);
-      queue.push(std::move(*segment));
-      ++tx_index;
-    }
-    queue.Close();
-    return Ready();
-  });
+  pw::async2::FuncTask msg_sender(
+      [&](pw::async2::Context& context) -> pw::async2::Poll<> {
+        auto& queue = encryptor.rx();
+        while (tx_index < kNumLines) {
+          PW_TRY_READY(
+              allocator.PendCanAllocate(context, kMaxDemoLinkFrameLength));
+          PW_TRY_READY(queue.PendHasSpace(context));
+          auto segment = TransportSegment::Create(allocator, segment_id++);
+          PW_CHECK_OK(segment.status());
+          const char* line = kTheAmaranth[tx_index];
+          segment->CopyFrom(line, strlen(line) + 1);
+          queue.push(std::move(*segment));
+          ++tx_index;
+        }
+        queue.Close();
+        return pw::async2::Ready();
+      });
 
   // Define a task that receives messages.
   size_t rx_index = 0;
-  async2::FuncTask msg_receiver(
-      [&](async2::Context& context) -> async2::Poll<> {
+  pw::async2::FuncTask msg_receiver(
+      [&](pw::async2::Context& context) -> pw::async2::Poll<> {
         auto& queue = decryptor.tx();
         while (true) {
           PW_TRY_READY_ASSIGN(auto status, queue.PendNotEmpty(context));
           if (!status.ok()) {
-            return Ready();
+            return pw::async2::Ready();
           }
           TransportSegment segment(std::move(queue.front()));
           queue.pop();
@@ -516,4 +539,4 @@ TEST(PseudoEncrypt, RoundTrip) {
   EXPECT_EQ(rx_index, kNumLines);
 }
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples

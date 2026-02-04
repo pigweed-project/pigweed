@@ -70,8 +70,30 @@
 // if needed, with the transport header containing the metadata necessary for
 // reassembly. However this example assumes no fragmentation for simplicity.
 
-namespace pw::multibuf::examples {
+namespace examples {
 
+using pw::multibuf::examples::DemoLinkHeader;
+using pw::multibuf::examples::emboss::DemoLinkHeaderView;
+using pw::multibuf::examples::emboss::DemoLinkHeaderWriter;
+
+using pw::multibuf::examples::DemoLinkFooter;
+using pw::multibuf::examples::emboss::DemoLinkFooterView;
+using pw::multibuf::examples::emboss::DemoLinkFooterWriter;
+
+using pw::multibuf::examples::DemoNetworkHeader;
+using pw::multibuf::examples::emboss::DemoNetworkHeaderView;
+using pw::multibuf::examples::emboss::DemoNetworkHeaderWriter;
+
+using pw::multibuf::examples::DemoTransportHeader;
+using pw::multibuf::examples::emboss::DemoTransportHeaderView;
+using pw::multibuf::examples::emboss::DemoTransportHeaderWriter;
+
+using pw::multibuf::examples::DemoTransportFirstHeader;
+using pw::multibuf::examples::emboss::DemoTransportFirstHeaderView;
+using pw::multibuf::examples::emboss::DemoTransportFirstHeaderWriter;
+
+constexpr size_t kMaxDemoLinkFrameLength =
+    pw::multibuf::examples::kMaxDemoLinkFrameLength;
 constexpr size_t kProtocolMaxPacketChunks = 5;
 
 // Serialization and deserialization functions, to go between the
@@ -79,7 +101,7 @@ constexpr size_t kProtocolMaxPacketChunks = 5;
 // "protocol.emb.h"
 
 // DOCSTAG: [pw_multibuf-examples-top_down_forward-demo_link_header_serialize]
-DemoLinkHeader Deserialize(emboss::DemoLinkHeaderView view) {
+DemoLinkHeader Deserialize(DemoLinkHeaderView view) {
   return {
       .src_addr = view.src_addr().Read(),
       .dst_addr = view.dst_addr().Read(),
@@ -87,26 +109,24 @@ DemoLinkHeader Deserialize(emboss::DemoLinkHeaderView view) {
   };
 }
 
-void Serialize(const DemoLinkHeader& value,
-               emboss::DemoLinkHeaderWriter& writer) {
+void Serialize(const DemoLinkHeader& value, DemoLinkHeaderWriter& writer) {
   writer.src_addr().Write(value.src_addr);
   writer.dst_addr().Write(value.dst_addr);
   writer.length().Write(value.length);
 }
 // DOCSTAG: [pw_multibuf-examples-top_down_forward-demo_link_header_serialize]
 
-DemoLinkFooter Deserialize(emboss::DemoLinkFooterView view) {
+DemoLinkFooter Deserialize(DemoLinkFooterView view) {
   return {
       .crc32 = view.crc32().Read(),
   };
 }
 
-void Serialize(const DemoLinkFooter& value,
-               emboss::DemoLinkFooterWriter& writer) {
+void Serialize(const DemoLinkFooter& value, DemoLinkFooterWriter& writer) {
   writer.crc32().Write(value.crc32);
 }
 
-DemoNetworkHeader Deserialize(emboss::DemoNetworkHeaderView view) {
+DemoNetworkHeader Deserialize(DemoNetworkHeaderView view) {
   return {
       .src_addr = view.src_addr().Read(),
       .dst_addr = view.dst_addr().Read(),
@@ -115,13 +135,13 @@ DemoNetworkHeader Deserialize(emboss::DemoNetworkHeaderView view) {
 }
 
 void Serialize(const DemoNetworkHeader& value,
-               emboss::DemoNetworkHeaderWriter& writer) {
+               DemoNetworkHeaderWriter& writer) {
   writer.src_addr().Write(value.src_addr);
   writer.dst_addr().Write(value.dst_addr);
   writer.length().Write(value.length);
 }
 
-DemoTransportHeader Deserialize(emboss::DemoTransportHeaderView view) {
+DemoTransportHeader Deserialize(DemoTransportHeaderView view) {
   return {
       .segment_id = view.segment_id().Read(),
       .offset = view.offset().Read(),
@@ -130,14 +150,13 @@ DemoTransportHeader Deserialize(emboss::DemoTransportHeaderView view) {
 }
 
 void Serialize(const DemoTransportHeader& value,
-               emboss::DemoTransportHeaderWriter& writer) {
+               DemoTransportHeaderWriter& writer) {
   writer.segment_id().Write(value.segment_id);
   writer.offset().Write(value.offset);
   writer.length().Write(value.length);
 }
 
-DemoTransportFirstHeader Deserialize(
-    emboss::DemoTransportFirstHeaderView view) {
+DemoTransportFirstHeader Deserialize(DemoTransportFirstHeaderView view) {
   // Because it DemoTransportFirstHeader is defined using inheritance in
   // protocol.h, returning a value is a bit more verbose.
   DemoTransportFirstHeader result{};
@@ -149,7 +168,7 @@ DemoTransportFirstHeader Deserialize(
 }
 
 void Serialize(const DemoTransportFirstHeader& value,
-               emboss::DemoTransportFirstHeaderWriter& writer) {
+               DemoTransportFirstHeaderWriter& writer) {
   writer.header().segment_id().Write(value.segment_id);
   writer.header().offset().Write(value.offset);
   writer.header().length().Write(value.length);
@@ -160,7 +179,8 @@ void Serialize(const DemoTransportFirstHeader& value,
 ///
 /// @param  name  The name to use when dumping out the bytes.
 /// @param  mb    The MultiBuf to dump.
-void LogHexdumpForMultibufChunks(const char* name, const ConstMultiBuf& mb) {
+void LogHexdumpForMultibufChunks(const char* name,
+                                 const pw::ConstMultiBuf& mb) {
   PW_LOG_DEBUG("%s: Multibuf has %hu fragments, %hu layers, %zu size",
                name,
                mb.NumFragments(),
@@ -168,9 +188,9 @@ void LogHexdumpForMultibufChunks(const char* name, const ConstMultiBuf& mb) {
                mb.size());
 
   size_t i = 0;
-  for (const ConstByteSpan chunk : mb.ConstChunks()) {
+  for (const pw::ConstByteSpan chunk : mb.ConstChunks()) {
     PW_LOG_DEBUG("[[chunk %zu]]", i);
-    dump::LogBytes(PW_LOG_LEVEL_DEBUG, chunk);
+    pw::dump::LogBytes(PW_LOG_LEVEL_DEBUG, chunk);
     ++i;
   }
 }
@@ -199,8 +219,8 @@ template <typename View>
 /// Returns a UniquePtr<byte[]> allocation with N bytes, where N is the maximum
 /// size of the structure represented by the view.
 template <typename View, size_t... kCannot, typename S = size_t>
-[[nodiscard]] UniquePtr<std::byte[]> AllocateBufferForEmbossView(
-    Allocator& alloc, S size = GetMaxSizeForEmbossView<View>()) {
+[[nodiscard]] pw::UniquePtr<std::byte[]> AllocateBufferForEmbossView(
+    pw::Allocator& alloc, S size = GetMaxSizeForEmbossView<View>()) {
   return alloc.MakeUnique<std::byte[]>(size);
 }
 
@@ -209,23 +229,22 @@ template <typename View, size_t... kCannot, typename S = size_t>
 /// Returns an instantiation of the view for a byte span (constant or
 /// non-constant), which requires using an intermediary Emboss-defined wrapper.
 template <typename View, typename Byte, size_t Extent>
-[[nodiscard]] View InstantiateView(span<Byte, Extent> buffer) {
+[[nodiscard]] View InstantiateView(pw::span<Byte, Extent> buffer) {
   constexpr size_t kAlignment = 1;
   constexpr size_t kOffset = 0;
   using ContiguousBuffer =
-      ::emboss::support::ContiguousBuffer<Byte, kAlignment, kOffset>;
+      emboss::support::ContiguousBuffer<Byte, kAlignment, kOffset>;
   return View{ContiguousBuffer{buffer.data(), buffer.size()}};
 }
 
 /// Helper for writing to a buffer with an Emboss writer.
 ///
-/// Serializes the provided header structure to the provided buffer, and returns
-/// the count of bytes actually written.
+/// Serializes the provided header structure to the provided buffer.
 ///
 /// The given buffer is assumed to be big enough to contain the bytes, otherwise
 /// this function will assert.
 template <typename EmbossWriter, typename HeaderType>
-[[nodiscard]] size_t SerializeTo(ByteSpan buffer, const HeaderType& header) {
+void SerializeTo(pw::ByteSpan buffer, const HeaderType& header) {
   // Construct an instance of the writer, pointing it to the allocation.
   auto writer = InstantiateView<EmbossWriter>(buffer);
 
@@ -234,11 +253,6 @@ template <typename EmbossWriter, typename HeaderType>
 
   // Ensure we have a valid header, and that the size is known.
   PW_CHECK(writer.Ok());
-
-  // Determine the actual size of the header, in case it isn't constant.
-  const size_t actual_size = writer.SizeInBytes();
-
-  return actual_size;
 }
 
 /// Helper for serializing an Emboss writer view to a Multibuf.
@@ -253,26 +267,16 @@ template <typename EmbossWriter, typename HeaderType>
 /// @param  insert_position  An iterator into the multibuf to indicate the
 //                           insert position. Typically begin() or end().
 /// @param  allocation       The byte allocation to insert
-/// @param  offset           The starting offset into the allocation which
-///                          should become part of the multibuf view.
-/// @param  size             The count of bytes after 'offset' which should
-///                          become part fo the multibuf view.
 /// @param  name             A debug name to use when logging.
 [[nodiscard]] bool InsertAllocatedChunk(
-    ConstMultiBuf& mb,
-    ConstMultiBuf::const_iterator insert_position,
-    UniquePtr<std::byte[]> allocation,
-    size_t offset,
-    size_t size,
+    pw::ConstMultiBuf& mb,
+    pw::ConstMultiBuf::const_iterator insert_position,
+    pw::UniquePtr<std::byte[]> allocation,
     const char* name) {
-  PW_CHECK(offset < allocation.size());
-  PW_CHECK(offset + size <= allocation.size());
-
   // For the purposes of this example, log the bytes we are about to insert.
   PW_LOG_DEBUG("Inserting bytes for %s", name);
-  dump::LogBytes(PW_LOG_LEVEL_DEBUG,
-                 ConstByteSpan({allocation.get(), allocation.size()})
-                     .subspan(offset, size));
+  pw::dump::LogBytes(PW_LOG_LEVEL_DEBUG,
+                     pw::ConstByteSpan({allocation.get(), allocation.size()}));
 
   // Insert the bytes into the Multibuf, transferring ownership of the
   // allocation.
@@ -280,7 +284,7 @@ template <typename EmbossWriter, typename HeaderType>
     return false;
   }
 
-  mb.Insert(std::move(insert_position), std::move(allocation), offset, size);
+  mb.Insert(std::move(insert_position), std::move(allocation));
   return true;
 }
 
@@ -295,15 +299,14 @@ template <typename EmbossWriter, typename HeaderType>
 /// @param  header        The CPU friendly header data to insert.
 /// @param  name          A debug name for logging.
 template <typename EmbossWriter, typename HeaderType>
-[[nodiscard]] bool PrependHeader(Allocator& alloc,
-                                 ConstMultiBuf& mb,
+[[nodiscard]] bool PrependHeader(pw::Allocator& alloc,
+                                 pw::ConstMultiBuf& mb,
                                  const HeaderType& header,
                                  const char* name) {
   auto allocation = AllocateBufferForEmbossView<EmbossWriter>(alloc);
-  const size_t size = SerializeTo<EmbossWriter>(
-      ByteSpan{allocation.get(), allocation.size()}, header);
-  return InsertAllocatedChunk(
-      mb, mb.begin(), std::move(allocation), 0, size, name);
+  SerializeTo<EmbossWriter>(pw::ByteSpan{allocation.get(), allocation.size()},
+                            header);
+  return InsertAllocatedChunk(mb, mb.begin(), std::move(allocation), name);
 }
 
 /// A helper function for appending a header structure to the MultiBuf.
@@ -317,15 +320,14 @@ template <typename EmbossWriter, typename HeaderType>
 /// @param  header        The CPU friendly header data to insert.
 /// @param  name          A debug name for logging.
 template <typename EmbossWriter, typename HeaderType>
-[[nodiscard]] bool AppendHeader(Allocator& alloc,
-                                ConstMultiBuf& mb,
+[[nodiscard]] bool AppendHeader(pw::Allocator& alloc,
+                                pw::ConstMultiBuf& mb,
                                 const HeaderType& header,
                                 const char* name) {
   auto allocation = AllocateBufferForEmbossView<EmbossWriter>(alloc);
-  const size_t size = SerializeTo<EmbossWriter>(
-      ByteSpan{allocation.get(), allocation.size()}, header);
-  return InsertAllocatedChunk(
-      mb, mb.end(), std::move(allocation), 0, size, name);
+  SerializeTo<EmbossWriter>(pw::ByteSpan{allocation.get(), allocation.size()},
+                            header);
+  return InsertAllocatedChunk(mb, mb.end(), std::move(allocation), name);
 }
 
 /// Simulate sending a packet.
@@ -333,7 +335,7 @@ template <typename EmbossWriter, typename HeaderType>
 /// Grabs a contiguous copy of the content of the multibuf, and logs it.
 ///
 /// @param  packet  The Multibuf contents to "send".
-void SimulateSend(const ConstMultiBuf& packet) {
+void SimulateSend(const pw::ConstMultiBuf& packet) {
   PW_LOG_INFO("Simulating sending a final packet (%zu bytes)", packet.size());
 
   // Allocate a chunk of memory on the stack for grabbing a copy of the
@@ -346,22 +348,22 @@ void SimulateSend(const ConstMultiBuf& packet) {
   }
 
   // Copy the Multibuf content to the buffer.
-  const size_t copied_size = packet.CopyTo(ByteSpan(buffer));
+  const size_t copied_size = packet.CopyTo(pw::ByteSpan(buffer));
 
   // Dump out the bytes that are being "sent".
-  dump::LogBytes(PW_LOG_LEVEL_INFO,
-                 ConstByteSpan(buffer).subspan(0, copied_size));
+  pw::dump::LogBytes(PW_LOG_LEVEL_INFO,
+                     pw::ConstByteSpan(buffer).subspan(0, copied_size));
 }
 
 /// Prepends a canned header for the purpose of the example.
-[[nodiscard]] bool PrependCannedTransportFirstHeader(Allocator& alloc,
-                                                     ConstMultiBuf& output) {
+[[nodiscard]] bool PrependCannedTransportFirstHeader(
+    pw::Allocator& alloc, pw::ConstMultiBuf& output) {
   DemoTransportFirstHeader first_header{};
   first_header.segment_id = 0;
   first_header.offset = 0;
   first_header.length = static_cast<uint32_t>(output.size());
   first_header.total_length = static_cast<uint32_t>(output.size());
-  if (!PrependHeader<emboss::DemoTransportFirstHeaderWriter>(
+  if (!PrependHeader<DemoTransportFirstHeaderWriter>(
           alloc, output, first_header, "DemoTransportFirstHeader")) {
     PW_LOG_ERROR("Failed to prepend the first transport header.");
     return false;
@@ -370,8 +372,8 @@ void SimulateSend(const ConstMultiBuf& packet) {
 }
 
 /// Prepends a canned header for the purpose of the example.
-[[nodiscard]] bool PrependCannedNetworkHeader(Allocator& alloc,
-                                              ConstMultiBuf& output) {
+[[nodiscard]] bool PrependCannedNetworkHeader(pw::Allocator& alloc,
+                                              pw::ConstMultiBuf& output) {
   // Chunk 3: Prepend a DemoNetworkHeader
   // (Uses a fake src_addr / dst_addr)
   const DemoNetworkHeader canned_network_header = {
@@ -379,7 +381,7 @@ void SimulateSend(const ConstMultiBuf& packet) {
       .dst_addr = 0x4567'4444'5555'6666,
       .length = static_cast<uint32_t>(output.size()),
   };
-  if (!PrependHeader<emboss::DemoNetworkHeaderWriter>(
+  if (!PrependHeader<DemoNetworkHeaderWriter>(
           alloc, output, canned_network_header, "DemoNetworkHeader")) {
     PW_LOG_ERROR("Failed to prepend the network header.");
     return false;
@@ -387,8 +389,8 @@ void SimulateSend(const ConstMultiBuf& packet) {
   return true;
 }
 
-[[nodiscard]] bool PrependCannedLinkHeader(Allocator& alloc,
-                                           ConstMultiBuf& output) {
+[[nodiscard]] bool PrependCannedLinkHeader(pw::Allocator& alloc,
+                                           pw::ConstMultiBuf& output) {
   // (Uses a fake src_addr / dst_addr)
   const DemoLinkHeader canned_link_header = {
       .src_addr = 0x4321,
@@ -396,7 +398,7 @@ void SimulateSend(const ConstMultiBuf& packet) {
       .length = static_cast<uint16_t>(output.size()),
   };
 
-  if (!PrependHeader<emboss::DemoLinkHeaderWriter>(
+  if (!PrependHeader<DemoLinkHeaderWriter>(
           alloc, output, canned_link_header, "DemoLinkHeader")) {
     PW_LOG_ERROR("Failed to prepend the link header.");
     return false;
@@ -404,14 +406,14 @@ void SimulateSend(const ConstMultiBuf& packet) {
   return true;
 }
 
-[[nodiscard]] bool AppendCannedLinkFooter(Allocator& alloc,
-                                          ConstMultiBuf& output) {
+[[nodiscard]] bool AppendCannedLinkFooter(pw::Allocator& alloc,
+                                          pw::ConstMultiBuf& output) {
   // Chunk 5: Prepend a DemoLinkFooter
   // (Uses a fake CRC)
   const DemoLinkFooter canned_link_footer = {
       .crc32 = 0xdeadbeef,
   };
-  if (!AppendHeader<emboss::DemoLinkFooterWriter>(
+  if (!AppendHeader<DemoLinkFooterWriter>(
           alloc, output, canned_link_footer, "DemoLinkFooter")) {
     PW_LOG_ERROR("Failed to append the link footer.");
     return false;
@@ -424,7 +426,7 @@ void SimulateSend(const ConstMultiBuf& packet) {
 template <
     typename EmbossView,
     typename UnpackedType = decltype(Deserialize(std::declval<EmbossView>()))>
-[[nodiscard]] constexpr auto DeserializeFromMultibufBegin(ConstMultiBuf& mb)
+[[nodiscard]] constexpr auto DeserializeFromMultibufBegin(pw::ConstMultiBuf& mb)
     -> UnpackedType {
   // `alternate_buffer` is here in case the Multibuf is internally fragmented,
   // fragmented, and the header bytes span multiple chunks. If the header we
@@ -456,7 +458,7 @@ template <
 template <
     typename EmbossView,
     typename UnpackedType = decltype(Deserialize(std::declval<EmbossView>()))>
-[[nodiscard]] constexpr auto DeserializeFromMultibufEnd(ConstMultiBuf& mb,
+[[nodiscard]] constexpr auto DeserializeFromMultibufEnd(pw::ConstMultiBuf& mb,
                                                         size_t offset)
     -> UnpackedType {
   // `alternate_buffer` is here in case the Multibuf is internally fragmented,
@@ -486,11 +488,11 @@ template <
 }
 
 // Unwraps the payload from the innermost DemoTransportHeader.
-[[nodiscard]] bool InPlaceDecodeTransportFirstHeader(ConstMultiBuf& remaining) {
+[[nodiscard]] bool InPlaceDecodeTransportFirstHeader(
+    pw::ConstMultiBuf& remaining) {
   // Read the header via an Emboss view.
   const DemoTransportFirstHeader header =
-      DeserializeFromMultibufBegin<emboss::DemoTransportFirstHeaderView>(
-          remaining);
+      DeserializeFromMultibufBegin<DemoTransportFirstHeaderView>(remaining);
 
   // Confirm the canned values encoded by the sample packet bytes.
   constexpr uint32_t kExpectedSegmentId = 0;
@@ -515,10 +517,10 @@ template <
   return true;
 }
 
-[[nodiscard]] bool InPlaceDecodeNetworkHeader(ConstMultiBuf& remaining) {
+[[nodiscard]] bool InPlaceDecodeNetworkHeader(pw::ConstMultiBuf& remaining) {
   // Read the header via an Emboss view.
   const DemoNetworkHeader header =
-      DeserializeFromMultibufBegin<emboss::DemoNetworkHeaderView>(remaining);
+      DeserializeFromMultibufBegin<DemoNetworkHeaderView>(remaining);
 
   // Confirm the canned values encoded by the sample packet bytes.
   constexpr uint64_t kExpectedSrcAddr = 0x4567'4444'5555'6666;
@@ -541,10 +543,11 @@ template <
   return true;
 }
 
-[[nodiscard]] bool InPlaceDecodeLinkHeaderAndFooter(ConstMultiBuf& remaining) {
+[[nodiscard]] bool InPlaceDecodeLinkHeaderAndFooter(
+    pw::ConstMultiBuf& remaining) {
   // Read the header via an Emboss view.
   const DemoLinkHeader header =
-      DeserializeFromMultibufBegin<emboss::DemoLinkHeaderView>(remaining);
+      DeserializeFromMultibufBegin<DemoLinkHeaderView>(remaining);
 
   // Confirm the canned values encoded by the sample bytes.
   constexpr uint16_t kExpectedSrcAddr = 0xeeee;
@@ -568,8 +571,7 @@ template <
   // Now that we decoded the link header, we know how big the inner content
   // is, and therefore where the footer is after that content.
   const DemoLinkFooter footer =
-      DeserializeFromMultibufEnd<emboss::DemoLinkFooterView>(remaining,
-                                                             header.length);
+      DeserializeFromMultibufEnd<DemoLinkFooterView>(remaining, header.length);
 
   // For this example, we don't actually compute a CRC, but look for a magic
   // value.
@@ -609,19 +611,20 @@ constexpr auto kExampleInputPacketData =
     "\xde\xad\xbe\xef"sv;
 
 int main() {
-  Allocator& alloc = allocator::GetLibCAllocator();
+  pw::Allocator& alloc = pw::allocator::GetLibCAllocator();
 
   // DOCSTAG: [pw_multibuf-examples-top_down_forward-main]
   // Create an read-only Multibuf containing the example input packet bytes.
   //
   // Note that providing bytes this way works only as long as the lifetime of
   // those bytes exceeds that of their use in the multibuf.
-  ConstMultiBuf::Instance received_packet_instance(alloc);
-  received_packet_instance->PushBack(as_bytes(span(kExampleInputPacketData)));
+  pw::ConstMultiBuf::Instance received_packet_instance(alloc);
+  received_packet_instance->PushBack(
+      as_bytes(pw::span(kExampleInputPacketData)));
 
   // Decode the three layers of the packet. This uses `MultiBuf::AddLayer()`
   // to deconstruct each layer from the outside in.
-  ConstMultiBuf& decoded = received_packet_instance;
+  pw::ConstMultiBuf& decoded = received_packet_instance;
   if (!InPlaceDecodeLinkHeaderAndFooter(decoded) ||
       !InPlaceDecodeNetworkHeader(decoded) ||
       !InPlaceDecodeTransportFirstHeader(decoded)) {
@@ -637,7 +640,7 @@ int main() {
   // unless the hardware needs a contiguous byte array for sending.
 
   // Set up a new Multibuf to hold the output packet.
-  ConstMultiBuf::Instance output_packet_instance(alloc);
+  pw::ConstMultiBuf::Instance output_packet_instance(alloc);
 
   // Attempt to reserve room to hold the metadata for the five total chunks
   // that will be in the final packet:
@@ -646,7 +649,7 @@ int main() {
     return 1;
   }
 
-  ConstMultiBuf& output_packet = output_packet_instance;
+  pw::ConstMultiBuf& output_packet = output_packet_instance;
 
   // Chunk 1: Insert the Multibuf containing the payload into the new
   // Multibuf.
@@ -686,23 +689,17 @@ int main() {
   return 0;
 }
 
-}  // namespace pw::multibuf::examples
-
-namespace {
-
 TEST(ExampleTests, TopDownMultibuf) {
-  using namespace ::pw::multibuf::examples;
-
   // Ensure the example main() works and returns zero.
   EXPECT_EQ(0, main());
 
-  ::pw::Allocator& alloc = ::pw::allocator::GetLibCAllocator();
+  pw::Allocator& alloc = pw::allocator::GetLibCAllocator();
 
-  ::pw::ConstMultiBuf::Instance received_packet_instance(alloc);
+  pw::ConstMultiBuf::Instance received_packet_instance(alloc);
   received_packet_instance->PushBack(
-      as_bytes(::pw::span(kExampleInputPacketData)));
+      as_bytes(pw::span(kExampleInputPacketData)));
 
-  ::pw::ConstMultiBuf& decoded = received_packet_instance;
+  pw::ConstMultiBuf& decoded = received_packet_instance;
   ASSERT_TRUE(InPlaceDecodeLinkHeaderAndFooter(decoded));
   ASSERT_TRUE(InPlaceDecodeNetworkHeader(decoded));
   ASSERT_TRUE(InPlaceDecodeTransportFirstHeader(decoded));
@@ -746,8 +743,7 @@ TEST(ExampleTests, TopDownMultibuf) {
       // DemoLinkFooter
       "\xde\xad\xbe\xef"sv;
 
-  const ::pw::span kExpectedOutputBytes =
-      ::pw::as_bytes(::pw::span(kExpectedOutputData));
+  const pw::span kExpectedOutputBytes = as_bytes(pw::span(kExpectedOutputData));
 
   ASSERT_EQ(output_packet_buffer_used, kExpectedOutputData.size());
   EXPECT_TRUE(std::equal(kExpectedOutputBytes.begin(),
@@ -755,4 +751,4 @@ TEST(ExampleTests, TopDownMultibuf) {
                          output_packet_buffer.begin()));
 }
 
-}  // namespace
+}  // namespace examples

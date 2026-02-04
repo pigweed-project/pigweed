@@ -32,14 +32,18 @@
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::examples {
+namespace examples {
 
-using async2::Context;
-using async2::Pending;
-using async2::Poll;
-using async2::Ready;
-using async2::Waker;
+using pw::multibuf::examples::DemoLinkFooter;
+using pw::multibuf::examples::DemoLinkHeader;
+using pw::multibuf::examples::DemoNetworkHeader;
 
+constexpr size_t kDemoLinkHeaderLen =
+    pw::multibuf::examples::kDemoLinkHeaderLen;
+constexpr size_t kDemoLinkFooterLen =
+    pw::multibuf::examples::kDemoLinkFooterLen;
+constexpr size_t kDemoNetworkHeaderLen =
+    pw::multibuf::examples::kDemoNetworkHeaderLen;
 constexpr uint16_t kLinkSrcAddr = 0x3b15;
 constexpr uint16_t kLinkDstAddr = 0x91a0;
 constexpr uint64_t kNetSrcAddr = 0xdeadbeefcafef00d;
@@ -47,13 +51,13 @@ constexpr uint64_t kNetDstAddr = 0x123456789abcdef0;
 
 // DOCSTAG: [pw_multibuf-examples-transfer-fields]
 template <typename T>
-constexpr T GetField(ConstByteSpan data, size_t offset) {
-  return bytes::ReadInOrder<T>(endian::little, &data[offset]);
+constexpr T GetField(pw::ConstByteSpan data, size_t offset) {
+  return pw::bytes::ReadInOrder<T>(pw::endian::little, &data[offset]);
 }
 
 template <typename T>
-constexpr void SetField(ByteSpan data, size_t offset, T value) {
-  return bytes::CopyInOrder<T>(endian::little, value, &data[offset]);
+constexpr void SetField(pw::ByteSpan data, size_t offset, T value) {
+  return pw::bytes::CopyInOrder<T>(pw::endian::little, value, &data[offset]);
 }
 // DOCSTAG: [pw_multibuf-examples-transfer-fields]
 
@@ -62,14 +66,14 @@ class NetworkPacket {
  public:
   /// Create and a return a new network packet, or return an error if unable to
   /// allocate the needed memory.
-  static Result<NetworkPacket> Create(Allocator& allocator) {
+  static pw::Result<NetworkPacket> Create(pw::Allocator& allocator) {
     auto metadata = allocator.MakeUnique<std::byte[]>(kDemoNetworkHeaderLen);
     if (metadata == nullptr) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     NetworkPacket packet(allocator);
     if (!packet.mbuf_->TryReserveForPushBack()) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     packet.mbuf_->PushBack(std::move(metadata));
     return packet;
@@ -96,7 +100,7 @@ class NetworkPacket {
   }
 
   /// Add a payload to a network packet.
-  [[nodiscard]] bool AddPayload(UniquePtr<std::byte[]>&& payload) {
+  [[nodiscard]] bool AddPayload(pw::UniquePtr<std::byte[]>&& payload) {
     if (!mbuf_->TryReserveForPushBack()) {
       return false;
     }
@@ -110,10 +114,11 @@ class NetworkPacket {
   }
 
   /// Consume a network packet and return its payload.
-  static Result<UniquePtr<std::byte[]>> ExtractPayload(NetworkPacket&& packet) {
+  static pw::Result<pw::UniquePtr<std::byte[]>> ExtractPayload(
+      NetworkPacket&& packet) {
     DemoNetworkHeader header = packet.GetHeader();
     if (header.length != packet.mbuf_->size()) {
-      return Status::DataLoss();
+      return pw::Status::DataLoss();
     }
     PW_TRY_ASSIGN(
         auto iter,
@@ -122,17 +127,17 @@ class NetworkPacket {
   }
 
  private:
-  constexpr NetworkPacket(Allocator& allocator) : mbuf_(allocator) {}
+  constexpr NetworkPacket(pw::Allocator& allocator) : mbuf_(allocator) {}
 
   friend class LinkFrame;
-  explicit NetworkPacket(FlatMultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {}
+  explicit NetworkPacket(pw::FlatMultiBuf&& mbuf) : mbuf_(std::move(mbuf)) {}
 
-  ByteSpan header() { return *(mbuf_->Chunks().begin()); }
-  constexpr ConstByteSpan header() const {
+  pw::ByteSpan header() { return *(mbuf_->Chunks().begin()); }
+  constexpr pw::ConstByteSpan header() const {
     return *(mbuf_->ConstChunks().cbegin());
   }
 
-  FlatMultiBuf::Instance mbuf_;
+  pw::FlatMultiBuf::Instance mbuf_;
 };
 // DOCSTAG: [pw_multibuf-examples-transfer-network_packet]
 
@@ -141,11 +146,11 @@ class LinkFrame {
  public:
   /// Create and a return a new link frame, or return an error if unable to
   /// allocate the needed memory.
-  static Result<LinkFrame> Create(Allocator& allocator) {
+  static pw::Result<LinkFrame> Create(pw::Allocator& allocator) {
     auto metadata = allocator.MakeUnique<std::byte[]>(kDemoLinkHeaderLen +
                                                       kDemoLinkFooterLen);
     if (metadata == nullptr) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     LinkFrame frame(allocator);
     frame.mbuf_->PushBack(std::move(metadata));
@@ -205,12 +210,12 @@ class LinkFrame {
 
   /// Examines a link frame. If it is valid, returns its payload as a network
   /// packet, otherwise returns an error.
-  static Result<NetworkPacket> ExtractNetworkPacket(LinkFrame&& frame) {
+  static pw::Result<NetworkPacket> ExtractNetworkPacket(LinkFrame&& frame) {
     DemoLinkHeader header = frame.GetHeader();
     DemoLinkFooter footer = frame.GetFooter();
     if (header.length != frame.mbuf_->size() ||
         footer.crc32 != frame.CalculateCheckSum()) {
-      return Status::DataLoss();
+      return pw::Status::DataLoss();
     }
     uint32_t packet_length =
         header.length - (kDemoLinkHeaderLen + kDemoLinkFooterLen);
@@ -222,63 +227,65 @@ class LinkFrame {
   }
 
  private:
-  constexpr LinkFrame(Allocator& allocator) : mbuf_(allocator) {}
+  constexpr LinkFrame(pw::Allocator& allocator) : mbuf_(allocator) {}
 
   uint32_t CalculateCheckSum() const {
-    checksum::Crc32 crc32;
-    ConstByteSpan prev;
-    for (ConstByteSpan chunk : mbuf_->ConstChunks()) {
+    pw::checksum::Crc32 crc32;
+    pw::ConstByteSpan prev;
+    for (pw::ConstByteSpan chunk : mbuf_->ConstChunks()) {
       crc32.Update(prev);
       prev = chunk;
     }
     return crc32.value();
   }
 
-  constexpr ByteSpan header() { return *(mbuf_->Chunks().begin()); }
-  constexpr ConstByteSpan header() const {
+  constexpr pw::ByteSpan header() { return *(mbuf_->Chunks().begin()); }
+  constexpr pw::ConstByteSpan header() const {
     return *(mbuf_->ConstChunks().cbegin());
   }
 
-  constexpr ByteSpan footer() { return *(--(mbuf_->Chunks().end())); }
-  constexpr ConstByteSpan footer() const {
+  constexpr pw::ByteSpan footer() { return *(--(mbuf_->Chunks().end())); }
+  constexpr pw::ConstByteSpan footer() const {
     return *(--(mbuf_->ConstChunks().cend()));
   }
 
-  FlatMultiBuf::Instance mbuf_;
+  pw::FlatMultiBuf::Instance mbuf_;
 };
 // DOCSTAG: [pw_multibuf-examples-transfer-link_frame]
 
 /// Asynchronously forward that has be written to callers trying to read.
 class Link {
  public:
-  Poll<> Write(Context& context, ConstByteSpan tx_buffer) {
+  pw::async2::Poll<> Write(pw::async2::Context& context,
+                           pw::ConstByteSpan tx_buffer) {
     if (!pending_.has_value()) {
       pending_ = tx_buffer;
       rx_waker_.Wake();
     } else if (pending_->empty()) {
       pending_.reset();
-      return Ready();
+      return pw::async2::Ready();
     }
     PW_ASYNC_STORE_WAKER(context, tx_waker_, "transmitting data");
-    return Pending();
+    return pw::async2::Pending();
   }
 
-  Poll<size_t> Read(Context& context, ByteSpan rx_buffer) {
+  pw::async2::Poll<size_t> Read(pw::async2::Context& context,
+                                pw::ByteSpan rx_buffer) {
     if (!pending_.has_value() || pending_->empty()) {
       PW_ASYNC_STORE_WAKER(context, rx_waker_, "waiting for data");
-      return Pending();
+      return pw::async2::Pending();
     }
     size_t len = std::min(pending_->size(), rx_buffer.size());
     std::memcpy(rx_buffer.data(), pending_->data(), len);
     pending_ = pending_->subspan(len);
     tx_waker_.Wake();
-    return Ready(len);
+    return pw::async2::Ready(len);
   }
 
  private:
-  std::optional<ConstByteSpan> pending_;
-  Waker tx_waker_;
-  Waker rx_waker_;
+  std::optional<pw::ConstByteSpan> pending_;
+  pw::async2::Waker tx_waker_;
+  pw::async2::Waker rx_waker_;
 };
 
 const char* kLoremIpsum =
@@ -291,9 +298,9 @@ const char* kLoremIpsum =
     "mollit anim id est laborum.";
 
 TEST(LinkTest, SendAndReceiveData) {
-  allocator::test::AllocatorForTest<2048> allocator;
+  pw::allocator::test::AllocatorForTest<2048> allocator;
   Link link;
-  async2::BasicDispatcher dispatcher;
+  pw::async2::BasicDispatcher dispatcher;
 
   auto tx_payload =
       allocator.MakeUnique<std::byte[]>(std::strlen(kLoremIpsum) + 1);
@@ -301,14 +308,14 @@ TEST(LinkTest, SendAndReceiveData) {
   std::memcpy(tx_payload.get(), kLoremIpsum, tx_payload.size());
 
   // DOCSTAG: [pw_multibuf-examples-transfer-create]
-  Result<NetworkPacket> tx_packet = NetworkPacket::Create(allocator);
-  ASSERT_EQ(tx_packet.status(), OkStatus());
+  pw::Result<NetworkPacket> tx_packet = NetworkPacket::Create(allocator);
+  ASSERT_EQ(tx_packet.status(), pw::OkStatus());
   tx_packet->set_src_addr(kNetSrcAddr);
   tx_packet->set_dst_addr(kNetDstAddr);
   ASSERT_TRUE(tx_packet->AddPayload(std::move(tx_payload)));
 
-  Result<LinkFrame> tx_frame = LinkFrame::Create(allocator);
-  ASSERT_EQ(tx_frame.status(), OkStatus());
+  pw::Result<LinkFrame> tx_frame = LinkFrame::Create(allocator);
+  ASSERT_EQ(tx_frame.status(), pw::OkStatus());
   tx_frame->set_src_addr(kLinkSrcAddr);
   tx_frame->set_dst_addr(kLinkDstAddr);
   ASSERT_TRUE(tx_frame->AddNetworkPacket(std::move(*tx_packet)));
@@ -316,35 +323,36 @@ TEST(LinkTest, SendAndReceiveData) {
   // DOCSTAG: [pw_multibuf-examples-transfer-create]
 
   auto tx_iter = tx_frame->ConstChunks().begin();
-  async2::FuncTask write_frame([&](async2::Context& context) -> async2::Poll<> {
-    while (tx_iter != tx_frame->ConstChunks().end()) {
-      if (!tx_iter->empty()) {
-        PW_TRY_READY(link.Write(context, *tx_iter));
-      }
-      ++tx_iter;
-    }
-    return Ready();
-  });
+  pw::async2::FuncTask write_frame(
+      [&](pw::async2::Context& context) -> pw::async2::Poll<> {
+        while (tx_iter != tx_frame->ConstChunks().end()) {
+          if (!tx_iter->empty()) {
+            PW_TRY_READY(link.Write(context, *tx_iter));
+          }
+          ++tx_iter;
+        }
+        return pw::async2::Ready();
+      });
   dispatcher.Post(write_frame);
 
-  Result<LinkFrame> rx_frame = LinkFrame::Create(allocator);
-  ASSERT_EQ(rx_frame.status(), OkStatus());
-  ByteSpan raw_frame_header =
+  pw::Result<LinkFrame> rx_frame = LinkFrame::Create(allocator);
+  ASSERT_EQ(rx_frame.status(), pw::OkStatus());
+  pw::ByteSpan raw_frame_header =
       rx_frame->Chunks().begin()->subspan(0, kDemoLinkHeaderLen);
 
-  Result<NetworkPacket> rx_packet = NetworkPacket::Create(allocator);
-  ASSERT_EQ(rx_packet.status(), OkStatus());
+  pw::Result<NetworkPacket> rx_packet = NetworkPacket::Create(allocator);
+  ASSERT_EQ(rx_packet.status(), pw::OkStatus());
 
   bool read_frame_header_finished = false;
-  async2::FuncTask read_frame_header(
-      [&](async2::Context& context) -> async2::Poll<> {
+  pw::async2::FuncTask read_frame_header(
+      [&](pw::async2::Context& context) -> pw::async2::Poll<> {
         while (!raw_frame_header.empty()) {
           PW_TRY_READY_ASSIGN(size_t bytes_read,
                               link.Read(context, raw_frame_header));
           raw_frame_header = raw_frame_header.subspan(bytes_read);
         }
         read_frame_header_finished = true;
-        return Ready();
+        return pw::async2::Ready();
       });
   dispatcher.Post(read_frame_header);
   dispatcher.RunUntilStalled();
@@ -364,9 +372,9 @@ TEST(LinkTest, SendAndReceiveData) {
   ASSERT_TRUE(rx_frame->AddNetworkPacket(std::move(*rx_packet)));
 
   auto iter = rx_frame->Chunks().begin();
-  ByteSpan chunk = *(++iter);
-  async2::FuncTask read_remaining_frame(
-      [&](async2::Context& context) -> async2::Poll<> {
+  pw::ByteSpan chunk = *(++iter);
+  pw::async2::FuncTask read_remaining_frame(
+      [&](pw::async2::Context& context) -> pw::async2::Poll<> {
         while (true) {
           PW_TRY_READY_ASSIGN(size_t bytes_read, link.Read(context, chunk));
           chunk = chunk.subspan(bytes_read);
@@ -379,24 +387,24 @@ TEST(LinkTest, SendAndReceiveData) {
           }
           chunk = *iter;
         }
-        return Ready();
+        return pw::async2::Ready();
       });
   dispatcher.Post(read_remaining_frame);
   dispatcher.RunToCompletion();
 
   rx_packet = LinkFrame::ExtractNetworkPacket(std::move(*rx_frame));
-  ASSERT_EQ(rx_packet.status(), OkStatus());
+  ASSERT_EQ(rx_packet.status(), pw::OkStatus());
 
   DemoNetworkHeader packet_header = rx_packet->GetHeader();
   EXPECT_EQ(packet_header.src_addr, kNetSrcAddr);
   EXPECT_EQ(packet_header.dst_addr, kNetDstAddr);
 
   auto rx_payload_result = NetworkPacket::ExtractPayload(std::move(*rx_packet));
-  ASSERT_EQ(rx_payload_result.status(), OkStatus());
+  ASSERT_EQ(rx_payload_result.status(), pw::OkStatus());
   rx_payload = std::move(rx_payload_result.value());
 
   auto* rx_text = reinterpret_cast<const char*>(rx_payload.get());
   EXPECT_STREQ(rx_text, kLoremIpsum);
 }
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples

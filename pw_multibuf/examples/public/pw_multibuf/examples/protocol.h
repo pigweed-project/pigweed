@@ -66,6 +66,7 @@ struct DemoTransportHeader {
   uint32_t offset;
   uint32_t length;
 };
+
 // DOCSTAG: [pw_multibuf-examples-protocol-transport_segment]
 
 inline constexpr size_t kDemoTransportHeaderLen =

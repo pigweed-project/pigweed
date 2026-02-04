@@ -21,15 +21,16 @@
 #include "pw_multibuf/multibuf.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::examples {
+namespace examples {
 
 // DOCSTAG: [pw_multibuf-examples-queue]
 class MultiBufQueue {
  public:
-  static Result<MultiBufQueue> Create(Allocator& allocator, size_t max_chunks) {
+  static pw::Result<MultiBufQueue> Create(pw::Allocator& allocator,
+                                          size_t max_chunks) {
     MultiBufQueue queue(allocator);
     if (!queue.mbuf_->TryReserveChunks(max_chunks)) {
-      return Status::ResourceExhausted();
+      return pw::Status::ResourceExhausted();
     }
     return queue;
   }
@@ -38,27 +39,28 @@ class MultiBufQueue {
 
   [[nodiscard]] bool full() const { return mbuf_->at_capacity(); }
 
-  void push_back(UniquePtr<std::byte[]>&& bytes) {
+  void push_back(pw::UniquePtr<std::byte[]>&& bytes) {
     PW_ASSERT(!full());
     mbuf_->PushBack(std::move(bytes));
   }
 
-  UniquePtr<const std::byte[]> pop_front() {
+  pw::UniquePtr<const std::byte[]> pop_front() {
     return mbuf_->Release(mbuf_->cbegin());
   }
 
  private:
-  constexpr explicit MultiBufQueue(Allocator& allocator) : mbuf_(allocator) {}
+  constexpr explicit MultiBufQueue(pw::Allocator& allocator)
+      : mbuf_(allocator) {}
 
-  ConstMultiBuf::Instance mbuf_;
+  pw::ConstMultiBuf::Instance mbuf_;
 };
 // DOCSTAG: [pw_multibuf-examples-queue]
 
 TEST(RingBufferTest, CanPushAndPop) {
-  allocator::test::AllocatorForTest<512> allocator;
+  pw::allocator::test::AllocatorForTest<512> allocator;
   constexpr std::array<const char*, 3> kWords = {"foo", "bar", "baz"};
   auto queue = MultiBufQueue::Create(allocator, 3);
-  ASSERT_EQ(queue.status(), OkStatus());
+  ASSERT_EQ(queue.status(), pw::OkStatus());
   EXPECT_TRUE(queue->empty());
 
   for (const char* word : kWords) {
@@ -75,4 +77,4 @@ TEST(RingBufferTest, CanPushAndPop) {
   EXPECT_TRUE(queue->empty());
 }
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples

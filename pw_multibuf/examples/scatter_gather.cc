@@ -26,62 +26,64 @@
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 
-namespace pw::multibuf::examples {
-
-using chrono::SystemClock;
-using i2c::Address;
-using i2c::Message;
+namespace examples {
 
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-message_vector]
 class MessageVector {
  public:
-  explicit MessageVector(Allocator& allocator)
+  explicit MessageVector(pw::Allocator& allocator)
       : messages_(allocator), rx_buffers_(allocator), tx_buffers_(allocator) {}
 
-  void AddRead(Address addr, UniquePtr<std::byte[]> dst) {
-    messages_.push_back(Message::ReadMessage(addr, {dst.get(), dst.size()}));
+  void AddRead(pw::i2c::Address addr, pw::UniquePtr<std::byte[]> dst) {
+    messages_.push_back(
+        pw::i2c::Message::ReadMessage(addr, {dst.get(), dst.size()}));
     rx_buffers_->PushBack(std::move(dst));
   }
 
-  void AddRead(Address addr, SharedPtr<std::byte[]> dst) {
-    messages_.push_back(Message::ReadMessage(addr, {dst.get(), dst.size()}));
+  void AddRead(pw::i2c::Address addr, pw::SharedPtr<std::byte[]> dst) {
+    messages_.push_back(
+        pw::i2c::Message::ReadMessage(addr, {dst.get(), dst.size()}));
     rx_buffers_->PushBack(dst);
   }
 
-  void AddWrite(Address addr, UniquePtr<const std::byte[]>&& src) {
-    messages_.push_back(Message::WriteMessage(addr, {src.get(), src.size()}));
+  void AddWrite(pw::i2c::Address addr, pw::UniquePtr<const std::byte[]>&& src) {
+    messages_.push_back(
+        pw::i2c::Message::WriteMessage(addr, {src.get(), src.size()}));
     tx_buffers_->PushBack(std::move(src));
   }
 
-  void AddWrite(Address addr, const SharedPtr<const std::byte[]>& src) {
-    messages_.push_back(Message::WriteMessage(addr, {src.get(), src.size()}));
+  void AddWrite(pw::i2c::Address addr,
+                const pw::SharedPtr<const std::byte[]>& src) {
+    messages_.push_back(
+        pw::i2c::Message::WriteMessage(addr, {src.get(), src.size()}));
     tx_buffers_->PushBack(src);
   }
 
  private:
   friend class TestInitiator;
 
-  DynamicVector<Message> messages_;
-  TrackedMultiBuf::Instance rx_buffers_;
-  TrackedConstMultiBuf::Instance tx_buffers_;
+  pw::DynamicVector<pw::i2c::Message> messages_;
+  pw::TrackedMultiBuf::Instance rx_buffers_;
+  pw::TrackedConstMultiBuf::Instance tx_buffers_;
 };
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-message_vector]
 
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-observer]
-class MessageVectorObserver : public multibuf::Observer {
+class MessageVectorObserver : public pw::multibuf::Observer {
  public:
   void AddBytes(size_t num_bytes) { num_bytes_ += num_bytes; }
 
-  Status Await(SystemClock::duration timeout) {
-    return notification_.try_acquire_for(timeout) ? OkStatus()
-                                                  : Status::DeadlineExceeded();
+  pw::Status Await(pw::chrono::SystemClock::duration timeout) {
+    return notification_.try_acquire_for(timeout)
+               ? pw::OkStatus()
+               : pw::Status::DeadlineExceeded();
   }
 
  private:
   void DoNotify(Event event, size_t value) override {
-    if (event == multibuf::Observer::Event::kBytesAdded) {
+    if (event == Event::kBytesAdded) {
       num_bytes_ += value;
-    } else if (event == multibuf::Observer::Event::kBytesRemoved) {
+    } else if (event == Event::kBytesRemoved) {
       num_bytes_ -= value;
     }
     if (num_bytes_ == 0) {
@@ -89,7 +91,7 @@ class MessageVectorObserver : public multibuf::Observer {
     }
   }
 
-  sync::TimedThreadNotification notification_;
+  pw::sync::TimedThreadNotification notification_;
   size_t num_bytes_ = 0;
 };
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-observer]
@@ -97,9 +99,9 @@ class MessageVectorObserver : public multibuf::Observer {
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-initiator]
 class TestInitiator {
  public:
-  explicit TestInitiator(Allocator& allocator) : msg_vec_(allocator) {}
+  explicit TestInitiator(pw::Allocator& allocator) : msg_vec_(allocator) {}
 
-  constexpr Status status() const { return status_; }
+  constexpr pw::Status status() const { return status_; }
 
   void StageForTransfer(MessageVector&& msg_vec) {
     msg_vec_ = std::move(msg_vec);
@@ -109,7 +111,7 @@ class TestInitiator {
     msg_vec_.tx_buffers_->set_observer(&observer_);
   }
 
-  void TransferFor(SystemClock::duration timeout) {
+  void TransferFor(pw::chrono::SystemClock::duration timeout) {
     // The actual I2C transfer would be performed here...
     status_ = observer_.Await(timeout);
   }
@@ -122,7 +124,7 @@ class TestInitiator {
  private:
   MessageVector msg_vec_;
   MessageVectorObserver observer_;
-  Status status_ = OkStatus();
+  pw::Status status_ = pw::OkStatus();
 };
 // DOCSTAG: [pw_multibuf-examples-scatter_gather-initiator]
 
@@ -131,29 +133,29 @@ class TestInitiator {
 #if PW_THREAD_JOINING_ENABLED
 
 TEST(ScatterGatherTest, NotifiedWhenDropped) {
-  allocator::test::AllocatorForTest<512> allocator;
+  pw::allocator::test::AllocatorForTest<512> allocator;
   MessageVector msg_vec(allocator);
 
   auto rx_owned = allocator.MakeUnique<std::byte[]>(16);
-  msg_vec.AddRead(Address::TenBit(0x10), std::move(rx_owned));
+  msg_vec.AddRead(pw::i2c::Address::TenBit(0x10), std::move(rx_owned));
 
   auto tx_shared = allocator.MakeShared<std::byte[]>(16);
-  msg_vec.AddWrite(Address::SevenBit(0x77), tx_shared);
+  msg_vec.AddWrite(pw::i2c::Address::SevenBit(0x77), tx_shared);
 
   TestInitiator initiator(allocator);
   initiator.StageForTransfer(std::move(msg_vec));
 
-  thread::test::TestThreadContext context;
-  Thread thread(context.options(), [&initiator]() {
+  pw::thread::test::TestThreadContext context;
+  pw::Thread thread(context.options(), [&initiator]() {
     initiator.TransferFor(
-        SystemClock::for_at_least(std::chrono::milliseconds(42)));
+        pw::chrono::SystemClock::for_at_least(std::chrono::milliseconds(42)));
   });
 
   initiator.Complete();
   thread.join();
-  EXPECT_EQ(initiator.status(), OkStatus());
+  EXPECT_EQ(initiator.status(), pw::OkStatus());
 }
 
 #endif  // PW_THREAD_JOINING_ENABLED
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples

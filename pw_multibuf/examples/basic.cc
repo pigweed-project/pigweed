@@ -21,14 +21,14 @@
 #include "pw_bytes/span.h"
 #include "pw_multibuf/multibuf.h"
 
-namespace pw::multibuf::examples {
+namespace examples {
 
 TEST(BasicTest, DemonstrateMultiBuf) {
   // DOCSTAG: [pw_multibuf-examples-basic-allocator]
-  allocator::test::AllocatorForTest<512> allocator;
+  pw::allocator::test::AllocatorForTest<512> allocator;
 
   // DOCSTAG: [pw_multibuf-examples-basic]
-  MultiBuf::Instance mbuf(allocator);
+  pw::MultiBuf::Instance mbuf(allocator);
   // DOCSTAG: [pw_multibuf-examples-basic-allocator]
 
   // Add some memory regions.
@@ -42,7 +42,7 @@ TEST(BasicTest, DemonstrateMultiBuf) {
 
   // Access a discontiguous region.
   std::array<std::byte, 16> tmp;
-  ConstByteSpan bytes = mbuf->Get(tmp, /*offset=*/16);
+  pw::ConstByteSpan bytes = mbuf->Get(tmp, /*offset=*/16);
   for (const auto b : bytes) {
     EXPECT_EQ(static_cast<uint8_t>(b), 0xFF);
   }
@@ -52,4 +52,4 @@ TEST(BasicTest, DemonstrateMultiBuf) {
   // DOCSTAG: [pw_multibuf-examples-basic]
 }
 
-}  // namespace pw::multibuf::examples
+}  // namespace examples
