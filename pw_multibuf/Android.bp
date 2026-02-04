@@ -29,11 +29,12 @@ cc_library_static {
     ],
     export_include_dirs: [
         "public",
+        "v1/public",
     ],
     srcs: [
-        "chunk.cc",
-        "from_span.cc",
-        "multibuf_v1.cc",
+        "v1/chunk.cc",
+        "v1/from_span.cc",
+        "v1/multibuf.cc",
     ],
     header_libs: [
         "pw_assert",
@@ -68,11 +69,12 @@ cc_library_static {
         "pw_android_common_target_support",
     ],
     srcs: [
-        "allocator.cc",
-        "simple_allocator.cc",
+        "v1/allocator.cc",
+        "v1/simple_allocator.cc",
     ],
     export_include_dirs: [
         "public",
+        "v1/public",
     ],
     header_libs: [
         "pw_sync",
@@ -100,9 +102,10 @@ cc_library_static {
     ],
     export_include_dirs: [
         "public",
+        "v2/public",
     ],
     srcs: [
-        "generic_multibuf.cc"
+        "v2/generic_multibuf.cc"
     ],
     header_libs: [
         "pw_assert",
@@ -137,5 +140,7 @@ cc_library_headers {
     ],
     export_include_dirs: [
         "public",
+        "v1/public",
+        "v2/public",
     ],
 }

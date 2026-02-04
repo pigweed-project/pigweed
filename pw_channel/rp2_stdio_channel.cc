@@ -19,8 +19,8 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_log/log.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/allocator_async.h"
 #include "pw_multibuf/multibuf.h"
+#include "pw_multibuf/v1/allocator_async.h"
 #include "pw_status/status.h"
 
 namespace pw::channel {
@@ -34,8 +34,8 @@ using ::pw::async2::PollResult;
 using ::pw::async2::Ready;
 using ::pw::async2::Waker;
 using ::pw::multibuf::MultiBuf;
-using ::pw::multibuf::MultiBufAllocationFuture;
 using ::pw::multibuf::MultiBufAllocator;
+using ::pw::multibuf::v1::MultiBufAllocationFuture;
 
 Waker global_chars_available_waker;
 
@@ -127,7 +127,7 @@ Poll<Status> Rp2StdioChannel::PendGetReadBuffer(Context& cx) {
   }
 
   read_allocation_future_.SetDesiredSizes(
-      kMinimumReadSize, kDesiredReadSize, pw::multibuf::kNeedsContiguous);
+      kMinimumReadSize, kDesiredReadSize, pw::multibuf::v1::kNeedsContiguous);
   PollOptional<MultiBuf> maybe_multibuf = read_allocation_future_.Pend(cx);
   if (maybe_multibuf.IsPending()) {
     return Pending();

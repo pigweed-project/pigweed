@@ -34,7 +34,7 @@
 #include "pw_log/log.h"
 #include "pw_multibuf/examples/protocol.emb.h"
 #include "pw_multibuf/examples/protocol.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_span/span.h"
 #include "pw_unit_test/framework.h"
 #include "runtime/cpp/emboss_memory_util.h"

@@ -18,10 +18,12 @@
 #include <type_traits>
 
 #include "pw_bytes/span.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_span/cast.h"
 
 namespace pw::bluetooth::proxy {
+
+using ::pw::multibuf::v2::MultiBuf;
 
 class EmbossedMultiBuf {
  public:

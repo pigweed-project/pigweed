@@ -20,7 +20,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_bytes/span.h"
 #include "pw_checksum/crc32.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_random/xor_shift.h"
 
 namespace pw::multibuf::examples {

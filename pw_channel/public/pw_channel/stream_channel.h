@@ -16,8 +16,8 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_channel/channel.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/allocator_async.h"
 #include "pw_multibuf/multibuf.h"
+#include "pw_multibuf/v1/allocator_async.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
 #include "pw_sync/interrupt_spin_lock.h"
@@ -180,8 +180,8 @@ class StreamChannel final
   stream::Writer& writer_;
   internal::StreamChannelReadState read_state_;
   internal::StreamChannelWriteState write_state_;
-  multibuf::MultiBufAllocationFuture read_allocation_future_;
-  multibuf::MultiBufAllocationFuture write_allocation_future_;
+  multibuf::v1::MultiBufAllocationFuture read_allocation_future_;
+  multibuf::v1::MultiBufAllocationFuture write_allocation_future_;
 };
 
 /// @}

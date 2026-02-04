@@ -28,7 +28,7 @@
 #include "pw_bytes/span.h"
 #include "pw_checksum/crc32.h"
 #include "pw_multibuf/examples/protocol.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 

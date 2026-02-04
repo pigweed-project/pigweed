@@ -28,7 +28,7 @@ pw_add_library(pw_channel INTERFACE
     pw_memory._sibling_cast
     pw_multibuf
     pw_multibuf.allocator
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
     pw_result
     pw_span
     pw_status
@@ -89,7 +89,7 @@ pw_add_library(pw_channel.forwarding_channel STATIC
   PUBLIC_DEPS
     pw_channel
     pw_multibuf.allocator
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
     pw_sync.mutex
   PUBLIC_INCLUDES
     public
@@ -100,9 +100,10 @@ pw_add_test(pw_channel.forwarding_channel_test
     forwarding_channel_test.cc
   PRIVATE_DEPS
     pw_allocator.testing
+    pw_async2.testing
     pw_channel.forwarding_channel
-    pw_multibuf.header_chunk_region_tracker
     pw_multibuf.simple_allocator
+    pw_multibuf.v1.header_chunk_region_tracker
 )
 
 pw_add_library(pw_channel.loopback_channel STATIC
@@ -113,7 +114,7 @@ pw_add_library(pw_channel.loopback_channel STATIC
   PUBLIC_DEPS
     pw_channel
     pw_multibuf.allocator
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
   PUBLIC_INCLUDES
     public
 )
@@ -123,7 +124,7 @@ pw_add_test(pw_channel.loopback_channel_test
     loopback_channel_test.cc
   PRIVATE_DEPS
     pw_channel.loopback_channel
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
     pw_multibuf.testing
     pw_async2.testing
 )
@@ -137,7 +138,7 @@ pw_add_library(pw_channel.epoll_channel STATIC
     pw_async2.epoll_dispatcher
     pw_channel
     pw_multibuf.allocator
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
     pw_sync.mutex
   PUBLIC_INCLUDES
     public
@@ -151,8 +152,9 @@ pw_add_test(pw_channel.epoll_channel_test
     epoll_channel_test.cc
   PRIVATE_DEPS
     pw_async2.epoll_dispatcher
+    pw_async2.testing
     pw_channel.epoll_channel
-    pw_multibuf.allocator_async
+    pw_multibuf.v1.allocator_async
     pw_multibuf.testing
     pw_async2.testing
     pw_thread.sleep
@@ -181,8 +183,8 @@ pw_add_test(pw_channel.stream_channel_test
   PRIVATE_DEPS
     pw_channel.stream_channel
     pw_async2.func_task
-    pw_multibuf.allocator_async
     pw_multibuf.testing
+    pw_multibuf.v1.allocator_async
     pw_async2.testing
     pw_stream
     pw_stream.mpsc_stream

@@ -19,8 +19,8 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_multibuf/header_chunk_region_tracker.h"
 #include "pw_multibuf/simple_allocator.h"
+#include "pw_multibuf/v1/header_chunk_region_tracker.h"
 #include "pw_string/string.h"
 #include "pw_unit_test/framework.h"
 
@@ -42,7 +42,7 @@ class InitializedMultiBuf {
  public:
   InitializedMultiBuf(std::string_view contents) {
     std::optional<pw::multibuf::OwnedChunk> chunk =
-        pw::multibuf::HeaderChunkRegionTracker::AllocateRegionAsChunk(
+        pw::multibuf::v1::HeaderChunkRegionTracker::AllocateRegionAsChunk(
             allocator_, contents.size());
     std::memcpy(chunk.value().data(), contents.data(), contents.size());
     buf_.PushFrontChunk(std::move(*chunk));

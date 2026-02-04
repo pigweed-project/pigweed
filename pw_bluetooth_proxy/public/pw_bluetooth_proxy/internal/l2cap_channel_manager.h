@@ -43,7 +43,7 @@
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager_async.h"
 #endif  // PW_BLUETOOTH_PROXY_ASYNC
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
 #include "pw_multibuf/simple_allocator.h"  // nogncheck
 #endif
 
@@ -295,13 +295,13 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   IntrusiveMap<uint16_t, internal::L2capLogicalLinkInterface> logical_links_
       PW_GUARDED_BY(links_mutex_);
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
   // This buffer is small because it is only used with ChannelProxy, which has
   // no MultiBuf clients other than tests, and MultiBuf v1 will soon be removed.
   std::array<std::byte, 200> allocator_buffer_;
   multibuf::SimpleAllocator multibuf_allocator_{allocator_buffer_,
                                                 impl_.allocator()};
-#elif PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V2
+#elif PW_MULTIBUF_VERSION == 2
   MultiBufAllocator multibuf_allocator_{impl_.allocator(), impl_.allocator()};
 #endif
 };

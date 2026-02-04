@@ -106,10 +106,6 @@ more details.
 
 Module configuration options include:
 
-- :cc:`PW_BLUETOOTH_PROXY_MULTIBUF`: This module depends on
-  :ref:`module-pw_multibuf`, and can use either the older v1 or newer v2
-  MultiBuf API. By default, the v1 MultiBuf API is in use. When migrating to the
-  v2 API, set the value of this option to :cc:`PW_BLUETOOTH_PROXY_MULTIBUF_V2`.
 - :cc:`PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE`: The
   :cc:`pw::bluetooth::proxy::ProxyHost` can either use a provided allocator or
   provide an internal one. To use an internal allocator, set the value of

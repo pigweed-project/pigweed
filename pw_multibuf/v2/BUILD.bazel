@@ -1,0 +1,142 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+### Libraries and tests
+
+# LINT.IfChange
+cc_library(
+    name = "properties",
+    hdrs = ["public/pw_multibuf/v2/properties.h"],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "iterators",
+    hdrs = [
+        "public/pw_multibuf/v2/chunks.h",
+        "public/pw_multibuf/v2/internal/byte_iterator.h",
+        "public/pw_multibuf/v2/internal/chunk_iterator.h",
+        "public/pw_multibuf/v2/internal/entry.h",
+    ],
+    strip_include_prefix = "public",
+    visibility = ["//pw_multibuf:__subpackages__"],
+    deps = [
+        "//pw_assert:assert",
+        "//pw_bytes",
+        "//pw_containers:dynamic_deque",
+        "//pw_preprocessor",
+    ],
+)
+
+cc_library(
+    name = "iterator_testing",
+    testonly = True,
+    hdrs = ["pw_multibuf_private/iterator_testing.h"],
+    deps = [
+        ":iterators",
+        "//pw_allocator:bump_allocator",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "chunk_iterator_test",
+    srcs = ["chunk_iterator_test.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
+    deps = [
+        ":iterator_testing",
+        ":iterators",
+        "//pw_bytes",
+        "//pw_containers:dynamic_deque",
+    ],
+)
+
+pw_cc_test(
+    name = "byte_iterator_test",
+    srcs = ["byte_iterator_test.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
+    deps = [
+        ":iterator_testing",
+        ":iterators",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+cc_library(
+    name = "multibuf",
+    srcs = ["generic_multibuf.cc"],
+    hdrs = [
+        "public/pw_multibuf/v2/multibuf.h",
+        "public/pw_multibuf/v2/observer.h",
+    ],
+    implementation_deps = [
+        "//pw_assert:check",
+    ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":iterators",
+        ":properties",
+        "//pw_allocator",
+        "//pw_allocator:null_allocator",
+        "//pw_bytes",
+        "//pw_containers:algorithm",
+        "//pw_containers:dynamic_deque",
+        "//pw_status",
+    ],
+)
+# LINT.ThenChange(../Android.bp, BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+pw_cc_test(
+    name = "multibuf_test",
+    srcs = ["multibuf_test.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
+    has_nc_test = True,
+    deps = [
+        ":iterators",
+        "//pw_allocator:chunk_pool",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_multibuf",
+        "//pw_result",
+        "//pw_status",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+
+### Docs
+
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_multibuf/v2/chunks.h",
+        "public/pw_multibuf/v2/internal/byte_iterator.h",
+        "public/pw_multibuf/v2/internal/chunk_iterator.h",
+        "public/pw_multibuf/v2/internal/entry.h",
+        "public/pw_multibuf/v2/multibuf.h",
+        "public/pw_multibuf/v2/observer.h",
+        "public/pw_multibuf/v2/properties.h",
+    ],
+)

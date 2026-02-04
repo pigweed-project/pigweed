@@ -21,7 +21,7 @@
 #include "pw_containers/dynamic_vector.h"
 #include "pw_i2c/address.h"
 #include "pw_i2c/message.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_sync/timed_thread_notification.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"

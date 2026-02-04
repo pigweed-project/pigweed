@@ -117,7 +117,7 @@ This process requires both runtime overhead due to copying and memory overhead
 due to the need for multiple buffers to hold every message.
 
 ``Channel`` avoids this problem by using :cc:`MultiBuf
-<pw::multibuf::MultiBuf>`. The lower layers of the stack are responsible for
+<pw::multibuf::v1::MultiBuf>`. The lower layers of the stack are responsible for
 allocating peripheral-compatible buffers that are then passed up the stack for
 the application code to read from or write into. ``MultiBuf`` allows for
 fragementation, coalescing, insertion of headers, footers etc. without the need

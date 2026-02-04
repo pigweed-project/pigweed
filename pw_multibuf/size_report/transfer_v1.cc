@@ -14,35 +14,41 @@
 
 #include "pw_allocator/bump_allocator.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/multibuf_v1.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_multibuf/simple_allocator.h"
 #include "pw_multibuf/size_report/transfer.h"
 
 namespace pw::multibuf::size_report {
 
-class FrameHandlerV1 : public virtual size_report::FrameHandler<MultiBuf> {
+using MultiBufType = v1::MultiBuf;
+
+class FrameHandlerV1 : public virtual size_report::FrameHandler<MultiBufType> {
  protected:
   FrameHandlerV1(MultiBufAllocator& mb_allocator)
       : mb_allocator_(mb_allocator) {}
 
  private:
-  MultiBuf DoAllocateFrame() override {
+  MultiBufType DoAllocateFrame() override {
     auto frame =
         mb_allocator_.AllocateContiguous(examples::kMaxDemoLinkFrameLength);
     PW_ASSERT(frame.has_value());
     return std::move(*frame);
   }
 
-  void DoTruncate(MultiBuf& mb, size_t length) override { mb.Truncate(length); }
+  void DoTruncate(MultiBufType& mb, size_t length) override {
+    mb.Truncate(length);
+  }
 
-  void DoNarrow(MultiBuf& mb, size_t offset, size_t length) override {
+  void DoNarrow(MultiBufType& mb, size_t offset, size_t length) override {
     mb.DiscardPrefix(offset);
     if (length != dynamic_extent) {
       mb.Truncate(length);
     }
   }
 
-  void DoWiden(MultiBuf& mb, size_t prefix_len, size_t suffix_len) override {
+  void DoWiden(MultiBufType& mb,
+               size_t prefix_len,
+               size_t suffix_len) override {
     if (prefix_len != 0) {
       PW_ASSERT(mb.ClaimPrefix(prefix_len));
     }
@@ -51,43 +57,48 @@ class FrameHandlerV1 : public virtual size_report::FrameHandler<MultiBuf> {
     }
   }
 
-  void DoPushBack(MultiBuf& mb, MultiBuf&& chunk) override {
+  void DoPushBack(MultiBufType& mb, MultiBufType&& chunk) override {
     mb.PushSuffix(std::move(chunk));
   }
 
-  MultiBuf::const_iterator GetBegin(const MultiBuf& mb) const override {
+  MultiBufType::const_iterator GetBegin(const MultiBufType& mb) const override {
     return mb.begin();
   }
 
-  MultiBuf::const_iterator GetEnd(const MultiBuf& mb) const override {
+  MultiBufType::const_iterator GetEnd(const MultiBufType& mb) const override {
     return mb.end();
   }
 
   MultiBufAllocator& mb_allocator_;
 };
 
-class SenderV1 : public FrameHandlerV1, public size_report::Sender<MultiBuf> {
+class SenderV1 : public FrameHandlerV1,
+                 public size_report::Sender<MultiBufType> {
  public:
-  SenderV1(MultiBufAllocator& mb_allocator, InlineAsyncQueue<MultiBuf>& queue)
-      : FrameHandlerV1(mb_allocator), size_report::Sender<MultiBuf>(queue) {}
+  SenderV1(MultiBufAllocator& mb_allocator,
+           InlineAsyncQueue<MultiBufType>& queue)
+      : FrameHandlerV1(mb_allocator),
+        size_report::Sender<MultiBufType>(queue) {}
 };
 
 class ReceiverV1 : public FrameHandlerV1,
-                   public size_report::Receiver<MultiBuf> {
+                   public size_report::Receiver<MultiBufType> {
  public:
-  ReceiverV1(MultiBufAllocator& mb_allocator, InlineAsyncQueue<MultiBuf>& queue)
-      : FrameHandlerV1(mb_allocator), size_report::Receiver<MultiBuf>(queue) {}
+  ReceiverV1(MultiBufAllocator& mb_allocator,
+             InlineAsyncQueue<MultiBufType>& queue)
+      : FrameHandlerV1(mb_allocator),
+        size_report::Receiver<MultiBufType>(queue) {}
 };
 
-constexpr size_t kMultiBufRegionSize = 8192;
+constexpr size_t kMultiBufTypeRegionSize = 8192;
 constexpr size_t kMetadataRegionSize = 1024;
-std::array<std::byte, kMultiBufRegionSize> multibuf_region;
+std::array<std::byte, kMultiBufTypeRegionSize> multibuf_region;
 std::array<std::byte, kMetadataRegionSize> metadata_region;
 
 void TransferMessage() {
   allocator::BumpAllocator metadata_allocator(metadata_region);
   SimpleAllocator mb_allocator(multibuf_region, metadata_allocator);
-  InlineAsyncQueue<MultiBuf, 3> queue;
+  InlineAsyncQueue<MultiBufType, 3> queue;
   SenderV1 sender(mb_allocator, queue);
   ReceiverV1 receiver(mb_allocator, queue);
   size_report::TransferMessage(sender, receiver);

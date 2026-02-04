@@ -460,7 +460,6 @@ INCLUDE_CHECK_EXCEPTIONS = (
     "//pw_log_null:headers",
     "//pw_metric:metric_service_pwpb",
     "//pw_multibuf/examples:emboss_protocol",
-    "//pw_multibuf:internal_test_utils",
     "//pw_perf_test:arm_cortex_timer",
     "//pw_perf_test:chrono_timer",
     "//pw_polyfill:standard_library",

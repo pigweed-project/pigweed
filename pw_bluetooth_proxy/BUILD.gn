@@ -97,9 +97,8 @@ _pw_bluetooth_proxy_public_deps = [
   "$dir_pw_containers:inline_queue",
   "$dir_pw_containers:intrusive_map",
   "$dir_pw_containers:vector",
+  "$dir_pw_multibuf",
   "$dir_pw_multibuf:allocator",
-  "$dir_pw_multibuf:multibuf_v1",
-  "$dir_pw_multibuf:multibuf_v2",
   "$dir_pw_sync:lock_annotations",
   "$dir_pw_sync:mutex",
   "$dir_pw_sync:thread_notification",
@@ -245,11 +244,11 @@ pw_source_set("config") {
 }
 
 config("multibuf_v1") {
-  defines = [ "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V1" ]
+  defines = [ "PW_MULTIBUF_VERSION =1" ]
 }
 
 config("multibuf_v2") {
-  defines = [ "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2" ]
+  defines = [ "PW_MULTIBUF_VERSION =2" ]
 }
 
 config("sync") {

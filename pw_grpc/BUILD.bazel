@@ -125,8 +125,6 @@ cc_library(
         "//pw_containers:dynamic_deque",
         "//pw_function",
         "//pw_log",
-        "//pw_multibuf",
-        "//pw_multibuf:allocator",
         "//pw_result",
         "//pw_span",
         "//pw_status",

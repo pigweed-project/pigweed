@@ -41,7 +41,7 @@ cc_library(
         "//pw_bluetooth:emboss_hci_h4",
         "//pw_bytes",
         "//pw_containers:intrusive_map",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf/v2:multibuf",
         "//pw_result",
         "//pw_span:cast",
         "//pw_status",

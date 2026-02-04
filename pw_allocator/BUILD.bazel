@@ -54,7 +54,7 @@ cc_library(
         ":fragmentation",
         ":hardening",
         "//pw_bytes",
-        "//pw_multibuf:properties",
+        "//pw_multibuf/v2:properties",
         "//pw_numeric:checked_arithmetic",
         "//pw_preprocessor",
         "//pw_result",

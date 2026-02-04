@@ -1,0 +1,297 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_async2/backend.gni")
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_unit_test/test.gni")
+
+config("public_include_path") {
+  include_dirs = [ "public" ]
+  visibility = [ ":*" ]
+}
+
+config("test_config") {
+  defines = [ "PW_MULTIBUF_VERSION=1" ]
+  visibility = [ ":*" ]
+}
+
+### Libraries and tests
+
+# LINT.IfChange
+pw_source_set("chunk") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/chunk.h" ]
+  sources = [ "chunk.cc" ]
+  public_deps = [
+    "$dir_pw_sync:mutex",
+    "..:config",
+    dir_pw_assert,
+    dir_pw_bytes,
+    dir_pw_preprocessor,
+    dir_pw_span,
+  ]
+  deps = [ "$dir_pw_assert:check" ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_test("chunk_test") {
+  sources = [ "chunk_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":chunk",
+    ":header_chunk_region_tracker",
+    "$dir_pw_allocator:testing",
+  ]
+}
+
+pw_source_set("header_chunk_region_tracker") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/header_chunk_region_tracker.h" ]
+  public_deps = [
+    ":chunk",
+    "..:config",
+    dir_pw_allocator,
+    dir_pw_bytes,
+  ]
+}
+
+pw_test("header_chunk_region_tracker_test") {
+  sources = [ "header_chunk_region_tracker_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":chunk",
+    ":header_chunk_region_tracker",
+    "$dir_pw_allocator:testing",
+    dir_pw_status,
+  ]
+}
+
+pw_source_set("single_chunk_region_tracker") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/single_chunk_region_tracker.h" ]
+  public_deps = [
+    ":chunk",
+    "..:config",
+    dir_pw_assert,
+    dir_pw_bytes,
+  ]
+}
+
+pw_test("single_chunk_region_tracker_test") {
+  sources = [ "single_chunk_region_tracker_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":chunk",
+    ":single_chunk_region_tracker",
+  ]
+
+  # TODO: b/260624583 - Fix this for //targets/rp2040
+  enable_if = pw_build_EXECUTABLE_TARGET_TYPE != "pico_executable"
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("multibuf") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/multibuf.h" ]
+  sources = [ "multibuf.cc" ]
+  public_deps = [
+    ":chunk",
+    "..:config",
+    dir_pw_preprocessor,
+    dir_pw_status,
+  ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_test("multibuf_test") {
+  sources = [ "multibuf_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":internal_test_utils",
+    "$dir_pw_assert:check",
+    dir_pw_bytes,
+    dir_pw_multibuf,
+  ]
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/allocator.h" ]
+  sources = [ "allocator.cc" ]
+  public_deps = [
+    ":multibuf",
+    "$dir_pw_containers:intrusive_forward_list",
+    "$dir_pw_result",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "..:config",
+  ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("allocator_async") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/allocator_async.h" ]
+  sources = [ "allocator_async.cc" ]
+  public_deps = [
+    ":allocator",
+    "$dir_pw_async2:poll",
+    "$dir_pw_async2:pw_async2",
+    "..:config",
+  ]
+}
+
+# TODO: https://pwbug.dev/384583239 - Split async into its own test.
+pw_test("allocator_test") {
+  sources = [ "allocator_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":allocator",
+    ":allocator_async",
+    "$dir_pw_async2:poll",
+    "$dir_pw_async2:testing",
+  ]
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("simple_allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/simple_allocator.h" ]
+  sources = [ "simple_allocator.cc" ]
+  public_deps = [
+    ":allocator",
+    ":multibuf",
+    "$dir_pw_allocator:allocator",
+    "$dir_pw_containers:intrusive_list",
+    "..:config",
+  ]
+  deps = [ "$dir_pw_bytes:alignment" ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_test("simple_allocator_test") {
+  sources = [ "simple_allocator_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":simple_allocator",
+    "$dir_pw_allocator:null_allocator",
+    "$dir_pw_allocator:testing",
+  ]
+}
+
+pw_source_set("stream") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/stream.h" ]
+  public_deps = [
+    ":multibuf",
+    "..:config",
+    dir_pw_status,
+    dir_pw_stream,
+  ]
+  sources = [ "stream.cc" ]
+}
+
+pw_test("stream_test") {
+  sources = [ "stream_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":internal_test_utils",
+    ":stream",
+    dir_pw_multibuf,
+  ]
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("from_span") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/from_span.h" ]
+  public_deps = [
+    ":multibuf",
+    dir_pw_allocator,
+    dir_pw_function,
+  ]
+  sources = [ "from_span.cc" ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_test("from_span_test") {
+  sources = [ "from_span_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    "$dir_pw_allocator:testing",
+    "$dir_pw_multibuf:from_span",
+  ]
+}
+
+pw_source_set("testing") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1/simple_allocator_for_test.h" ]
+  public_deps = [
+    ":simple_allocator",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_sync:mutex",
+    dir_pw_assert,
+  ]
+}
+
+pw_source_set("internal_test_utils") {
+  sources = [ "pw_multibuf_private/test_utils.h" ]
+  public_deps = [
+    ":header_chunk_region_tracker",
+    ":multibuf",
+    "$dir_pw_allocator:testing",
+    dir_pw_assert,
+    dir_pw_bytes,
+  ]
+  visibility = [ ":*" ]
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+## Test group
+
+pw_test_group("tests") {
+  tests = [
+    ":allocator_test",
+    ":chunk_test",
+    ":from_span_test",
+    ":header_chunk_region_tracker_test",
+    ":multibuf_test",
+    ":simple_allocator_test",
+    ":single_chunk_region_tracker_test",
+    ":stream_test",
+  ]
+}

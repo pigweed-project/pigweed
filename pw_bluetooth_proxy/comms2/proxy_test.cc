@@ -23,6 +23,7 @@
 #include "pw_bytes/array.h"
 #include "pw_bytes/endian.h"
 #include "pw_channel/test_packet_channel.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
@@ -32,6 +33,7 @@ using ::pw::bluetooth::emboss::OpCode;
 using ::pw::bluetooth::proxy::Direction;
 using ::pw::bluetooth::proxy::H4Packet;
 using ::pw::bluetooth::proxy::Proxy;
+using ::pw::multibuf::v2::MultiBuf;
 
 class ProxyTest : public ::testing::Test {
  protected:
@@ -53,7 +55,7 @@ class ProxyTest : public ::testing::Test {
     packet[0] = static_cast<std::byte>(H4Packet::Type::COMMAND);
     std::memcpy(&packet[1], code.data(), code.size());
 
-    pw::MultiBuf::Instance multibuf(allocator_);
+    MultiBuf::Instance multibuf(allocator_);
     multibuf->PushBack(std::move(packet));
 
     H4Packet h4_packet(allocator_);

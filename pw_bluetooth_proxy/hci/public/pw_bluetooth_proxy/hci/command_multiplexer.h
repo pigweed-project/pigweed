@@ -26,13 +26,15 @@
 #include "pw_containers/dynamic_queue.h"
 #include "pw_containers/intrusive_map.h"
 #include "pw_function/function.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_result/expected.h"
 #include "pw_result/result.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 
 namespace pw::bluetooth::proxy::hci {
+
+using ::pw::multibuf::v2::MultiBuf;
 
 struct CommandPacket final {
   MultiBuf::Instance buffer;

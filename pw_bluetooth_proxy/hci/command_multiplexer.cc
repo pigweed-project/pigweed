@@ -19,7 +19,6 @@
 #include "pw_bluetooth/hci_events.emb.h"
 #include "pw_bluetooth/hci_h4.emb.h"
 #include "pw_log/log.h"
-#include "pw_multibuf/multibuf_v2.h"
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::bluetooth::proxy::hci {

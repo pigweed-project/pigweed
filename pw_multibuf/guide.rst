@@ -42,9 +42,9 @@ The following example creates just such a MultiBuf instance:
    :start-after: [pw_multibuf-examples-iterate-create]
    :end-before: [pw_multibuf-examples-iterate-create]
 
-Note the use of :cc:`pw::ConstMultiBuf`. This type alias of
-:cc:`GenericMultiBuf <pw::multibuf::internal::GenericMultiBuf>` includes the
-:cc:`kConst <pw::multibuf::Property>` as one of its
+Note the use of :cc:`ConstMultiBuf <pw::multibuf::v2::ConstMultiBuf>`. This type
+alias of :cc:`GenericMultiBuf <pw::multibuf::v2::internal::GenericMultiBuf>`
+includes the :cc:`kConst <pw::multibuf::v2::Property>` as one of its
 :ref:`module-pw_multibuf-design-properties`.
 
 Regardless of how the underlying memory is stored, MultiBuf methods can
@@ -126,9 +126,9 @@ producers):
    :start-after: [pw_multibuf-examples-async_queue-observer]
    :end-before: [pw_multibuf-examples-async_queue-observer]
 
-This type extends :cc:`Observer <pw::multibuf::Observer>` and receives an
-:cc:`Event <pw::multibuf::Observer::Event>` every time the contents or structure
-of the MultiBuf instance changes.
+This type extends :cc:`Observer <pw::multibuf::v2::Observer>` and receives an
+:cc:`Event <pw::multibuf::v2::Observer::Event>` every time the contents or
+structure of the MultiBuf instance changes.
 
 With this, the queue can leverage the observer to add the same methods that
 produces and consumers can wait on:
@@ -139,9 +139,10 @@ produces and consumers can wait on:
    :start-after: [pw_multibuf-examples-async_queue]
    :end-before: [pw_multibuf-examples-async_queue]
 
-Note that this queue uses a :cc:`pw::TrackedConstMultiBuf`. The "Tracked"
-prefix indicates the MultiBuf instance supports observers, and the "Const"
-prefix indicates the data cannot be modified.
+Note that this queue uses a
+:cc:`TrackedConstMultiBuf <pw::multibuf::v2::TrackedConstMultiBuf>`. The
+"Tracked" prefix indicates the MultiBuf instance supports observers, and the
+"Const" prefix indicates the data cannot be modified.
 
 A producer task that adds data to this queue might look like the following:
 
@@ -184,10 +185,11 @@ writes in a single operation:
    :start-after: [pw_multibuf-examples-scatter_gather-message_vector]
    :end-before: [pw_multibuf-examples-scatter_gather-message_vector]
 
-This container has a :cc:`pw::TrackedMultiBuf` for data to be read, and a
-:cc:`pw::TrackedConstMultiBuf` for data to be written. As the "Tracked"
-prefix indicates, these accept an observer that can be used to signal when an
-I2C transfer is complete:
+This container has a :cc:`TrackedMultiBuf <pw::multibuf::v2::TrackedMultiBuf>`
+for data to be read, and a
+:cc:`TrackedConstMultiBuf <pw::multibuf::v2::TrackedConstMultiBuf>` for data to
+be written. As the "Tracked" prefix indicates, these accept an observer that can
+be used to signal when an I2C transfer is complete:
 
 .. literalinclude:: examples/scatter_gather.cc
    :language: cpp

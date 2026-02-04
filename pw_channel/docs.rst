@@ -10,9 +10,9 @@ pw_channel
    ``pw_channel`` in its current state is deprecated. Do not use it for new
    code.
 
-   A new module that provides the functionality of ``pw_channel`` with the new
-   :cc:`pw::MultiBuf` and ``pw_async2`` futures will be created to replace
-   ``pw_channel``.
+   A new module that provides the functionality of ``pw_channel`` with
+   :cc:`pw_multibuf version 2<pw::multibuf::v2::MultiBuf>` and ``pw_async2``
+   futures will be created to replace ``pw_channel``.
 
    Note that :ref:`pw_async2 Channels <module-pw_async2-channels>` are not
    related to ``pw_channel``.

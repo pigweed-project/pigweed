@@ -27,7 +27,7 @@
 #include "pw_bytes/span.h"
 #include "pw_containers/inline_async_queue.h"
 #include "pw_multibuf/examples/protocol.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_random/xor_shift.h"
 #include "pw_unit_test/framework.h"
 

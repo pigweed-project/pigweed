@@ -636,7 +636,6 @@ cc_library(
         "//pw_async2:basic_dispatcher",
         "//pw_async2:func_task",
         "//pw_hdlc:router",
-        "//pw_multibuf:simple_allocator",
         "//pw_rpc/pwpb:echo_service",
         "//pw_sync:interrupt_spin_lock",
         "//pw_thread:thread",
@@ -709,7 +708,7 @@ pw_cc_test(
         ":async",
         "//pw_allocator:testing",
         "//pw_channel:loopback_channel",
-        "//pw_multibuf:testing",
+        "//pw_multibuf:simple_allocator",
     ],
 )
 

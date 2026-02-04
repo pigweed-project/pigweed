@@ -172,7 +172,7 @@ Status StreamChannel::ProvideBufferIfAvailable(Context& cx) {
   }
 
   read_allocation_future_.SetDesiredSizes(
-      kMinimumReadSize, kDesiredReadSize, pw::multibuf::kNeedsContiguous);
+      kMinimumReadSize, kDesiredReadSize, pw::multibuf::v1::kNeedsContiguous);
   PollOptional<MultiBuf> maybe_multibuf = read_allocation_future_.Pend(cx);
 
   // If this is pending, we'll be awoken and this function will be re-run

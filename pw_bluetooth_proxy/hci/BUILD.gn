@@ -44,7 +44,7 @@ pw_source_set("command_multiplexer") {
     "$dir_pw_containers:intrusive_map",
     "$dir_pw_function",
     "$dir_pw_log",
-    "$dir_pw_multibuf:multibuf_v2",
+    "$dir_pw_multibuf",
     "$dir_pw_result",
     "$dir_pw_result:expected",
     "$dir_pw_span",

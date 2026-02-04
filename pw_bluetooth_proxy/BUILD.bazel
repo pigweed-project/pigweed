@@ -41,7 +41,7 @@ pw_bluetooth_proxy_library(
     testonly = True,
     defines = [
         "PW_BLUETOOTH_PROXY_ASYNC=0",
-        "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V1",
+        "PW_MULTIBUF_VERSION=1",
     ],
     versioned_deps = [
         "//pw_multibuf:simple_allocator",
@@ -57,7 +57,7 @@ pw_bluetooth_proxy_library(
     testonly = True,
     defines = [
         "PW_BLUETOOTH_PROXY_ASYNC=0",
-        "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2",
+        "PW_MULTIBUF_VERSION=2",
     ],
     versioned_deps = [],
     visibility = [
@@ -71,7 +71,7 @@ pw_bluetooth_proxy_library(
     testonly = True,
     defines = [
         "PW_BLUETOOTH_PROXY_ASYNC=1",
-        "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V1",
+        "PW_MULTIBUF_VERSION=1",
     ],
     versioned_deps = [
         "//pw_multibuf:simple_allocator",
@@ -84,7 +84,7 @@ pw_bluetooth_proxy_library(
     testonly = True,
     defines = [
         "PW_BLUETOOTH_PROXY_ASYNC=1",
-        "PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2",
+        "PW_MULTIBUF_VERSION=2",
     ],
     versioned_deps = [],
     visibility = [

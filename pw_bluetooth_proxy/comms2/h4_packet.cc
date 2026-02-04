@@ -15,9 +15,12 @@
 #include "pw_bluetooth_proxy/comms2/h4_packet.h"
 
 #include "pw_assert/check.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_status/try.h"
 
 namespace pw::bluetooth::proxy {
+
+using ::pw::multibuf::v2::MultiBuf;
 
 bool H4Packet::CanConstructFrom(const MultiBuf& buffer) {
   return buffer.size() >= kMinSize && buffer.NumLayers() >= kLayer;

@@ -16,7 +16,7 @@
 #include "pw_bluetooth_proxy/internal/multibuf.h"
 #include "pw_span/cast.h"
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
 
 namespace pw::bluetooth::proxy {
 
@@ -63,4 +63,4 @@ span<const uint8_t> MultiBufAdapter::AsSpan(const MultiBuf& mbuf) {
 
 }  // namespace pw::bluetooth::proxy
 
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION

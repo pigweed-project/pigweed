@@ -18,16 +18,17 @@
 #include "pw_bluetooth/hci_commands.emb.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/endian.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_span/span.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
 
-using pw::MultiBuf;
 using pw::OkStatus;
 using pw::Status;
 using pw::allocator::test::AllocatorForTest;
 using pw::bluetooth::proxy::H4Packet;
+using pw::multibuf::v2::MultiBuf;
 
 class H4PacketTest : public ::testing::Test {
  protected:

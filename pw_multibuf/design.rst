@@ -65,7 +65,7 @@ of a dereferenced iterator to define a range can lead memory corruption!
 
 For efficient bulk data transfer, the MultiBuf type provides ``CopyTo`` and
 ``CopyFrom`` methods, which are optimized to handle the scatter-gather nature of
-the buffer. The range of :cc:`Chunks <pw::multibuf::ChunksImpl>` can also be
+the buffer. The range of :cc:`Chunks <pw::multibuf::v2::ChunksImpl>` can also be
 accessed using the ``Chunks`` and ``ConstChunks`` methods. Each of these can
 provide ``ChunkIterator`` objects that can be used to iterate over the
 contiguous spans of memory.
@@ -109,8 +109,8 @@ simply use methods like  ``Insert`` and ``PushBack`` infallibly.
 ----------
 Properties
 ----------
-The :cc:`BasicMultiBuf <pw::BasicMultiBuf>` class template uses
-:cc:`Property <pw::multibuf::Property>` template parameters to define the
+The :cc:`BasicMultiBuf <pw::multibuf::v2::BasicMultiBuf>` class template uses
+:cc:`Property <pw::multibuf::v2::Property>` template parameters to define the
 capabilities of a MultiBuf interface. This creates a compile-time system for
 specifying behavior. The core properties are:
 
@@ -118,9 +118,9 @@ specifying behavior. The core properties are:
 - ``kLayerable``: The buffer supports adding and removing hierarchical
   :ref:`module-pw_multibuf-concepts-layers` of the data.
 - ``kObservable``: The buffer can notify a registered
-  :cc:`pw::multibuf::Observer` of changes.
+  :cc:`Observer <pw::multibuf::v2::Observer>` of changes.
 
-:cc:`GenericMultiBuf <pw::multibuf::internal::GenericMultiBuf>` privately
+:cc:`GenericMultiBuf <pw::multibuf::v2::internal::GenericMultiBuf>` privately
 inherits from all valid combinations of ``BasicMultiBuf<...kProperties>``. This
 design allows any ``BasicMultiBuf`` reference to be safely ``static_cast`` to a
 ``GenericMultiBuf`` reference, which holds the actual state (the deque,
@@ -130,10 +130,10 @@ in :ref:`module-pw_channel`, and is referred to as an
 :ref:`module-pw_channel-design-hourglass_inheritance_pattern`.
 
 To create a concrete objects, use an
-:cc:`Instance <pw::multibuf::internal::Instance>` templated on one of the
+:cc:`Instance <pw::multibuf::v2::internal::Instance>` templated on one of the
 aliases of a specific ``BasicMultiBuf`` specialization
-(e.g., :cc:`pw::TrackedMultiBuf`). The ``Instance`` class wraps a
-``GenericMultiBuf`` member.
+(e.g., :cc:`TrackedMultiBuf <pw::multibuf::v2::TrackedMultiBuf>`). The
+``Instance`` class wraps a ``GenericMultiBuf`` member.
 
 A key feature of this design is seamless and safe convertibility. An
 ``Instance`` object or a ``BasicMultiBuf`` reference can be implicitly or
@@ -142,31 +142,32 @@ conversion is valid.
 
 kConst
 ======
-The :cc:`kConst <pw::multibuf::Property>` property signifies that the underlying
-byte data held by the MultiBuf type is immutable. When this property is present,
-methods that would modify the data, such as the ``CopyFrom`` or the non-const
-``operator[]`` methods, are disabled at compile time.
+The :cc:`kConst <pw::multibuf::v2::Property>` property signifies that the
+underlying byte data held by the MultiBuf type is immutable. When this property
+is present, methods that would modify the data, such as the ``CopyFrom`` or the
+non-const ``operator[]`` methods, are disabled at compile time.
 
 It is important to distinguish this from an immutable *structure*. A
-:cc:`pw::ConstMultiBuf` can still be structurally modified. Operations
-like the ``Insert``, ``Remove``, ``PushBack``, or ``AddLayer`` methods are still
-permitted, as they only change the metadata that defines the sequence and view
-of the :ref:`module-pw_multibuf-concepts-chunks`, not the content of the memory
-chunks themselves.
+:cc:`ConstMultiBuf <pw::multibuf::v2::ConstMultiBuf>` can still be structurally
+modified. Operations like the ``Insert``, ``Remove``, ``PushBack``, or
+``AddLayer`` methods are still permitted, as they only change the metadata that
+defines the sequence and view of the :ref:`module-pw_multibuf-concepts-chunks`,
+not the content of the memory chunks themselves.
 
 This property provides a guarantee of data integrity similar to
 ``const``-correctness in C++. Any MultiBuf type that is not ``kConst`` can be
 safely and implicitly converted to its ``kConst`` equivalent (e.g.,
-:cc:`pw::MultiBuf` to :cc:`pw::ConstMultiBuf`). This allows
-functions that only need to read data to accept a ``kConst`` version, preventing
+:cc:`MultiBuf <pw::multibuf::v2::MultiBuf>` to
+:cc:`ConstMultiBuf <pw::multibuf::v2::ConstMultiBuf>`). This allows functions
+that only need to read data to accept a ``kConst`` version, preventing
 accidental modification, while callers can freely pass mutable buffers to them.
 The reverse conversion, from ``kConst`` to mutable, is disallowed.
 
 kLayerable
 ==========
-The :cc:`kLayerable <pw::multibuf::Property>` property enables a MultiBuf type
-to manage a stack of views, or :ref:`module-pw_multibuf-concepts-layers`. Each
-layer represents a subspan of the layer beneath it, effectively creating a
+The :cc:`kLayerable <pw::multibuf::v2::Property>` property enables a MultiBuf
+type to manage a stack of views, or :ref:`module-pw_multibuf-concepts-layers`.
+Each layer represents a subspan of the layer beneath it, effectively creating a
 narrower, more specific view of the underlying memory without any data copying.
 
 For example, a MultiBuf instance might initially represent a full Ethernet
@@ -185,14 +186,14 @@ buffers.
 
 kObservable
 ===========
-A MultiBuf with the :cc:`kObservable <pw::multibuf::Property>` property can have
-a :cc:`Observer <pw::multibuf::Observer>` registered via the ``set_observer``
-method. This observer will be notified of structural changes to the buffer.
-Whenever bytes or :ref:`module-pw_multibuf-concepts-layers` are added or removed
-(e.g., through the ``Insert``, ``Remove``, ``AddLayer``, ``PopLayer``, or
-``Clear`` methods), the MultiBuf instance invokes the observer's ``Notify``
-method, passing an event with a type like ``kBytesRemoved`` and a corresponding
-size.
+A MultiBuf with the :cc:`kObservable <pw::multibuf::v2::Property>` property can
+have a :cc:`Observer <pw::multibuf::v2::Observer>` registered via the
+``set_observer`` method. This observer will be notified of structural changes to
+the buffer. Whenever bytes or :ref:`module-pw_multibuf-concepts-layers` are
+added or removed (e.g., through the ``Insert``, ``Remove``, ``AddLayer``,
+``PopLayer``, or ``Clear`` methods), the MultiBuf instance invokes the
+observer's ``Notify`` method, passing an event with a type like
+``kBytesRemoved`` and a corresponding size.
 
 This mechanism is useful for implementing asynchronous workflows and flow
 control. For example, consider a system sending a large message contained in an

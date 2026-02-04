@@ -20,8 +20,8 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/allocator_async.h"
 #include "pw_multibuf/simple_allocator.h"
+#include "pw_multibuf/v1/allocator_async.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
 
@@ -45,9 +45,9 @@ using ::pw::channel::kReliable;
 using ::pw::channel::kSeekable;
 using ::pw::channel::kWritable;
 using ::pw::multibuf::MultiBuf;
-using ::pw::multibuf::MultiBufAllocationFuture;
 using ::pw::multibuf::MultiBufAllocator;
 using ::pw::multibuf::SimpleAllocator;
+using ::pw::multibuf::v1::MultiBufAllocationFuture;
 
 static_assert(sizeof(::pw::channel::AnyChannel) == 2 * sizeof(void*));
 

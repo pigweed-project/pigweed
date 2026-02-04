@@ -19,7 +19,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_bytes/span.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 
 namespace pw::multibuf::examples {
 

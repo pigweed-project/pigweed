@@ -1,4 +1,4 @@
-// Copyright 2025 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -13,10 +13,43 @@
 // the License.
 #pragma once
 
+#include "pw_multibuf/chunk.h"
 #include "pw_multibuf/config.h"
+#include "pw_multibuf/observer.h"
 
 #if PW_MULTIBUF_VERSION == 1
-#include "pw_multibuf/multibuf_v1.h"
+
+#include "pw_multibuf/v1/multibuf.h"
+
+namespace pw::multibuf {
+
+using v1::MultiBuf;
+using v1::MultiBufChunks;
+
+}  // namespace pw::multibuf
+
+#elif PW_MULTIBUF_VERSION == 2
+
+#include "pw_multibuf/v2/multibuf.h"
+
+namespace pw {
+
+template <multibuf::v2::Property... kProperties>
+using BasicMultiBuf = multibuf::v2::BasicMultiBuf<kProperties...>;
+
+using multibuf::v2::ConstMultiBuf;
+using multibuf::v2::FlatConstMultiBuf;
+using multibuf::v2::FlatMultiBuf;
+using multibuf::v2::MultiBuf;
+using multibuf::v2::TrackedConstMultiBuf;
+using multibuf::v2::TrackedFlatConstMultiBuf;
+using multibuf::v2::TrackedFlatMultiBuf;
+using multibuf::v2::TrackedMultiBuf;
+
+}  // namespace pw
+
 #else
+
 #error "Unsupported PW_MULTIBUF_VERSION"
+
 #endif  // PW_MULTIBUF_VERSION

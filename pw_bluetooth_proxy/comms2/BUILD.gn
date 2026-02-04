@@ -34,7 +34,7 @@ pw_source_set("packets") {
     "$dir_pw_bluetooth:emboss_hci_data",
     "$dir_pw_bluetooth:emboss_hci_h4",
     "$dir_pw_containers:intrusive_map",
-    "$dir_pw_multibuf:multibuf_v2",
+    "$dir_pw_multibuf",
     "$dir_pw_span:cast",
     dir_pw_bytes,
     dir_pw_result,

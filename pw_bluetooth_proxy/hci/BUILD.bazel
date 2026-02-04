@@ -49,7 +49,7 @@ cc_library(
         "//pw_containers:intrusive_map",
         "//pw_function",
         "//pw_log",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_result",
         "//pw_result:expected",
         "//pw_span",

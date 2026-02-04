@@ -23,19 +23,6 @@
 #define PW_BLUETOOTH_PROXY_ASYNC 0
 #endif  // PW_BLUETOOTH_PROXY_ASYNC
 
-/// Setting `PW_BLUETOOTH_PROXY_MULTIBUF` to this value builds the bt-proxy
-/// library using MultiBuf v1.
-#define PW_BLUETOOTH_PROXY_MULTIBUF_V1 10
-
-/// Setting `PW_BLUETOOTH_PROXY_MULTIBUF` to this value builds the bt-proxy
-/// library using MultiBuf v2.
-#define PW_BLUETOOTH_PROXY_MULTIBUF_V2 20
-
-#ifndef PW_BLUETOOTH_PROXY_MULTIBUF
-/// Sets the version of MultiBuf used by pw_bluetooth_proxy.
-#define PW_BLUETOOTH_PROXY_MULTIBUF PW_BLUETOOTH_PROXY_MULTIBUF_V1
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
-
 #ifndef PW_BLUETOOTH_PROXY_INTERNAL_ALLOCATOR_SIZE
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
 

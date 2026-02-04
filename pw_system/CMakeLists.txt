@@ -410,7 +410,6 @@ pw_add_library(pw_system.async STATIC
     pw_async2.basic_dispatcher
     pw_async2.func_task
     pw_hdlc.router
-    pw_multibuf.simple_allocator
     pw_rpc.pwpb.echo_service
     pw_sync.interrupt_spin_lock
     pw_thread.thread
@@ -466,7 +465,7 @@ if(NOT "${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
       pw_system.async
       pw_allocator.testing
       pw_channel.loopback_channel
-      pw_multibuf.testing
+      pw_multibuf.simple_allocator
     GROUPS
       modules
       pw_system

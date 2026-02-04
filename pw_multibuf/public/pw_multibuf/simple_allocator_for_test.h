@@ -1,4 +1,4 @@
-// Copyright 2024 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -13,45 +13,39 @@
 // the License.
 #pragma once
 
-#include <algorithm>
-#include <cstddef>
-#include <initializer_list>
-#include <optional>
-
-#include "pw_allocator/synchronized_allocator.h"
-#include "pw_allocator/testing.h"
-#include "pw_assert/assert.h"
 #include "pw_multibuf/config.h"
 #include "pw_multibuf/simple_allocator.h"
 
+// Class template argument deduction for alias templates is not available in
+// C++17. As a workaround, this file creates an alias template for a versioned
+// base type and inherits from it to define an explicit CTAD guide.
+
+#if PW_MULTIBUF_VERSION == 1
+
+#include "pw_multibuf/v1/simple_allocator_for_test.h"
+
 namespace pw::multibuf::test {
 
-/// @submodule{pw_multibuf,v1_test}
+template <size_t kDataSizeBytes, size_t kMetaSizeBytes>
+using SimpleAllocatorForTestBase =
+    v1::test::SimpleAllocatorForTest<kDataSizeBytes, kMetaSizeBytes>;
 
-/// Simple, self-contained `pw::multibuf::MultiBufAllocator` for test use.
+}  // namespace pw::multibuf::test
+
+#elif PW_MULTIBUF_VERSION == 2
+
+#else
+
+#error "Unsupported PW_MULTIBUF_VERSION"
+
+#endif  // PW_MULTIBUF_VERSION
+
+namespace pw::multibuf::test {
+
 template <size_t kDataSizeBytes = 1024, size_t kMetaSizeBytes = kDataSizeBytes>
-class PW_MULTIBUF_DEPRECATED SimpleAllocatorForTest : public SimpleAllocator {
- public:
-  /// Size of the data area.
-  static constexpr size_t data_size_bytes() { return kDataSizeBytes; }
+class SimpleAllocatorForTest
+    : public SimpleAllocatorForTestBase<kDataSizeBytes, kMetaSizeBytes> {};
 
-  SimpleAllocatorForTest()
-      : SimpleAllocator(data_area_, meta_alloc_), meta_alloc_(alloc_) {}
-
-  /// Allocates a `MultiBuf` and initializes its contents to the provided data.
-  MultiBuf BufWith(std::initializer_list<std::byte> data) {
-    std::optional<MultiBuf> buffer = Allocate(data.size());
-    PW_ASSERT(buffer.has_value());
-    std::copy(data.begin(), data.end(), buffer->begin());
-    return *std::move(buffer);
-  }
-
- private:
-  std::byte data_area_[kDataSizeBytes];
-  allocator::test::AllocatorForTest<kMetaSizeBytes> alloc_;
-  allocator::SynchronizedAllocator<sync::Mutex> meta_alloc_;
-};
-
-/// @}
+SimpleAllocatorForTest() -> SimpleAllocatorForTest<>;
 
 }  // namespace pw::multibuf::test

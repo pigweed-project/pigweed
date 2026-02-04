@@ -18,7 +18,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_assert/assert.h"
 #include "pw_bytes/span.h"
-#include "pw_multibuf/multibuf_v2.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::multibuf::examples {

@@ -42,7 +42,7 @@ pw_source_set("pw_allocator") {
     ":config",
     ":fragmentation",
     ":hardening",
-    "$dir_pw_multibuf:properties",
+    "$dir_pw_multibuf/v2:properties",
     "$dir_pw_numeric:checked_arithmetic",
     dir_pw_bytes,
     dir_pw_preprocessor,

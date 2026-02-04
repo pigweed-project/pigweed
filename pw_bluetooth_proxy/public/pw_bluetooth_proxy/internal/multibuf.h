@@ -19,36 +19,32 @@
 
 #include "pw_bluetooth_proxy/config.h"
 #include "pw_bytes/span.h"
+#include "pw_multibuf/allocator.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_span/span.h"
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
-
-#include "pw_multibuf/allocator.h"
-#include "pw_multibuf/multibuf_v1.h"
+#if PW_MULTIBUF_VERSION == 1
 
 namespace pw::bluetooth::proxy {
 
-using FlatConstMultiBuf = multibuf::MultiBuf;
-using FlatConstMultiBufInstance = multibuf::MultiBuf;
-using FlatMultiBuf = multibuf::MultiBuf;
-using FlatMultiBufInstance = multibuf::MultiBuf;
-using MultiBuf = multibuf::MultiBuf;
-using MultiBufInstance = multibuf::MultiBuf;
-using MultiBufAllocator = multibuf::MultiBufAllocator;
+using FlatConstMultiBuf = multibuf::v1::MultiBuf;
+using FlatConstMultiBufInstance = multibuf::v1::MultiBuf;
+using FlatMultiBuf = multibuf::v1::MultiBuf;
+using FlatMultiBufInstance = multibuf::v1::MultiBuf;
+using MultiBuf = multibuf::v1::MultiBuf;
+using MultiBufInstance = multibuf::v1::MultiBuf;
+using MultiBufAllocator = multibuf::v1::MultiBufAllocator;
 
 }  // namespace pw::bluetooth::proxy
 
-#elif PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V2
-
-#include "pw_allocator/allocator.h"
-#include "pw_multibuf/multibuf_v2.h"
+#elif PW_MULTIBUF_VERSION == 2
 
 namespace pw::bluetooth::proxy {
 
-using FlatConstMultiBufInstance = FlatConstMultiBuf::Instance;
-using FlatMultiBufInstance = FlatMultiBuf::Instance;
-using MultiBuf = MultiBuf;
-using MultiBufInstance = MultiBuf::Instance;
+using FlatConstMultiBufInstance = multibuf::v2::FlatConstMultiBuf::Instance;
+using FlatMultiBufInstance = multibuf::v2::FlatMultiBuf::Instance;
+using MultiBuf = multibuf::v2::MultiBuf;
+using MultiBufInstance = multibuf::v2::MultiBuf::Instance;
 
 struct MultiBufAllocator {
   Allocator& data_alloc;
@@ -57,11 +53,11 @@ struct MultiBufAllocator {
 
 }  // namespace pw::bluetooth::proxy
 
-#else  // PW_BLUETOOTH_PROXY_MULTIBUF
+#else  // PW_MULTIBUF_VERSION
 
-#error "Unsupported PW_BLUETOOTH_PROXY_MULTIBUF version"
+#error "Unsupported PW_MULTIBUF_VERSION"
 
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
 
 namespace pw::bluetooth::proxy {
 
@@ -109,10 +105,10 @@ struct MultiBufAdapter {
   /// Returns a MultiBuf reference from a MultiBuf instance.
   /// @{
   static MultiBuf& Unwrap(MultiBufInstance& wrapped);
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V2
+#if PW_MULTIBUF_VERSION == 2
   static FlatMultiBuf& Unwrap(FlatMultiBufInstance& wrapped);
   static FlatConstMultiBuf& Unwrap(FlatConstMultiBufInstance& wrapped);
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
   /// @}
 
   /// Takes back `header_size` bytes previously reserved for a header and makes
@@ -125,11 +121,11 @@ struct MultiBufAdapter {
   /// @{
   static span<uint8_t> AsSpan(MultiBuf& mbuf);
   static span<const uint8_t> AsSpan(const MultiBuf& mbuf);
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V2
+#if PW_MULTIBUF_VERSION == 2
   static span<uint8_t> AsSpan(FlatMultiBuf& mbuf);
   static span<const uint8_t> AsSpan(const FlatMultiBuf& mbuf);
   static span<const uint8_t> AsSpan(const FlatConstMultiBuf& mbuf);
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
   /// @}
 };
 

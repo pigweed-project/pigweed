@@ -142,7 +142,7 @@ pw_add_library(pw_hdlc.router STATIC
     pw_status
   PRIVATE_DEPS
     pw_hdlc.encoder
-    pw_multibuf.stream
+    pw_multibuf.v1.stream
     pw_log
     pw_result
     pw_stream

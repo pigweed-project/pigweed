@@ -15,26 +15,24 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
-package(
-    default_visibility = ["//visibility:public"],
-    features = [
-        "-layering_check",
-        "-ctad_warnings",
-    ],
-)
+package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
 # LINT.IfChange
 cc_library(
     name = "pw_multibuf",
-    hdrs = ["public/pw_multibuf/multibuf.h"],
+    hdrs = [
+        "public/pw_multibuf/multibuf.h",
+        "public/pw_multibuf/observer.h",
+    ],
     strip_include_prefix = "public",
     deps = [
+        ":chunk",
         ":config",
-        ":multibuf_v1",
+        "//pw_multibuf/v1:multibuf",
+        "//pw_multibuf/v2:multibuf",
     ],
 )
 # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
@@ -51,40 +49,22 @@ cc_library(
     name = "config",
     hdrs = ["public/pw_multibuf/config.h"],
     strip_include_prefix = "public",
+    visibility = ["//pw_multibuf:__subpackages__"],
     deps = [":config_override"],
 )
 
-cc_library(
-    name = "v1_config",
-    defines = [
-        "PW_MULTIBUF_VERSION=1",
-        "PW_MULTIBUF_WARN_DEPRECATED=0",
-    ],
-    visibility = ["//visibility:private"],
-)
-# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+### V1 Libraries
 
-### Libraries and tests
-
-# LINT.IfChange
 cc_library(
     name = "chunk",
-    srcs = ["chunk.cc"],
     hdrs = ["public/pw_multibuf/chunk.h"],
-    implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
         ":config",
-        "//pw_assert:assert",
-        "//pw_bytes",
-        "//pw_preprocessor",
-        "//pw_span",
-        "//pw_sync:mutex",
+        "//pw_multibuf/v1:chunk",
     ],
 )
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
 
-# LINT.IfChange
 cc_library(
     name = "header_chunk_region_tracker",
     hdrs = ["public/pw_multibuf/header_chunk_region_tracker.h"],
@@ -92,8 +72,7 @@ cc_library(
     deps = [
         ":chunk",
         ":config",
-        "//pw_allocator:allocator",
-        "//pw_bytes",
+        "//pw_multibuf/v1:header_chunk_region_tracker",
     ],
 )
 
@@ -104,218 +83,52 @@ cc_library(
     deps = [
         ":chunk",
         ":config",
-        "//pw_assert:assert",
-        "//pw_bytes",
+        "//pw_multibuf/v1:single_chunk_region_tracker",
     ],
 )
 
-pw_cc_test(
-    name = "chunk_test",
-    srcs = ["chunk_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":chunk",
-        ":header_chunk_region_tracker",
-        ":v1_config",
-        "//pw_allocator:testing",
-    ],
-)
-
-pw_cc_test(
-    name = "header_chunk_region_tracker_test",
-    srcs = ["header_chunk_region_tracker_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":chunk",
-        ":header_chunk_region_tracker",
-        ":v1_config",
-        "//pw_allocator:testing",
-        "//pw_status",
-    ],
-)
-
-pw_cc_test(
-    name = "single_chunk_region_tracker_test",
-    srcs = ["single_chunk_region_tracker_test.cc"],
-    # TODO: b/260624583 - Fix this for rp2040
-    target_compatible_with = select({
-        "//pw_build/constraints/chipset:rp2040": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":chunk",
-        ":single_chunk_region_tracker",
-        ":v1_config",
-    ],
-)
-# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-cc_library(
-    name = "multibuf_v1",
-    srcs = ["multibuf_v1.cc"],
-    hdrs = ["public/pw_multibuf/multibuf_v1.h"],
-    implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    deps = [
-        ":chunk",
-        ":config",
-        "//pw_preprocessor",
-        "//pw_status",
-    ],
-)
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-pw_cc_test(
-    name = "multibuf_v1_test",
-    srcs = ["multibuf_v1_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":internal_test_utils",
-        ":multibuf_v1",
-        ":v1_config",
-        "//pw_assert:check",
-        "//pw_bytes",
-    ],
-)
-# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
 cc_library(
     name = "allocator",
-    srcs = [
-        "allocator.cc",
-    ],
-    hdrs = [
-        "public/pw_multibuf/allocator.h",
-    ],
+    hdrs = ["public/pw_multibuf/allocator.h"],
     strip_include_prefix = "public",
     deps = [
         ":config",
-        ":multibuf_v1",
-        "//pw_containers:intrusive_forward_list",
-        "//pw_result",
-        "//pw_sync:interrupt_spin_lock",
-    ],
-)
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-cc_library(
-    name = "allocator_async",
-    srcs = [
-        "allocator_async.cc",
-    ],
-    hdrs = [
-        "public/pw_multibuf/allocator_async.h",
-    ],
-    features = ["-conversion_warnings"],
-    implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    deps = [
-        ":allocator",
-        ":config",
-        "//pw_async2",
-        "//pw_async2:poll",
-    ],
-)
-
-# TODO: https://pwbug.dev/384583239 - Split async into its own test.
-pw_cc_test(
-    name = "allocator_test",
-    srcs = ["allocator_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":allocator",
-        ":allocator_async",
-        ":v1_config",
-        "//pw_async2:poll",
-        "//pw_async2:testing",
-    ],
-)
-# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-cc_library(
-    name = "simple_allocator",
-    srcs = ["simple_allocator.cc"],
-    hdrs = ["public/pw_multibuf/simple_allocator.h"],
-    features = ["-conversion_warnings"],
-    implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    deps = [
-        ":allocator",
-        ":config",
-        ":multibuf_v1",
-        "//pw_allocator:allocator",
-        "//pw_bytes:alignment",
-        "//pw_containers:intrusive_list",
-    ],
-)
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-pw_cc_test(
-    name = "simple_allocator_test",
-    srcs = ["simple_allocator_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":simple_allocator",
-        ":v1_config",
-        "//pw_allocator:null_allocator",
-        "//pw_allocator:testing",
-        "//pw_async2:poll",
-        "//pw_async2:testing",
+        ":pw_multibuf",
+        "//pw_multibuf/v1:allocator",
     ],
 )
 
 cc_library(
-    name = "stream",
-    srcs = ["stream.cc"],
-    hdrs = ["public/pw_multibuf/stream.h"],
+    name = "allocator_async",
+    hdrs = ["public/pw_multibuf/allocator_async.h"],
     strip_include_prefix = "public",
     deps = [
         ":config",
-        ":multibuf_v1",
-        "//pw_status",
-        "//pw_stream",
-    ],
-)
-
-pw_cc_test(
-    name = "stream_test",
-    srcs = ["stream_test.cc"],
-    features = ["-conversion_warnings"],
-    deps = [
-        ":internal_test_utils",
-        ":multibuf_v1",
-        ":stream",
-        ":v1_config",
+        "//pw_multibuf:allocator",
+        "//pw_multibuf/v1:allocator_async",
     ],
 )
 
 cc_library(
     name = "from_span",
-    srcs = ["from_span.cc"],
     hdrs = ["public/pw_multibuf/from_span.h"],
     strip_include_prefix = "public",
     deps = [
         ":config",
-        ":multibuf_v1",
-        "//pw_allocator:allocator",
-        "//pw_function",
+        ":pw_multibuf",
+        "//pw_multibuf/v1:from_span",
     ],
 )
 
-pw_cc_test(
-    name = "from_span_test",
-    srcs = ["from_span_test.cc"],
-    features = ["-conversion_warnings"],
+cc_library(
+    name = "simple_allocator",
+    hdrs = ["public/pw_multibuf/simple_allocator.h"],
+    strip_include_prefix = "public",
     deps = [
-        ":from_span",
-        ":v1_config",
-        "//pw_allocator:testing",
+        ":allocator",
+        ":config",
+        ":pw_multibuf",
+        "//pw_multibuf/v1:simple_allocator",
     ],
 )
 
@@ -323,150 +136,11 @@ cc_library(
     name = "testing",
     testonly = True,
     hdrs = ["public/pw_multibuf/simple_allocator_for_test.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":config",
         ":simple_allocator",
-        "//pw_allocator:synchronized_allocator",
-        "//pw_allocator:testing",
-        "//pw_assert:assert",
-        "//pw_sync:mutex",
-    ],
-)
-
-cc_library(
-    name = "internal_test_utils",
-    testonly = True,
-    hdrs = ["pw_multibuf_private/test_utils.h"],
-    features = ["-conversion_warnings"],
-    includes = ["pw_multibuf_private"],
-    visibility = ["//visibility:private"],
-    deps = [
-        ":config",
-        ":header_chunk_region_tracker",
-        ":multibuf_v1",
-        "//pw_allocator:testing",
-        "//pw_assert:check",
-        "//pw_bytes",
-        "//pw_status",
-    ],
-)
-
-## MultiBuf v2
-
-cc_library(
-    name = "v2_config",
-    defines = [
-        "PW_MULTIBUF_VERSION=PW_MULTIBUF_V2",
-    ],
-)
-
-cc_library(
-    name = "properties",
-    hdrs = ["public/pw_multibuf/properties.h"],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:public"],
-)
-
-cc_library(
-    name = "iterators",
-    hdrs = [
-        "public/pw_multibuf/chunks.h",
-        "public/pw_multibuf/internal/byte_iterator.h",
-        "public/pw_multibuf/internal/chunk_iterator.h",
-        "public/pw_multibuf/internal/entry.h",
-    ],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:private"],
-    deps = [
-        "//pw_allocator",
-        "//pw_assert:assert",
-        "//pw_bytes",
-        "//pw_containers:dynamic_deque",
-        "//pw_preprocessor",
-    ],
-)
-
-cc_library(
-    name = "iterator_testing",
-    testonly = True,
-    hdrs = [
-        "public/pw_multibuf/internal/iterator_testing.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":iterators",
-        "//pw_allocator:bump_allocator",
-        "//pw_unit_test",
-    ],
-)
-
-pw_cc_test(
-    name = "chunk_iterator_test",
-    srcs = [
-        "chunk_iterator_test.cc",
-    ],
-    deps = [
-        ":iterator_testing",
-        ":iterators",
-    ],
-)
-
-pw_cc_test(
-    name = "byte_iterator_test",
-    srcs = [
-        "byte_iterator_test.cc",
-    ],
-    deps = [
-        ":iterator_testing",
-        ":iterators",
-    ],
-)
-# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-cc_library(
-    name = "multibuf_v2",
-    srcs = ["generic_multibuf.cc"],
-    hdrs = [
-        "public/pw_multibuf/multibuf_v2.h",
-        "public/pw_multibuf/observer.h",
-    ],
-    implementation_deps = [
-        "//pw_assert:check",
-    ],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":iterators",
-        ":properties",
-        "//pw_allocator",
-        "//pw_allocator:null_allocator",
-        "//pw_bytes",
-        "//pw_containers:algorithm",
-        "//pw_containers:dynamic_deque",
-    ],
-)
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
-
-# LINT.IfChange
-pw_cc_test(
-    name = "multibuf_v2_test",
-    srcs = [
-        "multibuf_v2_test.cc",
-    ],
-    has_nc_test = True,
-    deps = [
-        ":chunk",
-        ":iterators",
-        ":multibuf_v2",
-        "//pw_allocator:chunk_pool",
-        "//pw_allocator:testing",
-        "//pw_assert:check",
-        "//pw_bytes",
-        "//pw_result",
-        "//pw_status",
+        "//pw_multibuf/v1:testing",
     ],
 )
 # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
@@ -476,24 +150,9 @@ pw_cc_test(
 filegroup(
     name = "doxygen",
     srcs = [
-        "public/pw_multibuf/allocator.h",
-        "public/pw_multibuf/allocator_async.h",
-        "public/pw_multibuf/chunk.h",
-        "public/pw_multibuf/chunks.h",
         "public/pw_multibuf/config.h",
-        "public/pw_multibuf/from_span.h",
-        "public/pw_multibuf/header_chunk_region_tracker.h",
-        "public/pw_multibuf/internal/byte_iterator.h",
-        "public/pw_multibuf/internal/chunk_iterator.h",
-        "public/pw_multibuf/internal/entry.h",
-        "public/pw_multibuf/multibuf_v1.h",
-        "public/pw_multibuf/multibuf_v2.h",
-        "public/pw_multibuf/observer.h",
-        "public/pw_multibuf/properties.h",
-        "public/pw_multibuf/simple_allocator.h",
-        "public/pw_multibuf/simple_allocator_for_test.h",
-        "public/pw_multibuf/single_chunk_region_tracker.h",
-        "public/pw_multibuf/stream.h",
+        "//pw_multibuf/v1:doxygen",
+        "//pw_multibuf/v2:doxygen",
     ],
 )
 

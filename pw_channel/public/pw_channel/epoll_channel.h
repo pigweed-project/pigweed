@@ -21,8 +21,8 @@
 #include "pw_async2/poll.h"
 #include "pw_channel/channel.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/allocator_async.h"
 #include "pw_multibuf/multibuf.h"
+#include "pw_multibuf/v1/allocator_async.h"
 
 namespace pw::channel {
 
@@ -99,7 +99,7 @@ class EpollChannel : public Implement<ByteReaderWriter> {
   bool ready_to_write_;
 
   async2::EpollDispatcher* dispatcher_;
-  multibuf::MultiBufAllocationFuture write_alloc_future_;
+  multibuf::v1::MultiBufAllocationFuture write_alloc_future_;
   async2::Waker waker_;
 };
 

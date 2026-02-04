@@ -31,7 +31,7 @@
 #include "pw_allocator/internal/managed_ptr.h"
 #include "pw_allocator/layout.h"
 #include "pw_allocator/unique_ptr.h"
-#include "pw_multibuf/properties.h"
+#include "pw_multibuf/v2/properties.h"
 
 namespace pw {
 
@@ -41,8 +41,12 @@ namespace pw {
 template <typename T>
 class WeakPtr;
 
-template <multibuf::Property...>
+namespace multibuf::v2 {
+
+template <Property...>
 class BasicMultiBuf;
+
+}  // namespace multibuf::v2
 
 /// A `std::shared_ptr<T>`-like type that integrates with `pw::Allocator`.
 ///
@@ -248,12 +252,11 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   template <typename>
   friend class WeakPtr;
 
-  // Allow GenericMultiBufs to compose SharedPtr<T>.
-  friend class ::pw::multibuf::internal::GenericMultiBuf;
-
   // Allow MultiBufs to decompose SharedPtr<T>.
-  template <multibuf::Property...>
-  friend class BasicMultiBuf;
+  friend class multibuf::v2::internal::GenericMultiBuf;
+
+  template <multibuf::v2::Property...>
+  friend class multibuf::v2::BasicMultiBuf;
 
   /// Constructs and object of type `T` from the given `args`, and wraps it in a
   /// `SharedPtr`
@@ -268,10 +271,10 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   template <typename... Args>
   static SharedPtr Create(Allocator* allocator, Args&&... args);
 
-  /// Constructs an array of `count` objects, and wraps it in a `SharedPtr`
+  /// Constructs an array of `count` objects, and wraps it in a `UniquePtr`
   ///
   /// The returned value may contain null if allocating memory for the object
-  /// fails. Callers must check for null before using the `SharedPtr`.
+  /// fails. Callers must check for null before using the `UniquePtr`.
   ///
   /// NOTE: Instances of this type are most commonly constructed using
   /// `Allocator::MakeShared`.

@@ -31,7 +31,6 @@
 #include "pw_channel/channel.h"
 #include "pw_containers/vector.h"
 #include "pw_hdlc/decoder.h"
-#include "pw_multibuf/allocator.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_status/status.h"
 

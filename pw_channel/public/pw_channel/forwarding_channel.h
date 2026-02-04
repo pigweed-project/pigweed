@@ -21,7 +21,7 @@
 #include "pw_async2/poll.h"
 #include "pw_channel/channel.h"
 #include "pw_multibuf/allocator.h"
-#include "pw_multibuf/allocator_async.h"
+#include "pw_multibuf/v1/allocator_async.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 
@@ -144,7 +144,7 @@ class ForwardingChannel<DataType::kDatagram>
   // Could use a queue here.
   std::optional<multibuf::MultiBuf> read_queue_ PW_GUARDED_BY(pair_.mutex_);
   async2::Waker waker_ PW_GUARDED_BY(pair_.mutex_);
-  multibuf::MultiBufAllocationFuture write_alloc_future_;
+  multibuf::v1::MultiBufAllocationFuture write_alloc_future_;
 };
 
 template <>
@@ -191,7 +191,7 @@ class ForwardingChannel<DataType::kByte>
 
   multibuf::MultiBuf read_queue_ PW_GUARDED_BY(pair_.mutex_);
   async2::Waker read_waker_ PW_GUARDED_BY(pair_.mutex_);
-  multibuf::MultiBufAllocationFuture write_alloc_future_;
+  multibuf::v1::MultiBufAllocationFuture write_alloc_future_;
 };
 
 }  // namespace internal

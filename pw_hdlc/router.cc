@@ -20,7 +20,7 @@
 #include "pw_hdlc/encoder.h"
 #include "pw_log/log.h"
 #include "pw_multibuf/multibuf.h"
-#include "pw_multibuf/stream.h"
+#include "pw_multibuf/v1/stream.h"
 #include "pw_result/result.h"
 #include "pw_stream/null_stream.h"
 
@@ -45,8 +45,8 @@ using ::pw::async2::PollResult;
 using ::pw::async2::Ready;
 using ::pw::channel::ByteReaderWriter;
 using ::pw::channel::DatagramReaderWriter;
-using ::pw::multibuf::Chunk;
 using ::pw::multibuf::MultiBuf;
+using ::pw::multibuf::v1::Chunk;
 using ::pw::stream::CountingNullStream;
 
 namespace {
@@ -312,7 +312,7 @@ void Router::WriteOutgoingMessages(Context& cx) {
     Status encode_status =
         WriteMultiBufUIFrame(target_address,
                              buffer_to_encode_and_send_->buffer,
-                             pw::multibuf::Stream(write_buffer));
+                             pw::multibuf::v1::Stream(write_buffer));
     buffer_to_encode_and_send_ = std::nullopt;
     if (!encode_status.ok()) {
       PW_LOG_ERROR(

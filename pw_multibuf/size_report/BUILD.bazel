@@ -66,8 +66,8 @@ pw_cc_size_binary(
         ":transfer",
         "//pw_allocator:bump_allocator",
         "//pw_assert:assert",
+        "//pw_multibuf",
         "//pw_multibuf:allocator",
-        "//pw_multibuf:multibuf_v1",
         "//pw_multibuf:simple_allocator",
         "//pw_multibuf/examples:protocol",
     ],
@@ -83,7 +83,7 @@ pw_cc_size_binary(
         "//pw_allocator:bump_allocator",
         "//pw_allocator:chunk_pool",
         "//pw_assert:assert",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_multibuf/examples:protocol",
     ],
 )

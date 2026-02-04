@@ -48,11 +48,12 @@ cc_library(
 pw_cc_test(
     name = "basic",
     srcs = ["basic.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:testing",
         "//pw_bytes",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_unit_test",
     ],
 )
@@ -60,12 +61,13 @@ pw_cc_test(
 pw_cc_test(
     name = "iterate",
     srcs = ["iterate.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:testing",
         "//pw_bytes",
         "//pw_checksum",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_random",
         "//pw_unit_test",
     ],
@@ -74,12 +76,13 @@ pw_cc_test(
 pw_cc_test(
     name = "queue",
     srcs = ["queue.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:testing",
         "//pw_assert:assert",
         "//pw_bytes",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_unit_test",
     ],
 )
@@ -87,6 +90,7 @@ pw_cc_test(
 pw_cc_test(
     name = "async_queue",
     srcs = ["async_queue.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:testing",
@@ -97,7 +101,7 @@ pw_cc_test(
         "//pw_async2:poll",
         "//pw_async2:testing",
         "//pw_bytes",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_unit_test",
     ],
 )
@@ -106,6 +110,7 @@ pw_cc_test(
     name = "pseudo_encrypt",
     srcs = ["pseudo_encrypt.cc"],
     copts = ["-Wno-deprecated-declarations"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         ":protocol",
         "//pw_allocator",
@@ -118,7 +123,7 @@ pw_cc_test(
         "//pw_async2:testing",
         "//pw_bytes",
         "//pw_containers:inline_async_queue",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_random",
         "//pw_unit_test",
     ],
@@ -127,6 +132,7 @@ pw_cc_test(
 pw_cc_test(
     name = "scatter_gather",
     srcs = ["scatter_gather.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:testing",
@@ -136,7 +142,7 @@ pw_cc_test(
         "//pw_i2c:address",
         "//pw_i2c:initiator",
         "//pw_i2c:message",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_sync:timed_thread_notification",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
@@ -147,6 +153,7 @@ pw_cc_test(
 pw_cc_test(
     name = "transfer",
     srcs = ["transfer.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     deps = [
         ":protocol",
         "//pw_allocator",
@@ -159,7 +166,7 @@ pw_cc_test(
         "//pw_async2:testing",
         "//pw_bytes",
         "//pw_checksum",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_status",
         "//pw_unit_test",
     ],
@@ -168,6 +175,7 @@ pw_cc_test(
 pw_cc_test(
     name = "top_down_forward",
     srcs = ["top_down_forward.cc"],
+    defines = ["PW_MULTIBUF_VERSION=2"],
     # The _emboss_protocol headers come in via emboss_protocol as the former
     # does not allow for an "includes" attribute, which violates the layering
     # check. Turn it off locally so we can build anyway.
@@ -181,7 +189,7 @@ pw_cc_test(
         "//pw_bytes",
         "//pw_hex_dump:log_bytes",
         "//pw_log",
-        "//pw_multibuf:multibuf_v2",
+        "//pw_multibuf",
         "//pw_span",
     ],
 )

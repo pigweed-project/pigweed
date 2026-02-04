@@ -18,20 +18,21 @@
 
 #include "pw_allocator/libc_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/l2cap_channel_manager_interface.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_manager.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_unit_test/framework.h"
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
 #include "pw_multibuf/simple_allocator.h"
 #else
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_bluetooth_proxy/internal/multibuf.h"
-#include "pw_multibuf/multibuf.h"
 #include "pw_sync/mutex.h"
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
 
 namespace pw::bluetooth::proxy::rfcomm::internal {
 namespace testing {
@@ -152,7 +153,7 @@ class RfcommChannelTest : public ::testing::Test {
       pw::checksum::Crc8(0x07, 0xFF, true, true, 0xff);
 
   static constexpr size_t kDataSize = 2048;
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
   std::array<std::byte, kDataSize> buffer_{};
   multibuf::SimpleAllocator multibuf_allocator_{
       /*data_area=*/buffer_,

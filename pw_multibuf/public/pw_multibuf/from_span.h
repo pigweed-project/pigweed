@@ -1,4 +1,4 @@
-// Copyright 2024 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -13,27 +13,27 @@
 // the License.
 #pragma once
 
-#include "pw_allocator/allocator.h"
-#include "pw_function/function.h"
-#include "pw_multibuf/multibuf_v1.h"
+#include "pw_multibuf/config.h"
+#include "pw_multibuf/multibuf.h"
+
+#if PW_MULTIBUF_VERSION == 1
+
+#include "pw_multibuf/v1/from_span.h"
 
 namespace pw::multibuf {
 
-/// @submodule{pw_multibuf,v1}
-
-/// Creates a multibuf from an existing span and a ``deleter`` callback.
-///
-/// The provided allocator is used to allocate storage for the chunk-tracking
-/// metadata. The allocator's lifetime must outlive the returned ``MultiBuf``.
-///
-/// Returns ``nullopt`` if the ``metadata_allocator`` fails to allocate a
-/// metadata region to track the provided buffer. In this case, ``deleter``
-/// will not be invoked and the caller will retain ownership of the provided
-/// region.
-std::optional<MultiBuf> FromSpan(pw::Allocator& metadata_allocator,
+std::optional<MultiBuf> FromSpan(Allocator& metadata_allocator,
                                  ByteSpan region,
-                                 pw::Function<void(ByteSpan)>&& deleter);
-
-/// @}
+                                 Function<void(ByteSpan)>&& deleter) {
+  return v1::FromSpan(metadata_allocator, region, std::move(deleter));
+}
 
 }  // namespace pw::multibuf
+
+#elif PW_MULTIBUF_VERSION == 2
+
+#else
+
+#error "Unsupported PW_MULTIBUF_VERSION"
+
+#endif  // PW_MULTIBUF_VERSION

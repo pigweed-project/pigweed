@@ -14,7 +14,6 @@
 
 import("//build_overrides/pigweed.gni")
 
-import("$dir_pw_async2/backend.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_unit_test/test.gni")
@@ -27,10 +26,15 @@ config("public_include_path") {
 # LINT.IfChange
 pw_source_set("pw_multibuf") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/multibuf.h" ]
+  public = [
+    "public/pw_multibuf/multibuf.h",
+    "public/pw_multibuf/observer.h",
+  ]
   public_deps = [
+    ":chunk",
     ":config",
-    ":multibuf_v1",
+    "v1:multibuf",
+    "v2:multibuf",
   ]
 }
 
@@ -50,356 +54,89 @@ pw_source_set("config") {
   public = [ "public/pw_multibuf/config.h" ]
   public_configs = [ ":public_include_path" ]
   public_deps = [ pw_multibuf_CONFIG ]
+  visibility = [ "./*" ]
 }
 
-config("v1_config") {
-  defines = [ "PW_MULTIBUF_VERSION=1" ]
-}
+### V1 Libraries
 
-# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
-
-### Libraries and tests
-
-# LINT.IfChange
 pw_source_set("chunk") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/chunk.h" ]
-  sources = [ "chunk.cc" ]
-  public_deps = [
-    ":config",
-    "$dir_pw_sync:mutex",
-    dir_pw_assert,
-    dir_pw_bytes,
-    dir_pw_preprocessor,
-    dir_pw_span,
-  ]
-  deps = [ "$dir_pw_assert:check" ]
-}
-
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_source_set("header_chunk_region_tracker") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/header_chunk_region_tracker.h" ]
   public_deps = [
-    ":chunk",
     ":config",
-    dir_pw_allocator,
-    dir_pw_bytes,
+    "v1:chunk",
   ]
 }
 
-pw_test("header_chunk_region_tracker_test") {
-  deps = [
+pw_source_set("header_chunk_region_tracker") {
+  public = [ "public/pw_multibuf/header_chunk_region_tracker.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
     ":chunk",
-    ":header_chunk_region_tracker",
-    "$dir_pw_allocator:testing",
-    dir_pw_status,
+    ":config",
+    "$dir_pw_multibuf/v1:header_chunk_region_tracker",
   ]
-  sources = [ "header_chunk_region_tracker_test.cc" ]
-  configs = [ ":v1_config" ]
 }
 
 pw_source_set("single_chunk_region_tracker") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/single_chunk_region_tracker.h" ]
-  public_deps = [
-    ":chunk",
-    ":config",
-    dir_pw_assert,
-    dir_pw_bytes,
-  ]
-}
-
-pw_test("single_chunk_region_tracker_test") {
-  deps = [
-    ":chunk",
-    ":single_chunk_region_tracker",
-  ]
-  sources = [ "single_chunk_region_tracker_test.cc" ]
-  configs = [ ":v1_config" ]
-
-  # TODO: b/260624583 - Fix this for //targets/rp2040
-  enable_if = pw_build_EXECUTABLE_TARGET_TYPE != "pico_executable"
-}
-
-pw_test("chunk_test") {
-  deps = [
-    ":chunk",
-    ":header_chunk_region_tracker",
-    "$dir_pw_allocator:testing",
-  ]
-  sources = [ "chunk_test.cc" ]
-  configs = [ ":v1_config" ]
-}
-
-# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_source_set("multibuf_v1") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/multibuf_v1.h" ]
-  sources = [ "multibuf_v1.cc" ]
   public_deps = [
     ":chunk",
     ":config",
-    dir_pw_preprocessor,
-    dir_pw_status,
+    "v1:single_chunk_region_tracker",
   ]
 }
 
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_test("multibuf_v1_test") {
-  deps = [
-    ":internal_test_utils",
-    ":multibuf_v1",
-    dir_pw_bytes,
-  ]
-  sources = [ "multibuf_v1_test.cc" ]
-  configs = [ ":v1_config" ]
-}
-
-# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
 pw_source_set("allocator") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/allocator.h" ]
-  sources = [ "allocator.cc" ]
+  public_configs = [ ":public_include_path" ]
   public_deps = [
     ":config",
-    ":multibuf_v1",
-    "$dir_pw_containers:intrusive_forward_list",
-    "$dir_pw_result",
-    "$dir_pw_sync:interrupt_spin_lock",
+    ":pw_multibuf",
+    "v1:allocator",
   ]
 }
 
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
 pw_source_set("allocator_async") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/allocator_async.h" ]
-  sources = [ "allocator_async.cc" ]
-  public_deps = [
-    ":allocator",
-    ":config",
-    "$dir_pw_async2:poll",
-    "$dir_pw_async2:pw_async2",
-  ]
-}
-
-# TODO: https://pwbug.dev/384583239 - Split async into its own test.
-pw_test("allocator_test") {
-  deps = [
-    ":allocator",
-    ":allocator_async",
-    "$dir_pw_async2:poll",
-    "$dir_pw_async2:testing",
-  ]
-  sources = [ "allocator_test.cc" ]
-  configs = [ ":v1_config" ]
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-}
-
-# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_source_set("simple_allocator") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/simple_allocator.h" ]
-  sources = [ "simple_allocator.cc" ]
   public_deps = [
     ":allocator",
     ":config",
-    ":multibuf_v1",
-    "$dir_pw_allocator:allocator",
-    "$dir_pw_containers:intrusive_list",
+    "v1:allocator_async",
   ]
-  deps = [ "$dir_pw_bytes:alignment" ]
-}
-
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_test("simple_allocator_test") {
-  deps = [
-    ":simple_allocator",
-    "$dir_pw_allocator:null_allocator",
-    "$dir_pw_allocator:testing",
-  ]
-  sources = [ "simple_allocator_test.cc" ]
-  configs = [ ":v1_config" ]
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-}
-
-pw_source_set("stream") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/stream.h" ]
-  public_deps = [
-    ":config",
-    ":multibuf_v1",
-    dir_pw_status,
-    dir_pw_stream,
-  ]
-  sources = [ "stream.cc" ]
-}
-
-pw_test("stream_test") {
-  deps = [
-    ":internal_test_utils",
-    ":stream",
-  ]
-  sources = [ "stream_test.cc" ]
-  configs = [ ":v1_config" ]
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
 }
 
 pw_source_set("from_span") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/from_span.h" ]
+  public_configs = [ ":public_include_path" ]
   public_deps = [
-    ":multibuf_v1",
-    dir_pw_allocator,
-    dir_pw_function,
+    ":config",
+    ":pw_multibuf",
+    "v1:from_span",
   ]
-  sources = [ "from_span.cc" ]
 }
 
-pw_test("from_span_test") {
-  deps = [
-    ":from_span",
-    "$dir_pw_allocator:testing",
+pw_source_set("simple_allocator") {
+  public = [ "public/pw_multibuf/simple_allocator.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":allocator",
+    ":config",
+    ":pw_multibuf",
+    "v1:simple_allocator",
   ]
-  sources = [ "from_span_test.cc" ]
-  configs = [ ":v1_config" ]
 }
 
 pw_source_set("testing") {
-  public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/simple_allocator_for_test.h" ]
+  public_configs = [ ":public_include_path" ]
   public_deps = [
+    ":config",
     ":simple_allocator",
-    "$dir_pw_allocator:synchronized_allocator",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_async2:pw_async2",
-    "$dir_pw_async2:testing",
-    "$dir_pw_sync:mutex",
-    dir_pw_assert,
+    "v1:testing",
   ]
-}
-
-pw_source_set("internal_test_utils") {
-  sources = [ "pw_multibuf_private/test_utils.h" ]
-  public_deps = [
-    ":header_chunk_region_tracker",
-    ":multibuf_v1",
-    "$dir_pw_allocator:testing",
-    dir_pw_assert,
-    dir_pw_bytes,
-  ]
-  visibility = [ ":*" ]
-}
-
-## Multibuf v2
-
-config("v2_config") {
-  defines = [ "PW_MULTIBUF_VERSION=PW_MULTIBUF_V2" ]
-}
-
-pw_source_set("properties") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/properties.h" ]
-}
-
-pw_source_set("iterators") {
-  public_configs = [ ":public_include_path" ]
-  public = [
-    "public/pw_multibuf/chunks.h",
-    "public/pw_multibuf/internal/byte_iterator.h",
-    "public/pw_multibuf/internal/chunk_iterator.h",
-    "public/pw_multibuf/internal/entry.h",
-  ]
-  public_deps = [
-    ":chunk",
-    "$dir_pw_assert:assert",
-    "$dir_pw_containers:dynamic_deque",
-    dir_pw_allocator,
-    dir_pw_bytes,
-    dir_pw_preprocessor,
-  ]
-  visibility = [ ":*" ]
-}
-
-pw_source_set("iterator_testing") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/internal/iterator_testing.h" ]
-  public_deps = [
-    ":iterators",
-    "$dir_pw_allocator:bump_allocator",
-    dir_pw_unit_test,
-  ]
-}
-
-pw_test("chunk_iterator_test") {
-  sources = [ "chunk_iterator_test.cc" ]
-  deps = [
-    ":iterator_testing",
-    ":iterators",
-  ]
-}
-
-pw_test("byte_iterator_test") {
-  sources = [ "byte_iterator_test.cc" ]
-  deps = [
-    ":iterator_testing",
-    ":iterators",
-  ]
-}
-
-# LINT.ThenChange(CMakeLists.txt)
-
-# LINT.IfChange
-pw_source_set("multibuf_v2") {
-  public_configs = [ ":public_include_path" ]
-  public = [
-    "public/pw_multibuf/multibuf_v2.h",
-    "public/pw_multibuf/observer.h",
-  ]
-  public_deps = [
-    ":iterators",
-    ":properties",
-    "$dir_pw_allocator:null_allocator",
-    "$dir_pw_containers:algorithm",
-    "$dir_pw_containers:dynamic_deque",
-    dir_pw_allocator,
-    dir_pw_bytes,
-  ]
-  sources = [ "generic_multibuf.cc" ]
-  deps = [ "$dir_pw_assert:check" ]
-}
-
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-
-# LINT.IfChange
-pw_test("multibuf_v2_test") {
-  sources = [ "multibuf_v2_test.cc" ]
-  deps = [
-    ":chunk",
-    ":iterators",
-    ":multibuf_v2",
-    "$dir_pw_allocator:chunk_pool",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_assert:check",
-    dir_pw_bytes,
-    dir_pw_result,
-    dir_pw_status,
-  ]
-  negative_compilation_tests = true
 }
 
 # LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
@@ -407,19 +144,8 @@ pw_test("multibuf_v2_test") {
 ## Test group
 
 pw_test_group("tests") {
-  tests = [
-    ":allocator_test",
-    ":chunk_test",
-    ":from_span_test",
-    ":header_chunk_region_tracker_test",
-    ":multibuf_v1_test",
-    ":simple_allocator_test",
-    ":single_chunk_region_tracker_test",
-    ":stream_test",
-
-    # v2 tests
-    ":byte_iterator_test",
-    ":chunk_iterator_test",
-    ":multibuf_v2_test",
+  group_deps = [
+    "v1:tests",
+    "v2:tests",
   ]
 }

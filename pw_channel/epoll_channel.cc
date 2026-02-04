@@ -46,7 +46,7 @@ void EpollChannel::Register() {
 async2::PollResult<multibuf::MultiBuf> EpollChannel::DoPendRead(
     async2::Context& cx) {
   write_alloc_future_.SetDesiredSizes(
-      kMinimumReadSize, kDesiredReadSize, pw::multibuf::kNeedsContiguous);
+      kMinimumReadSize, kDesiredReadSize, pw::multibuf::v1::kNeedsContiguous);
   async2::PollOptional<multibuf::MultiBuf> maybe_multibuf =
       write_alloc_future_.Pend(cx);
   if (maybe_multibuf.IsPending()) {
@@ -59,7 +59,7 @@ async2::PollResult<multibuf::MultiBuf> EpollChannel::DoPendRead(
   }
 
   multibuf::MultiBuf buf = std::move(**maybe_multibuf);
-  multibuf::Chunk& chunk = *buf.Chunks().begin();
+  multibuf::v1::Chunk& chunk = *buf.Chunks().begin();
 
   int bytes_read = read(channel_fd_, chunk.data(), chunk.size());
   if (bytes_read >= 0) {
@@ -100,7 +100,7 @@ async2::Poll<Status> EpollChannel::DoPendReadyToWrite(async2::Context& cx) {
 }
 
 Status EpollChannel::DoStageWrite(multibuf::MultiBuf&& data) {
-  for (multibuf::Chunk& chunk : data.Chunks()) {
+  for (multibuf::v1::Chunk& chunk : data.Chunks()) {
     if (write(channel_fd_, chunk.data(), chunk.size()) < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         // The file descriptor is not currently available. The next call to

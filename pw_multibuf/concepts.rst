@@ -28,10 +28,10 @@ of scope. Others may be externally owned, and should be left intact. Still
 others may have shared pointer semantics. The collection should correctly handle
 memory ownership in all these cases to preserve correctness and prevent leaks.
 
-:cc:`GenericMultiBuf <pw::multibuf::internal::GenericMultiBuf>` and its derived
-types have been designed to meet these needs. These types are collectively
-referred to as "MultiBuf" in the following sections, except where details of the
-derived types differ.
+:cc:`GenericMultiBuf <pw::multibuf::v2::internal::GenericMultiBuf>` and its
+derived types have been designed to meet these needs. These types are
+collectively referred to as "MultiBuf" in the following sections, except where
+details of the derived types differ.
 
 --------------
 MultiBuf ideas
@@ -97,10 +97,10 @@ conceptually smiliar to a ``ByteSpan`` instance.
 Layers
 ======
 Every MultiBuf instance provides a view of its aggregated memory regions.
-If a MultiBuf type includes :cc:`kLayerable <pw::multibuf::Property>` as one of
-its :ref:`module-pw_multibuf-design-properties`, then it supports adding layers
-that restrict the view of the memory. Each layer represents a subset of the
-layer below, with the bottom-most layer being the memory regions themselves.
+If a MultiBuf type includes :cc:`kLayerable <pw::multibuf::v2::Property>` as one
+of its :ref:`module-pw_multibuf-design-properties`, then it supports adding
+layers that restrict the view of the memory. Each layer represents a subset of
+the layer below, with the bottom-most layer being the memory regions themselves.
 Each layer adds one entry to each chunk, describing the offset and length of the
 chunk that is visible at that layer.
 

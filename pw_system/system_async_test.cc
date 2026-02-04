@@ -17,7 +17,7 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_channel/loopback_channel.h"
 #include "pw_log/log.h"
-#include "pw_multibuf/simple_allocator_for_test.h"
+#include "pw_multibuf/simple_allocator.h"
 #include "pw_system/system.h"
 #include "pw_unit_test/framework.h"
 

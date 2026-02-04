@@ -35,7 +35,7 @@ pw_source_set("pw_channel") {
     "$dir_pw_async2:pw_async2",
     "$dir_pw_memory:sibling_cast",
     "$dir_pw_multibuf:allocator",
-    "$dir_pw_multibuf:allocator_async",
+    "$dir_pw_multibuf/v1:allocator_async",
     dir_pw_assert,
     dir_pw_bytes,
     dir_pw_multibuf,
@@ -72,7 +72,7 @@ pw_source_set("forwarding_channel") {
   public_deps = [
     ":pw_channel",
     "$dir_pw_multibuf:allocator",
-    "$dir_pw_multibuf:allocator_async",
+    "$dir_pw_multibuf/v1:allocator_async",
     "$dir_pw_sync:mutex",
   ]
 }
@@ -83,9 +83,8 @@ pw_test("forwarding_channel_test") {
     ":forwarding_channel",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_multibuf:header_chunk_region_tracker",
     "$dir_pw_multibuf:simple_allocator",
-    "$dir_pw_multibuf:simple_allocator",
+    "$dir_pw_multibuf/v1:header_chunk_region_tracker",
     dir_pw_preprocessor,
   ]
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
@@ -98,7 +97,7 @@ pw_source_set("loopback_channel") {
   public_deps = [
     ":pw_channel",
     "$dir_pw_multibuf:allocator",
-    "$dir_pw_multibuf:allocator_async",
+    "$dir_pw_multibuf/v1:allocator_async",
   ]
 }
 
@@ -106,8 +105,9 @@ pw_test("loopback_channel_test") {
   sources = [ "loopback_channel_test.cc" ]
   deps = [
     ":loopback_channel",
-    "$dir_pw_multibuf:allocator_async",
+    "$dir_pw_async2:testing",
     "$dir_pw_multibuf:testing",
+    "$dir_pw_multibuf/v1:allocator_async",
   ]
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
 }
@@ -120,7 +120,7 @@ pw_source_set("epoll_channel") {
     ":pw_channel",
     "$dir_pw_async2:epoll_dispatcher",
     "$dir_pw_multibuf:allocator",
-    "$dir_pw_multibuf:allocator_async",
+    "$dir_pw_multibuf/v1:allocator_async",
     "$dir_pw_sync:mutex",
   ]
   deps = [ dir_pw_log ]
@@ -130,9 +130,10 @@ pw_test("epoll_channel_test") {
   sources = [ "epoll_channel_test.cc" ]
   deps = [
     ":epoll_channel",
+    "$dir_pw_async2:testing",
     "$dir_pw_multibuf:allocator",
-    "$dir_pw_multibuf:allocator_async",
     "$dir_pw_multibuf:testing",
+    "$dir_pw_multibuf/v1:allocator_async",
     "$dir_pw_thread:sleep",
     "$dir_pw_thread:thread",
     "$dir_pw_thread_stl:thread",
@@ -149,7 +150,7 @@ if (pw_build_EXECUTABLE_TARGET_TYPE == "pico_executable") {
     public_deps = [
       ":pw_channel",
       "$dir_pw_multibuf:allocator",
-      "$dir_pw_multibuf:allocator_async",
+      "$dir_pw_multibuf/v1:allocator_async",
     ]
     deps = [
       "$PICO_ROOT/src/common/pico_base",
@@ -179,8 +180,8 @@ pw_test("stream_channel_test") {
     ":stream_channel",
     "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
-    "$dir_pw_multibuf:allocator_async",
     "$dir_pw_multibuf:testing",
+    "$dir_pw_multibuf/v1:allocator_async",
     "$dir_pw_stream:mpsc_stream",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
@@ -213,8 +214,8 @@ pw_test("channel_test") {
     ":pw_channel",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
-    "$dir_pw_multibuf:allocator_async",
     "$dir_pw_multibuf:simple_allocator",
+    "$dir_pw_multibuf/v1:allocator_async",
   ]
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   negative_compilation_tests = true

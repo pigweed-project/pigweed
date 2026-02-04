@@ -25,12 +25,12 @@
 #include "pw_sync/no_lock.h"
 #include "pw_unit_test/framework.h"
 
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
 #include "pw_multibuf/simple_allocator.h"
-#else  // PW_BLUETOOTH_PROXY_MULTIBUF
+#else  // PW_MULTIBUF_VERSION
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_allocator/testing.h"
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
 
 namespace pw::bluetooth::proxy::gatt {
 
@@ -39,7 +39,7 @@ namespace {
 constexpr size_t kMultiBufAllocatorCapacity = 500;
 
 /// Helper class that can produce an initialized MultiBufAllocator for either
-/// Multibuf V1 or V2, depending on the `PW_BLUETOOTH_PROXY_MULTIBUF` config
+/// Multibuf V1 or V2, depending on the `PW_MULTIBUF_VERSION` config
 /// option.
 template <size_t kDataCapacity, typename Lock = sync::NoLock>
 class MultiBufAllocatorContext {
@@ -48,14 +48,14 @@ class MultiBufAllocatorContext {
 
  private:
   // Use libc allocators so msan can detect use after frees.
-#if PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V1
+#if PW_MULTIBUF_VERSION == 1
 
   std::array<std::byte, kDataCapacity> buffer_{};
   pw::multibuf::SimpleAllocator allocator_{
       /*data_area=*/buffer_,
       /*metadata_alloc=*/allocator::GetLibCAllocator()};
 
-#elif PW_BLUETOOTH_PROXY_MULTIBUF == PW_BLUETOOTH_PROXY_MULTIBUF_V2
+#elif PW_MULTIBUF_VERSION == 2
   using BlockType = allocator::test::AllocatorForTest<0>::BlockType;
 
   static constexpr size_t kDataSize =
@@ -67,7 +67,7 @@ class MultiBufAllocatorContext {
       /*data_alloc=*/synced_,
       /*metadata_alloc=*/allocator::GetLibCAllocator()};
 
-#endif  // PW_BLUETOOTH_PROXY_MULTIBUF
+#endif  // PW_MULTIBUF_VERSION
 };
 
 constexpr ConnectionHandle kConnectionHandle1{0x0001};

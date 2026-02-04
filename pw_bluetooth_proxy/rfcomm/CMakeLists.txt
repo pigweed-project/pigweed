@@ -38,7 +38,6 @@ set(RFCOMM_PUBLIC_DEPS
   pw_allocator
   pw_bluetooth_proxy
   pw_checksum
-  pw_multibuf
 )
 
 set(RFCOMM_PRIVATE_DEPS
@@ -63,6 +62,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm STATIC
   PUBLIC_DEPS
     ${RFCOMM_PUBLIC_DEPS}
     pw_bluetooth_proxy
+    pw_multibuf
   PRIVATE_DEPS
     ${RFCOMM_PRIVATE_DEPS}
   SOURCES
@@ -77,6 +77,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._sync_mbv1 STATIC
   PUBLIC_DEPS
     ${RFCOMM_PUBLIC_DEPS}
     pw_bluetooth_proxy._sync_mbv1
+    pw_multibuf.v1.multibuf
   PRIVATE_DEPS
     ${RFCOMM_PRIVATE_DEPS}
   SOURCES
@@ -84,7 +85,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._sync_mbv1 STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy.rfcomm._sync_mbv1 PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
-  PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V1
+  PW_MULTIBUF_VERSION=1
 )
 
 pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv1 STATIC
@@ -95,6 +96,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv1 STATIC
   PUBLIC_DEPS
     ${RFCOMM_PUBLIC_DEPS}
     pw_bluetooth_proxy._async_mbv1
+    pw_multibuf.v1.multibuf
   PRIVATE_DEPS
     ${RFCOMM_PRIVATE_DEPS}
   SOURCES
@@ -102,7 +104,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv1 STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy.rfcomm._async_mbv1 PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
-  PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V1
+  PW_MULTIBUF_VERSION=1
 )
 
 pw_add_library(pw_bluetooth_proxy.rfcomm._sync_mbv2 STATIC
@@ -113,6 +115,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._sync_mbv2 STATIC
   PUBLIC_DEPS
     ${RFCOMM_PUBLIC_DEPS}
     pw_bluetooth_proxy._sync_mbv2
+    pw_multibuf.v2.multibuf
   PRIVATE_DEPS
     ${RFCOMM_PRIVATE_DEPS}
   SOURCES
@@ -120,7 +123,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._sync_mbv2 STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy.rfcomm._sync_mbv2 PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
-  PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2
+  PW_MULTIBUF_VERSION=2
 )
 
 pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv2 STATIC
@@ -131,6 +134,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv2 STATIC
   PUBLIC_DEPS
     ${RFCOMM_PUBLIC_DEPS}
     pw_bluetooth_proxy._async_mbv2
+    pw_multibuf.v2.multibuf
   PRIVATE_DEPS
     ${RFCOMM_PRIVATE_DEPS}
   SOURCES
@@ -138,7 +142,7 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._async_mbv2 STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy.rfcomm._async_mbv2 PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
-  PW_BLUETOOTH_PROXY_MULTIBUF=PW_BLUETOOTH_PROXY_MULTIBUF_V2
+  PW_MULTIBUF_VERSION=2
 )
 
 # Tests
