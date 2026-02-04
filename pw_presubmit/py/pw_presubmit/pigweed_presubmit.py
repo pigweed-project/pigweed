@@ -240,7 +240,7 @@ coverage = PigweedGnGenNinja(
     name='coverage',
     doc='Run coverage for the host build.',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
-    packages=('emboss',),
+    packages=('boringssl', 'emboss', 'googletest'),
     ninja_targets=('coverage',),
     coverage_options=build.CoverageOptions(
         common=build.CommonCoverageOptions(
@@ -264,9 +264,31 @@ coverage = PigweedGnGenNinja(
         ),
     ),
     gn_args=dict(
+        dir_pw_third_party_boringssl=lambda ctx: '"{}"'.format(
+            ctx.package_root / 'boringssl'
+        ),
         dir_pw_third_party_emboss=lambda ctx: '"{}"'.format(
             ctx.package_root / 'emboss'
         ),
+        dir_pw_third_party_googletest=lambda ctx: '"{}"'.format(
+            ctx.package_root / 'googletest'
+        ),
+        pw_unit_test_MAIN=lambda ctx: '"{}"'.format(
+            ctx.root / 'third_party/googletest:gmock_main'
+        ),
+        pw_unit_test_BACKEND=lambda ctx: '"{}"'.format(
+            ctx.root / 'pw_unit_test:googletest'
+        ),
+        pw_function_CONFIG=lambda ctx: '"{}"'.format(
+            ctx.root / 'pw_function:enable_dynamic_allocation'
+        ),
+        pw_crypto_AES_BACKEND=lambda ctx: '"{}"'.format(
+            ctx.root / 'pw_crypto:aes_boringssl'
+        ),
+        pw_crypto_ECDH_BACKEND=lambda ctx: '"{}"'.format(
+            ctx.root / 'pw_crypto:ecdh_boringssl'
+        ),
+        pw_bluetooth_sapphire_ENABLED=True,
     ),
 )
 
