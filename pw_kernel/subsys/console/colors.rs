@@ -31,14 +31,23 @@ pub const WHITE: &str = "\x1b[37m";
 
 #[must_use]
 pub const fn log_level_tag(level: LogLevel) -> &'static str {
+    // TODO(b/480216450): Using concat_static_strs! inside match level block
+    // directly crashes Clippy. Fix the Clippy crash upstream before changing
+    // the pattern back.
     if cfg!(feature = "color") {
+        const DBG: &str = concat_static_strs!(DIM, WHITE, "DBG", RESET);
+        const INF: &str = concat_static_strs!(DIM, CYAN, "INF", RESET);
+        const WRN: &str = concat_static_strs!(DIM, YELLOW, "WRN", RESET);
+        const ERR: &str = concat_static_strs!(DIM, RED, "ERR", RESET);
+        const CRT: &str = concat_static_strs!(DIM, RED, "CRT", RESET);
+        const FTL: &str = concat_static_strs!(DIM, RED, "FTL", RESET);
         match level {
-            LogLevel::Debug => concat_static_strs!(DIM, WHITE, "DBG", RESET),
-            LogLevel::Info => concat_static_strs!(DIM, CYAN, "INF", RESET),
-            LogLevel::Warn => concat_static_strs!(DIM, YELLOW, "WRN", RESET),
-            LogLevel::Error => concat_static_strs!(DIM, RED, "ERR", RESET),
-            LogLevel::Critical => concat_static_strs!(DIM, RED, "CRT", RESET),
-            LogLevel::Fatal => concat_static_strs!(DIM, RED, "FTL", RESET),
+            LogLevel::Debug => DBG,
+            LogLevel::Info => INF,
+            LogLevel::Warn => WRN,
+            LogLevel::Error => ERR,
+            LogLevel::Critical => CRT,
+            LogLevel::Fatal => FTL,
         }
     } else {
         match level {

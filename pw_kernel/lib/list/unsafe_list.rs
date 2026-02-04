@@ -530,11 +530,7 @@ impl UnsafeListInner {
     pub unsafe fn for_each(&self, callback: &mut dyn FnMut(NonNull<Link>) -> Result<(), ()>) {
         let mut cur = self.head;
 
-        loop {
-            let Some(cur_ptr) = cur else {
-                break;
-            };
-
+        while let Some(cur_ptr) = cur {
             unsafe {
                 if callback(cur_ptr).is_err() {
                     return;
@@ -557,11 +553,7 @@ impl UnsafeListInner {
     pub unsafe fn filter(&mut self, callback: &mut dyn FnMut(NonNull<Link>) -> bool) {
         let mut cur = self.head;
 
-        loop {
-            let Some(cur_ptr) = cur else {
-                break;
-            };
-
+        while let Some(cur_ptr) = cur {
             let next = unsafe {
                 // Cache the next element so that we don't rely on `cur_ptr`
                 // staying coherent across calls to `callback`.
@@ -604,11 +596,7 @@ impl UnsafeListInner {
     ) {
         let mut cur = self.head;
 
-        loop {
-            let Some(cur_link_ptr) = cur else {
-                break;
-            };
-
+        while let Some(cur_link_ptr) = cur {
             unsafe {
                 if let Ordering::Less | Ordering::Equal = cmp(link_ptr, cur_link_ptr) {
                     self.insert_before(link_ptr, cur_link_ptr);
