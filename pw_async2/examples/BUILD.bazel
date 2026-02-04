@@ -32,6 +32,8 @@ pw_cc_test(
     ],
     deps = [
         "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:channel",
         "//pw_async2:coro",
         "//pw_async2:testing",
     ],

@@ -12,51 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_allocator/allocator.h"
-#include "pw_async2/dispatcher.h"
 #include "pw_status/status.h"
-
-namespace {
-
-using ::pw::OkStatus;
-using ::pw::Result;
-using ::pw::Status;
-using ::pw::async2::Context;
-using ::pw::async2::Poll;
-using ::pw::async2::PollResult;
-
-class MyData {
- public:
-};
-
-class ReceiveFuture {
- public:
-  PollResult<MyData> Pend(Context&) { return MyData(); }
-};
-
-class MyReceiver {
- public:
-  ReceiveFuture Receive() { return ReceiveFuture(); }
-  PollResult<MyData> PendReceive(Context&) { return MyData(); }
-};
-
-class SendFuture {
- public:
-  Poll<Status> Pend(Context&) { return OkStatus(); }
-};
-
-class MySender {
- public:
-  SendFuture Send(MyData&&) { return SendFuture(); }
-};
-
-}  // namespace
-
-// NOTE: we double-include so that the example shows the `#includes`, but we
-// can still define types beforehand.
 
 // DOCSTAG: [pw_async2-examples-basic-coro]
 #include "pw_allocator/allocator.h"
+#include "pw_async2/channel.h"
 #include "pw_async2/coro.h"
 #include "pw_log/log.h"
 #include "pw_result/result.h"
@@ -64,13 +24,11 @@ class MySender {
 namespace {
 
 using ::pw::OkStatus;
-using ::pw::Result;
 using ::pw::Status;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-
-class MyReceiver;
-class MySender;
+using ::pw::async2::Receiver;
+using ::pw::async2::Sender;
 
 /// Create a coroutine which asynchronously receives a value from
 /// ``receiver`` and forwards it to ``sender``.
@@ -78,19 +36,20 @@ class MySender;
 /// Note: the ``CoroContext`` argument is used by the ``Coro<T>`` internals to
 /// allocate the coroutine state. If this allocation fails, ``Coro<Status>``
 /// will return ``Status::Internal()``.
-Coro<Status> ReceiveAndSendCoro(CoroContext&,
-                                MyReceiver receiver,
-                                MySender sender) {
-  Result<MyData> data = co_await receiver.Receive();
-  if (!data.ok()) {
-    PW_LOG_ERROR("Receiving failed: %s", data.status().str());
+Coro<Status> ForwardingCoro(CoroContext&,
+                            Receiver<int> receiver,
+                            Sender<int> sender) {
+  std::optional<int> data = co_await receiver.Receive();
+  if (!data.has_value()) {
+    PW_LOG_ERROR("Receiving failed: channel has closed");
     co_return Status::Unavailable();
   }
-  Status sent = co_await sender.Send(std::move(*data));
-  if (!sent.ok()) {
-    PW_LOG_ERROR("Sending failed: %s", sent.str());
+
+  if (!(co_await sender.Send(*data))) {
+    PW_LOG_ERROR("Sending failed: channel has closed");
     co_return Status::Unavailable();
   }
+
   co_return OkStatus();
 }
 
@@ -104,15 +63,26 @@ namespace {
 
 using ::pw::OkStatus;
 using ::pw::allocator::test::AllocatorForTest;
+using ::pw::async2::ChannelStorage;
 using ::pw::async2::CoroContext;
+using ::pw::async2::CreateSpscChannel;
 using ::pw::async2::Ready;
 
 TEST(CoroExample, ReturnsOk) {
-  AllocatorForTest<256> alloc;
+  ChannelStorage<int, 1> storage1;
+  auto [handle1, sender1, receiver1] = CreateSpscChannel(storage1);
+  ChannelStorage<int, 1> storage2;
+  auto [handle2, sender2, receiver2] = CreateSpscChannel(storage2);
+  handle1.Release();
+  handle2.Release();
+
+  AllocatorForTest<512> alloc;
   CoroContext coro_cx(alloc);
-  auto coro = ReceiveAndSendCoro(coro_cx, MyReceiver(), MySender());
+  auto coro = ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2));
   pw::async2::DispatcherForTest dispatcher;
+  EXPECT_EQ(sender1.TrySend(42), pw::OkStatus());
   EXPECT_EQ(dispatcher.RunInTaskUntilStalled(coro), Ready(OkStatus()));
+  EXPECT_EQ(receiver2.TryReceive().value(), 42);
 }
 
 }  // namespace
