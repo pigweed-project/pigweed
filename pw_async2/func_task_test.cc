@@ -30,6 +30,7 @@ using ::pw::async2::FuncTask;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
+using ::pw::async2::RunOnceTask;
 using ::pw::async2::Task;
 using ::pw::async2::Waker;
 
@@ -124,6 +125,102 @@ TEST(FuncTask, DeregistersInDestructor) {
     dispatcher.Post(task);
   }
   EXPECT_FALSE(dispatcher.RunUntilStalled());
+}
+
+TEST(RunOnce, VoidReturn) {
+  DispatcherForTest dispatcher;
+
+  int count = 0;
+  RunOnceTask task([&count] { count += 1; });
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(count, 1);
+}
+
+TEST(RunOnce, ReturnValue) {
+  DispatcherForTest dispatcher;
+
+  int count = 0;
+  RunOnceTask task([&count] {
+    count += 1;
+    return "o-}-<";
+  });
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_STREQ(task.value(), "o-}-<");
+}
+
+TEST(RunOnce, VoidReturnValue) {
+  DispatcherForTest dispatcher;
+
+  int count = 0;
+  RunOnceTask<pw::Function<void()>, pw::async2::ReturnValuePolicy::kKeep> task(
+      [&count] { count += 1; });
+
+  dispatcher.Post(task);
+
+  EXPECT_FALSE(task.has_value());
+  dispatcher.RunToCompletion();
+  EXPECT_TRUE(task.has_value());
+  static_assert(
+      std::is_same_v<decltype(task)::value_type, pw::async2::ReadyType>);
+}
+
+TEST(RunOnce, DiscardNonVoidReturnValue) {
+  DispatcherForTest dispatcher;
+
+  int count = 0;
+  auto func = [&count]() -> long long {
+    count += 1;
+    return -count;
+  };
+
+  RunOnceTask<decltype(func), pw::async2::ReturnValuePolicy::kDiscard> task(
+      std::move(func));
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+  task.Join();
+
+  EXPECT_EQ(count, 1);
+}
+
+TEST(RunOnce, RunMultipleTimes) {
+  DispatcherForTest dispatcher;
+
+  int count = 0;
+  RunOnceTask task([&count] {
+    count += 1;
+    return -count;
+  });
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(count, 1);
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value(), -1);
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), -2);
+  EXPECT_EQ(count, 2);
+}
+
+TEST(RunOnce, DeregistersInDestructor) {
+  DispatcherForTest dispatcher;
+  bool ran = false;
+  {
+    RunOnceTask task([&ran] { ran = true; });
+    dispatcher.Post(task);
+  }
+  dispatcher.RunToCompletion();
+  EXPECT_FALSE(ran);
 }
 
 }  // namespace

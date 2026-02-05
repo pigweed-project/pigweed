@@ -131,3 +131,20 @@ TEST_F(TaskHelpersExampleTest, FutureTaskReferencesTheFuture) {
   auto future = pw::async2::ValueFuture<int>::Resolved(1234);
   EXPECT_EQ(FutureTaskReferencesTheFuture(dispatcher_, future), 1234);
 }
+
+TEST_F(TaskHelpersExampleTest, RunOnceTask) {
+  // DOCSTAG: [pw_async2-examples-run-once]
+  // Calculate the 8th fibonacci number on the dispatcher thread.
+  pw::async2::RunOnceTask task([] {
+    int a = 0, b = 1;
+    for (int i = 3; i <= 8; i++) {
+      a = std::exchange(b, a + b);
+    }
+    return b;
+  });
+  dispatcher_.Post(task);
+
+  int result = task.Wait();  // returns 13
+  // DOCSTAG: [pw_async2-examples-run-once]
+  EXPECT_EQ(result, 13);
+}

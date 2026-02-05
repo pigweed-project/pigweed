@@ -93,6 +93,26 @@ or use a reference to a future:
    benefits of ``pw_async2``. Creating a task for each future is also less
    efficient than having one task work with multiple futures.
 
+``RunOnceTask``: Run an arbitrary function in a task
+====================================================
+:cc:`RunOnceTask <pw::async2::RunOnceTask>` is a task that invokes a function
+once then returns :cc:`Ready <pw::async2::Ready>`. The function's return value
+can optionally be stored in the task.
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-run-once]
+   :end-before: // DOCSTAG: [pw_async2-examples-run-once]
+
+.. admonition:: Use rarely
+   :class: warning
+
+   ``RunOnceTask`` should be used rarely, such as in tests, truly one-off
+   cases, or as a last resort for sync-async interop. ``pw_async2`` should not
+   be used as a work queue. Overuse of ``RunOnceTask`` forfeits the benefits of
+   ``pw_async2``, scattering logic across a mess of callbacks instead of
+   organizing it linearly in a task.
+
 ``CallbackTask``: Bridge between sync and async
 ===============================================
 :cc:`CallbackTask <pw::async2::CallbackTask>` invokes a callback after a future
