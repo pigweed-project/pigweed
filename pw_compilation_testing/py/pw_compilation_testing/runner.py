@@ -166,7 +166,7 @@ def _check_results(
 
         _start_failure(test, command, err_file)
         err('Compilation succeeded, but it should have failed!')
-        err('Update the test code so that is fails to compile.')
+        err('Update the test code so that it fails to compile.')
         return TestResult.FAIL
 
     compiler_str = command.split(' ', 1)[0]
