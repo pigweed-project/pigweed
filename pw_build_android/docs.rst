@@ -104,6 +104,18 @@ common Android backends via the ``pw_android_common_backends`` defaults.
    Every dependency has to be added as ``whole_static_libs`` to avoid dropping
    symbols on transitive dependencies.
 
+.. note::
+
+   The ``cc_library_static`` rule should be used even if the module includes no
+   source files (only headers); ``cc_library_headers`` should not be used for
+   normal Pigweed modules.
+
+   Rationale: In Soong, dependencies are listed by type (e.g.
+   ``cc_library_headers`` modules are referenced in a ``header_libs`` list,
+   while ``cc_library_static`` modules are referenced in a ``static_libs``
+   list).  That means the type of a module cannot be changed without breaking
+   consumers.
+
 .. code-block:: androidbp
 
    cc_library_static {
