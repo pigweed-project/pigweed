@@ -256,6 +256,7 @@ pw_test("from_span_test") {
 }
 
 pw_source_set("testing") {
+  testonly = pw_unit_test_TESTONLY
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_multibuf/v1/simple_allocator_for_test.h" ]
   public_deps = [
@@ -268,6 +269,7 @@ pw_source_set("testing") {
 }
 
 pw_source_set("internal_test_utils") {
+  testonly = pw_unit_test_TESTONLY
   sources = [ "pw_multibuf_private/test_utils.h" ]
   public_deps = [
     ":header_chunk_region_tracker",

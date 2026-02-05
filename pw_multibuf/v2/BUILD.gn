@@ -54,6 +54,7 @@ pw_source_set("iterators") {
 }
 
 pw_source_set("iterator_testing") {
+  testonly = pw_unit_test_TESTONLY
   public_configs = [ ":public_include_path" ]
   public = [ "pw_multibuf_private/iterator_testing.h" ]
   public_deps = [

@@ -130,6 +130,7 @@ pw_source_set("simple_allocator") {
 }
 
 pw_source_set("testing") {
+  testonly = pw_unit_test_TESTONLY
   public = [ "public/pw_multibuf/simple_allocator_for_test.h" ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
