@@ -1654,6 +1654,10 @@ types-six==1.16.9 \
     --hash=sha256:04da8bad920aea300e13d99c8948fd0914abdfc5d9421bad636137f9829dcbf6 \
     --hash=sha256:da5748f10eec44accbd393e7f5a834991aff8f37522472166fbc8233cc735b84
     # via -r compiled_requirements.txt
+types-toml==0.10.8.20240310 \
+    --hash=sha256:3d41501302972436a6b8b239c850b26689657e25281b48ff0ec06345b8830331 \
+    --hash=sha256:627b47775d25fa29977d9c70dc0cbab3f314f32c8d8d0c012f2ef5de7aaec05d
+    # via -r compiled_requirements.txt
 types-urllib3==1.26.25.14 \
     --hash=sha256:229b7f577c951b8c1b92c1bc2b2fdb0b49847bd2af6d1cc2a2e3dd340f3bda8f \
     --hash=sha256:9683bbb7fb72e32bfe9d2be6e04875fbe1b3eeec3cbb4ea231435aa7fd6b4f0e
