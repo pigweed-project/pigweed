@@ -29,7 +29,6 @@ BaseChannelFuture::BaseChannelFuture(BaseChannel* channel)
     }
   }
   channel_ = nullptr;  // channel is nullptr or closed
-  core_.Reset();
 }
 
 BaseChannelFuture& BaseChannelFuture::MoveAssignFrom(BaseChannelFuture& other) {
@@ -50,6 +49,7 @@ void BaseChannelFuture::StoreAndAddRefIfNonnull(BaseChannel* channel) {
 }
 
 void BaseChannelFuture::MoveFrom(BaseChannelFuture& other) {
+  core_ = std::move(other.core_);
   if (other.channel_ == nullptr) {
     return;
   }
