@@ -117,6 +117,7 @@ class FakeVoltageSensor {
   [[nodiscard]] static ValueFuture<float> SpawnFutureResolvingThread() {
     static LibCAllocator alloc;
     auto provider = alloc.MakeShared<ValueProvider<float>>();
+    ValueFuture<float> future = provider->Get();
 
     std::thread interrupt_thread([provider] {
       if (force_timeout) {
@@ -130,7 +131,7 @@ class FakeVoltageSensor {
     });
     interrupt_thread.detach();
 
-    return provider->Get();
+    return future;
   }
 };
 
