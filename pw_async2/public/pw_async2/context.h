@@ -76,8 +76,7 @@ class Context {
   /// to register a waker and go to sleep. This results in the task being
   /// removed from the dispatcher, requiring it to be manually re-posted to run
   /// again.
-  template <typename T = void>
-  Poll<T> Unschedule() {
+  PendingType Unschedule() {
     requires_waker_ = false;
     return Pending();
   }
