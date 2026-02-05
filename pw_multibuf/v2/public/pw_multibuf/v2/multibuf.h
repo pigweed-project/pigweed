@@ -487,34 +487,8 @@ class BasicMultiBuf {
   /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    bytes   Owned memory to be inserted.
   /// @{
-  void Insert(const_iterator pos, UniquePtr<std::byte[]>&& bytes) {
-    Insert(pos, std::move(bytes), 0);
-  }
-  void Insert(const_iterator pos, UniquePtr<const std::byte[]>&& bytes) {
-    Insert(pos, std::move(bytes), 0);
-  }
-  /// @}
-
-  /// @name Insert
-  /// Insert memory before the given iterator.
-  ///
-  /// It is a fatal error if this method cannot allocate space for necessary
-  /// metadata. See also `TryReserveForInsert`, which can be used to try to
-  /// pre-allocate the needed space without crashing.
-  ///
-  /// @param    pos     Location to insert memory within the MultiBuf.
-  /// @param    bytes   Owned memory to be inserted.
-  /// @param    offset  Used to denote a subspan of `bytes`.
-  /// @param    length  Used to denote a subspan of `bytes`.
-  /// @{
-  void Insert(const_iterator pos,
-              UniquePtr<std::byte[]>&& bytes,
-              size_t offset,
-              size_t length = dynamic_extent);
-  void Insert(const_iterator pos,
-              UniquePtr<const std::byte[]>&& bytes,
-              size_t offset,
-              size_t length = dynamic_extent);
+  void Insert(const_iterator pos, UniquePtr<std::byte[]>&& bytes);
+  void Insert(const_iterator pos, UniquePtr<const std::byte[]>&& bytes);
   /// @}
 
   /// @name Insert
@@ -608,32 +582,8 @@ class BasicMultiBuf {
   ///
   /// @param    bytes   Owned memory to be inserted.
   /// @{
-  void PushBack(UniquePtr<std::byte[]>&& bytes) {
-    PushBack(std::move(bytes), 0);
-  }
-  void PushBack(UniquePtr<const std::byte[]>&& bytes) {
-    PushBack(std::move(bytes), 0);
-  }
-  /// @}
-
-  /// @name PushBack
-  /// Moves memory to the end of this object.
-  ///
-  /// It is a fatal error if this method cannot allocate space for necessary
-  /// metadata. See also `TryReserveForPushBack`, which can be used to try to
-  /// pre-allocate the needed space without crashing.
-  ///
-  /// @param    bytes   Owned memory to be inserted.
-  /// @param    offset  Used to denote a subspan of `bytes`.
-  /// @param    length  Used to denote a subspan of `bytes`.
-  /// @{
-  void PushBack(UniquePtr<std::byte[]>&& bytes,
-                size_t offset,
-                size_t length = dynamic_extent);
-
-  void PushBack(UniquePtr<const std::byte[]>&& bytes,
-                size_t offset,
-                size_t length = dynamic_extent);
+  void PushBack(UniquePtr<std::byte[]>&& bytes);
+  void PushBack(UniquePtr<const std::byte[]>&& bytes);
   /// @}
 
   /// @name PushBack
@@ -1641,23 +1591,19 @@ void BasicMultiBuf<kProperties...>::Insert(const_iterator pos, const T& bytes) {
 
 template <Property... kProperties>
 void BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
-                                           UniquePtr<std::byte[]>&& bytes,
-                                           size_t offset,
-                                           size_t length) {
+                                           UniquePtr<std::byte[]>&& bytes) {
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, offset, length, bytes.deallocator());
+  generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
   bytes.Release();
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
-                                           UniquePtr<const std::byte[]>&& bytes,
-                                           size_t offset,
-                                           size_t length) {
+void BasicMultiBuf<kProperties...>::Insert(
+    const_iterator pos, UniquePtr<const std::byte[]>&& bytes) {
   static_assert(is_const(),
                 "Cannot `Insert` read-only bytes into mutable MultiBuf");
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, offset, length, bytes.deallocator());
+  generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
   bytes.Release();
 }
 
@@ -1712,18 +1658,16 @@ void BasicMultiBuf<kProperties...>::PushBack(const T& bytes) {
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::PushBack(UniquePtr<std::byte[]>&& bytes,
-                                             size_t offset,
-                                             size_t length) {
-  Insert(end(), std::move(bytes), offset, length);
+void BasicMultiBuf<kProperties...>::PushBack(UniquePtr<std::byte[]>&& bytes) {
+  Insert(end(), std::move(bytes));
 }
 
 template <Property... kProperties>
 void BasicMultiBuf<kProperties...>::PushBack(
-    UniquePtr<const std::byte[]>&& bytes, size_t offset, size_t length) {
+    UniquePtr<const std::byte[]>&& bytes) {
   static_assert(is_const(),
                 "Cannot `PushBack` read-only bytes into mutable MultiBuf");
-  Insert(end(), std::move(bytes), offset, length);
+  Insert(end(), std::move(bytes));
 }
 
 template <Property... kProperties>
