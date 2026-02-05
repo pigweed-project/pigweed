@@ -1804,8 +1804,8 @@
         "usagesDigest": "wr3ot+bRj09/MY54pyb584RaGu1mzC+o4FSKbHl3WPE=",
         "recordedFileInputs": {
           "@@//pw_env_setup/py/pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt": "affe8afad4cccc4b1fc1e424417dac43202b2dbdf60696dca8c70ffbd52cd450",
-          "@@//pw_env_setup/py/pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "2c083efe31452a3c5edd93266a5bd079051611dabf14c541f6bb76f4e0b7ec5c",
-          "@@//pw_env_setup/py/pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "6e0284a08195eff58f8d932b5c71979c24cac2bc7a2e808bbf05b2ea4666b40b",
+          "@@//pw_env_setup/py/pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "e8da7193365a92333c802be489983c62ea7be564bed3b3aa356e21ec3678e77e",
+          "@@//pw_env_setup/py/pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "71b0b8a5a92f92aef1dac61ce0b72b89ddce37a6aa377a4015612a2d52413d0e",
           "@@nanopb+//extra/requirements_lock.txt": "2bcdca24f1a4429b4ab0f0bb80cca292a92e12f7bf3d0f46de7c2b14fd97ac25",
           "@@protobuf+//python/requirements.txt": "983be60d3cec4b319dcab6d48aeb3f5b2f7c3350f26b3a9e97486c37967c73c5",
           "@@rules_fuzzing+//fuzzing/requirements.txt": "ab04664be026b632a0d2a2446c4f65982b7654f5b6851d2f9d399a19b7242a5b",
@@ -2389,7 +2389,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "annotated_types-0.7.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -2413,7 +2414,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "annotated_types-0.7.0.tar.gz",
@@ -2426,7 +2428,7 @@
               ]
             }
           },
-          "pigweed_python_packages_310_anyio_py3_none_any_0287e96f": {
+          "pigweed_python_packages_310_anyio_py3_none_any_d4058288": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -2438,19 +2440,20 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
-              "filename": "anyio-4.11.0-py3-none-any.whl",
+              "filename": "anyio-4.12.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "anyio==4.11.0",
-              "sha256": "0287e96f4d26d4149305414d4e3bc32f0dcd0862365a4bddea19d7a1ec38c4fc",
+              "requirement": "anyio==4.12.1",
+              "sha256": "d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c",
               "urls": [
-                "https://files.pythonhosted.org/packages/15/b3/9b1a8074496371342ec1e796a96f99c82c945a339cd81a8e73de28b4cf9e/anyio-4.11.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/38/0e/27be9fdef66e72d64c0cdc3cc2823101b80585f8119b5c112c2e8f5f7dab/anyio-4.12.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_310_anyio_sdist_82a8d0b8": {
+          "pigweed_python_packages_310_anyio_sdist_41cfcc3a": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -2462,16 +2465,17 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "anyio-4.11.0.tar.gz",
+              "filename": "anyio-4.12.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "anyio==4.11.0",
-              "sha256": "82a8d0b81e318cc5ce71a5f1f8b5c4e63619620b63141ef8c995fa0db95a57c4",
+              "requirement": "anyio==4.12.1",
+              "sha256": "41cfcc3a4c85d3f05c932da7c26d0201ac36f72abd4435ba90d0464a3ffed703",
               "urls": [
-                "https://files.pythonhosted.org/packages/c6/78/7d432127c41b50bccba979505f272c16cbcadcc33645d5fa3a738110ae75/anyio-4.11.0.tar.gz"
+                "https://files.pythonhosted.org/packages/96/f0/5eb65b2bb0d09ac6776f2eb54adee6abe8228ea05b20a5ad0e4945de8aac/anyio-4.12.1.tar.gz"
               ]
             }
           },
@@ -4832,7 +4836,7 @@
               ]
             }
           },
-          "pigweed_python_packages_310_exceptiongroup_py3_none_any_4d111e6e": {
+          "pigweed_python_packages_310_exceptiongroup_py3_none_any_a7a39a3b": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -4844,19 +4848,20 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
-              "filename": "exceptiongroup-1.3.0-py3-none-any.whl",
+              "filename": "exceptiongroup-1.3.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598",
               "urls": [
-                "https://files.pythonhosted.org/packages/36/f4/c6e662dade71f56cd2f3735141b265c3c79293c109549c1e6933b0651ffc/exceptiongroup-1.3.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_310_exceptiongroup_sdist_b241f588": {
+          "pigweed_python_packages_310_exceptiongroup_sdist_8b412432": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -4868,16 +4873,17 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "exceptiongroup-1.3.0.tar.gz",
+              "filename": "exceptiongroup-1.3.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219",
               "urls": [
-                "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz"
+                "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz"
               ]
             }
           },
@@ -5709,7 +5715,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "google_genai-1.39.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -5733,7 +5740,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "google_genai-1.39.1.tar.gz",
@@ -5868,7 +5876,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "h11-0.16.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -5892,7 +5901,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "h11-0.16.0.tar.gz",
@@ -5917,7 +5927,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "httpcore-1.0.9-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -5941,7 +5952,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpcore-1.0.9.tar.gz",
@@ -5966,7 +5978,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "httpx-0.28.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -5990,7 +6003,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpx-0.28.1.tar.gz",
@@ -9073,7 +9087,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9097,7 +9112,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9121,7 +9137,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9145,7 +9162,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9169,7 +9187,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9193,7 +9212,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9217,7 +9237,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9241,7 +9262,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9250,6 +9272,31 @@
               "sha256": "73662edf539e72a9440129f231ed3757faab89630d291b784ca99237fb94db2b",
               "urls": [
                 "https://files.pythonhosted.org/packages/d8/7a/925ff73756031289468326e355b6fa8316960d0d65f8b5d6b3a3e7866de7/pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_x86_64.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_310_pydantic_core_cp310_cp310_win_amd64_b0379a2b": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp310_linux_aarch64",
+                "cp310_linux_arm",
+                "cp310_linux_ppc",
+                "cp310_linux_s390x",
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
+              ],
+              "filename": "pydantic_core-2.33.2-cp310-cp310-win_amd64.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "pigweed_python_packages_310",
+              "requirement": "pydantic-core==2.33.2",
+              "sha256": "b0379a2b24882fef529ec3b4987cb5d003b9cda32256024e6fe1586ac45fc640",
+              "urls": [
+                "https://files.pythonhosted.org/packages/66/ff/172ba8f12a42d4b552917aa65d1f2328990d3ccfc01d5b7c943ec084299f/pydantic_core-2.33.2-cp310-cp310-win_amd64.whl"
               ]
             }
           },
@@ -9265,7 +9312,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic_core-2.33.2.tar.gz",
@@ -9290,7 +9338,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "pydantic-2.11.10-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9314,7 +9363,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic-2.11.10.tar.gz",
@@ -9657,7 +9707,7 @@
               ]
             }
           },
-          "pigweed_python_packages_310_pyparsing_py3_none_any_a749938e": {
+          "pigweed_python_packages_310_pyparsing_py3_none_any_850ba148": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -9669,15 +9719,16 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
-              "filename": "pyparsing-3.2.3-py3-none-any.whl",
+              "filename": "pyparsing-3.3.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
               "urls": [
-                "https://files.pythonhosted.org/packages/05/e7/df2285f3d08fee213f2d041540fa4fc9ca6c2d44cf36d3a035bf2a8d2bcc/pyparsing-3.2.3-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl"
               ]
             }
           },
@@ -9690,8 +9741,7 @@
               ],
               "experimental_target_platforms": [
                 "cp310_osx_aarch64",
-                "cp310_osx_x86_64",
-                "cp310_windows_x86_64"
+                "cp310_osx_x86_64"
               ],
               "filename": "pyparsing-3.2.5-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -9712,8 +9762,7 @@
               ],
               "experimental_target_platforms": [
                 "cp310_osx_aarch64",
-                "cp310_osx_x86_64",
-                "cp310_windows_x86_64"
+                "cp310_osx_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pyparsing-3.2.5.tar.gz",
@@ -9726,7 +9775,7 @@
               ]
             }
           },
-          "pigweed_python_packages_310_pyparsing_sdist_b9c13f1a": {
+          "pigweed_python_packages_310_pyparsing_sdist_c777f4d7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -9738,16 +9787,17 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "pyparsing-3.2.3.tar.gz",
+              "filename": "pyparsing-3.3.2.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
               "repo": "pigweed_python_packages_310",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "b9c13f1ab8b3b542f72e28f634bad4de758ab3ce4546e4301970ad6fa77c38be",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc",
               "urls": [
-                "https://files.pythonhosted.org/packages/bb/22/f1129e69d94ffff626bdb5c835506b3a5b4f3d070f17ea295e12c2c6f60f/pyparsing-3.2.3.tar.gz"
+                "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz"
               ]
             }
           },
@@ -11185,55 +11235,6 @@
               ]
             }
           },
-          "pigweed_python_packages_310_sniffio_py3_none_any_2f6da418": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp310_linux_aarch64",
-                "cp310_linux_arm",
-                "cp310_linux_ppc",
-                "cp310_linux_s390x",
-                "cp310_linux_x86_64"
-              ],
-              "filename": "sniffio-1.3.1-py3-none-any.whl",
-              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
-              "repo": "pigweed_python_packages_310",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
-              "urls": [
-                "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl"
-              ]
-            }
-          },
-          "pigweed_python_packages_310_sniffio_sdist_f4324edc": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp310_linux_aarch64",
-                "cp310_linux_arm",
-                "cp310_linux_ppc",
-                "cp310_linux_s390x",
-                "cp310_linux_x86_64"
-              ],
-              "extra_pip_args": [],
-              "filename": "sniffio-1.3.1.tar.gz",
-              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
-              "repo": "pigweed_python_packages_310",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc",
-              "urls": [
-                "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz"
-              ]
-            }
-          },
           "pigweed_python_packages_310_snowballstemmer_py2_none_any_c8e1716e": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -12071,7 +12072,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "tenacity-9.1.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -12095,7 +12097,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "tenacity-9.1.2.tar.gz",
@@ -12713,6 +12716,57 @@
               ]
             }
           },
+          "pigweed_python_packages_310_types_toml_py3_none_any_627b4777": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp310_linux_aarch64",
+                "cp310_linux_arm",
+                "cp310_linux_ppc",
+                "cp310_linux_s390x",
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
+              ],
+              "filename": "types_toml-0.10.8.20240310-py3-none-any.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "pigweed_python_packages_310",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "627b47775d25fa29977d9c70dc0cbab3f314f32c8d8d0c012f2ef5de7aaec05d",
+              "urls": [
+                "https://files.pythonhosted.org/packages/da/a2/d32ab58c0b216912638b140ab2170ee4b8644067c293b170e19fba340ccc/types_toml-0.10.8.20240310-py3-none-any.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_310_types_toml_sdist_3d415013": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp310_linux_aarch64",
+                "cp310_linux_arm",
+                "cp310_linux_ppc",
+                "cp310_linux_s390x",
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
+              ],
+              "extra_pip_args": [],
+              "filename": "types-toml-0.10.8.20240310.tar.gz",
+              "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
+              "repo": "pigweed_python_packages_310",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "3d41501302972436a6b8b239c850b26689657e25281b48ff0ec06345b8830331",
+              "urls": [
+                "https://files.pythonhosted.org/packages/86/47/3e4c75042792bff8e90d7991aa5c51812cc668828cc6cce711e97f63a607/types-toml-0.10.8.20240310.tar.gz"
+              ]
+            }
+          },
           "pigweed_python_packages_310_types_urllib3_py3_none_any_9683bbb7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -12835,7 +12889,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "filename": "typing_inspection-0.4.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_10_host//:python",
@@ -12859,7 +12914,8 @@
                 "cp310_linux_arm",
                 "cp310_linux_ppc",
                 "cp310_linux_s390x",
-                "cp310_linux_x86_64"
+                "cp310_linux_x86_64",
+                "cp310_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "typing_inspection-0.4.2.tar.gz",
@@ -14623,7 +14679,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "annotated_types-0.7.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -14647,7 +14704,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "annotated_types-0.7.0.tar.gz",
@@ -14660,7 +14718,7 @@
               ]
             }
           },
-          "pigweed_python_packages_311_anyio_py3_none_any_0287e96f": {
+          "pigweed_python_packages_311_anyio_py3_none_any_d4058288": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -14672,19 +14730,20 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
-              "filename": "anyio-4.11.0-py3-none-any.whl",
+              "filename": "anyio-4.12.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "anyio==4.11.0",
-              "sha256": "0287e96f4d26d4149305414d4e3bc32f0dcd0862365a4bddea19d7a1ec38c4fc",
+              "requirement": "anyio==4.12.1",
+              "sha256": "d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c",
               "urls": [
-                "https://files.pythonhosted.org/packages/15/b3/9b1a8074496371342ec1e796a96f99c82c945a339cd81a8e73de28b4cf9e/anyio-4.11.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/38/0e/27be9fdef66e72d64c0cdc3cc2823101b80585f8119b5c112c2e8f5f7dab/anyio-4.12.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_311_anyio_sdist_82a8d0b8": {
+          "pigweed_python_packages_311_anyio_sdist_41cfcc3a": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -14696,16 +14755,17 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "anyio-4.11.0.tar.gz",
+              "filename": "anyio-4.12.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "anyio==4.11.0",
-              "sha256": "82a8d0b81e318cc5ce71a5f1f8b5c4e63619620b63141ef8c995fa0db95a57c4",
+              "requirement": "anyio==4.12.1",
+              "sha256": "41cfcc3a4c85d3f05c932da7c26d0201ac36f72abd4435ba90d0464a3ffed703",
               "urls": [
-                "https://files.pythonhosted.org/packages/c6/78/7d432127c41b50bccba979505f272c16cbcadcc33645d5fa3a738110ae75/anyio-4.11.0.tar.gz"
+                "https://files.pythonhosted.org/packages/96/f0/5eb65b2bb0d09ac6776f2eb54adee6abe8228ea05b20a5ad0e4945de8aac/anyio-4.12.1.tar.gz"
               ]
             }
           },
@@ -17066,7 +17126,7 @@
               ]
             }
           },
-          "pigweed_python_packages_311_exceptiongroup_py3_none_any_4d111e6e": {
+          "pigweed_python_packages_311_exceptiongroup_py3_none_any_a7a39a3b": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -17078,19 +17138,20 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
-              "filename": "exceptiongroup-1.3.0-py3-none-any.whl",
+              "filename": "exceptiongroup-1.3.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598",
               "urls": [
-                "https://files.pythonhosted.org/packages/36/f4/c6e662dade71f56cd2f3735141b265c3c79293c109549c1e6933b0651ffc/exceptiongroup-1.3.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_311_exceptiongroup_sdist_b241f588": {
+          "pigweed_python_packages_311_exceptiongroup_sdist_8b412432": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -17102,16 +17163,17 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "exceptiongroup-1.3.0.tar.gz",
+              "filename": "exceptiongroup-1.3.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219",
               "urls": [
-                "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz"
+                "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz"
               ]
             }
           },
@@ -17943,7 +18005,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "google_genai-1.39.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -17967,7 +18030,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "google_genai-1.39.1.tar.gz",
@@ -18102,7 +18166,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "h11-0.16.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -18126,7 +18191,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "h11-0.16.0.tar.gz",
@@ -18151,7 +18217,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "httpcore-1.0.9-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -18175,7 +18242,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpcore-1.0.9.tar.gz",
@@ -18200,7 +18268,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "httpx-0.28.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -18224,7 +18293,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpx-0.28.1.tar.gz",
@@ -21307,7 +21377,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21331,7 +21402,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21355,7 +21427,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21379,7 +21452,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21403,7 +21477,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21427,7 +21502,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21451,7 +21527,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21475,7 +21552,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21484,6 +21562,31 @@
               "sha256": "235f45e5dbcccf6bd99f9f472858849f73d11120d76ea8707115415f8e5ebebf",
               "urls": [
                 "https://files.pythonhosted.org/packages/16/3f/59b3187aaa6cc0c1e6616e8045b284de2b6a87b027cce2ffcea073adf1d2/pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_x86_64.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_311_pydantic_core_cp311_cp311_win_amd64_1e063337": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp311_linux_aarch64",
+                "cp311_linux_arm",
+                "cp311_linux_ppc",
+                "cp311_linux_s390x",
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
+              ],
+              "filename": "pydantic_core-2.33.2-cp311-cp311-win_amd64.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "pigweed_python_packages_311",
+              "requirement": "pydantic-core==2.33.2",
+              "sha256": "1e063337ef9e9820c77acc768546325ebe04ee38b08703244c1309cccc4f1bab",
+              "urls": [
+                "https://files.pythonhosted.org/packages/fe/1b/25b7cccd4519c0b23c2dd636ad39d381abf113085ce4f7bec2b0dc755eb1/pydantic_core-2.33.2-cp311-cp311-win_amd64.whl"
               ]
             }
           },
@@ -21499,7 +21602,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic_core-2.33.2.tar.gz",
@@ -21524,7 +21628,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "pydantic-2.11.10-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21548,7 +21653,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic-2.11.10.tar.gz",
@@ -21891,7 +21997,7 @@
               ]
             }
           },
-          "pigweed_python_packages_311_pyparsing_py3_none_any_a749938e": {
+          "pigweed_python_packages_311_pyparsing_py3_none_any_850ba148": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -21903,15 +22009,16 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
-              "filename": "pyparsing-3.2.3-py3-none-any.whl",
+              "filename": "pyparsing-3.3.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
               "urls": [
-                "https://files.pythonhosted.org/packages/05/e7/df2285f3d08fee213f2d041540fa4fc9ca6c2d44cf36d3a035bf2a8d2bcc/pyparsing-3.2.3-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl"
               ]
             }
           },
@@ -21924,8 +22031,7 @@
               ],
               "experimental_target_platforms": [
                 "cp311_osx_aarch64",
-                "cp311_osx_x86_64",
-                "cp311_windows_x86_64"
+                "cp311_osx_x86_64"
               ],
               "filename": "pyparsing-3.2.5-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -21946,8 +22052,7 @@
               ],
               "experimental_target_platforms": [
                 "cp311_osx_aarch64",
-                "cp311_osx_x86_64",
-                "cp311_windows_x86_64"
+                "cp311_osx_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pyparsing-3.2.5.tar.gz",
@@ -21960,7 +22065,7 @@
               ]
             }
           },
-          "pigweed_python_packages_311_pyparsing_sdist_b9c13f1a": {
+          "pigweed_python_packages_311_pyparsing_sdist_c777f4d7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -21972,16 +22077,17 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "pyparsing-3.2.3.tar.gz",
+              "filename": "pyparsing-3.3.2.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
               "repo": "pigweed_python_packages_311",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "b9c13f1ab8b3b542f72e28f634bad4de758ab3ce4546e4301970ad6fa77c38be",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc",
               "urls": [
-                "https://files.pythonhosted.org/packages/bb/22/f1129e69d94ffff626bdb5c835506b3a5b4f3d070f17ea295e12c2c6f60f/pyparsing-3.2.3.tar.gz"
+                "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz"
               ]
             }
           },
@@ -23419,55 +23525,6 @@
               ]
             }
           },
-          "pigweed_python_packages_311_sniffio_py3_none_any_2f6da418": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp311_linux_aarch64",
-                "cp311_linux_arm",
-                "cp311_linux_ppc",
-                "cp311_linux_s390x",
-                "cp311_linux_x86_64"
-              ],
-              "filename": "sniffio-1.3.1-py3-none-any.whl",
-              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
-              "repo": "pigweed_python_packages_311",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
-              "urls": [
-                "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl"
-              ]
-            }
-          },
-          "pigweed_python_packages_311_sniffio_sdist_f4324edc": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp311_linux_aarch64",
-                "cp311_linux_arm",
-                "cp311_linux_ppc",
-                "cp311_linux_s390x",
-                "cp311_linux_x86_64"
-              ],
-              "extra_pip_args": [],
-              "filename": "sniffio-1.3.1.tar.gz",
-              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
-              "repo": "pigweed_python_packages_311",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc",
-              "urls": [
-                "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz"
-              ]
-            }
-          },
           "pigweed_python_packages_311_snowballstemmer_py2_none_any_c8e1716e": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -24305,7 +24362,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "tenacity-9.1.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -24329,7 +24387,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "tenacity-9.1.2.tar.gz",
@@ -24947,6 +25006,57 @@
               ]
             }
           },
+          "pigweed_python_packages_311_types_toml_py3_none_any_627b4777": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp311_linux_aarch64",
+                "cp311_linux_arm",
+                "cp311_linux_ppc",
+                "cp311_linux_s390x",
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
+              ],
+              "filename": "types_toml-0.10.8.20240310-py3-none-any.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "pigweed_python_packages_311",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "627b47775d25fa29977d9c70dc0cbab3f314f32c8d8d0c012f2ef5de7aaec05d",
+              "urls": [
+                "https://files.pythonhosted.org/packages/da/a2/d32ab58c0b216912638b140ab2170ee4b8644067c293b170e19fba340ccc/types_toml-0.10.8.20240310-py3-none-any.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_311_types_toml_sdist_3d415013": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp311_linux_aarch64",
+                "cp311_linux_arm",
+                "cp311_linux_ppc",
+                "cp311_linux_s390x",
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
+              ],
+              "extra_pip_args": [],
+              "filename": "types-toml-0.10.8.20240310.tar.gz",
+              "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
+              "repo": "pigweed_python_packages_311",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "3d41501302972436a6b8b239c850b26689657e25281b48ff0ec06345b8830331",
+              "urls": [
+                "https://files.pythonhosted.org/packages/86/47/3e4c75042792bff8e90d7991aa5c51812cc668828cc6cce711e97f63a607/types-toml-0.10.8.20240310.tar.gz"
+              ]
+            }
+          },
           "pigweed_python_packages_311_types_urllib3_py3_none_any_9683bbb7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -25069,7 +25179,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "filename": "typing_inspection-0.4.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_11_host//:python",
@@ -25093,7 +25204,8 @@
                 "cp311_linux_arm",
                 "cp311_linux_ppc",
                 "cp311_linux_s390x",
-                "cp311_linux_x86_64"
+                "cp311_linux_x86_64",
+                "cp311_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "typing_inspection-0.4.2.tar.gz",
@@ -26857,7 +26969,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "annotated_types-0.7.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -26881,7 +26994,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "annotated_types-0.7.0.tar.gz",
@@ -26894,7 +27008,7 @@
               ]
             }
           },
-          "pigweed_python_packages_312_anyio_py3_none_any_0287e96f": {
+          "pigweed_python_packages_312_anyio_py3_none_any_d4058288": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -26906,19 +27020,20 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
-              "filename": "anyio-4.11.0-py3-none-any.whl",
+              "filename": "anyio-4.12.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "anyio==4.11.0",
-              "sha256": "0287e96f4d26d4149305414d4e3bc32f0dcd0862365a4bddea19d7a1ec38c4fc",
+              "requirement": "anyio==4.12.1",
+              "sha256": "d405828884fc140aa80a3c667b8beed277f1dfedec42ba031bd6ac3db606ab6c",
               "urls": [
-                "https://files.pythonhosted.org/packages/15/b3/9b1a8074496371342ec1e796a96f99c82c945a339cd81a8e73de28b4cf9e/anyio-4.11.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/38/0e/27be9fdef66e72d64c0cdc3cc2823101b80585f8119b5c112c2e8f5f7dab/anyio-4.12.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_312_anyio_sdist_82a8d0b8": {
+          "pigweed_python_packages_312_anyio_sdist_41cfcc3a": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -26930,16 +27045,17 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "anyio-4.11.0.tar.gz",
+              "filename": "anyio-4.12.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "anyio==4.11.0",
-              "sha256": "82a8d0b81e318cc5ce71a5f1f8b5c4e63619620b63141ef8c995fa0db95a57c4",
+              "requirement": "anyio==4.12.1",
+              "sha256": "41cfcc3a4c85d3f05c932da7c26d0201ac36f72abd4435ba90d0464a3ffed703",
               "urls": [
-                "https://files.pythonhosted.org/packages/c6/78/7d432127c41b50bccba979505f272c16cbcadcc33645d5fa3a738110ae75/anyio-4.11.0.tar.gz"
+                "https://files.pythonhosted.org/packages/96/f0/5eb65b2bb0d09ac6776f2eb54adee6abe8228ea05b20a5ad0e4945de8aac/anyio-4.12.1.tar.gz"
               ]
             }
           },
@@ -28976,7 +29092,7 @@
               ]
             }
           },
-          "pigweed_python_packages_312_exceptiongroup_py3_none_any_4d111e6e": {
+          "pigweed_python_packages_312_exceptiongroup_py3_none_any_a7a39a3b": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -28988,19 +29104,20 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
-              "filename": "exceptiongroup-1.3.0-py3-none-any.whl",
+              "filename": "exceptiongroup-1.3.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "4d111e6e0c13d0644cad6ddaa7ed0261a0b36971f6d23e7ec9b4b9097da78a10",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598",
               "urls": [
-                "https://files.pythonhosted.org/packages/36/f4/c6e662dade71f56cd2f3735141b265c3c79293c109549c1e6933b0651ffc/exceptiongroup-1.3.0-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/8a/0e/97c33bf5009bdbac74fd2beace167cab3f978feb69cc36f1ef79360d6c4e/exceptiongroup-1.3.1-py3-none-any.whl"
               ]
             }
           },
-          "pigweed_python_packages_312_exceptiongroup_sdist_b241f588": {
+          "pigweed_python_packages_312_exceptiongroup_sdist_8b412432": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -29012,16 +29129,17 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "exceptiongroup-1.3.0.tar.gz",
+              "filename": "exceptiongroup-1.3.1.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "exceptiongroup==1.3.0",
-              "sha256": "b241f5885f560bc56a59ee63ca4c6a8bfa46ae4ad651af316d4e81817bb9fd88",
+              "requirement": "exceptiongroup==1.3.1",
+              "sha256": "8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219",
               "urls": [
-                "https://files.pythonhosted.org/packages/0b/9f/a65090624ecf468cdca03533906e7c69ed7588582240cfe7cc9e770b50eb/exceptiongroup-1.3.0.tar.gz"
+                "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz"
               ]
             }
           },
@@ -29664,7 +29782,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "google_genai-1.39.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -29688,7 +29807,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "google_genai-1.39.1.tar.gz",
@@ -29823,7 +29943,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "h11-0.16.0-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -29847,7 +29968,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "h11-0.16.0.tar.gz",
@@ -29872,7 +29994,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "httpcore-1.0.9-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -29896,7 +30019,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpcore-1.0.9.tar.gz",
@@ -29921,7 +30045,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "httpx-0.28.1-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -29945,7 +30070,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "httpx-0.28.1.tar.gz",
@@ -33028,7 +33154,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33052,7 +33179,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33076,7 +33204,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33100,7 +33229,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33124,7 +33254,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33148,7 +33279,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_aarch64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33172,7 +33304,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_armv7l.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33196,7 +33329,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_x86_64.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33205,6 +33339,31 @@
               "sha256": "5f483cfb75ff703095c59e365360cb73e00185e01aaea067cd19acffd2ab20ea",
               "urls": [
                 "https://files.pythonhosted.org/packages/27/b9/9c17f0396a82b3d5cbea4c24d742083422639e7bb1d5bf600e12cb176a13/pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_x86_64.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_312_pydantic_core_cp312_cp312_win_amd64_f941635f": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp312_linux_aarch64",
+                "cp312_linux_arm",
+                "cp312_linux_ppc",
+                "cp312_linux_s390x",
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
+              ],
+              "filename": "pydantic_core-2.33.2-cp312-cp312-win_amd64.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "pigweed_python_packages_312",
+              "requirement": "pydantic-core==2.33.2",
+              "sha256": "f941635f2a3d96b2973e867144fde513665c87f13fe0e193c158ac51bfaaa7b2",
+              "urls": [
+                "https://files.pythonhosted.org/packages/43/e4/5479fecb3606c1368d496a825d8411e126133c41224c1e7238be58b87d7e/pydantic_core-2.33.2-cp312-cp312-win_amd64.whl"
               ]
             }
           },
@@ -33220,7 +33379,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic_core-2.33.2.tar.gz",
@@ -33245,7 +33405,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "pydantic-2.11.10-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33269,7 +33430,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pydantic-2.11.10.tar.gz",
@@ -33612,7 +33774,7 @@
               ]
             }
           },
-          "pigweed_python_packages_312_pyparsing_py3_none_any_a749938e": {
+          "pigweed_python_packages_312_pyparsing_py3_none_any_850ba148": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -33624,15 +33786,16 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
-              "filename": "pyparsing-3.2.3-py3-none-any.whl",
+              "filename": "pyparsing-3.3.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "a749938e02d6fd0b59b356ca504a24982314bb090c383e3cf201c95ef7e2bfcf",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d",
               "urls": [
-                "https://files.pythonhosted.org/packages/05/e7/df2285f3d08fee213f2d041540fa4fc9ca6c2d44cf36d3a035bf2a8d2bcc/pyparsing-3.2.3-py3-none-any.whl"
+                "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl"
               ]
             }
           },
@@ -33645,8 +33808,7 @@
               ],
               "experimental_target_platforms": [
                 "cp312_osx_aarch64",
-                "cp312_osx_x86_64",
-                "cp312_windows_x86_64"
+                "cp312_osx_x86_64"
               ],
               "filename": "pyparsing-3.2.5-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -33667,8 +33829,7 @@
               ],
               "experimental_target_platforms": [
                 "cp312_osx_aarch64",
-                "cp312_osx_x86_64",
-                "cp312_windows_x86_64"
+                "cp312_osx_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "pyparsing-3.2.5.tar.gz",
@@ -33681,7 +33842,7 @@
               ]
             }
           },
-          "pigweed_python_packages_312_pyparsing_sdist_b9c13f1a": {
+          "pigweed_python_packages_312_pyparsing_sdist_c777f4d7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
               "dep_template": "@pigweed_python_packages//{name}:{target}",
@@ -33693,16 +33854,17 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
-              "filename": "pyparsing-3.2.3.tar.gz",
+              "filename": "pyparsing-3.3.2.tar.gz",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
               "repo": "pigweed_python_packages_312",
-              "requirement": "pyparsing==3.2.3",
-              "sha256": "b9c13f1ab8b3b542f72e28f634bad4de758ab3ce4546e4301970ad6fa77c38be",
+              "requirement": "pyparsing==3.3.2",
+              "sha256": "c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc",
               "urls": [
-                "https://files.pythonhosted.org/packages/bb/22/f1129e69d94ffff626bdb5c835506b3a5b4f3d070f17ea295e12c2c6f60f/pyparsing-3.2.3.tar.gz"
+                "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz"
               ]
             }
           },
@@ -35113,55 +35275,6 @@
               ]
             }
           },
-          "pigweed_python_packages_312_sniffio_py3_none_any_2f6da418": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp312_linux_aarch64",
-                "cp312_linux_arm",
-                "cp312_linux_ppc",
-                "cp312_linux_s390x",
-                "cp312_linux_x86_64"
-              ],
-              "filename": "sniffio-1.3.1-py3-none-any.whl",
-              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
-              "repo": "pigweed_python_packages_312",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
-              "urls": [
-                "https://files.pythonhosted.org/packages/e9/44/75a9c9421471a6c4805dbf2356f7c181a29c1879239abab1ea2cc8f38b40/sniffio-1.3.1-py3-none-any.whl"
-              ]
-            }
-          },
-          "pigweed_python_packages_312_sniffio_sdist_f4324edc": {
-            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
-            "attributes": {
-              "dep_template": "@pigweed_python_packages//{name}:{target}",
-              "envsubst": [
-                "PIGWEED_PIP_INDEX_URL"
-              ],
-              "experimental_target_platforms": [
-                "cp312_linux_aarch64",
-                "cp312_linux_arm",
-                "cp312_linux_ppc",
-                "cp312_linux_s390x",
-                "cp312_linux_x86_64"
-              ],
-              "extra_pip_args": [],
-              "filename": "sniffio-1.3.1.tar.gz",
-              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
-              "repo": "pigweed_python_packages_312",
-              "requirement": "sniffio==1.3.1",
-              "sha256": "f4324edc670a0f49750a81b895f35c3adb843cca46f0530f79fc1babb23789dc",
-              "urls": [
-                "https://files.pythonhosted.org/packages/a2/87/a6771e1546d97e7e041b6ae58d80074f81b7d5121207425c964ddf5cfdbd/sniffio-1.3.1.tar.gz"
-              ]
-            }
-          },
           "pigweed_python_packages_312_snowballstemmer_py2_none_any_c8e1716e": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -35999,7 +36112,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "tenacity-9.1.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -36023,7 +36137,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "tenacity-9.1.2.tar.gz",
@@ -36641,6 +36756,57 @@
               ]
             }
           },
+          "pigweed_python_packages_312_types_toml_py3_none_any_627b4777": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp312_linux_aarch64",
+                "cp312_linux_arm",
+                "cp312_linux_ppc",
+                "cp312_linux_s390x",
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
+              ],
+              "filename": "types_toml-0.10.8.20240310-py3-none-any.whl",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "pigweed_python_packages_312",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "627b47775d25fa29977d9c70dc0cbab3f314f32c8d8d0c012f2ef5de7aaec05d",
+              "urls": [
+                "https://files.pythonhosted.org/packages/da/a2/d32ab58c0b216912638b140ab2170ee4b8644067c293b170e19fba340ccc/types_toml-0.10.8.20240310-py3-none-any.whl"
+              ]
+            }
+          },
+          "pigweed_python_packages_312_types_toml_sdist_3d415013": {
+            "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
+            "attributes": {
+              "dep_template": "@pigweed_python_packages//{name}:{target}",
+              "envsubst": [
+                "PIGWEED_PIP_INDEX_URL"
+              ],
+              "experimental_target_platforms": [
+                "cp312_linux_aarch64",
+                "cp312_linux_arm",
+                "cp312_linux_ppc",
+                "cp312_linux_s390x",
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
+              ],
+              "extra_pip_args": [],
+              "filename": "types-toml-0.10.8.20240310.tar.gz",
+              "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
+              "repo": "pigweed_python_packages_312",
+              "requirement": "types-toml==0.10.8.20240310",
+              "sha256": "3d41501302972436a6b8b239c850b26689657e25281b48ff0ec06345b8830331",
+              "urls": [
+                "https://files.pythonhosted.org/packages/86/47/3e4c75042792bff8e90d7991aa5c51812cc668828cc6cce711e97f63a607/types-toml-0.10.8.20240310.tar.gz"
+              ]
+            }
+          },
           "pigweed_python_packages_312_types_urllib3_py3_none_any_9683bbb7": {
             "repoRuleId": "@@rules_python+//python/private/pypi:whl_library.bzl%whl_library",
             "attributes": {
@@ -36763,7 +36929,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "filename": "typing_inspection-0.4.2-py3-none-any.whl",
               "python_interpreter_target": "@@rules_python++python+python_3_12_host//:python",
@@ -36787,7 +36954,8 @@
                 "cp312_linux_arm",
                 "cp312_linux_ppc",
                 "cp312_linux_s390x",
-                "cp312_linux_x86_64"
+                "cp312_linux_x86_64",
+                "cp312_windows_x86_64"
               ],
               "extra_pip_args": [],
               "filename": "typing_inspection-0.4.2.tar.gz",
@@ -40625,7 +40793,7 @@
                 "aiosignal": "{\"pigweed_python_packages_310_aiosignal_py2_none_any_45cde58e\":[{\"filename\":\"aiosignal-1.3.2-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_aiosignal_sdist_a8c255c6\":[{\"filename\":\"aiosignal-1.3.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_aiosignal_py2_none_any_45cde58e\":[{\"filename\":\"aiosignal-1.3.2-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_aiosignal_sdist_a8c255c6\":[{\"filename\":\"aiosignal-1.3.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_aiosignal_py2_none_any_45cde58e\":[{\"filename\":\"aiosignal-1.3.2-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_aiosignal_sdist_a8c255c6\":[{\"filename\":\"aiosignal-1.3.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "alabaster": "{\"pigweed_python_packages_310_alabaster_py3_none_any_b46733c0\":[{\"filename\":\"alabaster-0.7.16-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_alabaster_sdist_75a8b99c\":[{\"filename\":\"alabaster-0.7.16.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_alabaster_py3_none_any_b46733c0\":[{\"filename\":\"alabaster-0.7.16-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_alabaster_sdist_75a8b99c\":[{\"filename\":\"alabaster-0.7.16.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_alabaster_py3_none_any_b46733c0\":[{\"filename\":\"alabaster-0.7.16-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_alabaster_sdist_75a8b99c\":[{\"filename\":\"alabaster-0.7.16.tar.gz\",\"version\":\"3.12\"}]}",
                 "annotated_types": "{\"pigweed_python_packages_310_annotated_types_py3_none_any_1f02e8b4\":[{\"filename\":\"annotated_types-0.7.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_annotated_types_sdist_aff07c09\":[{\"filename\":\"annotated_types-0.7.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_annotated_types_py3_none_any_1f02e8b4\":[{\"filename\":\"annotated_types-0.7.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_annotated_types_sdist_aff07c09\":[{\"filename\":\"annotated_types-0.7.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_annotated_types_py3_none_any_1f02e8b4\":[{\"filename\":\"annotated_types-0.7.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_annotated_types_sdist_aff07c09\":[{\"filename\":\"annotated_types-0.7.0.tar.gz\",\"version\":\"3.12\"}]}",
-                "anyio": "{\"pigweed_python_packages_310_anyio_py3_none_any_0287e96f\":[{\"filename\":\"anyio-4.11.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_anyio_sdist_82a8d0b8\":[{\"filename\":\"anyio-4.11.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_anyio_py3_none_any_0287e96f\":[{\"filename\":\"anyio-4.11.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_anyio_sdist_82a8d0b8\":[{\"filename\":\"anyio-4.11.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_anyio_py3_none_any_0287e96f\":[{\"filename\":\"anyio-4.11.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_anyio_sdist_82a8d0b8\":[{\"filename\":\"anyio-4.11.0.tar.gz\",\"version\":\"3.12\"}]}",
+                "anyio": "{\"pigweed_python_packages_310_anyio_py3_none_any_d4058288\":[{\"filename\":\"anyio-4.12.1-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_anyio_sdist_41cfcc3a\":[{\"filename\":\"anyio-4.12.1.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_anyio_py3_none_any_d4058288\":[{\"filename\":\"anyio-4.12.1-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_anyio_sdist_41cfcc3a\":[{\"filename\":\"anyio-4.12.1.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_anyio_py3_none_any_d4058288\":[{\"filename\":\"anyio-4.12.1-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_anyio_sdist_41cfcc3a\":[{\"filename\":\"anyio-4.12.1.tar.gz\",\"version\":\"3.12\"}]}",
                 "appdirs": "{\"pigweed_python_packages_310_appdirs_py2_none_any_a841dacd\":[{\"filename\":\"appdirs-1.4.4-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_appdirs_sdist_7d5d0167\":[{\"filename\":\"appdirs-1.4.4.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_appdirs_py2_none_any_a841dacd\":[{\"filename\":\"appdirs-1.4.4-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_appdirs_sdist_7d5d0167\":[{\"filename\":\"appdirs-1.4.4.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_appdirs_py2_none_any_a841dacd\":[{\"filename\":\"appdirs-1.4.4-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_appdirs_sdist_7d5d0167\":[{\"filename\":\"appdirs-1.4.4.tar.gz\",\"version\":\"3.12\"}]}",
                 "astroid": "{\"pigweed_python_packages_310_astroid_py3_none_any_d05bfd0a\":[{\"filename\":\"astroid-3.3.9-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_astroid_sdist_622cc8e3\":[{\"filename\":\"astroid-3.3.9.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_astroid_py3_none_any_d05bfd0a\":[{\"filename\":\"astroid-3.3.9-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_astroid_sdist_622cc8e3\":[{\"filename\":\"astroid-3.3.9.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_astroid_py3_none_any_d05bfd0a\":[{\"filename\":\"astroid-3.3.9-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_astroid_sdist_622cc8e3\":[{\"filename\":\"astroid-3.3.9.tar.gz\",\"version\":\"3.12\"}]}",
                 "async_timeout": "{\"pigweed_python_packages_310_async_timeout_py3_none_any_7405140f\":[{\"filename\":\"async_timeout-4.0.3-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_async_timeout_sdist_4640d96b\":[{\"filename\":\"async-timeout-4.0.3.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_async_timeout_py3_none_any_7405140f\":[{\"filename\":\"async_timeout-4.0.3-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_async_timeout_sdist_4640d96b\":[{\"filename\":\"async-timeout-4.0.3.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_async_timeout_py3_none_any_7405140f\":[{\"filename\":\"async_timeout-4.0.3-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_async_timeout_sdist_4640d96b\":[{\"filename\":\"async-timeout-4.0.3.tar.gz\",\"version\":\"3.12\"}]}",
@@ -40648,7 +40816,7 @@
                 "dill": "{\"pigweed_python_packages_310_dill_py3_none_any_468dff3b\":[{\"filename\":\"dill-0.3.9-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_dill_sdist_81aa267d\":[{\"filename\":\"dill-0.3.9.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_dill_py3_none_any_468dff3b\":[{\"filename\":\"dill-0.3.9-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_dill_sdist_81aa267d\":[{\"filename\":\"dill-0.3.9.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_dill_py3_none_any_468dff3b\":[{\"filename\":\"dill-0.3.9-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_dill_sdist_81aa267d\":[{\"filename\":\"dill-0.3.9.tar.gz\",\"version\":\"3.12\"}]}",
                 "docopt": "{\"pigweed_python_packages_310_docopt_sdist_49b3a825\":[{\"filename\":\"docopt-0.6.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_docopt_sdist_49b3a825\":[{\"filename\":\"docopt-0.6.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_docopt_sdist_49b3a825\":[{\"filename\":\"docopt-0.6.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "docutils": "{\"pigweed_python_packages_310_docutils_py3_none_any_96f387a2\":[{\"filename\":\"docutils-0.20.1-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_docutils_sdist_f08a4e27\":[{\"filename\":\"docutils-0.20.1.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_docutils_py3_none_any_96f387a2\":[{\"filename\":\"docutils-0.20.1-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_docutils_sdist_f08a4e27\":[{\"filename\":\"docutils-0.20.1.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_docutils_py3_none_any_96f387a2\":[{\"filename\":\"docutils-0.20.1-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_docutils_sdist_f08a4e27\":[{\"filename\":\"docutils-0.20.1.tar.gz\",\"version\":\"3.12\"}]}",
-                "exceptiongroup": "{\"pigweed_python_packages_310_exceptiongroup_py3_none_any_4d111e6e\":[{\"filename\":\"exceptiongroup-1.3.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_exceptiongroup_sdist_b241f588\":[{\"filename\":\"exceptiongroup-1.3.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_exceptiongroup_py3_none_any_4d111e6e\":[{\"filename\":\"exceptiongroup-1.3.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_exceptiongroup_sdist_b241f588\":[{\"filename\":\"exceptiongroup-1.3.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_exceptiongroup_py3_none_any_4d111e6e\":[{\"filename\":\"exceptiongroup-1.3.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_exceptiongroup_sdist_b241f588\":[{\"filename\":\"exceptiongroup-1.3.0.tar.gz\",\"version\":\"3.12\"}]}",
+                "exceptiongroup": "{\"pigweed_python_packages_310_exceptiongroup_py3_none_any_a7a39a3b\":[{\"filename\":\"exceptiongroup-1.3.1-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_exceptiongroup_sdist_8b412432\":[{\"filename\":\"exceptiongroup-1.3.1.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_exceptiongroup_py3_none_any_a7a39a3b\":[{\"filename\":\"exceptiongroup-1.3.1-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_exceptiongroup_sdist_8b412432\":[{\"filename\":\"exceptiongroup-1.3.1.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_exceptiongroup_py3_none_any_a7a39a3b\":[{\"filename\":\"exceptiongroup-1.3.1-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_exceptiongroup_sdist_8b412432\":[{\"filename\":\"exceptiongroup-1.3.1.tar.gz\",\"version\":\"3.12\"}]}",
                 "frozenlist": "{\"pigweed_python_packages_310_frozenlist_cp310_cp310_macosx_10_9_universal2_5b6a66c1\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-macosx_10_9_universal2.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_macosx_10_9_x86_64_d1b3eb7b\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-macosx_10_9_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_macosx_11_0_arm64_15538c0c\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-macosx_11_0_arm64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_manylinux_2_17_aarch64_e7922537\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_manylinux_2_17_ppc64le_9272fa73\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_manylinux_2_17_s390x_49852402\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_manylinux_2_5_x86_64_7f3c8c1d\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_musllinux_1_2_aarch64_f2ac49a9\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-musllinux_1_2_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_musllinux_1_2_ppc64le_5a3ba5f9\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-musllinux_1_2_ppc64le.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_musllinux_1_2_s390x_63218994\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-musllinux_1_2_s390x.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_musllinux_1_2_x86_64_76e47537\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-musllinux_1_2_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_cp310_cp310_win_amd64_189f03b5\":[{\"filename\":\"frozenlist-1.5.0-cp310-cp310-win_amd64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_py3_none_any_d994863b\":[{\"filename\":\"frozenlist-1.5.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_frozenlist_sdist_81d5af29\":[{\"filename\":\"frozenlist-1.5.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_macosx_10_9_universal2_fd745203\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-macosx_10_9_universal2.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_macosx_10_9_x86_64_2f3f7a0f\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-macosx_10_9_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_macosx_11_0_arm64_f47c9c90\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-macosx_11_0_arm64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_manylinux_2_17_aarch64_0996c667\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_manylinux_2_17_ppc64le_a2fe128e\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_manylinux_2_17_s390x_1a8ea951\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_manylinux_2_5_x86_64_9c262334\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_musllinux_1_2_aarch64_cee6798e\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-musllinux_1_2_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_musllinux_1_2_ppc64le_90646abb\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-musllinux_1_2_ppc64le.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_musllinux_1_2_s390x_bdac3c7d\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-musllinux_1_2_s390x.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_musllinux_1_2_x86_64_03d33c2d\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-musllinux_1_2_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_cp311_cp311_win_amd64_0cc974cc\":[{\"filename\":\"frozenlist-1.5.0-cp311-cp311-win_amd64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_py3_none_any_d994863b\":[{\"filename\":\"frozenlist-1.5.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_frozenlist_sdist_81d5af29\":[{\"filename\":\"frozenlist-1.5.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_macosx_10_13_universal2_31115ba7\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-macosx_10_13_universal2.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_macosx_10_13_x86_64_7437601c\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-macosx_10_13_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_macosx_11_0_arm64_7948140d\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-macosx_11_0_arm64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_manylinux_2_17_aarch64_feeb64bc\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_manylinux_2_17_ppc64le_683173d3\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_manylinux_2_17_s390x_7d57d8f7\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_manylinux_2_5_x86_64_000a77d6\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_musllinux_1_2_aarch64_5d7f5a50\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-musllinux_1_2_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_musllinux_1_2_ppc64le_6e9080bb\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-musllinux_1_2_ppc64le.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_musllinux_1_2_s390x_9b93d7aa\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-musllinux_1_2_s390x.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_musllinux_1_2_x86_64_52ef692a\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-musllinux_1_2_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_cp312_cp312_win_amd64_8969190d\":[{\"filename\":\"frozenlist-1.5.0-cp312-cp312-win_amd64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_py3_none_any_d994863b\":[{\"filename\":\"frozenlist-1.5.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_frozenlist_sdist_81d5af29\":[{\"filename\":\"frozenlist-1.5.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "google_api_core": "{\"pigweed_python_packages_310_google_api_core_py3_none_any_53ec0258\":[{\"filename\":\"google_api_core-2.19.2-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_google_api_core_sdist_ca07de7e\":[{\"filename\":\"google_api_core-2.19.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_google_api_core_py3_none_any_53ec0258\":[{\"filename\":\"google_api_core-2.19.2-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_google_api_core_sdist_ca07de7e\":[{\"filename\":\"google_api_core-2.19.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_google_api_core_py3_none_any_53ec0258\":[{\"filename\":\"google_api_core-2.19.2-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_google_api_core_sdist_ca07de7e\":[{\"filename\":\"google_api_core-2.19.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "google_auth": "{\"pigweed_python_packages_310_google_auth_py2_none_any_a8f4608e\":[{\"filename\":\"google_auth-2.23.3-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_google_auth_sdist_68642478\":[{\"filename\":\"google-auth-2.23.3.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_google_auth_py2_none_any_a8f4608e\":[{\"filename\":\"google_auth-2.23.3-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_google_auth_sdist_68642478\":[{\"filename\":\"google-auth-2.23.3.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_google_auth_py2_none_any_a8f4608e\":[{\"filename\":\"google_auth-2.23.3-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_google_auth_sdist_68642478\":[{\"filename\":\"google-auth-2.23.3.tar.gz\",\"version\":\"3.12\"}]}",
@@ -40696,14 +40864,14 @@
                 "pyasn1_modules": "{\"pigweed_python_packages_310_pyasn1_modules_py3_none_any_29253a92\":[{\"filename\":\"pyasn1_modules-0.4.2-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyasn1_modules_sdist_677091de\":[{\"filename\":\"pyasn1_modules-0.4.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyasn1_modules_py3_none_any_29253a92\":[{\"filename\":\"pyasn1_modules-0.4.2-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyasn1_modules_sdist_677091de\":[{\"filename\":\"pyasn1_modules-0.4.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyasn1_modules_py3_none_any_29253a92\":[{\"filename\":\"pyasn1_modules-0.4.2-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyasn1_modules_sdist_677091de\":[{\"filename\":\"pyasn1_modules-0.4.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "pycparser": "{\"pigweed_python_packages_310_pycparser_py2_none_any_8ee45429\":[{\"filename\":\"pycparser-2.21-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pycparser_sdist_e644fdec\":[{\"filename\":\"pycparser-2.21.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pycparser_py2_none_any_8ee45429\":[{\"filename\":\"pycparser-2.21-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pycparser_sdist_e644fdec\":[{\"filename\":\"pycparser-2.21.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pycparser_py2_none_any_8ee45429\":[{\"filename\":\"pycparser-2.21-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pycparser_sdist_e644fdec\":[{\"filename\":\"pycparser-2.21.tar.gz\",\"version\":\"3.12\"}]}",
                 "pydantic": "{\"pigweed_python_packages_310_pydantic_py3_none_any_802a6557\":[{\"filename\":\"pydantic-2.11.10-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_sdist_dc280f09\":[{\"filename\":\"pydantic-2.11.10.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pydantic_py3_none_any_802a6557\":[{\"filename\":\"pydantic-2.11.10-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_sdist_dc280f09\":[{\"filename\":\"pydantic-2.11.10.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pydantic_py3_none_any_802a6557\":[{\"filename\":\"pydantic-2.11.10-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_sdist_dc280f09\":[{\"filename\":\"pydantic-2.11.10.tar.gz\",\"version\":\"3.12\"}]}",
-                "pydantic_core": "{\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_aarch64_0069c9ac\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_armv7l_d53b22f2\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_ppc64le_04052627\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_s390x_4b25d91e\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_x86_64_6bdfe4b3\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_aarch64_031c57d6\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_armv7l_f8de6190\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_armv7l.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_x86_64_73662edf\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_aarch64_dc46a01b\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_armv7l_a144d4f7\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_ppc64le_73cf6373\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_s390x_3dc625f4\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_x86_64_881b21b5\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_aarch64_fe5b3218\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_armv7l_bc7aee6f\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_armv7l.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_x86_64_235f45e5\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_aarch64_4e612061\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_armv7l_eb8c529b\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_ppc64le_c52b02ad\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_s390x_96081f16\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_x86_64_8f57a694\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_aarch64_db4b41f9\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_armv7l_fa854f5c\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_armv7l.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_x86_64_5f483cfb\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.12\"}]}",
+                "pydantic_core": "{\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_aarch64_0069c9ac\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_armv7l_d53b22f2\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_ppc64le_04052627\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_s390x_4b25d91e\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_manylinux_2_17_x86_64_6bdfe4b3\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_aarch64_031c57d6\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_armv7l_f8de6190\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_armv7l.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_musllinux_1_1_x86_64_73662edf\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-musllinux_1_1_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_cp310_cp310_win_amd64_b0379a2b\":[{\"filename\":\"pydantic_core-2.33.2-cp310-cp310-win_amd64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_aarch64_dc46a01b\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_armv7l_a144d4f7\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_ppc64le_73cf6373\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_s390x_3dc625f4\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_manylinux_2_17_x86_64_881b21b5\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_aarch64_fe5b3218\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_armv7l_bc7aee6f\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_armv7l.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_musllinux_1_1_x86_64_235f45e5\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-musllinux_1_1_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_cp311_cp311_win_amd64_1e063337\":[{\"filename\":\"pydantic_core-2.33.2-cp311-cp311-win_amd64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_aarch64_4e612061\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_armv7l_eb8c529b\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_armv7l.manylinux2014_armv7l.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_ppc64le_c52b02ad\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_s390x_96081f16\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_s390x.manylinux2014_s390x.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_manylinux_2_17_x86_64_8f57a694\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_aarch64_db4b41f9\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_armv7l_fa854f5c\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_armv7l.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_musllinux_1_1_x86_64_5f483cfb\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-musllinux_1_1_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_cp312_cp312_win_amd64_f941635f\":[{\"filename\":\"pydantic_core-2.33.2-cp312-cp312-win_amd64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydantic_core_sdist_7cb8bc36\":[{\"filename\":\"pydantic_core-2.33.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "pydata_sphinx_theme": "{\"pigweed_python_packages_310_pydata_sphinx_theme_py3_none_any_2136ad0e\":[{\"filename\":\"pydata_sphinx_theme-0.15.4-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pydata_sphinx_theme_sdist_7762ec0a\":[{\"filename\":\"pydata_sphinx_theme-0.15.4.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pydata_sphinx_theme_py3_none_any_2136ad0e\":[{\"filename\":\"pydata_sphinx_theme-0.15.4-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pydata_sphinx_theme_sdist_7762ec0a\":[{\"filename\":\"pydata_sphinx_theme-0.15.4.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pydata_sphinx_theme_py3_none_any_2136ad0e\":[{\"filename\":\"pydata_sphinx_theme-0.15.4-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pydata_sphinx_theme_sdist_7762ec0a\":[{\"filename\":\"pydata_sphinx_theme-0.15.4.tar.gz\",\"version\":\"3.12\"}]}",
                 "pyelftools": "{\"pigweed_python_packages_310_pyelftools_py3_none_any_f52de7b3\":[{\"filename\":\"pyelftools-0.31-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyelftools_sdist_c774416b\":[{\"filename\":\"pyelftools-0.31.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyelftools_py3_none_any_f52de7b3\":[{\"filename\":\"pyelftools-0.31-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyelftools_sdist_c774416b\":[{\"filename\":\"pyelftools-0.31.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyelftools_py3_none_any_f52de7b3\":[{\"filename\":\"pyelftools-0.31-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyelftools_sdist_c774416b\":[{\"filename\":\"pyelftools-0.31.tar.gz\",\"version\":\"3.12\"}]}",
                 "pyfakefs": "{\"pigweed_python_packages_310_pyfakefs_py3_none_any_e1527b0e\":[{\"filename\":\"pyfakefs-5.7.2-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyfakefs_sdist_40da8417\":[{\"filename\":\"pyfakefs-5.7.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyfakefs_py3_none_any_e1527b0e\":[{\"filename\":\"pyfakefs-5.7.2-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyfakefs_sdist_40da8417\":[{\"filename\":\"pyfakefs-5.7.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyfakefs_py3_none_any_e1527b0e\":[{\"filename\":\"pyfakefs-5.7.2-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyfakefs_sdist_40da8417\":[{\"filename\":\"pyfakefs-5.7.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "pygments": "{\"pigweed_python_packages_310_pygments_py3_none_any_b8e6aca0\":[{\"filename\":\"pygments-2.18.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pygments_sdist_786ff802\":[{\"filename\":\"pygments-2.18.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pygments_py3_none_any_b8e6aca0\":[{\"filename\":\"pygments-2.18.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pygments_sdist_786ff802\":[{\"filename\":\"pygments-2.18.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pygments_py3_none_any_b8e6aca0\":[{\"filename\":\"pygments-2.18.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pygments_sdist_786ff802\":[{\"filename\":\"pygments-2.18.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "pykwalify": "{\"pigweed_python_packages_310_pykwalify_py2_none_any_731dfa87\":[{\"filename\":\"pykwalify-1.8.0-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pykwalify_sdist_796b2ad3\":[{\"filename\":\"pykwalify-1.8.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pykwalify_py2_none_any_731dfa87\":[{\"filename\":\"pykwalify-1.8.0-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pykwalify_sdist_796b2ad3\":[{\"filename\":\"pykwalify-1.8.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pykwalify_py2_none_any_731dfa87\":[{\"filename\":\"pykwalify-1.8.0-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pykwalify_sdist_796b2ad3\":[{\"filename\":\"pykwalify-1.8.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "pylint": "{\"pigweed_python_packages_310_pylint_py3_none_any_7ef94aa6\":[{\"filename\":\"pylint-3.3.8-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pylint_sdist_26698de1\":[{\"filename\":\"pylint-3.3.8.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pylint_py3_none_any_7ef94aa6\":[{\"filename\":\"pylint-3.3.8-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pylint_sdist_26698de1\":[{\"filename\":\"pylint-3.3.8.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pylint_py3_none_any_7ef94aa6\":[{\"filename\":\"pylint-3.3.8-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pylint_sdist_26698de1\":[{\"filename\":\"pylint-3.3.8.tar.gz\",\"version\":\"3.12\"}]}",
-                "pyparsing": "{\"pigweed_python_packages_310_pyparsing_py3_none_any_a749938e\":[{\"filename\":\"pyparsing-3.2.3-py3-none-any.whl\",\"target_platforms\":[\"cp310_linux_aarch64\",\"cp310_linux_arm\",\"cp310_linux_ppc\",\"cp310_linux_s390x\",\"cp310_linux_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp310_osx_aarch64\",\"cp310_osx_x86_64\",\"cp310_windows_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp310_osx_aarch64\",\"cp310_osx_x86_64\",\"cp310_windows_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_sdist_b9c13f1a\":[{\"filename\":\"pyparsing-3.2.3.tar.gz\",\"target_platforms\":[\"cp310_linux_aarch64\",\"cp310_linux_arm\",\"cp310_linux_ppc\",\"cp310_linux_s390x\",\"cp310_linux_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyparsing_py3_none_any_a749938e\":[{\"filename\":\"pyparsing-3.2.3-py3-none-any.whl\",\"target_platforms\":[\"cp311_linux_aarch64\",\"cp311_linux_arm\",\"cp311_linux_ppc\",\"cp311_linux_s390x\",\"cp311_linux_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp311_osx_aarch64\",\"cp311_osx_x86_64\",\"cp311_windows_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp311_osx_aarch64\",\"cp311_osx_x86_64\",\"cp311_windows_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_sdist_b9c13f1a\":[{\"filename\":\"pyparsing-3.2.3.tar.gz\",\"target_platforms\":[\"cp311_linux_aarch64\",\"cp311_linux_arm\",\"cp311_linux_ppc\",\"cp311_linux_s390x\",\"cp311_linux_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyparsing_py3_none_any_a749938e\":[{\"filename\":\"pyparsing-3.2.3-py3-none-any.whl\",\"target_platforms\":[\"cp312_linux_aarch64\",\"cp312_linux_arm\",\"cp312_linux_ppc\",\"cp312_linux_s390x\",\"cp312_linux_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp312_osx_aarch64\",\"cp312_osx_x86_64\",\"cp312_windows_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp312_osx_aarch64\",\"cp312_osx_x86_64\",\"cp312_windows_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_sdist_b9c13f1a\":[{\"filename\":\"pyparsing-3.2.3.tar.gz\",\"target_platforms\":[\"cp312_linux_aarch64\",\"cp312_linux_arm\",\"cp312_linux_ppc\",\"cp312_linux_s390x\",\"cp312_linux_x86_64\"],\"version\":\"3.12\"}]}",
+                "pyparsing": "{\"pigweed_python_packages_310_pyparsing_py3_none_any_850ba148\":[{\"filename\":\"pyparsing-3.3.2-py3-none-any.whl\",\"target_platforms\":[\"cp310_linux_aarch64\",\"cp310_linux_arm\",\"cp310_linux_ppc\",\"cp310_linux_s390x\",\"cp310_linux_x86_64\",\"cp310_windows_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp310_osx_aarch64\",\"cp310_osx_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp310_osx_aarch64\",\"cp310_osx_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyparsing_sdist_c777f4d7\":[{\"filename\":\"pyparsing-3.3.2.tar.gz\",\"target_platforms\":[\"cp310_linux_aarch64\",\"cp310_linux_arm\",\"cp310_linux_ppc\",\"cp310_linux_s390x\",\"cp310_linux_x86_64\",\"cp310_windows_x86_64\"],\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyparsing_py3_none_any_850ba148\":[{\"filename\":\"pyparsing-3.3.2-py3-none-any.whl\",\"target_platforms\":[\"cp311_linux_aarch64\",\"cp311_linux_arm\",\"cp311_linux_ppc\",\"cp311_linux_s390x\",\"cp311_linux_x86_64\",\"cp311_windows_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp311_osx_aarch64\",\"cp311_osx_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp311_osx_aarch64\",\"cp311_osx_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyparsing_sdist_c777f4d7\":[{\"filename\":\"pyparsing-3.3.2.tar.gz\",\"target_platforms\":[\"cp311_linux_aarch64\",\"cp311_linux_arm\",\"cp311_linux_ppc\",\"cp311_linux_s390x\",\"cp311_linux_x86_64\",\"cp311_windows_x86_64\"],\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyparsing_py3_none_any_850ba148\":[{\"filename\":\"pyparsing-3.3.2-py3-none-any.whl\",\"target_platforms\":[\"cp312_linux_aarch64\",\"cp312_linux_arm\",\"cp312_linux_ppc\",\"cp312_linux_s390x\",\"cp312_linux_x86_64\",\"cp312_windows_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_py3_none_any_e38a4f02\":[{\"filename\":\"pyparsing-3.2.5-py3-none-any.whl\",\"target_platforms\":[\"cp312_osx_aarch64\",\"cp312_osx_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_sdist_2df8d5b7\":[{\"filename\":\"pyparsing-3.2.5.tar.gz\",\"target_platforms\":[\"cp312_osx_aarch64\",\"cp312_osx_x86_64\"],\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyparsing_sdist_c777f4d7\":[{\"filename\":\"pyparsing-3.3.2.tar.gz\",\"target_platforms\":[\"cp312_linux_aarch64\",\"cp312_linux_arm\",\"cp312_linux_ppc\",\"cp312_linux_s390x\",\"cp312_linux_x86_64\",\"cp312_windows_x86_64\"],\"version\":\"3.12\"}]}",
                 "pyperclip": "{\"pigweed_python_packages_310_pyperclip_sdist_105254a8\":[{\"filename\":\"pyperclip-1.8.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyperclip_sdist_105254a8\":[{\"filename\":\"pyperclip-1.8.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyperclip_sdist_105254a8\":[{\"filename\":\"pyperclip-1.8.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "pyproject_hooks": "{\"pigweed_python_packages_310_pyproject_hooks_py3_none_any_9e5c6bfa\":[{\"filename\":\"pyproject_hooks-1.2.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyproject_hooks_sdist_1e859bd5\":[{\"filename\":\"pyproject_hooks-1.2.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyproject_hooks_py3_none_any_9e5c6bfa\":[{\"filename\":\"pyproject_hooks-1.2.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyproject_hooks_sdist_1e859bd5\":[{\"filename\":\"pyproject_hooks-1.2.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyproject_hooks_py3_none_any_9e5c6bfa\":[{\"filename\":\"pyproject_hooks-1.2.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyproject_hooks_sdist_1e859bd5\":[{\"filename\":\"pyproject_hooks-1.2.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "pyreadline3": "{\"pigweed_python_packages_310_pyreadline3_py3_none_any_eaf8e6cc\":[{\"filename\":\"pyreadline3-3.5.4-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_pyreadline3_sdist_8d57d530\":[{\"filename\":\"pyreadline3-3.5.4.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_pyreadline3_py3_none_any_eaf8e6cc\":[{\"filename\":\"pyreadline3-3.5.4-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_pyreadline3_sdist_8d57d530\":[{\"filename\":\"pyreadline3-3.5.4.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_pyreadline3_py3_none_any_eaf8e6cc\":[{\"filename\":\"pyreadline3-3.5.4-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_pyreadline3_sdist_8d57d530\":[{\"filename\":\"pyreadline3-3.5.4.tar.gz\",\"version\":\"3.12\"}]}",
@@ -40721,7 +40889,6 @@
                 "ruamel_yaml_clib": "{\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_macosx_13_0_arm64_11f89133\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-macosx_13_0_arm64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_manylinux_2_17_aarch64_a606ef75\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-manylinux2014_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_manylinux_2_17_x86_64_fd5415dd\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_musllinux_1_1_x86_64_93220597\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-musllinux_1_1_x86_64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_musllinux_1_2_aarch64_a52d48f4\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-musllinux_1_2_aarch64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_cp310_cp310_win_amd64_ab007f2f\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp310-cp310-win_amd64.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_ruamel_yaml_clib_sdist_6c8fbb13\":[{\"filename\":\"ruamel.yaml.clib-0.2.12.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_macosx_13_0_arm64_4a667952\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-macosx_13_0_arm64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_manylinux_2_17_aarch64_d8431860\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-manylinux2014_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_manylinux_2_17_x86_64_bb43a269\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_musllinux_1_1_x86_64_7dd5adc8\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-musllinux_1_1_x86_64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_musllinux_1_2_aarch64_1492a605\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-musllinux_1_2_aarch64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_cp311_cp311_win_amd64_a274fb2c\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp311-cp311-win_amd64.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_ruamel_yaml_clib_sdist_6c8fbb13\":[{\"filename\":\"ruamel.yaml.clib-0.2.12.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_macosx_14_0_arm64_20b0f8dc\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-macosx_14_0_arm64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_manylinux_2_17_aarch64_943f32bc\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-manylinux2014_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_manylinux_2_17_x86_64_95c3829b\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_musllinux_1_1_x86_64_32621c17\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-musllinux_1_1_x86_64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_musllinux_1_2_aarch64_b82a7c94\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-musllinux_1_2_aarch64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_cp312_cp312_win_amd64_0467c596\":[{\"filename\":\"ruamel.yaml.clib-0.2.12-cp312-cp312-win_amd64.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_ruamel_yaml_clib_sdist_6c8fbb13\":[{\"filename\":\"ruamel.yaml.clib-0.2.12.tar.gz\",\"version\":\"3.12\"}]}",
                 "setuptools": "{\"pigweed_python_packages_310_setuptools_py3_none_any_199466a1\":[{\"filename\":\"setuptools-76.0.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_setuptools_sdist_43b4ee60\":[{\"filename\":\"setuptools-76.0.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_setuptools_py3_none_any_199466a1\":[{\"filename\":\"setuptools-76.0.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_setuptools_sdist_43b4ee60\":[{\"filename\":\"setuptools-76.0.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_setuptools_py3_none_any_199466a1\":[{\"filename\":\"setuptools-76.0.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_setuptools_sdist_43b4ee60\":[{\"filename\":\"setuptools-76.0.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "six": "{\"pigweed_python_packages_310_six_py2_none_any_8abb2f1d\":[{\"filename\":\"six-1.16.0-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_six_sdist_1e61c374\":[{\"filename\":\"six-1.16.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_six_py2_none_any_8abb2f1d\":[{\"filename\":\"six-1.16.0-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_six_sdist_1e61c374\":[{\"filename\":\"six-1.16.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_six_py2_none_any_8abb2f1d\":[{\"filename\":\"six-1.16.0-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_six_sdist_1e61c374\":[{\"filename\":\"six-1.16.0.tar.gz\",\"version\":\"3.12\"}]}",
-                "sniffio": "{\"pigweed_python_packages_310_sniffio_py3_none_any_2f6da418\":[{\"filename\":\"sniffio-1.3.1-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_sniffio_sdist_f4324edc\":[{\"filename\":\"sniffio-1.3.1.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_sniffio_py3_none_any_2f6da418\":[{\"filename\":\"sniffio-1.3.1-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_sniffio_sdist_f4324edc\":[{\"filename\":\"sniffio-1.3.1.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_sniffio_py3_none_any_2f6da418\":[{\"filename\":\"sniffio-1.3.1-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_sniffio_sdist_f4324edc\":[{\"filename\":\"sniffio-1.3.1.tar.gz\",\"version\":\"3.12\"}]}",
                 "snowballstemmer": "{\"pigweed_python_packages_310_snowballstemmer_py2_none_any_c8e1716e\":[{\"filename\":\"snowballstemmer-2.2.0-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_snowballstemmer_sdist_09b16deb\":[{\"filename\":\"snowballstemmer-2.2.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_snowballstemmer_py2_none_any_c8e1716e\":[{\"filename\":\"snowballstemmer-2.2.0-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_snowballstemmer_sdist_09b16deb\":[{\"filename\":\"snowballstemmer-2.2.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_snowballstemmer_py2_none_any_c8e1716e\":[{\"filename\":\"snowballstemmer-2.2.0-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_snowballstemmer_sdist_09b16deb\":[{\"filename\":\"snowballstemmer-2.2.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "soupsieve": "{\"pigweed_python_packages_310_soupsieve_py3_none_any_e72c4ff0\":[{\"filename\":\"soupsieve-2.6-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_soupsieve_sdist_e2e68417\":[{\"filename\":\"soupsieve-2.6.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_soupsieve_py3_none_any_e72c4ff0\":[{\"filename\":\"soupsieve-2.6-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_soupsieve_sdist_e2e68417\":[{\"filename\":\"soupsieve-2.6.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_soupsieve_py3_none_any_e72c4ff0\":[{\"filename\":\"soupsieve-2.6-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_soupsieve_sdist_e2e68417\":[{\"filename\":\"soupsieve-2.6.tar.gz\",\"version\":\"3.12\"}]}",
                 "sphinx": "{\"pigweed_python_packages_310_sphinx_py3_none_any_c2419e21\":[{\"filename\":\"sphinx-7.4.7-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_sphinx_sdist_242f92a7\":[{\"filename\":\"sphinx-7.4.7.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_sphinx_py3_none_any_c2419e21\":[{\"filename\":\"sphinx-7.4.7-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_sphinx_sdist_242f92a7\":[{\"filename\":\"sphinx-7.4.7.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_sphinx_py3_none_any_c2419e21\":[{\"filename\":\"sphinx-7.4.7-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_sphinx_sdist_242f92a7\":[{\"filename\":\"sphinx-7.4.7.tar.gz\",\"version\":\"3.12\"}]}",
@@ -40749,6 +40916,7 @@
                 "types_requests": "{\"pigweed_python_packages_310_types_requests_py3_none_any_56d181c8\":[{\"filename\":\"types_requests-2.31.0.2-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_types_requests_sdist_6aa3f7fa\":[{\"filename\":\"types-requests-2.31.0.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_types_requests_py3_none_any_56d181c8\":[{\"filename\":\"types_requests-2.31.0.2-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_types_requests_sdist_6aa3f7fa\":[{\"filename\":\"types-requests-2.31.0.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_types_requests_py3_none_any_56d181c8\":[{\"filename\":\"types_requests-2.31.0.2-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_types_requests_sdist_6aa3f7fa\":[{\"filename\":\"types-requests-2.31.0.2.tar.gz\",\"version\":\"3.12\"}]}",
                 "types_setuptools": "{\"pigweed_python_packages_310_types_setuptools_py3_none_any_53bf881c\":[{\"filename\":\"types_setuptools-80.9.0.20250822-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_types_setuptools_sdist_070ea771\":[{\"filename\":\"types_setuptools-80.9.0.20250822.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_types_setuptools_py3_none_any_53bf881c\":[{\"filename\":\"types_setuptools-80.9.0.20250822-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_types_setuptools_sdist_070ea771\":[{\"filename\":\"types_setuptools-80.9.0.20250822.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_types_setuptools_py3_none_any_53bf881c\":[{\"filename\":\"types_setuptools-80.9.0.20250822-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_types_setuptools_sdist_070ea771\":[{\"filename\":\"types_setuptools-80.9.0.20250822.tar.gz\",\"version\":\"3.12\"}]}",
                 "types_six": "{\"pigweed_python_packages_310_types_six_py2_none_any_da5748f1\":[{\"filename\":\"types_six-1.16.9-py2.py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_types_six_sdist_04da8bad\":[{\"filename\":\"types-six-1.16.9.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_types_six_py2_none_any_da5748f1\":[{\"filename\":\"types_six-1.16.9-py2.py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_types_six_sdist_04da8bad\":[{\"filename\":\"types-six-1.16.9.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_types_six_py2_none_any_da5748f1\":[{\"filename\":\"types_six-1.16.9-py2.py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_types_six_sdist_04da8bad\":[{\"filename\":\"types-six-1.16.9.tar.gz\",\"version\":\"3.12\"}]}",
+                "types_toml": "{\"pigweed_python_packages_310_types_toml_py3_none_any_627b4777\":[{\"filename\":\"types_toml-0.10.8.20240310-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_types_toml_sdist_3d415013\":[{\"filename\":\"types-toml-0.10.8.20240310.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_types_toml_py3_none_any_627b4777\":[{\"filename\":\"types_toml-0.10.8.20240310-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_types_toml_sdist_3d415013\":[{\"filename\":\"types-toml-0.10.8.20240310.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_types_toml_py3_none_any_627b4777\":[{\"filename\":\"types_toml-0.10.8.20240310-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_types_toml_sdist_3d415013\":[{\"filename\":\"types-toml-0.10.8.20240310.tar.gz\",\"version\":\"3.12\"}]}",
                 "types_urllib3": "{\"pigweed_python_packages_310_types_urllib3_py3_none_any_9683bbb7\":[{\"filename\":\"types_urllib3-1.26.25.14-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_types_urllib3_sdist_229b7f57\":[{\"filename\":\"types-urllib3-1.26.25.14.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_types_urllib3_py3_none_any_9683bbb7\":[{\"filename\":\"types_urllib3-1.26.25.14-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_types_urllib3_sdist_229b7f57\":[{\"filename\":\"types-urllib3-1.26.25.14.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_types_urllib3_py3_none_any_9683bbb7\":[{\"filename\":\"types_urllib3-1.26.25.14-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_types_urllib3_sdist_229b7f57\":[{\"filename\":\"types-urllib3-1.26.25.14.tar.gz\",\"version\":\"3.12\"}]}",
                 "typing_extensions": "{\"pigweed_python_packages_310_typing_extensions_py3_none_any_a1514509\":[{\"filename\":\"typing_extensions-4.14.0-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_typing_extensions_sdist_8676b788\":[{\"filename\":\"typing_extensions-4.14.0.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_typing_extensions_py3_none_any_a1514509\":[{\"filename\":\"typing_extensions-4.14.0-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_typing_extensions_sdist_8676b788\":[{\"filename\":\"typing_extensions-4.14.0.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_typing_extensions_py3_none_any_a1514509\":[{\"filename\":\"typing_extensions-4.14.0-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_typing_extensions_sdist_8676b788\":[{\"filename\":\"typing_extensions-4.14.0.tar.gz\",\"version\":\"3.12\"}]}",
                 "typing_inspection": "{\"pigweed_python_packages_310_typing_inspection_py3_none_any_4ed1cacb\":[{\"filename\":\"typing_inspection-0.4.2-py3-none-any.whl\",\"version\":\"3.10\"}],\"pigweed_python_packages_310_typing_inspection_sdist_ba561c48\":[{\"filename\":\"typing_inspection-0.4.2.tar.gz\",\"version\":\"3.10\"}],\"pigweed_python_packages_311_typing_inspection_py3_none_any_4ed1cacb\":[{\"filename\":\"typing_inspection-0.4.2-py3-none-any.whl\",\"version\":\"3.11\"}],\"pigweed_python_packages_311_typing_inspection_sdist_ba561c48\":[{\"filename\":\"typing_inspection-0.4.2.tar.gz\",\"version\":\"3.11\"}],\"pigweed_python_packages_312_typing_inspection_py3_none_any_4ed1cacb\":[{\"filename\":\"typing_inspection-0.4.2-py3-none-any.whl\",\"version\":\"3.12\"}],\"pigweed_python_packages_312_typing_inspection_sdist_ba561c48\":[{\"filename\":\"typing_inspection-0.4.2.tar.gz\",\"version\":\"3.12\"}]}",
