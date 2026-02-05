@@ -22,8 +22,8 @@ namespace pw::async2 {
 
 /// A `Task` that delegates to a provided function `func`.
 ///
-/// The provided `func` may be any callable (function, lambda, or similar) which
-/// accepts a `Context&` and returns a `Poll<>`.
+/// The provided `func` may be any callable object (function, lambda, or class
+/// with `operator()`) that accepts a `Context&` and returns a `Poll<>`.
 ///
 /// The resulting `Task` implements `Pend` by invoking `func`.
 template <typename Func = Function<Poll<>(Context&)> >
@@ -41,7 +41,7 @@ class FuncTask final : public Task {
   ~FuncTask() override { Deregister(); }
 
  private:
-  Poll<> DoPend(Context& cx) final { return func_(cx); }
+  Poll<> DoPend(Context& cx) override { return func_(cx); }
 
   Func func_;
 };

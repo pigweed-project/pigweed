@@ -16,6 +16,7 @@
 #define PW_LOG_MODULE_NAME "ASYNC_COUNTER"
 
 #include "pw_allocator/libc_allocator.h"
+#include "pw_assert/check.h"
 #include "pw_async2/allocate_task.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"

@@ -52,6 +52,7 @@ pw_add_library(pw_async2 STATIC
     public/pw_async2/context.h
     public/pw_async2/dispatcher.h
     public/pw_async2/future.h
+    public/pw_async2/future_task.h
     public/pw_async2/internal/lock.h
     public/pw_async2/internal/logging.h
     public/pw_async2/internal/owned_task.h
@@ -178,6 +179,16 @@ pw_add_test(pw_async2.future_test
     pw_async2.select
     pw_async2.testing
     pw_compilation_testing._pigweed_only_negative_compilation
+)
+
+pw_add_test(pw_async2.future_task_test
+  SOURCES
+    future_task_test.cc
+  PRIVATE_DEPS
+    pw_async2
+    pw_async2.poll
+    pw_async2.testing
+    pw_async2.value_future
 )
 
 pw_add_library(pw_async2.future_timeout INTERFACE

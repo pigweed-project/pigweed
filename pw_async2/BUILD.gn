@@ -64,6 +64,7 @@ pw_source_set("pw_async2") {
     "public/pw_async2/context.h",
     "public/pw_async2/dispatcher.h",
     "public/pw_async2/future.h",
+    "public/pw_async2/future_task.h",
     "public/pw_async2/internal/owned_task.h",
     "public/pw_async2/runnable_dispatcher.h",
     "public/pw_async2/task.h",
@@ -189,6 +190,7 @@ pw_test("dispatcher_test") {
   deps = [
     ":pw_async2",
     ":testing",
+    ":value_future",
     "$dir_pw_containers:vector",
   ]
   sources = [ "dispatcher_test.cc" ]
@@ -205,6 +207,17 @@ pw_test("future_test") {
   ]
   sources = [ "future_test.cc" ]
   negative_compilation_tests = true
+}
+
+pw_test("future_task_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+  deps = [
+    ":poll",
+    ":pw_async2",
+    ":testing",
+    ":value_future",
+  ]
+  sources = [ "future_task_test.cc" ]
 }
 
 pw_source_set("future_timeout") {

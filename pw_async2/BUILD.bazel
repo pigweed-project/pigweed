@@ -65,6 +65,7 @@ cc_library(
         "public/pw_async2/context.h",
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/future.h",
+        "public/pw_async2/future_task.h",
         "public/pw_async2/internal/owned_task.h",
         "public/pw_async2/runnable_dispatcher.h",
         "public/pw_async2/task.h",
@@ -227,6 +228,7 @@ pw_cc_test(
     deps = [
         ":pw_async2",
         ":testing",
+        ":value_future",
         "//pw_containers:vector",
     ],
 )
@@ -268,6 +270,17 @@ pw_cc_test(
         ":pw_async2",
         ":select",
         ":testing",
+    ],
+)
+
+pw_cc_test(
+    name = "future_task_test",
+    srcs = ["future_task_test.cc"],
+    deps = [
+        ":poll",
+        ":pw_async2",
+        ":testing",
+        ":value_future",
     ],
 )
 
@@ -740,6 +753,7 @@ sphinx_docs_library(
         "//pw_async2/examples:channel.cc",
         "//pw_async2/examples:custom_future.cc",
         "//pw_async2/examples:docs",
+        "//pw_async2/examples:task_helpers.cc",
         "//pw_async2/size_report:channel_size_report",
         "//pw_async2/size_report:full_size_report",
         "//pw_async2/size_report:utilities_size_report",
@@ -765,6 +779,7 @@ filegroup(
         "public/pw_async2/epoll_dispatcher.h",
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
+        "public/pw_async2/future_task.h",
         "public/pw_async2/future_timeout.h",
         "public/pw_async2/internal/config.h",
         "public/pw_async2/internal/owned_task.h",

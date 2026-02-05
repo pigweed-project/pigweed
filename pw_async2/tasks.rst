@@ -19,22 +19,91 @@ For a detailed conceptual explanation of tasks, see
 :ref:`module-pw_async2-informed-poll`. For a hands-on introduction to using
 tasks, see :ref:`module-pw_async2-codelab`.
 
-.. _module-pw_async2-tasks-subclasses:
+--------------------
+Task implementations
+--------------------
+Tasks are created by deriving from :cc:`pw::async2::Task`. See
+:ref:`module-pw_async2-guides-implementing-tasks` for details.
 
--------------------
-Concrete subclasses
--------------------
-Pigweed provides the following concrete subclasses of ``Task``:
+Pigweed also provides several ``Task`` implementations for specific scenarios.
+Use these with caution. Systems should be built around composable tasks. Avoid
+using tasks as callback-style constructions. To realize the full benefits of
+``pw_async2``, implement your system's logic within ``pw_async2`` tasks that
+interact with one another through async primitives like :ref:`futures
+<module-pw_async2-futures>` and :ref:`channels <module-pw_async2-channels>`.
 
-* :cc:`CoroOrElseTask <pw::async2::CoroOrElseTask>`: Delegates to a
-  provided coroutine and executes an ``or_else`` handler function on failure.
-* :cc:`CallbackTask <pw::async2::CallbackTask>`: Invokes a callback after a
-  future is ready. See :ref:`module-pw_async2-tasks-callbacks`.
-* :cc:`FuncTask <pw::async2::FuncTask>`: Delegates to a provided
-  function.
+``FuncTask``: Use a function as a task
+======================================
+:cc:`FuncTask <pw::async2::FuncTask>` is a convenient way to write a simple
+task. ``FuncTask`` implements :cc:`Poll<> Task::DoPend(Context&)
+<pw::async2::Task::DoPend>` with a function or lambda. Like any other task,
+``FuncTask`` task supports suspending and resuming and must return either
+``Pending()`` or ``Ready()``.
 
-You can also :ref:`create your own subclass
-<module-pw_async2-guides-implementing-tasks>`.
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-func-task]
+   :end-before: // DOCSTAG: [pw_async2-examples-func-task]
+
+:cc:`FuncTask <pw::async2::FuncTask>` can create tasks that run a class member
+function in a task. This is helpful when the class spawns multiple
+tasks, so cannot inherit from :cc:`Task <pw::async2::Task>` itself.
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-func-task-class]
+   :end-before: // DOCSTAG: [pw_async2-examples-func-task-class]
+
+.. admonition:: Do not overuse
+   :class: warning
+
+   Tasks usually need to store futures that represent ongoing operations, and a
+   :cc:`FuncTask <pw::async2::FuncTask>` that wraps a lambda function is not
+   well suited for that. If a ``FuncTask`` must store futures or other data,
+   :ref:`convert it to a regular task
+   <module-pw_async2-guides-implementing-tasks>`.
+
+``FutureTask``: Run a future in a task
+======================================
+:cc:`FutureTask <pw::async2::FutureTask>` is a task that runs a single future to
+completion in a task. The value produced by the future is accessible by calling
+:cc:`Wait() <pw::async2::FutureTask::Wait>` or, if the task has been :cc:`joined
+<pw::async2::Task::Join>`, :cc:`value() <pw::async2::FutureTask::value>`.
+``FutureTask`` can take ownership of a future:
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :dedent:
+   :start-after: // DOCSTAG: [pw_async2-examples-future-task-owned]
+   :end-before: // DOCSTAG: [pw_async2-examples-future-task-owned]
+
+or use a reference to a future:
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-future-task-ref]
+   :end-before: // DOCSTAG: [pw_async2-examples-future-task-ref]
+
+.. admonition:: Do not overuse
+   :class: warning
+
+   :cc:`FutureTask <pw::async2::FutureTask>` is intended for test and occasional
+   production use. A ``FutureTask`` does not contain logic, and relying too much
+   on ``FutureTasks`` could push logic out of async tasks, which nullifies the
+   benefits of ``pw_async2``. Creating a task for each future is also less
+   efficient than having one task work with multiple futures.
+
+``CallbackTask``: Bridge between sync and async
+===============================================
+:cc:`CallbackTask <pw::async2::CallbackTask>` invokes a callback after a future
+is ready. This can be used to bridge between async and non-async code. and See
+:ref:`module-pw_async2-tasks-callbacks` for details.
+
+``CoroOrElseTask``: Execute a coroutine
+=======================================
+:cc:`CoroOrElseTask <pw::async2::CoroOrElseTask>` delegates to a
+provided coroutine and executes an ``or_else`` handler function on failure.
+See :ref:`module-pw_async2-coro` for information about coroutines.
 
 .. _module-pw_async2-tasks-callbacks:
 
@@ -213,5 +282,3 @@ If space is a concern, you can set the module configuration option
 :cc:`PW_ASYNC2_DEBUG_WAIT_REASON` to ``0`` to disable wait reason storage
 and logging. Under this configuration, the dispatcher only logs the waker count
 of a sleeping task.
-
-.. _green threads: https://en.wikipedia.org/wiki/Green_thread

@@ -24,13 +24,6 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
-namespace internal {
-
-template <typename T>
-using PendOutputOf = typename decltype(std::declval<T>().Pend(
-    std::declval<Context&>()))::value_type;
-
-}  // namespace internal
 
 /// @submodule{pw_async2,dispatchers}
 

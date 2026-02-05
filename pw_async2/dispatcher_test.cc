@@ -13,6 +13,7 @@
 // the License.
 
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/value_future.h"
 #include "pw_containers/vector.h"
 #include "pw_unit_test/framework.h"
 
@@ -40,20 +41,6 @@ class MockTask : public Task {
     }
     return Pending();
   }
-};
-
-class MockPendable {
- public:
-  MockPendable(Poll<int> value) : value_(value) {}
-  Poll<int> Pend(Context& cx) {
-    PW_ASYNC_STORE_WAKER(
-        cx, last_waker_, "MockPendable is waiting for last_waker");
-    return value_;
-  }
-
- private:
-  Waker last_waker_;
-  Poll<int> value_;
 };
 
 TEST(DispatcherForTest, RunUntilStalledPendsPostedTask) {
@@ -165,16 +152,19 @@ TEST(DispatcherForTest, RunToCompletionPendsMultipleTasks) {
 }
 
 TEST(DispatcherForTest, RunInTaskUntilStalledReturnsOutputOnReady) {
-  MockPendable pollable(Ready(5));
+  auto future = pw::async2::ValueFuture<int>::Resolved(5);
+
   DispatcherForTest dispatcher_for_test;
-  Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(pollable);
+  Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(future);
   EXPECT_EQ(result, Ready(5));
 }
 
 TEST(DispatcherForTest, RunInTaskUntilStalledReturnsPending) {
-  MockPendable pollable(Pending());
+  pw::async2::ValueProvider<int> provider;
+  pw::async2::ValueFuture<int> future = provider.Get();
+
   DispatcherForTest dispatcher_for_test;
-  Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(pollable);
+  Poll<int> result = dispatcher_for_test.RunInTaskUntilStalled(future);
   EXPECT_EQ(result, Pending());
 }
 

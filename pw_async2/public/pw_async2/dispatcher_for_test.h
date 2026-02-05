@@ -16,32 +16,11 @@
 #include <atomic>
 #include <utility>
 
+#include "pw_async2/future_task.h"
 #include "pw_async2/runnable_dispatcher.h"
 #include "pw_async2/waker.h"
 
 namespace pw::async2 {
-namespace internal {
-
-// This should be updated to work for futures instead of generic pendables.
-template <typename Pendable>
-class PendableAsTaskWithOutput : public Task {
- public:
-  using value_type = PendOutputOf<Pendable>;
-  PendableAsTaskWithOutput(Pendable& pendable)
-      : pendable_(pendable), output_(Pending()) {}
-
-  Poll<value_type> TakePoll() { return std::move(output_); }
-
- private:
-  Poll<> DoPend(Context& cx) final {
-    output_ = pendable_.Pend(cx);
-    return output_.Readiness();
-  }
-  Pendable& pendable_;
-  Poll<value_type> output_;
-};
-
-}  // namespace internal
 
 /// @submodule{pw_async2,dispatchers}
 
@@ -71,10 +50,10 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
   /// `RunToCompletion` may block the thread if there are no tasks ready to run.
   void AllowBlocking() { blocking_is_allowed_ = true; }
 
-  template <typename Pendable>
-  Poll<internal::PendOutputOf<Pendable>> RunInTaskUntilStalled(
-      Pendable& pendable) PW_LOCKS_EXCLUDED(internal::lock()) {
-    internal::PendableAsTaskWithOutput<Pendable> task(pendable);
+  /// Runs a future in a `FutureTask` until no progress can be made.
+  template <typename T>
+  auto RunInTaskUntilStalled(T& future) PW_LOCKS_EXCLUDED(internal::lock()) {
+    FutureTask<T&> task(future);
     native().Post(task);
     native().RunUntilStalled();
 

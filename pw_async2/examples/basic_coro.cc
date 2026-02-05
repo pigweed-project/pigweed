@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include "pw_allocator/allocator.h"
+#include "pw_async2/coro_or_else_task.h"
+#include "pw_async2/dispatcher.h"
 #include "pw_status/status.h"
 
 // DOCSTAG: [pw_async2-examples-basic-coro]
@@ -61,12 +64,11 @@ Coro<Status> ForwardingCoro(CoroContext&,
 
 namespace {
 
-using ::pw::OkStatus;
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::ChannelStorage;
 using ::pw::async2::CoroContext;
+using ::pw::async2::CoroOrElseTask;
 using ::pw::async2::CreateSpscChannel;
-using ::pw::async2::Ready;
 
 TEST(CoroExample, ReturnsOk) {
   ChannelStorage<int, 1> storage1;
@@ -78,10 +80,15 @@ TEST(CoroExample, ReturnsOk) {
 
   AllocatorForTest<512> alloc;
   CoroContext coro_cx(alloc);
-  auto coro = ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2));
+  CoroOrElseTask task(
+      ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2)),
+      [](Status) { FAIL(); });
+
   pw::async2::DispatcherForTest dispatcher;
   EXPECT_EQ(sender1.TrySend(42), pw::OkStatus());
-  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(coro), Ready(OkStatus()));
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
   EXPECT_EQ(receiver2.TryReceive().value(), 42);
 }
 

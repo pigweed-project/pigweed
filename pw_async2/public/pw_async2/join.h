@@ -81,13 +81,12 @@ class JoinFuture {
   template <size_t... Is>
   Poll<TupleOfOutputRvalues> TakeOutputs(std::index_sequence<Is...>) {
     return Poll<TupleOfOutputRvalues>(
-        std::forward_as_tuple<internal::PendOutputOf<Futures>...>(
-            TakeOutput<Is>()...));
+        std::forward_as_tuple<FutureValue<Futures>...>(TakeOutput<Is>()...));
   }
 
   /// Takes the result of the future at index ``kTupleIndex``.
   template <size_t kTupleIndex>
-  internal::PendOutputOf<
+  FutureValue<
       typename std::tuple_element<kTupleIndex, std::tuple<Futures...>>::type>&&
   TakeOutput() {
     return std::move(std::get<kTupleIndex>(outputs_).value());
@@ -96,7 +95,7 @@ class JoinFuture {
   static_assert((Future<Futures> && ...),
                 "All types in JoinFuture must be Future types");
   std::tuple<Futures...> futures_;
-  std::tuple<Poll<internal::PendOutputOf<Futures>>...> outputs_;
+  std::tuple<Poll<typename Futures::value_type>...> outputs_;
   FutureState state_;
 };
 

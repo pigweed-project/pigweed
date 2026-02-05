@@ -237,7 +237,8 @@ void DrainChannelToAvoidAssertOnDestruction(Receiver<T>&& channel_receiver) {
         }
       });
 
-  dispatcher.RunInTaskUntilStalled(drain_task).IgnorePoll();
+  dispatcher.Post(drain_task);
+  dispatcher.RunUntilStalled();
 }
 
 TEST(FutureTimeout, SendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
