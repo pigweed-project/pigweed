@@ -39,6 +39,15 @@ namespace pw {
 
 // Forward declarations.
 template <typename T>
+class SharedPtr;
+
+template <typename To, typename From>
+constexpr SharedPtr<To> static_pointer_cast(const SharedPtr<From>& p) noexcept;
+
+template <typename To, typename From>
+constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
+
+template <typename T>
 class WeakPtr;
 
 namespace multibuf::v2 {
@@ -76,11 +85,44 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// Releases any currently-held value.
   ~SharedPtr() { reset(); }
 
+  /// Constructs and object of type `T` from the given `args`, and wraps it in a
+  /// `SharedPtr`.
+  ///
+  /// The returned value may contain null if allocating memory for the object
+  /// fails. Callers must check for null before using the `SharedPtr`.
+  ///
+  /// NOTE: Instances of this type are most commonly constructed using
+  /// `Allocator::MakeShared`.
+  ///
+  /// @param[in]  args         Arguments passed to the object constructor.
+  template <typename... Args>
+  static SharedPtr Create(Allocator* allocator, Args&&... args);
+
+  /// Constructs an array of `count` objects, and wraps it in a `UniquePtr`
+  ///
+  /// The returned value may contain null if allocating memory for the object
+  /// fails. Callers must check for null before using the `UniquePtr`.
+  ///
+  /// NOTE: Instances of this type are most commonly constructed using
+  /// `Allocator::MakeShared`.
+  ///
+  /// @param[in]  allocator    Used to allocate memory.
+  /// @param[in]  count        Number of objects to allocate.
+  /// @param[in]  alignment    Alignment requirement for the array.
+  static SharedPtr Create(Allocator* allocator, size_t count, size_t alignment);
+
   /// Creates an empty (`nullptr`) instance.
   ///
   /// NOTE: Instances of this type are most commonly constructed using
   /// `Allocator::MakeShared`.
   constexpr SharedPtr() noexcept = default;
+
+  /// Constructs a `SharedPtr` from an already-allocated value.
+  ///
+  /// NOTE: Instances of this type are most commonly constructed using
+  /// `Allocator::MakeShared`.
+  constexpr SharedPtr(element_type* value, ControlBlock* control_block)
+      : Base(value), control_block_(control_block) {}
 
   /// Creates an empty (`nullptr`) instance.
   ///
@@ -116,7 +158,7 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
 
   /// Constructs a `SharedPtr<T>` from a `UniquePtr<T>`.
   ///
-  /// NOTE: This constructor differs from `std::shared_ptr(std::unique_ptr&&)`
+  /// NOTE: This constructor differs from `SharedPtr(std::unique_ptr&&)`
   /// in that it takes an l-value reference to the `UniquePtr`. This constructor
   /// must allocate a shared pointer control block. If that allocation fails,
   /// the `UniquePtr` is unmodified and still retains ownership of its object,
@@ -159,6 +201,8 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// (`nullptr`) state until a new value is assigned.
   SharedPtr& operator=(std::nullptr_t) noexcept;
 
+  // Conversions
+
   /// Explicit conversion operator for downcasting.
   ///
   /// If an arbitrary type `A` derives from another type `B`, a shared pointer
@@ -170,12 +214,42 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// pw::SharedPtr<B> b = a1;
   /// pw::SharedPtr<A> a2 = static_cast<pw::SharedPtr<A>>(b);
   /// @endcode
-  template <typename U,
-            typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
-  constexpr explicit operator const SharedPtr<U>&() const {
-    return static_cast<const SharedPtr<U>&>(
-        static_cast<const allocator::internal::BaseManagedPtr&>(*this));
+  template <typename U>
+  constexpr explicit operator SharedPtr<U>() const {
+    return static_pointer_cast<U>(*this);
   }
+
+  /// Creates a new SharedPtr by static casting the given shared pointer.
+  ///
+  /// If an arbitrary type `A` derives from another type `B`, a shared pointer
+  /// to `A` can be automatically upcast to one of type `B`. This function can
+  /// perform the reverse operation and allows specifying only the element
+  /// type.
+  ///
+  /// @code{.cpp}
+  /// pw::SharedPtr<A> a1 = allocator.MakeShared<A>();
+  /// pw::SharedPtr<B> b = a1;
+  /// pw::SharedPtr<A> a2 = static_pointer_cast<A>(b);
+  /// @endcode
+  template <typename To, typename From>
+  friend constexpr SharedPtr<To> static_pointer_cast(
+      const SharedPtr<From>& p) noexcept;
+
+  /// Creates a new SharedPtr by const casting the given shared pointer.
+  ///
+  /// For an arbitrary type `A`, a shared pointer to `A` can be automatically
+  /// converted to one of type `const A`. This function can perform the reverse
+  /// operation.
+  ///
+  /// @code{.cpp}
+  /// pw::SharedPtr<const A> a1 = allocator.MakeShared<const A>();
+  /// pw::SharedPtr<A> a2 = const_pointer_cast<A>(a1);
+  /// @endcode
+  template <typename To, typename From>
+  friend constexpr SharedPtr<To> const_pointer_cast(
+      const SharedPtr<From>& p) noexcept;
+
+  // Comparisons
 
   [[nodiscard]] friend constexpr bool operator==(const SharedPtr& lhs,
                                                  std::nullptr_t) {
@@ -203,20 +277,33 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
     return !(lhs == rhs);
   }
 
+  // Accessors
+
   /// Returns the number of elements allocated.
   ///
   /// This will fail to compile if it is called on a non-array type SharedPtr.
-  size_t size() const {
+  constexpr size_t size() const {
     static_assert(std::is_array_v<T>,
                   "size() cannot be called on non-array types");
-    return control_block_ == nullptr ? 0 : control_block_->size();
+    return control_block_ == nullptr
+               ? 0
+               : (control_block_->size() / sizeof(element_type));
   }
 
   /// Returns the number of shared pointers to the associated object, or 0 if
   /// this object is empty.
-  int32_t use_count() const {
+  constexpr int32_t use_count() const {
     return control_block_ == nullptr ? 0 : control_block_->num_shared();
   }
+
+  /// Checks whether `this` precedes `other` based on an ordering of their
+  /// control blocks.
+  template <typename PtrType>
+  bool owner_before(const PtrType& other) const noexcept {
+    return control_block_ < other.control_block();
+  }
+
+  // Mutators
 
   /// Resets this object to an empty state.
   ///
@@ -228,68 +315,18 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// Swaps the managed pointer and deallocator of this and another object.
   void swap(SharedPtr& other) noexcept;
 
-  /// Checks whether `this` precedes `other` based on an ordering of their
-  /// control blocks.
-  template <typename PtrType>
-  bool owner_before(const PtrType& other) const noexcept {
-    return control_block_ < other.control_block();
-  }
-
  private:
   using Layout = allocator::Layout;
 
-  static constexpr bool is_unbounded_array_v =
-      allocator::internal::is_unbounded_array_v<T>;
-
-  // Allow construction with to the implementation of `MakeShared`.
-  friend class Allocator;
-
-  // Allow SharedPtr<T> to access SharedPtr<U> and vice versa.
+  // Allow SharedPtrs, WeakPtrs, and MultiBufs to access control blocks.
   template <typename>
   friend class SharedPtr;
 
-  // Allow WeakPtr<T> to promote to a SharedPtr<T>.
   template <typename>
   friend class WeakPtr;
 
-  // Allow MultiBufs to decompose SharedPtr<T>.
-  friend class multibuf::v2::internal::GenericMultiBuf;
-
   template <multibuf::v2::Property...>
   friend class multibuf::v2::BasicMultiBuf;
-
-  /// Constructs and object of type `T` from the given `args`, and wraps it in a
-  /// `SharedPtr`
-  ///
-  /// The returned value may contain null if allocating memory for the object
-  /// fails. Callers must check for null before using the `SharedPtr`.
-  ///
-  /// NOTE: Instances of this type are most commonly constructed using
-  /// `Allocator::MakeShared`.
-  ///
-  /// @param[in]  args         Arguments passed to the object constructor.
-  template <typename... Args>
-  static SharedPtr Create(Allocator* allocator, Args&&... args);
-
-  /// Constructs an array of `count` objects, and wraps it in a `UniquePtr`
-  ///
-  /// The returned value may contain null if allocating memory for the object
-  /// fails. Callers must check for null before using the `UniquePtr`.
-  ///
-  /// NOTE: Instances of this type are most commonly constructed using
-  /// `Allocator::MakeShared`.
-  ///
-  /// @param[in]  allocator    Used to allocate memory.
-  /// @param[in]  count        Number of objects to allocate.
-  /// @param[in]  alignment    Alignment requirement for the array.
-  static SharedPtr Create(Allocator* allocator, size_t count, size_t alignment);
-
-  /// Constructs a `SharedPtr` from an already-allocated value.
-  ///
-  /// NOTE: Instances of this type are most commonly constructed using
-  /// `Allocator::MakeShared`.
-  SharedPtr(element_type* value, ControlBlock* control_block)
-      : Base(value), control_block_(control_block) {}
 
   ControlBlock* control_block() const { return control_block_; }
 
@@ -315,12 +352,11 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
 
 template <typename T>
 SharedPtr<T>::SharedPtr(UniquePtr<T>& owned) noexcept {
+  size_t size = sizeof(element_type);
   if constexpr (std::is_array_v<T>) {
-    control_block_ =
-        ControlBlock::Create(owned.deallocator(), owned.get(), owned.size());
-  } else {
-    control_block_ = ControlBlock::Create(owned.deallocator(), owned.get(), 1);
+    size *= owned.size();
   }
+  control_block_ = ControlBlock::Create(owned.deallocator(), owned.get(), size);
   if (control_block_ != nullptr) {
     Base::CopyFrom(owned);
     owned.Release();
@@ -331,7 +367,7 @@ template <typename T>
 template <typename... Args>
 SharedPtr<T> SharedPtr<T>::Create(Allocator* allocator, Args&&... args) {
   static_assert(!std::is_array_v<T>);
-  auto* control_block = ControlBlock::Create(allocator, Layout::Of<T>(), 1);
+  auto* control_block = ControlBlock::Create(allocator, Layout::Of<T>());
   if (control_block == nullptr) {
     return nullptr;
   }
@@ -345,11 +381,11 @@ SharedPtr<T> SharedPtr<T>::Create(Allocator* allocator,
                                   size_t alignment) {
   static_assert(allocator::internal::is_unbounded_array_v<T>);
   Layout layout = Layout::Of<T>(count).Align(alignment);
-  auto* control_block = ControlBlock::Create(allocator, layout, count);
+  auto* control_block = ControlBlock::Create(allocator, layout);
   if (control_block == nullptr) {
     return nullptr;
   }
-  auto* t = new (control_block->data()) std::remove_extent_t<T>[count];
+  auto* t = new (control_block->data()) element_type[count];
   return SharedPtr<T>(t, control_block);
 }
 
@@ -382,6 +418,24 @@ SharedPtr<T>& SharedPtr<T>::operator=(std::nullptr_t) noexcept {
   return *this;
 }
 
+template <typename To, typename From>
+constexpr SharedPtr<To> static_pointer_cast(const SharedPtr<From>& p) noexcept {
+  using PtrType = typename SharedPtr<To>::element_type*;
+  if (p.control_block_ != nullptr) {
+    p.control_block_->IncrementShared();
+  }
+  return SharedPtr<To>{static_cast<PtrType>(p.get()), p.control_block_};
+}
+
+template <typename To, typename From>
+constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept {
+  using PtrType = typename SharedPtr<To>::element_type*;
+  if (p.control_block_ != nullptr) {
+    p.control_block_->IncrementShared();
+  }
+  return SharedPtr<To>{const_cast<PtrType>(p.get()), p.control_block_};
+}
+
 template <typename T>
 void SharedPtr<T>::reset() noexcept {
   if (*this == nullptr) {
@@ -398,7 +452,7 @@ void SharedPtr<T>::reset() noexcept {
   Allocator* allocator = control_block_->allocator();
   if (!Base::HasCapability(allocator, allocator::kSkipsDestroy)) {
     if constexpr (std::is_array_v<T>) {
-      Base::Destroy(control_block_->size());
+      Base::Destroy(size());
     } else {
       Base::Destroy();
     }

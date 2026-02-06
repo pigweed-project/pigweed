@@ -24,9 +24,8 @@
 
 namespace pw::allocator::internal {
 
-ControlBlock* ControlBlock::Create(Allocator* allocator,
-                                   Layout layout,
-                                   size_t size) {
+ControlBlock* ControlBlock::Create(Allocator* allocator, Layout layout) {
+  size_t size = layout.size();
   layout = layout.Extend(AlignUp(sizeof(ControlBlock), layout.alignment()));
   void* ptr = allocator->Allocate(layout);
   if (ptr == nullptr) {

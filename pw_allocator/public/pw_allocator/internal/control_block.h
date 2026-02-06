@@ -26,6 +26,14 @@ namespace pw {
 class Allocator;
 class Deallocator;
 
+// Forward declarations for friending.
+template <typename T>
+class SharedPtr;
+
+namespace multibuf::v2::internal {
+class GenericMultiBuf;
+}  // namespace multibuf::v2::internal
+
 namespace allocator::internal {
 
 /// Object metadata used to track ref counts of shared and weak pointers.
@@ -49,32 +57,6 @@ class ControlBlock final {
     kFree,
   };
 
-  /// Factory method for allocating memory with an attached control block.
-  ///
-  /// If allocation fails, this call will return null.
-  ///
-  /// @param  allocator   Allocator to use to provide memory.
-  /// @param  layout      Layout of an object to allocate and associate with a
-  ///                     control block.
-  /// @param  size        Number of objects if allocating an array, or 1.
-  static ControlBlock* Create(Allocator* allocator, Layout layout, size_t size);
-
-  /// Factory method for allocating a control block for previously allocated
-  /// memory.
-  ///
-  /// The parameters are expected to come from a `UniquePtr`.
-  ///
-  /// If allocation fails, this call will return null.
-  ///
-  /// @param  deallocator Deallocator to use to provide memory. Must have the
-  ///                     `kCanAllocateArbitraryLayout` capability, i.e. be an
-  ///                     upcast allocator.
-  /// @param  data        Previously allocated memory.
-  /// @param  size        Number of objects if data is an array, or 1.
-  static ControlBlock* Create(Deallocator* deallocator,
-                              void* data,
-                              size_t size);
-
   /// Destructor.
   ///
   /// If this control block was `Create`d for previously allocated memory, that
@@ -87,8 +69,7 @@ class ControlBlock final {
   /// Returns a pointer to the memory location of the associated object.
   constexpr void* data() const { return data_; }
 
-  /// Returns the number of underlying objects if the shared pointer is to an
-  /// array type, otherwise returns 1.
+  /// Returns the number of bytes pointed at by the shared pointer.
   constexpr size_t size() const { return GetSize(); }
 
   /// Returns the number of active shared pointers to the associated object.
@@ -126,6 +107,36 @@ class ControlBlock final {
   Action DecrementWeak();
 
  private:
+  // Allow SharedPtrs and GenericMultiBuf to create control blocks.
+  template <typename T>
+  friend class ::pw::SharedPtr;
+  friend class ::pw::multibuf::v2::internal::GenericMultiBuf;
+
+  /// Factory method for allocating memory with an attached control block.
+  ///
+  /// If allocation fails, this call will return null.
+  ///
+  /// @param  allocator   Allocator to use to provide memory.
+  /// @param  layout      Layout of an object to allocate and associate with a
+  ///                     control block.
+  static ControlBlock* Create(Allocator* allocator, Layout layout);
+
+  /// Factory method for allocating a control block for previously allocated
+  /// memory.
+  ///
+  /// The parameters are expected to come from a `UniquePtr`.
+  ///
+  /// If allocation fails, this call will return null.
+  ///
+  /// @param  deallocator Deallocator to use to provide memory. Must have the
+  ///                     `kCanAllocateArbitraryLayout` capability, i.e. be an
+  ///                     upcast allocator.
+  /// @param  data        Previously allocated memory.
+  /// @param  size        Size of the previously allocated memory, in bytes.
+  static ControlBlock* Create(Deallocator* deallocator,
+                              void* data,
+                              size_t size);
+
   /// Creates a new control block with an initial shared pointer count of 1.
   ControlBlock(Allocator* allocator, void* data, size_t size, bool coallocated);
 

@@ -147,18 +147,24 @@ and destroy objects:
    :start-after: [pw_allocator-examples-basic-new_delete]
    :end-before: [pw_allocator-examples-basic-new_delete]
 
-Use UniquePtr<T>
-================
+Use smart pointers
+==================
 Where possible, using `RAII`_ is a recommended approach for making memory
 management easier and less error-prone.
-:cc:`UniquePtr <pw::UniquePtr>` is a smart pointer that makes
-allocating and deallocating memory more transparent:
+:cc:`UniquePtr <pw::UniquePtr>` is a smart pointer that resembles
+``std::unique_ptr`` and makes allocating and deallocating memory more
+transparent:
 
 .. literalinclude:: examples/basic.cc
    :language: cpp
    :linenos:
    :start-after: [pw_allocator-examples-basic-make_unique]
    :end-before: [pw_allocator-examples-basic-make_unique]
+
+In a similar fashion, :cc:`SharedPtr <pw::SharedPtr>` and
+:cc:`WeakPtr <pw::WeakPtr>` are smart pointers that resemble
+``std::shared_ptr`` and ``std::weak_ptr``, respectively, and share ownership of
+allocated memory.
 
 Determine an allocation's Layout
 ================================
