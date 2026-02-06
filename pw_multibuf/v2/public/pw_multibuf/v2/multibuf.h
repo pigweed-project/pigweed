@@ -1521,14 +1521,12 @@ class Instance {
   template <Property... kProperties>
   constexpr Instance(BasicMultiBuf<kProperties...>&& mb)
       : base_(std::move(static_cast<internal::GenericMultiBuf&>(mb))) {
-    internal::AssertIsConvertible<BasicMultiBuf<kProperties...>,
-                                  MultiBufType>();
+    internal::AssertIsAssignable<BasicMultiBuf<kProperties...>, MultiBufType>();
   }
 
   template <Property... kProperties>
   constexpr Instance& operator=(BasicMultiBuf<kProperties...>&& mb) {
-    internal::AssertIsConvertible<BasicMultiBuf<kProperties...>,
-                                  MultiBufType>();
+    internal::AssertIsAssignable<BasicMultiBuf<kProperties...>, MultiBufType>();
     base_ = std::move(static_cast<internal::GenericMultiBuf&>(mb));
     return *this;
   }

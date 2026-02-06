@@ -237,6 +237,20 @@ TEST_F(MultiBufTest, CheckAllowedConversions) {
   std::ignore = tmbi->as<TrackedMultiBuf>();
 }
 
+TEST_F(MultiBufTest, CheckAllowedAssignments) {
+  MultiBuf::Instance mbi(allocator_);
+
+  // Non-const can become const.
+  ConstMultiBuf::Instance cmbi = std::move(*mbi);
+
+  // Flat can become layered.
+  FlatMultiBuf::Instance fmbi(allocator_);
+  mbi = std::move(*fmbi);
+
+  // Untracked can become tracked.
+  TrackedConstMultiBuf::Instance tcmbi = std::move(*mbi);
+}
+
 #if PW_NC_TEST(CannotConvertConstMultiBufToNonMultiBuf)
 PW_NC_EXPECT("Only conversion to other MultiBuf types are supported.");
 [[maybe_unused]] void ShouldAssert(ConstMultiBuf& mb) {
@@ -463,19 +477,19 @@ PW_NC_EXPECT("Only conversion to other MultiBuf types are supported.");
   std::ignore = mb.as<pw::ByteSpan>();
 }
 #elif PW_NC_TEST(CannotConvertConstMultiBufToMultiBufInstance)
-PW_NC_EXPECT("Read-only data cannot be converted to mutable data.");
+PW_NC_EXPECT("Read-only data cannot be assigned to mutable data.");
 [[maybe_unused]] MultiBuf::Instance ShouldAssert(ConstMultiBuf&& mb) {
   return MultiBuf::Instance(std::move(mb));
 }
-#elif PW_NC_TEST(CannotConvertMultiBufToFlatMultiBufInstance)
-PW_NC_EXPECT("Flat MultiBufs do not have layer-related methods.");
-[[maybe_unused]] MultiBuf::Instance ShouldAssert(FlatMultiBuf&& mb) {
-  return MultiBuf::Instance(std::move(mb));
+#elif PW_NC_TEST(CannotAssignMultiBufToFlatMultiBufInstance)
+PW_NC_EXPECT("Layered MultiBufs cannot be assigned to flat MultiBufs.");
+[[maybe_unused]] MultiBuf::Instance ShouldAssert(MultiBuf&& mb) {
+  return FlatMultiBuf::Instance(std::move(mb));
 }
-#elif PW_NC_TEST(CannotConvertTrackedMultiBufToMultiBufInstance)
-PW_NC_EXPECT("Untracked MultiBufs do not have observer-related methods.");
-[[maybe_unused]] TrackedMultiBuf::Instance ShouldAssert(MultiBuf&& mb) {
-  return TrackedMultiBuf::Instance(std::move(mb));
+#elif PW_NC_TEST(CannotAssignMultiBufToTrackedMultiBufInstance)
+PW_NC_EXPECT("Tracked MultiBufs cannot be assigned to untracked MultiBufs.");
+[[maybe_unused]] TrackedMultiBuf::Instance ShouldAssert(TrackedMultiBuf&& mb) {
+  return MultiBuf::Instance(std::move(mb));
 }
 
 #endif  // PW_NC_TEST

@@ -81,7 +81,12 @@ struct IsBasicMultiBuf<BasicMultiBuf<kProperties...>> : public std::true_type {
 };
 
 /// SFINAE-style type that can be used to enable methods only when a MultiBuf
-/// can be converted to another MultiBuf type.
+/// can be "converted" to another MultiBuf type. When converting, the object is
+/// unchanged, but the resulting type is as or more limited in its methods than
+/// the original type.
+///
+/// Thus, a `MultiBuf::Instance` may be converted to a `FlatMultiBuf&`, but a
+/// `FlatMultiBuf::Instance` may NOT be converted to a `MultiBuf&`.
 template <typename From, typename To>
 using EnableIfConvertible =
     std::enable_if_t<std::is_same_v<To, GenericMultiBuf> ||
@@ -95,8 +100,11 @@ using EnableIfConvertible =
                       // methods.
                       (From::is_observable() || !To::is_observable()))>;
 
-/// Performs the same checks as EnableIfConvertible, but generates a
+/// Performs the same checks as `EnableIfConvertible`, but generates a
 /// static_assert with a helpful message if any condition is not met.
+///
+/// Compare with `AssertIsAssignable`, which checks whether a `MultiBuf` can be
+/// stored in a variable of a different type.
 template <typename From, typename To>
 static constexpr void AssertIsConvertible() {
   if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
@@ -108,6 +116,28 @@ static constexpr void AssertIsConvertible() {
                   "Flat MultiBufs do not have layer-related methods.");
     static_assert(From::is_observable() || !To::is_observable(),
                   "Untracked MultiBufs do not have observer-related methods.");
+  }
+}
+
+/// Performs checks that one type of MultiBuf can be move-assigned to a MultiBuf
+/// of another type. When assigning, the object's state must be preserved and
+/// can only be moved into a type that is as or less restrictive than its
+/// current type.
+///
+/// Thus, a `FlatMultiBuf::Instance` may be moved into a `MultiBuf::Instance`,
+/// but a `MultiBuf::Instance` may NOT be moved into a `FlatMultiBuf::Instance`.
+template <typename From, typename To>
+static constexpr void AssertIsAssignable() {
+  if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
+    static_assert(IsBasicMultiBuf<To>::value,
+                  "Only assignment to other MultiBuf types are supported.");
+    static_assert(!From::is_const() || To::is_const(),
+                  "Read-only data cannot be assigned to mutable data.");
+    static_assert(!From::is_layerable() || To::is_layerable(),
+                  "Layered MultiBufs cannot be assigned to flat MultiBufs.");
+    static_assert(
+        !From::is_observable() || To::is_observable(),
+        "Tracked MultiBufs cannot be assigned to untracked MultiBufs.");
   }
 }
 
