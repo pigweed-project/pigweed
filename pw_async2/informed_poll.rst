@@ -153,8 +153,8 @@ Wakers: Progress updates for the dispatcher
 When a task signals to the dispatcher that it can't make any more progress, the
 task must ensure that something will eventually trigger it to be run again.
 This is accomplished via :cc:`Wakers <pw::async2::Waker>`. When a future's
-value is ready, the future invokes a waker to inform the dispatcher that its
-parent task can make more progress.  This mechanism prevents the ``Dispatcher``
+value is ready, the future signals a waker to inform the dispatcher that its
+parent task can make more progress. This mechanism prevents the ``Dispatcher``
 from having to wastefully poll tasks that aren't ready, allowing the task to
 sleep and save power when no work can be done.
 
@@ -163,6 +163,35 @@ they are often an implementation detail that you usually don't need to think
 about. Pigweed-provided futures like :cc:`ValueFuture
 <pw::async2::ValueFuture>` automatically store and invoke wakers on your
 behalf.
+
+------------------------------------------------
+Comparison with traditional callback-based async
+------------------------------------------------
+The typical way to structure asynchronous operations in system code is through
+callbacks invoked when the operation completes. While familiar, this approach
+leads to issues in several areas:
+
+- State management: callers often need to invoke a series of async operations
+  in order where callbacks trigger other callbacks, requiring complicated
+  context management.
+- Ownership and lifetimes: it can be unclear who owns the data passed to a
+  callback and how long it is valid.
+- Execution context: the callback could run on a different thread or in an ISR,
+  making certain operations unsafe to perform.
+- Debugging: stack traces don't include much useful information, and it can be
+  difficult to determine who originally started the operation.
+
+``pw_async2`` addresses these issues by promoting:
+
+- Encapsulating state: Tasks and futures are objects that hold their own state.
+  There is no need to manually pack context into ``void*`` arguments.
+- Explicit ownership: The task that owns the future manages its lifetime. If the
+  task is destroyed, its futures are also destroyed, preventing use-after-free
+  and similar lifetime bugs.
+- Predictable execution: All tasks run on the dispatcher they are posted to, so
+  you know exactly which thread and stack is executing your code.
+- Inspectability: Since tasks are objects, they can be inspected in a debugger
+  or by ``pw_async2`` tooling to see exactly what they are waiting for.
 
 .. _module-pw_async2-informed-poll-rust:
 
@@ -181,6 +210,27 @@ you can achieve a similar ergonomic benefit by using
 :ref:`coroutines <module-pw_async2-coro>`, which allow you to ``co_await``
 futures. Without coroutines, you manually manage the state of futures within a
 :cc:`Task <pw::async2::Task>`.
+
+As a result of this, Pigweed's ``Future`` concept includes states in its core
+API---empty, pendable, and complete---to make them easier to work with manually
+when writing a chain of async operations within a ``Task``. An empty future is
+uninitialized and does not represent a pending operation, indicating that the
+task should start one. Similarly, a completed future signals that the operation
+has completed and the task should move on to its next step.
+
+---------
+Evolution
+---------
+Since the proposal in :ref:`SEED 0112 <seed-0112>`, the design of ``pw_async2``
+has evolved in several ways. The most significant change was the formalization
+of futures as the standardized interface for asynchronous operations, replacing
+ad-hoc "pendable functions" as originally proposed.
+
+"Pendable functions" were simply any C++ function that returned a ``Poll<T>``.
+While low-overhead and flexible, this design lacked a standard way to manage the
+lifetime and ownership of an asynchronous operation's state and ambiguity about
+who could run the operation and when. The lack of a standardized interface also
+made these functions difficult to compose.
 
 .. _Future: https://doc.rust-lang.org/std/future/trait.Future.html
 .. _Stream: https://docs.rs/futures/latest/futures/prelude/trait.Stream.html
