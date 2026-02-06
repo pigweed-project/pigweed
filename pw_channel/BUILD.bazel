@@ -305,42 +305,9 @@ pw_cc_test(
 )
 
 cc_library(
-    name = "packet_proxy",
-    srcs = ["basic_proxy.cc"],
-    hdrs = [
-        "public/pw_channel/internal/basic_proxy.h",
-        "public/pw_channel/packet_proxy.h",
-        "public/pw_channel/packet_proxy_task.h",
-    ],
-    copts = ["-Wno-deprecated-declarations"],
-    implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    deps = [
-        ":packet_channel",
-        "//pw_allocator",
-        "//pw_allocator:chunk_pool",
-        "//pw_async2",
-        "//pw_containers:inline_async_queue",
-    ],
-)
-
-cc_library(
     name = "properties",
     hdrs = ["public/pw_channel/properties.h"],
     strip_include_prefix = "public",
-)
-
-pw_cc_test(
-    name = "packet_proxy_test",
-    srcs = ["packet_proxy_test.cc"],
-    copts = ["-Wno-deprecated-declarations"],
-    deps = [
-        ":packet_proxy",
-        ":test_packet_channel",
-        "//pw_allocator:testing",
-        "//pw_async2",
-        "//pw_async2:testing",
-    ],
 )
 
 filegroup(

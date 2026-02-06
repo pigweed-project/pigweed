@@ -200,7 +200,6 @@ pw_test_group("tests") {
     ":forwarding_channel_test",
     ":loopback_channel_test",
     ":packet_channel_test",
-    ":packet_proxy_test",
     ":stream_channel_test",
     ":test_packet_channel_test",
   ]
@@ -256,34 +255,4 @@ pw_test("test_packet_channel_test") {
     dir_pw_result,
   ]
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-}
-
-pw_source_set("packet_proxy") {
-  public_configs = [ ":public_include_path" ]
-  public = [
-    "public/pw_channel/internal/basic_proxy.h",
-    "public/pw_channel/packet_proxy.h",
-    "public/pw_channel/packet_proxy_task.h",
-  ]
-  sources = [ "basic_proxy.cc" ]
-  public_deps = [
-    ":packet_channel",
-    "$dir_pw_allocator:chunk_pool",
-    "$dir_pw_async2:pw_async2",
-    "$dir_pw_containers:inline_async_queue",
-    dir_pw_allocator,
-  ]
-  cflags = [ "-Wno-deprecated-declarations" ]
-}
-
-pw_test("packet_proxy_test") {
-  sources = [ "packet_proxy_test.cc" ]
-  deps = [
-    ":packet_proxy",
-    ":test_packet_channel",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_async2:testing",
-  ]
-  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-  cflags = [ "-Wno-deprecated-declarations" ]
 }
