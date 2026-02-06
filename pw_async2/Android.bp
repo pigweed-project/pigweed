@@ -36,22 +36,22 @@ cc_library_static {
         "pw_assert",
         "pw_chrono",
         "pw_log",
-        "pw_memory",
         "pw_sync",
     ],
     export_header_lib_headers: [
         "pw_assert",
         "pw_chrono",
         "pw_log",
-        "pw_memory",
         "pw_sync",
     ],
     static_libs: [
         "pw_containers",
+        "pw_memory",
         "pw_string",
         "pw_tokenizer",
     ],
     export_static_lib_headers: [
+        "pw_memory",
         "pw_string",
     ],
 }

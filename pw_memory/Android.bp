@@ -16,7 +16,7 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-cc_library_headers {
+cc_library_static {
     name: "pw_memory",
     defaults: [
         "pw_android_common_target_support",
