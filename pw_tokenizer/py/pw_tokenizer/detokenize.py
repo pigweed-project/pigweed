@@ -509,21 +509,43 @@ class AutoUpdatingDetokenizer(Detokenizer):
         min_poll_period_s: float = 1.0,
         pool: Executor = ThreadPoolExecutor(max_workers=1),
         prefix: str | bytes = encode.NESTED_TOKEN_PREFIX,
+        extra_databases: Iterable = (),
     ) -> None:
+        """Constructs the AutoUpdatingDetokenizer.
+
+        Args:
+          *paths_or_files: a path or string to an ELF or CSV path with the token
+              database
+          min_poll_period_s: the minimum time between polls in seconds
+          pool: thread executor pool
+          prefix: a one-character byte string that signals the start of a
+              message
+          extra_databases: an optional tokens.Database list that is always
+              merged with the paths_or_files.
+              Note: adding or removing tokens form this database is not visible
+              to the underlying Detokenizer. However, these databases are
+              re-loaded when a path changes.
+        """
         self.paths = tuple(self._DatabasePath(path) for path in paths_or_files)
         self.min_poll_period_s = min_poll_period_s
         self._last_checked_time: float = time.time()
         # Thread pool to use for loading the databases. Limit to a single
         # worker since this is low volume and not time critical.
         self._pool = pool
-        super().__init__(*(path.load() for path in self.paths), prefix=prefix)
+        self._extra_databases = list(extra_databases)
+        super().__init__(
+            *([path.load() for path in self.paths] + self._extra_databases),
+            prefix=prefix,
+        )
 
     def __del__(self) -> None:
         if hasattr(self, '_pool'):
             self._pool.shutdown(wait=False)
 
     def _reload_paths(self) -> None:
-        self._initialize_database([path.load() for path in self.paths])
+        self._initialize_database(
+            [path.load() for path in self.paths] + self._extra_databases
+        )
 
     def _reload_if_changed(self) -> None:
         if time.time() - self._last_checked_time >= self.min_poll_period_s:

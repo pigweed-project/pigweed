@@ -674,6 +674,89 @@ class AutoUpdatingDetokenizerTest(unittest.TestCase):
                 pool=InlinePoolExecutor(),
             )
 
+    def test_extra_databases(self, mock_getmtime) -> None:
+        """Tests that extra_databases are merged and survive reloads."""
+        db = database.load_token_database(
+            io.BytesIO(ELF_WITH_TOKENIZER_SECTIONS)
+        )
+        extra_token = 0x1234
+        extra_db = tokens.Database(
+            [tokens.TokenizedStringEntry(extra_token, 'extra token')]
+        )
+
+        the_time = [100]
+        mock_getmtime.side_effect = lambda _: the_time[0]
+
+        with tempfile.NamedTemporaryFile('wb', delete=False) as file:
+            try:
+                tokens.write_binary(db, file.file)  # type: ignore[arg-type]
+                file.close()
+
+                pool = InlinePoolExecutor()
+                detok = detokenize.AutoUpdatingDetokenizer(
+                    file.name,
+                    min_poll_period_s=0,
+                    pool=pool,
+                    extra_databases=[extra_db],
+                )
+
+                # Both the file tokens and the extra token should be present.
+                self.assertTrue(detok.detokenize(JELLO_WORLD_TOKEN).ok())
+                self.assertTrue(
+                    detok.detokenize(struct.pack('<I', extra_token)).ok()
+                )
+                self.assertEqual(
+                    str(detok.detokenize(struct.pack('<I', extra_token))),
+                    'extra token',
+                )
+
+                # Update the file and trigger a reload.
+                the_time[0] += 1
+                with open(file.name, 'wb') as fd:
+                    # Write an empty database to the file.
+                    tokens.write_binary(tokens.Database(), fd)
+
+                # The file token should be gone, but the extra token should
+                # remain.
+                self.assertFalse(detok.detokenize(JELLO_WORLD_TOKEN).ok())
+                self.assertTrue(
+                    detok.detokenize(struct.pack('<I', extra_token)).ok()
+                )
+                self.assertEqual(
+                    str(detok.detokenize(struct.pack('<I', extra_token))),
+                    'extra token',
+                )
+
+            finally:
+                os.unlink(file.name)
+
+    def test_extra_databases_multiple_and_iterable(self, mock_getmtime) -> None:
+        """Tests that multiple extra_databases and iterables are supported."""
+        db1 = tokens.Database([tokens.TokenizedStringEntry(0x1, 'token 1')])
+        db2 = tokens.Database([tokens.TokenizedStringEntry(0x2, 'token 2')])
+
+        mock_getmtime.return_value = 100
+
+        # Test with a generator of multiple databases
+        def db_gen():
+            yield db1
+            yield db2
+
+        detok = detokenize.AutoUpdatingDetokenizer(
+            extra_databases=db_gen(),
+            min_poll_period_s=0,
+            pool=InlinePoolExecutor(),
+        )
+
+        self.assertTrue(detok.detokenize(struct.pack('<I', 0x1)).ok())
+        self.assertEqual(
+            str(detok.detokenize(struct.pack('<I', 0x1))), 'token 1'
+        )
+        self.assertTrue(detok.detokenize(struct.pack('<I', 0x2)).ok())
+        self.assertEqual(
+            str(detok.detokenize(struct.pack('<I', 0x2))), 'token 2'
+        )
+
 
 def _next_char(message: bytes) -> bytes:
     return bytes(b + 1 for b in message)
