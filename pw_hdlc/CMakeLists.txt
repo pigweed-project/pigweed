@@ -134,7 +134,6 @@ pw_add_library(pw_hdlc.router STATIC
   PUBLIC_DEPS
     pw_hdlc.decoder
     pw_async2
-    pw_async2.poll
     pw_containers.vector
     pw_multibuf.allocator
     pw_channel
@@ -188,7 +187,7 @@ pw_add_test(pw_hdlc.router_test
   SOURCES
     router_test.cc
   PRIVATE_DEPS
-    pw_async2.func_task
+    pw_async2
     pw_async2.testing
     pw_hdlc.router
     pw_allocator.testing

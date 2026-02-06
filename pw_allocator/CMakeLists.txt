@@ -97,7 +97,6 @@ pw_add_library(pw_allocator.async_pool STATIC
     pw_allocator
     pw_allocator.pool
     pw_async2
-    pw_async2.poll
   SOURCES
     async_pool.cc
 )
@@ -652,7 +651,6 @@ pw_add_test(pw_allocator.async_pool_test
     pw_allocator.testing
     pw_allocator.testing
     pw_async2
-    pw_async2.func_task
     pw_async2.testing
   GROUPS
     modules

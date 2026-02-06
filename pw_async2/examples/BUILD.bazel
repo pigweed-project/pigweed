@@ -96,7 +96,6 @@ pw_cc_test(
     srcs = ["task_helpers.cc"],
     deps = [
         "//pw_async2",
-        "//pw_async2:func_task",
         "//pw_async2:testing",
         "//pw_async2:value_future",
         "//pw_thread:test_thread_context",
@@ -111,10 +110,10 @@ pw_cc_test(
     deps = [
         "//pw_allocator:libc_allocator",
         "//pw_assert:check",
+        "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:coro",
         "//pw_async2:coro_or_else_task",
-        "//pw_async2:func_task",
         "//pw_async2:future_timeout",
         "//pw_async2:select",
         "//pw_async2:system_time_provider",
@@ -149,7 +148,7 @@ pw_cc_test(
     srcs = ["unit_test.cc"],
     deps = [
         "//pw_allocator:testing",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_async2:value_future",
     ],
@@ -160,8 +159,8 @@ pw_cc_test(
     srcs = ["custom_future.cc"],
     deps = [
         "//pw_assert:check",
+        "//pw_async2",
         "//pw_async2:basic_dispatcher",
-        "//pw_async2:func_task",
         "//pw_digital_io",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",

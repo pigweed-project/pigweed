@@ -169,7 +169,6 @@ cc_library(
     deps = [
         ":allocator",
         "//pw_async2",
-        "//pw_async2:poll",
         "//pw_multibuf:config",
     ],
 )
@@ -182,7 +181,7 @@ pw_cc_test(
     features = ["-conversion_warnings"],
     deps = [
         ":allocator_async",
-        "//pw_async2:poll",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_multibuf:allocator",
     ],

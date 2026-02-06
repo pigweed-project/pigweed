@@ -123,7 +123,6 @@ pw_source_set("async_pool") {
   public_deps = [
     ":pool",
     ":pw_allocator",
-    "$dir_pw_async2:poll",
     "$dir_pw_async2:pw_async2",
   ]
   sources = [ "async_pool.cc" ]
@@ -596,7 +595,6 @@ pw_test("async_pool_test") {
     ":chunk_pool",
     ":pw_allocator",
     ":testing",
-    "$dir_pw_async2:func_task",
     "$dir_pw_async2:testing",
   ]
   sources = [ "async_pool_test.cc" ]

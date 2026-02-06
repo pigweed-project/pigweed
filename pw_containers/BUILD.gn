@@ -122,7 +122,6 @@ pw_source_set("async_count_and_capacity") {
   visibility = [ ":*" ]
   public_deps = [
     ":deque_common",
-    "$dir_pw_async2:poll",
     "$dir_pw_async2:pw_async2",
   ]
 }
@@ -572,8 +571,6 @@ pw_test("inline_async_deque_test") {
   deps = [
     ":inline_async_deque",
     ":test_helpers",
-    "$dir_pw_async2:func_task",
-    "$dir_pw_async2:poll",
     "$dir_pw_async2:testing",
     "$dir_pw_async2:testing",
     "$dir_pw_status",
@@ -650,8 +647,6 @@ pw_test("inline_async_queue_test") {
   sources = [ "inline_async_queue_test.cc" ]
   deps = [
     ":inline_async_queue",
-    "$dir_pw_async2:func_task",
-    "$dir_pw_async2:poll",
     "$dir_pw_async2:testing",
     dir_pw_status,
   ]

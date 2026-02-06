@@ -22,7 +22,6 @@ pw_add_library(pw_channel INTERFACE
   PUBLIC_DEPS
     pw_assert
     pw_async2
-    pw_async2.poll
     pw_bytes
     pw_channel.properties
     pw_memory._sibling_cast
@@ -73,7 +72,6 @@ pw_add_test(pw_channel.packet_channel_test
     pw_channel.packet_channel
     pw_allocator.allocator
     pw_async2
-    pw_async2.poll
     pw_async2.testing
     pw_containers
     pw_unit_test
@@ -181,11 +179,11 @@ pw_add_test(pw_channel.stream_channel_test
   SOURCES
     stream_channel_test.cc
   PRIVATE_DEPS
+    pw_async2
+    pw_async2.testing
     pw_channel.stream_channel
-    pw_async2.func_task
     pw_multibuf.testing
     pw_multibuf.v1.allocator_async
-    pw_async2.testing
     pw_stream
     pw_stream.mpsc_stream
     pw_thread.thread
@@ -213,8 +211,6 @@ pw_add_test(pw_channel.test_packet_channel_test
   PRIVATE_DEPS
     pw_allocator.testing
     pw_async2
-    pw_async2.func_task
-    pw_async2.poll
     pw_async2.testing
     pw_channel.test_packet_channel
     pw_result
@@ -231,7 +227,6 @@ pw_add_library(pw_channel.packet_proxy STATIC
     pw_allocator
     pw_allocator.chunk_pool
     pw_async2
-    pw_async2.poll
     pw_channel.packet_channel
     pw_containers.inline_async_queue
   PUBLIC_INCLUDES
@@ -243,7 +238,7 @@ pw_add_test(pw_channel.packet_proxy_test
     packet_proxy_test.cc
   PRIVATE_DEPS
     pw_allocator.testing
-    pw_async2.func_task
+    pw_async2
     pw_async2.testing
     pw_channel.packet_proxy
     pw_channel.test_packet_channel

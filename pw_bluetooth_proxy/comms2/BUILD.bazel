@@ -99,7 +99,7 @@ pw_cc_test(
     deps = [
         ":proxy",
         "//pw_allocator:testing",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_bytes",
         "//pw_channel:packet_channel",

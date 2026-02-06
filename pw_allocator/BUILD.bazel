@@ -127,7 +127,6 @@ cc_library(
         ":pool",
         ":pw_allocator",
         "//pw_async2",
-        "//pw_async2:poll",
     ],
 )
 
@@ -652,7 +651,7 @@ pw_cc_test(
         ":chunk_pool",
         ":pw_allocator",
         ":testing",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:testing",
     ],
 )

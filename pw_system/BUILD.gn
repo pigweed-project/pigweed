@@ -444,7 +444,6 @@ pw_source_set("async") {
     "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_async2:allocate_task",
     "$dir_pw_async2:basic_dispatcher",
-    "$dir_pw_async2:func_task",
     "$dir_pw_hdlc:router",
     "$dir_pw_rpc/pwpb:echo_service",
     "$dir_pw_sync:interrupt_spin_lock",

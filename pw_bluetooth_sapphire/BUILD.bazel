@@ -193,7 +193,7 @@ pw_cc_test(
         ":discovery_filter",
         ":uuid",
         "//pw_async:fake_dispatcher",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_bluetooth_sapphire/host/gap:testing",
         "//pw_multibuf:testing",
@@ -223,7 +223,7 @@ pw_cc_test(
     deps = [
         ":peripheral",
         "//pw_async:fake_dispatcher",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:testing",
         "//pw_bluetooth_sapphire/host/gap:testing",
     ],

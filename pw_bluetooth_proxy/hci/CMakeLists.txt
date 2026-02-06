@@ -53,7 +53,7 @@ pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
   PRIVATE_DEPS
     pw_bluetooth_proxy.hci.command_multiplexer
     pw_allocator.testing
-    pw_async2.func_task
+    pw_async2
     pw_async2.simulated_time_provider
     pw_async2.testing
     pw_containers.vector

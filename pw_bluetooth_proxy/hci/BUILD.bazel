@@ -37,7 +37,7 @@ cc_library(
         "//pw_allocator",
         "//pw_assert:assert",
         "//pw_assert:check",
-        "//pw_async2:poll",
+        "//pw_async2",
         "//pw_async2:time_provider",
         "//pw_bluetooth:emboss_hci_commands",
         "//pw_bluetooth:emboss_hci_common",
@@ -72,7 +72,7 @@ pw_cc_test(
     deps = [
         ":command_multiplexer",
         "//pw_allocator:testing",
-        "//pw_async2:func_task",
+        "//pw_async2",
         "//pw_async2:simulated_time_provider",
         "//pw_async2:testing",
         "//pw_chrono:system_clock",

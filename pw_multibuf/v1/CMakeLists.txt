@@ -161,7 +161,6 @@ pw_add_library(pw_multibuf.v1.allocator_async STATIC
     public
   PUBLIC_DEPS
     pw_async2
-    pw_async2.poll
     pw_multibuf.config
     pw_multibuf.v1.allocator
   SOURCES
@@ -176,7 +175,6 @@ pw_add_test(pw_multibuf.v1.allocator_test
     PW_MULTIBUF_VERSION=1
   PRIVATE_DEPS
     pw_async2
-    pw_async2.poll
     pw_async2.testing
     pw_multibuf.v1.allocator
     pw_multibuf.v1.allocator_async

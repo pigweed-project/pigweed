@@ -85,7 +85,6 @@ _pw_bluetooth_proxy_public_deps = [
   "$dir_pw_allocator:synchronized_allocator",
   "$dir_pw_async2:basic_dispatcher",
   "$dir_pw_async2:channel",
-  "$dir_pw_async2:poll",
   "$dir_pw_async2:pw_async2",
   "$dir_pw_bluetooth:emboss_hci_common",
   "$dir_pw_bluetooth:emboss_hci_data",
