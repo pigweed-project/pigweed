@@ -119,15 +119,16 @@ class FutureState {
 
   /// Represents an empty future. The future does not yet represent an
   /// asynchronous operation and `Pend` may not be called.
-  constexpr FutureState() : state_(State::kEmpty) {}
+  constexpr FutureState() : pend_state_(PendState::kEmpty) {}
 
   /// Represents an active future, for which `Pend` may be called.
-  constexpr FutureState(Pending) : state_(State::kPending) {}
+  constexpr FutureState(Pending) : pend_state_(PendState::kPending) {}
 
   /// Represents a future that is guaranteed to return `Ready` from the next
   /// `Pend` call. Use of the `ReadyForCompletion" state is optional---future
   /// implementations may skip from `Pending` to `Complete` if desired.
-  constexpr FutureState(ReadyForCompletion) : state_(State::kReady) {}
+  constexpr FutureState(ReadyForCompletion)
+      : pend_state_(PendState::kPending), ready_(true) {}
 
   constexpr FutureState(const FutureState&) = delete;
   constexpr FutureState& operator=(const FutureState&) = delete;
@@ -135,67 +136,73 @@ class FutureState {
   /// Move constructs a `FutureState`, leaving the other in its default
   /// constructed / empty state.
   constexpr FutureState(FutureState&& other)
-      : state_(cpp20::exchange(other.state_, State::kEmpty)) {}
+      : pend_state_(cpp20::exchange(other.pend_state_, PendState::kEmpty)),
+        ready_(cpp20::exchange(other.ready_, false)) {}
 
   constexpr FutureState& operator=(FutureState&& other) {
-    state_ = cpp20::exchange(other.state_, State::kEmpty);
+    pend_state_ = cpp20::exchange(other.pend_state_, PendState::kEmpty);
+    ready_ = cpp20::exchange(other.ready_, false);
     return *this;
-  }
-
-  friend constexpr bool operator==(const FutureState& lhs,
-                                   const FutureState& rhs) {
-    return lhs.state_ == rhs.state_;
-  }
-
-  friend constexpr bool operator!=(const FutureState& lhs,
-                                   const FutureState& rhs) {
-    return lhs.state_ != rhs.state_;
   }
 
   /// @returns Whether the future's `Pend()` function can be called.
   [[nodiscard]] constexpr bool is_pendable() const {
-    return state_ > State::kComplete;
+    return pend_state_ == PendState::kPending;
   }
 
-  /// @returns Whether the future has completed: the future's `Pend()` returned
-  /// `Ready`.
+  /// @returns Whether `Pend()` returned `Ready`.
   [[nodiscard]] constexpr bool is_complete() const {
-    return state_ == State::kComplete;
+    return pend_state_ == PendState::kComplete;
   }
 
   /// @returns `true` if the next `Pend()` call is guaranteed to return `Ready`.
   /// Not all future implementations use the ready state; `Pend()` may return
   /// `Ready` even though `is_ready` is `false`.
-  [[nodiscard]] constexpr bool is_ready() const {
-    return state_ == State::kReady;
-  }
+  ///
+  /// `is_ready()` is not changed by calls to `MarkComplete`.
+  [[nodiscard]] constexpr bool is_ready() const { return ready_; }
 
   /// @returns `true` if the future was NOT default constructed. The future
   /// either represents an active or completed asynchronous operation.
   [[nodiscard]] constexpr bool is_initialized() const {
-    return state_ != State::kEmpty;
+    return pend_state_ != PendState::kEmpty;
   }
 
-  void MarkReady() { state_ = State::kReady; }
+  /// Indicates that the future is ready for completion. The next `Pend()` call
+  /// must return `Ready`. Use of `MarkReady()` is optional; futures can return
+  /// `Ready` and be completed while `is_ready()` is false.
+  ///
+  /// @warning Only call `MarkReady()` when the future will no longer be
+  /// accessed outside of `Pend()`.
+  void MarkReady() { ready_ = true; }
 
-  void MarkComplete() { state_ = State::kComplete; }
+  /// Indicates that the future has completed and cannot be pended again.
+  ///
+  /// @warning `MarkComplete()` may only be called within a `Pend()`
+  /// implementation when it will return `Ready`.
+  void MarkComplete() { pend_state_ = PendState::kComplete; }
 
  private:
-  enum class State : unsigned char {
+  // The future's pend_state_ is exclusively managed by the task that creates
+  // and pends the future.
+  enum class PendState : unsigned char {
     // The future is in a default constructed, empty state. It does not
     // represent an async operation and `Pend()` cannot be called.
     kEmpty,
 
-    // A previous call to `Pend()` returned `Ready()`.
-    kComplete,
-
-    // The next call to `Pend()` will return `Ready()`.
-    kReady,
-
     // `Pend()` may be called to advance the operation represented by this
     // future. `Pend()` may return `Ready()` or `Pending()`.
     kPending,
-  } state_;
+
+    // A previous call to `Pend()` returned `Ready()`.
+    kComplete,
+  } pend_state_;
+
+  // Indicates that a future was put in a ready-to-complete state.
+  //
+  // The ready flag is only set by code that wakes or advances a future,
+  // typically outside of the task that pends it.
+  bool ready_ = false;
 };
 
 /// `FutureCore` provides common functionality for futures that need to be
@@ -264,9 +271,15 @@ class FutureCore : public IntrusiveForwardList<FutureCore>::Item {
 
   /// Wakes the task pending the future and sets `is_ready` to `true`. Only call
   /// this if the next call to to the future's `Pend()` will return `Ready`.
+  ///
+  /// @pre The future must be ready to complete and only accessible by the task
+  /// pending it.
   void WakeAndMarkReady() {
-    Wake();
+    // Mark ready before waking to guarantee so that task will run with the
+    // ready future (though `is_ready()` should only be accessed in `Pend()`
+    // with a lock held anyway).
     state_.MarkReady();
+    Wake();
   }
 
   /// Provides direct access to the waker for future implementations that

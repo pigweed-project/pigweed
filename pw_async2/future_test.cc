@@ -499,27 +499,7 @@ TEST(FutureState, MarkCompleteFromReady) {
   state.MarkComplete();
   EXPECT_TRUE(state.is_complete());
   EXPECT_FALSE(state.is_pendable());
-  EXPECT_FALSE(state.is_ready());
-}
-
-TEST(FutureState, Equality) {
-  pw::async2::FutureState s1;
-  pw::async2::FutureState s2;
-  EXPECT_EQ(s1, s2);
-
-  pw::async2::FutureState p1(pw::async2::FutureState::kPending);
-  pw::async2::FutureState p2(pw::async2::FutureState::kPending);
-  EXPECT_EQ(p1, p2);
-  EXPECT_NE(s1, p1);
-
-  pw::async2::FutureState r1(pw::async2::FutureState::kReadyForCompletion);
-  pw::async2::FutureState r2(pw::async2::FutureState::kReadyForCompletion);
-  EXPECT_EQ(r1, r2);
-  EXPECT_NE(p1, r1);
-
-  p1.MarkComplete();
-  r1.MarkComplete();
-  EXPECT_EQ(p1, r1);
+  EXPECT_TRUE(state.is_ready());
 }
 
 TEST(FutureState, Move) {
