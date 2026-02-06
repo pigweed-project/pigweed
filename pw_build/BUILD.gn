@@ -608,3 +608,10 @@ if (current_toolchain != default_toolchain) {
     ]
   }
 }
+
+# The python files listed here are only useful for the Bazel build. However the
+# "source_is_in_gn_build" check requires that they be mentioned here, as there
+# is no explicit ignore-list for that check.
+pw_python_script("_bazel_only") {
+  sources = [ "pw_pylint_test_example.py" ]
+}
