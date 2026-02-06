@@ -24,11 +24,6 @@ void BasicSender::Send(const char* message) {
   waker_.Wake();
 }
 
-void BasicSender::Stop() {
-  stopped_ = true;
-  waker_.Wake();
-}
-
 ConstByteSpan BasicSender::GetDemoLinkHeader(size_t payload_len) {
   demo_link_header_.length = static_cast<uint16_t>(payload_len);
   return as_bytes(span(&demo_link_header_, 1));

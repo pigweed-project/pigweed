@@ -13,6 +13,7 @@
 // the License.
 
 #include "pw_allocator/bump_allocator.h"
+#include "pw_async2/channel.h"
 #include "pw_multibuf/size_report/transfer.h"
 
 namespace pw::multibuf::size_report {
@@ -137,20 +138,20 @@ class SenderV0 : public FrameHandlerV0,
                  public size_report::Sender<FakeMultiBuf> {
  public:
   SenderV0(allocator::BumpAllocator& allocator,
-           InlineAsyncQueue<FakeMultiBuf>& queue)
+           async2::Sender<FakeMultiBuf>&& tx)
       : size_report::FrameHandler<FakeMultiBuf>(),
         FrameHandlerV0(allocator),
-        size_report::Sender<FakeMultiBuf>(queue) {}
+        size_report::Sender<FakeMultiBuf>(std::move(tx)) {}
 };
 
 class ReceiverV0 : public FrameHandlerV0,
                    public size_report::Receiver<FakeMultiBuf> {
  public:
   ReceiverV0(allocator::BumpAllocator& allocator,
-             InlineAsyncQueue<FakeMultiBuf>& queue)
+             async2::Receiver<FakeMultiBuf>&& rx)
       : size_report::FrameHandler<FakeMultiBuf>(),
         FrameHandlerV0(allocator),
-        size_report::Receiver<FakeMultiBuf>(queue) {}
+        size_report::Receiver<FakeMultiBuf>(std::move(rx)) {}
 };
 
 constexpr size_t kMultiBufRegionSize = 8192;
@@ -159,9 +160,11 @@ std::array<std::byte, kMultiBufRegionSize> multibuf_region;
 void TransferMessage() {
   allocator::BumpAllocator allocator;
   allocator.Init(multibuf_region);
-  InlineAsyncQueue<FakeMultiBuf, 3> queue;
-  SenderV0 sender(allocator, queue);
-  ReceiverV0 receiver(allocator, queue);
+  async2::ChannelStorage<FakeMultiBuf, 3> storage;
+  [[maybe_unused]] auto [h, tx, rx] =
+      async2::CreateSpscChannel<FakeMultiBuf>(storage);
+  SenderV0 sender(allocator, std::move(tx));
+  ReceiverV0 receiver(allocator, std::move(rx));
   size_report::TransferMessage(sender, receiver);
 }
 

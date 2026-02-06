@@ -15,6 +15,7 @@
 #include "pw_allocator/async_pool.h"
 #include "pw_allocator/bump_allocator.h"
 #include "pw_allocator/chunk_pool.h"
+#include "pw_async2/channel.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_multibuf/size_report/transfer.h"
 
@@ -80,10 +81,10 @@ class SenderV2 : public FrameHandlerV2,
  public:
   SenderV2(allocator::ChunkPool& pool,
            allocator::BumpAllocator& metadata_allocator,
-           InlineAsyncQueue<MultiBufType>& queue)
+           async2::Sender<MultiBufType>&& tx)
       : size_report::FrameHandler<MultiBufType>(),
         FrameHandlerV2(pool, metadata_allocator),
-        size_report::Sender<MultiBufType>(queue) {}
+        size_report::Sender<MultiBufType>(std::move(tx)) {}
 };
 
 class ReceiverV2 : public FrameHandlerV2,
@@ -91,10 +92,11 @@ class ReceiverV2 : public FrameHandlerV2,
  public:
   ReceiverV2(allocator::ChunkPool& pool,
              allocator::BumpAllocator& metadata_allocator,
-             InlineAsyncQueue<MultiBufType>& queue)
+             async2::Receiver<MultiBufType>&& rx)
       : size_report::FrameHandler<MultiBufType>(),
         FrameHandlerV2(pool, metadata_allocator),
-        size_report::Receiver<MultiBufType>(queue, metadata_allocator) {}
+        size_report::Receiver<MultiBufType>(std::move(rx), metadata_allocator) {
+  }
 };
 
 constexpr size_t kMultiBufRegionSize = 8192;
@@ -106,9 +108,11 @@ void TransferMessage() {
   pw::allocator::ChunkPool chunk_pool(multibuf_region, FrameHandlerV2::kLayout);
   allocator::BumpAllocator metadata_allocator;
   metadata_allocator.Init(metadata_region);
-  InlineAsyncQueue<MultiBufType, 3> queue;
-  SenderV2 sender(chunk_pool, metadata_allocator, queue);
-  ReceiverV2 receiver(chunk_pool, metadata_allocator, queue);
+  async2::ChannelStorage<MultiBufType, 3> storage;
+  [[maybe_unused]] auto [h, tx, rx] =
+      async2::CreateSpscChannel<MultiBufType>(storage);
+  SenderV2 sender(chunk_pool, metadata_allocator, std::move(tx));
+  ReceiverV2 receiver(chunk_pool, metadata_allocator, std::move(rx));
   size_report::TransferMessage(sender, receiver);
 }
 

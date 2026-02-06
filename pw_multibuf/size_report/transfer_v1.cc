@@ -13,6 +13,7 @@
 // the License.
 
 #include "pw_allocator/bump_allocator.h"
+#include "pw_async2/channel.h"
 #include "pw_multibuf/allocator.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_multibuf/simple_allocator.h"
@@ -75,19 +76,18 @@ class FrameHandlerV1 : public virtual size_report::FrameHandler<MultiBufType> {
 class SenderV1 : public FrameHandlerV1,
                  public size_report::Sender<MultiBufType> {
  public:
-  SenderV1(MultiBufAllocator& mb_allocator,
-           InlineAsyncQueue<MultiBufType>& queue)
+  SenderV1(MultiBufAllocator& mb_allocator, async2::Sender<MultiBufType>&& tx)
       : FrameHandlerV1(mb_allocator),
-        size_report::Sender<MultiBufType>(queue) {}
+        size_report::Sender<MultiBufType>(std::move(tx)) {}
 };
 
 class ReceiverV1 : public FrameHandlerV1,
                    public size_report::Receiver<MultiBufType> {
  public:
   ReceiverV1(MultiBufAllocator& mb_allocator,
-             InlineAsyncQueue<MultiBufType>& queue)
+             async2::Receiver<MultiBufType>&& rx)
       : FrameHandlerV1(mb_allocator),
-        size_report::Receiver<MultiBufType>(queue) {}
+        size_report::Receiver<MultiBufType>(std::move(rx)) {}
 };
 
 constexpr size_t kMultiBufTypeRegionSize = 8192;
@@ -98,9 +98,11 @@ std::array<std::byte, kMetadataRegionSize> metadata_region;
 void TransferMessage() {
   allocator::BumpAllocator metadata_allocator(metadata_region);
   SimpleAllocator mb_allocator(multibuf_region, metadata_allocator);
-  InlineAsyncQueue<MultiBufType, 3> queue;
-  SenderV1 sender(mb_allocator, queue);
-  ReceiverV1 receiver(mb_allocator, queue);
+  async2::ChannelStorage<MultiBufType, 3> storage;
+  [[maybe_unused]] auto [h, tx, rx] =
+      async2::CreateSpscChannel<MultiBufType>(storage);
+  SenderV1 sender(mb_allocator, std::move(tx));
+  ReceiverV1 receiver(mb_allocator, std::move(rx));
   size_report::TransferMessage(sender, receiver);
 }
 

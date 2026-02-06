@@ -14,11 +14,13 @@
 #pragma once
 
 #include <cstddef>
+#include <optional>
 
+#include "pw_async2/channel.h"
 #include "pw_async2/context.h"
 #include "pw_async2/task.h"
+#include "pw_async2/try.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/inline_async_queue.h"
 #include "pw_multibuf/examples/protocol.h"
 #include "pw_multibuf/size_report/common.h"
 #include "pw_multibuf/size_report/handler.h"
@@ -29,12 +31,9 @@ class BasicSender {
  public:
   void Send(const char* message);
 
-  void Stop();
-
  protected:
   constexpr BasicSender()
-      : stopped_(false),
-        demo_link_header_({.src_addr = kDemoLinkSender,
+      : demo_link_header_({.src_addr = kDemoLinkSender,
                            .dst_addr = kDemoLinkReceiver,
                            .length = 0}),
         demo_link_footer_({.crc32 = 0}),
@@ -75,7 +74,6 @@ class BasicSender {
   void AdvanceOffset(size_t off);
 
   async2::Waker waker_;
-  bool stopped_;
   ConstByteSpan message_;
   examples::DemoLinkHeader demo_link_header_;
   examples::DemoLinkFooter demo_link_footer_;
@@ -86,12 +84,10 @@ class BasicSender {
 template <typename MultiBufType>
 class Sender : public virtual FrameHandler<MultiBufType>, public BasicSender {
  protected:
-  Sender(InlineAsyncQueue<MultiBufType>& queue) : queue_(queue) {}
+  Sender(async2::Sender<MultiBufType>&& sender) : sender_(std::move(sender)) {}
 
  private:
   async2::Poll<> DoPend(async2::Context& cx) override;
-
-  async2::Poll<> PendReadyToSend(async2::Context& cx);
 
   void MakeDemoLinkFrame(MultiBufType& frame);
 
@@ -99,37 +95,31 @@ class Sender : public virtual FrameHandler<MultiBufType>, public BasicSender {
 
   void MakeDemoTransportSegment(MultiBufType& segment);
 
-  InlineAsyncQueue<MultiBufType>& queue_;
+  async2::Sender<MultiBufType> sender_;
+  std::optional<async2::ReserveSendFuture<MultiBufType>> send_future_;
 };
 
 // Template method implementations.
 
 template <typename MultiBufType>
 async2::Poll<> Sender<MultiBufType>::DoPend(async2::Context& cx) {
-  while (true) {
-    PW_TRY_READY(PendReadyToSend(cx));
-    MultiBufType frame = FrameHandler<MultiBufType>::AllocateFrame();
-    MakeDemoLinkFrame(frame);
-    queue_.emplace(std::move(frame));
+  while (remaining() != 0) {
+    if (!send_future_.has_value()) {
+      send_future_ = sender_.ReserveSend();
+    }
+    PW_TRY_READY_ASSIGN(auto reservation, send_future_->Pend(cx));
+    send_future_.reset();
 
-    if (remaining() == 0) {
+    if (!reservation.has_value()) {
       break;
     }
+
+    MultiBufType frame = FrameHandler<MultiBufType>::AllocateFrame();
+    MakeDemoLinkFrame(frame);
+    reservation->Commit(std::move(frame));
   }
 
   return async2::Ready();
-}
-
-template <typename MultiBufType>
-async2::Poll<> Sender<MultiBufType>::PendReadyToSend(async2::Context& cx) {
-  if (stopped_) {
-    return async2::Ready();
-  }
-  if (remaining() == 0) {
-    PW_ASYNC_STORE_WAKER(cx, waker_, "waiting for message to send");
-    return async2::Pending();
-  }
-  return queue_.PendHasSpace(cx);
 }
 
 template <typename MultiBufType>

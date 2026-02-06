@@ -40,7 +40,7 @@ struct DemoLinkFooter {
 
 inline constexpr size_t kDemoLinkHeaderLen = sizeof(uint16_t) * 3;
 inline constexpr size_t kDemoLinkFooterLen = sizeof(uint32_t) * 3;
-inline constexpr size_t kMaxDemoLinkFrameLength = 1 << 10;
+inline constexpr size_t kMaxDemoLinkFrameLength = 1 << 8;
 
 // DOCSTAG: [pw_multibuf-examples-protocol-network_packet]
 // Protocol DemoNetwork have packets that fit entirely within a DemoLink frame.

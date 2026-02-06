@@ -15,11 +15,13 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
+#include "pw_async2/channel.h"
 #include "pw_async2/context.h"
 #include "pw_async2/task.h"
+#include "pw_async2/try.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/inline_async_queue.h"
 #include "pw_multibuf/examples/protocol.h"
 #include "pw_multibuf/size_report/handler.h"
 
@@ -61,8 +63,9 @@ class Receiver : public virtual FrameHandler<MultiBufType>,
                  public BasicReceiver {
  public:
   template <typename... MultiBufArgs>
-  Receiver(InlineAsyncQueue<MultiBufType>& queue, MultiBufArgs&&... args)
-      : queue_(queue), received_(std::forward<MultiBufArgs>(args)...) {}
+  Receiver(async2::Receiver<MultiBufType>&& receiver, MultiBufArgs&&... args)
+      : receiver_(std::move(receiver)),
+        received_(std::forward<MultiBufArgs>(args)...) {}
 
   std::optional<MultiBufType> TakeReceived();
 
@@ -73,7 +76,8 @@ class Receiver : public virtual FrameHandler<MultiBufType>,
   void HandleDemoTransportFirstSegment(MultiBufType& segment);
   void HandleDemoTransportSegment(MultiBufType& segment);
 
-  InlineAsyncQueue<MultiBufType>& queue_;
+  async2::Receiver<MultiBufType> receiver_;
+  std::optional<async2::ReceiveFuture<MultiBufType>> receive_future_;
   MultiBufType received_;
 };
 
@@ -90,17 +94,18 @@ std::optional<MultiBufType> Receiver<MultiBufType>::TakeReceived() {
 
 template <typename MultiBufType>
 async2::Poll<> Receiver<MultiBufType>::DoPend(async2::Context& context) {
-  while (true) {
-    if (remaining() != 0 || internal::GetMultiBuf(received_).empty()) {
-      PW_TRY_READY(queue_.PendNotEmpty(context));
-      MultiBufType mb = std::move(queue_.front());
-      queue_.pop();
-      HandleDemoLinkFrame(mb);
-      FrameHandler<MultiBufType>::PushBack(received_, std::move(mb));
+  while (remaining() != 0 || internal::GetMultiBuf(received_).empty()) {
+    if (!receive_future_.has_value()) {
+      receive_future_ = receiver_.Receive();
     }
-    if (remaining() == 0) {
+    PW_TRY_READY_ASSIGN(auto result, receive_future_->Pend(context));
+    receive_future_.reset();
+    if (!result.has_value()) {
       break;
     }
+    MultiBufType mb = std::move(*result);
+    HandleDemoLinkFrame(mb);
+    FrameHandler<MultiBufType>::PushBack(received_, std::move(mb));
   }
 
   return async2::Ready();
