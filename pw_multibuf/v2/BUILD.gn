@@ -60,6 +60,7 @@ pw_source_set("iterator_testing") {
   public_deps = [
     ":iterators",
     "$dir_pw_allocator:bump_allocator",
+    "$dir_pw_containers:storage",
     dir_pw_unit_test,
   ]
 }

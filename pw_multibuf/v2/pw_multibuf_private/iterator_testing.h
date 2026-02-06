@@ -18,6 +18,7 @@
 
 #include "pw_allocator/bump_allocator.h"
 #include "pw_containers/dynamic_deque.h"
+#include "pw_containers/storage.h"
 #include "pw_multibuf/v2/chunks.h"
 #include "pw_multibuf/v2/internal/byte_iterator.h"
 #include "pw_multibuf/v2/internal/chunk_iterator.h"
@@ -44,22 +45,24 @@ namespace pw::multibuf::v2::test {
 ///                       iterators or const_iterators.
 class IteratorTest : public ::testing::Test {
  protected:
-  using ChunksType = internal::Chunks<DynamicDeque<internal::Entry>>;
-  using RawChunksType = internal::RawChunks<DynamicDeque<internal::Entry>>;
   using Entry = internal::Entry;
+  using Deque = Entry::Deque;
+  using size_type = Entry::size_type;
 
-  constexpr static uint16_t kNumLayers = 3;
-  constexpr static uint16_t kNumChunks = 4;
-  constexpr static uint16_t kEntriesPerChunk =
+  constexpr static size_type kNumLayers = 3;
+  constexpr static size_type kNumChunks = 4;
+  constexpr static size_type kEntriesPerChunk =
       Entry::kMinEntriesPerChunk - 1 + kNumLayers;
-  constexpr static uint16_t kBufSize = 16;
+  constexpr static size_type kNumEntries = kNumChunks * kEntriesPerChunk;
+  constexpr static size_type kBufSize = 16;
 
-  IteratorTest() : deque_mem_(), allocator_(deque_mem_), deque_(allocator_) {
-    uint16_t num_entries = kNumChunks * kEntriesPerChunk;
+  IteratorTest() : deque_(allocator_) {
+    allocator_.Init(ByteSpan(deque_mem_.data(), deque_mem_.size()));
+    size_type num_entries = kNumChunks * kEntriesPerChunk;
     deque_.reserve(num_entries);
 
-    for (uint16_t chunk = 0; chunk < kNumChunks; ++chunk) {
-      for (uint16_t i = 0; i < kEntriesPerChunk; ++i) {
+    for (size_type chunk = 0; chunk < kNumChunks; ++chunk) {
+      for (size_type i = 0; i < kEntriesPerChunk; ++i) {
         internal::Entry entry;
         if (i == Entry::kDataIndex) {
           entry.data = &buffer_[chunk * kBufSize];
@@ -86,17 +89,28 @@ class IteratorTest : public ::testing::Test {
         deque_.push_back(entry);
       }
     }
-    chunks_ = ChunksType(deque_, kEntriesPerChunk);
-    raw_chunks_ = RawChunksType(deque_, kEntriesPerChunk);
+    chunks_ = Chunks(deque_, kEntriesPerChunk);
   }
 
-  ChunksType& chunks() { return chunks_; }
-  RawChunksType& raw_chunks() { return raw_chunks_; }
+  auto MakeIterator(size_type chunk) {
+    return internal::ByteIterator<internal::Mutability::kMutable>(
+        deque_, chunk, kEntriesPerChunk, 0);
+  }
+
+  auto MakeConstIterator(size_type chunk) {
+    return internal::ByteIterator<internal::Mutability::kConst>(
+        deque_, chunk, kEntriesPerChunk, 0);
+  }
+
+  const Deque& deque() const { return deque_; }
+
+  Chunks& chunks() { return chunks_; }
+  const Chunks& const_chunks() { return chunks_; }
 
   // Fragment 0 is non-empty.
   // Fragment 1 is empty.
   // Fragments 2 and 3 are contiguous.
-  constexpr static uint16_t kNumContiguous = 2;
+  constexpr static size_type kNumContiguous = 2;
   ByteSpan GetContiguous(size_t index) {
     switch (index) {
       case 0:
@@ -108,31 +122,8 @@ class IteratorTest : public ::testing::Test {
     }
   }
 
-  constexpr static uint16_t kNumRaw = 4;
-  ByteSpan GetRaw(size_t index) {
-    switch (index) {
-      case 0:
-        return {data(0), size(0)};
-      case 1:
-        return {data(1), size(1)};
-      case 2:
-        return {data(2), size(2)};
-      case 3:
-        return {data(3), size(3)};
-      default:
-        return {};
-    }
-  }
-
-  std::pair<
-      internal::ByteIterator<uint16_t, internal::ChunkMutability::kMutable>,
-      internal::ByteIterator<uint16_t, internal::ChunkMutability::kMutable>>
-  GetByteIterators() {
-    return {{chunks_.begin(), 0}, {chunks_.end(), 0}};
-  }
-
  private:
-  static constexpr std::pair<uint16_t, uint16_t>
+  static constexpr std::pair<size_type, size_type>
       kViews[kNumLayers][kNumChunks] = {
           {{0, 16}, {0, 16}, {0, 16}, {0, 16}},  // layer 1
           {{2, 12}, {0, 8}, {4, 12}, {0, 16}},   // layer 2
@@ -143,20 +134,18 @@ class IteratorTest : public ::testing::Test {
     return &buffer_[chunk * kBufSize] + kViews[kNumLayers - 1][chunk].first;
   }
 
-  constexpr uint16_t size(size_t chunk) {
+  constexpr size_type size(size_t chunk) {
     return kViews[kNumLayers - 1][chunk].second;
   }
 
   std::array<std::byte, kNumChunks * kBufSize> buffer_;
 
   // Create a minimally sized allocator for the deque.
-  std::array<std::byte, kNumChunks * kEntriesPerChunk * sizeof(internal::Entry)>
-      deque_mem_;
+  containers::StorageFor<Entry, kNumEntries> deque_mem_;
   allocator::BumpAllocator allocator_;
-  DynamicDeque<internal::Entry> deque_;
+  Deque deque_;
 
-  ChunksType chunks_;
-  RawChunksType raw_chunks_;
+  Chunks chunks_;
 };
 
 }  // namespace pw::multibuf::v2::test

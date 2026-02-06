@@ -65,9 +65,9 @@ of a dereferenced iterator to define a range can lead memory corruption!
 
 For efficient bulk data transfer, the MultiBuf type provides ``CopyTo`` and
 ``CopyFrom`` methods, which are optimized to handle the scatter-gather nature of
-the buffer. The range of :cc:`Chunks <pw::multibuf::v2::ChunksImpl>` can also be
-accessed using the ``Chunks`` and ``ConstChunks`` methods. Each of these can
-provide ``ChunkIterator`` objects that can be used to iterate over the
+the buffer. The range of :cc:`Chunks <pw::multibuf::v2::internal::ChunksImpl>`
+can also be accessed using the ``Chunks`` and ``ConstChunks`` methods. Each of
+these can provide ``ChunkIterator`` objects that can be used to iterate over the
 contiguous spans of memory.
 
 For accessing smaller regions of data, such as protocol headers, the ``Get``

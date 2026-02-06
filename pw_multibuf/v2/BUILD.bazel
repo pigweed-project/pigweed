@@ -54,6 +54,7 @@ cc_library(
     deps = [
         ":iterators",
         "//pw_allocator:bump_allocator",
+        "//pw_containers:storage",
         "//pw_unit_test",
     ],
 )

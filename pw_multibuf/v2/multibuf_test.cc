@@ -140,6 +140,8 @@ struct TestObserver : public pw::multibuf::v2::Observer {
 
 // Unit tests. /////////////////////////////////////////////////////////////////
 
+static_assert(sizeof(pw::multibuf::v2::internal::Entry) == sizeof(std::byte*));
+
 TEST_F(MultiBufTest, CheckProperties) {
   ConstMultiBuf::Instance cmbi(allocator_);
   ConstMultiBuf& cmb = cmbi;
@@ -719,6 +721,25 @@ PW_NC_EXPECT(
     "`BasicMultiBuf<...>::Instance` are valid.");
 [[maybe_unused]] MultiBuf ShouldAssert(MultiBuf&& mb) { return mb; }
 
+#elif PW_NC_TEST(CannotModifyConstChunkContents)
+PW_NC_EXPECT_CLANG(
+    "cannot assign to return value because function "
+    "'operator\[\]' returns a const value");
+PW_NC_EXPECT_GCC("assignment of read-only location");
+[[maybe_unused]] void ShouldNotCompile(const MultiBuf& mb) {
+  auto chunks = mb.ConstChunks();
+  (*chunks.begin())[0] = std::byte{1};
+}
+
+#elif PW_NC_TEST(CannotGetMutableChunkContents)
+PW_NC_EXPECT_CLANG(
+    "cannot assign to return value because function "
+    "'operator\[\]' returns a const value");
+PW_NC_EXPECT_GCC("assignment of read-only location");
+[[maybe_unused]] void ShouldNotCompile(ConstMultiBuf& mb) {
+  auto chunks = mb.Chunks();
+  (*chunks.begin())[0] = std::byte{1};
+}
 #endif
 
 TEST_F(MultiBufTest, IsDerefencableWithArrayOperator) {
@@ -922,10 +943,15 @@ TEST_F(MultiBufTest, TryReserveForInsertOfUniquePtrFailsDueToExcessiveSize) {
 
 TEST_F(MultiBufTest, InsertMultiBufIntoEmptyMultiBuf) {
   ConstMultiBuf::Instance mb1(allocator_);
+
   ConstMultiBuf::Instance mb2(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
   mb2->PushBack(std::move(chunk));
-  mb1->Insert(mb1->begin(), std::move(*mb2));
+  auto iter = mb1->Insert(mb1->begin(), std::move(*mb2));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter, mb1->begin());
   EXPECT_EQ(mb1->size(), kN);
   EXPECT_TRUE(mb2->empty());
 }
@@ -934,10 +960,15 @@ TEST_F(MultiBufTest, InsertMultiBufIntoNonEmptyMultiBufAtBoundary) {
   ConstMultiBuf::Instance mb1(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
   mb1->PushBack(std::move(chunk));
+
   ConstMultiBuf::Instance mb2(allocator_);
   chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
   mb2->PushBack(std::move(chunk));
-  mb1->Insert(mb1->end(), std::move(*mb2));
+  auto iter = mb1->Insert(mb1->end(), std::move(*mb2));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter + kN, mb1->end());
   EXPECT_EQ(mb1->size(), 2 * kN);
   EXPECT_TRUE(mb2->empty());
 }
@@ -946,17 +977,26 @@ TEST_F(MultiBufTest, InsertMultiBufIntoNonEmptyMultiBufMidChunk) {
   ConstMultiBuf::Instance mb1(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
   mb1->PushBack(std::move(chunk));
+
   ConstMultiBuf::Instance mb2(allocator_);
   chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
   mb2->PushBack(std::move(chunk));
-  mb1->Insert(mb1->begin() + kN / 2, std::move(*mb2));
+  auto iter = mb1->Insert(mb1->begin() + kN / 2, std::move(*mb2));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter, mb1->begin() + kN / 2);
   EXPECT_EQ(mb1->size(), 2 * kN);
   EXPECT_TRUE(mb2->empty());
 }
 
 TEST_F(MultiBufTest, InsertUnownedIntoEmptyMultiBuf) {
   ConstMultiBuf::Instance mb(allocator_);
-  mb->Insert(mb->begin(), unowned_chunk_);
+
+  auto iter = mb->Insert(mb->begin(), unowned_chunk_);
+
+  EXPECT_EQ(&(*iter), unowned_chunk_.data());
+  EXPECT_EQ(iter, mb->begin());
   EXPECT_EQ(mb->size(), unowned_chunk_.size());
 }
 
@@ -964,7 +1004,11 @@ TEST_F(MultiBufTest, InsertUnownedIntoNonEmptyMultiBufAtBoundary) {
   ConstMultiBuf::Instance mb(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
   mb->PushBack(std::move(chunk));
-  mb->Insert(mb->end(), unowned_chunk_);
+
+  auto iter = mb->Insert(mb->end(), unowned_chunk_);
+
+  EXPECT_EQ(&(*iter), unowned_chunk_.data());
+  EXPECT_EQ(iter + unowned_chunk_.size(), mb->end());
   EXPECT_EQ(mb->size(), kN + unowned_chunk_.size());
 }
 
@@ -972,81 +1016,115 @@ TEST_F(MultiBufTest, InsertUnownedIntoNonEmptyMultiBufMidChunk) {
   ConstMultiBuf::Instance mb(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
   mb->PushBack(std::move(chunk));
-  mb->Insert(mb->begin() + kN / 2, unowned_chunk_);
+
+  auto iter = mb->Insert(mb->begin() + kN / 2, unowned_chunk_);
+
+  EXPECT_EQ(&(*iter), unowned_chunk_.data());
+  EXPECT_EQ(iter, mb->begin() + kN / 2);
   EXPECT_EQ(mb->size(), kN + unowned_chunk_.size());
 }
 
 TEST_F(MultiBufTest, InsertUniquePtrIntoEmptyMultiBuf) {
   ConstMultiBuf::Instance mb(allocator_);
+
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
-  mb->Insert(mb->begin(), std::move(chunk));
+  std::byte* data = chunk.get();
+  auto iter = mb->Insert(mb->begin(), std::move(chunk));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter, mb->begin());
   EXPECT_EQ(mb->size(), kN);
 }
 
 TEST_F(MultiBufTest, InsertUniquePtrIntoNonEmptyMultiBufAtBoundary) {
   ConstMultiBuf::Instance mb(allocator_);
-  auto chunk1 = allocator_.MakeUnique<std::byte[]>(kN);
-  mb->PushBack(std::move(chunk1));
-  auto chunk2 = allocator_.MakeUnique<std::byte[]>(kN);
-  mb->Insert(mb->end(), std::move(chunk2));
+  auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  mb->PushBack(std::move(chunk));
+
+  chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
+  auto iter = mb->Insert(mb->end(), std::move(chunk));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter + kN, mb->end());
   EXPECT_EQ(mb->size(), 2 * kN);
 }
 
 TEST_F(MultiBufTest, InsertUniquePtrIntoNonEmptyMultiBufMidChunk) {
   ConstMultiBuf::Instance mb(allocator_);
-  auto chunk1 = allocator_.MakeUnique<std::byte[]>(kN);
-  mb->PushBack(std::move(chunk1));
-  auto chunk2 = allocator_.MakeUnique<std::byte[]>(kN);
-  mb->Insert(mb->begin() + kN / 2, std::move(chunk2));
+  auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  mb->PushBack(std::move(chunk));
+
+  chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
+  auto iter = mb->Insert(mb->begin() + kN / 2, std::move(chunk));
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter, mb->begin() + kN / 2);
   EXPECT_EQ(mb->size(), 2 * kN);
 }
 
 TEST_F(MultiBufTest, InsertSharedPtrIntoEmptyMultiBuf) {
   ConstMultiBuf::Instance mb(allocator_);
+
   auto chunk = allocator_.MakeShared<std::byte[]>(kN);
-  mb->Insert(mb->begin(), chunk);
+  std::byte* data = chunk.get();
+  auto iter = mb->Insert(mb->begin(), chunk);
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter, mb->begin());
   EXPECT_EQ(mb->size(), kN);
 }
 
 TEST_F(MultiBufTest, InsertSharedPtrIntoNonEmptyMultiBufAtBoundary) {
   ConstMultiBuf::Instance mb(allocator_);
-  auto shared = allocator_.MakeShared<std::byte[]>(2 * kN);
-  Fill(pw::ByteSpan(shared.get(), shared.size()));
-  mb->PushBack(shared, kN, kN);
-  mb->Insert(mb->end(), shared, 0, kN);
+
+  auto chunk = allocator_.MakeShared<std::byte[]>(2 * kN);
+  std::byte* data = chunk.get();
+  Fill(pw::ByteSpan(data, chunk.size()));
+  mb->PushBack(chunk, kN, kN);
+  auto iter = mb->Insert(mb->end(), chunk, 0, kN);
+
+  EXPECT_EQ(&(*iter), data);
+  EXPECT_EQ(iter + kN, mb->end());
   EXPECT_EQ(mb->size(), 2 * kN);
 
-  auto iter = mb->cbegin();
+  iter = mb->cbegin();
   for (size_t i = kN; i < 2 * kN; ++i) {
     ASSERT_NE(iter, mb->cend());
-    EXPECT_EQ(shared.get()[i], std::byte(i));
+    EXPECT_EQ(data[i], std::byte(i));
   }
   for (size_t i = 0; i < kN; ++i) {
     ASSERT_NE(iter, mb->cend());
-    EXPECT_EQ(shared.get()[i], std::byte(i));
+    EXPECT_EQ(data[i], std::byte(i));
   }
 }
 
 TEST_F(MultiBufTest, InsertSharedPtrIntoNonEmptyMultiBufMidChunk) {
   ConstMultiBuf::Instance mb(allocator_);
-  auto shared = allocator_.MakeShared<std::byte[]>(2 * kN);
-  Fill(pw::ByteSpan(shared.get(), shared.size()));
-  mb->PushBack(shared, 0, kN);
-  mb->Insert(mb->begin() + kN / 2, shared, kN, kN);
+
+  auto chunk = allocator_.MakeShared<std::byte[]>(2 * kN);
+  std::byte* data = chunk.get();
+  Fill(pw::ByteSpan(data, chunk.size()));
+  mb->PushBack(chunk, 0, kN);
+
+  auto iter = mb->Insert(mb->begin() + kN / 2, chunk, kN, kN);
+  EXPECT_EQ(&(*iter), data + kN);
+  EXPECT_EQ(iter, mb->begin() + kN / 2);
   EXPECT_EQ(mb->size(), 2 * kN);
 
-  auto iter = mb->cbegin();
+  iter = mb->cbegin();
   for (size_t i = 0; i < kN / 2; ++i) {
     ASSERT_NE(iter, mb->cend());
-    EXPECT_EQ(shared.get()[i], std::byte(i));
+    EXPECT_EQ(data[i], std::byte(i));
   }
   for (size_t i = kN; i < kN * 2; ++i) {
     ASSERT_NE(iter, mb->cend());
-    EXPECT_EQ(shared.get()[i], std::byte(i));
+    EXPECT_EQ(data[i], std::byte(i));
   }
   for (size_t i = kN / 2; i < kN; ++i) {
     ASSERT_NE(iter, mb->cend());
-    EXPECT_EQ(shared.get()[i], std::byte(i));
+    EXPECT_EQ(data[i], std::byte(i));
   }
 }
 

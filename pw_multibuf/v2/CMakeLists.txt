@@ -73,6 +73,7 @@ pw_add_library(pw_multibuf.v2._iterator_testing INTERFACE
     public
   PUBLIC_DEPS
     pw_allocator.bump_allocator
+    pw_containers.storage
     pw_multibuf.v2.iterators
     pw_unit_test
 )

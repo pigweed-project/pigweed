@@ -26,7 +26,6 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_bytes/span.h"
-#include "pw_containers/dynamic_deque.h"
 #include "pw_multibuf/v2/chunks.h"
 #include "pw_multibuf/v2/internal/byte_iterator.h"
 #include "pw_multibuf/v2/internal/entry.h"
@@ -36,6 +35,7 @@
 namespace pw::multibuf::v2 {
 
 // Forward declarations.
+
 template <Property...>
 class BasicMultiBuf;
 
@@ -183,7 +183,7 @@ class Instance;
 template <Property... kProperties>
 class BasicMultiBuf {
  protected:
-  using Deque = DynamicDeque<internal::Entry>;
+  using Deque = internal::Entry::Deque;
   using GenericMultiBuf = internal::GenericMultiBuf;
 
  public:
@@ -204,20 +204,18 @@ class BasicMultiBuf {
 
   using size_type = typename Deque::size_type;
   using difference_type = typename Deque::difference_type;
-  using iterator =
-      internal::ByteIterator<size_type, internal::ChunkMutability::kMutable>;
-  using const_iterator =
-      internal::ByteIterator<size_type, internal::ChunkMutability::kConst>;
-  using pointer = iterator::pointer;
+  using const_iterator = internal::ByteIterator<internal::Mutability::kConst>;
+  using iterator = std::conditional_t<
+      is_const(),
+      const_iterator,
+      internal::ByteIterator<internal::Mutability::kMutable>>;
+  using pointer = typename iterator::pointer;
   using const_pointer = const_iterator::pointer;
-  using reference = iterator::reference;
+  using reference = typename iterator::reference;
   using const_reference = const_iterator::reference;
   using value_type = std::conditional_t<is_const(),
                                         const_iterator::value_type,
-                                        iterator::value_type>;
-
-  using ChunksType = internal::Chunks<Deque>;
-  using ConstChunksType = internal::ConstChunks<Deque>;
+                                        typename iterator::value_type>;
 
   /// An instantiation of a `MultiBuf`.
   ///
@@ -316,6 +314,11 @@ class BasicMultiBuf {
 
   // Accessors
 
+  /// Returns the allocator used to store metadata.
+  constexpr Allocator& get_allocator() const {
+    return generic().get_allocator();
+  }
+
   /// Returns whether the MultiBuf is empty, i.e. whether it has no chunks or
   /// fragments.
   constexpr bool empty() const { return generic().empty(); }
@@ -368,11 +371,13 @@ class BasicMultiBuf {
   /// @endcode
   /// @{
   template <bool kMutable = !is_const()>
-  constexpr std::enable_if_t<kMutable, ChunksType> Chunks() {
+  constexpr std::enable_if_t<kMutable, v2::Chunks> Chunks() {
     return generic().Chunks();
   }
-  constexpr ConstChunksType Chunks() const { return generic().ConstChunks(); }
-  constexpr ConstChunksType ConstChunks() const {
+  constexpr const v2::ConstChunks Chunks() const {
+    return generic().ConstChunks();
+  }
+  constexpr const v2::ConstChunks ConstChunks() const {
     return generic().ConstChunks();
   }
   /// @}
@@ -459,8 +464,9 @@ class BasicMultiBuf {
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    mb      MultiBuf to be inserted.
+  /// @returns          An iterator to the inserted memory.
   template <Property... kOtherProperties>
-  void Insert(const_iterator pos, BasicMultiBuf<kOtherProperties...>&& mb);
+  iterator Insert(const_iterator pos, BasicMultiBuf<kOtherProperties...>&& mb);
 
   /// Insert memory before the given iterator.
   ///
@@ -470,12 +476,13 @@ class BasicMultiBuf {
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    bytes   Unowned memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   template <
       int&... kExplicitGuard,
       typename T,
       typename =
           std::enable_if_t<std::is_constructible_v<ConstByteSpan, T>, int>>
-  void Insert(const_iterator pos, const T& bytes);
+  iterator Insert(const_iterator pos, const T& bytes);
 
   /// @name Insert
   /// Insert memory before the given iterator.
@@ -486,9 +493,10 @@ class BasicMultiBuf {
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    bytes   Owned memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   /// @{
-  void Insert(const_iterator pos, UniquePtr<std::byte[]>&& bytes);
-  void Insert(const_iterator pos, UniquePtr<const std::byte[]>&& bytes);
+  iterator Insert(const_iterator pos, UniquePtr<std::byte[]>&& bytes);
+  iterator Insert(const_iterator pos, UniquePtr<const std::byte[]>&& bytes);
   /// @}
 
   /// @name Insert
@@ -500,12 +508,14 @@ class BasicMultiBuf {
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    bytes   Shared memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   /// @{
-  void Insert(const_iterator pos, const SharedPtr<std::byte[]>& bytes) {
-    Insert(pos, bytes, 0);
+  iterator Insert(const_iterator pos, const SharedPtr<std::byte[]>& bytes) {
+    return Insert(pos, bytes, 0);
   }
-  void Insert(const_iterator pos, const SharedPtr<const std::byte[]>& bytes) {
-    Insert(pos, bytes, 0);
+  iterator Insert(const_iterator pos,
+                  const SharedPtr<const std::byte[]>& bytes) {
+    return Insert(pos, bytes, 0);
   }
   /// @}
 
@@ -520,15 +530,16 @@ class BasicMultiBuf {
   /// @param    bytes   Shared memory to be inserted.
   /// @param    offset  Used to denote a subspan of `bytes`.
   /// @param    length  Used to denote a subspan of `bytes`.
+  /// @returns          An iterator to the inserted memory.
   /// @{
-  void Insert(const_iterator pos,
-              const SharedPtr<std::byte[]>& bytes,
-              size_t offset,
-              size_t length = dynamic_extent);
-  void Insert(const_iterator pos,
-              const SharedPtr<const std::byte[]>& bytes,
-              size_t offset,
-              size_t length = dynamic_extent);
+  iterator Insert(const_iterator pos,
+                  const SharedPtr<std::byte[]>& bytes,
+                  size_t offset,
+                  size_t length = dynamic_extent);
+  iterator Insert(const_iterator pos,
+                  const SharedPtr<const std::byte[]>& bytes,
+                  size_t offset,
+                  size_t length = dynamic_extent);
   /// @}
 
   /// Attempts to modify this object to be able to append the given MultiBuf to
@@ -735,7 +746,7 @@ class BasicMultiBuf {
   /// the middle of a shared chunk will include some bytes before the iterator.
   ///
   /// @param    pos     Location within the MultiBuf of the memory to share.
-  SharedPtr<value_type[]> Share(const_iterator pos);
+  SharedPtr<value_type[]> Share(const_iterator pos) const;
 
   /// Writes data from the MultiBuf at the given `offset` to `dst`.
   ///
@@ -862,7 +873,7 @@ class BasicMultiBuf {
   constexpr size_type NumLayers() const {
     static_assert(is_layerable(),
                   "`NumLayers` may only be called on layerable MultiBufs");
-    return generic().NumLayers();
+    return generic().num_layers();
   }
 
   /// Attempts to reserves memory to hold metadata for the given number of
@@ -974,6 +985,9 @@ class BasicMultiBuf {
   constexpr BasicMultiBuf() { internal::PropertiesAreValid(); }
 
  private:
+  template <v2::Property...>
+  friend class v2::BasicMultiBuf;
+
   template <bool kValidCopyOrMove = false>
   static constexpr void InvalidCopyOrMove() {
     static_assert(kValidCopyOrMove,
@@ -1021,8 +1035,6 @@ class GenericMultiBuf final
                             Property::kObservable> {
  private:
   using ControlBlock = allocator::internal::ControlBlock;
-  using typename BasicMultiBuf<>::ChunksType;
-  using typename BasicMultiBuf<>::ConstChunksType;
   using typename BasicMultiBuf<>::Deque;
 
  public:
@@ -1049,8 +1061,8 @@ class GenericMultiBuf final
   GenericMultiBuf& operator=(GenericMultiBuf&& other);
 
  private:
-  template <::pw::multibuf::v2::Property...>
-  friend class ::pw::multibuf::v2::BasicMultiBuf;
+  template <v2::Property...>
+  friend class v2::BasicMultiBuf;
 
   template <typename>
   friend class Instance;
@@ -1071,6 +1083,9 @@ class GenericMultiBuf final
 
   // Accessors.
 
+  /// @copydoc BasicMultiBuf<>::get_allocator
+  constexpr Allocator& get_allocator() const { return deque_.get_allocator(); }
+
   /// @copydoc BasicMultiBuf<>::empty
   constexpr bool empty() const { return deque_.empty(); }
 
@@ -1086,28 +1101,23 @@ class GenericMultiBuf final
 
   // Iterators.
 
-  constexpr ChunksType Chunks() {
-    return ChunksType(deque_, entries_per_chunk_);
+  constexpr v2::Chunks Chunks() {
+    return v2::Chunks(deque_, entries_per_chunk_);
   }
-  constexpr ConstChunksType ConstChunks() const {
-    return ConstChunksType(deque_, entries_per_chunk_);
-  }
-
-  constexpr iterator begin() { return iterator(Chunks().begin(), 0); }
-  constexpr const_iterator cbegin() const {
-    return const_iterator(ConstChunks().cbegin(), 0);
+  constexpr const v2::ConstChunks ConstChunks() const {
+    return v2::ConstChunks(deque_, entries_per_chunk_);
   }
 
-  constexpr iterator end() { return iterator(Chunks().end(), 0); }
-  constexpr const_iterator cend() const {
-    return const_iterator(ConstChunks().cend(), 0);
-  }
+  constexpr iterator begin() { return MakeIterator(0); }
+  constexpr const_iterator cbegin() const { return MakeIterator(0); }
+  constexpr iterator end() { return MakeIterator(num_chunks()); }
+  constexpr const_iterator cend() const { return MakeIterator(num_chunks()); }
 
   // Mutators.
 
   /// @copydoc BasicMultiBuf<>::TryReserveChunks
   [[nodiscard]] bool TryReserveChunks(size_t num_chunks) {
-    return TryReserveLayers(NumLayers(), num_chunks);
+    return TryReserveLayers(num_layers(), num_chunks);
   }
 
   /// @copydoc BasicMultiBuf<>::TryReserveForInsert
@@ -1119,18 +1129,18 @@ class GenericMultiBuf final
 
   /// @copydoc BasicMultiBuf<>::Insert
   /// @{
-  void Insert(const_iterator pos, GenericMultiBuf&& mb);
-  void Insert(const_iterator pos, ConstByteSpan bytes);
-  void Insert(const_iterator pos,
-              ConstByteSpan bytes,
-              size_t offset,
-              size_t length,
-              Deallocator* deallocator);
-  void Insert(const_iterator pos,
-              ConstByteSpan bytes,
-              size_t offset,
-              size_t length,
-              ControlBlock* control_block);
+  iterator Insert(const_iterator pos, GenericMultiBuf&& mb);
+  iterator Insert(const_iterator pos, ConstByteSpan bytes);
+  iterator Insert(const_iterator pos,
+                  ConstByteSpan bytes,
+                  size_t offset,
+                  size_t length,
+                  Deallocator* deallocator);
+  iterator Insert(const_iterator pos,
+                  ConstByteSpan bytes,
+                  size_t offset,
+                  size_t length,
+                  ControlBlock* control_block);
   /// @}
 
   /// @copydoc BasicMultiBuf<>::IsRemovable
@@ -1159,7 +1169,7 @@ class GenericMultiBuf final
   [[nodiscard]] bool IsShareable(const_iterator pos) const;
 
   /// @copydoc BasicMultiBuf<>::Share
-  SharedPtr<std::byte[]> Share(const_iterator pos);
+  SharedPtr<std::byte[]> Share(const_iterator pos) const;
 
   /// @copydoc BasicMultiBuf<>::CopyTo
   size_t CopyTo(ByteSpan dst, size_t offset) const {
@@ -1182,11 +1192,6 @@ class GenericMultiBuf final
 
   /// @copydoc BasicMultiBuf<>::NumFragments
   size_type NumFragments() const;
-
-  /// @copydoc BasicMultiBuf<>::NumLayers
-  constexpr size_type NumLayers() const {
-    return entries_per_chunk_ - Entry::kMinEntriesPerChunk + 1;
-  }
 
   /// @copydoc BasicMultiBuf<>::TryReserveLayers
   [[nodiscard]] bool TryReserveLayers(size_t num_layers, size_t num_chunks = 1);
@@ -1217,105 +1222,126 @@ class GenericMultiBuf final
   /// returns `length`.
   static size_t CheckRange(size_t offset, size_t length, size_t size);
 
-  /// Returns the number of chunks in the MultiBuf.
+  /// @copydoc Entry::num_chunks
   constexpr size_type num_chunks() const {
-    return deque_.size() / entries_per_chunk_;
+    return Entry::num_chunks(deque_, entries_per_chunk_);
   }
 
-  /// Returns the index to the data entry of a given chunk.
+  /// @copydoc Entry::num_layers
+  constexpr size_type num_layers() const {
+    return Entry::num_layers(entries_per_chunk_);
+  }
+
+  /// @copydoc Entry::memory_context_index
   constexpr size_type memory_context_index(size_type chunk) const {
     return Entry::memory_context_index(chunk, entries_per_chunk_);
   }
 
-  /// Returns the index to the data entry of a given chunk.
+  /// @copydoc Entry::data_index
   constexpr size_type data_index(size_type chunk) const {
     return Entry::data_index(chunk, entries_per_chunk_);
   }
 
-  /// Returns the index to the base view entry of a given chunk.
+  /// @copydoc Entry::base_view_index
   constexpr size_type base_view_index(size_type chunk) const {
     return Entry::base_view_index(chunk, entries_per_chunk_);
   }
 
-  /// Returns the index to a view entry of a given chunk.
+  /// @copydoc Entry::view_index
   constexpr size_type view_index(size_type chunk, size_type layer) const {
     return Entry::view_index(chunk, entries_per_chunk_, layer);
   }
 
-  /// Returns the index to the top view entry of a given chunk.
+  /// @copydoc Entry::top_view_index
   constexpr size_type top_view_index(size_type chunk) const {
     return Entry::top_view_index(chunk, entries_per_chunk_);
   }
 
-  /// Returns the memory backing the chunk at the given index.
+  /// @copydoc Entry::GetData
   constexpr std::byte* GetData(size_type chunk) const {
-    return deque_[data_index(chunk)].data;
+    return Entry::GetData(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns whether the memory backing the chunk at the given index is owned
-  /// by this object.
+  /// @copydoc Entry::IsOwned
   constexpr bool IsOwned(size_type chunk) const {
-    return deque_[base_view_index(chunk)].base_view.owned;
+    return Entry::IsOwned(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns whether the memory backing the chunk at the given index is shared
-  /// with other objects.
+  /// @copydoc Entry::IsShared
   constexpr bool IsShared(size_type chunk) const {
-    return deque_[base_view_index(chunk)].base_view.shared;
+    return Entry::IsShared(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns whether the chunk is part of a sealed layer.
+  /// @copydoc Entry::IsSealed
   constexpr bool IsSealed(size_type chunk) const {
-    return entries_per_chunk_ == Entry::kMinEntriesPerChunk
-               ? false
-               : deque_[top_view_index(chunk)].view.sealed;
+    return Entry::IsSealed(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns whether the chunk represents a fragment boundary.
+  /// @copydoc Entry::IsBoundary
+  /// @{
+  constexpr bool IsBoundary(size_type chunk, size_type layer) const {
+    return Entry::IsBoundary(deque_, chunk, entries_per_chunk_, layer);
+  }
   constexpr bool IsBoundary(size_type chunk) const {
-    return entries_per_chunk_ == Entry::kMinEntriesPerChunk
-               ? true
-               : deque_[top_view_index(chunk)].view.boundary;
+    return Entry::IsBoundary(deque_, chunk, entries_per_chunk_);
+  }
+  /// @}
+
+  /// @copydoc Entry::GetDeallocator
+  constexpr Deallocator& GetDeallocator(size_type chunk) const {
+    return Entry::GetDeallocator(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns the absolute offset of the given layer of the chunk.
-  ///
-  /// `layer` must be in the range [1, NumLayers()].
-  constexpr size_type GetOffset(size_type chunk, uint16_t layer) const {
-    return layer == 1 ? deque_[base_view_index(chunk)].base_view.offset
-                      : deque_[view_index(chunk, layer)].view.offset;
+  /// @copydoc Entry::GetControlBlock
+  constexpr ControlBlock& GetControlBlock(size_type chunk) const {
+    return Entry::GetControlBlock(deque_, chunk, entries_per_chunk_);
   }
 
-  /// Returns the offset of the view of the chunk.
+  /// @copydoc Entry::GetOffset
+  /// @{
+  constexpr size_type GetOffset(size_type chunk, size_type layer) const {
+    return Entry::GetOffset(deque_, chunk, entries_per_chunk_, layer);
+  }
   constexpr size_type GetOffset(size_type chunk) const {
-    return GetOffset(chunk, NumLayers());
+    return Entry::GetOffset(deque_, chunk, entries_per_chunk_);
   }
+  /// @}
 
-  /// Returns the offset relative to the layer below of the view of the chunk.
+  /// @copydoc Entry::GetRelativeOffset
+  /// @{
+  constexpr size_type GetRelativeOffset(size_type chunk,
+                                        size_type layer) const {
+    return Entry::GetRelativeOffset(deque_, chunk, entries_per_chunk_, layer);
+  }
   constexpr size_type GetRelativeOffset(size_type chunk) const {
-    uint16_t layer = NumLayers();
-    if (layer == 1) {
-      return GetOffset(chunk, layer);
-    }
-    return GetOffset(chunk, layer) - GetOffset(chunk, layer - 1);
+    return Entry::GetRelativeOffset(deque_, chunk, entries_per_chunk_);
   }
+  /// @}
 
-  /// Returns the length of the view of the chunk at the given index.
+  /// @copydoc Entry::GetLength
+  /// @{
+  constexpr size_type GetLength(size_type chunk, size_type layer) const {
+    return Entry::GetLength(deque_, chunk, entries_per_chunk_, layer);
+  }
   constexpr size_type GetLength(size_type chunk) const {
-    return entries_per_chunk_ == Entry::kMinEntriesPerChunk
-               ? deque_[base_view_index(chunk)].base_view.length
-               : deque_[top_view_index(chunk)].view.length;
+    return Entry::GetLength(deque_, chunk, entries_per_chunk_);
   }
+  /// @}
 
-  /// Returns the available view of a chunk.
+  /// @copydoc Entry::GetView
+  /// @{
+  constexpr ByteSpan GetView(size_type chunk, size_type layer) const {
+    return Entry::GetView(deque_, chunk, entries_per_chunk_, layer);
+  }
   constexpr ByteSpan GetView(size_type chunk) const {
-    return ByteSpan(GetData(chunk) + GetOffset(chunk), GetLength(chunk));
+    return Entry::GetView(deque_, chunk, entries_per_chunk_);
   }
+  /// @}
 
-  /// Converts an iterator into a chunk index and byte offset.
-  ///
-  /// The given iterator must be valid.
-  std::pair<size_type, size_type> GetChunkAndOffset(const_iterator pos) const;
+  /// Returns a byte iterator to the given offset in the given chunk.
+  constexpr iterator MakeIterator(size_type chunk, size_type offset = 0) const {
+    return iterator(deque_, chunk, entries_per_chunk_, 0) + offset;
+  }
 
   /// Attempts to allocate a control block and convert an owned chunk into a
   /// shared one.
@@ -1333,11 +1359,12 @@ class GenericMultiBuf final
   size_type InsertChunks(const_iterator pos, size_type num_chunks);
 
   /// Inserts entries representing the given data into the deque at the given
-  /// position, and returns the deque index to the start of the entries.
-  size_type Insert(const_iterator pos,
-                   ConstByteSpan bytes,
-                   size_t offset,
-                   size_t length);
+  /// position, and returns and iterator and chunk index to the start of the
+  /// inserted entries.
+  std::tuple<iterator, size_type> Insert(const_iterator pos,
+                                         ConstByteSpan bytes,
+                                         size_t offset,
+                                         size_t length);
 
   /// Sets the base entries of a given `out_chunk` in the `out_deque` to match
   /// the given `chunk`.
@@ -1415,10 +1442,6 @@ class GenericMultiBuf final
 
   /// Returns whether the top layer is sealed.
   [[nodiscard]] bool IsTopLayerSealed() const;
-
-  /// Modifies the top layer to represent the range [`offset`, `offset + range`)
-  /// of the second-from-top layer.
-  void SetLayer(size_t offset, size_t length);
 
   // Describes the memory and views to that in a one-dimensional sequence.
   // Every `entries_per_chunk_`-th entry holds a pointer to memory, each entry
@@ -1573,59 +1596,66 @@ bool BasicMultiBuf<kProperties...>::TryReserveForInsert(
 
 template <Property... kProperties>
 template <Property... kOtherProperties>
-void BasicMultiBuf<kProperties...>::Insert(
-    const_iterator pos, BasicMultiBuf<kOtherProperties...>&& mb) {
+auto BasicMultiBuf<kProperties...>::Insert(
+    const_iterator pos, BasicMultiBuf<kOtherProperties...>&& mb) -> iterator {
   internal::AssertIsConvertible<BasicMultiBuf<kOtherProperties...>,
                                 BasicMultiBuf>();
-  generic().Insert(pos, std::move(mb.generic()));
+  return generic().Insert(pos, std::move(mb.generic()));
 }
 
 template <Property... kProperties>
 template <int&... kExplicitGuard, typename T, typename>
-void BasicMultiBuf<kProperties...>::Insert(const_iterator pos, const T& bytes) {
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos, const T& bytes)
+    -> iterator {
   using data_ptr_type = decltype(std::data(std::declval<T&>()));
   static_assert(std::is_same_v<data_ptr_type, std::byte*> || is_const(),
                 "Cannot `Insert` read-only bytes into mutable MultiBuf");
-  generic().Insert(pos, bytes);
+  return generic().Insert(pos, bytes);
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
-                                           UniquePtr<std::byte[]>&& bytes) {
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
+                                           UniquePtr<std::byte[]>&& bytes)
+    -> iterator {
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
+  iterator iter =
+      generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
   bytes.Release();
+  return iter;
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::Insert(
-    const_iterator pos, UniquePtr<const std::byte[]>&& bytes) {
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
+                                           UniquePtr<const std::byte[]>&& bytes)
+    -> iterator {
   static_assert(is_const(),
                 "Cannot `Insert` read-only bytes into mutable MultiBuf");
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
+  iterator iter =
+      generic().Insert(pos, chunk, 0, bytes.size(), bytes.deallocator());
   bytes.Release();
+  return iter;
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
                                            const SharedPtr<std::byte[]>& bytes,
                                            size_t offset,
-                                           size_t length) {
+                                           size_t length) -> iterator {
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, offset, length, bytes.control_block());
+  return generic().Insert(pos, chunk, offset, length, bytes.control_block());
 }
 
 template <Property... kProperties>
-void BasicMultiBuf<kProperties...>::Insert(
+auto BasicMultiBuf<kProperties...>::Insert(
     const_iterator pos,
     const SharedPtr<const std::byte[]>& bytes,
     size_t offset,
-    size_t length) {
+    size_t length) -> iterator {
   static_assert(is_const(),
                 "Cannot `Insert` read-only bytes into mutable MultiBuf");
   ConstByteSpan chunk(bytes.get(), bytes.size());
-  generic().Insert(pos, chunk, offset, length, bytes.control_block());
+  return generic().Insert(pos, chunk, offset, length, bytes.control_block());
 }
 
 template <Property... kProperties>
@@ -1720,7 +1750,7 @@ BasicMultiBuf<kProperties...>::Release(const_iterator pos) {
 
 template <Property... kProperties>
 SharedPtr<typename BasicMultiBuf<kProperties...>::value_type[]>
-BasicMultiBuf<kProperties...>::Share(const_iterator pos) {
+BasicMultiBuf<kProperties...>::Share(const_iterator pos) const {
   return SharedPtr<value_type[]>(generic().Share(pos));
 }
 
