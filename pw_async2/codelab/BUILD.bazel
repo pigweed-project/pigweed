@@ -42,7 +42,6 @@ pw_cc_binary(
         "//pw_async2:system_time_provider",
         "//pw_async2:time_provider",
         "//pw_chrono:system_clock",
-        "//pw_containers:inline_async_deque",
         "//pw_log",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",

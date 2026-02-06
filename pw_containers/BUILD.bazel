@@ -207,17 +207,6 @@ cc_library(
 )
 
 cc_library(
-    name = "async_count_and_capacity",
-    hdrs = ["public/pw_containers/internal/async_count_and_capacity.h"],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:private"],
-    deps = [
-        ":deque_common",
-        "//pw_async2",
-    ],
-)
-
-cc_library(
     name = "deque",
     hdrs = ["public/pw_containers/deque.h"],
     strip_include_prefix = "public",
@@ -253,17 +242,6 @@ cc_library(
 )
 
 cc_library(
-    name = "inline_async_deque",
-    hdrs = ["public/pw_containers/inline_async_deque.h"],
-    strip_include_prefix = "public",
-    deps = [
-        ":async_count_and_capacity",
-        ":inline_deque",
-        "//pw_preprocessor",
-    ],
-)
-
-cc_library(
     name = "queue_common",
     hdrs = ["public/pw_containers/internal/generic_queue.h"],
     strip_include_prefix = "public",
@@ -292,18 +270,6 @@ cc_library(
     deps = [
         ":inline_deque",
         ":queue_common",
-    ],
-)
-
-cc_library(
-    name = "inline_async_queue",
-    hdrs = ["public/pw_containers/inline_async_queue.h"],
-    strip_include_prefix = "public",
-    deps = [
-        ":async_count_and_capacity",
-        ":inline_async_deque",
-        ":inline_queue",
-        "//pw_preprocessor",
     ],
 )
 
@@ -652,21 +618,6 @@ pw_cc_test(
 )
 
 pw_cc_test(
-    name = "inline_async_deque_test",
-    srcs = [
-        "inline_async_deque_test.cc",
-    ],
-    deps = [
-        ":inline_async_deque",
-        ":test_helpers",
-        "//pw_async2",
-        "//pw_async2:testing",
-        "//pw_preprocessor",
-        "//pw_status",
-    ],
-)
-
-pw_cc_test(
     name = "dynamic_queue_test",
     srcs = ["dynamic_queue_test.cc"],
     deps = [
@@ -686,20 +637,6 @@ pw_cc_test(
         ":algorithm",
         ":inline_queue",
         ":test_helpers",
-    ],
-)
-
-pw_cc_test(
-    name = "inline_async_queue_test",
-    srcs = [
-        "inline_async_queue_test.cc",
-    ],
-    deps = [
-        ":inline_async_queue",
-        "//pw_async2",
-        "//pw_async2:testing",
-        "//pw_preprocessor",
-        "//pw_status",
     ],
 )
 
@@ -906,13 +843,10 @@ filegroup(
         "public/pw_containers/filtered_view.h",
         "public/pw_containers/flat_map.h",
         "public/pw_containers/functional.h",
-        "public/pw_containers/inline_async_deque.h",
-        "public/pw_containers/inline_async_queue.h",
         "public/pw_containers/inline_deque.h",
         "public/pw_containers/inline_queue.h",
         "public/pw_containers/inline_var_len_entry_queue.h",
         "public/pw_containers/internal/aa_tree.h",
-        "public/pw_containers/internal/async_count_and_capacity.h",
         "public/pw_containers/internal/generic_deque.h",
         "public/pw_containers/internal/generic_queue.h",
         "public/pw_containers/internal/intrusive_list.h",

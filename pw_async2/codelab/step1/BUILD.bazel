@@ -40,7 +40,6 @@ pw_cc_binary(
         "//pw_async2/codelab:hardware",
         "//pw_async2/codelab:sensors",
         "//pw_chrono:system_clock",
-        "//pw_containers:inline_async_queue",
         "//pw_log",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",
