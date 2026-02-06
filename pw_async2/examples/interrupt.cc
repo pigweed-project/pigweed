@@ -152,13 +152,11 @@ int main() {
    private:
     pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
       while (true) {
-        if (!future_.has_value()) {
+        if (!future_.is_pendable()) {
           future_ = uart_.ReadByte();
         }
 
-        PW_TRY_READY_ASSIGN(pw::Result<char> result, future_->Pend(cx));
-
-        future_.reset();
+        PW_TRY_READY_ASSIGN(pw::Result<char> result, future_.Pend(cx));
 
         if (!result.ok()) {
           PW_LOG_ERROR("UART read failed: %s", result.status().str());
@@ -172,7 +170,7 @@ int main() {
     }
 
     FakeUart& uart_;
-    std::optional<pw::async2::ValueFuture<pw::Result<char>>> future_;
+    pw::async2::ValueFuture<pw::Result<char>> future_;
   };
 
   ReaderTask reader_task(fake_uart);

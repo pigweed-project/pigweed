@@ -219,21 +219,20 @@ template <typename T>
 void DrainChannelToAvoidAssertOnDestruction(Receiver<T>&& channel_receiver) {
   // Needed as the channel asserts if there is any data in it on destruction!
   DispatcherForTest dispatcher;
-  std::optional<ReceiveFuture<T>> receive_future;
+  ReceiveFuture<T> receive_future;
   auto drain_task =
       FuncTask([&receive_future, receiver = std::move(channel_receiver)](
                    Context& cx) mutable -> Poll<> {
         while (true) {
-          if (!receive_future.has_value()) {
+          if (!receive_future.is_pendable()) {
             receive_future = receiver.Receive();
           }
 
           PW_TRY_READY_ASSIGN([[maybe_unused]] const auto result,
-                              receive_future->Pend(cx));
+                              receive_future.Pend(cx));
           if (!result) {
             return Ready();
           }
-          receive_future.reset();
         }
       });
 
@@ -250,22 +249,22 @@ TEST(FutureTimeout, SendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
   auto receiver = std::move(std::get<2>(channel_result));
   handle.Release();
 
-  std::optional<SendFutureWithTimeoutOrClosed<int>> send_future;
+  SendFutureWithTimeoutOrClosed<int> send_future;
   int send_count = 0;
   FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!send_future.has_value()) {
+      if (!send_future.is_pendable()) {
         send_future =
             TimeoutOrClosed(sender.Send(send_count), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const bool sent, send_future->Pend(cx));
+      PW_TRY_READY_ASSIGN(const bool sent, send_future.Pend(cx));
       if (!sent) {
         return Ready();
       }
 
       send_count += 1;
-      send_future.reset();
+      send_future = SendFutureWithTimeoutOrClosed<int>();
     }
   });
 
@@ -293,16 +292,16 @@ TEST(FutureTimeout, SendFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
   auto receiver = std::move(std::get<2>(channel_result));
   handle.Release();
 
-  std::optional<SendFutureWithTimeout<int>> send_future;
+  SendFutureWithTimeout<int> send_future;
   int send_count = 0;
   Status send_status = {};
   FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!send_future.has_value()) {
+      if (!send_future.is_pendable()) {
         send_future = Timeout(sender.Send(send_count), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const Result<bool> result, send_future->Pend(cx));
+      PW_TRY_READY_ASSIGN(const Result<bool> result, send_future.Pend(cx));
       if (!result.ok()) {
         send_status = result.status();
         return Ready();
@@ -314,7 +313,6 @@ TEST(FutureTimeout, SendFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
       }
 
       send_count += 1;
-      send_future.reset();
     }
   });
 
@@ -343,24 +341,23 @@ TEST(FutureTimeout, ReserveSendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
   auto receiver = std::move(std::get<2>(channel_result));
   handle.Release();
 
-  std::optional<ReserveSendFutureWithTimeoutOrClosed<int>> send_reservation;
+  ReserveSendFutureWithTimeoutOrClosed<int> send_reservation;
   int send_count = 0;
   FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!send_reservation.has_value()) {
+      if (!send_reservation.is_pendable()) {
         send_reservation =
             TimeoutOrClosed(sender.ReserveSend(), time_provider, 30s);
       }
 
       PW_TRY_READY_ASSIGN(std::optional<SendReservation<int>> result,
-                          send_reservation->Pend(cx));
+                          send_reservation.Pend(cx));
       if (!result.has_value()) {
         return Ready();
       }
 
       result->Commit(send_count);
       send_count += 1;
-      send_reservation.reset();
     }
   });
 
@@ -389,17 +386,17 @@ TEST(FutureTimeout,
   auto receiver = std::move(std::get<2>(channel_result));
   handle.Release();
 
-  std::optional<ReserveSendFutureWithTimeout<int>> send_reservation;
+  ReserveSendFutureWithTimeout<int> send_reservation;
   int send_count = 0;
   Status send_status = {};
   FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!send_reservation.has_value()) {
+      if (!send_reservation.is_pendable()) {
         send_reservation = Timeout(sender.ReserveSend(), time_provider, 30s);
       }
 
       PW_TRY_READY_ASSIGN(Result<std::optional<SendReservation<int>>> result,
-                          send_reservation->Pend(cx));
+                          send_reservation.Pend(cx));
 
       if (!result.ok()) {
         send_status = result.status();
@@ -413,7 +410,6 @@ TEST(FutureTimeout,
 
       (*result)->Commit(send_count);
       send_count += 1;
-      send_reservation.reset();
     }
   });
 
@@ -446,23 +442,22 @@ TEST(FutureTimeout, ReceiveFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
   ASSERT_TRUE(sender.TrySend(1).ok());
   ASSERT_TRUE(sender.TrySend(2).ok());
 
-  std::optional<ReceiveFutureWithTimeoutOrClosed<int>> receive_future;
+  ReceiveFutureWithTimeoutOrClosed<int> receive_future;
   int receive_count = 0;
   FuncTask receive_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!receive_future.has_value()) {
+      if (!receive_future.is_pendable()) {
         receive_future =
             TimeoutOrClosed(receiver.Receive(), time_provider, 30s);
       }
 
       PW_TRY_READY_ASSIGN(const std::optional<int> result,
-                          receive_future->Pend(cx));
+                          receive_future.Pend(cx));
       if (!result) {
         return Ready();
       }
 
       receive_count += 1;
-      receive_future.reset();
     }
   });
 
@@ -495,17 +490,17 @@ TEST(FutureTimeout, ReceiveFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
   ASSERT_TRUE(sender.TrySend(1).ok());
   ASSERT_TRUE(sender.TrySend(2).ok());
 
-  std::optional<ReceiveFutureWithTimeout<int>> receive_future;
+  ReceiveFutureWithTimeout<int> receive_future;
   int receive_count = 0;
   Status receive_status = {};
   FuncTask receive_task([&](Context& cx) -> Poll<> {
     while (true) {
-      if (!receive_future.has_value()) {
+      if (!receive_future.is_pendable()) {
         receive_future = Timeout(receiver.Receive(), time_provider, 30s);
       }
 
       PW_TRY_READY_ASSIGN(const Result<std::optional<int>> result,
-                          receive_future->Pend(cx));
+                          receive_future.Pend(cx));
 
       if (!result.ok()) {
         receive_status = result.status();
@@ -518,7 +513,6 @@ TEST(FutureTimeout, ReceiveFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
       }
 
       receive_count += 1;
-      receive_future.reset();
     }
   });
 

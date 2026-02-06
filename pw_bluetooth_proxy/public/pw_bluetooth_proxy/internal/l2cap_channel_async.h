@@ -146,7 +146,7 @@ class L2capChannelImpl {
 
     L2capChannelImpl& impl_;
     async2::Receiver<Request> receiver_;
-    std::optional<async2::ReceiveFuture<Request>> future_;
+    async2::ReceiveFuture<Request> future_;
   } task_;
 
   /// Handle to the async2 channel used to connect receive basic requests from
@@ -160,8 +160,7 @@ class L2capChannelImpl {
   async2::MpscChannelHandle<FlatConstMultiBufInstance> payload_handle_;
   async2::Sender<FlatConstMultiBufInstance> payload_sender_;
   async2::Receiver<FlatConstMultiBufInstance> payload_receiver_;
-  std::optional<async2::ReceiveFuture<FlatConstMultiBufInstance>>
-      payload_future_;
+  async2::ReceiveFuture<FlatConstMultiBufInstance> payload_future_;
 
   /// An L2CAP SDU that is being segmented into one or more L2CAP PDUs.
   std::optional<FlatConstMultiBufInstance> payload_;

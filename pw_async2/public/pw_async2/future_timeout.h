@@ -93,7 +93,21 @@ struct ReadyConstantValueResolution {
   }
 
  private:
+  static_assert(
+      std::is_default_constructible_v<cpp20::remove_cvref_t<ConstantType>>,
+      "ConstantType must be default constructible");
   cpp20::remove_cvref_t<ConstantType> constant_;
+};
+
+template <typename T, typename CastType>
+struct ReadyConstantValueResolution<T, std::nullopt_t, CastType> {
+  using value_type = T;
+  constexpr ReadyConstantValueResolution() = default;
+  constexpr explicit ReadyConstantValueResolution(std::nullopt_t) {}
+
+  constexpr Poll<T> operator()() const {
+    return Ready<T>(std::in_place_t{}, CastType(std::nullopt));
+  }
 };
 
 /// When used as the `TimeoutResolution` type parameter, causes the

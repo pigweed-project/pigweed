@@ -42,11 +42,10 @@ class Producer : public Task {
  private:
   Poll<> DoPend(Context& cx) override {
     while (data_ < 3) {
-      if (!send_future_.has_value()) {
-        send_future_.emplace(sender_.Send(data_));
+      if (!send_future_.is_pendable()) {
+        send_future_ = sender_.Send(data_);
       }
-      PW_TRY_READY(send_future_->Pend(cx));
-      send_future_.reset();
+      PW_TRY_READY(send_future_.Pend(cx));
       ++data_;
     }
     sender_.Disconnect();
@@ -55,7 +54,7 @@ class Producer : public Task {
 
   int data_ = 0;
   Sender<int> sender_;
-  std::optional<SendFuture<int>> send_future_;
+  SendFuture<int> send_future_;
 };
 
 class Consumer : public Task {
@@ -68,23 +67,22 @@ class Consumer : public Task {
  private:
   Poll<> DoPend(Context& cx) override {
     while (true) {
-      if (!receive_future_.has_value()) {
-        receive_future_.emplace(receiver_.Receive());
+      if (!receive_future_.is_pendable()) {
+        receive_future_ = receiver_.Receive();
       }
-      PW_TRY_READY_ASSIGN(std::optional<int> result, receive_future_->Pend(cx));
+      PW_TRY_READY_ASSIGN(std::optional<int> result, receive_future_.Pend(cx));
       if (!result.has_value()) {
         break;
       }
 
       values_.push_back(*result);
-      receive_future_.reset();
     }
     receiver_.Disconnect();
     return Ready();
   }
 
   Receiver<int> receiver_;
-  std::optional<ReceiveFuture<int>> receive_future_;
+  ReceiveFuture<int> receive_future_;
   pw::Vector<int, 3> values_;
 };
 // DOCSTAG: [pw_async2-examples-channel-manual]

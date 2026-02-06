@@ -171,8 +171,6 @@ TEST(ValueProvider, MoveToThread) {
   EXPECT_EQ(*result, 42);
 }
 
-}  // namespace
-
 TEST(OptionalBroadcastValueProvider, ResolveFromOtherThread) {
   DispatcherForTest dispatcher;
   OptionalBroadcastValueProvider<int> provider;
@@ -257,3 +255,5 @@ TEST(OptionalValueProvider, DestructFromOtherThread) {
 
   EXPECT_FALSE(result.has_value());
 }
+
+}  // namespace

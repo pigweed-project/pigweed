@@ -167,7 +167,7 @@ class ProxyHostImpl {
 
    private:
     async2::Receiver<Request> receiver_;
-    std::optional<async2::ReceiveFuture<Request>> request_;
+    async2::ReceiveFuture<Request> request_;
 
     ProxyHostImpl& impl_;
   };
@@ -210,7 +210,7 @@ class ProxyHostImpl {
     async2::Poll<> DoPend(async2::Context& context) override;
 
     async2::Sender<Response> sender_;
-    std::optional<async2::SendFuture<Response>> response_;
+    async2::SendFuture<Response> response_;
   };
 
   /// Sends an H4 packet from the host to be handled.
@@ -275,12 +275,11 @@ class ProxyHostImpl {
 template <typename Request>
 async2::Poll<std::optional<Request>> ProxyHostImpl::ProxyTask<Request>::Receive(
     async2::Context& context) {
-  if (!request_.has_value()) {
+  if (!request_.is_pendable()) {
     request_ = receiver_.Receive();
   }
   std::optional<Request> request;
-  PW_TRY_READY_ASSIGN(request, request_->Pend(context));
-  request_.reset();
+  PW_TRY_READY_ASSIGN(request, request_.Pend(context));
   return request;
 }
 
@@ -304,11 +303,10 @@ async2::Poll<> ProxyHostImpl::Responder<Request, Response>::DoPend(
   while (true) {
     // First, send any outstanding response.
     bool can_send = true;
-    if (response_.has_value()) {
+    if (response_.is_pendable()) {
       // Try to send the response. This may return Pending and cause the loop to
       // be rerun from the top when the task is later awoken.
-      PW_TRY_READY_ASSIGN(can_send, response_->Pend(context));
-      response_.reset();
+      PW_TRY_READY_ASSIGN(can_send, response_.Pend(context));
     }
     if (!can_send) {
       // async2::Channel closed; exit the loop.

@@ -202,19 +202,17 @@ class SampleVoltageTask final : public Task {
  private:
   Poll<> DoPend(Context& cx) override {
     while (!voltages_.full()) {
-      if (!current_future_.has_value()) {
+      if (!current_future_.is_pendable()) {
         current_future_ = Timeout(sensor_.ReadFuture(), kSensorReadTimeout);
       }
 
-      PW_TRY_READY_ASSIGN(const Result<float> result,
-                          current_future_->Pend(cx));
+      PW_TRY_READY_ASSIGN(const Result<float> result, current_future_.Pend(cx));
 
       if (!result.ok()) {
         status_ = result.status();
         return Ready();
       }
       voltages_.push_back(*result);
-      current_future_.reset();
     }
     return Ready();
   }
@@ -222,7 +220,7 @@ class SampleVoltageTask final : public Task {
   FakeVoltageSensor sensor_;
   Vector<float, 10> voltages_;
   Status status_;
-  std::optional<ValueFutureWithTimeout<float>> current_future_;
+  ValueFutureWithTimeout<float> current_future_;
 };
 
 int main() {

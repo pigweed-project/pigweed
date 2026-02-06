@@ -275,11 +275,11 @@ channel.
           private:
            Poll<> DoPend(pw::async2::Context& cx) override {
              // Reserve space for a value in the channel.
-             if (!reservation_future_.has_value()) {
+             if (!reservation_future_.is_pendable()) {
                reservation_future_ = sender.ReserveSend();
              }
 
-             PW_TRY_READY_ASSIGN(auto reservation, reservation_future_);
+             PW_TRY_READY_ASSIGN(auto reservation, reservation_future_.Pend(cx));
              if (!reservation.has_value()) {
                PW_LOG_ERROR("Channel is closed");
                return;
@@ -287,12 +287,11 @@ channel.
 
              // Emplace a value into the channel.
              reservation->Commit(42);
-             reservation_future_.reset();
              return pw::async2::Ready();
            }
 
            Sender<int> sender;
-           std::optional<ReserveSendFuture<int>> reservation_future_;
+           ReserveSendFuture<int> reservation_future_;
          };
 
    .. tab-item:: C++20 coroutines

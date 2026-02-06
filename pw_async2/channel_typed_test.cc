@@ -174,17 +174,16 @@ class SenderTask : public Task {
  private:
   Poll<> DoPend(Context& cx) override {
     while (count_ > 0) {
-      if (!future_.has_value()) {
-        future_.emplace(sender_.Send(std::move(MakeT<T>(current_value_))));
+      if (!future_.is_pendable()) {
+        future_ = sender_.Send(std::move(MakeT<T>(current_value_)));
       }
 
-      PW_TRY_READY_ASSIGN(bool sent, future_->Pend(cx));
+      PW_TRY_READY_ASSIGN(bool sent, future_.Pend(cx));
       if (!sent) {
         success_ = false;
         return Ready();
       }
 
-      future_.reset();
       current_value_++;
       count_--;
     }
@@ -195,7 +194,7 @@ class SenderTask : public Task {
   }
 
   Sender<T> sender_;
-  std::optional<SendFuture<T>> future_;
+  SendFuture<T> future_;
   bool success_ = false;
   int current_value_;
   int count_;
@@ -220,17 +219,16 @@ class ReceiverTask : public Task {
  private:
   Poll<> DoPend(Context& cx) override {
     while (count_ > 0) {
-      if (!future_.has_value()) {
-        future_.emplace(receiver_.Receive());
+      if (!future_.is_pendable()) {
+        future_ = receiver_.Receive();
       }
 
-      PW_TRY_READY_ASSIGN(std::optional<T> value, future_->Pend(cx));
+      PW_TRY_READY_ASSIGN(std::optional<T> value, future_.Pend(cx));
       if (!value.has_value()) {
         break;
       }
 
       received_.emplace_back(std::move(*value));
-      future_.reset();
       count_--;
     }
 
@@ -239,7 +237,7 @@ class ReceiverTask : public Task {
   }
 
   Receiver<T> receiver_;
-  std::optional<ReceiveFuture<T>> future_;
+  ReceiveFuture<T> future_;
   std::list<T> received_;
   size_t count_;
 };

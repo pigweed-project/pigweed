@@ -570,28 +570,28 @@ TEST(OptionalBroadcastValueProvider, Cancel) {
 
 TEST(OptionalBroadcastValueProvider, DestructorCancels) {
   DispatcherForTest dispatcher;
-  std::optional<ValueFuture<std::optional<int>>> future1;
-  std::optional<ValueFuture<std::optional<int>>> future2;
+  ValueFuture<std::optional<int>> future1;
+  ValueFuture<std::optional<int>> future2;
 
   {
     OptionalBroadcastValueProvider<int> provider;
-    future1.emplace(provider.Get());
-    future2.emplace(provider.Get());
-    EXPECT_FALSE(future1->is_complete());
-    EXPECT_FALSE(future2->is_complete());
+    future1 = provider.Get();
+    future2 = provider.Get();
+    EXPECT_FALSE(future1.is_complete());
+    EXPECT_FALSE(future2.is_complete());
     // provider goes out of scope here
   }
 
   std::optional<int> result1 = 0;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1->Pend(cx));
+    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2 = 0;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2->Pend(cx));
+    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
     result2 = value;
     return Ready();
   });

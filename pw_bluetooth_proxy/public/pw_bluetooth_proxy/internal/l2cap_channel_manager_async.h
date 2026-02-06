@@ -147,7 +147,7 @@ class L2capChannelManagerImpl {
   async2::MpscChannelHandle<bool> credit_handle_;
   async2::Receiver<bool> credit_receiver_;
   async2::Sender<bool> credit_sender_;
-  std::optional<async2::ReceiveFuture<bool>> credit_future_;
+  async2::ReceiveFuture<bool> credit_future_;
 };
 
 }  // namespace internal

@@ -112,11 +112,10 @@ async2::Poll<std::optional<H4PacketWithH4>> L2capChannelImpl::DequeuePacket(
 
   // First, try to receive a payload if we don't already have one.
   if (!payload_.has_value()) {
-    if (!payload_future_.has_value()) {
+    if (!payload_future_.is_pendable()) {
       payload_future_ = payload_receiver_.Receive();
     }
-    PW_TRY_READY_ASSIGN(payload_, payload_future_->Pend(context));
-    payload_future_.reset();
+    PW_TRY_READY_ASSIGN(payload_, payload_future_.Pend(context));
 
     // Either the handle was closed, or the future returned std::nullopt. Either
     // way the channel is closed.
@@ -161,7 +160,7 @@ void L2capChannelImpl::ReportNewTxPacketsOrCredits() {
 
 void L2capChannelImpl::ClearQueue() {
   payload_handle_.Close();
-  payload_future_.reset();
+  payload_future_ = async2::ReceiveFuture<FlatConstMultiBufInstance>();
   payload_.reset();
 }
 
@@ -171,12 +170,12 @@ bool L2capChannelImpl::IsStale() const {
 
 async2::Poll<> L2capChannelImpl::Task::DoPend(async2::Context& context) {
   while (true) {
-    if (!future_.has_value()) {
+    if (!future_.is_pendable()) {
       future_ = receiver_.Receive();
     }
     std::optional<Request> request;
-    PW_TRY_READY_ASSIGN(request, future_->Pend(context));
-    future_.reset();
+    PW_TRY_READY_ASSIGN(request, future_.Pend(context));
+    future_ = async2::ReceiveFuture<Request>();
     if (!request.has_value()) {
       return async2::Ready();
     }

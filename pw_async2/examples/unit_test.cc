@@ -84,15 +84,15 @@ TEST(Async2UnitTest, MultiStepExample) {
 
   FortuneTeller oracle;
   const char* fortune = "";
-  std::optional<pw::async2::ValueFuture<const char*>> future;
+  pw::async2::ValueFuture<const char*> future;
 
   // This task gets a fortune and checks that it matches the expected value.
   // The task may need to execute multiple times if the fortune is not ready.
   pw::async2::FuncTask task([&](Context& context) -> Poll<> {
-    if (!future.has_value()) {
+    if (!future.is_pendable()) {
       future = oracle.WaitForFortune();
     }
-    PW_TRY_READY_ASSIGN(fortune, future->Pend(context));
+    PW_TRY_READY_ASSIGN(fortune, future.Pend(context));
     return Ready();
   });
 

@@ -99,15 +99,14 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
       return async2::Ready();
     }
 
-    if (!credit_future_.has_value()) {
+    if (!credit_future_.is_pendable()) {
       credit_future_ = credit_receiver_.Receive();
       round_robin_terminus_ = lrd_channel_;
     }
 
-    if (credit_future_->Pend(context).IsReady()) {
-      // We received a notification of additional tx credits. Clear the future
-      // to start a fresh iteration.
-      credit_future_.reset();
+    if (credit_future_.Pend(context).IsReady()) {
+      // We received a notification of additional tx credits. The future is no
+      // longer pendable, so start a fresh iteration.
       continue;
     }
 
