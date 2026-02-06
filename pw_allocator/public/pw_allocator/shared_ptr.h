@@ -358,6 +358,7 @@ template <typename U, typename>
 constexpr SharedPtr<T>& SharedPtr<T>::operator=(
     const SharedPtr<U>& other) noexcept {
   CheckArrayTypes<U>();
+  reset();
   CopyFrom(other);
   if (control_block_ != nullptr) {
     control_block_->IncrementShared();
