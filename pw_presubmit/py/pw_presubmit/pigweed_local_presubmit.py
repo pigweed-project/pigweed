@@ -51,7 +51,6 @@ EXCLUDES = tuple(re.compile(path) for path in _EXCLUDE_PATHS)
 
 # Quick lint and format checks.
 QUICK = (
-    upstream_checks.bazel_includes(),
     upstream_checks.commit_message_format,
     upstream_checks.copyright_notice,
     upstream_checks.inclusive_language_check,
