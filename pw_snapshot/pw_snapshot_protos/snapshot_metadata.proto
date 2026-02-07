@@ -85,6 +85,24 @@ message Metadata {
 
   // The architecture of the CPU that generated this report.
   CpuArchitecture.Enum cpu_arch = 8;
+
+  // A string identifying the unique "build" from which this firmware
+  // originates. This will typically refer to a CI/CD system build or job
+  // identifier.
+  //
+  // The recommended format is "<build_system>/<unique_id>" but the exact
+  // format of this string is up to the user. Examples:
+  //
+  // * GitHub Actions: "github/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+  // * GitLab CI/CD: "gitlab/${CI_PIPELINE_ID}"
+  // * Jenkins: "jenkins/${BUILD_NUMBER}"
+  // * LUCI: "luci/<build-id>"
+  //
+  // Local builds can leave this field empty or specify "local".
+  //
+  // Projects using Pigweed's LUCI build system should use the LUCI format
+  // specified above.
+  string build_origin = 9;
 }
 
 // This message overlays the pw.snapshot.Snapshot proto. It's valid to encode
