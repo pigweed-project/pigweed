@@ -34,11 +34,12 @@ pw_source_set("pw_multibuf") {
     ":chunk",
     ":config",
     "v1:multibuf",
+    "v1_adapter:multibuf",
     "v2:multibuf",
   ]
 }
 
-# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
 
 ### Module configuration
 
@@ -65,6 +66,7 @@ pw_source_set("chunk") {
   public_deps = [
     ":config",
     "v1:chunk",
+    "v1_adapter:chunk",
   ]
 }
 
@@ -147,6 +149,7 @@ pw_source_set("testing") {
 pw_test_group("tests") {
   group_deps = [
     "v1:tests",
+    "v1_adapter:tests",
     "v2:tests",
   ]
 }

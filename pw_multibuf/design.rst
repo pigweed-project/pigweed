@@ -17,6 +17,27 @@ A legacy version of the MultiBuf type encapsulated memory allocation for all
 buffers, did not provide support for layered views, and generally had higher
 overhead. We are in the process of migrating users to the newer version.
 
+During the migration period, consumers can use
+:ref:`module configuration <module-structure-compile-time-configuration>`
+options to select which version is in use:
+
+.. `cc``:: PW_MULTIBUF_VERSION
+
+   Controls which MultiBuf version is used. This module configuration option
+   should be set in a Pigweed configuration header. Defaults to ``1``.
+
+.. `cc`:: PW_MULTIBUF_WARN_DEPRECATED
+
+  Controls whether code using the v1 API emits deprecation warnings. This module
+  configuration option should be set in a Pigweed configuration header. Disabled
+  by default.
+
+.. `cc`:: PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
+  Controls whether the v2 module includes v1 adapter types. These allow setting
+  ``PW_MULTIBUF_VERSION`` to ``2`` while still having code that uses the v1 API.
+  Enabled by default.
+
 The remainder of this document refers to the newer, "v2" version.
 
 -----------------------------

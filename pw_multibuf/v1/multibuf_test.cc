@@ -39,6 +39,8 @@ static_assert(
 
 TEST(MultiBuf, IsDefaultConstructible) { [[maybe_unused]] MultiBuf buf; }
 
+// Keep these tests in sync with those in multibuf_v1_adapter_test.cc
+// LINT.IfChange
 TEST(MultiBuf, WithOneChunkReleases) {
   AllocatorForTest<kArbitraryAllocatorSize> allocator;
   const auto& metrics = allocator.metrics();
@@ -763,6 +765,7 @@ TEST(MultiBuf, ContiguousSpanAcrossMultipleChunks) {
   buf.InsertChunk(++it, MakeChunk(allocator, 1));
   EXPECT_FALSE(buf.IsContiguous());
 }
+// LINT.ThenChange(../v1_adapter/multibuf_test.cc)
 
 }  // namespace
 }  // namespace pw::multibuf::v1

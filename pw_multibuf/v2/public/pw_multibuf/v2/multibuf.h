@@ -32,9 +32,16 @@
 #include "pw_multibuf/v2/observer.h"
 #include "pw_multibuf/v2/properties.h"
 
-namespace pw::multibuf::v2 {
+namespace pw::multibuf {
 
 // Forward declarations.
+
+namespace v1_adapter {
+class MultiBuf;
+class MultiBufChunks;
+}  // namespace v1_adapter
+
+namespace v2 {
 
 template <Property...>
 class BasicMultiBuf;
@@ -988,6 +995,9 @@ class BasicMultiBuf {
   template <v2::Property...>
   friend class v2::BasicMultiBuf;
 
+  friend class v1_adapter::MultiBuf;
+  friend class v1_adapter::MultiBufChunks;
+
   template <bool kValidCopyOrMove = false>
   static constexpr void InvalidCopyOrMove() {
     static_assert(kValidCopyOrMove,
@@ -1063,6 +1073,9 @@ class GenericMultiBuf final
  private:
   template <v2::Property...>
   friend class v2::BasicMultiBuf;
+
+  friend class v1_adapter::MultiBuf;
+  friend class v1_adapter::MultiBufChunks;
 
   template <typename>
   friend class Instance;
@@ -1752,4 +1765,5 @@ BasicMultiBuf<kProperties...>::Share(const_iterator pos) const {
   return SharedPtr<value_type[]>(generic().Share(pos));
 }
 
-}  // namespace pw::multibuf::v2
+}  // namespace v2
+}  // namespace pw::multibuf

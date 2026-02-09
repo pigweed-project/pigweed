@@ -1,0 +1,87 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_unit_test/test.gni")
+
+config("public_include_path") {
+  include_dirs = [ "public" ]
+  visibility = [ ":*" ]
+}
+
+config("test_config") {
+  defines = [
+    "PW_MULTIBUF_VERSION=2",
+    "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
+  ]
+  visibility = [ ":*" ]
+}
+
+### Libraries and tests
+
+# LINT.IfChange
+pw_source_set("chunk") {
+  sources = [ "chunk.cc" ]
+  public = [ "public/pw_multibuf/v1_adapter/chunk.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    "$dir_pw_assert:assert",
+    dir_pw_allocator,
+    dir_pw_bytes,
+    dir_pw_function,
+  ]
+  deps = [ "$dir_pw_assert:check" ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_source_set("multibuf") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_multibuf/v1_adapter/multibuf.h" ]
+  sources = [ "multibuf.cc" ]
+  public_deps = [
+    ":chunk",
+    "$dir_pw_multibuf/v2:iterators",
+    "$dir_pw_multibuf/v2:multibuf",
+    dir_pw_allocator,
+    dir_pw_bytes,
+    dir_pw_status,
+  ]
+  deps = [ "$dir_pw_assert:check" ]
+}
+
+# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+
+# LINT.IfChange
+pw_test("multibuf_v1_test") {
+  sources = [ "multibuf_v1_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    "$dir_pw_allocator:bump_allocator",
+    "$dir_pw_allocator:testing",
+    dir_pw_bytes,
+    dir_pw_multibuf,
+  ]
+}
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
+## Test group
+
+pw_test_group("tests") {
+  tests = [ ":multibuf_v1_test" ]
+}

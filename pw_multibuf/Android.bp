@@ -95,6 +95,38 @@ cc_library_static {
 }
 
 cc_library_static {
+    name: "pw_multibuf_v1_adapter",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+    srcs: [
+        "pw_multibuf_v1_adapter.cc"
+    ],
+    header_libs: [
+        "pw_assert",
+    ],
+    export_header_lib_headers: [
+        "pw_assert",
+    ],
+    static_libs: [
+        "pw_allocator",
+        "pw_bytes",
+        "pw_multibuf_v2",
+        "pw_status",
+    ],
+    export_static_lib_headers: [
+        "pw_allocator",
+        "pw_bytes",
+        "pw_multibuf_v2",
+        "pw_status",
+    ],
+}
+
+cc_library_static {
     name: "pw_multibuf_v2",
     defaults: [
         "pw_android_common_backends",

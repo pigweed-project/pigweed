@@ -32,6 +32,8 @@ std::optional<MultiBuf> FromSpan(Allocator& metadata_allocator,
 
 #elif PW_MULTIBUF_VERSION == 2
 
+// Not (yet) supported in v2.
+
 #else
 
 #error "Unsupported PW_MULTIBUF_VERSION"

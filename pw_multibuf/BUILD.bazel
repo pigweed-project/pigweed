@@ -32,10 +32,11 @@ cc_library(
         ":chunk",
         ":config",
         "//pw_multibuf/v1:multibuf",
+        "//pw_multibuf/v1_adapter:multibuf",
         "//pw_multibuf/v2:multibuf",
     ],
 )
-# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
 
 ### Module configuration
 
@@ -62,6 +63,7 @@ cc_library(
     deps = [
         ":config",
         "//pw_multibuf/v1:chunk",
+        "//pw_multibuf/v1_adapter:chunk",
     ],
 )
 
@@ -152,6 +154,7 @@ filegroup(
     srcs = [
         "public/pw_multibuf/config.h",
         "//pw_multibuf/v1:doxygen",
+        "//pw_multibuf/v1_adapter:doxygen",
         "//pw_multibuf/v2:doxygen",
     ],
 )

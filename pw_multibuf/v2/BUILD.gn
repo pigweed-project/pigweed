@@ -54,7 +54,6 @@ pw_source_set("iterators") {
 }
 
 pw_source_set("iterator_testing") {
-  testonly = pw_unit_test_TESTONLY
   public_configs = [ ":public_include_path" ]
   public = [ "pw_multibuf_private/iterator_testing.h" ]
   public_deps = [
@@ -63,6 +62,7 @@ pw_source_set("iterator_testing") {
     "$dir_pw_containers:storage",
     dir_pw_unit_test,
   ]
+  visibility = [ ":*" ]
 }
 
 pw_test("chunk_iterator_test") {

@@ -48,6 +48,21 @@ using multibuf::v2::TrackedMultiBuf;
 
 }  // namespace pw
 
+// Legacy v1 name for a MultiBuf. This alias and the adapter it points to will
+// be removed when the migration to v2 is complete.
+#if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
+#include "pw_multibuf/v1_adapter/multibuf.h"
+
+namespace pw::multibuf {
+
+using v1_adapter::MultiBuf;
+using v1_adapter::MultiBufChunks;
+
+}  // namespace pw::multibuf
+
+#endif  // PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
 #else
 
 #error "Unsupported PW_MULTIBUF_VERSION"

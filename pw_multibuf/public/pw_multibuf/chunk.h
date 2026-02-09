@@ -29,6 +29,21 @@ using v1::OwnedChunk;
 
 #elif PW_MULTIBUF_VERSION == 2
 
+// v2 does not have chunk types, but the v1_adapter does. This will be removed
+// when the migration to v2 is complete.
+#if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
+#include "pw_multibuf/v1_adapter/chunk.h"
+
+namespace pw::multibuf {
+
+using v1_adapter::Chunk;
+using v1_adapter::OwnedChunk;
+
+}  // namespace pw::multibuf
+
+#endif  // PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
 #else
 
 #error "Unsupported PW_MULTIBUF_VERSION"

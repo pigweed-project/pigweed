@@ -64,4 +64,14 @@
 #define PW_MULTIBUF_DEPRECATED
 #endif  // PW_MULTIBUF_WARN_DEPRECATED
 
+#ifndef PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+/// Includes v1_adapter for v2.
+///
+/// When true and `PW_MULTIBUF_VERSION` is 2, pw_multibuf will include adapter
+/// types that match the v1 API and wrap corresponding v2 types. These types
+/// facilitate migrating between versions. When project has migrated to v2, it
+/// can set this to 0 to verify that no code is still using the v1 API.
+#define PW_MULTIBUF_INCLUDE_V1_ADAPTERS 1
+#endif  // PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
 /// @}

@@ -25,8 +25,10 @@ pw_add_library(pw_multibuf INTERFACE
     pw_multibuf.chunk
     pw_multibuf.config
     pw_multibuf.v1.multibuf
+    pw_multibuf.v1_adapter.multibuf
     pw_multibuf.v2.multibuf
 )
+# LINT.ThenChange(BUILD.bazel, BUILD.gn)
 
 ### Module configuration
 
@@ -43,6 +45,7 @@ pw_add_library(pw_multibuf.config INTERFACE
 
 ### V1 Libraries
 
+# LINT.IfChange
 pw_add_library(pw_multibuf.chunk INTERFACE
   HEADERS
     public/pw_multibuf/chunk.h
@@ -51,6 +54,7 @@ pw_add_library(pw_multibuf.chunk INTERFACE
   PUBLIC_DEPS
     pw_multibuf.config
     pw_multibuf.v1.chunk
+    pw_multibuf.v1_adapter.chunk
 )
 
 pw_add_library(pw_multibuf.header_chunk_region_tracker INTERFACE
@@ -133,4 +137,5 @@ pw_add_library(pw_multibuf.testing INTERFACE
 # LINT.ThenChange(BUILD.bazel, BUILD.gn)
 
 add_subdirectory(v1)
+add_subdirectory(v1_adapter)
 add_subdirectory(v2)

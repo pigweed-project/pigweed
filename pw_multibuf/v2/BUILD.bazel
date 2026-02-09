@@ -51,6 +51,7 @@ cc_library(
     name = "iterator_testing",
     testonly = True,
     hdrs = ["pw_multibuf_private/iterator_testing.h"],
+    visibility = ["//visibility:private"],
     deps = [
         ":iterators",
         "//pw_allocator:bump_allocator",

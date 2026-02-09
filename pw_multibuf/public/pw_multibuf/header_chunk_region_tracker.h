@@ -28,6 +28,8 @@ using v1::HeaderChunkRegionTracker;
 
 #elif PW_MULTIBUF_VERSION == 2
 
+// Not supported in v2.
+
 #else
 
 #error "Unsupported PW_MULTIBUF_VERSION"
