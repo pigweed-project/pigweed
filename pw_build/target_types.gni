@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/cc_executable.gni")
 import("$dir_pw_build/cc_library.gni")
+import("$dir_pw_build/ignore_group.gni")
 import("$dir_pw_build/rust_bindgen.gni")
 import("$dir_pw_build/rust_executable.gni")
 import("$dir_pw_build/rust_library.gni")
