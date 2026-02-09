@@ -46,6 +46,7 @@ class MetadataProcessorTest(unittest.TestCase):
         snapshot.metadata.device_name = b'hyper-fast-gshoe'
         snapshot.metadata.software_version = 'gShoe-debug-1.2.1-6f23412b+'
         snapshot.metadata.snapshot_uuid = b'\x00\x00\x00\x01'
+        snapshot.metadata.build_origin = 'luci/891267345'
 
         self.snapshot = snapshot
 
@@ -84,6 +85,10 @@ class MetadataProcessorTest(unittest.TestCase):
         meta = MetadataProcessor(self.snapshot.metadata, self.detok)
         self.assertEqual(meta.snapshot_uuid(), '00000001')
 
+    def test_build_origin(self):
+        meta = MetadataProcessor(self.snapshot.metadata, self.detok)
+        self.assertEqual(meta.build_origin(), 'luci/891267345')
+
     def test_fw_uuid_default(self):
         meta = MetadataProcessor(self.snapshot.metadata, self.detok)
         self.assertEqual(meta.fw_build_uuid(), '')
@@ -100,6 +105,7 @@ class MetadataProcessorTest(unittest.TestCase):
                 'Device:            hyper-fast-gshoe',
                 'Device FW version: gShoe-debug-1.2.1-6f23412b+',
                 'Snapshot UUID:     00000001',
+                'Build origin:      luci/891267345',
             )
         )
         self.assertEqual(expected, str(meta))
@@ -123,6 +129,7 @@ class MetadataProcessorTest(unittest.TestCase):
                 'Device:            hyper-fast-gshoe',
                 'Device FW version: gShoe-debug-1.2.1-6f23412b+',
                 'Snapshot UUID:     00000001',
+                'Build origin:      luci/891267345',
             )
         )
         self.assertEqual(expected, str(meta))
@@ -159,6 +166,7 @@ class MetadataProcessorTest(unittest.TestCase):
                 'Device:            hyper-fast-gshoe',
                 'Device FW version: gShoe-debug-1.2.1-6f23412b+',
                 'Snapshot UUID:     00000001',
+                'Build origin:      luci/891267345',
             )
         )
         self.assertEqual(expected, str(meta))
@@ -175,6 +183,7 @@ class MetadataProcessorTest(unittest.TestCase):
                 'Device:            hyper-fast-gshoe',
                 'Device FW version: gShoe-debug-1.2.1-6f23412b+',
                 'Snapshot UUID:     00000001',
+                'Build origin:      luci/891267345',
                 '',
                 'Tags:',
                 '  type: obviously a crash',

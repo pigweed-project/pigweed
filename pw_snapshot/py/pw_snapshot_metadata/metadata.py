@@ -119,6 +119,9 @@ class MetadataProcessor:
     def snapshot_uuid(self) -> str:
         return self._metadata.snapshot_uuid.hex()
 
+    def build_origin(self) -> str:
+        return self._metadata.build_origin
+
     def cpu_arch(self) -> str:
         descriptor = (
             snapshot_metadata_pb2.CpuArchitecture.DESCRIPTOR.enum_types_by_name[
@@ -174,5 +177,8 @@ class MetadataProcessor:
 
         if self._metadata.snapshot_uuid:
             output.append(f'Snapshot UUID:     {self.snapshot_uuid()}')
+
+        if self._metadata.build_origin:
+            output.append(f'Build origin:      {self.build_origin()}')
 
         return '\n'.join(output)
