@@ -71,6 +71,34 @@ def _parse_args() -> argparse.Namespace:
     return args
 
 
+class SubstitutionError(Exception):
+    pass
+
+
+def _substitute_file(
+    input_file: TextIO,
+    output_file: TextIO,
+    replacements: dict[str, str],
+) -> None:
+    """Substitute template placeholders in a file.
+
+    Args:
+      input_file: The input template file to be processed.
+      output_file: That file to which the processed text is written.
+      replacements: A dictionary of key => value pairs to replace in input_file.
+    """
+    for line_num, line in enumerate(input_file, start=1):
+        template = string.Template(line)
+        try:
+            result = template.substitute(replacements)
+        except KeyError as err:
+            raise SubstitutionError(f"Invalid key on line {line_num}: {err}")
+        except ValueError:
+            # The ValueError contains "on line 1" so just ignore it.
+            raise SubstitutionError(f"Invalid placeholder on line {line_num}")
+        output_file.write(result)
+
+
 def main():
     args = _parse_args()
 
@@ -80,18 +108,17 @@ def main():
         with status_file:
             replacements.update(_load_status_file(status_file))
 
-    # Load the template input file.
-    with args.template as file:
-        template = string.Template(file.read())
-
-    # Expand the variables in the template.
+    # Perform substitution on the template input file.
     try:
-        result = template.substitute(replacements)
-    except KeyError as err:
-        raise SystemExit(f"Invalid key found in input file: {err}")
-
-    # Write the result to the output file.
-    args.out.write(result)
+        with args.template as input_file:
+            _substitute_file(input_file, args.out, replacements)
+    except SubstitutionError as err:
+        status_filenames = ", ".join(repr(f.name) for f in args.status_files)
+        raise SystemExit(
+            f"Error substituting workspace status in {args.template.name!r}:\n"
+            f"  {err}\n"
+            f"  Using status files: {status_filenames}"
+        )
 
 
 if __name__ == "__main__":
