@@ -37,6 +37,22 @@ See :ref:`docs-contrib-docs` for other aspects of Pigweed documentation style.
 
 .. _docs-style-rest-headings:
 
+---------------
+File Formatting
+---------------
+Formatting for reST files should follow similar rules to other code in the
+Pigweed repository:
+
+* 80 column line length
+* Use only spaces for indentation
+
+Exceptions
+==========
+
+* Tables may exceed 80 columns when it improves readability.
+* Code blocks may exceed 80 columns when it improves readability or matches the
+  source code's formatting.
+
 --------
 Headings
 --------
