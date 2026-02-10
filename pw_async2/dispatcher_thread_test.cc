@@ -38,8 +38,8 @@ class BlockingTask : public Task {
   Poll<> DoPend(Context& cx) override {
     if (first_run_) {
       first_run_ = false;
-      running_.release();
       PW_ASYNC_STORE_WAKER(cx, waker_, "BlockingTask::Wake()");
+      running_.release();
       return Pending();
     }
     return Ready();
