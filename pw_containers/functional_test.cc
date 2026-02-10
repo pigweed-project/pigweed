@@ -166,6 +166,70 @@ TEST(Hash, Combine) {
   EXPECT_NE(hash4, hash7);
 }
 
+TEST(Hash, CombineContiguous) {
+  int data1[] = {1, 2, 3};
+  int data2[] = {1, 2, 3};
+  int data3[] = {3, 2, 1};
+
+  pw::HashState h1;
+  h1 = pw::HashState::combine_contiguous(std::move(h1), data1, 3);
+  size_t hash1 = h1.finalize();
+
+  pw::HashState h2;
+  h2 = pw::HashState::combine_contiguous(std::move(h2), data2, 3);
+  size_t hash2 = h2.finalize();
+
+  pw::HashState h3;
+  h3 = pw::HashState::combine_contiguous(std::move(h3), data3, 3);
+  size_t hash3 = h3.finalize();
+
+  EXPECT_EQ(hash1, hash2);
+  EXPECT_NE(hash1, hash3);
+
+  const char* str1 = "hello";
+  const char* str2 = "hello";
+  const char* str3 = "world";
+
+  pw::HashState h4;
+  h4 = pw::HashState::combine_contiguous(std::move(h4), str1, 5);
+  size_t hash4 = h4.finalize();
+
+  pw::HashState h5;
+  h5 = pw::HashState::combine_contiguous(std::move(h5), str2, 5);
+  size_t hash5 = h5.finalize();
+
+  pw::HashState h6;
+  h6 = pw::HashState::combine_contiguous(std::move(h6), str3, 5);
+  size_t hash6 = h6.finalize();
+
+  EXPECT_EQ(hash4, hash5);
+  EXPECT_NE(hash4, hash6);
+}
+
+TEST(Hash, CombineUnordered) {
+  int data1[] = {1, 2, 3};
+  int data2[] = {3, 2, 1};
+  int data3[] = {1, 2, 4};
+
+  pw::HashState h1;
+  h1 = pw::HashState::combine_unordered(
+      std::move(h1), std::begin(data1), std::end(data1));
+  size_t hash1 = h1.finalize();
+
+  pw::HashState h2;
+  h2 = pw::HashState::combine_unordered(
+      std::move(h2), std::begin(data2), std::end(data2));
+  size_t hash2 = h2.finalize();
+
+  pw::HashState h3;
+  h3 = pw::HashState::combine_unordered(
+      std::move(h3), std::begin(data3), std::end(data3));
+  size_t hash3 = h3.finalize();
+
+  EXPECT_EQ(hash1, hash2);
+  EXPECT_NE(hash1, hash3);
+}
+
 enum class MyEnum { kValue1, kValue2 };
 
 TEST(Hash, Enum) {

@@ -158,6 +158,55 @@ class HashState {
     return std::move(h);
   }
 
+  /// Combines a contiguous range of elements into the hash state.
+  ///
+  /// This is intended for arrays or buffers where the order of elements
+  /// matters.
+  ///
+  /// @note This implementation currently iterates through the range and
+  /// combines elements one-by-one. It is NOT yet optimized for bulk
+  /// hashing (e.g., using CRC32 or SIMD) even for trivially copyable
+  /// types like `uint8_t`.
+  ///
+  /// @param h The current state (passed by move).
+  /// @param data A pointer to the first element in the range.
+  /// @param size The number of elements to hash.
+  /// @return The updated HashState.
+  template <typename T>
+  static HashState combine_contiguous(HashState&& h,
+                                      const T* data,
+                                      size_t size) {
+    for (size_t i = 0; i < size; i++) {
+      h = combine(std::move(h), data[i]);
+    }
+    return std::move(h);
+  }
+
+  /// Combines a range of elements where the order does not affect the output.
+  ///
+  /// This is intended for unordered containers like sets or maps. It works
+  /// by hashing each element independently and combining them using
+  /// commutative operations (addition), ensuring that `{A, B}` results
+  /// in the same hash as `{B, A}`.
+  ///
+  /// @param h The current state (passed by move).
+  /// @param first The starting iterator of the range.
+  /// @param last The ending iterator of the range.
+  /// @return The updated HashState including the combined range and its size.
+  template <typename InputIt>
+  static HashState combine_unordered(HashState&& h,
+                                     InputIt first,
+                                     InputIt last) {
+    size_t total = 0;
+    size_t count = 0;
+    for (auto it = first; it != last; ++it) {
+      // High-entropy seed (Golden Ratio) prevents zero-swallowing
+      total += combine(HashState(0x9E3779B9), *it).finalize();
+      ++count;
+    }
+    return HashState::combine(std::move(h), total, count);
+  }
+
   /// Finalizes the hash calculation and returns the result.
   size_t finalize() { return state_; }
 
