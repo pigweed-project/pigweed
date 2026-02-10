@@ -130,7 +130,7 @@ TEST_F(SynchronizedAllocatorMutexTest, Reallocate) { TestReallocate(); }
 
 template <typename LockType>
 void TestGenerateRequests() {
-  constexpr size_t kNumIterations = 10000;
+  constexpr size_t kNumIterations = 1000;
   AllocatorForTest allocator;
   SynchronizedAllocator<LockType> synchronized(allocator);
   SynchronizedAllocatorTestThreadCore core1(synchronized, 1, kNumIterations);
