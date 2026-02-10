@@ -111,12 +111,11 @@ pw_test("build_id_test") {
   sources = [ "build_id_test.cc" ]
 }
 
-# git_build_info embedding isn't supported in GN build
-# Reference to satisfy presubmit.
-copy("git_build_info_files") {
+# These are not supported in GN build
+pw_ignore_group("bazel_workspace_required") {
   sources = [
+    "build_origin_test.cc",
     "git_build_info_test.cc",
     "substitute_workspace_status_tool.py",
   ]
-  outputs = [ "$target_gen_dir/{{source_file_part}}" ]
 }

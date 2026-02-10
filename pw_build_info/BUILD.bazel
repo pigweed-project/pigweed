@@ -124,6 +124,8 @@ pw_py_binary(
     srcs = ["substitute_workspace_status_tool.py"],
 )
 
+# git_build_info
+
 pw_substitute_workspace_status(
     name = "git_build_info_hdr",
     src = "git_build_info.h.in",
@@ -146,6 +148,41 @@ pw_cc_test(
         "//pw_log",
     ],
 )
+
+# build_origin
+
+# This target requires a workspace_status_command which emits
+# STABLE_PW_BUILD_INFO_BUILD_ORIGIN, so mark it as "manual"
+# to exclude from wildcard builds.
+pw_substitute_workspace_status(
+    name = "build_origin_hdr",
+    src = "build_origin.h.in",
+    out = "build_origin.h",
+    tags = ["manual"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "build_origin",
+    hdrs = [":build_origin_hdr"],
+    deps = ["//pw_string:string"],
+)
+
+# Test with:
+# $ bazelisk test \
+#   --workspace_status_command=pw_build_info/build_origin_test_workspace_status.sh \
+#   //pw_build_info:build_origin_test
+pw_cc_test(
+    name = "build_origin_test",
+    srcs = ["build_origin_test.cc"],
+    tags = [
+        "manual",
+        "noclangtidy",
+    ],
+    deps = [":build_origin"],
+)
+
+# docs
 
 sphinx_docs_library(
     name = "docs",
