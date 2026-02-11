@@ -43,10 +43,11 @@ constexpr inline Result<EmbossT> MakeEmbossView(Params&&... params) {
 // Unlike the Emboss `Make*View` creation methods, this function accepts a
 // reference so it can be used with rvalues. This is ok to do with pw::span
 // since it doesn't own its underlying data.
-template <typename EmbossT,
-          typename ContainerT,
-          typename = std::enable_if_t<
-              std::is_convertible_v<ContainerT, pw::span<const uint8_t>>>>
+template <
+    typename EmbossT,
+    typename ContainerT,
+    std::enable_if_t<std::is_convertible_v<ContainerT, pw::span<const uint8_t>>,
+                     bool> = true>
 constexpr inline Result<EmbossT> MakeEmbossView(ContainerT&& buffer) {
   return MakeEmbossView<EmbossT>(buffer.data(), buffer.size());
 }
@@ -79,8 +80,8 @@ constexpr inline Result<EmbossT> MakeEmbossWriter(Params&&... params) {
 // since it doesn't own its underlying data.
 template <typename EmbossT,
           typename ContainerT,
-          typename = std::enable_if_t<
-              std::is_convertible_v<ContainerT, pw::span<uint8_t>>>>
+          std::enable_if_t<std::is_convertible_v<ContainerT, pw::span<uint8_t>>,
+                           bool> = true>
 constexpr inline Result<EmbossT> MakeEmbossWriter(ContainerT&& buffer) {
   return MakeEmbossWriter<EmbossT>(buffer.data(), buffer.size());
 }
