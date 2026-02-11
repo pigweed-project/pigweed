@@ -51,6 +51,17 @@ template <
 constexpr inline Result<EmbossT> MakeEmbossView(ContainerT&& buffer) {
   return MakeEmbossView<EmbossT>(buffer.data(), buffer.size());
 }
+template <typename EmbossT,
+          typename ContainerT,
+          std::enable_if_t<
+              !std::is_convertible_v<ContainerT, pw::span<const uint8_t>> &&
+                  std::is_convertible_v<ContainerT, pw::span<const std::byte>>,
+              bool> = true>
+constexpr inline Result<EmbossT> MakeEmbossView(ContainerT&& buffer) {
+  auto reinterpret_span = pw::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(buffer.data()), buffer.size());
+  return MakeEmbossView<EmbossT>(reinterpret_span);
+}
 
 // Create an Emboss Writer and check that and check that the
 // backing storage contains at least enough space for MinSizeInBytes().
@@ -84,6 +95,17 @@ template <typename EmbossT,
                            bool> = true>
 constexpr inline Result<EmbossT> MakeEmbossWriter(ContainerT&& buffer) {
   return MakeEmbossWriter<EmbossT>(buffer.data(), buffer.size());
+}
+template <
+    typename EmbossT,
+    typename ContainerT,
+    std::enable_if_t<!std::is_convertible_v<ContainerT, pw::span<uint8_t>> &&
+                         std::is_convertible_v<ContainerT, pw::span<std::byte>>,
+                     bool> = true>
+constexpr inline Result<EmbossT> MakeEmbossWriter(ContainerT&& buffer) {
+  auto reinterpret_span = pw::span<uint8_t>(
+      reinterpret_cast<uint8_t*>(buffer.data()), buffer.size());
+  return MakeEmbossWriter<EmbossT>(reinterpret_span);
 }
 
 /// Copy from a container to an Emboss object's backing storage.
