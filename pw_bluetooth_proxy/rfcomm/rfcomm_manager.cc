@@ -46,6 +46,7 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     MultiBufAllocator& rx_multibuf_allocator,
     ConnectionHandle connection_handle,
     uint8_t channel_number,
+    RfcommDirection direction,
     bool mux_initiator,
     const RfcommChannelConfig& rx_config,
     const RfcommChannelConfig& tx_config,
@@ -103,7 +104,8 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
   }
 
   auto& conn_state = *it;
-  auto channel_it = conn_state.channels.find(channel_number);
+  auto channel_it =
+      conn_state.channels.find(MakeDlci(channel_number, direction));
   // If the channel already exists, return an error.
   if (channel_it != conn_state.channels.end()) {
     return Status::AlreadyExists();
@@ -115,6 +117,7 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
       *conn_state.l2cap_channel_proxy,
       connection_handle,
       channel_number,
+      direction,
       mux_initiator,
       rx_config,
       tx_config,
@@ -129,11 +132,12 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
   // Insert the new channel into the connection state.
   conn_state.channels.insert(*channel);
   channel.Release();  // The intrusive map now manages the lifetime.
-  return RfcommChannel(connection_handle, channel_number, this);
+  return RfcommChannel(connection_handle, channel_number, direction, this);
 }
 
 StatusWithMultiBuf RfcommManager::DoWrite(ConnectionHandle connection_handle,
                                           uint8_t channel_number,
+                                          RfcommDirection direction,
                                           FlatConstMultiBuf&& payload) {
   std::lock_guard lock(connections_mutex_);
   auto it = connections_.find(connection_handle);
@@ -141,7 +145,8 @@ StatusWithMultiBuf RfcommManager::DoWrite(ConnectionHandle connection_handle,
     return {Status::NotFound(), std::move(payload)};
   }
   auto& conn_state = *it;
-  auto channel_it = conn_state.channels.find(channel_number);
+  auto channel_it =
+      conn_state.channels.find(MakeDlci(channel_number, direction));
   if (channel_it == conn_state.channels.end()) {
     return {Status::NotFound(), std::move(payload)};
   }
@@ -165,7 +170,8 @@ void RfcommManager::DeregisterAndCloseChannels(RfcommEvent event) {
 }
 
 Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
-                                             uint8_t channel_number) {
+                                             uint8_t channel_number,
+                                             RfcommDirection direction) {
   internal::RfcommChannelInternal* channel_to_close = nullptr;
   ConnectionState* conn_state_to_delete = nullptr;
   {
@@ -176,7 +182,8 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
     }
 
     auto& conn_state = *it;
-    auto channel_it = conn_state.channels.find(channel_number);
+    auto channel_it =
+        conn_state.channels.find(MakeDlci(channel_number, direction));
     // If the channel is found, remove it from the map.
     if (channel_it != conn_state.channels.end()) {
       channel_to_close = &*channel_it;
@@ -307,11 +314,17 @@ std::optional<FlatConstMultiBufInstance> RfcommManager::HandlePduFromController(
 
     const uint8_t channel_number =
         static_cast<uint8_t>(parsed_frame.channel().Read());
-    auto channel_it = conn_state.channels.find(channel_number);
+    const RfcommDirection direction = parsed_frame.direction().Read()
+                                          ? RfcommDirection::kInitiator
+                                          : RfcommDirection::kResponder;
+    auto channel_it =
+        conn_state.channels.find(MakeDlci(channel_number, direction));
     if (channel_it == conn_state.channels.end()) {
       PW_LOG_DEBUG(
-          "Received RFCOMM PDU for unknown channel: %u, forwarding to host.",
-          channel_number);
+          "Received RFCOMM PDU for unknown DLCI: (channel %u, direction %u), "
+          "forwarding to host.",
+          channel_number,
+          static_cast<uint8_t>(direction));
       return std::move(pdu);
     }
 

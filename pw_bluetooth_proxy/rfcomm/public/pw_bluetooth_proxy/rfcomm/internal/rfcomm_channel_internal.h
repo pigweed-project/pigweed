@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "pw_bluetooth/rfcomm_frames.emb.h"
 #include "pw_bluetooth_proxy/channel_proxy.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
@@ -35,6 +36,7 @@ class RfcommChannelInternal
                         ChannelProxy& l2cap_channel_proxy,
                         ConnectionHandle connection_handle,
                         uint8_t channel_number,
+                        RfcommDirection direction,
                         bool mux_initiator,
                         const RfcommChannelConfig& rx_config,
                         const RfcommChannelConfig& tx_config,
@@ -57,7 +59,10 @@ class RfcommChannelInternal
   bool HandlePduFromController(uint8_t credits, ConstByteSpan pdu);
 
   uint8_t channel_number() const { return channel_number_; }
-  uint8_t key() const { return channel_number_; }
+  RfcommDirection direction() const { return direction_; }
+
+  // DLCI
+  uint8_t key() const { return MakeDlci(channel_number_, direction_); }
   ConnectionHandle connection_handle() const { return connection_handle_; }
 
  private:
@@ -74,6 +79,7 @@ class RfcommChannelInternal
   ChannelProxy& l2cap_channel_proxy_;
   const ConnectionHandle connection_handle_;
   const uint8_t channel_number_;
+  const RfcommDirection direction_;
   const bool mux_initiator_;
   const RfcommChannelConfig rx_config_;
   const RfcommChannelConfig tx_config_;

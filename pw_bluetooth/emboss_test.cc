@@ -462,8 +462,8 @@ TEST(EmbossTest, WriteRfcomm) {
 
   emboss::RfcommFrameWriter rfcomm = emboss::MakeRfcommFrameView(&buffer);
   rfcomm.extended_address().Write(true);
-  rfcomm.command_response_direction().Write(
-      emboss::RfcommCommandResponseAndDirection::COMMAND_FROM_RESPONDER);
+  rfcomm.command_response().Write(false);
+  rfcomm.direction().Write(false);
   rfcomm.channel().Write(3);
   rfcomm.control().Write(
       emboss::RfcommFrameType::
@@ -506,8 +506,8 @@ TEST(EmbossTest, WriteRfcommExtended) {
 
   emboss::RfcommFrameWriter rfcomm = emboss::MakeRfcommFrameView(&buffer);
   rfcomm.extended_address().Write(true);
-  rfcomm.command_response_direction().Write(
-      emboss::RfcommCommandResponseAndDirection::COMMAND_FROM_RESPONDER);
+  rfcomm.command_response().Write(false);
+  rfcomm.direction().Write(false);
   rfcomm.channel().Write(3);
   rfcomm.control().Write(
       emboss::RfcommFrameType::

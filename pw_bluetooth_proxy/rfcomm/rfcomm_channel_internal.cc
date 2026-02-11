@@ -32,6 +32,7 @@ RfcommChannelInternal::RfcommChannelInternal(
     ChannelProxy& l2cap_channel_proxy,
     ConnectionHandle connection_handle,
     uint8_t channel_number,
+    RfcommDirection direction,
     bool mux_initiator,
     const RfcommChannelConfig& rx_config,
     const RfcommChannelConfig& tx_config,
@@ -42,6 +43,7 @@ RfcommChannelInternal::RfcommChannelInternal(
       l2cap_channel_proxy_(l2cap_channel_proxy),
       connection_handle_(connection_handle),
       channel_number_(channel_number),
+      direction_(direction),
       mux_initiator_(mux_initiator),
       rx_config_(rx_config),
       tx_config_(tx_config),
@@ -50,7 +52,9 @@ RfcommChannelInternal::RfcommChannelInternal(
       event_fn_(std::move(event_fn)),
       tx_credits_(tx_config.initial_credits),
       rx_credits_(rx_config.initial_credits) {
-  PW_LOG_INFO("RFCOMM channel %u: created", channel_number_);
+  PW_LOG_INFO("RFCOMM channel %u (direction %u): created",
+              channel_number_,
+              static_cast<uint8_t>(direction_));
 }
 
 StatusWithMultiBuf RfcommChannelInternal::Write(FlatConstMultiBuf&& payload) {
@@ -164,11 +168,8 @@ void RfcommChannelInternal::TryToSendPacket()
         emboss::MakeRfcommFrameView(buffer.data(), buffer.size());
 
     frame_writer.extended_address().Write(true);
-    frame_writer.command_response_direction().Write(
-        mux_initiator_
-            ? emboss::RfcommCommandResponseAndDirection::COMMAND_FROM_INITIATOR
-            : emboss::RfcommCommandResponseAndDirection::
-                  COMMAND_FROM_RESPONDER);
+    frame_writer.command_response().Write(mux_initiator_);
+    frame_writer.direction().Write(direction_ == RfcommDirection::kInitiator);
     frame_writer.channel().Write(channel_number_);
 
     frame_writer.control().Write(pw::bluetooth::emboss::RfcommFrameType::
@@ -248,10 +249,8 @@ Status RfcommChannelInternal::SendCredits(uint8_t credits) {
   auto frame_writer = emboss::MakeRfcommFrameView(buffer.data(), buffer.size());
 
   frame_writer.extended_address().Write(true);
-  frame_writer.command_response_direction().Write(
-      mux_initiator_
-          ? emboss::RfcommCommandResponseAndDirection::COMMAND_FROM_INITIATOR
-          : emboss::RfcommCommandResponseAndDirection::COMMAND_FROM_RESPONDER);
+  frame_writer.command_response().Write(mux_initiator_);
+  frame_writer.direction().Write(direction_ == RfcommDirection::kInitiator);
   frame_writer.channel().Write(channel_number_);
   frame_writer.control().Write(
       pw::bluetooth::emboss::RfcommFrameType::

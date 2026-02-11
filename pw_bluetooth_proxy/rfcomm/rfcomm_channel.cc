@@ -19,6 +19,7 @@ namespace pw::bluetooth::proxy::rfcomm {
 RfcommChannel::RfcommChannel(RfcommChannel&& other) noexcept
     : connection_handle_(other.connection_handle_),
       channel_number_(other.channel_number_),
+      direction_(other.direction_),
       manager_(other.manager_) {
   other.manager_ = nullptr;
 }
@@ -28,6 +29,7 @@ RfcommChannel& RfcommChannel::operator=(RfcommChannel&& other) noexcept {
     Reset();
     connection_handle_ = other.connection_handle_;
     channel_number_ = other.channel_number_;
+    direction_ = other.direction_;
     manager_ = other.manager_;
     other.manager_ = nullptr;
   }
@@ -41,20 +43,22 @@ StatusWithMultiBuf RfcommChannel::Write(FlatConstMultiBuf&& payload) {
     return {Status::FailedPrecondition(), std::move(payload)};
   }
   return manager_->Write(
-      connection_handle_, channel_number_, std::move(payload));
+      connection_handle_, channel_number_, direction_, std::move(payload));
 }
 
 RfcommChannel::RfcommChannel(ConnectionHandle connection_handle,
                              uint8_t channel_number,
+                             RfcommDirection direction,
                              RfcommChannelManagerInterface* manager)
     : connection_handle_(connection_handle),
       channel_number_(channel_number),
+      direction_(direction),
       manager_(manager) {}
 
 void RfcommChannel::Reset() {
   if (manager_) {
-    static_cast<void>(
-        manager_->ReleaseRfcommChannel(connection_handle_, channel_number_));
+    static_cast<void>(manager_->ReleaseRfcommChannel(
+        connection_handle_, channel_number_, direction_));
   }
   manager_ = nullptr;
 }

@@ -59,7 +59,7 @@ class RfcommChannel {
   bool operator==(const RfcommChannel& other) const {
     return connection_handle_ == other.connection_handle_ &&
            channel_number_ == other.channel_number_ &&
-           manager_ == other.manager_;
+           direction_ == other.direction_ && manager_ == other.manager_;
   }
 
   bool operator!=(const RfcommChannel& other) const {
@@ -72,6 +72,7 @@ class RfcommChannel {
   /// Private constructor to ensure only RfcommChannelManager can create this.
   RfcommChannel(ConnectionHandle connection_handle,
                 uint8_t channel_number,
+                RfcommDirection direction,
                 RfcommChannelManagerInterface* manager);
 
   /// Releases the RFCOMM channel.
@@ -79,6 +80,7 @@ class RfcommChannel {
 
   ConnectionHandle connection_handle_ = static_cast<ConnectionHandle>(0);
   uint8_t channel_number_ = 0;
+  RfcommDirection direction_ = RfcommDirection::kResponder;
   RfcommChannelManagerInterface* manager_ = nullptr;
 };
 
@@ -95,6 +97,7 @@ class RfcommChannelManagerInterface {
   /// @param multibuf_allocator The allocator for multibuf buffers.
   /// @param connection_handle The handle for the ACL connection.
   /// @param channel_number The server channel number for the channel.
+  /// @param direction The direction bit for the DLCI.
   /// @param mux_initiator Whether this device is the initiator of the RFCOMM
   ///     multiplexer.
   /// @param rx_config Configuration for the receive direction of the
@@ -122,6 +125,7 @@ class RfcommChannelManagerInterface {
       MultiBufAllocator& multibuf_allocator,
       ConnectionHandle connection_handle,
       uint8_t channel_number,
+      RfcommDirection direction,
       bool mux_initiator,
       const RfcommChannelConfig& rx_config,
       const RfcommChannelConfig& tx_config,
@@ -130,6 +134,7 @@ class RfcommChannelManagerInterface {
     return DoAcquireRfcommChannel(multibuf_allocator,
                                   connection_handle,
                                   channel_number,
+                                  direction,
                                   mux_initiator,
                                   rx_config,
                                   tx_config,
@@ -142,6 +147,7 @@ class RfcommChannelManagerInterface {
   ///
   /// @param connection_handle The handle for the ACL connection.
   /// @param channel_number The server channel number for the channel.
+  /// @param direction The direction bit for the DLCI.
   /// @param payload The payload to write.
   ///
   /// @return A `StatusWithMultiBuf` containing the status of the write
@@ -152,8 +158,10 @@ class RfcommChannelManagerInterface {
   ///     the unwritten payload is returned to the caller.
   StatusWithMultiBuf Write(ConnectionHandle connection_handle,
                            uint8_t channel_number,
+                           RfcommDirection direction,
                            FlatConstMultiBuf&& payload) {
-    return DoWrite(connection_handle, channel_number, std::move(payload));
+    return DoWrite(
+        connection_handle, channel_number, direction, std::move(payload));
   }
 
   /// @brief Releases a previously acquired RFCOMM channel. If
@@ -162,13 +170,15 @@ class RfcommChannelManagerInterface {
   ///
   /// @param connection_handle The handle for the ACL connection.
   /// @param channel_number The server channel number for the channel.
+  /// @param direction The direction bit for the DLCI.
   ///
   /// @return A `Status` indicating the result of the release operation.
   /// @retval `OK` if the channel was successfully released.
   /// @retval `NOT_FOUND` if the channel was not found.
   Status ReleaseRfcommChannel(ConnectionHandle connection_handle,
-                              uint8_t channel_number) {
-    return DoReleaseRfcommChannel(connection_handle, channel_number);
+                              uint8_t channel_number,
+                              RfcommDirection direction) {
+    return DoReleaseRfcommChannel(connection_handle, channel_number, direction);
   }
 
  private:
@@ -176,6 +186,7 @@ class RfcommChannelManagerInterface {
       MultiBufAllocator& multibuf_allocator,
       ConnectionHandle connection_handle,
       uint8_t channel_number,
+      RfcommDirection direction,
       bool mux_initiator,
       const RfcommChannelConfig& rx_config,
       const RfcommChannelConfig& tx_config,
@@ -184,10 +195,12 @@ class RfcommChannelManagerInterface {
 
   virtual StatusWithMultiBuf DoWrite(ConnectionHandle connection_handle,
                                      uint8_t channel_number,
+                                     RfcommDirection direction,
                                      FlatConstMultiBuf&& payload) = 0;
 
   virtual Status DoReleaseRfcommChannel(ConnectionHandle connection_handle,
-                                        uint8_t channel_number) = 0;
+                                        uint8_t channel_number,
+                                        RfcommDirection direction) = 0;
 };
 
 }  // namespace pw::bluetooth::proxy::rfcomm

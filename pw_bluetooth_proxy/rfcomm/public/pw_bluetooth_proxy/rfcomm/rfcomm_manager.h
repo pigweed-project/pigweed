@@ -58,6 +58,7 @@ class RfcommManager final : public RfcommChannelManagerInterface {
       MultiBufAllocator& multibuf_allocator,
       ConnectionHandle connection_handle,
       uint8_t channel_number,
+      RfcommDirection direction,
       bool mux_initiator,
       const RfcommChannelConfig& rx_config,
       const RfcommChannelConfig& tx_config,
@@ -66,10 +67,12 @@ class RfcommManager final : public RfcommChannelManagerInterface {
 
   StatusWithMultiBuf DoWrite(ConnectionHandle connection_handle,
                              uint8_t channel_number,
+                             RfcommDirection direction,
                              FlatConstMultiBuf&& payload) override;
 
   Status DoReleaseRfcommChannel(ConnectionHandle connection_handle,
-                                uint8_t channel_number) override;
+                                uint8_t channel_number,
+                                RfcommDirection direction) override;
 
   struct ConnectionState
       : public IntrusiveMap<ConnectionHandle, ConnectionState>::Item {

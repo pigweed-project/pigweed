@@ -28,6 +28,22 @@ enum class RfcommEvent {
   kReset,
 };
 
+// The direction bit in the RFCOMM DLCI.
+//
+// The initiator of the multiplexer always sets the direction bit to 1, while
+// the responder sets it to 0.
+enum class RfcommDirection : uint8_t {
+  kResponder = 0,
+  kInitiator = 1,
+};
+
+// Returns the DLCI for a given channel number and direction.
+inline constexpr uint8_t MakeDlci(uint8_t channel_number,
+                                  RfcommDirection direction) {
+  return static_cast<uint8_t>((channel_number << 1) |
+                              static_cast<uint8_t>(direction));
+}
+
 using RfcommReceiveCallback = Function<void(FlatMultiBuf&& payload)>;
 using RfcommEventCallback = Function<void(RfcommEvent event)>;
 
