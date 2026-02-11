@@ -103,14 +103,10 @@ class UartNonBlocking : public UartBase {
   /// This function will cancel a read in progress. The read's callback will
   /// be invoked with status=CANCELLED.
   ///
-  /// @returns @rst
-  ///
-  ///    true: The operation was successfully canceled a transaction in progress
-  ///          and the callback will be invoked with status=CANCELLED.
-  ///    false: There were no transactions in progress and nothing was
-  ///           cancelled. No callback will be invoked.
-  ///
-  /// @endrst
+  /// @retval true The operation was successfully canceled a transaction in
+  ///     progress and the callback will be invoked with `status=CANCELLED`.
+  /// @retval false There were no transactions in progress and nothing was
+  ///     cancelled. No callback will be invoked.
   bool CancelRead() { return DoCancelRead(); }
 
   /// Writes data from a provided buffer to the UART.
@@ -145,14 +141,10 @@ class UartNonBlocking : public UartBase {
   /// This function will cancel a write in progress. The write's callback will
   /// be called with status=CANCELLED.
   ///
-  /// @returns @rst
-  ///
-  ///    true: The operation was successfully canceled a transaction in progress
-  ///          and the callback will be invoked with status=CANCELLED.
-  ///    false: There were no transactions in progress and nothing was
-  ///           cancelled. No callback will be invoked.
-  ///
-  /// @endrst
+  /// @retval true The operation was successfully canceled a transaction in
+  ///     progress and the callback will be invoked with status=CANCELLED.
+  /// @retval false There were no transactions in progress and nothing was
+  ///    cancelled. No callback will be invoked.
   bool CancelWrite() { return DoCancelWrite(); }
 
   /// Ensures all queued data in the UART has been transmitted and the hardware

@@ -16,10 +16,8 @@
 /// @file fuzztest.h
 /// Replaceable interface to FuzzTest
 ///
-/// @rst
-/// When FuzzTest is enabled, this header includes the FuzzTest interface. It
-/// exists only so that it can be replaced by stubs when FuzzTest is *not*
+/// When FuzzTest is enabled, this header includes the `FuzzTest` interface. It
+/// exists only so that it can be replaced by stubs when `FuzzTest` is **not**
 /// enabled.
-/// @endrst
 
 #include "fuzztest/fuzztest_core.h"

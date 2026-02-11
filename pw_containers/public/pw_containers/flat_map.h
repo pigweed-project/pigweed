@@ -49,15 +49,6 @@ Pair(T1, T2) -> Pair<T1, T2>;
 
 /// A simple, fixed-size associative array with lookup by key or value.
 ///
-/// FlatMaps can be initialized by:
-/// @rst
-/// .. literalinclude:: examples/flat_map.cc
-///    :language: cpp
-///    :linenos:
-///    :start-after: [pw_containers-flat_map]
-///    :end-before: [pw_containers-flat_map]
-/// @endrst
-///
 /// The keys do not need to be sorted as the constructor will sort the items
 /// if need be.
 template <typename Key, typename Value, size_t kArraySize>
