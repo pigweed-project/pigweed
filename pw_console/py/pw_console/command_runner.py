@@ -555,6 +555,10 @@ class CommandRunner:
             '[File] > Games > ',
             '[View] > Focus Next Window/Tab',
             '[View] > Focus Prev Window/Tab',
+            '[View] > Focus Pane Up',
+            '[View] > Focus Pane Down',
+            '[View] > Focus Pane Left',
+            '[View] > Focus Pane Right',
             # All help menu entries open popup windows.
             '[Help] > ',
             # This focuses on a save dialog bor.

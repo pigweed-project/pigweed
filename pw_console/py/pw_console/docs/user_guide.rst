@@ -113,6 +113,11 @@ Function                                      Keys
 Switch focus to the next window or tab        :kbd:`Ctrl-Alt-n`
 Switch focus to the previous window or tab    :kbd:`Ctrl-Alt-p`
 
+Switch window or tab focus up.                :kbd:`Ctrl-w k`
+Switch window or tab focus down.              :kbd:`Ctrl-w j`
+Switch window or tab focus left.              :kbd:`Ctrl-w h`
+Switch window or tab focus right.             :kbd:`Ctrl-w l`
+
 Switch focus to the next UI element           :kbd:`Shift-Tab`
                                               :kbd:`Ctrl-Right`
 Switch focus to the previous UI element       :kbd:`Ctrl-Left`

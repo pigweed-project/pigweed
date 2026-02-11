@@ -92,7 +92,7 @@ from pw_console.widgets import (
     to_checkbox_text,
     to_keybind_indicator,
 )
-from pw_console.window_manager import WindowManager
+from pw_console.window_manager import Direction, WindowManager
 
 _LOG = logging.getLogger(__package__)
 _ROOT_LOG = logging.getLogger('')
@@ -842,6 +842,38 @@ class ConsoleApp:
                         # [Menu Item                    ][    Keybind]
                         'Focus Prev Window/Tab              Ctrl-Alt-p',
                         handler=self.window_manager.focus_previous_pane,
+                    ),
+                    MenuItem(
+                        # [Menu Item                    ][    Keybind]
+                        'Focus Pane Up                        Ctrl-w k',
+                        handler=functools.partial(
+                            self.window_manager.focus_pane_direction,
+                            Direction.UP,
+                        ),
+                    ),
+                    MenuItem(
+                        # [Menu Item                    ][    Keybind]
+                        'Focus Pane Down                      Ctrl-w j',
+                        handler=functools.partial(
+                            self.window_manager.focus_pane_direction,
+                            Direction.DOWN,
+                        ),
+                    ),
+                    MenuItem(
+                        # [Menu Item                    ][    Keybind]
+                        'Focus Pane Left                      Ctrl-w h',
+                        handler=functools.partial(
+                            self.window_manager.focus_pane_direction,
+                            Direction.LEFT,
+                        ),
+                    ),
+                    MenuItem(
+                        # [Menu Item                    ][    Keybind]
+                        'Focus Pane Right                     Ctrl-w l',
+                        handler=functools.partial(
+                            self.window_manager.focus_pane_direction,
+                            Direction.RIGHT,
+                        ),
                     ),
                     MenuItem('-'),
                     MenuItem(

@@ -25,8 +25,8 @@ from prompt_toolkit.output import DummyOutput as FakeOutput
 
 from pw_console.console_app import ConsoleApp
 from pw_console.console_prefs import ConsolePrefs
-from pw_console.window_manager import _WINDOW_SPLIT_ADJUST
 from pw_console.window_list import _WINDOW_HEIGHT_ADJUST, DisplayMode
+from pw_console.window_manager import Direction, _WINDOW_SPLIT_ADJUST
 
 
 def _create_console_app(logger_count=2):
@@ -36,6 +36,7 @@ def _create_console_app(logger_count=2):
     prefs.code_theme = 'default'
     console_app = ConsoleApp(color_depth=ColorDepth.DEPTH_8_BIT, prefs=prefs)
     console_app.focus_on_container = MagicMock()
+    console_app.application.layout.focus = MagicMock()
 
     loggers = {}
     for i in range(logger_count):
@@ -676,6 +677,501 @@ class TestWindowManager(unittest.TestCase):
                 ],
             )
             # pylint: enable=line-too-long
+
+    def test_directional_window_focus_vertical_tabbed(self) -> None:
+        """
+        Test directional focus with a tabbed vertical split.
+
+        Test Cases:
+            Vertical group split:
+                * Tabbed
+                    * Left
+                        * Focus the left tab if there is one.
+                        * If at the leftmost tab, should focus the left group
+                          if there is one, otherwise no-op.
+                    * Right
+                        * Focus right tab if there is one.
+                        * If at rightmost tab, should focus the right group if
+                          there is one, otherwise no-op.
+                    * Up
+                        * no-op
+                    * Down
+                        * no-op
+        """
+        with create_app_session(output=FakeOutput()):
+            console_app = _create_console_app(logger_count=4)
+
+            window_manager = console_app.window_manager
+
+            # 5 panes, 4 for the loggers and 1 for the repl.
+            self.assertEqual(
+                len(window_manager.first_window_list().active_panes), 5
+            )
+
+            def wm_state() -> list[str]:
+                return repr(window_manager).split('\n')
+
+            # pylint: disable=line-too-long
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            window_manager.window_lists[0].set_display_mode(DisplayMode.TABBED)
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=False)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=False)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=False)',
+                    '  ReplPane(pane_title="Python Repl", visible=False)',
+                ],
+            )
+
+            # Move 2 windows left and switch to tabbed.
+            # Left window should have 2 tabs, right should have 3.
+            target_list_and_pane(window_manager, 0, 0)
+            window_manager.move_pane_to_prev_group()
+            target_list_and_pane(window_manager, 1, 0)
+            window_manager.move_pane_to_prev_group()
+            window_manager.window_lists[0].set_display_mode(DisplayMode.TABBED)
+
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=False)',
+                    'WindowList 1: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=False)',
+                    '  ReplPane(pane_title="Python Repl", visible=False)',
+                ],
+            )
+
+            # This is the first tab, so focus left should no-op.
+            target_list_and_pane(window_manager, 0, 0)
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_not_called()
+
+            # Focus right should move to the next tab.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+            target_list_and_pane(window_manager, 0, 1)
+
+            # This is the last tab in this group, so focus right should focus the right group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[1].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 1, 0)
+
+            # This is the first tab in this group, so focus left should focus the left group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+
+            # Move to Python repl.
+            window_manager.window_lists[1].switch_to_tab(2)
+            target_list_and_pane(window_manager, 1, 2)
+
+            # This is the last tab in the last group, so focus right should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_not_called()
+
+            # Focus Up should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.focus_on_container.assert_not_called()
+
+            # Focus Down should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.focus_on_container.assert_not_called()
+
+    def test_directional_window_focus_vertical_stacked(self):
+        """
+        Test directional focus with a stacked vertical split.
+
+        Test Cases:
+            Vertical group split:
+                * Stacked
+                    * Left
+                        * Focus the left group if there is one.
+                        * If at leftmost group, no-op.
+                    * Right
+                        * Focus the right group if there is one.
+                        * If at rightmost group, no-op.
+                    * Up
+                        * Focus the upper pane if there is one.
+                        * If at first pane, no-op.
+                    * Down
+                        * Focus the below pane if there is one.
+                        * If at last pane, no-op.
+        """
+        with create_app_session(output=FakeOutput()):
+            console_app = _create_console_app(logger_count=4)
+
+            window_manager = console_app.window_manager
+
+            # 5 panes, 4 for the loggers and 1 for the repl.
+            self.assertEqual(
+                len(window_manager.first_window_list().active_panes), 5
+            )
+
+            def wm_state() -> list[str]:
+                return repr(window_manager).split('\n')
+
+            # pylint: disable=line-too-long
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            # Move 2 windows left.
+            # Left window should have 2 panes, right should have 3.
+            target_list_and_pane(window_manager, 0, 0)
+            window_manager.move_pane_to_prev_group()
+            target_list_and_pane(window_manager, 1, 0)
+            window_manager.move_pane_to_prev_group()
+
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    'WindowList 1: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            target_list_and_pane(window_manager, 0, 0)
+
+            # Focus right should focus the right group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[1].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 1, 0)
+
+            # If currently focused on the rightmost group, focus right should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_not_called()
+
+            # Focus left should focus the left group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 0, 0)
+
+            # If currently focused on the leftmost group, focus left should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_not_called()
+
+            # If currently focused on the first pane, focus up should no-op.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.application.layout.focus.assert_not_called()
+
+            # Focus down should move down one pane.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.application.layout.focus.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+            target_list_and_pane(window_manager, 0, 1)
+
+            # If currently focused on the last pane, focus down should no-op.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.application.layout.focus.assert_not_called()
+
+            # Focus up should move up one pane.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.application.layout.focus.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[0]
+            )
+
+    def test_directional_window_focus_horizontal_tabbed(self):
+        """
+        Test directional focus with a horizontal tabbed split.
+            Horizontal Group Split:
+                * Tabbed
+                    * Left
+                        * Focus the left tab if there is one.
+                        * If at the leftmost tab, no-op.
+                    * Right
+                        * Focus the right tab if there is one.
+                        * If at the rightmost tab, no-op.
+                    * Up
+                        * Focus the upper group if there is one.
+                        * If at the first group, no-op.
+                        * Should focus the upper group if there is one.
+                    * Down
+                        * Focus the below group if there is one.
+                        * If at the last group, no-op.
+        """
+        with create_app_session(output=FakeOutput()):
+            console_app = _create_console_app(logger_count=4)
+
+            window_manager = console_app.window_manager
+
+            window_manager.vertical_window_list_splitting = MagicMock(
+                return_value=False
+            )
+            self.assertFalse(window_manager.vertical_window_list_splitting())
+
+            # 5 panes, 4 for the loggers and 1 for the repl.
+            self.assertEqual(
+                len(window_manager.first_window_list().active_panes), 5
+            )
+
+            def wm_state() -> list[str]:
+                return repr(window_manager).split('\n')
+
+            # pylint: disable=line-too-long
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            window_manager.window_lists[0].set_display_mode(DisplayMode.TABBED)
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=False)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=False)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=False)',
+                    '  ReplPane(pane_title="Python Repl", visible=False)',
+                ],
+            )
+
+            # Move 2 windows left and switch to tabbed.
+            # Left window should have 2 tabs, right should have 3.
+            target_list_and_pane(window_manager, 0, 0)
+            window_manager.move_pane_to_prev_group()
+            target_list_and_pane(window_manager, 1, 0)
+            window_manager.move_pane_to_prev_group()
+            window_manager.window_lists[0].set_display_mode(DisplayMode.TABBED)
+
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=False)',
+                    'WindowList 1: mode:DisplayMode.TABBED focused_pane_index:0)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=False)',
+                    '  ReplPane(pane_title="Python Repl", visible=False)',
+                ],
+            )
+            target_list_and_pane(window_manager, 0, 0)
+
+            # There is no left group, and the leftmost tab is visible, so focus left should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_not_called()
+            target_list_and_pane(window_manager, 0, 0)
+
+            # Focus right should focus the next tab.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+            target_list_and_pane(window_manager, 0, 1)
+
+            # There is no right group, and the rightmost tab is visible, so focus right should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            console_app.focus_on_container.assert_not_called()
+            target_list_and_pane(window_manager, 0, 1)
+
+            # Focus left should focus the previous tab.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 0, 0)
+
+            # This is the first group, so focus up should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.focus_on_container.assert_not_called()
+            target_list_and_pane(window_manager, 0, 0)
+
+            # Focus down should focus the below group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[1].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 1, 0)
+
+            # There is no left group, and the leftmost tab is visible, so focus left should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_not_called()
+            target_list_and_pane(window_manager, 1, 0)
+
+    def test_directional_window_focus_horizontal_stacked(self):
+        """
+        Test directional focus with a horizontal stacked split.
+            Horizontal Group Split:
+                * Stacked
+                    * Left
+                        * no-op
+                    * Right
+                        * no-op
+                    * Up
+                        * Focus the upper pane if there is one.
+                        * If at the top pane, focus upper group if there is
+                          one.
+                        * If at top group, no-op.
+                    * Down
+                        * Focus the below pane if there is one.
+                        * If at the bottom pane, focus below group if there is
+                          one.
+                        * If at bottom group, no-op.
+        """
+        with create_app_session(output=FakeOutput()):
+            console_app = _create_console_app(logger_count=4)
+
+            window_manager = console_app.window_manager
+
+            window_manager.vertical_window_list_splitting = MagicMock(
+                return_value=False
+            )
+            self.assertFalse(window_manager.vertical_window_list_splitting())
+
+            # 5 panes, 4 for the loggers and 1 for the repl.
+            self.assertEqual(
+                len(window_manager.first_window_list().active_panes), 5
+            )
+
+            def wm_state() -> list[str]:
+                return repr(window_manager).split('\n')
+
+            # pylint: disable=line-too-long
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            # Move 2 windows left.
+            # Left window should have 2 panes, right should have 3.
+            target_list_and_pane(window_manager, 0, 0)
+            window_manager.move_pane_to_prev_group()
+            target_list_and_pane(window_manager, 1, 0)
+            window_manager.move_pane_to_prev_group()
+
+            self.assertEqual(
+                wm_state(),
+                [
+                    'WindowList 0: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log2", pane_subtitle="test_log2", visible=True)',
+                    '  LogPane(pane_title="Log3", pane_subtitle="test_log3", visible=True)',
+                    'WindowList 1: mode:DisplayMode.STACK focused_pane_index:None)',
+                    '  LogPane(pane_title="Log1", pane_subtitle="test_log1", visible=True)',
+                    '  LogPane(pane_title="Log0", pane_subtitle="test_log0", visible=True)',
+                    '  ReplPane(pane_title="Python Repl", visible=True)',
+                ],
+            )
+            target_list_and_pane(window_manager, 0, 0)
+
+            # In a horizontal stacked split, left and right should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.RIGHT)
+            window_manager.focus_pane_direction(Direction.LEFT)
+            console_app.focus_on_container.assert_not_called()
+
+            # This is the first pane, so focus up should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.focus_on_container.assert_not_called()
+
+            # Focus down should move down one pane.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.application.layout.focus.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+            target_list_and_pane(window_manager, 0, 1)
+
+            # Focus down should move down to the next group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[1].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 1, 0)
+
+            # Focus up should move up to the next group.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.focus_on_container.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[1]
+            )
+            target_list_and_pane(window_manager, 0, 1)
+
+            # Focus up should move up one pane.
+            console_app.application.layout.focus.reset_mock()
+            window_manager.focus_pane_direction(Direction.UP)
+            console_app.application.layout.focus.assert_called_once_with(
+                window_manager.window_lists[0].active_panes[0]
+            )
+            target_list_and_pane(window_manager, 1, 2)
+
+            # This is the last pane, so focus down should no-op.
+            console_app.focus_on_container.reset_mock()
+            window_manager.focus_pane_direction(Direction.DOWN)
+            console_app.focus_on_container.assert_not_called()
 
     def test_focus_next_and_previous_pane(self) -> None:
         """Test switching focus to next and previous window panes."""

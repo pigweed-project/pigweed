@@ -78,6 +78,10 @@ DEFAULT_KEY_BINDINGS: dict[str, list[str]] = {
     'window-manager.enlarge-split': ['escape .'],  # Alt-. (mnemonic: Alt >)
     'window-manager.focus-prev-pane': ['escape c-p'],  # Ctrl-Alt-p
     'window-manager.focus-next-pane': ['escape c-n'],  # Ctrl-Alt-n
+    'window-manager.focus-pane-up': ['c-w k'],
+    'window-manager.focus-pane-down': ['c-w j'],
+    'window-manager.focus-pane-left': ['c-w h'],
+    'window-manager.focus-pane-right': ['c-w l'],
     'window-manager.balance-window-panes': ['c-u'],
     'python-repl.copy-output-selection': ['c-c'],
     'python-repl.copy-all-output': ['escape c-c'],

@@ -31,7 +31,10 @@ from prompt_toolkit.layout import (
 )
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType, MouseButton
 
-from pw_console.widgets import mouse_handlers as pw_console_mouse_handlers
+from pw_console.widgets import (
+    mouse_handlers as pw_console_mouse_handlers,
+    WindowPane,
+)
 
 if TYPE_CHECKING:
     # pylint: disable=ungrouped-imports
@@ -637,6 +640,42 @@ class WindowList:
             self.switch_to_tab(swapped_pane_index)
         else:
             self.refresh_ui()
+
+    def get_previous_visible_pane(
+        self, current_pane: WindowPane
+    ) -> WindowPane | None:
+        """Return the previous visible pane."""
+        try:
+            current_pane_index = self.active_panes.index(current_pane)
+        except ValueError:
+            # If pane can't be found, focus on the main menu.
+            return None
+
+        # Loop through active panes (not including the current_pane).
+        for pane_index in reversed(range(current_pane_index)):
+            pane = self.active_panes[pane_index]
+            if pane.show_pane:
+                return pane
+
+        return None
+
+    def get_next_visible_pane(
+        self, current_pane: WindowPane
+    ) -> WindowPane | None:
+        """Return the next visible pane."""
+        try:
+            current_pane_index = self.active_panes.index(current_pane)
+        except ValueError:
+            # If pane can't be found, focus on the main menu.
+            return None
+
+        # Loop through active panes (not including the current_pane).
+        for pane_index in range(current_pane_index + 1, len(self.active_panes)):
+            pane = self.active_panes[pane_index]
+            if pane.show_pane:
+                return pane
+
+        return None
 
     def _get_next_visible_pane_after(self, target_pane):
         """Return the next visible pane that appears after the target pane."""
