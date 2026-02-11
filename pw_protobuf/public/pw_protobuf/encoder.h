@@ -31,6 +31,7 @@
 #include "pw_protobuf/wire_format.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 #include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
 #include "pw_stream/stream.h"
@@ -946,7 +947,7 @@ Status StreamEncoder::WriteNestedMessage(
 //     MemoryEncoder encoder(response);
 //     encoder.WriteUint32(kMagicNumberField, 0x1a1a2b2b);
 //     encoder.WriteString(kFavoriteFood, "cookies");
-//     return StatusWithSize(encoder.status(), encoder.size());
+//     return encoder.status_with_size();
 //   }
 //
 // Note: Avoid using a MemoryEncoder reference as an argument for a function.
@@ -974,6 +975,10 @@ class MemoryEncoder : public StreamEncoder {
 
   const std::byte* begin() const { return data(); }
   const std::byte* end() const { return data() + size(); }
+
+  StatusWithSize status_with_size() const {
+    return StatusWithSize(status(), size());
+  }
 
  protected:
   // This is needed by codegen.

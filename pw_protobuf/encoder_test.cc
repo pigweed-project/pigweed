@@ -168,6 +168,8 @@ TEST(StreamEncoder, WriteBytesWithCallback) {
   constexpr uint32_t kArbitraryFieldNumber = 3;
   std::array<std::byte, 16> encode_buffer;
   constexpr auto kData = bytes::Initialized<8>(0xaa);
+  constexpr size_t kEncodedSize =
+      SizeOfDelimitedField(kArbitraryFieldNumber, kData.size());
 
   MemoryEncoder encoder(encode_buffer);
   EXPECT_EQ(encoder.WriteBytes(kArbitraryFieldNumber,
@@ -178,10 +180,12 @@ TEST(StreamEncoder, WriteBytesWithCallback) {
                                  return writer.Write(data_span.subspan(4));
                                }),
             OkStatus());
-  EXPECT_EQ(encoder.status(), OkStatus());
 
-  EXPECT_EQ(encoder.size(),
-            SizeOfDelimitedField(kArbitraryFieldNumber, kData.size()));
+  EXPECT_EQ(encoder.status(), OkStatus());
+  EXPECT_EQ(encoder.size(), kEncodedSize);
+
+  EXPECT_EQ(encoder.status_with_size().status(), OkStatus());
+  EXPECT_EQ(encoder.status_with_size().size(), kEncodedSize);
 }
 
 TEST(StreamEncoder, WriteBytesWithCallbackZeroLength) {
