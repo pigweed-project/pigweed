@@ -48,6 +48,7 @@ enum RfcommFixedChannel:
 
 
 enum RfcommCommandResponseAndDirection:
+  -- TODO(b/482441914): Deprecated, use bit flags directly.
   -- RFCOMM Spec v1.2 Section 5.4
   -- GSM 07.10 section 5.2.1.2
   -- Commands and responses from the responder have C/R = 0. Commands and
@@ -87,6 +88,7 @@ enum RfcommMaxInfoSize:
 
 struct RfcommFrame:
   -- RFCOMM adaptation of ETSI TS section 5.2 frame
+  -- RFCOMM Spec v1.2 Section 5.4
 
   [requires: extended_address == true]
 
@@ -95,6 +97,14 @@ struct RfcommFrame:
     0                  [+1]                 Flag                               extended_address
 
     1                  [+2]                 RfcommCommandResponseAndDirection  command_response_direction
+
+    1                  [+1]                 Flag                               command_response
+      -- Commands and responses from the responder have C/R = 0. Commands and
+      -- responses from the initiator have C/R = 1.
+
+    2                  [+1]                 Flag                               direction
+      -- For an RFCOMM session, the initiating device is given the direction bit D=1
+      -- (and conversely, D=0 in the other device)
 
     3                  [+5]                 UInt                               channel
       -- ETSI TS 07.10 section 5.2.1.2
