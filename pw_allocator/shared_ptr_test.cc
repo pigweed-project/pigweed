@@ -370,6 +370,14 @@ TEST_F(SharedPtrTest, SharedFromUniquePtrFailsOnAllocationFailure) {
   EXPECT_EQ(metrics.num_deallocations.value(), 1u);
 }
 
+TEST_F(SharedPtrTest, Allocator) {
+  pw::SharedPtr<Counter> ptr1;
+  EXPECT_EQ(ptr1.allocator(), nullptr);
+
+  pw::SharedPtr<Counter> ptr2 = allocator_.MakeShared<Counter>(100u);
+  EXPECT_EQ(ptr2.allocator(), &allocator_);
+}
+
 }  // namespace
 
 // TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.

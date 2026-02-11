@@ -315,6 +315,12 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// Swaps the managed pointer and deallocator of this and another object.
   void swap(SharedPtr& other) noexcept;
 
+  /// Returns the allocator that owns this `SharedPtr` or `nullptr` if the
+  /// `SharedPtr` is empty.
+  Allocator* allocator() const {
+    return control_block_ == nullptr ? nullptr : control_block_->allocator();
+  }
+
  private:
   using Layout = allocator::Layout;
 
