@@ -73,10 +73,10 @@ project and explains key concepts along the way.
 ------------------
 Set up build rules
 ------------------
-Add a dependency on ``dispatcher``. If you instantiate a concrete dispatcher
+Add a dependency on ``pw_async2``. If you instantiate a concrete dispatcher
 such as ``basic_dispatcher``, also depend on that dispatcher implementation.
-The ``dispatcher`` dependency pulls in most of the core ``pw_async2`` API that
-you'll always need.
+The ``pw_async2`` dependency pulls in most of the core ``pw_async2`` and
+dispatcher APIs that you'll always need.
 
 .. tab-set::
 
@@ -85,7 +85,7 @@ you'll always need.
       .. literalinclude:: examples/BUILD.bazel
          :language: py
          :linenos:
-         :emphasize-lines: 5
+         :emphasize-lines: 5-6
          :start-after: # DOCSTAG: [quickstart]
          :end-before: # DOCSTAG: [quickstart]
 
@@ -142,7 +142,7 @@ a dispatcher, and running the tasks with a dispatcher:
 .. literalinclude:: examples/quickstart.cc
    :language: cpp
    :linenos:
-   :emphasize-lines: 12,15,17,19
+   :emphasize-lines: 11,13,15,17
    :start-after: // DOCSTAG: [main]
    :end-before: // DOCSTAG: [main]
 
@@ -165,7 +165,7 @@ subclass of :cc:`pw::async2::Task` and it must implement an override of
 .. literalinclude:: examples/quickstart.cc
    :language: cpp
    :linenos:
-   :emphasize-lines: 7,14
+   :emphasize-lines: 8,15
    :start-after: // DOCSTAG: [decl]
    :end-before: // DOCSTAG: [decl]
 
@@ -175,16 +175,16 @@ subclass of :cc:`pw::async2::Task` and it must implement an override of
    method, which is a non-virtual wrapper around ``DoPend()``.
 
 The ``DoPend()`` implementation is where ``TimerTask`` progresses through its
-work asynchronously. ``DoPend()`` waits on a ``TimeFuture`` called ``timer_``
-to complete. ``timer_`` finishes after 100ms and then never runs again. Futures
-like ``timer_`` will be described more in the next section. For now, focus on
+work asynchronously. Our ``DoPend()`` waits on a ``TimeFuture`` to complete.
+``time_future_`` finishes after 100ms and then never runs again. Futures like
+``time_future_`` will be described more in the next section. For now, focus on
 the return values of the implementation. Notice how the implementation returns
 ``Pending()`` in one case, and ``Ready()`` in another case:
 
 .. literalinclude:: examples/quickstart.cc
    :language: cpp
    :linenos:
-   :emphasize-lines: 6,10
+   :emphasize-lines: 11,16
    :start-after: // DOCSTAG: [impl]
    :end-before: // DOCSTAG: [impl]
 
@@ -220,22 +220,22 @@ If you run this example, you'll see ``Waiting…`` logged only once:
    INF  Done!
 
 This suggests that there's no busy polling. So how does the polling work?
-``timer_`` is the key to understanding the flow. ``timer_`` is a :ref:`future
-<module-pw_async2-informed-poll-components-future>`, the main async primitive
-in ``pw_async2``. A future is a value that may not be ready yet.  Notice how
-``cx`` is passed to the timer's ``Pend()`` method:
+``time_future_`` is the key to understanding the flow. ``time_future_`` is a
+:ref:`future <module-pw_async2-informed-poll-components-future>`, the main
+async primitive in ``pw_async2``. A future is a result of an asynchronous
+operation that may not be ready yet.  Notice how ``cx`` is passed to the
+future's ``Pend()`` method:
 
 .. literalinclude:: examples/quickstart.cc
    :language: cpp
    :linenos:
-   :emphasize-lines: 3
+   :emphasize-lines: 8
    :start-after: // DOCSTAG: [impl]
    :end-before: // DOCSTAG: [impl]
 
-When the future is ready, the future informs the dispatcher that its parent
-task can make more progress and therefore should be polled again. This is why
-the ``pw_async2`` programming model is called
-:ref:`module-pw_async2-informed-poll`.
+When the future is ready, it informs the dispatcher that its parent task can
+make more progress and therefore should be polled again. This is why the
+``pw_async2`` programming model is called :ref:`module-pw_async2-informed-poll`.
 
 .. note::
 

@@ -173,6 +173,7 @@ pw_cc_test(
     name = "quickstart",
     srcs = ["quickstart.cc"],
     deps = [
+        "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:system_time_provider",
         "//pw_log",
