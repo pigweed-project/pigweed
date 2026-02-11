@@ -50,7 +50,7 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_nodejs", version = "6.3.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_probe_rs", version = "0.0.6")
-bazel_dep(name = "rules_python", version = "1.1.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "rules_rust", version = "0.65.0")
 bazel_dep(name = "rules_rust_prost", version = "0.65.0")
 bazel_dep(name = "rules_shell", version = "0.4.0")
@@ -274,27 +274,33 @@ pip.parse(
     experimental_index_url = "${PIGWEED_PIP_INDEX_URL:-https://pypi.org/simple}",
     hub_name = "pigweed_python_packages",
     python_version = "3.10",
-    requirements_darwin = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt",
-    requirements_linux = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
-    requirements_windows = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
+    requirements_by_platform = {
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt": "osx_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "linux_x86_64,linux_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "windows_x86_64, windows_aarch64",
+    },
 )
 pip.parse(
     envsubst = ["PIGWEED_PIP_INDEX_URL"],
     experimental_index_url = "${PIGWEED_PIP_INDEX_URL:-https://pypi.org/simple}",
     hub_name = "pigweed_python_packages",
     python_version = "3.11",
-    requirements_darwin = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt",
-    requirements_linux = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
-    requirements_windows = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
+    requirements_by_platform = {
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt": "osx_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "linux_x86_64,linux_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "windows_x86_64, window_aarch64",
+    },
 )
 pip.parse(
     envsubst = ["PIGWEED_PIP_INDEX_URL"],
     experimental_index_url = "${PIGWEED_PIP_INDEX_URL:-https://pypi.org/simple}",
     hub_name = "pigweed_python_packages",
     python_version = "3.12",
-    requirements_darwin = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt",
-    requirements_linux = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt",
-    requirements_windows = "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
+    requirements_by_platform = {
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_darwin_lock.txt": "osx_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_linux_lock.txt": "linux_x86_64,linux_aarch64",
+        "//pw_env_setup/py:pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt": "windows_x86_64,windows_aarch64",
+    },
 )
 use_repo(pip, "pigweed_python_packages")
 

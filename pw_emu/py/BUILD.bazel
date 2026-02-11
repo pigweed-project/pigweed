@@ -12,10 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
-py_library(
+pw_py_library(
     name = "pw_emu",
     srcs = [
         "pw_emu/__init__.py",
@@ -120,14 +119,14 @@ pw_py_binary(
     srcs = ["mock_emu.py"],
 )
 
-py_library(
+pw_py_library(
     name = "config_helper",
     srcs = ["tests/config_helper.py"],
     imports = ["tests"],
     deps = ["//pw_emu/py:pw_emu"],
 )
 
-py_library(
+pw_py_library(
     name = "mock_emu_frontend",
     srcs = ["mock_emu_frontend.py"],
     imports = ["."],

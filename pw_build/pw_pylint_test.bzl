@@ -21,9 +21,9 @@ load("//pw_build:pw_pylint.bzl", "PylintAspectForTestInfo", "is_rules_python_gen
 
 def _is_rules_python_generated_source_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.true(env, is_rules_python_generated_source("rules_python_entry_point_foo.py", "foo"))
+    asserts.true(env, is_rules_python_generated_source("foo_entry_point.py", "foo"))
     asserts.false(env, is_rules_python_generated_source("foo.py", "foo"))
-    asserts.false(env, is_rules_python_generated_source("rules_python_entry_point_bar.py", "foo"))
+    asserts.false(env, is_rules_python_generated_source("bar_entry_point.py", "foo"))
     return unittest.end(env)
 
 is_rules_python_generated_source_test = unittest.make(_is_rules_python_generated_source_test_impl)
@@ -144,6 +144,8 @@ def pw_pylint_test_suite(name):
     py_library(
         name = name + "_py_lib_dep",
         srcs = ["pw_pylint_test_example.py"],
+        # This fake target isn't meant to be built normally, but it is built
+        # when running the test suite.
         tags = ["manual"],
         visibility = ["//visibility:private"],
     )
@@ -151,6 +153,8 @@ def pw_pylint_test_suite(name):
     pw_py_importable_runfile(
         name = name + "_py_lib_dep_runfiles",
         src = name + "_py_lib_dep",
+        # This fake target isn't meant to be built normally, but it is built
+        # when running the test suite.
         tags = ["manual"],
         visibility = ["//visibility:private"],
     )
@@ -176,6 +180,8 @@ def pw_pylint_test_suite(name):
             # External runfiles dep
             "@rules_python//python/runfiles",
         ],
+        # This fake target isn't meant to be built normally, but it is built
+        # when running the test suite.
         tags = ["manual"],
         visibility = ["//visibility:private"],
     )
