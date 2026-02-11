@@ -104,7 +104,8 @@ cc_library_static {
         "public",
     ],
     srcs: [
-        "pw_multibuf_v1_adapter.cc"
+        "v1_adapter/chunk.cc",
+        "v1_adapter/multibuf.cc",
     ],
     header_libs: [
         "pw_assert",
