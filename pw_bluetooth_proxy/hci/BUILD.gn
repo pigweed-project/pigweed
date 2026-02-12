@@ -15,7 +15,9 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pigweed/third_party/emboss/emboss.gni")
+import("$dir_pw_async2/backend.gni")
 import("$dir_pw_chrono/backend.gni")
+import("$dir_pw_sync/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -66,6 +68,37 @@ pw_source_set("command_multiplexer") {
   visibility = [ ":*" ]
 }
 
+pw_source_set("sniff_offload") {
+  # LINT.IfChange
+  sources = [ "sniff_offload_manager.cc" ]
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_bluetooth_proxy/hci/sniff_offload_manager.h" ]
+  public_deps = [
+    ":types",
+    "$dir_pw_allocator",
+    "$dir_pw_assert:check",
+    "$dir_pw_async2",
+    "$dir_pw_async2:channel",
+    "$dir_pw_async2:future_timeout",
+    "$dir_pw_async2:system_time_provider",
+    "$dir_pw_async2:time_provider",
+    "$dir_pw_bluetooth:emboss_hci_android",
+    "$dir_pw_bluetooth:emboss_hci_commands",
+    "$dir_pw_bluetooth:emboss_hci_common",
+    "$dir_pw_bluetooth:emboss_hci_data",
+    "$dir_pw_bluetooth:emboss_hci_events",
+    "$dir_pw_bluetooth:emboss_util",
+    "$dir_pw_chrono:system_clock",
+    "$dir_pw_containers:intrusive_map",
+    "$dir_pw_function",
+    "$dir_pw_multibuf",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+  ]
+
+  # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+}
+
 pw_test("command_multiplexer_test") {
   # For now, disable if there's no system timer backend. In the future we will
   # want to remove this restriction since async2 will be the normal way to
@@ -86,6 +119,32 @@ pw_test("command_multiplexer_test") {
   # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
 }
 
+pw_test("sniff_offload_manager_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != "" &&
+              dir_pw_third_party_emboss != ""
+
+  # LINT.IfChange
+  sources = [ "sniff_offload_manager_test.cc" ]
+  deps = [
+    ":sniff_offload",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:simulated_time_provider",
+    "$dir_pw_async2:testing",
+    "$dir_pw_chrono:system_clock",
+    "$dir_pw_function",
+    "$dir_pw_thread:sleep",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+  ]
+
+  # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+}
+
 pw_test_group("tests") {
-  tests = [ ":command_multiplexer_test" ]
+  tests = [
+    ":command_multiplexer_test",
+    ":sniff_offload_manager_test",
+  ]
 }

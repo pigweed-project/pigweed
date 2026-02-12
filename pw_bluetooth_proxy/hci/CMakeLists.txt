@@ -55,6 +55,36 @@ pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
 
+pw_add_library(pw_bluetooth_proxy.hci.sniff_offload STATIC
+# LINT.IfChange
+  HEADERS
+    public/pw_bluetooth_proxy/hci/sniff_offload_manager.h
+  PUBLIC_DEPS
+    pw_allocator
+    pw_assert.check
+    pw_async2
+    pw_async2.channel
+    pw_async2.future_timeout
+    pw_async2.system_time_provider
+    pw_async2.time_provider
+    pw_bluetooth_proxy.hci.types
+    pw_bluetooth.emboss_hci_android
+    pw_bluetooth.emboss_hci_commands
+    pw_bluetooth.emboss_hci_common
+    pw_bluetooth.emboss_hci_data
+    pw_bluetooth.emboss_hci_events
+    pw_bluetooth.emboss_util
+    pw_chrono.system_clock
+    pw_containers.intrusive_map
+    pw_function
+    pw_multibuf
+    pw_sync.lock_annotations
+    pw_sync.mutex
+  SOURCES
+    sniff_offload_manager.cc
+# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
+)
+
 pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
 # LINT.IfChange
   PRIVATE_DEPS
@@ -67,5 +97,24 @@ pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
     pw_unit_test
   SOURCES
     command_multiplexer_test.cc
+# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
+)
+
+pw_add_test(pw_bluetooth_proxy.hci.sniff_offload_manager_test
+# LINT.IfChange
+  PRIVATE_DEPS
+    pw_bluetooth_proxy.hci.sniff_offload
+    pw_allocator.synchronized_allocator
+    pw_allocator.testing
+    pw_async2.func_task
+    pw_async2.simulated_time_provider
+    pw_async2.testing
+    pw_chrono.system_clock
+    pw_function
+    pw_thread.sleep
+    pw_thread.test_thread_context
+    pw_thread.thread
+  SOURCES
+    sniff_offload_manager_test.cc
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
