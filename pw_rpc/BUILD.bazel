@@ -166,6 +166,7 @@ cc_library(
         "public/pw_rpc/channel.h",
         "public/pw_rpc/client.h",
         "public/pw_rpc/internal/call.h",
+        "public/pw_rpc/internal/call_allocator.h",
         "public/pw_rpc/internal/call_context.h",
         "public/pw_rpc/internal/channel_list.h",
         "public/pw_rpc/internal/client_call.h",

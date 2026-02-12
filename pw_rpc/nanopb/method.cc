@@ -21,6 +21,7 @@
 #include "pb_decode.h"
 #include "pb_encode.h"
 #include "pw_log/log.h"
+#include "pw_rpc/internal/call_allocator.h"
 #include "pw_rpc/internal/packet.h"
 
 namespace pw::rpc {
@@ -36,7 +37,8 @@ void NanopbMethod::CallSynchronousUnary(const CallContext& context,
     return;
   }
 
-  NanopbServerCall responder(context.ClaimLocked(), MethodType::kUnary);
+  _PW_RPC_DECLARE_CALL(
+      NanopbServerCall, responder, context.ClaimLocked(), MethodType::kUnary);
   rpc_lock().unlock();
   const Status status = function_.synchronous_unary(
       context.service(), request_struct, response_struct);
@@ -52,7 +54,8 @@ void NanopbMethod::CallUnaryRequest(const CallContext& context,
     return;
   }
 
-  NanopbServerCall server_writer(context.ClaimLocked(), type);
+  _PW_RPC_DECLARE_CALL(
+      NanopbServerCall, server_writer, context.ClaimLocked(), type);
   rpc_lock().unlock();
   function_.unary_request(context.service(), request_struct, server_writer);
 }

@@ -17,13 +17,14 @@
 #include <cstddef>
 #include <cstring>
 
+#include "pw_rpc/internal/call_allocator.h"
 #include "pw_rpc/internal/packet.h"
 
 namespace pw::rpc::internal {
 
 void RawMethod::AsynchronousUnaryInvoker(const CallContext& context,
                                          const Packet& request) {
-  RawUnaryResponder responder(context.ClaimLocked());
+  _PW_RPC_DECLARE_CALL(RawUnaryResponder, responder, context.ClaimLocked());
   context.server().CleanUpCalls();
   static_cast<const RawMethod&>(context.method())
       .function_.asynchronous_unary(
@@ -32,7 +33,7 @@ void RawMethod::AsynchronousUnaryInvoker(const CallContext& context,
 
 void RawMethod::ServerStreamingInvoker(const CallContext& context,
                                        const Packet& request) {
-  RawServerWriter server_writer(context.ClaimLocked());
+  _PW_RPC_DECLARE_CALL(RawServerWriter, server_writer, context.ClaimLocked());
   context.server().CleanUpCalls();
   static_cast<const RawMethod&>(context.method())
       .function_.server_streaming(
@@ -41,7 +42,7 @@ void RawMethod::ServerStreamingInvoker(const CallContext& context,
 
 void RawMethod::ClientStreamingInvoker(const CallContext& context,
                                        const Packet&) {
-  RawServerReader reader(context.ClaimLocked());
+  _PW_RPC_DECLARE_CALL(RawServerReader, reader, context.ClaimLocked());
   context.server().CleanUpCalls();
   static_cast<const RawMethod&>(context.method())
       .function_.stream_request(context.service(), reader);
@@ -49,7 +50,8 @@ void RawMethod::ClientStreamingInvoker(const CallContext& context,
 
 void RawMethod::BidirectionalStreamingInvoker(const CallContext& context,
                                               const Packet&) {
-  RawServerReaderWriter reader_writer(context.ClaimLocked());
+  _PW_RPC_DECLARE_CALL(
+      RawServerReaderWriter, reader_writer, context.ClaimLocked());
   context.server().CleanUpCalls();
   static_cast<const RawMethod&>(context.method())
       .function_.stream_request(context.service(), reader_writer);

@@ -77,6 +77,14 @@ pw_source_set("config") {
   friend = [ "./*" ]
 }
 
+pw_source_set("call_allocator") {
+  sources = [ "public/pw_rpc/internal/call_allocator.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [ ":config" ]
+  visibility = [ "./*" ]
+  friend = [ "./*" ]
+}
+
 pw_source_set("log_config") {
   sources = [ "public/pw_rpc/internal/log_config.h" ]
   public_configs = [ ":public_include_path" ]
@@ -87,7 +95,10 @@ pw_source_set("log_config") {
 
 pw_source_set("server") {
   public_configs = [ ":public_include_path" ]
-  public_deps = [ ":common" ]
+  public_deps = [
+    ":call_allocator",
+    ":common",
+  ]
   deps = [
     ":log_config",
     dir_pw_log,

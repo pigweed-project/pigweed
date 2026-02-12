@@ -18,6 +18,7 @@
 #include <type_traits>
 
 #include "pw_bytes/span.h"
+#include "pw_rpc/internal/call_allocator.h"
 #include "pw_rpc/internal/call_context.h"
 #include "pw_rpc/internal/lock.h"
 #include "pw_rpc/internal/method.h"
@@ -261,8 +262,10 @@ class PwpbMethod : public Method {
       return;
     }
 
-    internal::PwpbServerCall responder(context.ClaimLocked(),
-                                       MethodType::kUnary);
+    _PW_RPC_DECLARE_CALL(internal::PwpbServerCall,
+                         responder,
+                         context.ClaimLocked(),
+                         MethodType::kUnary);
     context.server().CleanUpCalls();
     const Status status = function_.synchronous_unary(
         context.service(), &request_struct, &response_struct);
@@ -280,7 +283,10 @@ class PwpbMethod : public Method {
       return;
     }
 
-    internal::PwpbServerCall server_writer(context.ClaimLocked(), method_type);
+    _PW_RPC_DECLARE_CALL(internal::PwpbServerCall,
+                         server_writer,
+                         context.ClaimLocked(),
+                         method_type);
     context.server().CleanUpCalls();
     function_.unary_request(context.service(), &request_struct, server_writer);
   }
@@ -348,8 +354,10 @@ class PwpbMethod : public Method {
   template <typename Request>
   static void ClientStreamingInvoker(const CallContext& context, const Packet&)
       PW_UNLOCK_FUNCTION(rpc_lock()) {
-    internal::BasePwpbServerReader<Request> reader(
-        context.ClaimLocked(), MethodType::kClientStreaming);
+    _PW_RPC_DECLARE_CALL(internal::BasePwpbServerReader<Request>,
+                         reader,
+                         context.ClaimLocked(),
+                         MethodType::kClientStreaming);
     context.server().CleanUpCalls();
     static_cast<const PwpbMethod&>(context.method())
         .function_.stream_request(context.service(), reader);
@@ -360,8 +368,10 @@ class PwpbMethod : public Method {
   static void BidirectionalStreamingInvoker(const CallContext& context,
                                             const Packet&)
       PW_UNLOCK_FUNCTION(rpc_lock()) {
-    internal::BasePwpbServerReader<Request> reader_writer(
-        context.ClaimLocked(), MethodType::kBidirectionalStreaming);
+    _PW_RPC_DECLARE_CALL(internal::BasePwpbServerReader<Request>,
+                         reader_writer,
+                         context.ClaimLocked(),
+                         MethodType::kBidirectionalStreaming);
     context.server().CleanUpCalls();
     static_cast<const PwpbMethod&>(context.method())
         .function_.stream_request(context.service(), reader_writer);

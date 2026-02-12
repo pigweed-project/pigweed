@@ -19,6 +19,7 @@
 #include <type_traits>
 
 #include "pw_function/function.h"
+#include "pw_rpc/internal/call_allocator.h"
 #include "pw_rpc/internal/config.h"
 #include "pw_rpc/internal/lock.h"
 #include "pw_rpc/internal/method.h"
@@ -394,8 +395,10 @@ class NanopbMethod : public Method {
   template <typename Request>
   static void ClientStreamingInvoker(const CallContext& context, const Packet&)
       PW_UNLOCK_FUNCTION(rpc_lock()) {
-    BaseNanopbServerReader<Request> reader(context.ClaimLocked(),
-                                           MethodType::kClientStreaming);
+    _PW_RPC_DECLARE_CALL(BaseNanopbServerReader<Request>,
+                         reader,
+                         context.ClaimLocked(),
+                         MethodType::kClientStreaming);
     rpc_lock().unlock();
     static_cast<const NanopbMethod&>(context.method())
         .function_.stream_request(context.service(), reader);
@@ -406,8 +409,10 @@ class NanopbMethod : public Method {
   static void BidirectionalStreamingInvoker(const CallContext& context,
                                             const Packet&)
       PW_UNLOCK_FUNCTION(rpc_lock()) {
-    BaseNanopbServerReader<Request> reader_writer(
-        context.ClaimLocked(), MethodType::kBidirectionalStreaming);
+    _PW_RPC_DECLARE_CALL(BaseNanopbServerReader<Request>,
+                         reader_writer,
+                         context.ClaimLocked(),
+                         MethodType::kBidirectionalStreaming);
     rpc_lock().unlock();
     static_cast<const NanopbMethod&>(context.method())
         .function_.stream_request(context.service(), reader_writer);
