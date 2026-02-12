@@ -16,8 +16,13 @@
 #include <atomic>
 #include <optional>
 
+#include "config.h"
 #include "fsl_clock.h"
 #include "fsl_i3c.h"
+#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
+#include "fsl_i3c_dma.h"
+#include "pw_dma_mcuxpresso/dma.h"
+#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
 #include "pw_bytes/span.h"
 #include "pw_clock_tree/clock_tree.h"
 #include "pw_containers/vector.h"
@@ -41,6 +46,10 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
     bool enable_open_drain_stop;  // Whether to emit open-drain speed STOP.
     bool enable_open_drain_high;  // Enable Open-Drain High to be 1 PPBAUD count
                                   // for I3C messages, or 1 ODBAUD.
+#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
+    dma::McuxpressoDmaChannel& rx_dma_channel;  // Receive DMA channel
+    dma::McuxpressoDmaChannel& tx_dma_channel;  // Transmit DMA channel
+#endif                                          // PW_I2C_MCUXPRESSO_I3C_USE_DMA
   };
 
   I3cMcuxpressoInitiator(const Config& config,
@@ -169,6 +178,21 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
       PW_LOCKS_EXCLUDED(mutex_);
 
  private:
+  // inclusive-language: disable
+#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
+  using Handle = i3c_master_dma_handle_t;
+  using Callbacks = i3c_master_dma_callback_t;
+  static constexpr auto I3C_MasterTransferFunc = I3C_MasterTransferDMA;
+  static constexpr auto I3C_MasterTransferAbortFunc =
+      I3C_MasterTransferAbortDMA;
+#else   // PW_I2C_MCUXPRESSO_I3C_USE_DMA
+  using Handle = i3c_master_handle_t;
+  using Callbacks = i3c_master_transfer_callback_t;
+  static constexpr auto I3C_MasterTransferFunc = I3C_MasterTransferNonBlocking;
+  static constexpr auto I3C_MasterTransferAbortFunc = I3C_MasterTransferAbort;
+#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
+  // inclusive-language: enable
+
   pw::Status DoTransferCcc(I3cCccAction rnw,
                            I3cCcc ccc_id,
                            pw::i2c::Address address,
@@ -192,7 +216,7 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
 
   // Non-blocking I3C transfer callback.
   static void TransferCompleteCallback(I3C_Type* base,
-                                       i3c_master_handle_t* handle,
+                                       Handle* handle,
                                        status_t status,
                                        void* initiator_ptr);
 
@@ -221,10 +245,8 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
   sync::TimedThreadNotification callback_complete_notification_;
   std::atomic<status_t> transfer_status_;
 
-  // inclusive-language: disable
-  i3c_master_transfer_callback_t initiator_callbacks_;
-  i3c_master_handle_t handle_ PW_GUARDED_BY(mutex_);
-  // inclusive-language: enable
+  Callbacks initiator_callbacks_;
+  Handle handle_ PW_GUARDED_BY(mutex_);
 };
 
 }  // namespace pw::i2c

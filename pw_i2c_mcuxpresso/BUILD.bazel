@@ -21,6 +21,11 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+label_flag(
+    name = "config_override",
+    build_setting_default = "//pw_build:default_module_config",
+)
+
 cc_library(
     name = "pw_i2c_mcuxpresso",
     srcs = ["initiator.cc"],
@@ -90,16 +95,19 @@ cc_library(
     name = "i3c_initiator",
     srcs = ["i3c_initiator.cc"],
     hdrs = [
+        "public/pw_i2c_mcuxpresso/config.h",
         "public/pw_i2c_mcuxpresso/i3c_initiator.h",
     ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
+        ":config_override",
         ":i3c_ccc",
         "//pw_bytes",
         "//pw_chrono:system_clock",
         "//pw_clock_tree",
         "//pw_containers:vector",
+        "//pw_dma_mcuxpresso",
         "//pw_function:scope_guard",
         "//pw_i2c:address",
         "//pw_i2c:initiator",

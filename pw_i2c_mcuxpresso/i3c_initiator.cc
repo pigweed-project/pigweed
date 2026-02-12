@@ -92,7 +92,16 @@ void I3cMcuxpressoInitiator::Enable() {
       .transferComplete = I3cMcuxpressoInitiator::TransferCompleteCallback};
 
   // Create the handle for the non-blocking transfer and register callback.
+#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
+  I3C_MasterTransferCreateHandleDMA(base_,
+                                    &handle_,
+                                    &initiator_callbacks_,
+                                    this,
+                                    config_.rx_dma_channel.handle(),
+                                    config_.tx_dma_channel.handle());
+#else   // PW_I2C_MCUXPRESSO_I3C_USE_DMA
   I3C_MasterTransferCreateHandle(base_, &handle_, &initiator_callbacks_, this);
+#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
 
   enabled_ = true;
 }
@@ -116,10 +125,11 @@ void I3cMcuxpressoInitiator::Disable() {
 
 I3cMcuxpressoInitiator::~I3cMcuxpressoInitiator() { Disable(); }
 
-void I3cMcuxpressoInitiator::TransferCompleteCallback(I3C_Type*,
-                                                      i3c_master_handle_t*,
-                                                      status_t status,
-                                                      void* initiator_ptr) {
+void I3cMcuxpressoInitiator::TransferCompleteCallback(
+    I3C_Type*,
+    I3cMcuxpressoInitiator::Handle*,
+    status_t status,
+    void* initiator_ptr) {
   I3cMcuxpressoInitiator& initiator =
       *static_cast<I3cMcuxpressoInitiator*>(initiator_ptr);
   initiator.transfer_status_ = status;
@@ -136,17 +146,20 @@ Status I3cMcuxpressoInitiator::InitiateNonBlockingTransferUntil(
   PW_CHECK_OK(clock_tree_element_.Acquire());
   pw::ScopeGuard guard([this] { clock_tree_element_.Release().IgnoreError(); });
 
-  const status_t status =
-      I3C_MasterTransferNonBlocking(base_, &handle_, transfer);
+  const status_t status = I3C_MasterTransferFunc(base_, &handle_, transfer);
   if (status != kStatus_Success) {
     return HalStatusToPwStatus(status);
   }
 
   if (!callback_complete_notification_.try_acquire_until(deadline)) {
-    I3C_MasterTransferAbort(base_, &handle_);
+    I3C_MasterTransferAbortFunc(base_, &handle_);
     return Status::DeadlineExceeded();
   }
 
+  if (transfer_status_ != kStatus_Success) {
+    PW_LOG_INFO("NonBlockingTransfer failed transfer status %d",
+                transfer_status_.load());
+  }
   return HalStatusToPwStatus(transfer_status_);
 }
 

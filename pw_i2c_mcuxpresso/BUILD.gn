@@ -61,6 +61,7 @@ if (pw_third_party_mcuxpresso_SDK != "") {
   pw_source_set("i3c_initiator") {
     public_configs = [ ":default_config" ]
     public = [
+      "public/pw_i2c_mcuxpresso/config.h",
       "public/pw_i2c_mcuxpresso/i3c_ccc.h",
       "public/pw_i2c_mcuxpresso/i3c_initiator.h",
     ]
