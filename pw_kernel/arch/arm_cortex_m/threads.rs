@@ -160,8 +160,12 @@ impl Arch for crate::Arch {
             sched_state = crate::Arch::get_scheduler(crate::Arch).lock(crate::Arch);
             (sched_state, true)
         } else {
-            // in interrupt context the pendsv should have already triggered it
-            pw_assert::assert!(SCB::is_pendsv_pending());
+            // In interrupt context, a PendSV is queued but will happen at a
+            // lower priority. Previously we asserted that it was pending
+            // (`SCB::is_pendsv_pending()`).  However an interrupt may fire
+            // between when PendSV is vectored and when it disables interrupts
+            // resulting in a state where `ACTIVE_THREAD` is set but PendSV
+            // is not pending.
             (sched_state, false)
         }
     }
