@@ -23,6 +23,16 @@ package(
 licenses(["notice"])
 
 cc_library(
+    name = "types",
+    # LINT.IfChange
+    hdrs = [
+        "public/pw_bluetooth_proxy/hci/types.h",
+    ],
+    strip_include_prefix = "public",
+    # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+)
+
+cc_library(
     name = "command_multiplexer",
     # LINT.IfChange
     srcs = [

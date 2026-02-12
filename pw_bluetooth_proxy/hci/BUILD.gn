@@ -23,6 +23,14 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
+pw_source_set("types") {
+  # LINT.IfChange
+  public = [ "public/pw_bluetooth_proxy/hci/types.h" ]
+  public_configs = [ ":public_include_path" ]
+
+  # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+}
+
 pw_source_set("command_multiplexer") {
   # LINT.IfChange
   public = [

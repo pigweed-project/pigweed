@@ -23,6 +23,13 @@ if("${dir_pw_third_party_emboss}" STREQUAL "")
   return()
 endif()
 
+pw_add_library(pw_bluetooth_proxy.hci.types INTERFACE
+# LINT.IfChange
+  HEADERS
+    public/pw_bluetooth_proxy/hci/types.h
+# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
+)
+
 pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
 # LINT.IfChange
   HEADERS
