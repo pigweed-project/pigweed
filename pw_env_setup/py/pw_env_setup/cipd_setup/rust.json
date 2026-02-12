@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -19,7 +19,7 @@
         "linux-arm64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -28,7 +28,7 @@
         "linux-amd64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -37,7 +37,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -46,7 +46,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -55,7 +55,7 @@
         "mac-amd64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
@@ -67,7 +67,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revisions:0a13b4361264236cb40afebea97973e6dc366de3,9d944c0ed2c09d528875a546b4d348f044e95dc4"
+        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
       ]
     },
     {
