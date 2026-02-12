@@ -14,6 +14,8 @@
 
 #include "pw_async2/coro.h"
 
+#include <optional>
+
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
@@ -165,6 +167,68 @@ TEST(CoroTest, AwaitMultipleAndAwakenRuns) {
   EXPECT_EQ(a.poll_count, 2);
   EXPECT_EQ(b.poll_count, 2);
   EXPECT_EQ(output, a_value + b_value);
+}
+
+enum class ObjectState {
+  kUninitialized,
+  kConstructed,
+  kDestroyed,
+
+};
+
+class TrackedObject {
+ public:
+  explicit TrackedObject(ObjectState& state) : state_(state) {
+    state_ = ObjectState::kConstructed;
+  }
+
+  ~TrackedObject() { state_ = ObjectState::kDestroyed; }
+
+ private:
+  ObjectState& state_;
+};
+
+Coro<Status> Inner(CoroContext&) { co_return OkStatus(); }
+
+Coro<Status> Outer(CoroContext& cx,
+                   std::optional<Status>& returned_status,
+                   TrackedObject argument,
+                   ObjectState& before_inner,
+                   ObjectState& after_inner) {
+  TrackedObject before(before_inner);
+
+  returned_status = co_await Inner(cx);
+
+  TrackedObject after(after_inner);
+  co_return OkStatus();
+}
+
+TEST(CoroTest, AllocationFailureInNestedCoroReturnsStatusInternal) {
+  pw::allocator::test::AllocatorForTest<4096> alloc;
+  CoroContext coro_cx(alloc);
+
+  std::optional<Status> returned_status;
+
+  ObjectState argument = ObjectState::kUninitialized;
+  ObjectState before = ObjectState::kUninitialized;
+  ObjectState after = ObjectState::kUninitialized;
+
+  Coro<Status> outer_coro =
+      Outer(coro_cx, returned_status, TrackedObject(argument), before, after);
+  ASSERT_TRUE(outer_coro.IsValid());
+
+  alloc.Exhaust();  // Prevent allocation of Inner coroutine.
+
+  ExpectCoroTask task(std::move(outer_coro));
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(returned_status, Status::Internal());
+
+  EXPECT_EQ(argument, ObjectState::kDestroyed);
+  EXPECT_EQ(before, ObjectState::kDestroyed);
+  EXPECT_EQ(after, ObjectState::kDestroyed);
 }
 
 }  // namespace
