@@ -32,6 +32,8 @@ using TestingBase =
     bt::testing::FakeDispatcherControllerTest<bt::testing::MockController>;
 
 constexpr uint16_t kSyncTimeout = 0x4000;
+constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0007;
+const uint16_t kServiceData = 0x0908;
 
 auto CreateSyncPacket(bool filter_duplicates = false,
                       bool use_periodic_advertiser_list = false) {
@@ -1633,6 +1635,88 @@ TEST_F(PeriodicAdvertisingSynchronizerTest, InvalidAddressTypes) {
       anon_addr, kAdvSid, {.filter_duplicates = true}, delegate);
   ASSERT_TRUE(result.is_error());
   EXPECT_EQ(result.error_value(), Error(HostError::kInvalidParameters));
+}
+
+TEST_F(PeriodicAdvertisingSynchronizerTest, TransferSyncSuccess) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+  constexpr hci_spec::SyncHandle kSyncHandle = 0x01;
+
+  std::optional<PeriodicAdvertisingSync> sync =
+      CreateSyncAndExpectSuccess(delegate, addr, kAdvSid, kSyncHandle);
+  ASSERT_TRUE(sync.has_value());
+
+  std::optional<Result<>> transfer_result;
+  auto callback = [&transfer_result](Result<> result) {
+    transfer_result = result;
+  };
+
+  auto command = testing::LEPeriodicAdvertisingSyncTransferPacket(
+      kConnectionHandle, kServiceData, kSyncHandle);
+  auto transfer_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), command, &transfer_complete);
+
+  synchronizer()->TransferSync(
+      sync->id(), kConnectionHandle, kServiceData, std::move(callback));
+
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  EXPECT_TRUE(transfer_result->is_ok());
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  ExpectTerminateSync(test_device(), kSyncHandle);
+}
+
+TEST_F(PeriodicAdvertisingSynchronizerTest, TransferSyncInvalidSyncId) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+
+  std::optional<Result<>> transfer_result;
+  auto callback = [&](Result<> result) { transfer_result = result; };
+
+  synchronizer()->TransferSync(
+      kInvalidSyncId, kConnectionHandle, kServiceData, std::move(callback));
+
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  ASSERT_TRUE(transfer_result->is_error());
+  EXPECT_TRUE(transfer_result->error_value().is(HostError::kInvalidParameters));
+}
+
+TEST_F(PeriodicAdvertisingSynchronizerTest,
+       TransferSyncUnsupportedRemoteFeatureError) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+  constexpr hci_spec::SyncHandle kSyncHandle = 0x01;
+
+  std::optional<PeriodicAdvertisingSync> sync =
+      CreateSyncAndExpectSuccess(delegate, addr, kAdvSid, kSyncHandle);
+  ASSERT_TRUE(sync.has_value());
+
+  std::optional<Result<>> transfer_result;
+  auto callback = [&](Result<> result) { transfer_result = result; };
+
+  auto command = testing::LEPeriodicAdvertisingSyncTransferPacket(
+      kConnectionHandle, kServiceData, kSyncHandle);
+  auto transfer_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER,
+      pw::bluetooth::emboss::StatusCode::UNSUPPORTED_REMOTE_FEATURE);
+  EXPECT_CMD_PACKET_OUT(test_device(), command, &transfer_complete);
+
+  synchronizer()->TransferSync(
+      sync->id(), kConnectionHandle, kServiceData, std::move(callback));
+
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  ASSERT_TRUE(transfer_result->is_error());
+  EXPECT_TRUE(transfer_result->error_value().is(
+      pw::bluetooth::emboss::StatusCode::UNSUPPORTED_REMOTE_FEATURE));
+
+  ExpectTerminateSync(test_device(), kSyncHandle);
 }
 
 }  // namespace

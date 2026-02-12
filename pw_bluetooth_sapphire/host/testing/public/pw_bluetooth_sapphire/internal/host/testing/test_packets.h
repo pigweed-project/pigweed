@@ -296,6 +296,11 @@ DynamicByteBuffer LESetPeriodicAdvertisingSyncTransferParamsPacket(
     pw::bluetooth::emboss::PeriodicAdvertisingSyncTransferMode mode,
     uint16_t sync_timeout);
 
+DynamicByteBuffer LEPeriodicAdvertisingSyncTransferPacket(
+    hci_spec::ConnectionHandle connection_handle,
+    uint16_t service_data,
+    hci_spec::SyncHandle sync_handle);
+
 DynamicByteBuffer LEStartEncryptionPacket(hci_spec::ConnectionHandle,
                                           uint64_t random_number,
                                           uint16_t encrypted_diversifier,

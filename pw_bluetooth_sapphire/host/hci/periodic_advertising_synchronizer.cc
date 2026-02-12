@@ -308,6 +308,56 @@ Result<PeriodicAdvertisingSync> PeriodicAdvertisingSynchronizer::CreateSync(
   return fit::ok(PeriodicAdvertisingSync(sync_id, weak_self_.GetWeakPtr()));
 }
 
+void PeriodicAdvertisingSynchronizer::TransferSync(
+    SyncId id,
+    hci_spec::ConnectionHandle connection,
+    uint16_t service_data,
+    pw::Callback<void(Result<>)> callback) {
+  auto sync_it = std::find_if(syncs_.begin(), syncs_.end(), [&id](auto& s) {
+    return s.second.id == id;
+  });
+  if (sync_it == syncs_.end()) {
+    bt_log(WARN, "hci", "Transfer called with invalid sync_id: %s", bt_str(id));
+    callback(fit::error(Error(HostError::kInvalidParameters)));
+    return;
+  }
+  hci_spec::SyncHandle sync_handle = sync_it->first;
+
+  auto command = hci::CommandPacket::New<
+      pw::bluetooth::emboss::LEPeriodicAdvertisingSyncTransferCommandWriter>(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER);
+  auto view = command.view_t();
+  view.connection_handle().Write(connection);
+  view.service_data().Write(service_data);
+  view.sync_handle().Write(sync_handle);
+
+  auto self = weak_self_.GetWeakPtr();
+  auto event_cb = [self, cb = std::move(callback), sync_handle](
+                      auto, const EventPacket& event) mutable {
+    if (!self.is_alive()) {
+      return;
+    }
+
+    Result<> result = event.ToResult();
+    if (result.is_error()) {
+      bt_log(
+          WARN,
+          "hci",
+          "Failed to transfer periodic advertising sync (sync_handle: %" PRIu16
+          ", %s)",
+          sync_handle,
+          bt_str(result));
+    }
+    cb(result);
+  };
+
+  transport_->command_channel()
+      ->SendCommand(std::move(command),
+                    std::move(event_cb),
+                    hci_spec::kCommandCompleteEventCode)
+      .IgnoreError();
+}
+
 void PeriodicAdvertisingSynchronizer::MaybeUpdateAdvertiserList(
     bool advertiser_list_full) {
   if (state_ != State::kIdle && state_ != State::kCreateSyncPending) {
@@ -472,11 +522,11 @@ void PeriodicAdvertisingSynchronizer::SendCreateSyncCancelCommand() {
                                "Create Sync Cancel command failed: %s",
                                bt_str(result.error_value()));
 
-                        // The only specified error is Command Disallowed, which
-                        // indicates that no Create Sync command was pending
-                        // (possibly due to a race with the Sync Established
-                        // event). Thus, we should continue to wait for Sync
-                        // Established.
+                        // The only specified error is Command Disallowed,
+                        // which indicates that no Create Sync command was
+                        // pending (possibly due to a race with the Sync
+                        // Established event). Thus, we should continue to
+                        // wait for Sync Established.
                         return;
                       }
 
@@ -529,7 +579,8 @@ void PeriodicAdvertisingSynchronizer::SendAddDeviceToListCommand(
                 bt_log(INFO, "hci", "periodic advertiser list is full");
 
                 self->state_ = State::kIdle;
-                self->MaybeUpdateAdvertiserList(/*advertiser_list_full=*/true);
+                self->MaybeUpdateAdvertiserList(
+                    /*advertiser_list_full=*/true);
                 return;
               }
 
@@ -785,8 +836,8 @@ void PeriodicAdvertisingSynchronizer::CancelSync(SyncId sync_id) {
     return;
   }
 
-  // Check established syncs. This returns true if an established sync was found
-  // and a termination command was sent.
+  // Check established syncs. This returns true if an established sync was
+  // found and a termination command was sent.
   if (CancelEstablishedSync(sync_id)) {
     return;
   }
@@ -845,8 +896,8 @@ bool PeriodicAdvertisingSynchronizer::CancelEstablishedSync(SyncId sync_id) {
 
     Result<> result = event.ToResult();
     if (result.is_error()) {
-      // This could happen if the Sync Lost event raced with the Terminate Sync
-      // command.
+      // This could happen if the Sync Lost event raced with the Terminate
+      // Sync command.
       bt_log(WARN,
              "hci",
              "failed to terminate periodic advertising sync %s: %s",

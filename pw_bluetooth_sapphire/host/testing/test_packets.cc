@@ -1137,6 +1137,20 @@ DynamicByteBuffer LESetPeriodicAdvertisingSyncTransferParamsPacket(
   return DynamicByteBuffer(packet.data());
 }
 
+DynamicByteBuffer LEPeriodicAdvertisingSyncTransferPacket(
+    hci_spec::ConnectionHandle connection_handle,
+    uint16_t service_data,
+    hci_spec::SyncHandle sync_handle) {
+  auto packet = hci::CommandPacket::New<
+      pw::bluetooth::emboss::LEPeriodicAdvertisingSyncTransferCommandWriter>(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER);
+  auto view = packet.view_t();
+  view.connection_handle().Write(connection_handle);
+  view.service_data().Write(service_data);
+  view.sync_handle().Write(sync_handle);
+  return DynamicByteBuffer(packet.data());
+}
+
 DynamicByteBuffer LEStartEncryptionPacket(hci_spec::ConnectionHandle conn,
                                           uint64_t random_number,
                                           uint16_t encrypted_diversifier,
