@@ -86,9 +86,10 @@ class UnaryResponseClientCall : public ClientCall {
                         Function<void(ConstByteSpan, Status)>&& on_completed,
                         Function<void(Status)>&& on_error,
                         ConstByteSpan request) PW_LOCKS_EXCLUDED(rpc_lock()) {
-    static_assert(PW_RPC_ALLOW_INVOCATIONS_ON_STACK,
-                  "RPC client calls on the stack are not allowed. Use "
-                  "DynamicClient instead.");
+    PW_ASSERT(PW_RPC_ALLOW_INVOCATIONS_ON_STACK);  // RPC client calls on the
+                                                   // stack are not allowed. Use
+                                                   // DynamicClient instead.
+
     rpc_lock().lock();
     CallType call(client.ClaimLocked(), channel_id, service_id, method_id);
     call.set_on_completed_locked(std::move(on_completed));
@@ -186,9 +187,10 @@ class StreamResponseClientCall : public ClientCall {
                         Function<void(Status)>&& on_completed,
                         Function<void(Status)>&& on_error,
                         ConstByteSpan request) PW_LOCKS_EXCLUDED(rpc_lock()) {
-    static_assert(PW_RPC_ALLOW_INVOCATIONS_ON_STACK,
-                  "RPC client calls on the stack are not allowed. Use "
-                  "DynamicClient instead.");
+    PW_ASSERT(PW_RPC_ALLOW_INVOCATIONS_ON_STACK);  // RPC client calls on the
+                                                   // stack are not allowed. Use
+                                                   // DynamicClient instead.
+
     rpc_lock().lock();
     CallType call(client.ClaimLocked(), channel_id, service_id, method_id);
 

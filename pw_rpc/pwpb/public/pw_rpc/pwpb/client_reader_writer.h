@@ -49,6 +49,10 @@ class PwpbUnaryResponseClientCall : public UnaryResponseClientCall {
                         Function<void(Status)>&& on_error,
                         const Request&... request)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
+    PW_ASSERT(PW_RPC_ALLOW_INVOCATIONS_ON_STACK);  // RPC client calls on the
+                                                   // stack are not allowed. Use
+                                                   // DynamicClient instead.
+
     rpc_lock().lock();
     CallType call(
         client.ClaimLocked(), channel_id, service_id, method_id, serde);
@@ -208,6 +212,10 @@ class PwpbStreamResponseClientCall : public StreamResponseClientCall {
                         Function<void(Status)>&& on_error,
                         const Request&... request)
       PW_LOCKS_EXCLUDED(rpc_lock()) {
+    PW_ASSERT(PW_RPC_ALLOW_INVOCATIONS_ON_STACK);  // RPC client calls on the
+                                                   // stack are not allowed. Use
+                                                   // DynamicClient instead.
+
     rpc_lock().lock();
     CallType call(
         client.ClaimLocked(), channel_id, service_id, method_id, serde);
