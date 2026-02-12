@@ -53,6 +53,15 @@ def run_action_on_executable(
         feature_configuration = feature_configuration,
         action_name = action_name,
     )
+    cc_variables = cc_common.create_compile_variables(
+        cc_toolchain = cc_toolchain,
+        feature_configuration = feature_configuration,
+    )
+    command_line = cc_common.get_memory_inefficient_command_line(
+        feature_configuration = feature_configuration,
+        action_name = action_name,
+        variables = cc_variables,
+    )
 
     ctx.actions.run_shell(
         inputs = depset(
@@ -64,7 +73,12 @@ def run_action_on_executable(
         outputs = [output],
         command = "{tool} {args}".format(
             tool = tool_path,
-            args = action_args,
+            args = " ".join(command_line + [action_args]),
+        ),
+        mnemonic = "Action",
+        progress_message = "Running {action_name} for {label}".format(
+            action_name = action_name,
+            label = ctx.label,
         ),
     )
 
