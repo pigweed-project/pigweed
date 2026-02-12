@@ -33,6 +33,12 @@ class FakeController;
 // FakePeer is used to emulate a remote Bluetooth device.
 class FakePeer {
  public:
+  struct PeriodicAdvertisingSyncTransfer {
+    DeviceAddress peer_address;
+    uint8_t advertising_sid;
+    uint16_t service_data;
+  };
+
   // NOTE: Setting |connectable| to true will result in a "Connectable and
   // Scannable Advertisement" (i.e. ADV_IND) even if |scannable| is set to
   // false. This is OK since we use |scannable| to drive the receipt of Scan
@@ -245,6 +251,16 @@ class FakePeer {
     return periodic_advertisements_.count(advertising_sid);
   }
 
+  void AddPeriodicAdvertisingSyncTransfer(
+      PeriodicAdvertisingSyncTransfer transfer) {
+    received_periodic_advertising_sync_transfers_.emplace(
+        std::make_pair(transfer.peer_address, transfer.advertising_sid),
+        transfer);
+  }
+
+  std::optional<PeriodicAdvertisingSyncTransfer>
+  FindPeriodicAdvertisingSyncTransfer(DeviceAddress peer_address, uint8_t sid);
+
  private:
   friend class FakeController;
 
@@ -315,6 +331,10 @@ class FakePeer {
 
   std::unordered_map<uint8_t /*SID*/, PeriodicAdvertisement>
       periodic_advertisements_;
+
+  std::map<std::pair<DeviceAddress, uint8_t /*SID*/>,
+           PeriodicAdvertisingSyncTransfer>
+      received_periodic_advertising_sync_transfers_;
 
   // Open connection handles.
   HandleSet logical_links_;

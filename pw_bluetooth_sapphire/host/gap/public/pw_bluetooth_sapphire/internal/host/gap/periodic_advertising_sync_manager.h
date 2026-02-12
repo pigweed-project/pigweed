@@ -118,6 +118,19 @@ class PeriodicAdvertisingSyncManager final
                                                         SyncOptions options,
                                                         Delegate& delegate);
 
+  // Transfers a periodic advertising synchronization to a connected peer (PAST
+  // Sender).
+  //
+  // @param id The ID of the synchronization to transfer.
+  // @param connection The connection to transfer the synchronization over.
+  // @param service_data Application-specific data to transfer with the sync.
+  // @param callback The callback to be invoked with the result of the
+  // transfer.
+  void TransferSync(hci::SyncId id,
+                    hci_spec::ConnectionHandle connection,
+                    uint16_t service_data,
+                    pw::Callback<void(hci::Result<>)> callback);
+
  private:
   enum class SyncState : uint8_t { kPending, kEstablished };
 

@@ -105,6 +105,14 @@ PeriodicAdvertisingSyncManager::CreateSync(PeerId peer_id,
   return fit::ok(std::move(handle));
 }
 
+void PeriodicAdvertisingSyncManager::TransferSync(
+    hci::SyncId id,
+    hci_spec::ConnectionHandle connection,
+    uint16_t service_data,
+    pw::Callback<void(hci::Result<>)> callback) {
+  synchronizer_.TransferSync(id, connection, service_data, std::move(callback));
+}
+
 void PeriodicAdvertisingSyncManager::OnSyncEstablished(
     hci::SyncId sync_id,
     hci::PeriodicAdvertisingSynchronizer::SyncParameters parameters) {

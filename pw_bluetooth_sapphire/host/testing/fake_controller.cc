@@ -1581,6 +1581,43 @@ void FakeController::OnLEPeriodicAdvertisingCreateSyncCommandReceived(
   MaybeSendPeriodicAdvertisingSyncEstablishedEvent();
 }
 
+void FakeController::OnLEPeriodicAdvertisingSyncTransferCommandReceived(
+    const pw::bluetooth::emboss::LEPeriodicAdvertisingSyncTransferCommandView&
+        params) {
+  auto sync_iter =
+      periodic_advertising_syncs_.find(params.sync_handle().Read());
+  if (sync_iter == periodic_advertising_syncs_.end()) {
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER,
+        pwemb::StatusCode::UNKNOWN_ADVERTISING_IDENTIFIER);
+    return;
+  }
+
+  FakePeer* fake_peer = nullptr;
+  for (auto& [_, peer] : peers_) {
+    if (peer->HasLink(params.connection_handle().Read())) {
+      fake_peer = peer.get();
+      break;
+    }
+  }
+  if (!fake_peer) {
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER,
+        pwemb::StatusCode::UNKNOWN_CONNECTION_ID);
+    return;
+  }
+
+  fake_peer->AddPeriodicAdvertisingSyncTransfer(
+      FakePeer::PeriodicAdvertisingSyncTransfer{
+          sync_iter->second.peer_address,
+          sync_iter->second.advertising_sid,
+          params.service_data().Read()});
+
+  RespondWithCommandComplete(
+      pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER,
+      pwemb::StatusCode::SUCCESS);
+}
+
 void FakeController::OnLEPeriodicAdvertisingTerminateSyncCommandReceived(
     const pw::bluetooth::emboss::LEPeriodicAdvertisingTerminateSyncCommandView&
         params) {
@@ -6607,6 +6644,8 @@ void FakeController::HandleReceivedCommandPacket(
     case static_cast<uint16_t>(
         pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC):
     case static_cast<uint16_t>(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER):
+    case static_cast<uint16_t>(
         pwemb::OpCode::LE_PERIODIC_ADVERTISING_TERMINATE_SYNC):
     case static_cast<uint16_t>(
         pwemb::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST):
@@ -6967,6 +7006,14 @@ void FakeController::HandleReceivedCommandPacket(
           command_packet
               .view<pwemb::LEPeriodicAdvertisingCreateSyncCommandView>();
       OnLEPeriodicAdvertisingCreateSyncCommandReceived(params);
+      break;
+    }
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER): {
+      const auto& params =
+          command_packet
+              .view<pwemb::LEPeriodicAdvertisingSyncTransferCommandView>();
+      OnLEPeriodicAdvertisingSyncTransferCommandReceived(params);
       break;
     }
     case static_cast<uint16_t>(

@@ -32,6 +32,8 @@ using PeriodicAdvertisingSync =
 
 constexpr uint8_t kAdvSid1 = 8;
 constexpr uint8_t kAdvSid2 = 9;
+constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0007;
+constexpr uint16_t kServiceData = 0x0908;
 
 constexpr hci_spec::BroadcastIsochronousGroupInfo kBigInfo{
     .num_bis = 0x01,
@@ -541,6 +543,65 @@ TEST_F(PeriodicAdvertisingSyncManagerTest, CancelPendingSyncStopsScan) {
 
   std::vector<bool> expected_scan_states = {true, false};
   EXPECT_EQ(scan_states(), expected_scan_states);
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest, TransferSync) {
+  SyncDelegate delegate;
+  SyncOptions options{.filter_duplicates = true};
+  const std::unordered_set<UUID> kUuids = {UUID(static_cast<uint16_t>(0x180d))};
+
+  // Peer 0 is the advertising device
+  DeviceAddress address_0(DeviceAddress::Type::kLEPublic, {1});
+  auto fake_peer_0 =
+      std::make_unique<testing::FakePeer>(address_0, dispatcher());
+  const StaticByteBuffer kAdvData(
+      // Complete 16-bit service UUID
+      0x03,
+      0x03,
+      0x0d,
+      0x18);
+  fake_peer_0->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer_0));
+  Peer* peer_0 = peer_cache().NewPeer(address_0, /*connectable=*/false);
+
+  // Peer 1 is the PAST Receiver.
+  DeviceAddress address_1(DeviceAddress::Type::kLEPublic, {2});
+  auto fake_peer_1 =
+      std::make_unique<testing::FakePeer>(address_1, dispatcher());
+  FakePeer* fake_peer_ptr_1 = fake_peer_1.get();
+  // Simulate a connection to peer 1 so that FakeController can look up the peer
+  // by connection handle.
+  fake_peer_1->AddLink(kConnectionHandle);
+  test_device()->AddPeer(std::move(fake_peer_1));
+
+  hci::Result<PeriodicAdvertisingSyncHandle> sync_result =
+      sync_manager().CreateSync(
+          peer_0->identifier(), kAdvSid1, options, delegate);
+  ASSERT_TRUE(sync_result.is_ok());
+
+  RunUntilIdle();
+  std::vector<PeriodicAdvertisingSync> syncs =
+      test_device()->periodic_advertising_syncs();
+  ASSERT_EQ(syncs.size(), 1u);
+
+  std::optional<hci::Result<>> transfer_result;
+  auto callback = [&transfer_result](hci::Result<> result) {
+    transfer_result = result;
+  };
+  sync_manager().TransferSync(
+      sync_result->id(), kConnectionHandle, kServiceData, std::move(callback));
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  EXPECT_TRUE(transfer_result->is_ok());
+
+  std::optional<FakePeer::PeriodicAdvertisingSyncTransfer> transfer =
+      fake_peer_ptr_1->FindPeriodicAdvertisingSyncTransfer(address_0, kAdvSid1);
+  ASSERT_TRUE(transfer.has_value());
+  EXPECT_EQ(transfer->service_data, kServiceData);
+
+  sync_result->Cancel();
+  RunUntilIdle();
 }
 
 }  // namespace bt::gap

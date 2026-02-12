@@ -498,4 +498,15 @@ std::optional<DynamicByteBuffer> FakePeer::BuildBigInfoAdvertisingReportEvent(
   return event.release();
 }
 
+std::optional<FakePeer::PeriodicAdvertisingSyncTransfer>
+FakePeer::FindPeriodicAdvertisingSyncTransfer(DeviceAddress peer_address,
+                                              uint8_t sid) {
+  auto iter = received_periodic_advertising_sync_transfers_.find(
+      std::make_pair(peer_address, sid));
+  if (iter == received_periodic_advertising_sync_transfers_.end()) {
+    return std::nullopt;
+  }
+  return iter->second;
+}
+
 }  // namespace bt::testing
