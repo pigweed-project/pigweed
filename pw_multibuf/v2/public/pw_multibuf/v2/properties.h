@@ -100,22 +100,32 @@ using EnableIfConvertible =
                       // methods.
                       (From::is_observable() || !To::is_observable()))>;
 
-/// Performs the same checks as `EnableIfConvertible`, but generates a
-/// static_assert with a helpful message if any condition is not met.
-///
-/// Compare with `AssertIsAssignable`, which checks whether a `MultiBuf` can be
-/// stored in a variable of a different type.
+/// Performs the same checks as `EnableIfConvertible` except for constness.
+/// Generates a static_assert with a helpful message if any condition is not
+/// met.
 template <typename From, typename To>
-static constexpr void AssertIsConvertible() {
+static constexpr void AssertIsConvertibleIgnoreConst() {
   if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
     static_assert(IsBasicMultiBuf<To>::value,
                   "Only conversion to other MultiBuf types are supported.");
-    static_assert(!From::is_const() || To::is_const(),
-                  "Read-only data cannot be converted to mutable data.");
     static_assert(From::is_layerable() || !To::is_layerable(),
                   "Flat MultiBufs do not have layer-related methods.");
     static_assert(From::is_observable() || !To::is_observable(),
                   "Untracked MultiBufs do not have observer-related methods.");
+  }
+}
+
+/// Performs the same checks as `EnableIfConvertible`. Generates a static_assert
+/// with a helpful message if any condition is not met.
+///
+/// Compare with `AssertIsAssignable`, which checks whether a MultiBuf can be
+/// stored in a variable of a different type.
+template <typename From, typename To>
+static constexpr void AssertIsConvertible() {
+  if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
+    AssertIsConvertibleIgnoreConst<From, To>();
+    static_assert(!From::is_const() || To::is_const(),
+                  "Read-only data cannot be converted to mutable data.");
   }
 }
 

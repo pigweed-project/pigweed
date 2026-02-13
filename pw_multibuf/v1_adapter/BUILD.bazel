@@ -126,6 +126,26 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "multibuf_v2_test",
+    srcs = ["multibuf_v2_test.cc"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
+    ],
+    has_nc_test = True,
+    deps = [
+        "//pw_allocator:chunk_pool",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_multibuf",
+        "//pw_multibuf/v2:iterators",
+        "//pw_result",
+        "//pw_status",
+    ],
+)
+
 cc_library(
     name = "allocator",
     hdrs = ["public/pw_multibuf/v1_adapter/allocator.h"],

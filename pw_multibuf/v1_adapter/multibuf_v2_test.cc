@@ -1,4 +1,4 @@
-// Copyright 2025 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -12,8 +12,6 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_multibuf/multibuf.h"
-
 #include <array>
 
 #include "pw_allocator/chunk_pool.h"
@@ -22,6 +20,7 @@
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
 #include "pw_compilation_testing/negative_compilation.h"
+#include "pw_multibuf/multibuf.h"
 #include "pw_result/result.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
@@ -41,17 +40,17 @@ using ::pw::multibuf::v2::TrackedFlatMultiBuf;
 using ::pw::multibuf::v2::TrackedMultiBuf;
 using Event = ::pw::multibuf::v2::Observer::Event;
 
-using ConstMultiBufInstance = ConstMultiBuf::Instance;
-using FlatConstMultiBufInstance = FlatConstMultiBuf::Instance;
-using FlatMultiBufInstance = FlatMultiBuf::Instance;
-using MultiBufInstance = MultiBuf::Instance;
-using TrackedConstMultiBufInstance = TrackedConstMultiBuf::Instance;
-using TrackedFlatConstMultiBufInstance = TrackedFlatConstMultiBuf::Instance;
-using TrackedFlatMultiBufInstance = TrackedFlatMultiBuf::Instance;
-using TrackedMultiBufInstance = TrackedMultiBuf::Instance;
+using ConstMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using FlatConstMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using FlatMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using MultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using TrackedConstMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using TrackedFlatConstMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using TrackedFlatMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
+using TrackedMultiBufInstance = pw::multibuf::v1_adapter::MultiBuf;
 
 // LINT.IfChange
-// Keep these tests in sync with those in ../v1_adapter/multibuf_test.cc
+// Keep these tests in sync with those in ../v2/multibuf_test.cc
 constexpr size_t kN = 32;
 
 /// Test fixture that includes helper methods to set up structures used to test
@@ -2955,6 +2954,6 @@ TEST_F(MultiBufTest, ClearNotifiesObserver) {
   EXPECT_EQ(observer.value, kN);
   EXPECT_EQ(mb->observer(), nullptr);
 }
-// LINT.ThenChange(../v1_adapter/multibuf_test.cc)
+// LINT.ThenChange(../v2/multibuf_test.cc)
 
 }  // namespace

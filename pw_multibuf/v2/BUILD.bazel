@@ -113,7 +113,10 @@ cc_library(
 pw_cc_test(
     name = "multibuf_test",
     srcs = ["multibuf_test.cc"],
-    defines = ["PW_MULTIBUF_VERSION=2"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0",
+    ],
     has_nc_test = True,
     deps = [
         ":iterators",

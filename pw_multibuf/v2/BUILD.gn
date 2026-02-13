@@ -23,7 +23,10 @@ config("public_include_path") {
 }
 
 config("test_config") {
-  defines = [ "PW_MULTIBUF_VERSION=2" ]
+  defines = [
+    "PW_MULTIBUF_VERSION=2",
+    "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0",
+  ]
   visibility = [ ":*" ]
 }
 

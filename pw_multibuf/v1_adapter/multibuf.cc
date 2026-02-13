@@ -24,10 +24,9 @@
 #include "pw_bytes/span.h"
 #include "pw_multibuf/v1_adapter/chunk.h"
 #include "pw_status/status_with_size.h"
+#include "pw_status/try.h"
 
 namespace pw::multibuf::v1_adapter {
-
-// v1 API //////////////////////////////////////////////////////////////////////
 
 MultiBuf MultiBuf::FromChunk(OwnedChunk&& chunk) {
   MultiBuf buf;
@@ -75,7 +74,7 @@ bool MultiBuf::ClaimPrefix(size_t bytes_to_claim) {
   if (!mbv2_.has_value()) {
     return false;
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   if (mbv2->NumLayers() == 1 || offset_ < bytes_to_claim) {
     return false;
   }
@@ -109,7 +108,7 @@ void MultiBuf::DiscardPrefix(size_t bytes_to_discard) {
     return;
   }
   PW_CHECK(mbv2_.has_value());
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   const size_t length = mbv2->size();
   PW_CHECK_UINT_LE(bytes_to_discard, length);
   if (mbv2->NumLayers() > 1) {
@@ -131,7 +130,7 @@ void MultiBuf::Truncate(size_t len) {
         len, 0, "cannot truncate empty multibuf to a non-zero length");
     return;
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   PW_CHECK_UINT_LE(len, mbv2->size());
   if (mbv2->NumLayers() > 1) {
     mbv2->PopLayer();
@@ -149,7 +148,7 @@ std::optional<MultiBuf> MultiBuf::TakePrefix(size_t bytes_to_take) {
   if (!mbv2_.has_value()) {
     return std::make_optional(MultiBuf());
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   Allocator& allocator = mbv2->get_allocator();
   if (bytes_to_take == 0) {
     return std::make_optional(MultiBuf(allocator));
@@ -169,7 +168,7 @@ std::optional<MultiBuf> MultiBuf::TakeSuffix(size_t bytes_to_take) {
   if (!mbv2_.has_value()) {
     return std::make_optional(MultiBuf());
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   Allocator& allocator = mbv2->get_allocator();
   if (bytes_to_take == 0) {
     return std::make_optional(MultiBuf(allocator));
@@ -190,11 +189,12 @@ void MultiBuf::PushPrefix(MultiBuf&& front) {
   if (!front.mbv2_.has_value()) {
     return;
   }
-  v2::MultiBuf::Instance& prefix = *front.mbv2_;
+  auto& prefix = *front.mbv2_;
   if (!mbv2_.has_value()) {
-    mbv2_ = std::make_optional(v2::MultiBuf::Instance(prefix->get_allocator()));
+    mbv2_ = std::make_optional(
+        v2::TrackedMultiBuf::Instance(prefix->get_allocator()));
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   mbv2->Insert(mbv2->begin(), std::move(*prefix));
 }
 
@@ -202,11 +202,12 @@ void MultiBuf::PushSuffix(MultiBuf&& tail) {
   if (!tail.mbv2_.has_value()) {
     return;
   }
-  v2::MultiBuf::Instance& suffix = *tail.mbv2_;
+  auto& suffix = *tail.mbv2_;
   if (!mbv2_.has_value()) {
-    mbv2_ = std::make_optional(v2::MultiBuf::Instance(suffix->get_allocator()));
+    mbv2_ = std::make_optional(
+        v2::TrackedMultiBuf::Instance(suffix->get_allocator()));
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   mbv2->PushBack(std::move(*suffix));
 }
 
@@ -214,7 +215,7 @@ StatusWithSize MultiBuf::CopyTo(ByteSpan dest, size_t position) const {
   if (!mbv2_.has_value()) {
     return StatusWithSize(0);
   }
-  const v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  const auto& mbv2 = *mbv2_;
   const size_t copied = mbv2->CopyTo(dest, position);
   const size_t available = size() - position;
   return copied == available ? StatusWithSize(copied)
@@ -228,7 +229,7 @@ StatusWithSize MultiBuf::CopyFrom(ConstByteSpan source, size_t position) {
   if (!mbv2_.has_value()) {
     return StatusWithSize::ResourceExhausted(0);
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   const size_t copied = mbv2->CopyFrom(source, position);
   return copied == source.size() ? StatusWithSize(copied)
                                  : StatusWithSize::ResourceExhausted(copied);
@@ -252,9 +253,10 @@ void MultiBuf::PushFrontChunk(OwnedChunk&& chunk) {
   SharedPtr<std::byte[]> region = inner->region();
   size_t offset = static_cast<size_t>(inner->data() - region.get());
   if (!mbv2_.has_value()) {
-    mbv2_ = std::make_optional(v2::MultiBuf::Instance(*metadata_allocator));
+    mbv2_ =
+        std::make_optional(v2::TrackedMultiBuf::Instance(*metadata_allocator));
   }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   mbv2->Insert(mbv2->begin(), region, offset, inner->size());
 }
 
@@ -267,7 +269,8 @@ void MultiBuf::PushBackChunk(OwnedChunk&& chunk) {
   SharedPtr<std::byte[]> region = inner->region();
   size_t offset = static_cast<size_t>(inner->data() - region.get());
   if (!mbv2_.has_value()) {
-    mbv2_ = std::make_optional(v2::MultiBuf::Instance(*metadata_allocator));
+    mbv2_ =
+        std::make_optional(v2::TrackedMultiBuf::Instance(*metadata_allocator));
   }
   (*mbv2_)->PushBack(region, offset, inner->size());
 }
@@ -284,11 +287,12 @@ MultiBufChunks::iterator MultiBuf::InsertChunk(
   bool appending = position == Chunks().end();
   if (!mbv2_.has_value()) {
     Allocator* metadata_allocator = inner->metadata_allocator();
-    mbv2_ = std::make_optional(v2::MultiBuf::Instance(*metadata_allocator));
+    mbv2_ =
+        std::make_optional(v2::TrackedMultiBuf::Instance(*metadata_allocator));
   }
 
   // Add the chunk.
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   MultiBuf::iterator iter = appending ? mbv2->end() : ToByteIterator(position);
   SharedPtr<std::byte[]> region = inner->region();
   size_t offset = static_cast<size_t>(inner->data() - region.get());
@@ -299,7 +303,7 @@ MultiBufChunks::iterator MultiBuf::InsertChunk(
 std::tuple<MultiBufChunks::iterator, OwnedChunk> MultiBuf::TakeChunk(
     MultiBufChunks::iterator position) {
   PW_CHECK(mbv2_.has_value());
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   size_t size = position->size();
   auto iter = ToByteIterator(position);
   auto chunk = mbv2->Share(iter);
@@ -314,7 +318,7 @@ std::tuple<MultiBufChunks::iterator, OwnedChunk> MultiBuf::TakeChunk(
 
 MultiBuf::iterator MultiBuf::ToByteIterator(
     const MultiBufChunks::iterator& position) {
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   iterator iter = mbv2->begin();
 
   // First, check if this is the non-dereferencable `end()` iterator.
@@ -335,7 +339,7 @@ MultiBuf::iterator MultiBuf::ToByteIterator(
 
 MultiBufChunks::iterator MultiBuf::ToChunksIterator(
     const MultiBuf::const_iterator& position) {
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
+  auto& mbv2 = *mbv2_;
   MultiBufChunks chunks = Chunks();
   if (position == mbv2->end()) {
     return chunks.end();
@@ -347,16 +351,6 @@ MultiBufChunks::iterator MultiBuf::ToChunksIterator(
     }
   }
   PW_CHECK(false, "position not found in multibuf");
-}
-
-// v2 API //////////////////////////////////////////////////////////////////////
-
-bool MultiBuf::TryReserveChunks(size_t num_chunks) {
-  if (!mbv2_.has_value()) {
-    return false;
-  }
-  v2::MultiBuf::Instance& mbv2 = *mbv2_;
-  return mbv2->TryReserveChunks(num_chunks);
 }
 
 }  // namespace pw::multibuf::v1_adapter

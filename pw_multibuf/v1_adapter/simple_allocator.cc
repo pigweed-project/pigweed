@@ -34,7 +34,7 @@ std::optional<MultiBuf> SimpleAllocator::DoAllocate(size_t min_size,
                                                     bool contiguous) {
   // First, check if this request is even feasible.
   if (desired_size == 0) {
-    return MultiBuf();
+    return std::make_optional<MultiBuf>();
   }
 
   std::lock_guard lock(mutex_);
@@ -49,7 +49,7 @@ std::optional<MultiBuf> SimpleAllocator::DoAllocate(size_t min_size,
     num_chunks = chunk_allocator_.CountChunks(desired_size);
   }
   MultiBuf buf(chunk_allocator_.metadata_allocator());
-  if (!buf.TryReserveChunks(num_chunks)) {
+  if (!buf->TryReserveChunks(num_chunks)) {
     return std::nullopt;
   }
 
@@ -70,7 +70,7 @@ std::optional<MultiBuf> SimpleAllocator::DoAllocate(size_t min_size,
   if (buf.empty()) {
     return std::nullopt;
   }
-  return buf;
+  return std::make_optional(std::move(buf));
 }
 
 std::optional<size_t> SimpleAllocator::DoGetBackingCapacity() {

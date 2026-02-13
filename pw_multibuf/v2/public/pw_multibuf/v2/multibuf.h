@@ -92,6 +92,9 @@ class GenericMultiBuf;
 template <typename>
 class Instance;
 
+template <typename OtherMultiBuf, typename MultiBufType>
+constexpr OtherMultiBuf& ConstCast(const MultiBufType& mb);
+
 }  // namespace internal
 
 /// Logical byte sequence representing a sequence of memory buffers.
@@ -998,6 +1001,9 @@ class BasicMultiBuf {
   friend class v1_adapter::MultiBuf;
   friend class v1_adapter::MultiBufChunks;
 
+  template <typename OtherMultiBuf, typename MultiBufType>
+  friend constexpr OtherMultiBuf& internal::ConstCast(const MultiBufType& mb);
+
   template <bool kValidCopyOrMove = false>
   static constexpr void InvalidCopyOrMove() {
     static_assert(kValidCopyOrMove,
@@ -1022,6 +1028,12 @@ class BasicMultiBuf {
 /// @}
 
 namespace internal {
+
+template <typename OtherMultiBuf, typename MultiBufType>
+constexpr OtherMultiBuf& ConstCast(const MultiBufType& mb) {
+  AssertIsConvertibleIgnoreConst<MultiBufType, OtherMultiBuf>();
+  return const_cast<OtherMultiBuf&>(mb.generic().template as<OtherMultiBuf>());
+}
 
 // A generic MultiBuf implementation that provides the functionality of any
 // `BasicMultiBuf<kProperties>` type.
@@ -1079,6 +1091,9 @@ class GenericMultiBuf final
 
   template <typename>
   friend class Instance;
+
+  template <typename OtherMultiBuf, typename MultiBufType>
+  friend constexpr OtherMultiBuf& ConstCast(const MultiBufType& mb);
 
   /// Constructs an empty MultiBuf.
   constexpr explicit GenericMultiBuf(Allocator& allocator)

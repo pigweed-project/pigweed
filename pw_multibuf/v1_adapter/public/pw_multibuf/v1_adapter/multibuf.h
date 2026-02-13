@@ -196,23 +196,40 @@ class MultiBuf final {
   using const_reference = v2::MultiBuf::const_reference;
   using value_type = v2::MultiBuf::value_type;
 
-  /// Constructor that matches v1::MultiBuf.
-  constexpr MultiBuf() = default;
-
-  /// Factory method that matches v1::MultiBuf.
-  static MultiBuf FromChunk(OwnedChunk&& chunk);
-
-  /// Constructor that matches v2::MultiBuf.
-  constexpr explicit MultiBuf(Allocator& allocator)
-      : mbv2_(std::in_place, allocator) {}
-
-  MultiBuf(const MultiBuf&) = delete;
-  MultiBuf& operator=(const MultiBuf&) = delete;
+  MultiBuf(const MultiBuf& other) = delete;
+  MultiBuf& operator=(const MultiBuf& other) = delete;
 
   MultiBuf(MultiBuf&& other) noexcept = default;
   MultiBuf& operator=(MultiBuf&& other) noexcept = default;
 
   ~MultiBuf() { Release(); }
+
+  /// Returns the v2 MultiBuf used to implement both the v1 and v2 APIs.
+  ///
+  /// This can be useful for methods that are only in the v1 API of this type
+  /// due to name collisions, such as `empty()`, `size()`, and `Chunks()`.
+  ///
+  /// @code{.cpp}
+  ///   for (auto chunk : mb.Chunks() {
+  ///     // Iterate over raw chunks of memory as in v1.
+  ///   }
+  ///   for (auto chunk : mb.v2().Chunks() {
+  ///     // Iterate over non-empty chunks of contiguous memory as in v2.
+  ///   }
+  /// @endcode
+  constexpr v2::TrackedMultiBuf* v2() {
+    return mbv2_.has_value() ? &(**mbv2_) : nullptr;
+  }
+  constexpr const v2::TrackedMultiBuf* v2() const {
+    return mbv2_.has_value() ? &(**mbv2_) : nullptr;
+  }
+
+  // v1 API ////////////////////////////////////////////////////////////////////
+
+  /// @copydoc v1::MultiBuf::FromChunk
+  static MultiBuf FromChunk(OwnedChunk&& chunk);
+
+  constexpr MultiBuf() = default;
 
   /// @copydoc v1::MultiBuf::Release
   void Release() noexcept;
@@ -333,19 +350,88 @@ class MultiBuf final {
 
   // v2 API ////////////////////////////////////////////////////////////////////
 
-  /// @copydoc v2::MultiBuf::TryReserveChunks
-  [[nodiscard]] bool TryReserveChunks(size_t num_chunks);
+  constexpr explicit MultiBuf(Allocator& allocator)
+      : mbv2_(std::in_place, allocator) {}
+
+  template <v2::Property... kProperties>
+  constexpr MultiBuf(v2::BasicMultiBuf<kProperties...>&& mb) {
+    *this = std::move(mb);
+  }
+
+  template <v2::Property... kProperties>
+  constexpr MultiBuf& operator=(v2::BasicMultiBuf<kProperties...>&& mb) {
+    mbv2_ = std::move(mb);
+    return *this;
+  }
+
+  template <typename MultiBufType>
+  constexpr MultiBuf(v2::internal::Instance<MultiBufType>&& mbi) {
+    *this = std::move(mbi);
+  }
+
+  template <typename MultiBufType>
+  constexpr MultiBuf& operator=(v2::internal::Instance<MultiBufType>&& mbi) {
+    mbv2_ = std::move(*mbi);
+    return *this;
+  }
+
+  constexpr v2::TrackedMultiBuf* operator->() {
+    PW_ASSERT(mbv2_.has_value());
+    return &(**mbv2_);
+  }
+  constexpr const v2::TrackedMultiBuf* operator->() const {
+    PW_ASSERT(mbv2_.has_value());
+    return &(**mbv2_);
+  }
+
+  constexpr v2::TrackedMultiBuf& operator*() & {
+    PW_ASSERT(mbv2_.has_value());
+    return **mbv2_;
+  }
+  constexpr const v2::TrackedMultiBuf& operator*() const& {
+    PW_ASSERT(mbv2_.has_value());
+    return **mbv2_;
+  }
+
+  constexpr v2::TrackedMultiBuf&& operator*() && {
+    PW_ASSERT(mbv2_.has_value());
+    return std::move(**mbv2_);
+  }
+  constexpr const v2::TrackedMultiBuf&& operator*() const&& {
+    PW_ASSERT(mbv2_.has_value());
+    return std::move(**mbv2_);
+  }
+
+  template <typename MultiBufType>
+  constexpr operator MultiBufType&() & {
+    PW_ASSERT(mbv2_.has_value());
+    return **mbv2_;
+  }
+  template <typename MultiBufType>
+  constexpr operator const MultiBufType&() const& {
+    PW_ASSERT(mbv2_.has_value());
+    return **mbv2_;
+  }
+
+  template <typename MultiBufType>
+  constexpr operator MultiBufType&&() && {
+    PW_ASSERT(mbv2_.has_value());
+    return std::move(**mbv2_);
+  }
+  template <typename MultiBufType>
+  constexpr operator const MultiBufType&&() const&& {
+    PW_ASSERT(mbv2_.has_value());
+    return std::move(**mbv2_);
+  }
 
  private:
-  constexpr explicit MultiBuf(v2::MultiBuf&& mbv2) : mbv2_(std::move(mbv2)) {}
-
   /// Converts a chunks iterator to a byte iterator.
   iterator ToByteIterator(const MultiBufChunks::iterator& position);
 
   /// Converts a byte iterator to a chunks iterator.
   MultiBufChunks::iterator ToChunksIterator(const const_iterator& position);
 
-  std::optional<v2::MultiBuf::Instance> mbv2_;
+  std::optional<v2::TrackedMultiBuf::Instance> mbv2_;
   size_t offset_ = 0;
 };
 

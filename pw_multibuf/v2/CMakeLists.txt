@@ -107,6 +107,7 @@ pw_add_test(pw_multibuf.v2.multibuf_test
     multibuf_test.cc
   PRIVATE_DEFINES
     PW_MULTIBUF_VERSION=2
+    PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0
   PRIVATE_DEPS
     pw_allocator.chunk_pool
     pw_allocator.testing

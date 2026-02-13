@@ -112,6 +112,27 @@ pw_add_test(pw_multibuf.v1_adapter.multibuf_v1_test
     pw_multibuf
 )
 
+pw_add_test(pw_multibuf.v1_adapter.multibuf_v2_test
+  SOURCES
+    multibuf_v2_test.cc
+  PRIVATE_DEFINES
+    PW_MULTIBUF_VERSION=2
+    PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1
+  PRIVATE_DEPS
+    pw_allocator.chunk_pool
+    pw_allocator.testing
+    pw_assert.check
+    pw_bytes
+    pw_compilation_testing._pigweed_only_negative_compilation
+    pw_multibuf
+    pw_multibuf.v2.iterators
+    pw_result
+    pw_status
+  GROUPS
+    modules
+    pw_multibuf
+)
+
 pw_add_library(pw_multibuf.v1_adapter.allocator INTERFACE
   HEADERS
     public/pw_multibuf/v1_adapter/allocator.h

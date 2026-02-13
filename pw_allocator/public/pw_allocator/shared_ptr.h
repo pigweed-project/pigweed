@@ -50,12 +50,18 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
 template <typename T>
 class WeakPtr;
 
-namespace multibuf::v2 {
+namespace multibuf {
 
+namespace v1_adapter {
+class MultiBuf;
+}  // namespace v1_adapter
+
+namespace v2 {
 template <Property...>
 class BasicMultiBuf;
+}  // namespace v2
 
-}  // namespace multibuf::v2
+}  // namespace multibuf
 
 /// A `std::shared_ptr<T>`-like type that integrates with `pw::Allocator`.
 ///
@@ -330,6 +336,8 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
 
   template <typename>
   friend class WeakPtr;
+
+  friend class multibuf::v1_adapter::MultiBuf;
 
   template <multibuf::v2::Property...>
   friend class multibuf::v2::BasicMultiBuf;

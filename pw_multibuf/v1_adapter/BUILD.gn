@@ -118,6 +118,22 @@ pw_test("multibuf_v1_test") {
   ]
 }
 
+pw_test("multibuf_v2_test") {
+  sources = [ "multibuf_v2_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    "$dir_pw_allocator:chunk_pool",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_assert:check",
+    "$dir_pw_multibuf/v2:iterators",
+    dir_pw_bytes,
+    dir_pw_multibuf,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  negative_compilation_tests = true
+}
+
 pw_source_set("allocator") {
   public = [ "public/pw_multibuf/v1_adapter/allocator.h" ]
   public_configs = [ ":public_include_path" ]

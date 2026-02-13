@@ -66,7 +66,7 @@ std::optional<MultiBuf> FromSpan(Allocator& metadata_allocator,
                                  ByteSpan region,
                                  Function<void(ByteSpan)>&& deleter) {
   MultiBuf buf(metadata_allocator);
-  if (!buf.TryReserveChunks(1)) {
+  if (!buf->TryReserveChunks(1)) {
     return std::nullopt;
   }
   auto* allocator = metadata_allocator.New<FromSpanChunkAllocator>(
