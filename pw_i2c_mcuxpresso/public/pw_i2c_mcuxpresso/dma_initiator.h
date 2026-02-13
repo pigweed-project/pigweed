@@ -1,0 +1,130 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+#pragma once
+
+#include "fsl_clock.h"
+#include "fsl_i2c_dma.h"
+#include "pw_clock_tree/clock_tree.h"
+#include "pw_dma_mcuxpresso/dma.h"
+#include "pw_function/function.h"
+#include "pw_function/scope_guard.h"
+#include "pw_i2c/initiator.h"
+#include "pw_sync/interrupt_spin_lock.h"
+#include "pw_sync/lock_annotations.h"
+#include "pw_sync/mutex.h"
+#include "pw_sync/timed_thread_notification.h"
+
+namespace pw::i2c {
+
+// DMA initiator interface implementation based on I2C driver in NXP MCUXpresso
+// SDK. Currently supports only devices with 7 bit addresses.
+class DmaMcuxpressoInitiator final : public Initiator {
+ public:
+  struct Config {
+    uint32_t flexcomm_address;
+    clock_name_t clock_name;
+    uint32_t baud_rate_bps;
+
+    // Automatically restart the I2C interface when a transaction has timed
+    // out. This usually indicates the host interface has become stuck and
+    // will require a restart.
+    bool auto_restart_interface = false;
+  };
+
+  // Requires a DMA channel (TX), which will be used to service DMA interrupts.
+  // The channel should be initialized, priority set, and enabled outside of
+  // this class.
+  DmaMcuxpressoInitiator(const Config& config,
+                         pw::clock_tree::Element& clock_tree_element,
+                         pw::dma::McuxpressoDmaChannel& dma_channel)
+      : Initiator(Initiator::Feature::kStandard),
+        config_(config),
+        base_(reinterpret_cast<I2C_Type*>(config_.flexcomm_address)),
+        clock_tree_element_(clock_tree_element),
+        dma_channel_(dma_channel) {}
+
+  DmaMcuxpressoInitiator(const Config& config,
+                         pw::dma::McuxpressoDmaChannel& dma_channel)
+      : Initiator(Initiator::Feature::kStandard),
+        config_(config),
+        base_(reinterpret_cast<I2C_Type*>(config_.flexcomm_address)),
+        dma_channel_(dma_channel) {}
+
+  // Should be called before attempting any transfers. Will acquire the mutex,
+  // then call the respective private `Locked` implementations below.
+  void Enable() PW_LOCKS_EXCLUDED(mutex_);
+  void Disable() PW_LOCKS_EXCLUDED(mutex_);
+
+  // Returns a pointer to the underlying MCUXpresso I2C peripheral base address
+  // structure. This can be used for direct interaction with the I2C hardware
+  // register.
+  I2C_Type* base() const { return base_; }
+
+  ~DmaMcuxpressoInitiator() final;
+
+ private:
+  // Helper to acquire the clock and provide a `pw::ScopeGuard` that will
+  // release it upon destruction.
+  pw::ScopeGuard<pw::Function<void()>> AcquireScopedClock();
+
+  void EnableLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void DisableLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void ResetLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  // Performs a sequence of DMA I2C reads and writes.
+  Status DoTransferFor(span<const Message> messages,
+                       chrono::SystemClock::duration timeout) override
+      PW_LOCKS_EXCLUDED(mutex_);
+
+  // inclusive-language: disable
+  // Starts the DMA I2C transfer with a deadline.
+  Status InitiateDmaTransferUntil(chrono::SystemClock::time_point deadline,
+                                  i2c_master_transfer_t transfer)
+      PW_LOCKS_EXCLUDED(callback_isl_);
+
+  // Non-blocking I2C transfer callback.
+  static void TransferCompleteCallback(I2C_Type* base,
+                                       i2c_master_dma_handle_t* dma_handle,
+                                       status_t status,
+                                       void* initiator_ptr)
+      PW_LOCKS_EXCLUDED(callback_isl_);
+  // inclusive-language: enable
+
+  sync::Mutex mutex_;
+
+  // I2C configuration of this initiator.
+  Config const config_;
+  I2C_Type* const base_;
+  // I2C may require a clock. If provided, then we ensure that it is running
+  // when performing I2C operations.
+  pw::clock_tree::OptionalElement clock_tree_element_;
+  bool enabled_ PW_GUARDED_BY(mutex_);
+
+  // Transfer completion status for non-blocking I2C transfer.
+  sync::TimedThreadNotification callback_complete_notification_;
+  sync::InterruptSpinLock callback_isl_;
+  status_t transfer_status_ PW_GUARDED_BY(callback_isl_);
+
+  // The DMA channel must outlive this class, and should be fully initialized,
+  // priority set, and enabled before being passed to this class.
+  pw::dma::McuxpressoDmaChannel& dma_channel_;
+
+  // inclusive-language: disable
+  // High-level I2C handle. Manages the state of the I2C transaction (includes
+  // DMA handle above).
+  i2c_master_dma_handle_t i2c_master_dma_handle_ PW_GUARDED_BY(mutex_);
+  // inclusive-language: enable
+};
+
+}  // namespace pw::i2c

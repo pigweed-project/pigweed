@@ -28,6 +28,9 @@ has a few limitations:
   * Single Read or Write operations.
   * Write+Read, for example to query a register value on the device.
 
+``DmaMcuxpressoInitiator`` implements the ``pw_i2c`` initiator interface using
+the MCUXpresso DMA driver.
+
 ``I3cMcuxpressoInitiator`` implements the ``pw_i2c`` initiator interface using
 the MCUXpresso I3C driver. It exposes a few I3C specific API's for setting up
 the bus, allowing normal I2C API's to work after setup.

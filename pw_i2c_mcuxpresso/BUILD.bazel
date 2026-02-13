@@ -84,6 +84,30 @@ pw_cc_test(
 )
 
 cc_library(
+    name = "dma_initiator",
+    srcs = ["dma_initiator.cc"],
+    hdrs = ["public/pw_i2c_mcuxpresso/dma_initiator.h"],
+    implementation_deps = ["//pw_assert:check"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_chrono:system_clock",
+        "//pw_clock_tree",
+        "//pw_dma_mcuxpresso",
+        "//pw_function",
+        "//pw_function:scope_guard",
+        "//pw_i2c:address",
+        "//pw_i2c:initiator",
+        "//pw_log",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:timed_thread_notification",
+        "//targets:mcuxpresso_sdk",
+    ],
+)
+
+cc_library(
     name = "i3c_ccc",
     hdrs = [
         "public/pw_i2c_mcuxpresso/i3c_ccc.h",
