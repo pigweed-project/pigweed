@@ -29,7 +29,18 @@ using v1::SimpleAllocator;
 
 #elif PW_MULTIBUF_VERSION == 2
 
-// Not (yet) supported in v2.
+// This adapter will be removed when the migration to v2 is complete.
+#if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
+#include "pw_multibuf/v1_adapter/simple_allocator.h"
+
+namespace pw::multibuf {
+
+using v1_adapter::SimpleAllocator;
+
+}  // namespace pw::multibuf
+
+#endif  // PW_MULTIBUF_INCLUDE_V1_ADAPTERS
 
 #else
 

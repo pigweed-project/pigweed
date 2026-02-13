@@ -24,8 +24,14 @@ licenses(["notice"])
 # LINT.IfChange
 cc_library(
     name = "chunk",
-    srcs = ["chunk.cc"],
-    hdrs = ["public/pw_multibuf/v1_adapter/chunk.h"],
+    srcs = [
+        "chunk.cc",
+        "chunk_allocator.cc",
+    ],
+    hdrs = [
+        "public/pw_multibuf/v1_adapter/chunk.h",
+        "public/pw_multibuf/v1_adapter/internal/chunk_allocator.h",
+    ],
     implementation_deps = [
         "//pw_assert:check",
     ],
@@ -34,9 +40,50 @@ cc_library(
         "//pw_allocator",
         "//pw_assert:assert",
         "//pw_bytes",
+        "//pw_bytes:alignment",
+        "//pw_containers:dynamic_vector",
+        "//pw_containers:storage",
+        "//pw_numeric:checked_arithmetic",
+        "//pw_preprocessor",
+        "//pw_result",
     ],
 )
-# LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
+# LINT.ThenChange(../Android.bp, BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+cc_library(
+    name = "single_chunk_region_tracker",
+    hdrs = ["public/pw_multibuf/v1_adapter/single_chunk_region_tracker.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":chunk",
+        "//pw_allocator",
+        "//pw_allocator:first_fit",
+        "//pw_allocator/block:tiny_block",
+        "//pw_bytes",
+        "//pw_containers:storage",
+        "//pw_multibuf/v2:iterators",
+    ],
+)
+
+pw_cc_test(
+    name = "single_chunk_region_tracker_test",
+    srcs = ["single_chunk_region_tracker_test.cc"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
+    ],
+    # TODO: b/260624583 - Fix this for rp2040
+    target_compatible_with = select({
+        "//pw_build/constraints/chipset:rp2040": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//pw_multibuf:chunk",
+        "//pw_multibuf:single_chunk_region_tracker",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
 
 # LINT.IfChange
 cc_library(
@@ -71,13 +118,95 @@ pw_cc_test(
     deps = [
         "//pw_allocator",
         "//pw_allocator:bump_allocator",
-        "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_bytes",
         "//pw_multibuf",
-        "//pw_span",
         "//pw_status",
+    ],
+)
+
+cc_library(
+    name = "allocator",
+    hdrs = ["public/pw_multibuf/v1_adapter/allocator.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_multibuf",
+        "//pw_multibuf:config",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+cc_library(
+    name = "simple_allocator",
+    srcs = ["simple_allocator.cc"],
+    hdrs = ["public/pw_multibuf/v1_adapter/simple_allocator.h"],
+    implementation_deps = ["//pw_assert:check"],
+    strip_include_prefix = "public",
+    deps = [
+        ":allocator",
+        ":chunk",
+        ":multibuf",
+        "//pw_allocator",
+        "//pw_allocator:best_fit",
+        "//pw_allocator:synchronized_allocator",
+        "//pw_allocator/block:small_alignable_block",
+        "//pw_bytes",
+        "//pw_bytes:alignment",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+    ],
+)
+# LINT.ThenChange(../Android.bp, BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+pw_cc_test(
+    name = "simple_allocator_test",
+    srcs = ["simple_allocator_test.cc"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
+    ],
+    deps = [
+        "//pw_allocator:null_allocator",
+        "//pw_allocator:testing",
+        "//pw_containers:storage",
+        "//pw_containers:vector",
+        "//pw_multibuf:chunk",
+        "//pw_multibuf:simple_allocator",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+cc_library(
+    name = "from_span",
+    srcs = ["from_span.cc"],
+    hdrs = ["public/pw_multibuf/v1_adapter/from_span.h"],
+    implementation_deps = [":chunk"],
+    strip_include_prefix = "public",
+    deps = [
+        ":multibuf",
+        "//pw_allocator",
+        "//pw_bytes",
+        "//pw_function",
+        "//pw_multibuf:config",
+    ],
+)
+# LINT.ThenChange(../Android.bp, BUILD.gn, CMakeLists.txt)
+
+# LINT.IfChange
+pw_cc_test(
+    name = "from_span_test",
+    srcs = ["from_span_test.cc"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
+    ],
+    deps = [
+        "//pw_allocator:testing",
+        "//pw_multibuf:from_span",
     ],
 )
 # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
@@ -87,6 +216,10 @@ pw_cc_test(
 filegroup(
     name = "doxygen",
     srcs = [
+        "public/pw_multibuf/v1_adapter/allocator.h",
+        "public/pw_multibuf/v1_adapter/chunk.h",
         "public/pw_multibuf/v1_adapter/multibuf.h",
+        "public/pw_multibuf/v1_adapter/simple_allocator.h",
+        "public/pw_multibuf/v1_adapter/single_chunk_region_tracker.h",
     ],
 )

@@ -1,4 +1,4 @@
-// Copyright 2024 The Pigweed Authors
+// Copyright 2025 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -17,7 +17,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::v1 {
+namespace pw::multibuf {
 namespace {
 
 using ::pw::allocator::test::AllocatorForTest;
@@ -51,4 +51,4 @@ TEST(FromSpanTest, AllocateWholeDataAreaSizeSucceeds) {
 }
 
 }  // namespace
-}  // namespace pw::multibuf::v1
+}  // namespace pw::multibuf

@@ -12,39 +12,44 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_multibuf/v1/simple_allocator.h"
+#include "pw_multibuf/simple_allocator.h"
 
-#include <vector>
-
-#include "gtest/gtest.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_containers/storage.h"
+#include "pw_containers/vector.h"
+#include "pw_multibuf/chunk.h"
+#include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::v1 {
+namespace pw::multibuf {
 namespace {
 
 using ::pw::allocator::test::AllocatorForTest;
 
-constexpr size_t kArbitraryBufferSize = 1024;
-constexpr size_t kArbitraryMetaSize = 2048;
+// Test fixture.
 
-// For the tests that test alignment...
-constexpr size_t kAlignment = 8;
-static_assert(kArbitraryBufferSize % kAlignment == 0);
+class SimpleAllocatorTest : public ::testing::Test {
+ protected:
+  static constexpr size_t kArbitraryBufferSize = 1024;
+  static constexpr size_t kArbitraryMetaSize = 1024;
+  static constexpr size_t kAlignment = 8;
+  static_assert(kArbitraryBufferSize % kAlignment == 0);
 
-TEST(SimpleAllocator, AllocateWholeDataAreaSizeSucceeds) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+  std::array<std::byte, kArbitraryBufferSize> data_area_;
+  AllocatorForTest<kArbitraryMetaSize> meta_alloc_;
+};
+
+// Unit tests.
+
+TEST_F(SimpleAllocatorTest, AllocateWholeDataAreaSizeSucceeds) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   std::optional<MultiBuf> buf = simple_allocator.Allocate(kArbitraryBufferSize);
   ASSERT_TRUE(buf.has_value());
   EXPECT_EQ(buf->size(), kArbitraryBufferSize);
 }
 
-TEST(SimpleAllocator, AllocateContiguousWholeDataAreaSizeSucceeds) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest, AllocateContiguousWholeDataAreaSizeSucceeds) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   std::optional<MultiBuf> buf =
       simple_allocator.AllocateContiguous(kArbitraryBufferSize);
   ASSERT_TRUE(buf.has_value());
@@ -52,10 +57,8 @@ TEST(SimpleAllocator, AllocateContiguousWholeDataAreaSizeSucceeds) {
   EXPECT_EQ(buf->size(), kArbitraryBufferSize);
 }
 
-TEST(SimpleAllocator, AllocateContiguousHalfDataAreaSizeTwiceSucceeds) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest, AllocateContiguousHalfDataAreaSizeTwiceSucceeds) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   std::optional<MultiBuf> buf =
       simple_allocator.AllocateContiguous(kArbitraryBufferSize / 2);
   ASSERT_TRUE(buf.has_value());
@@ -69,10 +72,8 @@ TEST(SimpleAllocator, AllocateContiguousHalfDataAreaSizeTwiceSucceeds) {
   EXPECT_EQ(buf2->size(), kArbitraryBufferSize / 2);
 }
 
-TEST(SimpleAllocator, AllocateTooLargeReturnsNullopt) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest, AllocateTooLargeReturnsNullopt) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   std::optional<MultiBuf> buf =
       simple_allocator.Allocate(kArbitraryBufferSize + 1);
   EXPECT_FALSE(buf.has_value());
@@ -81,27 +82,25 @@ TEST(SimpleAllocator, AllocateTooLargeReturnsNullopt) {
   EXPECT_FALSE(contiguous_buf.has_value());
 }
 
-TEST(SimpleAllocator, AllocateZeroWithNoMetadataOrDataReturnsEmptyMultiBuf) {
-  std::array<std::byte, 0> data_area;
+TEST_F(SimpleAllocatorTest,
+       AllocateZeroWithNoMetadataOrDataReturnsEmptyMultiBuf) {
   pw::allocator::NullAllocator meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+  SimpleAllocator simple_allocator(ByteSpan(), meta_alloc);
   std::optional<MultiBuf> buf = simple_allocator.Allocate(0);
   ASSERT_TRUE(buf.has_value());
   EXPECT_EQ(buf->size(), 0U);
 }
 
-TEST(SimpleAllocator, AllocateWithNoMetadataRoomReturnsNullopt) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
+TEST_F(SimpleAllocatorTest, AllocateWithNoMetadataRoomReturnsNullopt) {
   pw::allocator::NullAllocator meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+  SimpleAllocator simple_allocator(data_area_, meta_alloc);
   std::optional<MultiBuf> buf = simple_allocator.Allocate(1);
   EXPECT_FALSE(buf.has_value());
 }
 
-TEST(SimpleAllocator, SecondLargeAllocationFailsUntilFirstAllocationReleased) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest,
+       SecondLargeAllocationFailsUntilFirstAllocationReleased) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   const size_t alloc_size = kArbitraryBufferSize / 2 + 1;
   std::optional<MultiBuf> buf = simple_allocator.Allocate(alloc_size);
   ASSERT_TRUE(buf.has_value());
@@ -112,17 +111,15 @@ TEST(SimpleAllocator, SecondLargeAllocationFailsUntilFirstAllocationReleased) {
   EXPECT_TRUE(simple_allocator.Allocate(alloc_size).has_value());
 }
 
-TEST(SimpleAllocator, AllocateSkipsMiddleAllocations) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest, AllocateSkipsMiddleAllocations) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   const size_t alloc_size = kArbitraryBufferSize / 3;
   std::optional<MultiBuf> buf1 = simple_allocator.Allocate(alloc_size);
   std::optional<MultiBuf> buf2 = simple_allocator.Allocate(alloc_size);
   std::optional<MultiBuf> buf3 = simple_allocator.Allocate(alloc_size);
-  EXPECT_TRUE(buf1.has_value());
-  EXPECT_TRUE(buf2.has_value());
-  EXPECT_TRUE(buf3.has_value());
+  ASSERT_TRUE(buf1.has_value());
+  ASSERT_TRUE(buf2.has_value());
+  ASSERT_TRUE(buf3.has_value());
   buf1 = std::nullopt;
   buf3 = std::nullopt;
   // Now `buf2` holds the middle third of data_area
@@ -132,15 +129,13 @@ TEST(SimpleAllocator, AllocateSkipsMiddleAllocations) {
   EXPECT_EQ(split->Chunks().size(), 2U);
 }
 
-TEST(SimpleAllocator, FailedAllocationDoesNotHoldOntoChunks) {
-  std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc);
+TEST_F(SimpleAllocatorTest, FailedAllocationDoesNotHoldOntoChunks) {
+  SimpleAllocator simple_allocator(data_area_, meta_alloc_);
   const size_t alloc_size = kArbitraryBufferSize / 2;
   std::optional<MultiBuf> buf1 = simple_allocator.Allocate(alloc_size);
   std::optional<MultiBuf> buf2 = simple_allocator.Allocate(alloc_size);
-  EXPECT_TRUE(buf1.has_value());
-  EXPECT_TRUE(buf2.has_value());
+  ASSERT_TRUE(buf1.has_value());
+  ASSERT_TRUE(buf2.has_value());
   buf1 = std::nullopt;
   // When this allocation is attempted, it will initially create a chunk for
   // the first empty region prior to failing.
@@ -150,10 +145,10 @@ TEST(SimpleAllocator, FailedAllocationDoesNotHoldOntoChunks) {
   EXPECT_TRUE(simple_allocator.Allocate(kArbitraryBufferSize).has_value());
 }
 
-TEST(SimpleAllocator, AllocatorReturnsAlignedChunks) {
-  alignas(kAlignment) std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc, kAlignment);
+TEST_F(SimpleAllocatorTest, AllocatorReturnsAlignedChunks) {
+  containers::Storage<kAlignment, kArbitraryBufferSize> storage;
+  ByteSpan data_area(storage.data(), storage.size());
+  SimpleAllocator simple_allocator(data_area, meta_alloc_, kAlignment);
   std::optional<MultiBuf> buf1 = simple_allocator.Allocate(5);
 
   {
@@ -177,17 +172,18 @@ TEST(SimpleAllocator, AllocatorReturnsAlignedChunks) {
   }
 }
 
-TEST(SimpleAllocator, MultipleChunksAreAllAligned) {
-  alignas(kAlignment) std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc, kAlignment);
-  std::vector<MultiBuf> bufs_to_keep, bufs_to_free;
+TEST_F(SimpleAllocatorTest, MultipleChunksAreAllAligned) {
+  containers::Storage<kAlignment, kArbitraryBufferSize> storage;
+  ByteSpan data_area(storage.data(), storage.size());
+  SimpleAllocator simple_allocator(data_area, meta_alloc_, kAlignment);
 
   // Keep allocating buffers until we fail, alternating betweens ones we want to
   // keep and ones we will free.
   constexpr size_t kBufSize = 250;
   constexpr size_t kRoundedBufSize =
       (kBufSize + kAlignment - 1) / kAlignment * kAlignment;
+  Vector<MultiBuf, kArbitraryBufferSize / kRoundedBufSize> bufs_to_keep;
+  Vector<MultiBuf, kArbitraryBufferSize / kRoundedBufSize> bufs_to_free;
   for (;;) {
     std::optional<MultiBuf> buf = simple_allocator.Allocate(kBufSize);
     if (!buf) {
@@ -211,7 +207,7 @@ TEST(SimpleAllocator, MultipleChunksAreAllAligned) {
   // buffer we freed should have been rounded up to the alignment.
   std::optional<MultiBuf> buf =
       simple_allocator.Allocate(free_bufs * kRoundedBufSize);
-  EXPECT_TRUE(buf);
+  ASSERT_TRUE(buf);
 
   // Check that all chunks of the returned buffer are aligned.
   size_t total_size = 0;
@@ -223,10 +219,10 @@ TEST(SimpleAllocator, MultipleChunksAreAllAligned) {
   EXPECT_EQ(total_size, free_bufs * kRoundedBufSize);
 }
 
-TEST(SimpleAllocator, ContiguousChunksAreAligned) {
-  alignas(kAlignment) std::array<std::byte, kArbitraryBufferSize> data_area;
-  AllocatorForTest<kArbitraryMetaSize> meta_alloc;
-  SimpleAllocator simple_allocator(data_area, meta_alloc, kAlignment);
+TEST_F(SimpleAllocatorTest, ContiguousChunksAreAligned) {
+  containers::Storage<kAlignment, kArbitraryBufferSize> storage;
+  ByteSpan data_area(storage.data(), storage.size());
+  SimpleAllocator simple_allocator(data_area, meta_alloc_, kAlignment);
 
   // First create some fragmentation.
   std::optional<MultiBuf> buf1 = simple_allocator.Allocate(5);
@@ -250,7 +246,7 @@ TEST(SimpleAllocator, ContiguousChunksAreAligned) {
   std::optional<MultiBuf> buf7 = simple_allocator.AllocateContiguous(11);
 
   {
-    EXPECT_TRUE(buf7);
+    ASSERT_TRUE(buf7);
     EXPECT_EQ(buf7->Chunks().size(), 1u);
     const auto first_chunk = buf7->Chunks().begin();
     EXPECT_EQ(first_chunk->size(), 11u);
@@ -261,7 +257,7 @@ TEST(SimpleAllocator, ContiguousChunksAreAligned) {
   std::optional<MultiBuf> buf8 = simple_allocator.AllocateContiguous(3);
 
   {
-    EXPECT_TRUE(buf8);
+    ASSERT_TRUE(buf8);
     EXPECT_EQ(buf8->Chunks().size(), 1u);
     const auto first_chunk = buf8->Chunks().begin();
     EXPECT_EQ(first_chunk->size(), 3u);
@@ -271,4 +267,4 @@ TEST(SimpleAllocator, ContiguousChunksAreAligned) {
 }
 
 }  // namespace
-}  // namespace pw::multibuf::v1
+}  // namespace pw::multibuf

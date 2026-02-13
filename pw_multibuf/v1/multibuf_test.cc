@@ -18,7 +18,6 @@
 #include "pw_bytes/array.h"
 #include "pw_bytes/suffix.h"
 #include "pw_multibuf_private/test_utils.h"
-#include "pw_span/span.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::multibuf::v1 {

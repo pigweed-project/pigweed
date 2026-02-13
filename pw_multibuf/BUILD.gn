@@ -87,6 +87,7 @@ pw_source_set("single_chunk_region_tracker") {
     ":chunk",
     ":config",
     "v1:single_chunk_region_tracker",
+    "v1_adapter:single_chunk_region_tracker",
   ]
 }
 
@@ -97,6 +98,7 @@ pw_source_set("allocator") {
     ":config",
     ":pw_multibuf",
     "v1:allocator",
+    "v1_adapter:allocator",
   ]
 }
 
@@ -117,6 +119,7 @@ pw_source_set("from_span") {
     ":config",
     ":pw_multibuf",
     "v1:from_span",
+    "v1_adapter:from_span",
   ]
 }
 
@@ -128,6 +131,7 @@ pw_source_set("simple_allocator") {
     ":config",
     ":pw_multibuf",
     "v1:simple_allocator",
+    "v1_adapter:simple_allocator",
   ]
 }
 
@@ -138,7 +142,7 @@ pw_source_set("testing") {
   public_deps = [
     ":config",
     ":simple_allocator",
-    "v1:testing",
+    "$dir_pw_multibuf/v1:testing",
   ]
 }
 

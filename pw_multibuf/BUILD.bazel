@@ -86,6 +86,7 @@ cc_library(
         ":chunk",
         ":config",
         "//pw_multibuf/v1:single_chunk_region_tracker",
+        "//pw_multibuf/v1_adapter:single_chunk_region_tracker",
     ],
 )
 
@@ -97,6 +98,7 @@ cc_library(
         ":config",
         ":pw_multibuf",
         "//pw_multibuf/v1:allocator",
+        "//pw_multibuf/v1_adapter:allocator",
     ],
 )
 
@@ -119,6 +121,7 @@ cc_library(
         ":config",
         ":pw_multibuf",
         "//pw_multibuf/v1:from_span",
+        "//pw_multibuf/v1_adapter:from_span",
     ],
 )
 
@@ -131,6 +134,7 @@ cc_library(
         ":config",
         ":pw_multibuf",
         "//pw_multibuf/v1:simple_allocator",
+        "//pw_multibuf/v1_adapter:simple_allocator",
     ],
 )
 
@@ -145,6 +149,7 @@ cc_library(
         "//pw_multibuf/v1:testing",
     ],
 )
+
 # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
 
 ## Docs

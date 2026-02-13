@@ -30,9 +30,17 @@ class Deallocator;
 template <typename T>
 class SharedPtr;
 
-namespace multibuf::v2::internal {
+namespace multibuf {
+
+namespace v1_adapter::internal {
+class ChunkAllocator;
+}  // namespace v1_adapter::internal
+
+namespace v2::internal {
 class GenericMultiBuf;
-}  // namespace multibuf::v2::internal
+}  // namespace v2::internal
+
+}  // namespace multibuf
 
 namespace allocator::internal {
 
@@ -107,9 +115,10 @@ class ControlBlock final {
   Action DecrementWeak();
 
  private:
-  // Allow SharedPtrs and GenericMultiBuf to create control blocks.
+  // Allow SharedPtrs and MultiBufs to create control blocks.
   template <typename T>
   friend class ::pw::SharedPtr;
+  friend class ::pw::multibuf::v1_adapter::internal::ChunkAllocator;
   friend class ::pw::multibuf::v2::internal::GenericMultiBuf;
 
   /// Factory method for allocating memory with an attached control block.

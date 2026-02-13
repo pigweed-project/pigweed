@@ -48,8 +48,7 @@ using multibuf::v2::TrackedMultiBuf;
 
 }  // namespace pw
 
-// Legacy v1 name for a MultiBuf. This alias and the adapter it points to will
-// be removed when the migration to v2 is complete.
+// This adapter will be removed when the migration to v2 is complete.
 #if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
 
 #include "pw_multibuf/v1_adapter/multibuf.h"

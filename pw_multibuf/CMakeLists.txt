@@ -77,6 +77,7 @@ pw_add_library(pw_multibuf.single_chunk_region_tracker INTERFACE
     pw_multibuf.chunk
     pw_multibuf.config
     pw_multibuf.v1.single_chunk_region_tracker
+    pw_multibuf.v1_adapter.single_chunk_region_tracker
 )
 
 pw_add_library(pw_multibuf.allocator INTERFACE
@@ -88,6 +89,7 @@ pw_add_library(pw_multibuf.allocator INTERFACE
     pw_multibuf
     pw_multibuf.config
     pw_multibuf.v1.allocator
+    pw_multibuf.v1_adapter.allocator
 )
 
 pw_add_library(pw_multibuf.allocator_async INTERFACE
@@ -110,6 +112,7 @@ pw_add_library(pw_multibuf.from_span INTERFACE
     pw_multibuf
     pw_multibuf.config
     pw_multibuf.v1.from_span
+    pw_multibuf.v1_adapter.from_span
 )
 
 pw_add_library(pw_multibuf.simple_allocator INTERFACE
@@ -122,6 +125,7 @@ pw_add_library(pw_multibuf.simple_allocator INTERFACE
     pw_multibuf.allocator
     pw_multibuf.config
     pw_multibuf.v1.simple_allocator
+    pw_multibuf.v1_adapter.simple_allocator
 )
 
 pw_add_library(pw_multibuf.testing INTERFACE

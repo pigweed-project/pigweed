@@ -32,7 +32,22 @@ std::optional<MultiBuf> FromSpan(Allocator& metadata_allocator,
 
 #elif PW_MULTIBUF_VERSION == 2
 
-// Not (yet) supported in v2.
+// This adapter will be removed when the migration to v2 is complete.
+#if PW_MULTIBUF_INCLUDE_V1_ADAPTERS
+
+#include "pw_multibuf/v1_adapter/from_span.h"
+
+namespace pw::multibuf {
+
+std::optional<MultiBuf> FromSpan(Allocator& metadata_allocator,
+                                 ByteSpan region,
+                                 Function<void(ByteSpan)>&& deleter) {
+  return v1_adapter::FromSpan(metadata_allocator, region, std::move(deleter));
+}
+
+}  // namespace pw::multibuf
+
+#endif  // PW_MULTIBUF_INCLUDE_V1_ADAPTERS
 
 #else
 

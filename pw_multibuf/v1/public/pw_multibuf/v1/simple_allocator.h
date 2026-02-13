@@ -61,6 +61,11 @@ class PW_MULTIBUF_DEPRECATED LinkedRegionTracker final
 /// A simple first-fit ``MultiBufAllocator``.
 class PW_MULTIBUF_DEPRECATED SimpleAllocator : public MultiBufAllocator {
  public:
+  /// Amount of chunk memory overhead needed per allocation.
+  ///
+  /// This allocator does not store metadata inline; hence this value is 0.
+  static constexpr size_t kAllocationOverhead = 0;
+
   /// Creates a new ``SimpleAllocator``.
   ///
   /// @param[in] data_area         The region to use for storing chunk memory.
@@ -78,6 +83,12 @@ class PW_MULTIBUF_DEPRECATED SimpleAllocator : public MultiBufAllocator {
   SimpleAllocator(ByteSpan data_area,
                   pw::allocator::Allocator& metadata_alloc,
                   size_t alignment = 1);
+
+  /// Returns the minimum alignment of chunk memory allocated by this object.
+  ///
+  /// Since this allocator does not store metadata inline, this is just the
+  /// alignment provided at construction.
+  constexpr size_t alignment() const { return alignment_; }
 
  private:
   pw::Result<MultiBuf> DoAllocate(

@@ -102,9 +102,11 @@ cc_library_static {
     ],
     export_include_dirs: [
         "public",
+        "v1_adapter/public",
     ],
     srcs: [
         "v1_adapter/chunk.cc",
+        "v1_adapter/from_span.cc",
         "v1_adapter/multibuf.cc",
     ],
     header_libs: [
@@ -117,13 +119,53 @@ cc_library_static {
         "pw_allocator",
         "pw_bytes",
         "pw_multibuf_v2",
+        "pw_function",
         "pw_status",
+        "pw_span",
     ],
     export_static_lib_headers: [
         "pw_allocator",
         "pw_bytes",
+        "pw_function",
         "pw_multibuf_v2",
+        "pw_span",
         "pw_status",
+    ],
+}
+
+cc_library_static {
+    name: "pw_multibuf_allocator_v1_adapter",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    srcs: [
+        "v1_adapter/chunk_allocator.cc",
+        "v1_adapter/simple_allocator.cc",
+    ],
+    export_include_dirs: [
+        "public",
+        "v1_adapter/public",
+    ],
+    header_libs: [
+        "pw_sync",
+    ],
+    export_header_lib_headers: [
+        "pw_sync",
+    ],
+    static_libs: [
+        "pw_allocator",
+        "pw_bytes",
+        "pw_containers",
+        "pw_multibuf_v1_adapter",
+        "pw_result",
+    ],
+    export_static_lib_headers: [
+        "pw_allocator",
+        "pw_bytes",
+        "pw_containers",
+        "pw_multibuf_v1_adapter",
+        "pw_result",
     ],
 }
 

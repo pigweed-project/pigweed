@@ -32,7 +32,6 @@
 #include "pw_bytes/span.h"
 #include "pw_bytes/suffix.h"
 #include "pw_multibuf/multibuf.h"
-#include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"

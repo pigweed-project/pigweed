@@ -284,7 +284,6 @@ cc_library(
         "//pw_allocator:synchronized_allocator",
         "//pw_allocator:testing",
         "//pw_assert:assert",
-        "//pw_multibuf:config",
         "//pw_sync:mutex",
     ],
 )
