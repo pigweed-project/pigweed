@@ -334,10 +334,6 @@ class PwConsoleEmbed:
         for floating_window, _ in self.floating_window_plugins:
             _set_console_app_instance(floating_window, self.console_app)
 
-        # Rebuild prompt_toolkit containers, menu items, and help content with
-        # any new plugins added above.
-        self.console_app.refresh_layout()
-
         # Load external config if passed in.
         if self.config_file_path:
             self.console_app.load_config(self.config_file_path)
@@ -345,6 +341,10 @@ class PwConsoleEmbed:
         if override_window_config:
             self.console_app.prefs.set_windows(override_window_config)
         self.console_app.apply_window_config()
+
+        # Rebuild prompt_toolkit containers, menu items, and help content with
+        # any new plugins added above.
+        self.console_app.refresh_layout()
 
         # Hide the repl pane if it's in the hidden windows list.
         if 'Python Repl' in self.hidden_by_default_windows:

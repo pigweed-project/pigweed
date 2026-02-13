@@ -1269,6 +1269,11 @@ class WindowManager:
         if not prefs.windows:
             return
 
+        # Update split method
+        self.vertical_splitting = bool(
+            prefs.window_column_split_method == 'vertical'
+        )
+
         unique_titles = prefs.unique_window_titles
         collected_panes = self._remove_panes_from_layout(unique_titles)
         existing_pane_titles = [
