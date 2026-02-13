@@ -428,6 +428,26 @@ class CustomFutureList : public BaseFutureList {
 
   reference Pop() { return *kGetFutureImpl(BaseFutureList::PopIfAvailable()); }
 
+  /// Removes the first future from the list that matches the predicate.
+  ///
+  /// @returns a pointer to the future that was removed or `nullptr` if no
+  ///     futures matched `predicate`
+  template <typename Predicate>
+  pointer Remove(Predicate predicate) {
+    auto previous = list().before_begin();
+    auto current = list().begin();
+    while (current != list().end()) {
+      pointer item = kGetFutureImpl(&(*current));
+      if (predicate(*item)) {
+        list().erase_after(previous);
+        return item;
+      }
+      previous = current;
+      ++current;
+    }
+    return nullptr;
+  }
+
   template <typename Resolver>
   void ResolveAllWith(Resolver&& resolver) {
     while (!list().empty()) {

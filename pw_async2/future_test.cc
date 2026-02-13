@@ -242,6 +242,8 @@ class TestAsyncInt {
     }
   }
 
+  pw::async2::FutureList<&TestIntFuture::core_>& list() { return list_; }
+
  private:
   friend class TestIntFuture;
 
@@ -519,6 +521,32 @@ TEST(FutureState, MoveAssignment) {
   EXPECT_FALSE(s1.is_initialized());  // NOLINT(bugprone-use-after-move)
   EXPECT_TRUE(s2.is_initialized());
   EXPECT_TRUE(s2.is_pendable());
+}
+
+TEST(CustomFutureList, Remove) {
+  TestAsyncInt provider;
+  TestIntFuture f1 = provider.Get();
+  TestIntFuture f2 = provider.Get();
+  TestIntFuture f3 = provider.Get();
+
+  TestIntFuture* removed =
+      provider.list().Remove([&](TestIntFuture& f) { return &f == &f2; });
+  EXPECT_EQ(removed, &f2);
+
+  EXPECT_FALSE(f2.core().in_list());
+  EXPECT_TRUE(f1.core().in_list());
+  EXPECT_TRUE(f3.core().in_list());
+
+  removed = provider.list().Remove([&](TestIntFuture& f) { return &f == &f1; });
+  EXPECT_EQ(removed, &f1);
+  EXPECT_FALSE(f1.core().in_list());
+
+  removed = provider.list().Remove([&](TestIntFuture& f) { return &f == &f1; });
+  EXPECT_EQ(removed, nullptr);
+
+  removed = provider.list().Remove([&](TestIntFuture& f) { return &f == &f3; });
+  EXPECT_EQ(removed, &f3);
+  EXPECT_TRUE(provider.list().empty());
 }
 
 }  // namespace
