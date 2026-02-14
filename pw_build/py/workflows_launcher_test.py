@@ -13,8 +13,12 @@
 # the License.
 """Tests for the workflows launcher CLI."""
 
+import argparse
 import json
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from google.protobuf import json_format
 from pw_build.proto import workflows_pb2
@@ -65,6 +69,7 @@ _EXAMPLE_CONFIG = """
           "--//pw_toolchain/cc:cxx_standard=20"
         ]
       },
+      "use_output": ["output_one_strip"],
       "targets": [
         "//..."
       ]
@@ -239,6 +244,47 @@ analyzers: "owners_lint"'''
         cli = self._load_config(_EXAMPLE_CONFIG)
         with self.assertRaises(ValueError):
             cli.describe().describe(['']).strip()
+
+    @patch('pw_build.workflows.launcher.WorkflowsManager')
+    @patch('pw_build.project_builder.ProjectBuilder')
+    def test_artifacts_manifest_generation(self, _, mock_manager_class):
+        """Generate artifact manifest and check contents"""
+        mock_manager = mock_manager_class.return_value
+        # Ensure 'all_host_cpp20' is recognized as a build name.
+        mock_manager.get_build_names.return_value = ['all_host_cpp20']
+        mock_manager.get_group_names.return_value = []
+        mock_manager.create_build_recipes.return_value = []
+
+        # Mock collect_artifacts to return a sample BuildArtifacts.
+        artifacts = workflows_pb2.BuildArtifacts()
+        artifacts.output_root = 'out/all_host_cpp20'
+        group = artifacts.output_groups.add()
+        group.matching_files.append('foo.bin')
+        mock_manager.collect_artifacts.return_value = artifacts
+
+        cli = self._load_config(_EXAMPLE_CONFIG)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            manifest_path = Path(tmp_dir) / 'manifest.textproto'
+            args = argparse.Namespace(
+                directory=None,
+                output_dir=Path('out'),
+                extra_arg=None,
+                artifacts_manifest=manifest_path,
+            )
+
+            plugins = cli.plugins(args)
+            build_plugin = next(p for p in plugins if p.name() == 'build')
+
+            # Run the plugin for the build that has use_output in the config.
+            build_plugin.run(['all_host_cpp20'])
+
+            # Verify that the manifest file was written with the expected
+            # content.
+            self.assertTrue(manifest_path.exists())
+            content = manifest_path.read_text()
+            self.assertIn('foo.bin', content)
+            self.assertIn('out/all_host_cpp20', content)
 
 
 if __name__ == '__main__':
