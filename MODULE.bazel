@@ -39,7 +39,7 @@ bazel_dep(name = "protobuf", version = "29.1", repo_name = "com_google_protobuf"
 
 bazel_dep(name = "re2", version = "2024-07-02.bcr.1")
 bazel_dep(name = "rules_android", version = "0.6.0")
-bazel_dep(name = "rules_cc", version = "0.2.4")
+bazel_dep(name = "rules_cc", version = "0.2.16")
 bazel_dep(name = "rules_fuzzing", version = "0.5.2")
 bazel_dep(name = "rules_go", version = "0.52.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "rules_java", version = "8.6.1")
@@ -182,6 +182,10 @@ register_toolchains(
     "//pw_toolchain/fuchsia:all",
     dev_dependency = True,
 )
+
+# Configure cc_compatibility_proxy
+cc_compatibility_proxy = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
+use_repo(cc_compatibility_proxy, "cc_compatibility_proxy")
 
 # Rust toolchains
 pw_rust = use_extension("//pw_toolchain/rust:extensions.bzl", "pw_rust")
