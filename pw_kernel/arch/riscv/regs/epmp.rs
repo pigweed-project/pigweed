@@ -56,6 +56,6 @@ impl MSeccfgVal {
 rw_csr_reg!(
     MSeccfg,
     MSeccfgVal,
-    mseccfg,
+    "mseccfg",
     "Machine Security Configuration Register"
 );

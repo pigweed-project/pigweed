@@ -29,10 +29,14 @@ pub(crate) use riscv_macro::user_space_exception as exception;
 
 #[cfg(feature = "exceptions_reload_pmp")]
 use crate::MemoryConfig;
+#[cfg(not(feature = "veer_pic"))]
+use crate::plic as pic;
 use crate::regs::{
     Cause, Exception, Interrupt, MCause, MCauseVal, MStatus, MtVal, MtVec, MtVecMode,
 };
-use crate::{plic, timer};
+use crate::timer;
+#[cfg(feature = "veer_pic")]
+use crate::veer_pic as pic;
 
 const LOG_EXCEPTIONS: bool = false;
 
@@ -186,7 +190,7 @@ unsafe fn interrupt_handler(interrupt: Interrupt, mepc: usize, frame: &TrapFrame
             timer::mtimer_tick();
         }
         Interrupt::MachineExternal => {
-            plic::interrupt();
+            pic::interrupt();
         }
         _ => {
             pw_assert::panic!(

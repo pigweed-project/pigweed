@@ -17,17 +17,18 @@ use regs::*;
 #[cfg(feature = "epmp")]
 pub mod epmp;
 pub mod pmp;
+pub mod veer;
 
 #[allow(unused_macros)]
 macro_rules! ro_csr_reg {
-    ($name:ident, $val_type:ident, $reg_ame:ident, $doc:literal) => {
+    ($name:ident, $val_type:ident, $reg_name:literal, $doc:literal) => {
         #[doc=$doc]
         pub struct $name;
         impl $name {
             #[inline]
             pub fn read() -> $val_type {
               mut val: usize;
-              core::arch::asm!(concat!("csrr {0}, ", stringify!($reg_name)), out(reg) val);
+              core::arch::asm!(concat!("csrr {0}, ", $reg_name), out(reg) val);
               $val_type(val)
             }
         }
@@ -36,7 +37,7 @@ macro_rules! ro_csr_reg {
 
 #[macro_export]
 macro_rules! rw_csr_reg {
-    ($name:ident, $val_type:ident, $reg_name:ident, $doc:literal) => {
+    ($name:ident, $val_type:ident, $reg_name:literal, $doc:literal) => {
         #[doc=$doc]
         pub struct $name;
         impl $name {
@@ -44,14 +45,14 @@ macro_rules! rw_csr_reg {
             #[inline]
             pub fn read() -> $val_type {
               let mut val: usize;
-              unsafe {core::arch::asm!(concat!("csrr {0}, ", stringify!($reg_name)), out(reg) val)};
+              unsafe {core::arch::asm!(concat!("csrr {0}, ", $reg_name), out(reg) val)};
               $val_type(val)
             }
 
             #[allow(dead_code)]
             #[inline]
             pub fn write(val: $val_type) {
-              unsafe {core::arch::asm!(concat!("csrw ", stringify!($reg_name), ", {0}"), in(reg) val.0)};
+              unsafe {core::arch::asm!(concat!("csrw ", $reg_name, ", {0}"), in(reg) val.0)};
             }
         }
     };
@@ -128,13 +129,13 @@ impl MCauseVal {
     }
 }
 
-rw_csr_reg!(MCause, MCauseVal, mcause, "Machine Cause Register");
+rw_csr_reg!(MCause, MCauseVal, "mcause", "Machine Cause Register");
 
 #[derive(Copy, Clone, Default)]
 #[repr(transparent)]
 pub struct MtValVal(pub usize);
 
-rw_csr_reg!(MtVal, MtValVal, mtval, "Machine Trap Value Register");
+rw_csr_reg!(MtVal, MtValVal, "mtval", "Machine Trap Value Register");
 
 /// Execution Privilege Level
 ///
@@ -189,7 +190,7 @@ impl MStatusVal {
     }
 }
 
-rw_csr_reg!(MStatus, MStatusVal, mstatus, "Machine Status Register");
+rw_csr_reg!(MStatus, MStatusVal, "mstatus", "Machine Status Register");
 
 /// Machine Trap-Vector Base-Address Register Mode
 #[allow(dead_code)]
@@ -221,6 +222,6 @@ impl MtVecVal {
 rw_csr_reg!(
     MtVec,
     MtVecVal,
-    mtvec,
+    "mtvec",
     "Machine Trap-Vector Base-Address Register"
 );

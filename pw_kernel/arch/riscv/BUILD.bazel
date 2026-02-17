@@ -30,6 +30,18 @@ config_setting(
     },
 )
 
+bool_flag(
+    name = "veer_pic",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "veer_pic_enabled",
+    flag_values = {
+        ":veer_pic": "true",
+    },
+)
+
 rust_library(
     name = "arch_riscv",
     srcs = [
@@ -41,11 +53,13 @@ rust_library(
         "regs.rs",
         "regs/epmp.rs",
         "regs/pmp.rs",
+        "regs/veer.rs",
         "spinlock.rs",
         "threads.rs",
         "timer.rs",
         "timer/clint.rs",
         "timer/mtime.rs",
+        "veer_pic.rs",
     ],
     crate_features = ["user_space"] + select({
         "timer_clint": ["timer_clint"],
@@ -55,6 +69,9 @@ rust_library(
         "//conditions:default": [],
     }) + select({
         ":exceptions_reload_pmp_enabled": ["exceptions_reload_pmp"],
+        "//conditions:default": [],
+    }) + select({
+        ":veer_pic_enabled": ["veer_pic"],
         "//conditions:default": [],
     }) + select({
         "//pw_build/constraints/riscv/extensions:A.not": ["disable_interrupts_atomic"],

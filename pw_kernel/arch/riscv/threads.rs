@@ -24,7 +24,6 @@ use kernel::sync::spinlock::SpinLockGuard;
 use log_if::debug_if;
 use pw_status::Result;
 
-use crate::plic;
 use crate::protection::MemoryConfig;
 use crate::regs::{MStatusVal, PrivilegeLevel};
 use crate::spinlock::BareSpinLock;
@@ -117,7 +116,7 @@ impl Arch for super::Arch {
     #[cfg(feature = "disable_interrupts_atomic")]
     type AtomicUsize = crate::disable_interrupts_atomic::AtomicUsize;
     type SyscallArgs<'a> = crate::exceptions::RiscVSyscallArgs<'a>;
-    type InterruptController = plic::Plic;
+    type InterruptController = crate::InterruptController;
 
     #[inline(never)]
     unsafe fn context_switch<'a>(

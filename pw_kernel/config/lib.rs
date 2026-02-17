@@ -92,6 +92,16 @@ pub trait PlicConfigInterface {
     const MAX_IRQS: u32 = 1023;
 }
 
+/// VeeR PIC configuration.
+pub trait VeerPicConfigInterface {
+    /// The PIC base address.
+    const PIC_BASE_ADDRESS: usize;
+
+    /// The maximum number of interrupts the
+    /// PIC supports per context.
+    const MAX_IRQS: u32 = 256;
+}
+
 /// CLINT timer config.
 pub trait ClintTimerConfigInterface {
     /// Address of mtime register.
