@@ -335,6 +335,22 @@ pw_test("allocate_task_test") {
   sources = [ "allocate_task_test.cc" ]
 }
 
+pw_source_set("notification") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_async2/notification.h" ]
+  public_deps = [ ":value_future" ]
+}
+
+pw_test("notification_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+  deps = [
+    ":notification",
+    ":pw_async2",
+    ":testing",
+  ]
+  sources = [ "notification_test.cc" ]
+}
+
 if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
   pw_source_set("coro") {
     public_configs = [ ":public_include_path" ]
@@ -623,6 +639,7 @@ pw_test_group("tests") {
     ":join_test",
     ":poll_test",
     ":func_task_test",
+    ":notification_test",
 
     ":select_test",
     ":simulated_time_provider_test",

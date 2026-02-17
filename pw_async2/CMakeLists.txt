@@ -317,6 +317,24 @@ pw_add_test(pw_async2.allocate_task_test
 
 
 
+pw_add_library(pw_async2.notification INTERFACE
+  HEADERS
+    public/pw_async2/notification.h
+  PUBLIC_DEPS
+    pw_async2.value_future
+  PUBLIC_INCLUDES
+    public
+)
+
+pw_add_test(pw_async2.notification_test
+  SOURCES
+    notification_test.cc
+  PRIVATE_DEPS
+    pw_async2.notification
+    pw_async2.testing
+    pw_async2
+)
+
 if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   pw_add_library(pw_async2.coro STATIC
     HEADERS

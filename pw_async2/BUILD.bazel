@@ -444,6 +444,27 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "notification",
+    hdrs = [
+        "public/pw_async2/notification.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":value_future",
+    ],
+)
+
+pw_cc_test(
+    name = "notification_test",
+    srcs = ["notification_test.cc"],
+    deps = [
+        ":notification",
+        ":pw_async2",
+        ":testing",
+    ],
+)
+
 pw_cc_test(
     name = "coro_test",
     srcs = ["coro_test.cc"],
@@ -765,6 +786,7 @@ filegroup(
         "public/pw_async2/internal/config.h",
         "public/pw_async2/internal/owned_task.h",
         "public/pw_async2/join.h",
+        "public/pw_async2/notification.h",
         "public/pw_async2/notified_dispatcher.h",
         "public/pw_async2/poll.h",
         "public/pw_async2/runnable_dispatcher.h",

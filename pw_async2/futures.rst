@@ -238,6 +238,18 @@ futures.
 
         std::optional<T> BlockingRead();
 
+Signalling tasks
+================
+Tasks often need to wait for a single event to occur. ``pw_async2`` provides
+:cc:`Notification <pw::async2::Notification>` for this purpose. Tasks call
+``Wait`` to obtain a future that will resolve once the notifier calls
+``Notify``. The future does not resolve to a value.
+
+Multiple tasks can wait on the same notification and will all be woken when it
+is triggered. A notification can be triggered from any context (async,
+non-async, ISR). ``Notification`` is implemented using a
+:cc:`BroadcastValueProvider <pw::async2::BroadcastValueProvider>`.
+
 .. _module-pw_async2-futures-implementing:
 
 ---------------------
