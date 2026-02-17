@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -19,7 +19,7 @@
         "linux-arm64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -28,7 +28,7 @@
         "linux-amd64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -37,7 +37,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -46,7 +46,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -55,7 +55,7 @@
         "mac-amd64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
@@ -67,7 +67,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revisions:d34f1f931489618efffc4007e6b6bdb9e10f6467,7e734da3460bc6f3474a16b4385332021ee6cdc2"
+        "git_revisions:7ad4e69ad585d8ff214f7b42d01f1959eda08f40,80743bd43fd5b38fedc503308e7a652e23d3ec93"
       ]
     },
     {
