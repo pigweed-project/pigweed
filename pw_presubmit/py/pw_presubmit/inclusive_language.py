@@ -17,6 +17,8 @@ import dataclasses
 from pathlib import Path
 import re
 
+from pw_cli import file_filter
+
 from . import presubmit, presubmit_context
 
 # List borrowed from Android:
@@ -225,7 +227,10 @@ ignored with "{disable_tag}" and reenabled with
         raise presubmit_context.PresubmitFailure
 
 
-@presubmit.check(name='inclusive_language')
+@presubmit.check(
+    name='inclusive_language',
+    path_filter=file_filter.FileFilter(exclude=[r'MODULE\.bazel\.lock']),
+)
 def presubmit_check(ctx: presubmit_context.PresubmitContext) -> None:
     generic_presubmit_check(
         ctx,
