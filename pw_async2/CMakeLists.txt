@@ -217,18 +217,22 @@ pw_add_test(pw_async2.future_timeout_test
     pw_async2.value_future
     pw_chrono.system_clock
     pw_compilation_testing._pigweed_only_negative_compilation
-    pw_function
-    pw_result
-    pw_status
 )
 
-pw_add_library(pw_async2.value_future INTERFACE
+pw_add_library(pw_async2.value_future STATIC
+  SOURCES
+    value_future.cc
   HEADERS
     public/pw_async2/value_future.h
-  PUBLIC_DEPS
-    pw_async2
   PUBLIC_INCLUDES
     public
+  PUBLIC_DEPS
+    pw_async2
+  PRIVATE_DEPS
+    pw_assert.assert
+    pw_assert.check
+    pw_polyfill
+    pw_sync.interrupt_spin_lock
 )
 
 pw_add_test(pw_async2.value_future_test

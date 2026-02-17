@@ -251,7 +251,14 @@ pw_test("future_timeout_test") {
 pw_source_set("value_future") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_async2/value_future.h" ]
+  sources = [ "value_future.cc" ]
   public_deps = [ ":pw_async2" ]
+  deps = [
+    "$dir_pw_assert:assert",
+    "$dir_pw_assert:check",
+    "$dir_pw_sync:interrupt_spin_lock",
+    dir_pw_polyfill,
+  ]
 }
 
 pw_test("value_future_test") {

@@ -321,12 +321,17 @@ pw_cc_test(
 
 cc_library(
     name = "value_future",
+    srcs = ["value_future.cc"],
     hdrs = [
         "public/pw_async2/value_future.h",
     ],
     strip_include_prefix = "public",
     deps = [
         ":pw_async2",
+        "//pw_assert:assert",
+        "//pw_assert:check",
+        "//pw_polyfill",
+        "//pw_sync:interrupt_spin_lock",
     ],
 )
 

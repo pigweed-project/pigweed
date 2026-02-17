@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <mutex>
 #include <optional>
 #include <type_traits>
 
@@ -28,6 +29,9 @@ inline sync::InterruptSpinLock& ValueProviderLock() {
   PW_CONSTINIT static sync::InterruptSpinLock lock;
   return lock;
 }
+
+bool PendValueFutureCore(FutureCore& core, Context& cx)
+    PW_EXCLUSIVE_LOCKS_REQUIRED(ValueProviderLock());
 
 }  // namespace internal
 
@@ -85,7 +89,10 @@ class ValueFuture {
     // With some care (and complexity), the lock could be moved to the provider.
     // A global lock is simpler and more efficient in practice.
     std::lock_guard lock(internal::ValueProviderLock());
-    return core_.DoPend<ValueFuture<T>>(*this, cx);
+    if (internal::PendValueFutureCore(core_, cx)) {
+      return Pending();
+    }
+    return Ready(std::move(*value_));
   }
 
   [[nodiscard]] bool is_pendable() const {
@@ -99,11 +106,8 @@ class ValueFuture {
   }
 
  private:
-  friend class FutureCore;
   friend class ValueProvider<T>;
   friend class BroadcastValueProvider<T>;
-
-  static constexpr char kWaitReason[] = "ValueFuture";
 
   template <typename... Args>
   explicit ValueFuture(std::in_place_t, Args&&... args)
@@ -111,15 +115,6 @@ class ValueFuture {
         value_(std::in_place, std::forward<Args>(args)...) {}
 
   ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
-
-  Poll<T> DoPend(Context&)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::ValueProviderLock()) {
-    if (!core_.is_ready()) {
-      return Pending();
-    }
-
-    return Ready(std::move(*value_));
-  }
 
   template <typename... Args>
   void ResolveLocked(Args&&... args)
@@ -154,7 +149,10 @@ class ValueFuture<void> {
 
   Poll<> Pend(Context& cx) {
     std::lock_guard lock(internal::ValueProviderLock());
-    return core_.DoPend<ValueFuture<void>>(*this, cx);
+    if (internal::PendValueFutureCore(core_, cx)) {
+      return Pending();
+    }
+    return Ready();
   }
 
   [[nodiscard]] bool is_pendable() const { return core_.is_pendable(); }
@@ -164,10 +162,7 @@ class ValueFuture<void> {
     return ValueFuture(FutureState::kReadyForCompletion);
   }
 
-  static constexpr char kWaitReason[] = "ValueFuture<void>";
-
  private:
-  friend class FutureCore;
   friend class ValueProvider<void>;
   friend class BroadcastValueProvider<void>;
 
@@ -175,13 +170,6 @@ class ValueFuture<void> {
       : core_(FutureState::kReadyForCompletion) {}
 
   explicit ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
-
-  Poll<> DoPend(Context&) {
-    if (!core_.is_ready()) {
-      return Pending();
-    }
-    return Ready();
-  }
 
   FutureCore core_;
 };
@@ -310,7 +298,7 @@ class ValueProvider {
     ValueFuture<T> future(FutureState::kPending);
     {
       std::lock_guard lock(internal::ValueProviderLock());
-      list_.PushRequireEmpty(future);
+      list_.PushRequireEmpty(future.core_);
     }
     return future;
   }
