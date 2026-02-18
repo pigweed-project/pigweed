@@ -84,6 +84,10 @@ class ManagedPtr : public WeakManagedPtr<T> {
   using element_type = typename Base::element_type;
 
  public:
+  // Not copyable.
+  ManagedPtr(const ManagedPtr&) = delete;
+  ManagedPtr& operator=(const ManagedPtr&) = delete;
+
   /// `operator bool` is not provided in order to ensure that there is no
   /// confusion surrounding `if (foo)` vs. `if (*foo)`.
   ///
@@ -133,9 +137,6 @@ class ManagedPtr : public WeakManagedPtr<T> {
 
   /// Constructs a `ManagedPtr` from an already-allocated object and size.
   constexpr explicit ManagedPtr(element_type* ptr) : ptr_(ptr) {}
-
-  constexpr ManagedPtr(const ManagedPtr& other) noexcept = default;
-  constexpr ManagedPtr& operator=(const ManagedPtr& other) noexcept = default;
 
   /// Returns whether this `ManagedPtr` is in an "empty" (`nullptr`) state.
   [[nodiscard]] bool Equals(std::nullptr_t) const { return ptr_ == nullptr; }

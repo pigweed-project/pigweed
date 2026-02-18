@@ -59,6 +59,10 @@ class UniquePtr : public ::pw::allocator::internal::ManagedPtr<T> {
     }
   }
 
+  // Not copyable.
+  UniquePtr(const UniquePtr&) = delete;
+  UniquePtr& operator=(const UniquePtr&) = delete;
+
   /// Creates an empty (`nullptr`) instance.
   ///
   /// NOTE: Instances of this type are most commonly constructed using

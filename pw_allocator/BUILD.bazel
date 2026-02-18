@@ -909,6 +909,7 @@ pw_cc_test(
 pw_cc_test(
     name = "unique_ptr_test",
     srcs = ["unique_ptr_test.cc"],
+    has_nc_test = True,
     deps = [
         ":counter",
         ":pw_allocator",

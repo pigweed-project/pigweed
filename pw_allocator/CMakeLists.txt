@@ -956,6 +956,7 @@ pw_add_test(pw_allocator.unique_ptr_test
     pw_allocator
     pw_allocator.counter
     pw_allocator.testing
+    pw_compilation_testing._pigweed_only_negative_compilation
   GROUPS
     modules
     pw_allocator

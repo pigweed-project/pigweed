@@ -831,6 +831,7 @@ pw_test("unique_ptr_test") {
     ":testing",
   ]
   sources = [ "unique_ptr_test.cc" ]
+  negative_compilation_tests = true
 }
 
 pw_test("weak_ptr_test") {

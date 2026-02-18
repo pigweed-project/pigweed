@@ -19,6 +19,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/internal/counter.h"
 #include "pw_allocator/testing.h"
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -299,5 +300,51 @@ TEST_F(UniquePtrTest, Conversions) {
   EXPECT_EQ(baz->bar(), 2);
   EXPECT_EQ(baz->baz(), 3);
 }
+
+#if PW_NC_TEST(CannotCopyConstruct)
+PW_NC_EXPECT_CLANG("call to deleted constructor");
+PW_NC_EXPECT_GCC("use of deleted function");
+
+TEST_F(UniquePtrTest, CannotCopyConstruct) {
+  auto ptr1 = allocator_.MakeUnique<std::byte[]>(10);
+  ASSERT_NE(ptr1, nullptr);
+  pw::UniquePtr<std::byte[]> ptr2(ptr1);
+  EXPECT_NE(ptr2.get(), nullptr);
+}
+
+#elif PW_NC_TEST(CannotCopyAssign)
+PW_NC_EXPECT_CLANG("call to deleted constructor");
+PW_NC_EXPECT_GCC("use of deleted function");
+
+TEST_F(UniquePtrTest, CannotCopyAssign) {
+  auto ptr1 = allocator_.MakeUnique<std::byte[]>(10);
+  ASSERT_NE(ptr1, nullptr);
+  pw::UniquePtr<std::byte[]> ptr2 = ptr1;
+  EXPECT_NE(ptr2.get(), nullptr);
+}
+
+#elif PW_NC_TEST(CannotPassByValue)
+PW_NC_EXPECT_CLANG("call to deleted constructor");
+PW_NC_EXPECT_GCC("use of deleted function");
+
+std::byte Checksum(pw::UniquePtr<std::byte[]> ptr) {
+  uint8_t cksum = 0;
+  for (size_t i = 0; i < ptr.size(); ++i) {
+    cksum ^= static_cast<uint8_t>(ptr[i]);
+  }
+  return std::byte(cksum);
+}
+
+TEST_F(UniquePtrTest, CannotPassByValue) {
+  auto ptr = allocator_.MakeUnique<std::byte[]>(4);
+  ASSERT_NE(ptr, nullptr);
+  ptr[0] = std::byte(0x88);
+  ptr[1] = std::byte(0x44);
+  ptr[2] = std::byte(0x22);
+  ptr[3] = std::byte(0x11);
+  EXPECT_EQ(Checksum(ptr), std::byte(0xFF));
+}
+
+#endif  // PW_NC_TEST
 
 }  // namespace
