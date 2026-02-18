@@ -19,6 +19,7 @@ from pathlib import Path
 import sys
 from typing import BinaryIO
 import elftools  # type: ignore
+import elftools.common  # type: ignore
 from elftools.elf import elffile, notes, sections  # type: ignore
 
 _LOG = logging.getLogger('build_id_parser')

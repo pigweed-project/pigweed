@@ -28,6 +28,7 @@ from typing import (
 )
 
 import pw_cli
+import pw_cli.log
 from pw_cli.collect_files import (
     add_file_collection_arguments,
     collect_files_in_current_repo,
