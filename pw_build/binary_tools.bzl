@@ -129,7 +129,7 @@ def _pw_elf_to_dump_impl(ctx):
         # to rules cc to make it possible to get this from ctx.attr._objdump.
         action_name = PW_ACTION_NAMES.objdump_disassemble,
         action_args = "{args} {input} > {output}".format(
-            args = "-dx",
+            args = "-Cdx",
             input = ctx.executable.elf_input.path,
             output = ctx.outputs.dump_out.path,
         ),
