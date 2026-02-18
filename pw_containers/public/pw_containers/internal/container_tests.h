@@ -74,6 +74,7 @@
   TEST_F(f, Modify_Erase_MiddleElement) { Modify_Erase_MiddleElement(); }      \
   TEST_F(f, Modify_Erase_OnlyElement) { Modify_Erase_OnlyElement(); }          \
   TEST_F(f, Modify_Erase_AfterPopFront) { Modify_Erase_AfterPopFront(); }      \
+  TEST_F(f, Modify_Erase_MoveOnly) { Modify_Erase_MoveOnly(); }                \
   TEST_F(f, Modify_EraseRange_ZeroElements) {                                  \
     Modify_EraseRange_ZeroElements();                                          \
   }                                                                            \
@@ -868,6 +869,20 @@ class CommonTestFixture : public ::testing::Test {
     EXPECT_EQ(*it, 4);
     EXPECT_TRUE(Equal(container, std::array{2, 4, 5}));
     EXPECT_EQ(Counter::destroyed, 1);
+  }
+
+  void Modify_Erase_MoveOnly() {
+    PW_DECLARE_CONTAINER(container, MoveOnly);
+    container.push_back(1);
+    container.push_back(2);
+    container.push_back(3);
+    container.push_back(4);
+    container.push_back(5);
+
+    auto it = container.erase(container.cbegin() + 1);
+    EXPECT_EQ(it, container.begin() + 1);
+    EXPECT_EQ(it->value, 3);
+    EXPECT_TRUE(Equal(container, std::array{1, 3, 4, 5}));
   }
 
   void Modify_EraseRange_ZeroElements() {

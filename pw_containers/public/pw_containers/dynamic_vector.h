@@ -511,7 +511,10 @@ class DynamicVector {
     auto first_ptr = const_cast<pointer>(&*first);
     if (first != last) {
       std::move(const_cast<pointer>(&*last), data() + size(), first_ptr);
-      deque_.resize(deque_.size() - static_cast<SizeType>(last - first));
+      size_t items_to_pop = static_cast<SizeType>(last - first);
+      for (size_t i = 0; i < items_to_pop; ++i) {
+        deque_.pop_back();
+      }
     }
     return iterator(first_ptr);
   }
