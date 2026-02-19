@@ -243,10 +243,7 @@ impl From<Result<u64>> for SysCallReturnValue {
                 let high = (val >> 32) as u32 as usize;
                 Self { value: [low, high] }
             }
-            Err(error) => Self {
-                #[expect(clippy::cast_sign_loss)]
-                value: [-(error as isize) as usize, 0],
-            },
+            Err(error) => Self::from(-(error as i64)),
         }
     }
 }
