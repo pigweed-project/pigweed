@@ -64,9 +64,6 @@ cc_args(
     actions = [
         "@rules_cc//cc/toolchains/actions:compile_actions",
     ],
-    args = [
-        "-specs=picolibc.specs",
-    ],
 )
 
 cc_feature(
@@ -80,7 +77,6 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
     args = [
         "-Wl,--gc-sections",
-        "-specs=picolibc.specs",
         "-lstdc++",
         "-lc",
         "-lm",
