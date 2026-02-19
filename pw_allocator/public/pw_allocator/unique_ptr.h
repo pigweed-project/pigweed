@@ -256,6 +256,9 @@ template <typename T>
 typename UniquePtr<T>::element_type* UniquePtr<T>::Release() noexcept {
   element_type* value = Base::Release();
   deallocator_ = nullptr;
+  if constexpr (std::is_array_v<T>) {
+    size_ = 0;
+  }
   return value;
 }
 

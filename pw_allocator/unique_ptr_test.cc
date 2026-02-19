@@ -212,21 +212,26 @@ TEST_F(UniquePtrTest, DestructorDestroysAndFreesArray) {
 }
 
 TEST_F(UniquePtrTest, CanRelease) {
-  size_t* raw = nullptr;
+  constexpr static size_t kArraySize = 5;
+
+  Counter* raw = nullptr;
   {
-    auto ptr = allocator_.MakeUnique<size_t>(1u);
+    auto ptr = allocator_.MakeUnique<Counter[]>(kArraySize);
     ASSERT_NE(ptr, nullptr);
     EXPECT_EQ(ptr.deallocator(), &allocator_);
     raw = ptr.Release();
 
     // Allocator pointer parameter is optional. Re-releasing returns null.
     EXPECT_EQ(ptr.Release(), nullptr);
+    EXPECT_EQ(ptr, nullptr);
+    EXPECT_EQ(ptr.get(), nullptr);
+    EXPECT_EQ(ptr.size(), 0u);
   }
 
   // Deallocate should not be called, even though UniquePtr goes out of scope.
   EXPECT_EQ(allocator_.deallocate_size(), 0U);
-  allocator_.Delete(raw);
-  EXPECT_EQ(allocator_.deallocate_size(), sizeof(size_t));
+  allocator_.Delete<Counter[]>(raw, kArraySize);
+  EXPECT_EQ(allocator_.deallocate_size(), sizeof(Counter) * kArraySize);
 }
 
 TEST_F(UniquePtrTest, SizeReturnsCorrectSize) {
