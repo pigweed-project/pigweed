@@ -201,17 +201,17 @@ the ``<mcu>`` placeholder with one of these values:
 * ``rp2040``
 * ``rp2350``
 
-For example, to build upstream Pigweed for a Pico 1 you run:
+For example, to build the ``pw_bluetooth_proxy`` module for a Pico 1 you run:
 
 .. code-block:: console
 
-   $ bazelisk build --config=rp2040 //...
+   $ bazelisk build --config=rp2040 //pw_bluetooth_proxy/...
 
-Whereas to build upstream Pigweed for a Pico 2 you run:
+Whereas to build the same module for a Pico 2 you run:
 
 .. code-block:: console
 
-   $ bazelisk build --config=rp2350 //...
+   $ bazelisk build --config=rp2350 //pw_bluetooth_proxy/...
 
 .. important::
 
@@ -244,11 +244,19 @@ Bazel workflows
 Building
 ========
 
-This builds everything for <mcu>
+This builds a specific module, like ``pw_bluetooth_proxy``, for <mcu>:
 
 .. code-block:: console
 
-   $ bazelisk build --config=<mcu> //...
+   $ bazelisk build --config=<mcu> //pw_bluetooth_proxy/...
+
+.. warning::
+
+   Avoid using the ``//...`` wildcard when cross-compiling for MCU targets
+   with ``--config=<mcu>``. Building the entire tree will attempt to build host
+   tools (like `pylint` or `black`) for the bare-metal environment, which will
+   fail because there are no Python wheels for those targets.
+
 
 Flashing
 ========
@@ -347,11 +355,11 @@ Run on-device tests
             $ bazelisk run //targets/rp2040/py:unit_test_server -- --chip RP2350
 
 
-#. Open another terminal and run the tests:
+#. Open another terminal and run the tests for your module:
 
    .. code-block:: console
 
-      $ bazelisk test --config=<mcu> //...
+      $ bazelisk test --config=<mcu> //pw_bluetooth_proxy/...
 
 .. _target-rp2-upstream-gn:
 
