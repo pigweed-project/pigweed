@@ -232,15 +232,18 @@ impl Arch for crate::Arch {
             // Note: Higher values have lower priority
             let mut scb = p.SCB;
 
-            // Set SVCall (system calls) to the lowest priority.
-            scb.set_priority(scb::SystemHandler::SVCall, 0b1111_1111);
+            // Set PendSV (used by context switching) to the lowest priority.
+            // This is necessary so that context switches do not happen while
+            // anything is executing in handler mode.
+            scb.set_priority(scb::SystemHandler::PendSV, 0b1111_1111);
 
-            // Set PendSV (used by context switching) to just above SVCall so
-            // that system calls can context switch.
-            scb.set_priority(scb::SystemHandler::PendSV, 0b1011_1111);
+            // Set SVCall (system calls) to between PendSV and SysTick to
+            // give interrupts a higher priority than the system call preamble.
+            // Note: the system call iteself does not execute in handler mode
+            // and this priority just affects the trampoline preamble.
+            scb.set_priority(scb::SystemHandler::SVCall, 0b1011_1111);
 
-            // Set IRQs to a priority above SVCall and PendSV so that they
-            // can preempt them.
+            // Set SysTick to a priority above SVCall and PendSV
             scb.set_priority(scb::SystemHandler::SysTick, 0b0111_1111);
 
             // External IRQ priorities are set by the interrupt controller.
