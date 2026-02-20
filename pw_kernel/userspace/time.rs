@@ -25,4 +25,4 @@ impl time::Clock for Clock {
 }
 
 pub type Instant = time::Instant<Clock>;
-pub type Duration = time::Instant<Clock>;
+pub type Duration = time::Duration<Clock>;
