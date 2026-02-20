@@ -28,3 +28,8 @@ sphinx_docs_library(
     prefix = "pw_digital_io_zephyr/",
     target_compatible_with = incompatible_with_mcu(),
 )
+
+exports_files([
+    "digital_io.cc",
+    "public/pw_digital_io_zephyr/digital_io.h",
+])
