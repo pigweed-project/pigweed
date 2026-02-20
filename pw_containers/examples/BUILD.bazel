@@ -32,6 +32,15 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "dynamic_hash_map",
+    srcs = ["dynamic_hash_map.cc"],
+    deps = [
+        "//pw_allocator:testing",
+        "//pw_containers:dynamic_hash_map",
+    ],
+)
+
+pw_cc_test(
     name = "flat_map",
     srcs = ["flat_map.cc"],
     deps = ["//pw_containers:flat_map"],
@@ -115,6 +124,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "bitset.cc",
+        "dynamic_hash_map.cc",
         "flat_map.cc",
         "intrusive_forward_list.cc",
         "intrusive_list.cc",

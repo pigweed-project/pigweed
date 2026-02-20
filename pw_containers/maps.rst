@@ -88,6 +88,37 @@ Example
 If you need to add this item to containers of more than one type, see
 :ref:`module-pw_containers-multiple_containers`.
 
+------------------
+pw::DynamicHashMap
+------------------
+:cc:`pw::DynamicHashMap` is an unordered associative container, similar to
+``std::unordered_map``, but optimized for memory-constrained environments.
+
+Key features of :cc:`pw::DynamicHashMap`:
+
+* **Allocator-driven**: Uses a :cc:`pw::Allocator` for all memory operations.
+* **Hybrid Storage**:
+    * **Nodes**: Stored in a dense ``pw::DynamicPtrVector`` to enable efficient,
+      linear iteration.
+    * **Buckets**: Stored in a ``pw::DynamicDeque`` for ``O(1)`` average lookup.
+* **Fallible API**: Adds ``try_*`` versions of operations (e.g., ``try_insert``,
+  ``try_emplace``, ``try_rehash``) that return ``std::nullopt`` or ``false`` on
+  allocation failure instead of crashing.
+* **Unstable Iteration**: Uses "swap-and-pop" erasure for efficiency.
+  Erasing an element moves the last element of the map into the erased
+  position, changing the iteration order.
+* **Flexible Load Factor**: Supports a load factor up to 500%. While 75% is
+  standard for speed, higher limits allow shrinking the bucket array's
+  footprint when RAM is more scarce than CPU cycles.
+
+Example
+=======
+.. literalinclude:: examples/dynamic_hash_map.cc
+   :language: cpp
+   :linenos:
+   :start-after: [pw_containers-dynamic_hash_map]
+   :end-before: [pw_containers-dynamic_hash_map]
+
 -------------
 API reference
 -------------

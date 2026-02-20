@@ -126,6 +126,19 @@ pw_source_set("dynamic_deque") {
   ]
 }
 
+pw_source_set("dynamic_hash_map") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_containers/dynamic_hash_map.h" ]
+  public_deps = [
+    ":dynamic_deque",
+    ":dynamic_ptr_vector",
+    ":functional",
+    "$dir_pw_allocator:allocator",
+    "$dir_pw_assert:assert",
+    dir_pw_preprocessor,
+  ]
+}
+
 pw_source_set("inline_deque") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
@@ -423,6 +436,7 @@ pw_test_group("tests") {
     ":flat_map_test",
     ":functional_test",
     ":dynamic_deque_test",
+    ":dynamic_hash_map_test",
     ":dynamic_queue_test",
     ":inline_deque_test",
     ":inline_queue_test",
@@ -515,6 +529,15 @@ pw_test("dynamic_deque_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_containers:algorithm",
     dir_pw_polyfill,
+  ]
+}
+
+pw_test("dynamic_hash_map_test") {
+  sources = [ "dynamic_hash_map_test.cc" ]
+  deps = [
+    ":dynamic_hash_map",
+    ":test_helpers",
+    "$dir_pw_allocator:testing",
   ]
 }
 

@@ -116,6 +116,20 @@ pw_add_library(pw_containers.dynamic_deque INTERFACE
     pw_numeric.saturating_arithmetic
 )
 
+pw_add_library(pw_containers.dynamic_hash_map INTERFACE
+  HEADERS
+    public/pw_containers/dynamic_hash_map.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_containers.dynamic_deque
+    pw_containers.dynamic_ptr_vector
+    pw_containers.functional
+    pw_allocator.allocator
+    pw_assert.assert
+    pw_preprocessor
+)
+
 pw_add_library(pw_containers.inline_deque INTERFACE
   HEADERS
     public/pw_containers/inline_deque.h
@@ -523,6 +537,15 @@ pw_add_test(pw_containers.dynamic_deque_test
     pw_containers.dynamic_deque
     pw_containers._test_helpers
     pw_polyfill
+)
+
+pw_add_test(pw_containers.dynamic_hash_map_test
+  SOURCES
+    dynamic_hash_map_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_containers.dynamic_hash_map
+    pw_containers._test_helpers
 )
 
 pw_add_test(pw_containers.inline_deque_test

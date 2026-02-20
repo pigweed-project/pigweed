@@ -230,6 +230,20 @@ cc_library(
 )
 
 cc_library(
+    name = "dynamic_hash_map",
+    hdrs = ["public/pw_containers/dynamic_hash_map.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":dynamic_deque",
+        ":dynamic_ptr_vector",
+        ":functional",
+        "//pw_allocator:allocator",
+        "//pw_assert:assert",
+        "//pw_preprocessor",
+    ],
+)
+
+cc_library(
     name = "inline_deque",
     hdrs = ["public/pw_containers/inline_deque.h"],
     strip_include_prefix = "public",
@@ -606,6 +620,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "dynamic_hash_map_test",
+    srcs = ["dynamic_hash_map_test.cc"],
+    deps = [
+        ":dynamic_hash_map",
+        ":test_helpers",
+        "//pw_allocator:testing",
+    ],
+)
+
+pw_cc_test(
     name = "inline_deque_test",
     srcs = [
         "inline_deque_test.cc",
@@ -837,6 +861,7 @@ filegroup(
         "public/pw_containers/bitset.h",
         "public/pw_containers/deque.h",
         "public/pw_containers/dynamic_deque.h",
+        "public/pw_containers/dynamic_hash_map.h",
         "public/pw_containers/dynamic_ptr_vector.h",
         "public/pw_containers/dynamic_queue.h",
         "public/pw_containers/dynamic_vector.h",
