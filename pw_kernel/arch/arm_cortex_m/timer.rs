@@ -65,8 +65,14 @@ pub fn systick_early_init() {
     info!("Starting monotonic SysTick timer");
 
     let mut csr = Regs::get().systick.csr;
-    // disable counter and interrupts
-    let mut csr_val = csr.read().with_enable(false).with_tickint(false);
+    // Disable counter and interrupts; explicitly use processor clock (always available)
+    // rather than external reference (implementation-defined, may not be connected on
+    // boards like AST1060).
+    let mut csr_val = csr
+        .read()
+        .with_enable(false)
+        .with_tickint(false)
+        .with_clksource(crate::regs::systick::CsrClkSource::PE);
     csr.write(csr_val);
 
     // clear current value
@@ -79,8 +85,10 @@ pub fn systick_early_init() {
     let rvr_val = rvr.read().with_reload(SYSTICK_RELOAD_VALUE - 1);
     rvr.write(rvr_val);
 
-    // enable counter and interrupts
-    csr_val = csr.read().with_enable(true).with_tickint(true);
+    // enable counter only; defer TICKINT until systick_init() after scheduler is ready
+    // to prevent SysTick IRQ from firing before scheduler initialization on ARMv7-M
+    // (ARMv7-M resets PRIMASK to 0, leaving interrupts unmasked at boot)
+    csr_val = csr.read().with_enable(true).with_tickint(false);
     csr.write(csr_val);
 }
 
@@ -94,6 +102,13 @@ pub fn systick_init() {
             KernelConfig::SYS_TICK_HZ as u32
         );
     }
+
+    // Now that the scheduler is ready, enable SysTick interrupts.
+    // This prevents a race on ARMv7-M where SysTick could fire before
+    // the scheduler is initialized (PRIMASK resets to 0 on ARMv7-M).
+    let mut csr = systick_regs.csr;
+    let csr_val = csr.read().with_enable(true).with_tickint(true);
+    csr.write(csr_val);
 }
 
 #[unsafe(no_mangle)]

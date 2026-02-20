@@ -88,7 +88,33 @@ pub trait Arch: 'static + Copy + thread::ThreadArg {
     #[allow(dead_code)]
     fn idle(self) {}
 
+    /// Early architecture initialization, called before the scheduler is bootstrapped.
+    ///
+    /// This is invoked during kernel startup before any threads exist and before
+    /// the scheduler is operational. Architecture code **must not** call
+    /// `scheduler::tick()` or any other scheduler functions during this phase.
+    ///
+    /// Use this for hardware initialization that must happen before the scheduler
+    /// starts, such as setting up the interrupt controller or memory protection.
     fn early_init(self) {}
+
+    /// Architecture initialization, called after the scheduler is bootstrapped.
+    ///
+    /// This is invoked after the scheduler is fully operational and threads can
+    /// be scheduled. It is safe to call `scheduler::tick()` once `init()` is invoked.
+    ///
+    /// Use this for initialization that depends on the scheduler being ready,
+    /// such as starting timer interrupts that will drive `scheduler::tick()`.
+    ///
+    /// # Contract
+    ///
+    /// - `early_init()` is always called before `init()`
+    /// - `scheduler::tick()` **must not** be called by architecture code before
+    ///   `init()` is invoked
+    /// - Once `init()` is invoked, timer interrupts may safely call `scheduler::tick()`.
+    ///   This includes interrupts that fire before `init()` returns. At this point,
+    ///   only the bootstrap thread exists in the system and any context switch
+    ///   requests will early exit, making this safe.
     fn init(self) {}
 
     fn panic() -> ! {
