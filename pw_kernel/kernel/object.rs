@@ -197,7 +197,7 @@ impl<K: Kernel> ObjectBase<K> {
         let mut state = self.state.lock(kernel);
 
         // Skip waiting if signals are already pending.
-        if state.active_signals.contains(signal_mask) {
+        if state.active_signals.intersects(signal_mask) {
             return Ok(WaitReturn {
                 user_data: 0,
                 pending_signals: state.active_signals,
@@ -247,7 +247,7 @@ impl<K: Kernel> ObjectBase<K> {
         state.active_signals = active_signals;
 
         let _ = state.waiters.for_each(|waiter| -> Result<()> {
-            if waiter.signal_mask.contains(active_signals) {
+            if waiter.signal_mask.intersects(active_signals) {
                 // Safety: While a waiter is in an object's `waiters` list, that
                 // object has exclusive access to the waiter.  The below
                 // operation is done with the object's spinlock held.
