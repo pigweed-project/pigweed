@@ -142,13 +142,22 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
 
         self.handler.base.signal(kernel, Signals::READABLE);
 
-        self.object_wait(kernel, Signals::READABLE | Signals::ERROR, deadline)?;
+        // Result processing is deferred until the object is in a coherent state.
+        let wait_result = self.object_wait(kernel, Signals::READABLE | Signals::ERROR, deadline);
 
         // TODO: konkers - Rationalize signal behavior with syscall_defs.rs.
         self.base.state.lock(kernel).active_signals |= Signals::WRITEABLE;
 
         let mut active_transaction = self.handler.active_transaction.lock();
-        let recv_bytes = match &*active_transaction {
+
+        // All success and error paths reset `active_transaction` to `None`.
+        let transaction = active_transaction.take();
+
+        // Process wait_result while active_transaction is locked so that errors
+        // both set the writeable signal as well haveing active_transaction reset.
+        wait_result?;
+
+        let recv_bytes = match transaction {
             // The handler has stored the number of response bytes by updating.
             // the recv_buffer length.
             Some(transaction) => transaction.recv_buffer.size(),
@@ -156,7 +165,6 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
             // Transaction was dropped.
             None => return Err(Error::Unavailable),
         };
-        *active_transaction = None;
 
         Ok(recv_bytes)
     }
