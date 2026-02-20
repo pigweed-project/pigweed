@@ -145,6 +145,7 @@ class ProjectBuilderContext:  # pylint: disable=too-many-instance-attributes,too
 
     def __post_init__(self) -> None:
         self.project_builder: ProjectBuilder | None = None
+        self.dry_run: bool = False
 
         self.progress_bar_formatters = [
             formatters.Text(' '),
@@ -196,6 +197,12 @@ class ProjectBuilderContext:  # pylint: disable=too-many-instance-attributes,too
 
     def interrupted(self) -> bool:
         return self.ctrl_c_pressed or self.restart_flag
+
+    def enable_dry_run(self) -> None:
+        self.dry_run = True
+
+    def disable_dry_run(self) -> None:
+        self.dry_run = False
 
     def set_bottom_toolbar(self, text: AnyFormattedText) -> None:
         self.bottom_toolbar = text

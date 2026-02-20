@@ -217,6 +217,15 @@ class WorkflowBuildPlugin(multitool.MultitoolPlugin):
                 self._print_all_builds()
             return 1
 
+        log_level = logging.DEBUG if args.debug_logging else logging.INFO
+
+        pw_cli.log.install(
+            level=log_level,
+            use_color=args.colors,
+            # Hide the date from the timestamp
+            time_format='%H:%M:%S',
+        )
+
         _PROJECT_BUILDER_LOGGER.propagate = True
 
         recipes = self._load_recipes(selected_workflows)
@@ -230,7 +239,8 @@ class WorkflowBuildPlugin(multitool.MultitoolPlugin):
             colors=args.colors,
             separate_build_file_logging=args.separate_logfiles,
             root_logfile=args.logfile,
-            log_level=logging.DEBUG if args.debug_logging else logging.INFO,
+            log_level=log_level,
+            dry_run=args.dry_run,
         )
 
         if builder.should_use_progress_bars():

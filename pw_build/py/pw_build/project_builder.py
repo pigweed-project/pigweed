@@ -248,12 +248,18 @@ def execute_command_pure(
     env: dict,
     recipe: BuildRecipe,
     working_dir: Path | None = None,
-    # pylint: disable=unused-argument
     logger: logging.Logger = _LOG,
+    # pylint: disable=unused-argument
     line_processed_callback: Callable[[BuildRecipe], None] | None = None,
     # pylint: enable=unused-argument
 ) -> bool:
     """Executes a command without any additional output whatsoever."""
+
+    # Only print the command if dry-run is enabled.
+    if BUILDER_CONTEXT.dry_run:
+        logger.info('%s', shlex.join(command))
+        return True
+
     proc = subprocess.Popen(command, env=env, cwd=working_dir, errors='replace')
     BUILDER_CONTEXT.register_process(recipe, proc)
     returncode = None
@@ -302,6 +308,12 @@ def execute_command_with_logging(
     line_processed_callback: Callable[[BuildRecipe], None] | None = None,
 ) -> bool:
     """Run a command in a subprocess and log all output."""
+
+    # Only log the command if dry-run is enabled.
+    if BUILDER_CONTEXT.dry_run:
+        logger.info('%s', shlex.join(command))
+        return True
+
     current_stdout = ''
     returncode = None
 
@@ -646,6 +658,7 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
             current working directory. If running under bazel this will be set
             to the $BUILD_WORKSPACE_DIRECTORY environment variable. Otherwise
             $PW_PROJECT_ROOT will be used.
+        dry_run: If True only print shell commands instead of executing them.
     """
 
     def __init__(
@@ -666,7 +679,7 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
                 Callable | None,
             ],
             bool,
-        ] = execute_command_no_logging,
+        ] = execute_command_pure,
         charset: ProjectBuilderCharset = ASCII_CHARSET,
         colors: bool = pw_cli.color.is_enabled(),
         separate_build_file_logging: bool = False,
@@ -678,6 +691,7 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
         use_verbatim_error_log_formatting: bool = False,
         log_build_steps: bool = False,
         source_path: Path | None = None,
+        dry_run: bool = False,
     ):
         self.charset: ProjectBuilderCharset = charset
         if not colors:
@@ -800,6 +814,9 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
         # Determine the source root path.
         if not self.source_path:
             self.source_path = pw_cli.env.project_root()
+
+        if dry_run:
+            BUILDER_CONTEXT.enable_dry_run()
 
         # If source_path was set change to that directory before building.
         if self.source_path:
@@ -991,7 +1008,11 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
 
     def flush_log_handlers(self) -> None:
         root_logger = logging.getLogger()
-        handlers = root_logger.handlers + self.error_logger.handlers
+        handlers = (
+            root_logger.handlers
+            + self.error_logger.handlers
+            + self.root_logger.handlers
+        )
         for cfg in self:
             handlers.extend(cfg.log.handlers)
         for handler in handlers:
@@ -1039,9 +1060,7 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
                 additional_bazel_build_args=self.extra_bazel_build_args,
             )
 
-            quoted_command_args = ' '.join(
-                shlex.quote(arg) for arg in command_args
-            )
+            quoted_command_args = shlex.join(command_args)
             build_succeeded = True
             if command_step.should_run():
                 cfg.log.info(
@@ -1370,7 +1389,7 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
             1 for a failed build, 0 for success.
         """
         num_builds = len(self.build_recipes)
-        self.root_logger.info('Starting build with %d directories', num_builds)
+        self.root_logger.info('Starting build with %d recipes', num_builds)
 
         if self.default_logfile:
             self.root_logger.info(
@@ -1476,6 +1495,7 @@ def main() -> int:
         root_logfile=args.logfile,
         root_logger=_LOG,
         log_level=log_level,
+        dry_run=args.dry_run,
     )
 
     if project_builder.should_use_progress_bars():

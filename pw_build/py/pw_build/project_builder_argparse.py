@@ -125,6 +125,11 @@ def add_project_builder_option_arguments(
         ),
     )
     build_options_group.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Print build commands without running them.',
+    )
+    build_options_group.add_argument(
         '--parallel',
         action='store_true',
         help='Run all builds in parallel.',

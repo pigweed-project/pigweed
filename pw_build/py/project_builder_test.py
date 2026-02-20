@@ -447,7 +447,7 @@ class TestProjectBuilder(unittest.TestCase):
             pb.run_builds(workers=1)
         # pylint: disable=line-too-long
         expected_logs = [
-            'Starting build with 2 directories',
+            'Starting build with 2 recipes',
             '[1/2] Starting ==> Recipe: build1',
             '[1/2] Run ==> pwd',
             '[1/2] Run ==> date',
@@ -542,7 +542,7 @@ class TestProjectBuilder(unittest.TestCase):
             pb.run_builds(workers=2)
         # pylint: disable=line-too-long
         expected_logs = [
-            'Starting build with 6 directories',
+            'Starting build with 6 recipes',
             ' ╔════════════════════════════════════',
             ' ║',
             ' ║   #1  ...   build1',
