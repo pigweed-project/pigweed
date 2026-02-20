@@ -42,7 +42,8 @@
         threads: [
           {
             name: "initiator thread",
-            stack_size_bytes: 1024,
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
           },
         ],
       },
@@ -62,7 +63,8 @@
         threads: [
           {
             name: "handler thread",
-            stack_size_bytes: 1024,
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
           },
         ],
       },

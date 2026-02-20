@@ -45,7 +45,8 @@
         threads: [
           {
             name: "uart thread",
-            stack_size_bytes: 1024,
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
           },
         ],
       },
@@ -85,7 +86,8 @@
         threads: [
           {
             name: "uart listener thread",
-            stack_size_bytes: 1024,
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
           },
         ],
       },
