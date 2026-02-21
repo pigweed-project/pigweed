@@ -31,6 +31,7 @@ sphinx_docs_library(
 exports_files([
     "binary_semaphore.cc",
     "interrupt_spin_lock.cc",
+    "timed_mutex.cc",
     "public/pw_sync_zephyr/binary_semaphore_inline.h",
     "public/pw_sync_zephyr/binary_semaphore_native.h",
     "public_overrides/pw_sync_backend/binary_semaphore_inline.h",
@@ -39,4 +40,10 @@ exports_files([
     "public/pw_sync_zephyr/interrupt_spin_lock_native.h",
     "public_overrides/pw_sync_backend/interrupt_spin_lock_inline.h",
     "public_overrides/pw_sync_backend/interrupt_spin_lock_native.h",
+    "public/pw_sync_zephyr/mutex_inline.h",
+    "public/pw_sync_zephyr/mutex_native.h",
+    "public/pw_sync_zephyr/timed_mutex_inline.h",
+    "public_overrides/pw_sync_backend/mutex_inline.h",
+    "public_overrides/pw_sync_backend/mutex_native.h",
+    "public_overrides/pw_sync_backend/timed_mutex_inline.h",
 ])
