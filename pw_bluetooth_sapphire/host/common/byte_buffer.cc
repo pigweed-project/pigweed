@@ -18,7 +18,14 @@
 #include <pw_assert/check.h>
 #include <pw_string/utf_codecs.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <string>
+
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/libc_allocator.h"
+#include "pw_allocator/unique_ptr.h"
 
 namespace bt {
 
@@ -166,25 +173,27 @@ pw::span<std::byte> MutableByteBuffer::mutable_subspan(size_t pos,
 
 DynamicByteBuffer::DynamicByteBuffer() = default;
 
-DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size)
-    : buffer_size_(buffer_size) {
+DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size) {
   if (buffer_size == 0) {
     return;
   }
 
-  // make_unique value-initializes the buffer to 0.
-  buffer_ = std::make_unique<uint8_t[]>(buffer_size);
+  buffer_ =
+      pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(buffer_size);
 
   // TODO(armansito): For now this is dumb but we should properly handle the
   // case when we're out of memory.
-  PW_CHECK(buffer_.get(), "failed to allocate buffer");
+  PW_CHECK(buffer_ != nullptr, "failed to allocate buffer");
+
+  std::memset(buffer_.get(), 0, buffer_size);
 }
 
 DynamicByteBuffer::DynamicByteBuffer(const ByteBuffer& buffer)
-    : buffer_size_(buffer.size()),
-      buffer_(buffer.size() ? std::make_unique<uint8_t[]>(buffer.size())
-                            : nullptr) {
-  PW_CHECK(!buffer_size_ || buffer_.get(),
+    : buffer_(buffer.size()
+                  ? pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
+                        buffer.size())
+                  : nullptr) {
+  PW_CHECK(!buffer.size() || buffer_ != nullptr,
            "|buffer| cannot be nullptr when |buffer_size| is non-zero");
   buffer.Copy(this);
 }
@@ -193,72 +202,80 @@ DynamicByteBuffer::DynamicByteBuffer(const DynamicByteBuffer& buffer)
     : DynamicByteBuffer(static_cast<const ByteBuffer&>(buffer)) {}
 
 DynamicByteBuffer::DynamicByteBuffer(const std::string& buffer) {
-  buffer_size_ = buffer.length();
-  buffer_ = std::make_unique<uint8_t[]>(buffer_size_);
-  memcpy(buffer_.get(), buffer.data(), buffer_size_);
+  buffer_ = pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
+      buffer.length());
+  PW_CHECK(buffer_ != nullptr, "failed to allocate buffer");
+  memcpy(buffer_.get(), buffer.data(), buffer.length());
 }
 
 DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size,
-                                     std::unique_ptr<uint8_t[]> buffer)
-    : buffer_size_(buffer_size), buffer_(std::move(buffer)) {
-  PW_CHECK(!buffer_size_ || buffer_.get(),
+                                     pw::UniquePtr<std::byte[]> buffer)
+    : buffer_(std::move(buffer)) {
+  PW_CHECK(!buffer_size || buffer_ != nullptr,
            "|buffer| cannot be nullptr when |buffer_size| is non-zero");
 }
 
 DynamicByteBuffer::DynamicByteBuffer(DynamicByteBuffer&& other) {
-  buffer_size_ = other.buffer_size_;
-  other.buffer_size_ = 0u;
   buffer_ = std::move(other.buffer_);
 }
 
 DynamicByteBuffer& DynamicByteBuffer::operator=(DynamicByteBuffer&& other) {
-  buffer_size_ = other.buffer_size_;
-  other.buffer_size_ = 0u;
   buffer_ = std::move(other.buffer_);
   return *this;
 }
 
-const uint8_t* DynamicByteBuffer::data() const { return buffer_.get(); }
+const uint8_t* DynamicByteBuffer::data() const {
+  return reinterpret_cast<const uint8_t*>(buffer_.get());
+}
 
-uint8_t* DynamicByteBuffer::mutable_data() { return buffer_.get(); }
+uint8_t* DynamicByteBuffer::mutable_data() {
+  return reinterpret_cast<uint8_t*>(buffer_.get());
+}
 
-size_t DynamicByteBuffer::size() const { return buffer_size_; }
+size_t DynamicByteBuffer::size() const {
+  return buffer_ == nullptr ? 0 : buffer_.size();
+}
 
 void DynamicByteBuffer::Fill(uint8_t value) {
-  std::memset(buffer_.get(), value, buffer_size_);
+  std::memset(buffer_.get(), value, size());
 }
 
 bool DynamicByteBuffer::expand(size_t new_buffer_size) {
   // we only allow growing the buffer, not shrinking it
-  if (new_buffer_size < buffer_size_) {
+  if (new_buffer_size < size()) {
     return false;
   }
 
   // no reason to do extra work
-  if (new_buffer_size == buffer_size_) {
+  if (new_buffer_size == size()) {
     return false;
   }
 
-  std::unique_ptr<uint8_t[]> new_buffer =
-      std::make_unique<uint8_t[]>(new_buffer_size);
+  pw::UniquePtr<std::byte[]> new_buffer =
+      pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
+          new_buffer_size);
+  if (new_buffer == nullptr) {
+    return false;
+  }
+
+  std::memset(new_buffer.get() + size(), 0, new_buffer.size() - size());
 
   // Handle the case where the default constructor was used and no actual buffer
   // data was initialized.
   if (buffer_ != nullptr) {
-    std::memcpy(new_buffer.get(), buffer_.get(), buffer_size_);
+    std::memcpy(new_buffer.get(), buffer_.get(), size());
   }
 
-  buffer_.swap(new_buffer);
-  buffer_size_ = new_buffer_size;
+  buffer_.Swap(new_buffer);
   return true;
 }
 
 ByteBuffer::const_iterator DynamicByteBuffer::cbegin() const {
-  return buffer_.get();
+  return reinterpret_cast<ByteBuffer::const_iterator>(buffer_.get());
 }
 
 ByteBuffer::const_iterator DynamicByteBuffer::cend() const {
-  return buffer_.get() + buffer_size_;
+  return reinterpret_cast<ByteBuffer::const_iterator>(buffer_.get()) + size();
 }
 
 BufferView::BufferView(const ByteBuffer& buffer, size_t size) {

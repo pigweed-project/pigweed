@@ -74,6 +74,7 @@ pw_source_set("common") {
   ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_allocator:libc_allocator",
     "$dir_pw_async:dispatcher",
     "$dir_pw_async:task",
     "$dir_pw_bluetooth:emboss_hci_group",
@@ -82,6 +83,7 @@ pw_source_set("common") {
     "$dir_pw_bluetooth_sapphire/lib/cpp-type",
     "$dir_pw_chrono:system_clock",
     "$pw_external_fuchsia:fit",
+    dir_pw_allocator,
     dir_pw_assert,
     dir_pw_intrusive_ptr,
     dir_pw_log,

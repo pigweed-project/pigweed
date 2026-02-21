@@ -19,6 +19,7 @@
 #include <pw_assert/check.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -29,6 +30,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "pw_allocator/unique_ptr.h"
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
 #include "pw_span/span.h"
 
@@ -486,7 +488,7 @@ class DynamicByteBuffer : public MutableByteBuffer {
   // Takes ownership of |buffer| and avoids allocating a new buffer. Since this
   // constructor performs a simple assignment, the caller must make sure that
   // the buffer pointed to by |buffer| actually contains |buffer_size| bytes.
-  DynamicByteBuffer(size_t buffer_size, std::unique_ptr<uint8_t[]> buffer);
+  DynamicByteBuffer(size_t buffer_size, pw::UniquePtr<std::byte[]> buffer);
 
   // Move constructor and assignment operator
   DynamicByteBuffer(DynamicByteBuffer&& other);
@@ -513,8 +515,7 @@ class DynamicByteBuffer : public MutableByteBuffer {
 
  private:
   // Pointer to the underlying buffer, which is owned and managed by us.
-  size_t buffer_size_ = 0u;
-  std::unique_ptr<uint8_t[]> buffer_;
+  pw::UniquePtr<std::byte[]> buffer_;
 };
 
 // A ByteBuffer that does not own the memory that it points to but rather
