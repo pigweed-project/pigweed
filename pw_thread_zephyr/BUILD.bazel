@@ -41,6 +41,7 @@ exports_files([
     "public/pw_thread_zephyr/thread_inline.h",
     "public/pw_thread_zephyr/thread_native.h",
     "sleep_public_overrides/pw_thread_backend/sleep_inline.h",
+    "sleep.cc",
     "thread_public_overrides/pw_thread_backend/context.h",
     "thread_public_overrides/pw_thread_backend/options.h",
     "thread_public_overrides/pw_thread_backend/priority.h",
