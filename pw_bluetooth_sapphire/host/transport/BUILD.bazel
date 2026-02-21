@@ -64,6 +64,8 @@ cc_library(
         "//pw_bluetooth_sapphire:lease",
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/hci-spec",
+        "//pw_bytes",
+        "//pw_multibuf",
         "//pw_result",
         "//pw_status",
         "//third_party/fuchsia:fit",
@@ -112,9 +114,11 @@ pw_cc_test(
     deps = [
         ":testing",
         ":transport",
+        "//pw_allocator:testing",
         "//pw_bluetooth:emboss_hci_test",
         "//pw_bluetooth_sapphire/host/testing",
         "//pw_bluetooth_sapphire/host/testing:mock_controller",
         "//pw_bluetooth_sapphire/host/testing:test_helpers",
+        "//pw_multibuf",
     ],
 )

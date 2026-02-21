@@ -15,9 +15,12 @@
 #pragma once
 #include <pw_bluetooth/hci_common.emb.h>
 
+#include <utility>
+
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/emboss_packet.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/error.h"
+#include "pw_multibuf/v2/multibuf.h"
 
 namespace bt::hci {
 
@@ -105,6 +108,11 @@ class EventPacket : public DynamicPacket {
     return packet;
   }
 
+  static EventPacket New(pw::multibuf::v2::MultiBuf::Instance&& buf) {
+    EventPacket packet(std::move(buf));
+    return packet;
+  }
+
   // Construct an HCI Event packet from an Emboss view T and initialize its
   // header with the |event_code| and size.
   template <typename T>
@@ -167,6 +175,9 @@ class EventPacket : public DynamicPacket {
 
  protected:
   explicit EventPacket(size_t packet_size);
+
+  explicit EventPacket(pw::multibuf::v2::MultiBuf::Instance&& buf)
+      : DynamicPacket(std::move(buf)) {}
 
  private:
   // From an Emboss view T containing a StatusCode field named "status", returns

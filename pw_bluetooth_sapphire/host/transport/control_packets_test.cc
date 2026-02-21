@@ -14,6 +14,12 @@
 
 #include "pw_bluetooth_sapphire/internal/host/transport/control_packets.h"
 
+#include <array>
+#include <cstddef>
+#include <utility>
+
+#include "pw_allocator/testing.h"
+#include "pw_multibuf/v2/multibuf.h"
 #include "pw_unit_test/framework.h"
 
 namespace bt::hci {
@@ -114,6 +120,96 @@ TEST(EmbossControlPackets, NewWritesOpcodeAndParameterTotalSize) {
   EXPECT_EQ(view.header().opcode().Read(),
             pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC);
   EXPECT_EQ(view.header().parameter_total_size().Read(), 14u);
+}
+
+TEST(EmbossControlPackets, ConstructFromEmptyMultiBuf) {
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  pw::multibuf::v2::MultiBuf::Instance buf(allocator);
+  EventPacket packet = EventPacket::New(std::move(buf));
+  EXPECT_EQ(packet.size(), 0u);
+}
+
+TEST(EmbossControlPackets, ConstructFromSingleReleasableFragmentMultiBuf) {
+  static constexpr std::array<std::byte, 6> data = {
+      std::byte{hci_spec::kCommandCompleteEventCode},
+      std::byte{0x04},  // size
+      std::byte{0x01},  // num hci packets
+      std::byte{0x02},
+      std::byte{0x03},  // command opcode
+      std::byte{0x00}   // status (success)
+  };
+
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  pw::UniquePtr<std::byte[]> bytes =
+      allocator.MakeUnique<std::byte[]>(data.size());
+  std::memcpy(bytes.get(), data.data(), data.size());
+
+  pw::multibuf::v2::MultiBuf::Instance buf(allocator);
+  buf->Insert(buf->end(), std::move(bytes));
+
+  EventPacket packet = EventPacket::New(std::move(buf));
+  EXPECT_EQ(packet.size(), 6u);
+  EXPECT_EQ(packet.event_code(), hci_spec::kCommandCompleteEventCode);
+  ASSERT_TRUE(packet.StatusCode().has_value());
+  EXPECT_EQ(packet.StatusCode().value(),
+            pw::bluetooth::emboss::StatusCode::SUCCESS);
+}
+
+TEST(EmbossControlPackets, ConstructFromSingleNonReleasableFragmentMultiBuf) {
+  static constexpr std::array<std::byte, 6> data = {
+      std::byte{hci_spec::kCommandCompleteEventCode},
+      std::byte{0x04},  // size
+      std::byte{0x01},  // num hci packets
+      std::byte{0x02},
+      std::byte{0x03},  // command opcode
+      std::byte{0x00}   // status (success)
+  };
+
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  pw::multibuf::v2::MultiBuf::Instance buf(allocator);
+  buf->Insert(buf->end(), data);
+
+  EventPacket packet = EventPacket::New(std::move(buf));
+
+  EXPECT_EQ(packet.size(), 6u);
+  EXPECT_EQ(packet.event_code(), hci_spec::kCommandCompleteEventCode);
+  ASSERT_TRUE(packet.StatusCode().has_value());
+  EXPECT_EQ(packet.StatusCode().value(),
+            pw::bluetooth::emboss::StatusCode::SUCCESS);
+}
+
+TEST(EmbossControlPackets, ConstructFromMultipleReleasableFragmentMultiBuf) {
+  static constexpr std::array<std::byte, 3> first_chunk = {
+      std::byte{hci_spec::kCommandCompleteEventCode},
+      std::byte{0x04},  // size
+      std::byte{0x01},  // num hci packets
+  };
+  static constexpr std::array<std::byte, 3> second_chunk = {
+      std::byte{0x02},
+      std::byte{0x03},  // command opcode
+      std::byte{0x00}   // status (success)
+  };
+
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  pw::UniquePtr<std::byte[]> first_chunk_bytes =
+      allocator.MakeUnique<std::byte[]>(first_chunk.size());
+  std::memcpy(first_chunk_bytes.get(), first_chunk.data(), first_chunk.size());
+  pw::UniquePtr<std::byte[]> second_chunk_bytes =
+      allocator.MakeUnique<std::byte[]>(second_chunk.size());
+  std::memcpy(
+      second_chunk_bytes.get(), second_chunk.data(), second_chunk.size());
+
+  pw::multibuf::v2::MultiBuf::Instance buf(allocator);
+  buf->Insert(buf->end(), std::move(first_chunk_bytes));
+  buf->Insert(buf->end(), std::move(second_chunk_bytes));
+
+  EventPacket packet = EventPacket::New(std::move(buf));
+
+  EXPECT_EQ(packet.size(), 6u);
+  EXPECT_EQ(packet.event_code(), hci_spec::kCommandCompleteEventCode);
+  ASSERT_TRUE(packet.StatusCode().has_value());
+  EXPECT_EQ(packet.StatusCode().value(),
+            pw::bluetooth::emboss::StatusCode::SUCCESS);
 }
 
 }  // namespace bt::hci
