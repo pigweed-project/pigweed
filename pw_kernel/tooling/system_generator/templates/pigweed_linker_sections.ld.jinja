@@ -72,4 +72,9 @@ SECTIONS
   {
     KEEP(*(.pw_kernel.annotations.process.*))
   }
+
+  .pw_kernel.annotations.trace_buffer 0x0 (INFO) :
+  {
+    KEEP(*(.pw_kernel.annotations.trace_buffer.*))
+  }
 }

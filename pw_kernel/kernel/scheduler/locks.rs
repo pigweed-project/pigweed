@@ -21,6 +21,7 @@ use time::Instant;
 
 use crate::Kernel;
 use crate::scheduler::algorithm::RescheduleReason;
+use crate::scheduler::thread::State;
 use crate::scheduler::{SchedulerState, WaitQueue, WaitType};
 use crate::sync::spinlock::SpinLockGuard;
 
@@ -61,10 +62,10 @@ impl<'lock, K: Kernel, T> SchedLockGuard<'lock, K, T> {
     }
 
     #[must_use]
-    pub fn block(self, current_thread_id: usize) -> Self {
+    pub fn block(self, current_thread_id: usize, current_thead_state: State) -> Self {
         let inner = self.inner;
         let kernel = self.kernel;
-        let guard = super::block(kernel, self.guard, current_thread_id);
+        let guard = super::block(kernel, self.guard, current_thread_id, current_thead_state);
         Self {
             guard,
             inner,

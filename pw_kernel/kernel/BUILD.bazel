@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -43,6 +44,7 @@ rust_library(
         "sync/mutex.rs",
         "sync/spinlock.rs",
         "target.rs",
+        "trace.rs",
     ] + select({
         "//pw_kernel/userspace:userspace_build_enabled": [
             "object.rs",
@@ -56,6 +58,9 @@ rust_library(
     }),
     crate_features = select({
         "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+        "//conditions:default": [],
+    }) + select({
+        ":tracing_enabled": ["tracing"],
         "//conditions:default": [],
     }) + select({
         "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
@@ -84,6 +89,7 @@ rust_library(
         "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/pw_atomic",
         "//pw_kernel/lib/pw_cast",
+        "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/regs",
         "//pw_kernel/lib/time",
         "//pw_kernel/subsys/console",
@@ -117,4 +123,16 @@ rust_doc(
         ],
     }),
     tags = ["kernel"],
+)
+
+bool_flag(
+    name = "tracing",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "tracing_enabled",
+    flag_values = {
+        ":tracing": "true",
+    },
 )

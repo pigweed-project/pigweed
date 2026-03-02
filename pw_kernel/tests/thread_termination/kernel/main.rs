@@ -137,7 +137,7 @@ fn terminate_sleep_test<K: Kernel>(
     let mut thread_ref = kernel::start_thread(kernel, thread);
 
     // Spin until the termination thread is in the sleep's wait queue.
-    wait_for_thread_state(kernel, &thread_ref, thread::State::Waiting)?;
+    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingInterruptible)?;
     info!("🔄 ├─ Termination thread observed in waiting state, terminating");
 
     thread_ref.terminate(kernel)?;
@@ -176,7 +176,7 @@ fn signaled_termination_test<K: Kernel>(
     thread.re_initialize_kernel_thread(kernel, signaled_sleep_entry, event);
     let thread_ref = kernel::start_thread(kernel, thread);
 
-    wait_for_thread_state(kernel, &thread_ref, thread::State::Waiting)?;
+    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingInterruptible)?;
 
     info!("🔄 ├─ Signaling signaled thread");
     event.get_signaler().signal();
@@ -208,14 +208,14 @@ fn mutex_test<K: Kernel>(
     thread.re_initialize_kernel_thread(kernel, mutex_entry, mutex);
     let mut thread_ref = kernel::start_thread(kernel, thread);
 
-    wait_for_thread_state(kernel, &thread_ref, thread::State::Waiting)?;
+    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingNonInterruptible)?;
     info!("🔄 ├─  Observed in waiting state, terminating");
 
     thread_ref.terminate(kernel)?;
 
     // Mutexes are non-interruptible so the thread should still be in the waiting
     // state after the termination request.
-    pw_assert::assert!(thread_ref.get_state(kernel) == thread::State::Waiting);
+    pw_assert::assert!(thread_ref.get_state(kernel) == thread::State::WaitingNonInterruptible);
 
     info!("🔄 ├─ Releasing mutex");
     drop(guard);

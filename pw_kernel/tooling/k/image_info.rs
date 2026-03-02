@@ -35,10 +35,17 @@ pub struct ProcessInfo {
     pub id: u64,
 }
 
+pub struct TraceBufferInfo {
+    pub name: String,
+    pub addr: u64,
+    pub size: u64,
+}
+
 pub struct ImageInfo {
     pub stacks: Vec<StackInfo>,
     pub threads: Vec<ThreadInfo>,
     pub processes: Vec<ProcessInfo>,
+    pub trace_buffers: Vec<TraceBufferInfo>,
     pub endian: object::Endianness,
 }
 
@@ -51,12 +58,14 @@ impl ImageInfo {
         let stacks = Self::extract_stacks(&obj_file)?;
         let threads = Self::extract_threads(&obj_file)?;
         let processes = Self::extract_processes(&obj_file)?;
+        let trace_buffers = Self::extract_trace_buffers(&obj_file)?;
 
         Ok(ImageInfo {
             stacks,
             threads,
             endian,
             processes,
+            trace_buffers,
         })
     }
 
@@ -102,6 +111,23 @@ impl ImageInfo {
                 id: fields[2],
             })
         })
+    }
+
+    fn extract_trace_buffers(obj_file: &File<'_>) -> Result<Vec<TraceBufferInfo>> {
+        Self::extract_entries(
+            obj_file,
+            ".pw_kernel.annotations.trace_buffer",
+            4,
+            |fields| {
+                let name = Self::read_string(obj_file, fields[0], fields[1])
+                    .context("Failed to read trace buffer name")?;
+                Ok(TraceBufferInfo {
+                    name,
+                    addr: fields[2],
+                    size: fields[3],
+                })
+            },
+        )
     }
 
     fn extract_entries<T, F>(

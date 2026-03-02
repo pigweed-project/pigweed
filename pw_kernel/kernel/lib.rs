@@ -27,6 +27,7 @@ pub mod sync;
 #[cfg(feature = "user_space")]
 pub mod syscall;
 mod target;
+mod trace;
 
 use interrupt_controller::InterruptController;
 use kernel_config::{KernelConfig, KernelConfigInterface};
@@ -157,6 +158,10 @@ pub struct KernelState<K: Kernel> {
     arch_state: ArchState<K>,
     scheduler: SpinLock<K, SchedulerState<K>>,
     timer_queue: SpinLock<K, TimerQueue<K>>,
+
+    // TODO: https://pwbug.dev/479857256 - Add configurable trace buffer size.
+    #[cfg(feature = "tracing")]
+    pub trace_buffer: pw_kernel_tracing::Buffer<K::AtomicUsize, 2048>,
 }
 
 impl<K: Kernel> KernelState<K> {
@@ -166,8 +171,43 @@ impl<K: Kernel> KernelState<K> {
             arch_state,
             scheduler: SpinLock::new(SchedulerState::new()),
             timer_queue: SpinLock::new(TimerQueue::new()),
+            #[cfg(feature = "tracing")]
+            trace_buffer: pw_kernel_tracing::Buffer::new(),
         }
     }
+}
+
+#[cfg(not(feature = "tracing"))]
+#[macro_export]
+macro_rules! annotate_kernel_trace_buffer {
+    ($trace_buffer:expr) => {{}};
+}
+
+#[cfg(feature = "tracing")]
+#[macro_export]
+macro_rules! annotate_kernel_trace_buffer {
+    ($trace_buffer:expr) => {{
+        #[repr(C, packed(1))]
+        struct TraceBufferAnnotation {
+            name: &'static str,
+            addr: *const (),
+            size: usize,
+        }
+        unsafe impl Sync for TraceBufferAnnotation {};
+
+        #[unsafe(link_section = ".pw_kernel.annotations.trace_buffer")]
+        #[used]
+        static _TRACE_BUFFER_ANNOTATION: TraceBufferAnnotation = TraceBufferAnnotation {
+            name: "kernel",
+            addr: unsafe { $trace_buffer.buffer() },
+            size: $trace_buffer.buffer_len(),
+        };
+    }};
+}
+
+#[macro_export]
+macro_rules! annotate_kernel_state {
+    ($state:expr) => {{ $crate::annotate_kernel_trace_buffer!($state.trace_buffer) }};
 }
 
 /// Initializes an [`InitKernelState`] in static storage.

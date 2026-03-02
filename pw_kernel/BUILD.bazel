@@ -98,6 +98,7 @@ pw_rust_docs(
         "//pw_kernel/lib/circular_buffer",
         "//pw_kernel/lib/log_if",
         "//pw_kernel/lib/pw_cast",
+        "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/regs",
         "//pw_kernel/lib/time",
         "//pw_kernel/lib/unittest",

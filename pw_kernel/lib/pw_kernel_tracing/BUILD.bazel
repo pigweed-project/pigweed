@@ -1,0 +1,60 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library")
+load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "pw_kernel_tracing",
+    srcs = [
+        "buffer.rs",
+        "lib.rs",
+        "record.rs",
+    ],
+    crate_features = select({
+        "@pigweed//pw_build/constraints/rust:std": [
+            "std",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//pw_kernel/lib/pw_atomic:riscv32_without_atomics": [],
+        "//conditions:default": ["builtin_atomics"],
+    }),
+    edition = "2024",
+    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
+    tags = ["kernel"],
+    deps = [
+               "//pw_kernel/lib/pw_atomic",
+               "//pw_kernel/lib/time",
+           ] + select({
+               "@pigweed//pw_build/constraints/rust:std": [
+                   "@rust_crates//:byteorder",
+               ],
+               "//conditions:default": [],
+           }) +
+           KERNEL_TEST_DEPS,
+)
+
+rust_doc_test(
+    name = "pw_kernel_tracing_doc_test",
+    crate = ":pw_kernel_tracing",
+    tags = [
+        "kernel",
+        "kernel_doc_test",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)

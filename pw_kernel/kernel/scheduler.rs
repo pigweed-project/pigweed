@@ -18,7 +18,8 @@
 //! different in its contract:
 //! - `block()` is used when a thread is taken out of the scheduler algorithm
 //!   and is managed by another source such as a wait queue. These threads
-//!   should be in the [`State::Waiting`] state.
+//!   should be in the [`State::WaitingInterruptible`] or
+//!   [`State::WaitingNonInterruptible`] state.
 //! - `try_reschedule()` is used when there is a change to the scheduling state
 //!   (such as waking a thread). Depending on the local thread's
 //!   [`PreemptDisableGuard`] state and the scheduler state, this may trigger an
@@ -49,6 +50,7 @@ use crate::object::NullObjectTable;
 use crate::scheduler::timer::Timer;
 use crate::sync::event::EventSignaler;
 use crate::sync::spinlock::SpinLockGuard;
+use crate::trace::trace_context_switch;
 use crate::{Arch, Kernel};
 
 mod algorithm;
@@ -117,8 +119,8 @@ pub fn start_thread<K: Kernel>(kernel: K, mut thread: ForeignBox<Thread<K>>) -> 
         .algorithm
         .schedule_thread(thread, RescheduleReason::Started);
 
-    // Now that we've added the new thread, trigger a context switch.
-    let (_sched_state, _switched) = context_switch(kernel, sched_state, id);
+    // Now that we've added the new thread, trigger a reschedule event.
+    let (_sched_state, _switched) = context_switch(kernel, sched_state, id, State::Ready);
 
     thread_ref
 }
@@ -126,7 +128,7 @@ pub fn start_thread<K: Kernel>(kernel: K, mut thread: ForeignBox<Thread<K>>) -> 
 pub fn initialize<K: Kernel>(kernel: K) {
     let mut sched_state = kernel.get_scheduler().lock(kernel);
 
-    // The kernel process needs be to initialized before any kernel threads so
+    // The kernel process needs to be initialized before any kernel threads so
     // that they can properly be parented underneath it.
     unsafe {
         let kernel_process = sched_state.kernel_process.get();
@@ -158,7 +160,12 @@ pub fn bootstrap_scheduler<K: Kernel>(
 
     drop(preempt_guard);
 
-    let _ = block(kernel, sched_state, Thread::<K>::null_id());
+    let _ = block(
+        kernel,
+        sched_state,
+        Thread::<K>::null_id(),
+        State::Terminated,
+    );
     pw_assert::panic!("Bootstrap scheduler returned unexpectedly");
 }
 
@@ -254,12 +261,12 @@ impl<K: Kernel> SchedulerState<K> {
         self.current_arch_thread_state
     }
 
-    fn reschedule_current_thread(&mut self, reason: RescheduleReason) -> usize {
+    fn reschedule_current_thread(&mut self, reason: RescheduleReason) -> (usize, State) {
         let mut current_thread = self.take_current_thread();
         let current_thread_id = current_thread.id();
         current_thread.state = State::Ready;
         self.algorithm.schedule_thread(current_thread, reason);
-        current_thread_id
+        (current_thread_id, State::Ready)
     }
 
     fn set_current_thread(&mut self, thread: ForeignBox<Thread<K>>) {
@@ -352,8 +359,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             .load(Ordering::SeqCst)
             == 1
         {
-            let current_thread_id = self.reschedule_current_thread(reason);
-            let (guard, _switched) = context_switch(kernel, self, current_thread_id);
+            let (current_thread_id, current_thread_state) = self.reschedule_current_thread(reason);
+            let (guard, _switched) =
+                context_switch(kernel, self, current_thread_id, current_thread_state);
             guard
         } else {
             kernel
@@ -615,7 +623,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
 
         self.termination_queue.push_back(current_thread);
 
-        let _ = context_switch(kernel, self, current_thread_id);
+        let _ = context_switch(kernel, self, current_thread_id, State::Terminated);
+
+        pw_assert::panic!("thread_exit returned unexpectedly");
     }
 
     fn thread_is_terminating(&self, thread: &ThreadRef<K>) -> bool {
@@ -629,8 +639,10 @@ fn block<K: Kernel>(
     kernel: K,
     sched_state: SpinLockGuard<K, SchedulerState<K>>,
     current_thread_id: usize,
+    current_thread_state: State,
 ) -> SpinLockGuard<K, SchedulerState<K>> {
-    let (sched_state, switched) = context_switch(kernel, sched_state, current_thread_id);
+    let (sched_state, switched) =
+        context_switch(kernel, sched_state, current_thread_id, current_thread_state);
     pw_assert::assert!(switched, "Blocking requires a context switch");
     sched_state
 }
@@ -640,6 +652,7 @@ fn context_switch<K: Kernel>(
     kernel: K,
     mut sched_state: SpinLockGuard<K, SchedulerState<K>>,
     current_thread_id: usize,
+    current_thread_state: State,
 ) -> (SpinLockGuard<K, SchedulerState<K>>, bool) {
     // Caller to reschedule is responsible for removing current thread and
     // put it in the correct run/wait queue.
@@ -675,6 +688,13 @@ fn context_switch<K: Kernel>(
         sched_state.current_thread = Some(new_thread);
         return (sched_state, false);
     }
+
+    trace_context_switch(
+        kernel,
+        current_thread_id,
+        new_thread.id(),
+        current_thread_state,
+    );
 
     let old_thread_state = sched_state.current_arch_thread_state;
     let new_thread_state = new_thread.arch_thread_state.get();
@@ -807,9 +827,25 @@ impl<K: Kernel> WaitQueue<K> {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u8)]
 pub enum WaitType {
-    Interruptible,
-    NonInterruptible,
+    // These variant values must mirror the values in thread `State` so conversions
+    // from WaitType to State can be optimized out.
+    Interruptible = 6,
+    NonInterruptible = 7,
+}
+
+const _: () = assert!(WaitType::Interruptible as u8 == State::WaitingInterruptible as u8);
+const _: () = assert!(WaitType::NonInterruptible as u8 == State::WaitingNonInterruptible as u8);
+
+impl From<WaitType> for State {
+    fn from(value: WaitType) -> Self {
+        // Note: Since the values align (see above) this is optimized out.
+        match value {
+            WaitType::Interruptible => State::WaitingInterruptible,
+            WaitType::NonInterruptible => State::WaitingNonInterruptible,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -826,7 +862,8 @@ impl<K: Kernel> SchedLockGuard<'_, K, WaitQueue<K>> {
     ) -> Self {
         let current_thread_id = thread.id();
         let current_thread_name = thread.name;
-        thread.state = State::Waiting;
+        let new_state = wait_type.into();
+        thread.state = new_state;
         thread.owner = ThreadOwner::WaitQueue {
             queue: NonNull::from_ref(&self),
             wait_type,
@@ -837,14 +874,14 @@ impl<K: Kernel> SchedLockGuard<'_, K, WaitQueue<K>> {
             current_thread_name as &str,
             current_thread_id as usize
         );
-        self.block(current_thread_id)
+        self.block(current_thread_id, new_state)
     }
 
     // Safety:
     // Caller guarantees that thread is non-null, valid, and process_timeout
     // has exclusive access to `waiting_thread`.
     unsafe fn process_timeout(&mut self, waiting_thread: *mut Thread<K>) -> Option<Error> {
-        if unsafe { (*waiting_thread).state } != State::Waiting {
+        if !(unsafe { (*waiting_thread).state }.is_waiting()) {
             // Thread has already been woken.
             return None;
         }

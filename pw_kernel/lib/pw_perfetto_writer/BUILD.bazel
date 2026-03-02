@@ -1,4 +1,4 @@
-# Copyright 2025 The Pigweed Authors
+# Copyright 2026 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -13,31 +13,36 @@
 # the License.
 
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
-rust_binary(
-    name = "k",
-    srcs = [
-        "image_info.rs",
-        "main.rs",
-        "stacks.rs",
-        "trace.rs",
-    ],
+rust_library(
+    name = "pw_perfetto_writer",
+    srcs = ["lib.rs"],
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
-        "//pw_kernel/lib/magic_values",
-        "//pw_kernel/lib/pw_gdb_protocol",
-        "//pw_kernel/lib/pw_kernel_tracing",
-        "//pw_kernel/lib/pw_perfetto_writer",
-        "@rust_crates//:anyhow",
-        "@rust_crates//:byteorder",
-        "@rust_crates//:clap",
-        "@rust_crates//:object",
-        "@rust_crates//:tokio",
-        "@rust_crates//:tokio-util",
+        "//third_party/perfetto:trace_rust_pb2",
+        "@rust_crates//:prost",
     ],
+)
+
+rust_test(
+    name = "pw_perfetto_writer_test",
+    crate = ":pw_perfetto_writer",
+    tags = [
+        "kernel",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+rust_doc_test(
+    name = "pw_perfetto_writer_doc_test",
+    crate = ":pw_perfetto_writer",
+    tags = [
+        "kernel",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
 )

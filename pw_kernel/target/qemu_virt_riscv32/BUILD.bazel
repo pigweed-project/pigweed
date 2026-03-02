@@ -34,6 +34,7 @@ platform(
     flags = flags_from_dict(
         KERNEL_DEVICE_COMMON_FLAGS | {
             "//pw_kernel/config:kernel_config": ":config",
+            "//pw_kernel/kernel:tracing": "true",
             "//pw_kernel/subsys/console:console_backend": "//pw_kernel/subsys/console:console_backend_semihosting",
         },
     ),

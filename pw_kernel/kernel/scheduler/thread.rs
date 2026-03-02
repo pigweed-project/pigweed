@@ -142,7 +142,7 @@ impl Stack {
 
     /// Initialize the stack for thread execution.
     ///
-    /// Intitializes the stack to a know pattern to avoid leaking data between
+    /// Initializes the stack to a known pattern to avoid leaking data between
     /// thread invocations as well as to provide a signature for calculating
     /// high water stack usage.
     pub fn initialize(&self) {
@@ -167,29 +167,43 @@ impl Stack {
 /// Runtime state of a Thread.
 // TODO: want to name this ThreadState, but collides with ArchThreadstate
 #[derive(Copy, Clone, PartialEq)]
+#[repr(u8)]
 pub enum State {
     /// Thread has been created but not initialized.
-    New,
+    New = 0,
 
     /// Thread has been initialized and added to its parent process but has not
     /// been added to the scheduler.
-    Initial,
+    Initial = 1,
 
     /// Thread is ready to run and owned by the scheduling algorithm.
-    Ready,
+    Ready = 2,
 
     /// Thread is currently running on a CPU core.
-    Running,
+    Running = 3,
 
     /// Thread has been successfully terminated and is waiting to be joined.
-    Terminated,
+    Terminated = 4,
 
     /// Thread has been joined, removed from its parent process, and no longer
     /// participates in the system scheduler.
-    Joined,
+    Joined = 5,
 
-    /// Thread is waiting in a [`WaitQueue`].
-    Waiting,
+    /// Thread is interruptibly waiting in a [`WaitQueue`].
+    WaitingInterruptible = 6,
+
+    /// Thread is non-interruptibly waiting in a [`WaitQueue`].
+    WaitingNonInterruptible = 7,
+}
+
+impl State {
+    #[must_use]
+    pub fn is_waiting(&self) -> bool {
+        matches!(
+            self,
+            Self::WaitingInterruptible | Self::WaitingNonInterruptible
+        )
+    }
 }
 
 // TODO: use From or Into trait (unclear how to do it with 'static str)
@@ -201,7 +215,8 @@ pub(super) fn to_string(s: State) -> &'static str {
         State::Running => "Running",
         State::Terminated => "Terminated",
         State::Joined => "Joined",
-        State::Waiting => "Waiting",
+        State::WaitingInterruptible => "WaitingInterruptible",
+        State::WaitingNonInterruptible => "WaitingNonInterruptible",
     }
 }
 
@@ -386,7 +401,7 @@ pub struct ThreadRef<K: Kernel> {
 impl<K: Kernel> ThreadRef<K> {
     /// Join the referenced thread.
     ///
-    /// Waits until the all other references to the tread is dropped and the
+    /// Waits until the all other references to the thread are dropped and the
     /// thread terminates.  Returns a `ForeignBox<Thread<K>>` which can be used
     /// to restart the thread.
     pub fn join(self, kernel: K) -> Result<ForeignBox<Thread<K>>> {
@@ -398,7 +413,7 @@ impl<K: Kernel> ThreadRef<K> {
 
     /// Join the referenced thread with a deadline
     ///
-    /// Waits until the all other references to the tread is dropped and the
+    /// Waits until the all other references to the thread are dropped and the
     /// thread terminates.
     ///
     /// Returns:
@@ -662,7 +677,7 @@ impl<K: Kernel> Thread<K> {
         unsafe { &*self.process }
     }
 
-    /// Return a reference counted `TreadRef` for this thread.
+    /// Return a reference counted `ThreadRef` for this thread.
     pub(super) fn get_ref(&self, kernel: K) -> ThreadRef<K> {
         self.ref_count.fetch_add(1, Ordering::Acquire);
         ThreadRef {
