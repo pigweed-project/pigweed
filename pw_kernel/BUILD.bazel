@@ -53,7 +53,7 @@ config_setting(
 alias(
     name = "log_backend_basic",
     actual = select({
-        "//pw_kernel/userspace:userspace_build_enabled": "//pw_kernel/userspace/log_backend:basic",
+        "//pw_kernel/userspace:is_app_build_enabled": "//pw_kernel/userspace/log_backend:basic",
         "//conditions:default": "//pw_kernel/subsys/console:pw_log_backend_basic",
     }),
 )
@@ -61,7 +61,7 @@ alias(
 alias(
     name = "log_backend_tokenized",
     actual = select({
-        "//pw_kernel/userspace:userspace_build_enabled": "//pw_kernel/userspace/log_backend:tokenized",
+        "//pw_kernel/userspace:is_app_build_enabled": "//pw_kernel/userspace/log_backend:tokenized",
         "//conditions:default": "//pw_kernel/subsys/console:pw_log_backend_tokenized",
     }),
 )

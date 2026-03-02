@@ -24,6 +24,7 @@ mod nvic;
 mod protection;
 mod regs;
 mod spinlock;
+#[cfg(feature = "user_space")]
 mod syscall;
 mod threads;
 mod timer;

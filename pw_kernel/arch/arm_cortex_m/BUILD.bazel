@@ -32,11 +32,16 @@ rust_library(
         "regs/scb.rs",
         "regs/systick.rs",
         "spinlock.rs",
-        "syscall.rs",
         "threads.rs",
         "timer.rs",
-    ],
-    crate_features = ["user_space"],
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["syscall.rs"],
+        "//conditions:default": [],
+    }),
+    crate_features = select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     proc_macro_deps = [
         "//pw_kernel/macros:arm_cortex_m_macro",
@@ -59,7 +64,6 @@ rust_library(
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/regs",
         "//pw_kernel/lib/time",
-        "//pw_kernel/syscall:syscall_defs",
         "//pw_status/rust:pw_status",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:cortex-m",
@@ -72,8 +76,10 @@ rust_doc(
     crate = ":arch_arm_cortex_m",
     rustdoc_flags = [
         "--document-private-items",
-        "--cfg=feature=\"user_space\"",
         "--cfg=feature=\"arch_arm_cortex_m\"",
-    ],
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["--cfg=feature=\"user_space\""],
+        "//conditions:default": [],
+    }),
     tags = ["kernel"],
 )

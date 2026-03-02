@@ -23,6 +23,7 @@ def _target_transition_impl(_, attr):
     flags = {
         "//command_line_option:platforms": str(attr.platform),
         str(Label("//pw_kernel/target:system_config_file")): str(attr.system_config),
+        str(Label("//pw_kernel/userspace:userspace_build")): attr.user_space,
     }
 
     return flags
@@ -33,6 +34,7 @@ _target_transition = transition(
     outputs = [
         "//command_line_option:platforms",
         str(Label("//pw_kernel/target:system_config_file")),
+        str(Label("//pw_kernel/userspace:userspace_build")),
     ],
 )
 
@@ -41,6 +43,7 @@ def _app_target_transition_impl(_, attr):
         "//command_line_option:platforms": str(attr.platform),
         str(Label("//pw_kernel/target:system_config_file")): str(attr.system_config),
         str(Label("//pw_kernel/userspace:userspace_build")): True,
+        str(Label("//pw_kernel/userspace:is_app_build")): True,
     }
 
     return flags
@@ -52,6 +55,7 @@ _app_target_transition = transition(
         "//command_line_option:platforms",
         str(Label("//pw_kernel/target:system_config_file")),
         str(Label("//pw_kernel/userspace:userspace_build")),
+        str(Label("//pw_kernel/userspace:is_app_build")),
     ],
 )
 
@@ -127,6 +131,10 @@ system_image = rule(
         "system_config": attr.label(
             doc = "Optional System config file which defines the system.",
             allow_single_file = True,
+        ),
+        "user_space": attr.bool(
+            doc = "Whether to include user space support in the kernel.",
+            default = True,
         ),
         "_system_assembler": attr.label(
             executable = True,

@@ -19,10 +19,13 @@ use foreign_box::ForeignRc;
 #[allow(unused_imports)]
 use kernel::interrupt_controller::{StaticContext, InterruptController, InterruptTableEntry};
 #[allow(unused_imports)]
+{% if userspace %}
 use kernel::object::InterruptObject;
+{% endif %}
 #[allow(unused_imports)]
 use syscall_defs::Signals;
 
+{% if userspace %}
 {% for app in apps %}
     {%- for object in app.process.objects %}
         {%- if object.type == "interrupt" %}
@@ -41,6 +44,7 @@ extern "C" fn {{handler_name}}() {
         {%- endif -%}
     {%- endfor -%}
 {%- endfor %}
+{% endif %}
 
 {%- for irq in kernel.interrupt_table.table %}
 unsafe extern "C" { fn interrupt_handler_{{irq}}(); }

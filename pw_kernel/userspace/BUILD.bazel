@@ -27,6 +27,22 @@ config_setting(
     flag_values = {":userspace_build": "True"},
 )
 
+# When building a system with userspace enabled, both the kernel and the
+# applications have the `userspace_build` flag set to true.  However, the
+# logging backend needs to be different for the kernel and application builds.
+#
+# This flag distinguishes the application build from the kernel build to allow
+# selecting the correct logging backend.
+bool_flag(
+    name = "is_app_build",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "is_app_build_enabled",
+    flag_values = {":is_app_build": "True"},
+)
+
 rust_library(
     name = "userspace",
     srcs = [
@@ -44,6 +60,10 @@ rust_library(
         ":userspace_macro",
     ],
     tags = ["kernel"],
+    target_compatible_with = select({
+        ":userspace_build_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//pw_kernel/config:kernel_config",
         "//pw_kernel/lib/pw_cast",

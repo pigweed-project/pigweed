@@ -30,11 +30,6 @@ rust_library(
     srcs = [
         "interrupt_controller.rs",
         "lib.rs",
-        "object.rs",
-        "object/buffer.rs",
-        "object/channel.rs",
-        "object/interrupt.rs",
-        "object/wait_group.rs",
         "panic.rs",
         "scheduler.rs",
         "scheduler/algorithm.rs",
@@ -47,10 +42,22 @@ rust_library(
         "sync/event.rs",
         "sync/mutex.rs",
         "sync/spinlock.rs",
-        "syscall.rs",
         "target.rs",
-    ],
-    crate_features = ["user_space"] + select({
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": [
+            "object.rs",
+            "object/buffer.rs",
+            "object/channel.rs",
+            "object/interrupt.rs",
+            "object/wait_group.rs",
+            "syscall.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    crate_features = select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+        "//conditions:default": [],
+    }) + select({
         "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
         "//conditions:default": [
@@ -96,8 +103,10 @@ rust_doc(
     crate = ":kernel",
     rustdoc_flags = [
         "--document-private-items",
-        "--cfg=feature=\"user_space\"",
     ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["--cfg=feature=\"user_space\""],
+        "//conditions:default": [],
+    }) + select({
         # Arch feature selection will be removed when arch support moves out of
         # the kernel crate.
         "@platforms//cpu:armv8-m": ["--cfg=feature=\"arch_arm_cortex_m\""],

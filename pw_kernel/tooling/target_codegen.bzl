@@ -29,6 +29,8 @@ def _target_codegen_impl(ctx):
         ctx.file.system_config.path,
         "--output",
         output.path,
+        "--userspace",
+        str(ctx.attr.user_space).lower(),
         "render-target-template",
     ]
 
@@ -56,6 +58,10 @@ _target_codegen_rule = rule(
         ),
         "templates": attr.string_keyed_label_dict(
             allow_files = True,
+        ),
+        "user_space": attr.bool(
+            doc = "Whether to include user space support in the kernel.",
+            default = True,
         ),
     },
     doc = "Codegen system sources from system config",
@@ -91,11 +97,22 @@ def target_codegen(
 
     codegen_target_name = name + "_codegen"
 
+    # The codegen target should only ever be built as a dependency
+    # and never as part of a wildcard build, as it won't have the full
+    # set of required configuration flags.
+    tags = kwargs.get("tags", default = [])
+    tags.append("manual")
+    kwargs["tags"] = tags
+
     _target_codegen_rule(
         name = codegen_target_name,
         system_config = system_config,
         system_generator = system_generator,
         templates = templates,
+        user_space = select({
+            "@pigweed//pw_kernel/userspace:userspace_build_enabled": True,
+            "//conditions:default": False,
+        }),
         **kwargs
     )
 
@@ -103,6 +120,10 @@ def target_codegen(
         name = name,
         srcs = [":" + codegen_target_name],
         edition = "2024",
+        crate_features = select({
+            "@pigweed//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+            "//conditions:default": [],
+        }) + kwargs.pop("crate_features", []),
         deps = deps + [arch] + [
             "@pigweed//pw_kernel/kernel",
             "@pigweed//pw_kernel/lib/foreign_box",

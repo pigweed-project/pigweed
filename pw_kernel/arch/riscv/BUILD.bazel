@@ -60,8 +60,16 @@ rust_library(
         "timer/clint.rs",
         "timer/mtime.rs",
         "veer_pic.rs",
-    ],
-    crate_features = ["user_space"] + select({
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": [
+            "syscall.rs",
+        ],
+        "//conditions:default": [],
+    }),
+    crate_features = select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+        "//conditions:default": [],
+    }) + select({
         "timer_clint": ["timer_clint"],
         "timer_mtime": ["timer_mtime"],
     }) + select({
@@ -112,9 +120,11 @@ rust_doc(
     crate = ":arch_riscv",
     rustdoc_flags = [
         "--document-private-items",
-        "--cfg=feature=\"user_space\"",
         "--cfg=feature=\"arch_riscv\"",
     ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["--cfg=feature=\"user_space\""],
+        "//conditions:default": [],
+    }) + select({
         "//pw_build/constraints/riscv/extensions:A.not": ["--cfg=feature=\"disable_interrupts_atomic\""],
         "//conditions:default": [],
     }),

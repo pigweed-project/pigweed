@@ -44,6 +44,7 @@ use pw_log::info;
 use pw_status::{Error, Result};
 use time::Instant;
 
+#[cfg(feature = "user_space")]
 use crate::object::NullObjectTable;
 use crate::scheduler::timer::Timer;
 use crate::sync::event::EventSignaler;
@@ -217,6 +218,7 @@ impl<K: Kernel> SchedulerState<K> {
     #[allow(dead_code)]
     #[allow(clippy::new_without_default)]
     pub const fn new() -> Self {
+        #[cfg(feature = "user_space")]
         static KERNEL_OBJECT_TABLE: NullObjectTable = NullObjectTable::new();
         Self {
             kernel_process: UnsafeCell::new(Process::new(
@@ -224,7 +226,10 @@ impl<K: Kernel> SchedulerState<K> {
                 <K::ThreadState as ThreadState>::MemoryConfig::KERNEL_THREAD_MEMORY_CONFIG,
                 // SAFETY: In the event of multiple scheduler objects, they will
                 // refer to the same, immutable, instance of a zero sized type.
-                unsafe { ForeignBox::new(NonNull::from_ref(&KERNEL_OBJECT_TABLE)) },
+                #[cfg(feature = "user_space")]
+                unsafe {
+                    ForeignBox::new(NonNull::from_ref(&KERNEL_OBJECT_TABLE))
+                },
             )),
             current_thread: None,
             current_arch_thread_state: core::ptr::null_mut(),
@@ -463,6 +468,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         // SAFETY: The scheduler guarantees that a process' `memory_config`
         // remains valid while it has any child threads ensuring that the
         // `memory_config` is valid for the lifetime of the thread.
+        #[cfg(feature = "user_space")]
         unsafe {
             (*thread.arch_thread_state.get()).initialize_user_frame(
                 kernel_stack,

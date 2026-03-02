@@ -21,6 +21,7 @@ use kernel::sync::spinlock::SpinLockGuard;
 use kernel::{Arch, Kernel, KernelState};
 use memory_config::MemoryRegionType;
 use pw_log::info;
+#[cfg(feature = "user_space")]
 use pw_status::{Error, Result};
 
 mod spinlock;
@@ -38,6 +39,7 @@ impl Arch for HostArch {
     type Clock = Clock;
     type AtomicBool = core::sync::atomic::AtomicBool;
     type AtomicUsize = core::sync::atomic::AtomicUsize;
+    #[cfg(feature = "user_space")]
     type SyscallArgs<'a> = HostSyscallArgs;
     type InterruptController = HostInterruptController;
 
@@ -127,7 +129,10 @@ impl memory_config::MemoryConfig for MemoryConfig {
     }
 }
 
+#[cfg(feature = "user_space")]
 pub struct HostSyscallArgs;
+
+#[cfg(feature = "user_space")]
 impl<'a> kernel::syscall::SyscallArgs<'a> for HostSyscallArgs {
     fn next_usize(&mut self) -> Result<usize> {
         Err(Error::Unimplemented)

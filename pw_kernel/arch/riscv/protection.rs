@@ -86,3 +86,10 @@ impl memory_config::MemoryConfig for MemoryConfig {
         MemoryRegion::regions_have_access(self.regions, &validation_region)
     }
 }
+
+#[allow(dead_code)]
+pub unsafe extern "C" fn memory_config_write(memory_config: *const MemoryConfig) {
+    unsafe {
+        (*memory_config).write();
+    }
+}

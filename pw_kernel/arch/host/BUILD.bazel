@@ -24,7 +24,10 @@ rust_library(
         "lib.rs",
         "spinlock.rs",
     ],
-    crate_features = ["user_space"],
+    crate_features = select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     proc_macro_deps = [
         "@rust_crates//:paste",
@@ -54,9 +57,11 @@ rust_doc(
     crate = ":arch_host",
     rustdoc_flags = [
         "--document-private-items",
-        "--cfg=feature=\"user_space\"",
         "--cfg=feature=\"arch_host\"",
         "--cfg=feature=\"std_panic_handler\"",
-    ],
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": ["--cfg=feature=\"user_space\""],
+        "//conditions:default": [],
+    }),
     tags = ["kernel"],
 )

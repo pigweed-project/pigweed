@@ -22,10 +22,13 @@ use kernel::scheduler::thread::Stack;
 use kernel::scheduler::{self, SchedulerState, ThreadLocalState};
 use kernel::sync::spinlock::SpinLockGuard;
 use log_if::debug_if;
+#[cfg(feature = "user_space")]
 use pw_status::Result;
 
 use crate::protection::MemoryConfig;
-use crate::regs::{MStatusVal, PrivilegeLevel};
+use crate::regs::MStatusVal;
+#[cfg(feature = "user_space")]
+use crate::regs::PrivilegeLevel;
 use crate::spinlock::BareSpinLock;
 
 const LOG_CONTEXT_SWITCH: bool = false;
@@ -91,8 +94,16 @@ impl ArchThreadState {
                 // do not perform the PMP load in the context switch function.  We
                 // defer it instead to the trampoline function.  Stash the pointers
                 // we'll need to make the call in the trampoline.
-                (*frame).s7 = self.memory_config as usize;
-                (*frame).s8 = memory_config_write as *const () as usize;
+                #[cfg(feature = "user_space")]
+                {
+                    (*frame).s7 = self.memory_config as usize;
+                    (*frame).s8 = crate::protection::memory_config_write as *const () as usize;
+                }
+                #[cfg(not(feature = "user_space"))]
+                {
+                    (*frame).s7 = 0;
+                    (*frame).s8 = 0;
+                }
             } else {
                 (*frame).s7 = 0;
                 (*frame).s8 = 0;
@@ -115,7 +126,8 @@ impl Arch for super::Arch {
     type AtomicBool = crate::disable_interrupts_atomic::AtomicBool;
     #[cfg(feature = "disable_interrupts_atomic")]
     type AtomicUsize = crate::disable_interrupts_atomic::AtomicUsize;
-    type SyscallArgs<'a> = crate::exceptions::RiscVSyscallArgs<'a>;
+    #[cfg(feature = "user_space")]
+    type SyscallArgs<'a> = crate::syscall::RiscVSyscallArgs<'a>;
     type InterruptController = crate::InterruptController;
 
     #[inline(never)]
@@ -213,6 +225,7 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
     };
 
     #[inline(never)]
+    #[allow(unused_variables)]
     unsafe fn initialize_kernel_frame(
         &mut self,
         kernel_stack: Stack,
@@ -220,7 +233,10 @@ impl kernel::scheduler::thread::ThreadState for ArchThreadState {
         initial_function: extern "C" fn(usize, usize, usize),
         args: (usize, usize, usize),
     ) {
-        self.memory_config = memory_config;
+        #[cfg(feature = "user_space")]
+        {
+            self.memory_config = memory_config;
+        }
         self.initialize_frame(
             kernel_stack,
             asm_trampoline,
@@ -301,12 +317,6 @@ extern "C" fn riscv_context_switch(
                 ret
             "
     )
-}
-
-unsafe extern "C" fn memory_config_write(memory_config: *const MemoryConfig) {
-    unsafe {
-        (*memory_config).write();
-    }
 }
 
 // Since the context switch frame does not contain the function arg registers,

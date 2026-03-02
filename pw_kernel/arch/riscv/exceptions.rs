@@ -14,14 +14,11 @@
 
 #[cfg(feature = "exceptions_reload_pmp")]
 use kernel::Kernel;
-use kernel::syscall::{SyscallArgs, handle_syscall};
 use kernel_config::{ExceptionMode, KernelConfig, RiscVKernelConfigInterface};
 use log_if::debug_if;
 #[cfg(feature = "exceptions_reload_pmp")]
 use memory_config::MemoryConfig as _;
-use pw_cast::CastInto as _;
 use pw_log::info;
-use pw_status::{Error, Result};
 #[cfg(not(feature = "user_space"))]
 pub(crate) use riscv_macro::kernel_only_exception as exception;
 #[cfg(feature = "user_space")]
@@ -40,42 +37,6 @@ use crate::timer;
 use crate::veer_pic as pic;
 
 const LOG_EXCEPTIONS: bool = false;
-
-pub struct RiscVSyscallArgs<'a> {
-    frame: &'a TrapFrame,
-    cur_index: usize,
-}
-
-impl<'a> RiscVSyscallArgs<'a> {
-    fn new(frame: &'a TrapFrame) -> Self {
-        Self {
-            frame,
-            cur_index: 0,
-        }
-    }
-}
-
-impl<'a> SyscallArgs<'a> for RiscVSyscallArgs<'a> {
-    fn next_usize(&mut self) -> Result<usize> {
-        let value = self.frame.a(self.cur_index)?;
-        self.cur_index += 1;
-        Ok(value)
-    }
-
-    #[inline(always)]
-    fn next_u64(&mut self) -> Result<u64> {
-        // Note: This follows the PSABI calling convention[1] which differs from
-        // the outdated (but still returned in search results) ABI from the ISA[2].
-        // The PSABI is what both gcc and llvm based toolchains implement.
-        //
-        // 1: https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/main/riscv-cc.adoc#integer-calling-convention
-        // 2: https://riscv.org/wp-content/uploads/2024/12/riscv-calling.pdf
-        let low: u64 = self.next_usize()?.cast_into();
-        let high: u64 = self.next_usize()?.cast_into();
-
-        Ok(low | high << 32)
-    }
-}
 
 pub fn early_init() {
     // Explicitly set up MTVEC to point to the kernel's handler to ensure
@@ -125,27 +86,6 @@ fn dump_exception_frame(frame: &TrapFrame) {
     info!("epc {:#010x}", frame.epc as usize);
 }
 
-// Pulls arguments out of the trap frame and calls the arch-independent syscall
-// handler.
-fn handle_ecall(frame: &mut TrapFrame) {
-    // Explicitly truncate the syscall ID to 16 bits per syscall ABI.
-    #[expect(clippy::cast_possible_truncation)]
-    let id = frame.t0 as u16;
-    let args = RiscVSyscallArgs::new(frame);
-    let ret_val = handle_syscall(super::Arch, id, args);
-    frame.a0 = ret_val.value[0];
-    frame.a1 = ret_val.value[1];
-
-    // ECALL exceptions do not "retire the instruction" requiring the advancing
-    // of the PC past the ECALL instruction.  ECALLs are encoded as 4 byte
-    // instructions.
-    //
-    // Use a wrapping add, as section 1.4 of the RISC-V unprivileged spec states:
-    // "...memory address computations done by the hardware ignore overflow
-    // and instead wrap around modulo 2^XLEN"
-    frame.epc = frame.epc.wrapping_add(4);
-}
-
 fn is_exception_from_kernel(frame: &TrapFrame) -> bool {
     MStatusVal(frame.status).mpp() != PrivilegeLevel::User
 }
@@ -162,7 +102,16 @@ fn exception_handler(exception: Exception, mepc: usize, frame: &mut TrapFrame) {
 
     match exception {
         Exception::EnvironmentCallFromUMode | Exception::EnvironmentCallFromMMode => {
-            handle_ecall(frame);
+            #[cfg(feature = "user_space")]
+            crate::syscall::handle_ecall(frame);
+            #[cfg(not(feature = "user_space"))]
+            {
+                dump_exception_frame(frame);
+                kernel::scheduler::handle_terminal_exception(
+                    super::Arch,
+                    is_exception_from_kernel(frame),
+                );
+            }
         }
         Exception::Breakpoint => {
             dump_exception_frame(frame);
@@ -239,49 +188,35 @@ unsafe extern "C" fn trap_handler(mcause: MCauseVal, mepc: usize, frame: &mut Tr
 #[repr(C)]
 pub struct TrapFrame {
     // Note: offsets are for 32bit sized usize
-    epc: usize,    // 0x00
-    status: usize, // 0x04
-    ra: usize,     // 0x08
+    pub epc: usize,    // 0x00
+    pub status: usize, // 0x04
+    pub ra: usize,     // 0x08
 
     // SAFETY: the `a()` accessor requires these to be in order.
-    a0: usize, // 0x0c
-    a1: usize, // 0x10
-    a2: usize, // 0x14
-    a3: usize, // 0x18
-    a4: usize, // 0x1c
-    a5: usize, // 0x20
-    a6: usize, // 0x24
-    a7: usize, // 0x28
+    pub a0: usize, // 0x0c
+    pub a1: usize, // 0x10
+    pub a2: usize, // 0x14
+    pub a3: usize, // 0x18
+    pub a4: usize, // 0x1c
+    pub a5: usize, // 0x20
+    pub a6: usize, // 0x24
+    pub a7: usize, // 0x28
 
-    t0: usize, // 0x2c
-    t1: usize, // 0x30
-    t2: usize, // 0x34
-    t3: usize, // 0x38
-    t4: usize, // 0x3c
-    t5: usize, // 0x40
-    t6: usize, // 0x44
+    pub t0: usize, // 0x2c
+    pub t1: usize, // 0x30
+    pub t2: usize, // 0x34
+    pub t3: usize, // 0x38
+    pub t4: usize, // 0x3c
+    pub t5: usize, // 0x40
+    pub t6: usize, // 0x44
 
     // These are only set when handling a trap from user space.
-    tp: usize, // 0x48
-    gp: usize, // 0x4c
-    sp: usize, // 0x50
+    pub tp: usize, // 0x48
+    pub gp: usize, // 0x4c
+    pub sp: usize, // 0x50
 
     // Per RISC-V calling convention, stacks must always be 16 byte aligned.
-    pad: [usize; 3], // 0x54-0x5f
+    pub pad: [usize; 3], // 0x54-0x5f
 }
 
-impl TrapFrame {
-    pub fn a(&self, index: usize) -> Result<usize> {
-        if index > 7 {
-            return Err(Error::InvalidArgument);
-        }
-        // Pointer math is used here instead of a match statement as it results
-        // in significantly smaller code.
-        //
-        // SAFETY: Index is range checked above and the a* fields are in consecutive
-        // positions in the `TrapFrame` struct.
-        let usize0 = &raw const self.a0;
-        Ok(unsafe { *usize0.byte_add(index * 4) })
-    }
-}
 const _: () = assert!(core::mem::size_of::<TrapFrame>() == 0x60);

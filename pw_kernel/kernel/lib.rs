@@ -18,16 +18,19 @@ use pw_log::info;
 pub use time::{Duration, Instant};
 
 pub mod interrupt_controller;
+#[cfg(feature = "user_space")]
 pub mod object;
 #[cfg(not(feature = "std_panic_handler"))]
 mod panic;
 pub mod scheduler;
 pub mod sync;
+#[cfg(feature = "user_space")]
 pub mod syscall;
 mod target;
 
 use interrupt_controller::InterruptController;
 use kernel_config::{KernelConfig, KernelConfigInterface};
+#[cfg(feature = "user_space")]
 pub use object::NullObjectTable;
 #[doc(hidden)]
 pub use scheduler::thread::{Process, Stack, StackStorage, StackStorageExt, Thread, ThreadState};
@@ -35,6 +38,7 @@ use scheduler::timer::TimerQueue;
 use scheduler::{PreemptDisableGuard, SchedulerState, ThreadLocalState, thread};
 pub use scheduler::{Priority, sleep_until, start_thread, yield_timeslice};
 use sync::spinlock::{BareSpinLock, SpinLock, SpinLockGuard};
+#[cfg(feature = "user_space")]
 pub use syscall::SyscallArgs;
 
 pub trait Arch: 'static + Copy + thread::ThreadArg {
@@ -43,6 +47,7 @@ pub trait Arch: 'static + Copy + thread::ThreadArg {
     type Clock: time::Clock;
     type AtomicBool: AtomicBool;
     type AtomicUsize: AtomicUsize;
+    #[cfg(feature = "user_space")]
     type SyscallArgs<'a>: SyscallArgs<'a>;
     type InterruptController: InterruptController;
 

@@ -35,6 +35,8 @@ pub struct BaseConfig {
     pub apps: Vec<AppConfig>,
     #[serde(skip_deserializing)]
     pub arch_crate_name: &'static str,
+    #[serde(skip_deserializing)]
+    pub userspace: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -23,6 +23,7 @@ system_image(
     platform = "//pw_kernel/target/pw_rp2350",
     system_config = ":system_config",
     tags = ["kernel"],
+    user_space = False,
     visibility = ["//visibility:public"],
 )
 

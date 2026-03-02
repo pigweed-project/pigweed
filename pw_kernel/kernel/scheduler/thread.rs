@@ -18,6 +18,9 @@ use core::ops::Range;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
+#[cfg(not(feature = "user_space"))]
+use foreign_box::ForeignBox;
+#[cfg(feature = "user_space")]
 use foreign_box::{ForeignBox, ForeignRc};
 use list::*;
 use memory_config::{MemoryConfig as _, MemoryRegionType};
@@ -27,6 +30,7 @@ use pw_status::Result;
 use time::Instant;
 
 use crate::Kernel;
+#[cfg(feature = "user_space")]
 use crate::object::{KernelObject, ObjectTable};
 use crate::scheduler::algorithm::SchedulerAlgorithmThreadState;
 use crate::scheduler::{JoinResult, Priority, TryJoinResult, WaitQueue, WaitType};
@@ -252,6 +256,7 @@ pub struct Process<K: Kernel> {
 
     pub(crate) memory_config: <K::ThreadState as ThreadState>::MemoryConfig,
 
+    #[cfg(feature = "user_space")]
     object_table: ForeignBox<dyn ObjectTable<K>>,
 
     thread_list: UnsafeList<Thread<K>, ProcessThreadListAdapter<K>>,
@@ -265,17 +270,19 @@ impl<K: Kernel> Process<K> {
     pub const fn new(
         name: &'static str,
         memory_config: <K::ThreadState as ThreadState>::MemoryConfig,
-        object_table: ForeignBox<dyn ObjectTable<K>>,
+        #[cfg(feature = "user_space")] object_table: ForeignBox<dyn ObjectTable<K>>,
     ) -> Self {
         Self {
             link: Link::new(),
             name,
             memory_config,
+            #[cfg(feature = "user_space")]
             object_table,
             thread_list: UnsafeList::new(),
         }
     }
 
+    #[cfg(feature = "user_space")]
     pub fn get_object(
         &self,
         kernel: K,
@@ -554,6 +561,7 @@ impl<K: Kernel> Thread<K> {
         }
     }
 
+    #[cfg(feature = "user_space")]
     pub fn get_object(
         &self,
         kernel: K,

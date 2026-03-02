@@ -49,6 +49,8 @@ pub struct CommonArgs {
         action = clap::ArgAction::Append
     )]
     templates: Vec<(String, PathBuf)>,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    userspace: bool,
 }
 
 fn parse_template(s: &str) -> Result<(String, PathBuf), String> {
@@ -197,6 +199,8 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
         // This must be called after populate_addresses.
         instance.populate_memory_mappings();
         instance.populate_interrupt_table()?;
+
+        instance.config.base.userspace = instance.cli.common_args.userspace;
 
         // Calculate and validate config after the populations above.
         instance.config.calculate_and_validate()?;

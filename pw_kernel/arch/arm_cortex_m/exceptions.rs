@@ -19,10 +19,11 @@ use core::ptr::with_exposed_provenance;
 pub(crate) use arm_cortex_m_macro::kernel_only_exception as exception;
 #[cfg(feature = "user_space")]
 pub(crate) use arm_cortex_m_macro::user_space_exception as exception;
-use pw_cast::{CastFrom as _, CastInto as _};
+use pw_cast::CastInto as _;
 use pw_log::info;
 use regs::*;
 
+#[cfg(feature = "user_space")]
 use crate::regs::msr::ControlVal;
 
 /// Combined Exception Return Program Status Register Value
@@ -233,11 +234,21 @@ impl KernelExceptionFrame {
             "r8  {:#010x} r9 {:#010x} r10 {:#010x} r11 {:#010x}",
             self.r8 as u32, self.r9 as u32, self.r10 as u32, self.r11 as u32
         );
+        info!("return_address {:#010x}", self.return_address as u32,);
+
+        #[cfg(feature = "user_space")]
         info!(
-            "psp {:#010x} control {:#010x} return_address {:#010x}",
-            self.psp as u32, self.control.0 as u32, self.return_address as u32,
+            "psp {:#010x} control {:#010x}",
+            self.psp as u32, self.control.0 as u32,
         );
 
+        #[cfg(feature = "user_space")]
+        self.dump_user_frame();
+    }
+
+    #[cfg(feature = "user_space")]
+    fn dump_user_frame(&self) {
+        use pw_cast::CastFrom;
         let user_frame = if self.return_address & u32::cast_from(ExcReturn::SP_SEL) == 0 {
             // If we came from the Main stack, the user frame is directly above
             // the kernel frame on the stack.
