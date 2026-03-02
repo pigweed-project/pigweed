@@ -21,6 +21,7 @@ rust_library(
     name = "system_generator",
     srcs = [
         "lib.rs",
+        "mpu_validation/mod.rs",
         "system_config.rs",
     ],
     edition = "2024",

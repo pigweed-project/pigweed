@@ -59,6 +59,13 @@ impl ArchConfigInterface for ArchConfig {
             ArchConfig::RiscV(config) => config.get_interrupt_table_link_section(),
         }
     }
+
+    fn validate_mpu(&self, config: &system_config::BaseConfig) -> Result<()> {
+        match self {
+            ArchConfig::Armv8M(arch_config) => arch_config.validate_mpu(config),
+            ArchConfig::RiscV(arch_config) => arch_config.validate_mpu(config),
+        }
+    }
 }
 
 fn main() -> Result<()> {

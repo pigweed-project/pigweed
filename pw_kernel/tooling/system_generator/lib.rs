@@ -23,6 +23,7 @@ use minijinja::{Environment, State};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+pub mod mpu_validation;
 pub mod system_config;
 
 use system_config::ObjectConfig::Interrupt;
@@ -79,6 +80,10 @@ pub trait ArchConfigInterface {
         config: &mut system_config::BaseConfig,
     ) -> Result<()>;
     fn get_interrupt_table_link_section(&self) -> Option<String>;
+    /// Validate memory layout for MPU compatibility.
+    fn validate_mpu(&self, _config: &system_config::BaseConfig) -> Result<()> {
+        Ok(()) // Default: no MPU validation
+    }
 }
 
 pub fn parse_config<A: ArchConfigInterface + DeserializeOwned>(
@@ -204,6 +209,9 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
 
         // Calculate and validate config after the populations above.
         instance.config.calculate_and_validate()?;
+
+        // Run architecture-specific MPU compatibility validation.
+        instance.config.arch.validate_mpu(&instance.config.base)?;
 
         Ok(instance)
     }
