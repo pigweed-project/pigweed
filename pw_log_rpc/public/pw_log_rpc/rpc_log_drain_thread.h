@@ -36,26 +36,37 @@ namespace pw::log_rpc {
 // manages multiple log streams. It is a suitable option when a minimal
 // thread count is desired but comes with the cost of individual log streams
 // blocking each other's flushing.
+//
+// By default, the RpcLogDrainThread will override every drain's
+// on_open_callback. If this should be prevented, set
+// `always_use_default_on_open_callback` to false and ensure the callback
+// provided to the drain calls RpcLogDrainThread::OnDrainOpen.
 class RpcLogDrainThread : public thread::ThreadCore,
                           public multisink::MultiSink::Listener {
  public:
   RpcLogDrainThread(multisink::MultiSink& multisink,
                     RpcLogDrainMap& drain_map,
-                    span<std::byte> encoding_buffer)
+                    span<std::byte> encoding_buffer,
+                    bool always_use_default_on_open_callback = true)
       : drain_map_(drain_map),
         multisink_(multisink),
-        encoding_buffer_(encoding_buffer) {}
+        encoding_buffer_(encoding_buffer),
+        always_use_default_on_open_callback_(
+            always_use_default_on_open_callback) {}
 
   void OnNewEntryAvailable() override {
     ready_to_flush_notification_.release();
   }
+
+  inline void OnDrainOpen() { OnNewEntryAvailable(); }
 
   // Sequentially flushes each log stream.
   void Run() override {
     for (auto& drain : drain_map_.drains()) {
       multisink_.AttachDrain(drain);
       drain.set_on_open_callback(
-          [this]() { this->ready_to_flush_notification_.release(); });
+          [this]() { this->OnDrainOpen(); },
+          /*force=*/always_use_default_on_open_callback_);
     }
     multisink_.AttachListener(*this);
 
@@ -101,14 +112,19 @@ class RpcLogDrainThread : public thread::ThreadCore,
   RpcLogDrainMap& drain_map_;
   multisink::MultiSink& multisink_;
   span<std::byte> encoding_buffer_;
+  const bool always_use_default_on_open_callback_;
 };
 
 template <size_t kEncodingBufferSizeBytes>
 class RpcLogDrainThreadWithBuffer final : public RpcLogDrainThread {
  public:
   RpcLogDrainThreadWithBuffer(multisink::MultiSink& multisink,
-                              RpcLogDrainMap& drain_map)
-      : RpcLogDrainThread(multisink, drain_map, encoding_buffer_array_) {}
+                              RpcLogDrainMap& drain_map,
+                              bool always_use_default_on_open_callback = true)
+      : RpcLogDrainThread(multisink,
+                          drain_map,
+                          encoding_buffer_array_,
+                          always_use_default_on_open_callback) {}
 
  private:
   static_assert(kEncodingBufferSizeBytes >=

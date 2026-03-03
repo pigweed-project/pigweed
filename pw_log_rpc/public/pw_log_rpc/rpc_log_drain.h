@@ -194,11 +194,18 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
     trickle_delay_ = trickle_delay;
   }
 
-  // Stores a function that is called when Open() is successful. Pass nulltpr to
-  // clear it. This is useful in cases where the owner of the drain needs to be
-  // notified that the drain was opened.
-  void set_on_open_callback(pw::Function<void()>&& callback) {
-    on_open_callback_ = std::move(callback);
+  // Stores a function that is called when Open() is successful. Pass nullptr
+  // and `force=true` to clear it. This is useful in cases where the owner of
+  // the drain needs to be notified that the drain was opened. The optional
+  // `force` argument, when set to false, will not set the callback if one was
+  // already set. Returns true if callback was set, false otherwise.
+  bool set_on_open_callback(pw::Function<void()>&& callback,
+                            bool force = true) {
+    if (force || on_open_callback_ == nullptr) {
+      on_open_callback_ = std::move(callback);
+      return true;
+    }
+    return false;
   }
 
  private:

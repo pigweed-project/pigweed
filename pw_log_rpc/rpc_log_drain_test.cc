@@ -463,5 +463,45 @@ TEST(RpcLogDrain, OnOpenCallbackCalled) {
   EXPECT_EQ(callback_call_times, 1);
 }
 
+TEST(RpcLogDrain, OverrideOnOpenCallbackForced) {
+  // Create drain and log components.
+  const uint32_t drain_id = 1;
+  std::array<std::byte, kBufferSize> buffer;
+  sync::Mutex mutex;
+  RpcLogDrain drain(
+      drain_id,
+      buffer,
+      mutex,
+      RpcLogDrain::LogDrainErrorHandling::kCloseStreamOnWriterError,
+      nullptr);
+
+  // The default force=true for set will always succeed.
+  ASSERT_TRUE(drain.set_on_open_callback(nullptr));
+  ASSERT_TRUE(drain.set_on_open_callback([]() {}));
+  ASSERT_TRUE(drain.set_on_open_callback(nullptr));
+}
+
+TEST(RpcLogDrain, OverrideOnOpenCallbackUnforced) {
+  // Create drain and log components.
+  const uint32_t drain_id = 1;
+  std::array<std::byte, kBufferSize> buffer;
+  sync::Mutex mutex;
+  RpcLogDrain drain(
+      drain_id,
+      buffer,
+      mutex,
+      RpcLogDrain::LogDrainErrorHandling::kCloseStreamOnWriterError,
+      nullptr);
+
+  // Setting nullptr from nullptr should be okay.
+  ASSERT_TRUE(drain.set_on_open_callback(nullptr, /*force=*/false));
+
+  // Setting a real callback from nullptr should work too.
+  ASSERT_TRUE(drain.set_on_open_callback([]() {}, /*force=*/false));
+
+  // Setting a callback from an existing registered callback should fail.
+  ASSERT_FALSE(drain.set_on_open_callback(nullptr, /*force=*/false));
+}
+
 }  // namespace
 }  // namespace pw::log_rpc
