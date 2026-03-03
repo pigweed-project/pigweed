@@ -220,6 +220,23 @@ pub(super) fn to_string(s: State) -> &'static str {
     }
 }
 
+#[derive(Copy, Clone, PartialEq)]
+pub enum ProcessState {
+    New,
+    Ready,
+    Terminating,
+    Terminated,
+}
+
+pub(super) fn process_state_to_string(s: ProcessState) -> &'static str {
+    match s {
+        ProcessState::New => "New",
+        ProcessState::Ready => "Ready",
+        ProcessState::Terminating => "Terminating",
+        ProcessState::Terminated => "Terminated",
+    }
+}
+
 pub trait ThreadState: 'static + Sized {
     const NEW: Self;
 
@@ -274,7 +291,10 @@ pub struct Process<K: Kernel> {
     #[cfg(feature = "user_space")]
     object_table: ForeignBox<dyn ObjectTable<K>>,
 
-    thread_list: UnsafeList<Thread<K>, ProcessThreadListAdapter<K>>,
+    pub(super) thread_list: UnsafeList<Thread<K>, ProcessThreadListAdapter<K>>,
+
+    pub(super) ref_count: K::AtomicUsize,
+    pub(super) state: ProcessState,
 }
 
 list::define_adapter!(pub ProcessListAdapter<K: Kernel> => Process<K>::link);
@@ -294,6 +314,8 @@ impl<K: Kernel> Process<K> {
             #[cfg(feature = "user_space")]
             object_table,
             thread_list: UnsafeList::new(),
+            ref_count: K::AtomicUsize::ZERO,
+            state: ProcessState::New,
         }
     }
 
@@ -323,11 +345,19 @@ impl<K: Kernel> Process<K> {
     }
 
     /// # Safety
-    /// Caller must ensure that the thread is already in the processes thread list.
+    /// Caller must ensure that the thread is already in the processes thread list and the
+    /// scheduler lock is held
     pub unsafe fn remove_from_thread_list(&mut self, thread: &mut Thread<K>) {
+        // SAFETY: Scheduler lock is held so it is safe to manipulate the process
+        // list and the caller guarantees that the thread is in said list so it
+        // is safe to remove it.
         unsafe {
             self.thread_list
                 .unlink_element_unchecked(NonNull::from(thread));
+
+            if self.state == ProcessState::Terminating && self.thread_list.is_empty() {
+                self.state = ProcessState::Terminated;
+            }
         }
     }
 
@@ -365,9 +395,10 @@ impl<K: Kernel> Process<K> {
 
     pub fn dump(&self) {
         info!(
-            "Process '{}' ({:#010x})",
+            "Process '{}' ({:#010x}) state: {}",
             self.name as &str,
-            self.id() as usize
+            self.id() as usize,
+            process_state_to_string(self.state) as &str
         );
         unsafe {
             let _ = self
@@ -376,6 +407,71 @@ impl<K: Kernel> Process<K> {
                     thread.dump();
                     Ok(())
                 });
+        }
+    }
+}
+
+pub struct ProcessRef<K: Kernel> {
+    pub(crate) process: NonNull<Process<K>>,
+    _marker: core::marker::PhantomData<K>,
+}
+
+impl<K: Kernel> ProcessRef<K> {
+    pub fn new(process: NonNull<Process<K>>, _kernel: K) -> Self {
+        unsafe {
+            process.as_ref().ref_count.fetch_add(1, Ordering::Acquire);
+        }
+        Self {
+            process,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Request termination of the process.
+    ///
+    /// Sets the process state to Terminating and requests termination for all
+    /// threads in the process.
+    pub fn terminate(&self, kernel: K) -> Result<()> {
+        kernel
+            .get_scheduler()
+            .lock(kernel)
+            .process_terminate(kernel, self)
+    }
+
+    /// Returns the current state of the process.
+    #[must_use]
+    pub fn get_state(&self) -> ProcessState {
+        unsafe { self.process.as_ref().state }
+    }
+
+    pub(super) fn as_ref(&self) -> &Process<K> {
+        unsafe { self.process.as_ref() }
+    }
+}
+
+impl<K: Kernel> Clone for ProcessRef<K> {
+    fn clone(&self) -> Self {
+        unsafe {
+            self.process
+                .as_ref()
+                .ref_count
+                .fetch_add(1, Ordering::Acquire);
+        }
+
+        Self {
+            process: self.process,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<K: Kernel> Drop for ProcessRef<K> {
+    fn drop(&mut self) {
+        unsafe {
+            self.process
+                .as_ref()
+                .ref_count
+                .fetch_sub(1, Ordering::Release);
         }
     }
 }
@@ -533,7 +629,7 @@ pub struct Thread<K: Kernel> {
 
     // Safety: All accesses to the parent process must be done with the
     // scheduler lock held.
-    pub(super) process: *mut Process<K>,
+    pub(super) process: Option<ProcessRef<K>>,
 
     pub(super) state: State,
     pub(super) stack: Stack,
@@ -563,7 +659,7 @@ impl<K: Kernel> Thread<K> {
         Thread {
             process_link: Link::new(),
             active_link: Link::new(),
-            process: core::ptr::null_mut(),
+            process: None,
             state: State::New,
             arch_thread_state: UnsafeCell::new(K::ThreadState::NEW),
             owner: ThreadOwner::None,
@@ -583,7 +679,7 @@ impl<K: Kernel> Thread<K> {
         handle: u32,
     ) -> Option<ForeignRc<K::AtomicUsize, dyn KernelObject<K>>> {
         // SAFETY: `self.process` will always outlive `self`.
-        unsafe { self.process.as_ref()? }.get_object(kernel, handle)
+        self.process.as_ref()?.as_ref().get_object(kernel, handle)
     }
 
     pub(super) extern "C" fn trampoline<A1: ThreadArg>(
@@ -630,6 +726,26 @@ impl<K: Kernel> Thread<K> {
             .thread_initialize_kernel(kernel, self, kernel_stack, entry_point, arg)
     }
 
+    /// DEPRECATED: Initialized a kernel thread in a new process
+    ///
+    /// Multiple kernel processes are not a supported features. This function
+    /// exists to test process termination.  Once userspace thread and process
+    /// control is implemented, the tests will be ported to use those and this
+    /// function will be deleted.
+    pub fn initialize_kernel_thread_for_process<A: ThreadArg>(
+        &mut self,
+        kernel: K,
+        stack: Stack,
+        process: ProcessRef<K>,
+        entry_point: fn(K, A),
+        arg: A,
+    ) {
+        kernel
+            .get_scheduler()
+            .lock(kernel)
+            .thread_initialize_kernel_for_process(kernel, self, process, stack, entry_point, arg);
+    }
+
     #[cfg(feature = "user_space")]
     /// # Safety
     /// It is up to the caller to ensure that *process is valid.
@@ -674,7 +790,10 @@ impl<K: Kernel> Thread<K> {
     pub fn process(&self) -> &Process<K> {
         // SAFETY: The returned process references is bound to an immutable
         // borrow of the thread the `process` pointer can not change.
-        unsafe { &*self.process }
+        let Some(process_ref) = self.process.as_ref() else {
+            pw_assert::panic!("Thread does not have a process");
+        };
+        process_ref.as_ref()
     }
 
     /// Return a reference counted `ThreadRef` for this thread.
@@ -724,9 +843,14 @@ impl<K: Kernel> Thread<K> {
         0usize
     }
 
+    /// # Safety
+    /// Must be called with scheduler lock held.
     pub(super) unsafe fn remove_from_parent_process(&mut self) {
-        unsafe { (*self.process).remove_from_thread_list(self) };
-        self.process = core::ptr::null_mut();
+        let Some(process_ref) = self.process.as_mut() else {
+            pw_assert::panic!("Thread does not have a process");
+        };
+        unsafe { process_ref.process.as_mut().remove_from_thread_list(self) };
+        self.process = None;
     }
 }
 

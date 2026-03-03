@@ -322,6 +322,13 @@ impl<K: Kernel> SchedulerState<K> {
         unsafe { self.process_list.push_front_unchecked(process) };
     }
 
+    fn get_kernel_process_ref(&self, kernel: K) -> ProcessRef<K> {
+        let Some(process) = NonNull::new(self.kernel_process.get()) else {
+            pw_assert::panic!("Kernel process is null");
+        };
+        ProcessRef::new(process, kernel)
+    }
+
     #[allow(dead_code)]
     pub fn dump_all_threads(&self) {
         info!("List of all threads:");
@@ -376,24 +383,25 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         &self,
         _kernel: K,
         thread: &mut Thread<K>,
-        process: *mut Process<K>,
+        mut process_ref: ProcessRef<K>,
         kernel_stack: Stack,
     ) {
         thread.stack = kernel_stack;
-        thread.process = process;
-
         thread.state = State::Initial;
 
         // SAFETY: *process is only accessed with the scheduler lock held.
         unsafe {
+            let process = process_ref.process.as_mut();
             // Assert that the parent process is added to the scheduler.
             pw_assert::assert!(
-                (*process).link.is_linked(),
+                process.link.is_linked(),
                 "Tried to add a Thread to an unregistered Process"
             );
             // Add thread to processes thread list.
-            (*process).add_to_thread_list(thread);
+            process.add_to_thread_list(thread);
         }
+
+        thread.process = Some(process_ref);
     }
 
     pub fn thread_initialize_kernel<A: ThreadArg>(
@@ -405,7 +413,33 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         arg: A,
     ) {
         pw_assert::assert!(thread.state == State::New);
-        let process = self.kernel_process.get();
+        let process_ref = self.get_kernel_process_ref(kernel);
+        let args = (entry_point as usize, kernel.into_usize(), arg.into_usize());
+
+        kernel_stack.initialize();
+
+        unsafe {
+            (*thread.arch_thread_state.get()).initialize_kernel_frame(
+                kernel_stack,
+                &raw const process_ref.process.as_ref().memory_config,
+                Thread::<K>::trampoline::<A>,
+                args,
+            );
+        }
+
+        self.thread_initialize(kernel, thread, process_ref, kernel_stack)
+    }
+
+    fn thread_initialize_kernel_for_process<A: ThreadArg>(
+        &mut self,
+        kernel: K,
+        thread: &mut Thread<K>,
+        process_ref: ProcessRef<K>,
+        kernel_stack: Stack,
+        entry_point: fn(K, A),
+        arg: A,
+    ) {
+        pw_assert::assert!(thread.state == State::New);
         let args = (entry_point as usize, kernel.into_usize(), arg.into_usize());
 
         kernel_stack.initialize();
@@ -414,15 +448,16 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         // remains valid while it has any child threads ensuring that the
         // `memory_config` is valid for the lifetime of the thread.
         unsafe {
+            let config = &raw const process_ref.process.as_ref().memory_config;
             (*thread.arch_thread_state.get()).initialize_kernel_frame(
                 kernel_stack,
-                &raw const (*process).memory_config,
+                config,
                 Thread::<K>::trampoline::<A>,
                 args,
             );
         }
 
-        self.thread_initialize(kernel, thread, process, kernel_stack)
+        self.thread_initialize(kernel, thread, process_ref, kernel_stack)
     }
 
     pub fn thread_reinitialize_kernel<A: ThreadArg>(
@@ -433,7 +468,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         arg: A,
     ) {
         pw_assert::assert!(thread.state == State::Joined);
-        let process = self.kernel_process.get();
+        let process_ref = self.get_kernel_process_ref(kernel);
         let args = (entry_point as usize, kernel.into_usize(), arg.into_usize());
 
         thread.stack.initialize();
@@ -444,13 +479,13 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         unsafe {
             (*thread.arch_thread_state.get()).initialize_kernel_frame(
                 thread.stack,
-                &raw const (*process).memory_config,
+                &raw const process_ref.as_ref().memory_config,
                 Thread::<K>::trampoline::<A>,
                 args,
             );
         }
 
-        self.thread_initialize(kernel, thread, process, thread.stack)
+        self.thread_initialize(kernel, thread, process_ref, thread.stack)
     }
 
     #[cfg(feature = "user_space")]
@@ -470,6 +505,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         args: (usize, usize, usize),
     ) -> Result<()> {
         pw_assert::assert!(thread.state == State::New);
+        let Some(process_ptr) = NonNull::new(process) else {
+            return Err(Error::InvalidArgument);
+        };
 
         kernel_stack.initialize();
 
@@ -487,7 +525,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
                 args,
             )?;
         }
-        self.thread_initialize(kernel, thread, process, kernel_stack);
+
+        let process_ref = ProcessRef::new(process_ptr, kernel);
+        self.thread_initialize(kernel, thread, process_ref, kernel_stack);
         Ok(())
     }
 
@@ -499,14 +539,13 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
     fn thread_terminate(&mut self, thread_ref: &mut ThreadRef<K>) -> Result<()> {
         // SAFETY: we have exclusive access to thread by virtue of the scheduler lock being held.
         let thread = unsafe { thread_ref.thread.as_mut() };
+        self.thread_terminate_internal(thread)
+    }
+
+    fn thread_terminate_internal(&mut self, thread: &mut Thread<K>) -> Result<()> {
         match &mut thread.owner {
             ThreadOwner::None => Err(Error::InvalidArgument),
             ThreadOwner::Scheduler => {
-                if thread.state == thread::State::Running {
-                    // thread is currently running.  This thread?  For now return an error
-                    return Err(Error::InvalidArgument);
-                }
-
                 // Mark thread as terminating so that it can clean itself up.
                 thread.terminating = true;
 
@@ -518,13 +557,19 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             ThreadOwner::WaitQueue { queue, wait_type } => {
                 // First, mark the thread as being in the terminated state.
                 // SAFETY: Threads access is guarded by the scheduler lock.
-                unsafe { (*thread_ref.thread.as_ptr()).terminating = true }
+                thread.terminating = true;
 
                 // Second, wake the thread if it is in an interruptible wait.
                 if *wait_type == WaitType::Interruptible {
                     // SAFETY: All thread and wait queue accesses are guarded by
-                    // the scheduler lock.
-                    let ret = unsafe { queue.as_mut().queue.remove_element(thread_ref.thread) };
+                    // the scheduler lock and the thread is guaranteed to be in
+                    // the queue by the fact that the queue is the ThreadOwner.
+                    let ret = unsafe {
+                        queue
+                            .as_mut()
+                            .queue
+                            .remove_element(NonNull::from_ref(thread))
+                    };
                     let Some(thread_box) = ret else {
                         // The a thread's owner is `ThreadOwner::WaitQueue` it will always
                         // be in the `WaitQueue`'s queue.  A failure to remove here would
@@ -556,19 +601,22 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
 
         // If the thread is terminated and `thread_ref` is the singular reference to it,
         // the thread is terminated
-        if thread.state == thread::State::Terminated && thread.ref_count.load(Ordering::SeqCst) == 1
-        {
+        if thread.state == State::Terminated && thread.ref_count.load(Ordering::SeqCst) == 1 {
             // SAFETY: Threads only enter the Terminated state through `exit_thread` which adds them
             // to the termination_queue.  Join is the only method by which they are removed from the
             // queue and the state is set to the Joined state when that happens.  Therefore, if the
             // thread is in the Terminated state, it *must* be in the termination_queue.
-            thread.state = thread::State::Joined;
+            thread.state = State::Joined;
 
+            // SAFETY: Scheduler lock is held per precondition.
             unsafe { thread.remove_from_parent_process() };
+
             // Reset thread state.
             thread.terminating = false;
             *thread.arch_thread_state.get_mut() = K::ThreadState::NEW;
 
+            // SAFETY: Thread is guaranteed to be in the termination queue by
+            // the fact that it is in the terminated state.
             return TryJoinResult::Joined(unsafe {
                 self.termination_queue
                     .remove_element(thread_ref.thread)
@@ -631,6 +679,34 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
     fn thread_is_terminating(&self, thread: &ThreadRef<K>) -> bool {
         // SAFETY: Exclusive access to thread is guaranteed by scheduler lock
         unsafe { thread.thread.as_ref().terminating }
+    }
+}
+
+impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
+    pub fn process_terminate(mut self, _kernel: K, process_ref: &ProcessRef<K>) -> Result<()> {
+        let proc = unsafe { process_ref.process.as_ref() };
+        match proc.state {
+            ProcessState::Terminating | ProcessState::Terminated => return Ok(()),
+            _ => {}
+        }
+
+        // Set state to terminating
+        unsafe {
+            let mut ptr = process_ref.process;
+            ptr.as_mut().state = ProcessState::Terminating;
+        }
+
+        // Terminate all threads
+        unsafe {
+            let mut proc_ptr = process_ref.process;
+            proc_ptr.as_mut().thread_list.filter(|thread| {
+                info!("Terminating thread '{}'", thread.name as &str);
+                let _ = self.thread_terminate_internal(thread);
+                true // Keep in list
+            });
+        }
+
+        Ok(())
     }
 }
 
