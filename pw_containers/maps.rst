@@ -119,6 +119,33 @@ Example
    :start-after: [pw_containers-dynamic_hash_map]
    :end-before: [pw_containers-dynamic_hash_map]
 
+.. _module-pw_containers-dynamic_map:
+
+----------------
+pw::DynamicMap
+----------------
+:cc:`pw::DynamicMap` provides an embedded-friendly, tree-based, dynamic map
+implementation. It uses a :cc:`pw::Allocator` for all memory operations.
+
+This class is similar to ``std::map<K, V>``.
+
+Key features of :cc:`pw::DynamicMap`:
+
+*  Uses a :cc:`pw::Allocator` for memory operations for each node.
+*  Provides a ``std::map``-like API, but adds ``try_*`` versions of
+   operations that return ``std::nullopt`` on allocation failure.
+   (e.g., :cc:`insert` vs :cc:`try_insert`, :cc:`emplace` vs :cc:`try_emplace`).
+*  Never allocates in the constructor. ``constexpr`` constructible.
+*  Leverages :cc:`pw::IntrusiveMap` internally.
+
+Example
+=======
+.. literalinclude:: examples/dynamic_map.cc
+   :language: cpp
+   :linenos:
+   :start-after: [pw_containers-dynamic_map]
+   :end-before: [pw_containers-dynamic_map]
+
 -------------
 API reference
 -------------

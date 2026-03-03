@@ -130,6 +130,18 @@ pw_add_library(pw_containers.dynamic_hash_map INTERFACE
     pw_preprocessor
 )
 
+pw_add_library(pw_containers.dynamic_map INTERFACE
+  HEADERS
+    public/pw_containers/dynamic_map.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator.allocator
+    pw_assert.assert
+    pw_containers._common
+    pw_containers.intrusive_map
+)
+
 pw_add_library(pw_containers.inline_deque INTERFACE
   HEADERS
     public/pw_containers/inline_deque.h
@@ -556,6 +568,15 @@ pw_add_test(pw_containers.dynamic_hash_map_test
   PRIVATE_DEPS
     pw_allocator.testing
     pw_containers.dynamic_hash_map
+    pw_containers._test_helpers
+)
+
+pw_add_test(pw_containers.dynamic_map_test
+  SOURCES
+    dynamic_map_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_containers.dynamic_map
     pw_containers._test_helpers
 )
 
