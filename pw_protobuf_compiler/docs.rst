@@ -284,6 +284,10 @@ executable and ``pw_protobuf_compiler_PROTOC_BINARY`` to the path, relative to
 For all ``protoc`` invocations, the build will add a dependency on that target
 and will invoke that executable.
 
+If your build specifies ``dir_pw_protobuf_compiler``, then this is used as the
+base directory of your protobuf repository. Otherwise, it is assumed to be the
+same as the ``pw_protobuf_compiler_PROTOC_TARGET`` label.
+
 .. _module-pw_protobuf_compiler-cmake:
 
 CMake

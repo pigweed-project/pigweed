@@ -23,6 +23,7 @@ import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/python_gn_args.gni")
 import("$dir_pw_build/target_types.gni")
 import("$pw_external_nanopb/nanopb.gni")
+import("$pw_external_protobuf/protobuf.gni")
 import("toolchain.gni")
 
 # Variables forwarded from the public pw_proto_library template to the final
@@ -143,8 +144,16 @@ template("_pw_invoke_protoc") {
         assert(
             pw_protobuf_compiler_PROTOC_BINARY != "",
             "if pw_protobuf_compiler_PROTOC_TARGET is set then pw_protobuf_compiler_PROTOC_BINARY must be set to the path to protoc, relative to the root_build_dir.")
-        _protoc_src_dir =
-            get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir") + "/src"
+
+        _protoc_base_dir = ""
+        if (dir_pw_third_party_protobuf != "") {
+          _protoc_base_dir = dir_pw_third_party_protobuf
+        } else {
+          _protoc_base_dir =
+              get_label_info(pw_protobuf_compiler_PROTOC_TARGET, "dir")
+        }
+
+        _protoc_src_dir = _protoc_base_dir + "/src"
 
         args += [
           "--protoc",
