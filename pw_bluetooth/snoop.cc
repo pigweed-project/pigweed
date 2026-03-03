@@ -21,6 +21,9 @@
 
 #include "pw_assert/check.h"
 #include "pw_bluetooth/emboss_util.h"
+#include "pw_bluetooth/hci_common.emb.h"
+#include "pw_bluetooth/hci_data.emb.h"
+#include "pw_bluetooth/hci_events.emb.h"
 #include "pw_bluetooth/snoop.emb.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
 #include "pw_bytes/span.h"
@@ -32,7 +35,10 @@
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
+#include "pw_string/string.h"
+#include "pw_string/string_builder.h"
 #include "pw_sync/mutex.h"
+#include "pw_trace/trace.h"
 
 namespace pw::bluetooth {
 
@@ -75,6 +81,89 @@ Result<std::array<uint8_t, kHeaderSize>> GetSnoopLogFileHeader() {
   writer.version_number().Write(kEmbossFileVersion);
   writer.datalink_type().Write(emboss::snoop_log::DataLinkType::HCI_UART_H4);
   return file_header_data;
+}
+
+void AddTrace(emboss::snoop_log::PacketFlags emboss_packet_flag,
+              const proxy::H4PacketInterface& hci_packet) {
+  pw::InlineString<32> trace_tag;
+  pw::StringBuilder trace_tag_builder(trace_tag);
+
+  uint8_t type = static_cast<uint8_t>(hci_packet.GetH4Type());
+  // Direction uses 0 for incoming, 1 for outcomming packet to match android
+  // BTSL traces.
+  uint8_t direction;
+  switch (emboss_packet_flag) {
+    case emboss::snoop_log::PacketFlags::RECEIVED:
+      direction = 0;
+      break;
+    case emboss::snoop_log::PacketFlags::SENT:
+      direction = 1;
+      break;
+    default:
+      PW_UNREACHABLE;
+      direction = -1;
+  }
+  size_t size = hci_packet.GetHciSpan().size();
+  trace_tag_builder << type << "/" << direction << "/" << size;
+  switch (hci_packet.GetH4Type()) {
+    case emboss::H4PacketType::EVENT: {
+      const auto header =
+          emboss::MakeEventHeaderView(hci_packet.GetHciSpan().data(),
+                                      emboss::EventHeaderView::SizeInBytes());
+      if (!header.IsComplete()) {
+        break;
+      }
+      trace_tag_builder.Format("/%02x", header.event_code_uint().Read());
+      const emboss::EventCode event_code = header.event_code().Read();
+      if (event_code == emboss::EventCode::LE_META_EVENT) {
+        const auto le_meta_event =
+            emboss::MakeLEMetaEventView(hci_packet.GetHciSpan().data(),
+                                        emboss::LEMetaEventView::SizeInBytes());
+        if (!le_meta_event.IsComplete()) {
+          break;
+        }
+        trace_tag_builder.Format("/%02x", le_meta_event.subevent_code().Read());
+      } else if (event_code == emboss::EventCode::VENDOR_DEBUG) {
+        const auto vendor_debug_event = emboss::MakeVendorDebugEventView(
+            hci_packet.GetHciSpan().data(),
+            emboss::VendorDebugEventView::SizeInBytes());
+        if (!vendor_debug_event.IsComplete()) {
+          break;
+        }
+        trace_tag_builder.Format("/%02x",
+                                 vendor_debug_event.subevent_code().Read());
+      }
+    } break;
+    case emboss::H4PacketType::COMMAND: {
+      const auto header = emboss::MakeCommandHeaderView(
+          hci_packet.GetHciSpan().data(),
+          emboss::CommandHeaderView::SizeInBytes());
+      if (!header.IsComplete()) {
+        break;
+      }
+      trace_tag_builder.Format("/%02x",
+                               static_cast<uint8_t>(header.opcode().Read()));
+    } break;
+    case emboss::H4PacketType::ACL_DATA: {
+      const auto header = emboss::MakeAclDataFrameHeaderView(
+          hci_packet.GetHciSpan().data(),
+          emboss::AclDataFrameHeaderView::SizeInBytes());
+      if (!header.IsComplete()) {
+        break;
+      }
+      trace_tag_builder.Format("/%03x/", header.handle().Read());
+      trace_tag_builder << header.packet_boundary_flag().Read();
+    } break;
+    case emboss::H4PacketType::UNKNOWN:
+    case emboss::H4PacketType::SYNC_DATA:
+    case emboss::H4PacketType::ISO_DATA:
+      break;
+  }
+  PW_TRACE_INSTANT_DATA("BTSL",
+                        "Bluetooth",
+                        "@pw_arg_label=%s",
+                        trace_tag_builder.c_str(),
+                        trace_tag_builder.size());
 }
 
 }  // namespace
@@ -262,6 +351,10 @@ void Snoop::AddEntry(emboss::snoop_log::PacketFlags emboss_packet_flag,
   std::lock_guard lock(queue_lock_);
   if (!is_enabled_) {
     return;
+  }
+
+  if (PW_TRACE_ENABLE) {
+    AddTrace(emboss_packet_flag, hci_packet);
   }
 
   size_t hci_packet_length_to_include = std::min(

@@ -153,6 +153,29 @@ The snoop log is easy to integrate into your H4 Uart driver.
          snoop_{pw::chrono::VirtualSystemClock::RealClock()};
    };
 
+Tracing
+=======
+
+If tracing is enabled (``PW_TRACE_ENABLE`` is non-zero), the snoop logs will be
+captured as instant events (see :ref:`module-pw_trace`) tagged with packet
+information (type, size, direction, etc).
+
++----------+---------+--------------------+---------+------------+--------------------------------------------+
+| Type     | Field 1 | Field 2            | Field 3 | Field 4    | Field 5                                    |
++==========+=========+====================+=========+============+============================================+
+|          |         |                    |         |            | Subevent Code                              |
+| EVENT    |         |                    |         | Event Code |                                            |
+|          |         |                    |         |            | (Only for LE Meta and Vendor Debug events, |
+|          |         |                    |         |            | otherwise empty)                           |
++----------+         | Direction          |         +------------+--------------------------------------------+
+| COMMAND  | Packet  |                    | Packet  | Opcode     | <EMPTY>                                    |
++----------+ Type    | (``0``: incoming,  | Size    +------------+--------------------------------------------+
+| ACL_DATA |         | ``1``: outcoming)  |         | Handle     | Packet Boundary Flag                       |
++----------+         |                    |         +------------+--------------------------------------------+
+| Others   |         |                    |         | <EMPTY>    | <EMPTY>                                    |
++----------+---------+--------------------+---------+------------+--------------------------------------------+
+
+
 ---------
 HCI Utils
 ---------
