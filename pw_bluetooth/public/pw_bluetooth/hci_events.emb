@@ -1563,7 +1563,18 @@ struct SynchronousConnectionCompleteEvent:
 
 # 7.7.37 Sniff Subrating event
 # HCI_Sniff_Subrating
-# TODO: b/265052417 - Definition needs to be added
+struct SniffSubratingEvent:
+  let hdr_size = hci.EventHeader.$size_in_bytes
+  0     [+hdr_size]  hci.EventHeader  header
+  $next [+1]         hci.StatusCode   status
+  $next [+2]         UInt             connection_handle
+    -- Only the lower 12-bits are meaningful.
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]         UInt             max_transmit_latency
+  $next [+2]         UInt             max_receive_latency
+  $next [+2]         UInt             minimum_remote_timeout
+  $next [+2]         UInt             minimum_local_timeout
 
 
 struct ExtendedInquiryResultEvent:
