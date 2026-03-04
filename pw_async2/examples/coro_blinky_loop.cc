@@ -13,6 +13,7 @@
 // the License.
 
 #include "pw_async2/coro.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_chrono/system_clock.h"
@@ -21,11 +22,11 @@
 
 namespace {
 
-using ::pw::OkStatus;
 using ::pw::Result;
 using ::pw::Status;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
+using ::pw::async2::CoroTask;
 using ::pw::async2::TimeProvider;
 using ::pw::chrono::SystemClock;
 using ::std::chrono_literals::operator""ms;
@@ -37,10 +38,10 @@ class Led {
 };
 
 // DOCSTAG: [pw_async2-examples-coro-blinky-loop]
-Coro<Status> Blink(CoroContext&,
-                   TimeProvider<SystemClock>& time,
-                   Led& led,
-                   int times) {
+Coro<void> Blink(CoroContext&,
+                 TimeProvider<SystemClock>& time,
+                 Led& led,
+                 int times) {
   for (int i = 0; i < times; ++i) {
     led.TurnOn();
     co_await time.WaitFor(500ms);
@@ -48,7 +49,6 @@ Coro<Status> Blink(CoroContext&,
     co_await time.WaitFor(500ms);
   }
   led.TurnOff();
-  co_return OkStatus();
 }
 // DOCSTAG: [pw_async2-examples-coro-blinky-loop]
 
@@ -58,40 +58,17 @@ Coro<Status> Blink(CoroContext&,
 
 namespace {
 
-using ::pw::OkStatus;
 using ::pw::allocator::test::AllocatorForTest;
-using ::pw::async2::Context;
-using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
 using ::pw::async2::DispatcherForTest;
-using ::pw::async2::Pending;
-using ::pw::async2::Poll;
-using ::pw::async2::Ready;
 using ::pw::async2::SimulatedTimeProvider;
-using ::pw::async2::Task;
-
-class ExpectCoroTask final : public Task {
- public:
-  ExpectCoroTask(Coro<pw::Status>&& coro) : coro_(std::move(coro)) {}
-
- private:
-  Poll<> DoPend(Context& cx) final {
-    Poll<Status> result = coro_.Pend(cx);
-    if (result.IsPending()) {
-      return Pending();
-    }
-    EXPECT_EQ(*result, OkStatus());
-    return Ready();
-  }
-  Coro<pw::Status> coro_;
-};
 
 TEST(CoroExample, ReturnsOk) {
   AllocatorForTest<512> alloc;
   CoroContext coro_cx(alloc);
   SimulatedTimeProvider<SystemClock> time;
   Led led;
-  ExpectCoroTask task = Blink(coro_cx, time, led, /*times=*/3);
+  CoroTask task = Blink(coro_cx, time, led, /*times=*/3);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   while (dispatcher.RunUntilStalled()) {

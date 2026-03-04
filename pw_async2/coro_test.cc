@@ -18,8 +18,11 @@
 
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_containers/internal/test_helpers.h"
 #include "pw_status/status.h"
+#include "pw_status/try.h"
 
 namespace {
 
@@ -32,28 +35,12 @@ using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
+using ::pw::async2::CoroTask;
 using ::pw::async2::DispatcherForTest;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
-using ::pw::async2::Ready;
-using ::pw::async2::Task;
 using ::pw::async2::Waker;
-
-class ExpectCoroTask final : public Task {
- public:
-  ExpectCoroTask(Coro<pw::Status>&& coro) : coro_(std::move(coro)) {}
-
- private:
-  Poll<> DoPend(Context& cx) final {
-    Poll<Status> result = coro_.Pend(cx);
-    if (result.IsPending()) {
-      return Pending();
-    }
-    EXPECT_EQ(*result, OkStatus());
-    return Ready();
-  }
-  Coro<pw::Status> coro_;
-};
+using ::pw::containers::test::Counter;
 
 Coro<Result<int>> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
 
@@ -74,47 +61,61 @@ class ObjectWithCoroMethod {
   int x_;
 };
 
-TEST(CoroTest, BasicFunctionsWithoutYieldingRun) {
-  AllocatorForTest<256> alloc;
-  CoroContext coro_cx(alloc);
+class CoroTest : public ::testing::Test {
+ protected:
+  CoroTest() : coro_cx_(alloc_) {}
+
+  AllocatorForTest<2048> alloc_;
+  CoroContext coro_cx_;
+};
+
+TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
   int output = 0;
-  ExpectCoroTask task = StoresFiveThenReturns(coro_cx, output);
+  CoroTask task = StoresFiveThenReturns(coro_cx_, output);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
+  EXPECT_EQ(task.Wait(), OkStatus());
   EXPECT_EQ(output, 5);
 }
 
-TEST(CoroTest, AllocationFailureProducesInvalidCoro) {
-  CoroContext coro_cx(GetNullAllocator());
-  EXPECT_FALSE(ImmediatelyReturnsFive(coro_cx).IsValid());
+TEST(Coro, AllocationFailureProducesInvalidCoro) {
+  CoroContext null_cx(GetNullAllocator());
+  EXPECT_FALSE(ImmediatelyReturnsFive(null_cx).IsValid());
   int x = 0;
-  EXPECT_FALSE(StoresFiveThenReturns(coro_cx, x).IsValid());
+  EXPECT_FALSE(StoresFiveThenReturns(null_cx, x).IsValid());
 }
 
-TEST(CoroTest, ObjectWithCoroMethodIsCallable) {
-  AllocatorForTest<256> alloc;
-  CoroContext coro_cx(alloc);
+TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
   ObjectWithCoroMethod obj(4);
   int out = 22;
-  ExpectCoroTask task = obj.CoroMethodStoresField(coro_cx, out);
+  CoroTask task = obj.CoroMethodStoresField(coro_cx_, out);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), OkStatus());
   EXPECT_EQ(out, 4);
 }
 
-struct MockPendable {
-  MockPendable() : poll_count(0), return_value(Pending()), last_waker() {}
-  MockPendable(const MockPendable&) = delete;
-  MockPendable& operator=(const MockPendable&) = delete;
-  MockPendable(MockPendable&&) = delete;
-  MockPendable& operator=(MockPendable&&) = delete;
+struct FakeFuture {
+  using value_type = int;
+
+  FakeFuture() : poll_count(0), return_value(Pending()), last_waker() {}
+
+  FakeFuture(const FakeFuture&) = delete;
+  FakeFuture& operator=(const FakeFuture&) = delete;
+
+  FakeFuture(FakeFuture&&) = default;
+  FakeFuture& operator=(FakeFuture&&) = default;
+
+  bool is_pendable() const { return true; }
+  bool is_complete() const { return false; }
 
   Poll<int> Pend(Context& cx) {
     ++poll_count;
     PW_ASYNC_STORE_WAKER(
-        cx, last_waker, "MockPendable is waiting for last_waker");
+        cx, last_waker, "FakeFuture is waiting for last_waker");
     return return_value;
   }
 
@@ -123,25 +124,23 @@ struct MockPendable {
   Waker last_waker;
 };
 
-Coro<Result<int>> AddTwo(CoroContext&, MockPendable& a, MockPendable& b) {
+Coro<Result<int>> AddTwo(CoroContext&, FakeFuture& a, FakeFuture& b) {
   co_return co_await a + co_await b;
 }
 
-Coro<Status> AddTwoThenStore(CoroContext& alloc,
-                             MockPendable& a,
-                             MockPendable& b,
+Coro<Status> AddTwoThenStore(CoroContext& alloc_,
+                             FakeFuture& a,
+                             FakeFuture& b,
                              int& out) {
-  PW_CO_TRY_ASSIGN(out, co_await AddTwo(alloc, a, b));
+  PW_CO_TRY_ASSIGN(out, co_await AddTwo(alloc_, a, b));
   co_return OkStatus();
 }
 
-TEST(CoroTest, AwaitMultipleAndAwakenRuns) {
-  AllocatorForTest<512> alloc;
-  CoroContext coro_cx(alloc);
-  MockPendable a;
-  MockPendable b;
+TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
+  FakeFuture a;
+  FakeFuture b;
   int output = 0;
-  ExpectCoroTask task = AddTwoThenStore(coro_cx, a, b, output);
+  CoroTask task = AddTwoThenStore(coro_cx_, a, b, output);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
 
@@ -164,71 +163,65 @@ TEST(CoroTest, AwaitMultipleAndAwakenRuns) {
   b.return_value = b_value;
   b.last_waker.Wake();
   dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), OkStatus());
+
   EXPECT_EQ(a.poll_count, 2);
   EXPECT_EQ(b.poll_count, 2);
   EXPECT_EQ(output, a_value + b_value);
 }
 
-enum class ObjectState {
-  kUninitialized,
-  kConstructed,
-  kDestroyed,
-
-};
-
-class TrackedObject {
- public:
-  explicit TrackedObject(ObjectState& state) : state_(state) {
-    state_ = ObjectState::kConstructed;
-  }
-
-  ~TrackedObject() { state_ = ObjectState::kDestroyed; }
-
- private:
-  ObjectState& state_;
-};
-
-Coro<Status> Inner(CoroContext&) { co_return OkStatus(); }
-
-Coro<Status> Outer(CoroContext& cx,
-                   std::optional<Status>& returned_status,
-                   TrackedObject argument,
-                   ObjectState& before_inner,
-                   ObjectState& after_inner) {
-  TrackedObject before(before_inner);
-
-  returned_status = co_await Inner(cx);
-
-  TrackedObject after(after_inner);
-  co_return OkStatus();
+Coro<Counter> MultiplyByThree(CoroContext&, Counter value) {
+  co_return Counter(value.value * 3);
 }
 
-TEST(CoroTest, AllocationFailureInNestedCoroReturnsStatusInternal) {
-  pw::allocator::test::AllocatorForTest<4096> alloc;
-  CoroContext coro_cx(alloc);
+Coro<int> NumberNine(CoroContext& cx) {
+  co_return co_await MultiplyByThree(cx, 3);
+}
 
-  std::optional<Status> returned_status;
+Coro<Counter> ReturnsAValue(CoroContext& cx, int add) {
+  co_return Counter(add + co_await NumberNine(cx));
+}
 
-  ObjectState argument = ObjectState::kUninitialized;
-  ObjectState before = ObjectState::kUninitialized;
-  ObjectState after = ObjectState::kUninitialized;
+TEST_F(CoroTest, ReturnsInt) {
+  CoroTask task(NumberNine(coro_cx_));
 
-  Coro<Status> outer_coro =
-      Outer(coro_cx, returned_status, TrackedObject(argument), before, after);
-  ASSERT_TRUE(outer_coro.IsValid());
-
-  alloc.Exhaust();  // Prevent allocation of Inner coroutine.
-
-  ExpectCoroTask task(std::move(outer_coro));
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_EQ(returned_status, Status::Internal());
+  EXPECT_EQ(task.Wait(), 9);
+}
 
-  EXPECT_EQ(argument, ObjectState::kDestroyed);
-  EXPECT_EQ(before, ObjectState::kDestroyed);
-  EXPECT_EQ(after, ObjectState::kDestroyed);
+TEST_F(CoroTest, Memory) {
+  CoroTask task(ReturnsAValue(coro_cx_, 5));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait().value, 9 + 5);
+}
+
+Coro<void> WaitUntilFive(CoroContext& cx, FakeFuture& fut) {
+  EXPECT_EQ(co_await fut, 5);
+}
+
+TEST_F(CoroTest, AwaitVoidCoro) {
+  FakeFuture fut;
+  CoroTask task(WaitUntilFive(coro_cx_, fut));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(fut.poll_count, 1);
+
+  fut.return_value = 5;
+  fut.last_waker.Wake();
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(fut.poll_count, 2);
 }
 
 }  // namespace

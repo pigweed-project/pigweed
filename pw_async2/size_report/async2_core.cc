@@ -22,6 +22,7 @@
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 #include "pw_async2/coro.h"
+#include "pw_async2/coro_task.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
 namespace pw::async2::size_report {
@@ -33,26 +34,10 @@ BasicDispatcher dispatcher;
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
-class ExpectCoroTask final : public Task {
- public:
-  ExpectCoroTask(Coro<pw::Status>&& coro) : coro_(std::move(coro)) {}
-
- private:
-  Poll<> DoPend(Context& cx) final {
-    Poll<Status> result = coro_.Pend(cx);
-    if (result.IsPending()) {
-      return Pending();
-    }
-    PW_CHECK_OK(*result);
-    return Ready();
-  }
-  Coro<pw::Status> coro_;
-};
-
-Coro<Result<int>> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
+Coro<int> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
 
 Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
-  PW_CO_TRY_ASSIGN(out, co_await ImmediatelyReturnsFive(coro_cx));
+  out = co_await ImmediatelyReturnsFive(coro_cx);
   co_return OkStatus();
 }
 
@@ -104,7 +89,7 @@ int Measure() {
 
   CoroContext coro_cx(GetAllocator());
   int output = 0;
-  ExpectCoroTask coro_task = StoresFiveThenReturns(coro_cx, output);
+  CoroTask coro_task = StoresFiveThenReturns(coro_cx, output);
   dispatcher.Post(coro_task);
   PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
 

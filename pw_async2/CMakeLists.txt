@@ -64,6 +64,7 @@ pw_add_library(pw_async2 STATIC
     pw_chrono.system_clock
     pw_containers.intrusive_forward_list
     pw_containers.intrusive_list
+    pw_containers.optional
     pw_function
     pw_log
     pw_log.args
@@ -339,15 +340,20 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   pw_add_library(pw_async2.coro STATIC
     HEADERS
       public/pw_async2/coro.h
+      public/pw_async2/coro_task.h
+      public/pw_async2/fallible_coro_task.h
     SOURCES
       coro.cc
+      coro_task.cc
     PRIVATE_DEPS
+      pw_assert.check
       pw_log
     PUBLIC_DEPS
       pw_allocator.allocator
+      pw_assert.assert
       pw_async2
+      pw_containers.optional
       pw_function
-      pw_status
     PUBLIC_INCLUDES
       public
   )
@@ -356,33 +362,35 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     SOURCES
       coro_test.cc
     PRIVATE_DEPS
-      pw_async2.testing
       pw_allocator.null_allocator
       pw_allocator.testing
       pw_async2.coro
+      pw_async2.testing
+      pw_containers._test_helpers
       pw_status
   )
 
-  pw_add_library(pw_async2.coro_or_else_task INTERFACE
-    HEADERS
-      public/pw_async2/coro_or_else_task.h
-    PUBLIC_DEPS
-      pw_async2.coro
-      pw_async2
-      pw_function
-      pw_status
-    PUBLIC_INCLUDES
-      public
-  )
-
-  pw_add_test(pw_async2.coro_or_else_task_test
+  pw_add_test(pw_async2.fallible_coro_task_test
     SOURCES
-      coro_or_else_task_test.cc
+      fallible_coro_task_test.cc
+    PRIVATE_DEPS
+      pw_allocator.null_allocator
+      pw_allocator.testing
+      pw_async2
+      pw_async2.coro
+      pw_async2.testing
+      pw_async2.value_future
+      pw_containers._test_helpers
+      pw_status
+  )
+
+  pw_add_test(pw_async2.coro_task_test
+    SOURCES
+      coro_task_test.cc
     PRIVATE_DEPS
       pw_async2.coro
-      pw_async2.coro_or_else_task
       pw_async2
-      pw_allocator.null_allocator
+      pw_async2.testing
       pw_allocator.testing
       pw_status
   )
@@ -607,7 +615,6 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     PRIVATE_DEPS
       pw_async2.channel
       pw_async2.coro
-      pw_async2.coro_or_else_task
       pw_async2
       pw_async2.testing
       pw_allocator.testing

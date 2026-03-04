@@ -16,7 +16,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_or_else_task.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/try.h"
 #include "pw_containers/vector.h"
@@ -124,16 +124,22 @@ using pw::async2::CoroContext;
 using pw::async2::Receiver;
 using pw::async2::Sender;
 
-Coro<pw::Status> CoroProducer(CoroContext&, Sender<int> sender) {
-  for (int data = 0; data < 3; ++data) {
-    co_await sender.Send(data);
+// Returns the number of ints that were successfully sent.
+Coro<int> CoroProducer(CoroContext&, Sender<int> sender) {
+  int data = 0;
+  for (; data < 3; ++data) {
+    if (!co_await sender.Send(data)) {
+      break;
+    }
   }
-  co_return pw::OkStatus();
+  co_return data;
 }
 
-Coro<pw::Status> CoroConsumer(CoroContext&,
-                              Receiver<int> receiver,
-                              pw::Vector<int>& values) {
+// Reads values from the receiver and stores them in `values` until the channel
+// closes.
+Coro<void> CoroConsumer(CoroContext&,
+                        Receiver<int> receiver,
+                        pw::Vector<int>& values) {
   while (true) {
     std::optional<int> result = co_await receiver.Receive();
     if (!result.has_value()) {
@@ -141,7 +147,6 @@ Coro<pw::Status> CoroConsumer(CoroContext&,
     }
     values.push_back(*result);
   }
-  co_return pw::OkStatus();
 }
 // DOCSTAG: [pw_async2-examples-channel-coro]
 
@@ -164,16 +169,18 @@ TEST(Channel, Coro) {
   channel.Release();
 
   pw::Vector<int, 3> values;
-  auto producer = pw::async2::CoroOrElseTask(
-      CoroProducer(coro_cx, std::move(sender)), [](pw::Status) {});
-  auto consumer = pw::async2::CoroOrElseTask(
-      CoroConsumer(coro_cx, std::move(receiver), values), [](pw::Status) {});
+  auto producer =
+      pw::async2::CoroTask(CoroProducer(coro_cx, std::move(sender)));
+  auto consumer =
+      pw::async2::CoroTask(CoroConsumer(coro_cx, std::move(receiver), values));
 
   dispatcher.Post(producer);
   dispatcher.Post(consumer);
 
   dispatcher.RunToCompletion();
 
+  EXPECT_EQ(producer.Wait(), 3);
+  consumer.Join();
   EXPECT_EQ(values.size(), 3u);
 }
 

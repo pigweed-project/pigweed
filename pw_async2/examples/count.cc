@@ -20,7 +20,7 @@
 #include "pw_async2/allocate_task.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_or_else_task.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/system_time_provider.h"
 #include "pw_chrono/system_clock.h"
@@ -36,7 +36,7 @@ using ::pw::async2::AllocateTask;
 using ::pw::async2::BasicDispatcher;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroOrElseTask;
+using ::pw::async2::CoroTask;
 using ::pw::async2::Dispatcher;
 using ::pw::async2::GetSystemTimeProvider;
 using ::pw::async2::Task;
@@ -62,9 +62,7 @@ class Counter {
     CoroContext coro_cx(*allocator_);
     Coro<Status> coro = CountCoro(coro_cx, period, times);
     Task* new_task =
-        AllocateTask<CoroOrElseTask>(*allocator_, std::move(coro), [](Status) {
-          PW_LOG_ERROR("Counter coroutine failed to allocate.");
-        });
+        AllocateTask<CoroTask<Status>>(*allocator_, std::move(coro));
 
     // The newly allocated task will be free'd by the dispatcher
     // upon completion.

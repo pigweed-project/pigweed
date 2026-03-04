@@ -454,7 +454,7 @@ cc_library(
     ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
-    visibility = [":__subpackages__"],
+    visibility = ["//:__subpackages__"],
     deps = [
         ":algorithm",
         "//pw_unit_test",

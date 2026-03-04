@@ -12,13 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_allocator/allocator.h"
-#include "pw_async2/coro_or_else_task.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_status/status.h"
 
 // DOCSTAG: [pw_async2-examples-basic-coro]
-#include "pw_allocator/allocator.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/coro.h"
 #include "pw_log/log.h"
@@ -33,12 +31,12 @@ using ::pw::async2::CoroContext;
 using ::pw::async2::Receiver;
 using ::pw::async2::Sender;
 
-/// Create a coroutine which asynchronously receives a value from
-/// ``receiver`` and forwards it to ``sender``.
+/// Create a coroutine which asynchronously receives a value from `receiver` and
+/// forwards it to `sender`.
 ///
-/// Note: the ``CoroContext`` argument is used by the ``Coro<T>`` internals to
-/// allocate the coroutine state. If this allocation fails, ``Coro<Status>``
-/// will return ``Status::Internal()``.
+/// Note: the `CoroContext` argument is used by the `Coro<T>` internals to
+/// allocate the coroutine state. If this allocation fails, the coroutine
+/// aborts.
 Coro<Status> ForwardingCoro(CoroContext&,
                             Receiver<int> receiver,
                             Sender<int> sender) {
@@ -67,7 +65,7 @@ namespace {
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::ChannelStorage;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroOrElseTask;
+using ::pw::async2::CoroTask;
 using ::pw::async2::CreateSpscChannel;
 
 TEST(CoroExample, ReturnsOk) {
@@ -78,16 +76,19 @@ TEST(CoroExample, ReturnsOk) {
   handle1.Release();
   handle2.Release();
 
-  AllocatorForTest<512> alloc;
-  CoroContext coro_cx(alloc);
-  CoroOrElseTask task(
-      ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2)),
-      [](Status) { FAIL(); });
-
-  pw::async2::DispatcherForTest dispatcher;
   EXPECT_EQ(sender1.TrySend(42), pw::OkStatus());
+
+  AllocatorForTest<512> alloc;
+  pw::async2::DispatcherForTest dispatcher;
+
+  // DOCSTAG: [pw_async2-examples-basic-coro-task]
+  CoroContext coro_cx(alloc);
+  CoroTask task(
+      ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2)));
+
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
+  // DOCSTAG: [pw_async2-examples-basic-coro-task]
 
   EXPECT_EQ(receiver2.TryReceive().value(), 42);
 }

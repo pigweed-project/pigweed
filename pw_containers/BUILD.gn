@@ -239,7 +239,7 @@ pw_source_set("test_helpers") {
     dir_pw_unit_test,
   ]
   deps = [ dir_pw_assert ]
-  visibility = [ ":*" ]
+  visibility = [ "$dir_pigweed/*" ]
   testonly = pw_unit_test_TESTONLY
 }
 

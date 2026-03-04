@@ -27,7 +27,7 @@
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/context.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_or_else_task.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/future_timeout.h"
 #include "pw_async2/poll.h"
@@ -57,7 +57,7 @@ using ::pw::async2::BasicDispatcher;
 using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroOrElseTask;
+using ::pw::async2::CoroTask;
 using ::pw::async2::FuncTask;
 using ::pw::async2::GetSystemTimeProvider;
 using ::pw::async2::Poll;
@@ -254,10 +254,10 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroOrElseTask(SampleVoltageCoro(coro_cx, result),
-                               [&](Status status) { result = status; });
+    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
+    PW_CHECK(task.Wait().IsDeadlineExceeded());
     PW_CHECK(result.status().IsDeadlineExceeded());
     LogSampledVoltages("SampleVoltageCoro", result);
   }
@@ -281,10 +281,10 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroOrElseTask(SampleVoltageCoro(coro_cx, result),
-                               [&](Status status) { result = status; });
+    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
+    PW_CHECK_OK(task.Wait());
     PW_CHECK(result.ok());
     LogSampledVoltages("SampleVoltageCoro", result);
   }
@@ -322,10 +322,10 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroOrElseTask(SampleVoltageCoro(coro_cx, result),
-                               [&](Status status) { result = status; });
+    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
+    ASSERT_TRUE(task.Wait().IsDeadlineExceeded());
     ASSERT_TRUE(result.status().IsDeadlineExceeded());
   }
 
@@ -348,10 +348,10 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroOrElseTask(SampleVoltageCoro(coro_cx, result),
-                               [&](Status status) { result = status; });
+    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
+    ASSERT_TRUE(task.Wait().ok());
     ASSERT_TRUE(result.status().ok());
     ASSERT_TRUE(result->size() == 10);
   }

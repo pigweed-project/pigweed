@@ -68,6 +68,7 @@ pw_source_set("pw_async2") {
     "$dir_pw_chrono:system_clock",
     "$dir_pw_containers:intrusive_forward_list",
     "$dir_pw_containers:intrusive_list",
+    "$dir_pw_containers:optional",
     "$dir_pw_log:args",
     "$dir_pw_string:to_string",
     "$dir_pw_sync:lock_annotations",
@@ -354,16 +355,28 @@ pw_test("notification_test") {
 if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
   pw_source_set("coro") {
     public_configs = [ ":public_include_path" ]
-    public = [ "public/pw_async2/coro.h" ]
+    public = [
+      "public/pw_async2/coro.h",
+      "public/pw_async2/coro_task.h",
+      "public/pw_async2/fallible_coro_task.h",
+    ]
     public_deps = [
       ":internal",
       ":pw_async2",
       "$dir_pw_allocator:allocator",
-      "$dir_pw_status",
+      "$dir_pw_assert:assert",
+      "$dir_pw_containers:optional",
       dir_pw_function,
     ]
-    deps = [ dir_pw_log ]
-    sources = [ "coro.cc" ]
+    deps = [
+      "$dir_pw_assert:check",
+      dir_pw_log,
+    ]
+    sources = [
+      "coro.cc",
+      "coro_task.cc",
+      "public/pw_async2/coro_or_else_task.h",
+    ]
   }
 
   pw_test("coro_test") {
@@ -374,31 +387,34 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       ":testing",
       "$dir_pw_allocator:null_allocator",
       "$dir_pw_allocator:testing",
+      "$dir_pw_containers:test_helpers",
       "$dir_pw_status",
     ]
     sources = [ "coro_test.cc" ]
   }
 
-  pw_source_set("coro_or_else_task") {
-    public_configs = [ ":public_include_path" ]
-    public = [ "public/pw_async2/coro_or_else_task.h" ]
-    public_deps = [
+  pw_test("fallible_coro_task_test") {
+    enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+    sources = [ "fallible_coro_task_test.cc" ]
+    deps = [
       ":coro",
       ":pw_async2",
-      "$dir_pw_function",
+      ":testing",
+      ":value_future",
+      "$dir_pw_allocator:null_allocator",
+      "$dir_pw_allocator:testing",
+      "$dir_pw_containers:test_helpers",
       "$dir_pw_status",
     ]
   }
 
-  pw_test("coro_or_else_task_test") {
+  pw_test("coro_task_test") {
     enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
-    sources = [ "coro_or_else_task_test.cc" ]
+    sources = [ "coro_task_test.cc" ]
     deps = [
       ":coro",
-      ":coro_or_else_task",
       ":pw_async2",
       ":testing",
-      "$dir_pw_allocator:null_allocator",
       "$dir_pw_allocator:testing",
       "$dir_pw_status",
     ]
@@ -618,7 +634,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     deps = [
       ":channel",
       ":coro",
-      ":coro_or_else_task",
       ":pw_async2",
       ":testing",
       "$dir_pw_allocator:testing",
@@ -651,7 +666,8 @@ pw_test_group("tests") {
     tests += [
       ":channel_coro_test",
       ":coro_test",
-      ":coro_or_else_task_test",
+      ":coro_task_test",
+      ":fallible_coro_task_test",
     ]
   }
 }

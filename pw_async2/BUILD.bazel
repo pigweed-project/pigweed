@@ -78,6 +78,7 @@ cc_library(
         "//pw_chrono:system_clock",
         "//pw_containers:intrusive_forward_list",
         "//pw_containers:intrusive_list",
+        "//pw_containers:optional",
         "//pw_function",
         "//pw_log",
         "//pw_log:args",
@@ -426,11 +427,15 @@ cc_library(
     name = "coro",
     srcs = [
         "coro.cc",
+        "coro_task.cc",
     ],
     hdrs = [
         "public/pw_async2/coro.h",
+        "public/pw_async2/coro_task.h",
+        "public/pw_async2/fallible_coro_task.h",
     ],
     implementation_deps = [
+        "//pw_assert:check",
         "//pw_log",
     ],
     strip_include_prefix = "public",
@@ -439,8 +444,9 @@ cc_library(
         ":internal",
         ":pw_async2",
         "//pw_allocator:allocator",
+        "//pw_assert:assert",
+        "//pw_containers:optional",
         "//pw_function",
-        "//pw_status",
     ],
 )
 
@@ -474,34 +480,44 @@ pw_cc_test(
         ":testing",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
+        "//pw_containers:test_helpers",
         "//pw_status",
     ],
 )
 
 cc_library(
     name = "coro_or_else_task",
-    hdrs = [
-        "public/pw_async2/coro_or_else_task.h",
-    ],
+    hdrs = ["public/pw_async2/coro_or_else_task.h"],
     strip_include_prefix = "public",
     deps = [
         ":coro",
-        ":pw_async2",
-        "//pw_function",
         "//pw_status",
     ],
 )
 
 pw_cc_test(
-    name = "coro_or_else_task_test",
-    srcs = ["coro_or_else_task_test.cc"],
+    name = "coro_task_test",
+    srcs = ["coro_task_test.cc"],
     deps = [
         ":coro",
-        ":coro_or_else_task",
         ":pw_async2",
         ":testing",
+        "//pw_allocator:testing",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
+    name = "fallible_coro_task_test",
+    srcs = ["fallible_coro_task_test.cc"],
+    deps = [
+        ":coro",
+        ":pw_async2",
+        ":testing",
+        ":value_future",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
+        "//pw_containers:test_helpers",
         "//pw_status",
     ],
 )
@@ -728,7 +744,6 @@ pw_cc_test(
     deps = [
         ":channel",
         ":coro",
-        ":coro_or_else_task",
         ":dispatcher",
         ":pw_async2",
         ":testing",
@@ -776,9 +791,11 @@ filegroup(
         "public/pw_async2/context.h",
         "public/pw_async2/coro.h",
         "public/pw_async2/coro_or_else_task.h",
+        "public/pw_async2/coro_task.h",
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/dispatcher_for_test.h",
         "public/pw_async2/epoll_dispatcher.h",
+        "public/pw_async2/fallible_coro_task.h",
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
         "public/pw_async2/future_task.h",

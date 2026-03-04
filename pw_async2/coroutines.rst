@@ -14,16 +14,16 @@ execution until an asynchronous operation is ``Ready``.
 
 .. code-block:: cpp
 
-   Coro<Status> ReadAndSend(Reader& reader, Writer& writer) {
+   Coro<void> ReadAndSend(Reader& reader, Writer& writer) {
      // co_await suspends the coroutine until the Read operation completes.
      Result<Data> data = co_await reader.Read();
      if (!data.ok()) {
-       co_return data.status();
+       co_return;
      }
 
      // The coroutine resumes here and continues.
      co_await writer.Write(*data);
-     co_return OkStatus();
+     co_return;
    }
 
 See also :ref:`docs-blog-05-coroutines`, a blog post on how Pigweed implements
@@ -31,10 +31,10 @@ coroutines without heap allocation, and challenges encountered along the way.
 
 .. _module-pw_async2-coro-tasks:
 
-------------
-Define tasks
-------------
-The following code example demonstrates basic usage:
+------------------
+Define a coroutine
+------------------
+The following example shows how to define a coroutine:
 
 .. literalinclude:: examples/basic_coro.cc
    :language: cpp
@@ -42,17 +42,28 @@ The following code example demonstrates basic usage:
    :start-after: [pw_async2-examples-basic-coro]
    :end-before: [pw_async2-examples-basic-coro]
 
-Any :ref:`future <module-pw_async2-futures>` can be passed to ``co_await``,
-which will return with a ``T`` when the result is ready.
+Any :ref:`future <module-pw_async2-futures>` or coroutine can be passed to
+``co_await``, which will return with a ``T`` when the result is ready. To return
+from a coroutine, use ``co_return <expression>`` instead of the usual ``return
+<expression>`` syntax.
 
-To return from a coroutine, ``co_return <expression>`` must be used instead of
-the usual ``return <expression>`` syntax. Because of this, the
-:c:macro:`PW_TRY` and :c:macro:`PW_TRY_ASSIGN` macros are not usable within
-coroutines. :c:macro:`PW_CO_TRY` and :c:macro:`PW_CO_TRY_ASSIGN` should be
-used instead.
+.. tip::
 
-For a more detailed explanation of Pigweed's coroutine support, see
-:cc:`Coro <pw::async2::Coro>`.
+   Use :cc:`PW_CO_TRY` and :cc:`PW_CO_TRY_ASSIGN` instead of :cc:`PW_TRY` and
+   :cc:`PW_TRY_ASSIGN` when working with :cc:`pw::Status` or :cc:`pw::Result` in
+   a coroutine. These macros use ``co_return`` instead of ``return``.
+
+Run a coroutine as a ``pw_async2`` :cc:`task <pw::async2::Task>` using
+:cc:`CoroTask <pw::async2::CoroTask>` or :cc:`FallibleCoroTask
+<pw::async2::FallibleCoroTask>`.
+
+.. literalinclude:: examples/basic_coro.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-basic-coro-task]
+   :end-before: [pw_async2-examples-basic-coro-task]
+
+For a more details about Pigweed's coroutine support, see :cc:`Coro
+<pw::async2::Coro>`.
 
 ------
 Memory
@@ -60,23 +71,23 @@ Memory
 When using C++20 coroutines, the compiler generates code to save the
 coroutine's state (including local variables) across suspension points
 (``co_await``). ``pw_async2`` hooks into this mechanism to control where this
-state is stored.
+state is stored and support gracefully handling allocation failures.
 
-A :cc:`CoroContext <pw::async2::CoroContext>`, which holds a
-:cc:`pw::Allocator`, must be passed to any function that
-returns a :cc:`Coro <pw::async2::Coro>`. This allocator is used to allocate the
-coroutine frame. If allocation fails, the resulting ``Coro`` will be invalid
-and will immediately return a ``Ready(Status::Internal())`` result when polled.
-This design makes coroutine memory usage explicit and controllable.
+A :cc:`CoroContext <pw::async2::CoroContext>`, which has a reference to a
+:cc:`pw::Allocator`, must be passed to any function that returns a :cc:`Coro
+<pw::async2::Coro>`. Its allocator is used to allocate the coroutine frame.
+
+If allocation fails, the resulting ``Coro`` object is invalid. Coroutine
+execution halts, and what happens next depends on the task executing the
+coroutine. :cc:`CoroTask <pw::async2::CoroTask>` crashes with ``PW_CRASH`` on
+allocation failure. :cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>`
+invokes an error handler function instead.
 
 .. _module-pw_async2-coro-passing-data:
 
 -------------------------------
 Passing data between coroutines
 -------------------------------
-Just like when :ref:`module-pw_async2-guides-passing-data`, there are two
-patterns for sending data between coroutines, with very much the same solutions.
-
-This section just briefly describes how to ``co_await`` the data, as all the
-details around construction and sending a value are the same as
-:ref:`module-pw_async2-guides-passing-data`.
+Coroutines run within ``pw_async2`` tasks and can pass data in all the same
+ways. See :ref:`module-pw_async2-channels` for details about passing data with
+channels.
