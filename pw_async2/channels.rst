@@ -219,7 +219,8 @@ channel.
   future resolves to ``false``.
 - ``Receiver::Receive()``: Returns a ``Future<std::optional<T>>`` which waits
   until a value is available, or resolves to ``std::nullopt`` if the channel is
-  closed and empty.
+  closed and empty. Values written to the channel are distributed among pending
+  receivers.
 
 .. tab-set::
 
@@ -320,13 +321,16 @@ channel.
 ----------------
 Channel lifetime
 ----------------
-A channel remains open as long as it has at least one active sender and at least
-one active receiver.
+A channel remains open as long as it has at least one active handle, or at least
+one active sender and one active receiver.
 
-- If all receivers are destroyed, the channel closes. Subsequent ``Send``
-  attempts will fail (the future resolves to ``false``).
-- If all senders are destroyed, the channel closes. Subsequent ``Receive`` calls
-  will drain any remaining items, then resolve to ``std::nullopt``.
+- If any handle is active, the channel remains open, even if there are no
+  senders or receivers.
+- If there is no handle and all receivers are destroyed, the channel closes.
+  Subsequent ``Send`` attempts will fail (the future resolves to ``false``).
+- If there is no handle and all senders are destroyed, the channel closes.
+  Subsequent ``Receive`` calls will drain any remaining items, then resolve to
+  ``std::nullopt``.
 
 .. _module-pw_async2-channels-alloc:
 
@@ -369,8 +373,9 @@ allocation fails, the optional will be empty.
 ------------------
 Synchronous access
 ------------------
-If you need to write to a channel from a non-async context, such as a
-separate thread or an interrupt handler, you can use ``TrySend``.
+It is possible to interact with channels from a non-async context, such as a
+separate thread or an interrupt handler. In these cases, use the following
+methods:
 
 - :cc:`Sender::TrySend`: Attempts to send the value immediately. Returns
   a :cc:`pw::Status` indicating success.
