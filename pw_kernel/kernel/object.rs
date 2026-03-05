@@ -96,6 +96,26 @@ pub trait KernelObject<K: Kernel>: Any + Send + Sync {
     }
 
     #[allow(unused_variables)]
+    fn channel_async_transact(
+        &self,
+        kernel: K,
+        send_buffer: SyscallBuffer,
+        recv_buffer: SyscallBuffer,
+    ) -> Result<()> {
+        Err(Error::Unimplemented)
+    }
+
+    #[allow(unused_variables)]
+    fn channel_async_transact_complete(&self, kernel: K) -> Result<usize> {
+        Err(Error::Unimplemented)
+    }
+
+    #[allow(unused_variables)]
+    fn channel_async_cancel(&self, kernel: K) -> Result<()> {
+        Err(Error::Unimplemented)
+    }
+
+    #[allow(unused_variables)]
     fn channel_read(&self, kernel: K, offset: usize, read_buffer: SyscallBuffer) -> Result<usize> {
         Err(Error::Unimplemented)
     }

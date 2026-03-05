@@ -188,10 +188,68 @@ fn handle_channel_transact<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a
     )?;
 
     let ret = object.channel_transact(kernel, send_buffer, recv_buffer, deadline);
-
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_transact complete");
-
     ret.map(|v| v.cast_into())
+}
+
+fn handle_channel_async_transact<'a, K: Kernel>(
+    kernel: K,
+    mut args: K::SyscallArgs<'a>,
+) -> Result<u64> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling channel_async_transact");
+    let handle = args.next_u32()?;
+    let send_data_addr = args.next_usize()?;
+    let send_data_len = args.next_usize()?;
+    let recv_data_addr = args.next_usize()?;
+    let recv_data_len = args.next_usize()?;
+
+    let object = lookup_handle(kernel, handle)?;
+    let send_buffer = SyscallBuffer::new_in_current_process(
+        kernel,
+        MemoryRegionType::ReadOnlyData,
+        send_data_addr..(send_data_addr + send_data_len),
+    )?;
+    let recv_buffer = SyscallBuffer::new_in_current_process(
+        kernel,
+        MemoryRegionType::ReadWriteData,
+        recv_data_addr..(recv_data_addr + recv_data_len),
+    )?;
+
+    let ret = object.channel_async_transact(kernel, send_buffer, recv_buffer);
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_async_transact complete");
+    ret.map(|_| 0)
+}
+
+fn handle_channel_async_transact_complete<'a, K: Kernel>(
+    kernel: K,
+    mut args: K::SyscallArgs<'a>,
+) -> Result<u64> {
+    log_if::debug_if!(
+        SYSCALL_DEBUG,
+        "syscall: handling channel_async_transact_complete"
+    );
+    let handle = args.next_u32()?;
+    let object = lookup_handle(kernel, handle)?;
+
+    let ret = object.channel_async_transact_complete(kernel);
+    log_if::debug_if!(
+        SYSCALL_DEBUG,
+        "syscall: channel_async_transact_complete complete"
+    );
+    ret.map(|v| v.cast_into())
+}
+
+fn handle_channel_async_cancel<'a, K: Kernel>(
+    kernel: K,
+    mut args: K::SyscallArgs<'a>,
+) -> Result<u64> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling channel_async_cancel");
+    let handle = args.next_u32()?;
+    let object = lookup_handle(kernel, handle)?;
+
+    let ret = object.channel_async_cancel(kernel);
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_async_cancel complete");
+    ret.map(|_| 0)
 }
 
 fn handle_channel_read<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
@@ -315,6 +373,11 @@ pub fn handle_syscall<'a, K: Kernel>(
             SysCallId::WaitGroupAdd => handle_wait_group_add(kernel, args).into(),
             SysCallId::WaitGroupRemove => handle_wait_group_remove(kernel, args).into(),
             SysCallId::ChannelTransact => handle_channel_transact(kernel, args).into(),
+            SysCallId::ChannelAsyncTransact => handle_channel_async_transact(kernel, args).into(),
+            SysCallId::ChannelAsyncTransactComplete => {
+                handle_channel_async_transact_complete(kernel, args).into()
+            }
+            SysCallId::ChannelAsyncCancel => handle_channel_async_cancel(kernel, args).into(),
             SysCallId::ChannelRead => handle_channel_read(kernel, args).into(),
             SysCallId::ChannelRespond => handle_channel_respond(kernel, args).into(),
             SysCallId::InterruptAck => handle_interrupt_ack(kernel, args).into(),

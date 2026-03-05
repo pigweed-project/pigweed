@@ -53,6 +53,15 @@ syscall_veneer!(ChannelTransact, channel_transact(
     recv_len: usize,    // a4
     deadline: u64,      // a6-a7
 ));
+syscall_veneer!(ChannelAsyncTransact, channel_async_transact(
+    object_handle: u32,
+    send_data: *const u8,
+    send_len: usize,
+    recv_data: *mut u8,
+    recv_len: usize,
+));
+syscall_veneer!(ChannelAsyncTransactComplete, channel_async_transact_complete(object_handle: u32));
+syscall_veneer!(ChannelAsyncCancel, channel_async_cancel(object_handle: u32));
 syscall_veneer!(ChannelRead, channel_read(
      object_handle: u32,
      offset: usize,
@@ -104,6 +113,30 @@ impl SysCallInterface for SysCall {
             channel_transact(handle, send_data, send_len, recv_data, recv_len, deadline)
         })
         .into()
+    }
+
+    #[inline(always)]
+    unsafe fn channel_async_transact(
+        handle: u32,
+        send_data: *const u8,
+        send_len: usize,
+        recv_data: *mut u8,
+        recv_len: usize,
+    ) -> Result<()> {
+        SysCallReturnValue::from(unsafe {
+            channel_async_transact(handle, send_data, send_len, recv_data, recv_len)
+        })
+        .into()
+    }
+
+    #[inline(always)]
+    fn channel_async_transact_complete(handle: u32) -> Result<u32> {
+        SysCallReturnValue::from(unsafe { channel_async_transact_complete(handle) }).into()
+    }
+
+    #[inline(always)]
+    fn channel_async_cancel(handle: u32) -> Result<()> {
+        SysCallReturnValue::from(unsafe { channel_async_cancel(handle) }).into()
     }
 
     #[inline(always)]

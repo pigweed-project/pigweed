@@ -65,6 +65,42 @@ pub fn channel_transact(
 }
 
 #[inline(always)]
+/// Start an asynchronous transaction on a channel.
+///
+/// # Safety
+///
+/// This function effectively borrows the memory pointed to by `send_data` and `recv_data` for the
+/// duration of the transaction. The caller must ensure that:
+///
+/// 1. The memory pointed to by `send_data` and `recv_data` remains valid and is not mutated until
+///    the transaction is either completed via `channel_async_transact_complete` or cancelled via
+///    `channel_async_cancel`.
+/// 2. The `recv_data` buffer is large enough to hold the expected response.
+///
+/// Violating these requirements may result in undefined behavior.
+pub unsafe fn channel_async_transact(
+    object_handle: u32,
+    send_data: *const u8,
+    send_len: usize,
+    recv_data: *mut u8,
+    recv_len: usize,
+) -> Result<()> {
+    unsafe {
+        SysCall::channel_async_transact(object_handle, send_data, send_len, recv_data, recv_len)
+    }
+}
+
+#[inline(always)]
+pub fn channel_async_transact_complete(object_handle: u32) -> Result<usize> {
+    SysCall::channel_async_transact_complete(object_handle).map(|ret| ret.cast_into())
+}
+
+#[inline(always)]
+pub fn channel_async_cancel(object_handle: u32) -> Result<()> {
+    SysCall::channel_async_cancel(object_handle)
+}
+
+#[inline(always)]
 pub fn channel_read(object_handle: u32, offset: usize, buffer: &mut [u8]) -> Result<usize> {
     unsafe {
         SysCall::channel_read(object_handle, offset, buffer.as_mut_ptr(), buffer.len())

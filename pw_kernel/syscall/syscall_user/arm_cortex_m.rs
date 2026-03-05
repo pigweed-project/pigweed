@@ -100,6 +100,25 @@ macro_rules! syscall_asm {
         )
     };
 
+    ($id:ident, 5) => {
+        naked_asm!("
+            push  {{r4-r8, r11}}
+            mov   r11, {id}
+            mov   r4, r0
+            mov   r5, r1
+            mov   r6, r2
+            mov   r7, r3
+            ldr   r8, [sp, #(6 * 4)]
+            svc   0
+            mov   r0, r4
+            mov   r1, r5
+            pop  {{r4-r8, r11}}
+            bx lr
+            ",
+            id = const SysCallId::$id as u32
+        )
+    };
+
     ($id:ident, 2_u64) => {
         // The u64 arg here is naturally aligned so the 4 arg wrapper is used.
         syscall_asm!($id, 4)
@@ -156,6 +175,17 @@ syscall_veneer!(ChannelTransact, 5_u64, channel_transact(
     recv_len: usize,
     deadline: u64
 ));
+syscall_veneer!(ChannelAsyncTransact, 5, channel_async_transact(
+    object_handle: u32,
+    send_data: *const u8,
+    send_len: usize,
+    recv_data: *mut u8,
+    recv_len: usize
+));
+syscall_veneer!(ChannelAsyncTransactComplete, 1, channel_async_transact_complete(
+    object_handle: u32
+));
+syscall_veneer!(ChannelAsyncCancel, 1, channel_async_cancel(object_handle: u32));
 syscall_veneer!(ChannelRead, 4, channel_read(
     handle: u32,
     offset: usize,
@@ -211,6 +241,30 @@ impl SysCallInterface for SysCall {
             channel_transact(handle, send_data, send_len, recv_data, recv_len, deadline)
         })
         .into()
+    }
+
+    #[inline(always)]
+    unsafe fn channel_async_transact(
+        handle: u32,
+        send_data: *const u8,
+        send_len: usize,
+        recv_data: *mut u8,
+        recv_len: usize,
+    ) -> Result<()> {
+        SysCallReturnValue::from(unsafe {
+            channel_async_transact(handle, send_data, send_len, recv_data, recv_len)
+        })
+        .into()
+    }
+
+    #[inline(always)]
+    fn channel_async_transact_complete(handle: u32) -> Result<u32> {
+        SysCallReturnValue::from(unsafe { channel_async_transact_complete(handle) }).into()
+    }
+
+    #[inline(always)]
+    fn channel_async_cancel(handle: u32) -> Result<()> {
+        SysCallReturnValue::from(unsafe { channel_async_cancel(handle) }).into()
     }
 
     #[inline(always)]

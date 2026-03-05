@@ -50,6 +50,27 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
+    unsafe fn channel_async_transact(
+        _handle: u32,
+        _send_data: *const u8,
+        _send_len: usize,
+        _recv_data: *mut u8,
+        _recv_len: usize,
+    ) -> Result<()> {
+        Err(pw_status::Error::Unimplemented)
+    }
+
+    #[inline(always)]
+    fn channel_async_transact_complete(_handle: u32) -> Result<u32> {
+        Err(pw_status::Error::Unimplemented)
+    }
+
+    #[inline(always)]
+    fn channel_async_cancel(_handle: u32) -> Result<()> {
+        Err(pw_status::Error::Unimplemented)
+    }
+
+    #[inline(always)]
     unsafe fn channel_read(
         _handle: u32,
         _offset: usize,

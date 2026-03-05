@@ -1,0 +1,132 @@
+// Copyright 2025 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x80000000,
+    flash_size_bytes: 261120,
+    ram_start_address: 0x81000000,
+    ram_size_bytes: 65536,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "initiator",
+      flash_size_bytes: 261120,
+      ram_size_bytes: 65536,
+      process: {
+        name: "initiator process",
+        objects: [
+          {
+            name: "IPC_1",
+            type: "channel_initiator",
+            handler_app: "handler1",
+            handler_object_name: "IPC_1",
+          },
+          {
+            name: "IPC_2",
+            type: "channel_initiator",
+            handler_app: "handler2",
+            handler_object_name: "IPC_2",
+          },
+          {
+            name: "IPC_3",
+            type: "channel_initiator",
+            handler_app: "handler3",
+            handler_object_name: "IPC_3",
+          },
+          {
+            name: "WAIT_GROUP",
+            type: "wait_group",
+          }
+        ],
+        threads: [
+          {
+            name: "initiator thread",
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
+          },
+        ],
+      },
+    },
+    {
+      name: "handler1",
+      flash_size_bytes: 261120,
+      ram_size_bytes: 65536,
+      process: {
+        name: "handler1 process",
+        objects: [
+          {
+            name: "IPC_1",
+            type: "channel_handler",
+          },
+        ],
+        threads: [
+          {
+            name: "handler1 thread",
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
+          },
+        ],
+      },
+    },
+    {
+      name: "handler2",
+      flash_size_bytes: 261120,
+      ram_size_bytes: 65536,
+      process: {
+        name: "handler2 process",
+        objects: [
+          {
+            name: "IPC_2",
+            type: "channel_handler",
+          },
+        ],
+        threads: [
+          {
+            name: "handler2 thread",
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
+          },
+        ],
+      },
+    },
+    {
+      name: "handler3",
+      flash_size_bytes: 261120,
+      ram_size_bytes: 65536,
+      process: {
+        name: "handler3 process",
+        objects: [
+          {
+            name: "IPC_3",
+            type: "channel_handler",
+          },
+        ],
+        threads: [
+          {
+            name: "handler3 thread",
+            // Generous stacks size pending kernel stack size optimization.
+            stack_size_bytes: 2048,
+          },
+        ],
+      },
+    },
+  ],
+}

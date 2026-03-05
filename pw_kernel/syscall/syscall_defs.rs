@@ -169,6 +169,7 @@
 //! ### Channel Initiator Syscalls
 //! - [`channel_transact()`]
 //! - [`channel_async_transact()`]
+//! - [`channel_async_transact_complete()`]
 //! - [`channel_async_cancel()`]
 //!
 //! ### Channel Handler Syscalls
@@ -293,9 +294,12 @@ pub enum SysCallId {
     WaitGroupAdd = 0x0001,
     WaitGroupRemove = 0x0002,
     ChannelTransact = 0x0003,
-    ChannelRead = 0x0004,
-    ChannelRespond = 0x0005,
-    InterruptAck = 0x0006,
+    ChannelAsyncTransact = 0x0004,
+    ChannelAsyncTransactComplete = 0x0005,
+    ChannelAsyncCancel = 0x0006,
+    ChannelRead = 0x0007,
+    ChannelRespond = 0x0008,
+    InterruptAck = 0x0009,
 
     // System calls prefixed with 0xF000 are reserved development/debugging use.
     DebugPutc = 0xf000,
@@ -437,13 +441,22 @@ unsafe extern "C" {
         recv_len: usize,
     ) -> isize;
 
+    /// Completes an asynchronous channel transaction
+    ///
+    /// # Returns
+    /// - `>=0`: Number of bytes received from the handler side.
+    /// - [`Error::InvalidArgument`]: `object_handle` is not a valid initiator
+    ///   channel object.
+    /// - [`Error::Unavailable`]: No transaction was pending on the channel.
+    pub fn channel_async_transact_complete(object_handle: u32) -> isize;
+
     /// Cancels a pending transaction on a channel
     ///
     /// # Returns
     /// - `0`: Pending transaction was successfully canceled.
     /// - [`Error::InvalidArgument`]: `object_handle` is not a valid initiator
     ///   channel object.
-    /// - [`Error::FailedPrecondition`]: No transaction was pending on the channel.
+    /// - [`Error::Unavailable`]: No transaction was pending on the channel.
     pub fn channel_async_cancel(object_handle: u32) -> isize;
 
     /// Perform a non-blocking read from a pending transaction.
@@ -460,7 +473,7 @@ unsafe extern "C" {
     ///   channel object.
     /// - [`Error::OutOfRange`]: A read was requested outside the bound of the
     ///   initiator's `send_buffer`.
-    /// - [`Error::FailedPrecondition`]: No transaction was pending on the channel.
+    /// - [`Error::Unavailable`]: No transaction was pending on the channel.
     ///   This can happen in the middle of handling a transaction if the initiator
     ///   cancels the transaction.
     /// - [`Error::PermissionDenied`]: `buffer` does not reference a valid memory
@@ -485,7 +498,7 @@ unsafe extern "C" {
     /// - `0`: On success.
     /// - [`Error::OutOfRange`]: The initiator's `recv_buffer` is not large enough
     ///   to fit the provided `buffer`.
-    /// - [`Error::FailedPrecondition`]: No transaction was pending on the channel.
+    /// - [`Error::Unavailable`]: No transaction was pending on the channel.
     ///   This can happen in the middle of handling a transaction if the initiator
     ///   cancels the transaction.
     /// - [`Error::PermissionDenied`]: `buffer` does not reference a valid memory
@@ -580,6 +593,19 @@ pub trait SysCallInterface {
         recv_len: usize,
         deadline: u64,
     ) -> Result<u32>;
+
+    #[expect(clippy::missing_safety_doc)]
+    unsafe fn channel_async_transact(
+        handle: u32,
+        send_data: *const u8,
+        send_len: usize,
+        recv_data: *mut u8,
+        recv_len: usize,
+    ) -> Result<()>;
+
+    fn channel_async_transact_complete(handle: u32) -> Result<u32>;
+
+    fn channel_async_cancel(handle: u32) -> Result<()>;
 
     #[expect(clippy::missing_safety_doc)]
     unsafe fn channel_read(
