@@ -40,8 +40,7 @@ class CoroContext {
  public:
   /// Creates a `CoroContext` which will allocate coroutine state using
   /// `alloc`.
-  explicit constexpr CoroContext(pw::allocator::Allocator& alloc)
-      : alloc_(alloc) {}
+  constexpr CoroContext(pw::allocator::Allocator& alloc) : alloc_(alloc) {}
 
   constexpr Allocator& alloc() const { return alloc_; }
 
