@@ -42,6 +42,17 @@ pw_test("poll_test") {
     "$dir_pw_result",
   ]
   sources = [ "poll_test.cc" ]
+  enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != ""
+}
+
+pw_test("await_test") {
+  deps = [
+    ":pw_async2",
+    ":testing",
+    ":value_future",
+    "$dir_pw_result",
+  ]
+  sources = [ "await_test.cc" ]
   enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
               pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != ""
 }
@@ -49,6 +60,7 @@ pw_test("poll_test") {
 pw_source_set("pw_async2") {
   public_configs = [ ":public_include_path" ]
   public = [
+    "public/pw_async2/await.h",
     "public/pw_async2/context.h",
     "public/pw_async2/dispatcher.h",
     "public/pw_async2/func_task.h",
@@ -65,7 +77,6 @@ pw_source_set("pw_async2") {
   public_deps = [
     ":internal",
     "$dir_pw_assert",
-    "$dir_pw_chrono:system_clock",
     "$dir_pw_containers:intrusive_forward_list",
     "$dir_pw_containers:intrusive_list",
     "$dir_pw_containers:optional",
@@ -427,6 +438,7 @@ pw_source_set("time_provider") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     "$dir_pw_async2:dispatcher",
+    "$dir_pw_chrono:virtual_clock",
     "$dir_pw_containers:intrusive_list",
     "$dir_pw_sync:interrupt_spin_lock",
     "$dir_pw_toolchain:no_destructor",
@@ -661,6 +673,7 @@ pw_test_group("tests") {
     ":system_time_provider_test",
     ":task_test",
     ":value_future_test",
+    ":await_test",
   ]
   if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     tests += [

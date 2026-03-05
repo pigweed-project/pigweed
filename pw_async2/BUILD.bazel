@@ -42,6 +42,17 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "await_test",
+    srcs = ["await_test.cc"],
+    deps = [
+        ":pw_async2",
+        ":testing",
+        ":value_future",
+        "//pw_result",
+    ],
+)
+
 cc_library(
     name = "pw_async2",
     srcs = [
@@ -53,6 +64,7 @@ cc_library(
         "waker.cc",
     ],
     hdrs = [
+        "public/pw_async2/await.h",
         "public/pw_async2/context.h",
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/func_task.h",
@@ -784,6 +796,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_async2/allocate_task.h",
+        "public/pw_async2/await.h",
         "public/pw_async2/basic_dispatcher.h",
         "public/pw_async2/callback_task.h",
         "public/pw_async2/cancellable_task.h",
