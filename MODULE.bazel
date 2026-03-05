@@ -621,7 +621,7 @@ fuchsia_clang_repository = use_repo_rule("@rules_fuchsia//fuchsia/workspace:fuch
 
 fuchsia_clang_repository(
     name = "fuchsia_clang",
-    cipd_tag = "git_revision:aea60ab94db4729bad17daa86ccfc411d48a1699",
+    cipd_tag = LLVM_VERSION,
 )
 
 cipd_repository(
