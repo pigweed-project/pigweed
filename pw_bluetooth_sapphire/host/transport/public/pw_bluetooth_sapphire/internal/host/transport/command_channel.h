@@ -37,6 +37,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/control_packets.h"
 #include "pw_bluetooth_sapphire/lease.h"
+#include "pw_multibuf/v2/multibuf.h"
 
 namespace bt::hci {
 
@@ -442,7 +443,9 @@ class CommandChannel final {
   void UpdateTransaction(std::unique_ptr<EventPacket> event);
 
   // Event handler.
+  void OnEvent(pw::multibuf::v2::MultiBuf::Instance&& buffer);
   void OnEvent(pw::span<const std::byte> buffer);
+  void OnEvent(std::unique_ptr<EventPacket> event);
 
   // Called when a command times out. Notifies upper layers of the error.
   void OnCommandTimeout(TransactionId transaction_id);

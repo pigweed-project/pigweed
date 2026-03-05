@@ -23,11 +23,17 @@
 #include <pw_result/result.h>
 #include <pw_status/status.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <optional>
+#include <utility>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/trace.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/slab_allocators.h"
+#include "pw_multibuf/v2/multibuf.h"
+#include "pw_span/span.h"
 
 namespace bt::hci {
 
@@ -173,7 +179,8 @@ CommandChannel::CommandChannel(
       dispatcher_(dispatcher),
       wake_lease_provider_(wake_lease_provider),
       weak_ptr_factory_(this) {
-  hci_->SetEventFunction(fit::bind_member<&CommandChannel::OnEvent>(this));
+  hci_->SetEventFunction(
+      [this](pw::span<const std::byte> buffer) { OnEvent(buffer); });
 
   bt_log(DEBUG, "hci", "CommandChannel initialized");
 }
@@ -778,7 +785,23 @@ void CommandChannel::NotifyEventHandler(std::unique_ptr<EventPacket> event) {
   }
 }
 
+void CommandChannel::OnEvent(pw::multibuf::v2::MultiBuf::Instance&& buffer) {
+  std::unique_ptr<EventPacket> event =
+      std::make_unique<EventPacket>(EventPacket::New(std::move(buffer)));
+
+  OnEvent(std::move(event));
+}
+
 void CommandChannel::OnEvent(pw::span<const std::byte> buffer) {
+  std::unique_ptr<EventPacket> event =
+      std::make_unique<EventPacket>(EventPacket::New(buffer.size()));
+  event->mutable_data().Write(reinterpret_cast<const uint8_t*>(buffer.data()),
+                              buffer.size());
+
+  OnEvent(std::move(event));
+}
+
+void CommandChannel::OnEvent(std::unique_ptr<EventPacket> event) {
   if (!active_) {
     bt_log(INFO, "hci", "ignoring event (CommandChannel is inactive)");
     return;
@@ -786,27 +809,22 @@ void CommandChannel::OnEvent(pw::span<const std::byte> buffer) {
 
   constexpr size_t kEventHeaderSize =
       pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes();
-  if (buffer.size() < kEventHeaderSize) {
+  if (event->size() < kEventHeaderSize) {
     // TODO(fxbug.dev/42179582): Handle these types of errors by signaling
     // Transport.
     bt_log(ERROR,
            "hci",
            "malformed packet - expected at least %zu bytes, got %zu",
            kEventHeaderSize,
-           buffer.size());
+           event->size());
     return;
   }
-
-  std::unique_ptr<EventPacket> event =
-      std::make_unique<EventPacket>(EventPacket::New(buffer.size()));
-  event->mutable_data().Write(reinterpret_cast<const uint8_t*>(buffer.data()),
-                              buffer.size());
 
   uint16_t header_payload_size =
       event->view<pw::bluetooth::emboss::EventHeaderView>()
           .parameter_total_size()
           .Read();
-  const size_t received_payload_size = buffer.size() - kEventHeaderSize;
+  const size_t received_payload_size = event->size() - kEventHeaderSize;
   if (header_payload_size != received_payload_size) {
     // TODO(fxbug.dev/42179582): Handle these types of errors by signaling
     // Transport.
