@@ -87,12 +87,8 @@ class DynamicMap {
 
     constexpr Iterator() = default;
 
-    constexpr reference operator*() const {
-      return const_cast<reference>(it_->key_value);
-    }
-    constexpr pointer operator->() const {
-      return const_cast<pointer>(&it_->key_value);
-    }
+    constexpr reference operator*() const { return it_->key_value; }
+    constexpr pointer operator->() const { return &it_->key_value; }
 
     constexpr Iterator operator++() {
       ++it_;
