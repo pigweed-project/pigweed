@@ -2388,6 +2388,78 @@ TEST_F(ProfileServerTestFakeAdapter,
 }
 
 TEST_F(ProfileServerTestFakeAdapter,
+       L2capParametersExtRequestParametersFlushTimeoutCallbackOnChannelClosed) {
+  const bt::PeerId kPeerId;
+  const fuchsia::bluetooth::PeerId kFidlPeerId{kPeerId.value()};
+
+  FakeChannel::WeakPtr last_channel;
+  adapter()->fake_bredr()->set_l2cap_channel_callback(
+      [&](FakeChannel::WeakPtr chan) { last_channel = chan; });
+
+  // Set L2CAP channel parameters
+  fidlbredr::L2capParameters l2cap_params;
+  fidlbredr::ConnectParameters conn_params;
+  l2cap_params.set_psm(fidlbredr::PSM_AVDTP);
+  conn_params.set_l2cap(std::move(l2cap_params));
+
+  std::optional<fidlbredr::Channel> response_channel;
+  client()->Connect(kFidlPeerId,
+                    std::move(conn_params),
+                    [&](fidlbredr::Profile_Connect_Result result) {
+                      ASSERT_TRUE(result.is_response());
+                      response_channel = std::move(result.response().channel);
+                    });
+  RunLoopUntilIdle();
+  ASSERT_TRUE(last_channel.is_alive());
+  ASSERT_TRUE(response_channel.has_value());
+
+  fidlbredr::L2capParametersExtPtr l2cap_client =
+      response_channel->mutable_ext_l2cap()->Bind();
+  bool l2cap_client_closed = false;
+  l2cap_client.set_error_handler(
+      [&](zx_status_t /*status*/) { l2cap_client_closed = true; });
+
+  bt::hci::ResultCallback<> pending_flush_timeout_cb;
+  last_channel->set_flush_timeout_callback(
+      [&](auto /*flush_timeout*/, bt::hci::ResultCallback<> callback) {
+        pending_flush_timeout_cb = std::move(callback);
+      });
+
+  // Send a request with a flush timeout so that it executes the lambda callback
+  // asynchronously.
+  fbt::ChannelParameters request_chan_params;
+  request_chan_params.set_flush_timeout(100);
+  std::optional<fbt::ChannelParameters> result_chan_params;
+  l2cap_client->RequestParameters(
+      std::move(request_chan_params),
+      [&](fidlbredr::L2capParametersExt_RequestParameters_Result new_params) {
+        result_chan_params = new_params.response().ResultValue_();
+      });
+
+  // Process RequestParameters message
+  RunLoopUntilIdle();
+  ASSERT_TRUE(pending_flush_timeout_cb);
+
+  // Closing the channel should close l2cap_client.
+  last_channel->Close();
+  // Destroy the channel (like the real LogicalLink would) while the async
+  // SetBrEdrAutomaticFlushTimeout callback is still pending.
+  EXPECT_TRUE(adapter()->fake_bredr()->DestroyChannel(last_channel->id()));
+
+  // Execute the pending callback. It should gracefully handle the dead pointer
+  // and return without crashing.
+  pending_flush_timeout_cb(fit::ok());
+
+  // Process the channel closure and the error handler logic asynchronously.
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(l2cap_client_closed);
+  EXPECT_FALSE(result_chan_params.has_value());
+  l2cap_client.Unbind();
+  RunLoopUntilIdle();
+}
+
+TEST_F(ProfileServerTestFakeAdapter,
        AudioDirectionExtRequestParametersClosedOnChannelClosed) {
   const bt::PeerId kPeerId;
   const fuchsia::bluetooth::PeerId kFidlPeerId{kPeerId.value()};

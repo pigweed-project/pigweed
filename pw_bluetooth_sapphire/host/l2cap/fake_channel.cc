@@ -173,6 +173,10 @@ void FakeChannel::RequestAclPriority(
 void FakeChannel::SetBrEdrAutomaticFlushTimeout(
     pw::chrono::SystemClock::duration flush_timeout,
     hci::ResultCallback<> callback) {
+  if (flush_timeout_cb_) {
+    flush_timeout_cb_(flush_timeout, std::move(callback));
+    return;
+  }
   if (!flush_timeout_succeeds_) {
     callback(ToResult(pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR));
     return;

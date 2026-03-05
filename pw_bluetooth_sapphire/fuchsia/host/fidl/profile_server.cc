@@ -265,6 +265,8 @@ ProfileServer::~ProfileServer() {
 void ProfileServer::L2capParametersExt::RequestParameters(
     fuchsia::bluetooth::ChannelParameters requested,
     RequestParametersCallback callback) {
+  PW_CHECK(channel_.is_alive());
+
   if (requested.has_flush_timeout()) {
     channel_->SetBrEdrAutomaticFlushTimeout(
         std::chrono::nanoseconds(requested.flush_timeout()),
@@ -283,10 +285,12 @@ void ProfileServer::L2capParametersExt::RequestParameters(
           // Return the current parameters even if the request failed.
           // TODO(fxbug.dev/42152567): set current security requirements in
           // returned channel parameters
-          cb(fidlbredr::L2capParametersExt_RequestParameters_Result::
-                 WithResponse(
-                     fidlbredr::L2capParametersExt_RequestParameters_Response(
-                         ChannelInfoToFidlChannelParameters(chan->info()))));
+          if (chan.is_alive()) {
+            cb(fidlbredr::L2capParametersExt_RequestParameters_Result::
+                   WithResponse(
+                       fidlbredr::L2capParametersExt_RequestParameters_Response(
+                           ChannelInfoToFidlChannelParameters(chan->info()))));
+          }
         });
     return;
   }
