@@ -112,6 +112,15 @@ class CustomWorkQueue : public thread::ThreadCore {
     work_notification_.release();
   }
 
+  /// Removes all pending work from the queue.
+  ///
+  /// This method does not stop the work queue thread. Any work item currently
+  /// being processed by the work queue thread will continue to execute.
+  void Clear() PW_LOCKS_EXCLUDED(lock_) {
+    std::lock_guard lock(lock_);
+    queue_.clear();
+  }
+
  private:
   void Run() override PW_LOCKS_EXCLUDED(lock_) {
     while (true) {

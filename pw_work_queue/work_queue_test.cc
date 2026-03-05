@@ -141,6 +141,24 @@ TEST(WorkQueue, CustomWorkItem) {
   EXPECT_EQ(counter, 5 + 10 + 20);
 }
 
+TEST(WorkQueue, Clear) {
+  int counter = 0;
+  WorkQueueWithBuffer<10> work_queue;
+
+  EXPECT_EQ(OkStatus(), work_queue.PushWork([&] { counter++; }));
+  EXPECT_EQ(OkStatus(), work_queue.PushWork([&] { counter++; }));
+
+  work_queue.Clear();
+
+  // Start the worker thread.
+  Thread work_thread(test::WorkQueueThreadOptions(), work_queue);
+
+  work_queue.RequestStop();
+  work_thread.join();
+
+  EXPECT_EQ(counter, 0);
+}
+
 // TODO(ewout): Add unit tests for the metrics once they have been restructured.
 
 }  // namespace
