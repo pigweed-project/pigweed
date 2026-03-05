@@ -17,6 +17,8 @@
 
 #include <utility>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/libc_allocator.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/emboss_packet.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/error.h"
@@ -34,13 +36,17 @@ class CommandPacket : public DynamicPacket {
   // Construct an HCI Command packet from an Emboss view T and initialize its
   // header with the |opcode| and size.
   template <typename T>
-  static CommandPacketT<T> New(pw::bluetooth::emboss::OpCode opcode) {
-    return New<T>(opcode, T::IntrinsicSizeInBytes().Read());
+  static CommandPacketT<T> New(
+      pw::bluetooth::emboss::OpCode opcode,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    return New<T>(opcode, T::IntrinsicSizeInBytes().Read(), allocator);
   }
 
   template <typename T>
-  static CommandPacketT<T> New(hci_spec::OpCode opcode) {
-    return New<T>(opcode, T::IntrinsicSizeInBytes().Read());
+  static CommandPacketT<T> New(
+      hci_spec::OpCode opcode,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    return New<T>(opcode, T::IntrinsicSizeInBytes().Read(), allocator);
   }
 
   // Construct an HCI Command packet from an Emboss view T of |packet_size|
@@ -48,15 +54,20 @@ class CommandPacket : public DynamicPacket {
   // and size. This constructor is meant for variable size packets, for which
   // clients must calculate packet size manually.
   template <typename T>
-  static CommandPacketT<T> New(pw::bluetooth::emboss::OpCode opcode,
-                               size_t packet_size) {
-    CommandPacketT<T> packet(opcode, packet_size);
+  static CommandPacketT<T> New(
+      pw::bluetooth::emboss::OpCode opcode,
+      size_t packet_size,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    CommandPacketT<T> packet(opcode, packet_size, allocator);
     return packet;
   }
 
   template <typename T>
-  static CommandPacketT<T> New(hci_spec::OpCode opcode, size_t packet_size) {
-    CommandPacketT<T> packet(opcode, packet_size);
+  static CommandPacketT<T> New(
+      hci_spec::OpCode opcode,
+      size_t packet_size,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    CommandPacketT<T> packet(opcode, packet_size, allocator);
     return packet;
   }
 
@@ -70,8 +81,11 @@ class CommandPacket : public DynamicPacket {
 
  protected:
   explicit CommandPacket(pw::bluetooth::emboss::OpCode opcode,
-                         size_t packet_size);
-  explicit CommandPacket(hci_spec::OpCode opcode, size_t packet_size);
+                         size_t packet_size,
+                         pw::Allocator& allocator);
+  explicit CommandPacket(hci_spec::OpCode opcode,
+                         size_t packet_size,
+                         pw::Allocator& allocator);
 
  private:
   pw::bluetooth::emboss::CommandHeaderView header_view() const;
@@ -88,11 +102,15 @@ class CommandPacketT : public CommandPacket {
  private:
   friend class CommandPacket;
 
-  CommandPacketT(pw::bluetooth::emboss::OpCode opcode, size_t packet_size)
-      : CommandPacket(opcode, packet_size) {}
+  CommandPacketT(pw::bluetooth::emboss::OpCode opcode,
+                 size_t packet_size,
+                 pw::Allocator& allocator)
+      : CommandPacket(opcode, packet_size, allocator) {}
 
-  CommandPacketT(hci_spec::OpCode opcode, size_t packet_size)
-      : CommandPacket(opcode, packet_size) {}
+  CommandPacketT(hci_spec::OpCode opcode,
+                 size_t packet_size,
+                 pw::Allocator& allocator)
+      : CommandPacket(opcode, packet_size, allocator) {}
 };
 
 template <class ViewT>
@@ -103,21 +121,27 @@ class EventPacket : public DynamicPacket {
  public:
   // Construct an HCI Event packet of |packet_size| total bytes (header +
   // payload).
-  static EventPacket New(size_t packet_size) {
-    EventPacket packet(packet_size);
+  static EventPacket New(
+      size_t packet_size,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    EventPacket packet(packet_size, allocator);
     return packet;
   }
 
-  static EventPacket New(pw::multibuf::v2::MultiBuf::Instance&& buf) {
-    EventPacket packet(std::move(buf));
+  static EventPacket New(
+      pw::multibuf::v2::MultiBuf::Instance&& buf,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    EventPacket packet(std::move(buf), allocator);
     return packet;
   }
 
   // Construct an HCI Event packet from an Emboss view T and initialize its
   // header with the |event_code| and size.
   template <typename T>
-  static EventPacketT<T> New(pw::bluetooth::emboss::EventCode event_code) {
-    EventPacketT<T> packet(T::IntrinsicSizeInBytes().Read());
+  static EventPacketT<T> New(
+      pw::bluetooth::emboss::EventCode event_code,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    EventPacketT<T> packet(T::IntrinsicSizeInBytes().Read(), allocator);
     auto header =
         packet.template view<pw::bluetooth::emboss::EventHeaderWriter>();
     header.event_code().Write(event_code);
@@ -128,8 +152,10 @@ class EventPacket : public DynamicPacket {
   }
 
   template <typename T>
-  static EventPacketT<T> New(hci_spec::EventCode event_code) {
-    EventPacketT<T> packet(T::IntrinsicSizeInBytes().Read());
+  static EventPacketT<T> New(
+      hci_spec::EventCode event_code,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    EventPacketT<T> packet(T::IntrinsicSizeInBytes().Read(), allocator);
     auto header =
         packet.template view<pw::bluetooth::emboss::EventHeaderWriter>();
     header.event_code_uint().Write(event_code);
@@ -145,9 +171,11 @@ class EventPacket : public DynamicPacket {
   // clients must calculate packet size manually.
   template <typename T>
   // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-  static EventPacketT<T> New(hci_spec::EventCode event_code,
-                             size_t packet_size) {
-    EventPacketT<T> packet(packet_size);
+  static EventPacketT<T> New(
+      hci_spec::EventCode event_code,
+      size_t packet_size,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator()) {
+    EventPacketT<T> packet(packet_size, allocator);
     auto header =
         packet.template view<pw::bluetooth::emboss::EventHeaderWriter>();
     header.event_code_uint().Write(event_code);
@@ -174,10 +202,11 @@ class EventPacket : public DynamicPacket {
   hci::Result<> ToResult() const;
 
  protected:
-  explicit EventPacket(size_t packet_size);
+  explicit EventPacket(size_t packet_size, pw::Allocator& allocator);
 
-  explicit EventPacket(pw::multibuf::v2::MultiBuf::Instance&& buf)
-      : DynamicPacket(std::move(buf)) {}
+  explicit EventPacket(pw::multibuf::v2::MultiBuf::Instance&& buf,
+                       pw::Allocator& allocator)
+      : DynamicPacket(std::move(buf), allocator) {}
 
  private:
   // From an Emboss view T containing a StatusCode field named "status", returns
@@ -211,7 +240,8 @@ class EventPacketT : public EventPacket {
  private:
   friend class EventPacket;
 
-  explicit EventPacketT(size_t packet_size) : EventPacket(packet_size) {}
+  explicit EventPacketT(size_t packet_size, pw::Allocator& allocator)
+      : EventPacket(packet_size, allocator) {}
 };
 
 }  // namespace bt::hci

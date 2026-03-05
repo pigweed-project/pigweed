@@ -173,13 +173,13 @@ pw::span<std::byte> MutableByteBuffer::mutable_subspan(size_t pos,
 
 DynamicByteBuffer::DynamicByteBuffer() = default;
 
-DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size) {
+DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size,
+                                     pw::Allocator& allocator) {
   if (buffer_size == 0) {
     return;
   }
 
-  buffer_ =
-      pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(buffer_size);
+  buffer_ = allocator.MakeUnique<std::byte[]>(buffer_size);
 
   // TODO(armansito): For now this is dumb but we should properly handle the
   // case when we're out of memory.
@@ -188,26 +188,26 @@ DynamicByteBuffer::DynamicByteBuffer(size_t buffer_size) {
   std::memset(buffer_.get(), 0, buffer_size);
 }
 
-DynamicByteBuffer::DynamicByteBuffer(const ByteBuffer& buffer)
-    : buffer_(buffer.size()
-                  ? pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
-                        buffer.size())
-                  : nullptr) {
+DynamicByteBuffer::DynamicByteBuffer(const ByteBuffer& buffer,
+                                     pw::Allocator& allocator)
+    : buffer_(buffer.size() ? allocator.MakeUnique<std::byte[]>(buffer.size())
+                            : nullptr) {
   PW_CHECK(!buffer.size() || buffer_ != nullptr,
            "|buffer| cannot be nullptr when |buffer_size| is non-zero");
   buffer.Copy(this);
 }
 
-DynamicByteBuffer::DynamicByteBuffer(const DynamicByteBuffer& buffer)
-    : DynamicByteBuffer(static_cast<const ByteBuffer&>(buffer)) {}
+DynamicByteBuffer::DynamicByteBuffer(const DynamicByteBuffer& buffer,
+                                     pw::Allocator& allocator)
+    : DynamicByteBuffer(static_cast<const ByteBuffer&>(buffer), allocator) {}
 
-DynamicByteBuffer::DynamicByteBuffer(const std::string& buffer) {
+DynamicByteBuffer::DynamicByteBuffer(const std::string& buffer,
+                                     pw::Allocator& allocator) {
   if (buffer.empty()) {
     return;
   }
 
-  buffer_ = pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
-      buffer.length());
+  buffer_ = allocator.MakeUnique<std::byte[]>(buffer.length());
   PW_CHECK(buffer_ != nullptr, "failed to allocate buffer");
   memcpy(buffer_.get(), buffer.data(), buffer.length());
 }
@@ -244,7 +244,8 @@ void DynamicByteBuffer::Fill(uint8_t value) {
   std::memset(buffer_.get(), value, size());
 }
 
-bool DynamicByteBuffer::expand(size_t new_buffer_size) {
+bool DynamicByteBuffer::expand(size_t new_buffer_size,
+                               pw::Allocator& allocator) {
   // we only allow growing the buffer, not shrinking it
   if (new_buffer_size < size()) {
     return false;
@@ -256,16 +257,15 @@ bool DynamicByteBuffer::expand(size_t new_buffer_size) {
   }
 
   pw::UniquePtr<std::byte[]> new_buffer =
-      pw::allocator::GetLibCAllocator().MakeUnique<std::byte[]>(
-          new_buffer_size);
+      allocator.MakeUnique<std::byte[]>(new_buffer_size);
   if (new_buffer == nullptr) {
     return false;
   }
 
   std::memset(new_buffer.get() + size(), 0, new_buffer.size() - size());
 
-  // Handle the case where the default constructor was used and no actual buffer
-  // data was initialized.
+  // Handle the case where the default constructor was used and no actual
+  // buffer data was initialized.
   if (buffer_ != nullptr) {
     std::memcpy(new_buffer.get(), buffer_.get(), size());
   }

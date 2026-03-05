@@ -57,6 +57,8 @@ cc_library(
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
+        "//pw_allocator",
+        "//pw_allocator:libc_allocator",
         "//pw_async:dispatcher",
         "//pw_async:task",
         "//pw_bluetooth",

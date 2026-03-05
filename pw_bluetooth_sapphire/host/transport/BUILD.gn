@@ -51,6 +51,7 @@ pw_source_set("transport") {
   ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_allocator:libc_allocator",
     "$dir_pw_async:dispatcher",
     "$dir_pw_async:task",
     "$dir_pw_bluetooth:emboss_hci_group",
@@ -60,6 +61,7 @@ pw_source_set("transport") {
     "$dir_pw_result",
     "$dir_pw_status",
     "$pw_external_fuchsia:fit",
+    dir_pw_allocator,
     dir_pw_bluetooth,
     dir_pw_bytes,
     dir_pw_multibuf,

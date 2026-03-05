@@ -212,4 +212,22 @@ TEST(EmbossControlPackets, ConstructFromMultipleReleasableFragmentMultiBuf) {
             pw::bluetooth::emboss::StatusCode::SUCCESS);
 }
 
+TEST(EmbossControlPackets, CommandPacketUseCustomAllocator) {
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  auto packet = CommandPacket::New<
+      pw::bluetooth::emboss::LEPeriodicAdvertisingCreateSyncCommandWriter>(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      allocator);
+  auto view = packet.view_t();
+  EXPECT_EQ(allocator.allocate_size(),
+            static_cast<size_t>(view.IntrinsicSizeInBytes().Read()));
+}
+
+TEST(EmbossControlPackets, EventPacketUseCustomAllocator) {
+  constexpr size_t kPacketSize = 10;
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  auto packet = EventPacket::New(kPacketSize, allocator);
+  EXPECT_EQ(allocator.allocate_size(), kPacketSize);
+}
+
 }  // namespace bt::hci

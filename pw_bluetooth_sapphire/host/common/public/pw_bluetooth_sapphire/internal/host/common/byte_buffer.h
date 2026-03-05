@@ -30,6 +30,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/libc_allocator.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
 #include "pw_span/span.h"
@@ -478,12 +480,20 @@ class DynamicByteBuffer : public MutableByteBuffer {
 
   // Allocates a new buffer with |buffer_size| bytes. The buffer bytes will be
   // initialized to 0x00.
-  explicit DynamicByteBuffer(size_t buffer_size);
+  explicit DynamicByteBuffer(
+      size_t buffer_size,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator());
 
   // Copies the contents of |buffer|.
-  DynamicByteBuffer(const DynamicByteBuffer& buffer);
-  explicit DynamicByteBuffer(const ByteBuffer& buffer);
-  explicit DynamicByteBuffer(const std::string& buffer);
+  DynamicByteBuffer(
+      const DynamicByteBuffer& buffer,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator());
+  explicit DynamicByteBuffer(
+      const ByteBuffer& buffer,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator());
+  explicit DynamicByteBuffer(
+      const std::string& buffer,
+      pw::Allocator& allocator = pw::allocator::GetLibCAllocator());
 
   // Takes ownership of |buffer| and avoids allocating a new buffer. Since this
   // constructor performs a simple assignment, the caller must make sure that
@@ -511,7 +521,8 @@ class DynamicByteBuffer : public MutableByteBuffer {
   // the new buffer. This method is meant only to grow the underlying buffer to
   // fit in more data. Returns false if the new buffer size is less than the
   // current buffer size.
-  bool expand(size_t new_buffer_size);
+  bool expand(size_t new_buffer_size,
+              pw::Allocator& allocator = pw::allocator::GetLibCAllocator());
 
  private:
   // Pointer to the underlying buffer, which is owned and managed by us.

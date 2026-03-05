@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 #include <pw_bluetooth/hci_android.emb.h>
 
+#include "pw_allocator/allocator.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
 
 namespace bt::hci {
@@ -25,8 +26,9 @@ namespace android_hci = hci_spec::vendor::android;
 namespace android_emb = pw::bluetooth::vendor::android_hci;
 
 CommandPacket::CommandPacket(pw::bluetooth::emboss::OpCode opcode,
-                             size_t packet_size)
-    : DynamicPacket(packet_size) {
+                             size_t packet_size,
+                             pw::Allocator& allocator)
+    : DynamicPacket(packet_size, allocator) {
   PW_CHECK(
       packet_size >=
           pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes(),
@@ -38,8 +40,10 @@ CommandPacket::CommandPacket(pw::bluetooth::emboss::OpCode opcode,
       pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes());
 }
 
-CommandPacket::CommandPacket(hci_spec::OpCode opcode, size_t packet_size)
-    : DynamicPacket(packet_size) {
+CommandPacket::CommandPacket(hci_spec::OpCode opcode,
+                             size_t packet_size,
+                             pw::Allocator& allocator)
+    : DynamicPacket(packet_size, allocator) {
   PW_CHECK(packet_size >=
                pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes(),
            "command packet size must be at least 3 bytes to accomodate header");
@@ -66,7 +70,8 @@ pw::bluetooth::emboss::CommandHeaderView CommandPacket::header_view() const {
   return view<pw::bluetooth::emboss::CommandHeaderView>();
 }
 
-EventPacket::EventPacket(size_t packet_size) : DynamicPacket(packet_size) {
+EventPacket::EventPacket(size_t packet_size, pw::Allocator& allocator)
+    : DynamicPacket(packet_size, allocator) {
   PW_CHECK(
       packet_size >= pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes(),
       "event packet size must be at least 2 bytes to accomodate header");
