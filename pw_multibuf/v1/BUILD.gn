@@ -24,6 +24,7 @@ config("public_include_path") {
 }
 
 config("test_config") {
+  include_dirs = [ "private" ]
   defines = [ "PW_MULTIBUF_VERSION=1" ]
   visibility = [ ":*" ]
 }
@@ -49,14 +50,23 @@ pw_source_set("chunk") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+pw_source_set("chunk_testing") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/chunk_testing.h" ]
+  public_configs = [ ":test_config" ]
+  public_deps = [
+    ":header_chunk_region_tracker",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_multibuf:chunk_testing",
+    dir_pw_multibuf,
+  ]
+  visibility = [ ":*" ]
+}
+
 pw_test("chunk_test") {
   sources = [ "chunk_test.cc" ]
   configs = [ ":test_config" ]
-  deps = [
-    ":chunk",
-    ":header_chunk_region_tracker",
-    "$dir_pw_allocator:testing",
-  ]
+  deps = [ ":chunk_testing" ]
 }
 
 pw_source_set("header_chunk_region_tracker") {
@@ -97,7 +107,7 @@ pw_test("single_chunk_region_tracker_test") {
   configs = [ ":test_config" ]
   deps = [
     ":chunk",
-    ":single_chunk_region_tracker",
+    "$dir_pw_multibuf:single_chunk_region_tracker",
   ]
 
   # TODO: b/260624583 - Fix this for //targets/rp2040
@@ -126,10 +136,9 @@ pw_test("multibuf_test") {
   sources = [ "multibuf_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
-    ":internal_test_utils",
-    "$dir_pw_assert:check",
+    ":chunk_testing",
+    "$dir_pw_multibuf:test_utils",
     dir_pw_bytes,
-    dir_pw_multibuf,
   ]
 }
 
@@ -165,8 +174,8 @@ pw_source_set("allocator_async") {
 }
 
 # TODO: https://pwbug.dev/384583239 - Split async into its own test.
-pw_test("allocator_test") {
-  sources = [ "allocator_test.cc" ]
+pw_test("allocator_async_test") {
+  sources = [ "allocator_async_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
     ":allocator",
@@ -201,9 +210,9 @@ pw_test("simple_allocator_test") {
   sources = [ "simple_allocator_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
-    ":simple_allocator",
     "$dir_pw_allocator:null_allocator",
     "$dir_pw_allocator:testing",
+    "$dir_pw_multibuf:simple_allocator",
   ]
 }
 
@@ -223,9 +232,12 @@ pw_test("stream_test") {
   sources = [ "stream_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
-    ":internal_test_utils",
+    ":chunk_testing",
     ":stream",
+    "$dir_pw_multibuf:test_utils",
+    dir_pw_bytes,
     dir_pw_multibuf,
+    dir_pw_status,
   ]
 }
 
@@ -255,39 +267,13 @@ pw_test("from_span_test") {
   ]
 }
 
-pw_source_set("testing") {
-  testonly = pw_unit_test_TESTONLY
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_multibuf/v1/simple_allocator_for_test.h" ]
-  public_deps = [
-    ":simple_allocator",
-    "$dir_pw_allocator:synchronized_allocator",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_sync:mutex",
-    dir_pw_assert,
-  ]
-}
-
-pw_source_set("internal_test_utils") {
-  testonly = pw_unit_test_TESTONLY
-  sources = [ "pw_multibuf_private/test_utils.h" ]
-  public_deps = [
-    ":header_chunk_region_tracker",
-    ":multibuf",
-    "$dir_pw_allocator:testing",
-    dir_pw_assert,
-    dir_pw_bytes,
-  ]
-  visibility = [ ":*" ]
-}
-
 # LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
 
 ## Test group
 
 pw_test_group("tests") {
   tests = [
-    ":allocator_test",
+    ":allocator_async_test",
     ":chunk_test",
     ":from_span_test",
     ":header_chunk_region_tracker_test",

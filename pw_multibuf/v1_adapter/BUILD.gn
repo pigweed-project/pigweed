@@ -27,6 +27,7 @@ config("test_config") {
     "PW_MULTIBUF_VERSION=2",
     "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=1",
   ]
+  include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }
 
@@ -60,6 +61,35 @@ pw_source_set("chunk") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+pw_source_set("chunk_testing") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/chunk_testing.h" ]
+  public_configs = [ ":test_config" ]
+  public_deps = [
+    "$dir_pw_allocator:testing",
+    "$dir_pw_multibuf:chunk_testing",
+    dir_pw_allocator,
+    dir_pw_multibuf,
+  ]
+  visibility = [ ":*" ]
+}
+
+# Make a copy to avoid duplicate rules with the same output.
+copy("chunk_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v1/chunk_test.cc" ]
+  outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+}
+
+pw_test("chunk_test") {
+  sources = [ "$target_gen_dir/chunk_test.cc" ]
+  configs = [ ":test_config" ]
+  deps = [
+    ":chunk_test_cc",
+    ":chunk_testing",
+  ]
+}
+
 pw_source_set("single_chunk_region_tracker") {
   public = [ "public/pw_multibuf/v1_adapter/single_chunk_region_tracker.h" ]
   public_configs = [ ":public_include_path" ]
@@ -74,10 +104,18 @@ pw_source_set("single_chunk_region_tracker") {
   ]
 }
 
+# Make a copy to avoid duplicate rules with the same output.
+copy("single_chunk_region_tracker_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v1/single_chunk_region_tracker_test.cc" ]
+  outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+}
+
 pw_test("single_chunk_region_tracker_test") {
-  sources = [ "single_chunk_region_tracker_test.cc" ]
+  sources = [ "$target_gen_dir/single_chunk_region_tracker_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
+    ":single_chunk_region_tracker_test_cc",
     "$dir_pw_multibuf:chunk",
     "$dir_pw_multibuf:single_chunk_region_tracker",
   ]
@@ -104,34 +142,56 @@ pw_source_set("multibuf") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+# Make a copy to avoid duplicate rules with the same output.
+copy("multibuf_v1_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v1/multibuf_test.cc" ]
+  outputs = [ "$target_gen_dir/multibuf_v1_test.cc" ]
+}
+
 pw_test("multibuf_v1_test") {
-  sources = [ "multibuf_v1_test.cc" ]
+  sources = [ "$target_gen_dir/multibuf_v1_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
-    "$dir_pw_allocator:bump_allocator",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_assert:check",
-    dir_pw_allocator,
+    ":chunk_testing",
+    ":multibuf_v1_test_cc",
+    "$dir_pw_multibuf:test_utils",
     dir_pw_bytes,
-    dir_pw_multibuf,
-    dir_pw_status,
   ]
 }
 
+# Make a copy to avoid duplicate rules with the same output.
+copy("multibuf_v2_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v2/multibuf_test.cc" ]
+  outputs = [ "$target_gen_dir/multibuf_v2_test.cc" ]
+}
+
+pw_source_set("multibuf_testing") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/multibuf_testing.h" ]
+  public_configs = [ ":test_config" ]
+  public_deps = [ dir_pw_multibuf ]
+  visibility = [ ":*" ]
+}
+
 pw_test("multibuf_v2_test") {
-  sources = [ "multibuf_v2_test.cc" ]
+  sources = [ "$target_gen_dir/multibuf_v2_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
+    ":multibuf_testing",
+    ":multibuf_v2_test_cc",
     "$dir_pw_allocator:chunk_pool",
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
-    "$dir_pw_multibuf/v2:iterators",
     dir_pw_bytes,
     dir_pw_multibuf,
     dir_pw_result,
     dir_pw_status,
   ]
-  negative_compilation_tests = true
+
+  # Negative compilation tests are not included in the GN build, as the source
+  # file is copied after NC tests are generated in the meta-build phase.
 }
 
 pw_source_set("allocator") {
@@ -169,15 +229,20 @@ pw_source_set("simple_allocator") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+# Make a copy to avoid duplicate rules with the same output.
+copy("simple_allocator_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v1/simple_allocator_test.cc" ]
+  outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+}
+
 pw_test("simple_allocator_test") {
-  sources = [ "simple_allocator_test.cc" ]
+  sources = [ "$target_gen_dir/simple_allocator_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
+    ":simple_allocator_test_cc",
     "$dir_pw_allocator:null_allocator",
     "$dir_pw_allocator:testing",
-    "$dir_pw_containers:storage",
-    "$dir_pw_containers:vector",
-    "$dir_pw_multibuf:chunk",
     "$dir_pw_multibuf:simple_allocator",
   ]
 }
@@ -202,10 +267,18 @@ pw_source_set("from_span") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+# Make a copy to avoid duplicate rules with the same output.
+copy("from_span_test_cc") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "$dir_pw_multibuf/v1/from_span_test.cc" ]
+  outputs = [ "$target_gen_dir/{{source_file_part}}" ]
+}
+
 pw_test("from_span_test") {
-  sources = [ "from_span_test.cc" ]
+  sources = [ "$target_gen_dir/from_span_test.cc" ]
   configs = [ ":test_config" ]
   deps = [
+    ":from_span_test_cc",
     "$dir_pw_allocator:testing",
     "$dir_pw_multibuf:from_span",
   ]
@@ -217,9 +290,11 @@ pw_test("from_span_test") {
 
 pw_test_group("tests") {
   tests = [
-    ":simple_allocator_test",
+    ":chunk_test",
     ":single_chunk_region_tracker_test",
     ":multibuf_v1_test",
+    ":multibuf_v2_test",
+    ":simple_allocator_test",
     ":from_span_test",
   ]
 }

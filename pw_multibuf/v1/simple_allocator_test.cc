@@ -12,13 +12,13 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_multibuf/v1/simple_allocator.h"
+#include "pw_multibuf/simple_allocator.h"
 
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
+#include "pw_unit_test/framework.h"
 
 namespace pw::multibuf::v1 {
 namespace {

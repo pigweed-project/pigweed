@@ -12,12 +12,12 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_multibuf/v1/single_chunk_region_tracker.h"
+#include "pw_multibuf/single_chunk_region_tracker.h"
 
 #include <cstddef>
 #include <optional>
 
-#include "pw_multibuf/v1/chunk.h"
+#include "pw_multibuf/chunk.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::multibuf::v1 {

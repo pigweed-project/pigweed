@@ -27,6 +27,7 @@ config("test_config") {
     "PW_MULTIBUF_VERSION=2",
     "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0",
   ]
+  include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }
 
@@ -58,8 +59,8 @@ pw_source_set("iterators") {
 
 pw_source_set("iterator_testing") {
   testonly = pw_unit_test_TESTONLY
-  public_configs = [ ":public_include_path" ]
-  public = [ "pw_multibuf_private/iterator_testing.h" ]
+  public = [ "private/pw_multibuf_private/iterator_testing.h" ]
+  public_configs = [ ":test_config" ]
   public_deps = [
     ":iterators",
     "$dir_pw_allocator:bump_allocator",
@@ -112,11 +113,23 @@ pw_source_set("multibuf") {
 # LINT.ThenChange(../Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
+pw_source_set("multibuf_testing") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/multibuf_testing.h" ]
+  public_configs = [ ":test_config" ]
+  public_deps = [ dir_pw_multibuf ]
+  visibility = [ ":*" ]
+}
+
 pw_test("multibuf_test") {
-  sources = [ "multibuf_test.cc" ]
+  sources = [
+    "multibuf_nc_test.cc",
+    "multibuf_test.cc",
+  ]
   configs = [ ":test_config" ]
   deps = [
     ":iterators",
+    ":multibuf_testing",
     "$dir_pw_allocator:chunk_pool",
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",

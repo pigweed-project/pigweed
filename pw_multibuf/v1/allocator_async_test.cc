@@ -12,12 +12,12 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_multibuf/v1/allocator.h"
+#include "pw_multibuf/v1/allocator_async.h"
 
-#include "gtest/gtest.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/poll.h"
-#include "pw_multibuf/v1/allocator_async.h"
+#include "pw_multibuf/v1/allocator.h"
+#include "pw_unit_test/framework.h"
 
 namespace pw::multibuf::v1 {
 namespace {

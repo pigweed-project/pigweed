@@ -68,9 +68,11 @@ pw_add_test(pw_multibuf.v2.byte_iterator_test
 
 pw_add_library(pw_multibuf.v2._iterator_testing INTERFACE
   HEADERS
-    pw_multibuf_private/iterator_testing.h
+    private/pw_multibuf_private/iterator_testing.h
   PUBLIC_INCLUDES
-    public
+    private
+  PUBLIC_DEFINES
+    PW_MULTIBUF_VERSION=2
   PUBLIC_DEPS
     pw_allocator.bump_allocator
     pw_containers.storage
@@ -102,9 +104,19 @@ pw_add_library(pw_multibuf.v2.multibuf STATIC
 # LINT.ThenChange(../Android.bp, BUILD.bazel, BUILD.gn)
 
 # LINT.IfChange
+pw_add_library(pw_multibuf.v2._multibuf_testing INTERFACE
+  HEADERS
+    private/pw_multibuf_private/multibuf_testing.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    pw_multibuf
+)
+
 pw_add_test(pw_multibuf.v2.multibuf_test
   SOURCES
     multibuf_test.cc
+    multibuf_nc_test.cc
   PRIVATE_DEFINES
     PW_MULTIBUF_VERSION=2
     PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0
@@ -116,6 +128,7 @@ pw_add_test(pw_multibuf.v2.multibuf_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_multibuf
     pw_multibuf.v2.iterators
+    pw_multibuf.v2._multibuf_testing
     pw_result
     pw_status
   GROUPS

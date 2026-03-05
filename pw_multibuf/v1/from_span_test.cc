@@ -17,17 +17,17 @@
 #include "pw_allocator/testing.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::multibuf::v1 {
 namespace {
 
-using ::pw::allocator::test::AllocatorForTest;
+using pw::allocator::test::AllocatorForTest;
+using pw::multibuf::MultiBuf;
 
 constexpr size_t kArbitraryBufferSize = 1024;
 constexpr size_t kArbitraryMetaSize = 1024;
 
 struct DestroyState {
   size_t count = 0;
-  ByteSpan last_region = {};
+  pw::ByteSpan last_region = {};
 };
 
 TEST(FromSpanTest, AllocateWholeDataAreaSizeSucceeds) {
@@ -35,7 +35,7 @@ TEST(FromSpanTest, AllocateWholeDataAreaSizeSucceeds) {
   AllocatorForTest<kArbitraryMetaSize> meta_alloc;
   DestroyState destroy_state;
   std::optional<MultiBuf> buf = pw::multibuf::FromSpan(
-      meta_alloc, data_area, [&destroy_state](ByteSpan span) {
+      meta_alloc, data_area, [&destroy_state](pw::ByteSpan span) {
         ++destroy_state.count;
         destroy_state.last_region = span;
       });
@@ -51,4 +51,3 @@ TEST(FromSpanTest, AllocateWholeDataAreaSizeSucceeds) {
 }
 
 }  // namespace
-}  // namespace pw::multibuf::v1

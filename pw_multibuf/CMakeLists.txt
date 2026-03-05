@@ -134,10 +134,30 @@ pw_add_library(pw_multibuf.testing INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_allocator.synchronized_allocator
+    pw_allocator.testing
+    pw_assert.assert
     pw_multibuf.config
     pw_multibuf.simple_allocator
-    pw_multibuf.v1.testing
+    pw_sync.mutex
 )
+
+pw_add_library(pw_multibuf._chunk_testing INTERFACE
+  HEADERS
+    private/pw_multibuf_private/chunk_test_base.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    pw_unit_test
+)
+
+pw_add_library(pw_multibuf._test_utils INTERFACE
+  HEADERS
+    private/pw_multibuf_private/test_utils.h
+  PUBLIC_INCLUDES
+    private
+)
+
 # LINT.ThenChange(BUILD.bazel, BUILD.gn)
 
 add_subdirectory(v1)

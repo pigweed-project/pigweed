@@ -145,9 +145,29 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":config",
-        ":simple_allocator",
-        "//pw_multibuf/v1:testing",
+        "//pw_allocator:synchronized_allocator",
+        "//pw_allocator:testing",
+        "//pw_assert:assert",
+        "//pw_multibuf:simple_allocator",
+        "//pw_sync:mutex",
     ],
+)
+
+cc_library(
+    name = "chunk_testing",
+    testonly = True,
+    hdrs = ["private/pw_multibuf_private/chunk_test_base.h"],
+    strip_include_prefix = "private",
+    visibility = ["//pw_multibuf:__subpackages__"],
+    deps = ["//pw_unit_test"],
+)
+
+cc_library(
+    name = "test_utils",
+    testonly = True,
+    hdrs = ["private/pw_multibuf_private/test_utils.h"],
+    strip_include_prefix = "private",
+    visibility = ["//pw_multibuf:__subpackages__"],
 )
 
 # LINT.ThenChange(BUILD.gn, CMakeLists.txt)

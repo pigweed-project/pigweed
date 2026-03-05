@@ -23,6 +23,11 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
+config("private_include_path") {
+  include_dirs = [ "private" ]
+  visibility = [ ":*" ]
+}
+
 # LINT.IfChange
 pw_source_set("pw_multibuf") {
   public_configs = [ ":public_include_path" ]
@@ -142,8 +147,26 @@ pw_source_set("testing") {
   public_deps = [
     ":config",
     ":simple_allocator",
-    "$dir_pw_multibuf/v1:testing",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_assert:assert",
+    "$dir_pw_sync:mutex",
   ]
+}
+
+pw_source_set("chunk_testing") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/chunk_test_base.h" ]
+  public_configs = [ ":private_include_path" ]
+  visibility = [ "$dir_pw_multibuf/*" ]
+  deps = [ dir_pw_unit_test ]
+}
+
+pw_source_set("test_utils") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_multibuf_private/test_utils.h" ]
+  public_configs = [ ":private_include_path" ]
+  visibility = [ "$dir_pw_multibuf/*" ]
 }
 
 # LINT.ThenChange(BUILD.bazel, CMakeLists.txt)

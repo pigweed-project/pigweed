@@ -50,7 +50,8 @@ cc_library(
 cc_library(
     name = "iterator_testing",
     testonly = True,
-    hdrs = ["pw_multibuf_private/iterator_testing.h"],
+    hdrs = ["private/pw_multibuf_private/iterator_testing.h"],
+    strip_include_prefix = "private",
     visibility = ["//visibility:private"],
     deps = [
         ":iterators",
@@ -110,16 +111,40 @@ cc_library(
 # LINT.ThenChange(../Android.bp, BUILD.gn, CMakeLists.txt)
 
 # LINT.IfChange
+# Expose source files to be reused by v1_adapter.
+filegroup(
+    name = "multibuf_test_srcs",
+    testonly = True,
+    srcs = [
+        "multibuf_nc_test.cc",
+        "multibuf_test.cc",
+    ],
+    visibility = ["//pw_multibuf:__subpackages__"],
+)
+
+cc_library(
+    name = "multibuf_testing",
+    testonly = True,
+    hdrs = ["private/pw_multibuf_private/multibuf_testing.h"],
+    defines = [
+        "PW_MULTIBUF_VERSION=2",
+        "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0",
+    ],
+    strip_include_prefix = "private",
+    visibility = ["//visibility:private"],
+    deps = ["//pw_multibuf"],
+)
+
 pw_cc_test(
     name = "multibuf_test",
-    srcs = ["multibuf_test.cc"],
+    srcs = [":multibuf_test_srcs"],
     defines = [
         "PW_MULTIBUF_VERSION=2",
         "PW_MULTIBUF_INCLUDE_V1_ADAPTERS=0",
     ],
     has_nc_test = True,
     deps = [
-        ":iterators",
+        ":multibuf_testing",
         "//pw_allocator:chunk_pool",
         "//pw_allocator:testing",
         "//pw_assert:check",

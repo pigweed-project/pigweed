@@ -37,15 +37,27 @@ pw_add_library(pw_multibuf.v1.chunk STATIC
 # LINT.ThenChange(../Android.bp, BUILD.bazel, BUILD.gn)
 
 # LINT.IfChange
+pw_add_library(pw_multibuf.v1._chunk_testing INTERFACE
+  HEADERS
+    private/pw_multibuf_private/chunk_testing.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEFINES
+    PW_MULTIBUF_VERSION=1
+  PUBLIC_DEPS
+    pw_allocator.testing
+    pw_multibuf
+    pw_multibuf.v1.header_chunk_region_tracker
+    pw_multibuf._chunk_testing
+)
+
 pw_add_test(pw_multibuf.v1.chunk_test
   SOURCES
     chunk_test.cc
   PRIVATE_DEFINES
     PW_MULTIBUF_VERSION=1
   PRIVATE_DEPS
-    pw_allocator.testing
-    pw_multibuf.v1.chunk
-    pw_multibuf.v1.header_chunk_region_tracker
+    pw_multibuf.v1._chunk_testing
   GROUPS
     modules
     pw_multibuf
@@ -126,10 +138,9 @@ pw_add_test(pw_multibuf.v1.multibuf_test
   PRIVATE_DEFINES
     PW_MULTIBUF_VERSION=1
   PRIVATE_DEPS
-    pw_assert.check
     pw_bytes
-    pw_multibuf
-    pw_multibuf.v1._internal_test_utils
+    pw_multibuf.v1._chunk_testing
+    pw_multibuf._test_utils
   GROUPS
     modules
     pw_multibuf
@@ -168,9 +179,9 @@ pw_add_library(pw_multibuf.v1.allocator_async STATIC
 )
 
 # TODO: https://pwbug.dev/384583239 - Split async into its own test.
-pw_add_test(pw_multibuf.v1.allocator_test
+pw_add_test(pw_multibuf.v1.allocator_async_test
   SOURCES
-    allocator_test.cc
+    allocator_async_test.cc
   PRIVATE_DEFINES
     PW_MULTIBUF_VERSION=1
   PRIVATE_DEPS
@@ -238,8 +249,9 @@ pw_add_test(pw_multibuf.v1.stream_test
     pw_allocator.testing
     pw_bytes
     pw_multibuf
-    pw_multibuf.v1._internal_test_utils
     pw_multibuf.v1.stream
+    pw_multibuf.v1._chunk_testing
+    pw_multibuf._test_utils
   GROUPS
     modules
     pw_multibuf
@@ -275,29 +287,4 @@ pw_add_test(pw_multibuf.v1.from_span_test
     pw_multibuf
 )
 
-pw_add_library(pw_multibuf.v1.testing INTERFACE
-  HEADERS
-    public/pw_multibuf/v1/simple_allocator_for_test.h
-  PUBLIC_INCLUDES
-    public
-  PUBLIC_DEPS
-    pw_assert
-    pw_allocator.synchronized_allocator
-    pw_allocator.testing
-    pw_multibuf.config
-    pw_multibuf.v1.simple_allocator
-    pw_sync.mutex
-)
-
-pw_add_library(pw_multibuf.v1._internal_test_utils INTERFACE
-  HEADERS
-    pw_multibuf_private/test_utils.h
-  PUBLIC_DEPS
-    pw_assert
-    pw_allocator.testing
-    pw_bytes
-    pw_multibuf.config
-    pw_multibuf.v1.chunk
-    pw_multibuf.v1.header_chunk_region_tracker
-)
 # LINT.ThenChange(BUILD.bazel, BUILD.gn)
