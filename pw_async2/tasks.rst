@@ -208,25 +208,57 @@ flexibility in how tasks are allocated and stored. Common patterns include:
   :cc:`Task::Deregister() <pw::async2::Task::Deregister>` before
   destruction guarantees safety.
 
-* **Dynamic Allocation**: For tasks with a dynamic lifetime, ``pw_async2``
-  provides the :cc:`AllocateTask() <pw::async2::AllocateTask>` helper. See
-  :ref:`module-pw_async2-tasks-memory-alloc`.
+* **Dynamic Allocation**: Tasks may be dynamically allocated as
+  :cc:`pw::SharedPtr`\s and posted to a :cc:`Dispatcher
+  <pw::async2::Dispatcher>`. See :ref:`module-pw_async2-tasks-memory-alloc` for
+  more details.
 
 .. _module-pw_async2-tasks-memory-alloc:
 
 Dynamically allocating tasks
 ============================
-:cc:`AllocateTask() <pw::async2::AllocateTask>` creates a concrete subclass of
-``Task``,  but the created task is dynamically allocated using a provided
-:cc:`pw::Allocator`. Upon completion the associated memory is automatically
-freed by calling the allocator's ``Delete`` method.  This simplifies memory
-management for "fire-and-forget" tasks.
+:cc:`Dispatcher <pw::async2::Dispatcher>` supports dynamically allocated tasks.
+:cc:`Dispatcher::PostShared <pw::async2::Dispatcher::PostShared>` accepts a
+:cc:`pw::SharedPtr<Task> <pw::SharedPtr>`. The dispatcher makes a copy of the
+``SharedPtr``, which it frees when the task completes. This allows the caller
+and dispatcher to access the task as needed, without either deleting it
+unexpectedly.
 
-.. code-block:: cpp
+For convenience, :cc:`Dispatcher <pw::async2::Dispatcher>` offers
+:cc:`Post(Allocator&, ...) <pw::async2::Dispatcher::Post>` overloads that
+allocate and post a task. These return a :cc:`pw::SharedPtr<Task>
+<pw::SharedPtr>` so the caller can check if allocation succeeded and optionally
+access the task object.
 
-   // This task will be deallocated from the provided allocator when it's done.
-   Task* task = AllocateTask<MyFunction>(my_allocator, arg1, arg2);
-   dispatcher.Post(*task);
+:cc:`Post <pw::async2::Dispatcher::Post>` supports allocating any type of task,
+including a custom :cc:`Task <pw::async2::Task>` implementation:
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-allocate-custom-task]
+   :end-before: // DOCSTAG: [pw_async2-examples-allocate-custom-task]
+
+a task in a lambda function (:cc:`FuncTask <pw::async2::FuncTask>`):
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-allocate-lambda]
+   :end-before: // DOCSTAG: [pw_async2-examples-allocate-lambda]
+
+a task that completes a future (:cc:`FutureTask <pw::async2::FutureTask>`):
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-allocate-future-task]
+   :end-before: // DOCSTAG: [pw_async2-examples-allocate-future-task]
+
+or a task that runs a non-async2 function once (:cc:`RunOnceTask
+<pw::async2::RunOnceTask>`):
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-allocate-run-once]
+   :end-before: // DOCSTAG: [pw_async2-examples-allocate-run-once]
 
 .. _module-pw_async2-guides-implementing-tasks:
 

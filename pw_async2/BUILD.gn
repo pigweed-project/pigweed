@@ -66,7 +66,6 @@ pw_source_set("pw_async2") {
     "public/pw_async2/func_task.h",
     "public/pw_async2/future.h",
     "public/pw_async2/future_task.h",
-    "public/pw_async2/internal/owned_task.h",
     "public/pw_async2/internal/poll_internal.h",
     "public/pw_async2/poll.h",
     "public/pw_async2/runnable_dispatcher.h",
@@ -76,6 +75,7 @@ pw_source_set("pw_async2") {
   ]
   public_deps = [
     ":internal",
+    "$dir_pw_allocator",
     "$dir_pw_assert",
     "$dir_pw_containers:intrusive_forward_list",
     "$dir_pw_containers:intrusive_list",
@@ -328,21 +328,15 @@ pw_test("callback_task_test") {
   enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != ""
 }
 
-pw_source_set("allocate_task") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async2/allocate_task.h" ]
-  public_deps = [
-    ":pw_async2",
-    "$dir_pw_allocator:allocator",
-  ]
-}
-
 pw_test("allocate_task_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
-    ":allocate_task",
+    ":pw_async2",
     ":testing",
+    ":value_future",
     "$dir_pw_allocator:testing",
+    "$dir_pw_function",
+    "$dir_pw_status",
   ]
   sources = [ "allocate_task_test.cc" ]
 }

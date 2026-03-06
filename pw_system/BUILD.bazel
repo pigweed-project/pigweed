@@ -633,7 +633,6 @@ cc_library(
         "//pw_allocator:synchronized_allocator",
         "//pw_assert:check",
         "//pw_async2",
-        "//pw_async2:allocate_task",
         "//pw_async2:basic_dispatcher",
         "//pw_hdlc:router",
         "//pw_rpc/pwpb:echo_service",

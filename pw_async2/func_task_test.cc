@@ -66,17 +66,25 @@ TEST(FuncTask, PendDelegatesToFunc) {
   EXPECT_EQ(poll_count, 2);
 }
 
-TEST(FuncTask, HoldsCallableByDefault) {
+TEST(FuncTask, DeducesValueInsteadOfReference) {
   auto callable = [](Context&) -> Poll<> { return Ready(); };
-  FuncTask func_task(std::move(callable));
+  FuncTask value_from_ref(callable);
   static_assert(
-      std::is_same<decltype(func_task), FuncTask<decltype(callable)>>::value);
+      std::is_same_v<decltype(value_from_ref), FuncTask<decltype(callable)>>);
+
+  FuncTask<decltype(callable)&> explicit_ref(callable);
+  static_assert(
+      std::is_same_v<decltype(explicit_ref), FuncTask<decltype(callable)&>>);
+
+  FuncTask value_from_move(std::move(callable));
+  static_assert(
+      std::is_same_v<decltype(value_from_move), FuncTask<decltype(callable)>>);
 }
 
 TEST(FuncTask, HoldsPwFunctionWithEmptyTypeList) {
   FuncTask<> func_task([](Context&) -> Poll<> { return Ready(); });
-  static_assert(std::is_same<decltype(func_task),
-                             FuncTask<Function<Poll<>(Context&)>>>::value);
+  static_assert(std::is_same_v<decltype(func_task),
+                               FuncTask<Function<Poll<>(Context&)>>>);
 }
 
 Poll<> ReturnsReady(Context&) { return Ready(); }

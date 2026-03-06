@@ -407,7 +407,6 @@ pw_add_library(pw_system.async STATIC
     pw_allocator.best_fit_block_allocator
     pw_allocator.synchronized_allocator
     pw_async2
-    pw_async2.allocate_task
     pw_async2.basic_dispatcher
     pw_hdlc.router
     pw_rpc.pwpb.echo_service

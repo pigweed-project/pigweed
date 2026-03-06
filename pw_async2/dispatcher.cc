@@ -21,33 +21,41 @@
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
-#include "pw_async2/internal/owned_task.h"
 #include "pw_async2/waker.h"
 #include "pw_log/log.h"
 #include "pw_log/tokenized_args.h"
 
 namespace pw::async2 {
 
-void Dispatcher::Deregister() {
+void Dispatcher::Destroy() {
   std::lock_guard lock(internal::lock());
   UnpostTaskList(woken_);
   UnpostTaskList(sleeping_);
 }
 
-void Dispatcher::Post(Task& task) {
+void Dispatcher::PostLocked(Task& task) {
+  task.PostTo(*this);
+  // To prevent duplicate wakes, request only if this is the first woken task.
+  if (woken_.empty()) {
+    SetWantsWake();
+  }
+  woken_.push_back(task);
+}
+
+bool Dispatcher::PostAllocatedTask(
+    Task* task, allocator::internal::ControlBlock* control_block) {
+  if (control_block == nullptr || !control_block->IncrementShared()) {
+    return false;
+  }
+
   {
     std::lock_guard lock(internal::lock());
-    task.PostTo(*this);
-    // To prevent duplicate wakes, request only if this is the first woken task.
-    if (woken_.empty()) {
-      SetWantsWake();
-    }
-    woken_.push_back(task);
+    // If control_block is non-null, task is non-null.
+    task->set_control_block(*control_block);
+    PostLocked(*task);
   }
-  // Unlike in `WakeTask`, here we know that the `Dispatcher` will not be
-  // destroyed out from under our feet because we're in a method being called on
-  // the `Dispatcher` by a user.
   Wake();
+  return true;
 }
 
 Task* Dispatcher::PopTaskToRunLocked() {
@@ -75,22 +83,11 @@ bool Dispatcher::PopAndRunAllReadyTasks() {
   return has_posted_tasks;
 }
 
-Dispatcher::RunTaskResult Dispatcher::RunTask(Task& task) {
-  const Task::RunResult run_result = task.RunInDispatcher();
-
-  // If this is an OwnedTask, then no other threads should be accessing it, so
-  // it is safe to destroy it without holding internal::lock().
-  if (run_result == Task::kCompletedNeedsDestroy) {
-    static_cast<internal::OwnedTask&>(task).Destroy();
-    return RunTaskResult::kCompleted;
-  }
-  return static_cast<RunTaskResult>(run_result);
-}
-
 void Dispatcher::UnpostTaskList(IntrusiveList<Task>& list) {
   while (!list.empty()) {
-    list.front().Unpost();
+    Task& task = list.front();
     list.pop_front();
+    task.UnpostAndReleaseRefFromDispatcherDestructor();
   }
 }
 

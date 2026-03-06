@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include "pw_allocator/internal/control_block.h"
+#include "pw_allocator/shared_ptr.h"
 #include "pw_assert/assert.h"
 #include "pw_async2/context.h"
 #include "pw_async2/internal/lock.h"
@@ -23,11 +25,6 @@
 #include "pw_sync/lock_annotations.h"
 
 namespace pw::async2 {
-namespace internal {
-
-class OwnedTask;
-
-}  // namespace internal
 
 /// @submodule{pw_async2,tasks}
 
@@ -35,6 +32,19 @@ class OwnedTask;
 #define PW_ASYNC_TASK_NAME(name) PW_LOG_TOKEN_EXPR("pw_async2", name)
 
 class Dispatcher;
+
+/// Result from `Dispatcher::RunTask`. Reports the state of the task when it
+/// finished running.
+enum class RunTaskResult {
+  /// The task is still posted to the dispatcher.
+  kActive,
+
+  /// The task was removed from the dispatcher by another thread.
+  kDeregistered,
+
+  /// The task finished running.
+  kCompleted,
+};
 
 /// A task which may complete one or more asynchronous operations.
 ///
@@ -58,12 +68,13 @@ class Dispatcher;
 /// being `Pend`'d by a `Dispatcher`. To protect against this, be sure to do one
 /// of the following:
 ///
-/// - Use dynamic lifetimes by creating `OwnedTask` objects that continue to
-///   live until they receive a `DoDestroy` call.
 /// - Create `Task` objects whose stack-based lifetimes outlive their associated
 ///   `Dispatcher`.
 /// - Call `Deregister` on the `Task` prior to its destruction. NOTE that
 ///   `Deregister` may not be called from inside the `Task`'s own `Pend` method.
+/// - Use dynamic task lifetimes. Tasks may be allocated and posted with
+///   @ref Dispatcher::Post "Dispatcher::Post(allocator_, ...)" overloads. Or, a
+///   `SharedPtr<Task>` can be posted with `Dispatcher::PostShared`.
 class Task : public IntrusiveList<Task>::Item {
  public:
   /// Creates a task with the specified name. To generate a name token, use the
@@ -137,17 +148,10 @@ class Task : public IntrusiveList<Task>::Item {
 
  private:
   friend class Dispatcher;
-  friend internal::OwnedTask;
   friend class Waker;
 
   static constexpr log::Token kDefaultName =
       PW_LOG_TOKEN("pw_async2", "(anonymous)");
-
-  struct OwnedTag {};
-
-  // Constructor for OwnedTask objects.
-  constexpr Task(log::Token name, OwnedTag)
-      : owned_by_dispatcher_(true), name_(name) {}
 
   /// Attempts to deregister this task.
   ///
@@ -183,37 +187,31 @@ class Task : public IntrusiveList<Task>::Item {
     dispatcher_ = &dispatcher;
   }
 
-  // Clears the task's dispatcher.
-  void Unpost() PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
-    state_ = State::kUnposted;
-    dispatcher_ = nullptr;
-    RemoveAllWakersLocked();
-  }
+  // Removes the task from the dispatcher. Returns the ControlBlock* if the
+  // dispatcher has a shared reference to this task.
+  allocator::internal::ControlBlock* Unpost()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock());
+
+  // Unposts and releases the dispatcher's shared reference to the task, if any.
+  // Unconditionally releases the lock since it cannot be held while a task
+  // destructor is called.
+  void UnpostAndReleaseRef() PW_UNLOCK_FUNCTION(internal::lock());
+
+  // Unposts and releases the dispatcher's shared reference to the task, if any.
+  // If the dispatcher has a shared reference to the task, the lock is
+  // released to destroy the task, then reacquired. This should ONLY be called
+  // from the Dispatcher's destructor, since no tasks should be posted or run
+  // while the Dispatcher is being destroyed.
+  void UnpostAndReleaseRefFromDispatcherDestructor()
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock());
 
   void MarkRunning() PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
     state_ = State::kRunning;
   }
 
-  // Result from `RunInDispatcher`. This is a superset of
-  // Dispatcher::RunTaskResult, which merges kCompletedNeedsDestroy into
-  // kCompleted.
-  enum RunResult {
-    // The task is still posted to the dispatcher.
-    kActive,
-
-    // The task was removed from the dispatcher by another thread.
-    kDeregistered,
-
-    // The task finished running.
-    kCompleted,
-
-    // The task finished running and must be deleted by the dispatcher.
-    kCompletedNeedsDestroy,
-  };
-
   // Called by the dispatcher to run this task. The task has already been marked
   // as running.
-  RunResult RunInDispatcher() PW_LOCKS_EXCLUDED(internal::lock());
+  RunTaskResult RunInDispatcher() PW_LOCKS_EXCLUDED(internal::lock());
 
   // Called by the dispatcher to wake this task. Returns whether the task
   // actually needed to be woken.
@@ -236,18 +234,27 @@ class Task : public IntrusiveList<Task>::Item {
     return *dispatcher_;
   }
 
+  void ReleaseSharedRef(allocator::internal::ControlBlock* control_block)
+      PW_LOCKS_EXCLUDED(internal::lock()) {
+    // Create a SharedPtr to decrement the ref count and possibly delete this.
+    SharedPtr<Task> temp(this, control_block);
+  }
+
+  void set_control_block(allocator::internal::ControlBlock& control_block)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
+    control_block_ = &control_block;
+  }
+
   enum class State : unsigned char {
     kUnposted,
+    kSleeping,
     kRunning,
     kDeregisteredButRunning,
     kWoken,
-    kSleeping,
   };
 
   // The current state of the task.
   State state_ PW_GUARDED_BY(internal::lock()) = State::kUnposted;
-
-  bool owned_by_dispatcher_ PW_GUARDED_BY(internal::lock()) = false;
 
   // A pointer to the dispatcher this task is associated with.
   //
@@ -256,6 +263,10 @@ class Task : public IntrusiveList<Task>::Item {
   // This value must be cleared by the dispatcher upon destruction in order to
   // prevent null access.
   Dispatcher* dispatcher_ PW_GUARDED_BY(internal::lock()) = nullptr;
+
+  // The memory block that contains this task, if it was dynamically allocated.
+  allocator::internal::ControlBlock* control_block_
+      PW_GUARDED_BY(internal::lock()) = nullptr;
 
   // Linked list of `Waker` s that may awaken this `Task`.
   IntrusiveForwardList<Waker> wakers_ PW_GUARDED_BY(internal::lock());

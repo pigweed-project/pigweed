@@ -14,8 +14,9 @@
 #pragma once
 
 #include <optional>
+#include <type_traits>
 
-#include "pw_async2/dispatcher.h"
+#include "pw_async2/task.h"
 #include "pw_function/function.h"
 
 namespace pw::async2 {
@@ -28,11 +29,17 @@ namespace pw::async2 {
 /// with `operator()`) that accepts a `Context&` and returns a `Poll<>`.
 ///
 /// The resulting `Task` implements `Pend` by invoking `func`.
+///
+/// `FuncTask` supports class template argument deduction. Constructing
+/// `FuncTask` with a function `F` deduces `FuncTask<std::decay_t<F>>`. To wrap
+/// a function object reference, manually specify the template parameter (e.g.
+/// `FuncTask<decltype(func)&> func_task(func)`).
 template <typename Func = Function<Poll<>(Context&)>>
 class FuncTask final : public Task {
  public:
   /// Creates a new `Task` that delegates `Pend` to `func`.
-  explicit constexpr FuncTask(Func&& func) : func_(std::forward<Func>(func)) {}
+  template <typename F>
+  explicit constexpr FuncTask(F&& func) : func_(std::forward<F>(func)) {}
 
   FuncTask(const FuncTask&) = delete;
   FuncTask& operator=(const FuncTask&) = delete;
@@ -49,7 +56,7 @@ class FuncTask final : public Task {
 };
 
 template <typename Func>
-FuncTask(Func&&) -> FuncTask<Func>;
+FuncTask(Func&&) -> FuncTask<std::decay_t<Func>>;
 
 /// Whether to store or discard the function's return value in `RunOnceTask`.
 enum class ReturnValuePolicy : bool { kKeep, kDiscard };

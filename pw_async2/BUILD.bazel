@@ -70,7 +70,6 @@ cc_library(
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
         "public/pw_async2/future_task.h",
-        "public/pw_async2/internal/owned_task.h",
         "public/pw_async2/internal/poll_internal.h",
         "public/pw_async2/poll.h",
         "public/pw_async2/runnable_dispatcher.h",
@@ -86,6 +85,7 @@ cc_library(
     deps = [
         ":config_override",
         ":internal",
+        "//pw_allocator",
         "//pw_assert:assert",
         "//pw_chrono:system_clock",
         "//pw_containers:intrusive_forward_list",
@@ -413,25 +413,16 @@ pw_cc_test(
     ],
 )
 
-cc_library(
-    name = "allocate_task",
-    hdrs = [
-        "public/pw_async2/allocate_task.h",
-    ],
-    strip_include_prefix = "public",
-    deps = [
-        ":pw_async2",
-        "//pw_allocator:allocator",
-    ],
-)
-
 pw_cc_test(
     name = "allocate_task_test",
     srcs = ["allocate_task_test.cc"],
     deps = [
-        ":allocate_task",
+        ":pw_async2",
         ":testing",
+        ":value_future",
         "//pw_allocator:testing",
+        "//pw_function",
+        "//pw_status",
     ],
 )
 
@@ -795,7 +786,6 @@ sphinx_docs_library(
 filegroup(
     name = "doxygen",
     srcs = [
-        "public/pw_async2/allocate_task.h",
         "public/pw_async2/await.h",
         "public/pw_async2/basic_dispatcher.h",
         "public/pw_async2/callback_task.h",
@@ -814,7 +804,6 @@ filegroup(
         "public/pw_async2/future_task.h",
         "public/pw_async2/future_timeout.h",
         "public/pw_async2/internal/config.h",
-        "public/pw_async2/internal/owned_task.h",
         "public/pw_async2/join.h",
         "public/pw_async2/notification.h",
         "public/pw_async2/notified_dispatcher.h",

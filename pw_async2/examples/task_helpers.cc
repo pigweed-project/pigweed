@@ -14,11 +14,16 @@
 
 #include <utility>
 
+#include "pw_allocator/synchronized_allocator.h"
+#include "pw_allocator/testing.h"
+#include "pw_assert/check.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/future_task.h"
 #include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
+#include "pw_log/log.h"
+#include "pw_sync/mutex.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
@@ -61,7 +66,8 @@ int FutureTaskReferencesTheFuture(pw::async2::Dispatcher& dispatcher,
 class TaskHelpersExampleTest : public ::testing::Test {
  public:
   TaskHelpersExampleTest()
-      : thread_(pw::Thread(context_.options(), [this] {
+      : allocator_(allocator_for_test_),
+        thread_(pw::Thread(context_.options(), [this] {
           dispatcher_.RunToCompletionUntilReleased();
         })) {}
 
@@ -70,6 +76,8 @@ class TaskHelpersExampleTest : public ::testing::Test {
     thread_.join();
   }
 
+  pw::allocator::test::AllocatorForTest<1024> allocator_for_test_;
+  pw::allocator::SynchronizedAllocator<pw::sync::Mutex> allocator_;
   pw::async2::DispatcherForTest dispatcher_;
 
  private:
@@ -147,4 +155,47 @@ TEST_F(TaskHelpersExampleTest, RunOnceTask) {
   int result = task.Wait();  // returns 13
   // DOCSTAG: [pw_async2-examples-run-once]
   EXPECT_EQ(result, 13);
+}
+
+TEST_F(TaskHelpersExampleTest, PostSharedTask) {
+  // DOCSTAG: [pw_async2-examples-allocate-custom-task]
+  class MyTask : public pw::async2::Task {
+   public:
+    MyTask(int value) : value_(value) {}
+
+   private:
+    pw::async2::Poll<> DoPend(pw::async2::Context&) override {
+      for (int i = 0; i < value_; ++i) {
+        // Do some work.
+      }
+      return pw::async2::Ready();
+    }
+    int value_;
+  };
+
+  // Allocate MyTask(123) and posts it to the dispatcher.
+  PW_CHECK(dispatcher_.Post<MyTask>(allocator_, 123) != nullptr);
+  // DOCSTAG: [pw_async2-examples-allocate-custom-task]
+
+  // DOCSTAG: [pw_async2-examples-allocate-lambda]
+  PW_CHECK(dispatcher_.Post(allocator_, [](pw::async2::Context&) {
+    return pw::async2::Ready();
+  }) != nullptr);
+  // DOCSTAG: [pw_async2-examples-allocate-lambda]
+}
+
+TEST_F(TaskHelpersExampleTest, PostSharedFuture) {
+  // DOCSTAG: [pw_async2-examples-allocate-future-task]
+  pw::async2::ValueProvider<void> provider;
+  PW_CHECK(dispatcher_.PostFuture(allocator_, provider.Get()) != nullptr);
+  // DOCSTAG: [pw_async2-examples-allocate-future-task]
+
+  provider.Resolve();
+}
+
+TEST_F(TaskHelpersExampleTest, AllocateAndRunOnce) {
+  // DOCSTAG: [pw_async2-examples-allocate-run-once]
+  PW_CHECK(dispatcher_.RunOnce(
+               allocator_, [] { PW_LOG_DEBUG("Running once!"); }) != nullptr);
+  // DOCSTAG: [pw_async2-examples-allocate-run-once]
 }

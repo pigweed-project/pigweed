@@ -42,13 +42,13 @@ pw_add_test(pw_async2.poll_test
 
 pw_add_library(pw_async2 STATIC
   HEADERS
+    public/pw_async2/await.h
     public/pw_async2/context.h
     public/pw_async2/dispatcher.h
     public/pw_async2/future.h
     public/pw_async2/future_task.h
     public/pw_async2/internal/lock.h
     public/pw_async2/internal/logging.h
-    public/pw_async2/internal/owned_task.h
     public/pw_async2/runnable_dispatcher.h
     public/pw_async2/task.h
     public/pw_async2/waker.h
@@ -61,6 +61,7 @@ pw_add_library(pw_async2 STATIC
   PUBLIC_DEPS
     pw_assert.assert
     pw_async2.config
+    pw_allocator
     pw_chrono.system_clock
     pw_containers.intrusive_forward_list
     pw_containers.intrusive_list
@@ -297,23 +298,18 @@ pw_add_test(pw_async2.callback_task_test
     pw_function
 )
 
-pw_add_library(pw_async2.allocate_task INTERFACE
-  HEADERS
-    public/pw_async2/allocate_task.h
-  PUBLIC_DEPS
-    pw_async2
-    pw_allocator.allocator
-  PUBLIC_INCLUDES
-    public
-)
+
 
 pw_add_test(pw_async2.allocate_task_test
   SOURCES
     allocate_task_test.cc
   PRIVATE_DEPS
-    pw_async2.allocate_task
+    pw_async2
     pw_async2.testing
+    pw_async2.value_future
     pw_allocator.testing
+    pw_function
+    pw_status
 )
 
 

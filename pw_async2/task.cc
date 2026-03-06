@@ -17,6 +17,8 @@
 
 #include <mutex>
 
+#include "pw_allocator/allocator.h"
+#include "pw_allocator/internal/control_block.h"
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/internal/config.h"
@@ -81,14 +83,14 @@ void Task::Deregister() {
 }
 
 bool Task::TryDeregister() {
-  std::lock_guard lock(internal::lock());
-  // TODO: b/456555552 - Ideally, it wouldn't be possible to call Deregister
-  // on an OwnedTask. Currently it's private, but accessible via Task.
-  // Consider having a common BaseTask without Deregister.
-  PW_DCHECK(!owned_by_dispatcher_);
+  // This function does not use std::lock_guard since the UnpostAndReleaseRef
+  // function releases the lock. Lock correctness is ensured by Clang's
+  // thread safety annotations.
+  internal::lock().lock();
 
   switch (state_) {
     case State::kUnposted:
+      internal::lock().unlock();
       return true;
     case State::kSleeping:
       dispatcher_->RemoveSleepingTaskLocked(*this);
@@ -99,20 +101,20 @@ bool Task::TryDeregister() {
       state_ = State::kDeregisteredButRunning;
       [[fallthrough]];
     case State::kDeregisteredButRunning:
+      internal::lock().unlock();
       return false;
     case State::kWoken:
       dispatcher_->RemoveWokenTaskLocked(*this);
       break;
   }
-  state_ = State::kUnposted;
-  RemoveAllWakersLocked();
 
   // Wake the dispatcher up if this was the last task so that it can see that
   // all tasks have completed.
   if (dispatcher_->woken_.empty() && dispatcher_->sleeping_.empty()) {
     dispatcher_->Wake();
   }
-  dispatcher_ = nullptr;
+
+  UnpostAndReleaseRef();
   return true;
 }
 
@@ -128,8 +130,33 @@ void Task::Join() {
   }
 }
 
+allocator::internal::ControlBlock* Task::Unpost() {
+  state_ = State::kUnposted;
+  dispatcher_ = nullptr;
+  RemoveAllWakersLocked();
+  return std::exchange(control_block_, nullptr);
+}
+
+void Task::UnpostAndReleaseRef() {
+  allocator::internal::ControlBlock* const control_block = Unpost();
+  internal::lock().unlock();
+
+  if (control_block != nullptr) {
+    ReleaseSharedRef(control_block);
+  }
+}
+
+void Task::UnpostAndReleaseRefFromDispatcherDestructor() {
+  allocator::internal::ControlBlock* const control_block = Unpost();
+  if (control_block != nullptr) {
+    internal::lock().unlock();
+    ReleaseSharedRef(control_block);
+    internal::lock().lock();
+  }
+}
+
 // Called by the dispatcher to run this task.
-Task::RunResult Task::RunInDispatcher() {
+RunTaskResult Task::RunInDispatcher() {
   PW_LOG_DEBUG("Dispatcher running task " PW_TASK_NAME_FMT() ":%p",
                name_,
                static_cast<const void*>(this));
@@ -144,15 +171,16 @@ Task::RunResult Task::RunInDispatcher() {
     requires_waker = context.requires_waker_;
   }
 
-  std::lock_guard lock(internal::lock());
+  // This function does not use std::lock_guard since the UnpostAndReleaseRef
+  // function releases the lock. Lock correctness is ensured by Clang's
+  // thread safety annotations.
+  internal::lock().lock();
 
   if (complete || state_ == State::kDeregisteredButRunning) {
     switch (state_) {
-      case State::kUnposted: {
-        // If the Task was already deregistered by another thread, it cannot be
-        // an OwnedThread, so there is no need to destroy it.
-        return kDeregistered;
-      }
+      case State::kUnposted:
+        // Invalid state -- if unregistered from another thread, the state
+        // becomes kDeregisteredButRunning.
       case State::kSleeping:
         // If the task is sleeping, then another thread must have run the
         // dispatcher, which is invalid.
@@ -165,14 +193,12 @@ Task::RunResult Task::RunInDispatcher() {
         dispatcher_->RemoveWokenTaskLocked(*this);
         break;
     }
-    state_ = State::kUnposted;
-    dispatcher_ = nullptr;
-    RemoveAllWakersLocked();
-
     PW_LOG_DEBUG("Task " PW_TASK_NAME_FMT() ":%p completed",
                  name_,
                  static_cast<const void*>(this));
-    return owned_by_dispatcher_ ? kCompletedNeedsDestroy : kCompleted;
+
+    UnpostAndReleaseRef();
+    return RunTaskResult::kCompleted;
   }
 
   if (state_ == State::kRunning) {
@@ -195,11 +221,13 @@ Task::RunResult Task::RunInDispatcher() {
       dispatcher_ = nullptr;
     }
   }
+  internal::lock().unlock();
+
   PW_LOG_DEBUG(
       "Task " PW_TASK_NAME_FMT() ":%p finished its run and is still pending",
       name_,
       static_cast<const void*>(this));
-  return kActive;
+  return RunTaskResult::kActive;
 }
 
 bool Task::Wake() {
