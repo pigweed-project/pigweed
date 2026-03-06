@@ -68,7 +68,7 @@ pyfakefs==5.7.2
 pygments==2.18.0
 pykwalify==1.8.0
 pylint==3.3.8
-pyperclip==1.8.2
+pyperclip==1.11.0
 pyserial==3.5
 python-daemon==3.0.1
 pytz==2023.3
