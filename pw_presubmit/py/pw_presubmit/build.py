@@ -950,7 +950,7 @@ def _copy_to_gcs(ctx: PresubmitContext, filepath: Path, gcs_dst: str):
     luci = Path(pw_cli.env.pigweed_environment().PW_LUCI_CIPD_INSTALL_DIR)
     gsutil = luci / 'gsutil' / 'gsutil'
 
-    cmd = [gsutil, 'cp', filepath, gcs_dst]
+    cmd = ['gcloud', 'storage', 'cp', filepath, gcs_dst]
 
     upload_stdout = ctx.output_dir / (filepath.name + '.stdout')
     with upload_stdout.open('w') as outs:
