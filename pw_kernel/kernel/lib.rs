@@ -305,7 +305,8 @@ pub struct InitKernelState<K: Kernel> {
 // in this crate.
 #[doc(hidden)]
 pub mod macro_exports {
-    pub use {foreign_box, pw_assert};
+    pub use foreign_box;
+    pub use pw_assert;
 }
 
 pub fn main<K: Kernel>(kernel: K, init_state: &'static mut InitKernelState<K>) -> ! {
@@ -435,5 +436,7 @@ pub mod __private {
         }};
     }
 
-    pub use {foreign_box, kernel_config, time};
+    pub use foreign_box;
+    pub use kernel_config;
+    pub use time;
 }

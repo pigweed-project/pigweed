@@ -15,8 +15,9 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
+use console_backend as _;
+use entry as _;
 use target_common::{TargetInterface, declare_target};
-use {console_backend as _, entry as _};
 
 pub struct Target {}
 

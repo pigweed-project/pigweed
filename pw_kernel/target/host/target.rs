@@ -14,7 +14,9 @@
 
 #![no_main]
 
-use {arch_host as _, console_backend as _, kernel as _};
+use arch_host as _;
+use console_backend as _;
+use kernel as _;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]

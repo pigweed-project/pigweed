@@ -14,8 +14,9 @@
 #![no_std]
 #![no_main]
 
+use console_backend as _;
+use entry as _;
 use target_common::{TargetInterface, declare_target};
-use {console_backend as _, entry as _};
 
 pub struct Target {}
 

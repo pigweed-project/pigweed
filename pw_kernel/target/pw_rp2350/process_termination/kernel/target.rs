@@ -15,9 +15,11 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
+use codegen as _;
+use console_backend as _;
+use entry as _;
 use process_termination::{TestState, test_main};
 use target_common::{TargetInterface, declare_target};
-use {codegen as _, console_backend as _, entry as _};
 
 pub struct Target {}
 impl TargetInterface for Target {
