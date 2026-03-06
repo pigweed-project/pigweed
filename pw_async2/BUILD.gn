@@ -382,6 +382,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "coro_task.cc",
       "public/pw_async2/coro_or_else_task.h",
     ]
+    allow_circular_includes_from = [ ":pw_async2" ]
   }
 
   pw_test("coro_test") {
@@ -423,6 +424,17 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       ":testing",
       "$dir_pw_allocator:testing",
       "$dir_pw_status",
+    ]
+  }
+
+  pw_test("allocate_task_coro_test") {
+    enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+    sources = [ "allocate_task_coro_test.cc" ]
+    deps = [
+      ":coro",
+      ":pw_async2",
+      ":testing",
+      "$dir_pw_allocator:testing",
     ]
   }
 }
@@ -676,6 +688,7 @@ pw_test_group("tests") {
       ":coro_test",
       ":coro_task_test",
       ":fallible_coro_task_test",
+      ":allocate_task_coro_test",
     ]
   }
 }

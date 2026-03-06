@@ -20,14 +20,12 @@
 #include "pw_async2/task.h"
 
 namespace pw::async2 {
-namespace internal {
-
-[[noreturn]] void CrashDueToCoroutineAllocationFailure();
-
-}  // namespace internal
 
 /// @submodule{pw_async2,coroutines}
 
+/// A `Task` that delegates to a provided `Coro<T>`.
+///
+/// The provided `Coro` is polled when `Pend` is called on this task.
 template <typename T,
           ReturnValuePolicy policy = std::is_void_v<T>
                                          ? ReturnValuePolicy::kDiscard
@@ -36,14 +34,12 @@ class CoroTask final : public Task {
  public:
   using value_type = T;
 
+  /// Creates a task that runs the provided coroutine. If the `Coro` is empty or
+  /// failed to allocate, this `CoroTask` crashes when `Pend` is called.
   CoroTask(Coro<T>&& coro)
       : Task(PW_ASYNC_TASK_NAME("CoroTask<T>")),
         coro_(std::move(coro)),
-        return_value_(internal::CoroPollState::kPending) {
-    if (!coro_.IsValid()) {
-      internal::CrashDueToCoroutineAllocationFailure();
-    }
-  }
+        return_value_(internal::CoroPollState::kPending) {}
 
   CoroTask(const CoroTask&) = delete;
   CoroTask& operator=(const CoroTask&) = delete;
@@ -51,6 +47,12 @@ class CoroTask final : public Task {
   CoroTask& operator=(CoroTask&&) = delete;
 
   ~CoroTask() override { Deregister(); }
+
+  /// Returns whether this `CoroTask` wraps a valid `Coro` and can be pended.
+  /// Pending a `!ok()` `CoroTask` will crash.
+  ///
+  /// This will be `false` if `Coro` allocation failed.
+  [[nodiscard]] bool ok() const { return coro_.ok(); }
 
   /// Returns whether the task ran and set that `value` to the function's return
   /// value.
@@ -72,7 +74,7 @@ class CoroTask final : public Task {
 
  private:
   Poll<> DoPend(Context& cx) final {
-    // Coro::Pend() asserts if allocation failed (!coro_.IsValid()).
+    // Coro::Pend() asserts if allocation failed (!coro_.ok()).
     return_value_ = coro_.Pend(cx);
     switch (return_value_.state()) {
       case internal::CoroPollState::kPending:
@@ -88,15 +90,16 @@ class CoroTask final : public Task {
   internal::CoroPoll<value_type> return_value_;
 };
 
+/// `CoroTask` specialization that discards the coroutine's return value.
 template <typename T>
 class CoroTask<T, ReturnValuePolicy::kDiscard> final : public Task {
  public:
+  /// Creates a task that runs the provided coroutine.
+  ///
+  /// If the `Coro` is empty or failed to allocate, this `CoroTask` crashes when
+  /// `Pend` is called.
   CoroTask(Coro<T>&& coro)
-      : Task(PW_ASYNC_TASK_NAME("CoroTask")), coro_(std::move(coro)) {
-    if (!coro_.IsValid()) {
-      internal::CrashDueToCoroutineAllocationFailure();
-    }
-  }
+      : Task(PW_ASYNC_TASK_NAME("CoroTask")), coro_(std::move(coro)) {}
 
   CoroTask(const CoroTask&) = delete;
   CoroTask& operator=(const CoroTask&) = delete;
@@ -105,10 +108,15 @@ class CoroTask<T, ReturnValuePolicy::kDiscard> final : public Task {
 
   ~CoroTask() override { Deregister(); }
 
+  /// Returns whether this `CoroTask` wraps a valid `Coro` and can be pended.
+  /// Pending a `!ok()` `CoroTask` will crash.
+  ///
+  /// This will be `false` if `Coro` allocation failed.
+  [[nodiscard]] bool ok() const { return coro_.ok(); }
+
  private:
   Poll<> DoPend(Context& cx) final {
-    PW_ASSERT(coro_.IsValid());
-
+    // Coro::Pend() asserts if allocation failed (!coro_.ok()).
     switch (coro_.Pend(cx).state()) {
       case internal::CoroPollState::kPending:
         return Pending();

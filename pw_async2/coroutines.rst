@@ -12,29 +12,21 @@ logic in a sequential, synchronous style, eliminating the need to write explicit
 state machines. The ``co_await`` keyword is used to suspend execution until an
 asynchronous operation is ``Ready``.
 
-.. code-block:: cpp
-
-   Coro<void> ReadAndSend(Reader& reader, Writer& writer) {
-     // co_await suspends the coroutine until the Read operation completes.
-     Result<Data> data = co_await reader.Read();
-     if (!data.ok()) {
-       co_return;
-     }
-
-     // The coroutine resumes here and continues.
-     co_await writer.Write(*data);
-     co_return;
-   }
-
 See also :ref:`docs-blog-05-coroutines`, a blog post on how Pigweed implements
 coroutines without heap allocation, and challenges encountered along the way.
 
 .. _module-pw_async2-coro-tasks:
 
-------------------
+----------------
+Using coroutines
+----------------
+
 Define a coroutine
-------------------
-The following example shows how to define a coroutine:
+==================
+A ``pw_async2`` coroutine is a function that with :cc:`CoroContext
+<pw::async2::CoroContext>` as its first parameter and a return type of
+:cc:`Coro<T> <pw::async2::Coro>`. Here is an example of a coroutine that returns
+:cc:`pw::Status`:
 
 .. literalinclude:: examples/basic_coro.cc
    :language: cpp
@@ -43,9 +35,9 @@ The following example shows how to define a coroutine:
    :end-before: [pw_async2-examples-basic-coro]
 
 Any :ref:`future <module-pw_async2-futures>` or coroutine can be passed to
-``co_await``, which will return with a ``T`` when the result is ready. To return
-from a coroutine, use ``co_return <expression>`` instead of the usual ``return
-<expression>`` syntax.
+``co_await``, which evaluates to a ``value_type`` when the result is ready. To
+return from a coroutine, use ``co_return <expression>`` instead of the usual
+``return <expression>`` syntax.
 
 .. tip::
 
@@ -53,9 +45,40 @@ from a coroutine, use ``co_return <expression>`` instead of the usual ``return
    :cc:`PW_TRY_ASSIGN` when working with :cc:`pw::Status` or :cc:`pw::Result` in
    a coroutine. These macros use ``co_return`` instead of ``return``.
 
+Run a coroutine
+===============
 Run a coroutine as a ``pw_async2`` :cc:`task <pw::async2::Task>` using
+:cc:`Dispatcher::Post`. The following posts a coroutine as a :cc:`CoroTask
+<pw::async2::CoroTask>`:
+
+.. literalinclude:: examples/basic_coro.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-basic-allocated]
+   :end-before: [pw_async2-examples-basic-allocated]
+
+The coroutine can also be instantiated directly and passed to ``Post``, though
+this requires listing the allocator twice:
+
+.. literalinclude:: examples/basic_coro.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-basic-allocated-explicit]
+   :end-before: [pw_async2-examples-basic-allocated-explicit]
+
+The previous examples use :cc:`CoroTask <pw::async2::CoroTask>`, which crashes
+if coroutione stack allocation fails. To handle allocation failures gracefully
+with :cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>`, pass an allocation
+error handler function after the coroutine:
+
+.. literalinclude:: examples/basic_coro.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-basic-allocated-fallible]
+   :end-before: [pw_async2-examples-basic-allocated-fallible]
+
 :cc:`CoroTask <pw::async2::CoroTask>` or :cc:`FallibleCoroTask
-<pw::async2::FallibleCoroTask>`.
+<pw::async2::FallibleCoroTask>` can be stack or statically allocated instead of
+dynamically allocated with :cc:`Dispatcher::Post`. This is not recommended, as
+it is more complex and does not eliminate all allocations. Coroutines always
+dynamically allocate their stacks.
 
 .. literalinclude:: examples/basic_coro.cc
    :language: cpp

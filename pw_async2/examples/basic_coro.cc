@@ -12,15 +12,12 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_async2/coro_task.h"
-#include "pw_async2/dispatcher.h"
-#include "pw_status/status.h"
-
 // DOCSTAG: [pw_async2-examples-basic-coro]
 #include "pw_async2/channel.h"
 #include "pw_async2/coro.h"
 #include "pw_log/log.h"
 #include "pw_result/result.h"
+#include "pw_status/status.h"
 
 namespace {
 
@@ -58,37 +55,95 @@ Coro<Status> ForwardingCoro(CoroContext,
 // DOCSTAG: [pw_async2-examples-basic-coro]
 
 #include "pw_allocator/testing.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 
 namespace {
 
+using ::pw::SharedPtr;
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::ChannelStorage;
 using ::pw::async2::CoroTask;
 using ::pw::async2::CreateSpscChannel;
 
-TEST(CoroExample, ReturnsOk) {
-  ChannelStorage<int, 1> storage1;
-  auto [handle1, sender1, receiver1] = CreateSpscChannel(storage1);
-  ChannelStorage<int, 1> storage2;
-  auto [handle2, sender2, receiver2] = CreateSpscChannel(storage2);
-  handle1.Release();
-  handle2.Release();
+class CoroExample : public ::testing::Test {
+ protected:
+  CoroExample() {
+    auto [handle1, s1, r1] = CreateSpscChannel(storage1_);
+    auto [handle2, s2, r2] = CreateSpscChannel(storage2_);
+    handle1.Release();
+    handle2.Release();
 
-  EXPECT_EQ(sender1.TrySend(42), pw::OkStatus());
+    sender1_ = std::move(s1);
+    receiver1_ = std::move(r1);
+    sender2_ = std::move(s2);
+    receiver2_ = std::move(r2);
 
-  AllocatorForTest<512> alloc;
+    EXPECT_EQ(sender1_.TrySend(42), pw::OkStatus());
+  }
+
+  ChannelStorage<int, 1> storage1_;
+  ChannelStorage<int, 1> storage2_;
+  pw::async2::Sender<int> sender1_;
+  pw::async2::Receiver<int> receiver1_;
+  pw::async2::Sender<int> sender2_;
+  pw::async2::Receiver<int> receiver2_;
+
+  AllocatorForTest<512> allocator;
   pw::async2::DispatcherForTest dispatcher;
+};
 
+TEST_F(CoroExample, ImplicitCoro) {
+  // DOCSTAG: [pw_async2-examples-basic-allocated]
+  SharedPtr<CoroTask<Status>> task = dispatcher.Post<ForwardingCoro>(
+      allocator, std::move(receiver1_), std::move(sender2_));
+
+  // The task is automatically posted when allocated.
+  dispatcher.RunToCompletion();
+  // DOCSTAG: [pw_async2-examples-basic-allocated]
+
+  EXPECT_EQ(receiver2_.TryReceive().value(), 42);
+}
+
+TEST_F(CoroExample, ExplicitCoro) {
+  // DOCSTAG: [pw_async2-examples-basic-allocated-explicit]
+  SharedPtr<CoroTask<Status>> task = dispatcher.Post(
+      allocator,
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)));
+
+  // The task is automatically posted when allocated.
+  dispatcher.RunToCompletion();
+  // DOCSTAG: [pw_async2-examples-basic-allocated-explicit]
+
+  EXPECT_EQ(receiver2_.TryReceive().value(), 42);
+}
+
+TEST_F(CoroExample, FallibleCoroTask) {
+  // DOCSTAG: [pw_async2-examples-basic-allocated-fallible]
+  auto task = dispatcher.Post(
+      allocator,
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)),
+      [] { PW_LOG_ERROR("coroutine allocation failed! Aborting..."); });
+
+  // The task is automatically posted when allocated.
+  dispatcher.RunToCompletion();
+  // DOCSTAG: [pw_async2-examples-basic-allocated-fallible]
+
+  EXPECT_EQ(receiver2_.TryReceive().value(), 42);
+}
+
+TEST_F(CoroExample, CoroTask) {
   // DOCSTAG: [pw_async2-examples-basic-coro-task]
-  CoroTask task(
-      ForwardingCoro(alloc, std::move(receiver1), std::move(sender2)));
+  // NOT RECOMMENDED: Manually declare a CoroTask to wrap a Coro. The coroutine
+  // itself still requires dynamic allocation.
+  pw::async2::CoroTask task(
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)));
 
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
   // DOCSTAG: [pw_async2-examples-basic-coro-task]
 
-  EXPECT_EQ(receiver2.TryReceive().value(), 42);
+  EXPECT_EQ(receiver2_.TryReceive().value(), 42);
 }
 
 }  // namespace

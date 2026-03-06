@@ -78,11 +78,11 @@ TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST(Coro, AllocationFailureProducesInvalidCoro) {
-  EXPECT_FALSE(
-      ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).IsValid());
+  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
+  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
   int x = 0;
-  EXPECT_FALSE(
-      StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).IsValid());
+  EXPECT_FALSE(StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).ok());
+  EXPECT_FALSE(StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).ok());
 }
 
 TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {

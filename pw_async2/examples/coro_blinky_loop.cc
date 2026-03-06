@@ -26,7 +26,6 @@ using ::pw::Result;
 using ::pw::Status;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroTask;
 using ::pw::async2::TimeProvider;
 using ::pw::chrono::SystemClock;
 using ::std::chrono_literals::operator""ms;
@@ -66,9 +65,9 @@ TEST(CoroExample, ReturnsOk) {
   AllocatorForTest<512> alloc;
   SimulatedTimeProvider<SystemClock> time;
   Led led;
-  CoroTask task = Blink(alloc, time, led, /*times=*/3);
   DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+  auto task = dispatcher.Post<Blink>(alloc, time, led, /*times=*/3);
+  EXPECT_NE(task, nullptr);
   while (dispatcher.RunUntilStalled()) {
     time.AdvanceUntilNextExpiration();
   }

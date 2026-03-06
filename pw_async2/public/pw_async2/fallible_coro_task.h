@@ -16,7 +16,6 @@
 #include <concepts>
 
 #include "pw_async2/coro.h"
-#include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
 #include "pw_function/function.h"
 
@@ -25,7 +24,7 @@ namespace pw::async2 {
 /// @submodule{pw_async2,coroutines}
 
 /// A `Task` that delegates to a provided `Coro<T>` and executes an
-/// `or_else` handler function if coroutine allocation fails.
+/// error handler function if coroutine allocation fails.
 template <typename T,
           typename AllocationErrorHandler = pw::Function<void()>,
           ReturnValuePolicy policy = std::is_void_v<T>
@@ -38,10 +37,11 @@ class FallibleCoroTask final : public Task {
 
   /// Create a new `Task` that runs `coro`, invoking `or_else` if allocation
   /// fails.
-  FallibleCoroTask(Coro<T>&& coro, AllocationErrorHandler&& error_handler)
+  template <typename ErrorHandler>
+  FallibleCoroTask(Coro<T>&& coro, ErrorHandler&& error_handler)
       : Task(PW_ASYNC_TASK_NAME("FallibleCoroTask<T>")),
         coro_(std::move(coro)),
-        error_handler_(std::move(error_handler)) {}
+        error_handler_(std::forward<ErrorHandler>(error_handler)) {}
 
   FallibleCoroTask(const FallibleCoroTask&) = delete;
   FallibleCoroTask& operator=(const FallibleCoroTask&) = delete;
@@ -49,6 +49,12 @@ class FallibleCoroTask final : public Task {
   FallibleCoroTask& operator=(FallibleCoroTask&&) = delete;
 
   ~FallibleCoroTask() override { Deregister(); }
+
+  /// Returns whether this `FallibleCoroTask` wraps a valid `Coro` and can be
+  /// pended. Pending a `!ok()` `FallibleCoroTask` calls the error handler.
+  ///
+  /// This will be `false` if `Coro` allocation failed.
+  [[nodiscard]] bool ok() const { return coro_.ok(); }
 
   /// Returns whether the task ran and set that `value` to the function's return
   /// value.
@@ -72,7 +78,7 @@ class FallibleCoroTask final : public Task {
 
  private:
   Poll<> DoPend(Context& cx) final {
-    if (!coro_.IsValid()) {
+    if (!coro_.ok()) {
       error_handler_();
       return Ready();
     }
@@ -95,6 +101,8 @@ class FallibleCoroTask final : public Task {
   std::optional<T> return_value_;
 };
 
+/// `FallibleCoroTask` specialization that discards the coroutine's return
+/// value.
 template <typename T, typename AllocationErrorHandler>
 class FallibleCoroTask<T, AllocationErrorHandler, ReturnValuePolicy::kDiscard>
     final : public Task {
@@ -111,10 +119,16 @@ class FallibleCoroTask<T, AllocationErrorHandler, ReturnValuePolicy::kDiscard>
 
   ~FallibleCoroTask() override { Deregister(); }
 
+  /// Returns whether this `FallibleCoroTask` wraps a valid `Coro` and can be
+  /// pended. Pending a `!ok()` `FallibleCoroTask` calls the error handler.
+  ///
+  /// This will be `false` if `Coro` allocation failed.
+  [[nodiscard]] bool ok() const { return coro_.ok(); }
+
  private:
   Poll<> DoPend(Context& cx) final {
-    if (!coro_.IsValid()) {
-      this->error_handler_();
+    if (!coro_.ok()) {
+      error_handler_();
       return Ready();
     }
     switch (coro_.Pend(cx).state()) {

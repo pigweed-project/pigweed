@@ -426,6 +426,18 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "allocate_task_coro_test",
+    srcs = ["allocate_task_coro_test.cc"],
+    target_compatible_with = minimum_cxx_20(),
+    deps = [
+        ":coro",
+        ":pw_async2",
+        ":testing",
+        "//pw_allocator:testing",
+    ],
+)
+
 cc_library(
     name = "coro",
     srcs = [

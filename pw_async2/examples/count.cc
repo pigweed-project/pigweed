@@ -30,7 +30,6 @@ using ::pw::allocator::GetLibCAllocator;
 using ::pw::async2::BasicDispatcher;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroTask;
 using ::pw::async2::Dispatcher;
 using ::pw::async2::GetSystemTimeProvider;
 using ::pw::async2::TimeProvider;
@@ -53,9 +52,9 @@ class Counter {
   // per `period`.
   void StartCounting(SystemClock::duration period, int times) {
     // Allocate a new task, which is freed by the dispatcher when it completes.
-    PW_CHECK(dispatcher_->Post<CoroTask<void>>(
-                 *allocator_, CountCoro(*allocator_, period, times)) !=
-             nullptr);
+    PW_CHECK(
+        dispatcher_->Post(*allocator_, CountCoro(*allocator_, period, times)) !=
+        nullptr);
   }
   // examples-task-end
 

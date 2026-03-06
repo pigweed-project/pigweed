@@ -80,7 +80,7 @@ TEST_F(CoroTaskTest, RunOnceInt) {
 TEST_F(CoroTaskTest, AllocationFailure) {
   alloc_.Exhaust();
   Coro c = DoubleIt(coro_cx_, 100);
-  EXPECT_FALSE(c.IsValid());
+  EXPECT_FALSE(c.ok());
 }
 
 Coro<void> ReturnVoid(CoroContext) { co_return; }

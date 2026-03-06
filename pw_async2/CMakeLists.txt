@@ -391,6 +391,16 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_allocator.testing
       pw_status
   )
+
+  pw_add_test(pw_async2.allocate_task_coro_test
+    SOURCES
+      allocate_task_coro_test.cc
+    PRIVATE_DEPS
+      pw_async2.coro
+      pw_async2
+      pw_async2.testing
+      pw_allocator.testing
+  )
 endif()
 
 pw_add_library(pw_async2.time_provider STATIC

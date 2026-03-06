@@ -65,8 +65,7 @@ TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST_F(FallibleCoroTaskTest, AllocationFailureProducesInvalidCoro) {
-  EXPECT_FALSE(
-      ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).IsValid());
+  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
   bool error_handler_ran = false;
   int output = 0;
   FallibleCoroTask task(
@@ -121,7 +120,7 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
 
   Coro<Status> outer_coro =
       Outer(alloc_, returned_status, TrackedObject(argument), before, after);
-  ASSERT_TRUE(outer_coro.IsValid());
+  ASSERT_TRUE(outer_coro.ok());
 
   alloc_.Exhaust();  // Prevent allocation of Inner coroutine.
 

@@ -27,6 +27,11 @@
 #include "pw_containers/internal/optional.h"
 
 namespace pw::async2 {
+namespace internal {
+
+[[noreturn]] void CrashDueToCoroutineAllocationFailure();
+
+}  // namespace internal
 
 // Forward-declare `Coro` so that it can be referenced by the promise type APIs.
 template <typename T>
@@ -73,7 +78,7 @@ template <typename PromiseType>
 class OwningCoroutineHandle final {
  public:
   // Construct a null (`!IsValid()`) handle.
-  OwningCoroutineHandle(std::nullptr_t) : promise_handle_(nullptr) {}
+  constexpr OwningCoroutineHandle(std::nullptr_t) : promise_handle_(nullptr) {}
 
   /// Take ownership of `promise_handle`.
   OwningCoroutineHandle(std::coroutine_handle<PromiseType>&& promise_handle)
@@ -472,7 +477,7 @@ class Awaitable final {
   CoroPollState Advance(Context& cx)
     requires IsCoro<await_type>
   {
-    if (!get().IsValid()) {
+    if (!get().ok()) {
       return CoroPollState::kAborted;
     }
     auto result = get().Pend(cx);
@@ -554,7 +559,7 @@ class Coro final {
   ///
   /// This will return `false` if coroutine state allocation failed or if
   /// this `Coro<T>::Pend` method previously returned a `Ready` value.
-  [[nodiscard]] bool IsValid() const { return promise_handle_.IsValid(); }
+  [[nodiscard]] bool ok() const { return promise_handle_.IsValid(); }
 
  private:
   // Allow get_return_object() and get_return_object_on_allocation_failure() to
@@ -572,11 +577,14 @@ class Coro final {
 
   /// Attempt to complete this coroutine, returning the result if complete.
   ///
-  /// Crashes `!IsValid()`, which may occur if coroutine state allocation fails.
+  /// Crashes if `ok()` is false, which occurs when coroutine state allocation
+  /// fails.
   internal::CoroPoll<T> Pend(Context& cx) {
     using enum internal::CoroPollState;
 
-    PW_ASSERT(IsValid());
+    if (!ok()) {
+      internal::CrashDueToCoroutineAllocationFailure();
+    }
 
     // DOCSTAG: [pw_async2-coro-resume]
     internal::CoroPoll<T> return_value(kPending);

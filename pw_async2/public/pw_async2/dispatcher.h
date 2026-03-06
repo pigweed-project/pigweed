@@ -29,6 +29,15 @@
 #include "pw_containers/intrusive_list.h"
 #include "pw_sync/lock_annotations.h"
 
+// Coroutines are supported if the build target depends on //pw_async2:coro.
+#if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+#include <functional>  // std::invoke
+
+#include "pw_async2/coro.h"
+#include "pw_async2/coro_task.h"
+#include "pw_async2/fallible_coro_task.h"
+#endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+
 namespace pw::async2 {
 
 /// @submodule{pw_async2,dispatchers}
@@ -52,7 +61,9 @@ namespace pw::async2 {
 ///
 /// The base `Dispatcher` performs no allocations internally. `Dispatcher`
 /// offers `Post` overloads that allocate a task with the provided allocator,
-/// but their use is optional.
+/// but their use is optional. C++20 coroutines can be posted to a `Dispatcher`
+/// with `Post` if C++20 is supported and the build target depends on
+/// `//pw_async2:coro`.
 class Dispatcher {
  public:
   Dispatcher(Dispatcher&) = delete;
@@ -163,6 +174,71 @@ class Dispatcher {
                                                       Fut&& future) {
     return Post<FutureTask<Fut>>(allocator, std::forward<Fut>(future));
   }
+
+#if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+  /// Allocates and posts a `CoroTask` that runs the provided coroutine to
+  /// completion.
+  ///
+  /// Returns `nullptr` if the coroutine or `CoroTask` failed to allocate.
+  /// Crashes if subsequent coroutine allocations fail.
+  ///
+  /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
+  ///     null `SharedPtr` if allocation failed.
+  template <typename T>
+  [[nodiscard]] SharedPtr<CoroTask<T>> Post(Allocator& allocator,
+                                            Coro<T>&& coro) {
+    if (!coro.ok()) {
+      return nullptr;
+    }
+    return Post<CoroTask<T>>(allocator, std::move(coro));
+  }
+
+  /// Allocates and posts a `FallibleCoroTask` that runs the provided coroutine
+  /// to completion.
+  ///
+  /// Returns `nullptr` if the coroutine or `FallibleCoroTask` failed to
+  /// allocate. Invokes `error_handler` if subsequent coroutine allocations
+  /// fail.
+  ///
+  /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
+  ///     null `SharedPtr` if allocation failed.
+  template <typename T,
+            typename E = void,
+            int&... kExplicitGuard,
+            typename Arg,
+            typename ErrorHandler =
+                std::conditional_t<std::is_void_v<E>, std::decay_t<Arg>, E>>
+  [[nodiscard]] SharedPtr<FallibleCoroTask<T, ErrorHandler>> Post(
+      Allocator& allocator, Coro<T>&& coro, Arg&& error_handler) {
+    if (!coro.ok()) {
+      return nullptr;
+    }
+    return Post<FallibleCoroTask<T, ErrorHandler>>(
+        allocator, std::move(coro), std::forward<Arg>(error_handler));
+  }
+
+  /// Allocates and posts a `CoroTask` for the provided coroutine function.
+  ///
+  /// The coroutine function is invoked with the provided arguments. The
+  /// allocator from the `CoroContext` (the first argument) is used to allocate
+  /// the task.
+  ///
+  /// Returns `nullptr` if the coroutine or `CoroTask` failed to allocate.
+  /// Crashes if subsequent coroutine allocations fail.
+  ///
+  /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
+  ///     null `SharedPtr` if allocation failed.
+  template <auto kCoroFunc, typename... Args>
+  [[nodiscard]] auto Post(CoroContext coro_cx, Args&&... args) {
+    if constexpr (std::is_member_function_pointer_v<decltype(kCoroFunc)>) {
+      return PostSharedMemberCoro<kCoroFunc>(coro_cx,
+                                             std::forward<Args>(args)...);
+    } else {
+      return Post(coro_cx.allocator(),
+                  std::invoke(kCoroFunc, coro_cx, std::forward<Args>(args)...));
+    }
+  }
+#endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
   /// Outputs log statements about the tasks currently registered with this
   /// dispatcher.
@@ -317,6 +393,19 @@ class Dispatcher {
   bool PostAllocatedTask(Task* task,
                          allocator::internal::ControlBlock* control_block)
       PW_LOCKS_EXCLUDED(internal::lock());
+
+#if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
+  template <auto kCoroMemberFunc, typename Receiver, typename... Args>
+  [[nodiscard]] auto PostSharedMemberCoro(CoroContext coro_cx,
+                                          Receiver&& receiver,
+                                          Args&&... args) {
+    return Post(coro_cx.allocator(),
+                std::invoke(kCoroMemberFunc,
+                            std::forward<Receiver>(receiver),
+                            coro_cx,
+                            std::forward<Args>(args)...));
+  }
+#endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
   IntrusiveList<Task> woken_ PW_GUARDED_BY(internal::lock());
   IntrusiveList<Task> sleeping_ PW_GUARDED_BY(internal::lock());
