@@ -20,12 +20,12 @@
 
 namespace pw::async2::internal {
 
-void* CoroPromiseBase::SharedNew(CoroContext& coro_cx,
+void* CoroPromiseBase::SharedNew(CoroContext coro_cx,
                                  std::size_t size,
                                  std::size_t align) noexcept {
   PW_LOG_DEBUG("Allocating %zu B coroutine with %zu B alignment", size, align);
 
-  auto ptr = coro_cx.alloc().Allocate(pw::allocator::Layout(size, align));
+  auto ptr = coro_cx.allocator().Allocate(pw::allocator::Layout(size, align));
   if (ptr == nullptr) {
     PW_LOG_ERROR("Failed to allocate space for a coroutine of size %zu.", size);
   }

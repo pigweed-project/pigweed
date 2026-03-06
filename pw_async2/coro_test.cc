@@ -20,6 +20,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
@@ -42,9 +43,9 @@ using ::pw::async2::Poll;
 using ::pw::async2::Waker;
 using ::pw::containers::test::Counter;
 
-Coro<Result<int>> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
+Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
 
-Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
+Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
   PW_CO_TRY_ASSIGN(out, co_await ImmediatelyReturnsFive(coro_cx));
   co_return OkStatus();
 }
@@ -52,7 +53,7 @@ Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
 class ObjectWithCoroMethod {
  public:
   ObjectWithCoroMethod(int x) : x_(x) {}
-  Coro<Status> CoroMethodStoresField(CoroContext&, int& out) {
+  Coro<Status> CoroMethodStoresField(CoroContext, int& out) {
     out = x_;
     co_return OkStatus();
   }
@@ -63,15 +64,12 @@ class ObjectWithCoroMethod {
 
 class CoroTest : public ::testing::Test {
  protected:
-  CoroTest() : coro_cx_(alloc_) {}
-
   AllocatorForTest<2048> alloc_;
-  CoroContext coro_cx_;
 };
 
 TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
   int output = 0;
-  CoroTask task = StoresFiveThenReturns(coro_cx_, output);
+  CoroTask task = StoresFiveThenReturns(alloc_, output);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
@@ -80,16 +78,17 @@ TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST(Coro, AllocationFailureProducesInvalidCoro) {
-  CoroContext null_cx(GetNullAllocator());
-  EXPECT_FALSE(ImmediatelyReturnsFive(null_cx).IsValid());
+  EXPECT_FALSE(
+      ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).IsValid());
   int x = 0;
-  EXPECT_FALSE(StoresFiveThenReturns(null_cx, x).IsValid());
+  EXPECT_FALSE(
+      StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).IsValid());
 }
 
 TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
   ObjectWithCoroMethod obj(4);
   int out = 22;
-  CoroTask task = obj.CoroMethodStoresField(coro_cx_, out);
+  CoroTask task = obj.CoroMethodStoresField(alloc_, out);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
@@ -124,11 +123,11 @@ struct FakeFuture {
   Waker last_waker;
 };
 
-Coro<Result<int>> AddTwo(CoroContext&, FakeFuture& a, FakeFuture& b) {
+Coro<Result<int>> AddTwo(CoroContext, FakeFuture& a, FakeFuture& b) {
   co_return co_await a + co_await b;
 }
 
-Coro<Status> AddTwoThenStore(CoroContext& alloc_,
+Coro<Status> AddTwoThenStore(CoroContext alloc_,
                              FakeFuture& a,
                              FakeFuture& b,
                              int& out) {
@@ -140,7 +139,7 @@ TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
   FakeFuture a;
   FakeFuture b;
   int output = 0;
-  CoroTask task = AddTwoThenStore(coro_cx_, a, b, output);
+  CoroTask task = AddTwoThenStore(alloc_, a, b, output);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
 
@@ -171,20 +170,20 @@ TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
   EXPECT_EQ(output, a_value + b_value);
 }
 
-Coro<Counter> MultiplyByThree(CoroContext&, Counter value) {
+Coro<Counter> MultiplyByThree(CoroContext, Counter value) {
   co_return Counter(value.value * 3);
 }
 
-Coro<int> NumberNine(CoroContext& cx) {
+Coro<int> NumberNine(CoroContext cx) {
   co_return co_await MultiplyByThree(cx, 3);
 }
 
-Coro<Counter> ReturnsAValue(CoroContext& cx, int add) {
+Coro<Counter> ReturnsAValue(CoroContext cx, int add) {
   co_return Counter(add + co_await NumberNine(cx));
 }
 
 TEST_F(CoroTest, ReturnsInt) {
-  CoroTask task(NumberNine(coro_cx_));
+  CoroTask task(NumberNine(alloc_));
 
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -194,7 +193,7 @@ TEST_F(CoroTest, ReturnsInt) {
 }
 
 TEST_F(CoroTest, Memory) {
-  CoroTask task(ReturnsAValue(coro_cx_, 5));
+  CoroTask task(ReturnsAValue(alloc_, 5));
 
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -203,13 +202,14 @@ TEST_F(CoroTest, Memory) {
   EXPECT_EQ(task.Wait().value, 9 + 5);
 }
 
-Coro<void> WaitUntilFive(CoroContext& cx, FakeFuture& fut) {
+Coro<void> WaitUntilFive(CoroContext, FakeFuture& fut) {
   EXPECT_EQ(co_await fut, 5);
 }
 
 TEST_F(CoroTest, AwaitVoidCoro) {
   FakeFuture fut;
-  CoroTask task(WaitUntilFive(coro_cx_, fut));
+  CoroContext cx(alloc_);
+  CoroTask task(WaitUntilFive(cx, fut));
 
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -222,6 +222,70 @@ TEST_F(CoroTest, AwaitVoidCoro) {
   dispatcher.RunToCompletion();
 
   EXPECT_EQ(fut.poll_count, 2);
+}
+
+#if PW_NC_TEST(CoroContextReference)
+PW_NC_EXPECT("CoroContext must be passed by value");
+[[maybe_unused]] Coro<void> CoroContextReference(CoroContext&) { co_return; }
+#elif PW_NC_TEST(CoroContextConstReference)
+PW_NC_EXPECT("CoroContext must be passed by value");
+[[maybe_unused]] Coro<void> CoroContextConstReference(const CoroContext&) {
+  co_return;
+}
+#elif PW_NC_TEST(ClassMethodReference)
+PW_NC_EXPECT("CoroContext must be passed by value");
+struct [[maybe_unused]] Foo {
+  Coro<void> Method(CoroContext&) { co_return; }
+};
+#elif PW_NC_TEST(ClassMethodConstReference)
+PW_NC_EXPECT("CoroContext must be passed by value");
+struct [[maybe_unused]] Foo {
+  Coro<void> Method(const CoroContext&) { co_return; }
+};
+#elif PW_NC_TEST(NonMemberFunctionWithSecondCoroContextArgument)
+PW_NC_EXPECT("CoroContext must be passed by value");
+
+class Foo {};
+
+[[maybe_unused]] Coro<void> CoroContextAsSecondArg(Foo, CoroContext) {
+  co_return;
+}
+
+[[maybe_unused]] void Invoke() {
+  CoroContextAsSecondArg(Foo{}, CoroContext(pw::allocator::GetNullAllocator()));
+}
+#elif PW_NC_TEST(NoArguments)
+PW_NC_EXPECT("CoroContext must be passed by value");
+[[maybe_unused]] Coro<void> CoroContextReference() { co_return; }
+#elif PW_NC_TEST(TwoContextArguments)
+PW_NC_EXPECT("must have exactly one CoroContext argument");
+[[maybe_unused]] Coro<void> TwoContexts(CoroContext, int, CoroContext&) {
+  co_return;
+}
+#endif  // PW_NC_TEST
+        //
+
+class SomeClass {};
+
+// With C++20 coroutines, it's not possible to distinguish between a member
+// function with CoroContext as its first arg and a free function with
+// CoroContext as its second arg. We could require a different context type for
+// member functions, but that introduces complexity without solving any real
+// problems. Coroutines declared in this way look odd, but work just fine.
+Coro<int> ThisShouldBeACompilationErrorDoNotDoThis(SomeClass&, CoroContext) {
+  co_return 123;
+}
+
+TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
+  SomeClass some_class;
+  CoroTask task(ThisShouldBeACompilationErrorDoNotDoThis(some_class, alloc_));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.value(), 123);
 }
 
 }  // namespace

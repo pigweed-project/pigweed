@@ -34,9 +34,9 @@ BasicDispatcher dispatcher;
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
-Coro<int> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
+Coro<int> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
 
-Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
+Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
   out = co_await ImmediatelyReturnsFive(coro_cx);
   co_return OkStatus();
 }
@@ -44,7 +44,7 @@ Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
 class ObjectWithCoroMethod {
  public:
   ObjectWithCoroMethod(int x) : x_(x) {}
-  Coro<Status> CoroMethodStoresField(CoroContext&, int& out) {
+  Coro<Status> CoroMethodStoresField(CoroContext, int& out) {
     out = x_;
     co_return OkStatus();
   }
@@ -87,9 +87,9 @@ int Measure() {
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
-  CoroContext coro_cx(GetAllocator());
   int output = 0;
-  CoroTask coro_task = StoresFiveThenReturns(coro_cx, output);
+  CoroTask coro_task =
+      StoresFiveThenReturns(CoroContext(GetAllocator()), output);
   dispatcher.Post(coro_task);
   PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
 

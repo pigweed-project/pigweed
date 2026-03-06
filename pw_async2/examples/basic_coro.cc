@@ -37,7 +37,7 @@ using ::pw::async2::Sender;
 /// Note: the `CoroContext` argument is used by the `Coro<T>` internals to
 /// allocate the coroutine state. If this allocation fails, the coroutine
 /// aborts.
-Coro<Status> ForwardingCoro(CoroContext&,
+Coro<Status> ForwardingCoro(CoroContext,
                             Receiver<int> receiver,
                             Sender<int> sender) {
   std::optional<int> data = co_await receiver.Receive();
@@ -64,7 +64,6 @@ namespace {
 
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::ChannelStorage;
-using ::pw::async2::CoroContext;
 using ::pw::async2::CoroTask;
 using ::pw::async2::CreateSpscChannel;
 
@@ -82,9 +81,8 @@ TEST(CoroExample, ReturnsOk) {
   pw::async2::DispatcherForTest dispatcher;
 
   // DOCSTAG: [pw_async2-examples-basic-coro-task]
-  CoroContext coro_cx(alloc);
   CoroTask task(
-      ForwardingCoro(coro_cx, std::move(receiver1), std::move(sender2)));
+      ForwardingCoro(alloc, std::move(receiver1), std::move(sender2)));
 
   dispatcher.Post(task);
   dispatcher.RunToCompletion();

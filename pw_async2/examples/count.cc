@@ -52,16 +52,16 @@ class Counter {
   // Posts a new asynchronous task which will count up to `times`, one count
   // per `period`.
   void StartCounting(SystemClock::duration period, int times) {
-    CoroContext coro_cx(*allocator_);
     // Allocate a new task, which is freed by the dispatcher when it completes.
     PW_CHECK(dispatcher_->Post<CoroTask<void>>(
-                 *allocator_, CountCoro(coro_cx, period, times)) != nullptr);
+                 *allocator_, CountCoro(*allocator_, period, times)) !=
+             nullptr);
   }
   // examples-task-end
 
  private:
   // Asynchronous counter implementation.
-  Coro<void> CountCoro(CoroContext&, SystemClock::duration period, int times) {
+  Coro<void> CountCoro(CoroContext, SystemClock::duration period, int times) {
     PW_LOG_INFO("Counting to %i", times);
     for (int i = 1; i <= times; ++i) {
       co_await time_->WaitFor(period);

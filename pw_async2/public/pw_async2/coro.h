@@ -16,6 +16,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/allocator.h"
@@ -27,25 +28,31 @@
 
 namespace pw::async2 {
 
-/// @submodule{pw_async2,coroutines}
-
 // Forward-declare `Coro` so that it can be referenced by the promise type APIs.
 template <typename T>
 class Coro;
 
 enum class ReturnValuePolicy : bool;
 
+/// @submodule{pw_async2,coroutines}
+
 /// Context required for creating and executing coroutines.
 class CoroContext {
  public:
-  /// Creates a `CoroContext` which will allocate coroutine state using
-  /// `alloc`.
-  constexpr CoroContext(pw::allocator::Allocator& alloc) : alloc_(alloc) {}
+  /// Creates a `CoroContext`, which uses the provided allocator to allocate
+  /// coroutine state. A `CoroContext` may be used to invoke other coroutines.
+  /// Its allocator can be used for other allocations, if desired.
+  ///
+  /// Supports implicit conversion to simplify creating coroutines.
+  constexpr CoroContext(Allocator& allocator) : allocator_(&allocator) {}
 
-  constexpr Allocator& alloc() const { return alloc_; }
+  constexpr CoroContext(const CoroContext&) = default;
+  constexpr CoroContext& operator=(const CoroContext&) = default;
+
+  constexpr Allocator& allocator() const { return *allocator_; }
 
  private:
-  pw::allocator::Allocator& alloc_;
+  Allocator* allocator_;
 };
 
 /// @endsubmodule
@@ -187,7 +194,7 @@ class CoroPromiseBase {
   // This override does not accept alignment.
   template <typename... Args>
   static void* operator new(std::size_t size,
-                            CoroContext& coro_cx,
+                            CoroContext coro_cx,
                             const Args&...) noexcept {
     return SharedNew(coro_cx, size, alignof(std::max_align_t));
   }
@@ -198,7 +205,7 @@ class CoroPromiseBase {
   template <typename... Args>
   static void* operator new(std::size_t size,
                             std::align_val_t align,
-                            CoroContext& coro_cx,
+                            CoroContext coro_cx,
                             const Args&...) noexcept {
     return SharedNew(coro_cx, size, static_cast<size_t>(align));
   }
@@ -209,7 +216,7 @@ class CoroPromiseBase {
   template <typename MethodReceiver, typename... Args>
   static void* operator new(std::size_t size,
                             const MethodReceiver&,
-                            CoroContext& coro_cx,
+                            CoroContext coro_cx,
                             const Args&...) noexcept {
     return SharedNew(coro_cx, size, alignof(std::max_align_t));
   }
@@ -221,7 +228,7 @@ class CoroPromiseBase {
   static void* operator new(std::size_t size,
                             std::align_val_t align,
                             const MethodReceiver&,
-                            CoroContext& coro_cx,
+                            CoroContext coro_cx,
                             const Args&...) noexcept {
     return SharedNew(coro_cx, size, static_cast<size_t>(align));
   }
@@ -254,11 +261,11 @@ class CoroPromiseBase {
   }
 
  protected:
-  CoroPromiseBase(CoroContext& cx)
-      : dealloc_(cx.alloc()), pending_awaitable_(nullptr) {}
+  CoroPromiseBase(CoroContext cx)
+      : dealloc_(cx.allocator()), pending_awaitable_(nullptr) {}
 
  private:
-  static void* SharedNew(CoroContext& coro_cx,
+  static void* SharedNew(CoroContext coro_cx,
                          std::size_t size,
                          std::size_t align) noexcept;
 
@@ -338,12 +345,12 @@ class CoroPromise final : public TypedCoroPromise<T, CoroPromise<T>> {
   // The first argument *must* be a `CoroContext`. The other arguments are
   // unused, but must be accepted in order for this to compile.
   template <typename... Args>
-  CoroPromise(CoroContext& cx, const Args&...)
+  CoroPromise(CoroContext cx, const Args&...)
       : TypedCoroPromise<T, CoroPromise>(cx) {}
 
   // Method-receiver version.
   template <typename MethodReceiver, typename... Args>
-  CoroPromise(const MethodReceiver&, CoroContext& cx, const Args&...)
+  CoroPromise(const MethodReceiver&, CoroContext cx, const Args&...)
       : TypedCoroPromise<T, CoroPromise>(cx) {}
 
   // Store the `co_return` arg in the memory provided by the `Pend` wrapper.
@@ -362,11 +369,11 @@ class CoroPromise<void> final
     : public TypedCoroPromise<void, CoroPromise<void>> {
  public:
   template <typename... Args>
-  CoroPromise(CoroContext& cx, const Args&...)
+  CoroPromise(CoroContext cx, const Args&...)
       : TypedCoroPromise<void, CoroPromise>(cx) {}
 
   template <typename MethodReceiver, typename... Args>
-  CoroPromise(const MethodReceiver&, CoroContext& cx, const Args&...)
+  CoroPromise(const MethodReceiver&, CoroContext cx, const Args&...)
       : TypedCoroPromise<void, CoroPromise>(cx) {}
 
   // Mark the output as ready.
@@ -639,5 +646,47 @@ TypedCoroPromise<T, Derived>::get_return_object_on_allocation_failure() {
   return Coro<T>(internal::OwningCoroutineHandle<Derived>(nullptr));
 }
 
+// Checks that the first argument is a by-value CoroContext.
+template <typename... Args>
+struct CoroContextIsPassedByValue : std::false_type {};
+
+// If there is only a single argument, it must be a CoroContext value.
+template <typename First>
+struct CoroContextIsPassedByValue<First> : std::is_same<First, CoroContext> {};
+
+// If there are multiple arguments, the first argument to a free function must
+// be CoroContext. For member functions, the first argument is a reference to
+// the object and the second must be CoroContext. Note that this trait cannot
+// distinguish between a member function and a free function with a reference to
+// an object as its first argument.
+template <typename First, typename Second, typename... Others>
+struct CoroContextIsPassedByValue<First, Second, Others...>
+    : std::disjunction<
+          std::is_same<First, CoroContext>,
+          std::conjunction<std::is_same<Second, CoroContext>,
+                           std::is_reference<First>,
+                           std::is_class<std::remove_reference_t<First>>>> {};
+
 }  // namespace internal
 }  // namespace pw::async2
+
+// Specialize `std::coroutine_traits` to enforce `CoroContext` semantics.
+namespace std {
+
+template <typename T, typename... Args>
+struct coroutine_traits<pw::async2::Coro<T>, Args...> {
+  using promise_type = typename pw::async2::Coro<T>::promise_type;
+
+  static_assert(
+      pw::async2::internal::CoroContextIsPassedByValue<Args...>::value,
+      "CoroContext must be passed by value as the first argument to a "
+      "pw_async2 coroutine");
+
+  static_assert(
+      (static_cast<int>(
+           std::is_same_v<std::remove_cvref_t<Args>, pw::async2::CoroContext>) +
+       ...) == 1,
+      "pw_async2 coroutines must have exactly one CoroContext argument");
+};
+
+}  // namespace std

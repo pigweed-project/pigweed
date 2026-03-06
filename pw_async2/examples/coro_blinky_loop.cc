@@ -38,7 +38,7 @@ class Led {
 };
 
 // DOCSTAG: [pw_async2-examples-coro-blinky-loop]
-Coro<void> Blink(CoroContext&,
+Coro<void> Blink(CoroContext,
                  TimeProvider<SystemClock>& time,
                  Led& led,
                  int times) {
@@ -59,16 +59,14 @@ Coro<void> Blink(CoroContext&,
 namespace {
 
 using ::pw::allocator::test::AllocatorForTest;
-using ::pw::async2::CoroContext;
 using ::pw::async2::DispatcherForTest;
 using ::pw::async2::SimulatedTimeProvider;
 
 TEST(CoroExample, ReturnsOk) {
   AllocatorForTest<512> alloc;
-  CoroContext coro_cx(alloc);
   SimulatedTimeProvider<SystemClock> time;
   Led led;
-  CoroTask task = Blink(coro_cx, time, led, /*times=*/3);
+  CoroTask task = Blink(alloc, time, led, /*times=*/3);
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   while (dispatcher.RunUntilStalled()) {

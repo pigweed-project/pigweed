@@ -7,10 +7,10 @@ Coroutines
    :name: pw_async2
 
 For projects using C++20, ``pw_async2`` provides first-class support for
-coroutines via :cc:`Coro <pw::async2::Coro>`. This allows you to write
-asynchronous logic in a sequential, synchronous style, eliminating the need to
-write explicit state machines. The ``co_await`` keyword is used to suspend
-execution until an asynchronous operation is ``Ready``.
+coroutines via :cc:`Coro <pw::async2::Coro>`. This allows writing asynchronous
+logic in a sequential, synchronous style, eliminating the need to write explicit
+state machines. The ``co_await`` keyword is used to suspend execution until an
+asynchronous operation is ``Ready``.
 
 .. code-block:: cpp
 
@@ -73,9 +73,12 @@ coroutine's state (including local variables) across suspension points
 (``co_await``). ``pw_async2`` hooks into this mechanism to control where this
 state is stored and support gracefully handling allocation failures.
 
-A :cc:`CoroContext <pw::async2::CoroContext>`, which has a reference to a
-:cc:`pw::Allocator`, must be passed to any function that returns a :cc:`Coro
-<pw::async2::Coro>`. Its allocator is used to allocate the coroutine frame.
+A ``pw_async2`` coroutine must accept a :cc:`CoroContext
+<pw::async2::CoroContext>` by value as its first argument. :cc:`CoroContext
+<pw::async2::CoroContext>` wraps a reference to a :cc:`pw::Allocator`, and this
+allocator is used to allocate the coroutine frame. When instantiating a
+coroutine, simply pass an allocator as the first argument; ``CoroContext`` is
+implicitly constructible from an ``Allocator&``.
 
 If allocation fails, the resulting ``Coro`` object is invalid. Coroutine
 execution halts, and what happens next depends on the task executing the

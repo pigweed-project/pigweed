@@ -25,8 +25,8 @@ namespace pw::async2 {
 /// @submodule{pw_async2,coroutines}
 
 /// @deprecated Use `FallibleCoroTask` instead.
-class [[deprecated("Use FallibleCoroTask instead")]] CoroOrElseTask final
-    : public Task {
+class [[deprecated("Use CoroTask or FallibleCoroTask instead")]]
+CoroOrElseTask final : public Task {
  public:
   /// Create a new ``Task`` which runs ``coro``, invoking ``or_else`` on
   /// any non-OK status.

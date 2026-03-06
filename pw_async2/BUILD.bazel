@@ -477,6 +477,7 @@ pw_cc_test(
 pw_cc_test(
     name = "coro_test",
     srcs = ["coro_test.cc"],
+    has_nc_test = True,
     deps = [
         ":coro",
         ":pw_async2",

@@ -171,8 +171,7 @@ Result<Vector<float, 10>> SampleVoltageBlocking() {
   return voltages;
 }
 
-Coro<Status> SampleVoltageCoro(CoroContext& cx,
-                               Result<Vector<float, 10>>& output) {
+Coro<Status> SampleVoltageCoro(CoroContext, Result<Vector<float, 10>>& output) {
   Vector<float, 10> voltages;
   FakeVoltageSensor sensor;
 
@@ -233,7 +232,6 @@ int main() {
   // Creating a CoroContext is required before using coroutines. It makes
   // the memory allocations needed for each coroutine at runtime when each is
   // started.
-  CoroContext coro_cx(alloc);
 
   FakeVoltageSensor::force_timeout = true;
 
@@ -254,7 +252,7 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
+    auto task = CoroTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     PW_CHECK(task.Wait().IsDeadlineExceeded());
@@ -281,7 +279,7 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
+    auto task = CoroTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     PW_CHECK_OK(task.Wait());
@@ -301,7 +299,6 @@ TEST(ExampleTests, Timeout) {
 
   BasicDispatcher dispatcher;
   LibCAllocator alloc;
-  CoroContext coro_cx(alloc);
 
   FakeVoltageSensor::force_timeout = true;
 
@@ -322,7 +319,7 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
+    auto task = CoroTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     ASSERT_TRUE(task.Wait().IsDeadlineExceeded());
@@ -348,7 +345,7 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(coro_cx, result));
+    auto task = CoroTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     ASSERT_TRUE(task.Wait().ok());

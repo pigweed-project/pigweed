@@ -38,25 +38,22 @@ using ::pw::async2::ReturnValuePolicy;
 using ::pw::async2::ValueProvider;
 using ::pw::containers::test::Counter;
 
-Coro<Result<int>> ImmediatelyReturnsFive(CoroContext&) { co_return 5; }
+Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
 
-Coro<Status> StoresFiveThenReturns(CoroContext& coro_cx, int& out) {
+Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
   PW_CO_TRY_ASSIGN(out, co_await ImmediatelyReturnsFive(coro_cx));
   co_return OkStatus();
 }
 
 class FallibleCoroTaskTest : public ::testing::Test {
  protected:
-  FallibleCoroTaskTest() : coro_cx_(alloc_) {}
-
   AllocatorForTest<256> alloc_;
-  CoroContext coro_cx_;
 };
 
 TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
   int output = 0;
   bool error_handler_ran = false;
-  FallibleCoroTask task(StoresFiveThenReturns(coro_cx_, output),
+  FallibleCoroTask task(StoresFiveThenReturns(alloc_, output),
                         [&error_handler_ran] { error_handler_ran = true; });
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -68,12 +65,13 @@ TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST_F(FallibleCoroTaskTest, AllocationFailureProducesInvalidCoro) {
-  CoroContext null_cx(GetNullAllocator());
-  EXPECT_FALSE(ImmediatelyReturnsFive(null_cx).IsValid());
+  EXPECT_FALSE(
+      ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).IsValid());
   bool error_handler_ran = false;
   int output = 0;
-  FallibleCoroTask task(StoresFiveThenReturns(null_cx, output),
-                        [&error_handler_ran] { error_handler_ran = true; });
+  FallibleCoroTask task(
+      StoresFiveThenReturns(CoroContext(GetNullAllocator()), output),
+      [&error_handler_ran] { error_handler_ran = true; });
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
@@ -99,9 +97,9 @@ class TrackedObject {
   ObjectState& state_;
 };
 
-Coro<Status> Inner(CoroContext&) { co_return OkStatus(); }
+Coro<Status> Inner(CoroContext) { co_return OkStatus(); }
 
-Coro<Status> Outer(CoroContext& cx,
+Coro<Status> Outer(CoroContext cx,
                    std::optional<Status>& returned_status,
                    TrackedObject argument,
                    ObjectState& before_inner,
@@ -122,7 +120,7 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
   ObjectState after = ObjectState::kUninitialized;
 
   Coro<Status> outer_coro =
-      Outer(coro_cx_, returned_status, TrackedObject(argument), before, after);
+      Outer(alloc_, returned_status, TrackedObject(argument), before, after);
   ASSERT_TRUE(outer_coro.IsValid());
 
   alloc_.Exhaust();  // Prevent allocation of Inner coroutine.
@@ -144,19 +142,19 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
   EXPECT_FALSE(task.has_value());
 }
 
-Coro<Counter> GetAndDouble(CoroContext& cx, ValueProvider<Counter>& provider) {
+Coro<Counter> GetAndDouble(CoroContext cx, ValueProvider<Counter>& provider) {
   Counter value = co_await provider.Get();
   co_return Counter(value.value * 2);
 }
 
-Coro<Counter> GetTwoAndDouble(CoroContext& cx,
+Coro<Counter> GetTwoAndDouble(CoroContext cx,
                               ValueProvider<Counter>& provider) {
   Counter one = co_await GetAndDouble(cx, provider);
   Counter two = co_await provider.Get();
   co_return Counter(one.value + two.value * 2);
 }
 
-Coro<Counter> Accumulate(CoroContext& cx, ValueProvider<Counter>& provider) {
+Coro<Counter> Accumulate(CoroContext cx, ValueProvider<Counter>& provider) {
   co_return Counter(co_await GetAndDouble(cx, provider) +
                     co_await GetAndDouble(cx, provider) +
                     co_await GetTwoAndDouble(cx, provider));
@@ -193,11 +191,10 @@ TEST(FallibleCoroTaskTestWithBigAllocator, NestedBlockingCoroutines) {
 
 TEST(FallibleCoroTaskTestWithBigAllocator, AllocFailureAfterSuspend) {
   AllocatorForTest<2048> alloc;
-  CoroContext coro_cx(alloc);
   ValueProvider<Counter> provider;
 
   bool error_handler_ran = false;
-  FallibleCoroTask task(Accumulate(coro_cx, provider),
+  FallibleCoroTask task(Accumulate(alloc, provider),
                         [&error_handler_ran] { error_handler_ran = true; });
 
   DispatcherForTest dispatcher;
@@ -215,10 +212,10 @@ TEST(FallibleCoroTaskTestWithBigAllocator, AllocFailureAfterSuspend) {
   EXPECT_FALSE(task.Wait().has_value());
 }
 
-Coro<int> ReturnsInteger(CoroContext&, int value) { co_return value; }
+Coro<int> ReturnsInteger(CoroContext, int value) { co_return value; }
 
 TEST_F(FallibleCoroTaskTest, StoreReturnValue) {
-  FallibleCoroTask task(ReturnsInteger(coro_cx_, 42), [] { FAIL(); });
+  FallibleCoroTask task(ReturnsInteger(alloc_, 42), [] { FAIL(); });
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
@@ -231,7 +228,7 @@ TEST_F(FallibleCoroTaskTest, DiscardReturnValue) {
   auto handler = [] { FAIL(); };
   // Explicitly specify kDiscard policy
   FallibleCoroTask<int, decltype(handler), ReturnValuePolicy::kDiscard> task(
-      ReturnsInteger(coro_cx_, 42), std::move(handler));
+      ReturnsInteger(alloc_, 42), std::move(handler));
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
@@ -239,7 +236,7 @@ TEST_F(FallibleCoroTaskTest, DiscardReturnValue) {
 }
 
 TEST_F(FallibleCoroTaskTest, WaitBlocks) {
-  FallibleCoroTask task(ReturnsInteger(coro_cx_, 99), [] { FAIL(); });
+  FallibleCoroTask task(ReturnsInteger(alloc_, 99), [] { FAIL(); });
 
   DispatcherForTest dispatcher;
   dispatcher.Post(task);
@@ -247,21 +244,20 @@ TEST_F(FallibleCoroTaskTest, WaitBlocks) {
   EXPECT_EQ(task.Wait(), 99);
 }
 
-Coro<Status> FailingInnerCoro(CoroContext& cx, ValueProvider<int>& provider) {
+Coro<Status> FailingInnerCoro(CoroContext cx, ValueProvider<int>& provider) {
   co_await provider.Get();
   co_return co_await Inner(cx);
 }
 
-Coro<Status> OuterCoro(CoroContext& cx, ValueProvider<int>& provider) {
+Coro<Status> OuterCoro(CoroContext cx, ValueProvider<int>& provider) {
   co_return co_await FailingInnerCoro(cx, provider);
 }
 
 TEST(FallibleCoroTaskTestWithBigAllocator, AwaitNestedCoroutineAbortedCrashes) {
   AllocatorForTest<2048> alloc;
-  CoroContext coro_cx(alloc);
   ValueProvider<int> provider;
   bool error_handler_ran = false;
-  FallibleCoroTask task(OuterCoro(coro_cx, provider),
+  FallibleCoroTask task(OuterCoro(alloc, provider),
                         [&error_handler_ran] { error_handler_ran = true; });
 
   DispatcherForTest dispatcher;

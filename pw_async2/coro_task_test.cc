@@ -36,7 +36,7 @@ class CoroTaskTest : public ::testing::Test {
 
 template <typename T>
   requires std::integral<T> || std::floating_point<T>
-Coro<T> DoubleIt(CoroContext&, T value) {
+Coro<T> DoubleIt(CoroContext, T value) {
   co_return value * 2;
 }
 
@@ -62,7 +62,7 @@ TEST_F(CoroTaskTest, RunOnceDiscard) {
   dispatcher.RunToCompletion();
 }
 
-Coro<pw::Result<int>> ReturnInt(CoroContext&, int val) { co_return val; }
+Coro<pw::Result<int>> ReturnInt(CoroContext, int val) { co_return val; }
 
 TEST_F(CoroTaskTest, RunOnceInt) {
   DispatcherForTest dispatcher;
@@ -83,7 +83,7 @@ TEST_F(CoroTaskTest, AllocationFailure) {
   EXPECT_FALSE(c.IsValid());
 }
 
-Coro<void> ReturnVoid(CoroContext&) { co_return; }
+Coro<void> ReturnVoid(CoroContext) { co_return; }
 
 TEST_F(CoroTaskTest, RunOnceVoid) {
   DispatcherForTest dispatcher;

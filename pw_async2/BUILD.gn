@@ -396,6 +396,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_status",
     ]
     sources = [ "coro_test.cc" ]
+    negative_compilation_tests = true
   }
 
   pw_test("fallible_coro_task_test") {
