@@ -295,6 +295,7 @@ pub struct Process<K: Kernel> {
 
     pub(super) ref_count: K::AtomicUsize,
     pub(super) state: ProcessState,
+    pub(super) join_event: Option<EventSignaler<K>>,
 }
 
 list::define_adapter!(pub ProcessListAdapter<K: Kernel> => Process<K>::link);
@@ -316,7 +317,16 @@ impl<K: Kernel> Process<K> {
             thread_list: UnsafeList::new(),
             ref_count: K::AtomicUsize::ZERO,
             state: ProcessState::New,
+            join_event: None,
         }
+    }
+
+    /// Manually increment the processes refcount
+    ///
+    /// SAFETY: This should only be done by the scheduler to maintain a
+    /// virtual, reference on the kernel process during initialization.
+    pub(super) unsafe fn manually_increment_ref_count(&mut self) {
+        self.ref_count.fetch_add(1, Ordering::Acquire);
     }
 
     #[cfg(feature = "user_space")]
@@ -326,16 +336,6 @@ impl<K: Kernel> Process<K> {
         handle: u32,
     ) -> Option<ForeignRc<K::AtomicUsize, dyn KernelObject<K>>> {
         self.object_table.get_object(kernel, handle)
-    }
-
-    /// Registers process with scheduler.
-    pub fn register(&mut self, kernel: K) {
-        unsafe {
-            kernel
-                .get_scheduler()
-                .lock(kernel)
-                .add_process_to_list(NonNull::from(self))
-        };
     }
 
     pub fn add_to_thread_list(&mut self, thread: &mut Thread<K>) {
@@ -357,6 +357,9 @@ impl<K: Kernel> Process<K> {
 
             if self.state == ProcessState::Terminating && self.thread_list.is_empty() {
                 self.state = ProcessState::Terminated;
+                if let Some(signaler) = self.join_event.take() {
+                    signaler.signal();
+                }
             }
         }
     }
@@ -413,18 +416,17 @@ impl<K: Kernel> Process<K> {
 
 pub struct ProcessRef<K: Kernel> {
     pub(crate) process: NonNull<Process<K>>,
-    _marker: core::marker::PhantomData<K>,
+    kernel: K,
 }
 
 impl<K: Kernel> ProcessRef<K> {
-    pub fn new(process: NonNull<Process<K>>, _kernel: K) -> Self {
+    // `ProcessRef`s should only be created when adding a process to the
+    // scheduler.
+    pub(super) fn new(process: NonNull<Process<K>>, kernel: K) -> Self {
         unsafe {
             process.as_ref().ref_count.fetch_add(1, Ordering::Acquire);
         }
-        Self {
-            process,
-            _marker: core::marker::PhantomData,
-        }
+        Self { process, kernel }
     }
 
     /// Request termination of the process.
@@ -447,6 +449,63 @@ impl<K: Kernel> ProcessRef<K> {
     pub(super) fn as_ref(&self) -> &Process<K> {
         unsafe { self.process.as_ref() }
     }
+
+    /// Join the referenced process.
+    ///
+    /// Waits until the all other references to the process are dropped and the
+    /// process terminates.  Returns a `ForeignBox<Process<K>>` which can be used
+    /// to restart the process.
+    pub fn join(self, kernel: K) -> Result<ForeignBox<Process<K>>> {
+        match self.join_until(kernel, Instant::<K::Clock>::MAX) {
+            crate::scheduler::ProcessJoinResult::Joined(process) => Ok(process),
+            crate::scheduler::ProcessJoinResult::Err { error, .. } => Err(error),
+        }
+    }
+
+    /// Join the referenced process with a deadline
+    ///
+    /// Waits until the all other references to the process are dropped and the
+    /// process terminates.
+    pub fn join_until(
+        mut self,
+        kernel: K,
+        deadline: Instant<K::Clock>,
+    ) -> crate::scheduler::ProcessJoinResult<K> {
+        let join_event = Event::new(kernel, EventConfig::ManualReset);
+        loop {
+            self = match kernel
+                .get_scheduler()
+                .lock(kernel)
+                .process_try_join(self, join_event.get_signaler())
+            {
+                crate::scheduler::ProcessTryJoinResult::Err {
+                    error: e,
+                    process: process_ref,
+                } => {
+                    return crate::scheduler::ProcessJoinResult::Err {
+                        error: e,
+                        process: process_ref,
+                    };
+                }
+                crate::scheduler::ProcessTryJoinResult::Joined(process_box) => {
+                    return crate::scheduler::ProcessJoinResult::Joined(process_box);
+                }
+                crate::scheduler::ProcessTryJoinResult::Wait(process_ref) => process_ref,
+            };
+
+            if let Err(e) = join_event.wait_until(deadline) {
+                kernel
+                    .get_scheduler()
+                    .lock(kernel)
+                    .process_cancel_try_join(&mut self);
+
+                return crate::scheduler::ProcessJoinResult::Err {
+                    error: e,
+                    process: self,
+                };
+            }
+        }
+    }
 }
 
 impl<K: Kernel> Clone for ProcessRef<K> {
@@ -460,7 +519,7 @@ impl<K: Kernel> Clone for ProcessRef<K> {
 
         Self {
             process: self.process,
-            _marker: core::marker::PhantomData,
+            kernel: self.kernel,
         }
     }
 }
@@ -468,10 +527,21 @@ impl<K: Kernel> Clone for ProcessRef<K> {
 impl<K: Kernel> Drop for ProcessRef<K> {
     fn drop(&mut self) {
         unsafe {
-            self.process
+            let prev_value = self
+                .process
                 .as_ref()
                 .ref_count
                 .fetch_sub(1, Ordering::Release);
+
+            // If this ref was one of two outstanding references to the process,
+            // the other reference may be attempting to join.  Let the scheduler
+            // notify the join request if it is outstanding.
+            if prev_value == 2 {
+                self.kernel
+                    .get_scheduler()
+                    .lock(self.kernel)
+                    .process_signal_join(self);
+            }
         }
     }
 }
@@ -756,7 +826,7 @@ impl<K: Kernel> Thread<K> {
         kernel: K,
         kernel_stack: Stack,
         initial_sp: usize,
-        process: *mut Process<K>,
+        process: ProcessRef<K>,
         initial_pc: usize,
         args: (usize, usize, usize),
     ) -> Result<()> {
@@ -769,7 +839,7 @@ impl<K: Kernel> Thread<K> {
                     self,
                     kernel_stack,
                     initial_sp,
-                    process,
+                    process.process.as_ptr(),
                     initial_pc,
                     args,
                 )
@@ -1146,8 +1216,9 @@ macro_rules! init_non_priv_process {
         unsafe fn __init_non_priv_process(
             storage: &'static StaticStorage<Process<arch::Arch>>,
             object_table: ForeignBox<dyn ObjectTable<arch::Arch>>,
-        ) -> &'static mut Process<arch::Arch> {
+        ) -> $crate::scheduler::thread::ProcessRef<arch::Arch> {
             use pw_log::info;
+            use $crate::__private::foreign_box::ForeignBox;
             info!(
                 "Allocating non-privileged process '{}'",
                 $name as &'static str
@@ -1156,8 +1227,8 @@ macro_rules! init_non_priv_process {
             // SAFETY: The caller promises that this function will be executed
             // at most once.
             let proc = unsafe { storage.init(Process::new($name, $memory_config, object_table)) };
-            proc.register(arch::Arch);
-            proc
+            let proc_box = ForeignBox::from(proc);
+            $crate::scheduler::add_process(arch::Arch, proc_box)
         }
 
         $crate::annotate_process_from_address!($name, arch::Arch, unsafe { $storage.address() });
@@ -1182,7 +1253,7 @@ macro_rules! init_non_priv_thread {
 
         /// SAFETY: This must be executed at most once at run time.
         unsafe fn __init_non_priv_thread(
-            proc: &mut Process<arch::Arch>,
+            proc: $crate::scheduler::thread::ProcessRef<arch::Arch>,
             entry: usize,
             initial_sp: usize,
         ) -> ForeignBox<Thread<arch::Arch>> {

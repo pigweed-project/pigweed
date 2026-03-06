@@ -130,10 +130,27 @@ pub fn initialize<K: Kernel>(kernel: K) {
 
     // The kernel process needs to be initialized before any kernel threads so
     // that they can properly be parented underneath it.
+
+    // SAFETY: Per the contract in `SchedulerState` this is the one place that
+    // `kernel_process` is converted into a foreign box and its refcount is
+    // incremented.
     unsafe {
         let kernel_process = sched_state.kernel_process.get();
-        sched_state.add_process_to_list(NonNull::new_unchecked(kernel_process));
+        (*kernel_process).manually_increment_ref_count();
+        let kernel_process = ForeignBox::new(NonNull::new_unchecked(kernel_process));
+
+        sched_state.add_process_to_list(kernel_process);
     }
+}
+
+pub fn add_process<K: Kernel>(kernel: K, mut process: ForeignBox<Process<K>>) -> ProcessRef<K> {
+    let mut sched_state = kernel.get_scheduler().lock(kernel);
+    let process_ref = ProcessRef::new(NonNull::from(&mut *process), kernel);
+
+    // SAFETY: We are taking ownership of the ForeignBox and interacting with the
+    // scheduler state which we have locked.
+    sched_state.add_process_to_list(process);
+    process_ref
 }
 
 pub fn bootstrap_scheduler<K: Kernel>(
@@ -206,11 +223,15 @@ impl<K: Kernel> Drop for PreemptDisableGuard<K> {
 pub struct SchedulerState<K: Kernel> {
     // The scheduler owns the kernel process from which all kernel threads
     // are parented.
+    //
+    // SAFETY: `kernel_process` must be converted to a `ForeignBox` exactly
+    // once while the scheduler is initialized.  This initialization must also
+    // increment the processes refcount.
     kernel_process: UnsafeCell<Process<K>>,
 
     current_thread: Option<ForeignBox<Thread<K>>>,
     current_arch_thread_state: *mut K::ThreadState,
-    process_list: UnsafeList<Process<K>, ProcessListAdapter<K>>,
+    process_list: ForeignList<Process<K>, ProcessListAdapter<K>>,
 
     /// The algorithm used for choosing the next thread to run.
     algorithm: SchedulerAlgorithm<K>,
@@ -240,7 +261,7 @@ impl<K: Kernel> SchedulerState<K> {
             )),
             current_thread: None,
             current_arch_thread_state: core::ptr::null_mut(),
-            process_list: UnsafeList::new(),
+            process_list: ForeignList::new(),
             algorithm: SchedulerAlgorithm::new(),
             termination_queue: ForeignList::new(),
         }
@@ -318,8 +339,8 @@ impl<K: Kernel> SchedulerState<K> {
     /// [`UnsafeList::push_front_unchecked`].
     #[allow(dead_code)]
     #[inline(never)]
-    pub unsafe fn add_process_to_list(&mut self, process: NonNull<Process<K>>) {
-        unsafe { self.process_list.push_front_unchecked(process) };
+    pub fn add_process_to_list(&mut self, process: ForeignBox<Process<K>>) {
+        self.process_list.push_front(process);
     }
 
     fn get_kernel_process_ref(&self, kernel: K) -> ProcessRef<K> {
@@ -332,14 +353,12 @@ impl<K: Kernel> SchedulerState<K> {
     #[allow(dead_code)]
     pub fn dump_all_threads(&self) {
         info!("List of all threads:");
-        unsafe {
-            let _ = self
-                .process_list
-                .for_each(|process| -> core::result::Result<(), ()> {
-                    process.dump();
-                    Ok(())
-                });
-        }
+        let _ = self
+            .process_list
+            .for_each(|process| -> core::result::Result<(), ()> {
+                process.dump();
+                Ok(())
+            });
     }
 }
 
@@ -352,6 +371,23 @@ enum TryJoinResult<K: Kernel> {
     Wait(ThreadRef<K>),
     Joined(ForeignBox<Thread<K>>),
     Err { error: Error, thread: ThreadRef<K> },
+}
+
+pub enum ProcessJoinResult<K: Kernel> {
+    Joined(ForeignBox<Process<K>>),
+    Err {
+        error: Error,
+        process: ProcessRef<K>,
+    },
+}
+
+pub enum ProcessTryJoinResult<K: Kernel> {
+    Wait(ProcessRef<K>),
+    Joined(ForeignBox<Process<K>>),
+    Err {
+        error: Error,
+        process: ProcessRef<K>,
+    },
 }
 
 // All thread lifecycle management is encapsulated in this `impl` block which
@@ -707,6 +743,57 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         }
 
         Ok(())
+    }
+
+    pub fn process_signal_join(&self, process: &mut ProcessRef<K>) {
+        if let Some(signaler) = unsafe { process.process.as_mut() }.join_event.take() {
+            signaler.signal();
+        }
+    }
+
+    pub fn process_try_join(
+        &mut self,
+        mut process_ref: ProcessRef<K>,
+        signaler: EventSignaler<K>,
+    ) -> ProcessTryJoinResult<K> {
+        let process = unsafe { process_ref.process.as_ref() };
+
+        // If the process is terminated and `process_ref` is the singular reference to it,
+        // the process is terminated
+        if process.state == ProcessState::Terminated
+            && process.ref_count.load(Ordering::SeqCst) == 1
+        {
+            // SAFETY: The process is guaranteed to be in the process list
+            // because it was passed in by ProcessRef and the scheduler is
+            // the only creator of those.
+            return ProcessTryJoinResult::Joined(unsafe {
+                self.process_list
+                    .remove_element(process_ref.process)
+                    .unwrap_unchecked()
+            });
+        }
+
+        // Only one call to join is allowed to wait process termination.  If
+        // another caller is waiting, return an error.
+        if process.join_event.is_some() {
+            return ProcessTryJoinResult::Err {
+                error: Error::AlreadyExists,
+                process: process_ref,
+            };
+        }
+
+        // Register the signaler and return None indicating the process is not yet
+        // joinable.
+        //
+        // SAFETY: Process mutability guarded by scheduler lock.
+        unsafe { process_ref.process.as_mut().join_event = Some(signaler) };
+        ProcessTryJoinResult::Wait(process_ref)
+    }
+
+    pub fn process_cancel_try_join(&mut self, process_ref: &mut ProcessRef<K>) {
+        let process = unsafe { process_ref.process.as_mut() };
+        pw_assert::assert!(process.join_event.is_some());
+        process.join_event = None;
     }
 }
 

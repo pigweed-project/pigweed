@@ -14,6 +14,7 @@
 #![no_std]
 
 use core::mem::MaybeUninit;
+#[cfg(feature = "user_space")]
 use core::ptr::NonNull;
 
 use foreign_box::ForeignBox;
@@ -130,10 +131,9 @@ fn test_termination_from_outside<K: Kernel>(
         unsafe { ForeignBox::new(NonNull::new_unchecked(object_table_ptr)) },
     ));
 
-    process.register(kernel);
-
-    // 2. Create a ProcessRef
-    let process_ref = ProcessRef::new(NonNull::from(&*process), kernel);
+    // 2. Start the process
+    let process_box = ForeignBox::from(process);
+    let process_ref = kernel::scheduler::add_process(kernel, process_box);
 
     // 3. Initialize threads in this process
     for (i, thread) in threads.iter_mut().enumerate() {
@@ -194,7 +194,10 @@ fn test_termination_from_outside<K: Kernel>(
     }
 
     // 8. Verify process is terminated
-    pw_assert::assert!(process_ref.get_state() == thread::ProcessState::Terminated);
+    let Ok(process) = process_ref.join(kernel) else {
+        pw_assert::panic!("Process join failed");
+    };
+    let _ = process.consume();
 
     Ok(())
 }
@@ -219,10 +222,9 @@ fn test_termination_from_inside<K: Kernel>(
         unsafe { ForeignBox::new(NonNull::new_unchecked(object_table_ptr)) },
     ));
 
-    process.register(kernel);
-
-    // 2. Create a ProcessRef
-    let process_ref = ProcessRef::new(NonNull::from(&*process), kernel);
+    // 2. Start the process
+    let process_box = ForeignBox::from(process);
+    let process_ref = kernel::scheduler::add_process(kernel, process_box);
 
     // 3. Initialize threads in this process
     for (i, thread) in threads.iter_mut().enumerate() {
@@ -293,7 +295,10 @@ fn test_termination_from_inside<K: Kernel>(
     }
 
     // 7. Verify process is terminated
-    pw_assert::assert!(process_ref.get_state() == thread::ProcessState::Terminated);
+    let Ok(process) = process_ref.join(kernel) else {
+        pw_assert::panic!("Process join failed");
+    };
+    let _ = process.consume();
 
     Ok(())
 }
