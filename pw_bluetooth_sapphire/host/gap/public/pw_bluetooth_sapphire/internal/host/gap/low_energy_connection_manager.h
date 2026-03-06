@@ -31,6 +31,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connection_request.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connector.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_discovery_manager.h"
+#include "pw_bluetooth_sapphire/internal/host/gap/periodic_advertising_sync_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connector.h"
@@ -91,6 +92,8 @@ class LowEnergyConnectionManager final {
   // |l2cap|: Used to interact with the L2CAP layer.
   // |gatt|: Used to interact with the GATT profile layer.
   // |adapter_state|: Provides information on controller capabilities.
+  // |transfer_periodic_advertising_sync_fn|: Function to call to request a
+  //   periodic advertising sync transfer (PAST).
   LowEnergyConnectionManager(
       hci::Transport::WeakPtr hci,
       hci::LocalAddressDelegate* addr_delegate,
@@ -102,7 +105,9 @@ class LowEnergyConnectionManager final {
       sm::SecurityManagerFactory sm_creator,
       const AdapterState& adapter_state,
       pw::async::Dispatcher& dispatcher,
-      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider);
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+      PeriodicAdvertisingSyncManager::TransferSyncFn&&
+          transfer_periodic_advertising_sync_fn);
   ~LowEnergyConnectionManager();
 
   // Allows a caller to claim shared ownership over a connection to the
@@ -392,6 +397,9 @@ class LowEnergyConnectionManager final {
   // True if the connection manager is performing a scan for a peer before
   // connecting.
   bool scanning_ = false;
+
+  PeriodicAdvertisingSyncManager::TransferSyncFn
+      transfer_periodic_advertising_sync_fn_;
 
   struct InspectProperties {
     // Count of connection failures in the past 10 minutes.

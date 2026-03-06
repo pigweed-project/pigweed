@@ -1965,5 +1965,106 @@ TEST_F(AdapterTest, PeriodicAdvertisingSynchronizationNotSupported) {
   EXPECT_EQ(result.error_value(), Error(HostError::kNotSupported));
 }
 
+TEST_F(AdapterTest,
+       TransferSyncWhenPeriodicAdvertisingSynchronizationSupported) {
+  FakeController::Settings settings;
+  settings.ApplyExtendedLEConfig();
+  settings.le_features |= static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kSynchronizedReceiver);
+  test_device()->set_settings(settings);
+  EXPECT_TRUE(EnsureInitialized());
+  EXPECT_TRUE(adapter()->state().low_energy_state.IsFeatureSupported(
+      hci_spec::LESupportedFeature::kSynchronizedReceiver));
+
+  auto fake_peer_0 = std::make_unique<FakePeer>(kTestAddr, dispatcher());
+  const uint8_t kAdvSid = 8;
+  fake_peer_0->AddPeriodicAdvertisement(
+      kAdvSid, DynamicByteBuffer(StaticByteBuffer(0x02, 0x01, 0x03)));
+  test_device()->AddPeer(std::move(fake_peer_0));
+  Peer* peer_0 =
+      adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
+
+  auto fake_peer_1 = std::make_unique<FakePeer>(kTestAddr2, dispatcher());
+  FakePeer* fake_peer_1_ptr = fake_peer_1.get();
+  test_device()->AddPeer(std::move(fake_peer_1));
+  Peer* peer_1 =
+      adapter()->peer_cache()->NewPeer(kTestAddr2, /*connectable=*/true);
+
+  Adapter::LowEnergy::SyncOptions options{.filter_duplicates = true};
+  PeriodicAdvertisingSyncDelegate delegate;
+
+  // 1. Sync to peer 0's periodic advertisement
+  hci::Result<PeriodicAdvertisingSyncHandle> sync_handle_result =
+      adapter()->le()->SyncToPeriodicAdvertisement(
+          peer_0->identifier(), kAdvSid, options, delegate);
+  ASSERT_TRUE(sync_handle_result.is_ok());
+
+  std::unique_ptr<bt::gap::LowEnergyConnectionHandle> conn_ref;
+  auto connect_cb = [&conn_ref](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_ref = std::move(result).value();
+  };
+
+  // 2. Connect to peer 1
+  adapter()->le()->Connect(
+      peer_1->identifier(), connect_cb, LowEnergyConnectionOptions());
+  RunUntilIdle();
+  ASSERT_TRUE(conn_ref);
+
+  // 3. Transfer sync to peer 1
+  std::optional<hci::Result<>> transfer_result;
+  auto callback = [&transfer_result](hci::Result<> result) {
+    transfer_result = result;
+  };
+  const uint16_t kServiceData = 0x0908;
+  conn_ref->TransferPeriodicAdvertisingSync(
+      sync_handle_result->id(), kServiceData, std::move(callback));
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  EXPECT_TRUE(transfer_result->is_ok());
+  std::optional<FakePeer::PeriodicAdvertisingSyncTransfer> transfer =
+      fake_peer_1_ptr->FindPeriodicAdvertisingSyncTransfer(kTestAddr, kAdvSid);
+  ASSERT_TRUE(transfer.has_value());
+  EXPECT_EQ(transfer->service_data, kServiceData);
+}
+
+TEST_F(AdapterTest,
+       TransferSyncWhenPeriodicAdvertisingSynchronizationNotSupported) {
+  FakeController::Settings settings;
+  settings.ApplyExtendedLEConfig();
+  settings.le_features &= ~static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kSynchronizedReceiver);
+  test_device()->set_settings(settings);
+  EXPECT_TRUE(EnsureInitialized());
+
+  auto fake_peer_1 = std::make_unique<FakePeer>(kTestAddr2, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer_1));
+  Peer* peer_1 =
+      adapter()->peer_cache()->NewPeer(kTestAddr2, /*connectable=*/true);
+
+  std::unique_ptr<bt::gap::LowEnergyConnectionHandle> conn_ref;
+  auto connect_cb = [&conn_ref](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_ref = std::move(result).value();
+  };
+
+  adapter()->le()->Connect(
+      peer_1->identifier(), connect_cb, LowEnergyConnectionOptions());
+  RunUntilIdle();
+  ASSERT_TRUE(conn_ref);
+
+  std::optional<hci::Result<>> transfer_result;
+  auto callback = [&transfer_result](hci::Result<> result) {
+    transfer_result = result;
+  };
+  const uint16_t kServiceData = 0x0908;
+  conn_ref->TransferPeriodicAdvertisingSync(
+      hci::SyncId(1), kServiceData, std::move(callback));
+  RunUntilIdle();
+  ASSERT_TRUE(transfer_result.has_value());
+  EXPECT_FALSE(transfer_result->is_ok());
+  EXPECT_TRUE(transfer_result->error_value().is(HostError::kNotSupported));
+}
+
 }  // namespace
 }  // namespace bt::gap

@@ -71,6 +71,13 @@ class PeriodicAdvertisingSyncManager final
   using BroadcastIsochronousGroupInfo =
       hci::PeriodicAdvertisingSynchronizer::BroadcastIsochronousGroupInfo;
 
+  // This is a helper type for classes that need to dependency inject the
+  // TransferSync method.
+  using TransferSyncFn = fit::function<void(hci::SyncId,
+                                            hci_spec::ConnectionHandle,
+                                            uint16_t service_data,
+                                            pw::Callback<void(hci::Result<>)>)>;
+
   // The parameters of a newly established synchronization.
   struct SyncParameters {
     PeerId peer_id;

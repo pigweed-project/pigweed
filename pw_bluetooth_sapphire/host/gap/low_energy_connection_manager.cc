@@ -118,7 +118,9 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
     sm::SecurityManagerFactory sm_creator,
     const AdapterState& adapter_state,
     pw::async::Dispatcher& dispatcher,
-    pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider)
+    pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+    PeriodicAdvertisingSyncManager::TransferSyncFn&&
+        transfer_periodic_advertising_sync_fn)
     : dispatcher_(dispatcher),
       hci_(std::move(hci)),
       security_mode_(LESecurityMode::Mode1),
@@ -132,6 +134,8 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
       hci_connector_(connector),
       local_address_delegate_(addr_delegate),
       wake_lease_provider_(wake_lease_provider),
+      transfer_periodic_advertising_sync_fn_(
+          std::move(transfer_periodic_advertising_sync_fn)),
       weak_self_(this) {
   PW_DCHECK(peer_cache_);
   PW_DCHECK(l2cap_);

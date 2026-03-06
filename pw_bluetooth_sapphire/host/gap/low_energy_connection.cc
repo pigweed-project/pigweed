@@ -175,13 +175,15 @@ LowEnergyConnection::AddRef() {
     return self->role();
   };
   std::unique_ptr<bt::gap::LowEnergyConnectionHandle> conn_ref(
-      new LowEnergyConnectionHandle(peer_id(),
-                                    handle(),
-                                    std::move(release_cb),
-                                    std::move(accept_cis_cb),
-                                    std::move(bondable_cb),
-                                    std::move(security_cb),
-                                    std::move(role_cb)));
+      new LowEnergyConnectionHandle(
+          peer_id(),
+          handle(),
+          std::move(release_cb),
+          std::move(accept_cis_cb),
+          std::move(bondable_cb),
+          std::move(security_cb),
+          std::move(role_cb),
+          conn_mgr_->transfer_periodic_advertising_sync_fn_.share()));
   PW_CHECK(conn_ref);
 
   refs_.Mutable()->insert(conn_ref.get());

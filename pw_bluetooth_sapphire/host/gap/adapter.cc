@@ -1636,6 +1636,22 @@ void AdapterImpl::InitializeStep4() {
   le_discovery_manager_->set_peer_connectable_callback(
       fit::bind_member<&AdapterImpl::OnLeAutoConnectRequest>(this));
 
+  PeriodicAdvertisingSyncManager::TransferSyncFn transfer_sync_fn =
+      [self = weak_self_.GetWeakPtr()](
+          hci::SyncId id,
+          hci_spec::ConnectionHandle connection,
+          uint16_t service_data,
+          pw::Callback<void(hci::Result<>)> callback) {
+        if (!self.is_alive()) {
+          return;
+        }
+        if (!self->periodic_advertising_sync_manager_.has_value()) {
+          callback(fit::error(Error(HostError::kNotSupported)));
+          return;
+        }
+        self->periodic_advertising_sync_manager_->TransferSync(
+            id, connection, service_data, std::move(callback));
+      };
   le_connection_manager_ = std::make_unique<LowEnergyConnectionManager>(
       hci_,
       le_address_manager_.get(),
@@ -1647,7 +1663,8 @@ void AdapterImpl::InitializeStep4() {
       sm::SecurityManager::CreateLE,
       state(),
       dispatcher_,
-      wake_lease_provider_);
+      wake_lease_provider_,
+      std::move(transfer_sync_fn));
   le_connection_manager_->AttachInspect(
       adapter_node_, kInspectLowEnergyConnectionManagerNodeName);
 

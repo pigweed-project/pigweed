@@ -14,6 +14,7 @@
 
 #pragma once
 #include "pw_bluetooth_sapphire/internal/host/common/identifier.h"
+#include "pw_bluetooth_sapphire/internal/host/gap/periodic_advertising_sync_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/types.h"
@@ -45,7 +46,9 @@ class LowEnergyConnectionHandle final {
       AcceptCisCallback accept_cis_cb,
       fit::function<sm::BondableMode()> bondable_cb,
       fit::function<sm::SecurityProperties()> security_cb,
-      fit::function<pw::bluetooth::emboss::ConnectionRole()> role_cb);
+      fit::function<pw::bluetooth::emboss::ConnectionRole()> role_cb,
+      PeriodicAdvertisingSyncManager::TransferSyncFn&&
+          transfer_periodic_advertising_sync_fn);
 
   // Destroying this object releases its reference to the underlying connection.
   ~LowEnergyConnectionHandle();
@@ -66,6 +69,18 @@ class LowEnergyConnectionHandle final {
   // status and if successful, connection parameters.
   [[nodiscard]] iso::AcceptCisStatus AcceptCis(
       iso::CigCisIdentifier id, iso::CisEstablishedCallback cis_established_cb);
+
+  // Transfers periodic advertising synchronization parameters over this
+  // connection.
+  //
+  // @param id The ID of the synchronization to transfer.
+  // @param service_data Application-specific data to transfer with the sync.
+  // @param callback The callback to be invoked with the result of the
+  // transfer.
+  void TransferPeriodicAdvertisingSync(
+      hci::SyncId sync_id,
+      uint16_t service_data,
+      pw::Callback<void(hci::Result<>)> callback);
 
   // Returns the operational bondable mode of the underlying connection. See
   // spec V5.1 Vol 3 Part C Section 9.4 for more details.
@@ -92,6 +107,8 @@ class LowEnergyConnectionHandle final {
   fit::function<sm::BondableMode()> bondable_cb_;
   fit::function<sm::SecurityProperties()> security_cb_;
   fit::function<pw::bluetooth::emboss::ConnectionRole()> role_cb_;
+  PeriodicAdvertisingSyncManager::TransferSyncFn
+      transfer_periodic_advertising_sync_fn_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyConnectionHandle);
 };
