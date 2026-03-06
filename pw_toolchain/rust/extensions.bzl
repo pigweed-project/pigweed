@@ -411,10 +411,13 @@ def _BUILD_for_toolchain_repo(hosts, extra_targets, channels):
             for target in extra_targets:
                 build_file += _pw_rust_toolchain(
                     name = "{}_{}_rust_toolchain_{}_{}_{}".format(host["os"], host["cpu"], target["triple"], target["cpu"], channel["name"]),
+                    analyzer_toolchain_name = "{}_{}_rust_analyzer_toolchain_{}_{}_{}".format(host["os"], host["cpu"], target["triple"], target["cpu"], channel["name"]),
+                    rustfmt_toolchain_name = "{}_{}_rustfmt_toolchain_{}_{}_{}".format(host["os"], host["cpu"], target["triple"], target["cpu"], channel["name"]),
                     exec_triple = host["triple"],
                     target_triple = target["triple"],
                     target_repo = "@rust_toolchain_target_{}_{}".format(target["triple"], target["cpu"]),
                     toolchain_repo = "@rust_toolchain_host_{}_{}".format(host["os"], host["cpu"]),
+                    rust_analyzer_repo = "@rust_analyzer_{}_{}".format(host["os"], host["cpu"]),
                     dylib_ext = "*.so",
                     exec_compatible_with = [
                         "@platforms//cpu:{}".format(host["cpu"]),
