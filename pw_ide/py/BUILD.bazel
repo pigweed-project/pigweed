@@ -167,6 +167,7 @@ pw_py_binary(
     deps = [
         ":clangd_binary",
         ":update_compile_commands_binary",
+        "@rules_python//python/runfiles",
     ],
 )
 

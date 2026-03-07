@@ -132,7 +132,30 @@ def _get_direct_virtual_includes(ctx, target):
         ),
     ]
 
-def _remap_virtual_includes(commands, all_virtual_paths):
+def _remap_arg(arg, virtual_path_map):
+    """Remaps a single argument using the virtual path map."""
+    # We iterate over the map to support substring replacement for flags
+    # like -I/path/to/virtual where the path is concatenated with the flag.
+
+    # Short circuit checking if there is a path separator at all before iterating,
+    # because resolving virtual includes is an expensive operation.
+    if "/" not in arg:
+        return arg
+
+    for v_path, r_path in virtual_path_map.items():
+        if v_path in arg:
+            return arg.replace(v_path, r_path)
+    return arg
+
+def _remap_args(args, virtual_path_map):
+    if not virtual_path_map:
+        return args
+    return [
+        _remap_arg(arg, virtual_path_map)
+        for arg in args
+    ]
+
+def _remap_commands(commands, virtual_path_map):
     """Replace all virtual includes with their actual path."""
     # cc_library's strip_include_prefix points to a sandboxed, generated include
     # path in Bazel's build outputs directory. We replace these with their
@@ -151,24 +174,27 @@ def _remap_virtual_includes(commands, all_virtual_paths):
     #
     # See https://cs.opensource.google/bazel/bazel/+/main:src/main/starlark/builtins_bzl/common/cc/compile/cc_compilation_helper.bzl;l=115-119;drc=075249556b518947c3b533cdf0358709b89db24d
 
-    virtual_path_map = {}
-    for mapping in all_virtual_paths.to_list():
-        virtual_path_map[mapping.virtual_path] = mapping.real_path
-        virtual_path_map["-I" + mapping.virtual_path] = "-I" + mapping.real_path
-        virtual_path_map["-isystem" + mapping.virtual_path] = "-isystem" + mapping.real_path
-
     rebuilt_commands = []
     for command in commands:
-        rebuilt_argv = []
-        for arg in command.arguments:
-            rebuilt_argv.append(
-                virtual_path_map[arg] if arg in virtual_path_map else arg,
-            )
         cmd_dict = {key: getattr(command, key) for key in dir(command)}
-        cmd_dict["arguments"] = rebuilt_argv
+        cmd_dict["arguments"] = _remap_args(command.arguments, virtual_path_map)
+        cmd_dict["file"] = _remap_arg(cmd_dict["file"], virtual_path_map)
+
         rebuilt_commands.append(struct(**cmd_dict))
 
     return rebuilt_commands
+
+def _remap_target_infos(target_infos, virtual_path_map):
+    rebuilt_target_infos = []
+    for info in target_infos:
+        rebuilt_info = {
+            "deps": info["deps"],
+            "hdrs": _remap_args(info["hdrs"], virtual_path_map),
+            "label": info["label"],
+            "srcs": _remap_args(info["srcs"], virtual_path_map),
+        }
+        rebuilt_target_infos.append(rebuilt_info)
+    return rebuilt_target_infos
 
 def _get_one_compile_command(ctx, src, action):
     """Extracts compile commands associated with the source.
@@ -214,20 +240,12 @@ def _get_one_compile_command(ctx, src, action):
         outputs = [f.path for f in action.outputs.to_list()],
     )
 
-def _get_cpp_compile_commands(ctx, target):
-    """Collects C/C++ compile commands for the provided target.
-
-    Args:
-        ctx: Rule context.
-        target: The target to extract compile commands from.
-
-    Returns:
-        List of compile commands `struct` objects.
-    """
-    if CcInfo not in target:
-        return []
-
+def _get_commands_for_target(ctx, target):
+    """Iterates over actions to find compile commands."""
     commands = []
+    if CcInfo not in target:
+        return commands
+
     for action in target.actions:
         # Don't try to evaluate anything without arguments. This saves a
         # considerable amount of CPU cycles.
@@ -241,7 +259,38 @@ def _get_cpp_compile_commands(ctx, target):
             result = _get_one_compile_command(ctx, src, action)
             if result != None:
                 commands.append(result)
+    return commands
 
+def _get_target_infos(ctx, target):
+    target_infos = [{
+        "deps": [str(d.label) for d in ctx.rule.attr.deps] if hasattr(ctx.rule.attr, "deps") else [],
+        "hdrs": [f.path for f in ctx.rule.files.hdrs] if hasattr(ctx.rule.files, "hdrs") else [],
+        "label": str(target.label),
+        "srcs": [f.path for f in ctx.rule.files.srcs] if hasattr(ctx.rule.files, "srcs") else [],
+    }]
+
+    if hasattr(ctx.rule.attr, "deps"):
+        for d in ctx.rule.attr.deps:
+            dep_info = {
+                "deps": [],
+                "hdrs": [],
+                "label": str(d.label),
+                "srcs": [],
+            }
+            if CcInfo in d:
+                # Fallback to scanning direct_public_headers/direct_headers safely
+                ctx_cc = d[CcInfo].compilation_context
+                if hasattr(ctx_cc, "direct_public_headers"):
+                    dep_info["hdrs"] = [f.path for f in ctx_cc.direct_public_headers]
+                elif hasattr(ctx_cc, "direct_headers"):
+                    dep_info["hdrs"] = [f.path for f in ctx_cc.direct_headers]
+
+            target_infos.append(dep_info)
+    return target_infos
+
+def _get_all_virtual_include_mappings(ctx, target):
+    if CcInfo not in target:
+        return depset()
     direct_virtual_includes = _get_direct_virtual_includes(ctx, target)
     transitive_virtual_includes = _collect_fragments(
         ctx.rule,
@@ -249,44 +298,88 @@ def _get_cpp_compile_commands(ctx, target):
         VirtualIncludesInfo,
         lambda virtual_includes: virtual_includes.mappings,
     )
-    all_virtual_include_mappings = depset(
+    return depset(
         direct = direct_virtual_includes,
         transitive = transitive_virtual_includes,
     )
 
-    commands = _remap_virtual_includes(
-        commands,
-        all_virtual_include_mappings,
+def _get_cpp_compile_commands(ctx, target):
+    """Collects C/C++ compile commands for the provided target.
+
+    Args:
+        ctx: Rule context.
+        target: The target to extract compile commands from.
+
+    Returns:
+        List of compile commands `struct` objects.
+    """
+
+    # Workaround: Rules with `analysis_test=true` cannot register actions.
+    # Analysis tests can be identified because they return `AnalysisTestResultInfo`.
+    # However, since we might not have `AnalysisTestResultInfo` imported, we can
+    # also check if the rule kind explicitly implies tests that we shouldn't touch.
+    if (
+        ctx.rule.kind == "_load_phase_test" or
+        "analysis_test" in ctx.rule.kind or
+        "pylint_aspect_test" in ctx.rule.kind
+    ):
+        return struct(
+            fragment_files = [],
+            providers = [
+                VirtualIncludesInfo(
+                    mappings = depset(),
+                ),
+            ],
+        )
+
+    all_virtual_include_mappings = _get_all_virtual_include_mappings(ctx, target)
+
+    # Convert depset to dict once for O(1) lookups during remapping
+    virtual_path_map = {
+        mapping.virtual_path: mapping.real_path
+        for mapping in all_virtual_include_mappings.to_list()
+    }
+
+    commands = _get_commands_for_target(ctx, target)
+    target_infos = _get_target_infos(ctx, target)
+
+    commands = _remap_commands(commands, virtual_path_map)
+    target_infos = _remap_target_infos(target_infos, virtual_path_map)
+
+    platform_fragment = ctx.bin_dir.path.split("/")[1]
+
+    fragment_file = ctx.actions.declare_file(
+        "{name}.{platform}.pw_aspect.compile_commands.json".format(
+            name = ctx.label.name,
+            platform = platform_fragment,
+        ),
     )
 
-    if commands:
-        # Create a JSON fragment file for this specific target, including the
-        # platform name to make it unique. We also add a unique suffix
-        # to distinguish these fragments from files generated by other tools.
-        platform_fragment = ctx.bin_dir.path.split("/")[1]
+    debug_mappings = []
 
-        fragment_file = ctx.actions.declare_file(
-            "{name}.{platform}.pw_aspect.compile_commands.json".format(
-                name = ctx.label.name,
-                platform = platform_fragment,
-            ),
-        )
-        ctx.actions.write(
-            output = fragment_file,
-            content = json.encode(commands),
-        )
-        return [
+    for v_path, r_path in virtual_path_map.items():
+        debug_mappings.append({"real_path": r_path, "virtual_path": v_path})
+
+    fragment_data = {
+        "commands": commands,
+        "target_info": target_infos,
+        "virtual_mappings": debug_mappings,
+    }
+
+    ctx.actions.write(
+        output = fragment_file,
+        content = json.encode(fragment_data),
+    )
+
+    return struct(
+        fragment_files = [fragment_file],
+        providers = [
             DefaultInfo(files = depset([fragment_file])),
             VirtualIncludesInfo(
                 mappings = all_virtual_include_mappings,
             ),
-        ]
-
-    return [
-        VirtualIncludesInfo(
-            mappings = all_virtual_include_mappings,
-        ),
-    ]
+        ],
+    )
 
 def _collect_fragments(ctx, label, requested_provider, depset_getter):
     """A Generic helper to build a depset from all a transitive dependencies.
@@ -307,10 +400,12 @@ def _collect_fragments(ctx, label, requested_provider, depset_getter):
     # strictly prohibited in Bazel/starlark. This is implemented as a loop with
     # a work stack instead.
     transitive_providers = []
-    stack = [
-        getattr(ctx.attr, attr_name)
-        for attr_name in dir(ctx.attr)
-    ]
+    stack = []
+    for attr_name in dir(ctx.attr):
+        if attr_name in ["def_parser", "grep_includes"] or attr_name.startswith("_"):
+            continue
+        stack.append(getattr(ctx.attr, attr_name))
+
     for i in range(_MAX_STACK_ITERATIONS + 1):
         if i == _MAX_STACK_ITERATIONS:
             fail(
@@ -369,20 +464,14 @@ def _compile_commands_aspect_impl(target, ctx):
         lambda command_fragment_info: command_fragment_info.fragments,
     )
 
-    providers = _get_cpp_compile_commands(
+    result = _get_cpp_compile_commands(
         ctx,
         target,
     )
-    if type(providers) != type(list()):
-        providers = [providers]
-    default_info = DefaultInfo()
-    for prov in providers:
-        if type(prov) == type(default_info):
-            default_info = prov
+    providers = result.providers
+    fragment_files = result.fragment_files
 
-    direct_files = None
-    if type(default_info.files) == type(depset()):
-        direct_files = default_info.files.to_list()
+    direct_files = fragment_files
     compile_command_fragments = depset(
         direct = direct_files,
         transitive = dep_fragments,
@@ -403,7 +492,8 @@ def _compile_commands_aspect_impl(target, ctx):
 
 pw_cc_compile_commands_aspect = aspect(
     implementation = _compile_commands_aspect_impl,
-    attr_aspects = ["*"],
+    attr_aspects = ["deps", "implementation_deps", "srcs", "target", "backend", "includes"],
+    provides = [VirtualIncludesInfo, CompileCommandsFragmentInfo],
     fragments = ["cpp"],
     attrs = {
         "_strict_errors": attr.label(
@@ -432,4 +522,11 @@ pw_cc_compile_commands_fragments = rule(
             aspects = [pw_cc_compile_commands_aspect],
         ),
     },
+)
+
+compile_commands_aspect_testing = struct(
+    remap_arg = _remap_arg,
+    remap_target_infos = _remap_target_infos,
+    remap_commands = _remap_commands,
+    get_cpp_compile_commands = _get_cpp_compile_commands,
 )

@@ -84,7 +84,6 @@ cc_library(
     deps = ["@pw_cc_compile_commands_test_external//:external_lib"],
 )
 
-# Coverage of dependencies that aren't remotely related to C/C++.
 cc_library(
     name = "non_cpp_deps",
     # This is nonsense, but shouldn't break anything.

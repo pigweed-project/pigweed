@@ -13,6 +13,7 @@
 # the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load(":pw_cc_compile_commands_aspect_test.bzl", "pw_cc_compile_commands_aspect_test_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -22,4 +23,8 @@ package(default_visibility = ["//visibility:public"])
 bool_flag(
     name = "strict_errors",
     build_setting_default = True,
+)
+
+pw_cc_compile_commands_aspect_test_suite(
+    name = "pw_cc_compile_commands_aspect_test",
 )
