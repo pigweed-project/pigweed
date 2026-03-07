@@ -27,6 +27,7 @@ pw_py_library(
         "pw_ide/cpp.py",
         "pw_ide/editors.py",
         "pw_ide/exceptions.py",
+        "pw_ide/ide_query.py",
         "pw_ide/merger.py",
         "pw_ide/python.py",
         "pw_ide/settings.py",
@@ -123,6 +124,12 @@ pw_py_binary(
     main = "pw_ide/cleaner.py",
 )
 
+pw_py_binary(
+    name = "ide_query",
+    srcs = ["pw_ide/ide_query.py"],
+    main = "pw_ide/ide_query.py",
+)
+
 pw_py_test(
     name = "merger_test",
     srcs = ["merger_test.py"],
@@ -130,6 +137,13 @@ pw_py_test(
         ":pw_ide",
         "@pigweed_python_packages//pyfakefs",
     ],
+)
+
+pw_py_test(
+    name = "ide_query_test",
+    size = "small",
+    srcs = ["ide_query_test.py"],
+    deps = [":pw_ide"],
 )
 
 # For testing, do not increase visibility.

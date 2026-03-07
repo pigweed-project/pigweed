@@ -62,6 +62,8 @@ group("bazel_only") {
     "performance_test.py",
     "merger_test.py",
     "pw_ide/cleaner.py",
+    "pw_ide/ide_query.py",
+    "ide_query_test.py",
     "pw_ide/merger.py",
   ]
 }
