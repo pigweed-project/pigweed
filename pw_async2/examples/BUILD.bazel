@@ -179,6 +179,23 @@ pw_cc_test(
 )
 # DOCSTAG: [quickstart]
 
+pw_cc_test(
+    name = "futures",
+    srcs = ["futures.cc"],
+    deps = [
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:coro",
+        "//pw_async2:future_timeout",
+        "//pw_async2:join",
+        "//pw_async2:select",
+        "//pw_async2:testing",
+        "//pw_async2:value_future",
+        "//pw_log",
+        "//pw_status",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
@@ -189,6 +206,7 @@ sphinx_docs_library(
         "coro_blinky_loop.cc",
         "count.cc",
         "custom_future.cc",
+        "futures.cc",
         "interrupt.cc",
         "quickstart.cc",
         "unit_test.cc",

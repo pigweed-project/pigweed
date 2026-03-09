@@ -25,7 +25,8 @@ class JoinFuture {
  public:
   using value_type = std::tuple<FutureValue<Futures>&&...>;
 
-  constexpr JoinFuture() : outputs_{} {}
+  constexpr JoinFuture()
+      : outputs_(Poll<typename Futures::value_type>(Pending())...) {}
 
   [[nodiscard]] bool is_pendable() const { return state_.is_pendable(); }
 

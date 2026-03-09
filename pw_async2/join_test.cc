@@ -31,6 +31,13 @@ static_assert(
     pw::async2::Future<pw::async2::JoinFuture<pw::async2::VoidFuture,
                                               pw::async2::ValueFuture<int>>>);
 
+TEST(JoinFuture, DefaultConstructible) {
+  pw::async2::JoinFuture<pw::async2::VoidFuture, pw::async2::ValueFuture<int>>
+      default_constructed;
+  EXPECT_FALSE(default_constructed.is_pendable());
+  EXPECT_FALSE(default_constructed.is_complete());
+}
+
 TEST(JoinFuture, ReturnsReadyWhenAllFuturesAreReady) {
   DispatcherForTest dispatcher;
 

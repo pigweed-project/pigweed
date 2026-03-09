@@ -119,11 +119,10 @@ Consider some asynchronous call which produces a simple value on completion.
 Pigweed provides :cc:`ValueFuture<T> <pw::async2::ValueFuture>` for this common
 case. The async function has the following signature:
 
-.. code-block:: c++
-
-   class NumberGenerator {
-     ValueFuture<int> GetNextNumber();
-   };
+.. literalinclude:: examples/futures.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-futures-number-generator]
+   :end-before: [pw_async2-examples-futures-number-generator]
 
 You would write a task that calls this operation as follows:
 
@@ -131,38 +130,17 @@ You would write a task that calls this operation as follows:
 
    .. tab-item:: Standard polling
 
-      .. code-block:: c++
-
-         class MyTask : public pw::async2::Task {
-          private:
-           pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             // The future begins in a default-constructed state, which is not
-             // pendable. Initialize it on the task's first run.
-             if (!future_.is_pendable()) {
-               future_ = generator_.GetNextNumber();
-             }
-
-             PW_TRY_READY_ASSIGN(int number, future_.Pend(cx));
-             PW_LOG_INFO("Received number: %d", number);
-
-             return pw::async2::Ready();
-           }
-
-           NumberGenerator& generator_;
-           ValueFuture<int> future_;
-         };
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-my-task]
+         :end-before: [pw_async2-examples-futures-my-task]
 
    .. tab-item:: C++20 coroutines
 
-      .. code-block:: c++
-
-         pw::async2::Coro<pw::Status> MyCoroutineFunction(pw::async2::CoroContext&,
-                                                          NumberGenerator& generator) {
-           // Pigweed's coroutine integration allows futures to be awaited directly.
-           int number = co_await generator.GetNextNumber();
-           PW_LOG_INFO("Received number: %d", number);
-           co_return pw::OkStatus();
-         }
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-my-coro]
+         :end-before: [pw_async2-examples-futures-my-coro]
 
 Writing functions that return futures
 =====================================
@@ -255,10 +233,10 @@ non-async, ISR). ``Notification`` is implemented using a
 ---------------------
 Implementing a future
 ---------------------
-``pw_async2`` provides futures like `ValueFuture <pw::async2::ValueFuture>` for
-common asynchronous patterns. However, you may want to implement a custom leaf
-future if your operation has complex logic where ``Pend()`` would benefit from
-reaching deeper into the underlying system, e.g. waiting for a hardware
+``pw_async2`` provides futures like :cc:`ValueFuture <pw::async2::ValueFuture>`
+for common asynchronous patterns. However, you may want to implement a custom
+leaf future if your operation has complex logic where ``Pend()`` would benefit
+from reaching deeper into the underlying system, e.g. waiting for a hardware
 interrupt.
 
 :cc:`FutureCore <pw::async2::FutureCore>` is the primary tool for creating
@@ -348,61 +326,26 @@ Join
 :cc:`Join` waits for multiple futures to complete and returns a tuple of their
 results.
 
-.. code-block:: cpp
-
-   #include "pw_async2/join.h"
-
-   ValueFuture<pw::Status> DoWork(int id);
+.. literalinclude:: examples/futures.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-futures-join-function]
+   :end-before: [pw_async2-examples-futures-join-function]
 
 .. tab-set::
 
    .. tab-item:: Standard polling
 
-      .. code-block:: cpp
-
-         class JoinTask : public pw::async2::Task {
-          private:
-           pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             if (!future_.is_pendable()) {
-               // Start three futures concurrently and wait for all of them
-               // to complete.
-               future_ = pw::async2::Join(DoWork(1), DoWork(2), DoWork(3));
-             }
-
-             PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
-             auto [status1, status2, status3] = *results;
-
-             if (!status1.ok() || !status2.ok() || !status3.ok()) {
-               PW_LOG_ERROR("Operation failed");
-             } else {
-               PW_LOG_INFO("All operations succeeded");
-             }
-
-             return pw::async2::Ready();
-           }
-
-           JoinFuture<ValueFuture<pw::Status>,
-                      ValueFuture<pw::Status>,
-                      ValueFuture<pw::Status>>
-               future_;
-         };
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-join-task]
+         :end-before: [pw_async2-examples-futures-join-task]
 
    .. tab-item:: C++20 coroutines
 
-      .. code-block:: cpp
-
-         pw::async2::Coro<pw::Status> JoinExample(pw::async2::CoroContext&) {
-           // Start three futures concurrently and wait for all of them to complete.
-           auto [status1, status2, status3] =
-               co_await pw::async2::Join(DoWork(1), DoWork(2), DoWork(3));
-
-           if (!status1.ok() || !status2.ok() || !status3.ok()) {
-             PW_LOG_ERROR("Operation failed");
-             co_return pw::Status::Internal();
-           }
-           PW_LOG_INFO("All operations succeeded");
-           co_return pw::OkStatus();
-         }
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-join-coro]
+         :end-before: [pw_async2-examples-futures-join-coro]
 
 Select
 ======
@@ -411,68 +354,26 @@ Select
 result. If additional futures happen to complete between the first future
 completing the task re-running, the tuple stores all of their results.
 
-.. code-block:: cpp
-
-   #include "pw_async2/select.h"
-
-   ValueFuture<int> DoWork();
-   ValueFuture<int> DoOtherWork();
+.. literalinclude:: examples/futures.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-futures-select-functions]
+   :end-before: [pw_async2-examples-futures-select-functions]
 
 .. tab-set::
 
    .. tab-item:: Standard polling
 
-      .. code-block:: cpp
-
-         class SelectTask : public pw::async2::Task {
-          private:
-           pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
-             if (!future_.is_pendable()) {
-               // Race two futures and wait for the first one to complete.
-               future_ = pw::async2::Select(DoWork(), DoOtherWork());
-             }
-
-             PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
-
-             // Check which future(s) completed.
-             // In this example, we check all of them, but it's common to return
-             // after the first result.
-             if (results.has_value<0>()) {
-               PW_LOG_INFO("DoWork completed with: %d", results.get<0>());
-             }
-             if (results.has_value<1>()) {
-               PW_LOG_INFO("DoOtherWork completed with: %d", results.get<1>());
-             }
-
-             return pw::async2::Ready();
-           }
-
-           SelectFuture<ValueFuture<int>, ValueFuture<int>> future_;
-         };
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-select-task]
+         :end-before: [pw_async2-examples-futures-select-task]
 
    .. tab-item:: C++20 coroutines
 
-      .. code-block:: cpp
-
-         pw::async2::Coro<int> SelectExample(pw::async2::CoroContext&) {
-           // Race two futures and wait for the first one to complete.
-           auto results = co_await pw::async2::Select(DoWork(), DoOtherWork());
-
-           // Check which future(s) completed.
-           // In this example, we check all of them, but it's common to return
-           // after the first result.
-           if (results.has_value<0>()) {
-             int result = results.get<0>();
-             PW_LOG_INFO("DoWork completed with: %d", result);
-           }
-
-           if (results.has_value<1>()) {
-             int result = results.get<1>();
-             PW_LOG_INFO("DoOtherWork completed with: %d", result);
-           }
-
-           co_return pw::OkStatus();
-         }
+      .. literalinclude:: examples/futures.cc
+         :language: cpp
+         :start-after: [pw_async2-examples-futures-select-coro]
+         :end-before: [pw_async2-examples-futures-select-coro]
 
 .. _module-pw_async2-guides-primitives-wakers:
 
@@ -565,24 +466,10 @@ Example
 =======
 Using them to construct the composite future is easy.
 
-.. code-block:: cpp
-
-   // Obtain a basic ValueFuture<T> or similar from some provider.
-   auto value_future = value_provider.Get()
-                       // Construct the composite future, which will either resolve
-                       // to a `T`, or timeout after 15ms using the system clock.
-                       auto future_with_timeout_ex1 =
-       Timeout(std::move(value_future), 15ms);
-
-   // You can also construct one this way.
-   auto future_with_timeout_ex2 = Timeout(value_provider.Get(), 15ms);
-
-   // For a sentinel with a simple constant:
-   auto future_with_timeout_ex3 = TimeoutOr(int_value_provider.Get(), 15ms, -1);
-
-   // To use a function to obtain a sentinnel value:
-   auto future_with_timeout_ex3 =
-       TimeoutOr(int_value_provider.Get(), 15ms, []() { return -1; });
+.. literalinclude:: examples/futures.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-futures-timeout]
+   :end-before: [pw_async2-examples-futures-timeout]
 
 You can find more examples showing how to use these functions in
 :cs:`pw_async2/examples/timeout_test.cc`.
