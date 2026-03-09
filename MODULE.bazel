@@ -119,11 +119,6 @@ git_repository(
 )
 # LINT.ThenChange(/pw_package/py/pw_package/packages/emboss.py:emboss)
 
-# TODO: b/383856665 - rules_fuchsia requires host_platform. Once this is fixed
-# we can remove this entry.
-host_platform = use_extension("@platforms//host:extension.bzl", "host_platform")
-use_repo(host_platform, "host_platform")
-
 # Configure libusb
 # ================
 #
@@ -600,39 +595,67 @@ use_repo(pnpm, "pnpm")
 
 # Setup Fuchsia SDK.
 # ==================
+# Since `@fuchsia_infra` isn't a real BCR module and relies on `git_override` to bring in its
+# transitive dependencies, mark it as a `dev_dependency` for now.
+bazel_dep(name = "fuchsia_infra", dev_dependency = True)
+git_override(
+    module_name = "fuchsia_infra",
+    # ROLL: Warning: this entry is automatically updated by
+    # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed/tools.roll/fuchsia-infra-bazel-rules-roller
+    commit = "bfcbce6b9a094145b354280f860362c0e272b699",
+    remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
+)
+
 FUCHSIA_SDK_VERSION = "version:30.20260128.1.1"
 
-cipd_repository(
-    name = "fuchsia_sdk",
-    path = "fuchsia/sdk/core/fuchsia-bazel-rules/linux-amd64",
-    tag = FUCHSIA_SDK_VERSION,
-)
+# Use `cipd_ext` and `fuchsia_clang_ext` from `@fuchsia_infra` to override `@fuchsia_infra`'s
+# instantiations of `@rules_fuchsia`, `@fuchsia_sdk` and `@fuchsia_clang`.
+#
+# This simultaneously allows:
+#  - `@rules_fuchsia`/`@fuchsia_sdk` builddefs to have providers compatible with
+#    `@fuchsia_infra` builddefs,
+#  - the version of `@fuchsia_products` to be aligned with `@rules_fuchsia` and `@fuchsia_sdk`,
+#  - not double-fetching large dependencies like `@fuchsia_sdk` and `@fuchsia_clang`, and
+#  - decoupling `@fuchsia_infra` vs `@rules_fuchsia`/`@fuchsia_sdk` vs `@fuchsia_clang` versions.
+fuchsia_cipd_ext = use_extension("@fuchsia_infra//cipd:defs.bzl", "cipd_ext", dev_dependency = True)
 
-cipd_repository(
+fuchsia_clang_ext = use_extension("@fuchsia_infra//:extensions.bzl", "fuchsia_clang_ext", dev_dependency = True)
+
+fuchsia_cipd_ext.repository(
     name = "rules_fuchsia",
-    path = "fuchsia/development/rules_fuchsia",
+    cipd_bin = "@cipd_client//:cipd",
+    package = "fuchsia/development/rules_fuchsia",
     tag = FUCHSIA_SDK_VERSION,
 )
+use_repo(fuchsia_cipd_ext, "rules_fuchsia")
 
-fuchsia_clang_repository = use_repo_rule("@rules_fuchsia//fuchsia/workspace:fuchsia_clang_repository.bzl", "fuchsia_clang_repository")
-
-fuchsia_clang_repository(
-    name = "fuchsia_clang",
-    cipd_tag = LLVM_VERSION,
+fuchsia_cipd_ext.repository(
+    name = "fuchsia_sdk",
+    cipd_bin = "@cipd_client//:cipd",
+    package = "fuchsia/sdk/core/fuchsia-bazel-rules/linux-amd64",
+    tag = FUCHSIA_SDK_VERSION,
 )
+use_repo(fuchsia_cipd_ext, "fuchsia_sdk")
 
 cipd_repository(
     name = "fuchsia_products_metadata",
+    dev_dependency = True,
     path = "fuchsia/development/product_bundles/v2",
     tag = FUCHSIA_SDK_VERSION,
 )
 
-fuchsia_products_repository = use_repo_rule("//pw_build/bazel_internal/fuchsia_sdk_workspace:products.bzl", "fuchsia_products_repository")
+fuchsia_products_repository = use_repo_rule("@rules_fuchsia//fuchsia:products.bzl", "fuchsia_products_repository")
 
 fuchsia_products_repository(
     name = "fuchsia_products",
+    dev_dependency = True,
     metadata_file = "@fuchsia_products_metadata//:product_bundles.json",
 )
+
+fuchsia_clang_ext.cipd_tag(
+    cipd_tag = LLVM_VERSION,
+)
+use_repo(fuchsia_clang_ext, "fuchsia_clang")
 
 register_toolchains(
     "//pw_toolchain/fuchsia:fuchsia_sdk_toolchain",

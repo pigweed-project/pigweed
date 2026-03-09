@@ -21,9 +21,6 @@ import %workspace%/pw_build/pigweed_recommended.bazelrc
 # requirements.
 common --check_direct_dependencies=error
 
-# TODO: https://pwbug.dev/258836641 - Only until bzlmod migration is done.
-common --enable_workspace
-
 # Enable all desired formatters.
 common --//pw_presubmit/py:enable_gn_formatter=True
 common --//pw_presubmit/py:enable_go_formatter=True

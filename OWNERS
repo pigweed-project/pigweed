@@ -32,4 +32,3 @@ zyecheng@google.com #{LAST_RESORT_SUGGESTION}
 # Additional owners for updating bazel dependencies
 per-file MODULE.bazel.lock=file:WORKSPACE_OWNERS
 per-file MODULE.bazel=file:WORKSPACE_OWNERS
-per-file WORKSPACE=file:WORKSPACE_OWNERS

@@ -1324,6 +1324,122 @@
         ]
       }
     },
+    "@@fuchsia_infra+//:extensions.bzl%fuchsia_clang_ext": {
+      "general": {
+        "bzlTransitiveDigest": "kYxfO1g3eMHbCN336bDyEqMXWFx4YBu2POZqT2xk51o=",
+        "usagesDigest": "MqGVHiOF1Jna8uwysft9YrFCLwZtxGfs7fnMSQ0SBEg=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "fuchsia_clang": {
+            "repoRuleId": "@@fuchsia_infra++cipd_ext+rules_fuchsia//fuchsia/workspace:fuchsia_clang_repository.bzl%fuchsia_clang_repository",
+            "attributes": {
+              "cipd_tag": "git_revision:943eb6fd958e8b130ee94f5c65b7d53ec3419acc",
+              "sha256": {}
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "bazel_tools",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "fuchsia_infra+",
+            "rules_fuchsia",
+            "fuchsia_infra++cipd_ext+rules_fuchsia"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "bazel_skylib",
+            "bazel_skylib+"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "fuchsia_sdk",
+            "fuchsia_infra++cipd_ext+fuchsia_sdk"
+          ],
+          [
+            "fuchsia_infra++cipd_ext+rules_fuchsia",
+            "rules_cc",
+            "rules_cc+"
+          ],
+          [
+            "rules_cc+",
+            "cc_compatibility_proxy",
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy"
+          ],
+          [
+            "rules_cc++compatibility_proxy+cc_compatibility_proxy",
+            "rules_cc",
+            "rules_cc+"
+          ]
+        ]
+      }
+    },
+    "@@fuchsia_infra+//cipd:defs.bzl%cipd_ext": {
+      "general": {
+        "bzlTransitiveDigest": "fJkxs06iLDUxIuKRBBRpSB5AjrkC8jPPKegXtDCURi0=",
+        "usagesDigest": "OdLQxSwy0iTxb865vC5mCOf8t+GmNlCqjAyaZ7VWPr8=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "rules_fuchsia": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "package": "fuchsia/development/rules_fuchsia",
+              "tag": "version:30.20260128.1.1",
+              "exports_files": false,
+              "cipd_bin": "@@+_repo_rules4+cipd_client//:cipd"
+            }
+          },
+          "fuchsia_sdk": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "package": "fuchsia/sdk/core/fuchsia-bazel-rules/linux-amd64",
+              "tag": "version:30.20260128.1.1",
+              "exports_files": false,
+              "cipd_bin": "@@+_repo_rules4+cipd_client//:cipd"
+            }
+          },
+          "shac": {
+            "repoRuleId": "@@fuchsia_infra+//cipd/private:cipd_repository.bzl%cipd_repository",
+            "attributes": {
+              "ensure_file": "@@fuchsia_infra+//manifests:shac.ensure",
+              "package": "",
+              "tag": "",
+              "exports_files": true,
+              "cipd_bin": "@@fuchsia_infra++_repo_rules+cipd_tool//:cipd"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "",
+            "cipd_client",
+            "+_repo_rules4+cipd_client"
+          ],
+          [
+            "fuchsia_infra+",
+            "bazel_tools",
+            "bazel_tools"
+          ],
+          [
+            "fuchsia_infra+",
+            "fuchsia_infra",
+            "fuchsia_infra+"
+          ]
+        ]
+      }
+    },
     "@@googleapis+//:extensions.bzl%switched_rules": {
       "general": {
         "bzlTransitiveDigest": "vG6fuTzXD8MMvHWZEQud0MMH7eoC4GXY0va7VrFFh04=",
