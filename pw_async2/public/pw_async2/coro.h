@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/layout.h"
