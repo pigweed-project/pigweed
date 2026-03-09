@@ -1125,8 +1125,11 @@ struct WriteDefaultLinkPolicySettingsCommand:
 struct SniffSubratingCommand:
   -- 7.2.14 Sniff Subrating command (v2.1 + EDR)
   -- HCI_Sniff_Subrating
+
   let hdr_size = hci.CommandHeader.$size_in_bytes
+
   0     [+hdr_size]  hci.CommandHeader  header
+
   $next [+2]         UInt               connection_handle
     -- Connection_Handle (only the lower 12-bits are meaningful).
     [requires: 0x0000 <= this <= 0x0EFF]
