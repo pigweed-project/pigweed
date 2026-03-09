@@ -134,6 +134,58 @@ following command in the Pigweed repository to register the symbols.
 
              $ bazelisk run --config=fuchsia //pw_bluetooth_sapphire/fuchsia/bt_host:pkg.x64.debug_symbols
 
+Using a local Fuchsia SDK
+=========================
+If you are making changes to the Fuchsia SDK itself (e.g., modifying FIDL
+definitions in a local ``fuchsia.git`` checkout), you can point Pigweed to use
+your local SDK instead of the prebuilt one from CIPD.
+
+1. **Build the SDK in your Fuchsia checkout:**
+
+   .. code-block:: console
+
+      fx build //sdk:final_fuchsia_sdk
+
+2. **Find the canonical name of the SDK repository:**
+
+   Because Pigweed uses Bzlmod, the repository name ``fuchsia_sdk`` might be
+   mangled internally. To find the exact name you need to override, run:
+
+   .. code-block:: console
+
+      bazel mod dump_repo_mapping pigweed | grep fuchsia_sdk | python -m json.tool | jq .fuchsia_sdk
+
+   This will return a mapping like ``fuchsia_sdk -> @@+_repo_rules5+fuchsia_sdk``.
+   The canonical name is everything after the ``@@`` (e.g.,
+   ``+_repo_rules5+fuchsia_sdk``).
+
+3. **Override the SDK repository in Pigweed:**
+
+   Use the ``--override_repository`` flag with the canonical name and an
+   **absolute path** (Bazel does not expand ``~``):
+
+   .. code-block:: console
+
+      bazelisk build --config=fuchsia \
+        --override_repository=+_repo_rules5+fuchsia_sdk=/home/user/code/fuchsia/out/default/obj/sdk/final_fuchsia_sdk \
+        //pw_bluetooth_sapphire/fuchsia/bt_host:pkg.x64
+
+4. **(Optional) Persistent configuration:**
+
+   To avoid passing the flag every time, you can add it to a ``user.bazelrc``
+   file in your Pigweed root:
+
+   .. code-block:: none
+
+      # user.bazelrc
+      build --override_repository=+_repo_rules5+fuchsia_sdk=/home/user/code/fuchsia/out/default/obj/sdk/final_fuchsia_sdk
+
+   .. note::
+      If you encounter version mismatches with the rules themselves, you may
+      also need to override ``rules_fuchsia`` using its canonical name (found
+      via the same ``dump_repo_mapping`` process) and pointing it to
+      ``/path/to/fuchsia/scripts/sdk/bazel``.
+
 --------------------
 Working with devices
 --------------------
