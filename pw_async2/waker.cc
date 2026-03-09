@@ -16,7 +16,9 @@
 
 #include <mutex>
 
+#include "pw_async2/context.h"
 #include "pw_async2/dispatcher.h"
+#include "pw_async2/task.h"
 
 namespace pw::async2 {
 namespace internal {
@@ -26,7 +28,7 @@ bool CloneWaker(Waker& waker_in, Waker& waker_out, log::Token wait_reason) {
   if (waker_out.task_ != nullptr && waker_out.task_ != waker_in.task_) {
     return false;
   }
-  waker_in.InternalCloneIntoLocked(waker_out, wait_reason);
+  waker_in.CloneInto(waker_out, wait_reason);
   return true;
 }
 
@@ -36,25 +38,18 @@ bool StoreWaker(Context& cx, Waker& waker_out, log::Token wait_reason) {
 
 }  // namespace internal
 
-Waker::Waker(Waker&& other) noexcept {
-  std::lock_guard lock(internal::lock());
-  if (other.task_ == nullptr) {
-    return;
-  }
-  Task& task = *other.task_;
-  task.RemoveWakerLocked(other);
-  task.AddWakerLocked(*this);
-}
-
 Waker& Waker::operator=(Waker&& other) noexcept {
   std::lock_guard lock(internal::lock());
-  RemoveFromTaskWakerListLocked();
+  RemoveTaskIfSet();
   if (other.task_ == nullptr) {
     return *this;
   }
-  Task& task = *other.task_;
-  task.RemoveWakerLocked(other);
-  task.AddWakerLocked(*this);
+  task_ = other.task_;
+#if PW_ASYNC2_DEBUG_WAIT_REASON
+  wait_reason_ = other.wait_reason_;
+#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
+  other.RemoveTask();
+  task_->AddWakerLocked(*this);
   return *this;
 }
 
@@ -62,18 +57,17 @@ void Waker::Wake() {
   std::lock_guard lock(internal::lock());
   if (task_ != nullptr) {
     task_->dispatcher_->WakeTask(*task_);
-    RemoveFromTaskWakerListLocked();
+    RemoveTaskIfSet();
   }
 }
 
-void Waker::InternalCloneIntoLocked(Waker& out,
-                                    [[maybe_unused]] log::Token wait_reason) & {
+void Waker::CloneInto(Waker& out, [[maybe_unused]] log::Token wait_reason) {
   // The `out` waker already points to this task, so no work is necessary.
   if (out.task_ == task_) {
     return;
   }
   // Remove the output waker from its existing task's list.
-  out.RemoveFromTaskWakerListLocked();
+  out.RemoveTaskIfSet();
   out.task_ = task_;
 
 #if PW_ASYNC2_DEBUG_WAIT_REASON
@@ -81,9 +75,7 @@ void Waker::InternalCloneIntoLocked(Waker& out,
 #endif  // PW_ASYNC2_DEBUG_WAIT_REASON
 
   // Only add if the waker being cloned is actually associated with a task.
-  if (task_ != nullptr) {
-    task_->AddWakerLocked(out);
-  }
+  out.AddToTaskIfSet();
 }
 
 bool Waker::IsEmpty() const {
@@ -91,25 +83,30 @@ bool Waker::IsEmpty() const {
   return task_ == nullptr;
 }
 
-void Waker::InsertIntoTaskWakerList() {
-  std::lock_guard lock(internal::lock());
-  InsertIntoTaskWakerListLocked();
-}
+void Waker::AddToTask() { task_->AddWakerLocked(*this); }
 
-void Waker::InsertIntoTaskWakerListLocked() {
+void Waker::AddToTaskIfSet() {
   if (task_ != nullptr) {
     task_->AddWakerLocked(*this);
   }
 }
 
-void Waker::RemoveFromTaskWakerList() {
+void Waker::Clear() {
   std::lock_guard lock(internal::lock());
-  RemoveFromTaskWakerListLocked();
+  RemoveTaskIfSet();
 }
 
-void Waker::RemoveFromTaskWakerListLocked() {
+void Waker::RemoveTask() {
+  task_->RemoveWakerLocked(*this);
+  task_ = nullptr;
+#if PW_ASYNC2_DEBUG_WAIT_REASON
+  wait_reason_ = log::kDefaultToken;
+#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
+}
+
+void Waker::RemoveTaskIfSet() {
   if (task_ != nullptr) {
-    task_->RemoveWakerLocked(*this);
+    RemoveTask();
   }
 }
 

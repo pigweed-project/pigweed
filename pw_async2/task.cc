@@ -54,21 +54,8 @@ void Task::RemoveAllWakersLocked() {
   while (!wakers_.empty()) {
     Waker& waker = wakers_.front();
     wakers_.pop_front();
-    waker.task_ = nullptr;
+    waker.ClearTask();
   }
-}
-
-void Task::AddWakerLocked(Waker& waker) {
-  waker.task_ = this;
-  wakers_.push_front(waker);
-}
-
-void Task::RemoveWakerLocked(Waker& waker) {
-  wakers_.remove(waker);
-  waker.task_ = nullptr;
-#if PW_ASYNC2_DEBUG_WAIT_REASON
-  waker.wait_reason_ = log::kDefaultToken;
-#endif  // PW_ASYNC2_DEBUG_WAIT_REASON
 }
 
 bool Task::IsRegistered() const {

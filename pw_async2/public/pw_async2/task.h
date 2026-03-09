@@ -222,13 +222,19 @@ class Task : public IntrusiveList<Task>::Item {
 
   // Adds a `Waker` to the linked list of `Waker` s tracked by this
   // `Task`.
-  void AddWakerLocked(Waker&) PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock());
+  void AddWakerLocked(Waker& waker)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
+    wakers_.push_front(waker);
+  }
 
   // Removes a `Waker` from the linked list of `Waker`s tracked by this `Task`.
   //
   // Precondition: the provided waker *must* be in the list of `Waker`s tracked
   // by this `Task`.
-  void RemoveWakerLocked(Waker&) PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock());
+  void RemoveWakerLocked(Waker& waker)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock()) {
+    wakers_.remove(waker);
+  }
 
   Dispatcher& GetDispatcherWhileRunning() PW_NO_LOCK_SAFETY_ANALYSIS {
     return *dispatcher_;
