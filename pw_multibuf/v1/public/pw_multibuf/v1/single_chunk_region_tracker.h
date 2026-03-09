@@ -72,9 +72,6 @@ class PW_MULTIBUF_DEPRECATED SingleChunkRegionTracker
 
   void DeallocateChunkClass(void* chunk) final {
     PW_ASSERT(chunk == chunk_storage_.data());
-    // Mark the `Chunk` as not in use and zero-out the region and chunk storage.
-    std::memset(chunk_storage_.data(), 0, chunk_storage_.size());
-    std::memset(region_.data(), 0, region_.size());
     chunk_in_use_ = false;
   }
 
