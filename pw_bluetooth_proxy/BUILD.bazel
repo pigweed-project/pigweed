@@ -93,6 +93,16 @@ pw_bluetooth_proxy_library(
     ],
 )
 
+alias(
+    name = "gatt",
+    actual = "//pw_bluetooth_proxy/gatt",
+)
+
+alias(
+    name = "rfcomm",
+    actual = "//pw_bluetooth_proxy/rfcomm",
+)
+
 # Module configuration
 
 cc_library(
