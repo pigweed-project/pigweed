@@ -1,4 +1,4 @@
-# Sapphire Host Stack
+# Sapphire Host Stack (pw_bluetooth_sapphire)
 
 ## Headers
 In each host layer, headers are in a deeply nested path in the public
@@ -28,14 +28,6 @@ bazelisk test --config googletest //pw_bluetooth_sapphire/host/...
 ### Bazel tips
 Do NOT use the `copts` parameter, especially not to fix include path issues.
 Use `strip_include_prefix` to add the public directory to the include path.
-
-## Bluetooth Specification
-### Host Controller Interface (HCI) Specification
-You can access the HCI specification, with command and event documentation,
-here:
-[HCI Specification](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/host-controller-interface/host-controller-interface-functional-specification.html)
-
-Do not Google search the specification.
 
 ## Packet serialization/deserialization
 You must use Emboss tool to serialize and deserialize packets. Emboss packet
