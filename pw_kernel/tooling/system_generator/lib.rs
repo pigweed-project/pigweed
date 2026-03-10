@@ -229,10 +229,9 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
 
     fn render_system(&self) -> Result<String> {
         let template = self.env.get_template("system")?;
-        match template.render(&self.config) {
-            Ok(str) => Ok(str),
-            Err(e) => Err(anyhow!(e)),
-        }
+        template
+            .render(&self.config)
+            .context("Could not render system template")
     }
 
     fn render_app_linker_script(&self, app_name: &String) -> Result<String> {
@@ -244,10 +243,9 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
             .iter()
             .find(|a| a.name == *app_name)
             .ok_or_else(|| anyhow!("Unable to find app \"{app_name}\" in system manifest"))?;
-        match template.render(app) {
-            Ok(str) => Ok(str),
-            Err(e) => Err(anyhow!(e)),
-        }
+        template
+            .render(app)
+            .context("Could not render app template")
     }
 
     #[must_use]
