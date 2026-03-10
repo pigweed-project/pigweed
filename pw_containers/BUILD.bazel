@@ -191,7 +191,6 @@ cc_library(
 cc_library(
     name = "deque_common",
     hdrs = [
-        "public/pw_containers/internal/count_and_capacity.h",
         "public/pw_containers/internal/deque_iterator.h",
         "public/pw_containers/internal/generic_deque.h",
     ],

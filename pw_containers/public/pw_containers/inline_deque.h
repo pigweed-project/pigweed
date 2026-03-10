@@ -21,7 +21,6 @@
 #include <utility>
 
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/count_and_capacity.h"
 #include "pw_containers/internal/generic_deque.h"
 #include "pw_containers/internal/raw_storage.h"
 #include "pw_toolchain/constexpr_tag.h"
@@ -30,7 +29,7 @@ namespace pw {
 namespace containers::internal {
 
 // Forward declarations.
-template <typename T, typename CountAndCapacityType, size_t kCapacity>
+template <typename T, typename SizeType, size_t kCapacity>
 class BasicInlineDequeImpl;
 
 }  // namespace containers::internal
@@ -40,10 +39,8 @@ class BasicInlineDequeImpl;
 template <typename ValueType,
           typename SizeType,
           size_t kCapacity = containers::internal::kGenericSized>
-using BasicInlineDeque = containers::internal::BasicInlineDequeImpl<
-    ValueType,
-    containers::internal::CountAndCapacity<SizeType>,
-    kCapacity>;
+using BasicInlineDeque =
+    containers::internal::BasicInlineDequeImpl<ValueType, SizeType, kCapacity>;
 
 /// The `InlineDeque` class is similar to the STL's double ended queue
 /// (`std::deque`), except it is backed by a fixed-size buffer.
@@ -69,15 +66,14 @@ using InlineDeque = BasicInlineDeque<T, uint16_t, kCapacity>;
 
 namespace containers::internal {
 
-template <typename ValueType, typename CountAndCapacityType, size_t kCapacity>
+template <typename ValueType, typename SizeType, size_t kCapacity>
 class BasicInlineDequeImpl
     : public RawStorage<
-          BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>,
+          BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>,
           ValueType,
           kCapacity> {
  private:
-  using Base =
-      BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>;
+  using Base = BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>;
 
  public:
   using typename Base::const_iterator;
@@ -121,9 +117,8 @@ class BasicInlineDequeImpl
   ///
   /// Note that this will result in a crash if `kOtherCapacity < size()`.
   template <size_t kOtherCapacity>
-  BasicInlineDequeImpl(const BasicInlineDequeImpl<ValueType,
-                                                  CountAndCapacityType,
-                                                  kOtherCapacity>& other) {
+  BasicInlineDequeImpl(
+      const BasicInlineDequeImpl<ValueType, SizeType, kOtherCapacity>& other) {
     *this = other;
   }
 
@@ -135,7 +130,7 @@ class BasicInlineDequeImpl
   /// Move constructs for mismatched capacity.
   template <size_t kOtherCapacity>
   BasicInlineDequeImpl(
-      BasicInlineDequeImpl<ValueType, CountAndCapacityType, kOtherCapacity>&&
+      BasicInlineDequeImpl<ValueType, SizeType, kOtherCapacity>&&
           other) noexcept {
     *this = std::move(other);
   }
@@ -179,9 +174,7 @@ class BasicInlineDequeImpl
   /// Note that this will result in a crash if `kOtherCapacity < size()`.
   template <size_t kOtherCapacity>
   BasicInlineDequeImpl& operator=(
-      const BasicInlineDequeImpl<ValueType,
-                                 CountAndCapacityType,
-                                 kOtherCapacity>& other) {
+      const BasicInlineDequeImpl<ValueType, SizeType, kOtherCapacity>& other) {
     Base::operator=(static_cast<const Base&>(other));
     return *this;
   }
@@ -195,7 +188,7 @@ class BasicInlineDequeImpl
   /// Move assigns for mismatched capacity.
   template <size_t kOtherCapacity>
   BasicInlineDequeImpl& operator=(
-      BasicInlineDequeImpl<ValueType, CountAndCapacityType, kOtherCapacity>&&
+      BasicInlineDequeImpl<ValueType, SizeType, kOtherCapacity>&&
           other) noexcept {
     Base::operator=(static_cast<Base&&>(std::move(other)));
     return *this;
@@ -221,17 +214,17 @@ class BasicInlineDequeImpl
 //
 // NOTE: this size-polymorphic base class must not be used inside of
 // ``std::unique_ptr`` or ``delete``.
-template <typename ValueType, typename CountAndCapacityType>
-class BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>
+template <typename ValueType, typename SizeType>
+class BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>
     : public GenericDeque<
-          BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>,
+          BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>,
           ValueType,
-          CountAndCapacityType> {
+          SizeType> {
  private:
-  using Base = GenericDeque<
-      BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>,
-      ValueType,
-      CountAndCapacityType>;
+  using Base =
+      GenericDeque<BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>,
+                   ValueType,
+                   SizeType>;
 
  public:
   using typename Base::const_iterator;
@@ -274,10 +267,10 @@ class BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>
   ~BasicInlineDequeImpl() = default;
 
   template <size_t kCapacity>
-  using Derived = RawStorage<
-      BasicInlineDequeImpl<ValueType, CountAndCapacityType, kGenericSized>,
-      ValueType,
-      kCapacity>;
+  using Derived =
+      RawStorage<BasicInlineDequeImpl<ValueType, SizeType, kGenericSized>,
+                 ValueType,
+                 kCapacity>;
 
   // The underlying RawStorage is not part of the generic-sized class. It is
   // provided in the derived class from which this instance was constructed. To

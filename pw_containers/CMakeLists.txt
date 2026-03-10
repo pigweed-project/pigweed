@@ -95,7 +95,6 @@ pw_add_library(pw_containers._deque_common INTERFACE
   HEADERS
     public/pw_containers/internal/deque_iterator.h
     public/pw_containers/internal/generic_deque.h
-    public/pw_containers/internal/count_and_capacity.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS

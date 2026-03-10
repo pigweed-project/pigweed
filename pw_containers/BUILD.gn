@@ -101,7 +101,6 @@ pw_source_set("common") {
 
 pw_source_set("deque_common") {
   public = [
-    "public/pw_containers/internal/count_and_capacity.h",
     "public/pw_containers/internal/deque_iterator.h",
     "public/pw_containers/internal/generic_deque.h",
   ]

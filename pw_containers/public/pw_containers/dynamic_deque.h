@@ -23,7 +23,6 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/count_and_capacity.h"
 #include "pw_containers/internal/generic_deque.h"
 #include "pw_numeric/saturating_arithmetic.h"
 
@@ -54,15 +53,12 @@ namespace pw {
 ///   `uint16_t`.
 /// - Uses `pw::Allocator::Resize()` when possible to maximize efficiency.
 template <typename ValueType, typename SizeType = uint16_t>
-class DynamicDeque : public containers::internal::GenericDeque<
-                         DynamicDeque<ValueType, SizeType>,
-                         ValueType,
-                         containers::internal::CountAndCapacity<SizeType>> {
+class DynamicDeque
+    : public containers::internal::
+          GenericDeque<DynamicDeque<ValueType, SizeType>, ValueType, SizeType> {
  private:
-  using Base = containers::internal::GenericDeque<
-      DynamicDeque<ValueType, SizeType>,
-      ValueType,
-      containers::internal::CountAndCapacity<SizeType>>;
+  using Base = containers::internal::
+      GenericDeque<DynamicDeque<ValueType, SizeType>, ValueType, SizeType>;
 
  public:
   using typename Base::const_iterator;

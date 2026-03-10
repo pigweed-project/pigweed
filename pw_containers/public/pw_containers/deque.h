@@ -25,7 +25,6 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
-#include "pw_containers/internal/count_and_capacity.h"
 #include "pw_containers/internal/generic_deque.h"
 #include "pw_containers/storage.h"
 #include "pw_polyfill/language_feature_macros.h"
@@ -54,15 +53,11 @@ namespace pw {
 /// @tparam SizeType How to store sizes. A smaller size type limits the maximum
 ///     number of items, but requires slightly less memory.
 template <typename T, typename SizeType = uint16_t>
-class Deque : public containers::internal::GenericDeque<
-                  Deque<T, SizeType>,
-                  T,
-                  containers::internal::CountAndCapacity<SizeType>> {
+class Deque : public containers::internal::
+                  GenericDeque<Deque<T, SizeType>, T, SizeType> {
  private:
-  using Base = containers::internal::GenericDeque<
-      Deque<T, SizeType>,
-      T,
-      containers::internal::CountAndCapacity<SizeType>>;
+  using Base =
+      containers::internal::GenericDeque<Deque<T, SizeType>, T, SizeType>;
 
  public:
   using typename Base::const_iterator;
