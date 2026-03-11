@@ -16,6 +16,7 @@
 import logging
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import urllib.parse
@@ -35,16 +36,25 @@ def git_stdout(
     *args: Path | str, show_stderr=False, repo: Path | str = '.'
 ) -> str:
     _LOG.debug('executing %r in %r', args, repo)
-    return (
-        subprocess.run(
-            ['git'] + _GIT_CONFIG + ['-C', repo, *args],
-            stdout=subprocess.PIPE,
-            stderr=None if show_stderr else subprocess.DEVNULL,
-            check=True,
+    try:
+        cmd = ['git'] + _GIT_CONFIG + ['-C', repo, *args]
+        return (
+            subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=None if show_stderr else subprocess.STDOUT,
+                check=True,
+            )
+            .stdout.decode()
+            .strip()
         )
-        .stdout.decode()
-        .strip()
-    )
+    except subprocess.CalledProcessError as err:
+        _LOG.error('Git command failed: %s', shlex.join(str(s) for s in cmd))
+        if err.output:
+            _LOG.error(
+                'Git output:\n%s', err.output.decode('utf-8', errors='replace')
+            )
+        raise
 
 
 def git(
