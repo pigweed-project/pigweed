@@ -56,6 +56,15 @@ size_t CopyMax(span<const T> src, span<T> dest) {
 
 constexpr uint32_t kEmbossFileVersion = 1;
 constexpr size_t kHeaderSize = 16;
+// BtSnoopEpoch starts at 12am Jan 1st 0AD this is the delta in micro seconds
+// with respect to the unix epoch, see:
+// https://repository.root-me.org/R%C3%A9seau/EN%20-%20fte.com%20-%20BT%20Snoop%20File%20Format.pdf
+// Also see the wireshark implementation:
+// https://github.com/wireshark/wireshark/blob/e1033766e925762fb9b07788c2f1a90e4c04ba93/wiretap/btsnoop.c#L65
+// and
+// https://github.com/wireshark/wireshark/blob/e1033766e925762fb9b07788c2f1a90e4c04ba93/wiretap/btsnoop.c#L203
+constexpr auto kBtSnoopEpochDelta =
+    std::chrono::microseconds(0x00dcddb30f2f8000ULL);
 
 // Generates the snoop log file header
 //
@@ -378,8 +387,9 @@ void Snoop::AddEntry(emboss::snoop_log::PacketFlags emboss_packet_flag,
   writer.header().packet_flags().Write(emboss_packet_flag);
   writer.header().cumulative_drops().Write(0);
   writer.header().timestamp_us().Write(static_cast<int64_t>(
-      std::chrono::time_point_cast<std::chrono::microseconds>(
-          system_clock_.now())
+      (std::chrono::time_point_cast<std::chrono::microseconds>(
+           system_clock_.now()) +
+       kBtSnoopEpochDelta)
           .time_since_epoch()
           .count()));
 

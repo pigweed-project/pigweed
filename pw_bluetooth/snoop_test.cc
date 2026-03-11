@@ -101,7 +101,7 @@ TEST(SnoopTest, HeaderTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -130,7 +130,7 @@ TEST(SnoopTest, HeaderTxTruncated) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -159,7 +159,7 @@ TEST(SnoopTest, HeaderRx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -188,7 +188,7 @@ TEST(SnoopTest, HeaderRxTruncated) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -223,7 +223,7 @@ TEST(SnoopTest, HeaderTxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -238,7 +238,7 @@ TEST(SnoopTest, HeaderTxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000001");
+  expected_snoop_data.append("00dcddb30f2f8001");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("01");
   // Packet Data[1-N] - Data
@@ -273,7 +273,7 @@ TEST(SnoopTest, HeaderRxRx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -288,7 +288,7 @@ TEST(SnoopTest, HeaderRxRx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000001");
+  expected_snoop_data.append("00dcddb30f2f8001");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("01");
   // Packet Data[1-N] - Data
@@ -335,7 +335,7 @@ TEST(SnoopTest, HeaderRxTxRxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000000");
+  expected_snoop_data.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -350,7 +350,7 @@ TEST(SnoopTest, HeaderRxTxRxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000001");
+  expected_snoop_data.append("00dcddb30f2f8001");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("01");
   // Packet Data[1-N] - Data
@@ -365,7 +365,7 @@ TEST(SnoopTest, HeaderRxTxRxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000002");
+  expected_snoop_data.append("00dcddb30f2f8002");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("02");
   // Packet Data[1-N] - Data
@@ -380,7 +380,7 @@ TEST(SnoopTest, HeaderRxTxRxTx) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000003");
+  expected_snoop_data.append("00dcddb30f2f8003");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("01");
   // Packet Data[1-N] - Data
@@ -442,7 +442,7 @@ TEST(SnoopTest, DisabledEnable) {
   // Cumulative Drops (32-bit)
   expected_snoop_data.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data.append("0000000000000001");
+  expected_snoop_data.append("00dcddb30f2f8001");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data.append("01");
   // Packet Data[1-N] - Data
@@ -471,7 +471,7 @@ TEST(SnoopTest, Stream) {
   // Cumulative Drops (32-bit)
   expected_snoop_data_str.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data_str.append("0000000000000000");
+  expected_snoop_data_str.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data_str.append("02");
   // Packet Data[1-N] - Data
@@ -510,7 +510,7 @@ TEST(SnoopTest, StreamPartialRead) {
   // Cumulative Drops (32-bit)
   expected_snoop_data_str.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data_str.append("0000000000000000");
+  expected_snoop_data_str.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data_str.append("02");
   // Packet Data[1-N] - Data
@@ -554,7 +554,7 @@ TEST(SnoopTest, StreamPartialReadByteByByte) {
   // Cumulative Drops (32-bit)
   expected_snoop_data_str.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data_str.append("0000000000000000");
+  expected_snoop_data_str.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data_str.append("02");
   // Packet Data[1-N] - Data
@@ -616,7 +616,7 @@ TEST(SnoopTest, MultipleStreamDisabled) {
   // Cumulative Drops (32-bit)
   expected_snoop_data_str.append("00000000");
   // Timestamp Microseconds (64-bit)
-  expected_snoop_data_str.append("0000000000000000");
+  expected_snoop_data_str.append("00dcddb30f2f8000");
   // Packet Data[0] - HCI_TYPE (8-bit)
   expected_snoop_data_str.append("02");
   // Packet Data[1-N] - Data
