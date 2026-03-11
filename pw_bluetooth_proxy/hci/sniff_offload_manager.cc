@@ -947,8 +947,8 @@ void SniffOffloadManager::ConnectionFsm::ResetTimer() {
   }
 
   timeout_task_.AssertLockHeld(*this);
-  timeout_task_.WaitFor(
-      std::chrono::milliseconds(parameters_->link_inactivity_timeout));
+  timeout_task_.WaitFor(std::chrono::ceil<chrono::SystemClock::duration>(
+      std::chrono::milliseconds(parameters_->link_inactivity_timeout)));
 }
 
 void SniffOffloadManager::ConnectionFsm::SendEnterSniffMode() {
