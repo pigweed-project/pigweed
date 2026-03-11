@@ -24,28 +24,34 @@ exports_files(glob(["**/bin/**"]))
 cc_tool_map(
     name = "arm_tools",
     tools = {
+        "@pigweed//pw_toolchain/action:gcov": ":arm-zephyr-eabi-gcov",
+        "@pigweed//pw_toolchain/action:nm": ":arm-zephyr-eabi-nm",
+        "@pigweed//pw_toolchain/action:objdump_disassemble": ":arm-zephyr-eabi-objdump",
+        "@pigweed//pw_toolchain/action:readelf": ":arm-zephyr-eabi-readelf",
+        "@pigweed//pw_toolchain/action:size": ":arm-zephyr-eabi-size",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":arm-zephyr-eabi-ar",
         "@rules_cc//cc/toolchains/actions:assembly_actions": ":arm-zephyr-eabi-asm",
         "@rules_cc//cc/toolchains/actions:c_compile_actions": ":arm-zephyr-eabi-gcc",
         "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":arm-zephyr-eabi-g++",
         "@rules_cc//cc/toolchains/actions:link_actions": ":arm-zephyr-eabi-ld",
         "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":arm-zephyr-eabi-objcopy",
-        "@pigweed//pw_toolchain/action:objdump_disassemble": ":arm-zephyr-eabi-objdump",
-        "@rules_cc//cc/toolchains/actions:strip": ":arm-zephyr-eabi-strip",
-        "@rules_cc//cc/toolchains/actions:ar_actions": ":arm-zephyr-eabi-ar",
     },
 )
 
 cc_tool_map(
     name = "x86_64_tools",
     tools = {
+        "@pigweed//pw_toolchain/action:gcov": ":x86_64-zephyr-elf-gcov",
+        "@pigweed//pw_toolchain/action:nm": ":x86_64-zephyr-elf-nm",
+        "@pigweed//pw_toolchain/action:objdump_disassemble": ":x86_64-zephyr-elf-objdump",
+        "@pigweed//pw_toolchain/action:readelf": ":x86_64-zephyr-elf-readelf",
+        "@pigweed//pw_toolchain/action:size": ":x86_64-zephyr-elf-size",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":x86_64-zephyr-elf-ar",
         "@rules_cc//cc/toolchains/actions:assembly_actions": ":x86_64-zephyr-elf-asm",
         "@rules_cc//cc/toolchains/actions:c_compile_actions": ":x86_64-zephyr-elf-gcc",
         "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":x86_64-zephyr-elf-g++",
         "@rules_cc//cc/toolchains/actions:link_actions": ":x86_64-zephyr-elf-ld",
         "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":x86_64-zephyr-elf-objcopy",
-        "@pigweed//pw_toolchain/action:objdump_disassemble": ":x86_64-zephyr-elf-objdump",
-        "@rules_cc//cc/toolchains/actions:strip": ":x86_64-zephyr-elf-strip",
-        "@rules_cc//cc/toolchains/actions:ar_actions": ":x86_64-zephyr-elf-ar",
     },
 )
 
@@ -105,7 +111,7 @@ cc_tool(
         # "arm-zephyr-eabi/lib/gcc/arm-zephyr-eabi/*/include/**",
         # "arm-zephyr-eabi/lib/gcc/arm-zephyr-eabi/*/include-fixed/**",
         # "arm-zephyr-eabi/libexec/**",
-    ]) #+
+    ]),  #+
     # The assembler needs to be explicilty added. Note that the path is
     # intentionally different here as `as` is called from arm-zephyr-eabi-gcc.
     # `arm-zephyr-eabi-as` will not suffice for this context.
@@ -164,6 +170,30 @@ cc_tool(
     src = select({
         "@platforms//os:windows": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-strip.exe",
         "//conditions:default": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-strip",
+    }),
+)
+
+cc_tool(
+    name = "arm-zephyr-eabi-nm",
+    src = select({
+        "@platforms//os:windows": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-nm.exe",
+        "//conditions:default": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-nm",
+    }),
+)
+
+cc_tool(
+    name = "arm-zephyr-eabi-readelf",
+    src = select({
+        "@platforms//os:windows": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-readelf.exe",
+        "//conditions:default": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-readelf",
+    }),
+)
+
+cc_tool(
+    name = "arm-zephyr-eabi-size",
+    src = select({
+        "@platforms//os:windows": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-size.exe",
+        "//conditions:default": "//:arm-zephyr-eabi/bin/arm-zephyr-eabi-size",
     }),
 )
 
@@ -272,5 +302,29 @@ cc_tool(
     src = select({
         "@platforms//os:windows": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-strip.exe",
         "//conditions:default": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-strip",
+    }),
+)
+
+cc_tool(
+    name = "x86_64-zephyr-elf-nm",
+    src = select({
+        "@platforms//os:windows": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-nm.exe",
+        "//conditions:default": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-nm",
+    }),
+)
+
+cc_tool(
+    name = "x86_64-zephyr-elf-readelf",
+    src = select({
+        "@platforms//os:windows": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-readelf.exe",
+        "//conditions:default": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-readelf",
+    }),
+)
+
+cc_tool(
+    name = "x86_64-zephyr-elf-size",
+    src = select({
+        "@platforms//os:windows": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-size.exe",
+        "//conditions:default": "//:x86_64-zephyr-elf/bin/x86_64-zephyr-elf-size",
     }),
 )

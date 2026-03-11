@@ -55,8 +55,12 @@ alias(
 )
 
 COMMON_TOOLS = {
+    "@pigweed//pw_toolchain/action:cov": ":llvm-cov",
+    "@pigweed//pw_toolchain/action:gcov": ":llvm-gcov",
+    "@pigweed//pw_toolchain/action:nm": ":llvm-nm",
     "@pigweed//pw_toolchain/action:objdump_disassemble": ":llvm-objdump",
     "@pigweed//pw_toolchain/action:readelf": ":llvm-readelf",
+    "@pigweed//pw_toolchain/action:size": ":llvm-size",
     "@rules_cc//cc/toolchains/actions:assembly_actions": ":asm",
     "@rules_cc//cc/toolchains/actions:c_compile_actions": ":clang",
     "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":clang++",
@@ -132,7 +136,7 @@ cc_tool(
             "lib/**/*.so*",
             "lib/**/*.o",
         ],
-        allow_empty=True,
+        allow_empty = True,
     ),
 )
 
@@ -195,6 +199,35 @@ cc_tool(
     src = select({
         "@platforms//os:windows": "//:bin/llvm-readelf.exe",
         "//conditions:default": "//:bin/llvm-readelf",
+    }),
+    data = glob(["bin/llvm"]),
+)
+
+# These tools are mapped to actions that can be used via standard accessors
+# defined in pw_toolchain/action.
+cc_tool(
+    name = "llvm-nm",
+    src = select({
+        "@platforms//os:windows": "//:bin/llvm-nm.exe",
+        "//conditions:default": "//:bin/llvm-nm",
+    }),
+    data = glob(["bin/llvm"]),
+)
+
+cc_tool(
+    name = "llvm-size",
+    src = select({
+        "@platforms//os:windows": "//:bin/llvm-size.exe",
+        "//conditions:default": "//:bin/llvm-size",
+    }),
+    data = glob(["bin/llvm"]),
+)
+
+cc_tool(
+    name = "llvm-gcov",
+    src = select({
+        "@platforms//os:windows": "//:bin/llvm-cov.exe",
+        "//conditions:default": "//:bin/llvm-cov",
     }),
     data = glob(["bin/llvm"]),
 )

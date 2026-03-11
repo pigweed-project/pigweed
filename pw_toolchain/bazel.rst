@@ -233,6 +233,61 @@ your project, with the following content:
 This will enable ``-Wconversion`` for all code in your project, but not for
 code coming from any external dependencies also built with Bazel.
 
+.. _module-pw_toolchain-bazel-running-tools:
+
+-----------------------
+Running toolchain tools
+-----------------------
+Pigweed provides a set of runnable targets that expose the active toolchain's
+tools for interactive use. These are essential for debugging and inspecting
+build artifacts, as local system tools often lack support for the target
+architecture of a cross-compiled build. Furthermore, since Pigweed's compilers
+are typically hermetic and managed by Bazel, their binaries are stored within
+Bazel's internal directories and are not easily accessible through the shell.
+
+Available tools include ``cc``, ``c++``, ``ld``, ``ar``, ``objdump``, ``nm``,
+``readelf``, ``size``, ``strip``, and ``cov``.
+
+These targets are dynamically resolved from the active toolchain's action
+mapping. This ensures that when you run a tool via these targets, you are using
+the *exact same* binary and configuration that Bazel uses during the build
+for that specific target platform.
+
+.. note::
+
+   Tool availability varies by suite (e.g., LLVM vs. GCC vs. Zephyr) and
+   configuration. While common tools like ``objdump`` and ``nm`` are present
+   across all supported suites (including ARM GCC and Zephyr), others like
+   ``cov`` or ``gcov`` may be missing. Attempting to run a missing tool
+   will result in a "tool not found" error or fail with a clear error
+   message during analysis or execution.
+
+   Additionally, compiler drivers that are symlinks to a multicall binary
+   (like ``llvm``) may behave as a generic driver if invoked without
+   arguments.
+
+.. code-block:: console
+
+   # Disassemble a binary using the objdump provided by the toolchain
+   $ bazel run //pw_toolchain/cc/current_toolchain:objdump -- -d bazel-bin/my_binary
+
+   # Link object files manually (for debugging)
+   $ bazel run //pw_toolchain/cc/current_toolchain:ld -- ...
+
+   # List symbols
+   $ bazel run //pw_toolchain/cc/current_toolchain:nm -- bazel-bin/my_binary
+
+.. admonition:: Warning
+   :class: warning
+
+   These targets are intended **exclusively** for interactive use via ``bazel run``.
+   **Do NOT** use them as dependencies in other rules (e.g. in ``srcs``,
+   ``tools``, or ``deps``).
+
+   Doing so will likely result in the wrong tool being selected (e.g. the host
+   ``objdump`` instead of the target ``objdump``) due to Bazel's configuration
+   transition logic.
+
 .. _module-pw_toolchain-bazel-compiler-specific-logic:
 
 -----------------------------

@@ -17,16 +17,34 @@ load(":action_names.bzl", "PW_ACTION_NAMES")
 
 package(default_visibility = ["//visibility:public"])
 
-# TODO: https://pwbug.dev/367352331 - Rename and upstream this to Bazel
-# (rules_cc, bazeltools).
+# TODO: https://pwbug.dev/367352331 - The following action types should be
+# renamed and upstreamed to Bazel (rules_cc, bazeltools).
 cc_action_type(
     name = "objdump_disassemble",
     action_name = PW_ACTION_NAMES.objdump_disassemble,
 )
 
-# TODO: https://pwbug.dev/367352331 - Rename and upstream this to Bazel
-# (rules_cc, bazeltools).
 cc_action_type(
     name = "readelf",
     action_name = PW_ACTION_NAMES.readelf,
+)
+
+cc_action_type(
+    name = "nm",
+    action_name = PW_ACTION_NAMES.nm,
+)
+
+cc_action_type(
+    name = "size",
+    action_name = PW_ACTION_NAMES.size,
+)
+
+cc_action_type(
+    name = "cov",
+    action_name = PW_ACTION_NAMES.cov,
+)
+
+cc_action_type(
+    name = "gcov",
+    action_name = PW_ACTION_NAMES.gcov,
 )

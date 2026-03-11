@@ -13,6 +13,7 @@
 # the License.
 
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+load("@pigweed//pw_toolchain/action:action_names.bzl", "PW_ACTION_NAMES")
 load(":pw_cc_tool_for_action.bzl", "pw_cc_tool_for_action")
 load(":pw_cc_toolchain_feature_is_enabled.bzl", "pw_cc_toolchain_feature_is_enabled")
 
@@ -69,21 +70,76 @@ pw_cc_toolchain_feature_is_enabled(
 # Runnable targets that alias to the current C/C++ toolchain tools used to
 # compile for the current target platform.
 #
-# These are ONLY exposed to make it easier to debug the active toolchain.
-# For example:
+# These are intended for interactive debugging and inspection of artifacts
+# produced by the toolchain.
 #
-#   # Print the version of the toolchain used when compiling for this MCU.
-#   $ bazel run --config=lm3s6965evb \
-#         //pw_toolchain/cc/current_toolchain:cc -- --version
+# WARNING: Use these ONLY via `bazel run`. Do NOT use them as dependencies for
+# other rules (e.g. in `srcs`, `tools`, or `deps`).
 #
-# WARNING: These are intentionally private, and should NEVER be used as
-# dependencies!!!
-#
-# An inherent side-effect of this structure is that target/exec compatibility
-# is lost in a way that can cause the wrong toolchain to be selected when it
-# is used as a dependency of another rule.
+# Doing so will likely result in the wrong tool being selected due to Bazel's
+# configuration transition logic (e.g. host tool instead of target tool).
 pw_cc_tool_for_action(
     name = "cc",
     action_name = ACTION_NAMES.c_compile,
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "c++",
+    action_name = ACTION_NAMES.cpp_compile,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "objdump",
+    action_name = PW_ACTION_NAMES.objdump_disassemble,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "readelf",
+    action_name = PW_ACTION_NAMES.readelf,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "strip",
+    action_name = "strip",
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "nm",
+    action_name = PW_ACTION_NAMES.nm,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "size",
+    action_name = PW_ACTION_NAMES.size,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "ar",
+    action_name = ACTION_NAMES.cpp_link_static_library,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "ld",
+    action_name = ACTION_NAMES.cpp_link_executable,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "cov",
+    action_name = PW_ACTION_NAMES.cov,
+    visibility = ["//visibility:public"],
+)
+
+pw_cc_tool_for_action(
+    name = "gcov",
+    action_name = PW_ACTION_NAMES.gcov,
+    visibility = ["//visibility:public"],
 )

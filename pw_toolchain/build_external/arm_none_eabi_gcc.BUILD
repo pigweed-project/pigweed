@@ -27,14 +27,18 @@ exports_files(glob(["bin/**"]))
 cc_tool_map(
     name = "all_tools",
     tools = {
+        "@pigweed//pw_toolchain/action:gcov": ":arm-none-eabi-gcov",
+        "@pigweed//pw_toolchain/action:nm": ":arm-none-eabi-nm",
+        "@pigweed//pw_toolchain/action:objdump_disassemble": ":arm-none-eabi-objdump",
+        "@pigweed//pw_toolchain/action:readelf": ":arm-none-eabi-readelf",
+        "@pigweed//pw_toolchain/action:size": ":arm-none-eabi-size",
+        "@rules_cc//cc/toolchains/actions:ar_actions": ":arm-none-eabi-ar",
         "@rules_cc//cc/toolchains/actions:assembly_actions": ":asm",
         "@rules_cc//cc/toolchains/actions:c_compile_actions": ":arm-none-eabi-gcc",
         "@rules_cc//cc/toolchains/actions:cpp_compile_actions": ":arm-none-eabi-g++",
         "@rules_cc//cc/toolchains/actions:link_actions": ":arm-none-eabi-ld",
         "@rules_cc//cc/toolchains/actions:objcopy_embed_data": ":arm-none-eabi-objcopy",
-        "@pigweed//pw_toolchain/action:objdump_disassemble": ":arm-none-eabi-objdump",
         "@rules_cc//cc/toolchains/actions:strip": ":arm-none-eabi-strip",
-        "@rules_cc//cc/toolchains/actions:ar_actions": ":arm-none-eabi-ar"
     },
 )
 
@@ -142,5 +146,29 @@ cc_tool(
     src = select({
         "@platforms//os:windows": "//:bin/arm-none-eabi-strip.exe",
         "//conditions:default": "//:bin/arm-none-eabi-strip",
+    }),
+)
+
+cc_tool(
+    name = "arm-none-eabi-nm",
+    src = select({
+        "@platforms//os:windows": "//:bin/arm-none-eabi-nm.exe",
+        "//conditions:default": "//:bin/arm-none-eabi-nm",
+    }),
+)
+
+cc_tool(
+    name = "arm-none-eabi-readelf",
+    src = select({
+        "@platforms//os:windows": "//:bin/arm-none-eabi-readelf.exe",
+        "//conditions:default": "//:bin/arm-none-eabi-readelf",
+    }),
+)
+
+cc_tool(
+    name = "arm-none-eabi-size",
+    src = select({
+        "@platforms//os:windows": "//:bin/arm-none-eabi-size.exe",
+        "//conditions:default": "//:bin/arm-none-eabi-size",
     }),
 )

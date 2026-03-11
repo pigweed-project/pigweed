@@ -15,8 +15,16 @@
 
 PW_OBJDUMP_DISASSEMBLE = "objdump-disassemble"
 PW_READELF = "readelf"
+PW_NM = "nm"
+PW_SIZE = "size"
+PW_COV = "cov"
+PW_GCOV = "gcov"
 
 PW_ACTION_NAMES = struct(
     objdump_disassemble = PW_OBJDUMP_DISASSEMBLE,
     readelf = PW_READELF,
+    nm = PW_NM,
+    size = PW_SIZE,
+    cov = PW_COV,
+    gcov = PW_GCOV,
 )
