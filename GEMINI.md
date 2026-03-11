@@ -25,6 +25,15 @@ This includes:
   conventions for things like commit messages, code formatting, and
   documentation.
 
+## Local guidelines for AI agents
+
+This document provides guidelines for AI agents making changes to the Pigweed
+codebase.
+
+Some subdirectories, such as `pw_ide`, contain their own `GEMINI.md` file with
+more specific instructions for that area of the codebase. When working in those
+areas, please refer to the local `GEMINI.md` for more detailed guidance.
+
 ## C++ Development Guidance
 
 This section provides specific guidance for writing C++ code and tests in
@@ -135,10 +144,10 @@ commands:
   - **Clean the build:** `gn clean out`
 
 - **`bazel` (Build system):**
-  - **Note:** Always use `bazelisk` and not `bazel` to ensure the correct `bazel`
-    version is in use.
-    **Note:** Use `--noshow_progress` `--noshow_loading_progress` to reduce the
-    amount of output produced and avoid polluting the context window.
+  - **Note:** Always use `bazelisk` and not `bazel` to ensure the correct
+    `bazel` version is in use. **Note:** Use `--noshow_progress`
+    `--noshow_loading_progress` to reduce the amount of output produced and
+    avoid polluting the context window.
   - **Build a target:**
     `bazelisk build --noshow_progress --noshow_loading_progress //path/to/module:target`
   - **Run a test:**
@@ -167,25 +176,23 @@ be concise and descriptive.
   - Use a `Bug:` or `Fixed:` line for bug fixes.
   - Example:
 
-    ```
-    This change adds support for the bar feature to the `pw_foo` module.
+    ``` This change adds support for the bar feature to the `pw_foo` module.
     This is necessary because...
 
-    Bug: b/123456789
-    ```
+    Bug: b/123456789 ```
 
 ## Fetching Change List (CL) diffs
 
-Fuchsia development happens on Gerrit When the user
-asks for you to read a CL for them, do the following:
+Fuchsia development happens on Gerrit When the user asks for you to read a CL
+for them, do the following:
 
-1. Parse the change id from the CL URL. If the URL is `pwrev/1234`, then
-   the id is 1234. If the URL is
-   `https://pigweed-review.googlesource.com/c/pigweed/+/1299104`,
-   then the ID is `1299104`.
+1. Parse the change id from the CL URL. If the URL is `pwrev/1234`, then the id
+   is 1234. If the URL is
+   `https://pigweed-review.googlesource.com/c/pigweed/+/1299104`, then the ID is
+   `1299104`.
 2. If the user asked for a CL hosted at
-   `https://pigweed-review.googlesource.com`, run this shell command to get
-   the diff from the changelist:
+   `https://pigweed-review.googlesource.com`, run this shell command to get the
+   diff from the changelist:
    `curl -L https://pigweed-review.googlesource.com/changes/<ID>/revisions/current/patch?raw`.
 3. Use this diff to answer further questions about the changelist
 
