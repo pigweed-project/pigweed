@@ -11,12 +11,6 @@ pw_protobuf
 ``pw_protobuf`` provides an expressive interface for encoding and decoding
 the Protocol Buffer wire format with a lightweight code and data footprint.
 
-.. note::
-
-   The protobuf module is a work in progress. Wire format encoding and decoding
-   is supported, though the APIs are not final. C++ code generation exists for
-   encoding and decoding, but not yet optimized for in-memory decoding.
-
 --------
 Overview
 --------
