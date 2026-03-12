@@ -98,7 +98,11 @@ def _valid_capitalization(word: str) -> bool:
 
 def commit_message_format(ctx: PresubmitContext):
     """Checks that the top commit's message is correctly formatted."""
-    if git_repo.commit_author().endswith('gserviceaccount.com'):
+    author = git_repo.commit_author()
+    if author.endswith('gserviceaccount.com'):
+        return
+
+    if author.split('@', 1)[1].startswith('pigweed.infra.roller.'):
         return
 
     lines = git_repo.commit_message().splitlines()
