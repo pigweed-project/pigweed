@@ -39,7 +39,7 @@ void Dispatcher::PostLocked(Task& task) {
   if (woken_.empty()) {
     SetWantsWake();
   }
-  woken_.push_back(task);
+  containers::PushBackSlow(woken_, task);
 }
 
 bool Dispatcher::PostAllocatedTask(
@@ -83,7 +83,7 @@ bool Dispatcher::PopAndRunAllReadyTasks() {
   return has_posted_tasks;
 }
 
-void Dispatcher::UnpostTaskList(IntrusiveList<Task>& list) {
+void Dispatcher::UnpostTaskList(IntrusiveForwardList<Task>& list) {
   while (!list.empty()) {
     Task& task = list.front();
     list.pop_front();
@@ -96,7 +96,7 @@ void Dispatcher::WakeTask(Task& task) {
     return;
   }
 
-  woken_.push_back(task);
+  containers::PushBackSlow(woken_, task);
 
   // It's quite annoying to make this call under the lock, as it can result in
   // extra thread wakeup/sleep cycles.

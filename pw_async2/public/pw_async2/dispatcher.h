@@ -26,7 +26,7 @@
 #include "pw_async2/internal/lock.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
-#include "pw_containers/intrusive_list.h"
+#include "pw_containers/intrusive_forward_list.h"
 #include "pw_sync/lock_annotations.h"
 
 // Coroutines are supported if the build target depends on //pw_async2:coro.
@@ -348,7 +348,7 @@ class Dispatcher {
   // `Waker`s. Use a separate function so thread safety analysis applies.
   void Destroy() PW_LOCKS_EXCLUDED(internal::lock());
 
-  static void UnpostTaskList(IntrusiveList<Task>& list)
+  static void UnpostTaskList(IntrusiveForwardList<Task>& list)
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::lock());
 
   void RemoveWokenTaskLocked(Task& task)
@@ -407,8 +407,10 @@ class Dispatcher {
   }
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
-  IntrusiveList<Task> woken_ PW_GUARDED_BY(internal::lock());
-  IntrusiveList<Task> sleeping_ PW_GUARDED_BY(internal::lock());
+  // TODO: b/491844340 - Evaluate IntrusiveForwardList performance and consider
+  //     alternatives.
+  IntrusiveForwardList<Task> woken_ PW_GUARDED_BY(internal::lock());
+  IntrusiveForwardList<Task> sleeping_ PW_GUARDED_BY(internal::lock());
 
   // Latches wake requests to avoid duplicate DoWake calls.
   std::atomic<bool> wants_wake_ = false;
