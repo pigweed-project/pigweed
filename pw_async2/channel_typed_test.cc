@@ -15,10 +15,10 @@
 #include <list>
 
 #include "pw_allocator/testing.h"
+#include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
-#include "pw_async2/try.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -178,7 +178,7 @@ class SenderTask : public Task {
         future_ = sender_.Send(std::move(MakeT<T>(current_value_)));
       }
 
-      PW_TRY_READY_ASSIGN(bool sent, future_.Pend(cx));
+      PW_AWAIT(bool sent, future_, cx);
       if (!sent) {
         success_ = false;
         return Ready();
@@ -223,7 +223,7 @@ class ReceiverTask : public Task {
         future_ = receiver_.Receive();
       }
 
-      PW_TRY_READY_ASSIGN(std::optional<T> value, future_.Pend(cx));
+      PW_AWAIT(std::optional<T> value, future_, cx);
       if (!value.has_value()) {
         break;
       }

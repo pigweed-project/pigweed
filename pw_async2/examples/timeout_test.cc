@@ -24,6 +24,7 @@
 
 #include "pw_allocator/libc_allocator.h"
 #include "pw_assert/check.h"
+#include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/context.h"
 #include "pw_async2/coro.h"
@@ -34,7 +35,6 @@
 #include "pw_async2/select.h"
 #include "pw_async2/system_time_provider.h"
 #include "pw_async2/task.h"
-#include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_containers/vector.h"
@@ -86,7 +86,7 @@ Result<T> RunFutureToCompletionWithTimeout(
 
   BasicDispatcher dispatcher;
   auto task = FuncTask([&](Context cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(select_result, select.Pend(cx));
+    PW_AWAIT(select_result, select, cx);
     return Ready();
   });
   dispatcher.Post(task);
@@ -205,7 +205,7 @@ class SampleVoltageTask final : public Task {
         current_future_ = Timeout(sensor_.ReadFuture(), kSensorReadTimeout);
       }
 
-      PW_TRY_READY_ASSIGN(const Result<float> result, current_future_.Pend(cx));
+      PW_AWAIT(const Result<float> result, current_future_, cx);
 
       if (!result.ok()) {
         status_ = result.status();

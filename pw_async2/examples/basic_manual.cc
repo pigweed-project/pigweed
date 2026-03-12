@@ -17,10 +17,10 @@
 #include "pw_status/status.h"
 
 // DOCSTAG: [pw_async2-examples-basic-manual]
+#include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/try.h"
 #include "pw_log/log.h"
 
 namespace {
@@ -35,7 +35,7 @@ using ::pw::async2::SendFuture;
 using ::pw::async2::Task;
 
 // Receive then send that data asynchronously. If the receiver or sender
-// isn't ready, the task suspends when `PW_TRY_READY_ASSIGN` returns
+// isn't ready, the task suspends when `PW_AWAIT` returns
 // `Pending()`.
 class ForwardingTask final : public Task {
  public:
@@ -49,8 +49,7 @@ class ForwardingTask final : public Task {
 
     switch (state_) {
       case kReceiving: {
-        PW_TRY_READY_ASSIGN(std::optional<int> new_data,
-                            receive_future_.Pend(cx));
+        PW_AWAIT(std::optional<int> new_data, receive_future_, cx);
         if (!new_data.has_value()) {
           PW_LOG_ERROR("Receive failed: channel has closed");
           return Ready();  // Completes the task.
@@ -61,7 +60,7 @@ class ForwardingTask final : public Task {
       }
         [[fallthrough]];
       case kTransmitting: {
-        PW_TRY_READY_ASSIGN(bool sent, send_future_.Pend(cx));
+        PW_AWAIT(bool sent, send_future_, cx);
         if (!sent) {
           PW_LOG_ERROR("Send failed: channel has closed");
         }

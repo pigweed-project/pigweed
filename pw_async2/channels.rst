@@ -280,7 +280,7 @@ channel.
                reservation_future_ = sender.ReserveSend();
              }
 
-             PW_TRY_READY_ASSIGN(auto reservation, reservation_future_.Pend(cx));
+             PW_AWAIT(auto reservation, reservation_future_, cx);
              if (!reservation.has_value()) {
                PW_LOG_ERROR("Channel is closed");
                return;

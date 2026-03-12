@@ -12,7 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <tuple>
+#include <utility>
+
 #include "pw_allocator/testing.h"
+#include "pw_async2/await.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
@@ -47,7 +51,7 @@ class MyTask : public pw::async2::Task {
       future_ = generator_.GetNextNumber();
     }
 
-    PW_TRY_READY_ASSIGN(int number, future_.Pend(cx));
+    PW_AWAIT(int number, future_, cx);
     PW_LOG_INFO("Received number: %d", number);
 
     return pw::async2::Ready();
@@ -81,7 +85,7 @@ class JoinTask : public pw::async2::Task {
       future_ = pw::async2::Join(DoWork(1), DoWork(2), DoWork(3));
     }
 
-    PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
+    PW_AWAIT(auto results, future_, cx);
     auto [status1, status2, status3] = std::move(results);
 
     if (!status1.ok() || !status2.ok() || !status3.ok()) {
@@ -131,7 +135,7 @@ class SelectTask : public pw::async2::Task {
       future_ = pw::async2::Select(DoWork(), DoOtherWork());
     }
 
-    PW_TRY_READY_ASSIGN(auto results, future_.Pend(cx));
+    PW_AWAIT(auto results, future_, cx);
 
     // Check which future(s) completed.
     // In this example, we check all of them, but it's common to return

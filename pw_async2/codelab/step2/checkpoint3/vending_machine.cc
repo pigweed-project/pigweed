@@ -14,7 +14,7 @@
 
 #include "vending_machine.h"
 
-#include "pw_async2/try.h"
+#include "pw_async2/await.h"
 #include "pw_log/log.h"
 
 namespace codelab {
@@ -26,7 +26,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
     coin_future_ = coin_slot_.GetCoins();
   }
 
-  PW_TRY_READY_ASSIGN(unsigned coins, coin_future_.Pend(cx));
+  PW_AWAIT(unsigned coins, coin_future_, cx);
   PW_LOG_INFO(
       "Received %u coin%s. Dispensing item.", coins, coins > 1 ? "s" : "");
   return pw::async2::Ready();

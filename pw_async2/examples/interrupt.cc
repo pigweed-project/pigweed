@@ -26,9 +26,9 @@
 #include <ctime>
 #include <thread>
 
+#include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_containers/inline_queue.h"
 #include "pw_log/log.h"
@@ -156,7 +156,7 @@ int main() {
           future_ = uart_.ReadByte();
         }
 
-        PW_TRY_READY_ASSIGN(pw::Result<char> result, future_.Pend(cx));
+        PW_AWAIT(pw::Result<char> result, future_, cx);
 
         if (!result.ok()) {
           PW_LOG_ERROR("UART read failed: %s", result.status().str());

@@ -17,7 +17,7 @@
 #include <mutex>
 
 #include "hardware.h"
-#include "pw_async2/try.h"
+#include "pw_async2/await.h"
 #include "pw_log/log.h"
 
 namespace codelab {
@@ -69,7 +69,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
           select_future_ = pw::async2::Select(coin_slot_.GetCoins(),
                                               keypad_.WaitForKeyPress());
         }
-        PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+        PW_AWAIT(auto result, select_future_, cx);
         if (result.has_value<0>()) {
           unsigned coins = result.value<0>();
           PW_LOG_INFO("Received %u coin%s.", coins, coins > 1 ? "s" : "");
@@ -87,7 +87,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
           select_future_ = pw::async2::Select(coin_slot_.GetCoins(),
                                               keypad_.WaitForKeyPress());
         }
-        PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+        PW_AWAIT(auto result, select_future_, cx);
         if (result.has_value<1>()) {
           int key = result.value<1>();
           PW_LOG_INFO("Keypad %d was pressed. Dispensing an item.", key);
@@ -106,7 +106,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
         if (!dispense_request_future_.is_pendable()) {
           dispense_request_future_ = dispense_requests_.Send(item_to_dispense_);
         }
-        PW_TRY_READY_ASSIGN(bool sent, dispense_request_future_.Pend(cx));
+        PW_AWAIT(bool sent, dispense_request_future_, cx);
         if (!sent) {
           PW_LOG_WARN("Dispense requests channel unexpectedly closed.");
           return pw::async2::Ready();
@@ -120,7 +120,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
           dispense_response_future_ = dispense_responses_.Receive();
         }
         std::optional<bool> received;
-        PW_TRY_READY_ASSIGN(received, dispense_response_future_.Pend(cx));
+        PW_AWAIT(received, dispense_response_future_, cx);
         if (!received.has_value()) {
           PW_LOG_WARN("Dispense responses channel unexpectedly closed.");
           return pw::async2::Ready();
@@ -145,8 +145,7 @@ pw::async2::Poll<> DispenserTask::DoPend(pw::async2::Context& cx) {
         if (!dispense_request_future_.is_pendable()) {
           dispense_request_future_ = dispense_requests_.Receive();
         }
-        PW_TRY_READY_ASSIGN(item_to_dispense_,
-                            dispense_request_future_.Pend(cx));
+        PW_AWAIT(item_to_dispense_, dispense_request_future_, cx);
         if (!item_to_dispense_.has_value()) {
           PW_LOG_WARN("Dispense requests channel unexpectedly closed.");
           return pw::async2::Ready();
@@ -160,7 +159,7 @@ pw::async2::Poll<> DispenserTask::DoPend(pw::async2::Context& cx) {
         if (!drop_future_.is_pendable()) {
           drop_future_ = drop_sensor_.Wait();
         }
-        PW_TRY_READY(drop_future_.Pend(cx));
+        PW_AWAIT(drop_future_, cx);
         SetDispenserMotorState(*item_to_dispense_, MotorState::kOff);
         item_to_dispense_ = std::nullopt;
         state_ = kReportDispenseSuccess;
@@ -171,7 +170,7 @@ pw::async2::Poll<> DispenserTask::DoPend(pw::async2::Context& cx) {
         if (!dispense_response_future_.is_pendable()) {
           dispense_response_future_ = dispense_responses_.Send(true);
         }
-        PW_TRY_READY_ASSIGN(bool result, dispense_response_future_.Pend(cx));
+        PW_AWAIT(bool result, dispense_response_future_, cx);
         if (!result) {
           PW_LOG_WARN("Dispense responses channel unexpectedly closed.");
           return pw::async2::Ready();

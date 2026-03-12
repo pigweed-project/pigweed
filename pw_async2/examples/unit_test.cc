@@ -40,10 +40,10 @@ TEST(Async2UnitTest, MinimalExample) {
 // DOCSTAG[pw_async2-multi-step-test]
 #include <utility>
 
+#include "pw_async2/await.h"
 #include "pw_async2/context.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
-#include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_unit_test/framework.h"
 
@@ -88,11 +88,11 @@ TEST(Async2UnitTest, MultiStepExample) {
 
   // This task gets a fortune and checks that it matches the expected value.
   // The task may need to execute multiple times if the fortune is not ready.
-  pw::async2::FuncTask task([&](Context& context) -> Poll<> {
+  pw::async2::FuncTask task([&](Context& cx) -> Poll<> {
     if (!future.is_pendable()) {
       future = oracle.WaitForFortune();
     }
-    PW_TRY_READY_ASSIGN(fortune, future.Pend(context));
+    PW_AWAIT(fortune, future, cx);
     return Ready();
   });
 

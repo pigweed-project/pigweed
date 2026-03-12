@@ -14,9 +14,9 @@
 
 #include "pw_async2/future.h"
 
+#include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
-#include "pw_async2/try.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"
 
@@ -279,7 +279,7 @@ TEST(FutureCore, Pend) {
   EXPECT_FALSE(future.core().is_complete());
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     EXPECT_EQ(value, 42);
     return Ready();
   });
@@ -304,7 +304,7 @@ TEST(FutureCore, PendReady) {
   EXPECT_FALSE(future.core().is_complete());
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     EXPECT_EQ(value, 65535);
     return Ready();
   });
@@ -327,7 +327,7 @@ TEST(FutureCore, MoveAssign) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future1.Pend(cx));
+    PW_AWAIT(int value, future1, cx);
     result = value;
     return Ready();
   });
@@ -349,7 +349,7 @@ TEST(FutureCore, MoveConstruct) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future2.Pend(cx));
+    PW_AWAIT(int value, future2, cx);
     result = value;
     return Ready();
   });
@@ -372,13 +372,13 @@ TEST(FutureCore, MultipleFutures) {
   int result2 = -1;
 
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future1.Pend(cx));
+    PW_AWAIT(int value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future2.Pend(cx));
+    PW_AWAIT(int value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -401,7 +401,7 @@ TEST(FutureCore, RelistsItselfOnPending) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });

@@ -14,9 +14,9 @@
 
 #include "pw_async2/value_future.h"
 
+#include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
-#include "pw_async2/try.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -42,7 +42,7 @@ TEST(ValueFuture, Pend) {
   int result = -1;
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -61,7 +61,7 @@ TEST(ValueFuture, Resolved) {
   int result = -1;
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -86,7 +86,7 @@ TEST(ValueFuture, ResolvedInPlace) {
 
   std::optional<std::pair<int, int>> result;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     result = value;
     return Ready();
   });
@@ -107,7 +107,7 @@ TEST(ValueProvider, VendsAndResolvesFuture) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -137,7 +137,7 @@ TEST(ValueProvider, OnlyAllowsOneFutureToExist) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -163,7 +163,7 @@ TEST(ValueProvider, ResolveInPlace) {
 
   std::optional<std::pair<int, int>> result;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     result = value;
     return Ready();
   });
@@ -193,7 +193,7 @@ TEST(ValueProvider, Move) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -220,7 +220,7 @@ TEST(ValueProvider, MoveAssignment) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(int value, future.Pend(cx));
+    PW_AWAIT(int value, future, cx);
     result = value;
     return Ready();
   });
@@ -244,7 +244,7 @@ TEST(OptionalValueProvider, Move) {
 
   std::optional<int> result;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     result = value;
     return Ready();
   });
@@ -270,7 +270,7 @@ TEST(OptionalValueProvider, MoveAssignment) {
 
   std::optional<int> result;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     result = value;
     return Ready();
   });
@@ -292,7 +292,7 @@ TEST(VoidFuture, Pend) {
   bool completed = false;
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY(future.Pend(cx));
+    PW_AWAIT(future, cx);
     completed = true;
     return Ready();
   });
@@ -312,7 +312,7 @@ TEST(VoidFuture, Resolved) {
   bool completed = false;
 
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY(future.Pend(cx));
+    PW_AWAIT(future, cx);
     completed = true;
     return Ready();
   });
@@ -336,7 +336,7 @@ TEST(ValueProviderVoid, VendsAndResolvesFuture) {
 
   bool completed = false;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY(future.Pend(cx));
+    PW_AWAIT(future, cx);
     completed = true;
     return Ready();
   });
@@ -359,7 +359,7 @@ TEST(OptionalValueProvider, Resolve) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     EXPECT_TRUE(value.has_value());
     if (value.has_value()) {
       result = *value;
@@ -384,7 +384,7 @@ TEST(OptionalValueProvider, Cancel) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     if (value.has_value()) {
       ADD_FAILURE();
       result = *value;
@@ -412,7 +412,7 @@ TEST(OptionalValueProvider, DestructorCancels) {
 
   int result = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future.Pend(cx));
+    PW_AWAIT(auto value, future, cx);
     if (value.has_value()) {
       ADD_FAILURE();
       result = *value;
@@ -438,14 +438,14 @@ TEST(OptionalBroadcastValueProvider, Move) {
 
   std::optional<int> result1;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
+    PW_AWAIT(auto value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
+    PW_AWAIT(auto value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -476,14 +476,14 @@ TEST(OptionalBroadcastValueProvider, MoveAssignment) {
 
   std::optional<int> result1;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
+    PW_AWAIT(auto value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
+    PW_AWAIT(auto value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -511,14 +511,14 @@ TEST(OptionalBroadcastValueProvider, Resolve) {
 
   std::optional<int> result1 = std::nullopt;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
+    PW_AWAIT(auto value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2 = std::nullopt;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
+    PW_AWAIT(auto value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -546,14 +546,14 @@ TEST(OptionalBroadcastValueProvider, Cancel) {
 
   std::optional<int> result1 = 0;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
+    PW_AWAIT(auto value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2 = 0;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
+    PW_AWAIT(auto value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -584,14 +584,14 @@ TEST(OptionalBroadcastValueProvider, DestructorCancels) {
 
   std::optional<int> result1 = 0;
   FuncTask task1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future1.Pend(cx));
+    PW_AWAIT(auto value, future1, cx);
     result1 = value;
     return Ready();
   });
 
   std::optional<int> result2 = 0;
   FuncTask task2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future2.Pend(cx));
+    PW_AWAIT(auto value, future2, cx);
     result2 = value;
     return Ready();
   });
@@ -613,7 +613,7 @@ TEST(OptionalValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_dest = 0;
   FuncTask task_dest([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_dest.Pend(cx));
+    PW_AWAIT(auto value, future_dest, cx);
     result_dest = value;
     return Ready();
   });
@@ -621,7 +621,7 @@ TEST(OptionalValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_src = 0;
   FuncTask task_src([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_src.Pend(cx));
+    PW_AWAIT(auto value, future_src, cx);
     result_src = value;
     return Ready();
   });
@@ -650,7 +650,7 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_dest1 = 0;
   FuncTask task_dest1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_dest1.Pend(cx));
+    PW_AWAIT(auto value, future_dest1, cx);
     result_dest1 = value;
     return Ready();
   });
@@ -658,7 +658,7 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_dest2 = 0;
   FuncTask task_dest2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_dest2.Pend(cx));
+    PW_AWAIT(auto value, future_dest2, cx);
     result_dest2 = value;
     return Ready();
   });
@@ -666,7 +666,7 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_src1 = 0;
   FuncTask task_src1([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_src1.Pend(cx));
+    PW_AWAIT(auto value, future_src1, cx);
     result_src1 = value;
     return Ready();
   });
@@ -674,7 +674,7 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
 
   std::optional<int> result_src2 = 0;
   FuncTask task_src2([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto value, future_src2.Pend(cx));
+    PW_AWAIT(auto value, future_src2, cx);
     result_src2 = value;
     return Ready();
   });

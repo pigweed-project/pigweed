@@ -257,12 +257,12 @@ Reduce boilerplate
 ------------------
 The pattern of polling a future and returning ``Pending()`` if it's not ready is
 common in ``pw_async2``. To reduce this boilerplate, ``pw_async2`` provides the
-:cc:`PW_TRY_READY_ASSIGN` macro to simplify writing clean async code.
+:cc:`PW_AWAIT` macro to simplify writing clean async code.
 
 #. Refactor the ``DoPend()`` implementation in ``vending_machine.cc``:
 
    * Replace the code that you wrote in the last step with a
-     :cc:`PW_TRY_READY_ASSIGN` implementation that handles both the ready and
+     :cc:`PW_AWAIT` implementation that handles both the ready and
      pending scenarios.
 
      1. If the future returns ``Pending()``, the macro immediately returns

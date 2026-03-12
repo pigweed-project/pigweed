@@ -196,8 +196,8 @@ All ``DoPend()`` implementations follow this general pattern:
 
   .. tip::
 
-     Helpers like :cc:`PW_TRY_READY` and :cc:`PW_TRY_READY_ASSIGN` can reduce
-     the boilerplate of handling a stalled task.
+     Helpers like :cc:`PW_AWAIT` can reduce the boilerplate of handling a
+     stalled task.
 
 * Something informs the dispatcher that the task is able to make more progress.
   This will be explained in the next section. The dispatcher runs the task

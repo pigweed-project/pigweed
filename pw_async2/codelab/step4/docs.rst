@@ -170,14 +170,14 @@ Then, we pend the ``select_future_``:
 
 .. literalinclude:: ./checkpoint2/vending_machine.cc
    :language: cpp
-   :start-at: PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
-   :end-at: PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+   :start-at: PW_AWAIT(auto result, select_future_, cx);
+   :end-at: PW_AWAIT(auto result, select_future_, cx);
    :linenos:
 
-Previously, we used ``PW_TRY_READY_ASSIGN`` to wait for a single future. Here,
-we use it to wait for both the ``CoinFuture`` and ``KeyPressFuture`` at once.
-When the first of these futures completes, ``SelectFuture`` also completes and
-returns its result.
+Previously, we used ``PW_AWAIT`` to wait for a single future. Here, we use
+it to wait for both the ``CoinFuture`` and ``KeyPressFuture`` at once.
+When the first of these futures completes, ``SelectFuture`` also completes
+and returns its result.
 
 The type of this result is a ``pw::OptionalTuple<unsigned, int>``, where
 ``unsigned`` and ``int`` are the return types of ``CoinFuture`` and

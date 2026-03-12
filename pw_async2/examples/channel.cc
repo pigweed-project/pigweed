@@ -15,10 +15,10 @@
 #include "pw_async2/channel.h"
 
 #include "pw_allocator/testing.h"
+#include "pw_async2/await.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/try.h"
 #include "pw_containers/vector.h"
 #include "pw_unit_test/framework.h"
 
@@ -45,7 +45,8 @@ class Producer : public Task {
       if (!send_future_.is_pendable()) {
         send_future_ = sender_.Send(data_);
       }
-      PW_TRY_READY(send_future_.Pend(cx));
+      PW_AWAIT(send_future_, cx);
+      send_future_ = {};
       ++data_;
     }
     sender_.Disconnect();
@@ -70,7 +71,7 @@ class Consumer : public Task {
       if (!receive_future_.is_pendable()) {
         receive_future_ = receiver_.Receive();
       }
-      PW_TRY_READY_ASSIGN(std::optional<int> result, receive_future_.Pend(cx));
+      PW_AWAIT(std::optional<int> result, receive_future_, cx);
       if (!result.has_value()) {
         break;
       }

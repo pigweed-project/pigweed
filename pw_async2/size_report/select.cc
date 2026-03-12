@@ -16,11 +16,11 @@
 
 #include "public/pw_async2/size_report/size_report.h"
 #include "pw_assert/check.h"
+#include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/size_report/size_report.h"
-#include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_log/log.h"
@@ -43,7 +43,7 @@ int SingleTypeSelect(uint32_t mask) {
 
   int value = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
+    PW_AWAIT(auto result, future, cx);
 
     if (result.has_value<0>()) {
       value = result.value<0>();
@@ -75,7 +75,7 @@ int MultiTypeSelect(uint32_t mask) {
 
   int value = -1;
   FuncTask task([&](Context& cx) -> Poll<> {
-    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
+    PW_AWAIT(auto result, future, cx);
 
     if (result.has_value<0>()) {
       value = result.value<0>();
@@ -151,7 +151,7 @@ class SelectComparisonTask : public Task {
   Poll<> DoPend(Context& cx) override {
     auto future =
         Select(std::move(value_1_), std::move(value_2_), std::move(value_3_));
-    PW_TRY_READY_ASSIGN(auto result, future.Pend(cx));
+    PW_AWAIT(auto result, future, cx);
 
     if (result.has_value<0>()) {
       PW_LOG_INFO("Value 1 ready: %d", result.value<0>());

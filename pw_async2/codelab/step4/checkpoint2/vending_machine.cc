@@ -16,7 +16,7 @@
 
 #include <mutex>
 
-#include "pw_async2/try.h"
+#include "pw_async2/await.h"
 #include "pw_log/log.h"
 
 namespace codelab {
@@ -68,7 +68,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
           select_future_ = pw::async2::Select(coin_slot_.GetCoins(),
                                               keypad_.WaitForKeyPress());
         }
-        PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+        PW_AWAIT(auto result, select_future_, cx);
         if (result.has_value<0>()) {
           unsigned coins = result.value<0>();
           PW_LOG_INFO("Received %u coin%s.", coins, coins > 1 ? "s" : "");
@@ -86,7 +86,7 @@ pw::async2::Poll<> VendingMachineTask::DoPend(pw::async2::Context& cx) {
           select_future_ = pw::async2::Select(coin_slot_.GetCoins(),
                                               keypad_.WaitForKeyPress());
         }
-        PW_TRY_READY_ASSIGN(auto result, select_future_.Pend(cx));
+        PW_AWAIT(auto result, select_future_, cx);
         if (result.has_value<1>()) {
           int key = result.value<1>();
           PW_LOG_INFO("Keypad %d was pressed. Dispensing an item.", key);

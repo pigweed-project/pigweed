@@ -19,13 +19,13 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/context.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/simulated_time_provider.h"
-#include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
 #include "pw_chrono/system_clock.h"
 #include "pw_compilation_testing/negative_compilation.h"
@@ -71,7 +71,7 @@ typename FutureType::value_type DoDispatchCommon(
   typename FutureType::value_type result{};
   FuncTask task([&result, pend_future = std::move(future)](
                     Context& cx) mutable -> Poll<> {
-    PW_TRY_READY_ASSIGN(result, pend_future.Pend(cx));
+    PW_AWAIT(result, pend_future, cx);
     return Ready();
   });
 
@@ -228,8 +228,7 @@ void DrainChannelToAvoidAssertOnDestruction(Receiver<T>&& channel_receiver) {
             receive_future = receiver.Receive();
           }
 
-          PW_TRY_READY_ASSIGN([[maybe_unused]] const auto result,
-                              receive_future.Pend(cx));
+          PW_AWAIT([[maybe_unused]] const auto result, receive_future, cx);
           if (!result) {
             return Ready();
           }
@@ -258,7 +257,7 @@ TEST(FutureTimeout, SendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
             TimeoutOrClosed(sender.Send(send_count), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const bool sent, send_future.Pend(cx));
+      PW_AWAIT(const bool sent, send_future, cx);
       if (!sent) {
         return Ready();
       }
@@ -301,7 +300,7 @@ TEST(FutureTimeout, SendFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
         send_future = Timeout(sender.Send(send_count), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const Result<bool> result, send_future.Pend(cx));
+      PW_AWAIT(const Result<bool> result, send_future, cx);
       if (!result.ok()) {
         send_status = result.status();
         return Ready();
@@ -350,8 +349,8 @@ TEST(FutureTimeout, ReserveSendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
             TimeoutOrClosed(sender.ReserveSend(), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(std::optional<SendReservation<int>> result,
-                          send_reservation.Pend(cx));
+      PW_AWAIT(
+          std::optional<SendReservation<int>> result, send_reservation, cx);
       if (!result.has_value()) {
         return Ready();
       }
@@ -395,8 +394,9 @@ TEST(FutureTimeout,
         send_reservation = Timeout(sender.ReserveSend(), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(Result<std::optional<SendReservation<int>>> result,
-                          send_reservation.Pend(cx));
+      PW_AWAIT(Result<std::optional<SendReservation<int>>> result,
+               send_reservation,
+               cx);
 
       if (!result.ok()) {
         send_status = result.status();
@@ -451,8 +451,7 @@ TEST(FutureTimeout, ReceiveFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
             TimeoutOrClosed(receiver.Receive(), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const std::optional<int> result,
-                          receive_future.Pend(cx));
+      PW_AWAIT(const std::optional<int> result, receive_future, cx);
       if (!result) {
         return Ready();
       }
@@ -499,8 +498,7 @@ TEST(FutureTimeout, ReceiveFutureTimeoutResolvesToDeadlineExceededOnTimeout) {
         receive_future = Timeout(receiver.Receive(), time_provider, 30s);
       }
 
-      PW_TRY_READY_ASSIGN(const Result<std::optional<int>> result,
-                          receive_future.Pend(cx));
+      PW_AWAIT(const Result<std::optional<int>> result, receive_future, cx);
 
       if (!result.ok()) {
         receive_status = result.status();

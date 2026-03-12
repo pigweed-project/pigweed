@@ -14,9 +14,9 @@
 
 #include <atomic>
 
+#include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/try.h"
 #include "pw_containers/vector.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
@@ -55,7 +55,7 @@ class BasicSenderTask : public Task {
         future_ = sender_.Send(T(next_));
       }
 
-      PW_TRY_READY_ASSIGN(bool sent, future_.Pend(cx));
+      PW_AWAIT(bool sent, future_, cx);
       if (!sent) {
         return Ready();
       }
@@ -92,7 +92,7 @@ class ReceiverTask : public Task {
         future_ = receiver_.Receive();
       }
 
-      PW_TRY_READY_ASSIGN(std::optional<int> value, future_.Pend(cx));
+      PW_AWAIT(std::optional<int> value, future_, cx);
       if (!value.has_value()) {
         break;
       }

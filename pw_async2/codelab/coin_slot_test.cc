@@ -14,11 +14,11 @@
 
 #include "coin_slot.h"
 
+#include "pw_async2/await.h"
 #include "pw_async2/context.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/try.h"
 #include "pw_unit_test/framework.h"
 
 using ::pw::async2::Context;
@@ -35,7 +35,7 @@ TEST(CoinSlotTest, PendAndDeposit) {
 
   pw::async2::FuncTask task(
       [&coin_future, &coins](Context& context) mutable -> Poll<> {
-        PW_TRY_READY_ASSIGN(coins, coin_future.Pend(context));
+        PW_AWAIT(coins, coin_future, context);
         return Ready();
       });
 
@@ -60,7 +60,7 @@ TEST(CoinSlotTest, MultipleDeposits) {
         }
 
         unsigned int coins;
-        PW_TRY_READY_ASSIGN(coins, coin_future.Pend(context));
+        PW_AWAIT(coins, coin_future, context);
         total_coins += coins;
       }
 
