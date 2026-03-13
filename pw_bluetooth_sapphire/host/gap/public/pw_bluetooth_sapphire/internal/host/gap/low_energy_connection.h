@@ -156,6 +156,10 @@ class LowEnergyConnection final : public sm::Delegate {
   hci::LowEnergyConnection* link() const { return link_.get(); }
   sm::BondableMode bondable_mode() const;
 
+  pw::chrono::SystemClock::time_point create_time() const {
+    return create_time_;
+  }
+
   sm::SecurityProperties security() const;
 
   pw::bluetooth::emboss::ConnectionRole role() const { return link()->role(); }
@@ -340,6 +344,7 @@ class LowEnergyConnection final : public sm::Delegate {
   struct InspectProperties {
     inspect::StringProperty peer_id;
     inspect::StringProperty peer_address;
+    inspect::IntProperty connected_time;
   };
   InspectProperties inspect_properties_;
   inspect::Node inspect_node_;
@@ -403,6 +408,8 @@ class LowEnergyConnection final : public sm::Delegate {
 
   WeakSelf<LowEnergyConnection> weak_self_;
   WeakSelf<sm::Delegate> weak_delegate_;
+
+  pw::chrono::SystemClock::time_point create_time_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyConnection);
 };

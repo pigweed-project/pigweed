@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "lib/fit/result.h"
+#include "pw_bluetooth_sapphire/internal/host/common/bounded_inspect_list_node.h"
 #include "pw_bluetooth_sapphire/internal/host/common/error.h"
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
 #include "pw_bluetooth_sapphire/internal/host/common/metrics.h"
@@ -68,6 +69,10 @@ enum class LowEnergyDisconnectReason : uint8_t {
   kApiRequest,
   // An internal error was encountered
   kError,
+  // All references were dropped
+  kZeroRef,
+  // Remote device disconnected
+  kPeerDisconnection,
 };
 
 // LowEnergyConnectionManager is responsible for connecting and initializing new
@@ -295,7 +300,11 @@ class LowEnergyConnectionManager final {
   //
   // This is also responsible for unregistering the link from managed subsystems
   // (e.g. L2CAP).
-  void CleanUpConnection(std::unique_ptr<internal::LowEnergyConnection> conn);
+  void CleanUpConnection(std::unique_ptr<internal::LowEnergyConnection> conn,
+                         LowEnergyDisconnectReason reason);
+
+  void RecordDisconnectInspect(const internal::LowEnergyConnection& conn,
+                               LowEnergyDisconnectReason reason);
 
   // Updates |peer_cache_| with the given |link| and returns the corresponding
   // Peer.
@@ -424,6 +433,9 @@ class LowEnergyConnectionManager final {
   inspect::Node inspect_pending_requests_node_;
   // container node for connection nodes.
   inspect::Node inspect_connections_node_;
+
+  BoundedInspectListNode last_disconnected_list_ =
+      BoundedInspectListNode(/*capacity=*/5);
 
   // Keep this as the last member to make sure that all weak pointers are
   // invalidated before other members get destroyed.

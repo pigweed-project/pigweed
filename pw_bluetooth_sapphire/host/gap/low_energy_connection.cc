@@ -26,6 +26,7 @@ namespace {
 constexpr const char* kInspectPeerIdPropertyName = "peer_id";
 constexpr const char* kInspectPeerAddressPropertyName = "peer_address";
 constexpr const char* kInspectRefsPropertyName = "ref_count";
+constexpr const char* kInspectConnectionCompletedTimePropertyName = "@time";
 
 // Connection parameters to use when the peer's preferred connection parameters
 // are not known.
@@ -111,7 +112,8 @@ LowEnergyConnection::LowEnergyConnection(
       error_callback_(std::move(error_cb)),
       refs_(/*convert=*/[](const auto& refs) { return refs.size(); }),
       weak_self_(this),
-      weak_delegate_(this) {
+      weak_delegate_(this),
+      create_time_(dispatcher.now()) {
   PW_CHECK(peer_.is_alive());
   PW_CHECK(link_);
   PW_CHECK(conn_mgr_.is_alive());
@@ -339,6 +341,9 @@ void LowEnergyConnection::AttachInspect(inspect::Node& parent,
   inspect_properties_.peer_address = inspect_node_.CreateString(
       kInspectPeerAddressPropertyName,
       link_.get() ? link_->peer_address().ToString() : "");
+  int64_t time_ns = create_time_.time_since_epoch().count();
+  inspect_properties_.connected_time = inspect_node_.CreateInt(
+      kInspectConnectionCompletedTimePropertyName, time_ns);
   refs_.AttachInspect(inspect_node_, kInspectRefsPropertyName);
 }
 

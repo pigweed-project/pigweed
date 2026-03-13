@@ -3898,6 +3898,10 @@ TEST_F(LowEnergyConnectionManagerTest, Inspect) {
       AllOf(NodeMatches(NameMatches("connections")),
             ChildrenMatch(::testing::IsEmpty()));
 
+  auto empty_last_disconnected_matcher =
+      AllOf(NodeMatches(NameMatches("last_disconnected")),
+            ChildrenMatch(::testing::IsEmpty()));
+
   auto conn_mgr_property_matcher = PropertyList(
       UnorderedElementsAre(UintIs("disconnect_explicit_disconnect_count", 0),
                            UintIs("disconnect_link_error_count", 0),
@@ -3909,13 +3913,13 @@ TEST_F(LowEnergyConnectionManagerTest, Inspect) {
                            UintIs("outgoing_connection_success_count", 0),
                            IntIs("recent_connection_failures", 0)));
 
-  auto conn_mgr_during_connecting_matcher =
-      AllOf(NodeMatches(AllOf(NameMatches("low_energy_connection_manager"),
-                              conn_mgr_property_matcher)),
-            ChildrenMatch(
-                UnorderedElementsAre(requests_matcher,
-                                     empty_connections_matcher,
-                                     outbound_connector_matcher_attempt_0)));
+  auto conn_mgr_during_connecting_matcher = AllOf(
+      NodeMatches(AllOf(NameMatches("low_energy_connection_manager"),
+                        conn_mgr_property_matcher)),
+      ChildrenMatch(UnorderedElementsAre(requests_matcher,
+                                         empty_connections_matcher,
+                                         outbound_connector_matcher_attempt_0,
+                                         empty_last_disconnected_matcher)));
 
   auto hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo());
   EXPECT_THAT(hierarchy.value(),
@@ -3933,7 +3937,8 @@ TEST_F(LowEnergyConnectionManagerTest, Inspect) {
             PropertyList(UnorderedElementsAre(
                 StringIs("peer_id", peer->identifier().ToString()),
                 StringIs("peer_address", peer->address().ToString()),
-                IntIs("ref_count", 1)))));
+                IntIs("ref_count", 1),
+                IntIs("@time", 0)))));
 
   auto connections_matcher = AllOf(NodeMatches(NameMatches("connections")),
                                    ChildrenMatch(ElementsAre(conn_matcher)));
@@ -3949,14 +3954,56 @@ TEST_F(LowEnergyConnectionManagerTest, Inspect) {
                            UintIs("outgoing_connection_success_count", 1),
                            IntIs("recent_connection_failures", 0)));
 
-  auto conn_mgr_after_connecting_matcher =
-      AllOf(NodeMatches(conn_mgr_property_matcher_after_connecting),
-            ChildrenMatch(UnorderedElementsAre(empty_requests_matcher,
-                                               connections_matcher)));
+  auto conn_mgr_after_connecting_matcher = AllOf(
+      NodeMatches(conn_mgr_property_matcher_after_connecting),
+      ChildrenMatch(UnorderedElementsAre(empty_requests_matcher,
+                                         connections_matcher,
+                                         empty_last_disconnected_matcher)));
 
   hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo());
   EXPECT_THAT(hierarchy.value(),
               ChildrenMatch(ElementsAre(conn_mgr_after_connecting_matcher)));
+
+  // Delay disconnect so connection has non-zero duration.
+  RunFor(std::chrono::seconds(1));
+  conn_handle.reset();
+  RunUntilIdle();
+
+  auto empty_connections_after_disconnect_matcher =
+      AllOf(NodeMatches(NameMatches("connections")),
+            ChildrenMatch(::testing::IsEmpty()));
+
+  auto last_disconnected_matcher =
+      AllOf(NodeMatches(NameMatches("last_disconnected")),
+            ChildrenMatch(ElementsAre(NodeMatches(
+                AllOf(NameMatches("0"),
+                      PropertyList(UnorderedElementsAre(
+                          StringIs("peer_id", peer->identifier().ToString()),
+                          IntIs("connected_@time", 0),
+                          IntIs("@time", 1'000'000'000),
+                          StringIs("reason", "zero ref"))))))));
+
+  auto conn_mgr_property_matcher_after_disconnect = PropertyList(
+      UnorderedElementsAre(UintIs("disconnect_explicit_disconnect_count", 0),
+                           UintIs("disconnect_link_error_count", 0),
+                           UintIs("disconnect_remote_disconnection_count", 0),
+                           UintIs("disconnect_zero_ref_count", 1),
+                           UintIs("incoming_connection_failure_count", 0),
+                           UintIs("incoming_connection_success_count", 0),
+                           UintIs("outgoing_connection_failure_count", 0),
+                           UintIs("outgoing_connection_success_count", 1),
+                           IntIs("recent_connection_failures", 0)));
+
+  auto conn_mgr_after_disconnect_matcher =
+      AllOf(NodeMatches(conn_mgr_property_matcher_after_disconnect),
+            ChildrenMatch(
+                UnorderedElementsAre(empty_requests_matcher,
+                                     empty_connections_after_disconnect_matcher,
+                                     last_disconnected_matcher)));
+
+  hierarchy = inspect::ReadFromVmo(inspector.DuplicateVmo());
+  EXPECT_THAT(hierarchy.value(),
+              ChildrenMatch(ElementsAre(conn_mgr_after_disconnect_matcher)));
 
   // LECM must be destroyed before the inspector to avoid a page fault on
   // destruction of inspect properties (they try to update the inspect VMO,
