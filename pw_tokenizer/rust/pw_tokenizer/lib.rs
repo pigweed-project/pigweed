@@ -53,7 +53,6 @@
 //! assert_eq!(len, 5);
 //! # Ok::<(), pw_status::Error>(())
 //! ```
-#![cfg_attr(feature = "nightly", feature(type_alias_impl_trait))]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]
 

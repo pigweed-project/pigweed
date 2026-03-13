@@ -14,7 +14,7 @@
 
 // The Rust test framework uses `set_output_capture()` to redirect stdio output.
 // Since we need to capture stdout in this test, we must use this API as well.
-#![feature(internal_output_capture)]
+#![cfg_attr(test, feature(internal_output_capture))]
 mod backend_tests;
 
 // Runs `action` while capturing `println!` output and returns the

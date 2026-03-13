@@ -190,10 +190,6 @@ rust_library(
 rust_test(
     name = "printf_backend_test_test",
     crate = ":printf_backend_test",
-    crate_features = select({
-        "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
-        "//conditions:default": [],
-    }),
     edition = "2024",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),

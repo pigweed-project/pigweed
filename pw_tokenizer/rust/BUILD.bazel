@@ -117,9 +117,6 @@ rust_test(
     crate_features = select({
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
-    }) + select({
-        "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
-        "//conditions:default": [],
     }),
     edition = "2024",
     # TODO: b/343726867 - support on-device rust tests

@@ -53,10 +53,6 @@ rust_library(
 rust_test(
     name = "pw_format_test",
     crate = ":pw_format",
-    crate_features = select({
-        "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
-        "//conditions:default": [],
-    }),
     edition = "2024",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
@@ -106,10 +102,6 @@ rust_library(
 rust_test(
     name = "pw_format_example_macro_test_test",
     crate = ":pw_format_example_macro_test",
-    crate_features = select({
-        "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
-        "//conditions:default": [],
-    }),
     edition = "2024",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
@@ -180,10 +172,6 @@ rust_library(
 rust_test(
     name = "pw_format_test_macros_core_fmt_test_test",
     crate = ":pw_format_test_macros_core_fmt_test",
-    crate_features = select({
-        "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
-        "//conditions:default": [],
-    }),
     edition = "2024",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
