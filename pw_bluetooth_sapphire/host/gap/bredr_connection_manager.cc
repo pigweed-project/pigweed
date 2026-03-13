@@ -42,6 +42,21 @@ namespace bt::gap {
 
 using ConnectionState = Peer::ConnectionState;
 
+const char* DisconnectReasonToString(DisconnectReason reason) {
+  switch (reason) {
+    case DisconnectReason::kApiRequest:
+      return "api request";
+    case DisconnectReason::kInterrogationFailed:
+      return "interrogation failed";
+    case DisconnectReason::kPairingFailed:
+      return "pairing failed";
+    case DisconnectReason::kAclLinkError:
+      return "acl link error";
+    case DisconnectReason::kPeerDisconnection:
+      return "peer disconnection";
+  }
+}
+
 namespace {
 
 const char* const kInspectRequestsNodeName = "connection_requests";
@@ -50,10 +65,11 @@ const char* const kInspectSecurityModeName = "security_mode";
 const char* const kInspectConnectionsNodeName = "connections";
 const char* const kInspectConnectionNodeNamePrefix = "connection_";
 const char* const kInspectLastDisconnectedListName = "last_disconnected";
-const char* const kInspectLastDisconnectedItemDurationPropertyName =
-    "duration_s";
+// @time suffixes have special treatment in Fuchsia Snapshot Viewer.
+const char* const kInspectLastDisconnectedItemConnectedTimePropertyName =
+    "connected_@time";
 const char* const kInspectLastDisconnectedItemPeerPropertyName = "peer_id";
-const char* const kInspectTimestampPropertyName = "@time";
+const char* const kInspectLastDisconnectedItemReasonPropertyName = "reason";
 const char* const kInspectOutgoingNodeName = "outgoing";
 const char* const kInspectIncomingNodeName = "incoming";
 const char* const kInspectConnectionAttemptsNodeName = "connection_attempts";
@@ -1305,7 +1321,6 @@ void BrEdrConnectionManager::OnPeerDisconnect(
   CleanUpConnection(
       handle, std::move(conn), DisconnectReason::kPeerDisconnection);
 }
-
 void BrEdrConnectionManager::CleanUpConnection(
     hci_spec::ConnectionHandle handle,
     BrEdrConnection conn,
@@ -2277,13 +2292,13 @@ void BrEdrConnectionManager::RecordDisconnectInspect(
   auto& inspect_item = inspect_properties_.last_disconnected_list.CreateItem();
   inspect_item.node.RecordString(kInspectLastDisconnectedItemPeerPropertyName,
                                  conn.peer_id().ToString());
-  uint64_t conn_duration_s =
-      std::chrono::duration_cast<std::chrono::seconds>(conn.duration()).count();
-  inspect_item.node.RecordUint(kInspectLastDisconnectedItemDurationPropertyName,
-                               conn_duration_s);
-
-  int64_t time_ns = dispatcher_.now().time_since_epoch().count();
-  inspect_item.node.RecordInt(kInspectTimestampPropertyName, time_ns);
+  inspect_item.node.RecordString(kInspectLastDisconnectedItemReasonPropertyName,
+                                 DisconnectReasonToString(reason));
+  int64_t connected_time_ns = conn.create_time().time_since_epoch().count();
+  inspect_item.node.RecordInt(
+      kInspectLastDisconnectedItemConnectedTimePropertyName, connected_time_ns);
+  inspect_item.node.RecordInt("@time",
+                              dispatcher_.now().time_since_epoch().count());
 
   switch (reason) {
     case DisconnectReason::kApiRequest:

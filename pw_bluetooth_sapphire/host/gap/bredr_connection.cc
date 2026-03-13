@@ -23,6 +23,7 @@ namespace bt::gap {
 namespace {
 
 const char* const kInspectPeerIdPropertyName = "peer_id";
+const char* const kInspectConnectionCompletedTimePropertyName = "@time";
 const char* const kInspectPairingStateNodeName = "pairing_state_manager";
 
 }  // namespace
@@ -182,6 +183,10 @@ void BrEdrConnection::AttachInspect(inspect::Node& parent, std::string name) {
   inspect_properties_.peer_id = inspect_node_.CreateString(
       kInspectPeerIdPropertyName, peer_id_.ToString());
 
+  int64_t time_ns = create_time_.time_since_epoch().count();
+  inspect_properties_.connected_time = inspect_node_.CreateInt(
+      kInspectConnectionCompletedTimePropertyName, time_ns);
+
   pairing_state_manager_->AttachInspect(inspect_node_,
                                         kInspectPairingStateNodeName);
 }
@@ -203,10 +208,6 @@ void BrEdrConnection::OnPairingStateStatus(hci_spec::ConnectionHandle,
   // Once pairing succeeds for the first time, the transition from Initializing
   // -> Connected can happen.
   peer_init_token_.reset();
-}
-
-pw::chrono::SystemClock::duration BrEdrConnection::duration() const {
-  return dispatcher_.now() - create_time_;
 }
 
 void BrEdrConnection::SetSecurityManagerChannel(
