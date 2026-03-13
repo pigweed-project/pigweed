@@ -24,6 +24,8 @@ def _target_transition_impl(_, attr):
         "//command_line_option:platforms": str(attr.platform),
         str(Label("//pw_kernel/target:system_config_file")): str(attr.system_config),
         str(Label("//pw_kernel/userspace:userspace_build")): attr.user_space,
+        # Only unittests should ever enable tests
+        str(Label("//pw_kernel:enable_tests")): False,
     }
 
     return flags
@@ -35,6 +37,7 @@ _target_transition = transition(
         "//command_line_option:platforms",
         str(Label("//pw_kernel/target:system_config_file")),
         str(Label("//pw_kernel/userspace:userspace_build")),
+        str(Label("//pw_kernel:enable_tests")),
     ],
 )
 
@@ -44,6 +47,8 @@ def _app_target_transition_impl(_, attr):
         str(Label("//pw_kernel/target:system_config_file")): str(attr.system_config),
         str(Label("//pw_kernel/userspace:userspace_build")): True,
         str(Label("//pw_kernel/userspace:is_app_build")): True,
+        # Only unittests should ever enable tests
+        str(Label("//pw_kernel:enable_tests")): False,
     }
 
     return flags
@@ -56,6 +61,7 @@ _app_target_transition = transition(
         str(Label("//pw_kernel/target:system_config_file")),
         str(Label("//pw_kernel/userspace:userspace_build")),
         str(Label("//pw_kernel/userspace:is_app_build")),
+        str(Label("//pw_kernel:enable_tests")),
     ],
 )
 
