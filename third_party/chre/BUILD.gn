@@ -17,6 +17,7 @@ import("$dir_pigweed/third_party/emboss/emboss.gni")
 import("$dir_pw_build/error.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_chrono/backend.gni")
+import("$dir_pw_sync/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 import("chre.gni")
 
@@ -169,6 +170,7 @@ if (dir_pw_third_party_chre == "") {
   pw_test("unit_tests") {
     enable_if =
         dir_pw_third_party_chre != "" && pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
+        pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
         dir_pw_third_party_emboss != ""
     sources = [
       "$dir_pw_third_party_chre/util/tests/blocking_queue_test.cc",
@@ -200,6 +202,7 @@ if (dir_pw_third_party_chre == "") {
   pw_test("integration_tests") {
     enable_if =
         dir_pw_third_party_chre != "" && pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
+        pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
         dir_pw_third_party_emboss != ""
     sources = [
       "$dir_pw_third_party_chre/test/simulation/memory_test.cc",
