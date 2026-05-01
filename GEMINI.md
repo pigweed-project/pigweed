@@ -101,17 +101,6 @@ refer to the full style guide.
 
 ## Project Conventions
 
-### Documentation Standards (Condensed)
-
-- **Format:** Documentation is written in reStructuredText (reST), not Markdown.
-- **Headings:** Use a specific hierarchy of characters for headings (e.g.,
-  `H1: ========` over and under, `H2: --------` over and under, `H3: ========`
-  under).
-- **Directives:** Indent directive content and attributes by 3 spaces.
-- **Code Blocks:** Use `.. code-block:: <language>` for code blocks.
-- **Writing Style:** Follow the Google Developer Documentation Style Guide. Use
-  sentence case for titles and headings.
-
 ### Build System Interaction
 
 Pigweed uses `gn` and `bazel` as its primary build systems. Here are some common

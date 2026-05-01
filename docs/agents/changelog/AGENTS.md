@@ -1,8 +1,3 @@
----
-name: changelog
-description: Update the Pigweed changelog.
----
-
 # Changelog update
 
 This is the official process for updating the [Pigweed](https://pigweed.dev)
@@ -25,15 +20,9 @@ to ensure that each commit is properly analyzed.
 ### Debugging
 
 Never attempt to run `python` or `python3` directly. Instead, create a
-temporary target in `//.agents/skills/changelog/scripts/BUILD.bazel` and use
+temporary target in `//docs/agents/changelog/scripts/BUILD.bazel` and use
 `bazelisk run` to invoke your temporary Python script. Delete all of these
 debugging artifacts when you're done with them.
-
-## Examples
-
-* `//.agents/skills/changelog/examples/data.toml` - An example of a finished
-  data file that demonstrates how you should structure the data, write content,
-  and score stories.
 
 ## 1. Get the year and month
 
@@ -48,7 +37,7 @@ user-specified year and `<MM>` with the user-specified month.
 Run this command:
 
 ```
-bazelisk run //.agents/skills/changelog/scripts -- start --year=<YYYY> --month=<MM>
+bazelisk run //docs/agents/changelog/scripts -- start --year=<YYYY> --month=<MM>
 ```
 
 This command makes sure that data files are properly populated. If there
@@ -59,11 +48,11 @@ are errors, stop here and inform the user of the problem(s).
 Run this command:
 
 ```
-bazelisk run //.agents/skills/changelog/scripts -- next --year=<YYYY> --month=<MM>
+bazelisk run //docs/agents/changelog/scripts -- next --year=<YYYY> --month=<MM>
 ```
 
 Inspect the data that was written to
-`//.agents/skills/changelog/resources/next.json`.
+`//docs/agents/changelog/resources/next.json`.
 
 If the `next` key is `null`, you have reached the
 terminating condition. Proceed to Step 5 (End).
@@ -87,7 +76,7 @@ For each commit in the `next` list, decide whether to:
 Strongly prefer option 1 or 2. Only pick option 3 as a last resort, when
 you are certain that the commit is not related to any of the existing stories.
 
-Update `//.agents/skills/changelog/resources/data.toml` with the new or
+Update `//docs/agents/changelog/resources/data.toml` with the new or
 modified story.
 
 Story example:
@@ -119,7 +108,7 @@ summary = "…"
 #### `<category_id>`
 
 `<category_id>` is a placeholder for the category ID. Valid category IDs are
-defined in `//.agents/skills/changelog/resources/categories.json5`.
+defined in `//docs/agents/changelog/resources/categories.json5`.
 
 #### `<story_id>`
 
@@ -273,7 +262,7 @@ you should dump them all into a `stories.<category_id>.misc` story and set the
 Run this command:
 
 ```
-bazelisk run //.agents/skills/changelog/scripts -- end --year=<YYYY> --month=<MM>
+bazelisk run //docs/agents/changelog/scripts -- end --year=<YYYY> --month=<MM>
 ```
 
 This command transforms `data.toml` into reStructuredText. The transformed

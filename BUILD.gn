@@ -362,7 +362,7 @@ group("docs") {
 
     # Unit test the small Sphinx site.
     "$dir_pw_docgen/py/tests:tests.run($pw_build_PYTHON_TOOLCHAIN)",
-    "//.agents/skills/changelog/scripts:scripts",
+    "//docs/agents/changelog/scripts:scripts",
   ]
 }
 

@@ -1,11 +1,3 @@
----
-name: docs_rst
-description: >-
-  Enforces Pigweed-specific reStructuredText (reST) style conventions and roles.
-  Use when editing or creating .rst files, or when writing reST-formatted
-  docstrings in Python. Doxygen and rustdoc comments should use Markdown, not reST.
----
-
 # reStructuredText (reST) style guide and conventions
 
 ## Formatting
@@ -200,11 +192,40 @@ No (missing blank line between attribute and content):
 
 ## Tables
 
-Prefer `list-table`. `csv-table` is acceptable when `list-table` can't be used
-for some reason. Avoid `table` because it's difficult to edit.
+Do not use [grid tables] or [simple tables]. Use [list-table] (preferred) or
+[csv-table].
 
-Always confirm with the user before migrating an existing table from one format
-to a different format.
+Yes:
+
+```rst
+.. list-table::
+   :header-rows: 1
+
+   * - cat
+     - dog
+   * - green
+     - blue
+```
+
+No (grid table):
+
+```rst
++-------+------+
+| cat   | dog  |
++=======+======+
+| green | blue |
++-------+------+
+```
+
+No (simple table):
+
+```rst
+===== ====
+cat   dog
+===== ====
+green blue
+===== ====
+```
 
 ## Code blocks
 
@@ -264,7 +285,8 @@ Link to a tip-of-tree file or directory:
 Link to a file or directory at a specific commit:
 
 ```rst
-:cs:`pw_allocator/allocator.cc <a18dd872b2c6fd544f96b38b31aafca6b4a0fa7b:pw_allocator/allocator.cc>`
+:cs:`pw_allocator/allocator.cc
+<a18dd872b2c6fd544f96b38b31aafca6b4a0fa7b:pw_allocator/allocator.cc>`
 ```
 
 Link to a commit:
@@ -276,7 +298,8 @@ Link to a commit:
 Link to a specific line within a file at a certain commit:
 
 ```rst
-:cs:`my line <a18dd872b2c6fd544f96b38b31aafca6b4a0fa7b:pw_allocator/allocator.cc;l=22>`
+:cs:`my line
+<a18dd872b2c6fd544f96b38b31aafca6b4a0fa7b:pw_allocator/allocator.cc;l=22>`
 ```
 
 ### Sphinx-to-Doxygen links (Doxylink)
@@ -385,3 +408,8 @@ To check your work, build the documentation and resolve any errors:
 2.  Address any warnings or errors reported by the build.
 
 3.  Repeat until the build is clean.
+
+[grid tables]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#grid-tables
+[simple tables]: https://docutils.sourceforge.io/docs/ref/rst/restructuredtext.html#simple-tables
+[list-table]: https://docutils.sourceforge.io/docs/ref/rst/directives.html#list-table
+[csv-table]: https://docutils.sourceforge.io/docs/ref/rst/directives.html#csv-table

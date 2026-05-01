@@ -112,4 +112,4 @@ pw_console-device-logs.txt
 # AI files
 .aider*
 .gemini/logs.json
-.agents/skills/changelog/resources/next.json
+docs/agents/changelog/resources/next.json

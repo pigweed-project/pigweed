@@ -64,6 +64,7 @@ SOURCE_FILES_FILTER = FileFilter(
 SOURCE_FILES_FILTER_BAZEL_EXCLUDE = FileFilter(
     exclude=(
         # keep-sorted: start
+        r'\.agents/skills/docs/tests/',
         r'\bpw_docgen/py/tests/',
         # keep-sorted: end
     ),

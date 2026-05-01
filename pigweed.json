@@ -5,6 +5,7 @@
         "python_formatter": "black",
         "black_config_file": "$pw_env{PW_ROOT}/.black.toml",
         "exclude": [
+          "^\\.agents/skills/docs/tests/before\\.rst$",
           "\\bthird_party/fuchsia/repo",
           "\\bthird_party/perfetto/repo",
           "\\bthird_party/.*\\.json$",
