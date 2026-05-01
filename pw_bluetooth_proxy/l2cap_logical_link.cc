@@ -59,7 +59,8 @@ L2capLogicalLink::L2capLogicalLink(uint16_t connection_handle,
       acl_data_channel_(acl_data_channel),
       channel_manager_(l2cap_channel_manager),
       signaling_channel_(l2cap_channel_manager) {
-  Status status = acl_data_channel_.RegisterConnection(*this);
+  Status status =
+      acl_data_channel_.RegisterConnection(connection_handle_, *this);
   if (!status.ok()) {
     PW_LOG_ERROR(
         "%s: Error registering link (handle: "
@@ -71,7 +72,7 @@ L2capLogicalLink::L2capLogicalLink(uint16_t connection_handle,
 }
 
 L2capLogicalLink::~L2capLogicalLink() {
-  Status status = acl_data_channel_.UnregisterConnection(*this);
+  Status status = acl_data_channel_.UnregisterConnection(connection_handle_);
   if (!status.ok()) {
     // This can happen after a reset, so it's not a bug, just unlikely.
     PW_LOG_WARN(

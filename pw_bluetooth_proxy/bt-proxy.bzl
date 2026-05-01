@@ -142,7 +142,6 @@ def pw_bluetooth_proxy_library(name, **kwargs):
             "//pw_containers:dynamic_queue",
             "//pw_containers:flat_map",
             "//pw_containers:inline_queue",
-            "//pw_containers:intrusive_map",
             "//pw_containers:vector",
             "//pw_function",
             "//pw_multibuf:allocator",

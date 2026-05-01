@@ -121,7 +121,6 @@ _pw_bluetooth_proxy_public_deps = [
   "$dir_pw_containers:dynamic_queue",
   "$dir_pw_containers:flat_map",
   "$dir_pw_containers:inline_queue",
-  "$dir_pw_containers:intrusive_map",
   "$dir_pw_containers:vector",
   "$dir_pw_multibuf:simple_allocator",
   "$dir_pw_sync:lock_annotations",
@@ -146,7 +145,6 @@ _pw_bluetooth_proxy_deps = [
   "$dir_pw_bluetooth:emboss_util",
   "$dir_pw_containers:algorithm",
   "$dir_pw_containers:dynamic_map",
-  "$dir_pw_containers:intrusive_map",
   "$dir_pw_span:cast",
   dir_pw_log,
 ]

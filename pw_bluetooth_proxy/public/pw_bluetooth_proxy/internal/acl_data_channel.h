@@ -24,8 +24,8 @@
 #include "pw_bluetooth_proxy/internal/hci_transport.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/internal/mutex.h"
+#include "pw_containers/dynamic_map.h"
 #include "pw_containers/dynamic_queue.h"
-#include "pw_containers/intrusive_map.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/multibuf.h"
@@ -44,8 +44,7 @@ class AclDataChannel {
  public:
   /// The delegate interface for an ACL connection. This is implemented by
   /// L2capLogicalLink.
-  class ConnectionDelegate
-      : public IntrusiveMap<uint16_t, ConnectionDelegate>::Item {
+  class ConnectionDelegate {
    public:
     struct HandleAclDataReturn {
       /// True if the packet was consumed and should not be forwarded.
@@ -62,9 +61,6 @@ class AclDataChannel {
     /// from the host or received from the controller.
     virtual HandleAclDataReturn HandleAclData(
         Direction direction, emboss::AclDataFrameWriter& acl) = 0;
-
-    // The connection handle.
-    virtual uint16_t key() const = 0;
   };
 
   // Used to `SendAcl` packets.
@@ -103,6 +99,7 @@ class AclDataChannel {
       : hci_transport_(hci_transport),
         le_credits_(allocator),
         br_edr_credits_(allocator),
+        connection_delegates_(allocator),
         allocator_(allocator),
         on_tx_credits_fn_(std::move(on_tx_credits_fn)) {}
 
@@ -116,6 +113,7 @@ class AclDataChannel {
       : hci_transport_(hci_transport),
         le_credits_(le_acl_credits_to_reserve),
         br_edr_credits_(br_edr_acl_credits_to_reserve),
+        connection_delegates_(allocator),
         allocator_(allocator),
         on_tx_credits_fn_(std::move(on_tx_credits_fn)) {}
 
@@ -140,12 +138,13 @@ class AclDataChannel {
   /// Registers a connection delegate.
   /// @returns `OkStatus()` on success. On failure returns:
   /// * @ALREADY_EXISTS: A delegate is already registered for the connection.
-  Status RegisterConnection(ConnectionDelegate& delegate);
+  /// * @RESOURCE_EXHAUSTED: A memory allocation failed.
+  Status RegisterConnection(uint16_t handle, ConnectionDelegate& delegate);
 
   /// Unregisters a connection delegate.
   /// @returns `OkStatus()` on success. On failure returns:
   /// * @NOT_FOUND: The delegate was not found.
-  Status UnregisterConnection(ConnectionDelegate& delegate);
+  Status UnregisterConnection(uint16_t handle);
 
   void ProcessReadBufferSizeCommandCompleteEvent(
       emboss::ReadBufferSizeCommandCompleteEventWriter read_buffer_event);
@@ -456,7 +455,8 @@ class AclDataChannel {
 
   // Guards the draining process to serialize SendToController calls.
   mutable internal::Mutex draining_mutex_ PW_ACQUIRED_BEFORE(connection_mutex_);
-  IntrusiveMap<uint16_t, ConnectionDelegate> connection_delegates_
+
+  DynamicMap<uint16_t, ConnectionDelegate*> connection_delegates_
       PW_GUARDED_BY(delegates_mutex_);
 
   pw::Allocator& allocator_;

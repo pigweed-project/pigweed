@@ -91,7 +91,7 @@ class GattIntegrationTest : public ProxyHostTest {};
 
 TEST_F(GattIntegrationTest, ReceiveNotification) {
   std::array<std::byte, 1024> packet_buffer;
-  allocator::test::AllocatorForTest<3072> allocator;
+  allocator::test::AllocatorForTest<4096> allocator;
   multibuf::SimpleAllocator multibuf_allocator{packet_buffer, allocator};
 
   Function<void(H4PacketWithHci&&)> send_to_host_fn([](H4PacketWithHci&&) {});

@@ -202,18 +202,22 @@ void AclDataChannel::Reset() {
   }
 }
 
-Status AclDataChannel::RegisterConnection(ConnectionDelegate& delegate) {
+Status AclDataChannel::RegisterConnection(uint16_t handle,
+                                          ConnectionDelegate& delegate) {
   std::lock_guard lock(delegates_mutex_);
-  auto [_, success] = connection_delegates_.insert(delegate);
-  if (!success) {
+  auto result = connection_delegates_.try_emplace(handle, &delegate);
+  if (!result.has_value()) {
+    return Status::ResourceExhausted();
+  }
+  if (!result->second) {
     return Status::AlreadyExists();
   }
   return OkStatus();
 }
 
-Status AclDataChannel::UnregisterConnection(ConnectionDelegate& delegate) {
+Status AclDataChannel::UnregisterConnection(uint16_t handle) {
   std::lock_guard lock(delegates_mutex_);
-  auto iter = connection_delegates_.find(delegate.key());
+  auto iter = connection_delegates_.find(handle);
   if (iter == connection_delegates_.end()) {
     return Status::NotFound();
   }
@@ -728,7 +732,7 @@ bool AclDataChannel::HandleAclData(Direction direction,
     std::lock_guard lock(delegates_mutex_);
     auto iter = connection_delegates_.find(handle);
     if (iter != connection_delegates_.end()) {
-      result = iter->HandleAclData(direction, *acl);
+      result = iter->second->HandleAclData(direction, *acl);
     }
   }
 

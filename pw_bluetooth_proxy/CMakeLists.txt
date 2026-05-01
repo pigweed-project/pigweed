@@ -110,7 +110,6 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
   pw_containers.dynamic_queue
   pw_containers.flat_map
   pw_containers.inline_queue
-  pw_containers.intrusive_map
   pw_containers.vector
   pw_function
   pw_multibuf
@@ -127,7 +126,6 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
 
 set(PW_BLUETOOTH_PROXY_PRIVATE_DEPS
   pw_containers.dynamic_map
-  pw_containers.intrusive_map
   pw_allocator.best_fit
   pw_allocator.synchronized_allocator
   pw_bluetooth.emboss_att

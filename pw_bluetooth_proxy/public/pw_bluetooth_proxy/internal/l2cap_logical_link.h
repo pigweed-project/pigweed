@@ -63,9 +63,6 @@ class L2capLogicalLink final : public AclDataChannel::ConnectionDelegate {
   AclDataChannel::ConnectionDelegate::HandleAclDataReturn HandleAclData(
       Direction direction, emboss::AclDataFrameWriter& acl) override;
 
-  // The connection handle.
-  uint16_t key() const override { return connection_handle_; }
-
  private:
   const uint16_t connection_handle_;
   const AclTransportType transport_;
