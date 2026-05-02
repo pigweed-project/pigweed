@@ -160,9 +160,6 @@ use_repo(cipd_ext, "cipd_client")
 pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
 
 # Fetch llvm toolchain.
-# ROLL: Warning: this variable is automatically updated.
-# ROLL: Last updated 2026-04-27.
-# ROLL: By https://cr-buildbucket.appspot.com/build/8683347842618223633.
 LLVM_VERSION = "git_revision:a3f244e2d5550e110daee562b88bee247b75d66c"
 
 pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
@@ -211,16 +208,13 @@ rust.toolchain(versions = [])
 # Rust toolchains
 pw_rust = use_extension("//pw_toolchain/rust:extensions.bzl", "pw_rust")
 
-# ROLL: Warning: this variable is automatically updated.
-# ROLL: Last updated 2026-04-27.
-# ROLL: By https://cr-buildbucket.appspot.com/build/8683347842618223633.
 RUST_VERSION = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d5550e110daee562b88bee247b75d66c"
 
 # TODO(b/488384121): Setup a roller
 # ROLL: Warning: this variable is automatically updated.
-# ROLL: Last updated 2026-04-25.
-# ROLL: By https://cr-buildbucket.appspot.com/build/8683517476154647009.
-RUST_ANALYZER_VERSION = "git_revision:33f097b09ba82406dec061c78fe542c009fc1e7b"
+# ROLL: Last updated 2026-05-02.
+# ROLL: By https://cr-buildbucket.appspot.com/build/8682883298001099505.
+RUST_ANALYZER_VERSION = "git_revision:451a56a69d6c75d84f94255e8fee7e65f5d69697"
 
 pw_rust.toolchain(
     cipd_tag = RUST_VERSION,
