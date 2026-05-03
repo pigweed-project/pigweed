@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:23cbb7eb3a25e133c4a42d465486cc0f19bfda76"
+        "git_revision:0147d375a509024280ec906e7f462fd5cb52c2b7"
       ],
       "version_file": ".versions/bb.cipd_version"
     },
@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:3d2757318a781d06d702ada3828cfde6a3357875"
+        "git_revision:745819ef1cfa2e3c3a11ea9e6ae299bf322adbe8"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
@@ -134,7 +134,7 @@
       ],
       "subdir": "gsutil",
       "tags": [
-        "version:3@5.36"
+        "version:3@5.37"
       ]
     },
     {
