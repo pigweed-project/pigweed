@@ -123,6 +123,53 @@ class TestFileFilter(unittest.TestCase):
         self.assertEqual([p.pattern for p in combined.name], ['foo'])
         self.assertEqual(combined.suffix, frozenset())
 
+    def test_equality_with_flags(self):
+        filter1 = FileFilter(exclude=[re.compile('a', re.IGNORECASE)])
+        filter2 = FileFilter(exclude=[re.compile('a')])
+        self.assertNotEqual(filter1, filter2)
+        self.assertNotEqual(hash(filter1), hash(filter2))
+
+    def test_equality_with_matching_flags(self):
+        filter1 = FileFilter(exclude=[re.compile('a', re.IGNORECASE)])
+        filter2 = FileFilter(exclude=[re.compile('a', re.IGNORECASE)])
+        self.assertIsNot(filter1.exclude, filter2.exclude)
+        self.assertEqual(filter1, filter2)
+        self.assertEqual(hash(filter1), hash(filter2))
+
+    def test_equality_string_and_pattern(self):
+        filter1 = FileFilter(exclude=['a'])
+        filter2 = FileFilter(exclude=[re.compile('a')])
+        self.assertIsNot(filter1.exclude, filter2.exclude)
+        self.assertEqual(filter1, filter2)
+        self.assertEqual(hash(filter1), hash(filter2))
+
+    def test_concat_with_string_args(self):
+        filter1 = FileFilter(name=['foo'])
+        combined = filter1.concat(endswith='.h', exclude='out')
+
+        self.assertEqual(combined.endswith, frozenset(['.h']))
+        self.assertEqual(set(p.pattern for p in combined.exclude), {'out'})
+        self.assertEqual([p.pattern for p in combined.name], ['foo'])
+
+    def test_init_with_string_args(self):
+        filter1 = FileFilter(
+            endswith='.h',
+            exclude='out',
+            name='foo',
+            suffix='.txt',
+        )
+        self.assertEqual(filter1.endswith, frozenset(['.h']))
+        self.assertEqual(set(p.pattern for p in filter1.exclude), {'out'})
+        self.assertEqual(set(p.pattern for p in filter1.name), {'foo'})
+        self.assertEqual(filter1.suffix, frozenset(['.txt']))
+
+    def test_init_with_string_args_does_not_split(self):
+        filter1 = FileFilter(endswith='foo')
+        # If it split, it would match 'baf' because it ends with 'f'.
+        self.assertFalse(filter1.matches('baf'))
+        self.assertTrue(filter1.matches('foo'))
+        self.assertTrue(filter1.matches('barfoo'))
+
 
 if __name__ == '__main__':
     unittest.main()

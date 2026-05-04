@@ -46,7 +46,6 @@ from pw_presubmit.private.step import Step
 from pw_presubmit.private.tools import (
     flatten,
     format_time,
-    make_str_tuple,
     relative_paths,
 )
 
@@ -172,7 +171,7 @@ class Check:
         Returns a new check.
         """
         return self.with_file_filter(
-            FileFilter(endswith=make_str_tuple(endswith), exclude=exclude)
+            FileFilter(endswith=endswith, exclude=exclude)
         )
 
     def with_file_filter(self, file_filter: FileFilter) -> Check:

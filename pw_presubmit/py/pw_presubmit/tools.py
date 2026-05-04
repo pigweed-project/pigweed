@@ -28,7 +28,6 @@ from pw_presubmit.presubmit_context import PRESUBMIT_CONTEXT
 from pw_presubmit.private.check import (  # Import for backwards compatibility
     flatten,
     format_time,
-    make_str_tuple,
     relative_paths,
 )
 

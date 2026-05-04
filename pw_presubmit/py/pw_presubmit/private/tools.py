@@ -43,11 +43,6 @@ def flatten(*items) -> Iterator:
             yield item
 
 
-def make_str_tuple(value: Iterable[str] | str) -> tuple[str, ...]:
-    """Returns a tuple of strings from a string or iterable of strings."""
-    return tuple([value] if isinstance(value, str) else value)
-
-
 def format_time(time_s: float) -> str:
     """Format a time duration as a string."""
     minutes, seconds = divmod(time_s, 60)

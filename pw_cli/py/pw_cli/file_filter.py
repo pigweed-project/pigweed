@@ -21,6 +21,10 @@ import re
 from typing import Pattern, Iterable, Sequence, Collection
 
 
+def _str_as_value(val) -> Iterable:
+    yield from [val] if isinstance(val, str) else val
+
+
 class FileFilter:
     """Allows checking if a path matches a series of filters.
 
@@ -38,6 +42,9 @@ class FileFilter:
     ) -> None:
         """Creates a FileFilter with the provided filters.
 
+        If a string is passed to any of the filter arguments instead of an
+        iterable, it is treated as a single item.
+
         Args:
             endswith: True if the end of the path is equal to any of the passed
                       strings
@@ -48,21 +55,12 @@ class FileFilter:
             suffix: True if final suffix (as determined by pathlib.Path) is
                     matched by any of the passed str.
         """
-        self._exclude = frozenset(
-            re.compile(i) if isinstance(i, str) else i for i in exclude
-        )
-        self._endswith = frozenset(endswith)
-        self._name = frozenset(
-            re.compile(i) if isinstance(i, str) else i for i in name
-        )
-        self._suffix = frozenset(suffix)
+        self._exclude = frozenset(re.compile(i) for i in _str_as_value(exclude))
+        self._endswith = frozenset(_str_as_value(endswith))
+        self._name = frozenset(re.compile(i) for i in _str_as_value(name))
+        self._suffix = frozenset(_str_as_value(suffix))
 
-        self._key = (
-            frozenset(p.pattern for p in self._exclude),
-            self._endswith,
-            frozenset(p.pattern for p in self._name),
-            self._suffix,
-        )
+        self._key = (self._exclude, self._endswith, self._name, self._suffix)
 
     @property
     def exclude(self) -> Collection[Pattern[str]]:
@@ -126,23 +124,32 @@ class FileFilter:
         name: Iterable[Pattern | str] = (),
         suffix: Iterable[str] = (),
     ) -> FileFilter:
-        """Returns a new filter with the combined properties of its args."""
-        combined_exclude = list(exclude)
-        combined_endswith = list(endswith)
-        combined_name = list(name)
-        combined_suffix = list(suffix)
+        """Returns a new filter with the combined properties of its args.
 
-        for ff in [self] if file_filter is None else [self, file_filter]:
-            combined_exclude.extend(ff.exclude)
-            combined_endswith.extend(ff.endswith)
-            combined_name.extend(ff.name)
-            combined_suffix.extend(ff.suffix)
-
-        return FileFilter(
-            exclude=combined_exclude,
-            endswith=combined_endswith,
-            name=combined_name,
-            suffix=combined_suffix,
+        If a string is passed to any of the filter arguments instead of an
+        iterable, it is treated as a single item.
+        """
+        return type(self)(
+            exclude=[
+                *_str_as_value(exclude),
+                *self.exclude,
+                *(file_filter.exclude if file_filter else ()),
+            ],
+            endswith=[
+                *_str_as_value(endswith),
+                *self.endswith,
+                *(file_filter.endswith if file_filter else ()),
+            ],
+            name=[
+                *_str_as_value(name),
+                *self.name,
+                *(file_filter.name if file_filter else ()),
+            ],
+            suffix=[
+                *_str_as_value(suffix),
+                *self.suffix,
+                *(file_filter.suffix if file_filter else ()),
+            ],
         )
 
 

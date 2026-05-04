@@ -495,9 +495,7 @@ def filter_paths(
             )
     else:
         # TODO: b/238426363 - Remove these arguments and use FileFilter only.
-        real_file_filter = FileFilter(
-            endswith=tools.make_str_tuple(endswith), exclude=exclude
-        )
+        real_file_filter = FileFilter(endswith=endswith, exclude=exclude)
 
     def filter_paths_for_function(function: Callable) -> Check:
         return Check(function, real_file_filter, always_run=always_run)
