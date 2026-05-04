@@ -293,29 +293,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             vscode.window.showErrorMessage('Bazel binary not found.');
             break;
           }
-          output.show();
-          const logger = new LoggerUI(logging);
           const cwd = workingDir.get();
 
           logging.info(`Running ${bazelBinary} run ${target}`);
 
           // We use `bazel run` to execute the target.
           // The target is expected to be a `pw_compile_commands_generator` target.
-          const exitCode = await spawnAsync(
-            bazelBinary,
-            ['run', target],
-            cwd,
-            logger,
-            bazelBinary,
-          );
-          if (exitCode !== 0) {
-            logger?.finishWithError(
-              `❌ Updating compile commands failed with exit code ${exitCode}.`,
-            );
-            return;
+          let terminal = vscode.window.activeTerminal;
+          if (!terminal) {
+            terminal = vscode.window.createTerminal();
           }
-
-          logger?.finish('✅ Compile commands generated successfully.');
+          terminal.show();
+          terminal.sendText(`cd "${cwd}" && ${bazelBinary} run ${target}`);
           break;
         }
         case 'openDocs': {

@@ -1566,5 +1566,41 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         self.assertEqual(data[0]['arguments'], ['-Ithird_party/my_lib/include'])
 
 
+class TestRunBazelStreaming(unittest.TestCase):
+    """Tests for _run_bazel streaming behavior."""
+
+    @mock.patch('subprocess.Popen')
+    @mock.patch('sys.stdout.isatty')
+    def test_run_bazel_streaming(self, mock_isatty, mock_popen):
+        """Tests that _run_bazel streaming correctly filters progress lines."""
+        mock_isatty.return_value = False
+
+        mock_process = mock.Mock()
+        mock_process.returncode = 0
+        mock_process.stdout = [
+            "INFO: Analyzed target...\n",
+            "[1 / 10] no actions running\n",
+            "INFO: Found 1 target...\n",
+            "[5 / 10] working...\n",
+            "Build completed successfully\n",
+        ]
+
+        mock_popen.return_value = mock_process
+
+        captured_output = io.StringIO()
+        with mock.patch('sys.stdout', captured_output):
+            # pylint: disable=protected-access
+            merger._run_bazel(['build', '//...'], Path('.'), stream=True)
+            # pylint: enable=protected-access
+
+        output = captured_output.getvalue()
+
+        self.assertIn('Generating compile commands', output)
+        self.assertIn('[1 / 10] no actions running', output)
+        self.assertIn('[5 / 10] working...', output)
+        self.assertNotIn('INFO: Analyzed target', output)
+        self.assertNotIn('Build completed successfully', output)
+
+
 if __name__ == '__main__':
     unittest.main()

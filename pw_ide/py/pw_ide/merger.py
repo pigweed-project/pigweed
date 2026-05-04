@@ -23,6 +23,7 @@ from collections.abc import Iterator
 import functools
 import json
 import logging
+import re
 import os
 from pathlib import Path
 import shlex
@@ -214,7 +215,7 @@ _SUPPORTED_SUBCOMMANDS = set(
 
 
 def _run_bazel(
-    args: list[str], cwd: str, capture_output: bool = True
+    args: list[str], cwd: str, capture_output: bool = True, stream: bool = False
 ) -> subprocess.CompletedProcess[str]:
     """Runs bazel with the given arguments."""
     cmd = (
@@ -222,6 +223,38 @@ def _run_bazel(
         *args,
     )
     _LOG.debug('Executing Bazel command: %s', shlex.join(cmd))
+
+    if stream:
+        print(
+            'Generating compile commands (Actions completed / total):',
+            flush=True,
+        )
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,  # Line buffered
+        )
+
+        is_atty = sys.stdout.isatty()
+        assert process.stdout is not None
+        for line in process.stdout:
+            if re.search(r'\[\d+\s*/\s*\d+\]', line):
+                if is_atty:
+                    print(line.strip(), end='\r', flush=True)
+                else:
+                    print(line.strip(), flush=True)
+
+        process.wait()
+        print(flush=True)  # New line after progress completes
+
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, cmd)
+
+        return subprocess.CompletedProcess(cmd, process.returncode, '', '')
+
     return subprocess.run(
         cmd,
         capture_output=capture_output,
@@ -257,7 +290,7 @@ def _run_bazel_build_for_fragments(
             _run_bazel(
                 command,
                 cwd=os.environ['BUILD_WORKING_DIRECTORY'],
-                capture_output=not verbose,
+                stream=not verbose,
             )
         except subprocess.CalledProcessError as e:
             _LOG.fatal('Failed to generate compile commands fragments: %s', e)
