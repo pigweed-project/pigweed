@@ -47,14 +47,20 @@ class MyStep(Step):
 
     def run(self, ctx: pw_presubmit.v2.Context) -> None:
         """Runs the check."""
-        for _ in ctx.paths:
+        for path in ctx.paths:
             # Check file
-            pass
+            if 'bad_word' in path.read_text():
+                # Signal failure by calling ctx.fail()
+                ctx.fail('Found bad word', path=path)
 
-    def fix(self, ctx: pw_presubmit.v2.Context) -> bool:
+    def fix(self, ctx: pw_presubmit.v2.Context) -> None:
         """Applies the fix."""
-        # Apply fix
-        return True
+        for path in ctx.paths:
+            # Attempt to fix the file
+            success = False  # Hypothetical result
+            if not success:
+                # Signal failure by raising PresubmitFailure
+                raise pw_presubmit.v2.PresubmitFailure(f'Failed to fix {path}')
 
 
 # DOCSTAG: [pw_presubmit-v2-class]
@@ -91,11 +97,13 @@ class TestExamples(unittest.TestCase):
         """Instantiate and run steps with a fake context."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
+            test_file = tmp_path / 'file.py'
+            test_file.write_text('nothing bad')
             ctx = pw_presubmit.v2.Context(
                 root=tmp_path,
                 output_dir=tmp_path / 'output',
-                paths=(tmp_path / 'file.py',),
-                all_paths=(tmp_path / 'file.py',),
+                paths=(test_file,),
+                all_paths=(test_file,),
             )
             ctx.output_dir.mkdir()
 
@@ -105,7 +113,8 @@ class TestExamples(unittest.TestCase):
             # Run class step
             step_instance = MyStep()
             step_instance.run(ctx)
-            self.assertTrue(step_instance.fix(ctx))
+            with self.assertRaises(pw_presubmit.v2.PresubmitFailure):
+                step_instance.fix(ctx)
 
 
 if __name__ == '__main__':

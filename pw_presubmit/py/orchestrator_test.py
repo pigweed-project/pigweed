@@ -50,7 +50,7 @@ class FailStep(Step):
 
 
 class FixableStep(Step):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.run_count = 0
 
@@ -59,23 +59,23 @@ class FixableStep(Step):
         if self.run_count == 1:
             ctx.fail('needs fix')
 
-    def fix(self, ctx: Context) -> bool:
-        return True
+    def fix(self, ctx: Context) -> None:
+        pass
 
 
 class OrchestratorTest(unittest.TestCase):
     """Tests for Orchestrator."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.output_dir = Path(self.tmp_dir.name)
         self.events = mock.Mock(spec=PresubmitEvents)
         self.events.name = 'boxes'
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tmp_dir.cleanup()
 
-    def test_run_zero_checks(self):
+    def test_run_zero_checks(self) -> None:
         orch = Orchestrator(
             root=Path('.'),
             output_dir=self.output_dir,
@@ -86,7 +86,7 @@ class OrchestratorTest(unittest.TestCase):
         result = orch.run('Presubmit', [])
         self.assertTrue(result.success)
 
-    def test_run_multiple_checks(self):
+    def test_run_multiple_checks(self) -> None:
         orch = Orchestrator(
             root=Path('.'),
             output_dir=self.output_dir,
@@ -97,7 +97,7 @@ class OrchestratorTest(unittest.TestCase):
         result = orch.run('Presubmit', [PassStep(), PassStep()])
         self.assertTrue(result.success)
 
-    def test_run_failure(self):
+    def test_run_failure(self) -> None:
         orch = Orchestrator(
             root=Path('.'),
             output_dir=self.output_dir,
@@ -108,7 +108,7 @@ class OrchestratorTest(unittest.TestCase):
         result = orch.run('Presubmit', [FailStep()])
         self.assertFalse(result.success)
 
-    def test_fix_and_rerun(self):
+    def test_fix_and_rerun(self) -> None:
         fixable = FixableStep()
         orch = Orchestrator(
             root=Path('.'),
@@ -123,9 +123,9 @@ class OrchestratorTest(unittest.TestCase):
         self.assertEqual(fixable.run_count, 2)
         self.events.fix_applied.assert_called_once_with('fixable_step')
 
-    def test_filtering(self):
+    def test_filtering(self) -> None:
         class PyStep(Step):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__(file_filter=FileFilter(endswith='.py'))
                 self.run_called = False
 
@@ -144,7 +144,7 @@ class OrchestratorTest(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertFalse(pystep.run_called)
 
-    def test_run_calls_events(self):
+    def test_run_calls_events(self) -> None:
         """Test that Orchestrator.run calls event methods."""
         orch = Orchestrator(
             root=Path('.'),
@@ -161,7 +161,7 @@ class OrchestratorTest(unittest.TestCase):
         self.events.step_end.assert_called_once()
         self.events.program_completed.assert_called_once()
 
-    def test_run_takes_name(self):
+    def test_run_takes_name(self) -> None:
         """Test that Orchestrator.run takes a name and passes it to events."""
         orch = Orchestrator(
             root=Path('.'),
@@ -177,7 +177,7 @@ class OrchestratorTest(unittest.TestCase):
         args, _ = self.events.program_start.call_args
         self.assertEqual(args[0], 'MyCustomRun')
 
-    def test_fix_fails_aborts(self):
+    def test_fix_fails_aborts(self) -> None:
         """Test that presubmit aborts if fix fails to fix the issue."""
 
         class FixFailsStep(FixableStep):
@@ -198,14 +198,14 @@ class OrchestratorTest(unittest.TestCase):
         self.assertEqual(step.run_count, 2)
         self.assertFalse(result.success)
 
-    def test_fix_returns_false(self):
-        """Test that if fix() returns False, the check fails normally."""
+    def test_fix_fails(self) -> None:
+        """Test that if fix() fails (calls fail), the check fails normally."""
 
-        class FixReturnsFalseStep(FixableStep):
-            def fix(self, _ctx: Context) -> bool:
-                return False
+        class FixFailsStep(FixableStep):
+            def fix(self, _ctx: Context) -> None:
+                _ctx.fail('error')
 
-        step = FixReturnsFalseStep()
+        step = FixFailsStep()
         orch = Orchestrator(
             root=Path('.'),
             output_dir=self.output_dir,
@@ -218,7 +218,7 @@ class OrchestratorTest(unittest.TestCase):
         self.assertEqual(step.run_count, 1)
         self.assertFalse(result.success)
 
-    def test_fix_not_called_when_fix_false(self):
+    def test_fix_not_called_when_fix_false(self) -> None:
         step = FixableStep()
         orch = Orchestrator(
             root=Path('.'),
@@ -231,11 +231,11 @@ class OrchestratorTest(unittest.TestCase):
 
         self.assertEqual(step.run_count, 1)
 
-    def test_fix_not_called_on_passing_check(self):
+    def test_fix_not_called_on_passing_check(self) -> None:
         """Test that fix is not called if the check passes."""
 
         class PassingStepWithFix(Step):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__()
                 self.fix_called = False
                 self.run_count = 0
@@ -243,9 +243,8 @@ class OrchestratorTest(unittest.TestCase):
             def run(self, _ctx: Context) -> None:
                 self.run_count += 1
 
-            def fix(self, _ctx: Context) -> bool:
+            def fix(self, _ctx: Context) -> None:
                 self.fix_called = True
-                return True
 
         step = PassingStepWithFix()
         orch = Orchestrator(
@@ -260,11 +259,11 @@ class OrchestratorTest(unittest.TestCase):
         self.assertFalse(step.fix_called)
         self.assertEqual(step.run_count, 1)
 
-    def test_fix_crashes(self):
+    def test_fix_crashes(self) -> None:
         """Test that an exception in fix() fails the check."""
 
         class FixCrashesStep(FixableStep):
-            def fix(self, _ctx: Context) -> bool:
+            def fix(self, _ctx: Context) -> None:
                 raise Exception('Fix crashed!')
 
         step = FixCrashesStep()
@@ -334,13 +333,13 @@ class ModuleRunTest(unittest.TestCase):
 class AutoTest(unittest.TestCase):
     """Tests for auto mode."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.output_dir = Path(self.tmp_dir.name)
         self.events = mock.Mock(spec=PresubmitEvents)
         self.events.name = 'boxes'
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tmp_dir.cleanup()
 
     def _run_auto_test(  # pylint: disable=too-many-arguments
@@ -355,7 +354,7 @@ class AutoTest(unittest.TestCase):
         continue_fail=False,
         expect_exception=None,
         changes_after_run=False,
-    ):
+    ) -> None:
         with (
             mock.patch.object(orchestrator, 'run') as mock_run,
             mock.patch.object(subprocess, 'run') as mock_subproc,
@@ -432,7 +431,7 @@ class AutoTest(unittest.TestCase):
                 for call in mock_run.call_args_list:
                     self.assertEqual(call.kwargs.get('mode'), Mode.AUTO)
 
-    def test_auto_one_commit_succeeds_after_fixes(self):
+    def test_auto_one_commit_succeeds_after_fixes(self) -> None:
         self._run_auto_test(
             num_commits=1,
             run_results=[True],
@@ -441,7 +440,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=1,
         )
 
-    def test_auto_one_commit_fails(self):
+    def test_auto_one_commit_fails(self) -> None:
         self._run_auto_test(
             num_commits=1,
             run_results=[False],
@@ -450,7 +449,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=0,
         )
 
-    def test_auto_three_commits_succeeds(self):
+    def test_auto_three_commits_succeeds(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[True, True, True],
@@ -459,7 +458,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=3,
         )
 
-    def test_auto_three_commits_succeeds_after_fixes(self):
+    def test_auto_three_commits_succeeds_after_fixes(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[True, True, True],
@@ -468,7 +467,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=3,
         )
 
-    def test_auto_fixes_trigger_restart(self):
+    def test_auto_fixes_trigger_restart(self) -> None:
         """Test that auto mode restarts if fixes occurred."""
         with (
             mock.patch.object(orchestrator, 'run') as mock_run,
@@ -537,7 +536,7 @@ class AutoTest(unittest.TestCase):
             self.assertTrue(rebase_calls)
             self.assertTrue(str(rebase_calls[0][-1]).endswith('HEAD'))
 
-    def test_auto_three_commits_fails_on_first(self):
+    def test_auto_three_commits_fails_on_first(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[False],
@@ -546,7 +545,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=0,
         )
 
-    def test_auto_three_commits_fails_on_third(self):
+    def test_auto_three_commits_fails_on_third(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[True, True, False],
@@ -555,7 +554,7 @@ class AutoTest(unittest.TestCase):
             expected_continue_calls=2,
         )
 
-    def test_auto_uncommitted_changes_initially(self):
+    def test_auto_uncommitted_changes_initially(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[],
@@ -563,7 +562,7 @@ class AutoTest(unittest.TestCase):
             expect_exception=AutoModeError,
         )
 
-    def test_auto_git_rebase_fails(self):
+    def test_auto_git_rebase_fails(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[],
@@ -571,7 +570,7 @@ class AutoTest(unittest.TestCase):
             expect_exception=AutoModeError,
         )
 
-    def test_auto_uncommitted_changes_after_run(self):
+    def test_auto_uncommitted_changes_after_run(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[True],
@@ -580,7 +579,7 @@ class AutoTest(unittest.TestCase):
             expect_exception=AutoModeError,
         )
 
-    def test_auto_continue_fails(self):
+    def test_auto_continue_fails(self) -> None:
         self._run_auto_test(
             num_commits=3,
             run_results=[True],
@@ -589,7 +588,7 @@ class AutoTest(unittest.TestCase):
             expected_return=False,
         )
 
-    def test_auto_continue_fails_but_completed(self):
+    def test_auto_continue_fails_but_completed(self) -> None:
         """Test auto fails if rebase continue fails even if completed."""
         with (
             mock.patch.object(orchestrator, 'run') as mock_run,
@@ -651,16 +650,16 @@ class AutoTest(unittest.TestCase):
 class ResumeTest(unittest.TestCase):
     """Tests for resume function."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.output_dir = Path(self.tmp_dir.name)
         self.events = mock.Mock(spec=PresubmitEvents)
         self.events.name = 'boxes'
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tmp_dir.cleanup()
 
-    def test_resume_success(self):
+    def test_resume_success(self) -> None:
         """Test that resume successfully continues a rebase."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -708,7 +707,7 @@ class ResumeTest(unittest.TestCase):
             mock_loop.assert_called_once()
             mock_auto.assert_called_once()
 
-    def test_resume_mismatched_rebase_state(self):
+    def test_resume_mismatched_rebase_state(self) -> None:
         """Test that resume fails if rebase state does not match."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -746,7 +745,7 @@ class ResumeTest(unittest.TestCase):
             with self.assertRaises(AutoModeError):
                 resume({step.name: step}, resume_file)
 
-    def test_resume_mismatched_steps(self):
+    def test_resume_mismatched_steps(self) -> None:
         """Test that resume fails if steps do not match."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -766,7 +765,7 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaises(AutoModeError):
             resume({step.name: step}, resume_file)
 
-    def test_resume_not_in_rebase(self):
+    def test_resume_not_in_rebase(self) -> None:
         """Test that resume fails if not in a rebase."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -798,7 +797,7 @@ class ResumeTest(unittest.TestCase):
             with self.assertRaises(AutoModeError):
                 resume({step.name: step}, resume_file)
 
-    def test_resume_invalid_json(self):
+    def test_resume_invalid_json(self) -> None:
         """Test that resume fails on invalid JSON."""
         resume_file = self.output_dir / 'resume.json'
         with open(resume_file, 'w') as f:
@@ -808,7 +807,7 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaises(AutoModeError):
             resume({step.name: step}, resume_file)
 
-    def test_resume_missing_key(self):
+    def test_resume_missing_key(self) -> None:
         """Test that resume fails if a required key is missing."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -827,7 +826,7 @@ class ResumeTest(unittest.TestCase):
         with self.assertRaises(AutoModeError):
             resume({step.name: step}, resume_file)
 
-    def test_resume_uncommitted_changes(self):
+    def test_resume_uncommitted_changes(self) -> None:
         """Test that resume fails if there are uncommitted changes."""
         resume_file = self.output_dir / 'resume.json'
         state = {
@@ -866,7 +865,7 @@ class ResumeTest(unittest.TestCase):
             with self.assertRaises(AutoModeError):
                 resume({step.name: step}, resume_file)
 
-    def test_resume_fails(self):
+    def test_resume_fails(self) -> None:
         """Test that resume returns False if auto loop fails."""
         resume_file = self.output_dir / 'resume.json'
         state = {

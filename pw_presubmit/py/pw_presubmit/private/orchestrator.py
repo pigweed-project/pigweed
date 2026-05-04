@@ -26,7 +26,7 @@ import collections
 import enum
 import tempfile
 import time
-from typing import Iterable, Sequence, Mapping
+from typing import Iterable, Sequence, Mapping, Callable
 
 from pw_cli import git_repo
 from pw_cli.file_filter import FileFilter
@@ -181,7 +181,8 @@ class Orchestrator:
         self._events.step_start(step.name, index, step.paths)
         start_time = time.time()
 
-        if (result := self._execute_run_impl(step)) is PresubmitResult.FAIL:
+        result = self._execute_action(step, 'run', step.step.run)
+        if result is PresubmitResult.FAIL:
             result = self._attempt_fix(step, fix=mode in (Mode.FIX, Mode.AUTO))
             if result is PresubmitResult.FIXED and mode is Mode.AUTO:
                 _LOG.debug('Amending HEAD commit with fixes')
@@ -216,23 +217,29 @@ class Orchestrator:
             if not ctx.failed:
                 shutil.rmtree(step_output_dir, ignore_errors=True)
 
-    def _execute_run_impl(self, step: FilteredStep) -> PresubmitResult:
-        """Executes Step.run with a Context and handles exceptions."""
+    def _execute_action(
+        self, step: FilteredStep, name: str, action: Callable[[Context], None]
+    ) -> PresubmitResult:
+        """Executes Step.run or Step.fix with a Context and handles
+        exceptions.
+        """
         with self._context(step) as ctx:
             try:
-                step.step.run(ctx)
+                action(ctx)
                 if ctx.failed:
                     return PresubmitResult.FAIL
                 return PresubmitResult.PASS
+            except NotImplementedError:
+                return PresubmitResult.FAIL
             except PresubmitFailure as failure:
                 if str(failure):
                     _LOG.warning('%s', failure)
                 return PresubmitResult.FAIL
-            except Exception:  # pylint: disable=broad-except
-                _LOG.exception(
-                    'Presubmit step %s failed unexpectedly!', step.name
+            except Exception as e:  # pylint: disable=broad-except
+                ctx.fail(
+                    f'Step {name} failed unexpectedly with an exception',
+                    exception=e,
                 )
-                ctx.fail('Step failed unexpectedly with an exception.')
                 return PresubmitResult.FAIL
             except KeyboardInterrupt:
                 print()
@@ -255,19 +262,11 @@ class Orchestrator:
 
         _LOG.debug('Applying fix for %s', step.name)
 
-        with self._context(step) as ctx:
-            try:
-                if not step.step.fix(ctx):
-                    return PresubmitResult.FAIL
-            except Exception:  # pylint: disable=broad-exception-caught
-                _LOG.exception(
-                    'Fix implementation for %s crashed!',
-                    step.name,
-                )
-                ctx.fail('Fix implementation crashed with an exception.')
-                return PresubmitResult.FAIL
+        result = self._execute_action(step, 'fix', step.step.fix)
+        if result is PresubmitResult.FAIL:
+            return PresubmitResult.FAIL
 
-        result = self._execute_run_impl(step)
+        result = self._execute_action(step, 'run', step.step.run)
 
         if result is PresubmitResult.PASS:
             _LOG.debug('Applied automatic fix for %s', step.name)

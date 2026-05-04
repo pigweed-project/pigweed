@@ -95,13 +95,26 @@ should run.
 
 Subclassing step
 ----------------
-For more complex steps, or steps that support automatic fixing, you can
-subclass :class:`pw_presubmit.v2.Step <Step>`.
+For more complex steps, you can subclass :class:`pw_presubmit.v2.Step <Step>`.
 
 .. literalinclude:: py/examples.py
    :language: py
    :start-after: [pw_presubmit-v2-class]
    :end-before: [pw_presubmit-v2-class]
+
+Signaling failure
+-----------------
+Presubmit steps signal failure in either ``run()`` or ``fix()`` with one of two
+approaches:
+
+* ``ctx.fail()``: Reports a failure but allows the step to continue running
+  and report more failures.
+* ``raise PresubmitFailure``: Aborts the step immediately.
+
+The example above demonstrates both approaches.
+
+Any other exceptions cause the step to fail immediately. They are treated as
+unexpected errors and the stack trace is logged.
 
 Running presubmit
 =================

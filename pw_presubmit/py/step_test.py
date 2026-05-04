@@ -42,9 +42,10 @@ class MockStep(Step):
         if self.should_fail:
             ctx.fail("Failed")
 
-    def fix(self, ctx: Context) -> bool:
+    def fix(self, ctx: Context) -> None:
         self.fix_called = True
-        return self.should_fix
+        if not self.should_fix:
+            ctx.fail("Failed to fix")
 
 
 class TestStep(unittest.TestCase):
@@ -114,7 +115,8 @@ class TestStep(unittest.TestCase):
             paths=(),
             all_paths=(),
         )
-        self.assertFalse(step.fix(ctx))
+        step.fix(ctx)
+        self.assertTrue(ctx.failed)
         self.assertTrue(step.fix_called)
 
     def test_fix_custom(self):
@@ -126,7 +128,8 @@ class TestStep(unittest.TestCase):
             paths=(),
             all_paths=(),
         )
-        self.assertTrue(step.fix(ctx))
+        step.fix(ctx)
+        self.assertFalse(ctx.failed)
         self.assertTrue(step.fix_called)
 
     def test_wrap_in_check(self):
@@ -210,10 +213,9 @@ class TestStepDecorator(unittest.TestCase):
     def test_decorator_with_fix(self):
         fix_called = False
 
-        def my_fix(_ctx: Context) -> bool:
+        def my_fix(_ctx: Context) -> None:
             nonlocal fix_called
             fix_called = True
-            return True
 
         @step_decorator(fix=my_fix)
         def my_step(_ctx: Context) -> None:
@@ -225,7 +227,7 @@ class TestStepDecorator(unittest.TestCase):
             paths=(),
             all_paths=(),
         )
-        self.assertTrue(my_step.fix(ctx))
+        self.assertIsNone(my_step.fix(ctx))
         self.assertTrue(fix_called)
 
     def test_decorator_no_fix_inherits_base(self):
@@ -237,18 +239,19 @@ class TestStepDecorator(unittest.TestCase):
         # inherited.
         self.assertNotIn('fix', my_step.__class__.__dict__)
 
-        # Verify it still works and returns False
+        # Verify it raises NotImplementedError
         ctx = Context(
             root=Path('.'),
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
         )
-        self.assertFalse(my_step.fix(ctx))
+        with self.assertRaises(NotImplementedError):
+            my_step.fix(ctx)
 
     def test_decorator_with_fix_overrides(self):
-        def my_fix(_ctx: Context) -> bool:
-            return True
+        def my_fix(_ctx: Context) -> None:
+            pass
 
         @step_decorator(fix=my_fix)
         def my_step(_ctx: Context) -> None:
@@ -263,7 +266,7 @@ class TestStepDecorator(unittest.TestCase):
             paths=(),
             all_paths=(),
         )
-        self.assertTrue(my_step.fix(ctx))
+        self.assertIsNone(my_step.fix(ctx))
 
 
 if __name__ == '__main__':

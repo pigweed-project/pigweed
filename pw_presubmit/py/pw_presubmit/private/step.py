@@ -62,10 +62,20 @@ class Context:
         description: str,
         path: Path | None = None,
         line: int | None = None,
+        *,
+        exception: Exception | None = None,
     ) -> None:
-        """Add a failure to this presubmit step."""
+        """Add a failure to this presubmit step.
+
+        Args:
+            description: A description of the failure.
+            path: The file path where the failure occurred.
+            line: The line number where the failure occurred.
+            exception: An unexpected exception that caused the failure. A
+              stack trace will be logged.
+        """
         failure = Failure(description, path, line)
-        _LOG.warning('%s', failure)
+        _LOG.warning('%s', failure, exc_info=exception)
         self._failures.append(failure)
 
     @property
@@ -108,16 +118,15 @@ class Step(ABC):
 
     def fix(  # pylint: disable=no-self-use,unused-argument
         self, ctx: Context
-    ) -> bool:
+    ) -> None:
         """Attempt to fix failures automatically.
 
-        If an automatic fix is possible, apply the fix and return True. The next
-        call to `run()` MUST pass.
-
-        If an automatic fix is NOT possible, make NO changes to files and return
-        False.
+        The fix function should report success / failure exactly the same as the
+        run function. To signal that it was unable to fix the issue, it should
+        throw an exception or call `ctx.fail`. The base implementation raises
+        NotImplementedError.
         """
-        return False
+        raise NotImplementedError
 
     @property
     def filter(self) -> FileFilter:
@@ -159,7 +168,7 @@ class Step(ABC):
 
 def step(
     *,
-    fix: Callable[[Context], bool] | None = None,
+    fix: Callable[[Context], None] | None = None,
     exclude: Iterable[Pattern[str] | str] = (),
     endswith: Iterable[str] = (),
     match_name: Iterable[Pattern[str] | str] = (),
@@ -189,8 +198,8 @@ def step(
 
                 def fix(  # pylint: disable=unused-argument
                     self, ctx: Context
-                ) -> bool:
-                    return fix_func(ctx)
+                ) -> None:
+                    fix_func(ctx)
 
         return _DecoratedStep()
 
