@@ -15,25 +15,106 @@
 #![no_std]
 #![no_main]
 
+use control_commands::Command;
 use main_codegen::handle;
 use pw_log::info;
 use pw_status::{Result, StatusCode};
-use userspace::time::{Clock, Duration, SystemClock, sleep_until};
-use userspace::{entry, syscall};
+use userspace::time::{Clock, Duration, Instant, SystemClock, sleep_until};
+use userspace::{process_entry, syscall};
 
 const PROCESS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+const TEST_THREAD_SPAWN_DELAY: Duration = Duration::from_millis(200);
 
 #[unsafe(no_mangle)]
-pub extern "C" fn test_thread_entry(_arg: usize) {
-    info!("Test thread started. Entering infinite loop...");
-    loop {
-        core::hint::spin_loop();
+pub extern "C" fn test_thread_entry_initiator(_arg: usize) {
+    let mut reply = [0u8; 1];
+    info!("Test thread: Initiating blocked transaction via Command 3");
+    let res = syscall::channel_transact(
+        handle::IPC_CONTROL_INITIATOR,
+        &[Command::BlockInitiator as u8],
+        &mut reply,
+        Instant::MAX,
+    );
+    if res == Err(pw_status::Error::Unavailable.into()) {
+        info!("✅ ├─ Initiator thread correctly received Unavailable!");
+        let _ = syscall::thread_exit(0);
+        loop {}
+    } else {
+        pw_log::error!(
+            "❌ ├─ Initiator thread expected Unavailable, got {}",
+            res.status_code() as u32
+        );
+        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+        loop {}
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn test_thread_entry_handler(_arg: usize) {
+    info!("Test thread: Waiting for transaction on IPC_RESET handler");
+    let wait_res =
+        syscall::object_wait(handle::IPC_RESET, syscall::Signals::READABLE, Instant::MAX);
+    if wait_res == Err(pw_status::Error::Cancelled.into()) {
+        info!("✅ ├─ Handler thread correctly received Cancelled!");
+        let _ = syscall::thread_exit(0);
+        loop {}
+    } else {
+        pw_log::error!("❌ ├─ Handler thread expected Cancelled");
+        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+        loop {}
+    }
+}
+
+const TEST_THREAD_STACK_SIZE: usize = 1024;
 
 fn do_test() -> Result<()> {
     info!("🔄 [User Process Termination] RUNNING");
 
+    let mut test_thread_stack = [0u8; TEST_THREAD_STACK_SIZE];
+    let mut reply = [0u8; 1];
+
+    test_invalid_handles()?;
+    test_clean_and_forced_exit()?;
+    test_object_reset_basic(&mut reply)?;
+    test_initiator_unavailable_on_terminate(&mut test_thread_stack)?;
+    test_handler_error_on_terminate(&mut test_thread_stack)?;
+    test_wait_group_error_on_initiator_terminate(&mut test_thread_stack, &mut reply)?;
+    test_wait_group_error_on_handler_terminate(&mut test_thread_stack)?;
+
+    info!("✅ └─ PASSED");
+
+    Ok(())
+}
+
+fn start_test_thread(entry: extern "C" fn(usize), stack: &mut [u8]) -> Result<()> {
+    let initial_pc = entry as *const () as usize;
+    let initial_sp = unsafe { stack.as_mut_ptr().add(stack.len()) as usize };
+    syscall::thread_start(handle::TEST_THREAD, initial_pc, initial_sp)
+}
+
+fn cleanup_test_thread() -> Result<()> {
+    let _ = syscall::thread_terminate(handle::TEST_THREAD);
+    syscall::object_wait(
+        handle::TEST_THREAD,
+        syscall::Signals::JOINABLE,
+        Instant::MAX,
+    )?;
+    syscall::thread_join(handle::TEST_THREAD)?;
+    Ok(())
+}
+
+fn wait_and_join_process(handle: u32) -> Result<syscall::ExitStatus> {
+    syscall::object_wait(handle, syscall::Signals::JOINABLE, Instant::MAX)?;
+    syscall::process_join(handle)
+}
+
+fn send_control_command(cmd: u8, reply: &mut [u8]) -> Result<()> {
+    syscall::channel_transact(handle::IPC_CONTROL_INITIATOR, &[cmd], reply, Instant::MAX)?;
+    Ok(())
+}
+
+/// Tests that syscalls correctly reject invalid handles or handles of the wrong type.
+fn test_invalid_handles() -> Result<()> {
     // We cannot test successful process_terminate on our own process because
     // it kills the main thread, resulting in a kernel panic (run queue empty),
     // and thus a failed test. Furthermore, userspace apps cannot spawn new processes
@@ -44,25 +125,29 @@ fn do_test() -> Result<()> {
     info!("🔄 ├─ Testing process_terminate on a Thread handle");
     let result = syscall::process_terminate(handle::TEST_THREAD);
     if result != Err(pw_status::Error::Unimplemented.into()) {
-        pw_log::error!("Expected Unimplemented when terminating a thread handle");
+        pw_log::error!("❌ ├─ Expected Unimplemented when terminating a thread handle");
         return Err(pw_status::Error::Internal.into());
     }
 
     info!("🔄 ├─ Testing process_terminate on an invalid handle");
     let result = syscall::process_terminate(0xdeadbeef);
     if result != Err(pw_status::Error::OutOfRange.into()) {
-        pw_log::error!("Expected OutOfRange on an invalid handle");
+        pw_log::error!("❌ ├─ Expected OutOfRange on an invalid handle");
         return Err(pw_status::Error::Internal.into());
     }
+    Ok(())
+}
 
+/// Tests normal process termination (clean exit) and forced termination (kill).
+fn test_clean_and_forced_exit() -> Result<()> {
     for pass in 0..2 {
         info!("🔄 ├─ Iteration {}", pass as u32);
 
         // Give `EXTRA_PROCESS` a chance to start.
         //
         // TODO: https://pwbug.dev/505490714 - Query process state to ensure it's running
-        if let Err(err) = sleep_until(SystemClock::now() + Duration::from_millis(200)) {
-            pw_log::error!("Failed to sleep for 200ms");
+        if let Err(err) = sleep_until(SystemClock::now() + TEST_THREAD_SPAWN_DELAY) {
+            pw_log::error!("❌ ├─ Failed to sleep for 200ms");
             return Err(err);
         }
 
@@ -73,7 +158,7 @@ fn do_test() -> Result<()> {
             syscall::Signals::JOINABLE,
             SystemClock::now() + PROCESS_JOIN_TIMEOUT,
         ) {
-            pw_log::error!("Failed to wait for extra process to become joinable");
+            pw_log::error!("❌ ├─ Failed to wait for extra process to become joinable");
             return Err(err);
         }
 
@@ -83,7 +168,7 @@ fn do_test() -> Result<()> {
             Ok(syscall::ExitStatus::Success(42)) => (),
             Ok(_) => {
                 pw_log::error!("❌ ├─ Clean exit process joined with unexpected status");
-                return Err(pw_status::Error::Internal);
+                return Err(pw_status::Error::Internal.into());
             }
         }
         info!("🔄 ├─ Clean exit process joined");
@@ -100,7 +185,7 @@ fn do_test() -> Result<()> {
             syscall::Signals::JOINABLE,
             SystemClock::now() + PROCESS_JOIN_TIMEOUT,
         ) {
-            pw_log::error!("❌ Error waiting for process to be joinable");
+            pw_log::error!("❌ ├─ Error waiting for process to be joinable");
             return Err(err);
         }
 
@@ -121,7 +206,7 @@ fn do_test() -> Result<()> {
             syscall::Signals::JOINABLE,
             SystemClock::now() + PROCESS_JOIN_TIMEOUT,
         ) {
-            pw_log::error!("❌ Error waiting for exception process to be joinable");
+            pw_log::error!("❌ ├─ Error waiting for exception process to be joinable");
             return Err(err);
         }
 
@@ -140,14 +225,210 @@ fn do_test() -> Result<()> {
         syscall::process_start(handle::FORCED_EXIT_PROCESS)?;
         syscall::process_start(handle::EXCEPTION_EXIT_PROCESS)?;
     }
+    Ok(())
+}
 
-    info!("✅ └─ PASSED");
+/// Tests that objects are correctly reset when a process terminates.
+fn test_object_reset_basic(reply: &mut [u8]) -> Result<()> {
+    info!("📋 Testing Object Reset");
+
+    info!("🔄 ├─ Sending 'Modify State' command to restart process");
+    syscall::channel_transact(
+        handle::IPC_CONTROL_INITIATOR,
+        &[Command::ModifyState as u8],
+        reply,
+        Instant::MAX,
+    )?;
+
+    info!("🔄 ├─ Terminating restart_process");
+    syscall::process_terminate(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Waiting for restart_process to become joinable and joining");
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Restarting restart_process");
+    syscall::process_start(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Sending 'Verify Reset' command to restart_process");
+    syscall::channel_transact(
+        handle::IPC_CONTROL_INITIATOR,
+        &[Command::VerifyReset as u8],
+        reply,
+        Instant::MAX,
+    )?;
+    Ok(())
+}
+
+/// Tests that an initiator receives `Unavailable` when the handler terminates.
+fn test_initiator_unavailable_on_terminate(stack: &mut [u8]) -> Result<()> {
+    info!("📋 Initiator receives Unavailable when handler terminates");
+    // test_thread_entry_initiator calls channel_transact and asserts that Unavailable is returned
+    start_test_thread(test_thread_entry_initiator, stack)?;
+
+    // Give the test thread a chance to print its log
+    sleep_until(SystemClock::now() + TEST_THREAD_SPAWN_DELAY)?;
+
+    info!("🔄 ├─ Terminating restart_process");
+    syscall::process_terminate(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Waiting for restart_process to become joinable and joining");
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Give the test thread a chance to print its log
+    sleep_until(SystemClock::now() + TEST_THREAD_SPAWN_DELAY)?;
+
+    cleanup_test_thread()?;
+    Ok(())
+}
+
+/// Tests that a handler receives `ERROR` signal when the initiator terminates.
+fn test_handler_error_on_terminate(_stack: &mut [u8]) -> Result<()> {
+    info!("📋 Handler receives ERROR signal when initiator terminates");
+    syscall::process_start(handle::RESTART_PROCESS)?;
+
+    // Tell OBJECT_RESET to initiate async transaction
+    let mut reply = [0u8; 1];
+    info!("🔄 ├─ main thread: Sending command 4 to initiate async transaction");
+    send_control_command(Command::AsyncTransact as u8, &mut reply)?;
+
+    // Wait for the async transaction to arrive
+    syscall::object_wait(handle::IPC_RESET, syscall::Signals::READABLE, Instant::MAX)?;
+
+    // Wait for the restart process to exit (it will do so after 500ms via command 4)
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Now check if the handler object received the ERROR signal
+    let wait_res = syscall::object_wait(
+        handle::IPC_RESET,
+        syscall::Signals::ERROR,
+        SystemClock::now() + PROCESS_JOIN_TIMEOUT,
+    );
+    if wait_res.is_ok() {
+        info!("✅ ├─ Handler thread correctly received ERROR signal after join!");
+    } else {
+        pw_log::error!("❌ ├─ Handler thread expected ERROR signal");
+        return Err(pw_status::Error::Internal.into());
+    }
+    Ok(())
+}
+
+/// Tests that the Wait Group receives `ERROR` when the initiator terminates.
+fn test_wait_group_error_on_initiator_terminate(_stack: &mut [u8], reply: &mut [u8]) -> Result<()> {
+    info!("📋 Wait Group receives ERROR when initiator terminates");
+    syscall::process_start(handle::RESTART_PROCESS)?;
+
+    // Tell OBJECT_RESET to initiate async transaction
+    info!("🔄 ├─ main thread: Sending command 4 to initiate async transaction");
+    send_control_command(Command::AsyncTransact as u8, reply)?;
+
+    // Add IPC_RESET to WAIT_GROUP waiting for ERROR
+    syscall::wait_group_add(
+        handle::WAIT_GROUP,
+        handle::IPC_RESET,
+        syscall::Signals::ERROR,
+        99,
+    )?;
+
+    // Wait for the restart process to exit
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Now wait on the WAIT_GROUP (it should be ready immediately since cleanup happened)
+    let wait_return = syscall::object_wait(
+        handle::WAIT_GROUP,
+        syscall::Signals::READABLE,
+        SystemClock::now() + PROCESS_JOIN_TIMEOUT,
+    )?;
+
+    if wait_return.user_data == 99
+        && wait_return
+            .pending_signals
+            .contains(syscall::Signals::ERROR)
+    {
+        info!("✅ ├─ Wait Group correctly woke up on member ERROR signal!");
+    } else {
+        pw_log::error!(
+            "❌ ├─ Wait Group woke up but unexpected result: user_data={}, signals={:#x}",
+            wait_return.user_data as u32,
+            wait_return.pending_signals.bits() as u32
+        );
+        return Err(pw_status::Error::Internal.into());
+    }
+
+    // Clean up: remove from wait group
+    syscall::wait_group_remove(handle::WAIT_GROUP, handle::IPC_RESET)?;
 
     Ok(())
 }
 
-#[entry]
-fn main_entry() -> ! {
+/// Tests that the Wait Group receives `ERROR` when the handler terminates.
+fn test_wait_group_error_on_handler_terminate(_stack: &mut [u8]) -> Result<()> {
+    info!("📋 Wait Group receives ERROR when handler terminates");
+    syscall::process_start(handle::RESTART_PROCESS)?;
+
+    // Initiate async transaction on IPC_CONTROL
+    let msg = [Command::SleepAndExit as u8];
+    let mut reply_buf = [0u8; 1];
+    info!("🔄 ├─ main thread: Initiating async transaction on IPC_CONTROL");
+    // NOTE: Async channel syscalls are not meant to be used directly by normal
+    // programs without wrappers handling buffer lifetimes.
+    unsafe {
+        syscall::channel_async_transact(
+            handle::IPC_CONTROL_INITIATOR,
+            msg.as_ptr(),
+            msg.len(),
+            reply_buf.as_mut_ptr(),
+            reply_buf.len(),
+        )?;
+    }
+
+    // Add IPC_CONTROL to WAIT_GROUP waiting for ERROR
+    syscall::wait_group_add(
+        handle::WAIT_GROUP,
+        handle::IPC_CONTROL_INITIATOR,
+        syscall::Signals::ERROR,
+        99,
+    )?;
+
+    // Wait for the restart process to exit
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Now wait on the WAIT_GROUP
+    let wait_return = syscall::object_wait(
+        handle::WAIT_GROUP,
+        syscall::Signals::READABLE,
+        SystemClock::now() + PROCESS_JOIN_TIMEOUT,
+    )?;
+
+    if (wait_return.user_data == 89 || wait_return.user_data == 99)
+        && wait_return
+            .pending_signals
+            .contains(syscall::Signals::ERROR)
+    {
+        info!("✅ ├─ Wait Group correctly woke up on member ERROR and READABLE (Initiator case)!");
+    } else {
+        pw_log::error!(
+            "❌ ├─ Wait Group woke up but unexpected result: user_data={}, signals={:#x}",
+            wait_return.user_data as u32,
+            wait_return.pending_signals.bits() as u32
+        );
+        return Err(pw_status::Error::Internal.into());
+    }
+
+    // Clean up: remove from wait group
+    syscall::wait_group_remove(handle::WAIT_GROUP, handle::IPC_CONTROL_INITIATOR)?;
+
+    // Cancel the async transaction to clean up channel state
+    if let Err(e) = syscall::channel_async_cancel(handle::IPC_CONTROL_INITIATOR) {
+        if e != pw_status::Error::Unavailable {
+            return Err(e.into());
+        }
+    }
+
+    Ok(())
+}
+
+#[process_entry("main")]
+fn main() -> ! {
     let ret = do_test();
 
     if ret.is_err() {
@@ -156,12 +437,5 @@ fn main_entry() -> ! {
     }
 
     let _ = syscall::debug_shutdown(ret);
-    loop {}
-}
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("❌ PANIC");
-    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
     loop {}
 }

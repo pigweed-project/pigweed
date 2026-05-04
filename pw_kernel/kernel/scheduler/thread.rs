@@ -366,6 +366,11 @@ impl<K: Kernel> Process<K> {
         self.object_table.get_object(kernel, handle)
     }
 
+    #[cfg(feature = "user_space")]
+    pub fn reset_objects(&self, kernel: K) -> Result<()> {
+        self.object_table.reset_all(kernel)
+    }
+
     /// # Safety
     /// Caller must ensure exclusive access to the process and `thread` and all
     /// threads in the process' thread list.  This can be accomplished by holding
@@ -480,11 +485,19 @@ impl<K: Kernel> ProcessRef<K> {
 
     pub fn join(self, kernel: K) -> Result<(ForeignBox<Process<K>>, ExitStatus)> {
         match self.join_until(kernel, Instant::<K::Clock>::MAX) {
-            crate::scheduler::ProcessJoinResult::Joined(process, status) => Ok((process, status)),
+            crate::scheduler::ProcessJoinResult::Joined(process, status) => {
+                #[cfg(feature = "user_space")]
+                process.reset_objects(kernel)?;
+                Ok((process, status))
+            }
             crate::scheduler::ProcessJoinResult::Err { error, .. } => Err(error),
         }
     }
 
+    /// Attempts to join the referenced process.
+    ///
+    /// If `ProcessTryJoinResult::Joined` is returned, the caller is responsible
+    /// for resetting the process's objects using `process.reset_objects(kernel)`.
     pub fn try_join(self, kernel: K) -> crate::scheduler::ProcessTryJoinResult<K> {
         let (_, res) = kernel
             .get_scheduler()

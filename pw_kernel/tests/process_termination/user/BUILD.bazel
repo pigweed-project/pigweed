@@ -11,9 +11,25 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-load("//pw_kernel/tooling:rust_app.bzl", "rust_app")
 
-rust_app(
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("//pw_kernel/tooling:rust_process.bzl", "rust_process")
+
+multi_process_app(
+    name = "process_termination",
+    processes = [
+        ":main",
+        ":clean_exit",
+        ":forced_exit",
+        ":restart",
+        ":exception_exit",
+    ],
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
+rust_process(
     name = "main",
     srcs = [
         "main.rs",
@@ -23,6 +39,7 @@ rust_app(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        ":control_commands",
         "//pw_kernel/lib/time",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",
@@ -31,7 +48,7 @@ rust_app(
     ],
 )
 
-rust_app(
+rust_process(
     name = "clean_exit",
     srcs = [
         "clean_exit.rs",
@@ -48,7 +65,7 @@ rust_app(
     ],
 )
 
-rust_app(
+rust_process(
     name = "forced_exit",
     srcs = [
         "forced_exit.rs",
@@ -65,7 +82,7 @@ rust_app(
     ],
 )
 
-rust_app(
+rust_process(
     name = "exception_exit",
     srcs = [
         "exception_exit.rs",
@@ -78,6 +95,35 @@ rust_app(
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",
         "//pw_log/rust:pw_log",
+        "//pw_status/rust:pw_status",
+    ],
+)
+
+rust_process(
+    name = "restart",
+    srcs = [
+        "restart.rs",
+    ],
+    codegen_crate_name = "restart_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":control_commands",
+        "//pw_kernel/syscall:syscall_user",
+        "//pw_kernel/userspace",
+        "//pw_log/rust:pw_log",
+        "//pw_status/rust:pw_status",
+    ],
+)
+
+rust_library(
+    name = "control_commands",
+    srcs = ["control_commands.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
         "//pw_status/rust:pw_status",
     ],
 )

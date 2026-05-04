@@ -16,18 +16,12 @@
 #![no_main]
 
 use pw_log::info;
-use userspace::{entry, syscall};
+use userspace::process_entry;
 
-#[entry]
+#[process_entry("forced_exit")]
 fn main() -> ! {
     info!("I am the forced exit process. Spinning...");
     loop {
-        core::hint::spin_loop();
+        let _ = userspace::time::sleep_until(userspace::time::Instant::MAX);
     }
-}
-
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
-    loop {}
 }

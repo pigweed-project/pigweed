@@ -126,6 +126,20 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         });
         Ok(())
     }
+
+    /// Reset the handler object. If there is a mid-flight transaction, cancel it.
+    fn reset(&self, kernel: K) -> Result<()> {
+        let mut active_transaction = self.active_transaction.lock();
+        if let Some(transaction) = active_transaction.take() {
+            drop(active_transaction);
+
+            transaction
+                .initiator
+                .base
+                .signal(kernel, |signals| signals | Signals::ERROR);
+        }
+        Ok(())
+    }
 }
 
 pub struct ChannelInitiatorObject<K: Kernel> {
@@ -148,6 +162,24 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
 impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     fn base(&self) -> Option<&ObjectBase<K>> {
         Some(&self.base)
+    }
+
+    /// Reset the initiator object. Clear any active transaction, and
+    /// restore the initial signals.
+    fn reset(&self, kernel: K) -> Result<()> {
+        // Cancel the active transaction.
+        if self.handler.active_transaction.lock().take().is_some() {
+            self.handler
+                .base
+                .signal(kernel, |signals| signals | Signals::ERROR);
+        }
+
+        // Restore objects initial signals.
+        if let Some(base) = self.base() {
+            base.signal(kernel, |_| Self::INITIAL_SIGNALS);
+        }
+
+        Ok(())
     }
 
     fn object_wait(
@@ -244,10 +276,10 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
 
         drop(active_transaction);
 
-        // Clear Readable and Writable signals on our side before
+        // Clear Readable and Writable & Error signals on our side before
         // signaling the handler.
         self.base.signal(kernel, |signals| {
-            signals - (Signals::READABLE | Signals::WRITEABLE)
+            signals - (Signals::READABLE | Signals::WRITEABLE | Signals::ERROR)
         });
 
         self.handler.base.signal(kernel, |signals| {

@@ -155,6 +155,8 @@ impl<K: Kernel> ProcessObject<K> {
         use crate::scheduler::ProcessTryJoinResult;
         match process_ref.try_join(kernel) {
             ProcessTryJoinResult::Joined(process, status) => {
+                #[cfg(feature = "user_space")]
+                process.reset_objects(kernel)?;
                 let mut state = self.state.lock(kernel);
                 state.process_state = ProcessState::Stopped(process);
                 Ok(status)

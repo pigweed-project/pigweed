@@ -13,7 +13,7 @@
 // the License.
 
 use pw_cast::CastInto;
-use pw_status::{Result, StatusCode};
+use pw_status::{Error, Result, StatusCode};
 use syscall_defs::SysCallInterface;
 pub use syscall_defs::{ExitStatus, Signals, WaitReturn};
 use syscall_user::SysCall;
@@ -106,6 +106,15 @@ pub fn channel_read(object_handle: u32, offset: usize, buffer: &mut [u8]) -> Res
         SysCall::channel_read(object_handle, offset, buffer.as_mut_ptr(), buffer.len())
             .map(|ret| ret.cast_into())
     }
+}
+
+#[inline(always)]
+pub fn channel_read_exact(object_handle: u32, offset: usize, buffer: &mut [u8]) -> Result<()> {
+    let read = channel_read(object_handle, offset, buffer)?;
+    if read != buffer.len() {
+        return Err(Error::OutOfRange);
+    }
+    Ok(())
 }
 
 #[inline(always)]

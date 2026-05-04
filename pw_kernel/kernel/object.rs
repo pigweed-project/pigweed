@@ -176,6 +176,11 @@ pub trait KernelObject<K: Kernel>: Any + Send + Sync {
     fn object_set_peer_user_signal(&self, kernel: K, set: bool) -> Result<()> {
         Err(Error::Unimplemented)
     }
+
+    /// Reset the object's signals to its initial signals.
+    fn reset(&self, _kernel: K) -> Result<()> {
+        Ok(())
+    }
 }
 
 trait WaiterState<K: Kernel> {
@@ -227,27 +232,46 @@ fn wait_on_object<'a, K: Kernel, S: WaiterState<K>>(
     result
 }
 
-pub(crate) fn signal_all_matching_waiters_locked<'a, K: Kernel>(
+// For all objects except wait groups, `wake_signals`` and `return_signals`` should be
+// the same.  For a wait group, the wake_signal is READABLE, and the return signal
+// is the signal of the woken element.
+pub(crate) fn signal_all_matching_waiters_with_return_signals_locked<'a, K: Kernel>(
     mut sched: SpinLockGuard<'a, K, SchedulerState<K>>,
     waiters: &mut RandomAccessForeignList<ObjectWaiter<K>, ObjectWaiterListAdapter<K>>,
-    active_signals: Signals,
+    wake_signals: Signals,
+    return_signals: Signals,
     user_data: usize,
 ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
     for waiter in waiters.iter() {
-        if waiter.signal_mask.intersects(active_signals) {
+        if waiter.signal_mask.intersects(wake_signals) {
             // SAFETY: While a waiter is in an object's `waiters` list, that
             // object has exclusive access to the waiter.  The below
             // operation is done with the object's spinlock held.
             unsafe {
                 waiter.wait_result.set(Ok(WaitReturn {
                     user_data,
-                    pending_signals: active_signals,
+                    pending_signals: return_signals,
                 }))
             };
             sched = waiter.signaler.signal_locked(sched);
         }
     }
     sched
+}
+
+pub(crate) fn signal_all_matching_waiters_locked<'a, K: Kernel>(
+    sched: SpinLockGuard<'a, K, SchedulerState<K>>,
+    waiters: &mut RandomAccessForeignList<ObjectWaiter<K>, ObjectWaiterListAdapter<K>>,
+    active_signals: Signals,
+    user_data: usize,
+) -> SpinLockGuard<'a, K, SchedulerState<K>> {
+    signal_all_matching_waiters_with_return_signals_locked(
+        sched,
+        waiters,
+        active_signals,
+        active_signals,
+        user_data,
+    )
 }
 
 list::define_adapter!(pub ObjectWaiterListAdapter<K: Kernel> => ObjectWaiter<K>::link);
@@ -321,6 +345,8 @@ pub trait ObjectTable<K: Kernel>: Send + Sync {
 
     /// Dump the object table's state for debugging.
     fn dump(&self, kernel: K);
+
+    fn reset_all(&self, kernel: K) -> Result<()>;
 }
 /// An object table with no entries.
 ///
@@ -346,6 +372,10 @@ impl<K: Kernel> ObjectTable<K> for NullObjectTable {
     fn dump(&self, _kernel: K) {
         pw_log::info!("      No objects in table.");
     }
+
+    fn reset_all(&self, _kernel: K) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl<const N: usize, K: Kernel> ObjectTable<K>
@@ -364,6 +394,13 @@ impl<const N: usize, K: Kernel> ObjectTable<K>
             pw_log::info!("      Object {}:", i as usize);
             obj.dump(kernel);
         }
+    }
+
+    fn reset_all(&self, kernel: K) -> Result<()> {
+        for obj in self.iter() {
+            obj.reset(kernel)?;
+        }
+        Ok(())
     }
 }
 /// Common functionality used by many kernel objects

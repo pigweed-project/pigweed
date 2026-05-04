@@ -21,10 +21,7 @@ load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 system_image(
     name = "process_termination",
     apps = [
-        "//pw_kernel/tests/process_termination/user:main",
-        "//pw_kernel/tests/process_termination/user:clean_exit",
-        "//pw_kernel/tests/process_termination/user:forced_exit",
-        "//pw_kernel/tests/process_termination/user:exception_exit",
+        "//pw_kernel/tests/process_termination/user:process_termination",
     ],
     kernel = ":target",
     platform = "//pw_kernel/target/pw_rp2350",

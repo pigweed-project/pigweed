@@ -21,7 +21,7 @@ use time::Instant;
 use crate::Kernel;
 use crate::object::{
     KernelObject, ObjectBase, ObjectWaiter, ObjectWaiterListAdapter, Signals, WaiterState,
-    signal_all_matching_waiters_locked, wait_on_object,
+    signal_all_matching_waiters_with_return_signals_locked, wait_on_object,
 };
 use crate::scheduler::SchedulerState;
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
@@ -111,10 +111,11 @@ impl<K: Kernel> WaitGroupMember<K> {
 
         self.is_signaled = signaled;
         if signaled {
-            sched = signal_all_matching_waiters_locked(
+            sched = signal_all_matching_waiters_with_return_signals_locked(
                 sched,
                 &mut state.waiters,
                 Signals::READABLE,
+                active_signals,
                 self.user_data,
             );
         }
@@ -281,6 +282,33 @@ impl<K: Kernel> KernelObject<K> for WaitGroupObject<K> {
         }
 
         object_state.wait_group = None;
+
+        Ok(())
+    }
+
+    fn reset(&self, kernel: K) -> Result<()> {
+        loop {
+            let mut wait_group_state = self.state.lock(kernel);
+            // Safety: Access to lists is guarded by WaitGroupObject state lock.
+            let base_ptr = unsafe {
+                wait_group_state
+                    .signaled_objects
+                    .pop_head()
+                    .or_else(|| wait_group_state.unsignaled_objects.pop_head())
+            };
+            let Some(base_ptr) = base_ptr else {
+                break;
+            };
+
+            // Drop the wait group state lock before acquiring the object base lock
+            // to avoid potential deadlock.
+            drop(wait_group_state);
+
+            // Safety: The pointer is valid as long as the object lives.
+            let base = unsafe { base_ptr.as_ref() };
+            let mut base_state = base.state.lock(kernel);
+            base_state.wait_group = None;
+        }
 
         Ok(())
     }

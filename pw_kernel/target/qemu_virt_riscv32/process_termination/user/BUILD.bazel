@@ -22,10 +22,7 @@ load("//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_
 system_image(
     name = "process_termination",
     apps = [
-        "//pw_kernel/tests/process_termination/user:main",
-        "//pw_kernel/tests/process_termination/user:clean_exit",
-        "//pw_kernel/tests/process_termination/user:forced_exit",
-        "//pw_kernel/tests/process_termination/user:exception_exit",
+        "//pw_kernel/tests/process_termination/user:process_termination",
     ],
     kernel = ":userspace_target",
     platform = "//pw_kernel/target/qemu_virt_riscv32",
