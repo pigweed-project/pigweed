@@ -25,7 +25,7 @@ path = "fake.rs"
 bitflags = "2.9.1"
 byteorder = { version = "1.5.0", default-features = false }
 cortex-m = "0.7.7"
-cortex-m-rt = "0.7.5"
+cortex-m-rt = { version = "0.7.5",  features = ["device"] }
 cortex-m-semihosting = "0.5.0"
 embedded-io = "0.6.1"
 intrusive-collections = { version = "0.9.7", default-features = false }
