@@ -367,16 +367,13 @@ class GitRepo:
         except GitError:
             return self.commit_hash(commit)
 
-    def commit_count(self, commit_1: str, commit_2: str = '') -> int:
-        """Returns the number of commits reachable from the specified commits.
+    def commit_count(self, commit_1: str, commit_2: str | None = None) -> int:
+        """Returns the number of commits between the specified commits.
 
-        If commit_2 is provided, counts commits reachable from either commit_1
-        or commit_2.
+        If only one commit is specified, counts the commits reachable from it.
         """
-        args = ['rev-list', '--count', commit_1]
-        if commit_2:
-            args.append(commit_2)
-        return int(self._git(*args))
+        commits = commit_1 if commit_2 is None else f'{commit_1}..{commit_2}'
+        return int(self._git('rev-list', '--count', commits))
 
     def commit_change_id(self, commit: str = 'HEAD') -> str | None:
         """Returns the Gerrit Change-Id of the specified commit.
@@ -831,13 +828,6 @@ def fetch_file_lists(
             for p in modified_files_repo
             if file_filter.matches(str(p.relative_to(root.resolve())))
         ]
-
-    _LOG.info(
-        'Checking %s',
-        describe_git_pattern(
-            repo, base, pathspecs, file_filter.exclude, tool_runner, root
-        ),
-    )
 
     return all_files, modified_files
 

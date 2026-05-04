@@ -148,6 +148,20 @@ class V2CliTest(unittest.TestCase):
         kwargs = mock_main.call_args.kwargs
         self.assertEqual(kwargs['mode'], orchestrator.Mode.FIX)
 
+    @mock.patch('pw_presubmit.private.v2_cli._main')
+    def test_ui_override(self, mock_main):
+        mock_main.return_value = 0
+
+        v2_cli.main(
+            self.programs,
+            default_program="prog1",
+            argv=["--ui", "minimal", "--output-dir", "out"],
+        )
+
+        mock_main.assert_called_once()
+        kwargs = mock_main.call_args.kwargs
+        self.assertEqual(kwargs['ui'], 'minimal')
+
     def test_no_program_or_step_fails(self):
         with self.assertRaises(SystemExit):
             v2_cli.main(self.programs, argv=["--output-dir", "out"])
@@ -172,6 +186,39 @@ class V2CliTest(unittest.TestCase):
                 self.programs,
                 argv=["--step", "unknown_step", "--output-dir", "out"],
             )
+
+    @mock.patch('pw_presubmit.private.orchestrator.resume')
+    @mock.patch(
+        'pathlib.Path.open',
+        new_callable=mock.mock_open,
+        read_data='{"event_handler": "minimal"}',
+    )
+    def test_resume(self, _mock_open, mock_resume):
+        mock_resume.return_value = True
+
+        result = v2_cli.main(
+            self.programs, argv=['--resume', 'path/to/resume.json']
+        )
+
+        self.assertEqual(result, 0)
+        mock_resume.assert_called_once()
+        kwargs = mock_resume.call_args.kwargs
+        self.assertEqual(
+            kwargs['all_steps'], {'step1': self.step1, 'step2': self.step2}
+        )
+        self.assertEqual(kwargs['resume_file'], Path('path/to/resume.json'))
+
+    @mock.patch(
+        'pathlib.Path.open',
+        new_callable=mock.mock_open,
+        read_data='invalid json',
+    )
+    def test_resume_invalid_json(self, mock_open):
+        result = v2_cli.main(
+            self.programs, argv=['--resume', 'path/to/resume.json']
+        )
+        self.assertEqual(result, 1)
+        mock_open.assert_called_once()
 
 
 if __name__ == '__main__':

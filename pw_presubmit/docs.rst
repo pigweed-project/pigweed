@@ -120,11 +120,13 @@ controlling error handling.
 
 * ``--program <name>``: Run a specific program.
 * ``--step <name>``: Run a specific step.
-* ``--mode {stop,fix,continue}``: How to run the presubmit.
+* ``--mode {stop,fix,auto,continue}``: How to run the presubmit.
 
   * ``stop``: Stop on first error (default).
   * ``fix``: Automatically apply fixes to checks.
   * ``continue``: Continue running other steps on error.
+  * ``auto``: Run checks, apply fixes, amend HEAD, and continue rebase across
+    multiple commits.
 
 pw_presubmit.v2 Python API
 ==========================

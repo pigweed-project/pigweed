@@ -21,6 +21,7 @@ from pathlib import Path
 import unittest
 from unittest import mock
 
+from pw_cli.git_repo import GitError
 from pw_presubmit import presubmit
 from pw_presubmit.private.events import PresubmitEvents, HumanUI
 from pw_presubmit import Program, Programs, PresubmitResult
@@ -151,7 +152,7 @@ class PresubmitEventsTest(unittest.TestCase):
             program[0].name, 1, PresubmitResult.PASS, mock.ANY
         )
 
-        mock_events.summary.assert_called_once_with(
+        mock_events.program_completed.assert_called_once_with(
             ProgramResult(
                 passed=['_fake_function_1'],
                 failed=[],
@@ -171,18 +172,42 @@ class HumanUITest(unittest.TestCase):
         ui = HumanUI(width=40)
         output = io.StringIO()
         program = Program('test_program', [])
-        with contextlib.redirect_stdout(output):
-            ui.program_start(program.name, [], [], [])
+        with mock.patch('pw_presubmit.private.events.GitRepo') as mock_git_repo:
+            mock_repo_inst = mock_git_repo.return_value
+            mock_repo_inst.name_rev.return_value = 'main'
+            mock_repo_inst.commit_message.return_value = 'Commit message\n'
+            with contextlib.redirect_stdout(output):
+                ui.program_start(program.name, [], [], [])
 
         self.assertIn('test_program', output.getvalue())
         self.assertIn('═', output.getvalue())
+
+    def test_title_git_error(self) -> None:
+        """Test title rendering when outside of a git repo."""
+        ui = HumanUI(width=40)
+        output = io.StringIO()
+        program = Program('test_program', [])
+        with mock.patch('pw_presubmit.private.events.GitRepo') as mock_git_repo:
+            mock_repo_inst = mock_git_repo.return_value
+            mock_repo_inst.name_rev.side_effect = GitError(
+                ['name-rev'], 'not a git repo', 128
+            )
+            with contextlib.redirect_stdout(output):
+                ui.program_start(program.name, [], [], [])
+
+        self.assertIn('test_program', output.getvalue())
+        self.assertNotIn('Commit message', output.getvalue())
 
     def test_fix_summary_ui(self) -> None:
         """Test that HumanUI summary reports FIXED correctly."""
         ui = HumanUI(width=80)
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
-            ui.program_start('test_program', [], [], [Path('a'), Path('b')])
+        with mock.patch('pw_presubmit.private.events.GitRepo') as mock_git_repo:
+            mock_repo_inst = mock_git_repo.return_value
+            mock_repo_inst.name_rev.return_value = 'main'
+            mock_repo_inst.commit_message.return_value = 'Commit message\n'
+            with contextlib.redirect_stdout(output):
+                ui.program_start('test_program', [], [], [Path('a'), Path('b')])
 
         result = ProgramResult(
             passed=['step'] * 8,
@@ -192,7 +217,7 @@ class HumanUITest(unittest.TestCase):
             success=True,
         )
         with contextlib.redirect_stdout(output):
-            ui.summary(result, 1.0)
+            ui.program_completed(result, 1.0)
 
         output_str = output.getvalue()
         self.assertIn('FIXED', output_str)

@@ -192,7 +192,7 @@ class Presubmit:  # pylint: disable=too-many-instance-attributes
             program_result.message(),
         )
 
-        self.events.summary(program_result, time_s)
+        self.events.program_completed(program_result, time_s)
 
     def _create_presubmit_context(  # pylint: disable=no-self-use
         self, **kwargs

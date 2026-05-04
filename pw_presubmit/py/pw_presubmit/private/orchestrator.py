@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import shutil
 from pathlib import Path
@@ -25,10 +26,11 @@ import collections
 import enum
 import tempfile
 import time
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Mapping
 
-from pw_cli.file_filter import FileFilter
 from pw_cli import git_repo
+from pw_cli.file_filter import FileFilter
+from pw_cli.tool_runner import BasicSubprocessRunner
 from pw_presubmit.private.events import PresubmitEvents
 from pw_presubmit.private.result import (
     PresubmitFailure,
@@ -37,7 +39,6 @@ from pw_presubmit.private.result import (
 )
 from pw_presubmit.private.step import Context, Step, FilteredStep
 from pw_presubmit.private.tools import relative_paths
-from pw_presubmit.tools import PresubmitToolRunner
 
 _LOG = logging.getLogger("pw_presubmit")
 
@@ -46,9 +47,14 @@ class Mode(enum.Enum):
     STOP = 'stop'  # Stop on errors
     CONTINUE = 'continue'  # Continue past errors
     FIX = 'fix'  # Attempt to fix errors
+    AUTO = 'auto'  # Run on all commits, fixing errors, and amend
 
     def __str__(self) -> str:
         return self.value
+
+
+class AutoModeError(Exception):
+    """Exception raised for errors during auto mode execution."""
 
 
 class Orchestrator:
@@ -162,9 +168,9 @@ class Orchestrator:
             failed=[s.name for s in failed],
             skipped=[s.name for s in skipped],
             fixed=[s.name for s in fixed],
-            success=not failed and not fixed,
+            success=not failed and (not fixed or mode is Mode.AUTO),
         )
-        self._events.summary(program_result, duration)
+        self._events.program_completed(program_result, duration)
 
         return program_result
 
@@ -176,7 +182,12 @@ class Orchestrator:
         start_time = time.time()
 
         if (result := self._execute_run_impl(step)) is PresubmitResult.FAIL:
-            result = self._attempt_fix(step, fix=mode is Mode.FIX)
+            result = self._attempt_fix(step, fix=mode in (Mode.FIX, Mode.AUTO))
+            if result is PresubmitResult.FIXED and mode is Mode.AUTO:
+                _LOG.debug('Amending HEAD commit with fixes')
+                repo = git_repo.GitRepo(self._root, BasicSubprocessRunner())
+                repo.modify().amend_commit_with_updated_files()
+                result = PresubmitResult.PASS
 
         duration = time.time() - start_time
         self._events.step_end(step.name, index, result, duration)
@@ -235,7 +246,8 @@ class Orchestrator:
         """Attempts to fix failures."""
         if not fix:
             if type(step.step).fix is not Step.fix:
-                _LOG.info('Automatic fix available; run with --fix to apply')
+                _LOG.debug('Automatic fix available for %s', step.name)
+                self._events.fix_available(step.name)
             return PresubmitResult.FAIL
 
         if type(step.step).fix is Step.fix:
@@ -258,16 +270,19 @@ class Orchestrator:
         result = self._execute_run_impl(step)
 
         if result is PresubmitResult.PASS:
+            _LOG.debug('Applied automatic fix for %s', step.name)
+            self._events.fix_applied(step.name)
             return PresubmitResult.FIXED
 
         raise RuntimeError(
-            f'{step.name} failed after running its fix() '
-            f'implementation! This is invalid; '
-            f'the fix implementation is broken.'
+            f'{step.name} failed after running its fix() implementation! '
+            f'This is invalid; the fix implementation is broken. '
+            f'Please review the fix() method for {step.name} and ensure it '
+            f'correctly addresses the failures detected by run().'
         )
 
 
-def run(  # pylint: disable=too-many-arguments
+def run(
     name: str,
     steps: Iterable[Step],
     root: Path,
@@ -300,7 +315,16 @@ def run(  # pylint: disable=too-many-arguments
             base=base,
             file_filter=file_filter,
             root=root,
-            tool_runner=PresubmitToolRunner(),
+            tool_runner=BasicSubprocessRunner(),
+        )
+
+        events.collect_files(
+            repos=tuple(repos),
+            base=base,
+            pathspecs=tuple(pathspecs),
+            exclude=tuple(file_filter.exclude),
+            root=root,
+            repo_files=repo_files,
         )
 
         orchestrator = Orchestrator(
@@ -312,3 +336,278 @@ def run(  # pylint: disable=too-many-arguments
         )
 
         return orchestrator.run(name, steps, mode=mode)
+
+
+def _auto_loop(
+    name: str,
+    steps: Iterable[Step],
+    root: Path,
+    events: PresubmitEvents,
+    repo: git_repo.GitRepo,
+    base: str,
+    pathspecs: Iterable[str],
+    output_dir: Path,
+    file_filter: FileFilter,
+) -> tuple[bool, bool]:
+    """Internal loop for auto mode."""
+    fixes_occurred = False
+    steps = tuple(steps)
+    step_names = [s.name for s in steps]
+
+    while True:
+        result = run(
+            name=name,
+            steps=steps,
+            root=root,
+            events=events,
+            base='HEAD~',
+            pathspecs=pathspecs,
+            output_dir=output_dir,
+            file_filter=file_filter,
+            mode=Mode.AUTO,
+        )
+
+        if result.fixed:
+            fixes_occurred = True
+
+        if not result.success:
+            _LOG.debug('Presubmit failed on current commit; stopping rebase')
+
+            resume_file = output_dir / 'resume.json'
+            info = repo.rebase_info()
+            if not info:
+                raise AutoModeError(
+                    'Failed to read rebase information. '
+                    'Please ensure you are in a valid git rebase state. '
+                    'You may need to abort the rebase with '
+                    '`git rebase --abort` and try again.'
+                )
+            state = {
+                'name': name,
+                'root': str(root),
+                'base': base,
+                'pathspecs': list(pathspecs),
+                'output_dir': str(output_dir),
+                'step_names': step_names,
+                'rebase_onto': info.onto,
+                'rebase_orig_head': info.orig_head,
+                'event_handler': events.name,
+            }
+            try:
+                with resume_file.open('w') as f:
+                    json.dump(state, f, indent=2)
+            except OSError as e:
+                _LOG.error('Failed to write resume file: %s', e)
+
+            events.auto_mode_failed(resume_file)
+
+            return False, fixes_occurred
+
+        if repo.has_uncommitted_changes():
+            raise AutoModeError(
+                'Working tree is not clean after successful run! '
+                'This implies the presubmit modified files without amending '
+                'or committing them. Please commit or stash these changes '
+                'before continuing.'
+            )
+
+        try:
+            repo.modify().rebase_continue()
+            if not repo.is_in_rebase():
+                _LOG.debug('Rebase completed successfully!')
+                events.auto_mode_completed()
+                break
+        except git_repo.GitError as e:
+            if repo.is_in_rebase():
+                _LOG.debug('git rebase --continue failed due to conflicts')
+                _LOG.debug(
+                    'Resolve the merge conflicts, run '
+                    '`git rebase --continue`, then restart the presubmit run'
+                )
+                events.auto_mode_conflict()
+                return False, fixes_occurred
+
+            raise AutoModeError(
+                '`git rebase --continue` failed for an unknown reason. '
+                'Please check the output of `git status` and resolve any '
+                'issues manually.'
+            ) from e
+
+    return True, fixes_occurred
+
+
+def auto(
+    name: str,
+    steps: Iterable[Step],
+    root: Path,
+    events: PresubmitEvents,
+    base: str,
+    *,
+    pathspecs: Iterable[str] = (),
+    output_dir: Path | None = None,
+    file_filter: FileFilter = FileFilter(),
+) -> bool:
+    """Runs presubmit in auto mode (rebase and fix)."""
+    repo = git_repo.GitRepo(root, BasicSubprocessRunner())
+    if repo.has_uncommitted_changes():
+        raise AutoModeError(
+            "Git working tree has uncommitted changes. "
+            "Auto mode requires a clean working tree to safely rebase "
+            "and amend commits. "
+            "Please commit or stash your changes before running."
+        )
+
+    if output_dir is None:
+        output_dir = Path(tempfile.mkdtemp(prefix='pw_presubmit_auto_'))
+        _LOG.debug('Created output directory: %s', output_dir)
+
+    _LOG.debug('Starting interactive rebase on %s', base)
+    events.auto_mode_started(base)
+    try:
+        repo.modify().rebase_interactive(base)
+    except git_repo.GitError as e:
+        raise AutoModeError(
+            f'Failed to start interactive rebase onto {base}. '
+            f'Please ensure the base commit exists and you have no '
+            f'uncommitted changes.'
+        ) from e
+
+    success, fixes_occurred = _auto_loop(
+        name=name,
+        steps=steps,
+        root=root,
+        events=events,
+        repo=repo,
+        base=base,
+        pathspecs=pathspecs,
+        output_dir=output_dir,
+        file_filter=file_filter,
+    )
+
+    if success and fixes_occurred:
+        _LOG.debug("Fixes occurred during run. Restarting from beginning.")
+        events.auto_mode_restarting()
+        return auto(
+            name=name,
+            steps=steps,
+            root=root,
+            events=events,
+            base=base,
+            pathspecs=pathspecs,
+            output_dir=output_dir,
+            file_filter=file_filter,
+        )
+
+    return success
+
+
+def resume(
+    all_steps: Mapping[str, Step],
+    resume_file: Path,
+    file_filter: FileFilter = FileFilter(),
+) -> bool:
+    """Resumes a failed auto mode run."""
+    try:
+        with resume_file.open() as f:
+            state = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise AutoModeError(
+            f'Failed to load resume file: {e}. '
+            f'The file might be corrupted. You can delete it and restart '
+            f'the presubmit run.'
+        ) from e
+
+    try:
+        name = state['name']
+        root = Path(state['root'])
+        base = state['base']
+        pathspecs = state['pathspecs']
+        output_dir = Path(state['output_dir'])
+        saved_step_names = state['step_names']
+        events = PresubmitEvents.get(state['event_handler'])
+    except KeyError as e:
+        raise AutoModeError(
+            f'Resume file is missing required key: {e}. '
+            f'The file format may be incompatible. You can delete it and '
+            f'restart the presubmit run.'
+        ) from e
+
+    try:
+        steps = [all_steps[name] for name in saved_step_names]
+    except KeyError as e:
+        raise AutoModeError(
+            f'Unknown step in resume file: {e}. '
+            f'The step might have been removed or renamed. You can delete '
+            f'the resume file and restart.'
+        ) from e
+
+    repo = git_repo.GitRepo(root, BasicSubprocessRunner())
+    if not repo.is_in_rebase():
+        raise AutoModeError(
+            "--resume requires the git repository to be in a rebase state, but "
+            "it is not. This command should only be used to resume a failed "
+            "auto mode run that left the repo in a rebase state."
+        )
+
+    info = repo.rebase_info()
+    if not info:
+        raise AutoModeError(
+            'Failed to read rebase information. '
+            'Please ensure you are in a valid git rebase state. '
+            'You may need to abort the rebase with `git rebase --abort` '
+            'and try again.'
+        )
+    current_onto = info.onto
+    current_orig_head = info.orig_head
+
+    if current_onto != state.get(
+        'rebase_onto', ''
+    ) or current_orig_head != state.get('rebase_orig_head', ''):
+        raise AutoModeError(
+            "The current rebase state does not match the saved state.\n"
+            f"  Expected: onto={state.get('rebase_onto')}, "
+            f"orig_head={state.get('rebase_orig_head')}\n"
+            f"  Actual:   onto={current_onto}, "
+            f"orig_head={current_orig_head}\n"
+            "Please ensure you are resuming the correct rebase or delete the "
+            "resume file to start over."
+        )
+
+    if repo.has_uncommitted_changes():
+        raise AutoModeError(
+            "Git working tree has uncommitted changes. "
+            "Resuming auto mode requires a clean working tree to safely rebase "
+            "and amend commits. "
+            "Please amend or otherwise resolve changes before running."
+        )
+
+    _LOG.debug('Resuming presubmit run on current commit.')
+    events.auto_mode_resuming()
+
+    success, _ = _auto_loop(
+        name=name,
+        steps=steps,
+        root=root,
+        events=events,
+        repo=repo,
+        base=base,
+        pathspecs=pathspecs,
+        output_dir=output_dir,
+        file_filter=file_filter,
+    )
+
+    if success:
+        _LOG.debug('Resume completed successfully. Restarting from beginning.')
+        events.auto_mode_restarting()
+        return auto(
+            name=name,
+            steps=steps,
+            root=root,
+            events=events,
+            base=base,
+            pathspecs=pathspecs,
+            output_dir=output_dir,
+            file_filter=file_filter,
+        )
+
+    return False

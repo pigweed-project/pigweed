@@ -238,14 +238,16 @@ class TestGitRepo(unittest.TestCase):
 
     def test_commit_count(self):
         git_cmd_1 = 'rev-list --count HEAD'
-        git_cmd_2 = "rev-list --count 'HEAD~3' HEAD"
-        cmds = {
-            git_cmd_1: git_ok(git_cmd_1, '10'),
-            git_cmd_2: git_ok(git_cmd_2, '3'),
-        }
-        repo = self.make_fake_git_repo(cmds)
-        self.assertEqual(repo.commit_count('HEAD'), 10)
-        self.assertEqual(repo.commit_count('HEAD~3', 'HEAD'), 3)
+        git_cmd_2 = "rev-list --count abc..def"
+
+        repo = self.make_fake_git_repo(
+            {
+                git_cmd_1: git_ok(git_cmd_1, '1'),
+                git_cmd_2: git_ok(git_cmd_2, '2'),
+            }
+        )
+        self.assertEqual(repo.commit_count('HEAD'), 1)
+        self.assertEqual(repo.commit_count('abc', 'def'), 2)
 
     def test_is_in_rebase(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
