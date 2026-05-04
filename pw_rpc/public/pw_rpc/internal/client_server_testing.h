@@ -72,7 +72,10 @@ class ForwardingChannelOutput : public ChannelOutput {
   }
 
   // Clears and resets the FakeChannelOutputImpl.
-  void clear() { output_.clear(); }
+  void clear() {
+    output_.clear();
+    sent_packets_ = 0;
+  }
 
  protected:
   explicit ForwardingChannelOutput(
