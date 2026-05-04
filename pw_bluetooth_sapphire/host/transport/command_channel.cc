@@ -23,8 +23,10 @@
 #include <pw_result/result.h>
 #include <pw_status/status.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
-#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -33,9 +35,14 @@
 #include "pw_bluetooth_sapphire/internal/host/common/trace.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/slab_allocators.h"
 #include "pw_multibuf/v2/multibuf.h"
-#include "pw_span/span.h"
+#include "pw_string/string_builder.h"
 
 namespace bt::hci {
+
+namespace {
+constexpr uint64_t kCommandDurationOutlierThresholdMs = 5000;
+constexpr size_t kMaxOutliers = 10;
+}  // namespace
 
 static bool IsAsync(hci_spec::EventCode code) {
   return code != hci_spec::kCommandCompleteEventCode &&
@@ -100,6 +107,7 @@ CommandChannel::TransactionData::~TransactionData() {
 
 void CommandChannel::TransactionData::StartTimer() {
   state_.Set(State::kPending);
+  start_time_ = timeout_task_.dispatcher().now();
   // Transactions should only ever be started once.
   PW_DCHECK(!timeout_task_.is_pending());
   timeout_task_.set_function(
@@ -115,6 +123,9 @@ void CommandChannel::TransactionData::Complete(
     std::unique_ptr<EventPacket> event) {
   state_.Set(State::kComplete);
   timeout_task_.Cancel();
+
+  auto end_time = timeout_task_.dispatcher().now();
+  channel_->RecordCommandResponseTime(end_time - start_time_);
 
   if (!callback_) {
     wake_lease_.reset();
@@ -136,8 +147,14 @@ void CommandChannel::TransactionData::Complete(
 }
 
 void CommandChannel::TransactionData::Cancel() {
+  auto end_time = timeout_task_.dispatcher().now();
   timeout_task_.Cancel();
   callback_ = nullptr;
+
+  uint64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    end_time - start_time_)
+                    .count();
+  bt_log(INFO, "hci", "Canceling Transaction after %" PRIu64 " ms", ms);
 }
 
 CommandChannel::EventCallback CommandChannel::TransactionData::MakeCallback() {
@@ -863,6 +880,68 @@ void CommandChannel::OnCommandTimeout(TransactionId transaction_id) {
   }
 }
 
+void CommandChannel::RecordCommandResponseTime(
+    pw::chrono::SystemClock::duration duration) {
+  uint64_t ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+  // Check for overflow in sum of squares
+  if (total_command_response_time_squared_ms_ >
+      std::numeric_limits<uint64_t>::max() - (ms * ms)) {
+    bt_log(
+        WARN,
+        "hci",
+        "command response time sum of squares overflowed; resetting metrics");
+    command_count_ = 0;
+    total_command_response_time_ms_ = 0;
+    total_command_response_time_squared_ms_ = 0;
+  }
+
+  command_count_++;
+  total_command_response_time_ms_ += ms;
+  total_command_response_time_squared_ms_ += ms * ms;
+
+  if (ms > kCommandDurationOutlierThresholdMs) {
+    bt_log(
+        WARN, "hci", "command reply longer than threshold: %" PRIu64 " ms", ms);
+    outlier_response_times_ms_.push_back(ms);
+    if (outlier_response_times_ms_.size() > kMaxOutliers) {
+      outlier_response_times_ms_.pop_front();
+    }
+
+    pw::StringBuffer<256> outliers_str;
+    outliers_str << "[";
+    for (auto it = outlier_response_times_ms_.begin();
+         it != outlier_response_times_ms_.end();
+         ++it) {
+      outliers_str << *it;
+      if (std::next(it) != outlier_response_times_ms_.end()) {
+        outliers_str << ", ";
+      }
+    }
+    outliers_str << "]";
+    command_response_outliers_.Set(outliers_str.c_str());
+  }
+
+  uint64_t avg = total_command_response_time_ms_ / command_count_;
+  avg_command_response_time_ms_.Set(avg);
+
+  // Compute variance: E[X^2] - (E[X])^2
+  uint64_t mean_squares =
+      total_command_response_time_squared_ms_ / command_count_;
+  uint64_t variance = 0;
+  if (mean_squares >= avg * avg) {
+    variance = mean_squares - (avg * avg);
+  }
+  variance_command_response_time_ms_.Set(variance);
+
+  double std_dev = std::sqrt(static_cast<double>(variance));
+  uint64_t p95 = avg + static_cast<uint64_t>(1.645 * std_dev);
+  uint64_t p99 = avg + static_cast<uint64_t>(2.326 * std_dev);
+  p95_command_response_time_ms_.Set(p95);
+  p99_command_response_time_ms_.Set(p99);
+}
+
 void CommandChannel::AttachInspect(inspect::Node& parent,
                                    const std::string& name) {
   command_channel_node_ = parent.CreateChild(name);
@@ -871,6 +950,16 @@ void CommandChannel::AttachInspect(inspect::Node& parent,
                                        "next_event_handler_id");
   allowed_command_packets_.AttachInspect(command_channel_node_,
                                          "allowed_command_packets");
+
+  response_stats_node_ =
+      command_channel_node_.CreateChild(kResponseStatsInspectNodeName);
+
+  avg_command_response_time_ms_.AttachInspect(response_stats_node_, "avg_ms");
+  p95_command_response_time_ms_.AttachInspect(response_stats_node_, "p95_ms");
+  p99_command_response_time_ms_.AttachInspect(response_stats_node_, "p99_ms");
+  variance_command_response_time_ms_.AttachInspect(response_stats_node_,
+                                                   "variance_ms_sq");
+  command_response_outliers_.AttachInspect(response_stats_node_, "outliers");
 }
 
 }  // namespace bt::hci

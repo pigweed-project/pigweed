@@ -24,6 +24,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "pw_bluetooth/controller.h"
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
@@ -363,6 +364,8 @@ class CommandChannel final {
     // Always zero if this transaction is synchronous.
     EventHandlerId handler_id_;
 
+    pw::chrono::SystemClock::time_point start_time_;
+
     BT_DISALLOW_COPY_ASSIGN_AND_MOVE(TransactionData);
   };
 
@@ -517,6 +520,23 @@ class CommandChannel final {
   pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
 
   pw::chrono::SystemClock::duration command_timeout_;
+
+  // Metrics for command response times.
+  uint64_t command_count_ = 0;
+  uint64_t total_command_response_time_ms_ = 0;
+  uint64_t total_command_response_time_squared_ms_ = 0;
+  std::list<uint64_t> outlier_response_times_ms_;
+
+  static constexpr const char* kResponseStatsInspectNodeName =
+      "command_response_stats";
+  inspect::Node response_stats_node_;
+  UintInspectable<uint64_t> avg_command_response_time_ms_;
+  UintInspectable<uint64_t> p95_command_response_time_ms_;
+  UintInspectable<uint64_t> p99_command_response_time_ms_;
+  UintInspectable<uint64_t> variance_command_response_time_ms_;
+  StringInspectable<std::string> command_response_outliers_;
+
+  void RecordCommandResponseTime(pw::chrono::SystemClock::duration duration);
 
   // As events can arrive in the event thread at any time, we should invalidate
   // our weak pointers early.

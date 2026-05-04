@@ -61,6 +61,7 @@ pw_source_set("transport") {
     "$dir_pw_multibuf/v2:multibuf",
     "$dir_pw_result",
     "$dir_pw_status",
+    "$dir_pw_string",
     "$pw_external_fuchsia:fit",
     dir_pw_allocator,
     dir_pw_bluetooth,

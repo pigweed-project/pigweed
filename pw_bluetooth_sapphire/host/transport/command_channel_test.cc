@@ -2199,12 +2199,20 @@ TEST_F(CommandChannelTest, InspectHierarchy) {
   auto transactions_matcher =
       AllOf(NodeMatches(AllOf(NameMatches("transactions"))));
 
-  auto command_channel_matcher =
-      AllOf(NodeMatches(AllOf(NameMatches("command_channel"),
-                              PropertyList(UnorderedElementsAre(
-                                  UintIs("allowed_command_packets", 1),
-                                  UintIs("next_event_handler_id", 1))))),
-            ChildrenMatch(UnorderedElementsAre(transactions_matcher)));
+  auto stats_matcher = AllOf(NodeMatches(
+      AllOf(NameMatches("command_response_stats"),
+            PropertyList(UnorderedElementsAre(UintIs("avg_ms", 0),
+                                              UintIs("p95_ms", 0),
+                                              UintIs("p99_ms", 0),
+                                              UintIs("variance_ms_sq", 0),
+                                              StringIs("outliers", ""))))));
+
+  auto command_channel_matcher = AllOf(
+      NodeMatches(AllOf(NameMatches("command_channel"),
+                        PropertyList(UnorderedElementsAre(
+                            UintIs("allowed_command_packets", 1),
+                            UintIs("next_event_handler_id", 1))))),
+      ChildrenMatch(UnorderedElementsAre(transactions_matcher, stats_matcher)));
 
   EXPECT_THAT(inspect::ReadFromVmo(inspector_.DuplicateVmo()).value(),
               ChildrenMatch(ElementsAre(command_channel_matcher)));
@@ -2220,8 +2228,9 @@ TEST_F(CommandChannelTest, InspectHierarchy) {
   EXPECT_CMD_PACKET_OUT(test_device(), req, &rsp0, &rsp1);
 
   int cb_count = 0;
-  auto cb = [&cb_count, this](CommandChannel::TransactionId callback_id,
-                              const EventPacket& event) {
+  auto cb = [&cb_count, &stats_matcher, this](
+                CommandChannel::TransactionId callback_id,
+                const EventPacket& event) {
     cb_count++;
     if (cb_count == 1) {
       ASSERT_EQ(hci_spec::kCommandStatusEventCode, event.event_code());
@@ -2238,7 +2247,8 @@ TEST_F(CommandChannelTest, InspectHierarchy) {
                                   PropertyList(UnorderedElementsAre(
                                       UintIs("allowed_command_packets", 1),
                                       UintIs("next_event_handler_id", 2))))),
-                ChildrenMatch(ElementsAre(transactions_matcher_complete)));
+                ChildrenMatch(UnorderedElementsAre(
+                    transactions_matcher_complete, stats_matcher)));
 
       EXPECT_THAT(inspect::ReadFromVmo(inspector_.DuplicateVmo()).value(),
                   ChildrenMatch(ElementsAre(command_channel_matcher_complete)));
@@ -2252,7 +2262,8 @@ TEST_F(CommandChannelTest, InspectHierarchy) {
                                   PropertyList(UnorderedElementsAre(
                                       UintIs("allowed_command_packets", 1),
                                       UintIs("next_event_handler_id", 2))))),
-                ChildrenMatch(ElementsAre(transactions_matcher_empty)));
+                ChildrenMatch(
+                    ElementsAre(transactions_matcher_empty, stats_matcher)));
     }
   };
 
@@ -2280,13 +2291,89 @@ TEST_F(CommandChannelTest, InspectHierarchy) {
                               PropertyList(UnorderedElementsAre(
                                   UintIs("allowed_command_packets", 0),
                                   UintIs("next_event_handler_id", 2))))),
-            ChildrenMatch(ElementsAre(transactions_matcher_after_send)));
+            ChildrenMatch(UnorderedElementsAre(transactions_matcher_after_send,
+                                               stats_matcher)));
 
   EXPECT_THAT(inspect::ReadFromVmo(inspector_.DuplicateVmo()).value(),
               ChildrenMatch(ElementsAre(command_channel_matcher_after_send)));
 
   RunUntilIdle();
   EXPECT_EQ(2, cb_count);
+}
+
+TEST_F(CommandChannelTest, ResponseTimeMetrics) {
+  cmd_channel()->AttachInspect(inspector_.GetRoot(), "command_channel");
+
+  auto send_cmd_with_delay = [&](int delay_seconds) {
+    const auto req = testing::InquiryCommandPacket(0x01);
+    const auto rsp_status = StaticByteBuffer(
+        hci_spec::kCommandStatusEventCode,
+        0x04,  // parameter_total_size (3 byte payload)
+        pw::bluetooth::emboss::StatusCode::SUCCESS,
+        0x01,  // status, num_hci_command_packets (1 can be sent)
+        LowerBits(hci_spec::kInquiry),
+        UpperBits(hci_spec::kInquiry));
+    auto rsp_complete =
+        StaticByteBuffer(hci_spec::kInquiryCompleteEventCode,
+                         0x01,  // parameter_total_size (1 byte payload)
+                         pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+    EXPECT_CMD_PACKET_OUT(test_device(), req, );
+    auto packet =
+        hci::CommandPacket::New<pw::bluetooth::emboss::InquiryCommandWriter>(
+            hci_spec::kInquiry);
+    auto view = packet.view_t();
+    view.lap().Write(pw::bluetooth::emboss::InquiryAccessCode::GIAC);
+    view.inquiry_length().Write(1);
+    view.num_responses().Write(0);
+
+    EXPECT_TRUE(cmd_channel()
+                    ->SendCommand(
+                        std::move(packet),
+                        [](auto, const auto&) {},
+                        hci_spec::kInquiryCompleteEventCode)
+                    .ok());
+
+    RunFor(std::chrono::seconds(delay_seconds));
+    // for async commands, the measurement should be from initiate -> status
+    // not initiate -> finish
+    test_device()->SendCommandChannelPacket(rsp_status);
+    // Inquiry should run for 1 secoond
+    RunFor(std::chrono::seconds(1));
+    test_device()->SendCommandChannelPacket(rsp_complete);
+    RunUntilIdle();
+  };
+
+  send_cmd_with_delay(1);
+  send_cmd_with_delay(2);
+  send_cmd_with_delay(3);
+  send_cmd_with_delay(4);
+  send_cmd_with_delay(6);  // Outlier!
+
+  // Verify that metrics are updated in Inspect.
+  // Average should be (1000 + 2000 + 3000 + 4000 + 6000) / 5 = 3200 ms.
+  // Samples: [1000, 2000, 3000, 4000, 6000]
+  // Given the avg (3200ms) and variance, the p95 and p99 were calculated
+  // manually to verify.
+  auto stats_after_send_matcher = AllOf(NodeMatches(AllOf(
+      NameMatches("command_response_stats"),
+      PropertyList(UnorderedElementsAre(UintIs("avg_ms", 3200),
+                                        UintIs("p95_ms", 6030),
+                                        UintIs("p99_ms", 7201),
+                                        UintIs("variance_ms_sq", 2960000),
+                                        StringIs("outliers", "[6000]"))))));
+  auto transactions_matcher =
+      AllOf(NodeMatches(AllOf(NameMatches("transactions"))));
+  auto command_channel_matcher =
+      AllOf(NodeMatches(AllOf(NameMatches("command_channel"),
+                              PropertyList(UnorderedElementsAre(
+                                  UintIs("allowed_command_packets", 1),
+                                  UintIs("next_event_handler_id", 6))))),
+            ChildrenMatch(UnorderedElementsAre(transactions_matcher,
+                                               stats_after_send_matcher)));
+
+  EXPECT_THAT(inspect::ReadFromVmo(inspector_.DuplicateVmo()).value(),
+              ChildrenMatch(ElementsAre(command_channel_matcher)));
 }
 #endif  // NINSPECT
 

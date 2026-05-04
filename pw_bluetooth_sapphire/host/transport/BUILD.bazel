@@ -72,6 +72,7 @@ cc_library(
         "//pw_multibuf/v2:multibuf",
         "//pw_result",
         "//pw_status",
+        "//pw_string",
         "//third_party/fuchsia:fit",
     ],
 )
