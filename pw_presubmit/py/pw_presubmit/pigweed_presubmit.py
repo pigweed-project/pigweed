@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -1283,7 +1284,7 @@ def run(install: bool, exclude: list[Pattern[str]], **presubmit_args) -> int:
         )
         return 0
 
-    exclude.extend(pigweed_local_presubmit.EXCLUDES)
+    exclude.extend(re.compile(p) for p in pigweed_local_presubmit.EXCLUDES)
     return cli.run(exclude=exclude, **presubmit_args)
 
 

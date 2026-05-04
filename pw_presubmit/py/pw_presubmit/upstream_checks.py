@@ -14,10 +14,12 @@
 """General non-build presubmit checks only applicable to upstream Pigweed."""
 
 from pathlib import Path
+import datetime
+import difflib
 import logging
 import re
 import shutil
-from typing import Iterable, Sequence, TextIO
+from typing import Iterable, Sequence
 
 from pw_cli.file_filter import FileFilter
 from pw_cli.plural import plural
@@ -32,7 +34,7 @@ from pw_presubmit import (
     source_in_build,
     todo_check,
 )
-from pw_presubmit.presubmit import Check, filter_paths
+from pw_presubmit.v2 import step, Step, Context
 
 
 _LOG = logging.getLogger('pw_presubmit')
@@ -365,24 +367,137 @@ _SKIP_LINE_PREFIXES = (
 )
 
 
-def _read_notice_lines(file: TextIO) -> Iterable[str]:
-    lines = iter(file)
+def _read_notice_lines(lines: Iterable[str]) -> Iterable[str]:
+    lines_iter = iter(lines)
     try:
         # Read until the first line of the copyright notice.
-        line = next(lines)
+        line = next(lines_iter)
         while line.isspace() or line.startswith(_SKIP_LINE_PREFIXES):
-            line = next(lines)
+            line = next(lines_iter)
 
         yield line
 
         for _ in range(12):  # The notice is 13 lines; read the remaining 12.
-            yield next(lines)
+            yield next(lines_iter)
     except StopIteration:
         pass
 
 
-@filter_paths(exclude=_EXCLUDE_FROM_COPYRIGHT_NOTICE)
-def copyright_notice(ctx: PresubmitContext):
+def _get_comment_style(path: Path) -> str | None:
+    if path.suffix in (
+        '.cc',
+        '.h',
+        '.c',
+        '.cpp',
+        '.hpp',
+        '.java',
+        '.js',
+        '.ts',
+        '.go',
+    ):
+        return '//'
+    if path.suffix in ('.py', '.gn', '.gni', '.cfg', '.emb', '.yaml', '.toml'):
+        return '#'
+    return None
+
+
+def _generate_notice(comment_style: str) -> str:
+    year = datetime.date.today().year
+    return f"""{comment_style} Copyright {year} The Pigweed Authors
+{comment_style}
+{comment_style} Licensed under the Apache License, Version 2.0 (the "License"); you may not
+{comment_style} use this file except in compliance with the License. You may obtain a copy of
+{comment_style} the License at
+{comment_style}
+{comment_style}     https://www.apache.org/licenses/LICENSE-2.0
+{comment_style}
+{comment_style} Unless required by applicable law or agreed to in writing, software
+{comment_style} distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+{comment_style} WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+{comment_style} License for the specific language governing permissions and limitations under
+{comment_style} the License.
+"""
+
+
+def _detect_copyright_typos(lines: Sequence[str], comment_style: str) -> bool:
+    matcher = difflib.SequenceMatcher(
+        None, ''.join(lines[:13]), _generate_notice(comment_style)
+    )
+    return matcher.ratio() > 0.85
+
+
+def _insert_copyright_notice(
+    path: Path, lines: Sequence[str], insert_idx: int
+) -> list[str] | None:
+    comment_style = _get_comment_style(path)
+    if not comment_style:
+        _LOG.warning(
+            '%s: Unknown file type, cannot insert copyright notice.', path
+        )
+        return None
+
+    notice = _generate_notice(comment_style)
+    return (
+        list(lines[:insert_idx])
+        + list(notice.splitlines(keepends=True))
+        + list(lines[insert_idx:])
+    )
+
+
+def _fix_copyright(ctx: Context) -> bool:
+    for path in ctx.paths:
+        if path.stat().st_size == 0:
+            continue
+
+        try:
+            with path.open() as file:
+                lines = file.readlines()
+        except UnicodeDecodeError:
+            _LOG.warning('failed to read %s', path)
+            continue
+
+        insert_idx = 0
+        found_non_skipped = False
+        for idx, line in enumerate(lines):
+            if not (line.isspace() or line.startswith(_SKIP_LINE_PREFIXES)):
+                insert_idx = idx
+                found_non_skipped = True
+                break
+
+        if not found_non_skipped:
+            insert_idx = len(lines)
+
+        # Check if it matches already
+        if _COPYRIGHT.match(''.join(lines[insert_idx : insert_idx + 13])):
+            continue
+
+        # Typo detection
+        comment_style = _get_comment_style(path)
+        if comment_style and _detect_copyright_typos(
+            lines[insert_idx:], comment_style
+        ):
+            _LOG.warning(
+                '%s: Copyright notice appears to be present but is malformed. '
+                'Please fix manually.',
+                path,
+            )
+            ctx.fail(f'Malformed copyright notice in {path}')
+            continue
+
+        # If no typo, insert notice
+        new_lines = _insert_copyright_notice(path, lines, insert_idx)
+        if new_lines is None:
+            ctx.fail(f'Unable to insert copyright notice in {path}')
+            continue
+
+        with path.open('w') as file:
+            file.writelines(new_lines)
+
+    return not ctx.failed
+
+
+@step(exclude=_EXCLUDE_FROM_COPYRIGHT_NOTICE, fix=_fix_copyright)
+def copyright_notice(ctx: Context) -> None:
     """Checks that the Pigweed copyright notice is present."""
     errors = []
 
@@ -406,8 +521,8 @@ def copyright_notice(ctx: PresubmitContext):
         raise PresubmitFailure
 
 
-@filter_paths(file_filter=format_code.OWNERS_CODE_FORMAT.filter)
-def owners_lint_checks(ctx: PresubmitContext):
+@step(file_filter=format_code.OWNERS_CODE_FORMAT.filter)
+def owners_lint_checks(ctx: Context) -> None:
     """Runs OWNERS linter."""
     owners_checks.presubmit_check(ctx.paths)
 
@@ -519,8 +634,12 @@ INCLUDE_CHECK_TARGET_PATTERN = "//... " + " ".join(
 )
 
 
-def bazel_includes() -> Check:
-    return bazel_checks.includes_presubmit_check(INCLUDE_CHECK_TARGET_PATTERN)
+def bazel_includes() -> Step:
+    @step()
+    def _bazel_includes(ctx: Context) -> None:
+        bazel_checks.includes_presubmit_check(INCLUDE_CHECK_TARGET_PATTERN)(ctx)
+
+    return _bazel_includes
 
 
 _EXCLUDE_FROM_TODO_CHECK = (
@@ -561,30 +680,45 @@ _EXCLUDE_FROM_TODO_CHECK = (
 )
 
 
-@filter_paths(exclude=_EXCLUDE_FROM_TODO_CHECK)
-def todo_check_with_exceptions(ctx: PresubmitContext):
+@step(exclude=_EXCLUDE_FROM_TODO_CHECK)
+def todo_check_with_exceptions(ctx: Context) -> None:
     """Check that non-legacy TODO lines are valid."""  # todo-check: ignore
     todo_check.create(todo_check.BUGS_OR_USERNAMES)(ctx)
 
 
-def source_in_gn_build() -> Check:
-    return source_in_build.gn(SOURCE_FILES_FILTER).with_file_filter(
-        SOURCE_FILES_FILTER_GN_EXCLUDE
+def source_in_gn_build() -> Step:
+    @step(
+        name='source_is_in_gn_build',
+        file_filter=SOURCE_FILES_FILTER.concat(SOURCE_FILES_FILTER_GN_EXCLUDE),
     )
+    def _source_in_gn_build(ctx: Context) -> None:
+        source_in_build.gn(SOURCE_FILES_FILTER)(ctx)
+
+    return _source_in_gn_build
 
 
-def source_in_bazel_build() -> Check:
-    return source_in_build.bazel(SOURCE_FILES_FILTER).with_file_filter(
-        SOURCE_FILES_FILTER_BAZEL_EXCLUDE
+def source_in_bazel_build() -> Step:
+    @step(
+        name='source_is_in_bazel_build',
+        file_filter=SOURCE_FILES_FILTER.concat(
+            SOURCE_FILES_FILTER_BAZEL_EXCLUDE
+        ),
     )
+    def _source_in_bazel_build(ctx: Context) -> None:
+        source_in_build.bazel(SOURCE_FILES_FILTER)(ctx)
+
+    return _source_in_bazel_build
 
 
-inclusive_language_check = inclusive_language.presubmit_check.with_filter(
+@step(
+    name='inclusive_language',
     exclude=(
         r'\bMODULE.bazel.lock$',
         r'\bgo.sum$',
         r'\bpackage-lock.json$',
         r'\bpnpm-lock.yaml$',
         r'\byarn.lock$',
-    )
+    ),
 )
+def inclusive_language_check(ctx: Context) -> None:
+    inclusive_language.presubmit_check(ctx)

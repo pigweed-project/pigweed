@@ -107,6 +107,7 @@ pw_python_package("py") {
     "owners_checks_test.py",
     "todo_check_test.py",
     "tools_test.py",
+    "upstream_checks_test.py",
     "v2_cli_test.py",
   ]
 

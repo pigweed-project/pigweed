@@ -749,6 +749,14 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "upstream_checks_test",
+    srcs = ["upstream_checks_test.py"],
+    deps = [
+        ":pw_presubmit",
+    ],
+)
+
+pw_py_test(
     name = "tools_test",
     srcs = ["tools_test.py"],
     deps = [

@@ -15,15 +15,12 @@
 
 import json
 
-from . import presubmit, presubmit_context
+from pw_presubmit.v2 import step, Context
 
 
-@presubmit.filter_paths(endswith=('.json',))
-@presubmit.check(name='json_check')
-def presubmit_check(ctx: presubmit_context.PresubmitContext):
+@step(name='json_check', endswith=('.json',))
+def presubmit_check(ctx: Context):
     """Presubmit check that ensures JSON files are valid."""
-
-    ctx.paths = presubmit_context.apply_exclusions(ctx)
 
     for path in ctx.paths:
         with path.open('r') as ins:

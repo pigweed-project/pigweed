@@ -14,7 +14,9 @@
 # the License.
 """Tests for cpp_checks."""
 
+import os
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -37,7 +39,7 @@ class TestPragmaOnce(unittest.TestCase):
 
         with patch.object(path, 'open', mocked_open_read):
             self.ctx.paths = [path]
-            cpp_checks.pragma_once(self.ctx)
+            cpp_checks.pragma_once.run(self.ctx)
 
     def test_empty(self) -> None:
         self._run('')
@@ -54,6 +56,54 @@ class TestPragmaOnce(unittest.TestCase):
     def test_different_pragma(self) -> None:
         self._run('#pragma thrice')
         self.ctx.fail.assert_called()
+
+    def test_fix(self) -> None:
+        self.ctx = MagicMock()
+        self.ctx.fail = MagicMock()
+        self.ctx.format_options.filter_paths = lambda x: x
+
+        with tempfile.NamedTemporaryFile('w+', delete=False) as f:
+            f.write('// Comment\n\n#include <foo>\n')
+            path = Path(f.name)
+
+        self.ctx.paths = [path]
+
+        try:
+            cpp_checks.pragma_once.fix(self.ctx)
+
+            with open(path) as f:
+                content = f.read()
+
+            self.assertEqual(
+                content, '// Comment\n#pragma once\n\n#include <foo>\n'
+            )
+
+        finally:
+            os.unlink(path)
+
+    def test_fix_adds_blank_line(self) -> None:
+        self.ctx = MagicMock()
+        self.ctx.fail = MagicMock()
+        self.ctx.format_options.filter_paths = lambda x: x
+
+        with tempfile.NamedTemporaryFile('w+', delete=False) as f:
+            f.write('// Comment\n#include <foo>\n')
+            path = Path(f.name)
+
+        self.ctx.paths = [path]
+
+        try:
+            cpp_checks.pragma_once.fix(self.ctx)
+
+            with open(path) as f:
+                content = f.read()
+
+            self.assertEqual(
+                content, '// Comment\n#pragma once\n\n#include <foo>\n'
+            )
+
+        finally:
+            os.unlink(path)
 
 
 def guard(path: Path) -> str:

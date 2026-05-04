@@ -13,21 +13,23 @@
 # the License.
 """C++-related checks."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 import re
-from typing import Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator, Pattern
+import warnings
 
-from pw_presubmit.presubmit import (
-    Check,
-    filter_paths,
-)
-from pw_presubmit.presubmit_context import PresubmitContext
 from pw_presubmit import (
+    Check,
     build,
     format_code,
     presubmit_context,
 )
+from pw_presubmit.presubmit import filter_paths
+from pw_presubmit.presubmit_context import PresubmitContext
+from pw_presubmit.v2 import Step, Context
 
 _LOG: logging.Logger = logging.getLogger(__name__)
 
@@ -36,20 +38,69 @@ def _fail(ctx, error, path):
     ctx.fail(error, path=path)
 
 
-@filter_paths(endswith=format_code.CPP_HEADER_EXTS, exclude=(r'\.pb\.h$',))
-def pragma_once(ctx: PresubmitContext) -> None:
-    """Presubmit check that ensures all header files contain '#pragma once'."""
-
-    ctx.paths = presubmit_context.apply_exclusions(ctx)
-
-    for path in ctx.paths:
-        _LOG.debug('Checking %s', path)
+def _files_missing_pragma_once(paths: Iterable[Path]) -> Iterator[Path]:
+    """Yields files that are missing '#pragma once'."""
+    for path in paths:
         with path.open() as file:
             for line in file:
                 if line.startswith('#pragma once'):
                     break
             else:
-                _fail(ctx, '#pragma once is missing!', path=path)
+                yield path
+
+
+class PragmaOnce(Step):
+    """Presubmit check that ensures all header files contain '#pragma once'."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            endswith=format_code.CPP_HEADER_EXTS, exclude=[r'\.pb\.h$']
+        )
+
+    def run(self, ctx: Context) -> None:
+        for path in _files_missing_pragma_once(ctx.paths):
+            _fail(ctx, '#pragma once is missing!', path=path)
+
+    def fix(self, ctx: Context) -> None:
+        for path in _files_missing_pragma_once(ctx.paths):
+            with path.open() as file:
+                lines = file.readlines()
+
+            # Find the first line that does not start with '//'
+            # (ignoring leading whitespace)
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if not line.lstrip().startswith('//'):
+                    insert_idx = i
+                    break
+            else:
+                insert_idx = len(lines)
+
+            # Insert #pragma once after the first non-comment line
+            lines.insert(insert_idx, '#pragma once\n')
+
+            # Add a blank line after #pragma once if the next line is not empty
+            if insert_idx + 1 < len(lines) and lines[insert_idx + 1].strip():
+                lines.insert(insert_idx + 1, '\n')
+
+            with path.open('w') as file:
+                file.writelines(lines)
+
+    def with_filter(
+        self,
+        *,
+        exclude: Iterable[Pattern[str] | str],
+        endswith: Iterable[str] = (),
+    ) -> PragmaOnce:
+        warnings.warn(
+            "with_filter() is deprecated; use concat_filter() instead.",
+            DeprecationWarning,
+        )
+        return self.concat_filter(exclude=exclude, endswith=endswith)
+
+
+# For backwards compatibility:
+pragma_once = PragmaOnce()
 
 
 def include_guard_check(

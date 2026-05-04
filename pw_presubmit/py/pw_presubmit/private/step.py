@@ -159,7 +159,7 @@ class Step(ABC):
         file_filter: FileFilter = FileFilter(),
     ) -> _T:
         """Make a copy of this step with concatenated FileFilter rules."""
-        clone = copy.copy(self)
+        clone = copy.deepcopy(self)
         clone._filter = self._filter.concat(  # pylint: disable=protected-access
             exclude=exclude, endswith=endswith, name=match_name, suffix=suffix
         ).concat(file_filter)
@@ -168,7 +168,8 @@ class Step(ABC):
 
 def step(
     *,
-    fix: Callable[[Context], None] | None = None,
+    name: str | None = None,
+    fix: Callable[[Context], bool] | None = None,
     exclude: Iterable[Pattern[str] | str] = (),
     endswith: Iterable[str] = (),
     match_name: Iterable[Pattern[str] | str] = (),
@@ -189,7 +190,10 @@ def step(
                     file_filter=file_filter,
                 )
                 self.__doc__ = func.__doc__
-                self._name = _camel_to_snake(func.__name__)
+                if name is None:
+                    self._name = _camel_to_snake(func.__name__)
+                else:
+                    self._name = name
 
             def run(self, ctx: Context) -> None:
                 func(ctx)

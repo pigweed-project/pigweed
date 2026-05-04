@@ -15,7 +15,8 @@
 
 import re
 
-from . import presubmit, presubmit_context, inclusive_language
+from pw_presubmit.v2 import step, Context
+from pw_presubmit import inclusive_language
 
 WORDS_REGEX = re.compile(
     r"do[\s_-]*not[\s_-]*submit|don'?t[\s_-]*submit", re.IGNORECASE
@@ -26,8 +27,8 @@ IGNORE_TAG = 'block-submission: ignore'
 ISSUE_TYPE = 'submission-blocking phrase'
 
 
-@presubmit.check(name='block_submission')
-def presubmit_check(ctx: presubmit_context.PresubmitContext) -> None:
+@step(name='block_submission')
+def presubmit_check(ctx: Context) -> None:
     inclusive_language.generic_presubmit_check(
         ctx,
         words_regex=WORDS_REGEX,

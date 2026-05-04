@@ -23,9 +23,11 @@ import sys
 from typing import (
     Callable,
     Collection,
+    Iterable,
     Pattern,
     Sequence,
 )
+import warnings
 
 import pw_cli
 import pw_cli.log
@@ -35,9 +37,9 @@ from pw_cli.collect_files import (
 )
 from pw_cli.diff import colorize_diff
 from pw_cli.plural import plural
-from pw_presubmit.private.result import Failure, PresubmitFailure
-from . import git_repo, presubmit, presubmit_context, tools
-from .presubmit_context import Failure
+from pw_presubmit.v2 import Step, Context, PresubmitFailure
+from pw_presubmit import git_repo, presubmit, tools
+from pw_presubmit.presubmit_context import Failure
 
 DEFAULT_PATH = Path('out', 'presubmit', 'keep_sorted')
 
@@ -135,7 +137,7 @@ class _Block:
 class _FileSorter:
     def __init__(
         self,
-        ctx: presubmit.PresubmitContext | KeepSortedContext,
+        ctx: presubmit.PresubmitContext | KeepSortedContext | Context,
         path: Path,
         errors: dict[Path, Sequence[str]] | None = None,
     ):
@@ -362,7 +364,7 @@ def _print_howto_fix(paths: Sequence[Path]) -> None:
 
 
 def _process_files(
-    ctx: presubmit.PresubmitContext | KeepSortedContext,
+    ctx: presubmit.PresubmitContext | KeepSortedContext | Context,
 ) -> dict[Path, Sequence[str]]:
     fix = getattr(ctx, 'fix', False)
     errors: dict[Path, Sequence[str]] = {}
@@ -405,15 +407,29 @@ def _process_files(
     return errors
 
 
-@presubmit.check(name='keep_sorted')
-def presubmit_check(ctx: presubmit.PresubmitContext) -> None:
+class KeepSorted(Step):
     """Presubmit check that ensures specified lists remain sorted."""
 
-    ctx.paths = presubmit_context.apply_exclusions(ctx)
-    errors = _process_files(ctx)
+    def __init__(self) -> None:
+        super().__init__()
 
-    if errors:
-        _print_howto_fix(list(errors.keys()))
+    def run(self, ctx: Context) -> None:
+        errors = _process_files(ctx)
+
+        if errors:
+            _print_howto_fix(list(errors.keys()))
+
+    def with_filter(
+        self, *, exclude: Iterable[Pattern[str] | str]
+    ) -> 'KeepSorted':
+        warnings.warn(
+            "with_filter() is deprecated; use concat_filter() instead.",
+            DeprecationWarning,
+        )
+        return self.concat_filter(exclude=exclude)
+
+
+presubmit_check = KeepSorted()
 
 
 def parse_args() -> argparse.Namespace:

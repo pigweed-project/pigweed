@@ -13,30 +13,20 @@
 # the License.
 """Runs the local presubmit checks for the Pigweed repository."""
 
-import argparse
-import logging
 import os
-import re
 import sys
-from typing import Pattern
-
-from pw_cli import log
 
 from pw_presubmit import (
     block_submission,
-    cli,
     cpp_checks,
     json_check,
     keep_sorted,
     upstream_checks,
 )
-from pw_presubmit.install_hook import install_git_hook
-from pw_presubmit import Programs
-
-_LOG = logging.getLogger('pw_presubmit')
+import pw_presubmit.v2
 
 # Paths to completely exclude from presubmit checks.
-_EXCLUDE_PATHS = (
+EXCLUDES = (
     "\\bthird_party/fuchsia/repo",
     "\\bthird_party/perfetto/repo",
     "\\bthird_party/.*\\.json$",
@@ -47,11 +37,11 @@ _EXCLUDE_PATHS = (
     "^patches\\.json$",
 )
 
-EXCLUDES = tuple(re.compile(path) for path in _EXCLUDE_PATHS)
-
 # Quick lint and format checks.
 QUICK = (
-    upstream_checks.commit_message_format,
+    # commit_message_format could not be easily converted to Step because it
+    # needs LUCI context.
+    # upstream_checks.commit_message_format,
     upstream_checks.copyright_notice,
     upstream_checks.inclusive_language_check,
     block_submission.presubmit_check,
@@ -68,33 +58,9 @@ QUICK = (
     upstream_checks.todo_check_with_exceptions,
 )
 
-
-def parse_args() -> dict:
-    """Creates an argument parser and parses arguments."""
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    cli.add_arguments(parser, Programs(quick=QUICK), 'quick')
-    parser.add_argument(
-        '--install',
-        action='store_true',
-        help='Install the presubmit as a Git pre-push hook and exit.',
-    )
-
-    return vars(parser.parse_args())
-
-
-def run(install: bool, exclude: list[Pattern[str]], **presubmit_args) -> int:
-    """Entry point for presubmit."""
-
-    if install:
-        install_git_hook(
-            'pre-push',
-            ['./pw', 'presubmit'],
-        )
-        return 0
-
-    exclude.extend(EXCLUDES)
-    return cli.run(exclude=exclude, **presubmit_args)
+PROGRAMS = {
+    "quick": QUICK,
+}
 
 
 def main() -> int:
@@ -103,9 +69,8 @@ def main() -> int:
     if 'BUILD_WORKING_DIRECTORY' in os.environ:
         os.chdir(os.environ['BUILD_WORKING_DIRECTORY'])
 
-    return run(**parse_args())
+    return pw_presubmit.v2.main(PROGRAMS, "quick", exclude=EXCLUDES)
 
 
 if __name__ == '__main__':
-    log.install(logging.INFO)
     sys.exit(main())

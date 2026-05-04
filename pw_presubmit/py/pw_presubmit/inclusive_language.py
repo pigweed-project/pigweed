@@ -18,9 +18,8 @@ from pathlib import Path
 import re
 
 from pw_cli import file_filter
-
-from pw_presubmit.private.result import PresubmitFailure
-from . import presubmit, presubmit_context
+from pw_presubmit.v2 import Context, PresubmitFailure
+from pw_presubmit import presubmit, presubmit_context
 
 # List borrowed from Android:
 # https://source.android.com/setup/contribute/respectful-code
@@ -175,7 +174,7 @@ def check_file(
 
 
 def generic_presubmit_check(
-    ctx: presubmit_context.PresubmitContext,
+    ctx: presubmit_context.PresubmitContext | Context,
     words_regex: re.Pattern[str],
     *,
     disable_tag: str,
@@ -187,12 +186,10 @@ def generic_presubmit_check(
 
     # No subprocesses are run for inclusive_language so don't perform this check
     # if dry_run is on.
-    if ctx.dry_run:
+    if getattr(ctx, 'dry_run', False):
         return
 
     found_words: dict[Path, list[PathMatch | LineMatch]] = {}
-
-    ctx.paths = presubmit_context.apply_exclusions(ctx)
 
     for path in ctx.paths:
         check_file(
