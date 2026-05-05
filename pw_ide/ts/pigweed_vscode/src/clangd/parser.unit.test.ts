@@ -90,3 +90,34 @@ test('inferTarget', () => {
     assert.equal(name, inferTarget(glob, inputPath));
   }
 });
+
+test('does not filter out header files', () => {
+  const db = new CompilationDatabase();
+  const contents = JSON.stringify([
+    {
+      directory: '/project',
+      file: 'test.cpp',
+      command: 'g++ -c test.cpp -o test.o',
+    },
+    {
+      directory: '/project',
+      file: 'header.h',
+      command: 'g++ -c header.h -o header.o',
+    },
+    {
+      directory: '/project',
+      file: 'another_header.hpp',
+      command: 'g++ -c another_header.hpp -o another_header.o',
+    },
+  ]);
+
+  db.loadFromString(contents);
+
+  const cppFile = db.db.find((cmd) => cmd.data.file === 'test.cpp');
+  const hFile = db.db.find((cmd) => cmd.data.file === 'header.h');
+  const hppFile = db.db.find((cmd) => cmd.data.file === 'another_header.hpp');
+
+  assert.ok(cppFile);
+  assert.ok(hFile);
+  assert.ok(hppFile);
+});

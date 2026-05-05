@@ -1569,13 +1569,10 @@ class MergerTest(fake_filesystem_unittest.TestCase):
 class TestRunBazelStreaming(unittest.TestCase):
     """Tests for _run_bazel streaming behavior."""
 
-    @mock.patch('subprocess.Popen')
-    @mock.patch('sys.stdout.isatty')
-    def test_run_bazel_streaming(self, mock_isatty, mock_popen):
+    @mock.patch('pw_ide.merger.subprocess.Popen')
+    def test_run_bazel_streaming(self, mock_popen):
         """Tests that _run_bazel streaming correctly filters progress lines."""
-        mock_isatty.return_value = False
-
-        mock_process = mock.Mock()
+        mock_process = mock.MagicMock()
         mock_process.returncode = 0
         mock_process.stdout = [
             "INFO: Analyzed target...\n",

@@ -279,13 +279,9 @@ export class CompilationDatabase {
    * @throws On any schema or invariant violations in the source data
    */
   loadFromString(contents: string): void {
-    this.db = JSON.parse(contents)
-      // Filter out header files since they may have incomplete arguments.
-      .filter(
-        (c: CompileCommandData) =>
-          !c.file.endsWith('.h') && !c.file.endsWith('.hpp'),
-      )
-      .map((c: CompileCommandData) => new CompileCommand(c));
+    this.db = JSON.parse(contents).map(
+      (c: CompileCommandData) => new CompileCommand(c),
+    );
   }
 
   /**
