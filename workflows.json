@@ -815,6 +815,11 @@
       "builds": [
         "ubsan_googletest"
       ]
+    },
+    {
+      "name": "sandbox",
+      "description": "Place for sandbox steps",
+      "builds": []
     }
   ]
 }
