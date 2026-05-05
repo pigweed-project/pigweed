@@ -1,4 +1,4 @@
-// Copyright 2025 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -14,32 +14,24 @@
 #![no_std]
 #![no_main]
 
-use arch_arm_cortex_m::Arch;
-use codegen as _;
 use console_backend as _;
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
 use entry as _;
 use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
 
-// make sure this IRQ matches the value
-// defined in the system.json5 file.
-const TEST_IRQ: u32 = 42;
-
 impl TargetInterface for Target {
-    const NAME: &'static str = "MPS2-AN505 Kernel Interrupts";
+    const NAME: &'static str = "RP2350 User Interrupts";
+
+    fn console_init() {
+        console_backend::init();
+    }
 
     fn main() -> ! {
-        let exit_status = match test_interrupts::main::<Arch>(Arch, TEST_IRQ) {
-            Ok(()) => EXIT_SUCCESS,
-            Err(_e) => EXIT_FAILURE,
-        };
-        exit(exit_status);
+        codegen::start();
         #[expect(clippy::empty_loop)]
         loop {}
     }
 }
 
-codegen::declare_kernel_interrupt_handlers!();
 declare_target!(Target);

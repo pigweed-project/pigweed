@@ -15,8 +15,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use kernel::Kernel;
 use kernel::interrupt_controller::InterruptController;
+use kernel::{Duration, Kernel};
 use pw_status::Result;
 
 static INTERRUPT_COUNT: AtomicU32 = AtomicU32::new(0);
@@ -29,22 +29,43 @@ pub fn test_interrupt_handler<K: Kernel>(kernel: K) {
     INTERRUPT_COUNT.fetch_add(1, Ordering::SeqCst);
 }
 
-pub fn main<K: Kernel>(test_irq: u32) -> Result<()> {
+fn wait_for_count(expected: u32) -> Result<()> {
+    let mut timeout = 10000;
+    while INTERRUPT_COUNT.load(Ordering::SeqCst) < expected && timeout > 0 {
+        timeout -= 1;
+        core::hint::spin_loop();
+    }
+
+    let count = INTERRUPT_COUNT.load(Ordering::SeqCst);
+    if count != expected {
+        pw_log::error!(
+            "❌ Assert failed: count={}, expected={}, timeout={}",
+            count as u32,
+            expected as u32,
+            timeout as i32
+        );
+        return Err(pw_status::Error::DeadlineExceeded);
+    }
+
+    Ok(())
+}
+
+pub fn main<K: Kernel>(kernel: K, test_irq: u32) -> Result<()> {
     pw_log::info!("🔄 RUNNING");
 
     K::InterruptController::enable_interrupt(test_irq);
 
-    let mut initial_count = INTERRUPT_COUNT.load(Ordering::SeqCst);
+    let initial_count = INTERRUPT_COUNT.load(Ordering::SeqCst);
     pw_assert::assert!(initial_count == 0);
 
     K::InterruptController::trigger_interrupt(test_irq);
-    initial_count = INTERRUPT_COUNT.load(Ordering::SeqCst);
-    pw_assert::assert!(initial_count == 1);
+    wait_for_count(1)?;
 
     K::InterruptController::trigger_interrupt(test_irq);
+    // Add a small delay to prevent interrupt coalescing.
+    let _ = kernel::sleep_until(kernel, kernel.now() + Duration::from_millis(1));
     K::InterruptController::trigger_interrupt(test_irq);
-    initial_count = INTERRUPT_COUNT.load(Ordering::SeqCst);
-    pw_assert::assert!(initial_count == 3);
+    wait_for_count(3)?;
 
     pw_log::info!("✅ PASSED");
     Ok(())
