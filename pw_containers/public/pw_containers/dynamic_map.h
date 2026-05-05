@@ -385,15 +385,23 @@ class DynamicMap {
     map_.swap(other.map_);
   }
 
-  /// Attempts to move elements from `other` into this map. Elements are only
-  /// removed from `other` if they are successfully inserted.
+  /// Transfers elements from `other` to this map without allocation or copying.
+  /// Elements with duplicate keys remain in `other`.
+  /// @pre Both maps must use the same allocator instance.
   void merge(DynamicMap& other) {
+    if (this == &other) {
+      return;
+    }
+    PW_ASSERT(allocator_ == other.allocator_);
+    if (empty()) {
+      swap(other);
+      return;
+    }
     for (auto it = other.begin(); it != other.end();) {
-      auto result = try_emplace(std::move(it->first), std::move(it->second));
-      if (result.has_value() && result.value().second) {
-        it = other.erase(it);
-      } else {
+      if (contains(it->first)) {
         ++it;
+      } else {
+        insert(other.take(it++));
       }
     }
   }

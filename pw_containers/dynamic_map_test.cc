@@ -346,9 +346,7 @@ TEST_F(DynamicMapTest, Merge) {
   map1.insert({1, 10});
   map1.insert({2, 20});
 
-  AllocatorForTest<1024> allocator2_for_test;
-  FaultInjectingAllocator allocator2(allocator2_for_test);
-  pw::DynamicMap<int, int> map2(allocator2);
+  pw::DynamicMap<int, int> map2(allocator_);
   map2.insert({2, 200});
   map2.insert({3, 30});
 
@@ -362,6 +360,23 @@ TEST_F(DynamicMapTest, Merge) {
   EXPECT_EQ(map2.size(), 1u);     // NOLINT(bugprone-use-after-move)
   EXPECT_TRUE(map2.contains(2));  // NOLINT(bugprone-use-after-move)
   EXPECT_EQ(map2.at(2), 200);     // NOLINT(bugprone-use-after-move)
+}
+
+TEST_F(DynamicMapTest, MergeZeroAllocation) {
+  pw::DynamicMap<int, int> map1(allocator_);
+  map1.insert({1, 10});
+
+  pw::DynamicMap<int, int> map2(allocator_);
+  map2.insert({2, 20});
+
+  allocator_.DisableAll();
+  map1.merge(std::move(map2));
+  allocator_.EnableAll();
+
+  EXPECT_EQ(map1.size(), 2u);
+  EXPECT_EQ(map1.at(1), 10);
+  EXPECT_EQ(map1.at(2), 20);
+  EXPECT_TRUE(map2.empty());  // NOLINT(bugprone-use-after-move)
 }
 
 TEST_F(DynamicMapTest, MoveConstruct) {
