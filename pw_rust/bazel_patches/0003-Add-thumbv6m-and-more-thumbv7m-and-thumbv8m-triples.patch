@@ -6,22 +6,22 @@ Subject: [PATCH] Add riscv32imac, thumbv6m and more thumbv7m and thumbv8m
 
 These are commonly used in microcontrollers.
 ---
- rust/platform/triple_mappings.bzl | 6 ++++++
- 1 file changed, 6 insertions(+)
+ rust/platform/triple_mappings.bzl | 5 +++++
+ 1 file changed, 5 insertions(+)
 
 diff --git a/rust/platform/triple_mappings.bzl b/rust/platform/triple_mappings.bzl
-index 6070591e6..8d42562ae 100644
+index 3cdd375b8..f7ce5ec78 100644
 --- a/rust/platform/triple_mappings.bzl
 +++ b/rust/platform/triple_mappings.bzl
-@@ -47,6 +47,7 @@ SUPPORTED_T2_PLATFORM_TRIPLES = {
+@@ -48,6 +48,7 @@ SUPPORTED_T2_PLATFORM_TRIPLES = {
      "aarch64-linux-android": _support(std = True, host_tools = False),
      "aarch64-pc-windows-msvc": _support(std = True, host_tools = True),
      "aarch64-unknown-fuchsia": _support(std = True, host_tools = False),
 +    "aarch64-unknown-none": _support(std = True, host_tools = False),
      "aarch64-unknown-uefi": _support(std = True, host_tools = False),
      "arm-unknown-linux-gnueabi": _support(std = True, host_tools = True),
-     "armv7-linux-androideabi": _support(std = True, host_tools = False),
-@@ -55,11 +56,15 @@ SUPPORTED_T2_PLATFORM_TRIPLES = {
+     "arm-unknown-linux-musleabi": _support(std = True, host_tools = True),
+@@ -57,13 +58,16 @@ SUPPORTED_T2_PLATFORM_TRIPLES = {
      "i686-unknown-freebsd": _support(std = True, host_tools = False),
      "powerpc-unknown-linux-gnu": _support(std = True, host_tools = True),
      "riscv32imc-unknown-none-elf": _support(std = True, host_tools = False),
@@ -29,15 +29,16 @@ index 6070591e6..8d42562ae 100644
      "riscv64gc-unknown-linux-gnu": _support(std = True, host_tools = False),
      "riscv64gc-unknown-none-elf": _support(std = True, host_tools = False),
      "s390x-unknown-linux-gnu": _support(std = True, host_tools = True),
-+    "thumbv6m-none-eabi": _support(std = False, host_tools = False),
-+    "thumbv7m-none-eabi": _support(std = False, host_tools = False),
+     "thumbv6m-none-eabi": _support(std = True, host_tools = False),
++    "thumbv7m-none-eabi": _support(std = True, host_tools = False),
      "thumbv7em-none-eabi": _support(std = True, host_tools = False),
+     "thumbv7em-none-eabihf": _support(std = True, host_tools = False),
      "thumbv8m.main-none-eabi": _support(std = True, host_tools = False),
 +    "thumbv8m.main-none-eabihf": _support(std = True, host_tools = False),
      "wasm32-unknown-emscripten": _support(std = True, host_tools = False),
      "wasm32-unknown-unknown": _support(std = True, host_tools = False),
      "wasm32-wasip1": _support(std = True, host_tools = False),
-@@ -121,6 +126,7 @@ _CPU_ARCH_TO_BUILTIN_PLAT_SUFFIX = {
+@@ -126,6 +130,7 @@ _CPU_ARCH_TO_BUILTIN_PLAT_SUFFIX = {
      "powerpc64le": "ppc64le",
      "riscv32": "riscv32",
      "riscv32imc": "riscv32",
@@ -45,5 +46,5 @@ index 6070591e6..8d42562ae 100644
      "riscv64": "riscv64",
      "riscv64gc": "riscv64",
      "s390": None,
--- 
-2.49.0.472.ge94155a9ec-goog
+--
+2.54.0.545.g6539524ca2-goog
