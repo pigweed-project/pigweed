@@ -21,6 +21,7 @@
 #include <utility>
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
 #include "pw_containers/internal/traits.h"
 #include "pw_containers/intrusive_map.h"
@@ -44,32 +45,41 @@ namespace pw {
 ///   tree pointers.
 template <typename Key, typename Value>
 class DynamicMap {
- private:
-  /// MapItem is the internal node structure.
-  /// It inherits from the IntrusiveMap Item to allow it to be linked into the
-  /// tree and stores the actual Key-Value pair as data.
-  class MapItem : public IntrusiveMap<Key, MapItem>::Item {
+ public:
+  /// Node is the public handle for extracted elements.
+  /// It inherits from IntrusiveMap::Item to be linkable in the tree.
+  ///
+  /// Key modification is disallowed because the internal storage uses
+  /// std::pair<const Key, Value> to match std::map's iterator layout.
+  /// Mutating a const-qualified member via const_cast is undefined behavior.
+  class Node : public IntrusiveMap<Key, Node>::Item {
    public:
-    using IntrusiveMap<Key, MapItem>::Item::Item;
+    using key_type = Key;
+    using mapped_type = Value;
 
-    /// Constructs the Key-Value pair in-place within the node using piecewise
-    /// construction to avoid unnecessary copies or moves.
+    Node(const Node&) = delete;
+    Node& operator=(const Node&) = delete;
+
     template <typename K, typename... Args>
-    explicit MapItem(K&& key, Args&&... args)
-        : Map::Item(),
-          key_value(std::piecewise_construct,
-                    std::forward_as_tuple(std::forward<K>(key)),
-                    std::forward_as_tuple(std::forward<Args>(args)...)) {}
+    explicit Node(K&& key, Args&&... args)
+        : key_value_(std::piecewise_construct,
+                     std::forward_as_tuple(std::forward<K>(key)),
+                     std::forward_as_tuple(std::forward<Args>(args)...)) {}
 
-    const Key& key() const { return key_value.first; }
-    Value& value() { return key_value.second; }
-    const Value& value() const { return key_value.second; }
+    const key_type& key() const { return key_value_.first; }
+
+    mapped_type& mapped() { return key_value_.second; }
+    const mapped_type& mapped() const { return key_value_.second; }
+
+    ~Node() = default;
 
    private:
-    std::pair<const Key, Value> key_value;
+    std::pair<const key_type, mapped_type> key_value_;
     friend class DynamicMap;
   };
-  using Map = IntrusiveMap<Key, MapItem>;
+
+ private:
+  using Map = IntrusiveMap<Key, Node>;
 
   /// Custom iterator that wraps the IntrusiveMap's iterator.
   /// It dereferences to a std::pair<const Key, Value>, matching std::map
@@ -87,8 +97,8 @@ class DynamicMap {
 
     constexpr Iterator() = default;
 
-    constexpr reference operator*() const { return it_->key_value; }
-    constexpr pointer operator->() const { return &it_->key_value; }
+    constexpr reference operator*() const { return it_->key_value_; }
+    constexpr pointer operator->() const { return &it_->key_value_; }
 
     constexpr Iterator operator++() {
       ++it_;
@@ -146,7 +156,14 @@ class DynamicMap {
   using const_iterator = Iterator<true>;
   using reverse_iterator = std::reverse_iterator<iterator>;
   using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-  using insert_return_type = std::pair<iterator, bool>;
+  using node_type = Node;
+
+  /// Return type for node-based insertion.
+  struct insert_return_type {
+    iterator position;
+    bool inserted;
+    UniquePtr<node_type> node;
+  };
 
   /// Constructs an empty `DynamicMap`. No memory is allocated.
   ///
@@ -207,10 +224,10 @@ class DynamicMap {
 
   /// Returns a reference to the mapped value of the element with key equivalent
   /// to `key`. If no such element exists, an assertion is triggered.
-  mapped_type& at(const key_type& key) { return map_.at(key).value(); }
+  mapped_type& at(const key_type& key) { return map_.at(key).mapped(); }
 
   const mapped_type& at(const key_type& key) const {
-    return map_.at(key).value();
+    return map_.at(key).mapped();
   }
 
   /// Returns a reference to the value associated with `key`. If `key` does not
@@ -241,7 +258,7 @@ class DynamicMap {
   /// Attempts to insert a value into the map.
   /// @returns An `insert_return_type` on success, or `std::nullopt` if
   ///          allocation fails.
-  [[nodiscard]] std::optional<insert_return_type> try_insert(
+  [[nodiscard]] std::optional<std::pair<iterator, bool>> try_insert(
       const value_type& value) {
     return try_emplace(value.first, value.second);
   }
@@ -249,14 +266,14 @@ class DynamicMap {
   // Moving into a fallible insertion is deleted to prevent "ghost moves."
   // If allocation fails, the object would be moved-from but not stored.
   // Use try_emplace instead to ensure moves only occur on success.
-  std::optional<insert_return_type> try_insert(value_type&&) = delete;
+  std::optional<std::pair<iterator, bool>> try_insert(value_type&&) = delete;
 
   /// Inserts a value into the map. Crashes on allocation failure.
-  insert_return_type insert(const value_type& value) {
+  std::pair<iterator, bool> insert(const value_type& value) {
     return emplace(value.first, value.second);
   }
 
-  insert_return_type insert(value_type&& value) {
+  std::pair<iterator, bool> insert(value_type&& value) {
     return emplace(std::move(value.first), std::move(value.second));
   }
 
@@ -271,6 +288,22 @@ class DynamicMap {
 
   void insert(std::initializer_list<value_type> ilist) {
     insert(ilist.begin(), ilist.end());
+  }
+
+  /// Inserts a node into the map.
+  /// @returns An `insert_return_type` containing the iterator, success bool,
+  ///          and the node itself if insertion failed.
+  insert_return_type insert(UniquePtr<node_type>&& node) {
+    if (node == nullptr) {
+      return {end(), false, nullptr};
+    }
+    PW_ASSERT(node.deallocator() == allocator_);
+    auto [node_it, inserted] = map_.insert(*node);
+    if (inserted) {
+      node.Release();
+      return {iterator(node_it), true, nullptr};
+    }
+    return {iterator(node_it), false, std::move(node)};
   }
 
   // TODO: b/483691699 - Support hint-optimized insertion
@@ -295,9 +328,9 @@ class DynamicMap {
 
   /// Removes the element at `pos` and deallocates the node.
   iterator erase(iterator pos) {
-    MapItem* item = &(*pos.it_);
+    node_type* node = &(*pos.it_);
     auto next_it = map_.erase(pos.it_);
-    allocator_->Delete(item);
+    allocator_->Delete(node);
     return iterator(next_it);
   }
 
@@ -323,6 +356,27 @@ class DynamicMap {
     }
     erase(it);
     return 1;
+  }
+
+  /// Removes the element at `pos` and returns it as a `UniquePtr`.
+  UniquePtr<node_type> take(iterator pos) {
+    node_type* node = &(*pos.it_);
+    map_.erase(pos.it_);
+    return UniquePtr<node_type>(node, *allocator_);
+  }
+
+  UniquePtr<node_type> take(const_iterator pos) {
+    return take(iterator(typename Map::iterator(pos.it_)));
+  }
+
+  /// Removes the element with matching key and returns it as a `UniquePtr`.
+  template <typename K>
+  UniquePtr<node_type> take(K&& key) {
+    auto it = find(key);
+    if (it == end()) {
+      return nullptr;
+    }
+    return take(it);
   }
 
   /// Swaps the contents and allocators of two maps. No allocations occur.
@@ -398,14 +452,14 @@ class DynamicMap {
     if (auto it = map_.find(key); it != map_.end()) {
       return std::make_pair(iterator(it), false);
     }
-    MapItem* item = allocator_->template New<MapItem>(
+    node_type* node = allocator_->template New<node_type>(
         std::forward<K>(key), std::forward<Args>(args)...);
-    if (item == nullptr) {
+    if (node == nullptr) {
       return std::nullopt;
     }
-    auto [item_it, inserted] = map_.insert(*item);
+    auto [node_it, inserted] = map_.insert(*node);
     PW_ASSERT(inserted);
-    return std::make_pair(iterator(item_it), true);
+    return std::make_pair(iterator(node_it), true);
   }
 
   Allocator* allocator_;

@@ -394,6 +394,70 @@ TEST_F(DynamicMapTest, MoveAssign) {
   EXPECT_FALSE(moved_into.contains(3));
 }
 
+TEST_F(DynamicMapTest, Take) {
+  pw::DynamicMap<int, int> map(allocator_);
+  map.insert({1, 10});
+  map.insert({2, 20});
+
+  EXPECT_EQ(map.size(), 2u);
+
+  // Take by key
+  auto node = map.take(1);
+  EXPECT_NE(node, nullptr);
+  EXPECT_EQ(node->key(), 1);
+  EXPECT_EQ(node->mapped(), 10);
+  EXPECT_EQ(map.size(), 1u);
+  EXPECT_FALSE(map.contains(1));
+
+  // Take missing key
+  auto node2 = map.take(3);
+  EXPECT_EQ(node2, nullptr);
+
+  // Take by iterator
+  auto it = map.find(2);
+  ASSERT_NE(it, map.end());
+  auto node3 = map.take(it);
+  EXPECT_NE(node3, nullptr);
+  EXPECT_EQ(node3->key(), 2);
+  EXPECT_EQ(node3->mapped(), 20);
+  EXPECT_TRUE(map.empty());
+}
+
+TEST_F(DynamicMapTest, InsertNode) {
+  pw::DynamicMap<int, int> map1(allocator_);
+  map1.insert({1, 10});
+
+  pw::DynamicMap<int, int> map2(allocator_);
+
+  auto node = map1.take(1);
+  EXPECT_NE(node, nullptr);
+
+  // Insert into new map
+  auto result = map2.insert(std::move(node));
+  EXPECT_TRUE(result.inserted);
+  EXPECT_EQ(result.position->first, 1);
+  EXPECT_EQ(result.position->second, 10);
+  EXPECT_EQ(result.node, nullptr);
+  EXPECT_EQ(node, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(map2.size(), 1u);
+
+  // Insert empty node handle
+  auto result2 = map2.insert(std::move(node));
+  EXPECT_FALSE(result2.inserted);
+  EXPECT_EQ(result2.position, map2.end());
+  EXPECT_EQ(result2.node, nullptr);
+
+  // Insert existing key
+  map1.insert({1, 100});
+  auto node2 = map1.take(1);
+  auto result3 = map2.insert(std::move(node2));
+  EXPECT_FALSE(result3.inserted);
+  EXPECT_EQ(result3.position->first, 1);
+  EXPECT_EQ(result3.position->second, 10);
+  EXPECT_NE(result3.node, nullptr);
+  EXPECT_EQ(node2, nullptr);  // NOLINT(bugprone-use-after-move)
+}
+
 // Test that DynamicMap<K, T> is NOT copy constructible
 static_assert(!std::is_copy_constructible_v<pw::DynamicMap<int, int>>);
 
