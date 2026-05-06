@@ -182,6 +182,26 @@ class IsoGroupImpl final : public IsoGroup {
       return current_.has_value();
     }
 
+    [[nodiscard]] constexpr bool CanSetParams() const {
+      return is_valid() &&
+             current().IsOneOf(State::kNotCreated, State::kConfigurable);
+    }
+
+    [[nodiscard]] constexpr bool CanRemoveCig() const {
+      return is_valid() &&
+             current().IsOneOf(State::kConfigurable, State::kInactive);
+    }
+
+    [[nodiscard]] constexpr bool CanCreateCis() const {
+      return is_valid() &&
+             current().IsOneOf(
+                 State::kConfigurable, State::kActive, State::kInactive);
+    }
+
+    [[nodiscard]] constexpr bool CanDisconnectCis() const {
+      return is_valid() && current().IsOneOf(State::kActive);
+    }
+
    private:
     std::optional<State> current_;
   };
