@@ -56,6 +56,7 @@ rust_library(
         "compiler-builtins",
         "mem",
         "no-f16-f128",
+        "unmangled-names",
     ],
     crate_root = "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/src/lib.rs",
     edition = "2024",
