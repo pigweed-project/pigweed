@@ -86,9 +86,9 @@ if (current_toolchain != default_toolchain) {
       ":check_ambiq_product_defined",
       "$dir_pw_boot",
       "$dir_pw_boot_cortex_m",
+      "$dir_pw_memory:busy_wait_forever",
       "$dir_pw_preprocessor",
       "$dir_pw_sys_io_ambiq_sdk",
-      "$dir_pw_toolchain:busy_wait_forever",
     ]
 
     if (pw_malloc_BACKEND != "") {

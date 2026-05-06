@@ -20,11 +20,11 @@
 #include "pw_assert/check.h"
 #include "pw_boot_cortex_m/boot.h"
 #include "pw_malloc/malloc.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_string/util.h"
 #include "pw_sys_io_stm32cube/init.h"
 #include "pw_system/init.h"
-#include "pw_toolchain/busy_wait_forever.h"
 #include "stm32f4xx.h"
 #include "task.h"
 

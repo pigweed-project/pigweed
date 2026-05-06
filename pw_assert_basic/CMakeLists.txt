@@ -54,5 +54,5 @@ pw_add_library(pw_assert_basic.basic_handler STATIC
     pw_preprocessor
     pw_string.builder
     pw_sys_io
-    pw_toolchain.busy_wait_forever
+    pw_memory.busy_wait_forever
 )

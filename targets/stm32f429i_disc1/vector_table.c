@@ -16,7 +16,7 @@
 
 #include "pw_boot/boot.h"
 #include "pw_boot_cortex_m/boot.h"
-#include "pw_toolchain/busy_wait_forever.h"
+#include "pw_memory/busy_wait_forever.h"
 
 // Default handler to insert into the ARMv7-M vector table (below).
 // This function exists for convenience. If a device isn't doing what you

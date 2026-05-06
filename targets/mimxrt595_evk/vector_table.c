@@ -16,8 +16,8 @@
 
 #include "pw_boot/boot.h"
 #include "pw_boot_cortex_m/boot.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_preprocessor/compiler.h"
-#include "pw_toolchain/busy_wait_forever.h"
 
 // Extern symbols provided by linker script.
 // This symbol contains the size of the image.

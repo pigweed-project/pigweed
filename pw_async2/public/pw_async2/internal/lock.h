@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
+#include "pw_memory/no_destructor.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_sync/interrupt_spin_lock.h"
-#include "pw_toolchain/no_destructor.h"
 
 namespace pw::async2::internal {
 

@@ -19,9 +19,9 @@
 #include "peripherals.h"
 #include "pin_mux.h"
 #include "pw_boot_cortex_m/boot.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_sys_io_mcuxpresso/init.h"
-#include "pw_toolchain/busy_wait_forever.h"
 
 #if PW_MALLOC_ACTIVE
 #include "pw_malloc/malloc.h"

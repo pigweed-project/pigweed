@@ -134,8 +134,8 @@ pw_source_set("internal") {
     "public/pw_async2/internal/logging.h",
   ]
   public_deps = [
+    "$dir_pw_memory:no_destructor",
     "$dir_pw_sync:interrupt_spin_lock",
-    "$dir_pw_toolchain:no_destructor",
     dir_pw_polyfill,
     pw_async2_CONFIG,
   ]
@@ -510,8 +510,8 @@ pw_source_set("time_provider") {
     ":pw_async2",
     "$dir_pw_chrono:virtual_clock",
     "$dir_pw_containers:intrusive_list",
+    "$dir_pw_memory:no_destructor",
     "$dir_pw_sync:interrupt_spin_lock",
-    "$dir_pw_toolchain:no_destructor",
     dir_pw_assert,
     dir_pw_function,
     dir_pw_memory,
@@ -529,7 +529,7 @@ pw_source_set("system_time_provider") {
   sources = [ "system_time_provider.cc" ]
   deps = [
     "$dir_pw_chrono:system_timer",
-    "$dir_pw_toolchain:no_destructor",
+    "$dir_pw_memory:no_destructor",
   ]
 }
 

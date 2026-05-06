@@ -16,9 +16,9 @@
 
 #include "pw_boot_cortex_m/boot.h"
 #include "pw_malloc/malloc.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_sys_io_baremetal_stm32f429/init.h"
-#include "pw_toolchain/busy_wait_forever.h"
 
 // Note that constexpr is used inside of this function instead of using a static
 // constexpr or declaring it outside of this function in an anonymous namespace,

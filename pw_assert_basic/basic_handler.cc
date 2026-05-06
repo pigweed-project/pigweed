@@ -27,7 +27,7 @@
 #include "pw_string/string_builder.h"
 #include "pw_sys_io/sys_io.h"
 #if (PW_ASSERT_BASIC_ACTION == PW_ASSERT_BASIC_ACTION_LOOP)
-#include "pw_toolchain/busy_wait_forever.h"
+#include "pw_memory/busy_wait_forever.h"
 #endif  // (PW_ASSERT_BASIC_ACTION == PW_ASSERT_BASIC_ACTION_LOOP)
 
 // ANSI color constants to control the terminal. Not Windows compatible.

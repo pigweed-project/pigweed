@@ -61,9 +61,9 @@ cc_library(
     deps = [
         "//pw_boot",
         "//pw_malloc",
+        "//pw_memory:busy_wait_forever",
         "//pw_preprocessor",
         "//pw_sys_io_baremetal_stm32f429",
-        "//pw_toolchain:busy_wait_forever",
     ],
     # TODO: b/251939135 - Remove the need for alwayslink by rethinking how
     # pw_boot_cortex_m is structured in the build system.

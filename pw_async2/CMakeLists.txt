@@ -77,7 +77,7 @@ pw_add_library(pw_async2 STATIC
     pw_sync.interrupt_spin_lock
     pw_sync.lock_annotations
     pw_tokenizer
-    pw_toolchain.no_destructor
+    pw_memory.no_destructor
     pw_third_party.fuchsia.stdcompat
   PRIVATE_DEPS
     pw_assert.check
@@ -468,7 +468,7 @@ pw_add_library(pw_async2.time_provider STATIC
     pw_function
     pw_memory
     pw_sync.interrupt_spin_lock
-    pw_toolchain.no_destructor
+    pw_memory.no_destructor
   PUBLIC_INCLUDES
     public
 )
@@ -483,7 +483,7 @@ pw_add_library(pw_async2.system_time_provider STATIC
     pw_async2.time_provider
   PRIVATE_DEPS
     pw_chrono.system_timer
-    pw_toolchain.no_destructor
+    pw_memory.no_destructor
   PUBLIC_INCLUDES
     public
 )

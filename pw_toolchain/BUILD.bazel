@@ -110,6 +110,7 @@ cc_library(
 cc_library(
     name = "no_destructor",
     hdrs = ["public/pw_toolchain/no_destructor.h"],
+    deprecation = "Use //pw_memory:no_destructor instead",
     strip_include_prefix = "public",
     deps = ["//pw_memory:no_destructor"],
 )
@@ -117,6 +118,7 @@ cc_library(
 cc_library(
     name = "globals",
     hdrs = ["public/pw_toolchain/globals.h"],
+    deprecation = "Use //pw_memory:globals instead",
     strip_include_prefix = "public",
     deps = ["//pw_memory:globals"],
 )
@@ -127,6 +129,7 @@ cc_library(
         "public/pw_toolchain/busy_wait_forever.h",
         "public/pw_toolchain/infinite_loop.h",
     ],
+    deprecation = "Use //pw_memory:busy_wait_forever instead",
     strip_include_prefix = "public",
     deps = ["//pw_memory:busy_wait_forever"],
 )

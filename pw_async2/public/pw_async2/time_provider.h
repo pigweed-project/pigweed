@@ -22,9 +22,9 @@
 #include "pw_async2/future.h"
 #include "pw_chrono/virtual_clock.h"
 #include "pw_containers/intrusive_list.h"
+#include "pw_memory/no_destructor.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_sync/lock_annotations.h"
-#include "pw_toolchain/no_destructor.h"
 
 namespace pw::async2 {
 

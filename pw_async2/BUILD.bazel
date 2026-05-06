@@ -140,9 +140,9 @@ cc_library(
     strip_include_prefix = "public",
     visibility = ["//visibility:private"],
     deps = [
+        "//pw_memory:no_destructor",
         "//pw_polyfill",
         "//pw_sync:interrupt_spin_lock",
-        "//pw_toolchain:no_destructor",
     ],
 )
 
@@ -636,9 +636,9 @@ cc_library(
         ":pw_async2",
         "//pw_chrono:virtual_clock",
         "//pw_containers:intrusive_list",
+        "//pw_memory:no_destructor",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",
-        "//pw_toolchain:no_destructor",
     ],
 )
 
@@ -652,7 +652,7 @@ cc_library(
     ],
     implementation_deps = [
         "//pw_chrono:system_timer",
-        "//pw_toolchain:no_destructor",
+        "//pw_memory:no_destructor",
     ],
     strip_include_prefix = "public",
     deps = [

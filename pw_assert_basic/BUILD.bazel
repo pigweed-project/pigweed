@@ -79,8 +79,8 @@ cc_library(
         ":pw_assert_basic",
         "//pw_assert:check.facade",
         "//pw_assert:config",
+        "//pw_memory:busy_wait_forever",
         "//pw_preprocessor",
-        "//pw_toolchain:busy_wait_forever",
     ],
     # Other libraries may not always depend on this library, even if it is
     # necessary at link time.
@@ -94,10 +94,10 @@ cc_library(
     ],
     implementation_deps = [
         "//pw_assert:config",
+        "//pw_memory:busy_wait_forever",
         "//pw_preprocessor",
         "//pw_string:builder",
         "//pw_sys_io",
-        "//pw_toolchain:busy_wait_forever",
     ],
     deps = [":handler.facade"],
     # Other libraries may not always depend on this library, even if it is

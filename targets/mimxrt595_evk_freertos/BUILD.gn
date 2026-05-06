@@ -80,10 +80,10 @@ if (current_toolchain != default_toolchain) {
         "$dir_pw_boot",
         "$dir_pw_boot_cortex_m",
         "$dir_pw_malloc",
+        "$dir_pw_memory:busy_wait_forever",
         "$dir_pw_preprocessor",
         "$dir_pw_sys_io_mcuxpresso",
         "$dir_pw_system:init",
-        "$dir_pw_toolchain:busy_wait_forever",
         "$pw_external_freertos:support",
         pw_third_party_mcuxpresso_SDK,
       ]

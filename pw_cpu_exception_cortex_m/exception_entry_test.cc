@@ -21,8 +21,8 @@
 #include "pw_cpu_exception_cortex_m/exception_entry_test_util.h"
 #include "pw_cpu_exception_cortex_m_private/config.h"
 #include "pw_cpu_exception_cortex_m_private/cortex_m_constants.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_span/span.h"
-#include "pw_toolchain/busy_wait_forever.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::cpu_exception::cortex_m {

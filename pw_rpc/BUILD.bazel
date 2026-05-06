@@ -213,6 +213,7 @@ cc_library(
         "//pw_containers:intrusive_list",
         "//pw_function",
         "//pw_log",
+        "//pw_memory:no_destructor",
         "//pw_polyfill",
         "//pw_preprocessor",
         "//pw_protobuf",
@@ -220,7 +221,6 @@ cc_library(
         "//pw_span",
         "//pw_status",
         "//pw_sync:lock_annotations",
-        "//pw_toolchain:no_destructor",
     ] + select({
         ":yield_mode_busy_loop": [],
         ":yield_mode_sleep": ["//pw_thread:sleep"],

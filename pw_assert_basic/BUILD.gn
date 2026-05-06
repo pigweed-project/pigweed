@@ -79,10 +79,10 @@ pw_source_set("basic_handler") {
   deps = [
     ":handler.facade",
     "$dir_pw_assert:config",
+    "$dir_pw_memory:busy_wait_forever",
     "$dir_pw_preprocessor",
     "$dir_pw_string:builder",
     "$dir_pw_sys_io",
-    "$dir_pw_toolchain:busy_wait_forever",
   ]
   sources = [ "basic_handler.cc" ]
 }

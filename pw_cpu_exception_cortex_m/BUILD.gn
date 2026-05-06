@@ -294,7 +294,7 @@ pw_test("cpu_exception_entry_test") {
     "$dir_pw_cpu_exception:entry",
     "$dir_pw_cpu_exception:handler",
     "$dir_pw_cpu_exception:support",
-    "$dir_pw_toolchain:busy_wait_forever",
+    "$dir_pw_memory:busy_wait_forever",
     dir_pw_span,
   ]
   sources = [ "exception_entry_test.cc" ]

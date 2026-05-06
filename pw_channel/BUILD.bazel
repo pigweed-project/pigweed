@@ -184,6 +184,8 @@ pw_cc_test(
         "//pw_async2",
         "//pw_async2:testing",
         "//pw_bytes",
+        "//pw_memory:globals",
+        "//pw_memory:no_destructor",
         "//pw_multibuf:testing",
         "//pw_multibuf/v1:allocator_async",
         "//pw_status",
@@ -191,8 +193,6 @@ pw_cc_test(
         "//pw_stream:mpsc_stream",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
-        "//pw_toolchain:globals",
-        "//pw_toolchain:no_destructor",
     ],
 )
 

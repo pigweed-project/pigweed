@@ -15,8 +15,8 @@
 #include "pw_boot_cortex_m/boot.h"
 
 #include "pw_malloc/malloc.h"
+#include "pw_memory/busy_wait_forever.h"
 #include "pw_sys_io_ambiq_sdk/init.h"
-#include "pw_toolchain/busy_wait_forever.h"
 
 PW_EXTERN_C void pw_boot_PreStaticMemoryInit() {}
 

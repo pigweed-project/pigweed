@@ -20,12 +20,12 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
 #include "pw_bytes/suffix.h"
+#include "pw_memory/globals.h"
+#include "pw_memory/no_destructor.h"
 #include "pw_multibuf/simple_allocator_for_test.h"
 #include "pw_status/status.h"
 #include "pw_stream/mpsc_stream.h"
 #include "pw_thread/test_thread_context.h"
-#include "pw_toolchain/globals.h"
-#include "pw_toolchain/no_destructor.h"
 #include "pw_unit_test/framework.h"
 
 namespace {

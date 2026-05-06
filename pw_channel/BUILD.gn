@@ -134,13 +134,13 @@ pw_test("stream_channel_test") {
   deps = [
     ":stream_channel",
     "$dir_pw_async2:testing",
+    "$dir_pw_memory:globals",
+    "$dir_pw_memory:no_destructor",
     "$dir_pw_multibuf:testing",
     "$dir_pw_multibuf/v1:allocator_async",
     "$dir_pw_stream:mpsc_stream",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
-    "$dir_pw_toolchain:globals",
-    "$dir_pw_toolchain:no_destructor",
     "$dir_pw_unit_test",
     dir_pw_stream,
   ]

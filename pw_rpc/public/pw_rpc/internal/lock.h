@@ -13,9 +13,9 @@
 // the License.
 #pragma once
 
+#include "pw_memory/no_destructor.h"
 #include "pw_rpc/internal/config.h"
 #include "pw_sync/lock_annotations.h"
-#include "pw_toolchain/no_destructor.h"
 
 #if PW_RPC_USE_GLOBAL_MUTEX
 

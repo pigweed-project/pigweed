@@ -15,7 +15,7 @@
 #include "pw_async2/system_time_provider.h"
 
 #include "pw_chrono/system_timer.h"
-#include "pw_toolchain/no_destructor.h"
+#include "pw_memory/no_destructor.h"
 
 namespace pw::async2 {
 namespace {

@@ -273,7 +273,7 @@ pw_cc_test(
         ":cpu_state",
         "//pw_cpu_exception:handler",
         "//pw_cpu_exception:support",
-        "//pw_toolchain:busy_wait_forever",
+        "//pw_memory:busy_wait_forever",
     ],
 )
 
