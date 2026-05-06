@@ -39,7 +39,7 @@ def _preprocess_linker_script_impl(ctx):
     c_compile_variables = cc_common.create_compile_variables(
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
-        user_compile_flags = ctx.fragments.cpp.copts + ctx.fragments.cpp.conlyopts,
+        user_compile_flags = ctx.fragments.cpp.copts + ctx.fragments.cpp.conlyopts + ctx.attr.copts,
         include_directories = compilation_context.includes,
         quote_include_directories = compilation_context.quote_includes,
         system_include_directories = compilation_context.system_includes,
