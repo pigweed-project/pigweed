@@ -104,6 +104,10 @@ class FakeController final : public ControllerTestDoubleBase,
     uint16_t iso_data_packet_length = 0;
     uint8_t total_num_iso_data_packets = 0;
 
+    // The maximum number of advertising packet filters supported by the
+    // controller.
+    uint8_t max_apcf_filters = 0;
+
     // Vendor extensions
     StaticPacket<android_emb::LEGetVendorCapabilitiesCommandCompleteEventWriter>
         android_extension_settings;
@@ -205,6 +209,11 @@ class FakeController final : public ControllerTestDoubleBase,
     uint8_t max_filters = 0;
     std::unordered_map<uint8_t, PacketFilter> filters;
 
+    uint8_t available_filters() const {
+      int available = max_filters - filters.size();
+      return std::max(0, available);
+    }
+
     std::unordered_map<uint8_t, PacketFilter*> filters_broadcast_address;
     std::unordered_map<uint8_t, PacketFilter*> filters_service_uuid;
     std::unordered_map<uint8_t, PacketFilter*> filters_solicitation_uuid;
@@ -278,8 +287,11 @@ class FakeController final : public ControllerTestDoubleBase,
       : ControllerTestDoubleBase(pw_dispatcher), WeakSelf(this) {}
   ~FakeController() override = default;
 
-  // Resets the controller settings.
-  void set_settings(const Settings& settings) { settings_ = settings; }
+  // Sets the controller settings.
+  void set_settings(const Settings& settings) {
+    settings_ = settings;
+    packet_filter_state_.max_filters = settings_.max_apcf_filters;
+  }
 
   // Always respond to the given command |opcode| with an Command Status event
   // specifying |status|.

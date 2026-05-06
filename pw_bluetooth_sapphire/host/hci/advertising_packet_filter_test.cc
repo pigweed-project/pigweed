@@ -633,4 +633,54 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingFilterWithNoOffloadableFields) {
   EXPECT_FALSE(controller_filter.service_data.has_value());
 }
 
+// Ensure that filters with no content specific configuration still take up
+// a slot in our accounting.
+TEST_F(AdvertisingPacketFilterTest,
+       MultipleScanIdsWithEmptyFiltersExhaustMemory) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/2,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  packet_filter.SetPacketFilters(0, {});
+  RunUntilIdle();
+  ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+  ASSERT_EQ(1u, test_device()->packet_filter_state().filters.size());
+
+  packet_filter.SetPacketFilters(1, {});
+  RunUntilIdle();
+  ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+  ASSERT_EQ(2u, test_device()->packet_filter_state().filters.size());
+
+  packet_filter.SetPacketFilters(2, {});
+  RunUntilIdle();
+
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
+// Ensure that UUID accounting is calculated correctly
+TEST_F(AdvertisingPacketFilterTest, MultipleUUIDsExhaustMemory) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/2,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  filter.set_service_uuids({UUID(uint16_t(0x1234)), UUID(uint16_t(0x5678))});
+
+  packet_filter.SetPacketFilters(0, {filter});
+  RunUntilIdle();
+  ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+
+  DiscoveryFilter filter2;
+  filter2.set_service_uuids({UUID(uint16_t(0x90ab))});
+  packet_filter.SetPacketFilters(1, {filter2});
+  RunUntilIdle();
+
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
 }  // namespace bt::hci

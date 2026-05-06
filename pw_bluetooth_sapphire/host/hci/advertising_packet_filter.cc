@@ -66,7 +66,7 @@ void AdvertisingPacketFilter::SetPacketFilters(
     return;
   }
 
-  if (!MemoryAvailableForFilters(filters)) {
+  if (!MemoryAvailable()) {
     bt_log(INFO, "hci-le", "controller out of offloaded filter memory");
     UseHostFiltering();
     return;
@@ -82,12 +82,6 @@ void AdvertisingPacketFilter::SetPacketFilters(
   }
 
   hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
-  for (FilterIndex filter_index : scan_id_to_index_[scan_id]) {
-    CommandPacket packet = BuildUnsetParametersCommand(filter_index);
-    hci_cmd_runner_->QueueCommand(std::move(packet));
-  }
-  scan_id_to_index_.erase(scan_id);
-
   for (const DiscoveryFilter& filter : filters) {
     bool success = QueueOffloadFilterCommands(scan_id, filter);
     if (!success) {
@@ -214,14 +208,6 @@ void AdvertisingPacketFilter::UseHostFiltering() {
   hci_cmd_runner_->RunCommands([](Result<> result) {
     bt_is_error(result, WARN, "hci-le", "failed switching to host filtering");
   });
-}
-
-bool AdvertisingPacketFilter::IsOffloadable(const DiscoveryFilter& filter) {
-  return !filter.service_uuids().empty() ||
-         !filter.service_data_uuids().empty() ||
-         !filter.solicitation_uuids().empty() ||
-         !filter.name_substring().empty() ||
-         filter.manufacturer_code().has_value();
 }
 
 bool AdvertisingPacketFilter::QueueOffloadFilterCommands(
@@ -415,15 +401,7 @@ bool AdvertisingPacketFilter::MemoryAvailable() const {
   }
 
   size_t total_filters = 0;
-  for (const auto& [_, filters] : scan_id_to_filters_) {
-    total_filters += filters.size();
-  }
-
-  if (NumFilterIndexesInUse() + total_filters > config_.max_filters()) {
-    return false;
-  }
-
-  std::unordered_map<OffloadedFilterType, uint8_t> new_slots = {
+  std::unordered_map<OffloadedFilterType, uint8_t> needed_slots = {
       {OffloadedFilterType::kServiceUUID, 0},
       {OffloadedFilterType::kServiceDataUUID, 0},
       {OffloadedFilterType::kSolicitationUUID, 0},
@@ -431,110 +409,39 @@ bool AdvertisingPacketFilter::MemoryAvailable() const {
       {OffloadedFilterType::kManufacturerCode, 0},
   };
 
-  for (const auto& [scan_id, filters] : scan_id_to_filters_) {
+  for (const auto& [_, filters] : scan_id_to_filters_) {
+    // Each scan ID takes up at least one filter slot in the controller, even
+    // if the filter is an allow-all empty filter.
+    if (filters.empty()) {
+      total_filters += 1;
+    } else {
+      total_filters += filters.size();
+    }
+
     for (const DiscoveryFilter& filter : filters) {
-      if (!MemoryAvailableForFilter(filter, new_slots)) {
-        return false;
+      needed_slots[OffloadedFilterType::kServiceUUID] +=
+          filter.service_uuids().size();
+      needed_slots[OffloadedFilterType::kServiceDataUUID] +=
+          filter.service_data_uuids().size();
+      needed_slots[OffloadedFilterType::kSolicitationUUID] +=
+          filter.solicitation_uuids().size();
+      if (!filter.name_substring().empty()) {
+        needed_slots[OffloadedFilterType::kLocalName]++;
+      }
+      if (filter.manufacturer_code().has_value()) {
+        needed_slots[OffloadedFilterType::kManufacturerCode]++;
       }
     }
   }
 
-  return true;
-}
-
-bool AdvertisingPacketFilter::MemoryAvailableForFilter(
-    const DiscoveryFilter& filter,
-    std::unordered_map<OffloadedFilterType, uint8_t>& new_slots) const {
-  if (!config_.offloading_supported()) {
+  if (total_filters > config_.max_filters()) {
     return false;
   }
 
-  if (NumFilterIndexesInUse() + 1 > config_.max_filters()) {
-    return false;
-  }
-
-  if (!filter.service_uuids().empty()) {
-    uint8_t value = ++new_slots[OffloadedFilterType::kServiceUUID];
-    if (!MemoryAvailableForSlots(OffloadedFilterType::kServiceUUID, value)) {
+  for (const auto& [_, count] : needed_slots) {
+    if (count > config_.max_filters()) {
       return false;
     }
-  }
-
-  if (!filter.service_data_uuids().empty()) {
-    uint8_t value = ++new_slots[OffloadedFilterType::kServiceDataUUID];
-    if (!MemoryAvailableForSlots(OffloadedFilterType::kServiceDataUUID,
-                                 value)) {
-      return false;
-    }
-  }
-
-  if (!filter.solicitation_uuids().empty()) {
-    uint8_t value = ++new_slots[OffloadedFilterType::kSolicitationUUID];
-    if (!MemoryAvailableForSlots(OffloadedFilterType::kSolicitationUUID,
-                                 value)) {
-      return false;
-    }
-  }
-
-  if (!filter.name_substring().empty()) {
-    uint8_t value = ++new_slots[OffloadedFilterType::kLocalName];
-    if (!MemoryAvailableForSlots(OffloadedFilterType::kLocalName, value)) {
-      return false;
-    }
-  }
-
-  if (filter.manufacturer_code().has_value()) {
-    uint8_t value = ++new_slots[OffloadedFilterType::kManufacturerCode];
-    if (!MemoryAvailableForSlots(OffloadedFilterType::kManufacturerCode,
-                                 value)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool AdvertisingPacketFilter::MemoryAvailableForFilters(
-    const std::vector<DiscoveryFilter>& filters) const {
-  if (!config_.offloading_supported()) {
-    return false;
-  }
-
-  if (NumFilterIndexesInUse() + filters.size() > config_.max_filters()) {
-    return false;
-  }
-
-  std::unordered_map<OffloadedFilterType, uint8_t> new_slots = {
-      {OffloadedFilterType::kServiceUUID, 0},
-      {OffloadedFilterType::kServiceDataUUID, 0},
-      {OffloadedFilterType::kSolicitationUUID, 0},
-      {OffloadedFilterType::kLocalName, 0},
-      {OffloadedFilterType::kManufacturerCode, 0},
-  };
-
-  for (const DiscoveryFilter& filter : filters) {
-    if (!MemoryAvailableForFilter(filter, new_slots)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool AdvertisingPacketFilter::MemoryAvailableForSlots(
-    OffloadedFilterType filter_type, uint8_t slots) const {
-  if (!config_.offloading_supported()) {
-    return false;
-  }
-
-  auto itr = open_slots_.find(filter_type);
-  if (itr == open_slots_.end()) {
-    return false;
-  }
-
-  uint8_t available = itr->second;
-  if (available - slots < 0) {
-    return false;
   }
 
   return true;

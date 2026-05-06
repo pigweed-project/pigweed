@@ -193,6 +193,7 @@ void FakeController::Settings::ApplyAndroidVendorExtensionDefaults() {
   view.version_supported().major_number().Write(0);
   view.version_supported().minor_number().Write(55);
   view.total_scan_results_storage().Write(1);
+  view.max_filter().Write(max_apcf_filters);
 }
 
 bool FakeController::Settings::is_event_unmasked(
@@ -4691,15 +4692,13 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandAdd(
 
   packet_filter_state_.filters[filter_index] = filter;
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters - packet_filter_state_.filters.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SET_FILTERING_PARAMETERS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4725,15 +4724,13 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandDelete(
   packet_filter_state_.filters_advertising_data.erase(filter_index);
   packet_filter_state_.filters.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters - packet_filter_state_.filters.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SET_FILTERING_PARAMETERS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4747,15 +4744,13 @@ void FakeController::OnAndroidLEApcfSetFilteringParametersCommandClear(
   packet_filter_state_.filters_advertising_data.clear();
   packet_filter_state_.filters.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters - packet_filter_state_.filters.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SET_FILTERING_PARAMETERS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4794,15 +4789,13 @@ void FakeController::OnAndroidLEApcfBroadcastAddressCommandAdd(
   filter->broadcast_address = DeviceAddressBytes(params.broadcaster_address());
   packet_filter_state_.filters_broadcast_address[filter_index] = filter;
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters - packet_filter_state_.filters.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::BROADCAST_ADDRESS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4823,15 +4816,13 @@ void FakeController::OnAndroidLEApcfBroadcastAddressCommandDelete(
   packet_filter_state_.filters[filter_index].broadcast_address.reset();
   packet_filter_state_.filters_broadcast_address.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters - packet_filter_state_.filters.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::BROADCAST_ADDRESS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4842,16 +4833,13 @@ void FakeController::OnAndroidLEApcfBroadcastAddressCommandClear(
   }
   packet_filter_state_.filters_broadcast_address.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_broadcast_address.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::BROADCAST_ADDRESS);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4893,15 +4881,13 @@ void FakeController::OnAndroidLEApcfServiceUUID16CommandAdd(
   filter->service_uuid = UUID(uuid);
   packet_filter_state_.filters_service_uuid[filter_index] = filter;
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4922,15 +4908,13 @@ void FakeController::OnAndroidLEApcfServiceUUID16CommandDelete(
   packet_filter_state_.filters[filter_index].service_uuid.reset();
   packet_filter_state_.filters_service_uuid.erase(filter_index);
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4941,15 +4925,13 @@ void FakeController::OnAndroidLEApcfServiceUUID16CommandClear(
   }
   packet_filter_state_.filters_service_uuid.clear();
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -4991,15 +4973,13 @@ void FakeController::OnAndroidLEApcfServiceUUID32CommandAdd(
   filter->service_uuid = UUID(uuid);
   packet_filter_state_.filters_service_uuid[filter_index] = filter;
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5020,15 +5000,13 @@ void FakeController::OnAndroidLEApcfServiceUUID32CommandDelete(
   packet_filter_state_.filters[filter_index].service_uuid.reset();
   packet_filter_state_.filters_service_uuid.erase(filter_index);
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5039,15 +5017,13 @@ void FakeController::OnAndroidLEApcfServiceUUID32CommandClear(
   }
   packet_filter_state_.filters_service_uuid.clear();
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5089,15 +5065,13 @@ void FakeController::OnAndroidLEApcfServiceUUID128CommandAdd(
   filter->service_uuid = UUID(uuid);
   packet_filter_state_.filters_service_uuid[filter_index] = filter;
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5118,15 +5092,13 @@ void FakeController::OnAndroidLEApcfServiceUUID128CommandDelete(
   packet_filter_state_.filters[filter_index].service_uuid.reset();
   packet_filter_state_.filters_service_uuid.erase(filter_index);
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5137,15 +5109,13 @@ void FakeController::OnAndroidLEApcfServiceUUID128CommandClear(
   }
   packet_filter_state_.filters_service_uuid.clear();
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5187,16 +5157,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID16CommandAdd(
   filter->solicitation_uuid = UUID(uuid);
   packet_filter_state_.filters_solicitation_uuid[filter_index] = filter;
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5217,16 +5184,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID16CommandDelete(
   packet_filter_state_.filters[filter_index].solicitation_uuid.reset();
   packet_filter_state_.filters_solicitation_uuid.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5237,16 +5201,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID16CommandClear(
   }
   packet_filter_state_.filters_solicitation_uuid.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5288,16 +5249,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID32CommandAdd(
   filter->solicitation_uuid = UUID(uuid);
   packet_filter_state_.filters_solicitation_uuid[filter_index] = filter;
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5318,16 +5276,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID32CommandDelete(
   packet_filter_state_.filters[filter_index].solicitation_uuid.reset();
   packet_filter_state_.filters_solicitation_uuid.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5338,16 +5293,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID32CommandClear(
   }
   packet_filter_state_.filters_solicitation_uuid.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5389,16 +5341,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID128CommandAdd(
   filter->solicitation_uuid = UUID(uuid);
   packet_filter_state_.filters_solicitation_uuid[filter_index] = filter;
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5419,16 +5368,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID128CommandDelete(
   packet_filter_state_.filters[filter_index].solicitation_uuid.reset();
   packet_filter_state_.filters_solicitation_uuid.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5439,16 +5385,13 @@ void FakeController::OnAndroidLEApcfSolicitationUUID128CommandClear(
   }
   packet_filter_state_.filters_solicitation_uuid.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_solicitation_uuid.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SOLICITATION_UUID);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5489,15 +5432,13 @@ void FakeController::OnAndroidLEApcfLocalNameCommandAdd(
   filter->local_name = local_name.AsString();
   packet_filter_state_.filters_local_name[filter_index] = filter;
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_local_name.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::LOCAL_NAME);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5518,15 +5459,13 @@ void FakeController::OnAndroidLEApcfLocalNameCommandDelete(
   packet_filter_state_.filters[filter_index].local_name.reset();
   packet_filter_state_.filters_local_name.erase(filter_index);
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_local_name.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::LOCAL_NAME);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5537,15 +5476,13 @@ void FakeController::OnAndroidLEApcfLocalNameCommandClear(
   }
   packet_filter_state_.filters_local_name.clear();
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_local_name.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::LOCAL_NAME);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5584,27 +5521,28 @@ void FakeController::OnAndroidLEApcfManufacturerDataCommandAdd(
 
   filter->manufacturer_data = std::vector<uint8_t>();
   filter->manufacturer_data->resize(params.manufacturer_data().SizeInBytes());
-  std::memcpy(filter->manufacturer_data->data(),
-              params.manufacturer_data().BackingStorage().data(),
-              filter->manufacturer_data->size());
+  if (!filter->manufacturer_data->empty()) {
+    std::memcpy(filter->manufacturer_data->data(),
+                params.manufacturer_data().BackingStorage().data(),
+                filter->manufacturer_data->size());
+  }
 
   filter->manufacturer_data_mask = std::vector<uint8_t>();
-  filter->manufacturer_data_mask->reserve(
+  filter->manufacturer_data_mask->resize(
       params.manufacturer_data_mask().SizeInBytes());
-  std::memcpy(filter->manufacturer_data_mask->data(),
-              params.manufacturer_data_mask().BackingStorage().data(),
-              filter->manufacturer_data_mask->size());
+  if (!filter->manufacturer_data_mask->empty()) {
+    std::memcpy(filter->manufacturer_data_mask->data(),
+                params.manufacturer_data_mask().BackingStorage().data(),
+                filter->manufacturer_data_mask->size());
+  }
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_manufacturer_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::MANUFACTURER_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5627,16 +5565,13 @@ void FakeController::OnAndroidLEApcfManufacturerDataCommandDelete(
   filter.manufacturer_data_mask.reset();
   packet_filter_state_.filters_manufacturer_data.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_manufacturer_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::MANUFACTURER_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5648,16 +5583,13 @@ void FakeController::OnAndroidLEApcfManufacturerDataCommandClear(
   }
   packet_filter_state_.filters_manufacturer_data.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_manufacturer_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::MANUFACTURER_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5696,25 +5628,27 @@ void FakeController::OnAndroidLEApcfServiceDataCommandAdd(
 
   filter->service_data = std::vector<uint8_t>();
   filter->service_data->resize(params.service_data().SizeInBytes());
-  std::memcpy(filter->service_data->data(),
-              params.service_data().BackingStorage().data(),
-              filter->service_data->size());
+  if (!filter->service_data->empty()) {
+    std::memcpy(filter->service_data->data(),
+                params.service_data().BackingStorage().data(),
+                filter->service_data->size());
+  }
 
   filter->service_data_mask = std::vector<uint8_t>();
-  filter->service_data_mask->reserve(params.service_data_mask().SizeInBytes());
-  std::memcpy(filter->service_data_mask->data(),
-              params.service_data_mask().BackingStorage().data(),
-              filter->service_data_mask->size());
+  filter->service_data_mask->resize(params.service_data_mask().SizeInBytes());
+  if (!filter->service_data_mask->empty()) {
+    std::memcpy(filter->service_data_mask->data(),
+                params.service_data_mask().BackingStorage().data(),
+                filter->service_data_mask->size());
+  }
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5737,15 +5671,13 @@ void FakeController::OnAndroidLEApcfServiceDataCommandDelete(
   filter.service_data_mask.reset();
   packet_filter_state_.filters_manufacturer_data.erase(filter_index);
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5757,15 +5689,13 @@ void FakeController::OnAndroidLEApcfServiceDataCommandClear(
   }
   packet_filter_state_.filters_service_data.clear();
 
-  uint8_t available_filters = packet_filter_state_.max_filters -
-                              packet_filter_state_.filters_service_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::SERVICE_DATA);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5804,27 +5734,28 @@ void FakeController::OnAndroidLEApcfAdTypeCommandAdd(
   filter->advertising_data_type = params.ad_type().Read();
 
   filter->advertising_data = std::vector<uint8_t>();
-  filter->advertising_data->reserve(params.ad_data().SizeInBytes());
-  std::memcpy(filter->advertising_data->data(),
-              params.ad_data().BackingStorage().data(),
-              filter->advertising_data->size());
+  filter->advertising_data->resize(params.ad_data().SizeInBytes());
+  if (!filter->advertising_data->empty()) {
+    std::memcpy(filter->advertising_data->data(),
+                params.ad_data().BackingStorage().data(),
+                filter->advertising_data->size());
+  }
 
   filter->advertising_data_mask = std::vector<uint8_t>();
-  filter->advertising_data_mask->reserve(params.ad_data_mask().SizeInBytes());
-  std::memcpy(filter->advertising_data_mask->data(),
-              params.ad_data_mask().BackingStorage().data(),
-              filter->advertising_data_mask->size());
+  filter->advertising_data_mask->resize(params.ad_data_mask().SizeInBytes());
+  if (!filter->advertising_data_mask->empty()) {
+    std::memcpy(filter->advertising_data_mask->data(),
+                params.ad_data_mask().BackingStorage().data(),
+                filter->advertising_data_mask->size());
+  }
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_advertising_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::AD_TYPE_FILTER);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5848,16 +5779,13 @@ void FakeController::OnAndroidLEApcfAdTypeCommandDelete(
   filter.advertising_data_mask.reset();
   packet_filter_state_.filters_advertising_data.erase(filter_index);
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_advertising_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::AD_TYPE_FILTER);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
@@ -5870,16 +5798,13 @@ void FakeController::OnAndroidLEApcfAdTypeCommandClear(
   }
   packet_filter_state_.filters_advertising_data.clear();
 
-  uint8_t available_filters =
-      packet_filter_state_.max_filters -
-      packet_filter_state_.filters_advertising_data.size();
   auto packet =
       hci::EventPacket::New<android_emb::LEApcfCommandCompleteEventWriter>(
           hci_spec::kCommandCompleteEventCode);
   auto view = packet.view_t();
   view.sub_opcode().Write(android_emb::ApcfSubOpcode::AD_TYPE_FILTER);
   view.action().Write(params.action().Read());
-  view.available_spaces().Write(available_filters);
+  view.available_spaces().Write(packet_filter_state_.available_filters());
   RespondWithCommandComplete(pwemb::OpCode::ANDROID_APCF, &packet);
 }
 
