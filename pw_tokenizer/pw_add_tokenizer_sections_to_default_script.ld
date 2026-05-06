@@ -14,24 +14,6 @@
  * the License.
  */
 
-/*
- *
- * This linker script snippet declares the sections needed for string
- * tokenization. All sections have type INFO so they are excluded from the final
- * binary.
- *
- * The contents of this script can be copied into an existing linker script.
- * Alternately, this file can be directly included in a linker script with an
- * include directive. For example,
- *
- *   INCLUDE path/to/modules/pw_tokenizer/pw_tokenizer_linker_sections.ld
- *
- *   SECTIONS
- *   {
- *     (your existing linker sections)
- *   }
- */
-
 /* LINT.IfChange(tokenizer_sections) */
 SECTIONS
 {
@@ -84,4 +66,14 @@ SECTIONS
     KEEP(*(.rodata.*_pw_tokenizer_string_entry_*))
   }
 }
-/* LINT.ThenChange(pw_add_tokenizer_sections_to_default_script.ld:tokenizer_sections) */
+/* LINT.ThenChange(pw_tokenizer_linker_sections.ld:tokenizer_sections) */
+
+/*
+ * The INSERT directive instructs the linker to merge the directives in this
+ * script with the default linker script, rather than replace the default with
+ * this script. The tokenized sections need to appear in the merged script
+ * before the .rodata section, to ensure that all of the correct symbols end up
+ * in the tokenized section. Here we insert them just after the .debug_info
+ * section, which both clang and GCC use.
+ */
+INSERT AFTER .debug_info

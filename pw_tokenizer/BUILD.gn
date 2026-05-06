@@ -49,16 +49,16 @@ config("linker_script") {
     ]
   } else if (current_os == "linux" && !pw_toolchain_OSS_FUZZ_ENABLED) {
     # When building for Linux, the linker provides a default linker script.
-    # The add_tokenizer_sections_to_default_script.ld wrapper includes the
-    # pw_tokenizer_linker_sections.ld script in a way that appends to the the
-    # default linker script instead of overriding it.
+    # We must instead use pw_add_tokenizer_sections_to_default_script.ld to
+    # append to the default linker script instead of overriding it.
+    inputs = []
+    inputs = [ "pw_add_tokenizer_sections_to_default_script.ld" ]
+
     ldflags = [
       "-T",
-      rebase_path("add_tokenizer_sections_to_default_script.ld",
+      rebase_path("pw_add_tokenizer_sections_to_default_script.ld",
                   root_build_dir),
     ]
-
-    inputs += [ "add_tokenizer_sections_to_default_script.ld" ]
   }
   visibility = [ ":*" ]
 }

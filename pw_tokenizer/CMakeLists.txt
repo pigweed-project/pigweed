@@ -70,7 +70,7 @@ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "")
 elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
   target_link_options(pw_tokenizer
     PUBLIC
-      "-T${CMAKE_CURRENT_SOURCE_DIR}/add_tokenizer_sections_to_default_script.ld"
+      "-T${CMAKE_CURRENT_SOURCE_DIR}/pw_add_tokenizer_sections_to_default_script.ld"
       "-L${CMAKE_CURRENT_SOURCE_DIR}"
   )
 endif()
