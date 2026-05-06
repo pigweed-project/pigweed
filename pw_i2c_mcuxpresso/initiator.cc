@@ -179,6 +179,13 @@ Status McuxpressoInitiator::InitiateNonBlockingTransferUntil(
     PW_LOG_WARN("SCL stuck low timeout! Is a peripheral misbehaving?");
   }
 
+  if (config_.treat_arb_loss_on_full_read_as_ok &&
+      transfer_status == kStatus_I2C_ArbitrationLost &&
+      transfer->direction == kI2C_Read &&
+      handle_.transferCount == transfer->dataSize) {
+    return pw::OkStatus();
+  }
+
   return HalStatusToPwStatus(transfer_status);
 }
 

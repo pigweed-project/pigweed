@@ -42,6 +42,12 @@ class McuxpressoInitiator final : public Initiator {
     // transactions to fail sooner, rather than spinning needlessly in
     // busy-wait loops deep in the MCUxpresso code.
     bool use_hardware_timeouts = false;
+
+    // If a read transfer reports arbitration loss but the full number of
+    // bytes were read out, treat the transfer as an `OkStatus` rather than
+    // `Aborted`. This is useful in situations where a misbehaving I2C client
+    // ACKs the last byte rather than NACKing.
+    bool treat_arb_loss_on_full_read_as_ok = false;
   };
 
   McuxpressoInitiator(const Config& config,
