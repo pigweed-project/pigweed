@@ -81,6 +81,7 @@ impl Packet {
     /// - 2 characters of hex encoding for each byte of data
     ///
     /// Returns an error if total_size is too small to hold any data.
+    #[allow(clippy::std_instead_of_core)]
     pub fn max_payload_size(max_packet_size: usize) -> std::io::Result<usize> {
         if max_packet_size <= 4 {
             return Err(std::io::Error::new(
