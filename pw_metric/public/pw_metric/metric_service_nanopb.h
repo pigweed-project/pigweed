@@ -41,7 +41,7 @@ namespace pw::metric {
 class MetricService final
     : public proto::pw_rpc::nanopb::MetricService::Service<MetricService> {
  public:
-  MetricService(const MetricList& metrics, const GroupList& groups)
+  constexpr MetricService(const MetricList& metrics, const GroupList& groups)
       : metrics_(metrics), groups_(groups) {}
 
   // The legacy streaming RPC for fetching metrics. The paginated Walk() RPC is

@@ -41,7 +41,7 @@ namespace pw::metric {
 class MetricService final
     : public proto::pw_rpc::raw::MetricService::Service<MetricService> {
  public:
-  MetricService(const MetricList& metrics, const GroupList& groups)
+  constexpr MetricService(const MetricList& metrics, const GroupList& groups)
       : metrics_(metrics), groups_(groups) {}
 
   // Returns metrics or groups matching the requested paths. This is the legacy
