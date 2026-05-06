@@ -82,7 +82,7 @@ pw_add_library(pw_bluetooth_proxy.hci.sniff_offload STATIC
     pw_bluetooth.emboss_hci_events
     pw_bluetooth.emboss_util
     pw_chrono.system_clock
-    pw_containers.intrusive_map
+    pw_containers.dynamic_map
     pw_function
     pw_multibuf.v2.multibuf
     pw_sync.lock_annotations

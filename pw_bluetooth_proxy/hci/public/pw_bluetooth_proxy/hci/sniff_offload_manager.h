@@ -24,7 +24,7 @@
 #include "pw_async2/time_provider.h"
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/hci/types.h"
-#include "pw_containers/intrusive_map.h"
+#include "pw_containers/dynamic_map.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/v2/multibuf.h"
 #include "pw_result/result.h"
@@ -227,7 +227,7 @@ class SniffOffloadManager final {
     uint16_t subrating_min_remote_timeout;
     uint16_t subrating_min_local_timeout;
   };
-  using ConnectionMap = pw::IntrusiveMap<uint16_t, ConnectionFsm>;
+  using ConnectionMap = pw::DynamicMap<uint16_t, ConnectionFsm>;
 
   enum class CommandStatus {
     kSuccess,

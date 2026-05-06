@@ -122,7 +122,7 @@ bool SniffOffloadManager::HandlerAction::operator==(
   return intercept == other.intercept && resume == other.resume;
 }
 
-class SniffOffloadManager::ConnectionFsm final : public ConnectionMap::Item {
+class SniffOffloadManager::ConnectionFsm final {
  public:
   ConnectionFsm(SniffOffloadManager& manager, ConnectionHandle handle)
       : manager_(manager), handle_(handle) {}
@@ -168,7 +168,6 @@ class SniffOffloadManager::ConnectionFsm final : public ConnectionMap::Item {
   }
 
   ConnectionHandle handle() const { return handle_; }
-  uint16_t key() const { return cpp23::to_underlying(handle_); }
 
  private:
   void HandleInput(EnableInput&& input)
@@ -264,7 +263,8 @@ SniffOffloadManager::SniffOffloadManager(
       time_provider_(time_provider),
       send_command_(std::move(send_command)),
       send_event_(std::move(send_event)),
-      on_error_(std::move(on_error)) {}
+      on_error_(std::move(on_error)),
+      connections_(allocator) {}
 
 SniffOffloadManager::~SniffOffloadManager() { Reset(); }
 
@@ -275,12 +275,10 @@ void SniffOffloadManager::Reset() {
 
 void SniffOffloadManager::DoReset() {
   PW_LOG_INFO("Resetting sniff offload manager.");
-  for (auto iter = connections_.begin(); iter != connections_.end();) {
-    iter->Stop();
-    auto* fsm = &*iter;
-    iter = connections_.erase(iter);
-    allocator_.Delete(fsm);
+  for (auto& [_, fsm] : connections_) {
+    fsm.Stop();
   }
+  connections_.clear();
   state_ = Disabled();
   suppress_mode_change_event_ = false;
   suppress_sniff_subrating_event_ = false;
@@ -308,8 +306,8 @@ void SniffOffloadManager::ProcessAclPacket(const MultiBuf& acl_packet,
     return;
   }
 
-  iter->AssertLockHeld(*this);
-  iter->OnInput(ConnectionFsm::AclActivity{direction});
+  iter->second.AssertLockHeld(*this);
+  iter->second.OnInput(ConnectionFsm::AclActivity{direction});
 }
 
 SniffOffloadManager::HandlerAction SniffOffloadManager::ProcessCommand(
@@ -447,8 +445,8 @@ SniffOffloadManager::ProcessWriteSniffOffloadParameters(
     return kBlockPacket;
   }
 
-  iter->AssertLockHeld(*this);
-  iter->OnInput(ConnectionFsm::SniffOffloadParametersInput{
+  iter->second.AssertLockHeld(*this);
+  iter->second.OnInput(ConnectionFsm::SniffOffloadParametersInput{
       .sniff_max_interval = view->max_interval().Read(),
       .sniff_min_interval = view->min_interval().Read(),
       .sniff_attempts = view->attempts().Read(),
@@ -510,8 +508,8 @@ SniffOffloadManager::HandlerAction SniffOffloadManager::ProcessModeChange(
   }
 
   auto current_mode = view->current_mode().Read();
-  iter->AssertLockHeld(*this);
-  iter->OnInput(ConnectionFsm::ModeChangeInput{current_mode});
+  iter->second.AssertLockHeld(*this);
+  iter->second.OnInput(ConnectionFsm::ModeChangeInput{current_mode});
 
   return action;
 }
@@ -556,28 +554,29 @@ SniffOffloadManager::ProcessConnectionComplete(const MultiBuf& event_packet) {
   }
 
   ConnectionHandle handle = ConnectionHandle(view->connection_handle().Read());
-  auto iter = connections_.find(cpp23::to_underlying(handle));
-  if (iter != connections_.end()) {
-    PW_LOG_WARN("Connection handle 0x%04x already exists.",
-                cpp23::to_underlying(handle));
-    OnError(ErrorReason::kConnectionAlreadyExists, handle);
-    return {};
-  }
-
-  auto fsm = allocator_.New<ConnectionFsm>(*this, handle);
-  if (fsm == nullptr) {
+  auto result =
+      connections_.try_emplace(cpp23::to_underlying(handle), *this, handle);
+  if (!result.has_value()) {
     PW_LOG_WARN("Failed to allocate connection data for handle 0x%04x.",
                 cpp23::to_underlying(handle));
     OnError(ErrorReason::kCannotAllocateConnection, handle);
     return {};
   }
 
-  fsm->AssertLockHeld(*this);
-  connections_.insert(*fsm);
-  if (std::holds_alternative<Enabled>(state_)) {
-    fsm->OnInput(std::get<Enabled>(state_));
+  auto& [iter, inserted] = *result;
+  if (!inserted) {
+    PW_LOG_WARN("Connection handle 0x%04x already exists.",
+                cpp23::to_underlying(handle));
+    OnError(ErrorReason::kConnectionAlreadyExists, handle);
+    return {};
   }
-  fsm->Start();
+
+  auto& fsm = iter->second;
+  fsm.AssertLockHeld(*this);
+  if (std::holds_alternative<Enabled>(state_)) {
+    fsm.OnInput(std::get<Enabled>(state_));
+  }
+  fsm.Start();
   return {};
 }
 
@@ -603,10 +602,9 @@ SniffOffloadManager::ProcessDisconnectionComplete(
     return {};
   }
 
-  auto* fsm = &*iter;
+  auto& fsm = iter->second;
+  fsm.Stop();
   connections_.erase(iter);
-  fsm->Stop();
-  allocator_.Delete(fsm);
   return {};
 }
 
@@ -822,7 +820,7 @@ void SniffOffloadManager::OnError(
 }
 
 void SniffOffloadManager::DoDisable() {
-  for (auto& fsm : connections_) {
+  for (auto& [_, fsm] : connections_) {
     fsm.AssertLockHeld(*this);
     fsm.OnInput(Disabled{});
   }
@@ -831,7 +829,7 @@ void SniffOffloadManager::DoDisable() {
 }
 
 void SniffOffloadManager::DoEnable(Enabled&& enabled) {
-  for (auto& fsm : connections_) {
+  for (auto& [_, fsm] : connections_) {
     fsm.AssertLockHeld(*this);
     fsm.OnInput(Enabled{enabled});
   }

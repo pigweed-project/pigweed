@@ -89,7 +89,7 @@ pw_source_set("sniff_offload") {
     "$dir_pw_bluetooth:emboss_hci_events",
     "$dir_pw_bluetooth:emboss_util",
     "$dir_pw_chrono:system_clock",
-    "$dir_pw_containers:intrusive_map",
+    "$dir_pw_containers:dynamic_map",
     "$dir_pw_function",
     "$dir_pw_multibuf/v2:multibuf",
     "$dir_pw_sync:lock_annotations",
