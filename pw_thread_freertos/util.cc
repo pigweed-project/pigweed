@@ -59,7 +59,7 @@ namespace {
 
 Status ForEachThreadInList(List_t* list,
                            const eTaskState default_list_state,
-                           ThreadCallback cb) {
+                           const ThreadCallback& cb) {
   if (listCURRENT_LIST_LENGTH(list) == 0) {
     return OkStatus();
   }
@@ -91,7 +91,7 @@ Status ForEachThreadInList(List_t* list,
 
 }  // namespace
 
-Status ForEachThread(ThreadCallback cb) {
+Status ForEachThread(const ThreadCallback& cb) {
   if (xSchedulerRunning == pdFALSE) {
     return Status::FailedPrecondition();
   }

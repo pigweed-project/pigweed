@@ -14,7 +14,7 @@
 #pragma once
 
 #include "FreeRTOS.h"
-#include "pw_function/function_ref.h"
+#include "pw_function/function.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "task.h"
@@ -25,7 +25,7 @@ namespace pw::thread::freertos {
 // callback should return true if thread iteration should continue. When this
 // callback returns false, ForEachThread() will cease iteration of threads and
 // return an `Aborted` error code.
-using ThreadCallback = pw::FunctionRef<bool(TaskHandle_t, eTaskState)>;
+using ThreadCallback = pw::Function<bool(TaskHandle_t, eTaskState)>;
 
 // Iterates through all threads that haven't been deleted, calling the provided
 // callback on each thread. If the callback fails on one thread, the iteration
@@ -46,6 +46,6 @@ using ThreadCallback = pw::FunctionRef<bool(TaskHandle_t, eTaskState)>;
 //
 // Warning: This is only safe to use when the scheduler and interrupts are
 // disabled.
-Status ForEachThread(ThreadCallback cb);
+Status ForEachThread(const ThreadCallback& cb);
 
 }  // namespace pw::thread::freertos

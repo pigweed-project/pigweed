@@ -19,7 +19,7 @@
 #include <string_view>
 
 #include "FreeRTOS.h"
-#include "pw_function/function_ref.h"
+#include "pw_function/function.h"
 #include "pw_log/log.h"
 #include "pw_protobuf/encoder.h"
 #include "pw_span/span.h"
@@ -86,23 +86,28 @@ void CaptureThreadState(eTaskState thread_state,
 Status SnapshotThreads(void* running_thread_stack_pointer,
                        proto::pwpb::SnapshotThreadInfo::StreamEncoder& encoder,
                        ProcessThreadStackCallback& stack_dumper) {
-  Status thread_capture_status = OkStatus();
+  struct {
+    void* running_thread_stack_pointer;
+    proto::pwpb::SnapshotThreadInfo::StreamEncoder* encoder;
+    ProcessThreadStackCallback* stack_dumper;
+    Status thread_capture_status;
+  } ctx;
+  ctx.running_thread_stack_pointer = running_thread_stack_pointer;
+  ctx.encoder = &encoder;
+  ctx.stack_dumper = &stack_dumper;
+  ctx.thread_capture_status = OkStatus();
+
   ThreadCallback thread_capture_cb(
-      [&encoder,
-       running_thread_stack_pointer,
-       &stack_dumper,
-       &thread_capture_status](TaskHandle_t thread,
-                               eTaskState thread_state) -> bool {
-        auto status = encoder.WriteThreadsMessage(
-            [thread, thread_state, running_thread_stack_pointer, &stack_dumper](
-                auto& thread_encoder) {
+      [&ctx](TaskHandle_t thread, eTaskState thread_state) -> bool {
+        auto status = ctx.encoder->WriteThreadsMessage(
+            [&ctx, thread, thread_state](auto& thread_encoder) {
               return SnapshotThread(thread,
                                     thread_state,
-                                    running_thread_stack_pointer,
+                                    ctx.running_thread_stack_pointer,
                                     thread_encoder,
-                                    stack_dumper);
+                                    *ctx.stack_dumper);
             });
-        thread_capture_status.Update(status);
+        ctx.thread_capture_status.Update(status);
 
         return true;  // Iterate through all threads.
       });
@@ -111,7 +116,7 @@ Status SnapshotThreads(void* running_thread_stack_pointer,
     PW_LOG_ERROR("Failed to iterate threads during snapshot capture: %d",
                  status.code());
   }
-  return thread_capture_status;
+  return ctx.thread_capture_status;
 }
 
 Status SnapshotThread(
