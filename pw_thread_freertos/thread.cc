@@ -180,6 +180,14 @@ void Context::CreateThread(const freertos::Options& options,
   }
   PW_CHECK_NOTNULL(task_handle);  // Ensure it succeeded.
   native_type_out->set_task_handle(task_handle);
+
+#if configNUM_THREAD_LOCAL_STORAGE_POINTERS > 0
+  const auto& pointers = options.tls_pointers();
+  for (uint32_t i = 0; i < configNUM_THREAD_LOCAL_STORAGE_POINTERS; ++i) {
+    vTaskSetThreadLocalStoragePointer(
+        task_handle, i, reinterpret_cast<void*>(pointers[i]));
+  }
+#endif
 }
 
 Thread::Thread(const thread::Options& facade_options, Function<void()>&& entry)

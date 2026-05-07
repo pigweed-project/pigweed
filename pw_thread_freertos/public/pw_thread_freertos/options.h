@@ -70,6 +70,23 @@ class Options : public thread::Options {
     return *this;
   }
 
+#if configNUM_THREAD_LOCAL_STORAGE_POINTERS > 0
+  // Sets the thread local storage at the specified index.
+  //
+  // uintptr_t is used instead of the underlying FreeRTOS API's void* to allow
+  // setting values in a constexpr context (where reinterpret_cast is not
+  // permitted). The value is cast back to void* when applied at runtime.
+  template <size_t kIndex>
+  constexpr Options& set_thread_local_storage(uintptr_t value) {
+    tls_pointers_[kIndex] = value;
+    return *this;
+  }
+  pw::span<const uintptr_t, configNUM_THREAD_LOCAL_STORAGE_POINTERS>
+  tls_pointers() const {
+    return tls_pointers_;
+  }
+#endif
+
 #if PW_THREAD_FREERTOS_CONFIG_DYNAMIC_ALLOCATION_ENABLED
   // Set the stack size of dynamic thread allocations.
   //
@@ -113,6 +130,11 @@ class Options : public thread::Options {
   size_t stack_size_words_ = config::kDefaultStackSizeWords;
 #endif  // PW_THREAD_FREERTOS_CONFIG_DYNAMIC_ALLOCATION_ENABLED
   StaticContext* context_ = nullptr;
+
+#if configNUM_THREAD_LOCAL_STORAGE_POINTERS > 0
+  std::array<uintptr_t, configNUM_THREAD_LOCAL_STORAGE_POINTERS> tls_pointers_ =
+      {};
+#endif
 };
 
 }  // namespace pw::thread::freertos
