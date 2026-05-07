@@ -52,6 +52,13 @@ fn handle_uppercase_ipcs() -> Result<()> {
         let Some(c) = char::from_u32(u32::from_ne_bytes(buffer)) else {
             return Err(Error::InvalidArgument);
         };
+
+        if c == '!' {
+            syscall::object_set_peer_user_signal(handle::IPC, true)?;
+        } else if c == '#' {
+            syscall::object_set_peer_user_signal(handle::IPC, false)?;
+        }
+
         let upper_c = c.to_ascii_uppercase();
 
         // Respond to the IPC with the uppercase character.

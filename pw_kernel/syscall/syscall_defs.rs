@@ -96,7 +96,9 @@
 //! - `Signals::ERROR` indicates pending transaction has an error.  Cleared
 //!   when the initiator is waited on.
 //! - `Signals::USER` indicates the handler calls [`object_set_peer_user_signal()`].
-//!   Cleared when the handler calls [`object_set_peer_user_signal()`] with `set=false`.
+//!   Cleared when the handler calls [`object_set_peer_user_signal()`] with `set=false`,
+//!   or automatically by the kernel if the initiator handler terminates. Preserved on
+//!   initiator process termination.
 //!
 //! #### Handler Signals
 //! - `Signals::READABLE` indicates there is a pending transaction.  Cleared when
@@ -107,7 +109,9 @@
 //!   are defined at the moment.  In the future an error may be raised when
 //!   the remote peer closes.
 //! - `Signals::USER` indicates the initiator calls [`object_set_peer_user_signal()`].
-//!   Cleared when the initiator calls [`object_set_peer_user_signal()`] with `set=false`.
+//!   Cleared when the initiator calls [`object_set_peer_user_signal()`] with `set=false`,
+//!   or automatically by the kernel if the initiator process terminates. Preserved on
+//!   handler process termination.
 //!
 //! ### Wait Group
 //! Wait groups provide a mechanism for waiting on multiple handles at once.
@@ -628,6 +632,12 @@ unsafe extern "C" {
     /// on the peer; `set == 0` lowers USER on the peer. The receiver does
     /// not clear the signal — only the sender does.
     ///
+    /// If the signaler process terminates or is reset, the kernel automatically
+    /// lowers `Signals::USER` on the peer object to prevent signal leaks.
+    /// Symmetrically, if the receiver process terminates and restarts, its own
+    /// `Signals::USER` is preserved as long as the signaler remains alive and
+    /// has not lowered it.
+    ///
     /// # Returns
     /// - `0`: On success.
     /// - [`Error::Unimplemented`]: `object_handle` does not support peer signaling.
@@ -758,6 +768,12 @@ pub trait SysCallInterface {
     fn process_exit(exit_code: u32) -> Result<()>;
 
     /// Set or clear `Signals::USER` on the paired peer (level-triggered model).
+    ///
+    /// If the signaler process terminates or is reset, the kernel automatically
+    /// lowers `Signals::USER` on the peer object to prevent signal leaks.
+    /// Symmetrically, if the receiver process terminates and restarts, its own
+    /// `Signals::USER` is preserved as long as the signaler remains alive and
+    /// has not lowered it.
     fn object_set_peer_user_signal(object_handle: u32, set: bool) -> Result<()>;
 
     fn debug_putc(a: u32) -> Result<u32>;

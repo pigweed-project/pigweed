@@ -113,6 +113,42 @@ fn handle_sleep_and_exit() -> ! {
     loop {}
 }
 
+fn handle_set_control_user_signal() {
+    info!("SetControlUserSignal received: Setting peer USER signal to true");
+    if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_CONTROL_HANDLER, true) {
+        info!("Failed to set peer user signal on IPC_CONTROL_HANDLER");
+        let _ = syscall::debug_shutdown(Err(e.into()));
+        loop {}
+    }
+    let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
+}
+
+fn handle_set_reset_user_signal() {
+    info!("SetResetUserSignal received: Setting peer USER signal to true on IPC_RESET");
+    if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_RESET, true) {
+        info!("Failed to set peer user signal on IPC_RESET");
+        let _ = syscall::debug_shutdown(Err(e.into()));
+        loop {}
+    }
+    let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
+}
+
+fn handle_verify_user_signal_preserved() {
+    info!("VerifyUserSignalPreserved received: Verifying Signals::USER is still set");
+    let wait_res = syscall::object_wait(
+        handle::IPC_CONTROL_HANDLER,
+        Signals::USER,
+        SystemClock::now(),
+    );
+    if wait_res.is_err() {
+        info!("Signals::USER was lost on restart!");
+        let _ = syscall::debug_shutdown(Err(Error::Internal.into()));
+        loop {}
+    }
+    info!("Signals::USER correctly remained set on restart!");
+    let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
+}
+
 #[process_entry("restart")]
 fn main() -> ! {
     info!("I am the object_reset process.");
@@ -150,6 +186,9 @@ fn main() -> ! {
             Command::BlockInitiator => handle_block_initiator(),
             Command::AsyncTransact => handle_async_transact(),
             Command::SleepAndExit => handle_sleep_and_exit(),
+            Command::SetControlUserSignal => handle_set_control_user_signal(),
+            Command::SetResetUserSignal => handle_set_reset_user_signal(),
+            Command::VerifyUserSignalPreserved => handle_verify_user_signal_preserved(),
         }
     }
 }

@@ -17,7 +17,7 @@
 use initiator_codegen::handle;
 use pw_status::{Error, Result, StatusCode};
 use userspace::syscall::Signals;
-use userspace::time::Instant;
+use userspace::time::{Clock, Duration, Instant, SystemClock};
 use userspace::{process_entry, syscall};
 
 fn test_uppercase_ipcs() -> Result<()> {
@@ -77,6 +77,8 @@ fn test_uppercase_ipcs() -> Result<()> {
         }
     }
 
+    test_ipc_preserves_user_signal()?;
+
     // Test object_set_peer_user_signal: signal the handler and wait for the echo back.
     // Level-triggered model: the initiator raises USER on the handler, the handler
     // echoes USER back on the initiator and then lowers it.  The initiator only
@@ -89,6 +91,44 @@ fn test_uppercase_ipcs() -> Result<()> {
         return Err(Error::Internal);
     }
     pw_log::info!("object_set_peer_user_signal round-trip OK");
+
+    Ok(())
+}
+
+/// Tests that IPC transactions do not wipe out or reset active Signals::USER signals.
+fn test_ipc_preserves_user_signal() -> Result<()> {
+    pw_log::info!("📋 Testing that IPC transactions preserve Signals::USER");
+
+    let mut send_buf = [0u8; size_of::<char>()];
+    let mut recv_buf = [0u8; size_of::<char>() * 2];
+    let deadline = SystemClock::now() + Duration::from_secs(2);
+
+    // Tell the handler to set peer USER signal to true on our initiator
+    '!'.encode_utf8(&mut send_buf);
+    syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, deadline)?;
+
+    // Verify that Signals::USER is active on our initiator
+    let wait_res = syscall::object_wait(handle::IPC, Signals::USER, SystemClock::now());
+    if wait_res.is_err() {
+        pw_log::error!("❌ Expected Signals::USER to be set on initiator");
+        return Err(Error::Internal);
+    }
+
+    // Perform another normal IPC transaction (e.g., character 'a')
+    'a'.encode_utf8(&mut send_buf);
+    syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, deadline)?;
+
+    // Verify that Signals::USER remained active and was not wiped out by the transaction response!
+    let wait_res = syscall::object_wait(handle::IPC, Signals::USER, SystemClock::now());
+    if wait_res.is_err() {
+        pw_log::error!("❌ Signals::USER was reset or wiped out by the IPC transaction response!");
+        return Err(Error::Internal);
+    }
+    pw_log::info!("✅ Signals::USER correctly remained set across the IPC transaction!");
+
+    // Tell the handler to lower the USER signal
+    '#'.encode_utf8(&mut send_buf);
+    syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, deadline)?;
 
     Ok(())
 }

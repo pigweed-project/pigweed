@@ -109,7 +109,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         transaction
             .initiator
             .base
-            .signal(kernel, |_| Signals::READABLE);
+            .signal(kernel, |signals| signals | Signals::READABLE);
         Ok(())
     }
 
@@ -129,6 +129,13 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
 
     /// Reset the handler object. If there is a mid-flight transaction, cancel it.
     fn reset(&self, kernel: K) -> Result<()> {
+        // Clear peer USER signal on initiator.
+        if let Some(initiator) = self.initiator.lock(kernel).clone() {
+            initiator
+                .base
+                .signal(kernel, |signals| signals - Signals::USER);
+        }
+
         let mut active_transaction = self.active_transaction.lock();
         if let Some(transaction) = active_transaction.take() {
             drop(active_transaction);
@@ -148,12 +155,10 @@ pub struct ChannelInitiatorObject<K: Kernel> {
 }
 
 impl<K: Kernel> ChannelInitiatorObject<K> {
-    pub const INITIAL_SIGNALS: Signals = Signals::WRITEABLE;
-
     #[must_use]
     pub fn new(handler: ForeignRc<K::AtomicUsize, ChannelHandlerObject<K>>) -> Self {
         Self {
-            base: ObjectBase::new(Self::INITIAL_SIGNALS),
+            base: ObjectBase::new(Signals::WRITEABLE),
             handler,
         }
     }
@@ -167,6 +172,11 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     /// Reset the initiator object. Clear any active transaction, and
     /// restore the initial signals.
     fn reset(&self, kernel: K) -> Result<()> {
+        // Clear peer USER signal on handler.
+        self.handler
+            .base
+            .signal(kernel, |signals| signals - Signals::USER);
+
         // Cancel the active transaction.
         if self.handler.active_transaction.lock().take().is_some() {
             self.handler
@@ -176,7 +186,9 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
 
         // Restore objects initial signals.
         if let Some(base) = self.base() {
-            base.signal(kernel, |_| Self::INITIAL_SIGNALS);
+            base.signal(kernel, |signals| {
+                (signals | Signals::WRITEABLE) - (Signals::READABLE | Signals::ERROR)
+            });
         }
 
         Ok(())

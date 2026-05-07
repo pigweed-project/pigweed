@@ -22,6 +22,9 @@ pub enum Command {
     BlockInitiator = 3,
     AsyncTransact = 4,
     SleepAndExit = 5,
+    SetControlUserSignal = 6,
+    SetResetUserSignal = 7,
+    VerifyUserSignalPreserved = 8,
 }
 
 impl TryFrom<u8> for Command {
@@ -34,6 +37,9 @@ impl TryFrom<u8> for Command {
             3 => Ok(Command::BlockInitiator),
             4 => Ok(Command::AsyncTransact),
             5 => Ok(Command::SleepAndExit),
+            6 => Ok(Command::SetControlUserSignal),
+            7 => Ok(Command::SetResetUserSignal),
+            8 => Ok(Command::VerifyUserSignalPreserved),
             _ => Err(pw_status::Error::InvalidArgument),
         }
     }

@@ -76,6 +76,8 @@ fn do_test() -> Result<()> {
     test_invalid_handles()?;
     test_clean_and_forced_exit()?;
     test_object_reset_basic(&mut reply)?;
+    test_own_user_signal_preserved_on_terminate(&mut reply)?;
+    test_peer_user_signal_cleared_on_terminate(&mut reply)?;
     test_initiator_unavailable_on_terminate(&mut test_thread_stack)?;
     test_handler_error_on_terminate(&mut test_thread_stack)?;
     test_wait_group_error_on_initiator_terminate(&mut test_thread_stack, &mut reply)?;
@@ -256,6 +258,87 @@ fn test_object_reset_basic(reply: &mut [u8]) -> Result<()> {
         reply,
         Instant::MAX,
     )?;
+    Ok(())
+}
+
+/// Tests that an object's own USER signal is preserved on process termination and
+/// restart when it's peer remains alive.
+fn test_own_user_signal_preserved_on_terminate(reply: &mut [u8]) -> Result<()> {
+    info!("📋 Receiver termination preserves USER signal upon restart");
+
+    info!("🔄 ├─ Setting peer USER signal to true on RESTART_PROCESS handler");
+    syscall::object_set_peer_user_signal(handle::IPC_CONTROL_INITIATOR, true)?;
+
+    info!("🔄 ├─ Terminating RESTART_PROCESS");
+    syscall::process_terminate(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Waiting for RESTART_PROCESS to become joinable and joining");
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Restart RESTART_PROCESS
+    info!("🔄 ├─ Restarting RESTART_PROCESS");
+    syscall::process_start(handle::RESTART_PROCESS)?;
+
+    // Request RESTART_PROCESS to verify USER signal remained active on restart
+    info!("🔄 ├─ Requesting RESTART_PROCESS to verify USER signal is preserved");
+    syscall::channel_transact(
+        handle::IPC_CONTROL_INITIATOR,
+        &[Command::VerifyUserSignalPreserved as u8],
+        reply,
+        Instant::MAX,
+    )?;
+
+    // Reset our USER signal to false for subsequent tests
+    syscall::object_set_peer_user_signal(handle::IPC_CONTROL_INITIATOR, false)?;
+    Ok(())
+}
+
+/// Tests that an object's peer's USER signal is cleared on process termination
+/// and restart.
+fn test_peer_user_signal_cleared_on_terminate(reply: &mut [u8]) -> Result<()> {
+    info!("📋 Process termination resets peer's USER signals to false");
+
+    info!("🔄 ├─ Requesting RESTART_PROCESS to set USER signal on IPC_RESET handler");
+    syscall::channel_transact(
+        handle::IPC_CONTROL_INITIATOR,
+        &[Command::SetResetUserSignal as u8],
+        reply,
+        Instant::MAX,
+    )?;
+
+    // Verify USER signal is active on IPC_RESET handler before termination
+    let wait_res = syscall::object_wait(
+        handle::IPC_RESET,
+        syscall::Signals::USER,
+        SystemClock::now(),
+    );
+    if wait_res.is_err() {
+        pw_log::error!("❌ Expected Signals::USER to be set on IPC_RESET handler");
+        return Err(pw_status::Error::Internal.into());
+    }
+
+    info!("🔄 ├─ Terminating RESTART_PROCESS");
+    syscall::process_terminate(handle::RESTART_PROCESS)?;
+
+    info!("🔄 ├─ Waiting for RESTART_PROCESS to become joinable and joining");
+    wait_and_join_process(handle::RESTART_PROCESS)?;
+
+    // Verify USER signal is reset to false on IPC_RESET handler after termination!
+    info!("🔄 ├─ Checking if USER signal is de-asserted on IPC_RESET handler");
+    let wait_res = syscall::object_wait(
+        handle::IPC_RESET,
+        syscall::Signals::USER,
+        SystemClock::now(),
+    );
+    // If it was reset to false, waiting for USER signal should return Err(DeadlineExceeded) (4) immediately!
+    if wait_res != Err(pw_status::Error::DeadlineExceeded.into()) {
+        pw_log::error!("❌ Signals::USER was NOT de-asserted on process termination!");
+        return Err(pw_status::Error::Internal.into());
+    }
+    info!("✅ ├─ Peer's USER signal correctly de-asserted after termination!");
+
+    // Restart RESTART_PROCESS
+    syscall::process_start(handle::RESTART_PROCESS)?;
     Ok(())
 }
 
