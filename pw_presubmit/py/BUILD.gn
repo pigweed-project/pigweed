@@ -22,6 +22,7 @@ pw_python_package("py") {
     "setup.cfg",
   ]
   sources = [
+    "pigweed_local_presubmit.py",
     "pw_presubmit/__init__.py",
     "pw_presubmit/bazel_checks.py",
     "pw_presubmit/bazel_parser.py",
@@ -67,7 +68,6 @@ pw_python_package("py") {
     "pw_presubmit/ninja_parser.py",
     "pw_presubmit/npm_presubmit.py",
     "pw_presubmit/owners_checks.py",
-    "pw_presubmit/pigweed_local_presubmit.py",
     "pw_presubmit/pigweed_presubmit.py",
     "pw_presubmit/presubmit.py",
     "pw_presubmit/presubmit_context.py",
@@ -78,6 +78,7 @@ pw_python_package("py") {
     "pw_presubmit/private/result.py",
     "pw_presubmit/private/step.py",
     "pw_presubmit/private/tools.py",
+    "pw_presubmit/private/upstream_programs.py",
     "pw_presubmit/private/v2_cli.py",
     "pw_presubmit/pw_internal_namespace.py",
     "pw_presubmit/python_checks.py",

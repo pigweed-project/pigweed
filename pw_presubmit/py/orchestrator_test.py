@@ -363,10 +363,6 @@ class AutoTest(unittest.TestCase):
             git_dir = self.output_dir / 'git_dir'
             git_dir.mkdir(exist_ok=True)
             rebase_merge = git_dir / 'rebase-merge'
-            if num_commits > 0:
-                rebase_merge.mkdir(exist_ok=True)
-                (rebase_merge / 'onto').write_text('1234')
-                (rebase_merge / 'orig-head').write_text('5678')
 
             continue_calls = 0
 
@@ -392,6 +388,10 @@ class AutoTest(unittest.TestCase):
                 if 'rebase' in args_str and '-i' in args_str:
                     if git_rebase_fail:
                         return mock.Mock(returncode=1, stderr=b'failed')
+                    if num_commits > 0:
+                        rebase_merge.mkdir(exist_ok=True)
+                        (rebase_merge / 'onto').write_text('1234')
+                        (rebase_merge / 'orig-head').write_text('5678')
                     return mock.Mock(returncode=0)
 
                 if 'rebase' in args_str and '--continue' in args_str:
@@ -476,9 +476,6 @@ class AutoTest(unittest.TestCase):
             git_dir = self.output_dir / 'git_dir'
             git_dir.mkdir(exist_ok=True)
             rebase_merge = git_dir / 'rebase-merge'
-            rebase_merge.mkdir(exist_ok=True)
-            (rebase_merge / 'onto').write_text('1234')
-            (rebase_merge / 'orig-head').write_text('5678')
 
             # 1 commit, first run fixed, second run clean
             mock_run.side_effect = [
@@ -645,6 +642,32 @@ class AutoTest(unittest.TestCase):
 
             with self.assertRaises(AutoModeError):
                 auto('Presubmit', [], self.output_dir, self.events, 'HEAD')
+
+    def test_auto_already_in_rebase(self) -> None:
+        """Test that auto mode fails if already in a rebase."""
+        with mock.patch.object(subprocess, 'run') as mock_subproc:
+            git_dir = self.output_dir / 'git_dir'
+            git_dir.mkdir(exist_ok=True)
+            rebase_merge = git_dir / 'rebase-merge'
+            rebase_merge.mkdir(exist_ok=True)
+            (rebase_merge / 'onto').write_text('1234')
+            (rebase_merge / 'orig-head').write_text('5678')
+
+            def subproc_side_effect(args, **_kwargs):
+                args_str = ' '.join(str(a) for a in args)
+                if 'rev-parse' in args_str and '--absolute-git-dir' in args_str:
+                    return mock.Mock(stdout=str(git_dir).encode(), returncode=0)
+                return mock.Mock(returncode=0, stdout=b'')
+
+            mock_subproc.side_effect = subproc_side_effect
+
+            with self.assertRaises(AutoModeError) as ctx:
+                auto('Presubmit', [], self.output_dir, self.events, 'HEAD')
+
+            self.assertIn(
+                "You can't start auto mode during a rebase",
+                str(ctx.exception),
+            )
 
 
 class ResumeTest(unittest.TestCase):

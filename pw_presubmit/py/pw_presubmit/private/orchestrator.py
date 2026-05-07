@@ -188,7 +188,6 @@ class Orchestrator:
                 _LOG.debug('Amending HEAD commit with fixes')
                 repo = git_repo.GitRepo(self._root, BasicSubprocessRunner())
                 repo.modify().amend_commit_with_updated_files()
-                result = PresubmitResult.PASS
 
         duration = time.time() - start_time
         self._events.step_end(step.name, index, result, duration)
@@ -448,6 +447,13 @@ def auto(
 ) -> bool:
     """Runs presubmit in auto mode (rebase and fix)."""
     repo = git_repo.GitRepo(root, BasicSubprocessRunner())
+    if repo.is_in_rebase():
+        raise AutoModeError(
+            "You can't start auto mode during a rebase. "
+            "If you want to run on a higher commit in the stack, "
+            "create a new branch."
+        )
+
     if repo.has_uncommitted_changes():
         raise AutoModeError(
             "Git working tree has uncommitted changes. "

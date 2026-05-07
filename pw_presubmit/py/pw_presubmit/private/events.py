@@ -376,8 +376,6 @@ class MinimalUI(PresubmitEvents):
         print(f'- Files: {len(paths)}')
         print(f'- Steps: {len(selected_checks)}')
         print()
-        print('### Steps')
-        print()
 
     def collect_files(
         self,
@@ -401,8 +399,7 @@ class MinimalUI(PresubmitEvents):
         self._total_commits = repo.commit_count(base, 'HEAD')
         print('# Auto presubmit start')
         print(
-            f'- Running on {plural(self._total_commits, "commit")} '
-            'commits since {base}'
+            f'- Running on {plural(self._total_commits, "commit")} since {base}'
         )
         print('- Fixes are automatically applied when possible.')
         print('- The presubmit may be resumed if manual fixes are required.')
@@ -442,7 +439,7 @@ class MinimalUI(PresubmitEvents):
     def step_start(
         self, check: str, step_count: int, paths: Sequence[Path]
     ) -> None:
-        print(f'#### ({step_count}/{len(self.checks)}) {check}')
+        print(f'### ({step_count}/{len(self.checks)}) {check}')
 
     def step_end(
         self,

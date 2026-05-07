@@ -41,13 +41,13 @@ from pw_presubmit import (
     javascript_checks,
     module_owners,
     npm_presubmit,
-    pigweed_local_presubmit,
     pw_internal_namespace,
     python_checks,
     shell_checks,
     source_in_build,
     upstream_checks,
 )
+from pw_presubmit.private import upstream_programs
 from pw_presubmit.install_hook import install_git_hook
 from pw_presubmit.presubmit import call, filter_paths
 from pw_presubmit import Programs, PresubmitFailure
@@ -1209,7 +1209,7 @@ SECURITY = (
 
 FUZZ = (gn_fuzz_build, oss_fuzz_build)
 
-_LINTFORMAT = pigweed_local_presubmit.QUICK + (
+_LINTFORMAT = upstream_programs.QUICK + (
     format_code.presubmit_checks(),
     build.bazel_lint,  # TODO: b/432484923 - Remove when added to Bazel checks
     source_is_in_cmake_build_warn_only,
@@ -1284,7 +1284,7 @@ def run(install: bool, exclude: list[Pattern[str]], **presubmit_args) -> int:
         )
         return 0
 
-    exclude.extend(re.compile(p) for p in pigweed_local_presubmit.EXCLUDES)
+    exclude.extend(re.compile(p) for p in upstream_programs.EXCLUDES)
     return cli.run(exclude=exclude, **presubmit_args)
 
 

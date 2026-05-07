@@ -62,11 +62,11 @@ pw_py_library(
         "pw_presubmit/ninja_parser.py",
         "pw_presubmit/npm_presubmit.py",
         "pw_presubmit/owners_checks.py",
-        "pw_presubmit/pigweed_local_presubmit.py",
         "pw_presubmit/pigweed_presubmit.py",
         "pw_presubmit/presubmit.py",
         "pw_presubmit/presubmit_context.py",
         "pw_presubmit/private/orchestrator.py",
+        "pw_presubmit/private/upstream_programs.py",
         "pw_presubmit/private/v2_cli.py",
         "pw_presubmit/pw_internal_namespace.py",
         "pw_presubmit/python_checks.py",
@@ -476,8 +476,8 @@ pw_py_binary(
 
 pw_py_binary(
     name = "local_presubmit",
-    srcs = ["pw_presubmit/pigweed_local_presubmit.py"],
-    main = "pw_presubmit/pigweed_local_presubmit.py",
+    srcs = ["pigweed_local_presubmit.py"],
+    main = "pigweed_local_presubmit.py",
     deps = [":pw_presubmit"],
 )
 
