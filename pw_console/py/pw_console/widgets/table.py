@@ -16,7 +16,7 @@
 import collections
 import copy
 import logging
-from typing import Iterable
+from typing import Iterable, TYPE_CHECKING
 
 from prompt_toolkit.formatted_text import (
     ANSI,
@@ -28,6 +28,9 @@ from pw_console.console_prefs import ConsolePrefs
 from pw_console.log_line import LogLine
 from pw_console.text_formatting import strip_ansi
 
+if TYPE_CHECKING:
+    from pw_console.log_pane import LogPane
+
 _LOG = logging.getLogger(__package__)
 
 
@@ -38,7 +41,7 @@ class TableView:  # pylint: disable=too-many-instance-attributes
     INT_FORMAT = '%s'
     LAST_TABLE_COLUMN_NAMES = ['msg', 'message']
 
-    def __init__(self, prefs: ConsolePrefs):
+    def __init__(self, prefs: ConsolePrefs, log_pane: 'LogPane'):
         self._header_fragment_cache: list[StyleAndTextTuples] = []
 
         # Max column sizes determined from logs.
@@ -74,11 +77,11 @@ class TableView:  # pylint: disable=too-many-instance-attributes
         self.user_resized_width: dict[str, int] = {}
 
         # Set prefs last to override defaults.
-        self.set_prefs(prefs)
-        self.reset_user_column_widths()
-
-    def set_prefs(self, prefs: ConsolePrefs) -> None:
+        self.log_pane = log_pane
         self.prefs = prefs
+        self.reset_prefs()
+
+    def reset_prefs(self) -> None:
         column_spacing = max(1, self.prefs.spaces_between_columns)
         self.column_padding = ' ' * column_spacing
         self.column_padding_handle = '|' + (' ' * (column_spacing - 1))
@@ -92,9 +95,13 @@ class TableView:  # pylint: disable=too-many-instance-attributes
             self.hidden_columns['file'] = True
 
         # Apply default visibility for any settings in the prefs.
-        for column_name, is_visible in self.prefs.column_visibility.items():
+        for column_name, is_visible in self.prefs.column_visibility(
+            self.log_pane.startup_window_options
+        ).items():
             is_hidden = not is_visible
             self.hidden_columns[column_name] = is_hidden
+
+        self.reset_user_column_widths()
 
     def is_column_hidden(self, name: str) -> bool:
         return self.hidden_columns.get(name, False)
@@ -108,12 +115,14 @@ class TableView:  # pylint: disable=too-many-instance-attributes
 
     def _ordered_column_widths(self) -> dict[str, int]:
         """Return each column and default width value in the preferred order."""
-        if self.prefs.column_order:
+        if self.prefs.column_order(self.log_pane.startup_window_options):
             # Get ordered_columns
             columns = copy.copy(self.column_width_from_logs)
             ordered_columns = {}
 
-            for column_name in self.prefs.column_order:
+            for column_name in self.prefs.column_order(
+                self.log_pane.startup_window_options
+            ):
                 # If valid column name
                 if column_name in columns:
                     ordered_columns[column_name] = columns.pop(column_name)
@@ -239,7 +248,9 @@ class TableView:  # pylint: disable=too-many-instance-attributes
             self.user_resized_width[name] = width
 
         # Override widths based on settings in prefs.
-        for name, width in self.prefs.column_width.items():
+        for name, width in self.prefs.column_width(
+            self.log_pane.startup_window_options
+        ).items():
             self.user_resized_width[name] = width
 
         self.update_table_header()
@@ -334,7 +345,10 @@ class TableView:  # pylint: disable=too-many-instance-attributes
                 if self.prefs.hide_date_from_log_time:
                     time_text = time_text[self._year_month_day_width :]
                 time_style = self.prefs.column_style(
-                    'time', time_text, default='class:log-time'
+                    'time',
+                    time_text,
+                    default='class:log-time',
+                    window_config=self.log_pane.startup_window_options,
                 )
                 columns['time'] = (
                     time_style,
@@ -349,6 +363,7 @@ class TableView:  # pylint: disable=too-many-instance-attributes
                     'level',
                     level_text,
                     default='class:log-level-{}'.format(log.record.levelno),
+                    window_config=self.log_pane.startup_window_options,
                 )
                 columns['level'] = (
                     level_style,
@@ -410,7 +425,10 @@ class TableView:  # pylint: disable=too-many-instance-attributes
                 )
 
                 style = self.prefs.column_style(
-                    column_name, column_value.rstrip(), default=fallback_style
+                    column_name,
+                    column_value.rstrip(),
+                    default=fallback_style,
+                    window_config=self.log_pane.startup_window_options,
                 )
 
                 table_fragments.append((style, column_value))

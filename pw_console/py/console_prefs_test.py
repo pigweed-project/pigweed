@@ -175,6 +175,135 @@ class TestConsolePrefs(unittest.TestCase):
             project_user_config_file.unlink()
             user_config_file.unlink()
 
+    def test_load_project_file_and_startup_window_options(self) -> None:
+        """Test startup_window_options return values."""
+        project_config = {
+            'pw_console': {
+                # Global table related startup_window_options:
+                'column_order': [
+                    'time',
+                    'keys',
+                    'level',
+                ],
+                'column_width': {
+                    'timestamp': 9,
+                    'module': 6,
+                },
+                'column_visibility': {
+                    'timestamp': False,
+                    'module': False,
+                },
+                'column_colors': {
+                    'module': {
+                        'default': '#fe4450',
+                        'BAT': '#2ee2fa',
+                        'RADIO': '#fede5d',
+                        'CPU': '#ff7edb',
+                        'APP': '#72f1b8 bold',
+                        'USB': '#03edf9 bold',
+                    }
+                },
+            },
+        }
+        project_config_file = _create_tempfile(yaml.dump(project_config))
+        try:
+            prefs = ConsolePrefs(
+                project_file=project_config_file,
+                project_user_file=False,
+                user_file=False,
+            )
+
+            # Overridden window config values should be returned instead of
+            # global values.
+            window_config = {
+                'wrap_lines': True,
+                'table_mode': True,
+                'column_order': [
+                    'level',
+                    'time',
+                ],
+                'column_width': {
+                    'level': 6,
+                    'timestamp': 12,
+                    'module': 8,
+                },
+                'column_colors': {
+                    'module': {
+                        'default': '#ffffff',
+                        'BAT': '#ff0000',
+                    }
+                },
+                'column_visibility': {
+                    'timestamp': True,
+                    'module': True,
+                },
+            }
+            self.assertEqual(
+                prefs.column_order(window_config),
+                [
+                    'level',
+                    'time',
+                ],
+            )
+            self.assertEqual(
+                prefs.column_width(window_config),
+                {
+                    'level': 6,
+                    'timestamp': 12,
+                    'module': 8,
+                },
+            )
+            self.assertEqual(
+                prefs.column_visibility(window_config),
+                {
+                    'timestamp': True,
+                    'module': True,
+                },
+            )
+            self.assertEqual(
+                prefs.column_style(
+                    'module', 'BAT', window_config=window_config
+                ),
+                '#ff0000',
+            )
+            self.assertEqual(
+                prefs.column_style(
+                    'module', 'unmatched value', window_config=window_config
+                ),
+                '#ffffff',
+            )
+
+            # Check global values are still returned normally.
+            self.assertEqual(
+                prefs.column_order(),
+                [
+                    'time',
+                    'keys',
+                    'level',
+                ],
+            )
+            self.assertEqual(
+                prefs.column_width(),
+                {
+                    'timestamp': 9,
+                    'module': 6,
+                },
+            )
+            self.assertEqual(
+                prefs.column_visibility(),
+                {
+                    'timestamp': False,
+                    'module': False,
+                },
+            )
+            self.assertEqual(prefs.column_style('module', 'BAT'), '#2ee2fa')
+            self.assertEqual(
+                prefs.column_style('module', 'unmatched value'), '#fe4450'
+            )
+
+        finally:
+            project_config_file.unlink()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1096,6 +1096,7 @@ class ConsoleApp:
         # Redraw all log windows.
         for log_pane in self.all_log_panes():
             log_pane.log_view.refresh_visible_table_columns()
+            log_pane.log_view.reset_column_sizes()
 
     def load_theme(self, theme_name: str | None) -> None:
         """Regenerate styles for the current theme_name."""

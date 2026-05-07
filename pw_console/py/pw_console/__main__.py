@@ -37,7 +37,7 @@ _ROOT_LOG = logging.getLogger('')
 def _build_argument_parser() -> argparse.ArgumentParser:
     """Setup argparse."""
     parser = argparse.ArgumentParser(
-        prog="python -m pw_console", description=__doc__
+        prog='python -m pw_console', description=__doc__
     )
 
     parser.add_argument(
@@ -65,9 +65,9 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         help='Log file to send console debug messages to.',
     )
     parser.add_argument(
-        "--browser",
-        action="store_true",
-        help="Start browser-based console instead of terminal.",
+        '--browser',
+        action='store_true',
+        help='Start browser-based console instead of terminal.',
     )
 
     return parser
@@ -168,39 +168,78 @@ def main(args: argparse.Namespace | None = None) -> int:
                 loggers_with_no_propagation=[fake_logger]
             )
 
-            _ROOT_LOG.debug("pw_console.PwConsoleEmbed init complete")
-            _ROOT_LOG.debug("Adding plugins...")
+            _ROOT_LOG.debug('pw_console.PwConsoleEmbed init complete')
+            _ROOT_LOG.debug('Adding plugins...')
             console.add_window_plugin(ClockPane())
             console.add_window_plugin(CalcPane())
             console.add_floating_window_plugin(
                 Twenty48Pane(include_resize_handle=False), left=4
             )
             _ROOT_LOG.debug(
-                "Starting prompt_toolkit full-screen application..."
+                'Starting prompt_toolkit full-screen application...'
             )
 
             overridden_window_config = {
-                "Group 1 stacked": {
-                    "Fake Device": None,
-                    "Fake Keys": {
-                        "duplicate_of": "Fake Device",
-                        "filters": {
-                            "keys": {"regex": "[^ ]+"},
+                'Group 1 stacked': {
+                    'Fake Device': {
+                        'column_colors': {
+                            'module': {
+                                'default': '#fe4450',
+                                'BAT': '#2ee2fa',
+                                'RADIO': '#fede5d',
+                                'CPU': '#ff7edb',
+                                'APP': '#72f1b8 bold',
+                                'USB': '#03edf9 bold',
+                            }
+                        },
+                        'column_width': {
+                            'timestamp': 9,
+                            'module': 6,
                         },
                     },
-                    "Fake USB": {
-                        "duplicate_of": "Fake Device",
-                        "filters": {
-                            "module": {"regex": "USB"},
+                    'Fake Keys': {
+                        'duplicate_of': 'Fake Device',
+                        'filters': {
+                            'keys': {'regex': '[^ ]+'},
+                        },
+                        'table_mode': True,
+                        'wrap_lines': True,
+                        'column_order': [
+                            'time',
+                            'keys',
+                            'level',
+                        ],
+                        'column_visibility': {
+                            'timestamp': False,
+                            'module': False,
+                        },
+                        'column_width': {
+                            'level': 6,
+                        },
+                    },
+                    'Fake USB': {
+                        'duplicate_of': "Fake Device",
+                        'filters': {
+                            'module': {'regex': 'USB'},
+                        },
+                        'column_colors': {
+                            'module': {
+                                'default': '',
+                                'USB': '#03edf9',
+                            }
+                        },
+                        'column_width': {
+                            'timestamp': 9,
+                            'module': 6,
                         },
                     },
                 },
-                "Group 2 tabbed": {
-                    "Python Repl": None,
-                    "All Logs": None,
-                    "PwConsole Debug": None,
-                    "Calculator": None,
-                    "Clock": None,
+                'Group 2 tabbed': {
+                    'Python Repl': None,
+                    'All Logs': None,
+                    'PwConsole Debug': None,
+                    'Calculator': None,
+                    'Clock': None,
                 },
             }
 

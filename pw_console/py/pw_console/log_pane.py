@@ -566,13 +566,18 @@ class LogPane(WindowPane):
         pane_title: str = 'Logs',
         log_store: LogStore | None = None,
         background_task: BackgroundTask | None = None,
+        startup_window_options: dict[str, dict] | None = None,
     ):
         super().__init__(application, pane_title)
 
-        # TODO(tonymd): Read these settings from a project (or user) config.
         self.wrap_lines = False
         self._table_view = True
         self.is_a_duplicate = False
+
+        self.startup_window_options = {}
+        if startup_window_options:
+            self.startup_window_options = startup_window_options
+            self._set_startup_window_option_values()
 
         # Create the log container which stores and handles incoming logs.
         self.log_view: LogView = LogView(
@@ -973,6 +978,23 @@ class LogPane(WindowPane):
 
         return options
 
+    def _set_startup_window_option_values(self) -> None:
+        self.wrap_lines = bool(
+            self.startup_window_options.get('wrap_lines', self.wrap_lines)
+        )
+        self._table_view = bool(
+            self.startup_window_options.get('table_mode', self._table_view)
+        )
+
+    def set_startup_window_options(
+        self, window_options: dict[str, dict] | None
+    ) -> None:
+        if window_options is None:
+            return
+        self.startup_window_options = window_options
+        self._set_startup_window_option_values()
+        self.log_view.table.reset_prefs()
+
     def apply_filters_from_config(self, window_options) -> None:
         if 'filters' not in window_options:
             return
@@ -997,7 +1019,11 @@ class LogPane(WindowPane):
 
     def create_duplicate(self) -> LogPane:
         """Create a duplicate of this LogView."""
-        new_pane = LogPane(self.application, pane_title=self.pane_title())
+        new_pane = LogPane(
+            self.application,
+            pane_title=self.pane_title(),
+            startup_window_options=self.startup_window_options,
+        )
         # Set the log_store
         log_store = self.log_view.log_store
         new_pane.log_view.log_store = log_store

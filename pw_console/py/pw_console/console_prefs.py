@@ -15,12 +15,12 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
-from functools import cached_property
 import os
 from pathlib import Path
 import sys
-from typing import Callable
+from typing import Any, Callable
 
 from prompt_toolkit.key_binding import KeyBindings
 import yaml
@@ -255,32 +255,54 @@ class ConsolePrefs(YamlConfigLoaderMixin):
         assert isinstance(existing_setting, bool)
         self._config[name] = not existing_setting
 
-    @property
-    def column_order(self) -> list:
-        return self._config.get('column_order', [])
+    def column_order(
+        self, window_config: dict[str, Any] | None = None
+    ) -> list[str]:
+        if window_config is None:
+            window_config = {}
+        global_config = self._config.get('column_order', [])
+        window_override = window_config.get('column_order', [])
+        if window_override:
+            return window_override
+        return global_config
 
-    @cached_property
-    def column_width(self) -> dict[str, int]:
+    def column_width(
+        self, window_config: dict[str, Any] | None = None
+    ) -> dict[str, int]:
+        if window_config is None:
+            window_config = {}
+        final_config = copy.deepcopy(self._config.get('column_width', {}))
+        final_config.update(window_config.get('column_width', {}))
         return {
             name: int(width)
-            for name, width in self._config.get('column_width', {}).items()
+            for name, width in final_config.items()
             if name.lower() != 'message'
         }
 
-    @cached_property
-    def column_visibility(self) -> dict[str, bool]:
+    def column_visibility(
+        self, window_config: dict[str, Any] | None = None
+    ) -> dict[str, bool]:
+        if window_config is None:
+            window_config = {}
+        final_config = copy.deepcopy(self._config.get('column_visibility', {}))
+        final_config.update(window_config.get('column_visibility', {}))
         return {
             name: is_visible
-            for name, is_visible in self._config.get(
-                'column_visibility', {}
-            ).items()
+            for name, is_visible in final_config.items()
             if name.lower() != 'message'
         }
 
     def column_style(
-        self, column_name: str, column_value: str, default=''
+        self,
+        column_name: str,
+        column_value: str,
+        default='',
+        window_config: dict[str, Any] | None = None,
     ) -> str:
-        column_colors = self._config.get('column_colors', {})
+        if window_config is None:
+            window_config = {}
+        column_colors = copy.deepcopy(self._config.get('column_colors', {}))
+        column_colors.update(window_config.get('column_colors', {}))
         column_style = default
 
         if column_name in column_colors:

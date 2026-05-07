@@ -711,10 +711,11 @@ Example Config
    # Default: False
    show_source_file: True
 
-   # Custom Column Ordering
+   # Default Column Ordering (global setting).
    # By default columns are ordered as:
    #   time, level, metadata1, metadata2, ..., message
    # The log 'message' is always the last value and not required in this list.
+   # This can be overridden on a per-window basis.
    column_order:
      # Column name lowercase
      - time
@@ -723,13 +724,14 @@ Example Config
      - metadata2
      - file
 
-   # Set default character widths for columns.
+   # Default character widths for columns (global setting).
+   # This can be overridden on a per-window basis.
    column_width:
      metadata1: 20
      metadata2: 15
 
-   # Set the default column visibility.
-   # Column name: Visible?
+   # Default column visibility (global setting).
+   # This can be overridden on a per-window basis.
    column_visibility:
      metadata1: True
      metadata2: false
@@ -737,17 +739,11 @@ Example Config
      py_logger: False
      file: False
 
-   # Deprecated option, please use 'column_visibility' instead.
-   #
-   # If True, any field not listed above in 'column_order'
-   # will be hidden in table view. Note it is better to use
-   # Default: False
-   column_order_omit_unspecified_columns: False
-
-   # Apply custom colors for column values
+   # Apply custom colors to specific column values.
    #   Color format: 'bg:#BG-HEX #FG-HEX STYLE'
    # All parts are optional.
    # Empty strings will leave styling unchanged.
+   # This can be overridden on a per-window basis.
    column_colors:
      # Column name
      time:
@@ -782,15 +778,18 @@ Example Config
        Device Logs:
          height: 33  # Weighted value for window height
          hidden: False  # Hide this window if True
+
        # Window 2
        Python Repl:
          height: 67
+
        # Window 3
        Host Logs:
          hidden: True
 
      # Second window group
      Group 2 tabbed:
+       # Window 1
        # This is a duplicate of the existing 'Device Logs' window.
        # The title is 'NEW DEVICE'
        NEW DEVICE:
@@ -805,14 +804,26 @@ Example Config
            module:
              # An inverted match will remove matching log lines
              regex-inverted: 'keyboard'
+
+       # Window 2
        NEW HOST:
          duplicate_of: Host Logs
          filters:
            all:
              string: 'FLASH'
+         # Custom window options may be applied to each window individually.
+         # Any of these may be overridden:
+         #
+         #   column_order
+         #   column_width
+         #   column_visibility
+         #   column_colors
+         #   table_mode: True
+         #   wrap_lines: False
 
      # Third window group
      Group 3 tabbed:
+       # Window 1
        # This is a brand new log Window
        Keyboard Logs - IBM:
          loggers:
@@ -828,10 +839,12 @@ Example Config
            all:
              regex: 'IBM Model M'
 
+       # Window 2
        # New log window that is populated by running a shell command.
        Android Logs:
          command: 'adb logcat'
 
+       # Window 3
        # New log window that is populated by running a shell command.
        Fuchsia Logs:
          command: 'ffx --machine json log'

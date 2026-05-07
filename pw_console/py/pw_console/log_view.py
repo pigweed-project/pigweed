@@ -73,7 +73,9 @@ class LogView:
         # Parent LogPane reference. Updated by calling `set_log_pane()`.
         self.log_pane = log_pane
         self.log_store = log_store if log_store else LogStore()
-        self.table: TableView = TableView(prefs=application.prefs)
+        self.table: TableView = TableView(
+            prefs=application.prefs, log_pane=log_pane
+        )
         self.log_store.register_viewer(self)
 
         self.marked_logs_start_line: int | None = None

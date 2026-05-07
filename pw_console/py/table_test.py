@@ -16,6 +16,7 @@
 from datetime import datetime
 import logging
 import unittest
+from unittest.mock import MagicMock
 
 from parameterized import parameterized  # type: ignore
 
@@ -73,6 +74,16 @@ def make_log(**kwargs):
     return log_line
 
 
+def _create_log_pane(startup_window_options: dict[str, dict] | None = None):
+    log_pane = MagicMock()
+    if startup_window_options is None:
+        startup_window_options = {}
+    log_pane.startup_window_options = MagicMock(
+        return_value=startup_window_options
+    )
+    return log_pane
+
+
 class TestTableView(unittest.TestCase):
     """Tests for rendering log lines into tables."""
 
@@ -121,7 +132,7 @@ class TestTableView(unittest.TestCase):
     )
     def test_column_widths(self, _name, logs, expected_widths) -> None:
         """Test colum widths calculation."""
-        table = TableView(self.prefs)
+        table = TableView(prefs=self.prefs, log_pane=_create_log_pane())
         log_store = LogStore()
         for log in logs:
             log_store.update_metadata_column_widths(log)
@@ -191,7 +202,7 @@ class TestTableView(unittest.TestCase):
     )
     def test_formatted_header(self, _name, logs, expected_headers) -> None:
         """Test colum widths calculation."""
-        table = TableView(self.prefs)
+        table = TableView(prefs=self.prefs, log_pane=_create_log_pane())
         log_store = LogStore()
 
         for log, header in zip(logs, expected_headers):
@@ -268,7 +279,7 @@ class TestTableView(unittest.TestCase):
     )
     def test_formatted_rows(self, _name, logs, expected_log_format) -> None:
         """Test colum widths calculation."""
-        table = TableView(self.prefs)
+        table = TableView(prefs=self.prefs, log_pane=_create_log_pane())
         log_store = LogStore()
         # Check each row meets expected formats incrementally.
         for log, formatted_log in zip(logs, expected_log_format):

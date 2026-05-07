@@ -1251,7 +1251,9 @@ class WindowManager:
             return new_pane
 
         new_pane = LogPane(
-            application=self.application, pane_title=window_title
+            application=self.application,
+            pane_title=window_title,
+            startup_window_options=window_options,
         )
 
         # Add logger handlers
@@ -1346,6 +1348,7 @@ class WindowManager:
                     # Apply log pane options
                     if isinstance(new_pane, LogPane):
                         new_pane.apply_filters_from_config(window_options)
+                        new_pane.set_startup_window_options(window_options)
                         # Auto-start the websocket log server if requested.
                         if window_options.get('view_in_web', False):
                             new_pane.toggle_websocket_server()
