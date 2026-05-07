@@ -38,7 +38,6 @@ set(RFCOMM_PUBLIC_DEPS
   pw_allocator
   pw_bluetooth.emboss_rfcomm_frames
   pw_containers.dynamic_map
-  pw_containers.intrusive_map
   pw_checksum
   pw_multibuf
 )

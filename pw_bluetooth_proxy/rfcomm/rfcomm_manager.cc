@@ -36,7 +36,9 @@ RfcommManager::ConnectionState::ConnectionState(ConnectionHandle handle,
 
 RfcommManager::RfcommManager(
     L2capChannelManagerInterface& l2cap_channel_manager, Allocator& allocator)
-    : l2cap_channel_manager_(l2cap_channel_manager), allocator_(allocator) {
+    : l2cap_channel_manager_(l2cap_channel_manager),
+      allocator_(allocator),
+      connections_(allocator) {
   PW_LOG_INFO("RFCOMM manager created");
 }
 
@@ -84,20 +86,22 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
       return proxy_result.status();
     }
 
-    auto new_conn_state = allocator_.MakeUnique<ConnectionState>(
-        connection_handle, rx_config.cid, tx_config.cid, allocator_);
-    if (new_conn_state == nullptr) {
+    auto emplace_result = connections_.try_emplace(connection_handle,
+                                                   connection_handle,
+                                                   rx_config.cid,
+                                                   tx_config.cid,
+                                                   allocator_);
+    if (!emplace_result.has_value()) {
       return Status::ResourceExhausted();
     }
-    new_conn_state->l2cap_channel_proxy = std::move(proxy_result).value();
-    connections_.insert(*new_conn_state);
-    new_conn_state.Release();  // The intrusive map now manages the lifetime.
+    it = emplace_result.value().first;
+    it->second.l2cap_channel_proxy = std::move(proxy_result).value();
     PW_LOG_INFO("New RFCOMM connection state created for connection handle %hu",
                 static_cast<uint16_t>(connection_handle));
-    it = connections_.find(connection_handle);
   } else {
     // If the connection already exists, verify that the CIDs match.
-    if (it->local_cid != rx_config.cid || it->remote_cid != tx_config.cid) {
+    if (it->second.local_cid != rx_config.cid ||
+        it->second.remote_cid != tx_config.cid) {
       PW_LOG_ERROR(
           "RFCOMM CIDs do not match existing connection for handle %hu",
           static_cast<uint16_t>(connection_handle));
@@ -105,7 +109,7 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     }
   }
 
-  auto& conn_state = *it;
+  auto& conn_state = it->second;
   auto channel_it =
       conn_state.channels.find(MakeDlci(channel_number, direction));
   // If the channel already exists, return an error.
@@ -144,7 +148,7 @@ StatusWithMultiBuf RfcommManager::DoWrite(ConnectionHandle connection_handle,
   if (it == connections_.end()) {
     return {Status::NotFound(), std::move(payload)};
   }
-  auto& conn_state = *it;
+  auto& conn_state = it->second;
   auto channel_it =
       conn_state.channels.find(MakeDlci(channel_number, direction));
   if (channel_it == conn_state.channels.end()) {
@@ -156,24 +160,23 @@ StatusWithMultiBuf RfcommManager::DoWrite(ConnectionHandle connection_handle,
 void RfcommManager::DeregisterAndCloseChannels(RfcommEvent event) {
   PW_LOG_INFO("Deregistering and closing RFCOMM channels with event: %d",
               static_cast<int>(event));
-  IntrusiveMap<ConnectionHandle, ConnectionState> connections_to_close;
+  ConnectionMap connections_to_close(allocator_);
   {
     std::lock_guard lock(connections_mutex_);
     connections_to_close.swap(connections_);
   }
 
   while (!connections_to_close.empty()) {
-    ConnectionState* conn_state = &*connections_to_close.begin();
-    connections_to_close.erase(connections_to_close.begin());
-    CloseConnectionState(conn_state, event);
+    CloseConnectionState(
+        connections_to_close.take(connections_to_close.begin()), event);
   }
 }
 
 Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
                                              uint8_t channel_number,
                                              RfcommDirection direction) {
+  UniquePtr<ConnectionMap::node_type> conn_state_to_delete;
   UniquePtr<ChannelMap::node_type> channel_to_close;
-  ConnectionState* conn_state_to_delete = nullptr;
   {
     std::lock_guard lock(connections_mutex_);
     auto it = connections_.find(connection_handle);
@@ -181,7 +184,7 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
       return Status::NotFound();
     }
 
-    auto& conn_state = *it;
+    auto& conn_state = it->second;
     auto channel_it =
         conn_state.channels.find(MakeDlci(channel_number, direction));
     // If the channel is found, remove it from the map.
@@ -196,20 +199,13 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
           "Last RFCOMM channel closed for connection handle %hu. "
           "Closing connection.",
           static_cast<uint16_t>(conn_state.connection_handle));
-      conn_state_to_delete = &conn_state;
-      connections_.erase(it);
+      conn_state_to_delete = connections_.take(it);
     }
   }
 
   // Close the channel outside the lock.
   if (channel_to_close != nullptr) {
     channel_to_close->mapped().Close(RfcommEvent::kChannelClosedByOther);
-    channel_to_close.Reset();
-    // If this is the last RFCOMM channel for the connection, delete the
-    // connection state.
-    if (conn_state_to_delete) {
-      allocator_.Delete(conn_state_to_delete);
-    }
   }
 
   return OkStatus();
@@ -227,7 +223,7 @@ Status RfcommManager::DoSendAdditionalRxCredits(
                 static_cast<uint16_t>(connection_handle));
     return Status::NotFound();
   }
-  auto& conn_state = *it;
+  auto& conn_state = it->second;
   auto channel_it =
       conn_state.channels.find(MakeDlci(channel_number, direction));
   if (channel_it == conn_state.channels.end()) {
@@ -241,30 +237,30 @@ Status RfcommManager::DoSendAdditionalRxCredits(
 
 void RfcommManager::CloseAllChannelsForConnection(
     ConnectionHandle connection_handle, RfcommEvent event) {
-  ConnectionState* conn_state_to_close = nullptr;
+  UniquePtr<ConnectionMap::node_type> conn_state_to_close;
   {
     std::lock_guard lock(connections_mutex_);
     auto it = connections_.find(connection_handle);
     if (it != connections_.end()) {
-      conn_state_to_close = &*it;
-      connections_.erase(it);
+      conn_state_to_close = connections_.take(it);
     }
   }
 
-  if (conn_state_to_close) {
-    CloseConnectionState(conn_state_to_close, event);
+  if (conn_state_to_close != nullptr) {
+    CloseConnectionState(std::move(conn_state_to_close), event);
   }
 }
 
-void RfcommManager::CloseConnectionState(ConnectionState* conn_state,
-                                         RfcommEvent event) {
+void RfcommManager::CloseConnectionState(
+    UniquePtr<ConnectionMap::node_type>&& conn_state_node, RfcommEvent event) {
+  if (conn_state_node == nullptr) {
+    return;
+  }
   ChannelMap channels_to_close(allocator_);
-  channels_to_close.swap(conn_state->channels);
+  channels_to_close.swap(conn_state_node->mapped().channels);
   for (auto& [_, channel] : channels_to_close) {
     channel.Close(event);
   }
-  channels_to_close.clear();
-  allocator_.Delete(conn_state);
 }
 
 Result<emboss::RfcommFrameView> RfcommManager::ParseRfcommFrame(
@@ -308,8 +304,8 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
     ConnectionHandle connection_handle,
     uint16_t local_cid,
     uint16_t remote_cid) {
+  UniquePtr<ConnectionMap::node_type> conn_state_to_delete;
   UniquePtr<ChannelMap::node_type> channel_to_close;
-  ConnectionState* conn_state_to_delete = nullptr;
   uint8_t uih_credits = 0;
   span<const uint8_t> uih_info_bytes;
   std::optional<internal::BorrowedRfcommChannel> borrowed_channel;
@@ -320,13 +316,14 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
     if (it == connections_.end()) {
       return std::move(pdu);
     }
-    if (it->local_cid != local_cid || it->remote_cid != remote_cid) {
+    if (it->second.local_cid != local_cid ||
+        it->second.remote_cid != remote_cid) {
       PW_LOG_ERROR("Received L2CAP PDU with mismatched CIDs for handle %hu",
                    static_cast<uint16_t>(connection_handle));
       return std::move(pdu);
     }
 
-    auto& conn_state = *it;
+    auto& conn_state = it->second;
 
     auto contiguous_span = pdu.ContiguousSpan();
     PW_CHECK(contiguous_span.has_value(),
@@ -385,8 +382,7 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
             "Last RFCOMM channel closed for connection handle %hu. "
             "Closing connection.",
             static_cast<uint16_t>(conn_state.connection_handle));
-        conn_state_to_delete = &conn_state;
-        connections_.erase(it);
+        conn_state_to_delete = connections_.take(it);
       }
     }
   }
@@ -400,17 +396,13 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
 
   if (channel_to_close != nullptr) {
     channel_to_close->mapped().Close(RfcommEvent::kChannelClosedByRemote);
-    channel_to_close.Reset();
-    if (conn_state_to_delete) {
-      allocator_.Delete(conn_state_to_delete);
-    }
   }
   return std::move(pdu);
 }
 
 void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
                                      ConnectionHandle connection_handle) {
-  ConnectionState* conn_state_to_close = nullptr;
+  UniquePtr<ConnectionMap::node_type> conn_state_to_close;
   {
     std::lock_guard lock(connections_mutex_);
     auto it = connections_.find(connection_handle);
@@ -427,16 +419,15 @@ void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
     // reset, close all RFCOMM channels for the connection.
     if (event == L2capChannelEvent::kChannelClosedByOther ||
         event == L2capChannelEvent::kReset) {
-      conn_state_to_close = &*it;
-      connections_.erase(it);
+      conn_state_to_close = connections_.take(it);
     }
   }
 
-  if (conn_state_to_close) {
+  if (conn_state_to_close != nullptr) {
     RfcommEvent rfcomm_event = event == L2capChannelEvent::kReset
                                    ? RfcommEvent::kReset
                                    : RfcommEvent::kChannelClosedByOther;
-    CloseConnectionState(conn_state_to_close, rfcomm_event);
+    CloseConnectionState(std::move(conn_state_to_close), rfcomm_event);
   }
 }
 

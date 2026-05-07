@@ -26,7 +26,6 @@
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_config.h"
 #include "pw_checksum/crc8.h"
 #include "pw_containers/dynamic_map.h"
-#include "pw_containers/intrusive_map.h"
 #include "pw_sync/mutex.h"
 
 namespace pw::bluetooth::proxy::rfcomm {
@@ -47,6 +46,26 @@ class RfcommManager final : public RfcommChannelManagerInterface {
  private:
   // The map of RFCOMM channels for a connection, keyed by DLCI.
   using ChannelMap = DynamicMap<uint8_t, internal::RfcommChannelInternal>;
+
+  struct ConnectionState {
+    ConnectionState(ConnectionHandle handle,
+                    uint16_t local_cid_arg,
+                    uint16_t remote_cid_arg,
+                    Allocator& allocator);
+    ConnectionState(const ConnectionState&) = delete;
+    ConnectionState& operator=(const ConnectionState&) = delete;
+
+    UniquePtr<ChannelProxy> l2cap_channel_proxy;
+    ConnectionHandle connection_handle;
+    uint16_t local_cid;
+    uint16_t remote_cid;
+
+    // This map is protected by the `connections_mutex_`.
+    ChannelMap channels;
+  };
+
+  // The map of connections.
+  using ConnectionMap = DynamicMap<ConnectionHandle, ConnectionState>;
 
   // The CRC-8 polynomial used for RFCOMM frame checksums.
   //   - Polynomial: 0x07 (x^8 + x^2 + x + 1)
@@ -83,26 +102,6 @@ class RfcommManager final : public RfcommChannelManagerInterface {
                                    RfcommDirection direction,
                                    uint8_t credits) override;
 
-  struct ConnectionState
-      : public IntrusiveMap<ConnectionHandle, ConnectionState>::Item {
-    ConnectionState(ConnectionHandle handle,
-                    uint16_t local_cid_arg,
-                    uint16_t remote_cid_arg,
-                    Allocator& allocator);
-    ConnectionState(const ConnectionState&) = delete;
-    ConnectionState& operator=(const ConnectionState&) = delete;
-
-    ConnectionHandle key() const { return connection_handle; }
-
-    UniquePtr<ChannelProxy> l2cap_channel_proxy;
-    ConnectionHandle connection_handle;
-    uint16_t local_cid;
-    uint16_t remote_cid;
-
-    // This map is protected by the `connections_mutex_`.
-    ChannelMap channels;
-  };
-
   // Handles an RFCOMM PDU received from the controller. If the PDU is not
   // handled, it is returned to the caller to be forwarded to the host.
   std::optional<multibuf::MultiBuf> HandlePduFromController(
@@ -123,9 +122,9 @@ class RfcommManager final : public RfcommChannelManagerInterface {
   void CloseAllChannelsForConnection(ConnectionHandle connection_handle,
                                      RfcommEvent event);
 
-  // Closes all channels for the given connection state and deletes the
-  // connection state.
-  void CloseConnectionState(ConnectionState* conn_state, RfcommEvent event);
+  // Closes all channels for the given connection state node and destroys it.
+  void CloseConnectionState(
+      UniquePtr<ConnectionMap::node_type>&& conn_state_node, RfcommEvent event);
 
   L2capChannelManagerInterface& l2cap_channel_manager_;
   Allocator& allocator_;
@@ -133,8 +132,7 @@ class RfcommManager final : public RfcommChannelManagerInterface {
   // Protects `connections_` from concurrent access. This is also used to
   // synchronize the destruction of connection states.
   sync::Mutex connections_mutex_;
-  IntrusiveMap<ConnectionHandle, ConnectionState> connections_
-      PW_GUARDED_BY(connections_mutex_);
+  ConnectionMap connections_ PW_GUARDED_BY(connections_mutex_);
 };
 
 }  // namespace pw::bluetooth::proxy::rfcomm
