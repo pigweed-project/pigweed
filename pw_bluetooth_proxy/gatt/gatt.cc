@@ -236,21 +236,17 @@ Result<Server> Gatt::CreateServer(
   }
   PW_CHECK(server_result->second);
 
-  size_t added = 0;
-  for (auto characteristic : characteristics) {
-    auto result = conn_iter->second.characteristics.try_emplace(
+  CharacteristicMap characteristics_temp(allocator_);
+  for (const auto& characteristic : characteristics) {
+    auto result = characteristics_temp.try_emplace(
         cpp23::to_underlying(characteristic.value_handle), server_id);
     if (!result.has_value()) {
-      for (size_t i = 0; i < added; ++i) {
-        conn_iter->second.characteristics.erase(
-            cpp23::to_underlying(characteristics[i].value_handle));
-      }
       conn_iter->second.servers.erase(cpp23::to_underlying(server_id));
       return Status::ResourceExhausted();
     }
     PW_CHECK(result->second);
-    added++;
   }
+  conn_iter->second.characteristics.merge(characteristics_temp);
 
   return Server(server_id, connection_handle, *this);
 }
