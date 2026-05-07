@@ -25,6 +25,7 @@
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_common.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_config.h"
 #include "pw_checksum/crc8.h"
+#include "pw_containers/dynamic_map.h"
 #include "pw_containers/intrusive_map.h"
 #include "pw_sync/mutex.h"
 
@@ -44,6 +45,9 @@ class RfcommManager final : public RfcommChannelManagerInterface {
   void DeregisterAndCloseChannels(RfcommEvent event);
 
  private:
+  // The map of RFCOMM channels for a connection, keyed by DLCI.
+  using ChannelMap = DynamicMap<uint8_t, internal::RfcommChannelInternal>;
+
   // The CRC-8 polynomial used for RFCOMM frame checksums.
   //   - Polynomial: 0x07 (x^8 + x^2 + x + 1)
   //   - Initial value: 0xFF
@@ -83,7 +87,8 @@ class RfcommManager final : public RfcommChannelManagerInterface {
       : public IntrusiveMap<ConnectionHandle, ConnectionState>::Item {
     ConnectionState(ConnectionHandle handle,
                     uint16_t local_cid_arg,
-                    uint16_t remote_cid_arg);
+                    uint16_t remote_cid_arg,
+                    Allocator& allocator);
     ConnectionState(const ConnectionState&) = delete;
     ConnectionState& operator=(const ConnectionState&) = delete;
 
@@ -95,7 +100,7 @@ class RfcommManager final : public RfcommChannelManagerInterface {
     uint16_t remote_cid;
 
     // This map is protected by the `connections_mutex_`.
-    IntrusiveMap<uint8_t, rfcomm::internal::RfcommChannelInternal> channels;
+    ChannelMap channels;
   };
 
   // Handles an RFCOMM PDU received from the controller. If the PDU is not

@@ -22,7 +22,6 @@
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_config.h"
 #include "pw_checksum/crc8.h"
 #include "pw_containers/inline_queue.h"
-#include "pw_containers/intrusive_map.h"
 #include "pw_function/function.h"
 #include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
@@ -45,8 +44,7 @@ class BorrowedRfcommChannel {
 };
 
 // Represents an RFCOMM channel.
-class RfcommChannelInternal
-    : public IntrusiveMap<uint8_t, RfcommChannelInternal>::Item {
+class RfcommChannelInternal {
  public:
   RfcommChannelInternal(multibuf::MultiBufAllocator& multibuf_allocator,
                         ChannelProxy& l2cap_channel_proxy,

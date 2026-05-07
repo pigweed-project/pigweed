@@ -40,6 +40,7 @@ _rfcomm_public = [
 
 _rfcomm_public_deps = [
   "$dir_pw_bluetooth:emboss_rfcomm_frames",
+  "$dir_pw_containers:dynamic_map",
   "$dir_pw_containers:intrusive_map",
   dir_pw_allocator,
   dir_pw_checksum,

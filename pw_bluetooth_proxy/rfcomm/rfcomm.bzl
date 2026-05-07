@@ -57,6 +57,7 @@ def pw_bluetooth_proxy_rfcomm_library(name, versioned_deps, **kwargs):
         deps = [
             "//pw_allocator",
             "//pw_bluetooth:emboss_rfcomm_frames",
+            "//pw_containers:dynamic_map",
             "//pw_containers:intrusive_map",
             "//pw_checksum",
             "//pw_multibuf",

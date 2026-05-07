@@ -27,10 +27,12 @@ namespace pw::bluetooth::proxy::rfcomm {
 
 RfcommManager::ConnectionState::ConnectionState(ConnectionHandle handle,
                                                 uint16_t local_cid_arg,
-                                                uint16_t remote_cid_arg)
+                                                uint16_t remote_cid_arg,
+                                                Allocator& allocator)
     : connection_handle(handle),
       local_cid(local_cid_arg),
-      remote_cid(remote_cid_arg) {}
+      remote_cid(remote_cid_arg),
+      channels(allocator) {}
 
 RfcommManager::RfcommManager(
     L2capChannelManagerInterface& l2cap_channel_manager, Allocator& allocator)
@@ -83,7 +85,7 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     }
 
     auto new_conn_state = allocator_.MakeUnique<ConnectionState>(
-        connection_handle, rx_config.cid, tx_config.cid);
+        connection_handle, rx_config.cid, tx_config.cid, allocator_);
     if (new_conn_state == nullptr) {
       return Status::ResourceExhausted();
     }
@@ -111,27 +113,25 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     return Status::AlreadyExists();
   }
 
-  // Create a new RFCOMM channel.
-  auto channel = allocator_.MakeUnique<internal::RfcommChannelInternal>(
-      rx_multibuf_allocator,
-      *conn_state.l2cap_channel_proxy,
-      connection_handle,
-      channel_number,
-      direction,
-      mux_initiator,
-      rx_config,
-      tx_config,
-      kRfcommCrc,
-      std::move(receive_fn),
-      std::move(event_fn));
-  if (channel == nullptr) {
-    PW_LOG_ERROR("Failed to allocate RFCOMM channel");
+  // Insert the new channel into the connection state.
+  auto emplace_result =
+      conn_state.channels.try_emplace(MakeDlci(channel_number, direction),
+                                      rx_multibuf_allocator,
+                                      *conn_state.l2cap_channel_proxy,
+                                      connection_handle,
+                                      channel_number,
+                                      direction,
+                                      mux_initiator,
+                                      rx_config,
+                                      tx_config,
+                                      kRfcommCrc,
+                                      std::move(receive_fn),
+                                      std::move(event_fn));
+  if (!emplace_result.has_value()) {
+    PW_LOG_ERROR("Failed to insert RFCOMM channel");
     return Status::ResourceExhausted();
   }
 
-  // Insert the new channel into the connection state.
-  conn_state.channels.insert(*channel);
-  channel.Release();  // The intrusive map now manages the lifetime.
   return RfcommChannel(connection_handle, channel_number, direction, this);
 }
 
@@ -150,7 +150,7 @@ StatusWithMultiBuf RfcommManager::DoWrite(ConnectionHandle connection_handle,
   if (channel_it == conn_state.channels.end()) {
     return {Status::NotFound(), std::move(payload)};
   }
-  return channel_it->Write(std::move(payload));
+  return channel_it->second.Write(std::move(payload));
 }
 
 void RfcommManager::DeregisterAndCloseChannels(RfcommEvent event) {
@@ -172,7 +172,7 @@ void RfcommManager::DeregisterAndCloseChannels(RfcommEvent event) {
 Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
                                              uint8_t channel_number,
                                              RfcommDirection direction) {
-  internal::RfcommChannelInternal* channel_to_close = nullptr;
+  UniquePtr<ChannelMap::node_type> channel_to_close;
   ConnectionState* conn_state_to_delete = nullptr;
   {
     std::lock_guard lock(connections_mutex_);
@@ -186,8 +186,7 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
         conn_state.channels.find(MakeDlci(channel_number, direction));
     // If the channel is found, remove it from the map.
     if (channel_it != conn_state.channels.end()) {
-      channel_to_close = &*channel_it;
-      conn_state.channels.erase(channel_it);
+      channel_to_close = conn_state.channels.take(channel_it);
     }
 
     // If this is the last RFCOMM channel for the connection, close the
@@ -203,9 +202,9 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
   }
 
   // Close the channel outside the lock.
-  if (channel_to_close) {
-    channel_to_close->Close(RfcommEvent::kChannelClosedByOther);
-    allocator_.Delete(channel_to_close);
+  if (channel_to_close != nullptr) {
+    channel_to_close->mapped().Close(RfcommEvent::kChannelClosedByOther);
+    channel_to_close.Reset();
     // If this is the last RFCOMM channel for the connection, delete the
     // connection state.
     if (conn_state_to_delete) {
@@ -237,7 +236,7 @@ Status RfcommManager::DoSendAdditionalRxCredits(
                 static_cast<uint8_t>(direction));
     return Status::NotFound();
   }
-  return channel_it->SendAdditionalRxCredits(credits);
+  return channel_it->second.SendAdditionalRxCredits(credits);
 }
 
 void RfcommManager::CloseAllChannelsForConnection(
@@ -259,14 +258,12 @@ void RfcommManager::CloseAllChannelsForConnection(
 
 void RfcommManager::CloseConnectionState(ConnectionState* conn_state,
                                          RfcommEvent event) {
-  IntrusiveMap<uint8_t, internal::RfcommChannelInternal> channels_to_close;
+  ChannelMap channels_to_close(allocator_);
   channels_to_close.swap(conn_state->channels);
-  while (!channels_to_close.empty()) {
-    auto* channel = &*channels_to_close.begin();
-    channels_to_close.erase(channels_to_close.begin());
-    channel->Close(event);
-    allocator_.Delete(channel);
+  for (auto& [_, channel] : channels_to_close) {
+    channel.Close(event);
   }
+  channels_to_close.clear();
   allocator_.Delete(conn_state);
 }
 
@@ -311,7 +308,7 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
     ConnectionHandle connection_handle,
     uint16_t local_cid,
     uint16_t remote_cid) {
-  internal::RfcommChannelInternal* channel_to_close = nullptr;
+  UniquePtr<ChannelMap::node_type> channel_to_close;
   ConnectionState* conn_state_to_delete = nullptr;
   uint8_t uih_credits = 0;
   span<const uint8_t> uih_info_bytes;
@@ -363,7 +360,7 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
       return std::move(pdu);
     }
 
-    internal::RfcommChannelInternal* channel = &*channel_it;
+    internal::RfcommChannelInternal* channel = &channel_it->second;
 
     // Handle the RFCOMM frame type.
     emboss::RfcommFrameType frame_type = parsed_frame.control().Read();
@@ -382,8 +379,7 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
                frame_type ==
                    emboss::RfcommFrameType::DISCONNECT_AND_POLL_FINAL) {
       PW_LOG_INFO("Channel number %u closed by remote", channel_number);
-      channel_to_close = channel;
-      conn_state.channels.erase(channel_it);
+      channel_to_close = conn_state.channels.take(channel_it);
       if (conn_state.channels.empty()) {
         PW_LOG_INFO(
             "Last RFCOMM channel closed for connection handle %hu. "
@@ -402,9 +398,9 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
     }
   }
 
-  if (channel_to_close) {
-    channel_to_close->Close(RfcommEvent::kChannelClosedByRemote);
-    allocator_.Delete(channel_to_close);
+  if (channel_to_close != nullptr) {
+    channel_to_close->mapped().Close(RfcommEvent::kChannelClosedByRemote);
+    channel_to_close.Reset();
     if (conn_state_to_delete) {
       allocator_.Delete(conn_state_to_delete);
     }
