@@ -268,6 +268,7 @@ pw_add_test(pw_async2.value_future_thread_test
     pw_thread.sleep
     pw_thread.test_thread_context
     pw_thread.thread
+    pw_thread.yield
 )
 
 pw_add_library(pw_async2.box INTERFACE

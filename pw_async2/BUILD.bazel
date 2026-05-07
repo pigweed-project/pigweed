@@ -402,6 +402,7 @@ pw_cc_test(
         "//pw_thread:sleep",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
+        "//pw_thread:yield",
         "//pw_unit_test",
     ],
 )

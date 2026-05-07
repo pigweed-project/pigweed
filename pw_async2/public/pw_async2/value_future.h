@@ -138,9 +138,19 @@ class ValueFuture<void> {
 
   constexpr ValueFuture() = default;
 
-  ValueFuture(ValueFuture&& other) = default;
+  ValueFuture(ValueFuture&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    *this = std::move(other);
+  }
 
-  ValueFuture& operator=(ValueFuture&& other) = default;
+  ValueFuture& operator=(ValueFuture&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      core_ = std::move(other.core_);
+    }
+    return *this;
+  }
 
   ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
     std::lock_guard lock(internal::ValueProviderLock());
@@ -155,8 +165,15 @@ class ValueFuture<void> {
     return Ready();
   }
 
-  [[nodiscard]] bool is_pendable() const { return core_.is_pendable(); }
-  [[nodiscard]] bool is_complete() const { return core_.is_complete(); }
+  [[nodiscard]] bool is_pendable() const {
+    std::lock_guard lock(internal::ValueProviderLock());
+    return core_.is_pendable();
+  }
+
+  [[nodiscard]] bool is_complete() const {
+    std::lock_guard lock(internal::ValueProviderLock());
+    return core_.is_complete();
+  }
 
   static ValueFuture Resolved() {
     return ValueFuture(FutureState::kReadyForCompletion);
@@ -171,7 +188,7 @@ class ValueFuture<void> {
 
   explicit ValueFuture(FutureState::Pending) : core_(FutureState::kPending) {}
 
-  FutureCore core_;
+  FutureCore core_ PW_GUARDED_BY(internal::ValueProviderLock());
 };
 
 /// A `ValueFuture` that does not return any value, just a completion signal.

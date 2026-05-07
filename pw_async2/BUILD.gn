@@ -357,6 +357,7 @@ pw_test("value_future_thread_test") {
     "$dir_pw_thread:sleep",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
+    "$dir_pw_thread:yield",
   ]
 }
 

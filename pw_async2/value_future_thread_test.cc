@@ -12,12 +12,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <atomic>
+
 #include "pw_async2/callback_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/value_future.h"
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_thread/yield.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -254,6 +257,51 @@ TEST(OptionalValueProvider, DestructFromOtherThread) {
   resolver_thread.join();
 
   EXPECT_FALSE(result.has_value());
+}
+
+TEST(ValueFuture, Void_MoveRace_LoopingTask) {
+  DispatcherForTest dispatcher;
+
+  struct {
+    ValueProvider<void> provider;
+    std::atomic<bool> running{true};
+  } test_context;
+
+  // Continuously vend, move, and discard futures while the provider thread
+  // resolves them.
+  class GetterTask : public pw::async2::Task {
+   public:
+    GetterTask(ValueProvider<void>& provider, std::atomic<bool>& running)
+        : provider_(&provider), running_(&running) {}
+
+   private:
+    pw::async2::Poll<> DoPend(pw::async2::Context&) override {
+      while (running_->load(std::memory_order_relaxed)) {
+        auto f = provider_->Get();
+        auto f2 = std::move(f);
+      }
+      return pw::async2::Ready();
+    }
+
+    ValueProvider<void>* provider_;
+    std::atomic<bool>* running_;
+  };
+
+  GetterTask task(test_context.provider, test_context.running);
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&test_context]() {
+    for (int i = 0; i < 10000; ++i) {
+      test_context.provider.Resolve();
+      pw::this_thread::yield();
+    }
+    test_context.running.store(false, std::memory_order_relaxed);
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
 }
 
 }  // namespace
