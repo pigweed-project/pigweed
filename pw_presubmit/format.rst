@@ -186,3 +186,9 @@ Formatters
 .. autoclass:: pw_presubmit.format.rust.RustfmtFormatter
    :members:
    :noindex:
+
+Presubmit step
+==============
+.. autoclass:: pw_presubmit.format.step.CodeFormatting
+   :members:
+   :noindex:

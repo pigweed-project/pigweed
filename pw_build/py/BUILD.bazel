@@ -125,6 +125,7 @@ pw_py_library(
         ":pw_build",
         ":pw_project_builder",
         "//pw_cli/py:pw_cli",
+        "//pw_presubmit/py:pigweed_presubmit",
         "//pw_presubmit/py:pw_presubmit",
     ],
 )
@@ -214,6 +215,7 @@ pw_py_binary(
     deps = [
         ":presubmit_runner",
         ":pw_project_builder",
+        "//pw_presubmit/py:pigweed_presubmit",
         "//pw_watch/py:pw_watch",
     ],
 )

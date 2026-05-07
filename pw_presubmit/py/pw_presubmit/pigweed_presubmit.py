@@ -1209,7 +1209,7 @@ SECURITY = (
 
 FUZZ = (gn_fuzz_build, oss_fuzz_build)
 
-_LINTFORMAT = upstream_programs.QUICK + (
+_LINTFORMAT = upstream_programs.QUICK_COMMON + (
     format_code.presubmit_checks(),
     build.bazel_lint,  # TODO: b/432484923 - Remove when added to Bazel checks
     source_is_in_cmake_build_warn_only,

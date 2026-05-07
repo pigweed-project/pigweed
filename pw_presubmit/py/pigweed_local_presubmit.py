@@ -17,11 +17,7 @@ import os
 import sys
 
 import pw_presubmit.v2
-from pw_presubmit.private.upstream_programs import EXCLUDES, QUICK
-
-PROGRAMS = {
-    'quick': QUICK,
-}
+from pw_presubmit.private.upstream_programs import EXCLUDES, programs
 
 
 def main() -> int:
@@ -30,7 +26,7 @@ def main() -> int:
     if 'BUILD_WORKING_DIRECTORY' in os.environ:
         os.chdir(os.environ['BUILD_WORKING_DIRECTORY'])
 
-    return pw_presubmit.v2.main(PROGRAMS, 'quick', exclude=EXCLUDES)
+    return pw_presubmit.v2.main(programs(), 'quick', exclude=EXCLUDES)
 
 
 if __name__ == '__main__':

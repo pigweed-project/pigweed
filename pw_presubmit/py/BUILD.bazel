@@ -62,11 +62,9 @@ pw_py_library(
         "pw_presubmit/ninja_parser.py",
         "pw_presubmit/npm_presubmit.py",
         "pw_presubmit/owners_checks.py",
-        "pw_presubmit/pigweed_presubmit.py",
         "pw_presubmit/presubmit.py",
         "pw_presubmit/presubmit_context.py",
         "pw_presubmit/private/orchestrator.py",
-        "pw_presubmit/private/upstream_programs.py",
         "pw_presubmit/private/v2_cli.py",
         "pw_presubmit/pw_internal_namespace.py",
         "pw_presubmit/python_checks.py",
@@ -93,6 +91,30 @@ pw_py_library(
         "//pw_env_setup/py:pw_env_setup",
         "//pw_package/py:pw_package",
         "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_library(
+    name = "upstream_programs",
+    srcs = ["pw_presubmit/private/upstream_programs.py"],
+    imports = ["."],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":formatters",
+        ":pw_presubmit",
+    ],
+)
+
+pw_py_library(
+    name = "pigweed_presubmit",
+    srcs = ["pw_presubmit/pigweed_presubmit.py"],
+    imports = ["."],
+    visibility = ["//pw_build/py:__pkg__"],
+    deps = [
+        ":pw_presubmit",
+        ":upstream_programs",
+        "//pw_cli/py",
+        "//pw_package/py:pw_package",
     ],
 )
 
@@ -428,11 +450,15 @@ write_file(
 
 pw_py_library(
     name = "formatters",
-    srcs = ["pw_presubmit/format/formatters.py"],
+    srcs = [
+        "pw_presubmit/format/formatters.py",
+        "pw_presubmit/format/step.py",
+    ],
     data = [
         ":disabled_formatters",
     ],
     deps = [
+        ":core",
         ":format_core",
         "//pw_build/py:pw_build",
     ] + select({
@@ -478,7 +504,10 @@ pw_py_binary(
     name = "local_presubmit",
     srcs = ["pigweed_local_presubmit.py"],
     main = "pigweed_local_presubmit.py",
-    deps = [":pw_presubmit"],
+    deps = [
+        ":pw_presubmit",
+        ":upstream_programs",
+    ],
 )
 
 pw_py_binary(
@@ -567,6 +596,16 @@ pw_py_test(
     srcs = ["format_core_test.py"],
     deps = [
         ":pw_presubmit",
+    ],
+)
+
+pw_py_test(
+    name = "format_step_test",
+    srcs = ["format_step_test.py"],
+    deps = [
+        ":formatters",
+        ":pw_presubmit",
+        ":upstream_programs",
     ],
 )
 

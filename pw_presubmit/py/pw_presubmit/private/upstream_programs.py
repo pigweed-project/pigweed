@@ -13,6 +13,8 @@
 # the License.
 """Defines programs and excludes for Pigweed's upstream presubmit."""
 
+from typing import Iterable, Pattern
+
 from pw_presubmit import (
     block_submission,
     cpp_checks,
@@ -20,9 +22,12 @@ from pw_presubmit import (
     keep_sorted,
     upstream_checks,
 )
+from pw_presubmit.format.step import format_steps
+from pw_presubmit.private.step import Step
 
 # Paths to completely exclude from presubmit checks.
 EXCLUDES = (
+    "^\\.agents/skills/docs/tests/before\\.rst$",
     "\\bthird_party/fuchsia/repo",
     "\\bthird_party/perfetto/repo",
     "\\bthird_party/.*\\.json$",
@@ -34,7 +39,7 @@ EXCLUDES = (
 )
 
 # Quick lint and format checks.
-QUICK = (
+QUICK_COMMON = (
     # commit_message_format could not be easily converted to Step because it
     # needs LUCI context.
     # upstream_checks.commit_message_format,
@@ -54,6 +59,15 @@ QUICK = (
     upstream_checks.todo_check_with_exceptions,
 )
 
-PROGRAMS = {
-    "quick": QUICK,
-}
+
+def programs(
+    format_exclusions: Iterable[Pattern[str] | str] = (),
+) -> dict[str, tuple[Step, ...]]:
+    """Get Pigweed's Bazel-friendly presubmit programs.
+
+    This is a function to avoid evaluating all programs at import time, which
+    might fail in some environments.
+    """
+    return {
+        "quick": QUICK_COMMON + tuple(format_steps(exclude=format_exclusions)),
+    }

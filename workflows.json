@@ -585,8 +585,8 @@
       "target": "//pw_module/py:module"
     },
     {
-      "name": "pw_presubmit_checks",
-      "description": "Run checks that use the pw_presubmit framework",
+      "name": "presubmit",
+      "description": "Quick presubmit for validating code changes locally",
       "use_config": "bazel_default",
       "target": "@pigweed//:presubmit",
       "type": "ANALYZER"
@@ -638,14 +638,6 @@
     }
   ],
   "groups": [
-    {
-      "name": "presubmit",
-      "description": "Quick presubmit for validating code changes locally",
-      "analyzers": [
-        "format",
-        "pw_presubmit_checks"
-      ]
-    },
     {
       "name": "default",
       "description": "Common builds/configurations",
