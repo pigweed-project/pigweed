@@ -62,5 +62,6 @@ tokio-util = { version = "0.7.17", features = ["compat"] }
 toml = "0.8.23"
 zngur = "0.7.0"
 psm = "0.1.30"
+zerocopy = { version = "0.8.48", features = ["derive"] }
 
 [features]
