@@ -69,6 +69,32 @@ pub enum Error {
     Unauthenticated = 16,
 }
 
+impl TryFrom<u32> for Error {
+    type Error = Self;
+
+    fn try_from(val: u32) -> core::result::Result<Self, Self::Error> {
+        match val {
+            1 => Ok(Error::Cancelled),
+            2 => Ok(Error::Unknown),
+            3 => Ok(Error::InvalidArgument),
+            4 => Ok(Error::DeadlineExceeded),
+            5 => Ok(Error::NotFound),
+            6 => Ok(Error::AlreadyExists),
+            7 => Ok(Error::PermissionDenied),
+            8 => Ok(Error::ResourceExhausted),
+            9 => Ok(Error::FailedPrecondition),
+            10 => Ok(Error::Aborted),
+            11 => Ok(Error::OutOfRange),
+            12 => Ok(Error::Unimplemented),
+            13 => Ok(Error::Internal),
+            14 => Ok(Error::Unavailable),
+            15 => Ok(Error::DataLoss),
+            16 => Ok(Error::Unauthenticated),
+            _ => Err(Error::InvalidArgument),
+        }
+    }
+}
+
 pub type Result<T> = core::result::Result<T, Error>;
 
 /// Convert a Result into an status code.
