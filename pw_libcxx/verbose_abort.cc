@@ -14,7 +14,12 @@
 
 #include <__verbose_abort>
 #include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
+
+#include "pw_assert/check.h"
+#include "pw_string/format.h"
+#include "pw_string/string.h"
 
 // Older LLVM distributions don't define this.
 #ifndef _LIBCPP_VERBOSE_ABORT_NOEXCEPT
@@ -24,9 +29,16 @@
 // Inline functions in libc++ headers call this.
 [[noreturn]] void std::__libcpp_verbose_abort(const char* format, ...)
     _LIBCPP_VERBOSE_ABORT_NOEXCEPT {
+  pw::InlineString<128> buffer;
   va_list list;
   va_start(list, format);
-  // TODO: https://pwbug.dev/298822102 - Log the message, ideally using pw_log.
+
+  if (pw::string::FormatVaList(buffer, format, list).IsResourceExhausted()) {
+    buffer[buffer.size() - 3] = '.';
+    buffer[buffer.size() - 2] = '.';
+    buffer[buffer.size() - 1] = '.';
+  }
   va_end(list);
-  std::abort();
+
+  PW_CRASH("libc++ abort: %s", buffer.c_str());
 }

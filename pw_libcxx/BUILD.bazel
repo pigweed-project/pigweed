@@ -33,6 +33,11 @@ cc_library(
         [],
         otherwise = ["@platforms//:incompatible"],
     ),
+    deps = [
+        "//pw_assert:check",
+        "//pw_string:format",
+        "//pw_string:string",
+    ],
     alwayslink = True,
 )
 
