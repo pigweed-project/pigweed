@@ -18,7 +18,6 @@
 #include "pw_bluetooth_proxy/internal/l2cap_signaling_channel.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/internal/recombiner.h"
-#include "pw_containers/intrusive_map.h"
 
 namespace pw::bluetooth::proxy {
 class L2capChannelManager;
