@@ -19,6 +19,7 @@ load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
 load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
 load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
 load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("//pw_build:pigweed_is_root.bzl", "pigweed_is_root")
 load("//pw_toolchain/cc:builtin_module_map.bzl", "builtin_module_map")
 
@@ -288,6 +289,12 @@ copy_file(
     out = "addr2line",
     allow_symlink = True,
     is_executable = True,
+)
+
+sh_binary(
+    name = "run_with_symbolizer",
+    srcs = ["run_with_symbolizer.sh"],
+    data = ["@llvm_toolchain//:bin/llvm-symbolizer"],
 )
 
 cc_feature(

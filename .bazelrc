@@ -142,22 +142,30 @@ common:asan --//pw_toolchain/host_clang:asan
 # -integration because the test_tag_filters flag does not
 # accumulate.
 test:asan --test_tag_filters=-integration,-noasan,-do_not_build,-do_not_run_test,-kernel
+test:asan --run_under=//pw_toolchain/host_clang:run_with_symbolizer
+
 
 common:ubsan --//pw_toolchain/host_clang:ubsan
 # TODO: https://github.com/bazelbuild/bazel/issues/7322 - We need to repeat the
 # -integration because the test_tag_filters flag does not accumulate.
 test:ubsan --test_tag_filters=-integration,-noubsan,-do_not_build,-do_not_run_test,-kernel
+test:ubsan --run_under=//pw_toolchain/host_clang:run_with_symbolizer
+
 
 common:tsan --//pw_toolchain/host_clang:tsan
 # TODO: https://github.com/bazelbuild/bazel/issues/7322 - We need to repeat the
 # -integration because the test_tag_filters flag does not accumulate.
 test:tsan --test_tag_filters=-integration,-notsan,-do_not_build,-do_not_run_test,-kernel
+test:tsan --run_under=//pw_toolchain/host_clang:run_with_symbolizer
+
 
 # msan currently has false positives in Pigweed (see b/234876100).
 common:msan --//pw_toolchain/host_clang:msan
 # TODO: https://github.com/bazelbuild/bazel/issues/7322 - We need to repeat the
 # -integration because the test_tag_filters flag does not accumulate.
 test:msan --test_tag_filters=-integration,-nomsan,-do_not_build,-do_not_run_test,-kernel
+test:msan --run_under=//pw_toolchain/host_clang:run_with_symbolizer
+
 
 # Include libFuzzer build configurations.
 import %workspace%/pw_fuzzer/libfuzzer.bazelrc
