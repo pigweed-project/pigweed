@@ -34,14 +34,14 @@ fn handle_modify_state() {
         42,
     ) {
         info!("Failed to add to wait group");
-        let _ = syscall::debug_shutdown(Err(e.into()));
+        let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
     if let Err(e) =
         syscall::wait_group_add(handle::WAIT_GROUP, handle::IPC_RESET, Signals::READABLE, 43)
     {
         info!("Failed to add initiator to wait group");
-        let _ = syscall::debug_shutdown(Err(e.into()));
+        let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
@@ -53,12 +53,12 @@ fn handle_verify_reset() {
         Err(Error::NotFound) => {}
         Ok(()) => {
             info!("Object was NOT removed from wait group on reset!");
-            let _ = syscall::debug_shutdown(Err(Error::Internal.into()));
+            let _ = syscall::debug_shutdown(Err(Error::Internal));
             loop {}
         }
         Err(e) => {
             info!("Failed to remove object from wait group");
-            let _ = syscall::debug_shutdown(Err(e.into()));
+            let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
     }
@@ -66,12 +66,12 @@ fn handle_verify_reset() {
         Err(Error::NotFound) => {}
         Ok(()) => {
             info!("Initiator was NOT removed from wait group on reset!");
-            let _ = syscall::debug_shutdown(Err(Error::Internal.into()));
+            let _ = syscall::debug_shutdown(Err(Error::Internal));
             loop {}
         }
         Err(e) => {
             info!("Failed to remove initiator from wait group");
-            let _ = syscall::debug_shutdown(Err(e.into()));
+            let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
     }
@@ -150,7 +150,7 @@ fn handle_verify_user_signal_preserved() {
 }
 
 #[process_entry("restart")]
-fn main() -> ! {
+fn main() {
     info!("I am the object_reset process.");
 
     loop {
@@ -159,7 +159,7 @@ fn main() -> ! {
             syscall::object_wait(handle::IPC_CONTROL_HANDLER, Signals::READABLE, Instant::MAX)
         {
             info!("Failed to wait for command");
-            let _ = syscall::debug_shutdown(Err(e.into()));
+            let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
 
@@ -167,7 +167,7 @@ fn main() -> ! {
         let mut cmd = [0u8; 1];
         if let Err(e) = syscall::channel_read_exact(handle::IPC_CONTROL_HANDLER, 0, &mut cmd) {
             info!("Failed to read command");
-            let _ = syscall::debug_shutdown(Err(e.into()));
+            let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
 
@@ -175,7 +175,7 @@ fn main() -> ! {
             Ok(c) => c,
             Err(_) => {
                 info!("Unknown command received");
-                let _ = syscall::debug_shutdown(Err(Error::InvalidArgument.into()));
+                let _ = syscall::debug_shutdown(Err(Error::InvalidArgument));
                 loop {}
             }
         };

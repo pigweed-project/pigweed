@@ -19,7 +19,7 @@ use pw_log::info;
 use userspace::process_entry;
 
 #[process_entry("extra")]
-fn main() -> ! {
+fn main() {
     info!("I am the extra process. Spinning...");
     loop {
         core::hint::spin_loop();
@@ -29,6 +29,6 @@ fn main() -> ! {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     pw_log::error!("❌ PANIC");
-    let _ = userspace::syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+    let _ = userspace::syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

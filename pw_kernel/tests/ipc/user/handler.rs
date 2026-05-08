@@ -70,13 +70,11 @@ fn handle_uppercase_ipcs() -> Result<()> {
 }
 
 #[process_entry("handler")]
-fn entry() -> ! {
-    if let Err(e) = handle_uppercase_ipcs() {
+fn entry() -> Result<()> {
+    handle_uppercase_ipcs().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
-        pw_log::error!("IPC service error: {}", e as u32);
-        let _ = syscall::debug_shutdown(Err(e));
-    }
-
-    loop {}
+        pw_log::error!("IPC service error: {}", *e as u32);
+        let _ = syscall::debug_shutdown(Err(*e));
+    })
 }

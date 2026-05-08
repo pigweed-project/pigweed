@@ -106,7 +106,6 @@ rust_proc_macro(
         "arm_cortex_m/entry.s",
         "riscv/entry.s",
     ],
-    crate_features = ["user_space"],
     edition = "2024",
     tags = ["kernel"],
     deps = [

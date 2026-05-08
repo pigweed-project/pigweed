@@ -35,7 +35,7 @@ pub extern "C" fn test_thread_entry_initiator(_arg: usize) {
         &mut reply,
         Instant::MAX,
     );
-    if res == Err(pw_status::Error::Unavailable.into()) {
+    if res == Err(pw_status::Error::Unavailable) {
         info!("✅ ├─ Initiator thread correctly received Unavailable!");
         let _ = syscall::thread_exit(0);
         loop {}
@@ -44,7 +44,7 @@ pub extern "C" fn test_thread_entry_initiator(_arg: usize) {
             "❌ ├─ Initiator thread expected Unavailable, got {}",
             res.status_code() as u32
         );
-        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
         loop {}
     }
 }
@@ -54,13 +54,13 @@ pub extern "C" fn test_thread_entry_handler(_arg: usize) {
     info!("Test thread: Waiting for transaction on IPC_RESET handler");
     let wait_res =
         syscall::object_wait(handle::IPC_RESET, syscall::Signals::READABLE, Instant::MAX);
-    if wait_res == Err(pw_status::Error::Cancelled.into()) {
+    if wait_res == Err(pw_status::Error::Cancelled) {
         info!("✅ ├─ Handler thread correctly received Cancelled!");
         let _ = syscall::thread_exit(0);
         loop {}
     } else {
         pw_log::error!("❌ ├─ Handler thread expected Cancelled");
-        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+        let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
         loop {}
     }
 }
@@ -126,16 +126,19 @@ fn test_invalid_handles() -> Result<()> {
     // TEST_THREAD is a ThreadObject, not a ProcessObject!
     info!("🔄 ├─ Testing process_terminate on a Thread handle");
     let result = syscall::process_terminate(handle::TEST_THREAD);
-    if result != Err(pw_status::Error::Unimplemented.into()) {
-        pw_log::error!("❌ ├─ Expected Unimplemented when terminating a thread handle");
-        return Err(pw_status::Error::Internal.into());
+    if result != Err(pw_status::Error::Unimplemented) {
+        pw_log::error!(
+            "❌ ├─ Expected Unimplemented when terminating a thread handle, got {}",
+            result.status_code() as u32
+        );
+        return Err(pw_status::Error::Internal);
     }
 
     info!("🔄 ├─ Testing process_terminate on an invalid handle");
     let result = syscall::process_terminate(0xdeadbeef);
-    if result != Err(pw_status::Error::OutOfRange.into()) {
+    if result != Err(pw_status::Error::OutOfRange) {
         pw_log::error!("❌ ├─ Expected OutOfRange on an invalid handle");
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
     Ok(())
 }
@@ -170,7 +173,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
             Ok(syscall::ExitStatus::Success(42)) => (),
             Ok(_) => {
                 pw_log::error!("❌ ├─ Clean exit process joined with unexpected status");
-                return Err(pw_status::Error::Internal.into());
+                return Err(pw_status::Error::Internal);
             }
         }
         info!("🔄 ├─ Clean exit process joined");
@@ -197,7 +200,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
             pw_log::error!(
                 "❌ ├─ Process joined with unexpected status (expected TerminatedBySyscall)"
             );
-            return Err(pw_status::Error::Internal.into());
+            return Err(pw_status::Error::Internal);
         }
         info!("🔄 ├─ Forced exit process joined");
 
@@ -218,7 +221,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
             pw_log::error!(
                 "❌ ├─ Process joined with unexpected status (expected UnhandledException(0))"
             );
-            return Err(pw_status::Error::Internal.into());
+            return Err(pw_status::Error::Internal);
         }
         info!("🔄 ├─ Exception exit process joined");
 
@@ -390,7 +393,7 @@ fn test_handler_error_on_terminate(_stack: &mut [u8]) -> Result<()> {
         info!("✅ ├─ Handler thread correctly received ERROR signal after join!");
     } else {
         pw_log::error!("❌ ├─ Handler thread expected ERROR signal");
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
     Ok(())
 }
@@ -434,7 +437,7 @@ fn test_wait_group_error_on_initiator_terminate(_stack: &mut [u8], reply: &mut [
             wait_return.user_data as u32,
             wait_return.pending_signals.bits() as u32
         );
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
 
     // Clean up: remove from wait group
@@ -494,7 +497,7 @@ fn test_wait_group_error_on_handler_terminate(_stack: &mut [u8]) -> Result<()> {
             wait_return.user_data as u32,
             wait_return.pending_signals.bits() as u32
         );
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
 
     // Clean up: remove from wait group
@@ -503,7 +506,7 @@ fn test_wait_group_error_on_handler_terminate(_stack: &mut [u8]) -> Result<()> {
     // Cancel the async transaction to clean up channel state
     if let Err(e) = syscall::channel_async_cancel(handle::IPC_CONTROL_INITIATOR) {
         if e != pw_status::Error::Unavailable {
-            return Err(e.into());
+            return Err(e);
         }
     }
 
@@ -511,14 +514,12 @@ fn test_wait_group_error_on_handler_terminate(_stack: &mut [u8]) -> Result<()> {
 }
 
 #[process_entry("main")]
-fn main() -> ! {
-    let ret = do_test();
-
-    if ret.is_err() {
+fn main() -> Result<()> {
+    let ret = do_test().inspect_err(|e| {
         pw_log::error!("❌ ├─ FAILED");
-        pw_log::error!("❌ └─ status code: {}", ret.status_code() as u32);
-    }
+        pw_log::error!("❌ └─ status code: {}", *e as u32);
+    });
 
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }

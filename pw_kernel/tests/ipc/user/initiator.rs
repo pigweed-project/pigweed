@@ -15,7 +15,7 @@
 #![no_std]
 
 use initiator_codegen::handle;
-use pw_status::{Error, Result, StatusCode};
+use pw_status::{Error, Result};
 use userspace::syscall::Signals;
 use userspace::time::{Clock, Duration, Instant, SystemClock};
 use userspace::{process_entry, syscall};
@@ -134,19 +134,14 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
 }
 
 #[process_entry("initiator")]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
 
-    let ret = test_uppercase_ipcs();
-
-    // Log that an error occurred so that the app that caused the shutdown is logged.
-    if ret.is_err() {
-        pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
-    } else {
-        pw_log::info!("✅ PASSED");
-    }
+    let ret = test_uppercase_ipcs()
+        .inspect(|_| pw_log::info!("✅ PASSED"))
+        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }

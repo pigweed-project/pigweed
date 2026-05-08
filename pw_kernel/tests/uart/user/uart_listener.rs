@@ -66,31 +66,26 @@ fn handle_interrupt(uart: &mut Uart, interrupts: Signals) -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     let mut uart = Uart::new(mapping::UART0_START_ADDRESS);
 
     loop {
-        let res = match syscall::object_wait(handle::UART_INTERRUPTS, signals::UART0, Instant::MAX)
-        {
-            Ok(wait_return) => {
-                if !wait_return.pending_signals.contains(signals::UART0)
-                    || wait_return.user_data != 0
-                {
-                    pw_log::error!("Incorrect WaitReturn values");
-                    Err(Error::Internal)
-                } else {
-                    handle_interrupt(&mut uart, wait_return.pending_signals)
-                }
-            }
-            Err(err) => {
-                pw_log::error!("Failed to wait on interrupt");
-                Err(err)
-            }
-        };
+        let wait_return =
+            syscall::object_wait(handle::UART_INTERRUPTS, signals::UART0, Instant::MAX)
+                .inspect_err(|e| {
+                    pw_log::error!("Failed to wait on interrupt");
+                    let _ = syscall::debug_shutdown(Err(*e));
+                })?;
 
-        if res.is_err() {
-            let _ = syscall::debug_shutdown(res);
+        if !wait_return.pending_signals.contains(signals::UART0) || wait_return.user_data != 0 {
+            pw_log::error!("Incorrect WaitReturn values");
+            let _ = syscall::debug_shutdown(Err(Error::Internal));
+            return Err(Error::Internal);
         }
+
+        handle_interrupt(&mut uart, wait_return.pending_signals).inspect_err(|e| {
+            let _ = syscall::debug_shutdown(Err(*e));
+        })?;
     }
 }
 

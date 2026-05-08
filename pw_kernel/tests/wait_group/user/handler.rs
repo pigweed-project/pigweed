@@ -155,15 +155,13 @@ fn wait_group() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
-    if let Err(e) = wait_group() {
+fn entry() -> Result<()> {
+    wait_group().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
-        pw_log::error!("WaitGroup service error: {}", e as u32);
-        let _ = syscall::debug_shutdown(Err(e));
-    }
-
-    loop {}
+        pw_log::error!("WaitGroup service error: {}", *e as u32);
+        let _ = syscall::debug_shutdown(Err(*e));
+    })
 }
 
 #[panic_handler]

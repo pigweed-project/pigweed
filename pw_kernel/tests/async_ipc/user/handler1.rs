@@ -15,16 +15,15 @@
 #![no_main]
 
 use handler1_codegen::handle;
+use pw_status::Result;
 use userspace::process_entry;
 
 mod common_handler;
 
 #[process_entry("handler1")]
-fn entry() -> ! {
-    if let Err(e) = common_handler::handle_increment_ipc(handle::IPC_1, 1) {
-        pw_log::error!("IPC service 1 error: {}", e as u32);
-        let _ = userspace::syscall::debug_shutdown(Err(e));
-    }
-
-    loop {}
+fn entry() -> Result<()> {
+    common_handler::handle_increment_ipc(handle::IPC_1, 1).inspect_err(|e| {
+        pw_log::error!("IPC service 1 error: {}", *e as u32);
+        let _ = userspace::syscall::debug_shutdown(Err(*e));
+    })
 }

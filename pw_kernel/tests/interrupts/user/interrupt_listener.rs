@@ -62,31 +62,28 @@ fn handle_interrupt(interrupts: Signals) -> Result<()> {
     Ok(())
 }
 
-#[entry]
-fn entry() -> ! {
+fn run_test() -> Result<()> {
     loop {
-        let res =
-            match syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX) {
-                Ok(wait_return) => {
-                    if !wait_return.pending_signals.contains(signals::TEST_IRQ)
-                        || wait_return.user_data != 0
-                    {
-                        pw_log::error!("Incorrect WaitReturn values");
-                        Err(Error::Internal)
-                    } else {
-                        handle_interrupt(wait_return.pending_signals)
-                    }
-                }
-                Err(err) => {
+        let wait_return =
+            syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX)
+                .inspect_err(|_| {
                     pw_log::error!("Failed to wait on interrupt");
-                    Err(err)
-                }
-            };
+                })?;
 
-        if res.is_err() {
-            let _ = syscall::debug_shutdown(res);
+        if !wait_return.pending_signals.contains(signals::TEST_IRQ) || wait_return.user_data != 0 {
+            pw_log::error!("Incorrect WaitReturn values");
+            return Err(Error::Internal);
         }
+
+        handle_interrupt(wait_return.pending_signals)?;
     }
+}
+
+#[entry]
+fn entry() -> Result<()> {
+    run_test().inspect_err(|e| {
+        let _ = syscall::debug_shutdown(Err(*e));
+    })
 }
 
 #[panic_handler]

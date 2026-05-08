@@ -18,7 +18,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use main_codegen::handle;
 use pw_log::info;
-use pw_status::{Result, StatusCode};
+use pw_status::Result;
 use userspace::{entry, syscall};
 
 // NOTE: Atomic operations will not work on platforms without atomic support.
@@ -97,23 +97,21 @@ fn do_test() -> Result<()> {
 }
 
 #[entry]
-fn main_entry() -> ! {
-    let ret = do_test();
-
-    if ret.is_err() {
-        pw_log::error!("❌ ├─ FAILED");
-        pw_log::error!("❌ └─ status code: {}", ret.status_code() as u32);
-    } else {
-        pw_log::info!("✅ └─ PASSED");
-    }
+fn main_entry() -> Result<()> {
+    let ret = do_test()
+        .inspect(|_| pw_log::info!("✅ └─ PASSED"))
+        .inspect_err(|e| {
+            pw_log::error!("❌ ├─ FAILED");
+            pw_log::error!("❌ └─ status code: {}", *e as u32);
+        });
 
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     pw_log::error!("❌ PANIC");
-    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

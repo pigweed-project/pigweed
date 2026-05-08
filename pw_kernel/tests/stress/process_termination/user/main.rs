@@ -17,7 +17,7 @@
 
 use main_codegen::handle;
 use pw_log::info;
-use pw_status::{Result, StatusCode};
+use pw_status::Result;
 use userspace::time::{Clock, Duration, SystemClock};
 use userspace::{entry, syscall};
 
@@ -68,21 +68,19 @@ fn do_test() -> Result<()> {
 }
 
 #[entry]
-fn main_entry() -> ! {
-    let ret = do_test();
-
-    if ret.is_err() {
+fn main_entry() -> Result<()> {
+    let ret = do_test().inspect_err(|e| {
         pw_log::error!("❌ FAILED");
-        pw_log::error!("❌ status code: {}", ret.status_code() as u32);
-    }
+        pw_log::error!("❌ status code: {}", *e as u32);
+    });
 
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     pw_log::error!("❌ PANIC");
-    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

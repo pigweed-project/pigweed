@@ -15,7 +15,7 @@
 #![no_std]
 
 use initiator_codegen::handle;
-use pw_status::{Error, Result, StatusCode};
+use pw_status::{Error, Result};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
@@ -80,19 +80,14 @@ fn test_uppercase_ipcs() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
 
     let mut pass = 0;
     loop {
-        let ret = test_uppercase_ipcs();
-
-        // Log that an error occurred so that the app that caused the shutdown is logged.
-        if ret.is_err() {
-            pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
-        } else {
-            pw_log::info!("✅ PASSED {}", pass as u32);
-        }
+        let _ = test_uppercase_ipcs()
+            .inspect(|_| pw_log::info!("✅ PASSED {}", pass as u32))
+            .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
         pass += 1;
     }
 }

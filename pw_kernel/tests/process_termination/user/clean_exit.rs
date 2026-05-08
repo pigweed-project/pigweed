@@ -16,14 +16,10 @@
 #![no_main]
 
 use pw_log::info;
-use userspace::{process_entry, syscall};
+use userspace::process_entry;
 
 #[process_entry("clean_exit")]
-fn main() -> ! {
+fn main() -> u32 {
     info!("I am the clean exit process. Exiting...");
-    let _ = syscall::process_exit(42);
-    info!("process_exit FAILED!");
-    loop {
-        core::hint::spin_loop();
-    }
+    42
 }

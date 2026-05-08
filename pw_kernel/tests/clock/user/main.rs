@@ -35,7 +35,7 @@ fn clock_test() -> Result<()> {
         Ok(())
     } else {
         pw_log::error!("Clock did not advance");
-        Err(pw_status::Error::Internal.into())
+        Err(pw_status::Error::Internal)
     }
 }
 
@@ -56,7 +56,7 @@ fn sleep_test() -> Result<()> {
         Ok(())
     } else {
         pw_log::error!("sleep_until returned before deadline");
-        Err(pw_status::Error::Internal.into())
+        Err(pw_status::Error::Internal)
     }
 }
 
@@ -69,20 +69,18 @@ fn do_test() -> Result<()> {
 }
 
 #[entry]
-fn main_entry() -> ! {
-    let ret = do_test();
-
-    if ret.is_err() {
+fn main_entry() -> Result<()> {
+    let ret = do_test().inspect_err(|_| {
         pw_log::error!("❌ ├─ FAILED");
-    }
+    });
 
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     pw_log::error!("❌ PANIC");
-    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal.into()));
+    let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

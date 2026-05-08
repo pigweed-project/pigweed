@@ -34,7 +34,7 @@ static APP_ENTRY_TABLE: [unsafe extern "C" fn() -> !; {{ app.processes | length 
 ];
 
 #[entry]
-fn main(index: usize) -> ! {
+fn main(index: usize) {
     assert!(index < APP_ENTRY_TABLE.len());
 
     unsafe {

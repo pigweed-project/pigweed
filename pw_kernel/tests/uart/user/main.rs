@@ -14,7 +14,7 @@
 #![no_main]
 #![no_std]
 
-use pw_status::{Error, Result, StatusCode};
+use pw_status::{Error, Result};
 use test_uart_codegen::{handle, mapping};
 use uart_16550_user::Uart;
 use userspace::syscall::Signals;
@@ -81,20 +81,15 @@ fn test_uart_interrupts() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
-    let ret = test_uart_interrupts();
-
-    // Log that an error occurred so that the app that caused the shutdown is logged.
-    if ret.is_err() {
-        pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
-    } else {
-        pw_log::info!("✅ PASSED");
-    }
+    let ret = test_uart_interrupts()
+        .inspect(|_| pw_log::info!("✅ PASSED"))
+        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]

@@ -15,7 +15,7 @@
 #![no_main]
 
 use initiator_codegen::handle;
-use pw_status::{Error, Result, StatusCode};
+use pw_status::{Error, Result};
 use userspace::entry;
 use userspace::syscall::{
     Signals, channel_async_cancel, channel_async_transact, channel_async_transact_complete,
@@ -243,21 +243,17 @@ fn test_increment_async_ipcs() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
 
-    let ret = test_async_cancel().and_then(|_| test_increment_async_ipcs());
-
-    // Log that an error occurred so that the app that caused the shutdown is logged.
-    if ret.is_err() {
-        pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
-    } else {
-        pw_log::info!("✅ PASSED");
-    }
+    let ret = test_async_cancel()
+        .and_then(|_| test_increment_async_ipcs())
+        .inspect(|_| pw_log::info!("✅ PASSED"))
+        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = userspace::syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]
