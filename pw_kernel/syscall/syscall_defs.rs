@@ -760,12 +760,12 @@ pub trait SysCallInterface {
     fn thread_start(object_handle: u32, initial_pc: usize, initial_sp: usize) -> Result<()>;
     fn thread_terminate(object_handle: u32) -> Result<()>;
     fn thread_join(object_handle: u32) -> Result<ExitStatus>;
-    fn thread_exit(exit_code: u32) -> Result<()>;
+    fn thread_exit(exit_code: u32) -> !;
 
     fn process_start(object_handle: u32) -> Result<()>;
     fn process_terminate(object_handle: u32) -> Result<()>;
     fn process_join(object_handle: u32) -> Result<ExitStatus>;
-    fn process_exit(exit_code: u32) -> Result<()>;
+    fn process_exit(exit_code: u32) -> !;
 
     /// Set or clear `Signals::USER` on the paired peer (level-triggered model).
     ///

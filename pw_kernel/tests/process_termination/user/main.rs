@@ -37,8 +37,7 @@ pub extern "C" fn test_thread_entry_initiator(_arg: usize) {
     );
     if res == Err(pw_status::Error::Unavailable) {
         info!("✅ ├─ Initiator thread correctly received Unavailable!");
-        let _ = syscall::thread_exit(0);
-        loop {}
+        syscall::thread_exit(0);
     } else {
         pw_log::error!(
             "❌ ├─ Initiator thread expected Unavailable, got {}",
@@ -56,8 +55,7 @@ pub extern "C" fn test_thread_entry_handler(_arg: usize) {
         syscall::object_wait(handle::IPC_RESET, syscall::Signals::READABLE, Instant::MAX);
     if wait_res == Err(pw_status::Error::Cancelled) {
         info!("✅ ├─ Handler thread correctly received Cancelled!");
-        let _ = syscall::thread_exit(0);
-        loop {}
+        syscall::thread_exit(0);
     } else {
         pw_log::error!("❌ ├─ Handler thread expected Cancelled");
         let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));

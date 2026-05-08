@@ -96,20 +96,20 @@ fn generate_wrapper_function(
         ReturnKind::U32 => {
             quote!(
                 let ret = unsafe { #user_func_call };
-                let _ = userspace::syscall::process_exit(ret);
+                userspace::syscall::process_exit(ret);
             )
         }
         ReturnKind::Result => {
             quote!(
                 use pw_status::StatusCode;
                 let ret = unsafe { #user_func_call };
-                let _ = userspace::syscall::process_exit(ret.status_code());
+                userspace::syscall::process_exit(ret.status_code());
             )
         }
         ReturnKind::Unit => {
             quote!(
                 let _ = unsafe { #user_func_call };
-                let _ = userspace::syscall::process_exit(0);
+                userspace::syscall::process_exit(0);
             )
         }
     };
@@ -122,7 +122,6 @@ fn generate_wrapper_function(
         #[unsafe(no_mangle)]
         pub extern "C" fn #wrapper_ident(#args) -> ! {
             #wrapper_body
-            loop {}
         }
     )
 }

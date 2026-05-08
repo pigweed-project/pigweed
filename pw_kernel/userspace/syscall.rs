@@ -195,11 +195,11 @@ pub fn process_join(object_handle: u32) -> Result<ExitStatus> {
 }
 
 #[inline(always)]
-pub fn process_exit(exit_code: u32) -> Result<()> {
+pub fn process_exit(exit_code: u32) -> ! {
     SysCall::process_exit(exit_code)
 }
 
 #[inline(always)]
-pub fn thread_exit(exit_code: u32) -> Result<()> {
+pub fn thread_exit(exit_code: u32) -> ! {
     SysCall::thread_exit(exit_code)
 }

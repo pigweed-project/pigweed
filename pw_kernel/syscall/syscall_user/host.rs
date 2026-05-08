@@ -106,8 +106,9 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
-    fn thread_exit(_exit_code: u32) -> Result<()> {
-        Err(pw_status::Error::Unimplemented)
+    #[expect(clippy::unimplemented)]
+    fn thread_exit(_exit_code: u32) -> ! {
+        unimplemented!();
     }
 
     #[inline(always)]
@@ -126,8 +127,9 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
-    fn process_exit(_exit_code: u32) -> Result<()> {
-        Err(pw_status::Error::Unimplemented)
+    #[allow(clippy::unimplemented)]
+    fn process_exit(_exit_code: u32) -> ! {
+        unimplemented!()
     }
 
     #[inline(always)]

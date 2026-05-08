@@ -336,22 +336,24 @@ fn handle_thread_join<'a, K: Kernel>(
     object.thread_join(kernel)
 }
 
-fn handle_thread_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
+fn handle_thread_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> ! {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling thread_exit");
-    let exit_code = args.next_u32()?;
+    // TODO: b/510812835 - infallible syscalls.
+    let exit_code = args.next_u32().unwrap_or(0);
     crate::scheduler::exit_thread(kernel, syscall_defs::ExitStatus::Success(exit_code));
 }
 
-fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
+fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> ! {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling process_exit");
-    let exit_code = args.next_u32()?;
+    // TODO: b/510812835 - infallible syscalls.
+    let exit_code = args.next_u32().unwrap_or(0);
     let mut sched = kernel.get_scheduler().lock(kernel);
     let current_process = sched.current_process_ref().clone();
     sched.process_terminate(
         kernel,
         &current_process,
         syscall_defs::ExitStatus::Success(exit_code),
-    )?;
+    );
 
     // Drop the reference to the current process before calling exit_thread.
     // Since exit_thread does not return, the reference would otherwise be leaked,
@@ -510,11 +512,11 @@ pub fn handle_syscall<'a, K: Kernel>(
             SysCallId::ThreadStart => handle_thread_start(kernel, args).into(),
             SysCallId::ThreadTerminate => handle_thread_terminate(kernel, args).into(),
             SysCallId::ThreadJoin => handle_thread_join(kernel, args).into(),
-            SysCallId::ThreadExit => handle_thread_exit(kernel, args).into(),
+            SysCallId::ThreadExit => handle_thread_exit(kernel, args),
             SysCallId::ProcessStart => handle_process_start(kernel, args).into(),
             SysCallId::ProcessTerminate => handle_process_terminate(kernel, args).into(),
             SysCallId::ProcessJoin => handle_process_join(kernel, args).into(),
-            SysCallId::ProcessExit => handle_process_exit(kernel, args).into(),
+            SysCallId::ProcessExit => handle_process_exit(kernel, args),
             SysCallId::RaisePeerUserSignal => handle_set_peer_user_signal(kernel, args).into(),
             SysCallId::DebugPutc => handle_debug_putc(kernel, args).into(),
             SysCallId::DebugShutdown => handle_debug_shutdown(kernel, args).into(),

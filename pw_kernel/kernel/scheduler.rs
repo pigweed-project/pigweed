@@ -768,12 +768,12 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         _kernel: K,
         process_ref: &ProcessRef<K>,
         status: ExitStatus,
-    ) -> Result<()> {
+    ) {
         let mut ptr = process_ref.process;
         let proc = unsafe { ptr.as_mut() };
 
         match proc.state {
-            ProcessState::Terminating | ProcessState::Terminated => return Ok(()),
+            ProcessState::Terminating | ProcessState::Terminated => return,
             _ => {}
         }
 
@@ -789,8 +789,6 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
                 true // Keep in list
             });
         }
-
-        Ok(())
     }
 
     #[must_use]
@@ -1120,7 +1118,7 @@ pub fn handle_terminal_exception<K: Kernel>(
 
     let mut sched = kernel.get_scheduler().lock(kernel);
     let process_ref = sched.current_thread().process();
-    let _ = sched.process_terminate(kernel, &process_ref, ExitStatus::UnhandledException(0));
+    sched.process_terminate(kernel, &process_ref, ExitStatus::UnhandledException(0));
 
     guard
 }

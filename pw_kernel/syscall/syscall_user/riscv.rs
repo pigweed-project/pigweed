@@ -191,8 +191,10 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
-    fn thread_exit(exit_code: u32) -> Result<()> {
-        SysCallReturnValue::from(unsafe { thread_exit(exit_code) }).into()
+    fn thread_exit(exit_code: u32) -> ! {
+        let _ = unsafe { thread_exit(exit_code) };
+        // SAFETY: `thread_exit` will never return per the contract of the syscall.
+        unsafe { core::hint::unreachable_unchecked() }
     }
 
     #[inline(always)]
@@ -214,8 +216,10 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
-    fn process_exit(exit_code: u32) -> Result<()> {
-        SysCallReturnValue::from(unsafe { process_exit(exit_code) }).into()
+    fn process_exit(exit_code: u32) -> ! {
+        let _ = unsafe { process_exit(exit_code) };
+        // SAFETY: `process_exit` will never return per the contract of the syscall.
+        unsafe { core::hint::unreachable_unchecked() }
     }
 
     #[inline(always)]

@@ -137,7 +137,8 @@ impl<K: Kernel> ProcessObject<K> {
                 ProcessState::Empty => return Err(Error::Internal),
             }
         };
-        process_ref.terminate(kernel, ExitStatus::TerminatedBySyscall)
+        process_ref.terminate(kernel, ExitStatus::TerminatedBySyscall);
+        Ok(())
     }
 
     pub fn join(&self, kernel: K) -> Result<ExitStatus> {

@@ -30,9 +30,7 @@ pub extern "C" fn test_thread_entry(_arg: usize) -> ! {
     THREAD_DONE.store(1, Ordering::SeqCst);
     info!("Test thread exiting");
 
-    let _res = syscall::thread_exit(42);
-    pw_log::error!("thread_exit FAILED!");
-    loop {}
+    syscall::thread_exit(42);
 }
 
 #[unsafe(no_mangle)]

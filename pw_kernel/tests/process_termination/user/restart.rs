@@ -102,15 +102,13 @@ fn handle_async_transact() -> ! {
     }
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
     let _ = sleep_until(SystemClock::now() + EXIT_DELAY);
-    let _ = syscall::process_exit(0);
-    loop {}
+    syscall::process_exit(0);
 }
 
 fn handle_sleep_and_exit() -> ! {
     info!("SleepAndExit received: Sleeping and then exiting");
     let _ = sleep_until(SystemClock::now() + EXIT_DELAY);
-    let _ = syscall::process_exit(0);
-    loop {}
+    syscall::process_exit(0);
 }
 
 fn handle_set_control_user_signal() {

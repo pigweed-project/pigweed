@@ -470,11 +470,11 @@ impl<K: Kernel> ProcessRef<K> {
     /// threads in the process.
     ///
     /// This is an ASYNCHRONOUS operation.
-    pub fn terminate(&self, kernel: K, status: ExitStatus) -> Result<()> {
+    pub fn terminate(&self, kernel: K, status: ExitStatus) {
         kernel
             .get_scheduler()
             .lock(kernel)
-            .process_terminate(kernel, self, status)
+            .process_terminate(kernel, self, status);
     }
 
     /// Returns the current state of the process.
