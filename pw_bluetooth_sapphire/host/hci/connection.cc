@@ -143,6 +143,7 @@ void Connection::LogDisconnectionComplete(
     pw::chrono::SystemClock::duration duration =
         self->dispatcher_.now() - *last_packet_time;
     buffer << std::chrono::duration_cast<std::chrono::milliseconds>(duration)
+                  .count()
            << " ms ago";
   } else {
     buffer << "never";
