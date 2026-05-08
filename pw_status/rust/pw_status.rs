@@ -112,6 +112,23 @@ impl<T> StatusCode for Result<T> {
     }
 }
 
+/// Convert a raw Pigweed status code into a Result.
+///
+/// # Returns
+/// If `status` is `OK` (0): `Ok(())`.
+/// If `status` is a valid [`Error`] code: `Err(Error)`.
+/// Otherwise: `Err(Error::Unknown)`.
+pub fn status_to_result(status: u32) -> Result<()> {
+    if status == OK {
+        Ok(())
+    } else {
+        match Error::try_from(status) {
+            Ok(e) => Err(e),
+            Err(_) => Err(Error::Unknown),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,5 +154,13 @@ mod tests {
         assert_eq!(Result::<()>::Err(Error::Unavailable).status_code(), 14);
         assert_eq!(Result::<()>::Err(Error::DataLoss).status_code(), 15);
         assert_eq!(Result::<()>::Err(Error::Unauthenticated).status_code(), 16);
+    }
+
+    #[test]
+    fn test_status_to_result() {
+        assert_eq!(status_to_result(0), Ok(()));
+        assert_eq!(status_to_result(1), Err(Error::Cancelled));
+        assert_eq!(status_to_result(13), Err(Error::Internal));
+        assert_eq!(status_to_result(999), Err(Error::Unknown));
     }
 }
