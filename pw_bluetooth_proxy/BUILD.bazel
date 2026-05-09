@@ -43,9 +43,35 @@ label_flag(
     build_setting_default = "//pw_build:default_module_config",
 )
 
+label_flag(
+    name = "clock_backend",
+    build_setting_default = ":system_clock_backend",
+)
+
+cc_library(
+    name = "system_clock_backend",
+    hdrs = ["public_overrides/system_clock_backend/pw_bluetooth_proxy_backend/clock.h"],
+    strip_include_prefix = "public_overrides/system_clock_backend",
+    deps = [
+        "//pw_async2:system_time_provider",
+        "//pw_chrono:system_clock",
+    ],
+)
+
 # Libraries
 
 # LINT.IfChange
+
+cc_library(
+    name = "clock",
+    hdrs = ["public/pw_bluetooth_proxy/clock.h"],
+    strip_include_prefix = "public",
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+    deps = [
+        ":clock_backend",
+        ":config",
+    ],
+)
 
 pw_bluetooth_proxy_library(
     name = "pw_bluetooth_proxy",

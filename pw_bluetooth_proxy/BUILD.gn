@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pigweed/third_party/emboss/emboss.gni")
 import("$dir_pw_bloat/bloat.gni")
+import("$dir_pw_build/facade.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_chrono/backend.gni")
@@ -29,6 +30,10 @@ declare_args() {
   # module. This should point to a source set that provides defines through a
   # public config (which may -include a file or add defines directly).
   pw_bluetooth_proxy_CONFIG = pw_build_DEFAULT_MODULE_CONFIG
+
+  # Backend for the pw_bluetooth_proxy module's clock.
+  pw_bluetooth_proxy_CLOCK_BACKEND =
+      "$dir_pw_bluetooth_proxy:system_clock_backend"
 }
 
 config("public_include_path") {
@@ -53,6 +58,30 @@ config("sync") {
 
 config("async") {
   defines = [ "PW_BLUETOOTH_PROXY_ASYNC=1" ]
+}
+
+config("system_clock_backend_include_path") {
+  include_dirs = [ "public_overrides/system_clock_backend" ]
+  visibility = [ ":*" ]
+}
+
+pw_source_set("system_clock_backend") {
+  public_configs = [ ":system_clock_backend_include_path" ]
+  public = [
+    "public_overrides/system_clock_backend/pw_bluetooth_proxy_backend/clock.h",
+  ]
+  public_deps = [
+    "$dir_pw_async2:system_time_provider",
+    "$dir_pw_chrono:system_clock",
+  ]
+}
+
+pw_facade("clock") {
+  backend = pw_bluetooth_proxy_CLOCK_BACKEND
+  public = [ "public/pw_bluetooth_proxy/clock.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [ ":config" ]
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
 }
 
 # LINT.IfChange

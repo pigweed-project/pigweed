@@ -18,7 +18,6 @@
 #include "pw_assert/check.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/future.h"
-#include "pw_async2/future_timeout.h"
 #include "pw_async2/try.h"
 #include "pw_bluetooth/emboss_util.h"
 #include "pw_bluetooth/hci_android.emb.h"
@@ -218,7 +217,7 @@ class SniffOffloadManager::ConnectionFsm final {
     async2::Poll<> DoPend(async2::Context&) override;
 
     // Wait for the specified time, overriding any previous wait.
-    void WaitFor(chrono::SystemClock::duration duration)
+    void WaitFor(Clock::duration duration)
         PW_EXCLUSIVE_LOCKS_REQUIRED(fsm_.manager_.mutex_) {
       timeout_future_ = fsm_.manager_.time_provider_.WaitFor(duration);
     }
@@ -232,7 +231,7 @@ class SniffOffloadManager::ConnectionFsm final {
 
    private:
     SniffOffloadManager::ConnectionFsm& fsm_;
-    async2::TimeFuture<chrono::SystemClock> timeout_future_
+    async2::TimeFuture<Clock> timeout_future_
         PW_GUARDED_BY(fsm_.manager_.mutex_);
   };
 
@@ -257,7 +256,7 @@ SniffOffloadManager::SniffOffloadManager(
     SendCommandFunc&& send_command,
     SendEventFunc&& send_event,
     OnErrorFunc&& on_error,
-    async2::TimeProvider<chrono::SystemClock>& time_provider)
+    async2::TimeProvider<Clock>& time_provider)
     : allocator_(allocator),
       dispatcher_(dispatcher),
       time_provider_(time_provider),
@@ -265,6 +264,18 @@ SniffOffloadManager::SniffOffloadManager(
       send_event_(std::move(send_event)),
       on_error_(std::move(on_error)),
       connections_(allocator) {}
+
+SniffOffloadManager::SniffOffloadManager(allocator::Allocator& allocator,
+                                         async2::Dispatcher& dispatcher,
+                                         SendCommandFunc&& send_command,
+                                         SendEventFunc&& send_event,
+                                         OnErrorFunc&& on_error)
+    : SniffOffloadManager(allocator,
+                          dispatcher,
+                          std::move(send_command),
+                          std::move(send_event),
+                          std::move(on_error),
+                          internal::GetDefaultTimeProvider()) {}
 
 SniffOffloadManager::~SniffOffloadManager() { Reset(); }
 
@@ -971,7 +982,7 @@ void SniffOffloadManager::ConnectionFsm::ResetTimer() {
   }
 
   timeout_task_.AssertLockHeld(*this);
-  timeout_task_.WaitFor(std::chrono::ceil<chrono::SystemClock::duration>(
+  timeout_task_.WaitFor(std::chrono::ceil<Clock::duration>(
       std::chrono::milliseconds(parameters_->link_inactivity_timeout)));
 }
 
@@ -1071,8 +1082,8 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
   while (true) {
     std::lock_guard lock(fsm_.manager_.mutex_);
     if (!timeout_future_.is_pendable() || timeout_future_.is_complete()) {
-      timeout_future_ = fsm_.manager_.time_provider_.WaitUntil(
-          chrono::SystemClock::time_point::max());
+      timeout_future_ =
+          fsm_.manager_.time_provider_.WaitUntil(Clock::time_point::max());
     }
     PW_TRY_READY(timeout_future_.Pend(cx));
     fsm_.HandleTimeout();

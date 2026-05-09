@@ -118,6 +118,17 @@ Module configuration options include:
   APIs. Configure this value to be large enough to allocate multiple RFCOMM
   packets if you are using RFCOMM.
 
+Clock Facade
+============
+This module uses a facade for time-related operations to allow overriding the
+clock implementation. By default, the facade uses :cc:`pw::chrono::SystemClock`
+and is backed by :cc:`pw::async2::GetSystemTimeProvider`.
+
+To override the backend, set the appropriate variable in your build system:
+- **GN:** ``pw_bluetooth_proxy_CLOCK_BACKEND``
+- **CMake:** ``pw_bluetooth_proxy.clock_BACKEND``
+- **Bazel:** Use the ``clock_backend`` label flag.
+
 .. _module-pw_bluetooth_proxy-reference:
 
 -------------

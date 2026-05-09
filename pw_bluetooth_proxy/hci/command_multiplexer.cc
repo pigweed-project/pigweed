@@ -43,8 +43,8 @@ CommandMultiplexer::CommandMultiplexer(
     Allocator& allocator,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
-    [[maybe_unused]] async2::TimeProvider<chrono::SystemClock>& time_provider,
-    [[maybe_unused]] chrono::SystemClock::duration command_timeout)
+    [[maybe_unused]] async2::TimeProvider<Clock>& time_provider,
+    [[maybe_unused]] Clock::duration command_timeout)
     : allocator_(allocator),
       interceptors_(allocator_),
       event_interceptors_(allocator_),
@@ -56,9 +56,20 @@ CommandMultiplexer::CommandMultiplexer(
 CommandMultiplexer::CommandMultiplexer(
     Allocator& allocator,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
+    Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn)
+    : CommandMultiplexer(
+          allocator,
+          std::move(send_to_host_fn),
+          std::move(send_to_controller_fn),
+          ::pw::bluetooth::proxy::internal::GetDefaultTimeProvider(),
+          kDefaultCommandTimeout) {}
+
+CommandMultiplexer::CommandMultiplexer(
+    Allocator& allocator,
+    Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
     [[maybe_unused]] Function<void()> timeout_fn,
-    [[maybe_unused]] chrono::SystemClock::duration command_timeout)
+    [[maybe_unused]] Clock::duration command_timeout)
     : allocator_(allocator),
       interceptors_(allocator_),
       event_interceptors_(allocator_),

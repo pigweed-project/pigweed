@@ -28,7 +28,6 @@
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth/hci_data.emb.h"
 #include "pw_bluetooth/hci_events.emb.h"
-#include "pw_chrono/system_clock.h"
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 #include "pw_sync/mutex.h"
@@ -47,7 +46,7 @@ constexpr size_t kAllocatorSize = 1024;
 constexpr size_t kInternalAllocatorSize = 512;
 constexpr auto kDefaultErrorAction = SniffOffloadManager::ErrorAction::kIgnore;
 constexpr auto kDefaultLinkInactivityTimeout = std::chrono::milliseconds(1000);
-constexpr auto kTick = chrono::SystemClock::duration(1);
+constexpr auto kTick = Clock::duration(1);
 constexpr uint16_t kConnectionHandle = 0x123;
 
 constexpr HandlerAction kPassthroughResume = {
@@ -180,7 +179,7 @@ class SniffOffloadManagerTest : public ::testing::Test {
                            SniffOffloadManager::Direction direction,
                            bool valid = true);
 
-  void AdvanceTime(chrono::SystemClock::duration duration) {
+  void AdvanceTime(Clock::duration duration) {
     time_provider_.AdvanceTime(duration);
     SyncWithDispatcher();
   }
@@ -317,7 +316,7 @@ class SniffOffloadManagerTest : public ::testing::Test {
   allocator::SynchronizedAllocator<sync::Mutex> sync_internal_allocator_{
       internal_allocator_};
   async2::DispatcherForTest dispatcher_;
-  async2::SimulatedTimeProvider<chrono::SystemClock> time_provider_;
+  async2::SimulatedTimeProvider<Clock> time_provider_;
   std::optional<SniffOffloadManager> sniff_offload_manager_;
 
   pw::DynamicDeque<MultiBuf::Instance> packets_to_host_{

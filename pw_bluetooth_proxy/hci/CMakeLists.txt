@@ -37,13 +37,17 @@ pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
   HEADERS
     public/pw_bluetooth_proxy/hci/command_multiplexer.h
     public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h
+
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_bluetooth.emboss_hci_common
+    pw_async2
+    pw_async2.time_provider
     pw_bluetooth.emboss_hci_commands
+    pw_bluetooth.emboss_hci_common
     pw_bluetooth.emboss_hci_events
     pw_bluetooth.emboss_hci_h4
+    pw_bluetooth_proxy.clock
     pw_containers.dynamic_hash_map
     pw_containers.flat_map
     pw_function
@@ -71,22 +75,21 @@ pw_add_library(pw_bluetooth_proxy.hci.sniff_offload STATIC
     pw_assert.check
     pw_async2
     pw_async2.channel
-    pw_async2.future_timeout
-    pw_async2.system_time_provider
     pw_async2.time_provider
-    pw_bluetooth_proxy.hci.types
     pw_bluetooth.emboss_hci_android
     pw_bluetooth.emboss_hci_commands
     pw_bluetooth.emboss_hci_common
     pw_bluetooth.emboss_hci_data
     pw_bluetooth.emboss_hci_events
     pw_bluetooth.emboss_util
-    pw_chrono.system_clock
+    pw_bluetooth_proxy.clock
+    pw_bluetooth_proxy.hci.types
     pw_containers.dynamic_map
     pw_function
     pw_multibuf.v2.multibuf
     pw_sync.lock_annotations
     pw_sync.mutex
+
   SOURCES
     sniff_offload_manager.cc
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
@@ -116,7 +119,7 @@ pw_add_test(pw_bluetooth_proxy.hci.sniff_offload_manager_test
     pw_async2
     pw_async2.simulated_time_provider
     pw_async2.testing
-    pw_chrono.system_clock
+    pw_bluetooth_proxy.clock
     pw_function
     pw_thread.sleep
     pw_thread.test_thread_context

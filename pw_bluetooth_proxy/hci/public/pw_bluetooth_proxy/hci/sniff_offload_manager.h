@@ -20,9 +20,9 @@
 #include "pw_allocator/allocator.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher.h"
-#include "pw_async2/system_time_provider.h"
 #include "pw_async2/time_provider.h"
 #include "pw_bluetooth/hci_common.emb.h"
+#include "pw_bluetooth_proxy/clock.h"
 #include "pw_bluetooth_proxy/hci/types.h"
 #include "pw_containers/dynamic_map.h"
 #include "pw_function/function.h"
@@ -132,9 +132,14 @@ class SniffOffloadManager final {
                       async2::Dispatcher& dispatcher,
                       SendCommandFunc&& send_command,
                       SendEventFunc&& send_event,
-                      OnErrorFunc&& on_error = nullptr,
-                      async2::TimeProvider<chrono::SystemClock>& time_provider =
-                          async2::GetSystemTimeProvider());
+                      OnErrorFunc&& on_error,
+                      async2::TimeProvider<Clock>& time_provider);
+
+  SniffOffloadManager(allocator::Allocator& allocator,
+                      async2::Dispatcher& dispatcher,
+                      SendCommandFunc&& send_command,
+                      SendEventFunc&& send_event,
+                      OnErrorFunc&& on_error = nullptr);
 
   ~SniffOffloadManager();
 
@@ -258,7 +263,7 @@ class SniffOffloadManager final {
 
   // Async members.
   async2::Dispatcher& dispatcher_;
-  async2::TimeProvider<chrono::SystemClock>& time_provider_;
+  async2::TimeProvider<Clock>& time_provider_;
 
   // Injected functions.
   const SendCommandFunc send_command_;

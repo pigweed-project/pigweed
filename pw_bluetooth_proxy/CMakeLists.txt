@@ -15,6 +15,7 @@
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_thread/backend.cmake)
 include($ENV{PW_ROOT}/third_party/emboss/emboss.cmake)
+include($ENV{PW_ROOT}/pw_bluetooth_proxy/backend.cmake)
 
 add_subdirectory(hci)
 
@@ -39,8 +40,27 @@ pw_add_library(pw_bluetooth_proxy.config INTERFACE
     public/pw_bluetooth_proxy/config.h
   PUBLIC_INCLUDES
     public
+)
+
+pw_add_library(pw_bluetooth_proxy.system_clock_backend INTERFACE
+  HEADERS
+    public_overrides/system_clock_backend/pw_bluetooth_proxy_backend/clock.h
+  PUBLIC_INCLUDES
+    public_overrides/system_clock_backend
   PUBLIC_DEPS
-    ${pw_bluetooth_proxy_CONFIG}
+    pw_chrono.system_clock
+    pw_async2.system_time_provider
+)
+
+pw_add_facade(pw_bluetooth_proxy.clock INTERFACE
+  BACKEND
+    pw_bluetooth_proxy.clock_BACKEND
+  HEADERS
+    public/pw_bluetooth_proxy/clock.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_bluetooth_proxy.config
 )
 
 # LINT.IfChange

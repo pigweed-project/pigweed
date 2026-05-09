@@ -20,9 +20,8 @@
 #include "pw_async2/time_provider.h"
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth/hci_events.emb.h"
+#include "pw_bluetooth_proxy/clock.h"
 #include "pw_bluetooth_proxy/hci/internal/type_safe_ids.h"
-#include "pw_chrono/system_clock.h"
-#include "pw_chrono/system_timer.h"
 #include "pw_containers/dynamic_hash_map.h"
 #include "pw_containers/dynamic_queue.h"
 #include "pw_function/function.h"
@@ -120,7 +119,7 @@ class CommandStatusOpcode {
 
 class CommandMultiplexer final {
  public:
-  static constexpr chrono::SystemClock::duration kDefaultCommandTimeout =
+  static constexpr Clock::duration kDefaultCommandTimeout =
       std::chrono::seconds(30);
 
   using InterceptorId = Identifier<uint16_t>;
@@ -241,8 +240,22 @@ class CommandMultiplexer final {
       Allocator& allocator,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
-      async2::TimeProvider<chrono::SystemClock>& time_provider,
-      chrono::SystemClock::duration command_timeout = kDefaultCommandTimeout);
+      async2::TimeProvider<Clock>& time_provider,
+      Clock::duration command_timeout = kDefaultCommandTimeout);
+
+  /// Creates a `CommandMultiplexer` that will process HCI command and event
+  /// packets.
+  /// @param[in] allocator - The allocator to use for buffers and internal data
+  /// structures.
+  /// @param[in] send_to_host_fn - Callback that will be called when proxy wants
+  /// to send H4 HCI event packets towards the host. All unhandled events will
+  /// be forwarded to the host, so this is also the default event handler.
+  /// @param[in] send_to_controller_fn - Callback that will be called when
+  /// proxy wants to send H4 HCI command packets towards the controller.
+  CommandMultiplexer(
+      Allocator& allocator,
+      Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
+      Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn);
 
   /// This constructor will use chrono::SystemTimer for command timeouts.
   /// Prefer to use the other constructor with async2::TimeProvider if possible.
@@ -257,7 +270,7 @@ class CommandMultiplexer final {
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
       Function<void()> timeout_fn,
-      chrono::SystemClock::duration command_timeout = kDefaultCommandTimeout);
+      Clock::duration command_timeout = kDefaultCommandTimeout);
 
   ~CommandMultiplexer();
 

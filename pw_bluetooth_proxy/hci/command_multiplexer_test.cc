@@ -24,7 +24,6 @@
 #include "pw_async2/func_task.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_bluetooth/hci_h4.emb.h"
-#include "pw_chrono/system_clock.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_status/try.h"
@@ -128,7 +127,7 @@ TEST(IdentifierTest, UniqueIdentifier) {
 
 class CommandMultiplexerTest : public ::testing::Test {
  public:
-  static constexpr chrono::SystemClock::duration kTestTimeoutDuration =
+  static constexpr Clock::duration kTestTimeoutDuration =
       std::chrono::milliseconds(2);
 
   // Because we want to test both kinds of CommandMultiplexer (async vs cb),
@@ -273,7 +272,7 @@ class CommandMultiplexerTest : public ::testing::Test {
   }
 
   async2::DispatcherForTest dispatcher_{};
-  async2::SimulatedTimeProvider<chrono::SystemClock> time_provider_{};
+  async2::SimulatedTimeProvider<Clock> time_provider_{};
   pw::allocator::test::AllocatorForTest<kAllocatorSize> allocator_{};
 
   pw::DynamicDeque<MultiBuf::Instance> packets_to_host_{allocator_};
