@@ -37,7 +37,8 @@ from pw_presubmit import (
     Programs,
     PresubmitContext,
 )
-from pw_presubmit.build import GnGenNinja, gn_args
+from pw_presubmit.build import gn_args
+from pw_presubmit.build_with_pw_package import GnGenNinja
 import pw_presubmit.pigweed_presubmit
 from pw_presubmit.presubmit_context import (
     get_check_traces,

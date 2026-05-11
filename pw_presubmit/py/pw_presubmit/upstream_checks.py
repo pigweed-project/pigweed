@@ -406,7 +406,8 @@ def _get_comment_style(path: Path) -> str | None:
 
 def _generate_notice(comment_style: str) -> str:
     year = datetime.date.today().year
-    return f"""{comment_style} Copyright {year} The Pigweed Authors
+    # pylint: disable=line-too-long
+    notice = f"""{comment_style} Copyright {year} The Pigweed Authors
 {comment_style}
 {comment_style} Licensed under the Apache License, Version 2.0 (the "License"); you may not
 {comment_style} use this file except in compliance with the License. You may obtain a copy of
@@ -420,6 +421,8 @@ def _generate_notice(comment_style: str) -> str:
 {comment_style} License for the specific language governing permissions and limitations under
 {comment_style} the License.
 """
+    # pylint: enable=line-too-long
+    return notice
 
 
 def _detect_copyright_typos(lines: Sequence[str], comment_style: str) -> bool:

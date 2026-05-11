@@ -34,10 +34,8 @@ pw_py_library(
         "pw_build/bazel_mod.py",
         "pw_build/bazel_query.py",
         "pw_build/bazel_to_gn.py",
-        "pw_build/build_recipe.py",
         "pw_build/collect_wheels.py",
         "pw_build/copy_and_patch.py",
-        "pw_build/copy_from_cipd.py",
         "pw_build/create_gn_venv.py",
         "pw_build/create_python_tree.py",
         "pw_build/error.py",
@@ -72,16 +70,23 @@ pw_py_library(
         "pw_build/zephyr_default_prj.conf",
     ],
     imports = ["."],
-    # TODO: b/433321728 - Imports private parts of pw_env_setup.
-    tags = [
-        "nomypy",
-        "nopylint",
-    ],
     deps = [
         "//pw_cli/py:pw_cli",
         "//pw_config_loader/py:pw_config_loader",
+        "@pigweed_python_packages//jsonschema",
         "@pigweed_python_packages//patch",
+        "@pigweed_python_packages//pyyaml",
+        "@pigweed_python_packages//setuptools",
         "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_library(
+    name = "copy_from_cipd",
+    srcs = ["pw_build/copy_from_cipd.py"],
+    imports = ["."],
+    deps = [
+        "//pw_env_setup/py:pw_env_setup_private",
     ],
 )
 
@@ -133,6 +138,7 @@ pw_py_library(
 pw_py_library(
     name = "pw_project_builder",
     srcs = [
+        "pw_build/build_recipe.py",
         "pw_build/project_builder.py",
         "pw_build/project_builder_argparse.py",
         "pw_build/project_builder_context.py",

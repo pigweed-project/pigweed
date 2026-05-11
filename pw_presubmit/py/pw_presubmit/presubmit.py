@@ -63,7 +63,6 @@ import pw_cli.env
 from pw_cli.plural import plural
 from pw_cli.file_filter import FileFilter
 from pw_cli.git_repo import collect_files
-from pw_package import package_manager
 from pw_presubmit import git_repo, tools
 from pw_presubmit.private.check import (  # pylint: disable=unused-import
     Program,
@@ -572,32 +571,3 @@ def call(
 
     if process.returncode:
         raise PresubmitFailure
-
-
-def install_package(
-    ctx: PresubmitContext,
-    name: str,
-    force: bool = False,
-) -> None:
-    """Install package with given name in given path."""
-    root = ctx.package_root
-    mgr = package_manager.PackageManager(root)
-
-    ctx.append_check_command(
-        'pw',
-        'package',
-        'install',
-        name,
-        call_annotation={'pw_package_install': name},
-    )
-    if ctx.dry_run:
-        return
-
-    if not mgr.list():
-        raise PresubmitFailure(
-            'no packages configured, please import your pw_package '
-            'configuration module'
-        )
-
-    if not mgr.status(name) or force:
-        mgr.install(name, force=force)

@@ -51,14 +51,9 @@ pw_py_library(
         "pw_package/pigweed_packages.py",
     ],
     imports = ["."],
-    # TODO: b/433321728 - Imports private parts of pw_env_setup.
-    tags = [
-        "nomypy",
-        "nopylint",
-    ],
     deps = [
         "//pw_arduino_build/py:pw_arduino_build",
-        "//pw_env_setup/py:pw_env_setup",
+        "//pw_env_setup/py:pw_env_setup_private",
         "//pw_stm32cube_build/py:pw_stm32cube_build",
     ],
 )

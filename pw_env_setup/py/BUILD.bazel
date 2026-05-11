@@ -129,7 +129,13 @@ pw_py_library(
     # happens in Bazel, though.
     tags = ["nomypy"],
     # Nobody in the Bazel ecosystem should ever use these parts of pw_env_setup.
-    visibility = ["//docs/sphinx:__pkg__"],
+    visibility = [
+        "//docs/sphinx:__pkg__",
+        "//pw_build/py:__pkg__",
+        "//pw_doctor/py:__pkg__",
+        "//pw_package/py:__pkg__",
+        "//pw_presubmit/py:__pkg__",
+    ],
     deps = [
         "@pigweed_python_packages//setuptools",  # For import pkg_resources
         "@pigweed_python_packages//six",

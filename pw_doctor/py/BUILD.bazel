@@ -25,13 +25,8 @@ pw_py_library(
         "pw_doctor/doctor.py",
     ],
     imports = ["."],
-    # TODO: b/433321728 - Imports private parts of pw_env_setup.
-    tags = [
-        "nomypy",
-        "nopylint",
-    ],
     deps = [
         "//pw_cli/py:pw_cli",
-        "//pw_env_setup/py:pw_env_setup",
+        "//pw_env_setup/py:pw_env_setup_private",
     ],
 )

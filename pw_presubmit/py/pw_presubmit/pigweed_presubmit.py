@@ -30,6 +30,15 @@ from typing import Callable, Pattern, Sequence
 
 import pw_package.pigweed_packages
 from pw_cli.file_filter import FileFilter
+from pw_env_setup import python_packages
+from pw_presubmit.private.check import Check
+from pw_presubmit.build_with_pw_package import GnGenNinja, install_package
+from pw_presubmit.private.build_common import (
+    CoverageOptions,
+    CommonCoverageOptions,
+    CodeSearchCoverageOptions,
+    GerritCoverageOptions,
+)
 
 from pw_presubmit import (
     bazel_checks,
@@ -72,7 +81,7 @@ def _at_all_optimization_levels(target):
         yield f'{target}_{level}'
 
 
-class PigweedGnGenNinja(build.GnGenNinja):  # pylint: disable=abstract-method
+class PigweedGnGenNinja(GnGenNinja):  # pylint: disable=abstract-method
     """Add Pigweed-specific defaults to GnGenNinja."""
 
     def add_default_gn_args(self, args):
@@ -244,8 +253,8 @@ coverage = PigweedGnGenNinja(
     path_filter=upstream_checks.BUILD_FILE_FILTER,
     packages=('boringssl', 'emboss', 'googletest'),
     ninja_targets=('coverage',),
-    coverage_options=build.CoverageOptions(
-        common=build.CommonCoverageOptions(
+    coverage_options=CoverageOptions(
+        common=CommonCoverageOptions(
             target_bucket_project='pigweed',
             target_bucket_root='gs://ng3-metrics/ng3-pigweed-coverage',
             trace_type='LLVM',
@@ -253,7 +262,7 @@ coverage = PigweedGnGenNinja(
             bug_component='503634',
         ),
         codesearch=(
-            build.CodeSearchCoverageOptions(
+            CodeSearchCoverageOptions(
                 host='pigweed-internal',
                 project='codesearch',
                 add_prefix='pigweed',
@@ -261,7 +270,7 @@ coverage = PigweedGnGenNinja(
                 source='infra:main',
             ),
         ),
-        gerrit=build.GerritCoverageOptions(
+        gerrit=GerritCoverageOptions(
             project='pigweed/pigweed',
         ),
     ),
@@ -559,7 +568,7 @@ def _env_with_zephyr_vars(ctx: PresubmitContext) -> dict:
 def zephyr_build(ctx: PresubmitContext) -> None:
     """Run Zephyr compatible tests"""
     # Install the Zephyr package
-    build.install_package(ctx, 'zephyr')
+    install_package(ctx, 'zephyr')
     # Configure the environment
     env = _env_with_zephyr_vars(ctx)
     sysroot_dir = Path(
@@ -649,13 +658,13 @@ def docs_build(ctx: PresubmitContext) -> None:
             'Please run with: "pw presubmit --step"'
         )
 
-    build.install_package(ctx, 'emboss')
-    build.install_package(ctx, 'boringssl')
-    build.install_package(ctx, 'freertos')
-    build.install_package(ctx, 'nanopb')
-    build.install_package(ctx, 'pico_sdk')
-    build.install_package(ctx, 'pigweed_examples_repo')
-    build.install_package(ctx, 'stm32cube_f4')
+    install_package(ctx, 'emboss')
+    install_package(ctx, 'boringssl')
+    install_package(ctx, 'freertos')
+    install_package(ctx, 'nanopb')
+    install_package(ctx, 'pico_sdk')
+    install_package(ctx, 'pigweed_examples_repo')
+    install_package(ctx, 'stm32cube_f4')
     emboss_dir = ctx.package_root / 'emboss'
     boringssl_dir = ctx.package_root / 'boringssl'
     pico_sdk_dir = ctx.package_root / 'pico_sdk'
@@ -780,9 +789,9 @@ def docs_build(ctx: PresubmitContext) -> None:
 
 
 def _run_cmake(ctx: PresubmitContext, toolchain='host_clang') -> None:
-    build.install_package(ctx, 'emboss')
-    build.install_package(ctx, 'flatbuffers')
-    build.install_package(ctx, 'nanopb')
+    install_package(ctx, 'emboss')
+    install_package(ctx, 'flatbuffers')
+    install_package(ctx, 'nanopb')
 
     env = None
     if 'clang' in toolchain:
@@ -1216,9 +1225,48 @@ _LINTFORMAT = upstream_programs.QUICK_COMMON + (
     javascript_checks.eslint if shutil.which('npm') else (),
 )
 
+
+@Check
+def check_python_versions(ctx: PresubmitContext):
+    """Checks that the list of installed packages is as expected."""
+
+    build.gn_gen(ctx)
+    constraint_file: str | None = None
+    requirement_file: str | None = None
+    try:
+        for arg in build.get_gn_args(ctx.output_dir):
+            if arg['name'] == 'pw_build_PIP_CONSTRAINTS':
+                constraint_file = json.loads(arg['current']['value'])[0].strip(
+                    '/'
+                )
+            if arg['name'] == 'pw_build_PIP_REQUIREMENTS':
+                requirement_file = json.loads(arg['current']['value'])[0].strip(
+                    '/'
+                )
+    except json.JSONDecodeError:
+        _LOG.warning('failed to parse GN args json')
+        return
+
+    if not constraint_file:
+        _LOG.warning('could not find pw_build_PIP_CONSTRAINTS GN arg')
+        return
+    ignored_requirements_arg = None
+    if requirement_file:
+        ignored_requirements_arg = [(ctx.root / requirement_file)]
+
+    if (
+        python_packages.diff(
+            expected=(ctx.root / constraint_file),
+            ignore_requirements_file=ignored_requirements_arg,
+        )
+        != 0
+    ):
+        raise PresubmitFailure
+
+
 LINTFORMAT = (
     _LINTFORMAT,
-    python_checks.check_python_versions,
+    check_python_versions,
 )
 
 QUICK = (

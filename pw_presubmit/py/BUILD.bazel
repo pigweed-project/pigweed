@@ -64,6 +64,7 @@ pw_py_library(
         "pw_presubmit/owners_checks.py",
         "pw_presubmit/presubmit.py",
         "pw_presubmit/presubmit_context.py",
+        "pw_presubmit/private/build_common.py",
         "pw_presubmit/private/orchestrator.py",
         "pw_presubmit/private/v2_cli.py",
         "pw_presubmit/pw_internal_namespace.py",
@@ -77,20 +78,43 @@ pw_py_library(
         "pw_presubmit/v2.py",
     ],
     imports = ["."],
-    # TODO: b/433321728 - Imports private parts of pw_env_setup.
-    tags = [
-        "nomypy",
-        "nopylint",
-    ],
     deps = [
         ":core",
         ":format_core",
         "//pw_build/py:pw_build",
+        "//pw_build/py:pw_project_builder",
         "//pw_cli/py",
         "//pw_config_loader/py:pw_config_loader",
         "//pw_env_setup/py:pw_env_setup",
-        "//pw_package/py:pw_package",
         "@rules_python//python/runfiles",
+    ],
+)
+
+# Use a separate library to isolate the pw_package and transitive
+# pw_env_setup_private deps, which are not supported in the Bazel build.
+pw_py_library(
+    name = "build_with_pw_package",
+    srcs = ["pw_presubmit/build_with_pw_package.py"],
+    imports = ["."],
+    deps = [
+        ":pw_presubmit",
+        "//pw_package/py:pw_package",
+    ],
+)
+
+pw_py_library(
+    name = "pigweed_presubmit",
+    srcs = ["pw_presubmit/pigweed_presubmit.py"],
+    imports = ["."],
+    visibility = ["//pw_build/py:__pkg__"],
+    deps = [
+        ":build_with_pw_package",
+        ":core",
+        ":pw_presubmit",
+        ":upstream_programs",
+        "//pw_cli/py",
+        "//pw_env_setup/py:pw_env_setup_private",
+        "//pw_package/py:pw_package",
     ],
 )
 
@@ -102,19 +126,6 @@ pw_py_library(
     deps = [
         ":formatters",
         ":pw_presubmit",
-    ],
-)
-
-pw_py_library(
-    name = "pigweed_presubmit",
-    srcs = ["pw_presubmit/pigweed_presubmit.py"],
-    imports = ["."],
-    visibility = ["//pw_build/py:__pkg__"],
-    deps = [
-        ":pw_presubmit",
-        ":upstream_programs",
-        "//pw_cli/py",
-        "//pw_package/py:pw_package",
     ],
 )
 

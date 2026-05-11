@@ -17,7 +17,6 @@ These checks assume that they are running in a preconfigured Python environment.
 """
 
 import difflib
-import json
 import logging
 from pathlib import Path
 import platform
@@ -28,14 +27,11 @@ from tempfile import TemporaryDirectory
 import venv
 
 from pw_cli.diff import colorize_diff_line
-from pw_cli.file_filter import FileFilter
-from pw_env_setup import python_packages
 
 from pw_presubmit.presubmit import (
     call,
     filter_paths,
 )
-from pw_presubmit.private.check import Check
 from pw_presubmit.private.result import PresubmitFailure
 from pw_presubmit.git_repo import LoggingGitRepo
 from pw_presubmit.presubmit_context import PresubmitContext
@@ -58,11 +54,11 @@ _PYTHON_IS_3_9_OR_HIGHER = sys.version_info >= (
 )
 
 
-gn_python_check = build.GnGenNinja(
-    name='gn_python_check',
-    path_filter=FileFilter(endswith=_PYTHON_EXTENSIONS),
-    ninja_targets=('python.tests', 'python.lint'),
-)
+@filter_paths(endswith=_PYTHON_EXTENSIONS)
+def gn_python_check(ctx: PresubmitContext):
+    """Runs gn gen and ninja for Python tests and lint."""
+    build.gn_gen(ctx)
+    build.ninja(ctx, 'python.tests', 'python.lint')
 
 
 def _transform_lcov_file_paths(lcov_file: Path, repo_root: Path) -> str:
@@ -661,41 +657,3 @@ def diff_upstream_python_constraints(ctx: PresubmitContext) -> None:
 def gn_python_lint(ctx: PresubmitContext) -> None:
     build.gn_gen(ctx)
     build.ninja(ctx, 'python.lint')
-
-
-@Check
-def check_python_versions(ctx: PresubmitContext):
-    """Checks that the list of installed packages is as expected."""
-
-    build.gn_gen(ctx)
-    constraint_file: str | None = None
-    requirement_file: str | None = None
-    try:
-        for arg in build.get_gn_args(ctx.output_dir):
-            if arg['name'] == 'pw_build_PIP_CONSTRAINTS':
-                constraint_file = json.loads(arg['current']['value'])[0].strip(
-                    '/'
-                )
-            if arg['name'] == 'pw_build_PIP_REQUIREMENTS':
-                requirement_file = json.loads(arg['current']['value'])[0].strip(
-                    '/'
-                )
-    except json.JSONDecodeError:
-        _LOG.warning('failed to parse GN args json')
-        return
-
-    if not constraint_file:
-        _LOG.warning('could not find pw_build_PIP_CONSTRAINTS GN arg')
-        return
-    ignored_requirements_arg = None
-    if requirement_file:
-        ignored_requirements_arg = [(ctx.root / requirement_file)]
-
-    if (
-        python_packages.diff(
-            expected=(ctx.root / constraint_file),
-            ignore_requirements_file=ignored_requirements_arg,
-        )
-        != 0
-    ):
-        raise PresubmitFailure
