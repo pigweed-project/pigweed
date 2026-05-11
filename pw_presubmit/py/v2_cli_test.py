@@ -36,17 +36,20 @@ class Step2(Step):
 class V2CliTest(unittest.TestCase):
     """Tests for v2 CLI argument parsing and processing."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.step1 = Step1()
         self.step2 = Step2()
-        self.programs = {
+        self.programs: dict[str, list[Step]] = {
             "prog1": [self.step1],
             "prog2": [self.step2],
         }
 
-    def test_add_arguments(self):
+    def test_add_arguments(self) -> None:
         parser = argparse.ArgumentParser()
-        programs = {'prog1': [self.step1], 'prog2': [self.step2]}
+        programs: dict[str, list[Step]] = {
+            'prog1': [self.step1],
+            'prog2': [self.step2],
+        }
         v2_cli.add_arguments(parser, programs)
 
         args = parser.parse_args(
@@ -58,7 +61,7 @@ class V2CliTest(unittest.TestCase):
 
     @mock.patch('pw_presubmit.git_repo.find_git_repo')
     @mock.patch('pw_presubmit.private.orchestrator.run')
-    def test_main(self, mock_run, mock_find_git_repo):
+    def test_main(self, mock_run, mock_find_git_repo) -> None:
         mock_run.return_value = mock.Mock(success=True)
         mock_repo = mock.Mock()
         mock_repo.root.return_value = Path('/mock/root')
@@ -70,7 +73,7 @@ class V2CliTest(unittest.TestCase):
         mock_run.assert_called_once()
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_default_program(self, mock_main):
+    def test_default_program(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -83,7 +86,7 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['steps'], self.programs['prog1'])
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_program_override(self, mock_main):
+    def test_program_override(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -98,7 +101,7 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['steps'], self.programs['prog2'])
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_step_override(self, mock_main):
+    def test_step_override(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -113,7 +116,7 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['steps'], [self.step1])
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_multiple_steps(self, mock_main):
+    def test_multiple_steps(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -135,7 +138,7 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['steps'], [self.step1, self.step2])
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_mode_override(self, mock_main):
+    def test_mode_override(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -149,7 +152,7 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['mode'], orchestrator.Mode.FIX)
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
-    def test_ui_override(self, mock_main):
+    def test_ui_override(self, mock_main) -> None:
         mock_main.return_value = 0
 
         v2_cli.main(
@@ -162,11 +165,11 @@ class V2CliTest(unittest.TestCase):
         kwargs = mock_main.call_args.kwargs
         self.assertEqual(kwargs['ui'], 'minimal')
 
-    def test_no_program_or_step_fails(self):
+    def test_no_program_or_step_fails(self) -> None:
         with self.assertRaises(SystemExit):
             v2_cli.main(self.programs, argv=["--output-dir", "out"])
 
-    def test_mutually_exclusive_fails(self):
+    def test_mutually_exclusive_fails(self) -> None:
         with self.assertRaises(SystemExit):
             v2_cli.main(
                 self.programs,
@@ -180,7 +183,12 @@ class V2CliTest(unittest.TestCase):
                 ],
             )
 
-    def test_unknown_step_fails(self):
+    def test_parse_args_list_steps_exits(self) -> None:
+        with self.assertRaises(SystemExit) as cm:
+            v2_cli.main(self.programs, argv=['--list-steps'])
+        self.assertEqual(cm.exception.code, 0)
+
+    def test_unknown_step_fails(self) -> None:
         with self.assertRaises(SystemExit):
             v2_cli.main(
                 self.programs,
@@ -193,7 +201,7 @@ class V2CliTest(unittest.TestCase):
         new_callable=mock.mock_open,
         read_data='{"event_handler": "minimal"}',
     )
-    def test_resume(self, _mock_open, mock_resume):
+    def test_resume(self, _mock_open, mock_resume) -> None:
         mock_resume.return_value = True
 
         result = v2_cli.main(
@@ -213,7 +221,7 @@ class V2CliTest(unittest.TestCase):
         new_callable=mock.mock_open,
         read_data='invalid json',
     )
-    def test_resume_invalid_json(self, mock_open):
+    def test_resume_invalid_json(self, mock_open) -> None:
         result = v2_cli.main(
             self.programs, argv=['--resume', 'path/to/resume.json']
         )

@@ -75,6 +75,23 @@ def add_arguments(
         type=resolve_step,
         help='Specific presubmit steps to run.',
     )
+
+    def list_steps() -> None:
+        """List all available presubmit steps and their docstrings."""
+
+        for step in sorted(all_steps.values(), key=lambda x: x.name):
+            print(step.name)
+            if step.__doc__:
+                first = step.__doc__.split('\n', 1)[0]
+                print(f'  {first.strip()}')
+
+    group.add_argument(
+        '--list-steps',
+        action='store_const',
+        const=list_steps,
+        default=None,
+        help='List all the available steps.',
+    )
     parser.add_argument(
         '--output-dir',
         type=Path,
@@ -149,6 +166,10 @@ def _parse_args(
 
     pw_cli.log.install(level=getattr(logging, args.loglevel.upper()))
 
+    if args.list_steps:
+        args.list_steps()
+        sys.exit(0)
+
     # Ensure program and steps are set as needed.
     if args.program:
         args.steps = programs[args.program]
@@ -160,6 +181,7 @@ def _parse_args(
         args.steps = programs[default_program]
 
     del args.loglevel  # Clean up attributes not needed by _main
+    del args.list_steps
     return args
 
 
