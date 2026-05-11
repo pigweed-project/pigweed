@@ -116,6 +116,7 @@ pw_python_package("py") {
     "bazel_to_gn_test.py",
     "build_recipe_test.py",
     "create_python_tree_test.py",
+    "error_test.py",
     "file_prefix_map_test.py",
     "generate_cc_blob_library_test.py",
     "generated_tests_test.py",

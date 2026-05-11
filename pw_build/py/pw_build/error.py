@@ -17,6 +17,7 @@ import argparse
 import logging
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -26,6 +27,14 @@ except ImportError:
     from logging import basicConfig as setup_logging  # type: ignore
 
 _LOG = logging.getLogger(__name__)
+
+_GN_FALLBACK_PATHS = (
+    # Pigweed puts the binary here, relative to the root directory.
+    'environment/cipd/packages/pigweed',
+    # Fuchsia uses these paths, relative to the root directory.
+    'prebuilt/third_party/gn/linux-x64',
+    'prebuilt/third_party/gn/linux-arm64',
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -53,15 +62,28 @@ def main(message: str, target: str, root: Path, out: Path) -> int:
 
     _LOG.error('')
 
-    gn_cmd = subprocess.run(
-        ['gn', 'path', f'--root={root}', out, '//:default', target],
-        capture_output=True,
-    )
-    path_info = gn_cmd.stdout.decode(errors='replace').rstrip()
+    gn = shutil.which('gn')
+    if gn is None:
+        search_path = ':'.join(str(root / path) for path in _GN_FALLBACK_PATHS)
+        gn = shutil.which('gn', path=search_path)
+
+    gn_cmd = None
+    path_info = None
+    if gn:
+        gn_cmd = subprocess.run(
+            [gn, 'path', f'--root={root}', out, '//:default', target],
+            capture_output=True,
+        )
+        path_info = gn_cmd.stdout.decode(errors='replace').rstrip()
 
     relative_out = os.path.relpath(out, root)
 
-    if gn_cmd.returncode == 0 and 'No non-data paths found' not in path_info:
+    if (
+        gn_cmd
+        and path_info
+        and gn_cmd.returncode == 0
+        and 'No non-data paths found' not in path_info
+    ):
         _LOG.error('Dependency path to this target:')
         _LOG.error('')
         _LOG.error(

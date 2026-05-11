@@ -335,6 +335,17 @@ pw_py_test(
 )
 
 pw_py_test(
+    name = "error_test",
+    size = "small",
+    srcs = [
+        "error_test.py",
+    ],
+    deps = [
+        ":pw_build",
+    ],
+)
+
+pw_py_test(
     name = "file_prefix_map_test",
     size = "small",
     srcs = [
