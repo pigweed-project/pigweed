@@ -856,12 +856,6 @@ def _create_module(
     project_root = _project_root()
     is_upstream = _is_upstream()
 
-    if not is_upstream:
-        _LOG.error(
-            '`pw module create` is experimental and does '
-            'not yet support downstream projects.'
-        )
-
     config_or_errors = _ModuleConfig.load()
     if isinstance(config_or_errors, _ConfigErrors):
         for error in config_or_errors:
