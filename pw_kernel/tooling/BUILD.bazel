@@ -46,6 +46,7 @@ rust_binary(
 pw_py_binary(
     name = "qemu_runner",
     srcs = ["qemu_runner.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//pw_tokenizer/py:detokenize",
         "@qemu//:qemu-system-arm-runfiles",
@@ -58,6 +59,7 @@ platform_data(
     name = "qemu",
     platform = "@bazel_tools//tools:host_platform",
     target = ":qemu_runner",
+    visibility = ["//visibility:public"],
 )
 
 platform_data(

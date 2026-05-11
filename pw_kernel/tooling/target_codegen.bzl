@@ -100,6 +100,7 @@ def target_codegen(
     """
 
     codegen_target_name = name + "_codegen"
+    crate_name = kwargs.pop("crate_name", None)
 
     # The codegen target should only ever be built as a dependency
     # and never as part of a wildcard build, as it won't have the full
@@ -124,6 +125,7 @@ def target_codegen(
         name = name,
         srcs = [":" + codegen_target_name],
         edition = "2024",
+        crate_name = crate_name,
         crate_features = select({
             "@pigweed//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
             "//conditions:default": [],

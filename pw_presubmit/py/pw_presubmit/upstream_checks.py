@@ -68,6 +68,9 @@ SOURCE_FILES_FILTER_BAZEL_EXCLUDE = FileFilter(
         # keep-sorted: start
         r'\.agents/skills/docs/tests/',
         r'\bpw_docgen/py/tests/',
+        # TODO: https://pwbug.dev/512125492 - Remove once this is no longer a
+        # false positive.
+        r'\bpw_kernel/examples/adventure/.*\.py',
         # keep-sorted: end
     ),
 )

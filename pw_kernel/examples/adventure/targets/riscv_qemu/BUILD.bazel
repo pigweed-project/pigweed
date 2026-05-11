@@ -1,0 +1,85 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
+load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+TARGET_COMPATIBLE_WITH = select({
+    "//conditions:default": [],
+})
+
+# Shared standalone QEMU RISC-V Platform
+platform(
+    name = "qemu_virt_riscv32",
+    constraint_values = [
+        "@pigweed//pw_build/constraints/riscv/extensions:I",
+        "@pigweed//pw_build/constraints/riscv/extensions:M",
+        "@pigweed//pw_build/constraints/riscv/extensions:C",
+        "@pigweed//pw_build/constraints/riscv/extensions:A",
+        "@pigweed//pw_build/constraints/rust:no_std",
+        "@platforms//cpu:riscv32",
+        "@platforms//os:none",
+    ],
+    flags = flags_from_dict(
+        KERNEL_DEVICE_COMMON_FLAGS | {
+            "@pigweed//pw_kernel/config:kernel_config": ":config",
+            "@pigweed//pw_kernel/kernel:tracing": "false",
+            "@pigweed//pw_kernel/subsys/console:console_backend": "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
+        },
+    ),
+)
+
+# Expose shared kernel runner entry point source file
+filegroup(
+    name = "target_src",
+    srcs = ["target.rs"],
+)
+
+# Expose shared bare-metal linker script template
+filegroup(
+    name = "linker_script_template",
+    srcs = ["target.ld.jinja"],
+)
+
+# Shared bare-metal bootstrap entry library
+rust_library(
+    name = "entry",
+    srcs = ["entry.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@rust_crates//:riscv-rt",
+    ],
+)
+
+# Shared target platform memory configuration
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_name = "kernel_config",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@pigweed//pw_kernel/config:kernel_config_interface",
+        "@pigweed//pw_kernel/drivers/uart:kernel_uart",
+        "@pigweed//pw_kernel/lib/memory_config",
+    ],
+)

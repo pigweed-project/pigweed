@@ -294,8 +294,8 @@ fn test_own_user_signal_preserved_on_terminate(reply: &mut [u8]) -> Result<()> {
     Ok(())
 }
 
-/// Tests that an object's peer's USER signal is cleared on process termination
-/// and restart.
+/// Tests that an object's peer's USER signal is cleared on process termination and
+/// restart.
 fn test_peer_user_signal_cleared_on_terminate(reply: &mut [u8]) -> Result<()> {
     info!("📋 Process termination resets peer's USER signals to false");
 

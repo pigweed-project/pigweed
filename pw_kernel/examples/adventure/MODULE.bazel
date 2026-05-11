@@ -1,0 +1,65 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+module(
+    name = "adventure",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "pigweed")
+local_path_override(
+    module_name = "pigweed",
+    path = "../../..",
+)
+
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# Adds support for riscv32imac.  Merged into rules_rust and will be part of the
+# 0.70.1 release.
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 1,
+    patches = [
+        "//bazel:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
+    ],
+)
+
+pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+pw_rust.toolchain(cipd_tag = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d5550e110daee562b88bee247b75d66c")
+use_repo(pw_rust, "pw_rust_toolchains")
+
+pw_rust_crates = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
+use_repo(pw_rust_crates, "rust_crates")
+
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate", isolate = True)
+crate.from_cargo(
+    name = "crates_no_std",
+    cargo_lockfile = "@pigweed//third_party/crates_io/crates_no_std:Cargo.lock",
+    manifests = ["@pigweed//third_party/crates_io/crates_no_std:Cargo.toml"],
+)
+use_repo(crate, "crates_no_std")
+
+# Import qemu CIPD repo for test runfiles
+cipd_ext = use_extension("@pigweed//pw_env_setup/bazel/cipd:defs.bzl", "cipd")
+use_repo(cipd_ext, qemu = "pigweed.qemu")
+
+register_toolchains(
+    "@pigweed//pw_toolchain:cc_toolchain_cortex-m33",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imac",
+    "@pw_rust_toolchains//:all",
+)

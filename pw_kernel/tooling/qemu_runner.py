@@ -93,6 +93,11 @@ def _parse_args():
         nargs='*',
         help='Extra arguments to pass to qemu',
     )
+    parser.add_argument(
+        '--serial-socket',
+        type=int,
+        help='Expose serial port over local TCP socket on this port',
+    )
     return parser.parse_args()
 
 
@@ -155,7 +160,11 @@ def _main(args) -> int:
         "none",
         "-nographic",
         "-serial",
-        "mon:stdio",
+        (
+            f"tcp:127.0.0.1:{args.serial_socket},server,wait"
+            if args.serial_socket
+            else "mon:stdio"
+        ),
         "-kernel",
         args.image,
     ]

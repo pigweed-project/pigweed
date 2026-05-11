@@ -1,0 +1,95 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+TARGET_COMPATIBLE_WITH = select({
+    "//conditions:default": [],
+})
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    crate_name = "codegen",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//targets/riscv_qemu:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["//targets/riscv_qemu:target_src"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//targets/riscv_qemu:entry",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:riscv-semihosting",
+    ],
+)
+
+system_image(
+    name = "adventure",
+    apps = [
+        "//apps/supervisor:supervisor",
+        "//apps/uart_driver_mock:uart_driver_mock",
+        "//apps/adventure_game:adventure_game",
+    ],
+    kernel = ":target",
+    platform = "//targets/riscv_qemu:qemu_virt_riscv32",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+py_test(
+    name = "integration_test",
+    srcs = ["adventure_simulated_test.py"],
+    data = [
+        ":adventure",
+        "@pigweed//pw_kernel/tooling:qemu",
+    ],
+    main = "adventure_simulated_test.py",
+    tags = ["kernel"],
+    deps = [
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Attempt to fix "All source files must appear in BUILD.bazel files" lint.
+filegroup(
+    name = "_adventure_simulated_test",
+    srcs = ["adventure_simulated_test.py"],
+)
