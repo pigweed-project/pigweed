@@ -74,7 +74,7 @@ TEST(StatusWithSize, AllStatusValues_ZeroSize) {
 
 TEST(StatusWithSize, AllStatusValues_SameSize) {
   for (int i = 0; i < 32; ++i) {
-    StatusWithSize result(static_cast<Status::Code>(i), i);
+    StatusWithSize result(static_cast<Status::Code>(i), static_cast<size_t>(i));
     EXPECT_EQ(result.ok(), i == 0);
     EXPECT_EQ(i, static_cast<int>(result.status().code()));
     EXPECT_EQ(static_cast<size_t>(i), result.size());
