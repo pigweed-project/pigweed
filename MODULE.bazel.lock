@@ -708,7 +708,7 @@
     },
     "@@aspect_rules_esbuild+//esbuild:extensions.bzl%esbuild": {
       "general": {
-        "bzlTransitiveDigest": "DSbsp3KDgpu0DkarNQTLlW4Qz2cXfGcIloRhL9S/yo4=",
+        "bzlTransitiveDigest": "3s6xMupjq3TNvqMvG0ayE5L/YhWXJjYoVa9eW9rHrK0=",
         "usagesDigest": "6We6zwGoawD9YXqMI0KPaxEKJTnamXBsuOekhFS2D40=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1047,7 +1047,7 @@
     },
     "@@buildifier_prebuilt+//:defs.bzl%buildifier_prebuilt_deps_extension": {
       "general": {
-        "bzlTransitiveDigest": "UuPPKtgkayflJh3xnoDcElnjA0xyLYaim0cMSFV12v8=",
+        "bzlTransitiveDigest": "7bCbBwC3B6yFaJpQDhFyYirer+5U+YbfUb6OGRC+ZBo=",
         "usagesDigest": "eWMDBEn8E8CrwAPXrlrjIap2pseSMhxDyDdrntHBOOE=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -1978,7 +1978,7 @@
     },
     "@@rules_foreign_cc+//foreign_cc:extensions.bzl%tools": {
       "general": {
-        "bzlTransitiveDigest": "+6wfVMf8CDEdu0gPM4luK83l8p+i7WKrR5UREhgj2I0=",
+        "bzlTransitiveDigest": "e5bbV8Q/8yWefJ9l3qjxKidj4fL9P3YjHF5JRQymicE=",
         "usagesDigest": "mqChTKgeSo2+U6Pxt2FXlbg3JnDADJTrRE2okUyeU4g=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2352,7 +2352,7 @@
     },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {
       "general": {
-        "bzlTransitiveDigest": "nvW/NrBXlAmiQw99EMGKkLaD2KbNp2mQDlxdfpr+0Ls=",
+        "bzlTransitiveDigest": "03Qju4tW0vE+0RBuZGuV2A4Hx6AiSkdNahYvworx2aM=",
         "usagesDigest": "QI2z8ZUR+mqtbwsf2fLqYdJAkPOHdOV+tF2yVAUgRzw=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2416,7 +2416,7 @@
     },
     "@@rules_libusb+//:extensions.bzl%libusb": {
       "general": {
-        "bzlTransitiveDigest": "T30B4QoAaSr9hLUaroAv98raY3rMcO7z/v9LhOzf9Fw=",
+        "bzlTransitiveDigest": "IXwGzw1HMX72A9kaixGE8Y6Gu33XiicABN1KCuxMZL0=",
         "usagesDigest": "xGFxSIHK0SLodG1e83PeV3/6o20G4nWLgQfGxIliJoU=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -2787,7 +2787,7 @@
     },
     "@@rules_python+//python/extensions:config.bzl%config": {
       "general": {
-        "bzlTransitiveDigest": "TRGIl0CDmorwyNiblOYyhWuyKzi/kWFHT2uIofq7o9Y=",
+        "bzlTransitiveDigest": "EcMcbtKZvYmd5Mi1Fpg4EeBBztLHEE5tjO5tLDBYDuU=",
         "usagesDigest": "HZ99ezJBkgjKcxXQ3OBxGgesUIMF6eg7E0TUNOait2I=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -3063,7 +3063,7 @@
     },
     "@@rules_rust+//crate_universe:extension.bzl%crate": {
       "general": {
-        "bzlTransitiveDigest": "9WwEcsy7B03hutXWL3TGvjySlImU7PsAUKQAlNzwZd8=",
+        "bzlTransitiveDigest": "blr3Tgg1H9HLEfS+td9euOxkURQ2jCOYGDwo+libigg=",
         "usagesDigest": "c2tdTR72OmiSCRokb5zGJbhlLOjQmz+MVHPCOmO8LMY=",
         "recordedFileInputs": {
           "@@//third_party/crates_io/crates_no_std/Cargo.lock": "a638a4d2ec1fd8494c090dc6136fbd84adbb6c8fce9982ab838edc76d6dfa71b",
