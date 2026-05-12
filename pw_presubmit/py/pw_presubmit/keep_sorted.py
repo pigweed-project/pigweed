@@ -69,7 +69,6 @@ class KeepSortedContext:
     """Context for keep-sorted check."""
 
     paths: Sequence[Path]
-    fix: bool
     output_dir: Path
     _failures: list[Failure] = dataclasses.field(default_factory=list)
 
@@ -88,16 +87,13 @@ class KeepSortedContext:
             line_part = f'{line}:'
 
         log = _LOG.error
-        if self.fix:
-            log = _LOG.warning
 
         if path:
             log('%s:%s %s', path, line_part, description)
         else:
             log('%s', description)
 
-        if not self.fix:
-            self._failures.append(Failure(description, path, line))
+        self._failures.append(Failure(description, path, line))
 
 
 class KeepSortedParsingError(PresubmitFailure):
@@ -365,8 +361,8 @@ def _print_howto_fix(paths: Sequence[Path]) -> None:
 
 def _process_files(
     ctx: presubmit.PresubmitContext | KeepSortedContext | Context,
+    fix: bool = False,
 ) -> dict[Path, Sequence[str]]:
-    fix = getattr(ctx, 'fix', False)
     errors: dict[Path, Sequence[str]] = {}
 
     for path in ctx.paths:
@@ -384,7 +380,7 @@ def _process_files(
         except KeepSortedParsingError as exc:
             ctx.fail(str(exc))
 
-    if not errors:
+    if not errors or fix:
         return errors
 
     ctx.fail(f'Found {plural(errors, "file")} with keep-sorted errors:')
@@ -418,6 +414,9 @@ class KeepSorted(Step):
 
         if errors:
             _print_howto_fix(list(errors.keys()))
+
+    def fix(self, ctx: Context) -> None:
+        _process_files(ctx, fix=True)
 
     def with_filter(
         self, *, exclude: Iterable[Pattern[str] | str]
@@ -480,10 +479,9 @@ def keep_sorted_in_repo(
 
     ctx = KeepSortedContext(
         paths=files,
-        fix=fix,
         output_dir=outdir,
     )
-    errors = _process_files(ctx)
+    errors = _process_files(ctx, fix=fix)
 
     # pylint: disable=protected-access
     if ctx._failures:

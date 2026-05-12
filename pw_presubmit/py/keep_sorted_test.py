@@ -353,5 +353,82 @@ class TestKeepSorted(unittest.TestCase):
         self.assertEqual(self.contents, expected)
 
 
+class TestKeepSortedStep(unittest.TestCase):
+    """Test KeepSorted class as a presubmit step."""
+
+    def test_fix(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / 'foo'
+            with path.open('w') as outs:
+                outs.write(f'{START}\n2\n1\n{END}\n')
+
+            ctx = MagicMock()
+            ctx.paths = (path,)
+            ctx.output_dir = Path(tempdir)
+            ctx.fail = MagicMock()
+
+            step = keep_sorted.KeepSorted()
+            step.fix(ctx)
+
+            with path.open() as ins:
+                contents = ins.read()
+
+            self.assertEqual(contents, f'{START}\n1\n2\n{END}\n')
+            ctx.fail.assert_not_called()
+
+    def test_fix_parsing_error(self) -> None:  # pylint: disable=no-self-use
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / 'foo'
+            with path.open('w') as outs:
+                outs.write(f'{START}\n{START}\n{END}\n')
+
+            ctx = MagicMock()
+            ctx.paths = (path,)
+            ctx.output_dir = Path(tempdir)
+            ctx.fail = MagicMock()
+
+            step = keep_sorted.KeepSorted()
+            step.fix(ctx)
+
+            ctx.fail.assert_called_once()
+
+    def test_run(self) -> None:  # pylint: disable=no-self-use
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / 'foo'
+            with path.open('w') as outs:
+                outs.write(f'{START}\n2\n1\n{END}\n')
+
+            ctx = MagicMock()
+            ctx.paths = (path,)
+            ctx.output_dir = Path(tempdir)
+            ctx.fail = MagicMock()
+
+            step = keep_sorted.KeepSorted()
+            step.run(ctx)
+
+            ctx.fail.assert_called()
+
+    def test_run_sorted(self) -> None:  # pylint: disable=no-self-use
+        with tempfile.TemporaryDirectory() as tempdir:
+            path = Path(tempdir) / 'foo'
+            with path.open('w') as outs:
+                outs.write(f'{START}\n1\n2\n{END}\n')
+
+            ctx = MagicMock()
+            ctx.paths = (path,)
+            ctx.output_dir = Path(tempdir)
+            ctx.fail = MagicMock()
+
+            step = keep_sorted.KeepSorted()
+            step.run(ctx)
+
+            ctx.fail.assert_not_called()
+
+    def test_keep_sorted_context_fail(self) -> None:
+        ctx = keep_sorted.KeepSortedContext(paths=(), output_dir=Path('.'))
+        ctx.fail("error")
+        self.assertTrue(ctx.failed)
+
+
 if __name__ == '__main__':
     unittest.main()
