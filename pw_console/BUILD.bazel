@@ -25,6 +25,7 @@ sphinx_docs_library(
         "internals.rst",
         "plugins.rst",
         "testing.rst",
+        "tools.rst",
         "//pw_console/py:docs",
     ],
     prefix = "pw_console/",

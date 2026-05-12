@@ -21,6 +21,9 @@ import logging
 import re
 from typing import Any, Callable
 
+from pw_console.text_formatting import strip_incompatible_ansi
+
+
 _LOG = logging.getLogger(__package__)
 
 
@@ -169,52 +172,61 @@ class AndroidLogcatParser(BackgroundCommandLogParser):
     Works with 'adb logcat --format threadtime' (the default output).
     """
 
-    LOG_LEVELS = {
-        'D': logging.DEBUG,
-        'I': logging.INFO,
-        'W': logging.WARNING,
-        'E': logging.ERROR,
-    }
+    def __init__(self, enable_user: bool = False) -> None:
+        self.log_levels = {
+            'D': logging.DEBUG,
+            'I': logging.INFO,
+            'W': logging.WARNING,
+            'E': logging.ERROR,
+        }
 
-    LINE_REGEX = re.compile(
-        # Timestamp capture group
-        r'(?P<timestamp>'
-        # Month-day
-        r'[0-9]{2}-[0-9]{2} '
-        # Hour:minute:seconds
-        r'[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+'
-        r')'
-        r'\s*'
-        # Process ID
-        r'(?P<pid>[0-9]+)'
-        r'\s*'
-        # Thread ID
-        r'(?P<tid>[0-9]+)'
-        r'\s*'
-        # Single letter log level.
-        r'(?P<log_level_letter>\w)'
-        r'\s*'
-        # Optionally capture the tag. Tags seem to allow:
-        #   Alphanumeric characters
-        #   These symbols . / -
-        # Followed optionally by 0 or more spaces and a colon character
-        r'(?:'
-        r'(?P<tag>[\[\]a-zA-Z0-9-_/.]+) *: '
-        r')?'
-        # The rest is the message.
-        r'(?P<msg>.*)'
-    )
+        line_regex = (
+            # Timestamp capture group
+            r'(?P<timestamp>'
+            # Month-day
+            r'[0-9]{2}-[0-9]{2} '
+            # Hour:minute:seconds
+            r'[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+'
+            r')'
+            r'\s*'
+        )
+        if enable_user:
+            line_regex += (
+                # User
+                r'(?P<user>\w+)'
+                r'\s*'
+            )
+        line_regex += (
+            # Process ID
+            r'(?P<pid>[0-9]+)'
+            r'\s*'
+            # Thread ID
+            r'(?P<tid>[0-9]+)'
+            r'\s*'
+            # Single letter log level.
+            r'(?P<log_level_letter>\w)'
+            r'\s*'
+            # Optionally capture the tag. Tags seem to allow:
+            #   Alphanumeric characters
+            #   These symbols . / -
+            # Followed optionally by 0 or more spaces and a colon character
+            r'(?:'
+            r'(?P<tag>[\[\]a-zA-Z0-9-_/.]+) *: '
+            r')?'
+            # The rest is the message.
+            r'(?P<msg>.*)'
+        )
+
+        self.line_regex = re.compile(line_regex)
 
     def process_log(self, logger: logging.Logger, line: str) -> None:
-        matches = AndroidLogcatParser.LINE_REGEX.match(line)
+        matches = self.line_regex.match(line)
         if matches is None:
             logger.info(line)
             return
 
         fields = matches.groupdict()
-        level = AndroidLogcatParser.LOG_LEVELS.get(
-            fields['log_level_letter'], logging.DEBUG
-        )
+        level = self.log_levels.get(fields['log_level_letter'], logging.DEBUG)
         del fields["log_level_letter"]
 
         logger.log(
@@ -225,16 +237,35 @@ class AndroidLogcatParser(BackgroundCommandLogParser):
         )
 
 
-_COMMAND_LOG_PARSING_CLASSES = {
+class AndroidPersistentLogcatParser(AndroidLogcatParser):
+    """An adb logcat text parser for viewing persistent logcat files.
+
+    Works with 'adb logcat --format threadtime --format uid'
+    """
+
+    def __init__(self) -> None:
+        super().__init__(enable_user=True)
+
+
+class BasicLogParser(BackgroundCommandLogParser):
+    """A basic log parser that passes line output as-is."""
+
+    def process_log(self, logger: logging.Logger, line: str) -> None:
+        logger.log(logging.INFO, strip_incompatible_ansi(line).rstrip())
+
+
+COMMAND_LOG_PARSING_CLASSES = {
+    'basic': BasicLogParser,
     'fuchsia-json': FuchsiaJsonLogParser,
     'android-logcat-text': AndroidLogcatParser,
+    'android-persistent-logcat-text': AndroidPersistentLogcatParser,
 }
 
 
 def get_command_log_parser(
     name: str,
 ) -> Callable[[logging.Logger, str], None] | None:
-    parser_class = _COMMAND_LOG_PARSING_CLASSES.get(name, None)
+    parser_class = COMMAND_LOG_PARSING_CLASSES.get(name, None)
     if not parser_class:
         return None
 

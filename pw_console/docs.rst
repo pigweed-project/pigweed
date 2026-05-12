@@ -51,6 +51,7 @@ Guides
    embedding
    plugins
    testing
+   tools
    internals
 
 .. _IPython's embed(): https://ipython.readthedocs.io/en/stable/interactive/reference.html#embedding

@@ -11,7 +11,32 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Pigweed Console entry point."""
+"""Pigweed Console built-in tools.
+
+Launch an empty UI with only a Python repl:
+
+.. code-block:: shell
+
+   pw-console
+
+Launch the test mode user interface:
+
+.. code-block:: shell
+
+   pw-console --test-mode
+
+Open files for viewing in log windows:
+
+.. code-block:: shell
+
+   pw-console --open-files logfile1.txt logfile2.txt
+
+Open an Android bugreport zipfile and view persistent logcat files:
+
+.. code-block:: shell
+
+   pw-console --open-bugreport android-bugreport.zip
+"""
 
 import argparse
 import inspect
@@ -22,11 +47,15 @@ import sys
 from pw_cli import log as pw_cli_log
 from pw_cli import argument_types
 from pw_console import PwConsoleEmbed
-from pw_console.python_logging import create_temp_log_file
+from pw_console.background_command_log_parsers import (
+    COMMAND_LOG_PARSING_CLASSES,
+)
+from pw_console.log_file_loader import LogFileLoader
 from pw_console.log_store import LogStore
 from pw_console.plugins.calc_pane import CalcPane
 from pw_console.plugins.clock_pane import ClockPane
 from pw_console.plugins.twenty48_pane import Twenty48Pane
+from pw_console.python_logging import create_temp_log_file
 from pw_console.test_mode import FAKE_DEVICE_LOGGER_NAME
 from pw_console.web import PwConsoleWeb
 
@@ -37,7 +66,9 @@ _ROOT_LOG = logging.getLogger('')
 def _build_argument_parser() -> argparse.ArgumentParser:
     """Setup argparse."""
     parser = argparse.ArgumentParser(
-        prog='python -m pw_console', description=__doc__
+        prog='python -m pw_console',
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
@@ -50,11 +81,60 @@ def _build_argument_parser() -> argparse.ArgumentParser:
 
     parser.add_argument('--logfile', help='Pigweed Console log file.')
 
-    parser.add_argument(
+    extra_modes = parser.add_mutually_exclusive_group()
+    extra_modes.add_argument(
         '--test-mode',
         action='store_true',
         help='Enable fake log messages for testing purposes.',
     )
+    extra_modes.add_argument(
+        '--open-files',
+        nargs='+',
+        action='extend',
+        type=Path,
+        help='Paths to text log file to open.',
+    )
+    extra_modes.add_argument(
+        '--open-bugreport',
+        type=Path,
+        help=(
+            'Open an Android bugreport zip file and view persistent logcat '
+            'file contents. This option makes use of preset values for '
+            '--file-parser, --zipfile-globs, --reverse-file-order and '
+            '--merge-open-files. Any additional passed in values are ignored.'
+        ),
+    )
+
+    file_options_group = parser.add_argument_group(title='Open File Options')
+    file_options_group.add_argument(
+        '--file-parser',
+        choices=COMMAND_LOG_PARSING_CLASSES.keys(),
+        default='basic',
+    )
+    file_options_group.add_argument(
+        '--merge-open-files',
+        action='store_true',
+        help=(
+            'Multiple open-file arguments will be merged into a single '
+            'continuous view in the order they are specified. '
+            'Otherwise each file will be shown in a separate tab.'
+        ),
+    )
+    file_options_group.add_argument(
+        '--zipfile-globs',
+        nargs='+',
+        type=str,
+        help='Globs to match when opening zipfile contents.',
+    )
+    file_options_group.add_argument(
+        '--reverse-file-order',
+        action='store_true',
+        help=(
+            'When opening multiple files reverse the order in which they '
+            'appear. Normally they will appear in ascending order of filename.'
+        ),
+    )
+
     parser.add_argument(
         '--config-file',
         type=Path,
@@ -81,7 +161,10 @@ def main(args: argparse.Namespace | None = None) -> int:
     if args is None:
         args = parser.parse_args()
 
-    if not args.logfile:
+    user_specified_logfile = False
+    if args.logfile:
+        user_specified_logfile = True
+    else:
         # Create a temp logfile to prevent logs from appearing over stdout. This
         # would corrupt the prompt toolkit UI.
         args.logfile = create_temp_log_file()
@@ -136,6 +219,27 @@ def main(args: argparse.Namespace | None = None) -> int:
         """
         )
 
+    overridden_window_config: dict | None = None
+
+    if args.open_bugreport:
+        args.open_files = [args.open_bugreport]
+        args.file_parser = 'android-persistent-logcat-text'
+        args.merge_open_files = True
+        args.zipfile_globs = ['FS/data/misc/logd/logcat*']
+        args.reverse_file_order = True
+
+    if args.open_files:
+        loader = LogFileLoader(
+            files=args.open_files,
+            log_parser=args.file_parser,
+            merge_files=args.merge_open_files,
+            zip_globs=args.zipfile_globs,
+            reverse_file_order=args.reverse_file_order,
+        )
+        loader.load_files()
+        default_loggers.update(loader.default_loggers())
+        overridden_window_config = loader.window_config()
+
     if args.browser:
         loggers = {
             'Fake Device': [fake_logger],
@@ -158,7 +262,6 @@ def main(args: argparse.Namespace | None = None) -> int:
             config_file_path=args.config_file,
         )
 
-        overridden_window_config: dict | None = None
         # Add example plugins and log panes used to validate behavior in the
         # Pigweed Console manual test procedure:
         # https://pigweed.dev/pw_console/testing.html
@@ -245,9 +348,8 @@ def main(args: argparse.Namespace | None = None) -> int:
 
         console.embed(override_window_config=overridden_window_config)
 
-    if args.logfile:
+    if user_specified_logfile:
         print(f'Logs saved to: {args.logfile}')
-
     return 0
 
 
