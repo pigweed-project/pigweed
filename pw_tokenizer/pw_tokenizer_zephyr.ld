@@ -24,17 +24,17 @@
  */
 
 #ifdef CONFIG_ARCH_POSIX
-#define ADDR
+#define PW_TOKENIZER_ADDR
 #else
-#define ADDR 0x0
+#define PW_TOKENIZER_ADDR 0x0
 #endif
 
-.pw_tokenizer.info ADDR (INFO) :
+.pw_tokenizer.info PW_TOKENIZER_ADDR (INFO) :
 {
   KEEP(*(.pw_tokenizer.info))
 }
 
-.pw_tokenizer.entries ADDR (INFO) :
+.pw_tokenizer.entries PW_TOKENIZER_ADDR (INFO) :
 {
   KEEP(*(.pw_tokenizer.entries.*))
   /* GCC has a known bug (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88061)
