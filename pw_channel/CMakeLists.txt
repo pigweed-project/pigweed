@@ -129,7 +129,8 @@ pw_add_test(pw_channel.stream_channel_test
     pw_multibuf.testing
     pw_multibuf.v1.allocator_async
     pw_stream
-    pw_stream.mpsc_stream
+    pw_sync.mutex
+    pw_sync.thread_notification
     pw_thread.thread
     pw_thread.test_thread_context
 )

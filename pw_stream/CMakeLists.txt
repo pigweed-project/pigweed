@@ -94,26 +94,6 @@ pw_add_library(pw_stream.limited_stream INTERFACE
     pw_stream
 )
 
-pw_add_library(pw_stream.mpsc_stream STATIC
-  HEADERS
-    public/pw_stream/mpsc_stream.h
-  PUBLIC_INCLUDES
-    public
-  PUBLIC_DEPS
-    pw_assert
-    pw_bytes
-    pw_chrono.system_clock
-    pw_containers.intrusive_list
-    pw_function
-    pw_status
-    pw_stream
-    pw_sync.lock_annotations
-    pw_sync.mutex
-    pw_sync.timed_thread_notification
-  SOURCES
-    mpsc_stream.cc
-)
-
 pw_add_test(pw_stream.limited_stream_test
   SOURCES
     limited_stream_test.cc
@@ -176,17 +156,3 @@ pw_add_test(pw_stream.interval_reader_test
     pw_stream
 )
 
-pw_add_test(pw_stream.mpsc_stream_test
-  SOURCES
-    mpsc_stream_test.cc
-  PRIVATE_DEPS
-    pw_stream.mpsc_stream
-    pw_containers.vector
-    pw_fuzzer.fuzztest
-    pw_random
-    pw_thread.thread
-    pw_thread.test_thread_context
-  GROUPS
-    modules
-    pw_stream
-)

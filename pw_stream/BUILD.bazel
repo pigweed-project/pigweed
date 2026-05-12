@@ -115,25 +115,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "mpsc_stream",
-    srcs = ["mpsc_stream.cc"],
-    hdrs = ["public/pw_stream/mpsc_stream.h"],
-    implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    deps = [
-        ":pw_stream",
-        "//pw_bytes",
-        "//pw_chrono:system_clock.facade",
-        "//pw_containers:intrusive_list",
-        "//pw_function",
-        "//pw_status",
-        "//pw_sync:lock_annotations",
-        "//pw_sync:mutex",
-        "//pw_sync:timed_thread_notification",
-    ],
-)
-
 pw_cc_test(
     name = "limited_stream_test",
     srcs = ["limited_stream_test.cc"],
@@ -219,33 +200,12 @@ pw_cc_test(
     ],
 )
 
-pw_cc_test(
-    name = "mpsc_stream_test",
-    srcs = ["mpsc_stream_test.cc"],
-    features = ["-ctad_warnings"],
-    # TODO: b/361369435 - This test crashes on rp2.
-    target_compatible_with = select({
-        "@pico-sdk//bazel/constraint:rp2040": ["@platforms//:incompatible"],
-        "@pico-sdk//bazel/constraint:rp2350": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":mpsc_stream",
-        "//pw_containers:vector",
-        "//pw_fuzzer:fuzztest",
-        "//pw_random",
-        "//pw_thread:test_thread_context",
-        "//pw_thread:thread",
-    ],
-)
-
 filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_stream/interval_reader.h",
         "public/pw_stream/limited_stream.h",
         "public/pw_stream/memory_stream.h",
-        "public/pw_stream/mpsc_stream.h",
         "public/pw_stream/null_stream.h",
         "public/pw_stream/seek.h",
         "public/pw_stream/socket_stream.h",
