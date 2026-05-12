@@ -120,8 +120,7 @@ bool DiscoveryFilter::Matches(
   }
 
   if (manufacturer_code_) {
-    if (ad.manufacturer_data_ids().find(*manufacturer_code_) ==
-        ad.manufacturer_data_ids().end()) {
+    if (ad.manufacturer_data_ids().count(*manufacturer_code_) == 0) {
       return false;
     }
   }
