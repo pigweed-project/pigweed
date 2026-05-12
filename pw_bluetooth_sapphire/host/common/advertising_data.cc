@@ -461,9 +461,8 @@ AdvertisingData::ParseResult AdvertisingData::FromBytes(
           return fit::error(ParseError::kManufacturerSpecificDataTooSmall);
         }
 
-        uint16_t id = static_cast<uint16_t>(pw::bytes::ConvertOrderFrom(
-            cpp20::endian::little,
-            *reinterpret_cast<const uint16_t*>(field.data())));
+        uint16_t id = pw::bytes::ConvertOrderFrom(cpp20::endian::little,
+                                                  field.To<uint16_t>());
         const BufferView manuf_data(field.data() + kManufacturerIdSize,
                                     field.size() - kManufacturerIdSize);
 
