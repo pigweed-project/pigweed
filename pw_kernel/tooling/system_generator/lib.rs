@@ -671,7 +671,7 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
                         let irq_name = &irq_config.name;
                         let irq = irq_config.number;
 
-                        if interrupt_table.table.contains_key(&*irq.to_string()) {
+                        if interrupt_table.table.contains_key(&irq.to_string()) {
                             return Err(anyhow!(
                                 "IRQ {}={} in app {} object {} already handled.",
                                 irq_name,
@@ -688,7 +688,7 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
                         .to_lowercase();
 
                         interrupt_table
-                            .ordered_table
+                            .combined_ordered_table
                             .insert(irq, handler_name.clone());
 
                         interrupt_config.handlers.insert(irq, handler_name.clone());
@@ -714,19 +714,17 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
         let interrupt_table = self.config.base.kernel.interrupt_table.as_mut().unwrap();
 
         // Add any kernel interrupt handlers defined in the config to the ordered list.
-        for irq in interrupt_table.table.keys() {
+        for irq_str in interrupt_table.table.keys() {
+            let irq = irq_str.parse::<u32>().unwrap();
             interrupt_table
-                .ordered_table
+                .combined_ordered_table
                 // Use the safe wrapper handler to keep the table elements safe.
-                .insert(
-                    irq.parse::<u32>().unwrap(),
-                    std::format!("interrupt_handler_{irq}"),
-                );
+                .insert(irq, std::format!("interrupt_handler_{irq_str}"));
         }
 
         // Calculate the size of the interrupt table, which is the highest handled IRQ + 1
         interrupt_table.table_size = interrupt_table
-            .ordered_table
+            .combined_ordered_table
             .keys()
             .max()
             .map(|max_irq| max_irq + 1)

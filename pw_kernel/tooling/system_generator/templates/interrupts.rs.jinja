@@ -73,8 +73,8 @@ unsafe extern "C" {
 static PW_KERNEL_INTERRUPT_TABLE_ARRAY: [ArchInterruptTableEntry; {{kernel.interrupt_table.table_size}}] = {
     #[allow(unused_mut)]
     let mut interrupt_table: [ArchInterruptTableEntry; {{kernel.interrupt_table.table_size}}] = [None; {{kernel.interrupt_table.table_size}}];
-{%- for irq in kernel.interrupt_table.ordered_table %}
-    {%- set handler_name = kernel.interrupt_table.ordered_table[irq] %}
+{%- for irq in kernel.interrupt_table.combined_ordered_table %}
+    {%- set handler_name = kernel.interrupt_table.combined_ordered_table[irq] %}
     interrupt_table[{{irq}}] = Some({{handler_name}});
 {%- endfor %}
     interrupt_table

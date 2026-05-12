@@ -104,11 +104,16 @@ pub struct KernelConfig {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterruptTableConfig {
-    pub table: HashMap<String, String>,
+    /// User defined table of interrupt handlers, mapping
+    /// IRQ to interrupt handler.
+    pub table: BTreeMap<String, String>,
     #[serde(skip_deserializing)]
     pub table_size: usize,
+    /// Complete table of all interrupt handlers in the system
+    /// composed of both user defined handlers from `table` and
+    /// code generated handlers.
     #[serde(skip_deserializing)]
-    pub ordered_table: BTreeMap<u32, String>,
+    pub combined_ordered_table: BTreeMap<u32, String>,
     #[serde(skip_deserializing)]
     pub link_section: Option<String>,
 }
