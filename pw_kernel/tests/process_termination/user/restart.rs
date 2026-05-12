@@ -115,7 +115,7 @@ fn handle_set_control_user_signal() {
     info!("SetControlUserSignal received: Setting peer USER signal to true");
     if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_CONTROL_HANDLER, true) {
         info!("Failed to set peer user signal on IPC_CONTROL_HANDLER");
-        let _ = syscall::debug_shutdown(Err(e.into()));
+        let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
@@ -125,7 +125,7 @@ fn handle_set_reset_user_signal() {
     info!("SetResetUserSignal received: Setting peer USER signal to true on IPC_RESET");
     if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_RESET, true) {
         info!("Failed to set peer user signal on IPC_RESET");
-        let _ = syscall::debug_shutdown(Err(e.into()));
+        let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
@@ -140,7 +140,7 @@ fn handle_verify_user_signal_preserved() {
     );
     if wait_res.is_err() {
         info!("Signals::USER was lost on restart!");
-        let _ = syscall::debug_shutdown(Err(Error::Internal.into()));
+        let _ = syscall::debug_shutdown(Err(Error::Internal));
         loop {}
     }
     info!("Signals::USER correctly remained set on restart!");

@@ -315,7 +315,7 @@ fn test_peer_user_signal_cleared_on_terminate(reply: &mut [u8]) -> Result<()> {
     );
     if wait_res.is_err() {
         pw_log::error!("❌ Expected Signals::USER to be set on IPC_RESET handler");
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
 
     info!("🔄 ├─ Terminating RESTART_PROCESS");
@@ -332,9 +332,9 @@ fn test_peer_user_signal_cleared_on_terminate(reply: &mut [u8]) -> Result<()> {
         SystemClock::now(),
     );
     // If it was reset to false, waiting for USER signal should return Err(DeadlineExceeded) (4) immediately!
-    if wait_res != Err(pw_status::Error::DeadlineExceeded.into()) {
+    if wait_res != Err(pw_status::Error::DeadlineExceeded) {
         pw_log::error!("❌ Signals::USER was NOT de-asserted on process termination!");
-        return Err(pw_status::Error::Internal.into());
+        return Err(pw_status::Error::Internal);
     }
     info!("✅ ├─ Peer's USER signal correctly de-asserted after termination!");
 
