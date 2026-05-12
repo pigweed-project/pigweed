@@ -3319,9 +3319,9 @@ void FakeController::OnLESetExtendedAdvertisingParameters(
   if (state.interval_min < hci_spec::kLEExtendedAdvertisingIntervalMin) {
     bt_log(INFO,
            "fake-hci",
-           "advertising interval min (%d) less than spec min (%dstate.)",
+           "advertising interval min (%d) less than spec min (%d)",
            state.interval_min,
-           hci_spec::kLEAdvertisingIntervalMin);
+           hci_spec::kLEExtendedAdvertisingIntervalMin);
     RespondWithCommandComplete(
         pwemb::OpCode::LE_SET_EXTENDED_ADVERTISING_PARAMETERS_V1,
         pwemb::StatusCode::UNSUPPORTED_FEATURE_OR_PARAMETER);
@@ -3333,7 +3333,7 @@ void FakeController::OnLESetExtendedAdvertisingParameters(
            "fake-hci",
            "advertising interval max (%d) greater than spec max (%d)",
            state.interval_max,
-           hci_spec::kLEAdvertisingIntervalMax);
+           hci_spec::kLEExtendedAdvertisingIntervalMax);
     RespondWithCommandComplete(
         pwemb::OpCode::LE_SET_EXTENDED_ADVERTISING_PARAMETERS_V1,
         pwemb::StatusCode::UNSUPPORTED_FEATURE_OR_PARAMETER);

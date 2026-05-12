@@ -1703,6 +1703,94 @@ TEST_F(LowEnergyDiscoveryManagerTest, Inspect) {
 }
 #endif  // NINSPECT
 
+TEST_F(LowEnergyDiscoveryManagerTest, SetActiveScanParameters) {
+  // Set valid values
+  const uint16_t kInterval = 0x0100;  // 256 * 0.625 = 160.0 ms
+  const uint16_t kWindow = 0x0080;    // 128 * 0.625 = 80.0 ms
+  discovery_manager()->set_active_scan_parameters(kInterval, kWindow);
+
+  auto session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, kInterval);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, kWindow);
+  session.reset();
+  RunUntilIdle();
+
+  // Set invalid values (interval too small). Should be ignored atomically.
+  // Try to set: interval = invalid (too small), window = 0x0090 (valid in
+  // range, but rejected).
+  discovery_manager()->set_active_scan_parameters(
+      hci_spec::kLEScanIntervalMin - 1, 0x0090);
+  session = StartDiscoverySession();
+  // Expect values to remain unchanged
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, kInterval);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, kWindow);
+  session.reset();
+  RunUntilIdle();
+
+  // Set invalid values (window > interval).
+  // Try to set: interval = 0x0120 (valid), window = 0x0130 (invalid because >
+  // interval).
+  discovery_manager()->set_active_scan_parameters(0x0120, 0x0130);
+  session = StartDiscoverySession();
+  // Expect values to remain unchanged
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, kInterval);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, kWindow);
+  session.reset();
+  RunUntilIdle();
+
+  // Set interval == 0. Should keep current interval and update window to
+  // 0x0090.
+  discovery_manager()->set_active_scan_parameters(0, 0x0090);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, kInterval);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+
+  // Set window == 0. Should keep current window (0x0090) and update interval to
+  // 0x0120.
+  discovery_manager()->set_active_scan_parameters(0x0120, 0);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, 0x0120);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+
+  // Set both to 0. Should be ignored atomically.
+  discovery_manager()->set_active_scan_parameters(0, 0);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, 0x0120);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+
+  // Set invalid values (interval too large). Should be ignored atomically.
+  discovery_manager()->set_active_scan_parameters(
+      hci_spec::kLEScanIntervalMax + 1, 0x0090);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, 0x0120);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+
+  // Set invalid values (window too small). Should be ignored atomically.
+  discovery_manager()->set_active_scan_parameters(
+      0x0120, hci_spec::kLEScanWindowMin - 1);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, 0x0120);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+
+  // Set invalid values (window too large). Should be ignored atomically.
+  discovery_manager()->set_active_scan_parameters(0x4000, 0x4001);
+  session = StartDiscoverySession();
+  EXPECT_EQ(test_device()->le_scan_state().scan_interval, 0x0120);
+  EXPECT_EQ(test_device()->le_scan_state().scan_window, 0x0090);
+  session.reset();
+  RunUntilIdle();
+}
+
 TEST_F(LowEnergyDiscoveryManagerTest, SetResultCallbackIgnoresRemovedPeers) {
   auto fake_peer_0 = std::make_unique<FakePeer>(kAddress0, dispatcher());
   test_device()->AddPeer(std::move(fake_peer_0));

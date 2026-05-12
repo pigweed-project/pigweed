@@ -383,11 +383,22 @@ inline constexpr uint16_t kLEAdvertisingIntervalDefault = 0x0800;
 inline constexpr uint16_t kLEScanIntervalMin = 0x0004;
 inline constexpr uint16_t kLEScanIntervalMax = 0x4000;
 
+// The minimum and maximum range values for the LE scan interval parameters.
+// (see Core Spec v6.0, Vol 4, Part E, Section 7.8.10)
+inline constexpr uint16_t kLEScanWindowMin = 0x0004;
+inline constexpr uint16_t kLEScanWindowMax = 0x4000;
+
 // The minimum and maximum range values for the LE extended scan interval
 // parameters.
 // (see Core Spec v5.0, Vol 2, Part E, Section 7.8.64)
 inline constexpr uint16_t kLEExtendedScanIntervalMin = 0x0004;
 inline constexpr uint16_t kLEExtendedScanIntervalMax = 0xFFFF;
+
+// The minimum and maximum range values for the LE extended scan interval
+// parameters.
+// (see Core Spec v6.0, Vol 4, Part E, Section 7.8.64)
+inline constexpr uint16_t kLEExtendedScanWindowMin = 0x0004;
+inline constexpr uint16_t kLEExtendedScanWindowMax = 0xFFFF;
 
 // The default LE scan interval parameter value, corresponding to 10
 // milliseconds (see Core Spec v5.0, Vol 2, Part E, Section 7.8.10).
@@ -439,7 +450,6 @@ inline constexpr size_t kMaxLEAdvertisingDataLength = 0x1F;  // (31)
 inline constexpr size_t kMaxLEExtendedAdvertisingDataLength = 1650;
 
 // Tx Power values, See Core Spec v5.0 Vol 4, Part E, 7.8.6.
-inline constexpr int8_t kTxPowerInvalid = 127;
 inline constexpr int8_t kLEAdvertisingTxPowerMin = -127;
 inline constexpr int8_t kLEAdvertisingTxPowerMax = 20;
 inline constexpr int8_t kLEExtendedAdvertisingTxPowerNoPreference = 0x7F; // Vol 4, Part E, 7.8.53

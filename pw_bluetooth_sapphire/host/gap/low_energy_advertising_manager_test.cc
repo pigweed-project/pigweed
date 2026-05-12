@@ -54,8 +54,9 @@ struct AdvertisementStatus {
   AdvertisingData data;
   AdvertisingData scan_rsp;
   bool anonymous;
-  uint16_t interval_min;
-  uint16_t interval_max;
+  uint32_t interval_min;
+  uint32_t interval_max;
+  int8_t tx_power;
   bool extended_pdu;
   hci::LowEnergyAdvertiser::ConnectionCallback connect_cb;
 };
@@ -84,6 +85,10 @@ class FakeLowEnergyAdvertiser final : public hci::LowEnergyAdvertiser {
 
   bool IsAdvertising() const override { return !ads_->empty(); }
 
+  bool IsExtendedAdvertiser() const override { return extended_; }
+
+  void set_extended(bool extended) { extended_ = extended; }
+
   void StartAdvertising(
       const DeviceAddress& address,
       const AdvertisingData& data,
@@ -111,6 +116,7 @@ class FakeLowEnergyAdvertiser final : public hci::LowEnergyAdvertiser {
     new_status.connect_cb = std::move(connect_callback);
     new_status.interval_min = options.interval.min();
     new_status.interval_max = options.interval.max();
+    new_status.tx_power = options.max_tx_power;
     new_status.anonymous = options.anonymous;
     new_status.extended_pdu = options.extended_pdu;
     AdvertisementId adv_id(next_id_++);
@@ -216,6 +222,7 @@ class FakeLowEnergyAdvertiser final : public hci::LowEnergyAdvertiser {
   }
 
   std::unordered_map<AdvertisementId, AdvertisementStatus>* ads_;
+  bool extended_ = false;
   hci::Result<> pending_error_ = fit::ok();
   hci::Transport::WeakPtr hci_;
   pw::async::Dispatcher& dispatcher_;
@@ -311,6 +318,151 @@ class LowEnergyAdvertisingManagerTest : public TestingBase {
 
   void DestroyAdvertisementInstance() {
     last_instance_ = AdvertisementInstance();
+  }
+
+  void TestIntervalRange(
+      fit::function<void(uint32_t, uint32_t)> set_interval_func,
+      AdvertisingInterval interval_enum,
+      bool connectable) {
+    const uint32_t kLimitMin = advertiser()->IsExtendedAdvertiser()
+                                   ? hci_spec::kLEExtendedAdvertisingIntervalMin
+                                   : hci_spec::kLEAdvertisingIntervalMin;
+    const uint32_t kLimitMax = advertiser()->IsExtendedAdvertiser()
+                                   ? hci_spec::kLEExtendedAdvertisingIntervalMax
+                                   : hci_spec::kLEAdvertisingIntervalMax;
+
+    auto start_adv = [&](AdvertisingInterval interval) {
+      adv_mgr()->StartAdvertising(AdvertisingData(),
+                                  AdvertisingData(),
+                                  connectable ? NopConnectCallback : nullptr,
+                                  interval,
+                                  /*extended_pdu=*/false,
+                                  /*anonymous=*/false,
+                                  /*include_tx_power_level=*/false,
+                                  /*address_type=*/std::nullopt,
+                                  GetSuccessCallback());
+      RunUntilIdle();
+    };
+
+    // Valid values
+    set_interval_func(kLimitMin + 1, kLimitMax - 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(kLimitMin + 1, current_adv()->interval_min);
+    EXPECT_EQ(kLimitMax - 1, current_adv()->interval_max);
+    DestroyAdvertisementInstance();
+
+    // Invalid values (too large)
+    set_interval_func(kLimitMin, kLimitMax + 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(kLimitMin + 1, current_adv()->interval_min);
+    EXPECT_EQ(kLimitMax - 1, current_adv()->interval_max);
+    DestroyAdvertisementInstance();
+
+    // min == 0 (ignored)
+    set_interval_func(0, kLimitMax - 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(kLimitMin + 1, current_adv()->interval_min);
+    EXPECT_EQ(kLimitMax - 1, current_adv()->interval_max);
+    DestroyAdvertisementInstance();
+
+    // max == 0 (ignored)
+    set_interval_func(kLimitMin + 1, 0);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(kLimitMin + 1, current_adv()->interval_min);
+    EXPECT_EQ(kLimitMax - 1, current_adv()->interval_max);
+    DestroyAdvertisementInstance();
+
+    // min < limit_min (ignored)
+    set_interval_func(kLimitMin - 1, kLimitMax - 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(kLimitMin + 1, current_adv()->interval_min);
+    EXPECT_EQ(kLimitMax - 1, current_adv()->interval_max);
+    DestroyAdvertisementInstance();
+
+    if (advertiser()->IsExtendedAdvertiser()) {
+      // min == max is valid
+      set_interval_func(0x0100, 0x0100);
+      start_adv(interval_enum);
+      ASSERT_TRUE(current_adv());
+      EXPECT_EQ(0x0100u, current_adv()->interval_min);
+      EXPECT_EQ(0x0100u, current_adv()->interval_max);
+      DestroyAdvertisementInstance();
+
+      // min > max is always invalid
+      set_interval_func(0x0101, 0x0100);
+      start_adv(interval_enum);
+      ASSERT_TRUE(current_adv());
+      EXPECT_EQ(0x0100u, current_adv()->interval_min);
+      EXPECT_EQ(0x0100u, current_adv()->interval_max);
+      DestroyAdvertisementInstance();
+    }
+  }
+
+  void TestAdvertisingTxPower(fit::function<void(int8_t)> set_tx_power_func,
+                              AdvertisingInterval interval_enum,
+                              bool connectable,
+                              int8_t expected_default_power) {
+    auto start_adv = [&](AdvertisingInterval interval) {
+      adv_mgr()->StartAdvertising(AdvertisingData(),
+                                  AdvertisingData(),
+                                  connectable ? NopConnectCallback : nullptr,
+                                  interval,
+                                  /*extended_pdu=*/false,
+                                  /*anonymous=*/false,
+                                  /*include_tx_power_level=*/false,
+                                  /*address_type=*/std::nullopt,
+                                  GetSuccessCallback());
+      RunUntilIdle();
+    };
+
+    // Valid values
+    set_tx_power_func(hci_spec::kLEAdvertisingTxPowerMin);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(hci_spec::kLEAdvertisingTxPowerMin, current_adv()->tx_power);
+    DestroyAdvertisementInstance();
+
+    set_tx_power_func(0);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(0, current_adv()->tx_power);
+    DestroyAdvertisementInstance();
+
+    set_tx_power_func(hci_spec::kLEAdvertisingTxPowerMax);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(hci_spec::kLEAdvertisingTxPowerMax, current_adv()->tx_power);
+    DestroyAdvertisementInstance();
+
+    // No preference should be accepted
+    set_tx_power_func(hci_spec::kLEExtendedAdvertisingTxPowerNoPreference);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(hci_spec::kLEExtendedAdvertisingTxPowerNoPreference,
+              current_adv()->tx_power);
+    DestroyAdvertisementInstance();
+
+    // Reset to a known valid value
+    set_tx_power_func(expected_default_power);
+
+    // Invalid values (too small)
+    set_tx_power_func(hci_spec::kLEAdvertisingTxPowerMin - 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(expected_default_power, current_adv()->tx_power);
+    DestroyAdvertisementInstance();
+
+    // Invalid values (too large)
+    set_tx_power_func(hci_spec::kLEAdvertisingTxPowerMax + 1);
+    start_adv(interval_enum);
+    ASSERT_TRUE(current_adv());
+    EXPECT_EQ(expected_default_power, current_adv()->tx_power);
+    DestroyAdvertisementInstance();
   }
 
   // Returns and clears the last callback status. This resets the state to
@@ -773,6 +925,87 @@ TEST_F(LowEnergyAdvertisingManagerTest,
   // scope.
   RunUntilIdle();
   EXPECT_FALSE(adv_mgr()->advertising());
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest, SetAdvertisingIntervalRange) {
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_slow_advertising_interval(min, max);
+      },
+      AdvertisingInterval::SLOW,
+      /*connectable=*/false);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest, SetFastAdvertisingIntervalRange) {
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_fast_advertising_interval(min, max);
+      },
+      AdvertisingInterval::FAST2,
+      /*connectable=*/false);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest, SetVeryFastAdvertisingIntervalRange) {
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_very_fast_advertising_interval(min, max);
+      },
+      AdvertisingInterval::FAST1,
+      /*connectable=*/true);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest, SetExtendedAdvertisingIntervalRange) {
+  advertiser()->set_extended(true);
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_slow_advertising_interval(min, max);
+      },
+      AdvertisingInterval::SLOW,
+      /*connectable=*/false);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest,
+       SetExtendedFastAdvertisingIntervalRange) {
+  advertiser()->set_extended(true);
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_fast_advertising_interval(min, max);
+      },
+      AdvertisingInterval::FAST2,
+      /*connectable=*/false);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest,
+       SetExtendedVeryFastAdvertisingIntervalRange) {
+  advertiser()->set_extended(true);
+  TestIntervalRange(
+      [this](uint32_t min, uint32_t max) {
+        adv_mgr()->set_very_fast_advertising_interval(min, max);
+      },
+      AdvertisingInterval::FAST1,
+      /*connectable=*/true);
+}
+
+TEST_F(LowEnergyAdvertisingManagerTest, SetAdvertisingTxPower) {
+  TestAdvertisingTxPower(
+      [this](int8_t power) { adv_mgr()->set_slow_adv_max_tx_power(power); },
+      AdvertisingInterval::SLOW,
+      /*connectable=*/false,
+      /*expected_default_power=*/hci_spec::kLEAdvertisingTxPowerMin);
+
+  TestAdvertisingTxPower(
+      [this](int8_t power) { adv_mgr()->set_fast_adv_max_tx_power(power); },
+      AdvertisingInterval::FAST2,
+      /*connectable=*/false,
+      /*expected_default_power=*/0);
+
+  TestAdvertisingTxPower(
+      [this](int8_t power) {
+        adv_mgr()->set_very_fast_adv_max_tx_power(power);
+      },
+      AdvertisingInterval::FAST1,
+      /*connectable=*/true,
+      /*expected_default_power=*/hci_spec::kLEAdvertisingTxPowerMax);
 }
 
 }  // namespace

@@ -60,6 +60,8 @@ class ExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
       const DeviceAddress& peer_address,
       const hci_spec::LEConnectionParameters& conn_params) override;
 
+  bool IsExtendedAdvertiser() const override { return true; }
+
   size_t MaxAdvertisements() const override {
     return advertising_handle_map_.capacity();
   }

@@ -248,22 +248,81 @@ void LowEnergyDiscoveryManager::AttachInspect(inspect::Node& parent,
       inspect_.node.CreateDouble(kInspectScanWindowPropertyName, 0);
 }
 
-void LowEnergyDiscoveryManager::set_active_scan_interval(uint16_t interval) {
-  if (interval == 0) {
-    bt_log(WARN, "gap-le", "scan interval is default 0 value, ignoring");
+void LowEnergyDiscoveryManager::set_active_scan_parameters(uint16_t interval,
+                                                           uint16_t window) {
+  if (interval == 0 && window == 0) {
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: both active scan interval and window are 0, "
+           "using current values: (interval: %#.4x, window: %#.4x)",
+           active_scan_interval_,
+           active_scan_window_);
     return;
   }
 
-  active_scan_interval_ = interval;
-}
+  uint16_t new_interval = interval == 0 ? active_scan_interval_ : interval;
+  uint16_t new_window = window == 0 ? active_scan_window_ : window;
 
-void LowEnergyDiscoveryManager::set_active_scan_window(uint16_t window) {
-  if (window == 0) {
-    bt_log(WARN, "gap-le", "scan window is default 0 value, ignoring");
+  uint16_t interval_min = hci_spec::kLEScanIntervalMin;
+  uint16_t interval_max = hci_spec::kLEScanIntervalMax;
+  uint16_t window_min = hci_spec::kLEScanWindowMin;
+  uint16_t window_max = hci_spec::kLEScanWindowMax;
+
+  if (scanner_->IsExtendedScanner()) {
+    interval_min = hci_spec::kLEExtendedScanIntervalMin;
+    interval_max = hci_spec::kLEExtendedScanIntervalMax;
+    window_min = hci_spec::kLEExtendedScanWindowMin;
+    window_max = hci_spec::kLEExtendedScanWindowMax;
+  }
+
+  if (new_interval < interval_min || new_interval > interval_max) {
+    bt_log(WARN,
+           "gap-le",
+           "ignoring request: active scan interval out of range: %#.4x "
+           "(range: [%#.4x, %#.4x]) (current: %#.4x)",
+           new_interval,
+           interval_min,
+           interval_max,
+           active_scan_interval_);
     return;
   }
 
-  active_scan_window_ = window;
+  if (new_window < window_min || new_window > window_max) {
+    bt_log(WARN,
+           "gap-le",
+           "ignoring request: active scan window out of range: %#.4x "
+           "(range: [%#.4x, %#.4x]) (current: %#.4x)",
+           new_window,
+           window_min,
+           window_max,
+           active_scan_window_);
+    return;
+  }
+
+  if (new_window > new_interval) {
+    bt_log(WARN,
+           "gap-le",
+           "ignoring request: active scan window (%#.4x) must be <= interval "
+           "(%#.4x), continuing to use current values (interval: %#.4x, "
+           "window: %#.4x)",
+           new_window,
+           new_interval,
+           active_scan_interval_,
+           active_scan_window_);
+    return;
+  }
+
+  bt_log(INFO,
+         "gap-le",
+         "setting active scan parameters to interval %#.4x, window %#.4x "
+         "(previous interval: %#.4x, window: %#.4x)",
+         new_interval,
+         new_window,
+         active_scan_interval_,
+         active_scan_window_);
+
+  active_scan_interval_ = new_interval;
+  active_scan_window_ = new_window;
 }
 
 std::string LowEnergyDiscoveryManager::StateToString(State state) {

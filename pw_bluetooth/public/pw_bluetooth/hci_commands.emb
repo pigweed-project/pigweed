@@ -2444,10 +2444,10 @@ struct LESetExtendedAdvertisingParametersV1Command:
   $next [+1]                          hci.LEAdvertisingFilterPolicy  advertising_filter_policy
 
   $next [+1]                          Int                            advertising_tx_power
-    -- Range: -127 <= N <= +126
+    -- Range: -127 <= N <= +20
     -- Units: dBm
     -- If N = 127: Host has no preference.
-    [requires: -127 <= this]
+    [requires: -127 <= this <= 20 || this == 127]
 
   $next [+1]                          hci.LEPrimaryAdvertisingPHY    primary_advertising_phy
     -- LEPHY::kLE2M and LEPHY::kLECodedS2 are excluded.

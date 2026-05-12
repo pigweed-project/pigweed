@@ -17,10 +17,7 @@
 #include <pw_assert/check.h>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
-#include "pw_bluetooth_sapphire/internal/host/gap/low_energy_address_manager.h"
-#include "pw_bluetooth_sapphire/internal/host/gap/peer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 
 namespace bt::gap {
 
@@ -66,45 +63,192 @@ LowEnergyAdvertisingManager::LowEnergyAdvertisingManager(
   PW_DCHECK(local_addr_delegate_);
 }
 
-void LowEnergyAdvertisingManager::set_slow_advertising_interval(uint16_t min,
-                                                                uint16_t max) {
+void LowEnergyAdvertisingManager::set_slow_advertising_interval(uint32_t min,
+                                                                uint32_t max) {
   if (min == 0 || max == 0) {
-    bt_log(WARN, "gap-le", "advertising interval is default 0 value, ignoring");
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: no advertising interval configuration provided, "
+           "using current values [%#.4x, %#.4x]",
+           slow_interval_.min(),
+           slow_interval_.max());
     return;
   }
 
+  uint32_t limit_min = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMin
+                           : hci_spec::kLEAdvertisingIntervalMin;
+  uint32_t limit_max = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMax
+                           : hci_spec::kLEAdvertisingIntervalMax;
+
+  if (min < limit_min || max > limit_max || min > max) {
+    bt_log(
+        WARN,
+        "gap-le",
+        "ignoring request: advertising interval out of range: [%#.4x, %#.4x] "
+        "(range: [%#.4x, %#.4x]) (current: [%#.4x, %#.4x])",
+        min,
+        max,
+        limit_min,
+        limit_max,
+        slow_interval_.min(),
+        slow_interval_.max());
+    return;
+  }
+
+  bt_log(INFO,
+         "gap-le",
+         "setting slow advertising interval to [%#.4x, %#.4x]",
+         min,
+         max);
   slow_interval_ = {min, max};
 }
 
-void LowEnergyAdvertisingManager::set_fast_advertising_interval(uint16_t min,
-                                                                uint16_t max) {
+void LowEnergyAdvertisingManager::set_fast_advertising_interval(uint32_t min,
+                                                                uint32_t max) {
   if (min == 0 || max == 0) {
-    bt_log(WARN, "gap-le", "advertising interval is default 0 value, ignoring");
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: no advertising interval configuration provided, "
+           "using current values [%#.4x, %#.4x]",
+           fast_interval_.min(),
+           fast_interval_.max());
     return;
   }
 
+  uint32_t limit_min = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMin
+                           : hci_spec::kLEAdvertisingIntervalMin;
+  uint32_t limit_max = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMax
+                           : hci_spec::kLEAdvertisingIntervalMax;
+
+  if (min < limit_min || max > limit_max || min > max) {
+    bt_log(
+        WARN,
+        "gap-le",
+        "ignoring request: advertising interval out of range: [%#.4x, %#.4x] "
+        "(range: [%#.4x, %#.4x]) (current: [%#.4x, %#.4x])",
+        min,
+        max,
+        limit_min,
+        limit_max,
+        fast_interval_.min(),
+        fast_interval_.max());
+    return;
+  }
+
+  bt_log(INFO,
+         "gap-le",
+         "setting fast advertising interval to [%#.4x, %#.4x]",
+         min,
+         max);
   fast_interval_ = {min, max};
 }
 
 void LowEnergyAdvertisingManager::set_very_fast_advertising_interval(
-    uint16_t min, uint16_t max) {
+    uint32_t min, uint32_t max) {
   if (min == 0 || max == 0) {
-    bt_log(WARN, "gap-le", "advertising interval is default 0 value, ignoring");
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: no advertising interval configuration provided, "
+           "using current values [%#.4x, %#.4x]",
+           very_fast_interval_.min(),
+           very_fast_interval_.max());
     return;
   }
 
+  uint32_t limit_min = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMin
+                           : hci_spec::kLEAdvertisingIntervalMin;
+  uint32_t limit_max = advertiser_->IsExtendedAdvertiser()
+                           ? hci_spec::kLEExtendedAdvertisingIntervalMax
+                           : hci_spec::kLEAdvertisingIntervalMax;
+
+  if (min < limit_min || max > limit_max || min > max) {
+    bt_log(
+        WARN,
+        "gap-le",
+        "ignoring request: advertising interval out of range: [%#.4x, %#.4x] "
+        "(range: [%#.4x, %#.4x]) (current: [%#.4x, %#.4x])",
+        min,
+        max,
+        limit_min,
+        limit_max,
+        very_fast_interval_.min(),
+        very_fast_interval_.max());
+    return;
+  }
+
+  bt_log(INFO,
+         "gap-le",
+         "setting very fast advertising interval to [%#.4x, %#.4x]",
+         min,
+         max);
   very_fast_interval_ = {min, max};
 }
 
 void LowEnergyAdvertisingManager::set_slow_adv_max_tx_power(int8_t power) {
+  if ((power < hci_spec::kLEAdvertisingTxPowerMin ||
+       power > hci_spec::kLEAdvertisingTxPowerMax) &&
+      power != hci_spec::kLEExtendedAdvertisingTxPowerNoPreference) {
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: max tx power out of range: %#.4x "
+           "(range: [%#.4x, %#.4x]) (current: %#.4x)",
+           power,
+           hci_spec::kLEAdvertisingTxPowerMin,
+           hci_spec::kLEAdvertisingTxPowerMax,
+           slow_adv_max_tx_power_);
+
+    return;
+  }
+
+  bt_log(INFO, "gap-le", "setting slow max advertising tx power to %d", power);
   slow_adv_max_tx_power_ = power;
 }
 
 void LowEnergyAdvertisingManager::set_fast_adv_max_tx_power(int8_t power) {
+  if ((power < hci_spec::kLEAdvertisingTxPowerMin ||
+       power > hci_spec::kLEAdvertisingTxPowerMax) &&
+      power != hci_spec::kLEExtendedAdvertisingTxPowerNoPreference) {
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: max tx power out of range: %#.4x "
+           "(range: [%#.4x, %#.4x]) (current: %#.4x)",
+           power,
+           hci_spec::kLEAdvertisingTxPowerMin,
+           hci_spec::kLEAdvertisingTxPowerMax,
+           fast_adv_max_tx_power_);
+
+    return;
+  }
+
+  bt_log(INFO, "gap-le", "setting fast max advertising tx power to %d", power);
   fast_adv_max_tx_power_ = power;
 }
 
 void LowEnergyAdvertisingManager::set_very_fast_adv_max_tx_power(int8_t power) {
+  if ((power < hci_spec::kLEAdvertisingTxPowerMin ||
+       power > hci_spec::kLEAdvertisingTxPowerMax) &&
+      power != hci_spec::kLEExtendedAdvertisingTxPowerNoPreference) {
+    bt_log(INFO,
+           "gap-le",
+           "ignoring request: max tx power out of range: %#.4x "
+           "(range: [%#.4x, %#.4x]) (current: %#.4x)",
+           power,
+           hci_spec::kLEAdvertisingTxPowerMin,
+           hci_spec::kLEAdvertisingTxPowerMax,
+           very_fast_adv_max_tx_power_);
+
+    return;
+  }
+
+  bt_log(INFO,
+         "gap-le",
+         "setting very fast max advertising tx power to %d",
+         power);
   very_fast_adv_max_tx_power_ = power;
 }
 

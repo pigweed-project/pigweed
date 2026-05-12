@@ -52,18 +52,6 @@ constexpr AdvertisingIntervalRange kTestInterval(
 const DeviceAddress kPublicAddress(DeviceAddress::Type::kLEPublic, {1});
 const DeviceAddress kRandomAddress(DeviceAddress::Type::kLERandom, {2});
 
-// Various parts of the Bluetooth Core Spec require that advertising interval
-// min and max are not the same value. We shouldn't allow it either. For
-// example, Core Spec Volume 4, Part E, Section 7.8.5: "The
-// Advertising_Interval_Min and Advertising_Interval_Max should not be the same
-// value to enable the Controller to determine the best advertising interval
-// given other activities."
-TEST(AdvertisingIntervalRangeDeathTest, MaxMinNotSame) {
-  EXPECT_DEATH(AdvertisingIntervalRange(hci_spec::kLEAdvertisingIntervalMin,
-                                        hci_spec::kLEAdvertisingIntervalMin),
-               ".*");
-}
-
 TEST(AdvertisingIntervalRangeDeathTest, MinLessThanMax) {
   EXPECT_DEATH(AdvertisingIntervalRange(hci_spec::kLEAdvertisingIntervalMax,
                                         hci_spec::kLEAdvertisingIntervalMin),
@@ -945,21 +933,19 @@ TYPED_TEST(LowEnergyAdvertiserTest, PreviousAdvertisingParameters) {
   EXPECT_EQ(expected_ad, state->advertised_view());
 }
 
-// Tests that advertising interval values are capped within the allowed range.
-TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalWithinAllowedRange) {
+// Tests that advertising interval values are passed down correctly.
+TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalValues) {
   AdvertisingData ad = this->GetExampleData();
   AdvertisingData scan_data = this->GetExampleData();
 
-  // Pass min and max values that are outside the allowed range. These should
-  // be capped.
-  constexpr AdvertisingIntervalRange interval(
+  const AdvertisingIntervalRange interval(
       hci_spec::kLEAdvertisingIntervalMin - 1,
       hci_spec::kLEAdvertisingIntervalMax + 1);
   AdvertisingOptions options(interval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/false);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/false);
   this->SetRandomAddress(kRandomAddress);
 
   this->advertiser()->StartAdvertising(kRandomAddress,
@@ -967,15 +953,15 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalWithinAllowedRange) {
                                        scan_data,
                                        options,
                                        nullptr,
-                                       this->MakeExpectSuccessCallback());
+                                       this->MakeExpectErrorCallback());
   this->RunUntilIdle();
   EXPECT_TRUE(this->TakeLastStatus());
 
   std::optional<FakeController::LEAdvertisingState> state =
       this->GetControllerAdvertisingState();
   EXPECT_TRUE(state);
-  EXPECT_EQ(hci_spec::kLEAdvertisingIntervalMin, state->interval_min);
-  EXPECT_EQ(hci_spec::kLEAdvertisingIntervalMax, state->interval_max);
+  EXPECT_EQ(0u, state->interval_min);
+  EXPECT_EQ(0u, state->interval_max);
 
   std::optional<hci::Result<>> stop_result;
   this->advertiser()->StopAdvertising(
@@ -988,9 +974,9 @@ TYPED_TEST(LowEnergyAdvertiserTest, AdvertisingIntervalWithinAllowedRange) {
       hci_spec::kLEAdvertisingIntervalMax - 1);
   AdvertisingOptions new_options(new_interval,
                                  kDefaultNoAdvFlags,
-                                 /*extended_pdu=*/false,
-                                 /*anonymous=*/false,
-                                 /*include_tx_power_level=*/false);
+                                 /*init_extended_pdu=*/false,
+                                 /*init_anonymous=*/false,
+                                 /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress,
                                        ad,
                                        scan_data,
@@ -1014,9 +1000,9 @@ TYPED_TEST(LowEnergyAdvertiserTest, StartWhileStopping) {
   DeviceAddress addr = kRandomAddress;
   AdvertisingOptions options(kTestInterval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/false);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/false);
   this->SetRandomAddress(addr);
 
   // Get to a started state.

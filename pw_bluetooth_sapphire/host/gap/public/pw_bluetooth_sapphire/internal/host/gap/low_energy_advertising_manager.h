@@ -124,9 +124,9 @@ class LowEnergyAdvertisingManager final {
                         std::optional<DeviceAddress::Type> address_type,
                         AdvertisingStatusCallback status_callback);
 
-  void set_slow_advertising_interval(uint16_t min, uint16_t max);
-  void set_fast_advertising_interval(uint16_t min, uint16_t max);
-  void set_very_fast_advertising_interval(uint16_t min, uint16_t max);
+  void set_slow_advertising_interval(uint32_t min, uint32_t max);
+  void set_fast_advertising_interval(uint32_t min, uint32_t max);
+  void set_very_fast_advertising_interval(uint32_t min, uint32_t max);
 
   void set_slow_adv_max_tx_power(int8_t power);
   void set_fast_adv_max_tx_power(int8_t power);

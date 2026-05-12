@@ -1630,9 +1630,8 @@ void AdapterImpl::InitializeStep4() {
   // Initialize the LE manager objects
   le_discovery_manager_ = std::make_unique<LowEnergyDiscoveryManager>(
       hci_le_scanner_.get(), &peer_cache_, packet_filter_config, dispatcher_);
-  le_discovery_manager_->set_active_scan_interval(
-      config_.le_active_scan_interval);
-  le_discovery_manager_->set_active_scan_window(config_.le_active_scan_window);
+  le_discovery_manager_->set_active_scan_parameters(
+      config_.le_active_scan_interval, config_.le_active_scan_window);
   le_discovery_manager_->AttachInspect(
       adapter_node_, kInspectLowEnergyDiscoveryManagerNodeName);
   le_discovery_manager_->set_peer_connectable_callback(

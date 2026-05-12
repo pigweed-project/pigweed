@@ -45,6 +45,8 @@ class ExtendedLowEnergyScanner final : public LowEnergyScanner {
   bool StartScan(const ScanOptions& options,
                  ScanStatusCallback callback) override;
 
+  bool IsExtendedScanner() const override { return true; }
+
  private:
   // Build the HCI command packet to set the scan parameters for the flavor of
   // low energy scanning being implemented.

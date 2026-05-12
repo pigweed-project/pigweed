@@ -19,8 +19,6 @@
 #include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/discovery_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/local_address_delegate.h"
-#include "pw_bluetooth_sapphire/internal/host/hci/sequential_command_runner.h"
-#include "pw_bluetooth_sapphire/internal/host/transport/transport.h"
 
 namespace bt::hci {
 
@@ -80,7 +78,7 @@ class LowEnergyScanResult {
   int8_t rssi_ = hci_spec::kRSSIInvalid;
 
   // The transmitted signal strength of this packet, according to the advertiser
-  int8_t tx_power_ = hci_spec::kTxPowerInvalid;
+  int8_t tx_power_ = hci_spec::kLEExtendedAdvertisingTxPowerNoPreference;
 
   // Matches the advertising SID subfield in the ADI field of the received
   // advertisement, used to synchronize against a periodic advertising train
@@ -249,6 +247,8 @@ class LowEnergyScanner : public LocalAddressClient {
   bool IsUsingOffloadedFiltering() const {
     return packet_filter_.IsUsingOffloadedFiltering();
   }
+
+  virtual bool IsExtendedScanner() const { return false; }
 
   // LocalAddressClient override:
   bool AllowsRandomAddressChange() const override {

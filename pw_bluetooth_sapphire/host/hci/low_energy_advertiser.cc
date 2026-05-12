@@ -70,6 +70,27 @@ fit::result<HostError> LowEnergyAdvertiser::CanStartAdvertising(
     return fit::error(HostError::kNotSupported);
   }
 
+  uint32_t limit_min = hci_spec::kLEAdvertisingIntervalMin;
+  uint32_t limit_max = hci_spec::kLEAdvertisingIntervalMax;
+  if (IsExtendedAdvertiser()) {
+    limit_min = hci_spec::kLEExtendedAdvertisingIntervalMin;
+    limit_max = hci_spec::kLEExtendedAdvertisingIntervalMax;
+  }
+
+  if (options.interval.min() < limit_min ||
+      options.interval.max() > limit_max ||
+      options.interval.min() > options.interval.max()) {
+    bt_log(WARN,
+           "gap-le",
+           "advertising interval out of range: [%#.4x, %#.4x] (range: [%#.4x, "
+           "%#.4x])",
+           options.interval.min(),
+           options.interval.max(),
+           limit_min,
+           limit_max);
+    return fit::error(HostError::kInvalidParameters);
+  }
+
   AdvertisingEventProperties properties =
       GetAdvertisingEventProperties(data, scan_rsp, options, connect_callback);
 

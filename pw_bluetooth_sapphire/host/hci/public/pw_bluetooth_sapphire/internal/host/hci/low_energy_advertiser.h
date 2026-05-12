@@ -33,20 +33,24 @@ class Transport;
 
 class AdvertisingIntervalRange final {
  public:
-  // Constructs an advertising interval range, capping the values based on the
-  // allowed range (Vol 2, Part E, 7.8.5).
-  constexpr AdvertisingIntervalRange(uint16_t min, uint16_t max)
-      : min_(std::max(min, hci_spec::kLEAdvertisingIntervalMin)),
-        max_(std::min(max, hci_spec::kLEAdvertisingIntervalMax)) {
-    PW_ASSERT(min < max);
+  // Constructs an advertising interval range. When sending an HCI command to
+  // the Controller, legacy advertising uses a two byte interval (0x0020,
+  // 0x4000) and extended advertising uses a three byte interval (0x000020,
+  // 0xffffff). AdvertisingIntervalRange is used in both legacy and extended
+  // advertising and therefore uses uint32_t instead of uint16_t for its
+  // interval ranges. Validation that the interval is within range occurs
+  // elsewhere (i.e. LowEnergyAdvertisingManager).
+  constexpr AdvertisingIntervalRange(uint32_t min, uint32_t max)
+      : min_(min), max_(max) {
+    PW_ASSERT(min <= max);
   }
 
-  uint16_t min() const { return min_; }
-  uint16_t max() const { return max_; }
+  uint32_t min() const { return min_; }
+  uint32_t max() const { return max_; }
 
  private:
-  uint16_t min_;
-  uint16_t max_;
+  uint32_t min_;
+  uint32_t max_;
 };
 
 class LowEnergyAdvertiser : public LocalAddressClient {
@@ -221,6 +225,8 @@ class LowEnergyAdvertiser : public LocalAddressClient {
 
   // Returns the maximum number of advertisements that can be supported
   virtual size_t MaxAdvertisements() const = 0;
+
+  virtual bool IsExtendedAdvertiser() const { return false; }
 
   virtual void AttachInspect(inspect::Node& /*parent*/) {}
 

@@ -170,8 +170,7 @@ class LowEnergyDiscoveryManager final
 
   void AttachInspect(inspect::Node& parent, std::string name);
 
-  void set_active_scan_interval(uint16_t interval);
-  void set_active_scan_window(uint16_t window);
+  void set_active_scan_parameters(uint16_t interval, uint16_t window);
 
  private:
   enum class State {
