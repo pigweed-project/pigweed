@@ -74,6 +74,7 @@ pw_cc_test(
 pw_cc_test(
     name = "function_ref_test",
     srcs = ["function_ref_test.cc"],
+    has_nc_test = True,
     deps = [
         ":pw_function",
     ],

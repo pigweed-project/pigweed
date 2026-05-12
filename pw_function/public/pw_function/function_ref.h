@@ -17,6 +17,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_preprocessor/compiler.h"
+
 namespace pw {
 
 /// `pw::FunctionRef` is a non-owning reference to a callable object.
@@ -68,7 +70,7 @@ class BasicFunctionRef<IsConst, false, R, Args...> {
                                            std::remove_reference_t<F>&>,
                         Args...>,
                 int> = 0>
-  BasicFunctionRef(F&& f) noexcept
+  BasicFunctionRef(F&& f PW_ATTRIBUTE_LIFETIME_BOUND) noexcept
       : invoker_([](ObjPtr obj_ptr, Args... args) -> R {
           Storage* s = static_cast<Storage*>(obj_ptr);
           using FPtr = std::conditional_t<IsConst,
@@ -129,7 +131,7 @@ class BasicFunctionRef<IsConst, true, R, Args...> {
                                            std::remove_reference_t<F>&>,
                         Args...>,
                 int> = 0>
-  BasicFunctionRef(F&& f) noexcept
+  BasicFunctionRef(F&& f PW_ATTRIBUTE_LIFETIME_BOUND) noexcept
       : invoker_([](ObjPtr obj_ptr, Args... args) noexcept -> R {
           Storage* s = static_cast<Storage*>(obj_ptr);
           using FPtr = std::conditional_t<IsConst,

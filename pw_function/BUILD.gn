@@ -108,4 +108,5 @@ pw_test("scope_guard_test") {
 pw_test("function_ref_test") {
   deps = [ ":pw_function" ]
   sources = [ "function_ref_test.cc" ]
+  negative_compilation_tests = true
 }

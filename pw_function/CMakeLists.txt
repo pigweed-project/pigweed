@@ -50,16 +50,6 @@ pw_add_test(pw_function.function_test
     pw_function
 )
 
-pw_add_test(pw_function.function_ref_test
-  SOURCES
-    function_ref_test.cc
-  PRIVATE_DEPS
-    pw_function
-  GROUPS
-    modules
-    pw_function
-)
-
 pw_add_library(pw_function.pointer INTERFACE
   HEADERS
     public/pw_function/pointer.h

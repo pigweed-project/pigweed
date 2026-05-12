@@ -14,10 +14,21 @@
 
 #include "pw_function/function_ref.h"
 
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw {
 namespace {
+
+// We rely on a clang-specific attribute to catch this lifetime error
+#ifdef __clang__
+#if PW_NC_TEST(DanglingLambdaDoesNotLiveLongEnough)
+PW_NC_EXPECT_CLANG("temporary.*destroyed.*Wdangling");
+[[maybe_unused]] void TriggerDanglingLambda() {
+  [[maybe_unused]] FunctionRef<void()> ref = [] {};
+}
+#endif  // PW_NC_TEST
+#endif  // __clang__
 
 int Multiply(int a, int b) { return a * b; }
 
@@ -34,6 +45,20 @@ TEST(FunctionRefTest, LambdaWithCapture) {
   EXPECT_EQ(ref(3), 6);
   factor = 3;
   EXPECT_EQ(ref(3), 9);
+}
+
+int SomeFunction(FunctionRef<int()> ref) { return ref() + ref(); }
+
+// It is okay to create a FunctionRef from a temporary lambda as long as the
+// FunctionRef does not outlive the lambda
+TEST(FunctionRefTest, TemporaryLambda) {
+  int a = 0;
+  EXPECT_EQ(SomeFunction([&a] {
+              a += 128;
+              return 100;
+            }),
+            200);
+  EXPECT_EQ(a, 256);
 }
 
 TEST(FunctionRefTest, FunctionPointer) {
