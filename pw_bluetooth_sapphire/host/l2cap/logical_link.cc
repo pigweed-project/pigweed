@@ -173,8 +173,8 @@ LogicalLink::LogicalLink(
 
     SendFixedChannelsSupportedInformationRequest();
   }
-  a2dp_offload_manager_.SetSniffSuppress(
-      fit::bind_member<&LogicalLink::SuppressAutosniff>(this));
+  a2dp_offload_manager_.RegisterLink(
+      handle_, fit::bind_member<&LogicalLink::SuppressAutosniff>(this));
 }
 
 LogicalLink::~LogicalLink() {
@@ -607,6 +607,8 @@ void LogicalLink::Close() {
   PW_DCHECK(!closed_);
 
   closed_ = true;
+
+  a2dp_offload_manager_.UnregisterLink(handle_);
 
   acl_data_channel_->UnregisterConnection(handle_);
 

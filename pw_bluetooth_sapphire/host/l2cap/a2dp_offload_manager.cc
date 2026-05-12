@@ -127,8 +127,9 @@ void A2dpOffloadManager::StartA2dpOffload(
   }
   PW_MODIFY_DIAGNOSTICS_POP();
 
-  if (sniff_suppress_cb_) {
-    autosniff_suppress_ = sniff_suppress_cb_("A2DP Offload");
+  auto iter = sniff_suppress_cbs_.find(link_handle);
+  if (iter != sniff_suppress_cbs_.end() && iter->second) {
+    autosniff_suppress_ = iter->second("A2DP Offload");
   }
 
   cmd_channel_
@@ -294,6 +295,19 @@ bool A2dpOffloadManager::IsChannelOffloaded(
          (a2dp_offload_status_ == A2dpOffloadStatus::kStarted ||
           a2dp_offload_status_ == A2dpOffloadStatus::kStarting ||
           a2dp_offload_status_ == A2dpOffloadStatus::kStopping);
+}
+
+void A2dpOffloadManager::RegisterLink(hci_spec::ConnectionHandle link_handle,
+                                      SniffSuppressCallback cb) {
+  sniff_suppress_cbs_[link_handle] = std::move(cb);
+}
+
+void A2dpOffloadManager::UnregisterLink(
+    hci_spec::ConnectionHandle link_handle) {
+  sniff_suppress_cbs_.erase(link_handle);
+  if (offloaded_link_handle_ == link_handle) {
+    autosniff_suppress_.reset();
+  }
 }
 
 }  // namespace bt::l2cap

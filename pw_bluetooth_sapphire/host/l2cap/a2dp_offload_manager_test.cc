@@ -30,6 +30,7 @@ namespace android_emb = pw::bluetooth::vendor::android_hci;
 using namespace bt::testing;
 
 constexpr hci_spec::ConnectionHandle kTestHandle1 = 0x0001;
+constexpr hci_spec::ConnectionHandle kTestHandle2 = 0x0002;
 constexpr ChannelId kLocalId = 0x0040;
 constexpr ChannelId kRemoteId = 0x9042;
 
@@ -569,6 +570,70 @@ TEST_F(A2dpOffloadTest, DifferentChannelCannotStopA2dpOffloading) {
   EXPECT_FALSE(offload_mgr()->IsChannelOffloaded(kLocalId, kTestHandle1));
   ASSERT_TRUE(stop_result.has_value());
   EXPECT_TRUE(stop_result->is_ok());
+}
+
+TEST_F(A2dpOffloadTest, SniffSuppressionCallbackPerLink) {
+  int link1_suppressed_count = 0;
+  int link2_suppressed_count = 0;
+
+  offload_mgr()->RegisterLink(kTestHandle1, [&](const char* reason) {
+    EXPECT_STREQ("A2DP Offload", reason);
+    link1_suppressed_count++;
+    return nullptr;
+  });
+
+  offload_mgr()->RegisterLink(kTestHandle2, [&](const char* reason) {
+    EXPECT_STREQ("A2DP Offload", reason);
+    link2_suppressed_count++;
+    return nullptr;
+  });
+
+  // Start offload on Link 1
+  A2dpOffloadManager::Configuration config = BuildConfiguration();
+  const auto command_complete =
+      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
+                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
+      &command_complete);
+
+  offload_mgr()->StartA2dpOffload(
+      config, kLocalId, kRemoteId, kTestHandle1, kMaxMTU, [](auto res) {
+        EXPECT_TRUE(res.is_ok());
+      });
+  RunUntilIdle();
+
+  // Only Link 1's callback should have been invoked
+  EXPECT_EQ(1, link1_suppressed_count);
+  EXPECT_EQ(0, link2_suppressed_count);
+
+  // Unregister Link 1
+  offload_mgr()->UnregisterLink(kTestHandle1);
+
+  // Stop offload (this would reset the autosniff_suppress_)
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), StopA2dpOffloadRequest(), &command_complete);
+  offload_mgr()->RequestStopA2dpOffload(
+      kLocalId, kTestHandle1, [](auto res) { EXPECT_TRUE(res.is_ok()); });
+  RunUntilIdle();
+
+  // Now start offload again on Link 1, but since it is unregistered, it
+  // shouldn't call its callback
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
+      &command_complete);
+
+  offload_mgr()->StartA2dpOffload(
+      config, kLocalId, kRemoteId, kTestHandle1, kMaxMTU, [](auto res) {
+        EXPECT_TRUE(res.is_ok());
+      });
+  RunUntilIdle();
+
+  // Link 1's callback should still be 1 (not incremented)
+  EXPECT_EQ(1, link1_suppressed_count);
+  EXPECT_EQ(0, link2_suppressed_count);
 }
 
 }  // namespace
