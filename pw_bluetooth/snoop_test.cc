@@ -36,11 +36,11 @@ constexpr std::string_view kSnoopFileHeader =
 
 constexpr uint8_t hex_char_to_int(char c) {
   if (c >= '0' && c <= '9') {
-    return c - '0';
+    return static_cast<uint8_t>(c - '0');
   } else if (c >= 'a' && c <= 'f') {
-    return c - 'a' + 10;
+    return static_cast<uint8_t>(c - 'a' + 10);
   } else if (c >= 'A' && c <= 'F') {
-    return c - 'A' + 10;
+    return static_cast<uint8_t>(c - 'A' + 10);
   } else {
     // Handle invalid characters as needed
     return 0;
@@ -52,7 +52,7 @@ pw::Vector<std::byte, 512> hex_string_to_bytes(std::string_view hex_str) {
   uint8_t value = 0;
   for (size_t i = 0; i < hex_str.size(); i++) {
     if (i % 2 == 0) {
-      value = hex_char_to_int(hex_str[i]) << 4;
+      value = static_cast<uint8_t>(hex_char_to_int(hex_str[i]) << 4);
     } else {
       value |= hex_char_to_int(hex_str[i]);
       bytes.push_back(std::byte(value));

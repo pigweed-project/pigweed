@@ -110,7 +110,7 @@ void AddTrace(emboss::snoop_log::PacketFlags emboss_packet_flag,
       break;
     default:
       PW_UNREACHABLE;
-      direction = -1;
+      direction = static_cast<uint8_t>(-1);
   }
   size_t size = hci_packet.GetHciSpan().size();
   trace_tag_builder << type << "/" << direction << "/" << size;
