@@ -45,6 +45,16 @@ import {
 } from './processedMapping';
 import { saveUnprocessedMapping } from './unprocessedMapping';
 
+export function getClangdArgs(targetDir: string, cores: number): string[] {
+  return [
+    `--compile-commands-dir=${targetDir}`,
+    '--query-driver=/*',
+    '--header-insertion=never',
+    '--background-index',
+    '-j=' + Math.max(1, Math.round(cores / 4)),
+  ];
+}
+
 export async function setTargetWithClangd(
   target: Target | undefined,
   settingsFileWriter: (target: string) => Promise<void>,
@@ -98,13 +108,7 @@ export async function setTargetWithClangd(
   // all done before we trigger a clangd restart.
   await Promise.all([
     updatePath(clangdPath),
-    updateArgs([
-      `--compile-commands-dir=${target.dir}`,
-      '--query-driver=/*',
-      '--header-insertion=never',
-      '--background-index',
-      '-j=' + Math.max(1, Math.round(cores / 4)),
-    ]),
+    updateArgs(getClangdArgs(target.dir, cores)),
     settingsFileWriter(target.name),
   ]);
   // Restart the clangd server so it picks up the new setting.

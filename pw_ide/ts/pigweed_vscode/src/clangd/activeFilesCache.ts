@@ -15,7 +15,6 @@
 import * as fs from 'fs';
 import * as fs_p from 'fs/promises';
 import * as path from 'path';
-import * as readline_p from 'readline/promises';
 
 import { Uri } from 'vscode';
 
@@ -194,7 +193,7 @@ export class ClangdActiveFilesCache extends Disposable {
       ...((await this.getForTarget(target)).keys() ?? []),
     ];
     const escapedPaths = activeFilesForTarget.map((p) =>
-      p.replace(/\+/g, '\\+'),
+      p.replace(/\\/g, '/').replace(/\+/g, '\\+'),
     );
     let data = yaml.dump(clangdSettingsDisableFiles(escapedPaths));
 

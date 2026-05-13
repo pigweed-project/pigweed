@@ -40,9 +40,13 @@ export const clangdPath = () => {
   const args = ['cquery', createClangdSymlinkTarget, '--output=files'];
   logger.info(`Running ${cmd} ${args.join(' ')}`);
   const result = child_process.spawnSync(cmd, args, { cwd: workingDir.get() });
-  // Sometimes the stdout has more than just path (like in fish shell).
   const relativeClangdPath = result.stdout.toString().trim().split('\n').pop()!;
   logger.info('Relative clangd path resolves to ' + relativeClangdPath);
+
+  if (!relativeClangdPath) {
+    logger.error('Could not determine relative clangd path from cquery.');
+    return undefined;
+  }
 
   const execRoot = getBazelExecRoot();
   if (!execRoot) {
