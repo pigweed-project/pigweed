@@ -1,4 +1,4 @@
-.. _module-pw_ide-design:
+.. _module-pw_ide-contributing-design:
 
 ======
 Design
@@ -16,14 +16,14 @@ Design
 .. grid:: 2
 
    .. grid-item-card:: :octicon:`code` C/C++ Code Intelligence
-      :link: module-pw_ide-design-cpp
+      :link: module-pw_ide-contributing-design-cpp
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
       Learn about Pigweed's approach to IDE code intelligence for C/C++
 
    .. grid-item-card:: :octicon:`project` Projects
-      :link: module-pw_ide-design-projects
+      :link: module-pw_ide-contributing-design-projects
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 

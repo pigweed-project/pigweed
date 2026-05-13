@@ -1,19 +1,26 @@
-.. _module-pw_ide-guide-cli:
+.. _module-pw_ide-bootstrap:
 
-==========
-pw_ide CLI
-==========
+===============================
+pw_ide for Bootstrap Projects
+===============================
 .. pigweed-module-subpage::
    :name: pw_ide
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   editors
 
 The ``pw_ide`` command-line interface (CLI) provides an editor-independent
 mechanism for managing code intelligence for Pigweed projects.
 
 .. note::
 
-   Currently, the CLI only supports :ref:`bootstrap projects<module-pw_ide-design-projects-bootstrap>`,
-   For :ref:`Bazel projects<module-pw_ide-design-projects-bazel>`, we recommend
-   using the :ref:`Visual Studio Code integration<module-pw_ide-guide-vscode>`.
+   Currently, the CLI only supports :ref:`bootstrap projects
+   <module-pw_ide-contributing-design-projects-bootstrap>`.
+   For :ref:`Bazel projects<module-pw_ide-contributing-design-projects-bazel>`, we recommend
+   using the :ref:`Visual Studio Code integration<module-pw_ide-bazel>`.
 
 --------------------------------
 Setting up C++ code intelligence

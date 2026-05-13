@@ -1,4 +1,4 @@
-.. _module-pw_ide-testing:
+.. _module-pw_ide-contributing-testing:
 
 ============================
 Manual Test Procedure

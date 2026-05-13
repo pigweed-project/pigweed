@@ -1,4 +1,4 @@
-.. _module-pw_ide-guide-vscode-development:
+.. _module-pw_ide-contributing-development:
 
 ===========
 Development

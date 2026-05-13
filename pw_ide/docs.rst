@@ -10,11 +10,11 @@ pw_ide
    :maxdepth: 1
    :hidden:
 
-   guide/index
-   design/index
-   testing
+   Bazel <guide/bazel/index>
+   Bootstrap <guide/bootstrap/index>
+   Contributing <contributing/index>
 
-Rich, modern IDE and code editor support for embedded systems Projects.
+Rich, modern IDE and code editor support for embedded systems projects.
 
 Modern software development takes advantage of language servers and advanced
 editor features to power experiences like:
@@ -25,42 +25,34 @@ editor features to power experiences like:
 * Code autocompletion based on a deep understanding of the code structure, not
   just dictionary lookups
 
-* Instant compiler errors and warnings as you write your code
+* Instant compiler errors and warnings as you write your code, powered by the language server.
 
 Most embedded systems development still lacks these features.
-**When you use Pigweed, you get all of them!**
+**When you use pw_ide, you get all of them!**
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`codescan` Visual Studio Code
-      :link: module-pw_ide-guide-vscode
+   .. grid-item-card:: :octicon:`code` pw_ide for Bazel
+      :link: module-pw_ide-bazel
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Learn how to use Visual Studio Code for blazingly modern embedded software
+      Learn how to use Visual Studio Code for blazingly fast embedded software
       development for Bazel-based Pigweed projects
 
-   .. grid-item-card:: :octicon:`terminal` pw_ide CLI
-      :link: module-pw_ide-guide-cli
+   .. grid-item-card:: :octicon:`terminal` pw_ide for Bootstrap
+      :link: module-pw_ide-bootstrap
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
       Learn how to use the ``pw_ide`` command-line interface with
       bootstrap-based Pigweed projects using GN or CMake
 
-.. grid:: 2
+.. grid:: 1
 
-   .. grid-item-card:: :octicon:`code` C/C++ Code Intelligence
-      :link: module-pw_ide-design-cpp
+   .. grid-item-card:: :octicon:`repo` Contributing
+      :link: module-pw_ide-contributing
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Learn about Pigweed's approach to IDE code intelligence for C/C++
-
-   .. grid-item-card:: :octicon:`project` Projects
-      :link: module-pw_ide-design-projects
-      :link-type: ref
-      :class-item: sales-pitch-cta-primary
-
-      Understand Pigweed project structure and how Pigweed's IDE features
-      interact with it
+      Learn how to contribute to the Pigweed IDE module and understand its design

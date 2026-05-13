@@ -1,4 +1,4 @@
-.. _module-pw_ide-design-projects:
+.. _module-pw_ide-contributing-design-projects:
 
 ========
 Projects
@@ -23,7 +23,7 @@ Pigweed IDE supports either or both of these in a project. For example, Pigweed
 itself has a GN build, supported by Bootstrap tooling, as well as a Bazel build,
 supported by Bazel tooling. Pigweed IDE will provide code intelligence for both.
 
-.. _module-pw_ide-design-projects-project-root:
+.. _module-pw_ide-contributing-design-projects-project-root:
 
 -----------------
 Project structure
@@ -31,7 +31,7 @@ Project structure
 Pigweed IDE looks for the presence of a ``pigweed.json`` file to indicate the
 root of the project directory.
 
-.. _module-pw_ide-design-projects-bootstrap:
+.. _module-pw_ide-contributing-design-projects-bootstrap:
 
 Bootstrap projects
 ==================
@@ -85,7 +85,7 @@ If the environment has not been bootstrapped yet, we just need to run
 that results from running the script, since we have access to it through the
 steps described above.
 
-.. _module-pw_ide-design-projects-bazel:
+.. _module-pw_ide-contributing-design-projects-bazel:
 
 Bazel projects
 ==============

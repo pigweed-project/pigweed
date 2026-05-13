@@ -1,4 +1,4 @@
-.. _module-pw_ide-guide-vscode-legacy:
+.. _module-pw_ide-bootstrap-editors:
 
 ======================
 Legacy support via CLI
@@ -6,15 +6,15 @@ Legacy support via CLI
 .. pigweed-module-subpage::
    :name: pw_ide
 
-The :ref:`pw_ide CLI<module-pw_ide-guide-cli>` provides an alternative method
-of configuring Visual Studio Code for :ref:`bootstrap Pigweed projects<module-pw_ide-design-projects-bootstrap>`
+The :ref:`pw_ide CLI<module-pw_ide-bootstrap>` provides an alternative method
+of configuring Visual Studio Code for :ref:`bootstrap Pigweed projects<module-pw_ide-contributing-design-projects-bootstrap>`
 that doesn't rely on the use of an extension. This page documents that
 functionality.
 
 .. tip::
 
-   Are you working on a :ref:`Bazel Pigweed project<module-pw_ide-design-projects-bazel>`?
-   These instructions won't work for you. Use the :ref:`extension<module-pw_ide-guide-vscode>`!
+   Are you working on a :ref:`Bazel Pigweed project<module-pw_ide-contributing-design-projects-bazel>`?
+   These instructions won't work for you. Use the :ref:`extension<module-pw_ide-bazel>`!
 
 -----
 Usage

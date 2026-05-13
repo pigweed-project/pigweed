@@ -1,4 +1,4 @@
-.. _module-pw_ide-guide-vscode-troubleshooting:
+.. _module-pw_ide-bazel-troubleshooting:
 
 ===============
 Troubleshooting
@@ -15,11 +15,11 @@ Code extension.
 Can't determine project type
 ----------------------------
 The Pigweed extension wasn't able to infer whether your Pigweed project is a
-:ref:`Bazel project<module-pw_ide-design-projects-bazel>` or a
-:ref:`bootstrap project<module-pw_ide-design-projects-bootstrap>`. This may
+:ref:`Bazel project<module-pw_ide-contributing-design-projects-bazel>` or a
+:ref:`bootstrap project<module-pw_ide-contributing-design-projects-bootstrap>`. This may
 happen if you have an unusual project structure.
 
-You can resolve it by :ref:`explicitly setting the project type<module-pw_ide-guide-vscode-settings-project-type>`
+You can resolve it by :ref:`explicitly setting the project type<module-pw_ide-bazel-configuration-project-type>`
 in your settings.
 
 .. _project-root:
@@ -28,10 +28,10 @@ in your settings.
 Can't find project root
 -----------------------
 The Pigweed extension wasn't able to infer the path to your
-:ref:`Pigweed project root<module-pw_ide-design-projects-project-root>`. This
+:ref:`Pigweed project root<module-pw_ide-contributing-design-projects-project-root>`. This
 may happen if you have an unusual project structure.
 
-You can resolve it by :ref:`explicitly setting the project root<module-pw_ide-guide-vscode-settings-project-root>`
+You can resolve it by :ref:`explicitly setting the project root<module-pw_ide-bazel-configuration-project-root>`
 in your settings.
 
 .. _failed_to_refresh_code_intelligence:
@@ -54,7 +54,7 @@ used to provide code intelligences. Some troubleshooting steps:
 ---------------------------------
 Couldn't find any targets (Bazel)
 ---------------------------------
-The Pigweed extension couldn't find any Bazel targets or target groups to use
+The Pigweed extension couldn't find any Bazel targets or target platforms to use
 for code intelligence. Here are some troubleshooting steps to follow:
 
 Check the output panel for errors that may have occurred
@@ -62,8 +62,6 @@ Check the output panel for errors that may have occurred
 Run ``Pigweed: Open Output Panel`` from the command palette. You should see the
 output from the most recent attempt to generate compile commands. If you *don't*
 see that output, you can manually start the process by running
-``Pigweed: Refresh Compile Commands``.
-
 The most common failure here is actually an upstream failure in the Bazel build,
 like missing dependencies or invalid Starlark files. Resolve those problems,
 and the refresh process should restart automatically.

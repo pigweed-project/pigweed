@@ -1,4 +1,4 @@
-.. _module-pw_ide-design-cpp:
+.. _module-pw_ide-contributing-design-cpp:
 
 =======================
 C/C++ code intelligence
@@ -68,7 +68,7 @@ Bazel doesn't have native support for generating compile commands, so Pigweed
 IDE uses Bazel queries to create ``clangd`` compile commands that reflect the
 Bazel build graph.
 
-.. _module-pw_ide-design-cpp-gn:
+.. _module-pw_ide-contributing-design-cpp-gn:
 
 GN (Generate Ninja)
 ===================
@@ -94,7 +94,7 @@ commands and cause ``clangd`` to fault. So these files need to be processed to:
 
 Pigweed IDE does this for you.
 
-.. _module-pw_ide-design-cpp-cmake:
+.. _module-pw_ide-contributing-design-cpp-cmake:
 
 CMake
 =====
