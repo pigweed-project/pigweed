@@ -25,7 +25,6 @@ pw_cc_binary(
         "hdlc_rpc_server.cc",
         "main.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_hdlc",

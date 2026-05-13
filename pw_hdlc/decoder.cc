@@ -34,8 +34,9 @@ Result<Frame> Frame::Parse(ConstByteSpan frame) {
     return Status::DataLoss();
   }
 
-  return Frame(
-      address, frame[address_size], frame.subspan(address_size + 1, data_size));
+  return Frame(address,
+               frame[address_size],
+               frame.subspan(address_size + 1, static_cast<size_t>(data_size)));
 }
 
 Result<Frame> Decoder::Process(const byte new_byte) {
