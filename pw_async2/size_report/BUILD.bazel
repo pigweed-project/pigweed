@@ -421,6 +421,20 @@ pw_cc_size_binary(
     deps = CHANNEL_DEPS,
 )
 
+pw_cc_size_binary(
+    name = "channel_notification_size_report",
+    srcs = ["channel_size_report.cc"],
+    defines = ["PW_ASYNC2_CHANNEL_SIZE_REPORT_NOTIFICATION"],
+    deps = CHANNEL_DEPS,
+)
+
+pw_cc_size_binary(
+    name = "channel_static_notification_incremental",
+    srcs = ["channel_size_report.cc"],
+    defines = ["PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT_AND_NOTIFICATION"],
+    deps = CHANNEL_DEPS,
+)
+
 pw_size_diff(
     name = "channel_static_row",
     base = ":async2_core",
@@ -456,6 +470,20 @@ pw_size_diff(
     target = ":channel_dynamic_static_size_report",
 )
 
+pw_size_diff(
+    name = "channel_notification_row",
+    base = ":async2_core",
+    label = "Size of ``MpmcChannel<void>``",
+    target = ":channel_notification_size_report",
+)
+
+pw_size_diff(
+    name = "channel_static_notification_row",
+    base = ":channel_notification_size_report",
+    label = "Cost of ``MpmcChannel<void>`` with static ``MpmcChannel<int>``",
+    target = ":channel_static_notification_incremental",
+)
+
 pw_size_table(
     name = "channel_size_report",
     reports = [
@@ -464,5 +492,7 @@ pw_size_table(
         ":channel_static_move_only_row",
         ":channel_dynamic_row",
         ":channel_dynamic_static_row",
+        ":channel_notification_row",
+        ":channel_static_notification_row",
     ],
 )

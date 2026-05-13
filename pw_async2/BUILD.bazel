@@ -190,12 +190,29 @@ cc_library(
     name = "testing",
     testonly = True,
     srcs = ["dispatcher_for_test.cc"],
-    hdrs = ["public/pw_async2/dispatcher_for_test.h"],
+    hdrs = [
+        "public/pw_async2/dispatcher_for_test.h",
+    ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
         ":dispatcher_for_test_backend",
         ":pw_async2",
+    ],
+)
+
+cc_library(
+    name = "testing_internal",
+    testonly = True,
+    hdrs = [
+        "public/pw_async2/internal/channel_test_util.h",
+    ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":channel",
+        ":pw_async2",
+        "//pw_containers:vector",
     ],
 )
 
@@ -788,6 +805,7 @@ cc_library(
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:lock_annotations",
         "//pw_sync:timed_thread_notification",
+        "//third_party/fuchsia:stdcompat",
     ],
 )
 
@@ -800,8 +818,10 @@ pw_cc_test(
         ":channel",
         ":pw_async2",
         ":testing",
+        ":testing_internal",
         "//pw_allocator:testing",
         "//pw_containers:vector",
+        "//pw_function",
     ],
 )
 
@@ -814,7 +834,9 @@ pw_cc_test(
         ":channel",
         ":pw_async2",
         ":testing",
+        ":testing_internal",
         "//pw_containers:vector",
+        "//pw_function",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
     ],

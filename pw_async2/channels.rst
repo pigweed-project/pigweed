@@ -398,6 +398,157 @@ methods:
   containing either the value read or the error in case of timeout or channel
   closure.
 
+.. _module-pw_async2-notification-channels:
+
+---------------------
+Notification Channels
+---------------------
+A notification channel is a specialization of the channel types created when
+the specified type is ``void``. Notification channels use somewhat less memory
+than other channel types, as instead of a queue of `T` there is instead a single
+counter with the count of notifications in the queue.
+
+They are useful if all you need is a way of signalling to another task or
+thread that something has happened, such as a generic completion event with no
+other details.
+
+Since you cannot send or receive a ``void`` data type, there are some minor
+adjustments needed around sending or receiving data. The API differences
+section below summarizes them. Other than these differences, notification
+channels behave exactly like their regular counterparts, to make it easy to
+switch to and from them.
+
+Notification Channel API differences
+====================================
+* - :cc:`Sender::Send`
+
+  For a notification, there is no value argument. The returned
+  :cc:`SendFuture` has the same behavior and has no API changes.
+
+  .. code-block:: cpp
+
+     Sender<int> sender = /* ... */;
+     SendFuture<int> send_future = sender.Send(123);  // Sends '123'
+     PW_TRY_READY_ASSIGN(bool sent, send_future.Pend(cx));
+
+     Sender<void> sender = /* ... */;
+     SendFuture<void> send_future = sender.Send();  // Sends a notification
+     PW_TRY_READY_ASSIGN(bool sent, send_future.Pend(cx));
+
+* :cc:`Sender::TrySend`
+
+  For a notification, there is no value argument. The returned
+  :cc:`pw::Status` still indicates if the operation succeeded or not.
+
+  .. code-block:: cpp
+
+     Sender<int> sender = /* ... */;
+     pw::Status status = sender.TrySend(123);  // Tries to send '123'
+     if (!status.ok()) {
+       /* handle failure */
+     }
+
+     Sender<void> sender = /* ... */;
+     pw::Status status = sender.TrySend();  // Tries to send a notification
+     if (!status.ok()) {
+       /* handle failure */
+     }
+
+* :cc:`Sender::BlockingSend`
+
+   For a notification, there is no value argument, but there are still
+   ``dispatcher`` and (optional) ``timeout`` arguments.
+
+   .. code-block:: cpp
+
+      Sender<int> sender = /* ... */;
+      pw::Status status = sender.BlockingSend(123, dispatcher, timeout);
+      if (!status.ok()) {
+        /* handle failure */
+      }
+
+      Sender<void> sender = /* ... */;
+      pw::Status status = sender.BlockingSend(dispatcher, timeout);
+      if (!status.ok()) {
+        /* handle failure */
+      }
+
+* :cc:`SendReservation::Commit`
+
+  For a notification, use ``CommitNotification()`` instead, as ``Commit``
+  allows for in-place construction, and can take zero arguments to
+  default-construct your value.
+
+  The name change ensures that if you switch from a notification channel to a
+  value channel, the ``CommitNotification()`` call on a non-notification
+  channel will result in a build error ensuring you use a useful value.
+
+  .. code-block:: cpp
+
+     SendReservation<int> reservation = /* ... */;
+     reservation.Commit(123);
+
+     SendReservation<void> reservation = /* ... */;
+     reservation.CommitNotification();
+
+* :cc:`Receiver::TryReceive`
+
+  For a notification, the return type changes from ``pw::Result<T>`` to
+  ``pw::Status`` since there is no value to unwrap on success.
+
+  .. code-block:: cpp
+
+     Receiver<int> receiver = /* ... */;
+     pw::Result<int> result = receiver.TryReceive();
+     if (!result.ok()) {
+       /* handle failure */
+     }
+
+     Receiver<void> receiver = /* ... */;
+     pw::Status result = receiver.TryReceive();
+     if (!result.ok()) {
+       /* handle failure */
+     }
+
+* :cc:`Receiver::BlockingReceive`
+
+  For a notification, the return type changes from ``pw::Result<T>`` to
+  ``pw::Status`` since there is no value to unwrap on success.
+
+  .. code-block:: cpp
+
+     Receiver<int> receiver = /* ... */;
+     pw::Result<int> result = receiver.BlockingReceive(dispatcher);
+     if (!result.ok()) {
+       /* handle failure */
+     }
+
+     Receiver<void> receiver = /* ... */;
+     pw::Status result = receiver.BlockingReceive(dispatcher);
+     if (!result.ok()) {
+       /* handle failure */
+     }
+
+* :cc:`ReceiveFuture::Pend()<pw::async2::ReceiveFuture>`
+
+  For a notification, the returned poll type changes from ``Poll<std::optional<T>>``
+  to ``Poll<bool>``. The contained bool is true if a notification was received,
+  or false if the channel was closed.
+
+  .. code-block:: cpp
+
+     ReceiveFuture<int> receive_future = /* ... */;
+     PW_TRY_READY_ASSIGN(std::optional<int> value, receive_future.Pend(cx));
+     if (!value) {
+       /* handle channel closed */
+     }
+
+     ReceiveFuture<int> result = /* ... */;
+     PW_TRY_READY_ASSIGN(bool value, receive_future.Pend(cx));
+     if (!value) {
+       /* handle channel closed */
+     }
+
 -----------
 Size report
 -----------

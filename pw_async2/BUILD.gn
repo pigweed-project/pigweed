@@ -172,6 +172,18 @@ pw_source_set("testing") {
   testonly = pw_unit_test_TESTONLY
 }
 
+pw_source_set("testing_internal") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_async2/internal/channel_test_util.h" ]
+  public_deps = [
+    ":channel",
+    ":pw_async2",
+    "$dir_pw_containers:vector",
+  ]
+  testonly = pw_unit_test_TESTONLY
+  visibility = [ ":*" ]
+}
+
 config("basic_dispatcher_for_test_public_overrides") {
   include_dirs = [ "dispatcher_for_test_public_overrides" ]
   visibility = [ ":*" ]
@@ -637,6 +649,7 @@ pw_source_set("channel") {
     "$dir_pw_numeric:checked_arithmetic",
     "$dir_pw_sync:interrupt_spin_lock",
     "$dir_pw_sync:timed_thread_notification",
+    "$pw_external_fuchsia:stdcompat",
   ]
 }
 
@@ -648,8 +661,10 @@ pw_test("channel_test") {
     ":channel",
     ":pw_async2",
     ":testing",
+    ":testing_internal",
     "$dir_pw_allocator:testing",
     "$dir_pw_containers:vector",
+    dir_pw_function,
   ]
 }
 
@@ -660,10 +675,12 @@ pw_test("channel_thread_test") {
     ":channel",
     ":pw_async2",
     ":testing",
+    ":testing_internal",
     "$dir_pw_containers:vector",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
     "$dir_pw_thread_stl:thread",
+    dir_pw_function,
   ]
 }
 

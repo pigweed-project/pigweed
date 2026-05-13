@@ -609,6 +609,7 @@ pw_add_library(pw_async2.channel STATIC
     pw_numeric.checked_arithmetic
     pw_sync.interrupt_spin_lock
     pw_sync.timed_thread_notification
+    pw_third_party.fuchsia.stdcompat
   PUBLIC_INCLUDES
     public
 )

@@ -36,11 +36,19 @@ int MeasureStatic() {
   channel.Release();
 
   FuncTask send_task([&](Context& cx) -> Poll<> {
-    auto future = sender.Send(T());
-    if (future.Pend(cx).IsReady()) {
-      return Ready();
+    if constexpr (std::is_void_v<T>) {
+      auto future = sender.Send();
+      if (future.Pend(cx).IsReady()) {
+        return Ready();
+      }
+      return Pending();
+    } else {
+      auto future = sender.Send(T());
+      if (future.Pend(cx).IsReady()) {
+        return Ready();
+      }
+      return Pending();
     }
-    return Pending();
   });
   dispatcher.Post(send_task);
 
@@ -129,6 +137,11 @@ int main() {
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_DYNAMIC_STATIC_INT)
   pw::async2::size_report::MeasureDynamic();
   pw::async2::size_report::MeasureStatic<int>();
+#elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_NOTIFICATION)
+  pw::async2::size_report::MeasureStatic<void>();
+#elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT_AND_NOTIFICATION)
+  pw::async2::size_report::MeasureStatic<int>();
+  pw::async2::size_report::MeasureStatic<void>();
 #else
 #error "No size report macro was set!"
 #endif

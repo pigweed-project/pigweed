@@ -17,7 +17,9 @@
 #include "pw_async2/await.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/internal/channel_test_util.h"
 #include "pw_containers/vector.h"
+#include "pw_function/function.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
@@ -25,513 +27,555 @@
 namespace {
 
 using pw::async2::ChannelStorage;
-using pw::async2::Context;
 using pw::async2::CreateSpscChannel;
 using pw::async2::Dispatcher;
 using pw::async2::DispatcherForTest;
-using pw::async2::Poll;
-using pw::async2::Ready;
-using pw::async2::ReceiveFuture;
 using pw::async2::Receiver;
 using pw::async2::Sender;
-using pw::async2::SendFuture;
-using pw::async2::Task;
+
+using IntFunction = pw::InlineFunction<int()>;
+using MoveOnlyInt = pw::async2::test::MoveOnlyInt;
 
 using namespace std::chrono_literals;
 
+constexpr pw::Status AsStatus(pw::Status status) { return status; }
 template <typename T>
-class BasicSenderTask : public Task {
- public:
-  BasicSenderTask(Sender<T> sender, int start, int end)
-      : Task(PW_ASYNC_TASK_NAME("SenderTask")),
-        sender_(std::move(sender)),
-        next_(start),
-        end_(end) {}
+constexpr pw::Status AsStatus(const pw::Result<T>& result) {
+  return result.status();
+}
 
- private:
-  Poll<> DoPend(Context& cx) override {
-    while (next_ <= end_) {
-      if (!future_.is_pendable()) {
-        future_ = sender_.Send(T(next_));
-      }
+template <typename T>
+struct ChannelAdapter {
+  using ReceiverTask = pw::async2::test::ReceiverTask<T>;
+  using ReservedSenderTask = pw::async2::test::ReservedSenderTask<T, int>;
+  using SenderTask = pw::async2::test::SenderTask<T, int>;
 
-      PW_AWAIT(bool sent, future_, cx);
-      if (!sent) {
-        return Ready();
-      }
-
-      next_++;
-    }
-
-    sender_.Disconnect();
-    return Ready();
+  pw::Status BlockingSend(Sender<T>& sender,
+                          Dispatcher& dispatcher,
+                          int value) {
+    return sender.BlockingSend(dispatcher, T(value));
   }
 
-  Sender<T> sender_;
-  SendFuture<T> future_;
-  int next_;
-  int end_;
-};
-
-using SenderTask = BasicSenderTask<int>;
-
-class ReceiverTask : public Task {
- public:
-  ReceiverTask(Receiver<int> receiver,
-               size_t disconnect_after = std::numeric_limits<size_t>::max())
-      : Task(PW_ASYNC_TASK_NAME("ReceiverTask")),
-        receiver_(std::move(receiver)),
-        disconnect_after_(disconnect_after) {}
-
-  const pw::Vector<int>& received() const { return received_; }
-
- private:
-  Poll<> DoPend(Context& cx) override {
-    while (disconnect_after_ > 0) {
-      if (!future_.is_pendable()) {
-        future_ = receiver_.Receive();
-      }
-
-      PW_AWAIT(std::optional<int> value, future_, cx);
-      if (!value.has_value()) {
-        break;
-      }
-      received_.push_back(*value);
-      disconnect_after_--;
-    }
-
-    receiver_.Disconnect();
-    return Ready();
+  pw::Status BlockingSend(Sender<T>& sender,
+                          Dispatcher& dispatcher,
+                          int value,
+                          pw::chrono::SystemClock::duration timeout) {
+    return sender.BlockingSend(dispatcher, T(value), timeout);
   }
 
-  Receiver<int> receiver_;
-  ReceiveFuture<int> future_;
-  pw::Vector<int, 10> received_;
-  size_t disconnect_after_;
-};
-
-struct MoveOnly {
-  int n = 0;
-  constexpr MoveOnly() = default;
-  constexpr explicit MoveOnly(int n_) : n(n_) {}
-  MoveOnly(const MoveOnly&) = delete;
-  MoveOnly& operator=(const MoveOnly&) = delete;
-  MoveOnly(MoveOnly&&) = default;
-  MoveOnly& operator=(MoveOnly&&) = default;
-};
-
-TEST(Channel, BlockingSend) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Sender<int>& sender;
-    size_t send_count;
-  } sender_context{dispatcher, sender, 0};
-
-  pw::thread::test::TestThreadContext context;
-  pw::Thread sender_thread(context.options(), [&sender_context]() {
-    pw::Status last_status;
-    for (int i = 0; i < 10; ++i) {
-      last_status =
-          sender_context.sender.BlockingSend(sender_context.dispatcher, i);
-      if (last_status.ok()) {
-        ++sender_context.send_count;
-      } else {
-        break;
-      }
-    }
-
-    sender_context.sender.Disconnect();
-    sender_context.dispatcher.Release();
-    EXPECT_EQ(last_status, pw::OkStatus());
-  });
-
-  ReceiverTask receiver_task(std::move(receiver));
-  dispatcher.Post(receiver_task);
-
-  dispatcher.RunToCompletionUntilReleased();
-  sender_thread.join();
-
-  EXPECT_EQ(sender_context.send_count, 10u);
-  ASSERT_EQ(receiver_task.received().size(), 10u);
-  for (size_t i = 0; i < 10; ++i) {
-    EXPECT_EQ(receiver_task.received()[i], static_cast<int>(i));
+  pw::Result<T> BlockingReceive(Receiver<T>& receiver, Dispatcher& dispatcher) {
+    return receiver.BlockingReceive(dispatcher);
   }
-}
 
-TEST(Channel, BlockingSend_ChannelCloses) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Sender<int>& sender;
-    size_t send_count;
-  } sender_context{dispatcher, sender, 0};
-
-  // The sender will write values up until the receiver disconnects and the
-  // channel closes, causing `BlockingSend` to return false.
-  pw::thread::test::TestThreadContext context;
-  pw::Thread sender_thread(context.options(), [&sender_context]() {
-    pw::Status last_status;
-    for (int i = 0; i < 10; ++i) {
-      last_status =
-          sender_context.sender.BlockingSend(sender_context.dispatcher, i);
-      if (last_status.ok()) {
-        ++sender_context.send_count;
-      } else {
-        break;
-      }
-    }
-
-    EXPECT_EQ(last_status, pw::Status::FailedPrecondition());
-    EXPECT_FALSE(sender_context.sender.is_open());
-    sender_context.dispatcher.Release();
-  });
-
-  constexpr size_t kDisconnectAfter = 3;
-
-  ReceiverTask receiver_task(std::move(receiver), kDisconnectAfter);
-  dispatcher.Post(receiver_task);
-
-  dispatcher.RunToCompletionUntilReleased();
-  sender_thread.join();
-
-  // Depending on timing, sender_thread could fill back up the channel before
-  // the receiver_task has a chance to disconnect.
-  EXPECT_GE(sender_context.send_count, kDisconnectAfter);
-  EXPECT_LE(sender_context.send_count, kDisconnectAfter + storage.capacity());
-
-  ASSERT_EQ(receiver_task.received().size(), kDisconnectAfter);
-  for (size_t i = 0; i < kDisconnectAfter; ++i) {
-    EXPECT_EQ(receiver_task.received()[i], static_cast<int>(i));
+  pw::Result<T> BlockingReceive(Receiver<T>& receiver,
+                                Dispatcher& dispatcher,
+                                pw::chrono::SystemClock::duration timeout) {
+    return receiver.BlockingReceive(dispatcher, timeout);
   }
-}
 
-TEST(Channel, BlockingSend_Timeout) {
-  DispatcherForTest dispatcher;
+  void TrySend(Sender<T>& sender, int value) {
+    PW_TEST_ASSERT_OK(sender.TrySend(T(value)));
+  }
 
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Sender<int>& sender;
-    size_t send_count;
-  } sender_context{dispatcher, sender, 0};
-
-  // No task is receiving, so the sender should write values up to the channel
-  // capacity and then block, timing out and failing. The channel should remain
-  // open the entire time.
-  pw::thread::test::TestThreadContext context;
-  pw::Thread sender_thread(context.options(), [&sender_context]() {
-    pw::Status last_status;
-    for (int i = 0; i < 10; ++i) {
-      last_status = sender_context.sender.BlockingSend(
-          sender_context.dispatcher, i, 200ms);
-      if (last_status.ok()) {
-        ++sender_context.send_count;
-      } else {
-        break;
-      }
-    }
-
-    EXPECT_EQ(last_status, pw::Status::DeadlineExceeded());
-    EXPECT_TRUE(sender_context.sender.is_open());
-    sender_context.dispatcher.Release();
-  });
-
-  dispatcher.RunToCompletionUntilReleased();
-  sender_thread.join();
-
-  EXPECT_EQ(sender_context.send_count, 2u);
-}
-
-TEST(Channel, BlockingSend_ReturnsImmediatelyIfSpaceAvailable) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  // We never actually run the dispatcher, so the only way the sender
-  // can write a value is if there is space in the channel.
-
-  pw::Status sent =
-      sender.BlockingSend(dispatcher, 0, pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::OkStatus());
-
-  sent =
-      sender.BlockingSend(dispatcher, 1, pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::OkStatus());
-
-  sent =
-      sender.BlockingSend(dispatcher, 2, pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::Status::DeadlineExceeded());
-}
-
-TEST(Channel, BlockingSend_MoveOnly_ReturnsImmediatelyIfSpaceAvailable) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<MoveOnly, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  // We never actually run the dispatcher, so the only way the sender
-  // can write a value is if there is space in the channel.
-
-  pw::Status sent = sender.BlockingSend(
-      dispatcher, MoveOnly(), pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::OkStatus());
-
-  sent = sender.BlockingSend(
-      dispatcher, MoveOnly(), pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::OkStatus());
-
-  sent = sender.BlockingSend(
-      dispatcher, MoveOnly(), pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(sent, pw::Status::DeadlineExceeded());
-}
-
-TEST(Channel, BlockingReceive) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Receiver<int>& receiver;
-    size_t receive_count;
-  } receiver_context{dispatcher, receiver, 0};
-
-  // The receive thread should read values until the sender disconnects and the
-  // channel closes.
-  pw::thread::test::TestThreadContext context;
-  pw::Thread receiver_thread(context.options(), [&receiver_context]() {
-    pw::Status last_status;
-    int expected = 0;
-
-    while (true) {
-      pw::Result<int> received = receiver_context.receiver.BlockingReceive(
-          receiver_context.dispatcher);
-      last_status = received.status();
-      if (received.ok()) {
-        EXPECT_EQ(*received, expected);
-        ++receiver_context.receive_count;
-        ++expected;
-      } else {
-        break;
-      }
-    }
-
-    EXPECT_EQ(last_status, pw::Status::FailedPrecondition());
-    EXPECT_FALSE(receiver_context.receiver.is_open());
-    receiver_context.dispatcher.Release();
-  });
-
-  SenderTask sender_task(std::move(sender), 0, 9);
-  dispatcher.Post(sender_task);
-
-  dispatcher.RunToCompletionUntilReleased();
-  receiver_thread.join();
-
-  EXPECT_EQ(receiver_context.receive_count, 10u);
-}
-
-TEST(Channel, BlockingReceive_MoveOnly) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<MoveOnly, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Receiver<MoveOnly>& receiver;
-  } context{dispatcher, receiver};
-
-  pw::thread::test::TestThreadContext thread_context;
-  pw::Thread receiver_thread(thread_context.options(), [&context]() {
-    for (int i = 1; i <= 4; ++i) {
-      auto received = context.receiver.BlockingReceive(context.dispatcher);
-      PW_TEST_ASSERT_OK(received.status());
-      EXPECT_EQ(received->n, i);
-    }
-    context.dispatcher.Release();
-  });
-
-  BasicSenderTask<MoveOnly> sender_task(std::move(sender), 1, 4);
-  dispatcher.Post(sender_task);
-
-  dispatcher.RunToCompletionUntilReleased();
-  receiver_thread.join();
-}
-
-TEST(Channel, BlockingReceive_Timeout) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  struct {
-    DispatcherForTest& dispatcher;
-    Receiver<int>& receiver;
-    size_t receive_count;
-  } receiver_context{dispatcher, receiver, 0};
-
-  // Push some values into the channel upfront.
-  PW_TEST_EXPECT_OK(sender.TrySend(0));
-  PW_TEST_EXPECT_OK(sender.TrySend(1));
-
-  // There is no sender actively writing values, so the receive thread should
-  // first drain the two existing values, then timeout trying to read more.
-  // The channel should remain open the entire time.
-  pw::thread::test::TestThreadContext context;
-  pw::Thread receiver_thread(context.options(), [&receiver_context]() {
-    pw::Status last_status;
-    for (int i = 0; i < 10; ++i) {
-      pw::Result<int> received = receiver_context.receiver.BlockingReceive(
-          receiver_context.dispatcher, 200ms);
-      last_status = received.status();
-      if (received.ok()) {
-        EXPECT_EQ(*received, i);
-        ++receiver_context.receive_count;
-      } else {
-        break;
-      }
-    }
-
-    EXPECT_EQ(last_status, pw::Status::DeadlineExceeded());
-    EXPECT_TRUE(receiver_context.receiver.is_open());
-    receiver_context.dispatcher.Release();
-  });
-
-  dispatcher.RunToCompletionUntilReleased();
-  receiver_thread.join();
-
-  EXPECT_EQ(receiver_context.receive_count, 2u);
-}
-
-TEST(Channel, BlockingReceive_ReturnsExistingValueImmediately) {
-  DispatcherForTest dispatcher;
-
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  PW_TEST_ASSERT_OK(sender.TrySend(0));
-  PW_TEST_ASSERT_OK(sender.TrySend(1));
-
-  // We never actually run the dispatcher, so the only way the receiver
-  // can read a value is if it's already in the channel. This approach is NOT
-  // recommended in general; use TryReceive() for non-blocking operations.
-
-  pw::Result<int> received = receiver.BlockingReceive(
-      dispatcher, pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(received.status(), pw::OkStatus());
-  EXPECT_EQ(*received, 0);
-
-  received = receiver.BlockingReceive(dispatcher,
-                                      pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(received.status(), pw::OkStatus());
-  EXPECT_EQ(*received, 1);
-
-  received = receiver.BlockingReceive(dispatcher,
-                                      pw::chrono::SystemClock::duration(0));
-  ASSERT_EQ(received.status(), pw::Status::DeadlineExceeded());
-}
-
-TEST(Channel, BlockingSend_AlreadyClosed) {
-  DispatcherForTest dispatcher;
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  sender.Disconnect();
-
-  struct {
-    Sender<int>& sender;
-    Dispatcher& dispatcher;
-  } ctx{sender, dispatcher};
-
-  pw::thread::test::TestThreadContext context;
-  pw::Thread sender_thread(context.options(), [&ctx]() {
-    EXPECT_EQ(ctx.sender.BlockingSend(ctx.dispatcher, 1),
-              pw::Status::FailedPrecondition());
-  });
-
-  dispatcher.AllowBlocking();
-  dispatcher.RunToCompletion();
-  sender_thread.join();
-}
-
-TEST(Channel, BlockingReceive_AlreadyClosed) {
-  DispatcherForTest dispatcher;
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  receiver.Disconnect();
-
-  struct {
-    Receiver<int>& receiver;
-    Dispatcher& dispatcher;
-  } ctx{receiver, dispatcher};
-
-  pw::thread::test::TestThreadContext context;
-  pw::Thread receiver_thread(context.options(), [&ctx]() {
-    EXPECT_EQ(ctx.receiver.BlockingReceive(ctx.dispatcher).status(),
-              pw::Status::FailedPrecondition());
-  });
-
-  dispatcher.AllowBlocking();
-  dispatcher.RunToCompletion();
-  receiver_thread.join();
-}
-
-TEST(Channel, BlockingReceive_ClosedWithData) {
-  DispatcherForTest dispatcher;
-  ChannelStorage<int, 2> storage;
-  auto [channel, sender, receiver] = CreateSpscChannel(storage);
-  channel.Release();
-
-  PW_TEST_ASSERT_OK(sender.TrySend(1));
-  sender.Disconnect();
-
-  struct {
-    Receiver<int>& receiver;
-    Dispatcher& dispatcher;
-  } ctx{receiver, dispatcher};
-
-  pw::thread::test::TestThreadContext context;
-  pw::Thread receiver_thread(context.options(), [&ctx]() {
-    // Channel is closed, but receiver should still be able to read the data
-    EXPECT_FALSE(ctx.receiver.is_open());
-    auto result = ctx.receiver.BlockingReceive(ctx.dispatcher);
+  void ExpectBlockingReceiveResult(const pw::Result<T>& result, int expected) {
     ASSERT_TRUE(result.ok());
-    EXPECT_EQ(*result, 1);
+    EXPECT_EQ(*result, expected);
+  }
 
-    // Now the channel is empty and closed.
-    EXPECT_FALSE(ctx.receiver.is_open());
-    EXPECT_EQ(ctx.receiver.BlockingReceive(ctx.dispatcher).status(),
-              pw::Status::FailedPrecondition());
-  });
+  pw::Vector<int, 10> GetReceivedBy(
+      const pw::async2::test::ReceiverTask<T>& receiver_task) {
+    pw::Vector<int, 10> received;
+    for (const auto& v : receiver_task.received()) {
+      received.push_back(v);
+    }
+    return received;
+  }
 
-  dispatcher.AllowBlocking();
-  dispatcher.RunToCompletion();
-  receiver_thread.join();
-}
+  void ValidateReceived(std::initializer_list<int> expected,
+                        const ReceiverTask& receiver_task) {
+    auto received = GetReceivedBy(receiver_task);
+    ASSERT_EQ(received.size(), expected.size());
+    size_t i = 0;
+    for (auto value : expected) {
+      EXPECT_EQ(received[i++], value);
+    }
+  }
+
+  ChannelStorage<T, 2> storage;
+};
+
+template <>
+struct ChannelAdapter<IntFunction> {
+  using ReceiverTask = pw::async2::test::ReceiverTask<IntFunction>;
+  using ReservedSenderTask =
+      pw::async2::test::ReservedSenderTask<IntFunction, int>;
+  using SenderTask = pw::async2::test::SenderTask<IntFunction, int>;
+
+  pw::Status BlockingSend(Sender<IntFunction>& sender,
+                          Dispatcher& dispatcher,
+                          int value) {
+    return sender.BlockingSend(dispatcher, [value]() { return value; });
+  }
+
+  pw::Status BlockingSend(Sender<IntFunction>& sender,
+                          Dispatcher& dispatcher,
+                          int value,
+                          pw::chrono::SystemClock::duration timeout) {
+    return sender.BlockingSend(
+        dispatcher, [value]() { return value; }, timeout);
+  }
+
+  pw::Result<IntFunction> BlockingReceive(Receiver<IntFunction>& receiver,
+                                          Dispatcher& dispatcher) {
+    return receiver.BlockingReceive(dispatcher);
+  }
+
+  pw::Result<IntFunction> BlockingReceive(
+      Receiver<IntFunction>& receiver,
+      Dispatcher& dispatcher,
+      pw::chrono::SystemClock::duration timeout) {
+    return receiver.BlockingReceive(dispatcher, timeout);
+  }
+
+  void TrySend(Sender<IntFunction>& sender, int value) {
+    PW_TEST_ASSERT_OK(sender.TrySend([value]() { return value; }));
+  }
+
+  void ExpectBlockingReceiveResult(const pw::Result<IntFunction>& result,
+                                   int expected) {
+    ASSERT_TRUE(result.ok());
+    EXPECT_EQ((*result)(), expected);
+  }
+
+  pw::Vector<int, 10> GetReceivedBy(
+      const pw::async2::test::ReceiverTask<IntFunction>& receiver_task) {
+    pw::Vector<int, 10> received;
+    for (const auto& v : receiver_task.received()) {
+      received.push_back(v());
+    }
+    return received;
+  }
+
+  void ValidateReceived(std::initializer_list<int> expected,
+                        const ReceiverTask& receiver_task) {
+    auto received = GetReceivedBy(receiver_task);
+    ASSERT_EQ(received.size(), expected.size());
+    size_t i = 0;
+    for (auto value : expected) {
+      EXPECT_EQ(received[i++], value);
+    }
+  }
+
+  ChannelStorage<IntFunction, 2> storage;
+};
+
+template <>
+struct ChannelAdapter<void> {
+  using ReceiverTask = pw::async2::test::ReceiverTask<void>;
+  using ReservedSenderTask = pw::async2::test::ReservedSenderTask<void>;
+  using SenderTask = pw::async2::test::SenderTask<void>;
+
+  pw::Status BlockingSend(Sender<void>& sender,
+                          Dispatcher& dispatcher,
+                          int /*value*/) {
+    return sender.BlockingSend(dispatcher);
+  }
+
+  pw::Status BlockingSend(Sender<void>& sender,
+                          Dispatcher& dispatcher,
+                          int /*value*/,
+                          pw::chrono::SystemClock::duration timeout) {
+    return sender.BlockingSend(dispatcher, timeout);
+  }
+
+  pw::Status BlockingReceive(Receiver<void>& receiver, Dispatcher& dispatcher) {
+    return receiver.BlockingReceive(dispatcher);
+  }
+
+  pw::Status BlockingReceive(Receiver<void>& receiver,
+                             Dispatcher& dispatcher,
+                             pw::chrono::SystemClock::duration timeout) {
+    return receiver.BlockingReceive(dispatcher, timeout);
+  }
+
+  void TrySend(Sender<void>& sender, int /*value*/) {
+    PW_TEST_ASSERT_OK(sender.TrySend());
+  }
+
+  void ExpectBlockingReceiveResult(pw::Status status, int /*expected*/) {
+    EXPECT_TRUE(status.ok());
+  }
+
+  void ValidateReceived(std::initializer_list<int> expected,
+                        const ReceiverTask& receiver_task) {
+    EXPECT_EQ(receiver_task.received(), expected.size());
+  }
+
+  ChannelStorage<void, 2> storage;
+};
+
+template <typename T>
+class ChannelThreadTest : public ::testing::Test, ChannelAdapter<T> {
+  using ReceiverTask = typename ChannelAdapter<T>::ReceiverTask;
+  using ReservedSenderTask = typename ChannelAdapter<T>::ReservedSenderTask;
+  using SenderTask = typename ChannelAdapter<T>::SenderTask;
+
+  using ChannelAdapter<T>::storage;
+  using ChannelAdapter<T>::BlockingSend;
+  using ChannelAdapter<T>::BlockingReceive;
+  using ChannelAdapter<T>::TrySend;
+  using ChannelAdapter<T>::ExpectBlockingReceiveResult;
+  using ChannelAdapter<T>::ValidateReceived;
+
+ public:
+  void BlockingSend() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Sender<T>& sender;
+      ChannelAdapter<T>& adapter;
+      size_t send_count = 0;
+    } sender_context{dispatcher, sender, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread sender_thread(context.options(), [&sender_context]() {
+      pw::Status last_status;
+      for (int i = 0; i < 10; ++i) {
+        last_status = sender_context.adapter.BlockingSend(
+            sender_context.sender, sender_context.dispatcher, i);
+        if (last_status.ok()) {
+          ++sender_context.send_count;
+        } else {
+          break;
+        }
+      }
+
+      sender_context.sender.Disconnect();
+      sender_context.dispatcher.Release();
+      EXPECT_EQ(last_status, pw::OkStatus());
+    });
+
+    auto receiver_task = ReceiverTask(std::move(receiver));
+    dispatcher.Post(receiver_task);
+
+    dispatcher.RunToCompletionUntilReleased();
+    sender_thread.join();
+
+    EXPECT_EQ(sender_context.send_count, 10u);
+    ValidateReceived({0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, receiver_task);
+  }
+
+  void BlockingSendChannelCloses() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Sender<T>& sender;
+      ChannelAdapter<T>& adapter;
+      size_t send_count = 0;
+    } sender_context{dispatcher, sender, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread sender_thread(context.options(), [&sender_context]() {
+      pw::Status last_status;
+      for (int i = 0; i < 10; ++i) {
+        last_status = sender_context.adapter.BlockingSend(
+            sender_context.sender, sender_context.dispatcher, i);
+        if (last_status.ok()) {
+          ++sender_context.send_count;
+        } else {
+          break;
+        }
+      }
+
+      EXPECT_EQ(last_status, pw::Status::FailedPrecondition());
+      EXPECT_FALSE(sender_context.sender.is_open());
+      sender_context.dispatcher.Release();
+    });
+
+    constexpr size_t kDisconnectAfter = 3;
+    auto receiver_task = ReceiverTask(std::move(receiver), kDisconnectAfter);
+    dispatcher.Post(receiver_task);
+
+    dispatcher.RunToCompletionUntilReleased();
+    sender_thread.join();
+
+    EXPECT_GE(sender_context.send_count, kDisconnectAfter);
+    EXPECT_LE(sender_context.send_count, kDisconnectAfter + storage.capacity());
+
+    ValidateReceived({0, 1, 2}, receiver_task);
+  }
+
+  void BlockingSendTimeout() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Sender<T>& sender;
+      ChannelAdapter<T>& adapter;
+      size_t send_count = 0;
+    } sender_context{dispatcher, sender, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread sender_thread(context.options(), [&sender_context]() {
+      pw::Status last_status;
+      for (int i = 0; i < 10; ++i) {
+        last_status = sender_context.adapter.BlockingSend(
+            sender_context.sender, sender_context.dispatcher, i, 200ms);
+        if (last_status.ok()) {
+          ++sender_context.send_count;
+        } else {
+          break;
+        }
+      }
+
+      EXPECT_EQ(last_status, pw::Status::DeadlineExceeded());
+      EXPECT_TRUE(sender_context.sender.is_open());
+      sender_context.dispatcher.Release();
+    });
+
+    dispatcher.RunToCompletionUntilReleased();
+    sender_thread.join();
+
+    EXPECT_EQ(sender_context.send_count, 2u);
+  }
+
+  void BlockingSendReturnsImmediatelyIfSpaceAvailable() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    pw::Status sent = BlockingSend(
+        sender, dispatcher, 0, pw::chrono::SystemClock::duration(0));
+    ASSERT_EQ(sent, pw::OkStatus());
+
+    sent = BlockingSend(
+        sender, dispatcher, 1, pw::chrono::SystemClock::duration(0));
+    ASSERT_EQ(sent, pw::OkStatus());
+
+    sent = BlockingSend(
+        sender, dispatcher, 2, pw::chrono::SystemClock::duration(0));
+    ASSERT_EQ(sent, pw::Status::DeadlineExceeded());
+  }
+
+  void BlockingReceive() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Receiver<T>& receiver;
+      ChannelAdapter<T>& adapter;
+      size_t receive_count = 0;
+    } receiver_context{dispatcher, receiver, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread receiver_thread(context.options(), [&receiver_context]() {
+      pw::Status last_status;
+      int expected = 0;
+
+      while (true) {
+        auto result = receiver_context.adapter.BlockingReceive(
+            receiver_context.receiver, receiver_context.dispatcher);
+        last_status = AsStatus(result);
+        if (last_status.ok()) {
+          receiver_context.adapter.ExpectBlockingReceiveResult(result,
+                                                               expected);
+          ++receiver_context.receive_count;
+          ++expected;
+        } else {
+          break;
+        }
+      }
+
+      EXPECT_EQ(last_status, pw::Status::FailedPrecondition());
+      EXPECT_FALSE(receiver_context.receiver.is_open());
+      receiver_context.dispatcher.Release();
+    });
+
+    auto sender_task =
+        SenderTask(std::move(sender), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+    dispatcher.Post(sender_task);
+
+    dispatcher.RunToCompletionUntilReleased();
+    receiver_thread.join();
+
+    EXPECT_EQ(receiver_context.receive_count, 10u);
+  }
+
+  void BlockingReceiveTimeout() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    // Push some values into the channel upfront.
+    TrySend(sender, 0);
+    TrySend(sender, 1);
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Receiver<T>& receiver;
+      ChannelAdapter<T>& adapter;
+      size_t receive_count = 0;
+    } receiver_context{dispatcher, receiver, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread receiver_thread(context.options(), [&receiver_context]() {
+      pw::Status last_status;
+      for (int i = 0; i < 10; ++i) {
+        auto result = receiver_context.adapter.BlockingReceive(
+            receiver_context.receiver, receiver_context.dispatcher, 200ms);
+        last_status = AsStatus(result);
+        if (last_status.ok()) {
+          receiver_context.adapter.ExpectBlockingReceiveResult(result, i);
+          ++receiver_context.receive_count;
+        } else {
+          break;
+        }
+      }
+
+      EXPECT_EQ(last_status, pw::Status::DeadlineExceeded());
+      EXPECT_TRUE(receiver_context.receiver.is_open());
+      receiver_context.dispatcher.Release();
+    });
+
+    dispatcher.RunToCompletionUntilReleased();
+    receiver_thread.join();
+
+    EXPECT_EQ(receiver_context.receive_count, 2u);
+  }
+
+  void BlockingReceiveReturnsExistingValueImmediately() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    TrySend(sender, 0);
+    TrySend(sender, 1);
+
+    auto result = BlockingReceive(
+        receiver, dispatcher, pw::chrono::SystemClock::duration(0));
+    EXPECT_EQ(AsStatus(result), pw::OkStatus());
+    ExpectBlockingReceiveResult(result, 0);
+
+    result = BlockingReceive(
+        receiver, dispatcher, pw::chrono::SystemClock::duration(0));
+    EXPECT_EQ(AsStatus(result), pw::OkStatus());
+    ExpectBlockingReceiveResult(result, 1);
+
+    result = BlockingReceive(
+        receiver, dispatcher, pw::chrono::SystemClock::duration(0));
+    EXPECT_EQ(AsStatus(result), pw::Status::DeadlineExceeded());
+  }
+
+  void BlockingSendAlreadyClosed() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    sender.Disconnect();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Sender<T>& sender;
+      ChannelAdapter<T>& adapter;
+    } sender_context{dispatcher, sender, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread sender_thread(context.options(), [&sender_context]() {
+      EXPECT_EQ(sender_context.adapter.BlockingSend(
+                    sender_context.sender, sender_context.dispatcher, 1),
+                pw::Status::FailedPrecondition());
+    });
+
+    dispatcher.AllowBlocking();
+    dispatcher.RunToCompletion();
+    sender_thread.join();
+  }
+
+  void BlockingReceiveAlreadyClosed() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    receiver.Disconnect();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Receiver<T>& receiver;
+      ChannelAdapter<T>& adapter;
+    } receiver_context{dispatcher, receiver, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread receiver_thread(context.options(), [&receiver_context]() {
+      auto result = receiver_context.adapter.BlockingReceive(
+          receiver_context.receiver, receiver_context.dispatcher);
+      EXPECT_EQ(AsStatus(result), pw::Status::FailedPrecondition());
+    });
+
+    dispatcher.AllowBlocking();
+    dispatcher.RunToCompletion();
+    receiver_thread.join();
+  }
+
+  void BlockingReceiveClosedWithData() {
+    auto [channel, sender, receiver] = CreateSpscChannel(storage);
+    channel.Release();
+
+    TrySend(sender, 1);
+    sender.Disconnect();
+
+    struct {
+      DispatcherForTest& dispatcher;
+      Receiver<T>& receiver;
+      ChannelAdapter<T>& adapter;
+    } receiver_context{dispatcher, receiver, *this};
+
+    pw::thread::test::TestThreadContext context;
+    pw::Thread receiver_thread(context.options(), [&receiver_context]() {
+      // Channel is closed, but receiver should still be able to
+      // read the data
+      EXPECT_FALSE(receiver_context.receiver.is_open());
+      auto result = receiver_context.adapter.BlockingReceive(
+          receiver_context.receiver, receiver_context.dispatcher);
+      EXPECT_EQ(AsStatus(result), pw::OkStatus());
+      receiver_context.adapter.ExpectBlockingReceiveResult(result, 1);
+
+      // Now the channel is empty and closed.
+      EXPECT_FALSE(receiver_context.receiver.is_open());
+      auto result2 = receiver_context.adapter.BlockingReceive(
+          receiver_context.receiver, receiver_context.dispatcher);
+      EXPECT_EQ(AsStatus(result2), pw::Status::FailedPrecondition());
+    });
+
+    dispatcher.AllowBlocking();
+    dispatcher.RunToCompletion();
+    receiver_thread.join();
+  }
+
+ private:
+  DispatcherForTest dispatcher;
+};
+
+using IntChannelThreadTest = ChannelThreadTest<int>;
+using IntFunctionChannelThreadTest = ChannelThreadTest<IntFunction>;
+using MoveOnlyIntChannelThreadTest = ChannelThreadTest<MoveOnlyInt>;
+using NotificationChannelThreadTest = ChannelThreadTest<void>;
+
+#define TEST_CHANNEL_THREADS(test_name)                            \
+  TEST_F(IntChannelThreadTest, test_name) { test_name(); }         \
+  TEST_F(IntFunctionChannelThreadTest, test_name) { test_name(); } \
+  TEST_F(MoveOnlyIntChannelThreadTest, test_name) { test_name(); } \
+  TEST_F(NotificationChannelThreadTest, test_name) { test_name(); }
+
+TEST_CHANNEL_THREADS(BlockingSend)
+TEST_CHANNEL_THREADS(BlockingSendChannelCloses)
+TEST_CHANNEL_THREADS(BlockingSendTimeout)
+TEST_CHANNEL_THREADS(BlockingSendReturnsImmediatelyIfSpaceAvailable)
+TEST_CHANNEL_THREADS(BlockingReceive)
+TEST_CHANNEL_THREADS(BlockingReceiveTimeout)
+TEST_CHANNEL_THREADS(BlockingReceiveReturnsExistingValueImmediately)
+TEST_CHANNEL_THREADS(BlockingSendAlreadyClosed)
+TEST_CHANNEL_THREADS(BlockingReceiveAlreadyClosed)
+TEST_CHANNEL_THREADS(BlockingReceiveClosedWithData)
 
 }  // namespace
