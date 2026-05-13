@@ -18,6 +18,7 @@
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/inspect_util.h"
+#include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
 
 // Multiple advertising is supported by the Bluetooth 5.0+ Core Specification as
 // well as Android vendor extensions. This test file contains shared tests for
@@ -205,9 +206,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, AdvertisingHandlesExhausted) {
   AdvertisingData scan_data = this->GetExampleData();
   AdvertisingOptions options(kTestInterval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/true);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/true);
 
   for (uint8_t i = 0; i < this->advertiser()->MaxAdvertisements(); i++) {
     this->advertiser()->StartAdvertising(
@@ -250,9 +251,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, SimultaneousAdvertisements) {
   // start public address advertising
   AdvertisingOptions public_options(kTestInterval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress,
                                        ad,
                                        scan_data,
@@ -274,9 +275,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, SimultaneousAdvertisements) {
       hci_spec::kLEAdvertisingIntervalMax - 1u);
   AdvertisingOptions random_options(random_interval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress,
                                        ad,
                                        scan_data,
@@ -337,9 +338,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, SimultaneousRandomAdvertisements) {
   // start first random address advertising
   AdvertisingOptions options1(kTestInterval,
                               kDefaultNoAdvFlags,
-                              /*extended_pdu=*/false,
-                              /*anonymous=*/false,
-                              /*include_tx_power_level=*/false);
+                              /*init_extended_pdu=*/false,
+                              /*init_anonymous=*/false,
+                              /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress1,
                                        ad,
                                        scan_data,
@@ -361,9 +362,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, SimultaneousRandomAdvertisements) {
       hci_spec::kLEAdvertisingIntervalMax - 1u);
   AdvertisingOptions options2(random_interval,
                               kDefaultNoAdvFlags,
-                              /*extended_pdu=*/false,
-                              /*anonymous=*/false,
-                              /*include_tx_power_level=*/false);
+                              /*init_extended_pdu=*/false,
+                              /*init_anonymous=*/false,
+                              /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress2,
                                        ad,
                                        scan_data,
@@ -416,9 +417,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest,
   // start public address advertising
   AdvertisingOptions public_options(kTestInterval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress,
                                        ad,
                                        scan_data,
@@ -440,9 +441,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest,
       hci_spec::kLEAdvertisingIntervalMax - 1u);
   AdvertisingOptions random_options(random_interval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress,
                                        ad,
                                        scan_data,
@@ -518,9 +519,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest,
   // start public address advertising
   AdvertisingOptions public_options(kTestInterval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kPublicAddress,
                                        ad,
                                        scan_data,
@@ -541,9 +542,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest,
       hci_spec::kLEAdvertisingIntervalMax - 1u);
   AdvertisingOptions random_options(random_interval,
                                     kDefaultNoAdvFlags,
-                                    /*extended_pdu=*/false,
-                                    /*anonymous=*/false,
-                                    /*include_tx_power_level=*/false);
+                                    /*init_extended_pdu=*/false,
+                                    /*init_anonymous=*/false,
+                                    /*init_include_tx_power_level=*/false);
   this->advertiser()->StartAdvertising(kRandomAddress,
                                        ad,
                                        scan_data,
@@ -661,9 +662,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, SuccessiveAdvertisingCalls) {
   AdvertisingData scan_data = this->GetExampleData();
   AdvertisingOptions options(kTestInterval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/false);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/false);
 
   std::optional<Result<AdvertisementId>> start_result_0;
   this->advertiser()->StartAdvertising(
@@ -710,9 +711,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, InterleavedAdvertisingCalls) {
   AdvertisingData scan_data = this->GetExampleData();
   AdvertisingOptions options(kTestInterval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/false);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/false);
 
   std::optional<Result<AdvertisementId>> result_0;
   this->advertiser()->StartAdvertising(
@@ -756,9 +757,9 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest, StopWhileStarting) {
   AdvertisingData scan_data = this->GetExampleData();
   AdvertisingOptions options(kTestInterval,
                              kDefaultNoAdvFlags,
-                             /*extended_pdu=*/false,
-                             /*anonymous=*/false,
-                             /*include_tx_power_level=*/false);
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/false);
 
   this->advertiser()->StartAdvertising(kPublicAddress,
                                        ad,
@@ -1003,6 +1004,167 @@ TYPED_TEST(LowEnergyMultipleAdvertisingTest,
   EXPECT_TRUE(this->advertiser()->IsAdvertising());
   EXPECT_EQ(this->advertiser()->MaxAdvertisements(),
             this->advertiser()->NumAdvertisements());
+}
+
+using AndroidLowEnergyMultipleAdvertisingTest =
+    LowEnergyMultipleAdvertisingTest<AndroidExtendedLowEnergyAdvertiser>;
+
+TEST_F(AndroidLowEnergyMultipleAdvertisingTest, StartAndStopWithTxPower) {
+  this->test_device()->set_num_supported_advertising_sets(1);
+
+  AdvertisingData ad = this->GetExampleData();
+  AdvertisingData scan_data = this->GetExampleData();
+  AdvertisingOptions options(kTestInterval,
+                             kDefaultNoAdvFlags,
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/true);
+
+  this->advertiser()->StartAdvertising(kPublicAddress,
+                                       ad,
+                                       scan_data,
+                                       options,
+                                       /*connect_callback=*/nullptr,
+                                       this->MakeExpectSuccessCallback());
+  this->RunUntilIdle();
+  std::optional<hci_spec::AdvertisingHandle> handle =
+      this->advertiser()->LastUsedHandleForTesting();
+  ASSERT_TRUE(handle);
+  std::optional<Result<AdvertisementId>> status = this->TakeLastStatus();
+  ASSERT_TRUE(status.has_value());
+  ASSERT_TRUE(status->is_ok());
+  AdvertisementId id = status->value();
+
+  EXPECT_TRUE(this->advertiser()->IsAdvertising());
+  EXPECT_TRUE(this->advertiser()->IsAdvertising(id));
+
+  const LEAdvertisingState& addr_state =
+      this->test_device()->extended_advertising_state(handle.value());
+
+  EXPECT_TRUE(addr_state.enabled);
+
+  // The fake controller returns 9 dBm for LE Read Advertising Channel Tx Power.
+  ad.SetTxPower(9);
+  scan_data.SetTxPower(9);
+
+  size_t expected_ad_size = ad.CalculateBlockSize(/*include_flags=*/true);
+  DynamicByteBuffer expected_ad(expected_ad_size);
+  ad.WriteBlock(&expected_ad, kDefaultNoAdvFlags);
+
+  BufferView actual_ad(addr_state.data, addr_state.data_length);
+  EXPECT_TRUE(ContainersEqual(expected_ad, actual_ad));
+
+  size_t expected_scan_size =
+      scan_data.CalculateBlockSize(/*include_flags=*/false);
+  DynamicByteBuffer expected_scan(expected_scan_size);
+  scan_data.WriteBlock(&expected_scan, std::nullopt);
+
+  BufferView actual_scan(addr_state.scan_rsp_data, addr_state.scan_rsp_length);
+  EXPECT_TRUE(ContainersEqual(expected_scan, actual_scan));
+
+  this->advertiser()->StopAdvertising(id);
+  this->RunUntilIdle();
+  EXPECT_FALSE(this->advertiser()->IsAdvertising());
+}
+
+// Ensure that when starting advertising with TX power level included, if the
+// controller returns an error for the read TX power level command, advertising
+// fails to start and the error is propagated.
+TEST_F(AndroidLowEnergyMultipleAdvertisingTest,
+       StartAdvertisingFailureTxPowerReadError) {
+  this->test_device()->set_num_supported_advertising_sets(1);
+
+  AdvertisingData ad = this->GetExampleData();
+  AdvertisingData scan_data = this->GetExampleData();
+  AdvertisingOptions options(kTestInterval,
+                             kDefaultNoAdvFlags,
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/true);
+
+  this->test_device()->SetDefaultResponseStatus(
+      hci_spec::kLEReadAdvertisingChannelTxPower,
+      pw::bluetooth::emboss::StatusCode::HARDWARE_FAILURE);
+
+  std::optional<Result<AdvertisementId>> last_status;
+  auto result_cb = [&](Result<AdvertisementId> status) {
+    last_status = status;
+  };
+
+  this->advertiser()->StartAdvertising(kPublicAddress,
+                                       ad,
+                                       scan_data,
+                                       options,
+                                       /*connect_callback=*/nullptr,
+                                       result_cb);
+  this->RunUntilIdle();
+
+  ASSERT_TRUE(last_status.has_value());
+  EXPECT_TRUE(last_status->is_error());
+  EXPECT_TRUE(last_status->error_value().is(
+      pw::bluetooth::emboss::StatusCode::HARDWARE_FAILURE));
+  EXPECT_FALSE(this->advertiser()->IsAdvertising());
+}
+
+// Ensure that when starting advertising with TX power level included, if the
+// controller returns a malformed (too small) response for the read TX power
+// level command, advertising fails to start and a malformed packet error is
+// propagated without crashing the system.
+TEST_F(AndroidLowEnergyMultipleAdvertisingTest,
+       StartAdvertisingFailureTxPowerReadMalformed) {
+  this->test_device()->set_num_supported_advertising_sets(1);
+
+  AdvertisingData ad = this->GetExampleData();
+  AdvertisingData scan_data = this->GetExampleData();
+  AdvertisingOptions options(kTestInterval,
+                             kDefaultNoAdvFlags,
+                             /*init_extended_pdu=*/false,
+                             /*init_anonymous=*/false,
+                             /*init_include_tx_power_level=*/true);
+
+  bool paused = false;
+  this->test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadAdvertisingChannelTxPower,
+      [&](fit::closure /*resume*/) { paused = true; });
+
+  std::optional<Result<AdvertisementId>> last_status;
+  auto result_cb = [&](Result<AdvertisementId> status) {
+    last_status = status;
+  };
+
+  this->advertiser()->StartAdvertising(kPublicAddress,
+                                       ad,
+                                       scan_data,
+                                       options,
+                                       /*connect_callback=*/nullptr,
+                                       result_cb);
+  this->RunUntilIdle();
+  ASSERT_TRUE(paused);
+
+  // Send a malformed response (SimpleCommandCompleteEvent with SUCCESS).
+  // This is too small for LEReadAdvertisingChannelTxPowerCommandCompleteEvent.
+  auto packet = hci::EventPacket::New<
+      pw::bluetooth::emboss::SimpleCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode);
+  auto view = packet.view_t();
+  view.status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  auto header =
+      packet.view<pw::bluetooth::emboss::CommandCompleteEventWriter>();
+  header.num_hci_command_packets().Write(1);
+  header.command_opcode().Write(static_cast<pw::bluetooth::emboss::OpCode>(
+      hci_spec::kLEReadAdvertisingChannelTxPower));
+
+  this->test_device()->SendCommandChannelPacket(packet.data());
+  this->RunUntilIdle();
+
+  ASSERT_TRUE(last_status.has_value());
+  EXPECT_TRUE(last_status->is_error());
+  EXPECT_TRUE(last_status->error_value().is(HostError::kPacketMalformed));
+  EXPECT_FALSE(this->advertiser()->IsAdvertising());
+
+  this->test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadAdvertisingChannelTxPower);
 }
 
 }  // namespace

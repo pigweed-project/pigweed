@@ -31,7 +31,9 @@ class SequentialCommandRunner;
 //
 // For more information, see
 // https://source.android.com/devices/bluetooth/hci_requirements
-class AndroidExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
+class AndroidExtendedLowEnergyAdvertiser final
+    : public LowEnergyAdvertiser,
+      public WeakSelf<AndroidExtendedLowEnergyAdvertiser> {
  public:
   // Create an AndroidExtendedLowEnergyAdvertiser. The maximum number of
   // advertisements the controller can support (obtained via
@@ -89,6 +91,15 @@ class AndroidExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
     hci_spec::LEConnectionParameters conn_params;
   };
 
+  struct PendingStart {
+    DeviceAddress address;
+    AdvertisingData data;
+    AdvertisingData scan_rsp;
+    AdvertisingOptions options;
+    ConnectionCallback connect_callback;
+    StartAdvertisingInternalCallback result_callback;
+  };
+
   CommandPacket BuildEnablePacket(
       AdvertisementId advertisement_id,
       pw::bluetooth::emboss::GenericEnableParam enable) const override;
@@ -126,10 +137,13 @@ class AndroidExtendedLowEnergyAdvertiser final : public LowEnergyAdvertiser {
   // Event handler for the LE multi-advertising state change sub-event
   CommandChannel::EventCallbackResult OnAdvertisingStateChangedSubevent(
       const EventPacket& event);
-  CommandChannel::EventHandlerId state_changed_event_handler_id_;
 
   AdvertisingHandleMap advertising_handle_map_;
   std::queue<fit::closure> op_queue_;
+  CommandChannel::EventHandlerId state_changed_event_handler_id_;
+
+  std::unordered_map<uint64_t, PendingStart> pending_starts_;
+  uint64_t next_pending_start_id_ = 0;
 
   // Incoming connections to Android LE Multiple Advertising occur through two
   // events: HCI_LE_Connection_Complete and LE multi-advertising state change

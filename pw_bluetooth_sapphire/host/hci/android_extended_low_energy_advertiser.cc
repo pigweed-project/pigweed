@@ -24,8 +24,10 @@
 namespace bt::hci {
 namespace pwemb = pw::bluetooth::emboss;
 
-// Android range -70 to +20, select the middle for now
-constexpr int8_t kTransmitPower = -25;
+static CommandPacket BuildReadAdvertisingTxPower() {
+  return CommandPacket::New<pwemb::LEReadAdvertisingChannelTxPowerCommandView>(
+      hci_spec::kLEReadAdvertisingChannelTxPower);
+}
 
 namespace android_hci = hci_spec::vendor::android;
 namespace android_emb = pw::bluetooth::vendor::android_hci;
@@ -37,6 +39,7 @@ AndroidExtendedLowEnergyAdvertiser::AndroidExtendedLowEnergyAdvertiser(
     : LowEnergyAdvertiser(std::move(hci_ptr),
                           dispatcher,
                           hci_spec::kMaxLEAdvertisingDataLength),
+      WeakSelf(this),
       advertising_handle_map_(max_advertisements) {
   state_changed_event_handler_id_ =
       hci()->command_channel()->AddVendorEventHandler(
@@ -303,11 +306,6 @@ void AndroidExtendedLowEnergyAdvertiser::StartAdvertising(
     return;
   }
 
-  if (options.include_tx_power_level) {
-    copied_data.SetTxPower(kTransmitPower);
-    copied_scan_rsp.SetTxPower(kTransmitPower);
-  }
-
   auto result_cb_wrapper = [this, cb = std::move(result_callback)](
                                StartAdvertisingInternalResult result) {
     if (result.is_error()) {
@@ -321,6 +319,77 @@ void AndroidExtendedLowEnergyAdvertiser::StartAdvertising(
     cb(result.take_value());
   };
 
+  if (options.include_tx_power_level) {
+    uint64_t pending_start_id = next_pending_start_id_++;
+    pending_starts_.emplace(pending_start_id,
+                            PendingStart{address,
+                                         std::move(copied_data),
+                                         std::move(copied_scan_rsp),
+                                         options,
+                                         std::move(connect_callback),
+                                         std::move(result_cb_wrapper)});
+
+    auto power_cb = [self = GetWeakPtr(), pending_start_id](
+                        CommandChannel::TransactionId,
+                        const hci::EventPacket& event) {
+      if (!self.is_alive()) {
+        return;
+      }
+
+      std::unordered_map<uint64_t, PendingStart>::iterator it =
+          self->pending_starts_.find(pending_start_id);
+      if (it == self->pending_starts_.end()) {
+        bt_log(
+            INFO, "hci-le", "Advertising start cancelled during TX Power read");
+        return;
+      }
+
+      PendingStart pending_start = std::move(it->second);
+      self->pending_starts_.erase(it);
+
+      if (HCI_IS_ERROR(event, WARN, "hci-le", "read TX power level failed")) {
+        pending_start.result_callback(fit::error(std::make_tuple(
+            event.ToResult().error_value(), std::optional<AdvertisementId>())));
+        return;
+      }
+
+      auto view = event.unchecked_view<
+          pw::bluetooth::emboss::
+              LEReadAdvertisingChannelTxPowerCommandCompleteEventView>();
+      if (!view.Ok()) {
+        bt_log(WARN, "hci-le", "read TX power level event malformed");
+        pending_start.result_callback(
+            fit::error(std::make_tuple(Error(HostError::kPacketMalformed),
+                                       std::optional<AdvertisementId>())));
+        return;
+      }
+
+      int8_t tx_power = view.tx_power_level().Read();
+      pending_start.data.SetTxPower(tx_power);
+      if (pending_start.scan_rsp.CalculateBlockSize()) {
+        pending_start.scan_rsp.SetTxPower(tx_power);
+      }
+
+      self->StartAdvertisingInternal(pending_start.address,
+                                     pending_start.data,
+                                     pending_start.scan_rsp,
+                                     pending_start.options,
+                                     std::move(pending_start.connect_callback),
+                                     std::move(pending_start.result_callback));
+    };
+
+    auto cmd_res = hci()->command_channel()->SendCommand(
+        BuildReadAdvertisingTxPower(), std::move(power_cb));
+    if (cmd_res.ok()) {
+      return;
+    }
+
+    bt_log(WARN, "hci-le", "failed to send read TX power level command");
+    result_cb_wrapper(fit::error(std::make_tuple(
+        Error(HostError::kFailed), std::optional<AdvertisementId>())));
+    return;
+  }
+
   StartAdvertisingInternal(address,
                            copied_data,
                            copied_scan_rsp,
@@ -333,6 +402,13 @@ void AndroidExtendedLowEnergyAdvertiser::StopAdvertising(
     fit::function<void(Result<>)> result_cb) {
   StopAdvertisingInternal(std::move(result_cb));
   advertising_handle_map_.Clear();
+
+  std::unordered_map<uint64_t, PendingStart> pending_starts;
+  pending_starts.swap(pending_starts_);
+  for (auto& item : pending_starts) {
+    item.second.result_callback(fit::error(std::make_tuple(
+        Error(HostError::kCanceled), std::optional<AdvertisementId>())));
+  }
 
   // std::queue doesn't have a clear method so we have to resort to this
   // tomfoolery :(
