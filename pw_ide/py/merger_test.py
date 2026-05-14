@@ -82,8 +82,12 @@ class MergerTest(fake_filesystem_unittest.TestCase):
 
     def setUp(self):
         self.setUpPyfakefs()
+        # Clear caches for functions that use @functools.lru_cache to ensure
+        # test isolation, as state would otherwise leak between tests.
         # pylint: disable=protected-access
         merger._resolve_single_external_path.cache_clear()
+        merger._get_bazel_out_symlink_prefix.cache_clear()
+        merger._resolve_bazel_out_path_str.cache_clear()
         # pylint: enable=protected-access
         self.workspace_root = Path('/workspace')
         self.output_base = Path(
