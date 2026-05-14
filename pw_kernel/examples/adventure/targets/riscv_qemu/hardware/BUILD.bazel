@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@pigweed//pw_kernel/tooling:qemu_run.bzl", "qemu_runner")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -91,4 +92,13 @@ py_test(
 filegroup(
     name = "_adventure_integration_test",
     srcs = ["adventure_integration_test.py"],
+)
+
+qemu_runner(
+    name = "adventure_runner",
+    cpu = "rv32",
+    image = ":adventure",
+    machine = "virt",
+    tags = ["kernel"],
+    uart_tcp_port = 22352,
 )

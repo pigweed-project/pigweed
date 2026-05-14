@@ -94,7 +94,7 @@ def _parse_args():
         help='Extra arguments to pass to qemu',
     )
     parser.add_argument(
-        '--serial-socket',
+        '--uart-tcp-port',
         type=int,
         help='Expose serial port over local TCP socket on this port',
     )
@@ -161,8 +161,8 @@ def _main(args) -> int:
         "-nographic",
         "-serial",
         (
-            f"tcp:127.0.0.1:{args.serial_socket},server,wait"
-            if args.serial_socket
+            f"tcp:127.0.0.1:{args.uart_tcp_port},server,wait"
+            if args.uart_tcp_port
             else "mon:stdio"
         ),
         "-kernel",

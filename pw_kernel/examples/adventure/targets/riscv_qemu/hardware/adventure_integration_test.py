@@ -80,7 +80,7 @@ class AdventureIntegrationTest(unittest.TestCase):
             "--semihosting",
             "--image",
             image_path,
-            "--serial-socket",
+            "--uart-tcp-port",
             str(port),
         ]
 
