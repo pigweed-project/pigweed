@@ -22,8 +22,8 @@ namespace pw::clock_tree {
 /// @module{pw_clock_tree_mcuxpresso}
 
 /// Class implementing an FRO clock source.
-class ClockMcuxpressoFro final
-    : public ClockSource<ElementNonBlockingCannotFail> {
+class [[deprecated("Use ClockMcuxpressoFroSource instead")]]
+ClockMcuxpressoFro final : public ClockSource<ElementNonBlockingCannotFail> {
  public:
   /// Constructor specifying the FRO divider output to manage.
   constexpr ClockMcuxpressoFro(clock_fro_output_en_t fro_output)
@@ -43,6 +43,47 @@ class ClockMcuxpressoFro final
   }
 
   /// FRO divider.
+  const uint32_t fro_output_;
+};
+
+/// Class implementing the FRO clock source.
+class ClockMcuxpressoFroSource final
+    : public ClockSource<ElementNonBlockingCannotFail> {
+ public:
+  constexpr ClockMcuxpressoFroSource() = default;
+
+ private:
+  Status DoEnable() final {
+    POWER_DisablePD(kPDRUNCFG_PD_FFRO);
+    return OkStatus();
+  }
+
+  Status DoDisable() final {
+    POWER_EnablePD(kPDRUNCFG_PD_FFRO);
+    return OkStatus();
+  }
+};
+
+/// FRO divider elements.
+class ClockMcuxpressoFroDivider final
+    : public DependentElement<ElementNonBlockingCannotFail> {
+ public:
+  constexpr ClockMcuxpressoFroDivider(ClockMcuxpressoFroSource& source,
+                                      clock_fro_output_en_t fro_output)
+      : DependentElement<ElementNonBlockingCannotFail>(source),
+        fro_output_(fro_output) {}
+
+ private:
+  Status DoEnable() final {
+    CLOCK_EnableFroClk(CLKCTL0->FRODIVOEN | fro_output_);
+    return OkStatus();
+  }
+
+  Status DoDisable() final {
+    CLOCK_EnableFroClk(CLKCTL0->FRODIVOEN & ~fro_output_);
+    return OkStatus();
+  }
+
   const uint32_t fro_output_;
 };
 

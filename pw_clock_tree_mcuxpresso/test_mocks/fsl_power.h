@@ -25,6 +25,7 @@ extern "C" {
 typedef uint32_t pd_bit_t;
 
 #define kPDRUNCFG_PD_LPOSC 0U  // Arbitrary value for mock
+#define kPDRUNCFG_PD_FFRO 0U   // Arbitrary value for mock
 
 void POWER_DisablePD(pd_bit_t enable_bit);
 void POWER_EnablePD(pd_bit_t enable_bit);
