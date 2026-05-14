@@ -42,6 +42,12 @@ namespace pw {
 template <typename Signature>
 class FunctionRef;
 
+template <typename T>
+inline constexpr bool is_function_ref_v = false;
+
+template <typename Sig>
+inline constexpr bool is_function_ref_v<FunctionRef<Sig>> = true;
+
 namespace function::internal {
 
 template <bool kIsConst, bool IsNoExcept, typename R, typename... Args>
@@ -56,10 +62,24 @@ union Storage {
 template <bool kIsConst, typename R, typename... Args>
 class BasicFunctionRef<kIsConst, false, R, Args...> {
  public:
-  // Constructor for lvalue reference
+  // Constructor for function pointers
+  template <typename F,
+            std::enable_if_t<std::is_function_v<F> &&
+                                 std::is_invocable_r_v<R, F*, Args...>,
+                             int> = 0>
+  BasicFunctionRef(F* f) noexcept
+      : invoker_([](void* obj_ptr, Args... args) -> R {
+          Storage* s = static_cast<Storage*>(obj_ptr);
+          return (*reinterpret_cast<F*>(s->ptr))(std::forward<Args>(args)...);
+        }) {
+    obj_.ptr = reinterpret_cast<void*>(f);
+  }
+
+  // Constructor for callable objects
   template <typename F,
             std::enable_if_t<
-                !std::is_same_v<std::decay_t<F>, BasicFunctionRef> &&
+                !is_function_ref_v<std::decay_t<F>> &&
+                    !std::is_member_pointer_v<std::remove_reference_t<F>> &&
                     std::is_invocable_r_v<
                         R,
                         std::conditional_t<kIsConst,
@@ -73,20 +93,19 @@ class BasicFunctionRef<kIsConst, false, R, Args...> {
           using FPtr = std::conditional_t<kIsConst,
                                           const std::remove_reference_t<F>*,
                                           std::remove_reference_t<F>*>;
-          FPtr f_ptr;
-          if constexpr (std::is_function_v<std::remove_reference_t<F>>) {
-            f_ptr = reinterpret_cast<FPtr>(s->ptr);
-          } else {
-            f_ptr = static_cast<FPtr>(s->ptr);
-          }
-          return (*f_ptr)(std::forward<Args>(args)...);
+          return (*static_cast<FPtr>(s->ptr))(std::forward<Args>(args)...);
         }) {
-    if constexpr (std::is_function_v<std::remove_reference_t<F>>) {
-      obj_.ptr = reinterpret_cast<void*>(&f);
-    } else {
-      obj_.ptr = const_cast<void*>(static_cast<const void*>(&f));
-    }
+    obj_.ptr = const_cast<void*>(static_cast<const void*>(&f));
   }
+
+  // Converting constructor from compatible BasicFunctionRef
+  template <bool kOtherConst,
+            bool kOtherNoExcept,
+            std::enable_if_t<(!kOtherConst || kIsConst), int> = 0>
+  BasicFunctionRef(
+      const BasicFunctionRef<kOtherConst, kOtherNoExcept, R, Args...>&
+          other) noexcept
+      : obj_(other.obj_), invoker_(other.invoker_) {}
 
   BasicFunctionRef(const BasicFunctionRef&) noexcept = default;
   BasicFunctionRef& operator=(const BasicFunctionRef&) noexcept = default;
@@ -96,6 +115,9 @@ class BasicFunctionRef<kIsConst, false, R, Args...> {
   }
 
  private:
+  template <bool, bool, typename, typename...>
+  friend class BasicFunctionRef;
+
   using Invoker = R (*)(void*, Args...);
 
   Storage obj_;
@@ -106,10 +128,25 @@ class BasicFunctionRef<kIsConst, false, R, Args...> {
 template <bool kIsConst, typename R, typename... Args>
 class BasicFunctionRef<kIsConst, true, R, Args...> {
  public:
-  // Constructor for lvalue reference
+  // Constructor for function pointers
+  template <typename F,
+            std::enable_if_t<std::is_function_v<F> &&
+                                 std::is_invocable_r_v<R, F*, Args...> &&
+                                 std::is_nothrow_invocable_v<F*, Args...>,
+                             int> = 0>
+  BasicFunctionRef(F* f) noexcept
+      : invoker_([](void* obj_ptr, Args... args) noexcept -> R {
+          Storage* s = static_cast<Storage*>(obj_ptr);
+          return (*reinterpret_cast<F*>(s->ptr))(std::forward<Args>(args)...);
+        }) {
+    obj_.ptr = reinterpret_cast<void*>(f);
+  }
+
+  // Constructor for callable objects
   template <typename F,
             std::enable_if_t<
-                !std::is_same_v<std::decay_t<F>, BasicFunctionRef> &&
+                !is_function_ref_v<std::decay_t<F>> &&
+                    !std::is_member_pointer_v<std::remove_reference_t<F>> &&
                     std::is_invocable_r_v<
                         R,
                         std::conditional_t<kIsConst,
@@ -128,20 +165,20 @@ class BasicFunctionRef<kIsConst, true, R, Args...> {
           using FPtr = std::conditional_t<kIsConst,
                                           const std::remove_reference_t<F>*,
                                           std::remove_reference_t<F>*>;
-          FPtr f_ptr;
-          if constexpr (std::is_function_v<std::remove_reference_t<F>>) {
-            f_ptr = reinterpret_cast<FPtr>(s->ptr);
-          } else {
-            f_ptr = static_cast<FPtr>(s->ptr);
-          }
-          return (*f_ptr)(std::forward<Args>(args)...);
+          return (*static_cast<FPtr>(s->ptr))(std::forward<Args>(args)...);
         }) {
-    if constexpr (std::is_function_v<std::remove_reference_t<F>>) {
-      obj_.ptr = reinterpret_cast<void*>(&f);
-    } else {
-      obj_.ptr = const_cast<void*>(static_cast<const void*>(&f));
-    }
+    obj_.ptr = const_cast<void*>(static_cast<const void*>(&f));
   }
+
+  // Converting constructor from compatible BasicFunctionRef
+  template <
+      bool kOtherConst,
+      bool kOtherNoExcept,
+      std::enable_if_t<kOtherNoExcept && (!kOtherConst || kIsConst), int> = 0>
+  BasicFunctionRef(
+      const BasicFunctionRef<kOtherConst, kOtherNoExcept, R, Args...>&
+          other) noexcept
+      : obj_(other.obj_), invoker_(other.invoker_) {}
 
   BasicFunctionRef(const BasicFunctionRef&) noexcept = default;
   BasicFunctionRef& operator=(const BasicFunctionRef&) noexcept = default;
@@ -151,6 +188,9 @@ class BasicFunctionRef<kIsConst, true, R, Args...> {
   }
 
  private:
+  template <bool, bool, typename, typename...>
+  friend class BasicFunctionRef;
+
   using Invoker = R (*)(void*, Args...) noexcept;
 
   Storage obj_;

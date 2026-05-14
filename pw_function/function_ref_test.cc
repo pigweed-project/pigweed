@@ -66,6 +66,13 @@ TEST(FunctionRefTest, FunctionPointer) {
   EXPECT_EQ(ref(2, 3), 6);
 }
 
+auto GetMultiplyPtr() -> int (*)(int, int) { return Multiply; }
+
+TEST(FunctionRefTest, FunctionPointerRvalue) {
+  FunctionRef<int(int, int)> ref(GetMultiplyPtr());
+  EXPECT_EQ(ref(3, 4), 12);
+}
+
 TEST(FunctionRefTest, ConstSignature) {
   auto lambda = [](int a) { return a * 2; };
   FunctionRef<int(int) const> ref(lambda);
@@ -128,9 +135,21 @@ TEST(FunctionRefTest, CopySupport) {
   EXPECT_EQ(ref2(3), 6);
 
   auto lambda2 = [](int a) { return a * 3; };
+  ref1 = FunctionRef<int(int)>(lambda2);
+  EXPECT_EQ(ref2(3), 6);
+
   FunctionRef<int(int)> ref3(lambda2);
   ref2 = ref3;  // Copy assign
   EXPECT_EQ(ref2(3), 9);
+
+  auto lambda_ne = [](int a) noexcept { return a * 2; };
+  FunctionRef<int(int) noexcept> ref_noexcept(lambda_ne);
+  FunctionRef<int(int)> ref_from_noexcept(ref_noexcept);
+  EXPECT_EQ(ref_from_noexcept(3), 6);
+
+  auto lambda_ne2 = [](int a) noexcept { return a * 4; };
+  ref_noexcept = FunctionRef<int(int) noexcept>(lambda_ne2);
+  EXPECT_EQ(ref_from_noexcept(3), 6);
 }
 
 TEST(FunctionRefTest, MoveSupport) {
