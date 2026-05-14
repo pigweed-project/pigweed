@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <atomic>
 #include <cinttypes>
 #include <mutex>
 
@@ -71,7 +72,10 @@ class ForwardingChannelOutput : public ChannelOutput {
     return true;
   }
 
-  // Clears and resets the FakeChannelOutputImpl.
+  // Clears and resets the FakeChannelOutputImpl and ForwardingChannelOutput.
+  // Does not wait for any in progress sends to complete. Typical usage to avoid
+  // overflowing kMaxPackets for larger tests would be to clear well before
+  // reaching max.
   void clear() {
     output_.clear();
     sent_packets_ = 0;
@@ -101,7 +105,7 @@ class ForwardingChannelOutput : public ChannelOutput {
     return packets[sent_packets_].Encode(packet_buffer);
   }
 
-  uint16_t sent_packets_ = 0;
+  std::atomic<uint16_t> sent_packets_ = 0;
 
   const TestPacketProcessor server_packet_processor_;
   const TestPacketProcessor client_packet_processor_;
