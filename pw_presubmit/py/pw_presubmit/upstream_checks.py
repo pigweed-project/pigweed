@@ -138,7 +138,7 @@ def commit_message_format(ctx: PresubmitContext):
     if (
         'Revert' in lines[0]
         and 'This reverts commit ' in git_repo.commit_message()
-        and 'Reason for revert: ' in git_repo.commit_message()
+        and 'Reason for revert:' in git_repo.commit_message()
     ):
         _LOG.warning('Ignoring apparent Gerrit-generated revert')
         return
