@@ -44,36 +44,33 @@ class FunctionRef;
 
 namespace function::internal {
 
-template <bool IsConst, bool IsNoExcept, typename R, typename... Args>
+template <bool kIsConst, bool IsNoExcept, typename R, typename... Args>
 class BasicFunctionRef;
 
+union Storage {
+  void* ptr;
+  alignas(void*) char buffer[sizeof(void*)];
+};
+
 // Specialization for non-noexcept
-template <bool IsConst, typename R, typename... Args>
-class BasicFunctionRef<IsConst, false, R, Args...> {
+template <bool kIsConst, typename R, typename... Args>
+class BasicFunctionRef<kIsConst, false, R, Args...> {
  public:
-  using ObjPtr = void*;
-  using Invoker = R (*)(ObjPtr, Args...);
-
-  union Storage {
-    void* ptr;
-    alignas(void*) char buffer[sizeof(void*)];
-  };
-
   // Constructor for lvalue reference
   template <typename F,
             std::enable_if_t<
                 !std::is_same_v<std::decay_t<F>, BasicFunctionRef> &&
                     std::is_invocable_r_v<
                         R,
-                        std::conditional_t<IsConst,
+                        std::conditional_t<kIsConst,
                                            const std::remove_reference_t<F>&,
                                            std::remove_reference_t<F>&>,
                         Args...>,
                 int> = 0>
   BasicFunctionRef(F&& f PW_ATTRIBUTE_LIFETIME_BOUND) noexcept
-      : invoker_([](ObjPtr obj_ptr, Args... args) -> R {
+      : invoker_([](void* obj_ptr, Args... args) -> R {
           Storage* s = static_cast<Storage*>(obj_ptr);
-          using FPtr = std::conditional_t<IsConst,
+          using FPtr = std::conditional_t<kIsConst,
                                           const std::remove_reference_t<F>*,
                                           std::remove_reference_t<F>*>;
           FPtr f_ptr;
@@ -98,43 +95,37 @@ class BasicFunctionRef<IsConst, false, R, Args...> {
     return invoker_(const_cast<Storage*>(&obj_), std::forward<Args>(args)...);
   }
 
- protected:
+ private:
+  using Invoker = R (*)(void*, Args...);
+
   Storage obj_;
   Invoker invoker_;
 };
 
 // Specialization for noexcept
-template <bool IsConst, typename R, typename... Args>
-class BasicFunctionRef<IsConst, true, R, Args...> {
+template <bool kIsConst, typename R, typename... Args>
+class BasicFunctionRef<kIsConst, true, R, Args...> {
  public:
-  using ObjPtr = void*;
-  using Invoker = R (*)(ObjPtr, Args...) noexcept;
-
-  union Storage {
-    void* ptr;
-    alignas(void*) char buffer[sizeof(void*)];
-  };
-
   // Constructor for lvalue reference
   template <typename F,
             std::enable_if_t<
                 !std::is_same_v<std::decay_t<F>, BasicFunctionRef> &&
                     std::is_invocable_r_v<
                         R,
-                        std::conditional_t<IsConst,
+                        std::conditional_t<kIsConst,
                                            const std::remove_reference_t<F>&,
                                            std::remove_reference_t<F>&>,
                         Args...> &&
                     std::is_nothrow_invocable_v<
-                        std::conditional_t<IsConst,
+                        std::conditional_t<kIsConst,
                                            const std::remove_reference_t<F>&,
                                            std::remove_reference_t<F>&>,
                         Args...>,
                 int> = 0>
   BasicFunctionRef(F&& f PW_ATTRIBUTE_LIFETIME_BOUND) noexcept
-      : invoker_([](ObjPtr obj_ptr, Args... args) noexcept -> R {
+      : invoker_([](void* obj_ptr, Args... args) noexcept -> R {
           Storage* s = static_cast<Storage*>(obj_ptr);
-          using FPtr = std::conditional_t<IsConst,
+          using FPtr = std::conditional_t<kIsConst,
                                           const std::remove_reference_t<F>*,
                                           std::remove_reference_t<F>*>;
           FPtr f_ptr;
@@ -159,7 +150,9 @@ class BasicFunctionRef<IsConst, true, R, Args...> {
     return invoker_(const_cast<Storage*>(&obj_), std::forward<Args>(args)...);
   }
 
- protected:
+ private:
+  using Invoker = R (*)(void*, Args...) noexcept;
+
   Storage obj_;
   Invoker invoker_;
 };
@@ -168,7 +161,7 @@ class BasicFunctionRef<IsConst, true, R, Args...> {
 
 // Specialization for R(Args...)
 template <typename R, typename... Args>
-class FunctionRef<R(Args...)>
+class FunctionRef<R(Args...)> final
     : public function::internal::BasicFunctionRef<false, false, R, Args...> {
   using Base = function::internal::BasicFunctionRef<false, false, R, Args...>;
 
@@ -180,7 +173,7 @@ class FunctionRef<R(Args...)>
 
 // Specialization for R(Args...) const
 template <typename R, typename... Args>
-class FunctionRef<R(Args...) const>
+class FunctionRef<R(Args...) const> final
     : public function::internal::BasicFunctionRef<true, false, R, Args...> {
   using Base = function::internal::BasicFunctionRef<true, false, R, Args...>;
 
@@ -192,7 +185,7 @@ class FunctionRef<R(Args...) const>
 
 // Specialization for R(Args...) noexcept
 template <typename R, typename... Args>
-class FunctionRef<R(Args...) noexcept>
+class FunctionRef<R(Args...) noexcept> final
     : public function::internal::BasicFunctionRef<false, true, R, Args...> {
   using Base = function::internal::BasicFunctionRef<false, true, R, Args...>;
 
@@ -204,7 +197,7 @@ class FunctionRef<R(Args...) noexcept>
 
 // Specialization for R(Args...) const noexcept
 template <typename R, typename... Args>
-class FunctionRef<R(Args...) const noexcept>
+class FunctionRef<R(Args...) const noexcept> final
     : public function::internal::BasicFunctionRef<true, true, R, Args...> {
   using Base = function::internal::BasicFunctionRef<true, true, R, Args...>;
 
