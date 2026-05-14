@@ -240,17 +240,19 @@ CommandPacket AndroidExtendedLowEnergyAdvertiser::BuildUnsetScanResponse(
 
 std::optional<CommandPacket>
 AndroidExtendedLowEnergyAdvertiser::BuildRemoveAdvertisingSet(
-    AdvertisementId advertisement_id) const {
-  auto packet =
-      hci::CommandPacket::New<android_emb::LEMultiAdvtEnableCommandWriter>(
-          android_hci::kLEMultiAdvt);
-  auto packet_view = packet.view_t();
-  packet_view.vendor_command().sub_opcode().Write(
-      android_hci::kLEMultiAdvtEnableSubopcode);
-  packet_view.enable().Write(pwemb::GenericEnableParam::DISABLE);
-  packet_view.advertising_handle().Write(
-      advertising_handle_map_.GetHandle(advertisement_id));
-  return packet;
+    AdvertisementId /*advertisement_id*/) const {
+  // Multiple advertising via Android vendor extensions doesn't have the concept
+  // of removing an advertising set. We return nullopt here so that no command
+  // is sent for the remove advertising set part of disabling advertising.
+  //
+  // Note: we don't want to disable advertising in general here. We already do
+  // that in LowEnergyAdvertiser::EnqueueStopAdvertisingCommands. Doing it here
+  // as well would result in a duplicate disable command for an already disabled
+  // set. Some controllers return `Command Disallowed (0x0C)` when receiving a
+  // disable command for an already-disabled set, causing the command runner to
+  // abort with an error.
+
+  return std::nullopt;
 }
 
 void AndroidExtendedLowEnergyAdvertiser::StartAdvertising(
