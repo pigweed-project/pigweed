@@ -1803,6 +1803,82 @@ TEST_F(BrEdrDynamicChannelTest, OpenChannelNoResourcesTimeout) {
   EXPECT_EQ(1, open_cb_count);
 }
 
+TEST_F(BrEdrDynamicChannelTest,
+       OpenChannelNoResourcesThenPendingThenSuccessRFCOMM) {
+  auto conn_req = MakeConnectionRequest(kLocalCId, kRFCOMM);
+
+  auto conn_rsp_no_resources =
+      MakeConnectionResponseWithResultNoResources(kLocalCId, 0x0000);
+  auto conn_rsp_pending =
+      MakeConnectionResponseWithResultPending(kLocalCId, 0x0000);
+  auto conn_rsp_success = MakeConnectionResponse(kLocalCId, kRemoteCId);
+
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConnectionRequest,
+      conn_req.view(),
+      {SignalingChannel::Status::kSuccess, conn_rsp_no_resources.view()},
+      {SignalingChannel::Status::kSuccess, conn_rsp_pending.view()},
+      {SignalingChannel::Status::kSuccess, conn_rsp_success.view()});
+
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      kOutboundConfigReq.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  int open_cb_count = 0;
+  auto open_cb = [&open_cb_count](auto chan) {
+    if (open_cb_count == 0) {
+      ASSERT_TRUE(chan);
+      EXPECT_TRUE(chan->IsOpen());
+      EXPECT_TRUE(chan->IsConnected());
+      EXPECT_EQ(kLocalCId, chan->local_cid());
+      EXPECT_EQ(kRemoteCId, chan->remote_cid());
+    }
+    open_cb_count++;
+  };
+
+  registry()->OpenOutbound(kRFCOMM, kChannelParams, std::move(open_cb));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // Simulate config request from remote.
+  sig()->ReceiveExpect(kConfigurationRequest,
+                       kInboundConfigReq.view(),
+                       kOutboundOkConfigRsp.view());
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_EQ(1, open_cb_count);
+}
+
+TEST_F(BrEdrDynamicChannelTest, OpenChannelNoResourcesTimeoutRFCOMM) {
+  auto conn_req = MakeConnectionRequest(kLocalCId, kRFCOMM);
+
+  auto conn_rsp_no_resources =
+      MakeConnectionResponseWithResultNoResources(kLocalCId, 0x0000);
+
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConnectionRequest,
+      conn_req.view(),
+      {SignalingChannel::Status::kSuccess, conn_rsp_no_resources.view()});
+
+  int open_cb_count = 0;
+  auto open_cb = [&open_cb_count](auto chan) {
+    if (open_cb_count == 0) {
+      EXPECT_FALSE(chan);
+    }
+    open_cb_count++;
+  };
+
+  registry()->OpenOutbound(kRFCOMM, kChannelParams, std::move(open_cb));
+  RETURN_IF_FATAL(RunUntilIdle());
+  RunFor(std::chrono::seconds(2));
+
+  EXPECT_EQ(1, open_cb_count);
+}
+
 TEST_F(BrEdrDynamicChannelTest, InboundConnectionOk) {
   EXPECT_OUTBOUND_REQ(
       *sig(),

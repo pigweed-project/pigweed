@@ -1323,13 +1323,15 @@ BrEdrDynamicChannel::ResponseHandlerAction BrEdrDynamicChannel::OnRxConnRsp(
   }
 
   if (rsp.result() != ConnectionResult::kSuccess) {
-    // Workaround for AirPods 4 interop bug: when opening an AVDTP channel,
-    // the device initially responds with "Refused - no resources available",
-    // but subsequently sends "Pending" and then "Success" responses. Wait
-    // for a short duration instead of failing the connection immediately.
+    // Workaround for Apple interop bug (e.g. AirPods 4 AVDTP, Apple RFCOMM):
+    // when opening a channel, the device initially responds with "Refused - no
+    // resources available", but subsequently sends "Pending" and then "Success"
+    // responses. Wait for a short duration instead of failing the connection
+    // immediately.
     // TODO: https://fxbug.dev/477697118 - Remove this once Apple fixes the
     // firmware bug.
-    if (rsp.result() == ConnectionResult::kNoResources && psm() == kAVDTP) {
+    if (rsp.result() == ConnectionResult::kNoResources &&
+        (psm() == kAVDTP || psm() == kRFCOMM)) {
       bt_log(WARN,
              "l2cap-bredr",
              "Channel %#.4x: Connection Response indicates 'no resources', "
