@@ -518,6 +518,29 @@ TEST(StreamEncoder, NestedTwoPassFailsIfInconsistentShorter) {
   EXPECT_EQ(status, encoder.status());
 }
 
+TEST(StreamEncoder, NestedTwoPassFailsCleanlyWhenBufferExhausted) {
+  // Buffer sized to hold initial field (2 bytes) + 1 extra byte (total 3
+  // bytes). A nested message requiring 5 bytes (2 byte header + 3 byte payload)
+  // will not fit.
+  std::byte dest_buffer[3];
+  MemoryWriter writer(dest_buffer);
+  StreamEncoder encoder(writer, {});
+
+  EXPECT_EQ(encoder.WriteUint32(kTestProtoMagicNumberField, 42), OkStatus());
+  EXPECT_EQ(writer.bytes_written(), 2u);
+
+  auto status = encoder.WriteNestedMessage(
+      kTestProtoNestedField, [](StreamEncoder& nested_proto) {
+        PW_TRY(nested_proto.WriteUint32(kNestedProtoIdField, 999));
+        return OkStatus();
+      });
+
+  EXPECT_EQ(status, Status::ResourceExhausted());
+  EXPECT_EQ(status, encoder.status());
+  // Prove that the submessage header was NOT written to the stream.
+  EXPECT_EQ(writer.bytes_written(), 2u);
+}
+
 TEST(StreamEncoder, NestedTwoPassRespectsEmptyEncoderBehaviorWriteField) {
   std::byte dest_buffer[128];
   MemoryWriter writer(dest_buffer);

@@ -71,6 +71,16 @@ Status StreamEncoder::WriteNestedMessage(
 
   if (num_bytes > 0 ||
       empty_encoder_behavior == EmptyEncoderBehavior::kWriteFieldNumber) {
+    const Result<size_t> field_size =
+        SizeOfField(field_number, WireType::kDelimited, num_bytes);
+    status_.Update(field_size.status());
+    PW_TRY(status_);
+
+    if (field_size.value() > writer_.ConservativeWriteLimit()) {
+      status_ = Status::ResourceExhausted();
+      return status_;
+    }
+
     // With the field size known, we can write the header.
     status_ = WriteLengthDelimitedKeyAndLengthPrefix(
         field_number, num_bytes, writer_);
