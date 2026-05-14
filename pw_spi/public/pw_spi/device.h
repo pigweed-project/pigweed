@@ -57,9 +57,9 @@ namespace pw::spi {
 /// object is "borrowed" for the duration of a transaction.
 class Device {
  public:
-  Device(sync::Borrowable<Initiator> initiator,
-         const Config config,
-         ChipSelector& selector)
+  constexpr Device(sync::Borrowable<Initiator> initiator,
+                   const Config config,
+                   ChipSelector& selector)
       : initiator_(initiator), config_(config), selector_(selector) {}
 
   ~Device() = default;
