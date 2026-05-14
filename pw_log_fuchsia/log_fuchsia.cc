@@ -33,16 +33,29 @@ namespace {
 // This is an arbitrary size limit of logs.
 constexpr size_t kBufferSize = 400;
 
-// Returns the part of a path following the final '/', or the whole path if
-// there is no '/'.
+// Returns the base name of a path including up to one parent directory.
 constexpr const char* BaseName(const char* path) {
+  const char* last_slash = nullptr;
+  const char* second_last_slash = nullptr;
   for (const char* c = path; c && (*c != '\0'); c++) {
     if (*c == '/') {
-      path = c + 1;
+      second_last_slash = last_slash;
+      last_slash = c;
     }
+  }
+  if (second_last_slash != nullptr) {
+    return second_last_slash + 1;
+  }
+  if (last_slash == path) {
+    return last_slash + 1;
   }
   return path;
 }
+
+static_assert(std::string_view(BaseName("/a/b/c/file.cc")) == "c/file.cc");
+static_assert(std::string_view(BaseName("c/file.cc")) == "c/file.cc");
+static_assert(std::string_view(BaseName("/file.cc")) == "file.cc");
+static_assert(std::string_view(BaseName("file.cc")) == "file.cc");
 
 const char* LogLevelToString(int severity) {
   switch (severity) {
@@ -122,7 +135,7 @@ extern "C" void pw_Log(int level,
   }
 
   auto buffer = fuchsia_logging::LogBufferBuilder(fuchsia_severity)
-                    .WithFile(file_name, line_number)
+                    .WithFile(BaseName(file_name), line_number)
                     .WithMsg(formatted)
                     .Build();
   buffer.WriteKeyValue("tag", module_name);
