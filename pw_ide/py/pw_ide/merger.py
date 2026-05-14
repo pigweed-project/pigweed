@@ -398,13 +398,24 @@ def _build_and_collect_fragments_from_groups(
             _LOG.warning("Skipping invalid compile command group: %s", group)
             continue
 
+        # Workaround for Bazel 7+ canonical label format in target patterns
+        targets = [t[2:] if t.startswith('@@//') else t for t in targets]
+
         _LOG.info(
             '⏳ Generating compile commands for group %d/%d (%s)...',
             i + 1,
             total_groups,
             platform,
         )
-        build_args = ['build', '--platforms', platform, *targets]
+        build_args = [
+            'build',
+            '--noshow_progress',
+            '--noshow_loading_progress',
+            '--workspace_status_command=/usr/bin/true',
+            '--platforms',
+            platform,
+            *targets,
+        ]
         group_fragments = _run_bazel_build_for_fragments(
             build_args, verbose, execution_root
         )
@@ -509,17 +520,24 @@ def _setup_logging(log_level: int):
     root_logger.setLevel(log_level)
 
 
-def _get_bazel_path_info(key: str, cwd: str) -> Path | None:
-    """Gets a value from `bazel info {key}`."""
+def _get_bazel_info_multi(keys: list[str], cwd: str) -> dict[str, Path] | None:
+    """Gets values from `bazel info {keys}`."""
     try:
         output_str = _run_bazel(
-            ['info', key],
+            ['info'] + keys,
             cwd=cwd,
         ).stdout.strip()
     except subprocess.CalledProcessError as e:
-        _LOG.fatal("Error getting bazel %s: %s", key, e)
+        _LOG.fatal("Error getting bazel info for %s: %s", keys, e)
         return None
-    return Path(output_str)
+
+    results = {}
+
+    for line in output_str.splitlines():
+        if ':' in line:
+            k, v = line.split(':', 1)
+            results[k.strip()] = Path(v.strip())
+    return results
 
 
 def _load_commands_for_platform(
@@ -684,21 +702,26 @@ def _validate_environment() -> tuple[Path, Path, Path, Path]:
 
     workspace_root = Path(workspace_root_str).resolve()
 
-    bazel_output_path = _get_bazel_path_info('output_path', workspace_root_str)
-    if bazel_output_path is None:
-        sys.exit(1)
-    bazel_output_path = bazel_output_path.resolve()
-
-    output_base_path = _get_bazel_path_info('output_base', workspace_root_str)
-    if output_base_path is None:
-        sys.exit(1)
-    output_base_path = output_base_path.resolve()
-
-    execution_root_path = _get_bazel_path_info(
-        'execution_root', workspace_root_str
+    info_dict = _get_bazel_info_multi(
+        ['output_path', 'output_base', 'execution_root'], workspace_root_str
     )
-    if execution_root_path is None:
+    if info_dict is None:
         sys.exit(1)
+
+    bazel_output_path = info_dict.get('output_path')
+    output_base_path = info_dict.get('output_base')
+    execution_root_path = info_dict.get('execution_root')
+
+    if not all([bazel_output_path, output_base_path, execution_root_path]):
+        _LOG.fatal("Failed to get all required Bazel paths")
+        sys.exit(1)
+
+    assert bazel_output_path is not None
+    assert output_base_path is not None
+    assert execution_root_path is not None
+
+    bazel_output_path = bazel_output_path.resolve()
+    output_base_path = output_base_path.resolve()
     execution_root_path = execution_root_path.resolve()
 
     if not bazel_output_path.exists():
@@ -1333,7 +1356,7 @@ def resolve_external_paths(
     """Replaces external paths with their real paths."""
     # Standard compiler flags for include paths.
     # Include both prefix and prefix= to handle both styles.
-    allowed_prefixes = (
+    specific_prefixes = (
         "-I=",
         "-I",
         "-isystem=",
@@ -1343,7 +1366,6 @@ def resolve_external_paths(
         "-isysroot=",
         "-isysroot",
         "--sysroot=",
-        "",
     )
 
     new_args = []
@@ -1356,37 +1378,39 @@ def resolve_external_paths(
 
     for arg in command.arguments:
         new_arg = arg
+        matched_prefix = ""
 
-        # We iterate over allowed prefixes to find where the path starts
-        for prefix in allowed_prefixes:
-            if not arg.startswith(prefix):
-                continue
+        if arg.startswith(specific_prefixes):
+            for prefix in specific_prefixes:
+                if arg.startswith(prefix):
+                    matched_prefix = prefix
+                    break
 
-            prefix_len = len(prefix)
-            relevant_part_str = arg[prefix_len:]
-            if not relevant_part_str:
-                continue
+        prefix_len = len(matched_prefix)
+        relevant_part_str = arg[prefix_len:]
+        if not relevant_part_str:
+            new_args.append(new_arg)
+            continue
 
-            # Optimization: only process if it looks like an absolute path
-            # to output base, or a relative external/ path.
-            if (
-                not relevant_part_str.startswith('/')
-                and not relevant_part_str.startswith('external/')
-                and output_base_str not in relevant_part_str
-            ):
-                continue
+        # Optimization: only process if it looks like an absolute path
+        # to output base, or a relative external/ path.
+        if (
+            not relevant_part_str.startswith('/')
+            and not relevant_part_str.startswith('external/')
+            and output_base_str not in relevant_part_str
+        ):
+            new_args.append(new_arg)
+            continue
 
-            resolved = _resolve_single_external_path(
-                relevant_part_str,
-                output_base_str,
-                relative_to_str,
-                symlink_prefix,
-            )
+        resolved = _resolve_single_external_path(
+            relevant_part_str,
+            output_base_str,
+            relative_to_str,
+            symlink_prefix,
+        )
 
-            if resolved:
-                new_arg = arg[:prefix_len] + resolved
-                break
-
+        if resolved:
+            new_arg = arg[:prefix_len] + resolved
         new_args.append(new_arg)
 
     # Resolve as an external path first (handles relative external/...

@@ -123,6 +123,13 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 return mock.Mock(stdout=f'{self.output_base}\n')
             if args == ['info', 'execution_root']:
                 return mock.Mock(stdout=f'{self.execution_root}\n')
+            if args == ['info', 'output_path', 'output_base', 'execution_root']:
+                stdout = (
+                    f'output_path: {self.output_path}\n'
+                    f'output_base: {self.output_base}\n'
+                    f'execution_root: {self.execution_root}\n'
+                )
+                return mock.Mock(stdout=stdout)
             raise AssertionError(f'Unhandled Bazel request: {args}')
 
         self.mock_run_bazel.side_effect = run_bazel_side_effect
@@ -348,6 +355,14 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 return mock.Mock(
                     stdout=f'{symlink_output_base}/execroot/_main\n'
                 )
+            if args == ['info', 'output_path', 'output_base', 'execution_root']:
+                stdout = (
+                    f'output_path: {symlink_output_base}'
+                    f'/execroot/_main/bazel-out\n'
+                    f'output_base: {symlink_output_base}\n'
+                    f'execution_root: {symlink_output_base}/execroot/_main\n'
+                )
+                return mock.Mock(stdout=stdout)
             raise AssertionError(f'Unhandled Bazel request: {args}')
 
         self.mock_run_bazel.side_effect = mock_run_bazel
@@ -751,6 +766,13 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 return mock.Mock(stdout=f'{self.output_base}\n')
             if args == ['info', 'execution_root']:
                 return mock.Mock(stdout=f'{self.execution_root}\n')
+            if args == ['info', 'output_path', 'output_base', 'execution_root']:
+                stdout = (
+                    f'output_path: {self.output_path}\n'
+                    f'output_base: {self.output_base}\n'
+                    f'execution_root: {self.execution_root}\n'
+                )
+                return mock.Mock(stdout=stdout)
 
             bep_path_arg = next(
                 arg
