@@ -588,6 +588,119 @@ TEST_F(AdapterTest, LeAutoConnect) {
   EXPECT_EQ(kPeerId, conn->peer_identifier());
 }
 
+TEST_F(AdapterTest, LeAutoConnectIgnoredWhenAlreadyConnected) {
+  constexpr pw::chrono::SystemClock::duration kTestScanPeriod =
+      std::chrono::seconds(10);
+  constexpr PeerId kPeerId(1234);
+
+  FakeController::Settings settings;
+  settings.ApplyLEOnlyDefaults();
+  test_device()->set_settings(settings);
+
+  InitializeAdapter([](bool) {});
+  adapter()->le()->set_scan_period_for_testing(kTestScanPeriod);
+
+  auto fake_peer =
+      std::make_unique<FakePeer>(kTestAddr, dispatcher(), true, false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  std::unique_ptr<bt::gap::LowEnergyConnectionHandle> conn;
+  adapter()->set_auto_connect_callback(
+      [&](auto conn_ref) { conn = std::move(conn_ref); });
+
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  adapter()->le()->StartDiscovery(
+      /*active=*/false, {}, [&session](auto cb_session) {
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  EXPECT_FALSE(conn);
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  sm::PairingData pdata;
+  pdata.peer_ltk = sm::LTK();
+  pdata.local_ltk = sm::LTK();
+  adapter()->peer_cache()->AddBondedPeer(
+      BondingData{.identifier = kPeerId,
+                  .address = kTestAddr,
+                  .name = std::nullopt,
+                  .device_class = {},
+                  .le_pairing_data = pdata,
+                  .bredr_link_key = std::nullopt,
+                  .bredr_services = {}});
+  EXPECT_EQ(1u, adapter()->peer_cache()->count());
+
+  auto* peer = adapter()->peer_cache()->FindById(kPeerId);
+  ASSERT_TRUE(peer);
+
+  // Emulate an existing connection on the peer.
+  auto conn_token = peer->MutLe().RegisterConnection();
+
+  RunFor(kTestScanPeriod);
+
+  // The peer should NOT have been auto-connected because it is already
+  // connected.
+  EXPECT_FALSE(conn);
+}
+
+TEST_F(AdapterTest, LeAutoConnectProceedsWhenConnectedOnlyOverBrEdr) {
+  constexpr pw::chrono::SystemClock::duration kTestScanPeriod =
+      std::chrono::seconds(10);
+  constexpr PeerId kPeerId(1234);
+
+  FakeController::Settings settings;
+  settings.ApplyLEOnlyDefaults();
+  test_device()->set_settings(settings);
+
+  InitializeAdapter([](bool) {});
+  adapter()->le()->set_scan_period_for_testing(kTestScanPeriod);
+
+  auto fake_peer =
+      std::make_unique<FakePeer>(kTestAddr, dispatcher(), true, false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  std::unique_ptr<bt::gap::LowEnergyConnectionHandle> conn;
+  adapter()->set_auto_connect_callback(
+      [&](auto conn_ref) { conn = std::move(conn_ref); });
+
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  adapter()->le()->StartDiscovery(
+      /*active=*/false, {}, [&session](auto cb_session) {
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  EXPECT_FALSE(conn);
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  sm::PairingData pdata;
+  pdata.peer_ltk = sm::LTK();
+  pdata.local_ltk = sm::LTK();
+  adapter()->peer_cache()->AddBondedPeer(
+      BondingData{.identifier = kPeerId,
+                  .address = kTestAddr,
+                  .name = std::nullopt,
+                  .device_class = {},
+                  .le_pairing_data = pdata,
+                  .bredr_link_key = std::nullopt,
+                  .bredr_services = {}});
+  EXPECT_EQ(1u, adapter()->peer_cache()->count());
+
+  auto* peer = adapter()->peer_cache()->FindById(kPeerId);
+  ASSERT_TRUE(peer);
+
+  // Emulate an existing connection over BR/EDR.
+  auto conn_token = peer->MutBrEdr().RegisterConnection();
+
+  RunFor(kTestScanPeriod);
+
+  // The peer should have been auto-connected over LE because it is only
+  // connected over BR/EDR.
+  ASSERT_TRUE(conn);
+  EXPECT_EQ(kPeerId, conn->peer_identifier());
+}
+
 TEST_F(AdapterTest, LeSkipAutoConnectBehavior) {
   constexpr pw::chrono::SystemClock::duration kTestScanPeriod =
       std::chrono::seconds(10);
