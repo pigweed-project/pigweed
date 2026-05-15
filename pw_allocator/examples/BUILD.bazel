@@ -56,7 +56,6 @@ cc_library(
     name = "custom_allocator_test_harness",
     testonly = True,
     hdrs = ["public/examples/custom_allocator_test_harness.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":custom_allocator",
@@ -70,7 +69,6 @@ cc_library(
 pw_cc_test(
     name = "basic",
     srcs = ["basic.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":named_u32",
         "//pw_allocator",
@@ -81,7 +79,6 @@ pw_cc_test(
 pw_cc_test(
     name = "block_allocator",
     srcs = ["block_allocator.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":named_u32",
         "//pw_allocator:first_fit",
@@ -91,7 +88,6 @@ pw_cc_test(
 pw_cc_test(
     name = "custom_allocator_perf_test",
     srcs = ["custom_allocator_perf_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":custom_allocator_test_harness",
         "//pw_perf_test",
@@ -103,7 +99,6 @@ pw_cc_test(
 pw_cc_test(
     name = "custom_allocator_test",
     srcs = ["custom_allocator_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":custom_allocator",
         ":custom_allocator_test_harness",
@@ -118,7 +113,6 @@ pw_cc_test(
 pw_cc_test(
     name = "linker_sections",
     srcs = ["linker_sections.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":named_u32",
         "//pw_allocator",
@@ -131,7 +125,6 @@ pw_cc_test(
 pw_cc_test(
     name = "metrics",
     srcs = ["metrics.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":named_u32",
         "//pw_allocator:metrics",
@@ -145,7 +138,6 @@ pw_cc_test(
     name = "pmr",
     testonly = True,
     srcs = ["pmr.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_allocator",
         "//pw_allocator:pmr_allocator",
@@ -157,7 +149,6 @@ pw_cc_test(
 pw_cc_size_binary(
     name = "size_report",
     srcs = ["size_report.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":custom_allocator",
         "//pw_allocator:best_fit",
@@ -182,7 +173,6 @@ pw_size_table(
 pw_cc_test(
     name = "spin_lock",
     srcs = ["spin_lock.cc"],
-    features = ["-conversion_warnings"],
     # TODO: b/358411629 - This test times out on rp2.
     target_compatible_with = select({
         "@pico-sdk//bazel/constraint:rp2040": ["@platforms//:incompatible"],

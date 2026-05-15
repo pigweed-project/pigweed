@@ -66,10 +66,10 @@ NamedU32Factory psram_factory(psram_allocator);
 namespace pw::allocator {
 
 TEST(LinkerSectionExample, MakeObjects) {
-  auto result1 = examples::sram_factory.MakeNamedU32("1", 1);
+  auto result1 = examples::sram_factory.MakeNamedU32("1", 1u);
   EXPECT_NE(result1, nullptr);
 
-  auto result2 = examples::psram_factory.MakeNamedU32("2", 2);
+  auto result2 = examples::psram_factory.MakeNamedU32("2", 2u);
   EXPECT_NE(result2, nullptr);
 }
 

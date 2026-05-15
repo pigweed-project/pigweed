@@ -79,9 +79,12 @@ extern "C" void pw_assert_tokenized_HandleCheckFailure(
   // number values that would cause the bit field to overflow.
   // See https://pigweed.dev/pw_log_tokenized/#c.PW_LOG_TOKENIZED_LINE_BITS for
   // more info.
-  const uint32_t payload = pw::log_tokenized::Metadata(
-                               PW_LOG_LEVEL_FATAL, 0, PW_LOG_FLAGS, line_number)
-                               .value();
+  const uint32_t payload = static_cast<uint32_t>(
+      pw::log_tokenized::Metadata(static_cast<uintptr_t>(PW_LOG_LEVEL_FATAL),
+                                  static_cast<uintptr_t>(0),
+                                  static_cast<uintptr_t>(PW_LOG_FLAGS),
+                                  static_cast<uintptr_t>(line_number))
+          .value());
   std::array<std::byte, sizeof(tokenized_message)> token_buffer =
       pw::bytes::CopyInOrder(pw::endian::little, tokenized_message);
 

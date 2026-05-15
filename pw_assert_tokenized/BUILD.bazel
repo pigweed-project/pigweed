@@ -39,7 +39,6 @@ cc_library(
     srcs = [
         "log_handler.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":handler",
         "//pw_assert:config",

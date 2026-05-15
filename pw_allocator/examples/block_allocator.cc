@@ -57,7 +57,7 @@ void my_free(void* ptr) { allocator.Deallocate(ptr); }
 namespace {
 
 TEST(BlockAllocatorExample, NewDelete) {
-  auto* named_u32 = examples::my_new<examples::NamedU32>("test", 111);
+  auto* named_u32 = examples::my_new<examples::NamedU32>("test", 111u);
   ASSERT_NE(named_u32, nullptr);
   EXPECT_STREQ(named_u32->name().data(), "test");
   EXPECT_EQ(named_u32->value(), 111U);

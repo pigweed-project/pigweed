@@ -131,7 +131,6 @@ alias(
 cc_library(
     name = "best_fit",
     srcs = ["best_fit.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":pw_malloc.facade",
         "//pw_allocator:best_fit",
@@ -141,7 +140,6 @@ cc_library(
 cc_library(
     name = "bucket_allocator",
     srcs = ["bucket_allocator.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_allocator:bucket_allocator",
         "//pw_malloc:facade",
@@ -151,7 +149,6 @@ cc_library(
 cc_library(
     name = "first_fit",
     srcs = ["first_fit.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_allocator:first_fit",
         "//pw_malloc:facade",
@@ -161,7 +158,6 @@ cc_library(
 cc_library(
     name = "worst_fit",
     srcs = ["worst_fit.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_allocator:worst_fit",
         "//pw_malloc:facade",
@@ -184,7 +180,6 @@ cc_library(
         "PW_MALLOC_MIN_BUCKET_SIZE=64",
         "PW_MALLOC_NUM_BUCKETS=4",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_assert:check",
         "//pw_tokenizer:decoder",

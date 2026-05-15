@@ -97,7 +97,7 @@ TEST(MeasurementTest, Update_ManyVarious) {
   data.largest = 8192;
   Measurement<size_t> measurement(kName, 0);
   for (size_t i = 0; i < 10; ++i) {
-    data.nanoseconds += 100.f;
+    data.nanoseconds += 100;
     data.fragmentation += 0.02f;
     data.largest -= 512;
     data.failed = !data.failed;
@@ -152,7 +152,7 @@ TEST(MeasurementsTest, ByFragmentation) {
   by_fragmentation.AddByFragmentation(top_third);
 
   EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0)), &bottom_third);
-  EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0.3299)), &bottom_third);
+  EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0.3299f)), &bottom_third);
   EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0.33f)), &middle_third);
   EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0.6599f)), &middle_third);
   EXPECT_EQ(&(by_fragmentation.GetByFragmentation(0.66f)), &top_third);

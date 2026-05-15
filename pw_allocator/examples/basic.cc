@@ -71,7 +71,7 @@ TEST_F(BasicExampleTest, AllocateNamedU32) {
 }
 
 TEST_F(BasicExampleTest, NewNamedU32) {
-  auto* named_u32 = examples::NewNamedU32(allocator_, "test1", 111);
+  auto* named_u32 = examples::NewNamedU32(allocator_, "test1", 111u);
   ASSERT_NE(named_u32, nullptr);
   EXPECT_STREQ(named_u32->name().data(), "test1");
   EXPECT_EQ(named_u32->value(), 111U);
@@ -80,7 +80,7 @@ TEST_F(BasicExampleTest, NewNamedU32) {
 
 TEST_F(BasicExampleTest, MakeNamedU32) {
   pw::UniquePtr<examples::NamedU32> named_u32 =
-      examples::MakeNamedU32(allocator_, "test2", 222);
+      examples::MakeNamedU32(allocator_, "test2", 222u);
   ASSERT_NE(named_u32, nullptr);
   EXPECT_STREQ(named_u32->name().data(), "test2");
   EXPECT_EQ(named_u32->value(), 222U);

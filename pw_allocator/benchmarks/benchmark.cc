@@ -68,8 +68,8 @@ void GenericBlockAllocatorBenchmark::DoAfter() {
   auto finish = chrono::SystemClock::now();
   PW_ASSERT(start_.has_value());
   auto elapsed = finish - start_.value();
-  data_.nanoseconds =
-      std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+  data_.nanoseconds = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
 
   IterateOverBlocks(data_);
   Fragmentation fragmentation = GetBlockFragmentation();

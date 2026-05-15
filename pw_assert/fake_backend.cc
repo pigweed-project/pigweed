@@ -25,7 +25,7 @@ struct pw_CapturedAssert pw_captured_assert;
 bool IsDirSeparator(char c) { return c == '/' || c == '\\'; }
 
 const char* GetFileBasename(const char* filename) {
-  int length = std::strlen(filename);
+  size_t length = std::strlen(filename);
   if (length == 0) {
     return filename;
   }

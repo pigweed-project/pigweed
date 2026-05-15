@@ -30,13 +30,13 @@ int Measure() {
 
 #ifdef PW_ALLOCATOR_SIZE_REPORT_BASE
   std::vector<Bar> vec;
-  auto* bar = base.New<Bar>(1);
+  auto* bar = base.New<Bar>(1u);
   vec.emplace_back(std::move(*bar));
 
 #else  // PW_ALLOCATOR_SIZE_REPORT_BASE
   static PmrAllocator alloc(base);
   std::pmr::vector<Bar> vec(alloc);
-  PW_BLOAT_EXPR(vec.emplace_back(1), mask);
+  PW_BLOAT_EXPR(vec.emplace_back(1u), mask);
 
 #endif  // PW_ALLOCATOR_SIZE_REPORT_BASE
 

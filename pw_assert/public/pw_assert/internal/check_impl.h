@@ -326,29 +326,31 @@ constexpr T ConvertToType(const U& value) {
 // Custom implementation for FLOAT_NEAR which is implemented through two
 // underlying checks which are not trivially replaced through the use of
 // FLOAT_EXACT_LE & FLOAT_EXACT_GE.
-#define _PW_CHECK_FLOAT_NEAR(argument_a, argument_b, abs_tolerance, ...)  \
-  do {                                                                    \
-    PW_CHECK_FLOAT_EXACT_GE(abs_tolerance, 0.0f);                         \
-    float evaluated_argument_a = (float)(argument_a);                     \
-    float evaluated_argument_b_min = (float)(argument_b) - abs_tolerance; \
-    float evaluated_argument_b_max = (float)(argument_b) + abs_tolerance; \
-    if (!(evaluated_argument_a >= evaluated_argument_b_min)) {            \
-      _PW_CHECK_BINARY_ARG_HANDLER(#argument_a,                           \
-                                   evaluated_argument_a,                  \
-                                   ">=",                                  \
-                                   #argument_b " - abs_tolerance",        \
-                                   evaluated_argument_b_min,              \
-                                   "%f",                                  \
-                                   "" __VA_ARGS__);                       \
-    } else if (!(evaluated_argument_a <= evaluated_argument_b_max)) {     \
-      _PW_CHECK_BINARY_ARG_HANDLER(#argument_a,                           \
-                                   evaluated_argument_a,                  \
-                                   "<=",                                  \
-                                   #argument_b " + abs_tolerance",        \
-                                   evaluated_argument_b_max,              \
-                                   "%f",                                  \
-                                   "" __VA_ARGS__);                       \
-    }                                                                     \
+#define _PW_CHECK_FLOAT_NEAR(argument_a, argument_b, abs_tolerance, ...) \
+  do {                                                                   \
+    PW_CHECK_FLOAT_EXACT_GE(abs_tolerance, 0.0f);                        \
+    float evaluated_argument_a = (float)(argument_a);                    \
+    float evaluated_argument_b_min =                                     \
+        (float)((float)(argument_b) - (float)(abs_tolerance));           \
+    float evaluated_argument_b_max =                                     \
+        (float)((float)(argument_b) + (float)(abs_tolerance));           \
+    if (!(evaluated_argument_a >= evaluated_argument_b_min)) {           \
+      _PW_CHECK_BINARY_ARG_HANDLER(#argument_a,                          \
+                                   evaluated_argument_a,                 \
+                                   ">=",                                 \
+                                   #argument_b " - abs_tolerance",       \
+                                   evaluated_argument_b_min,             \
+                                   "%f",                                 \
+                                   "" __VA_ARGS__);                      \
+    } else if (!(evaluated_argument_a <= evaluated_argument_b_max)) {    \
+      _PW_CHECK_BINARY_ARG_HANDLER(#argument_a,                          \
+                                   evaluated_argument_a,                 \
+                                   "<=",                                 \
+                                   #argument_b " + abs_tolerance",       \
+                                   evaluated_argument_b_max,             \
+                                   "%f",                                 \
+                                   "" __VA_ARGS__);                      \
+    }                                                                    \
   } while (0)
 
 // This empty function allows the compiler to verify that the condition contains

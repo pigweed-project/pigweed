@@ -39,8 +39,8 @@ void CollectCustomMetrics(pw::Allocator& allocator) {
   // DOCSTAG: [pw_allocator-examples-metrics-custom_metrics2]
 
   // Keep one UniquePtr in scope, and let the other deallocate immediately.
-  auto ptr = tracker.MakeUnique<NamedU32>("test", 111);
-  ptr = tracker.MakeUnique<NamedU32>("test", 222);
+  auto ptr = tracker.MakeUnique<NamedU32>("test", 111u);
+  ptr = tracker.MakeUnique<NamedU32>("test", 222u);
 
   // DOCSTAG: [pw_allocator-examples-metrics-dump]
   tracker.metric_group().Dump();
@@ -66,9 +66,9 @@ void CollectMultipleTrackers(pw::Allocator& allocator) {
   // DOCSTAG: [pw_allocator-examples-metrics-multiple_trackers]
 
   // Keep one UniquePtr in scope, and let others deallocate immediately.
-  auto ptr = tracker1.MakeUnique<NamedU32>("test", 111);
-  ptr = tracker1.MakeUnique<NamedU32>("test", 222);
-  ptr = tracker2.MakeUnique<NamedU32>("test", 222);
+  auto ptr = tracker1.MakeUnique<NamedU32>("test", 111u);
+  ptr = tracker1.MakeUnique<NamedU32>("test", 222u);
+  ptr = tracker2.MakeUnique<NamedU32>("test", 222u);
 
   combined.metric_group().Dump();
 }

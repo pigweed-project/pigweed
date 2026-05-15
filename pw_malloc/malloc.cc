@@ -100,7 +100,7 @@ void UpdateSystemMetrics() {
 void InitSystemAllocator(void* heap_low_addr, void* heap_high_addr) {
   auto* lo = std::launder(reinterpret_cast<std::byte*>(heap_low_addr));
   auto* hi = std::launder(reinterpret_cast<std::byte*>(heap_high_addr));
-  InitSystemAllocator(pw::ByteSpan(lo, (hi - lo)));
+  InitSystemAllocator(pw::ByteSpan(lo, static_cast<size_t>(hi - lo)));
 }
 
 const PW_MALLOC_METRICS_TYPE& UpdateSystemMetrics() {

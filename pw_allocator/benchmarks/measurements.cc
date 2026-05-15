@@ -30,15 +30,17 @@ void GenericMeasurement::Update(const BenchmarkSample& data) {
   count_++;
 
   float mean = nanoseconds_.value();
-  mean += (data.nanoseconds - mean) / count_;
+  mean += (static_cast<float>(data.nanoseconds) - mean) /
+          static_cast<float>(count_);
   nanoseconds_.Set(mean);
 
   mean = fragmentation_.value();
-  mean += (data.fragmentation - mean) / count_;
+  mean += (data.fragmentation - mean) / static_cast<float>(count_);
   fragmentation_.Set(mean);
 
   mean = largest_.value();
-  mean += (data.largest - mean) / count_;
+  mean +=
+      (static_cast<float>(data.largest) - mean) / static_cast<float>(count_);
   largest_.Set(mean);
 
   if (data.failed) {

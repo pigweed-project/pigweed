@@ -36,12 +36,12 @@ TEST(CustomAllocatorExample, MakeUnique) {
   examples::CustomAllocator custom(allocator, kThreshold);
   // log_basic::test::LogCache<32> logs;
 
-  auto ptr1 = custom.MakeUnique<examples::NamedU32>("test", 111);
-  auto ptr2 = custom.MakeUnique<examples::NamedU32>("test", 222);
-  auto ptr3 = custom.MakeUnique<examples::NamedU32>("test", 333);
+  auto ptr1 = custom.MakeUnique<examples::NamedU32>("test", 111u);
+  auto ptr2 = custom.MakeUnique<examples::NamedU32>("test", 222u);
+  auto ptr3 = custom.MakeUnique<examples::NamedU32>("test", 333u);
   // EXPECT_FALSE(logs.HasNext());
 
-  auto ptr4 = custom.MakeUnique<examples::NamedU32>("test", 444);
+  auto ptr4 = custom.MakeUnique<examples::NamedU32>("test", 444u);
   // ASSERT_TRUE(logs.HasNext());
   // log_basic::test::LogMessage log = logs.Next();
   // EXPECT_EQ(log.level, PW_LOG_LEVEL_INFO);
