@@ -38,11 +38,11 @@ pw_rust_docs(
         "//pw_log/rust:pw_log_backend_api",
         "//pw_log/rust:pw_log",
         "//pw_base64/rust:pw_base64",
+        "//pw_rust/rust/pigweed:pigweed",
     ],
     rustdoc_flags = [
         "-Z",
         "unstable-options",
-        "--enable-index-page",
     ],
     target_compatible_with = incompatible_with_mcu(),
 )

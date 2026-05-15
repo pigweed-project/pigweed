@@ -77,6 +77,17 @@ def _pw_rust_docs_impl(ctx):
         rustdoc_scripts.append(arg_file)
         rustdoc_inputs += [action.inputs, depset([action.executable])]
 
+    # Generate a root index.html that redirects to the 'pigweed' crate's documentation.
+    # By default, rustdoc doesn't generate a styled landing page for the workspace
+    # (and we disabled --enable-index-page because it only generates a minimal flat list).
+    # This redirect ensures users land on the proper front page.
+    redirect_script = ctx.actions.declare_file("generate_redirect.sh")
+    ctx.actions.write(
+        output = redirect_script,
+        content = "bash\n-c\necho '<meta http-equiv=\"refresh\" content=\"0; url=pigweed/index.html\" />' > {}/index.html\n".format(output_dir.path),
+    )
+    rustdoc_scripts.append(redirect_script)
+
     args = ctx.actions.args()
     for script in rustdoc_scripts:
         args.add(script)
