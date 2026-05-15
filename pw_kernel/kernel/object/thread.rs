@@ -185,11 +185,11 @@ impl<K: Kernel> KernelObject<K> for ThreadObject<K> {
         self.start(kernel, process.clone(), initial_pc, initial_sp, (0, 0, 0))
     }
 
-    fn thread_terminate(&self, kernel: K) -> Result<()> {
+    fn task_terminate(&self, kernel: K) -> Result<()> {
         self.terminate(kernel)
     }
 
-    fn thread_join(&self, kernel: K) -> Result<ExitStatus> {
+    fn task_join(&self, kernel: K) -> Result<ExitStatus> {
         let sched = kernel.get_scheduler().lock(kernel);
         let (_, res) = self.join_locked(kernel, sched);
         res

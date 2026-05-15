@@ -342,25 +342,23 @@ impl From<Result<ExitStatus>> for SysCallReturnValue {
 #[non_exhaustive]
 pub enum SysCallId {
     // IDs are not ABI stable yet and are subject to change.
-    ObjectWait = 0x0000,
-    WaitGroupAdd = 0x0001,
-    WaitGroupRemove = 0x0002,
-    ChannelTransact = 0x0003,
-    ChannelAsyncTransact = 0x0004,
-    ChannelAsyncTransactComplete = 0x0005,
-    ChannelAsyncCancel = 0x0006,
-    ChannelRead = 0x0007,
-    ChannelRespond = 0x0008,
-    InterruptAck = 0x0009,
-    ThreadStart = 0x000a,
-    ThreadTerminate = 0x000b,
-    ThreadJoin = 0x000c,
+    ChannelAsyncCancel = 0x0000,
+    ChannelAsyncTransact = 0x0001,
+    ChannelAsyncTransactComplete = 0x0002,
+    ChannelRead = 0x0003,
+    ChannelRespond = 0x0004,
+    ChannelTransact = 0x0005,
+    InterruptAck = 0x0006,
+    ObjectWait = 0x0007,
+    ProcessExit = 0x0008,
+    ProcessStart = 0x0009,
+    RaisePeerUserSignal = 0x000a,
+    TaskJoin = 0x000b,
+    TaskTerminate = 0x000c,
     ThreadExit = 0x000d,
-    ProcessStart = 0x000e,
-    ProcessTerminate = 0x000f,
-    ProcessJoin = 0x0010,
-    ProcessExit = 0x0011,
-    RaisePeerUserSignal = 0x0012,
+    ThreadStart = 0x000e,
+    WaitGroupAdd = 0x000f,
+    WaitGroupRemove = 0x0010,
 
     // System calls prefixed with 0xF000 are reserved development/debugging use.
     DebugPutc = 0xf000,
@@ -758,13 +756,11 @@ pub trait SysCallInterface {
     fn interrupt_ack(object_handle: u32, signal_mask: Signals) -> Result<()>;
 
     fn thread_start(object_handle: u32, initial_pc: usize, initial_sp: usize) -> Result<()>;
-    fn thread_terminate(object_handle: u32) -> Result<()>;
-    fn thread_join(object_handle: u32) -> Result<ExitStatus>;
+    fn task_terminate(object_handle: u32) -> Result<()>;
+    fn task_join(object_handle: u32) -> Result<ExitStatus>;
     fn thread_exit(exit_code: u32) -> !;
 
     fn process_start(object_handle: u32) -> Result<()>;
-    fn process_terminate(object_handle: u32) -> Result<()>;
-    fn process_join(object_handle: u32) -> Result<ExitStatus>;
     fn process_exit(exit_code: u32) -> !;
 
     /// Set or clear `Signals::USER` on the paired peer (level-triggered model).

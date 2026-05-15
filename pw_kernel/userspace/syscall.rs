@@ -170,28 +170,18 @@ pub fn thread_start(object_handle: u32, initial_pc: usize, initial_sp: usize) ->
 }
 
 #[inline(always)]
-pub fn thread_terminate(object_handle: u32) -> Result<()> {
-    SysCall::thread_terminate(object_handle)
+pub fn task_terminate(object_handle: u32) -> Result<()> {
+    SysCall::task_terminate(object_handle)
 }
 
 #[inline(always)]
-pub fn thread_join(object_handle: u32) -> Result<ExitStatus> {
-    SysCall::thread_join(object_handle)
+pub fn task_join(object_handle: u32) -> Result<ExitStatus> {
+    SysCall::task_join(object_handle)
 }
 
 #[inline(always)]
 pub fn process_start(object_handle: u32) -> Result<()> {
     SysCall::process_start(object_handle)
-}
-
-#[inline(always)]
-pub fn process_terminate(object_handle: u32) -> Result<()> {
-    SysCall::process_terminate(object_handle)
-}
-
-#[inline(always)]
-pub fn process_join(object_handle: u32) -> Result<ExitStatus> {
-    SysCall::process_join(object_handle)
 }
 
 #[inline(always)]

@@ -206,11 +206,11 @@ impl<K: Kernel> KernelObject<K> for ProcessObject<K> {
         self.start(kernel)
     }
 
-    fn process_terminate(&self, kernel: K) -> Result<()> {
+    fn task_terminate(&self, kernel: K) -> Result<()> {
         self.terminate(kernel)
     }
 
-    fn process_join(&self, kernel: K) -> Result<ExitStatus> {
+    fn task_join(&self, kernel: K) -> Result<ExitStatus> {
         self.join(kernel)
     }
 }

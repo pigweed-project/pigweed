@@ -67,7 +67,7 @@ fn run_supervisor() -> Result<()> {
         let triggered_handle = wait_result.user_data as u32;
 
         // Join the process and get it's `ExitStatus`.
-        let status = syscall::process_join(triggered_handle)?;
+        let status = syscall::task_join(triggered_handle)?;
 
         log_exit_status(triggered_handle, status);
 
@@ -125,7 +125,7 @@ fn log_exit_status(process_handle: u32, status: ExitStatus) {
             );
         }
         ExitStatus::ProcessTerminated => {
-            // ExitStatus::ProcessTerminated is only returned by `thread_join`.
+            // ExitStatus::ProcessTerminated is only returned when joining a thread.
             pw_log::error!(
                 "Process '{}' terminated with unexpected ExitStatus::ProcessTerminated",
                 process_name(process_handle) as &str

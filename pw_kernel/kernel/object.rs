@@ -147,27 +147,17 @@ pub trait KernelObject<K: Kernel>: Any + Send + Sync {
     }
 
     #[allow(unused_variables)]
-    fn thread_terminate(&self, kernel: K) -> Result<()> {
+    fn task_terminate(&self, kernel: K) -> Result<()> {
         Err(Error::Unimplemented)
     }
 
     #[allow(unused_variables)]
-    fn thread_join(&self, kernel: K) -> Result<ExitStatus> {
+    fn task_join(&self, kernel: K) -> Result<ExitStatus> {
         Err(Error::Unimplemented)
     }
 
     #[allow(unused_variables)]
     fn process_start(&self, kernel: K) -> Result<()> {
-        Err(Error::Unimplemented)
-    }
-
-    #[allow(unused_variables)]
-    fn process_terminate(&self, kernel: K) -> Result<()> {
-        Err(Error::Unimplemented)
-    }
-
-    #[allow(unused_variables)]
-    fn process_join(&self, kernel: K) -> Result<ExitStatus> {
         Err(Error::Unimplemented)
     }
 

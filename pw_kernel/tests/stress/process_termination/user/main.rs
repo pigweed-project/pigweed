@@ -31,7 +31,7 @@ fn do_test() -> Result<()> {
     loop {
         info!("🔄 ├─ Pass {}", pass as u32);
 
-        if let Err(err) = syscall::process_terminate(handle::FORCED_EXIT_PROCESS) {
+        if let Err(err) = syscall::task_terminate(handle::FORCED_EXIT_PROCESS) {
             pw_log::error!("Failed to terminate extra process");
             return Err(err);
         }
@@ -48,7 +48,7 @@ fn do_test() -> Result<()> {
         }
 
         info!("🔄 ├─ Joining", pass as u32);
-        match syscall::process_join(handle::FORCED_EXIT_PROCESS) {
+        match syscall::task_join(handle::FORCED_EXIT_PROCESS) {
             Err(err) => return Err(err),
             Ok(syscall::ExitStatus::TerminatedBySyscall) => (),
             Ok(_) => {

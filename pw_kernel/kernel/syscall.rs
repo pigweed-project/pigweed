@@ -319,21 +319,18 @@ fn handle_thread_start<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     object.thread_start(kernel, initial_pc, initial_sp)
 }
 
-fn handle_thread_terminate<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
-    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling thread_terminate");
+fn handle_task_terminate<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling task_terminate");
     let handle = args.next_u32()?;
     let object = lookup_handle(kernel, handle)?;
-    object.thread_terminate(kernel)
+    object.task_terminate(kernel)
 }
 
-fn handle_thread_join<'a, K: Kernel>(
-    kernel: K,
-    mut args: K::SyscallArgs<'a>,
-) -> Result<ExitStatus> {
-    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling thread_join");
+fn handle_task_join<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<ExitStatus> {
+    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling task_join");
     let handle = args.next_u32()?;
     let object = lookup_handle(kernel, handle)?;
-    object.thread_join(kernel)
+    object.task_join(kernel)
 }
 
 fn handle_thread_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> ! {
@@ -372,23 +369,6 @@ fn handle_process_start<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) 
     let handle = args.next_u32()?;
     let object = lookup_handle(kernel, handle)?;
     object.process_start(kernel)
-}
-
-fn handle_process_terminate<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
-    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling process_terminate");
-    let handle = args.next_u32()?;
-    let object = lookup_handle(kernel, handle)?;
-    object.process_terminate(kernel)
-}
-
-fn handle_process_join<'a, K: Kernel>(
-    kernel: K,
-    mut args: K::SyscallArgs<'a>,
-) -> Result<ExitStatus> {
-    log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling process_join");
-    let handle = args.next_u32()?;
-    let object = lookup_handle(kernel, handle)?;
-    object.process_join(kernel)
 }
 
 fn handle_set_peer_user_signal<'a, K: Kernel>(
@@ -510,12 +490,10 @@ pub fn handle_syscall<'a, K: Kernel>(
             SysCallId::ChannelRespond => handle_channel_respond(kernel, args).into(),
             SysCallId::InterruptAck => handle_interrupt_ack(kernel, args).into(),
             SysCallId::ThreadStart => handle_thread_start(kernel, args).into(),
-            SysCallId::ThreadTerminate => handle_thread_terminate(kernel, args).into(),
-            SysCallId::ThreadJoin => handle_thread_join(kernel, args).into(),
+            SysCallId::TaskTerminate => handle_task_terminate(kernel, args).into(),
+            SysCallId::TaskJoin => handle_task_join(kernel, args).into(),
             SysCallId::ThreadExit => handle_thread_exit(kernel, args),
             SysCallId::ProcessStart => handle_process_start(kernel, args).into(),
-            SysCallId::ProcessTerminate => handle_process_terminate(kernel, args).into(),
-            SysCallId::ProcessJoin => handle_process_join(kernel, args).into(),
             SysCallId::ProcessExit => handle_process_exit(kernel, args),
             SysCallId::RaisePeerUserSignal => handle_set_peer_user_signal(kernel, args).into(),
             SysCallId::DebugPutc => handle_debug_putc(kernel, args).into(),

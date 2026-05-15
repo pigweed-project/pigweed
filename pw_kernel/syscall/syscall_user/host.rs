@@ -96,12 +96,12 @@ impl SysCallInterface for SysCall {
     }
 
     #[inline(always)]
-    fn thread_terminate(_handle: u32) -> Result<()> {
+    fn task_terminate(_handle: u32) -> Result<()> {
         Err(pw_status::Error::Unimplemented)
     }
 
     #[inline(always)]
-    fn thread_join(_handle: u32) -> Result<ExitStatus> {
+    fn task_join(_handle: u32) -> Result<ExitStatus> {
         Err(pw_status::Error::Unimplemented)
     }
 
@@ -113,16 +113,6 @@ impl SysCallInterface for SysCall {
 
     #[inline(always)]
     fn process_start(_handle: u32) -> Result<()> {
-        Err(pw_status::Error::Unimplemented)
-    }
-
-    #[inline(always)]
-    fn process_terminate(_handle: u32) -> Result<()> {
-        Err(pw_status::Error::Unimplemented)
-    }
-
-    #[inline(always)]
-    fn process_join(_handle: u32) -> Result<ExitStatus> {
         Err(pw_status::Error::Unimplemented)
     }
 

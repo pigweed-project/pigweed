@@ -93,19 +93,19 @@ fn start_test_thread(entry: extern "C" fn(usize), stack: &mut [u8]) -> Result<()
 }
 
 fn cleanup_test_thread() -> Result<()> {
-    let _ = syscall::thread_terminate(handle::TEST_THREAD);
+    let _ = syscall::task_terminate(handle::TEST_THREAD);
     syscall::object_wait(
         handle::TEST_THREAD,
         syscall::Signals::JOINABLE,
         Instant::MAX,
     )?;
-    syscall::thread_join(handle::TEST_THREAD)?;
+    syscall::task_join(handle::TEST_THREAD)?;
     Ok(())
 }
 
-fn wait_and_join_process(handle: u32) -> Result<syscall::ExitStatus> {
+fn wait_and_join_task(handle: u32) -> Result<syscall::ExitStatus> {
     syscall::object_wait(handle, syscall::Signals::JOINABLE, Instant::MAX)?;
-    syscall::process_join(handle)
+    syscall::task_join(handle)
 }
 
 fn send_control_command(cmd: u8, reply: &mut [u8]) -> Result<()> {
@@ -121,19 +121,8 @@ fn test_invalid_handles() -> Result<()> {
     // or hold handles to other processes.
     // So we test that process_terminate correctly rejects invalid handles.
 
-    // TEST_THREAD is a ThreadObject, not a ProcessObject!
-    info!("🔄 ├─ Testing process_terminate on a Thread handle");
-    let result = syscall::process_terminate(handle::TEST_THREAD);
-    if result != Err(pw_status::Error::Unimplemented) {
-        pw_log::error!(
-            "❌ ├─ Expected Unimplemented when terminating a thread handle, got {}",
-            result.status_code() as u32
-        );
-        return Err(pw_status::Error::Internal);
-    }
-
-    info!("🔄 ├─ Testing process_terminate on an invalid handle");
-    let result = syscall::process_terminate(0xdeadbeef);
+    info!("🔄 ├─ Testing task_terminate on an invalid handle");
+    let result = syscall::task_terminate(0xdeadbeef);
     if result != Err(pw_status::Error::OutOfRange) {
         pw_log::error!("❌ ├─ Expected OutOfRange on an invalid handle");
         return Err(pw_status::Error::Internal);
@@ -166,7 +155,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
         }
 
         info!("🔄 ├─ Joining clean exit process");
-        match syscall::process_join(handle::CLEAN_EXIT_PROCESS) {
+        match syscall::task_join(handle::CLEAN_EXIT_PROCESS) {
             Err(err) => return Err(err),
             Ok(syscall::ExitStatus::Success(42)) => (),
             Ok(_) => {
@@ -180,7 +169,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
         // The forced_exit process is started automatically by the kernel on boot.
         // On subsequent iterations, we start it manually below.
         info!("🔄 ├─ Terminating forced exit process");
-        syscall::process_terminate(handle::FORCED_EXIT_PROCESS)?;
+        syscall::task_terminate(handle::FORCED_EXIT_PROCESS)?;
 
         info!("🔄 ├─ Waiting for forced exit process to become joinable");
         if let Err(err) = syscall::object_wait(
@@ -193,7 +182,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
         }
 
         info!("🔄 ├─ Joining forced exit process");
-        let status = syscall::process_join(handle::FORCED_EXIT_PROCESS)?;
+        let status = syscall::task_join(handle::FORCED_EXIT_PROCESS)?;
         if status != syscall::ExitStatus::TerminatedBySyscall {
             pw_log::error!(
                 "❌ ├─ Process joined with unexpected status (expected TerminatedBySyscall)"
@@ -214,7 +203,7 @@ fn test_clean_and_forced_exit() -> Result<()> {
         }
 
         info!("🔄 ├─ Joining exception exit process");
-        let status = syscall::process_join(handle::EXCEPTION_EXIT_PROCESS)?;
+        let status = syscall::task_join(handle::EXCEPTION_EXIT_PROCESS)?;
         if status != syscall::ExitStatus::UnhandledException(0) {
             pw_log::error!(
                 "❌ ├─ Process joined with unexpected status (expected UnhandledException(0))"
@@ -244,10 +233,10 @@ fn test_object_reset_basic(reply: &mut [u8]) -> Result<()> {
     )?;
 
     info!("🔄 ├─ Terminating restart_process");
-    syscall::process_terminate(handle::RESTART_PROCESS)?;
+    syscall::task_terminate(handle::RESTART_PROCESS)?;
 
     info!("🔄 ├─ Waiting for restart_process to become joinable and joining");
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     info!("🔄 ├─ Restarting restart_process");
     syscall::process_start(handle::RESTART_PROCESS)?;
@@ -271,10 +260,10 @@ fn test_own_user_signal_preserved_on_terminate(reply: &mut [u8]) -> Result<()> {
     syscall::object_set_peer_user_signal(handle::IPC_CONTROL_INITIATOR, true)?;
 
     info!("🔄 ├─ Terminating RESTART_PROCESS");
-    syscall::process_terminate(handle::RESTART_PROCESS)?;
+    syscall::task_terminate(handle::RESTART_PROCESS)?;
 
     info!("🔄 ├─ Waiting for RESTART_PROCESS to become joinable and joining");
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Restart RESTART_PROCESS
     info!("🔄 ├─ Restarting RESTART_PROCESS");
@@ -319,10 +308,10 @@ fn test_peer_user_signal_cleared_on_terminate(reply: &mut [u8]) -> Result<()> {
     }
 
     info!("🔄 ├─ Terminating RESTART_PROCESS");
-    syscall::process_terminate(handle::RESTART_PROCESS)?;
+    syscall::task_terminate(handle::RESTART_PROCESS)?;
 
     info!("🔄 ├─ Waiting for RESTART_PROCESS to become joinable and joining");
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Verify USER signal is reset to false on IPC_RESET handler after termination!
     info!("🔄 ├─ Checking if USER signal is de-asserted on IPC_RESET handler");
@@ -353,10 +342,10 @@ fn test_initiator_unavailable_on_terminate(stack: &mut [u8]) -> Result<()> {
     sleep_until(SystemClock::now() + TEST_THREAD_SPAWN_DELAY)?;
 
     info!("🔄 ├─ Terminating restart_process");
-    syscall::process_terminate(handle::RESTART_PROCESS)?;
+    syscall::task_terminate(handle::RESTART_PROCESS)?;
 
     info!("🔄 ├─ Waiting for restart_process to become joinable and joining");
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Give the test thread a chance to print its log
     sleep_until(SystemClock::now() + TEST_THREAD_SPAWN_DELAY)?;
@@ -379,7 +368,7 @@ fn test_handler_error_on_terminate(_stack: &mut [u8]) -> Result<()> {
     syscall::object_wait(handle::IPC_RESET, syscall::Signals::READABLE, Instant::MAX)?;
 
     // Wait for the restart process to exit (it will do so after 500ms via command 4)
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Now check if the handler object received the ERROR signal
     let wait_res = syscall::object_wait(
@@ -414,7 +403,7 @@ fn test_wait_group_error_on_initiator_terminate(_stack: &mut [u8], reply: &mut [
     )?;
 
     // Wait for the restart process to exit
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Now wait on the WAIT_GROUP (it should be ready immediately since cleanup happened)
     let wait_return = syscall::object_wait(
@@ -474,7 +463,7 @@ fn test_wait_group_error_on_handler_terminate(_stack: &mut [u8]) -> Result<()> {
     )?;
 
     // Wait for the restart process to exit
-    wait_and_join_process(handle::RESTART_PROCESS)?;
+    wait_and_join_task(handle::RESTART_PROCESS)?;
 
     // Now wait on the WAIT_GROUP
     let wait_return = syscall::object_wait(

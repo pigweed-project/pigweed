@@ -59,7 +59,7 @@ fn do_test() -> Result<()> {
         syscall::Signals::JOINABLE,
         userspace::time::Instant::MAX,
     )?;
-    let status = syscall::thread_join(thread_handle)?;
+    let status = syscall::task_join(thread_handle)?;
     if status != syscall::ExitStatus::Success(42) {
         pw_log::error!("❌ ├─ Thread joined with unexpected status");
         return Err(pw_status::Error::Internal);
@@ -76,7 +76,7 @@ fn do_test() -> Result<()> {
     syscall::thread_start(thread_handle, initial_pc, initial_sp)?;
 
     info!("🔄 ├─ Terminating test thread from main thread");
-    syscall::thread_terminate(thread_handle)?;
+    syscall::task_terminate(thread_handle)?;
 
     info!("🔄 ├─ Waiting for test thread to terminate");
     syscall::object_wait(
@@ -84,7 +84,7 @@ fn do_test() -> Result<()> {
         syscall::Signals::JOINABLE,
         userspace::time::Instant::from_ticks(u64::MAX),
     )?;
-    let status = syscall::thread_join(thread_handle)?;
+    let status = syscall::task_join(thread_handle)?;
     if status != syscall::ExitStatus::TerminatedBySyscall {
         pw_log::error!("❌ ├─ Thread joined with unexpected status (expected TerminatedBySyscall)");
         return Err(pw_status::Error::Internal);
