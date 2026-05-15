@@ -1381,7 +1381,7 @@ TEST_F(NumberOfCompletedPacketsTest, HandlesUnusualEvents) {
                   emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS);
 
         // Event should be unmodified.
-        for (int i = 0; i < 5; ++i) {
+        for (size_t i = 0; i < 5; ++i) {
           EXPECT_EQ(view.nocp_data()[i].connection_handle().Read(),
                     capture.connection_handles[i]);
           EXPECT_EQ(view.nocp_data()[i].num_completed_packets().Read(), 0);
@@ -2988,10 +2988,10 @@ TEST_F(BasicL2capChannelTest, MultithreadedWrite) {
   pw::Vector<pw::Thread, kNumThreads> threads;
 
   for (unsigned int i = 0; i < kNumThreads; ++i) {
-    uint16_t local_cid = kBaseLocalCid + i;
+    uint16_t local_cid = static_cast<uint16_t>(kBaseLocalCid + i);
     // Each channel's remote cid has the thread index as its LSB. That is
     // used to track packet ordering per channel.
-    uint16_t remote_cid = kBaseRemoteCid + i;
+    uint16_t remote_cid = static_cast<uint16_t>(kBaseRemoteCid + i);
     // TODO: https://pwbug.dev/422222575 -  Move channel creation, close, and
     // destruction inside each thread once we have proper channel lifecycle
     // locking.
@@ -4177,28 +4177,30 @@ TEST_F(ProxyHostConnectionEventTest, HciDisconnectionAlertsListeners) {
   };
 
   for (size_t i = 0; i < 3; ++i) {
-    PW_TEST_EXPECT_OK(SendL2capConnectionReq(proxy,
-                                             Direction::kFromController,
-                                             i == 1 ? Handle2 : Handle1,
-                                             kStartSourceCid + i,
-                                             kPsm));
+    PW_TEST_EXPECT_OK(
+        SendL2capConnectionReq(proxy,
+                               Direction::kFromController,
+                               i == 1 ? Handle2 : Handle1,
+                               static_cast<uint16_t>(kStartSourceCid + i),
+                               kPsm));
     PW_TEST_EXPECT_OK(SendL2capConnectionRsp(
         proxy,
         Direction::kFromHost,
         i == 1 ? Handle2 : Handle1,
-        kStartSourceCid + i,
-        kStartDestinationCid + i,
+        static_cast<uint16_t>(kStartSourceCid + i),
+        static_cast<uint16_t>(kStartDestinationCid + i),
         emboss::L2capConnectionRspResultCode::SUCCESSFUL));
-    PW_TEST_EXPECT_OK(SendL2capConfigureReq(proxy,
-                                            Direction::kFromController,
-                                            i == 1 ? Handle2 : Handle1,
-                                            kStartDestinationCid + i,
-                                            l2cap_options));
+    PW_TEST_EXPECT_OK(
+        SendL2capConfigureReq(proxy,
+                              Direction::kFromController,
+                              i == 1 ? Handle2 : Handle1,
+                              static_cast<uint16_t>(kStartDestinationCid + i),
+                              l2cap_options));
     PW_TEST_EXPECT_OK(
         SendL2capConfigureRsp(proxy,
                               Direction::kFromHost,
                               i == 1 ? Handle2 : Handle1,
-                              kStartSourceCid + i,
+                              static_cast<uint16_t>(kStartSourceCid + i),
                               emboss::L2capConfigurationResult::SUCCESS));
   }
 
@@ -4685,7 +4687,7 @@ TEST_F(AclFragTest, ChannelHasNoRxAllocator) {
       hci_cont{};
 
   struct {
-    int to_host_called = 0;
+    size_t to_host_called = 0;
     std::array<H4PacketWithHci, 2> h4s;
   } capture{.h4s = {H4PacketWithHci{emboss::H4PacketType::ACL_DATA, hci_first},
                     H4PacketWithHci{emboss::H4PacketType::ACL_DATA, hci_cont}}};
@@ -4749,7 +4751,7 @@ TEST_F(AclFragTest, ChannelHasNoRxAllocator) {
     // ACL fragment should be delivered to host since channel can't
     // recombine. An error should be logged also, but we don't have way in
     // Pigweed to test that here.
-    EXPECT_EQ(capture.to_host_called, 1);
+    EXPECT_EQ(capture.to_host_called, 1u);
     ExpectClientReceivedPayloadsAndClear({});
   }
 
@@ -4779,7 +4781,7 @@ TEST_F(AclFragTest, ChannelHasNoRxAllocator) {
     // ACL fragment should be delivered to host since channel can't recombine.
     // The fact there were two fragments also verifies that recombination didn't
     // happen.
-    EXPECT_EQ(capture.to_host_called, 2);
+    EXPECT_EQ(capture.to_host_called, 2u);
     ExpectClientReceivedPayloadsAndClear({});
   }
 }

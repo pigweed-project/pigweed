@@ -167,9 +167,10 @@ bool L2capSignalingChannel::HandleL2capSignalingCommand(
     }
     case emboss::L2capSignalingPacketCode::CONFIGURATION_REQ: {
       Result<emboss::L2capConfigureReqView> configure_req_cmd =
-          emboss::MakeL2capConfigureReqView(cmd.SizeInBytes(),
-                                            cmd.BackingStorage().data(),
-                                            cmd.SizeInBytes());
+          emboss::MakeL2capConfigureReqView(
+              static_cast<uint32_t>(cmd.SizeInBytes()),
+              cmd.BackingStorage().data(),
+              cmd.SizeInBytes());
       if (!configure_req_cmd.ok()) {
         return false;
       }
@@ -178,9 +179,10 @@ bool L2capSignalingChannel::HandleL2capSignalingCommand(
     }
     case emboss::L2capSignalingPacketCode::CONFIGURATION_RSP: {
       Result<emboss::L2capConfigureRspView> configure_rsp_cmd =
-          emboss::MakeL2capConfigureRspView(cmd.SizeInBytes(),
-                                            cmd.BackingStorage().data(),
-                                            cmd.SizeInBytes());
+          emboss::MakeL2capConfigureRspView(
+              static_cast<uint32_t>(cmd.SizeInBytes()),
+              cmd.BackingStorage().data(),
+              cmd.SizeInBytes());
       if (!configure_rsp_cmd.ok()) {
         return false;
       }
@@ -305,8 +307,8 @@ void L2capSignalingChannel::HandleConfigurationReq(
 
   std::optional<MtuOption> mtu = std::nullopt;
 
-  int64_t bytes_consumed = 0;
-  int64_t options_size = cmd.options_size().Read();
+  size_t bytes_consumed = 0;
+  size_t options_size = static_cast<size_t>(cmd.options_size().Read());
   pw::ConstByteSpan options_payload = pw::as_bytes(
       pw::span(cmd.options().BackingStorage().data(), options_size));
   while (bytes_consumed < options_size) {

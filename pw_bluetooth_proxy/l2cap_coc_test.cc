@@ -287,7 +287,7 @@ TEST_F(L2capCocWriteTest, MultipleWritesSameChannel) {
   StartDispatcherOnCurrentThread(proxy);
   PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(
       proxy,
-      /*num_credits_to_reserve=*/num_writes));
+      /*num_credits_to_reserve=*/static_cast<uint8_t>(num_writes)));
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
 
@@ -496,7 +496,7 @@ TEST_F(L2capCocWriteTest, MultipleWritesMultipleChannels) {
                      .remote_cid = static_cast<uint16_t>(remote_cid + i),
                  }));
   }
-  for (int i = 0; i < kNumChannels; ++i) {
+  for (size_t i = 0; i < kNumChannels; ++i) {
     auto mbuf_result = multibuf::FromSpan(
         *allocator, as_writable_bytes(span(capture.payload)), [](ByteSpan) {});
     ASSERT_TRUE(mbuf_result.has_value());
@@ -619,10 +619,10 @@ TEST_F(L2capCocWriteTest, MultithreadedWrite) {
   pw::Vector<pw::Thread, kNumThreads> threads;
 
   for (unsigned int i = 0; i < kNumThreads; ++i) {
-    uint16_t local_cid = kBaseLocalCid + i;
+    uint16_t local_cid = static_cast<uint16_t>(kBaseLocalCid + i);
     // Each channel's remote cid has the thread index its LSB. That is
     // used to track packet ordering per channel.
-    uint16_t remote_cid = kBaseRemoteCid + i;
+    uint16_t remote_cid = static_cast<uint16_t>(kBaseRemoteCid + i);
     // TODO: https://pwbug.dev/422222575 -  Move channel creation, close, and
     // destruction inside each thread once we have proper channel lifecycle
     // locking.
@@ -2106,7 +2106,7 @@ TEST_F(L2capCocReassemblyTest, SduReceivedWhenSegmentedOverFullRangeOfMps) {
           SetupKFrame(kConnectionHandle,
                       local_cid,
                       mps,
-                      segment_no,
+                      static_cast<uint16_t>(segment_no),
                       span(capture.expected_payload));
       if (!kframe.ok()) {
         break;

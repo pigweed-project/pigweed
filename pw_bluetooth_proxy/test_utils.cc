@@ -96,7 +96,8 @@ Result<KFrameWithStorage> SetupKFrame(uint16_t handle,
   if (payload_offset >= payload.size()) {
     return Status::OutOfRange();
   }
-  uint16_t remaining_payload_length = payload.size() - payload_offset;
+  uint16_t remaining_payload_length =
+      static_cast<uint16_t>(payload.size() - payload_offset);
   uint16_t segment_pdu_length =
       remaining_payload_length + sdu_length_field_offset;
   if (segment_pdu_length > mps) {
@@ -369,7 +370,7 @@ Status ProxyHostTest::SendL2capConfigureReq(ProxyHost& proxy,
       CFrameWithStorage cframe,
       SetupCFrame(handle,
                   cpp23::to_underlying(emboss::L2capFixedCid::ACL_U_SIGNALING),
-                  kConfigureReqLen));
+                  static_cast<uint16_t>(kConfigureReqLen)));
 
   auto configure_req_writer = MakeEmbossWriter<emboss::L2capConfigureReqWriter>(
       cframe.writer.payload().SizeInBytes(),
@@ -672,8 +673,9 @@ BasicL2capChannel ProxyHostTest::BuildBasicL2capChannel(
 
 Result<GattNotifyChannel> ProxyHostTest::BuildGattNotifyChannelWithResult(
     ProxyHost& proxy, GattNotifyChannelParameters params) {
-  return proxy.AcquireGattNotifyChannel(
-      params.handle, params.attribute_handle, std::move(params.event_fn));
+  return proxy.AcquireGattNotifyChannel(static_cast<int16_t>(params.handle),
+                                        params.attribute_handle,
+                                        std::move(params.event_fn));
 }
 
 GattNotifyChannel ProxyHostTest::BuildGattNotifyChannel(

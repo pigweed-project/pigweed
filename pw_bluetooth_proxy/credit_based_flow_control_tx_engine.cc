@@ -66,20 +66,22 @@ Result<H4PacketWithH4> CreditBasedFlowControlTxEngine::GenerateNextPacket(
     // Generating the first (or only) PDU of an SDU.
     size_t sdu_bytes_max_allowable =
         *max_basic_payload_size - kSduLengthFieldSize;
-    sdu_bytes_in_segment = std::min(sdu.size(), sdu_bytes_max_allowable);
+    sdu_bytes_in_segment =
+        static_cast<uint16_t>(std::min(sdu.size(), sdu_bytes_max_allowable));
     pdu_data_size = sdu_bytes_in_segment + kSduLengthFieldSize;
   } else {
     // Generating a continuing PDU in an SDU.
     size_t sdu_bytes_max_allowable = *max_basic_payload_size;
-    sdu_bytes_in_segment =
-        std::min(sdu.size() - sdu_offset_, sdu_bytes_max_allowable);
+    sdu_bytes_in_segment = static_cast<uint16_t>(
+        std::min(sdu.size() - sdu_offset_, sdu_bytes_max_allowable));
     pdu_data_size = sdu_bytes_in_segment;
   }
 
   const size_t l2cap_packet_size =
       emboss::BasicL2capHeader::IntrinsicSizeInBytes() + pdu_data_size;
   const size_t h4_packet_size = H4SizeForL2capData(pdu_data_size);
-  PW_TRY_ASSIGN(H4PacketWithH4 h4_packet, delegate_.AllocateH4(h4_packet_size));
+  PW_TRY_ASSIGN(H4PacketWithH4 h4_packet,
+                delegate_.AllocateH4(static_cast<uint16_t>(h4_packet_size)));
   h4_packet.SetH4Type(emboss::H4PacketType::ACL_DATA);
 
   PW_TRY_ASSIGN(

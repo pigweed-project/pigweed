@@ -270,7 +270,8 @@ pw::Result<H4PacketWithH4> L2capChannel::PopulateL2capPacket(
   const size_t h4_packet_size = H4SizeForL2capData(data_length);
 
   pw::Result<H4PacketWithH4> h4_packet_res =
-      l2cap_channel_manager_.GetAclH4Packet(h4_packet_size);
+      l2cap_channel_manager_.GetAclH4Packet(
+          static_cast<uint16_t>(h4_packet_size));
   if (!h4_packet_res.ok()) {
     return h4_packet_res.status();
   }

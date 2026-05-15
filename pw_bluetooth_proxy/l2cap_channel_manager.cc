@@ -461,7 +461,8 @@ Result<uint16_t> L2capChannelManager::MaxL2capPayloadSize(
   if (*max_acl_length <= emboss::BasicL2capHeader::IntrinsicSizeInBytes()) {
     return Status::FailedPrecondition();
   }
-  return *max_acl_length - emboss::BasicL2capHeader::IntrinsicSizeInBytes();
+  return static_cast<uint16_t>(
+      *max_acl_length - emboss::BasicL2capHeader::IntrinsicSizeInBytes());
 }
 
 void L2capChannelManager::ResetLogicalLinksLocked() { logical_links_.clear(); }

@@ -436,7 +436,7 @@ TEST_F(DynamicCreditSharingTest, FairRoundRobinDrainingAndNocp) {
 
   // Host sends 4 packets (length = 4 + 2 = 6, data length = 2)
   std::array<std::array<uint8_t, 11>, 4> host_packets;
-  for (int i = 0; i < 4; ++i) {
+  for (size_t i = 0; i < 4; ++i) {
     host_packets[i] = {
         0x02,
         0x23,

@@ -26,7 +26,7 @@ namespace pw::bluetooth::proxy::internal {
 namespace {
 
 // TODO: b/353734827 - Allow client to determine this constant.
-const float kRxCreditReplenishThreshold = 0.30;
+const float kRxCreditReplenishThreshold = 0.30f;
 
 }  // namespace
 
@@ -66,7 +66,8 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
 
     // Core Spec v6.0 Vol 3, Part A, 3.4.3: "If the payload size of any K-frame
     // exceeds the receiver's MPS, the receiver shall disconnect the channel."
-    uint16_t payload_size = subsequent_kframe_view->payload_size().Read();
+    uint16_t payload_size =
+        static_cast<uint16_t>(subsequent_kframe_view->payload_size().Read());
     if (payload_size > rx_mps_) {
       PW_LOG_ERROR(
           "(CID %#x) Rx K-frame payload exceeds MPS. So stopping channel & "
@@ -75,9 +76,9 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
       return L2capChannelEvent::kRxInvalid;
     }
 
-    kframe_payload =
-        as_bytes(span(subsequent_kframe_view->payload().BackingStorage().data(),
-                      subsequent_kframe_view->payload_size().Read()));
+    kframe_payload = as_bytes(span(
+        subsequent_kframe_view->payload().BackingStorage().data(),
+        static_cast<size_t>(subsequent_kframe_view->payload_size().Read())));
   } else {
     // Received first (or only) PDU of SDU.
     Result<emboss::FirstKFrameView> first_kframe_view =
@@ -90,7 +91,8 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
       return L2capChannelEvent::kRxInvalid;
     }
 
-    rx_sdu_bytes_remaining_ = first_kframe_view->sdu_length().Read();
+    rx_sdu_bytes_remaining_ =
+        static_cast<uint16_t>(first_kframe_view->sdu_length().Read());
 
     // Core Spec v6.0 Vol 3, Part A, 3.4.3: "If the SDU length field value
     // exceeds the receiver's MTU, the receiver shall disconnect the channel."
@@ -104,7 +106,8 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
 
     // Core Spec v6.0 Vol 3, Part A, 3.4.3: "If the payload size of any K-frame
     // exceeds the receiver's MPS, the receiver shall disconnect the channel."
-    uint16_t payload_size = first_kframe_view->payload_size().Read();
+    uint16_t payload_size =
+        static_cast<uint16_t>(first_kframe_view->payload_size().Read());
     if (payload_size > rx_mps_) {
       PW_LOG_ERROR(
           "(CID %#x) Rx K-frame payload exceeds MPS. So stopping channel & "
@@ -123,9 +126,9 @@ CreditBasedFlowControlRxEngine::HandlePduFromController(
       return L2capChannelEvent::kRxOutOfMemory;
     }
 
-    kframe_payload =
-        as_bytes(span(first_kframe_view->payload().BackingStorage().data(),
-                      first_kframe_view->payload_size().Read()));
+    kframe_payload = as_bytes(
+        span(first_kframe_view->payload().BackingStorage().data(),
+             static_cast<size_t>(first_kframe_view->payload_size().Read())));
   }
 
   // Copy segment into rx_sdu_.

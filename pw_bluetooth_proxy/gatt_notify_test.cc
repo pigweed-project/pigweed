@@ -48,8 +48,10 @@ Result<AttNotifyWithStorage> SetupAttNotify(
       emboss::AttHandleValueNtf::MinSizeInBytes() + attribute_value.size();
 
   AttNotifyWithStorage frame;
-  PW_TRY_ASSIGN(frame.bframe,
-                SetupBFrame(connection_handle, kAttChannelId, att_size));
+  PW_TRY_ASSIGN(
+      frame.bframe,
+      SetupBFrame(
+          connection_handle, kAttChannelId, static_cast<uint16_t>(att_size)));
 
   EXPECT_EQ(att_size, frame.bframe.writer.payload().SizeInBytes());
   PW_TRY_ASSIGN(frame.writer,

@@ -28,7 +28,7 @@ Result<ConstByteSpan> CommandPacket::Encode(ByteSpan buffer,
                                             endian order) const {
   ByteBuilder builder(buffer);
   builder.PutUint16(opcode_, order);
-  builder.PutUint8(parameters_.size_bytes());
+  builder.PutUint8(static_cast<uint8_t>(parameters_.size_bytes()));
   builder.append(parameters_);
   PW_TRY(builder.status());
   return ConstByteSpan(builder.data(), builder.size());
@@ -56,7 +56,7 @@ Result<ConstByteSpan> AsyncDataPacket::Encode(ByteSpan buffer,
                                               endian order) const {
   ByteBuilder builder(buffer);
   builder.PutUint16(handle_and_fragmentation_bits_, order);
-  builder.PutUint16(data_.size_bytes(), order);
+  builder.PutUint16(static_cast<uint16_t>(data_.size_bytes()), order);
   builder.append(data_);
   PW_TRY(builder.status());
   return ConstByteSpan(builder.data(), builder.size());
@@ -84,7 +84,7 @@ Result<ConstByteSpan> SyncDataPacket::Encode(ByteSpan buffer,
                                              endian order) const {
   ByteBuilder builder(buffer);
   builder.PutUint16(handle_and_status_bits_, order);
-  builder.PutUint8(data_.size_bytes());
+  builder.PutUint8(static_cast<uint8_t>(data_.size_bytes()));
   builder.append(data_);
   PW_TRY(builder.status());
   return ConstByteSpan(builder.data(), builder.size());
@@ -111,7 +111,7 @@ std::optional<SyncDataPacket> SyncDataPacket::Decode(ConstByteSpan data,
 Result<ConstByteSpan> EventPacket::Encode(ByteSpan buffer) const {
   ByteBuilder builder(buffer);
   builder.PutUint8(event_code_);
-  builder.PutUint8(parameters_.size_bytes());
+  builder.PutUint8(static_cast<uint8_t>(parameters_.size_bytes()));
   builder.append(parameters_);
   PW_TRY(builder.status());
   return ConstByteSpan(builder.data(), builder.size());

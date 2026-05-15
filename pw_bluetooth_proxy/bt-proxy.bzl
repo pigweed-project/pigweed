@@ -108,7 +108,6 @@ def pw_bluetooth_proxy_library(name, **kwargs):
             "public/pw_bluetooth_proxy/channel_proxy.h",
             "public/pw_bluetooth_proxy/l2cap_channel_manager_interface.h",
         ],
-        features = ["-conversion_warnings"],
         # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
         # LINT.IfChange
         implementation_deps = [
@@ -188,7 +187,6 @@ def pw_bluetooth_proxy_test(name, versioned_deps, **kwargs):
             "recombiner_test.cc",
             "utils_test.cc",
         ],
-        features = ["-conversion_warnings"],
         deps = [
             "//pw_allocator:testing",
             "//pw_assert:check",
@@ -223,7 +221,6 @@ def pw_bluetooth_proxy_test_utils(name, versioned_deps, **kwargs):
             "private/pw_bluetooth_proxy_private/test_utils.h",
         ],
         strip_include_prefix = "private",
-        features = ["-conversion_warnings"],
         deps = [
             "//pw_allocator:libc_allocator",
             "//pw_allocator:null_allocator",

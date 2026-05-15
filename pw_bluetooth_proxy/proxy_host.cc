@@ -366,7 +366,9 @@ pw::Result<GattNotifyChannel> ProxyHost::DoAcquireGattNotifyChannel(
     uint16_t attribute_handle,
     ChannelEventCallback&& event_fn) {
   return l2cap_channel_manager_.AcquireGattNotifyChannel(
-      connection_handle, attribute_handle, std::move(event_fn));
+      static_cast<uint16_t>(connection_handle),
+      attribute_handle,
+      std::move(event_fn));
 }
 
 bool ProxyHost::DoHasSendLeAclCapability() const {

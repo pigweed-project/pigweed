@@ -27,7 +27,6 @@ licenses(["notice"])
 
 cc_library(
     name = "pw_bluetooth_hci",
-    features = ["-conversion_warnings"],
     deps = [
         ":packet",
         ":uart_transport",
@@ -42,7 +41,6 @@ cc_library(
     hdrs = [
         "public/pw_bluetooth_hci/packet.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         "//pw_assert:assert",
@@ -61,7 +59,6 @@ cc_library(
     hdrs = [
         "public/pw_bluetooth_hci/uart_transport.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":packet",
@@ -75,7 +72,6 @@ cc_library(
 pw_cc_test(
     name = "packet_test",
     srcs = ["packet_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":packet",
         "//pw_bytes",
@@ -87,7 +83,6 @@ pw_cc_test(
 pw_cc_test(
     name = "uart_transport_test",
     srcs = ["uart_transport_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":packet",
         ":uart_transport",
@@ -99,7 +94,6 @@ pw_cc_test(
 pw_cc_fuzz_test(
     name = "uart_transport_fuzzer",
     srcs = ["uart_transport_fuzzer.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":packet",
         ":uart_transport",

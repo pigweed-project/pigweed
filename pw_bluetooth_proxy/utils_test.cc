@@ -50,11 +50,15 @@ TEST(UtilsTest, SetupKFrameProperlySegments) {
     for (segment_no = 0; segment_no < total_num_segments; ++segment_no) {
       PW_TEST_ASSERT_OK_AND_ASSIGN(
           KFrameWithStorage kframe,
-          SetupKFrame(kHandle, kCid, mps, segment_no, span(expected_payload)));
+          SetupKFrame(kHandle,
+                      kCid,
+                      static_cast<uint16_t>(mps),
+                      static_cast<uint16_t>(segment_no),
+                      span(expected_payload)));
 
-      uint16_t pdu_length = mps;
+      uint16_t pdu_length = static_cast<uint16_t>(mps);
       if (segment_no == total_num_segments - 1) {
-        pdu_length = final_segment_payload_size;
+        pdu_length = static_cast<uint16_t>(final_segment_payload_size);
       }
 
       // Validate ACL header.
@@ -99,10 +103,13 @@ TEST(UtilsTest, SetupKFrameProperlySegments) {
 
     // Confirm that requesting a segment one past the final expected segment
     // results in an error.
-    EXPECT_EQ(
-        SetupKFrame(kHandle, kCid, mps, segment_no, span(expected_payload))
-            .status(),
-        Status::OutOfRange());
+    EXPECT_EQ(SetupKFrame(kHandle,
+                          kCid,
+                          static_cast<uint16_t>(mps),
+                          static_cast<uint16_t>(segment_no),
+                          span(expected_payload))
+                  .status(),
+              Status::OutOfRange());
   }
 }
 

@@ -319,7 +319,7 @@ class EventPacket : public Packet {
         parameters_(parameters, parameters_size_bytes) {}
 
   // Precondition: the parameters size must be <= 255 bytes.
-  constexpr EventPacket(uint16_t event_code, ConstByteSpan parameters)
+  constexpr EventPacket(uint8_t event_code, ConstByteSpan parameters)
       : EventPacket(event_code,
                     parameters.data(),
                     static_cast<uint8_t>(parameters.size_bytes())) {

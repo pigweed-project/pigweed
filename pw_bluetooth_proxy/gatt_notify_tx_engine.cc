@@ -48,14 +48,15 @@ Result<H4PacketWithH4> GattNotifyTxEngine::GenerateNextPacket(
   // This should have been caught during Write.
   PW_CHECK(attribute_value.size() < max_attribute_size);
 
-  size_t att_frame_size =
-      emboss::AttHandleValueNtf::MinSizeInBytes() + attribute_value.size();
+  uint16_t att_frame_size = static_cast<uint16_t>(
+      emboss::AttHandleValueNtf::MinSizeInBytes() + attribute_value.size());
 
   const size_t l2cap_packet_size =
       emboss::BasicL2capHeader::IntrinsicSizeInBytes() + att_frame_size;
   const size_t h4_packet_size = H4SizeForL2capData(att_frame_size);
 
-  PW_TRY_ASSIGN(H4PacketWithH4 h4_packet, delegate_.AllocateH4(h4_packet_size));
+  PW_TRY_ASSIGN(H4PacketWithH4 h4_packet,
+                delegate_.AllocateH4(static_cast<uint16_t>(h4_packet_size)));
   h4_packet.SetH4Type(emboss::H4PacketType::ACL_DATA);
 
   // Write ACL header
