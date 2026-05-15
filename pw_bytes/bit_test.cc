@@ -71,7 +71,7 @@ TEST(Endian, NativeIsCorrect) {
   int8_t bytes[sizeof(kInteger)] = {};
   std::memcpy(bytes, &kInteger, sizeof(kInteger));
 
-  if (endian::native == endian::little) {
+  if constexpr (endian::native == endian::little) {
     EXPECT_EQ(bytes[0], 0x44);
     EXPECT_EQ(bytes[1], 0x33);
     EXPECT_EQ(bytes[2], 0x22);

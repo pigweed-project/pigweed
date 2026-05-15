@@ -394,7 +394,7 @@ Status StreamDecoder::ReadFixedField(span<std::byte> out) {
   position_ += out.size();
   field_consumed_ = true;
 
-  if (endian::native != endian::little) {
+  if constexpr (endian::native != endian::little) {
     std::reverse(out.begin(), out.end());
   }
 
@@ -455,7 +455,7 @@ StatusWithSize StreamDecoder::ReadPackedFixedField(span<std::byte> out,
   field_consumed_ = true;
 
   // Decode little-endian serialized packed fields.
-  if (endian::native != endian::little) {
+  if constexpr (endian::native != endian::little) {
     auto element_size =
         static_cast<span<std::byte>::difference_type>(elem_size);
     for (auto out_start = out.begin(); out_start != out.end();

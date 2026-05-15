@@ -53,7 +53,7 @@ void PutBytes() {
   uint32_t kVal1 = 0x482B3D9E;
   int32_t kVal2 = 0x482B3D9E;
 
-  if (endian::native == endian::little) {
+  if constexpr (endian::native == endian::little) {
     std::memcpy(b_array, &kVal1, sizeof(kVal1));
 
     kVal2 = static_cast<int32_t>(
@@ -77,7 +77,7 @@ void ReadBytes() {
   uint32_t kVal1;
   int32_t kVal2;
 
-  if (endian::native == endian::little) {
+  if constexpr (endian::native == endian::little) {
     std::memcpy(&kVal1, b_array, sizeof(kVal1));
     std::memcpy(&kVal2, b_array + 4, sizeof(kVal2));
     kVal2 = static_cast<int32_t>(

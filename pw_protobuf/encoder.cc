@@ -309,7 +309,7 @@ Status StreamEncoder::WritePackedFixed(uint32_t field_number,
     // Allocates 8 bytes so both 4-byte and 8-byte types can be encoded as
     // little-endian for serialization.
     std::array<std::byte, sizeof(uint64_t)> data;
-    if (endian::native == endian::little) {
+    if constexpr (endian::native == endian::little) {
       std::copy(val_start, val_start + element_size, std::begin(data));
     } else {
       std::reverse_copy(val_start, val_start + element_size, std::begin(data));
