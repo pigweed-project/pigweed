@@ -185,7 +185,7 @@ Status ComputeDiffieHellman(const NativeP256Keypair& key,
                        out.size(),
                        EC_KEY_get0_public_key(other_key.get()),
                        key.get(),
-                       /*kdf=*/nullptr) != out.size()) {
+                       /*kdf=*/nullptr) != static_cast<int>(out.size())) {
     return Status::Internal();
   }
 

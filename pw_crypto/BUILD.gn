@@ -20,6 +20,10 @@ import("$dir_pw_build/target_types.gni")
 import("$dir_pw_crypto/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
+_is_host_toolchain = defined(pw_toolchain_SCOPE.is_host_toolchain) &&
+                     pw_toolchain_SCOPE.is_host_toolchain
+not_needed([ "_is_host_toolchain" ])
+
 config("default_config") {
   include_dirs = [ "public" ]
   visibility = [ ":*" ]
@@ -245,21 +249,23 @@ pw_source_set("ecdh_boringssl") {
   ]
 }
 
-pw_source_set("ecdh_mbedtls") {
+pw_source_set("ecdh_mbedtls_v3") {
   public_configs = [ ":mbedtls_config" ]
   sources = [ "ecdh_mbedtls.cc" ]
   public = [ "public_overrides/mbedtls/pw_crypto/ecdh_backend.h" ]
   deps = [ "$dir_pw_assert" ]
   public_deps = [
     ":ecdh.facade",
-    "$pw_external_mbedtls",
+    "$pw_external_mbedtls:mbedtls_v3",
   ]
 }
 
 # This test targets the specific backend pointed to by
 # pw_crypto_ECDH_BACKEND.
+#
+# TODO: b/513578015 - This test doesn't have to be host-only.
 pw_test("ecdh_test") {
-  enable_if = pw_crypto_ECDH_BACKEND != ""
+  enable_if = pw_crypto_ECDH_BACKEND != "" && _is_host_toolchain
   deps = [ ":ecdh" ]
   sources = [ "ecdh_test.cc" ]
 }

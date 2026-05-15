@@ -23,6 +23,8 @@ struct EcKeyDeleter final {
   void operator()(EC_KEY* key) { EC_KEY_free(key); }
 };
 
+#define DUPLICATE_NATIVE_P256 1
+
 using NativeP256Keypair = std::unique_ptr<EC_KEY, EcKeyDeleter>;
 using NativeP256PublicKey = std::unique_ptr<EC_KEY, EcKeyDeleter>;
 

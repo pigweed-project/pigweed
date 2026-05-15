@@ -19,6 +19,10 @@ import("$dir_pw_tls_client/configs.gni")
 import("$dir_pw_unit_test/test.gni")
 import("$pw_external_boringssl/boringssl.gni")
 
+_is_host_toolchain = defined(pw_toolchain_SCOPE.is_host_toolchain) &&
+                     pw_toolchain_SCOPE.is_host_toolchain
+not_needed([ "_is_host_toolchain" ])
+
 config("public_includes") {
   include_dirs = [ "public" ]
 }
@@ -95,8 +99,9 @@ pw_source_set("test_server") {
   ]
 }
 
+# TODO: b/513578015 - This test doesn't have to be host-only.
 pw_test("test_server_test") {
-  enable_if = dir_pw_third_party_boringssl != ""
+  enable_if = dir_pw_third_party_boringssl != "" && _is_host_toolchain
   public_deps = [
     ":test_data",
     ":test_server",

@@ -43,17 +43,21 @@ Status DoGetX(const NativeP256Keypair& ctx,
               P256Coordinate out,
               endian endianness);
 /// Get X coordinate from a public key.
+#ifndef DUPLICATE_NATIVE_P256
 Status DoGetX(const NativeP256PublicKey& ctx,
               P256Coordinate out,
               endian endianness);
+#endif
 /// Get Y coordinate from a keypair.
 Status DoGetY(const NativeP256Keypair& ctx,
               P256Coordinate out,
               endian endianness);
 /// Get Y coordinate from a public key.
+#ifndef DUPLICATE_NATIVE_P256
 Status DoGetY(const NativeP256PublicKey& ctx,
               P256Coordinate out,
               endian endianness);
+#endif
 /// Generate a keypair.
 Status DoGenerate(NativeP256Keypair& ctx);
 /// Convert an externally-generated private key into a native keypair.

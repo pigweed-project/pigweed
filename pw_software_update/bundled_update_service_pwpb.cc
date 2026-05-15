@@ -345,7 +345,7 @@ void BundledUpdateService::DoApply() {
     const std::string_view file_name_view(
         reinterpret_cast<const char*>(file_name_span.data()),
         file_name_span.size_bytes());
-    if (file_name_view.compare(kUserManifestTargetFileName) == 0) {
+    if (file_name_view == kUserManifestTargetFileName) {
       continue;  // user_manifest is not applied by the backend.
     }
     // Try to get an IntervalReader for the current file.
