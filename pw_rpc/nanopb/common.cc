@@ -96,10 +96,10 @@ void NanopbSendInitialRequest(ClientCall& call,
                               const void* payload) {
   PW_DCHECK(call.active_locked());
 
-  Result<ByteSpan> result = EncodeToPayloadBuffer(payload, serde);
+  auto result = EncodeToPayloadBuffer(payload, serde);
 
   if (result.ok()) {
-    call.SendInitialClientRequest(*result);
+    call.SendInitialClientRequest(result.value().payload());
   } else {
     call.CloseAndMarkForCleanup(result.status());
   }
@@ -112,12 +112,12 @@ Status NanopbSendStream(Call& call,
     return Status::FailedPrecondition();
   }
 
-  Result<ByteSpan> result = EncodeToPayloadBuffer(
+  auto result = EncodeToPayloadBuffer(
       payload,
       call.type() == kClientCall ? serde->request() : serde->response());
 
   PW_TRY(result.status());
-  return call.WriteLocked(*result);
+  return call.WriteLocked(result.value().payload());
 }
 
 Status SendFinalResponse(NanopbServerCall& call,
@@ -128,12 +128,11 @@ Status SendFinalResponse(NanopbServerCall& call,
     return Status::FailedPrecondition();
   }
 
-  Result<ByteSpan> result =
-      EncodeToPayloadBuffer(payload, call.serde().response());
+  auto result = EncodeToPayloadBuffer(payload, call.serde().response());
   if (!result.ok()) {
     return call.CloseAndSendServerErrorLocked(Status::Internal());
   }
-  return call.CloseAndSendResponseLocked(*result, status);
+  return call.CloseAndSendResponseLocked(result.value().payload(), status);
 }
 
 Status TrySendFinalResponse(NanopbServerCall& call,
@@ -144,12 +143,11 @@ Status TrySendFinalResponse(NanopbServerCall& call,
     return Status::FailedPrecondition();
   }
 
-  Result<ByteSpan> result =
-      EncodeToPayloadBuffer(payload, call.serde().response());
+  auto result = EncodeToPayloadBuffer(payload, call.serde().response());
   if (!result.ok()) {
     return call.TryCloseAndSendServerErrorLocked(Status::Internal());
   }
-  return call.TryCloseAndSendResponseLocked(*result, status);
+  return call.TryCloseAndSendResponseLocked(result.value().payload(), status);
 }
 
 }  // namespace pw::rpc::internal

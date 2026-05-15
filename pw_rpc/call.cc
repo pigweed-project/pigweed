@@ -53,18 +53,20 @@ namespace pw::rpc::internal {
 
 using pwpb::PacketType;
 
-Result<ConstByteSpan> EncodeCallbackToPayloadBuffer(
+Result<EncodedPacket> EncodeCallbackToPayloadBuffer(
     const Function<StatusWithSize(ByteSpan)>& callback)
     PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
   if (callback == nullptr) {
     return Status::InvalidArgument();
   }
 
+  EncodingBuffer encoding_buffer;
   ByteSpan payload_buffer =
       encoding_buffer.AllocatePayloadBuffer(MaxSafePayloadSize());
+
   PW_TRY_ASSIGN(const size_t payload_size, callback(payload_buffer));
 
-  return payload_buffer.first(payload_size);
+  return EncodedPacket(std::move(encoding_buffer), payload_size);
 }
 
 // Creates an active server-side Call.
@@ -227,13 +229,11 @@ bool Call::CleanUpIfRequired() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
 
 Status Call::SendPacket(PacketType type, ConstByteSpan payload, Status status) {
   if (!active_locked()) {
-    encoding_buffer.ReleaseIfAllocated();
     return Status::FailedPrecondition();
   }
 
   ChannelBase* channel = endpoint_->GetInternalChannel(channel_id_);
   if (channel == nullptr) {
-    encoding_buffer.ReleaseIfAllocated();
     return Status::Unavailable();
   }
   return channel->Send(MakePacket(type, payload, status));
@@ -241,16 +241,16 @@ Status Call::SendPacket(PacketType type, ConstByteSpan payload, Status status) {
 
 Status Call::CloseAndSendResponseCallbackLocked(
     const Function<StatusWithSize(ByteSpan)>& callback, Status status) {
-  PW_TRY_ASSIGN(ConstByteSpan payload, EncodeCallbackToPayloadBuffer(callback));
+  PW_TRY_ASSIGN(auto result, EncodeCallbackToPayloadBuffer(callback));
   return CloseAndSendFinalPacketLocked(
-      pwpb::PacketType::RESPONSE, payload, status);
+      pwpb::PacketType::RESPONSE, result.payload(), status);
 }
 
 Status Call::TryCloseAndSendResponseCallbackLocked(
     const Function<StatusWithSize(ByteSpan)>& callback, Status status) {
-  PW_TRY_ASSIGN(ConstByteSpan payload, EncodeCallbackToPayloadBuffer(callback));
+  PW_TRY_ASSIGN(auto result, EncodeCallbackToPayloadBuffer(callback));
   return TryCloseAndSendFinalPacketLocked(
-      pwpb::PacketType::RESPONSE, payload, status);
+      pwpb::PacketType::RESPONSE, result.payload(), status);
 }
 
 Status Call::CloseAndSendFinalPacketLocked(PacketType type,
@@ -281,11 +281,11 @@ Status Call::WriteLocked(ConstByteSpan payload) {
 
 Status Call::WriteCallbackLocked(
     const Function<StatusWithSize(ByteSpan)>& callback) {
-  PW_TRY_ASSIGN(ConstByteSpan payload, EncodeCallbackToPayloadBuffer(callback));
+  PW_TRY_ASSIGN(auto result, EncodeCallbackToPayloadBuffer(callback));
   return SendPacket(properties_.call_type() == kServerCall
                         ? PacketType::SERVER_STREAM
                         : PacketType::CLIENT_STREAM,
-                    payload);
+                    result.payload());
 }
 
 // This definition is in the .cc file because the Endpoint class is not defined

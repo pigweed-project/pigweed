@@ -237,6 +237,20 @@ label_flag(
 )
 
 cc_library(
+    name = "dynamic_allocation_config",
+    defines = [
+        "PW_RPC_DYNAMIC_ALLOCATION=1",
+    ],
+)
+
+config_setting(
+    name = "dynamic_allocation_config_setting",
+    flag_values = {
+        ":config_override": ":dynamic_allocation_config",
+    },
+)
+
+cc_library(
     name = "completion_request_callback_config_enabled",
     defines = [
         "PW_RPC_COMPLETION_REQUEST_CALLBACK=1",

@@ -44,9 +44,9 @@ void PwpbSendInitialRequest(ClientCall& call,
     PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
   PW_ASSERT(call.active_locked());
 
-  Result<ByteSpan> buffer = EncodeToPayloadBuffer(request, serde);
+  auto buffer = EncodeToPayloadBuffer(request, serde);
   if (buffer.ok()) {
-    call.SendInitialClientRequest(*buffer);
+    call.SendInitialClientRequest(buffer.value().payload());
   } else {
     call.CloseAndMarkForCleanup(buffer.status());
   }
@@ -63,12 +63,12 @@ Status PwpbSendStream(Call& call,
     return Status::FailedPrecondition();
   }
 
-  Result<ByteSpan> buffer = EncodeToPayloadBuffer(
+  auto buffer = EncodeToPayloadBuffer(
       payload,
       call.type() == kClientCall ? serde->request() : serde->response());
-  PW_TRY(buffer);
+  PW_TRY(buffer.status());
 
-  return call.WriteLocked(*buffer);
+  return call.WriteLocked(buffer.value().payload());
 }
 
 }  // namespace pw::rpc::internal

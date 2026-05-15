@@ -58,11 +58,12 @@ Status ChannelBase::Send(const Packet& packet) {
                 static_cast<unsigned>(packet.method_id()));
   }
 
+  EncodingBuffer encoding_buffer;
   ByteSpan buffer = encoding_buffer.GetPacketBuffer(packet.payload().size());
+
   Result encoded = packet.Encode(buffer);
 
   if (!encoded.ok()) {
-    encoding_buffer.Release();
     PW_LOG_ERROR(
         "Failed to encode RPC packet type %u to channel %u buffer, status %u",
         static_cast<unsigned>(packet.type()),
@@ -72,8 +73,8 @@ Status ChannelBase::Send(const Packet& packet) {
   }
 
   PW_CHECK_NOTNULL(output_);
+
   Status sent = output_->Send(encoded.value());
-  encoding_buffer.Release();
 
   if (!sent.ok()) {
     PW_LOG_ERROR("Channel %u failed to send packet with status %u",

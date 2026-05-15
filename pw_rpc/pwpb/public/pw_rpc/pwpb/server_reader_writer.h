@@ -67,13 +67,12 @@ class PwpbServerCall : public ServerCall {
       return Status::FailedPrecondition();
     }
 
-    Result<ByteSpan> buffer =
-        EncodeToPayloadBuffer(response, serde_->response());
+    auto buffer = EncodeToPayloadBuffer(response, serde_->response());
     if (!buffer.ok()) {
       return CloseAndSendServerErrorLocked(Status::Internal());
     }
 
-    return CloseAndSendResponseLocked(*buffer, status);
+    return CloseAndSendResponseLocked(buffer.value().payload(), status);
   }
 
   template <typename Response>
@@ -85,13 +84,12 @@ class PwpbServerCall : public ServerCall {
       return Status::FailedPrecondition();
     }
 
-    Result<ByteSpan> buffer =
-        EncodeToPayloadBuffer(response, serde_->response());
+    auto buffer = EncodeToPayloadBuffer(response, serde_->response());
     if (!buffer.ok()) {
       return TryCloseAndSendServerErrorLocked(Status::Internal());
     }
 
-    return TryCloseAndSendResponseLocked(*buffer, status);
+    return TryCloseAndSendResponseLocked(buffer.value().payload(), status);
   }
 
  protected:
