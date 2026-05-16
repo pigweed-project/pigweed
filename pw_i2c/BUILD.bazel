@@ -40,7 +40,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/address.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
 )
@@ -53,7 +52,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/initiator.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":address",
@@ -106,7 +104,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/message.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":address",
@@ -121,7 +118,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/device.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":address",
@@ -138,7 +134,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/register_device.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -159,7 +154,6 @@ pw_cc_test(
     ],
     # Disable deprecation warning for Address() constructor.
     copts = ["-Wno-deprecated-declarations"],
-    features = ["-conversion_warnings"],
     deps = [":address"],
 )
 
@@ -168,7 +162,6 @@ pw_cc_test(
     srcs = [
         "message_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":message",
@@ -181,7 +174,6 @@ pw_cc_test(
     srcs = [
         "initiator_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":initiator",
@@ -203,7 +195,6 @@ cc_library(
     testonly = True,
     srcs = ["initiator_mock.cc"],
     hdrs = ["public/pw_i2c/initiator_mock.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_assert:check",
         "//pw_containers:algorithm",
@@ -242,7 +233,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c/initiator_gmock.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     # TODO: b/310957361 - gtest not supported on device
     target_compatible_with = incompatible_with_mcu(),
@@ -257,7 +247,6 @@ pw_cc_test(
     srcs = [
         "initiator_mock_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":initiator_mock",
@@ -273,7 +262,6 @@ pw_cc_test(
     srcs = [
         "initiator_message_mock_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":initiator_message_mock",
@@ -291,7 +279,6 @@ pw_cc_test(
     srcs = [
         "device_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":device",
         ":initiator_mock",
@@ -305,7 +292,6 @@ pw_cc_test(
     srcs = [
         "device_message_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":device",
         ":initiator_message_mock",
@@ -320,7 +306,6 @@ pw_cc_test(
     srcs = [
         "register_device_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":register_device",
         "//pw_assert:check",
@@ -359,7 +344,6 @@ cc_library(
     name = "i2c_service",
     srcs = ["i2c_service.cc"],
     hdrs = ["public/pw_i2c/i2c_service.h"],
-    features = ["-conversion_warnings"],
     implementation_deps = [
         "//pw_assert:check",
         "//pw_containers:vector",
@@ -380,7 +364,6 @@ cc_library(
 pw_cc_test(
     name = "i2c_message_service_test",
     srcs = ["i2c_message_service_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":i2c_service",
@@ -396,7 +379,6 @@ pw_cc_test(
 pw_cc_test(
     name = "i2c_service_test",
     srcs = ["i2c_service_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":address",
         ":i2c_service",

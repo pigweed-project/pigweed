@@ -31,7 +31,6 @@ pw_cc_size_binary(
     name = "noop_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_NOOP_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",
@@ -45,7 +44,6 @@ pw_cc_size_binary(
     name = "crc16_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_CRC16_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",
@@ -59,7 +57,6 @@ pw_cc_size_binary(
     name = "crc32_8bit_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_CRC32_8BIT_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",
@@ -73,7 +70,6 @@ pw_cc_size_binary(
     name = "crc32_4bit_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_CRC32_4BIT_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",
@@ -87,7 +83,6 @@ pw_cc_size_binary(
     name = "crc32_1bit_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_CRC32_1BIT_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",
@@ -101,7 +96,6 @@ pw_cc_size_binary(
     name = "fletcher16_checksum",
     srcs = ["run_checksum.cc"],
     copts = ["-DUSE_FLETCHER16_CHECKSUM=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_checksum",

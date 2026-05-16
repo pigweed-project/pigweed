@@ -50,7 +50,6 @@ cc_library(
         "public/pw_log_rpc/internal/log_config.h",
         "public/pw_log_rpc/log_service.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":config",
@@ -66,7 +65,6 @@ cc_library(
     name = "log_filter_service",
     srcs = ["log_filter_service.cc"],
     hdrs = ["public/pw_log_rpc/log_filter_service.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":log_filter",
@@ -87,7 +85,6 @@ cc_library(
         "public/pw_log_rpc/log_filter.h",
         "public/pw_log_rpc/log_filter_map.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":config",
@@ -110,7 +107,6 @@ cc_library(
         "public/pw_log_rpc/rpc_log_drain.h",
         "public/pw_log_rpc/rpc_log_drain_map.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -133,7 +129,6 @@ cc_library(
 cc_library(
     name = "rpc_log_drain_thread",
     hdrs = ["public/pw_log_rpc/rpc_log_drain_thread.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":log_service",
@@ -154,7 +149,6 @@ cc_library(
     testonly = True,
     srcs = ["test_utils.cc"],
     hdrs = ["pw_log_rpc_private/test_utils.h"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bytes",
         "//pw_containers:vector",
@@ -170,7 +164,6 @@ cc_library(
 pw_cc_test(
     name = "log_service_test",
     srcs = ["log_service_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":log_filter",
         ":log_service",
@@ -192,7 +185,6 @@ pw_cc_test(
 pw_cc_test(
     name = "log_filter_service_test",
     srcs = ["log_filter_service_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":log_filter",
         ":log_filter_service",
@@ -207,7 +199,6 @@ pw_cc_test(
 pw_cc_test(
     name = "log_filter_test",
     srcs = ["log_filter_test.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         ":log_filter",
         "//pw_log:log_proto_pwpb",
@@ -221,7 +212,6 @@ pw_cc_test(
 pw_cc_test(
     name = "rpc_log_drain_test",
     srcs = ["rpc_log_drain_test.cc"],
-    features = ["-conversion_warnings"],
     # TODO: https://pwbug.dev/325509758 - Doesn't work on the Pico yet; hangs
     # indefinitely.
     target_compatible_with = select({

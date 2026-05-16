@@ -39,7 +39,7 @@ Address::Address(uint16_t address, Mode mode) : address_(address), mode_(mode) {
 // Implemented in the source to produce a nicer CHECK message vs an ASSERT.
 uint8_t Address::GetSevenBit() const {
   PW_CHECK(mode_ == Mode::kSevenBit);
-  return address_;
+  return static_cast<uint8_t>(address_);
 }
 
 }  // namespace pw::i2c

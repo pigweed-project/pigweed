@@ -29,7 +29,6 @@ cc_library(
         "public/pw_channel/channel.h",
         "public/pw_channel/internal/channel_specializations.h",
     ],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -49,7 +48,6 @@ pw_cc_test(
     name = "channel_test",
     srcs = ["channel_test.cc"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     has_nc_test = True,
@@ -69,7 +67,6 @@ cc_library(
     name = "forwarding_channel",
     srcs = ["forwarding_channel.cc"],
     hdrs = ["public/pw_channel/forwarding_channel.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":pw_channel",
@@ -85,7 +82,6 @@ pw_cc_test(
     name = "forwarding_channel_test",
     srcs = ["forwarding_channel_test.cc"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     deps = [
@@ -102,7 +98,6 @@ cc_library(
     name = "loopback_channel",
     srcs = ["loopback_channel.cc"],
     hdrs = ["public/pw_channel/loopback_channel.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":pw_channel",
@@ -117,7 +112,6 @@ pw_cc_test(
     name = "loopback_channel_test",
     srcs = ["loopback_channel_test.cc"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     deps = [
@@ -155,7 +149,6 @@ cc_library(
     name = "stream_channel",
     srcs = ["stream_channel.cc"],
     hdrs = ["public/pw_channel/stream_channel.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         ":pw_channel",
@@ -176,7 +169,6 @@ pw_cc_test(
     name = "stream_channel_test",
     srcs = ["stream_channel_test.cc"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     deps = [

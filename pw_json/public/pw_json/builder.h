@@ -659,8 +659,8 @@ constexpr StatusWithSize WriteQuotedString(std::string_view value,
   }
   // If the string might fit, try to copy it. May still run out of room due to
   // escaping.
-  const int written =
-      EscapedStringCopy(buffer + 1 /* quote */, buffer_size - kOverhead, value);
+  const int written = EscapedStringCopy(
+      buffer + 1 /* quote */, static_cast<int>(buffer_size - kOverhead), value);
   if (written < 0) {
     return StatusWithSize::ResourceExhausted();
   }
@@ -708,7 +708,8 @@ constexpr StatusWithSize SerializeJson(const T& value,
   } else if constexpr (std::is_convertible_v<T, std::string_view>) {  // strings
     return WriteQuotedString(value, buffer, remaining);
   } else if constexpr (std::is_floating_point_v<T>) {
-    return string::FloatAsIntToString(value, {buffer, remaining});
+    return string::FloatAsIntToString(static_cast<float>(value),
+                                      {buffer, remaining});
   } else if constexpr (std::is_same_v<T, bool>) {  // boolean
     return WriteString(value ? "true" : "false", buffer, remaining);
   } else if constexpr (std::is_integral_v<T>) {  // integers

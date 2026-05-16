@@ -55,9 +55,9 @@ void ArbitrarySerializeAndDeserialize(const Vector<Metric>& metrics) {
 // This unit test will run on host and may run on target devices (if supported).
 TEST(MetricsTest, SerializeAndDeserialize) {
   Vector<Metric, 3> metrics;
-  metrics.emplace_back("one", 1);
-  metrics.emplace_back("two", 2);
-  metrics.emplace_back("three", 3);
+  metrics.emplace_back("one", 1u);
+  metrics.emplace_back("two", 2u);
+  metrics.emplace_back("three", 3u);
   ArbitrarySerializeAndDeserialize(metrics);
 }
 // DOCSTAG: [pwfuzzer_examples_fuzztest-metrics_fuzztest1]

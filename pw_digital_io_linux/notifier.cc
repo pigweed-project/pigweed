@@ -180,15 +180,16 @@ pw::Result<unsigned int> LinuxGpioNotifier::WaitForEvents(int timeout_ms) {
   // Process any lines that have events. Note that if event_count =
   // kMaxEvents and there are more events waiting, we will get them on the
   // next loop.
-  for (int i = 0; i < event_count; i++) {
+  for (size_t i = 0; i < static_cast<size_t>(event_count); i++) {
     if (events[i].data.ptr == kCancelToken) {
       return pw::Status::Cancelled();
     }
-    static_cast<Handler*>(events[i].data.ptr)->HandleEvents();
+    static_cast<Handler*>(events[static_cast<size_t>(i)].data.ptr)
+        ->HandleEvents();
   }
 
   // Must be positive due to (event_count > 0) check above.
-  return event_count;
+  return static_cast<unsigned int>(event_count);
 }
 
 void LinuxGpioNotifier::Run() {

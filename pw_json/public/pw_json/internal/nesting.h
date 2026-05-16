@@ -39,7 +39,9 @@ class Nesting {
 
   constexpr Nesting Nest(size_t start, Type type) const {
     PW_ASSERT(depth_ < 16);  // Arrays or objects may be nested at most 17 times
-    return Nesting(start, depth_ + 1, (types_ << 1) | type);
+    return Nesting(start,
+                   static_cast<uint16_t>(depth_ + 1),
+                   static_cast<uint16_t>((types_ << 1) | type));
   }
 
   // The start of this structure in the original buffer.

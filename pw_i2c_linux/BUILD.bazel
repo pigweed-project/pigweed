@@ -33,7 +33,6 @@ cc_library(
     hdrs = [
         "public/pw_i2c_linux/initiator.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     target_compatible_with = ["@platforms//os:linux"],
@@ -54,7 +53,6 @@ pw_cc_test(
     srcs = [
         "initiator_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":initiator",
         "//pw_i2c:initiator",
@@ -82,7 +80,6 @@ cc_binary(
     srcs = [
         "cli.cc",
     ],
-    features = ["-conversion_warnings"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],

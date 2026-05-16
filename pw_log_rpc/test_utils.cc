@@ -64,7 +64,8 @@ void VerifyLogEntry(protobuf::Decoder& entry_decoder,
     EXPECT_EQ(expected_entry.metadata.level(),
               line_level & PW_LOG_LEVEL_BITMASK);
     EXPECT_EQ(expected_entry.metadata.line_number(),
-              (line_level & ~PW_LOG_LEVEL_BITMASK) >> PW_LOG_LEVEL_BITS);
+              (line_level & static_cast<uint32_t>(~PW_LOG_LEVEL_BITMASK)) >>
+                  PW_LOG_LEVEL_BITS);
   }
   if (expected_entry.metadata.flags()) {
     ASSERT_EQ(entry_decoder.Next(), OkStatus());

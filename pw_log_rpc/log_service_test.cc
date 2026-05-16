@@ -242,7 +242,7 @@ TEST_F(LogServiceTest, StartAndEndStream) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -312,7 +312,7 @@ TEST_F(LogServiceTest, HandleDropped) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -376,7 +376,7 @@ TEST_F(LogServiceTest, HandleDroppedBetweenFilteredOutLogs) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -433,7 +433,7 @@ TEST_F(LogServiceTest, HandleSmallLogEntryBuffer) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -476,15 +476,17 @@ TEST_F(LogServiceTest, LargeLogEntry) {
   // Add entry to multisink.
   log::pwpb::LogEntry::MemoryEncoder encoder(entry_encode_buffer_);
   ASSERT_EQ(encoder.WriteMessage(expected_entry.tokenized_data), OkStatus());
-  ASSERT_EQ(encoder.WriteLineLevel(
+  ASSERT_EQ(encoder.WriteLineLevel(static_cast<uint32_t>(
                 (expected_entry.metadata.level() & PW_LOG_LEVEL_BITMASK) |
                 ((expected_entry.metadata.line_number() << PW_LOG_LEVEL_BITS) &
-                 ~PW_LOG_LEVEL_BITMASK)),
+                 static_cast<uintptr_t>(~PW_LOG_LEVEL_BITMASK)))),
             OkStatus());
-  ASSERT_EQ(encoder.WriteFlags(expected_entry.metadata.flags()), OkStatus());
+  ASSERT_EQ(encoder.WriteFlags(
+                static_cast<uint32_t>(expected_entry.metadata.flags())),
+            OkStatus());
   ASSERT_EQ(encoder.WriteTimestamp(expected_entry.timestamp), OkStatus());
-  const uint32_t little_endian_module =
-      bytes::ConvertOrderTo(endian::little, expected_entry.metadata.module());
+  const uint32_t little_endian_module = bytes::ConvertOrderTo(
+      endian::little, static_cast<uint32_t>(expected_entry.metadata.module()));
   ASSERT_EQ(encoder.WriteModule(as_bytes(span(&little_endian_module, 1))),
             OkStatus());
   ASSERT_EQ(encoder.WriteThread(expected_entry.thread), OkStatus());
@@ -530,7 +532,7 @@ TEST_F(LogServiceTest, InterruptedLogStreamSendsDropCount) {
   ASSERT_TRUE(status.ok());
 
   const uint32_t max_messages_per_response =
-      encoding_buffer_.size() / status.size();
+      static_cast<uint32_t>(encoding_buffer_.size() / status.size());
   // Send less packets than the max to avoid crashes.
   const uint32_t packets_sent = max_packets / 2;
   const size_t total_entries = packets_sent * max_messages_per_response;
@@ -573,7 +575,7 @@ TEST_F(LogServiceTest, InterruptedLogStreamSendsDropCount) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -593,7 +595,8 @@ TEST_F(LogServiceTest, InterruptedLogStreamSendsDropCount) {
 
   // One full packet was dropped. Since all messages are the same length,
   // there are entries_found / successful_packets_sent per packet.
-  const uint32_t total_drop_count = entries_found / successful_packets_sent;
+  const uint32_t total_drop_count =
+      static_cast<uint32_t>(entries_found / successful_packets_sent);
   Vector<TestLogEntry, max_entries> expected_messages_after_reset;
   expected_messages_after_reset.push_back(
       {.metadata = kDropMessageMetadata,
@@ -601,7 +604,8 @@ TEST_F(LogServiceTest, InterruptedLogStreamSendsDropCount) {
        .tokenized_data =
            as_bytes(span(std::string_view(RpcLogDrain::kWriterErrorMessage)))});
 
-  const uint32_t remaining_entries = total_entries - total_drop_count;
+  const uint32_t remaining_entries =
+      static_cast<uint32_t>(total_entries - total_drop_count);
   for (size_t i = 0; i < remaining_entries; ++i) {
     expected_messages_after_reset.push_back(
         {.metadata = kSampleMetadata,
@@ -613,8 +617,8 @@ TEST_F(LogServiceTest, InterruptedLogStreamSendsDropCount) {
   size_t entries_found_after_reset = 0;
   for (auto& response : output.payloads<Logs::Listen>()) {
     protobuf::Decoder entry_decoder(response);
-    uint32_t expected_sequence_id =
-        entries_found + entries_found_after_reset + total_drop_count;
+    uint32_t expected_sequence_id = static_cast<uint32_t>(
+        entries_found + entries_found_after_reset + total_drop_count);
     VerifyLogEntries(entry_decoder,
                      expected_messages_after_reset,
                      expected_sequence_id,
@@ -642,7 +646,7 @@ TEST_F(LogServiceTest, InterruptedLogStreamIgnoresErrors) {
   ASSERT_TRUE(status.ok());
 
   const uint32_t max_messages_per_response =
-      encoding_buffer_.size() / status.size();
+      static_cast<uint32_t>(encoding_buffer_.size() / status.size());
   // Send less packets than the max to avoid crashes.
   const uint32_t packets_sent = 4;
   const size_t total_entries = packets_sent * max_messages_per_response;
@@ -679,7 +683,8 @@ TEST_F(LogServiceTest, InterruptedLogStreamIgnoresErrors) {
   ASSERT_LT(entries_found, total_entries);
 
   // Verify that all messages were sent.
-  const uint32_t total_drop_count = total_entries - entries_found;
+  const uint32_t total_drop_count =
+      static_cast<uint32_t>(total_entries - entries_found);
   Vector<TestLogEntry, max_entries> expected_messages;
   for (size_t i = 0; i < entries_found; ++i) {
     expected_messages.push_back(
@@ -696,7 +701,7 @@ TEST_F(LogServiceTest, InterruptedLogStreamIgnoresErrors) {
     protobuf::Decoder entry_decoder(output.payloads<Logs::Listen>()[i]);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }
@@ -704,7 +709,7 @@ TEST_F(LogServiceTest, InterruptedLogStreamIgnoresErrors) {
     protobuf::Decoder entry_decoder(output.payloads<Logs::Listen>()[i]);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found + total_drop_count,
+                     static_cast<uint32_t>(entries_found + total_drop_count),
                      entries_found,
                      drop_count_found);
   }
@@ -837,7 +842,7 @@ TEST_F(LogServiceTest, FilterLogs) {
     protobuf::Decoder entry_decoder(response);
     VerifyLogEntries(entry_decoder,
                      expected_messages,
-                     entries_found,
+                     static_cast<uint32_t>(entries_found),
                      entries_found,
                      drop_count_found);
   }

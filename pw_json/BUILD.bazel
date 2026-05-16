@@ -41,7 +41,6 @@ cc_library(
 pw_cc_test(
     name = "builder_test",
     srcs = ["builder_test.cc"],
-    features = ["-conversion_warnings"],
     has_nc_test = True,
     deps = [
         ":builder",

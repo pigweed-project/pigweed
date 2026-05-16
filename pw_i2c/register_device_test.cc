@@ -341,7 +341,8 @@ TEST(RegisterDevice, WriteRegister16With1ByteAddressAndBigEndian) {
 
   // Check data.
   for (uint32_t i = 0; i < test_device_builder.size() - kAddressSize; i++) {
-    const uint32_t shift = test_device_builder.size() - kAddressSize - (i + 1);
+    const uint32_t shift = static_cast<uint32_t>(test_device_builder.size() -
+                                                 kAddressSize - (i + 1));
     EXPECT_EQ(
         (kRegisterData >> (8 * shift)) & 0xFF,
         static_cast<uint16_t>(test_device_builder.data()[i + kAddressSize]));
@@ -369,7 +370,8 @@ TEST(RegisterDevice, WriteRegister32With1ByteAddressAndBigEndian) {
 
   // Check data.
   for (uint32_t i = 0; i < test_device_builder.size() - kAddressSize; i++) {
-    const uint32_t shift = test_device_builder.size() - kAddressSize - (i + 1);
+    const uint32_t shift = static_cast<uint32_t>(test_device_builder.size() -
+                                                 kAddressSize - (i + 1));
     EXPECT_EQ(
         (kRegisterData >> (8 * shift)) & 0xFF,
         static_cast<uint32_t>(test_device_builder.data()[i + kAddressSize]));
@@ -400,7 +402,8 @@ TEST(RegisterDevice, WriteRegister16With2ByteAddressAndBigEndian) {
 
   // Check data.
   for (uint32_t i = 0; i < test_device_builder.size() - kAddressSize; i++) {
-    const uint32_t shift = test_device_builder.size() - kAddressSize - (i + 1);
+    const uint32_t shift = static_cast<uint32_t>(test_device_builder.size() -
+                                                 kAddressSize - (i + 1));
     EXPECT_EQ(
         (kRegisterData >> (8 * shift)) & 0xFF,
         static_cast<uint16_t>(test_device_builder.data()[i + kAddressSize]));

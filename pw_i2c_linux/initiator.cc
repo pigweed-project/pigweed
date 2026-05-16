@@ -42,7 +42,7 @@ using ::pw::chrono::SystemClock;
 // Returns an appropriate status code for the given fault_code (i.e. `errno`).
 // For unexpected fault codes, logs messages to aid in debugging.
 // Reference: https://www.kernel.org/doc/html/latest/i2c/fault-codes.html
-Status PwStatusAndLog(int i2c_errno, uint8_t device_address) {
+Status PwStatusAndLog(int i2c_errno, uint16_t device_address) {
   switch (i2c_errno) {
     case EAGAIN:
       // Lost arbitration on a multi-controller bus.
@@ -57,7 +57,7 @@ Status PwStatusAndLog(int i2c_errno, uint8_t device_address) {
       //
       // Return Unavailable instead of NotFound as per the requirements of
       // pw::i2c::Initiator.
-      PW_LOG_INFO("I2C device unavailable at address 0x%" PRIx8,
+      PW_LOG_INFO("I2C device unavailable at address 0x%" PRIx16,
                   device_address);
       return Status::Unavailable();
     case ESHUTDOWN:
@@ -66,7 +66,7 @@ Status PwStatusAndLog(int i2c_errno, uint8_t device_address) {
       return Status::FailedPrecondition();
     default:
       // All other errors are unexpected and don't have a well-defined code.
-      PW_LOG_ERROR("I2C transaction failed for address 0x%" PRIx8 ": errno=%d",
+      PW_LOG_ERROR("I2C transaction failed for address 0x%" PRIx16 ": errno=%d",
                    device_address,
                    i2c_errno);
       return Status::Unknown();

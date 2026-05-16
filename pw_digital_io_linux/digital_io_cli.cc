@@ -248,7 +248,13 @@ int main(int argc, char* argv[]) {
   }
   std::string path = args.front();
   args.pop_front();
-  uint32_t index = std::stoi(args.front());
+  // std::stoi
+  const int raw_index = std::stoi(args.front());
+  if (raw_index < 0) {
+    PW_LOG_ERROR("The index must be non-negative; %d is negative", raw_index);
+    return 1;
+  }
+  const unsigned index = static_cast<unsigned>(raw_index);
   args.pop_front();
 
   // "set" also takes a value argument.

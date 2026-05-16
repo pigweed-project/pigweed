@@ -81,7 +81,7 @@ class FakeLine : public LinuxGpioNotifier::Handler {
   // Atomically send one or more events.
   void SendEvents(int count) {
     PW_CHECK_INT_GE(count, 1, "Must send one or more events");
-    uint64_t data = count;
+    uint64_t data = static_cast<uint64_t>(count);
     ssize_t result = write(event_fd_, &data, sizeof(data));
     PW_CHECK_INT_EQ(result,
                     sizeof(data),

@@ -87,7 +87,8 @@ Status DoEncryptBlock(ConstByteSpan key,
   mbedtls_aes_context aes;
   mbedtls_aes_init(&aes);
 
-  if (mbedtls_aes_setkey_enc(&aes, key_data, key.size() * kBits)) {
+  if (mbedtls_aes_setkey_enc(
+          &aes, key_data, static_cast<unsigned int>(key.size() * kBits))) {
     mbedtls_aes_free(&aes);
     return Status::Internal();
   }

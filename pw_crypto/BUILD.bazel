@@ -157,7 +157,6 @@ pw_facade(
         "public/pw_crypto/aes_backend_defs.h",
     ],
     backend = ":aes_backend",
-    features = ["-conversion_warnings"],
     includes = ["public"],
     deps = [
         "//pw_assert:assert",
@@ -170,7 +169,6 @@ pw_facade(
 cc_library(
     name = "aes_cmac",
     hdrs = ["public/pw_crypto/aes_cmac.h"],
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [":aes"],
 )
@@ -192,7 +190,6 @@ cc_library(
         "public/pw_crypto/aes_boringssl.h",
         "public_overrides/boringssl/pw_crypto/aes_backend.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     includes = ["public_overrides/boringssl"],
     target_compatible_with = incompatible_with_mcu() + select({
@@ -212,7 +209,6 @@ cc_library(
     hdrs = [
         "public/pw_crypto/aes_mbedtls.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -245,7 +241,6 @@ pw_cc_test(
     srcs = [
         "aes_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":aes",
         ":aes_cmac",
@@ -258,7 +253,6 @@ pw_facade(
     name = "ecdh",
     hdrs = ["public/pw_crypto/ecdh.h"],
     backend = ":ecdh_backend",
-    features = ["-conversion_warnings"],
     strip_include_prefix = "public",
     deps = [
         "//pw_bytes",

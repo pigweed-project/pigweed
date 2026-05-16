@@ -83,8 +83,9 @@ Status DoEncryptBlock(ConstByteSpan key,
   auto plaintext_u8 = span_cast<uint8_t>(plaintext);
   auto ciphertext_u8 = span_cast<uint8_t>(out_ciphertext);
 
-  PW_CHECK(AES_set_encrypt_key(
-               key_u8.data(), key_u8.size() * kBits, &bssl_key) == 0);
+  PW_CHECK(AES_set_encrypt_key(key_u8.data(),
+                               static_cast<unsigned int>(key_u8.size() * kBits),
+                               &bssl_key) == 0);
   AES_encrypt(plaintext_u8.data(), ciphertext_u8.data(), &bssl_key);
 
   return OkStatus();

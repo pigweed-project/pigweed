@@ -41,14 +41,15 @@ using ColorRgb565 = uint16_t;
 /// This will introduce some loss in color as values are mapped from 8
 /// bits per color down to 5 for red, 6 for green, and 5 for blue.
 constexpr ColorRgb565 EncodeRgb565(uint8_t r, uint8_t g, uint8_t b) {
-  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3);
+  return static_cast<ColorRgb565>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) |
+                                  ((b & 0xF8) >> 3));
 }
 
 /// Encode an RGBA8888 value into RGB565.
 constexpr ColorRgb565 EncodeRgb565(ColorRgba8888 rgba8888) {
-  uint8_t r = (rgba8888 & 0xFF);
-  uint8_t g = (rgba8888 & 0xFF00) >> 8;
-  uint8_t b = (rgba8888 & 0xFF0000) >> 16;
+  uint8_t r = static_cast<uint8_t>(rgba8888 & 0xFF);
+  uint8_t g = static_cast<uint8_t>((rgba8888 & 0xFF00) >> 8);
+  uint8_t b = static_cast<uint8_t>((rgba8888 & 0xFF0000) >> 16);
   // Alpha is ignored for RGB565.
   return EncodeRgb565(r, g, b);
 }
@@ -59,7 +60,8 @@ constexpr ColorRgba8888 EncodeRgba8888(uint8_t r,
                                        uint8_t g,
                                        uint8_t b,
                                        uint8_t a) {
-  return (a << 24) | (b << 16) | (g << 8) | r;
+  return (static_cast<uint32_t>(a) << 24) | (static_cast<uint32_t>(b) << 16) |
+         (static_cast<uint32_t>(g) << 8) | r;
 }
 
 /// Encode an RGBA8888 value from RGB565.
@@ -69,9 +71,9 @@ constexpr ColorRgba8888 EncodeRgba8888(uint8_t r,
 /// bits. There is no alpha channel in the RGB565 format so alpha is
 /// set to 255 representing 100% opaque.
 constexpr ColorRgba8888 EncodeRgba8888(ColorRgb565 rgb565) {
-  uint8_t r = 255 * ((rgb565 & 0xF800) >> 11) / 31;
-  uint8_t g = 255 * ((rgb565 & 0x7E0) >> 5) / 63;
-  uint8_t b = 255 * (rgb565 & 0x1F) / 31;
+  uint8_t r = static_cast<uint8_t>(255 * ((rgb565 & 0xF800) >> 11) / 31);
+  uint8_t g = static_cast<uint8_t>(255 * ((rgb565 & 0x7E0) >> 5) / 63);
+  uint8_t b = static_cast<uint8_t>(255 * (rgb565 & 0x1F) / 31);
   uint8_t a = 255;
   return EncodeRgba8888(r, g, b, a);
 }
