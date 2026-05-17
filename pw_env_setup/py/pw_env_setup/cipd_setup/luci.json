@@ -80,7 +80,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02cd9b7826fb50f5dbbca469eab42b0500b12aa2"
+        "git_revision:04641308a37268ef1fb26065376992d0942ade67"
       ],
       "version_file": ".versions/led.cipd_version"
     },
@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:02cd9b7826fb50f5dbbca469eab42b0500b12aa2"
+        "git_revision:24e856048d206800c77c164df3dfe8689b8ccfe7"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
