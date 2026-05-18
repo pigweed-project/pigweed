@@ -24,8 +24,15 @@
 
 // If the C++ library fully supports <span>, pw::span is an alias of std::span,
 // but only if PW_SPAN_ENABLE_ASSERTS is not enabled.
+//
+// Avoid std::span for libc++ versions older than 16 (e.g. Clang 15) because of
+// incomplete C++20 ranges support. Older libc++ versions fall back to C++17
+// container deduction guides which incorrectly deduce span<char> instead of
+// span<const char> when passed a non-const std::string_view lvalue. pw::span
+// has a more robust deduction guide that correctly deduces const char.
 #if defined(__cpp_lib_span) && __cpp_lib_span >= 202002L && \
-    !PW_SPAN_ENABLE_ASSERTS
+    !PW_SPAN_ENABLE_ASSERTS &&                              \
+    (!defined(_LIBCPP_VERSION) || _LIBCPP_VERSION >= 16000)
 
 #include <span>
 
