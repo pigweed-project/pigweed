@@ -27,10 +27,8 @@ pub mod __private {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
             // Use the direct syscall interface to avoid a circular dependency in the
             // `userspace` crate.
-            let buffer = s.as_bytes();
             unsafe {
-                syscall_user::SysCall::debug_log(buffer.as_ptr(), buffer.len())
-                    .map_err(|_| core::fmt::Error)
+                syscall_user::SysCall::debug_log(s.as_ptr(), s.len()).map_err(|_| core::fmt::Error)
             }
         }
     }

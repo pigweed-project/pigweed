@@ -68,6 +68,7 @@ config_setting(
 rust_library(
     name = "userspace",
     srcs = [
+        "buffer.rs",
         "lib.rs",
         "syscall.rs",
         "time.rs",

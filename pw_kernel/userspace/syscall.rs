@@ -18,6 +18,7 @@ use syscall_defs::SysCallInterface;
 pub use syscall_defs::{ExitStatus, Signals, WaitReturn};
 use syscall_user::SysCall;
 
+use crate::buffer::AsSyscallBuffer;
 use crate::time::Instant;
 
 #[inline(always)]
@@ -45,19 +46,25 @@ pub fn wait_group_remove(wait_group: u32, object: u32) -> Result<()> {
 }
 
 #[inline(always)]
-pub fn channel_transact(
+pub fn channel_transact<BufSend, BufRecv>(
     object_handle: u32,
-    send_data: &[u8],
-    recv_data: &mut [u8],
+    send_data: &BufSend,
+    recv_data: &mut BufRecv,
     deadline: Instant,
-) -> Result<usize> {
+) -> Result<usize>
+where
+    BufSend: AsSyscallBuffer + ?Sized,
+    BufRecv: AsSyscallBuffer + ?Sized,
+{
+    let (send_data, send_len) = send_data.as_raw();
+    let (recv_data, recv_len) = recv_data.as_raw_mut();
     unsafe {
         SysCall::channel_transact(
             object_handle,
-            send_data.as_ptr(),
-            send_data.len(),
-            recv_data.as_mut_ptr(),
-            recv_data.len(),
+            send_data,
+            send_len,
+            recv_data,
+            recv_len,
             deadline.ticks(),
         )
         .map(|ret| ret.cast_into())
@@ -101,25 +108,35 @@ pub fn channel_async_cancel(object_handle: u32) -> Result<()> {
 }
 
 #[inline(always)]
-pub fn channel_read(object_handle: u32, offset: usize, buffer: &mut [u8]) -> Result<usize> {
+pub fn channel_read<Buf>(object_handle: u32, offset: usize, buffer: &mut Buf) -> Result<usize>
+where
+    Buf: AsSyscallBuffer + ?Sized,
+{
+    let (buffer, length) = buffer.as_raw_mut();
     unsafe {
-        SysCall::channel_read(object_handle, offset, buffer.as_mut_ptr(), buffer.len())
-            .map(|ret| ret.cast_into())
+        SysCall::channel_read(object_handle, offset, buffer, length).map(|ret| ret.cast_into())
     }
 }
 
 #[inline(always)]
-pub fn channel_read_exact(object_handle: u32, offset: usize, buffer: &mut [u8]) -> Result<()> {
+pub fn channel_read_exact<Buf>(object_handle: u32, offset: usize, buffer: &mut Buf) -> Result<()>
+where
+    Buf: AsSyscallBuffer + ?Sized,
+{
+    let total_size = buffer.total_size();
     let read = channel_read(object_handle, offset, buffer)?;
-    if read != buffer.len() {
+    if read != total_size {
         return Err(Error::OutOfRange);
     }
     Ok(())
 }
 
-#[inline(always)]
-pub fn channel_respond(object_handle: u32, buffer: &[u8]) -> Result<()> {
-    unsafe { SysCall::channel_respond(object_handle, buffer.as_ptr(), buffer.len()) }
+pub fn channel_respond<Buf>(object_handle: u32, buffer: &Buf) -> Result<()>
+where
+    Buf: AsSyscallBuffer + ?Sized,
+{
+    let (buffer, length) = buffer.as_raw();
+    unsafe { SysCall::channel_respond(object_handle, buffer, length) }
 }
 
 #[inline(always)]
@@ -144,8 +161,12 @@ pub fn debug_shutdown(status: Result<()>) -> Result<()> {
 }
 
 #[inline(always)]
-pub fn debug_log(buffer: &[u8]) -> Result<()> {
-    unsafe { SysCall::debug_log(buffer.as_ptr(), buffer.len()) }
+pub fn debug_log<Buf>(buffer: &Buf) -> Result<()>
+where
+    Buf: AsSyscallBuffer + ?Sized,
+{
+    let (buffer, length) = buffer.as_raw();
+    unsafe { SysCall::debug_log(buffer, length) }
 }
 
 #[inline(always)]

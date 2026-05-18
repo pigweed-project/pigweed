@@ -129,7 +129,47 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
     // Tell the handler to lower the USER signal
     '#'.encode_utf8(&mut send_buf);
     syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, deadline)?;
+    Ok(())
+}
 
+fn test_iovec_ipc() -> Result<()> {
+    pw_log::info!("Ipc iovec test");
+    let req1 = b"THIS";
+    let req2 = b"IS";
+    let req3 = b"A";
+    let req4 = b"TEST";
+
+    let mut rsp1 = [0u8; 6];
+    let mut rsp2 = [0u8; 5];
+
+    let len: usize = syscall::channel_transact(
+        handle::IPC,
+        &[
+            req1.as_slice(),
+            req2.as_slice(),
+            req3.as_slice(),
+            req4.as_slice(),
+        ],
+        &mut [rsp1.as_mut_slice(), rsp2.as_mut_slice()],
+        Instant::MAX,
+    )?;
+
+    if len != 11 {
+        return Err(Error::Unknown);
+    }
+    if &rsp1 != b"thisis" {
+        return Err(Error::Unknown);
+    }
+    if &rsp2 != b"atest" {
+        return Err(Error::Unknown);
+    }
+
+    Ok(())
+}
+
+fn execute_tests() -> Result<()> {
+    test_uppercase_ipcs()?;
+    test_iovec_ipc()?;
     Ok(())
 }
 
@@ -137,7 +177,7 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
 fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
 
-    let ret = test_uppercase_ipcs()
+    let ret = execute_tests()
         .inspect(|_| pw_log::info!("✅ PASSED"))
         .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
 

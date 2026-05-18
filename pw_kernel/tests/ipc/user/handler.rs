@@ -69,9 +69,41 @@ fn handle_uppercase_ipcs() -> Result<()> {
     }
 }
 
+fn handle_iovec_ipc() -> Result<()> {
+    let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)
+        .map_err(|_| Error::Internal)?;
+
+    if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
+        return Err(Error::Internal);
+    }
+
+    // Read the payload.
+    let mut buffer = [0u8; 32];
+    let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
+
+    let s = core::str::from_utf8(&buffer[..len]).expect("utf8 string");
+    pw_log::info!("IPC received: {}", s as &str);
+
+    // Convert the message to lowercase.
+    for b in buffer[..len].iter_mut() {
+        *b = b.to_ascii_lowercase();
+    }
+
+    // Send the reply as a iovec, just because we can.
+    let (x, y) = buffer[..len].split_at(len / 2);
+    syscall::channel_respond(handle::IPC, &[x, y])?;
+    Ok(())
+}
+
+fn handle_ipcs() -> Result<()> {
+    handle_uppercase_ipcs()?;
+    handle_iovec_ipc()?;
+    Ok(())
+}
+
 #[process_entry("handler")]
 fn entry() -> Result<()> {
-    handle_uppercase_ipcs().inspect_err(|e| {
+    handle_ipcs().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
         pw_log::error!("IPC service error: {}", *e as u32);

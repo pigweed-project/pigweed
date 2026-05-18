@@ -179,12 +179,14 @@ fn handle_channel_transact<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a
     let send_buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadOnlyData,
-        send_data_addr..(send_data_addr + send_data_len),
+        send_data_addr,
+        send_data_len.cast_signed(),
     )?;
     let recv_buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadWriteData,
-        recv_data_addr..(recv_data_addr + recv_data_len),
+        recv_data_addr,
+        recv_data_len.cast_signed(),
     )?;
 
     let ret = object.channel_transact(kernel, send_buffer, recv_buffer, deadline);
@@ -207,12 +209,14 @@ fn handle_channel_async_transact<'a, K: Kernel>(
     let send_buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadOnlyData,
-        send_data_addr..(send_data_addr + send_data_len),
+        send_data_addr,
+        send_data_len.cast_signed(),
     )?;
     let recv_buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadWriteData,
-        recv_data_addr..(recv_data_addr + recv_data_len),
+        recv_data_addr,
+        recv_data_len.cast_signed(),
     )?;
 
     let ret = object.channel_async_transact(kernel, send_buffer, recv_buffer);
@@ -263,7 +267,8 @@ fn handle_channel_read<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     let buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadWriteData,
-        buffer_addr..(buffer_addr + buffer_len),
+        buffer_addr,
+        buffer_len.cast_signed(),
     )?;
 
     let ret = object.channel_read(kernel, offset, buffer);
@@ -281,7 +286,8 @@ fn handle_channel_respond<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>
     let buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadOnlyData,
-        buffer_addr..(buffer_addr + buffer_len),
+        buffer_addr,
+        buffer_len.cast_signed(),
     )?;
 
     let ret = object.channel_respond(kernel, buffer);
@@ -428,10 +434,14 @@ fn handle_debug_log<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> R
     let buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadOnlyData,
-        buffer_addr..(buffer_addr + buffer_len),
+        buffer_addr,
+        buffer_len.cast_signed(),
     )?;
     let mut console = console::Console::new();
-    console.write_all(buffer.as_slice())
+    for byteslice in buffer.as_slices() {
+        console.write_all(byteslice)?;
+    }
+    Ok(())
 }
 
 fn handle_debug_trigger_interrupt<'a, K: Kernel>(

@@ -12,13 +12,98 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 use core::cmp::min;
-use core::ops::Range;
 use core::ptr::NonNull;
 
 use memory_config::MemoryRegionType;
 use pw_status::{Error, Result};
+use vectored_buffer::{Slice, vectored_buffer_copy};
 
 use crate::Kernel;
+use crate::scheduler::thread::ProcessRef;
+
+/// A `Buffer` represents a buffer or vector of buffers in a user process.
+pub enum Buffer {
+    Flat(Slice<u8>),
+    Vector(Slice<Slice<u8>>),
+}
+
+impl Buffer {
+    fn new(address: usize, length: isize) -> Result<Self> {
+        let Some(address) = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(address))
+        else {
+            return Err(Error::InvalidArgument);
+        };
+        if length >= 0 {
+            Ok(Buffer::Flat(Slice {
+                addr: address,
+                length: length.cast_unsigned(),
+            }))
+        } else {
+            Ok(Buffer::Vector(Slice {
+                addr: address.cast(),
+                length: (-length).cast_unsigned(),
+            }))
+        }
+    }
+
+    fn _check_access<K: Kernel>(
+        start: usize,
+        size: usize,
+        access_type: MemoryRegionType,
+        process: &ProcessRef<K>,
+    ) -> Result<usize> {
+        if size > 0 {
+            // We only need to check if the size is greater than zero.
+            // The pointer for zero-sized objects will be invalid, so
+            // we shouldn't check access.
+            if !process.range_has_access(access_type, start..(start + size)) {
+                return Err(Error::PermissionDenied);
+            }
+        }
+        Ok(size)
+    }
+    fn check_access<K: Kernel>(
+        &self,
+        access_type: MemoryRegionType,
+        process: &ProcessRef<K>,
+    ) -> Result<usize> {
+        let total_size = match self {
+            Buffer::Flat(buf) => {
+                Self::_check_access(buf.addr.as_ptr() as usize, buf.length, access_type, process)?
+            }
+
+            Buffer::Vector(vec) => {
+                let mut sum = 0;
+                // First make sure we can access the vector of slices.
+                let _ = Self::_check_access(
+                    vec.addr.as_ptr() as usize,
+                    vec.length * core::mem::size_of::<Slice<u8>>(),
+                    access_type,
+                    process,
+                )?;
+                // Then check each item in the vector and sum up the total size in bytes.
+                for item in vec.as_slice() {
+                    sum += Self::_check_access(
+                        item.addr.as_ptr() as usize,
+                        item.length,
+                        access_type,
+                        process,
+                    )?;
+                }
+                sum
+            }
+        };
+        Ok(total_size)
+    }
+
+    #[must_use]
+    fn as_slices(&self) -> &[Slice<u8>] {
+        match self {
+            Buffer::Flat(buf) => core::slice::from_ref(buf),
+            Buffer::Vector(vec) => vec.as_slice(),
+        }
+    }
+}
 
 // A buffer that resides in a process
 //
@@ -30,7 +115,9 @@ use crate::Kernel;
 // * Operation on the buffer always respects the access rights of the process to which
 //   it is bound.
 pub struct SyscallBuffer {
-    addr: NonNull<u8>,
+    // Pointer to the user buffer.
+    buffer: Buffer,
+    // The sum of the sizes of all the buffers in the iovec.
     size: usize,
     access_type: MemoryRegionType,
 }
@@ -40,26 +127,22 @@ impl SyscallBuffer {
     pub fn new_in_current_process<K: Kernel>(
         kernel: K,
         access_type: MemoryRegionType,
-        range: Range<usize>,
+        address: usize,
+        length: isize,
     ) -> Result<Self> {
         let sched = kernel.get_scheduler().lock(kernel);
         let process = sched.current_thread().process();
+        let buffer = Buffer::new(address, length)?;
 
         // SAFETY: Since there is no dynamic memory and processes can not be
         // terminated and restarted, the access check can happen at buffer creates
         // and still uphold the invariant that the processes access rights are respected.
         //
         // TODO: https://pwbug.dev/442660183 - Handle access checks with process termination.
-        if !process.range_has_access(access_type, range.clone()) {
-            return Err(Error::PermissionDenied);
-        }
-
-        let Some(addr) = NonNull::new(core::ptr::with_exposed_provenance_mut(range.start)) else {
-            return Err(Error::InvalidArgument);
-        };
+        let size = buffer.check_access(access_type, &process)?;
         Ok(Self {
-            addr,
-            size: range.len(),
+            buffer,
+            size,
             access_type,
         })
     }
@@ -106,18 +189,21 @@ impl SyscallBuffer {
 
         // SAFETY: The access right invariant is upheld at buffer creation time
         // where the addr and size fields are validated.
-        unsafe {
-            self.addr
-                .byte_add(offset)
-                .copy_to(into_buffer.addr, copy_len);
-        }
-
-        Ok(copy_len)
+        let copied = vectored_buffer_copy(
+            offset,
+            copy_len,
+            self.buffer.as_slices(),
+            into_buffer.buffer.as_slices(),
+        );
+        Ok(copied)
     }
 
     #[must_use]
-    pub fn as_slice(&self) -> &[u8] {
-        // Safety: Address and size are checked and validated in `new()`.
-        unsafe { core::slice::from_raw_parts(self.addr.as_ptr(), self.size) }
+    pub fn as_slices(&self) -> &[&[u8]] {
+        unsafe {
+            // Safety: Address and size are checked and validated in `new()`.
+            // The `Slice` type is isomorphic to the underlying rust representation of a slice.
+            core::mem::transmute(self.buffer.as_slices())
+        }
     }
 }
