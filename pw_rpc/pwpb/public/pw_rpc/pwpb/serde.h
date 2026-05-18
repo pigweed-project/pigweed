@@ -18,6 +18,7 @@
 #include "pw_protobuf/encoder.h"
 #include "pw_protobuf/internal/codegen.h"
 #include "pw_protobuf/stream_decoder.h"
+#include "pw_rpc/internal/config.h"
 #include "pw_span/span.h"
 #include "pw_stream/null_stream.h"
 
@@ -45,7 +46,7 @@ class PwpbSerde {
   template <typename Message>
   StatusWithSize EncodedSizeBytes(const Message& message) const {
     // TODO: b/269515470 - Use kScratchBufferSizeBytes instead of a fixed size.
-    std::array<std::byte, 64> scratch_buffer;
+    std::array<std::byte, cfg::kPwpbScratchBufferSizeBytes> scratch_buffer;
 
     stream::CountingNullStream output;
     StreamEncoder encoder(output, scratch_buffer);

@@ -266,6 +266,14 @@ static_assert(
 #define PW_RPC_ENCODING_BUFFER_SIZE_BYTES 512
 #endif  // PW_RPC_ENCODING_BUFFER_SIZE_BYTES
 
+/// Size of the stack-allocated scratch buffer in bytes used to calculate the
+/// encoded size of a pw_protobuf message struct.
+///
+/// This defaults to 64 bytes.
+#ifndef PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES
+#define PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES 64
+#endif  // PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES
+
 /// The log level to use for this module. Logs below this level are omitted.
 #ifndef PW_RPC_CONFIG_LOG_LEVEL
 #define PW_RPC_CONFIG_LOG_LEVEL PW_LOG_LEVEL_INFO
@@ -295,8 +303,12 @@ inline constexpr size_t kNanopbStructMinBufferSize =
 inline constexpr size_t kEncodingBufferSizeBytes =
     PW_RPC_ENCODING_BUFFER_SIZE_BYTES;
 
+inline constexpr size_t kPwpbScratchBufferSizeBytes =
+    PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES;
+
 #undef PW_RPC_NANOPB_STRUCT_MIN_BUFFER_SIZE
 #undef PW_RPC_ENCODING_BUFFER_SIZE_BYTES
+#undef PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES
 
 }  // namespace pw::rpc::cfg
 
