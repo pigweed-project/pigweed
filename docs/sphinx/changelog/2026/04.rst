@@ -1,0 +1,420 @@
+=================================
+What's new in Pigweed: April 2026
+=================================
+.. changelog_highlights_start
+
+Highlights:
+
+* Developer tools: :ref:`changelog-2026-04-dev-bazel-ide-overhaul` -
+  ``pw_ide`` overhauled Bazel code intelligence for VS Code, shifting
+  to preconfigured compile commands aspects and simplifying the UI
+  for a zero-setup developer experience.
+
+* Kernel: :ref:`changelog-2026-04-kernel-control` - Processes can now
+  completely monitor and control each other.
+
+* Developer tools: :ref:`changelog-2026-04-dev-presubmit-overhaul` -
+  Introduced a new v2 presubmit system supporting automatic fixes and
+  commit-by-commit execution.
+
+* Async and concurrency: :ref:`changelog-2026-04-async-select-void-futures` -
+  The ``Select`` combinator now supports mixtures of value-returning and
+  void-returning futures.
+
+.. changelog_highlights_end
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-04-async-select-void-futures:
+
+Void future support in pw::async2::Select
+=========================================
+``pw::async2::Select`` can now handle mixtures of value-returning
+and void futures. Example:
+
+.. code-block:: cpp
+
+   #include "pw_async2/dispatcher.h"
+   #include "pw_async2/select.h"
+   #include "pw_async2/value_future.h"
+
+   pw::async2::Poll<int> PollMixedTasks(pw::async2::Context& ctx,
+                                        pw::async2::ValueFuture<void>& task_void,
+                                        pw::async2::ValueFuture<int>& task_int) {
+     // Select over a mixture of void and value-returning futures
+     auto combined = pw::async2::Select(task_void, task_int);
+     auto poll_result = combined.Pend(ctx);
+
+     if (poll_result.IsReady()) {
+       if (poll_result->has_value<0>()) {
+         // task_void completed
+         return 0;
+       }
+       if (poll_result->has_value<1>()) {
+         // task_int completed
+         return poll_result->value<1>();
+       }
+     }
+     return pw::async2::Pending();
+   }
+
+CLs: `1 <https://pwrev.dev/398913>`__
+
+---------
+Bluetooth
+---------
+
+.. _changelog-2026-04-bluetooth-bluetooth-proxy-dynamic-credits:
+
+Dynamic credit sharing mode in pw_bluetooth_proxy
+=================================================
+Instead of statically partitioning controller credits between the host and the
+proxy, both can now share a single credit pool. Packets are queued dynamically
+when credits are exhausted and drained using a fair round-robin strategy. This
+maximizes buffer utilization and throughput while mitigating memory exhaustion.
+
+CLs: `1 <https://pwrev.dev/392452>`__
+
+-------------
+Build systems
+-------------
+
+.. _changelog-2026-04-build-bazel-python-api:
+
+New Python API for Bazel introspection and queries
+==================================================
+Introduced a Python API within ``pw_build`` for programmatically
+interacting with Bazel. It provides common, structured utilities for executing
+and parsing ``bazel info``, ``bazel cquery`` (to track source and generated
+dependencies), ``bazel mod`` (for canonical repo path and bzlmod discovery), and
+standard label parsing (``BazelLabel``). Example:
+
+.. code-block:: python
+
+   from pw_build.bazel_mod import external_repo_path
+   from pw_build.bazel_label import BazelLabel
+
+   # Get the path to an external repository
+   repo_path = external_repo_path("@some_external_repo")
+
+   # Parse a label
+   label = BazelLabel.from_string("//pw_build:bazel_mod")
+
+CLs: `1 <https://pwrev.dev/390093>`__
+
+---------------------------------
+C++ data structures and utilities
+---------------------------------
+
+.. _changelog-2026-04-cpp-function-config-header:
+
+pw_function config override header
+==================================
+Added support for ``PW_FUNCTION_CONFIG_HEADER``, allowing projects to provide a
+header file to override ``pw_function`` configuration options. This is
+especially useful in Bazel builds where propagating compiler defines like
+``-include`` is not supported. Example:
+
+.. code-block:: cpp
+
+   // my_project/pw_function_config.h
+   #pragma once
+
+   // Override the inline callable size.
+   #define PW_FUNCTION_INLINE_CALLABLE_SIZE_BYTES 32
+
+CLs: `1 <https://pwrev.dev/392232>`__
+
+.. _changelog-2026-04-cpp-function-ref:
+
+Non-owning callbacks via pw::FunctionRef
+========================================
+``pw::FunctionRef`` is a non-owning callable wrapper matching C++26
+``std::function_ref`` semantics. It supports passing arbitrary
+callable types to functions, including capturing lambdas, with minimal
+overhead. Example:
+
+.. code-block:: cpp
+
+   #include "pw_function/function_ref.h"
+
+   void ProcessItems(pw::FunctionRef<void(int)> callback) {
+     for (int i = 0; i < 5; ++i) {
+       callback(i);
+     }
+   }
+
+   void UseFunctionRef() {
+     int sum = 0;
+     // Pass a capturing lambda as a temporary.
+     ProcessItems([&sum](int value) { sum += value; });
+   }
+
+CLs: `1 <https://pwrev.dev/400906>`__, `2 <https://pwrev.dev/400907>`__,
+`3 <https://pwrev.dev/400908>`__
+
+.. _changelog-2026-04-cpp-containers-reset:
+
+Dynamic containers reset support
+================================
+Added a ``reset()`` method to dynamic containers (``DynamicDeque``,
+``DynamicHashMap``, ``DynamicPtrVector``, ``DynamicQueue``, ``DynamicVector``)
+to clear elements and deallocate the underlying buffer, returning the container
+to a zero-memory state. This is useful for ensuring allocators can be safely
+destroyed before the containers go out of scope. Example:
+
+.. code-block:: cpp
+
+   #include "pw_allocator/simple_allocator.h"
+   #include "pw_containers/dynamic_vector.h"
+
+   // ...
+   pw::allocator::SimpleAllocator allocator(buffer);
+   pw::DynamicVector<int> vector(allocator);
+
+   vector.push_back(1);
+   vector.reset();  // Frees all allocated memory and elements
+
+CLs: `1 <https://pwrev.dev/392372>`__
+
+.. _changelog-2026-04-cpp-hash-variant:
+
+std::variant support in pw::Hash
+================================
+Updated ``pw::Hash`` to support hashing ``std::variant`` types. Hashing mixes
+the variant's index with the hash of the currently active alternative to
+reduce hash collisions.
+
+CLs: `1 <https://pwrev.dev/398252>`__
+
+.. _changelog-2026-04-cpp-numeric-utilities:
+
+New pw_numeric arithmetic and rounding utilities
+================================================
+The new ``pw_numeric:rounding`` library provides ``RoundUp`` and
+``RoundDown`` templated utility functions. Also added ``constexpr``
+implementations for ``pw::abs`` and related absolute value functions, and
+updated ``IntegerDivisionRoundNearest`` to use modulo arithmetic for large types
+to safely prevent overflows. Example of ``RoundUp``:
+
+.. code-block:: cpp
+
+   #include "pw_numeric/rounding.h"
+
+   constexpr size_t kBufferSize = 100;
+   constexpr size_t kAlignment = 16;
+   // Rounds up to 112
+   constexpr size_t kAlignedSize = pw::numeric::RoundUp(kBufferSize, kAlignment);
+
+CLs: `1 <https://pwrev.dev/372212>`__, `2 <https://pwrev.dev/302836>`__,
+`3 <https://pwrev.dev/302835>`__
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-04-dev-bazel-ide-overhaul:
+
+pw_ide Bazel code intelligence and VS Code UI overhaul
+======================================================
+Overhauled Bazel code intelligence in ``pw_ide`` to provide a reliable,
+out-of-the-box experience in VS Code. By moving to preconfigured compile
+commands aspects and simplifying the UI, developers no longer need manual
+setup. This update also resolves header resolution issues in sandboxed
+environments, adds a compile commands database verification tool, and
+optimizes performance by caching path resolutions.
+
+CLs: `1 <https://pwrev.dev/388212>`__, `2 <https://pwrev.dev/387732>`__,
+`3 <https://pwrev.dev/389975>`__, `4 <https://pwrev.dev/388415>`__,
+`5 <https://pwrev.dev/388413>`__, `6 <https://pwrev.dev/388414>`__,
+`7 <https://pwrev.dev/389992>`__, `8 <https://pwrev.dev/389855>`__,
+`9 <https://pwrev.dev/387065>`__, `10 <https://pwrev.dev/392373>`__,
+`11 <https://pwrev.dev/392713>`__
+
+.. _changelog-2026-04-dev-presubmit-overhaul:
+
+pw_presubmit v2
+===============
+v2 of ``pw_presubmit`` includes a new ``Step`` class that supports automatic
+fixes via a ``fix()`` method, a new orchestrator that manages execution and
+automatically applies fixes, and a streamlined command-line interface.
+
+CLs: `1 <https://pwrev.dev/403419>`__, `2 <https://pwrev.dev/396334>`__,
+`3 <https://pwrev.dev/398952>`__, `4 <https://pwrev.dev/398012>`__,
+`5 <https://pwrev.dev/398773>`__, `6 <https://pwrev.dev/399192>`__,
+`7 <https://pwrev.dev/398972>`__, `8 <https://pwrev.dev/399395>`__,
+`9 <https://pwrev.dev/394012>`__
+
+.. _changelog-2026-04-dev-snapshot-memory-regions:
+
+Embedded memory regions support in pw_snapshot diagnostics
+==========================================================
+Enhanced ``pw_snapshot`` core diagnostics and its Python processing tools to
+support capturing and dumping arbitrary embedded memory regions (such as
+peripheral registers or isolated SRAM banks). The ``Snapshot`` proto definition
+now includes a repeated ``MemoryRegion`` message that stores a region's name,
+base address, and a raw binary payload. The Python snapshot processor
+automatically reports address-name descriptors and accepts a project-provided
+``memory_region_processor`` callback to programmatically dump or parse these
+regions during crash audits.
+
+CLs: `1 <https://pwrev.dev/399576>`__
+
+----
+HALs
+----
+
+.. _changelog-2026-04-hal-i2c-mcuxpresso-hardware-timeouts:
+
+pw_i2c mcuxpresso hardware timeouts support for deadlines
+=========================================================
+Added I2C bus timeout support for ``pw_i2c_mcuxpresso``.
+Transaction deadlines are now mapped to MCUxpresso SDK hardware ``TIMEOUT``
+registers, preventing busy-wait spins. This improves I2C bus responsiveness
+during peripheral failures, especially when paired with
+``auto_restart_interface`` controls.
+
+CLs: `1 <https://pwrev.dev/373554>`__
+
+.. _changelog-2026-04-kernel:
+
+------
+Kernel
+------
+
+.. _changelog-2026-04-kernel-control:
+
+Userspace process control
+=========================
+Processes can now completely monitor and control each other. A process
+can wait on a group of other processes to finish, detect when other
+processes have exited, and even forcibly restart other processes. All
+process control is managed through the ``pw_kernel`` security model.
+A process must have a handle, which is an unforgeable token provided by
+the kernel, before it can monitor or control another process.
+
+CLs:
+`1 <https://pwrev.dev/399574>`__,
+`2 <https://pwrev.dev/399092>`__,
+`3 <https://pwrev.dev/404774>`__,
+`4 <https://pwrev.dev/402512>`__,
+`5 <https://pwrev.dev/408652>`__,
+`6 <https://pwrev.dev/406814>`__
+
+
+Shareable ``.text`` sections
+============================
+Userspace apps can now share instructions, potentially greatly reducing overall
+system binary size.
+
+CLs:
+`1 <https://pwrev.dev/387694>`__
+
+Userspace time support
+======================
+Most ``pw_kernel`` syscalls require userspace to specify a deadline by which
+an operation must complete. The new ``userspace::time::SystemClock::now()``
+function provides the current time to userspace apps so that they can compute
+deadlines. The new ``sleep_until`` function lets an app sleep until a deadline
+has passed.
+
+CLs:
+`1 <https://pwrev.dev/377736>`__,
+`2 <https://pwrev.dev/400593>`__,
+`3 <https://pwrev.dev/401613>`__,
+`4 <https://pwrev.dev/400592>`__
+
+Out-of-band channel signaling
+=============================
+In ``pw_kernel`` a channel is a unidirectional IPC connection between 2
+asymmetric peers: an initiator and a handler. Only the initiator can initiate
+IPC transactions. The new ``object_set_peer_user_signal`` provides out-of-band
+signaling for the handler. E.g. when the handler has data that the initiator
+needs, the handler can invoke ``object_set_peer_user_signal`` to notify the
+initiator that it should start a new transaction to get the new data.
+
+CLs:
+`1 <https://pwrev.dev/376072>`__
+
+System generation
+=================
+* The new ``rust_app`` Bazel macro simplifies the end-to-end process of
+  building ``pw_kernel``-based systems.
+* The system generator now validates that all names are valid Rust identifiers
+  and that process names are unique across apps.
+* RAM size is now configured more granularly at the process level rather than
+  the app level.
+
+CLs:
+`1 <https://pwrev.dev/391153>`__,
+`2 <https://pwrev.dev/395875>`__,
+`3 <https://pwrev.dev/396832>`__
+
+---
+RPC
+---
+
+.. _changelog-2026-04-rpc-transfer-server-callbacks:
+
+pw_transfer server-side lifecycle callbacks
+===========================================
+Introduced ``StartCallback`` and ``EndCallback`` callbacks to
+``TransferService``, allowing platforms to be notified when server-side
+transfers begin and complete or fail. These callbacks are invoked from the
+transfer thread and must be lightweight and non-reentrant. Example:
+
+.. code-block:: cpp
+
+   #include "pw_transfer/transfer.h"
+
+   auto on_start = [](uint32_t session_id, uint32_t resource_id) {
+     // …
+   };
+
+   auto on_end = [](uint32_t session_id, pw::Status status) {
+     // …
+   };
+
+   pw::transfer::TransferService transfer_service(transfer_thread,
+                                                  max_window_size_bytes,
+                                                  std::move(on_start),
+                                                  std::move(on_end));
+
+CLs: `1 <https://pwrev.dev/379572>`__
+
+---------------------------------
+Third-party hardware and software
+---------------------------------
+
+.. _changelog-2026-04-third-party-zephyr-allocator:
+
+pw_allocator support for Zephyr
+===============================
+The new ``pw_allocator_zephyr`` module enables standard ``pw_allocator``
+interfaces to be used with Zephyr kernel heaps. ``SystemHeapAllocator`` wraps
+Zephyr's shared system heap API, and ``SynchronizedHeapAllocator`` constructs
+and manages local synchronized heaps using Zephyr's ``k_heap`` object.
+
+CLs: `1 <https://pwrev.dev/390613>`__
+
+-----------------
+Timing and clocks
+-----------------
+
+.. _changelog-2026-04-time-clock-tree-improvements:
+
+pw_clock_tree improvements
+==========================
+Dependency requirements are now enforced at compile time, ensuring non-blocking
+elements cannot depend on blocking ones. The ``may_block`` method was removed
+in favor of a per-element locking scheme, and a runtime ``SetSource``
+method was introduced. The MCUXpresso backend was updated to use the new
+``SetSource`` feature to implement a clock mux
+(``ClockMcuxpressoSyncSelector``) with runtime source selection.
+
+CLs: `1 <https://pwrev.dev/393232>`__, `2 <https://pwrev.dev/393552>`__,
+`3 <https://pwrev.dev/392534>`__, `4 <https://pwrev.dev/392533>`__,
+`5 <https://pwrev.dev/392536>`__, `6 <https://pwrev.dev/393553>`__,
+`7 <https://pwrev.dev/392535>`__, `8 <https://pwrev.dev/392532>`__

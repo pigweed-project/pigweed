@@ -62,11 +62,11 @@ Get started
 ----------------------
 What's new in Pigweed?
 ----------------------
-.. include:: changelog/2026/03.rst
+.. include:: changelog/2026/04.rst
    :start-after: .. changelog_highlights_start
    :end-before: .. changelog_highlights_end
 
-And more! See :doc:`changelog/2026/03`.
+And more! See :doc:`changelog/2026/04`.
 
 ----------------
 What is Pigweed?
