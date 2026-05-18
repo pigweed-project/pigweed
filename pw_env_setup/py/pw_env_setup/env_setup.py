@@ -444,11 +444,48 @@ class EnvSetup:
             )
             print('', file=sys.stderr)
 
-            for miss in sorted(missing):
-                print(
-                    '    git submodule update --init {}'.format(miss),
-                    file=sys.stderr,
+            submodule_repos = set(
+                subprocess.check_output(
+                    [
+                        'git',
+                        'submodule',
+                        'foreach',
+                        '--quiet',
+                        '--recursive',
+                        'echo $displaypath',
+                    ],
+                    cwd=self._project_root,
                 )
+                .decode()
+                .splitlines()
+            )
+
+            for miss in sorted(missing):
+                command = 'git submodule update --init {}'.format(miss)
+                if miss not in submodule_repos:
+                    parts = miss.split('/')
+                    for i in range(len(parts) - 1, 0, -1):
+                        parent = '/'.join(parts[:i])
+                        if parent in submodule_repos:
+                            sub_path = '/'.join(parts[i:])
+                            command = (
+                                '(cd {} && '
+                                'git submodule update --init {} && cd -)'
+                            ).format(parent, sub_path)
+                            break
+
+                print('    {}'.format(command), file=sys.stderr)
+            print('', file=sys.stderr)
+
+            print(
+                'Or simply run the following command to recursively '
+                'initialize all submodules.',
+                file=sys.stderr,
+            )
+            print('', file=sys.stderr)
+            print(
+                '    git submodule update --init --recursive', file=sys.stderr
+            )
             print('', file=sys.stderr)
 
             if self._required_submodules:
