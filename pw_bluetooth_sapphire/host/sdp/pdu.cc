@@ -19,6 +19,7 @@
 
 #include <memory>
 
+#include "public/pw_bluetooth_sapphire/internal/host/sdp/pdu.h"
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/packet_view.h"
@@ -89,14 +90,25 @@ MutableByteBufferPtr BuildNewPdu(OpCode pdu_id,
 //   beginning attribute ID and the low order 16-bits represent a
 //   ending attribute ID of a range.
 // Returns the number of bytes taken by the list, or zero if an error
-// occurred (wrong order, wrong format).
+// occurred (wrong order, wrong format, too many elements).
 size_t ReadAttributeIDList(const ByteBuffer& buf,
-                           std::list<AttributeRange>* attribute_ranges) {
+                           std::list<AttributeRange>* attribute_ranges,
+                           size_t max_elements) {
   DataElement attribute_list_elem;
   size_t elem_size = DataElement::Read(&attribute_list_elem, buf);
   if ((elem_size == 0) ||
       (attribute_list_elem.type() != DataElement::Type::kSequence)) {
     bt_log(TRACE, "sdp", "failed to parse attribute ranges, or not a sequence");
+    attribute_ranges->clear();
+    return 0;
+  }
+  size_t elem_count = *attribute_list_elem.ElementCount();
+  if (elem_count > max_elements) {
+    bt_log(WARN,
+           "sdp",
+           "too many attribute list elements in list: %zu > %zu",
+           elem_count,
+           max_elements);
     attribute_ranges->clear();
     return 0;
   }
@@ -534,8 +546,8 @@ ServiceAttributeRequest::ServiceAttributeRequest(const ByteBuffer& params) {
   }
   read_size += sizeof(uint16_t);
 
-  size_t elem_size =
-      ReadAttributeIDList(params.view(read_size), &attribute_ranges_);
+  size_t elem_size = ReadAttributeIDList(
+      params.view(read_size), &attribute_ranges_, kMaxAttributeRangesInRequest);
   if (attribute_ranges_.size() == 0) {
     max_attribute_byte_count_ = 0;
     return;
@@ -900,8 +912,8 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
   }
   read_size += sizeof(uint16_t);
 
-  size_t elem_size =
-      ReadAttributeIDList(params.view(read_size), &attribute_ranges_);
+  size_t elem_size = ReadAttributeIDList(
+      params.view(read_size), &attribute_ranges_, kMaxAttributeRangesInRequest);
   if (attribute_ranges_.size() == 0) {
     max_attribute_byte_count_ = 0;
     return;
@@ -924,7 +936,7 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
 }
 
 bool ServiceSearchAttributeRequest::valid() const {
-  return (max_attribute_byte_count_ > kMinMaximumAttributeByteCount) &&
+  return (max_attribute_byte_count_ >= kMinMaximumAttributeByteCount) &&
          (service_search_pattern_.size() > 0) &&
          (service_search_pattern_.size() <= kMaxServiceSearchSize) &&
          (attribute_ranges_.size() > 0) &&

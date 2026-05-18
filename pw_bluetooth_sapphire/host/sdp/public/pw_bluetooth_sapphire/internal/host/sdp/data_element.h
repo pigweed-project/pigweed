@@ -158,6 +158,10 @@ class DataElement {
   // containing sequence is valid.
   const DataElement* At(size_t idx) const;
 
+  // Get the number of elements in a DataElement Sequence or Alternative.
+  // Returns an nullopt_t if this is not a Sequence or Alternative type.
+  std::optional<size_t> ElementCount() const;
+
   // Calculates the number of bytes that this DataElement will use if it's
   // written using Write().
   size_t WriteSize() const;

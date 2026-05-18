@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -698,6 +699,13 @@ const DataElement* DataElement::At(size_t idx) const {
     return nullptr;
   }
   return &aggregate_[idx];
+}
+
+std::optional<size_t> DataElement::ElementCount() const {
+  if ((type_ != Type::kSequence && type_ != Type::kAlternative)) {
+    return std::nullopt;
+  }
+  return aggregate_.size();
 }
 
 std::string DataElement::ToString() const {
