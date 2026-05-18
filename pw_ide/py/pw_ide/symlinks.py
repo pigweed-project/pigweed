@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 def set_symlink(target_path: Path, symlink_path: Path) -> None:
-    if symlink_path.exists():
+    if os.path.lexists(symlink_path):
         os.remove(symlink_path)
 
     os.symlink(target_path, symlink_path, target_path.is_dir())
