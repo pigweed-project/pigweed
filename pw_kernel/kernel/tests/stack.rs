@@ -22,16 +22,16 @@ mod tests {
     #[test]
     fn stack_initialize_fills_stack_with_pattern() -> unittest::Result<()> {
         const STACK_SIZE: usize = 1024;
-        let mut storage = StackStorage::<STACK_SIZE> {
+        let storage = StackStorage::<STACK_SIZE> {
             stack: [MaybeUninit::uninit(); STACK_SIZE],
         };
 
-        let stack = Stack::from_slice(&mut storage.stack);
+        let stack = Stack::from_slice(&storage.stack);
         stack.initialize();
 
         let stack_slice = unsafe {
             core::slice::from_raw_parts(
-                storage.stack.as_ptr() as *const u32,
+                storage.stack.as_ptr().cast::<u32>(),
                 STACK_SIZE / size_of::<u32>(),
             )
         };
