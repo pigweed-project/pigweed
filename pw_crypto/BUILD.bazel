@@ -309,9 +309,69 @@ cc_library(
     ],
 )
 
+pw_facade(
+    name = "chacha20",
+    hdrs = [
+        "public/pw_crypto/chacha20.h",
+    ],
+    backend = ":chacha20_backend",
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_bytes",
+        "//pw_status",
+    ],
+)
+
+label_flag(
+    name = "chacha20_backend",
+    build_setting_default = ":unspecified_chacha20_backend",
+)
+
+host_backend_alias(
+    name = "unspecified_chacha20_backend",
+    backend = ":chacha20_mbedtls",
+)
+
+cc_library(
+    name = "chacha20_boringssl",
+    srcs = ["chacha20_boringssl.cc"],
+    hdrs = [
+        "public/pw_crypto/chacha20_backend.h",
+    ],
+    strip_include_prefix = "public",
+    target_compatible_with = incompatible_with_mcu() + select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":chacha20.facade",
+        "@boringssl//:crypto",
+    ],
+)
+
+cc_library(
+    name = "chacha20_mbedtls",
+    srcs = ["chacha20_mbedtls.cc"],
+    hdrs = [
+        "public/pw_crypto/chacha20_backend.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":chacha20.facade",
+        "@mbedtls",
+    ],
+)
+
+pw_cc_test(
+    name = "chacha20_test",
+    srcs = ["chacha20_test.cc"],
+    deps = [":chacha20"],
+)
+
 filegroup(
     name = "doxygen",
     srcs = [
+        "public/pw_crypto/chacha20.h",
         "public/pw_crypto/ecdsa.h",
         "public/pw_crypto/sha256.h",
     ],

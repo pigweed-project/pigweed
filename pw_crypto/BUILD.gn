@@ -49,6 +49,7 @@ pw_test_group("tests") {
     ":sha256_mock_test",
     ":ecdh_test",
     ":ecdsa_test",
+    ":chacha20_test",
   ]
 }
 
@@ -268,4 +269,43 @@ pw_test("ecdh_test") {
   enable_if = pw_crypto_ECDH_BACKEND != "" && _is_host_toolchain
   deps = [ ":ecdh" ]
   sources = [ "ecdh_test.cc" ]
+}
+
+pw_facade("chacha20") {
+  backend = pw_crypto_CHACHA20_BACKEND
+  public_configs = [ ":default_config" ]
+  public = [ "public/pw_crypto/chacha20.h" ]
+  public_deps = [
+    "$dir_pw_bytes",
+    "$dir_pw_status",
+  ]
+  deps = [ "$dir_pw_assert" ]
+}
+
+pw_source_set("chacha20_boringssl") {
+  public_configs = [ ":boringssl_config" ]
+  sources = [ "chacha20_boringssl.cc" ]
+  public = [ "public/pw_crypto/chacha20_backend.h" ]
+  deps = [ "$dir_pw_assert" ]
+  public_deps = [
+    ":chacha20.facade",
+    "$dir_pw_third_party/boringssl",
+  ]
+}
+
+pw_source_set("chacha20_mbedtls_v3") {
+  public_configs = [ ":mbedtls_config" ]
+  sources = [ "chacha20_mbedtls.cc" ]
+  public = [ "public/pw_crypto/chacha20_backend.h" ]
+  deps = [ "$dir_pw_assert" ]
+  public_deps = [
+    ":chacha20.facade",
+    "$pw_external_mbedtls:mbedtls_v3",
+  ]
+}
+
+pw_test("chacha20_test") {
+  enable_if = pw_crypto_CHACHA20_BACKEND != ""
+  deps = [ ":chacha20" ]
+  sources = [ "chacha20_test.cc" ]
 }

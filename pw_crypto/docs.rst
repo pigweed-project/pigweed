@@ -12,7 +12,10 @@ The following crypto services are provided by this module.
 
 1. Hashing a message with `SHA256`_.
 2. Verifying a digital signature signed with `ECDSA`_ over the NIST P256 curve.
-3. Many more to come ...
+3. Symmetric encryption and decryption with `AES`_.
+4. Key agreement using `ECDH`_.
+5. Stream encryption/decryption with `ChaCha20`_.
+6. Many more to come ...
 
 ------
 SHA256
@@ -57,6 +60,7 @@ ECDSA
 
 .. code-block:: cpp
 
+   #include "pw_crypto/ecdsa.h"
    #include "pw_crypto/sha256.h"
 
    std::byte digest[32];
@@ -74,6 +78,7 @@ ECDSA
 
 .. code-block:: cpp
 
+   #include "pw_crypto/ecdsa.h"
    #include "pw_crypto/sha256.h"
 
    std::byte digest[32];
@@ -180,6 +185,51 @@ ECDH
      // handle errors.
    }
 
+--------
+ChaCha20
+--------
+1. Encrypting or decrypting a message in a oneshot manner. ChaCha20 is a stream
+   cipher, so the same operation is used for both encryption and decryption.
+   This API is intended for single invocations where a unique (key, nonce) pair
+   is used per message, typically starting with an initial counter of 1.
+
+.. warning::
+   It is CRITICAL to never reuse the same (key, nonce) pair for different
+   messages. Doing so will compromise the confidentiality of all messages
+   encrypted with that pair.
+
+.. code-block:: cpp
+
+   #include <vector>
+
+   #include "pw_bytes/span.h"
+   #include "pw_crypto/chacha20.h"
+
+   constexpr std::byte key[32] = ...;    // Your 256-bit secret key
+   constexpr std::byte nonce[12] = ...;  // Your 96-bit unique nonce
+   constexpr uint32_t counter = 1;       // Initial counter value
+
+   std::vector<std::byte> plaintext = ...;
+   std::vector<std::byte> ciphertext(plaintext.size());
+
+   // Encrypt
+   pw::Status status = pw::crypto::chacha20::Crypt(
+       pw::span(key), pw::span(nonce), counter, plaintext, pw::span(ciphertext));
+
+   if (!status.ok()) {
+     // Handle encryption error
+   }
+
+   // Decrypt (same function)
+   std::vector<std::byte> decrypted(ciphertext.size());
+   status = pw::crypto::chacha20::Crypt(
+       pw::span(key), pw::span(nonce), counter, ciphertext, pw::span(decrypted));
+
+   if (!status.ok()) {
+     // Handle decryption error
+   }
+   // decrypted should now equal plaintext
+
 -------------
 Configuration
 -------------
@@ -212,10 +262,12 @@ GN
    pw package install mbedtls
    gn gen out --args='
        dir_pw_third_party_mbedtls=getenv("PW_PACKAGE_ROOT")+"/mbedtls"
+       pw_external_mbedtls=getenv("PW_PROJECT_ROOT")+"/third_party/mbedtls"
        pw_crypto_SHA256_BACKEND="//pw_crypto:sha256_mbedtls_v3"
        pw_crypto_ECDSA_BACKEND="//pw_crypto:ecdsa_mbedtls_v3"
        pw_crypto_AES_BACKEND="//pw_crypto:aes_mbedtls_v3"
        pw_crypto_ECDH_BACKEND="//pw_crypto:ecdh_mbedtls_v3"
+       pw_crypto_CHACHA20_BACKEND="//pw_crypto:chacha20_mbedtls_v3"
    '
 
    ninja -C out
@@ -236,6 +288,7 @@ and select appropriate backends by adding them to your project's `platform
         "@pigweed//pw_crypto:ecdsa_backend=@pigweed//pw_crypto:ecdsa_mbedtls",
         "@pigweed//pw_crypto:aes_backend=@pigweed//pw_crypto:aes_mbedtls",
         "@pigweed//pw_crypto:ecdh_backend=@pigweed//pw_crypto:ecdh_mbedtls",
+        "@pigweed//pw_crypto:chacha20_backend=@pigweed//pw_crypto:chacha20_mbedtls",
         # ... other flags
       ],
    )
@@ -411,6 +464,13 @@ CSPRNG for ECDH:
      MbedtlsCtrDrbg ctr_drbg_;
    };
 
+``pw::crypto::chacha20`` requires ``MBEDTLS_CHACHA20_C`` to be defined in the
+MbedTLS config.
+
+.. code-block:: c
+
+   #define MBEDTLS_CHACHA20_C
+
 .. _module-pw_crypto-boringssl:
 
 BoringSSL
@@ -434,6 +494,7 @@ configured. To do that:
        dir_pw_third_party_boringssl=getenv("PW_PACKAGE_ROOT")+"/boringssl"
        pw_crypto_AES_BACKEND="//pw_crypto:aes_boringssl"
        pw_crypto_ECDH_BACKEND="//pw_crypto:ecdh_boringssl"
+       pw_crypto_CHACHA20_BACKEND="//pw_crypto:chacha20_boringssl"
    '
 
    ninja -C out
