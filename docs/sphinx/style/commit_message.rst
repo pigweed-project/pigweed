@@ -167,20 +167,24 @@ should (unless the first word is an identifier). See below for the details.
 
 Multiple modules
 ================
-Sometimes it is necessary to change code across multiple modules.
+Commits often change code across multiple modules. Adapt the module prefix
+accordingly.
 
-#. **2-5 modules**: Use ``{}`` syntax shown below
-#. **>5 modules changed** - Omit the module names entirely
-#. **Changes mostly in one module** - If the commit mostly changes the
-   code in a single module with some small changes elsewhere, only list the
-   module receiving most of the content
+#. **Changes primarily for one module** - If the commit is primarily concerned
+   with one module, only list that module, even if there are changes in other
+   modules. This is the most common case.
+#. **2-3 modules**: If the commit is focused on two or three modules, list the
+   the modules separated by commas, as shown below.
+#. **>3 modules** - Use a general prefix (``GN: Fix deps``) or omit the
+   prefix entirely.
 
-.. admonition:: **Yes**: Small number of modules affected; use {} syntax.
+.. admonition:: **Yes**: Small number of modules affected; use comma separated
+   list
    :class: checkmark
 
    .. code-block:: none
 
-      pw_{foo, bar, baz}: Change something in a few places
+      pw_foo,pw_bar,pw_baz: Change something in a few places
 
       When changes cross a few modules, include them with the syntax shown
       above.
@@ -199,7 +203,7 @@ Sometimes it is necessary to change code across multiple modules.
 
    .. code-block:: none
 
-      pw_{a, b, c, d, e, f, g, h, i, j}: Change convention for how errors are handled
+      pw_a,pw_b,pw_c,pw_d,pw_e,pw_f,pw_g,pw_h,pw_i,pw_j: Change error handling convention
 
       When changes cross many modules, skip the module name entirely.
 
