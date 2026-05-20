@@ -92,7 +92,8 @@ impl<A: Arch> ThreadLocalState<A> {
 }
 
 pub fn start_thread<K: Kernel>(kernel: K, mut thread: ForeignBox<Thread<K>>) -> ThreadRef<K> {
-    info!(
+    log_if::info_if!(
+        LOG_SCHEDULER_EVENTS,
         "Starting thread '{}' ({:#010x})",
         thread.name as &str,
         thread.id() as usize
@@ -690,7 +691,8 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
 
         pw_assert::assert!(matches!(current_thread.owner, ThreadOwner::Scheduler));
 
-        info!(
+        log_if::info_if!(
+            LOG_SCHEDULER_EVENTS,
             "Exiting thread '{}' ({:#010x})",
             current_thread.name as &str,
             current_thread.id() as usize
@@ -784,7 +786,11 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         // Terminate all threads
         unsafe {
             proc.thread_list.filter(|thread| {
-                info!("Terminating thread '{}'", thread.name as &str);
+                log_if::info_if!(
+                    LOG_SCHEDULER_EVENTS,
+                    "Terminating thread '{}'",
+                    thread.name as &str
+                );
                 let _ = self.thread_terminate_internal(thread, ExitStatus::ProcessTerminated);
                 true // Keep in list
             });
