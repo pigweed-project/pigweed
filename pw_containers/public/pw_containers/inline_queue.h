@@ -50,9 +50,13 @@ template <typename ValueType,
           typename SizeType,
           size_t kCapacity = containers::internal::kGenericSized>
 class BasicInlineQueue
+    // TODO: b/513051956 - Fix `recursive class relation` error
+    /// @cond
     : public BasicInlineQueue<ValueType,
                               SizeType,
-                              containers::internal::kGenericSized> {
+                              containers::internal::kGenericSized>
+/// @endcond
+{
  private:
   using Base = BasicInlineQueue<ValueType,
                                 SizeType,

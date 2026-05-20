@@ -153,3 +153,5 @@ inline constexpr size_t kEncodingBufferSizeBytes =
 }  // namespace pw::log_tokenized
 
 #endif  // __cplusplus
+
+/// @endmodule

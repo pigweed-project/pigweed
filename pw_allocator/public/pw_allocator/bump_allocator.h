@@ -94,7 +94,7 @@ class BumpAllocator : public AbstractAllocator {
   /// fail. Callers must check for this error before using the resulting
   /// pointer.
   ///
-  /// @param[in]  args...     Arguments passed to the object constructor.
+  /// @param[in]  args        Arguments passed to the object constructor.
   template <typename T, int&... kExplicitGuard, typename... Args>
   T* NewOwned(Args&&... args);
 
@@ -107,7 +107,7 @@ class BumpAllocator : public AbstractAllocator {
   /// The returned value may contain null if allocating memory for the object
   /// fails. Callers must check for null before using the `UniquePtr`.
   ///
-  /// @param[in]  args...     Arguments passed to the object constructor.
+  /// @param[in]  args        Arguments passed to the object constructor.
   template <typename T, int&... kExplicitGuard, typename... Args>
   [[nodiscard]] UniquePtr<T> MakeUniqueOwned(Args&&... args);
 
@@ -116,7 +116,7 @@ class BumpAllocator : public AbstractAllocator {
   void* DoAllocate(Layout layout) override;
 
   /// @copydoc Deallocator::Deallocate
-  void DoDeallocate(void*) override;
+  void DoDeallocate(void* ptr) override;
 
   /// @copydoc Allocator::GetAllocated
   size_t DoGetAllocated() const override { return allocated_; }

@@ -185,7 +185,7 @@ class ProxyHostImpl {
     ~H4Handler() override { async2::Task::Deregister(); }
 
    private:
-    /// @copydoc pw::async2::Task::Pend
+    /// @copydoc ::async2::Task::Pend
     async2::Poll<> DoPend(async2::Context& context) override;
   };
 
@@ -206,7 +206,7 @@ class ProxyHostImpl {
     }
 
    private:
-    /// @copydoc pw::async2::Task::Pend
+    /// @copydoc ::async2::Task::Pend
     async2::Poll<> DoPend(async2::Context& context) override;
 
     async2::Sender<Response> sender_;

@@ -85,7 +85,7 @@ class BucketTest : public ::testing::Test {
   BlockType* available_ = nullptr;
 };
 
-/// @}
+/// @endsubmodule
 
 // Test fixture template method implementations.
 

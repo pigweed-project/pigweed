@@ -131,6 +131,16 @@ HTML_HEADER            = docs/doxygen/header.html
 # https://www.doxygen.nl/manual/config.html#cfg_html_stylesheet
 HTML_STYLESHEET        = docs/doxygen/styles.css
 
+# https://www.doxygen.nl/manual/config.html#cfg_include_path
+#
+# Doxygen requires this include path to resolve the absolute-style include
+# of `pw_string/internal/string_common_functions.inc` in `string.h`.
+# Because this is a `.inc` file rather than a standard header, Doxygen
+# cannot resolve it by basename matching, and the physical path contains
+# `public` (`pw_string/public/pw_string/internal/...`) which does not match
+# the include path without this configuration.
+INCLUDE_PATH           = pw_string/public
+
 # https://www.doxygen.nl/manual/config.html#cfg_layout_file
 LAYOUT_FILE            = docs/doxygen/layout.xml
 
@@ -166,6 +176,7 @@ PREDEFINED             = __cplusplus=202002L \
                          PW_LOCKS_EXCLUDED(...)= \
                          PW_EXCLUSIVE_LOCKS_REQUIRED(...)= \
                          PW_GUARDED_BY(...)= \
+                         PW_LOCK_RETURNED(...)= \
                          PW_MODIFY_DIAGNOSTIC_CLANG(...)= \
                          PW_NO_SANITIZE(...)= \
                          PW_NODISCARD_STR(...)= \
@@ -173,7 +184,8 @@ PREDEFINED             = __cplusplus=202002L \
                          configSUPPORT_STATIC_ALLOCATION=1 \
                          configUSE_TIMERS=1 \
                          configCHECK_FOR_STACK_OVERFLOW=1 \
-                         PW_EXCLUDE_FROM_DOXYGEN=1
+                         PW_EXCLUDE_FROM_DOXYGEN=1 \
+                         PW_MULTIBUF_DEPRECATED=
 
 # https://www.doxygen.nl/manual/config.html#cfg_project_brief
 PROJECT_BRIEF          = "C/C++ API Reference"
@@ -214,10 +226,8 @@ TAB_SIZE               = 2
 # https://www.doxygen.nl/manual/config.html#cfg_use_mdfile_as_mainpage
 USE_MDFILE_AS_MAINPAGE = docs/doxygen/index.md
 
-# TODO: https://pwbug.dev/393634135 - Turn this on.
-#
-# https://www.doxygen.nl/manual/config.html#cfg_warn_if_doc_error
-WARN_IF_DOC_ERROR      = NO
+# https://www.doxygen.nl/manual/config.html#cfg_warn_as_error
+WARN_AS_ERROR          = YES
 
 # TODO: https://pwbug.dev/393634135 - Turn this on.
 #
@@ -229,12 +239,5 @@ WARN_IF_INCOMPLETE_DOC = NO
 # https://www.doxygen.nl/manual/config.html#cfg_warn_if_undocumented
 WARN_IF_UNDOCUMENTED   = NO
 
-# TODO: https://pwbug.dev/393634135 - Log warnings to stderr.
-#
-# https://www.doxygen.nl/manual/config.html#cfg_warn_logfile
-WARN_LOGFILE           = "doxygen_build_warnings.txt"
-
-# TODO: https://pwbug.dev/393634135 - Turn this on.
-#
 # https://www.doxygen.nl/manual/config.html#cfg_warnings
-WARNINGS               = NO
+WARNINGS               = YES

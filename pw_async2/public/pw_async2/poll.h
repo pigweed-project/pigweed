@@ -362,7 +362,10 @@ struct UnwrapPoll<Poll<T>> {
   using Type = T;
 };
 
+/// @endsubmodule
 }  // namespace async2
+
+/// @submodule{pw_async2,poll}
 
 // --- ToString implementations for `Poll` types ---
 

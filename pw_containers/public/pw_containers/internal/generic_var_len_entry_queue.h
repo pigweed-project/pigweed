@@ -158,7 +158,7 @@ class GenericVarLenEntryQueue : private GenericVarLenEntryQueueBase {
   }
   constexpr const_iterator cbegin() const { return begin(); }
 
-  /// @copydoc pw_InlineVarLenEntryQueue_End
+  /// Returns an iterator to the end of the `queue`.
   constexpr iterator end() { return iterator(GetBuffer(), GetTail()); }
   constexpr const_iterator end() const {
     return const_iterator(GetBuffer(), GetTail());

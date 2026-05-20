@@ -95,7 +95,7 @@ class SyncAllocatorTest : public ::testing::Test {
   void TestReallocate();
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator::test
 

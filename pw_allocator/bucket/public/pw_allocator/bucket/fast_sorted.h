@@ -83,19 +83,19 @@ class FastSortedBucket final
   constexpr explicit FastSortedBucket(Compare&& compare)
       : items_(std::move(compare)) {}
 
-  /// @copydoc `BucketBase::Add`
+  /// @copydoc internal::BucketBase::Add
   void DoAdd(BlockType& block);
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 
-  /// @copydoc `BucketBase::RemoveAny`
+  /// @copydoc internal::BucketBase::RemoveAny
   BlockType* DoRemoveAny();
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::Remove
   bool DoRemove(BlockType& block);
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
   template <typename Iterator>
@@ -123,19 +123,19 @@ class ReverseFastSortedBucket final
       : impl_(std::greater<>()), items_(impl_.items_) {}
 
  private:
-  /// @copydoc `BucketBase::Add`
+  /// @copydoc internal::BucketBase::Add
   void DoAdd(BlockType& block);
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 
-  /// @copydoc `BucketBase::RemoveAny`
+  /// @copydoc internal::BucketBase::RemoveAny
   BlockType* DoRemoveAny();
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::Remove
   bool DoRemove(BlockType& block) { return impl_.DoRemove(block); }
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout) {
     return impl_.RemoveImpl(impl_.items_.begin(), layout);
   }

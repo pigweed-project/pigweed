@@ -62,3 +62,5 @@
 #else
 #define PW_NODISCARD_STR(str) [[nodiscard]]
 #endif  // __cplusplus >= 202002L
+
+/// @endmodule

@@ -107,37 +107,37 @@ class Chunk {
   const std::byte* end() const { return cend(); }
   const std::byte* cend() const { return span_.data() + span_.size(); }
 
-  /// @copydoc pw::multibuf::v1::Chunk::CanMerge
+  /// @copydoc ::v1::Chunk::CanMerge
   [[nodiscard]] bool CanMerge(const Chunk& next_chunk) const;
 
-  /// @copydoc pw::multibuf::v1::Chunk::Merge
+  /// @copydoc ::v1::Chunk::Merge
   bool Merge(OwnedChunk& next_chunk);
 
-  /// @copydoc pw::multibuf::v1::Chunk::ClaimPrefix
+  /// @copydoc ::v1::Chunk::ClaimPrefix
   /// @warning See the note about subregion ownership in the class comments.
   [[nodiscard]] bool ClaimPrefix(size_t bytes_to_claim);
 
-  /// @copydoc pw::multibuf::v1::Chunk::ClaimSuffix
+  /// @copydoc ::v1::Chunk::ClaimSuffix
   /// @warning See the note about subregion ownership in the class comments.
   [[nodiscard]] bool ClaimSuffix(size_t bytes_to_claim);
 
-  /// @copydoc pw::multibuf::v1::Chunk::ClaimSuffix
+  /// @copydoc ::v1::Chunk::ClaimSuffix
   /// @warning See the note about subregion ownership in the class comments.
   void DiscardPrefix(size_t bytes_to_discard);
 
-  /// @copydoc pw::multibuf::v1::Chunk::Slice
+  /// @copydoc ::v1::Chunk::Slice
   /// @warning See the note about subregion ownership in the class comments.
   void Slice(size_t begin, size_t end);
 
-  /// @copydoc pw::multibuf::v1::Chunk::Slice
+  /// @copydoc ::v1::Chunk::Slice
   /// @warning See the note about subregion ownership in the class comments.
   void Truncate(size_t len);
 
-  /// @copydoc pw::multibuf::v1::Chunk::TakePrefix
+  /// @copydoc ::v1::Chunk::TakePrefix
   /// @warning See the note about subregion ownership in the class comments.
   std::optional<OwnedChunk> TakePrefix(size_t bytes_to_take);
 
-  /// @copydoc pw::multibuf::v1::Chunk::TakePrefix
+  /// @copydoc ::v1::Chunk::TakePrefix
   /// @warning See the note about subregion ownership in the class comments.
   std::optional<OwnedChunk> TakeSuffix(size_t bytes_to_take);
 
@@ -216,7 +216,7 @@ class OwnedChunk {
 
   // Mutators
 
-  /// @copydoc pw::multibuf::v1::OwnedChunk::Release
+  /// @copydoc ::v1::OwnedChunk::Release
   void Release() { inner_.reset(); }
 
   /// Returns the memory contained by this object's `Chunk` and empties this
@@ -236,6 +236,6 @@ class OwnedChunk {
   std::optional<Chunk> inner_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter

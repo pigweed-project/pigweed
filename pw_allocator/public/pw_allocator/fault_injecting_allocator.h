@@ -89,6 +89,6 @@ class FaultInjectingAllocator : public pw::Allocator {
   bool allow_reallocate_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator::test

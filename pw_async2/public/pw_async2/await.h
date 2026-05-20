@@ -30,15 +30,12 @@
 /// remain valid until it completes. Do not use `PW_AWAIT` with temporary
 /// futures unless you are certain they will complete immediately.
 ///
-/// @param variable_declaration
-///   (Optional) The variable declaration to which the future's result will be
-///   assigned. For example: `auto result` or `int value`.
-///
-/// @param future
-///   The `pw::async2::Future` to poll.
-///
-/// @param context
-///   The `pw::async2::Context&` with which to poll the future.
+/// Parameters:
+/// * `variable_declaration` - (Optional) The variable declaration to which
+///   the future's result will be assigned. For example: `auto result` or
+///   `int value`.
+/// * `future` - The `pw::async2::Future` to poll.
+/// * `context` - The `pw::async2::Context&` with which to poll the future.
 ///
 /// **Usage:**
 ///
@@ -84,9 +81,9 @@
 /// @endcode
 #define PW_AWAIT(...) PW_DELEGATE_BY_ARG_COUNT(_PW_AWAIT_, __VA_ARGS__)
 
+/// @endsubmodule
+
 /// @cond
 #define _PW_AWAIT_2(future, cx) PW_TRY_READY((future).Pend(cx))
 #define _PW_AWAIT_3(lhs, future, cx) PW_TRY_READY_ASSIGN(lhs, (future).Pend(cx))
 /// @endcond
-
-/// @endsubmodule

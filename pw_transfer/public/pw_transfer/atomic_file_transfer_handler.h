@@ -54,11 +54,11 @@ class AtomicFileTransferHandler : public ReadWriteHandler {
   /// Handler function that is called by the transfer thread after a read
   /// transfer completes.
   ///
-  /// @param[in] Status A `pw::Status` object provided by the transfer thread
+  /// @param[in] status A `pw::Status` object provided by the transfer thread
   /// indicating whether the transfer succeeded.
   ///
   /// @pre The read transfer is done before the call to this method.
-  void FinalizeRead(Status) override;
+  void FinalizeRead(Status status) override;
   /// Prepares `AtomicFileTransferHandler` for a write transfer.
   ///
   /// @pre The write transfer has not been initialized before the call to this

@@ -206,6 +206,6 @@ class AllocatorForTest : public pw::Allocator {
   std::optional<Fragmentation> fragmentation_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator::test

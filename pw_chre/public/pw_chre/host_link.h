@@ -63,7 +63,7 @@ struct MessageToAp {
 /// The client must implement this method, and the client is responsible for
 /// calling `FreeMessageToAp` once they are finished with the message.
 /// @param[in] message The message to be sent.
-/// @param[out] bool Whether this method was successful.
+/// @returns Whether this method was successful.
 bool SendMessageToAp(MessageToAp message);
 
 }  // namespace pw::chre

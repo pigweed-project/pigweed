@@ -28,4 +28,6 @@ PW_EXTERN_C_START
 void pw_log_tokenized_HandleLogWithoutMetadata(const uint8_t encoded_message[],
                                                size_t size_bytes);
 
+/// @endmodule
+
 PW_EXTERN_C_END

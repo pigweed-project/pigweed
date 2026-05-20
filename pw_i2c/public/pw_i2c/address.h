@@ -132,8 +132,6 @@ class Address {
   /// @code{.cpp}
   ///   constexpr pw::i2c::Address kAddress(0x200);
   /// @endcode
-  ///
-  /// @returns A `pw::i2c::Address` instance.
   [[deprecated("Use one of the factory methods above to construct safely.")]]
   explicit Address(uint16_t address);
 

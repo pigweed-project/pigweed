@@ -59,7 +59,7 @@ constexpr inline bool IsValidCharacter(uint32_t code_point) {
 /// encoded.
 class CodePointAndSize final {
  public:
-  /// Creates a combined view of a @code_point and its encoded @size.
+  /// Creates a combined view of a @p code_point and its encoded @p size.
   explicit constexpr CodePointAndSize(uint32_t code_point, size_t size)
       : code_point_((static_cast<uint32_t>(size) << kSizeShift) | code_point) {}
 

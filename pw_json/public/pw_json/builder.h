@@ -40,10 +40,7 @@
 
 namespace pw {
 
-/// @module{pw_json}
-
-/// @defgroup pw_json_builder_api
-/// @{
+/// @submodule{pw_json,builder_api}
 
 /// A `JsonArray` nested inside an object or array. Only provides functions for
 /// appending values to the nested array.
@@ -562,7 +559,7 @@ class JsonBuffer final : public JsonBuilder {
 
   char static_buffer_[kMaxSize + 1];
 };
-/// @}
+/// @endsubmodule
 
 // Implementation details
 namespace json_impl {

@@ -46,7 +46,11 @@ inline void ByteLiteralIsTooLarge() {}
 /// Returns a ``std::byte`` when used as a ``_b`` suffix.
 ///
 /// This is useful for writing byte literals, particularly in tests.
-/// To use, add ``using ::pw::operator""_b;`` and then use like ``5_b``
+/// To use, add:
+/// @code
+/// using ::pw::operator""_b;
+/// @endcode
+/// and then use like ``5_b``
 /// in order to create a ``std::byte`` with the contents ``5``.
 ///
 /// This should not be used in header files, as it requires a ``using``

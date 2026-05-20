@@ -65,7 +65,11 @@ namespace pw {
 /// `pw::InlineBasicString<char>` and is equivalent to `std::string`.
 template <typename T, size_t kCapacity = string_impl::kGeneric>
 class InlineBasicString final
-    : public InlineBasicString<T, string_impl::kGeneric> {
+    // TODO: b/513051956 - Fix `recursive class relation` error
+    /// @cond
+    : public InlineBasicString<T, string_impl::kGeneric>
+/// @endcond
+{
  public:
   using typename InlineBasicString<T, string_impl::kGeneric>::value_type;
   using typename InlineBasicString<T, string_impl::kGeneric>::size_type;

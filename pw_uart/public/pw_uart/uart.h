@@ -245,9 +245,9 @@ class Uart : public UartBase {
   /// * May return other implementation-specific status codes.
   // TODO: https://pwbug.dev/368149122 - Make pure virtual after transition.
   virtual StatusWithSize DoTryReadFor(
-      ByteSpan /*rx_buffer*/,
-      size_t /*min_bytes*/,
-      std::optional<chrono::SystemClock::duration> /*timeout*/) {
+      [[maybe_unused]] ByteSpan rx_buffer,
+      [[maybe_unused]] size_t min_bytes,
+      [[maybe_unused]] std::optional<chrono::SystemClock::duration> timeout) {
     return StatusWithSize::Unimplemented();
   }
 

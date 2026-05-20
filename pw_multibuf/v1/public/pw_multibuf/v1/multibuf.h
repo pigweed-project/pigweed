@@ -478,26 +478,21 @@ class PW_MULTIBUF_DEPRECATED MultiBuf : private MultiBufChunks {
   //--------------------- Chunk manipulation ----------------------//
   ///////////////////////////////////////////////////////////////////
 
-  /// @copydoc MultiBufChunks::push_front
   void PushFrontChunk(OwnedChunk&& chunk) {
     MultiBufChunks::push_front(std::move(chunk));
   }
 
-  /// @copydoc MultiBufChunks::push_back
   void PushBackChunk(OwnedChunk&& chunk) {
     MultiBufChunks::push_back(std::move(chunk));
   }
 
-  /// @copydoc MultiBufChunks::take_front
   OwnedChunk TakeFrontChunk() { return MultiBufChunks::take_front(); }
 
-  /// @copydoc MultiBufChunks::insert
   MultiBufChunks::iterator InsertChunk(MultiBufChunks::iterator position,
                                        OwnedChunk&& chunk) {
     return MultiBufChunks::insert(position, std::move(chunk));
   }
 
-  /// @copydoc MultiBufChunks::take
   std::tuple<MultiBufChunks::iterator, OwnedChunk> TakeChunk(
       MultiBufChunks::iterator position) {
     return MultiBufChunks::take(position);

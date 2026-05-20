@@ -45,16 +45,16 @@ class UartNonBlocking : public UartBase {
   ///
   /// @param rx_buffer  The buffer to read data into.
   /// @param callback   A callback to invoke when the transaction is completed.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  entire buffer has been filled with data.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelRead().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
-  ///                   @param buffer  buffer.size() returns the number of
-  ///                                  bytes successfully read into the buffer.
-  ///                                  If `status`=OK, the buffer is identical
-  ///                                  to rx_buffer
+  ///                   Callback parameters:
+  ///                   - `status`: `OK`: The operation was successful and the
+  ///                     entire buffer has been filled with data.
+  ///                     `CANCELLED`: The operation was cancelled via
+  ///                     `CancelRead()`. May return other
+  ///                     implementation-specific status codes.
+  ///                   - `buffer`: `buffer.size()` returns the number of
+  ///                     bytes successfully read into the buffer. If
+  ///                     `status` is `OK`, the buffer is identical to
+  ///                     `rx_buffer`.
   ///
   /// @returns
   /// * @OK: The operation was successfully started.
@@ -77,15 +77,14 @@ class UartNonBlocking : public UartBase {
   /// @param rx_buffer  The buffer to read data into.
   /// @param min_bytes  Minimum bytes to read.
   /// @param callback   A callback to invoke when the transaction is completed.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  buffer has been filled with at least
-  ///                                  `min_bytes` with data.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelRead().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
-  ///                   @param buffer  buffer.size() returns the number of
-  ///                                  bytes successfully read into the buffer.
+  ///                   Callback parameters:
+  ///                   - `status`: `OK`: The operation was successful and the
+  ///                     buffer has been filled with at least `min_bytes` with
+  ///                     data. `CANCELLED`: The operation was cancelled via
+  ///                     `CancelRead()`. May return other
+  ///                     implementation-specific status codes.
+  ///                   - `buffer`: `buffer.size()` returns the number of
+  ///                     bytes successfully read into the buffer.
   ///
   /// @returns
   /// * @OK: The operation was successfully started.
@@ -118,14 +117,13 @@ class UartNonBlocking : public UartBase {
   ///
   /// @param tx_buffer  The buffer to write to the UART.
   /// @param callback   A callback to invoke when the transaction is completed.
-  ///                   @param status  status.size() returns the number of bytes
-  ///                                  successfully written from `tx_buffer`.
-  ///                                  OK: The operation was successful and the
-  ///                                  entire buffer has been written.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelWrite().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
+  ///                   Callback parameters:
+  ///                   - `status`: `status.size()` returns the number of bytes
+  ///                     successfully written from `tx_buffer`. `OK`: The
+  ///                     operation was successful and the entire buffer has
+  ///                     been written. `CANCELLED`: The operation was cancelled
+  ///                     via `CancelWrite()`. May return other
+  ///                     implementation-specific status codes.
   ///
   /// @returns
   /// * @OK: The operation was successfully started.
@@ -155,12 +153,12 @@ class UartNonBlocking : public UartBase {
   /// be transmitted immediately.
   ///
   /// @param callback   A callback to invoke when the flush is completed.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  transmit FIFO is empty.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelFlushOutput().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
+  ///                   Callback parameters:
+  ///                   - `status`: `OK`: The operation was successful and the
+  ///                     transmit FIFO is empty.
+  ///                     `CANCELLED`: The operation was cancelled via
+  ///                     `CancelFlushOutput()`. May return other
+  ///                     implementation-specific status codes.
   ///
   /// @returns
   /// * @OK: The operation was successfully started.
@@ -200,15 +198,13 @@ class UartNonBlocking : public UartBase {
   /// @param rx_buffer  The buffer to read data into.
   /// @param min_bytes  Minimum bytes to read.
   /// @param callback   A callback to invoke when the transaction is completed.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  buffer has been filled with at least
-  ///                                  `min_bytes` with data.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelRead().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
-  ///                   @param buffer  buffer.size() returns the number of
-  ///                                  bytes successfully read into the buffer.
+  ///                   - `status`: OK: The operation was successful and the
+  ///                     buffer has been filled with at least `min_bytes` with
+  ///                     data. `CANCELLED`: The operation was cancelled via
+  ///                     `CancelRead()`. May return other
+  ///                     implementation-specific status codes.
+  ///                   - `buffer`: `buffer.size()` returns the number of
+  ///                     bytes successfully read into the buffer.
   /// @returns
   /// * @OK: The operation was successfully started.
   /// * @UNAVAILABLE: Another `Read()` transaction is currently in progress.
@@ -244,14 +240,12 @@ class UartNonBlocking : public UartBase {
   ///
   /// @param tx_buffer  The buffer to write to the UART.
   /// @param callback   A callback to invoke when the transaction is completed.
-  ///                   @param status  status.size() returns the number of bytes
-  ///                                  successfully written from `tx_buffer`.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  entire buffer has been written.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelWrite().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
+  ///                   - `status`: `status.size()` returns the number of bytes
+  ///                     successfully written from `tx_buffer`. `OK`: The
+  ///                     operation was successful and the entire buffer has
+  ///                     been written. `CANCELLED`: The operation was cancelled
+  ///                     via `CancelWrite()`. May return other
+  ///                     implementation-specific status codes.
   /// @returns
   /// * @OK: The operation was successfulyl started.
   /// * @UNAVAILABLE: Another `Write()` transaction is currently in progress.
@@ -279,13 +273,13 @@ class UartNonBlocking : public UartBase {
   /// has been transmitted. Any data enqueued after this function completes will
   /// be transmitted immediately.
   ///
-  /// @param callback   A callback to invoke when the flush is completed.
-  ///                   @param status  OK: The operation was successful and the
-  ///                                  transmit FIFO is empty.
-  ///                                  CANCELLED: The operation was cancelled
-  ///                                  via CancelFlushOutput().
-  ///                                  May return other implementation-specific
-  ///                                  status codes.
+  /// Parameters:
+  /// * `callback` - A callback to invoke when the flush is completed. Callback
+  ///   parameters:
+  ///   - `status`: `OK`: The operation was successful and the transmit FIFO is
+  ///     empty. `CANCELLED`: The operation was cancelled via
+  ///     `CancelFlushOutput()`. May return other implementation-specific
+  ///     status codes.
   ///
   /// @returns
   /// * @OK: The operation was successfully started.

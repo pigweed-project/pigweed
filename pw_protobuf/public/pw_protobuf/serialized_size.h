@@ -196,6 +196,6 @@ constexpr size_t SizeOfFieldEnum(T field_number, U value = static_cast<U>(-1)) {
   return SizeOfFieldInt32(field_number, static_cast<int32_t>(value));
 }
 
-/// @module{pw_protobuf}
+/// @endmodule
 
 }  // namespace pw::protobuf

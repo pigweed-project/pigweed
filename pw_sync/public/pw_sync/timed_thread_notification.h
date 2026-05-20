@@ -24,7 +24,7 @@ namespace pw::sync {
 /// used to permit a SINGLE thread to block and consume a latching, saturating
 /// notification from  multiple notifiers.
 ///
-/// @important This is a single consumer/waiter, multiple producer/notifier
+/// @attention This is a single consumer/waiter, multiple producer/notifier
 /// API! The acquire APIs must only be invoked by a single consuming thread. As
 /// a result, having multiple threads receiving notifications via the acquire
 /// API is unsupported.
@@ -55,7 +55,7 @@ class TimedThreadNotification : public ThreadNotification {
   /// @returns `true` if the thread was notified, meaning the internal latch
   /// was reset successfully.
   ///
-  /// @important This should only be used by a single consumer thread.
+  /// @attention This should only be used by a single consumer thread.
   [[nodiscard]] bool try_acquire_for(chrono::SystemClock::duration timeout);
 
   /// Blocks until the specified deadline time has been reached the thread has
@@ -67,7 +67,7 @@ class TimedThreadNotification : public ThreadNotification {
   /// @returns `true` if the thread was notified, meaning the internal latch
   /// was reset successfully.
   ///
-  /// @important This should only be used by a single consumer thread.
+  /// @attention This should only be used by a single consumer thread.
   [[nodiscard]] bool try_acquire_until(
       chrono::SystemClock::time_point deadline);
 };

@@ -155,9 +155,8 @@ class TokenizedTracer {
 /// @returns A reference of the global tokenized tracer
 TokenizedTracer& GetTokenizedTracer();
 
+/// @endmodule
 }  // namespace trace
-
-/// @}
 
 }  // namespace pw
 #endif  // __cplusplus
@@ -219,4 +218,4 @@ TokenizedTracer& GetTokenizedTracer();
       PW_STRINGIFY(event_type) "|" PW_STRINGIFY(flags) "|" module "|" group \
                                                        "|" label "|" type)
 
-/// @}
+/// @endmodule

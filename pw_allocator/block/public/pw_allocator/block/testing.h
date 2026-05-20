@@ -141,7 +141,7 @@ class BlockTestUtilities {
   ByteSpan bytes_;
 };
 
-/// @}
+/// @endsubmodule
 
 //  Template method implementations.
 

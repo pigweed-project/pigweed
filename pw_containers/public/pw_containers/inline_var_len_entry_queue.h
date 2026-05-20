@@ -90,8 +90,11 @@ namespace pw {
 template <typename T,
           size_t kMaxSizeBytes = containers::internal::kGenericSized>
 class BasicInlineVarLenEntryQueue
-    : public BasicInlineVarLenEntryQueue<T,
-                                         containers::internal::kGenericSized> {
+    // TODO: b/513051956 - Fix `recursive class relation` error
+    /// @cond
+    : public BasicInlineVarLenEntryQueue<T, containers::internal::kGenericSized>
+/// @endcond
+{
  private:
   using Base =
       BasicInlineVarLenEntryQueue<T, containers::internal::kGenericSized>;
@@ -261,6 +264,7 @@ BasicInlineVarLenEntryQueue<T, kMaxSizeBytes>::operator=(
 
 // BasicInlineVarLenEntryQueue<T> methods.
 
+/// @cond
 template <typename T>
 template <size_t kArraySize>
 BasicInlineVarLenEntryQueue<T>& BasicInlineVarLenEntryQueue<T>::Init(
@@ -288,6 +292,7 @@ span<const T> BasicInlineVarLenEntryQueue<T>::raw_storage() const {
   size_t raw_size = (kNumFields * sizeof(uint32_t)) + buffer_size();
   return span<const T>(reinterpret_cast<const T*>(array().data()), raw_size);
 }
+/// @endcond
 
 }  // namespace pw
 
@@ -323,86 +328,89 @@ PW_EXTERN_C_START
 typedef uint32_t* pw_InlineVarLenEntryQueue_Handle;
 typedef const uint32_t* pw_InlineVarLenEntryQueue_ConstHandle;
 
-/// @copydoc BasicInlineVarLenEntryQueue::Init
+/// Initializes a `BasicInlineVarLenEntryQueue` in place within a `uint32_t`
+/// array. The array MUST be larger than
+/// `PW_VARIABLE_LENGTH_ENTRY_QUEUE_HEADER_SIZE_UINT32` (3) elements.
 void pw_InlineVarLenEntryQueue_Init(uint32_t array[], size_t array_size_uint32);
 
-/// @copydoc GenericVarLenEntryQueue::begin
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::begin
 pw_InlineVarLenEntryQueue_Iterator pw_InlineVarLenEntryQueue_Begin(
     pw_InlineVarLenEntryQueue_Handle queue);
 
-/// @copydoc GenericVarLenEntryQueue::cbegin
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::cbegin
 pw_InlineVarLenEntryQueue_ConstIterator pw_InlineVarLenEntryQueue_ConstBegin(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::end
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::end
 pw_InlineVarLenEntryQueue_Iterator pw_InlineVarLenEntryQueue_End(
     pw_InlineVarLenEntryQueue_Handle queue);
 
-/// @copydoc GenericVarLenEntryQueue::cend
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::cend
 pw_InlineVarLenEntryQueue_ConstIterator pw_InlineVarLenEntryQueue_ConstEnd(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::empty
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::empty
 bool pw_InlineVarLenEntryQueue_Empty(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::size
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::size
 uint32_t pw_InlineVarLenEntryQueue_Size(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::max_size
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::max_size
 uint32_t pw_InlineVarLenEntryQueue_MaxSize(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::size_bytes
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::size_bytes
 uint32_t pw_InlineVarLenEntryQueue_SizeBytes(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::max_size_bytes
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::max_size_bytes
 uint32_t pw_InlineVarLenEntryQueue_MaxSizeBytes(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::push
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::push
 void pw_InlineVarLenEntryQueue_Push(pw_InlineVarLenEntryQueue_Handle queue,
                                     const void* data,
                                     uint32_t data_size_bytes);
 
-/// @copydoc GenericVarLenEntryQueue::try_push
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::try_push
 bool pw_InlineVarLenEntryQueue_TryPush(pw_InlineVarLenEntryQueue_Handle queue,
                                        const void* data,
                                        const uint32_t data_size_bytes);
 
-/// @copydoc GenericVarLenEntryQueue::push_overwrite
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::push_overwrite
 void pw_InlineVarLenEntryQueue_PushOverwrite(
     pw_InlineVarLenEntryQueue_Handle queue,
     const void* data,
     uint32_t data_size_bytes);
 
-/// @copydoc GenericVarLenEntryQueue::pop
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::pop
 void pw_InlineVarLenEntryQueue_Pop(pw_InlineVarLenEntryQueue_Handle queue);
 
-/// @copydoc GenericVarLenEntryQueue::clear
+/// @copydoc pw::containers::internal::GenericVarLenEntryQueue::clear
 void pw_InlineVarLenEntryQueue_Clear(pw_InlineVarLenEntryQueue_Handle queue);
 
-/// @copydoc BasicInlineVarLenEntryQueue::raw_storage
+/// Underlying storage of the variable-length entry queue. May be used to
+/// memcpy the queue.
 uint32_t pw_InlineVarLenEntryQueue_RawStorageSizeBytes(
     pw_InlineVarLenEntryQueue_ConstHandle queue);
 
-/// @copydoc GenericVarLenEntryQueue::CopyEntries
+/// @copydoc pw::containers::internal::CopyVarLenEntries
 void pw_InlineVarLenEntryQueue_CopyEntries(
     pw_InlineVarLenEntryQueue_ConstHandle from,
     pw_InlineVarLenEntryQueue_Handle to);
 
-/// @copydoc GenericVarLenEntryQueue::CopyEntriesOverwrite
+/// @copydoc pw::containers::internal::CopyVarLenEntriesOverwrite
 void pw_InlineVarLenEntryQueue_CopyEntriesOverwrite(
     pw_InlineVarLenEntryQueue_ConstHandle from,
     pw_InlineVarLenEntryQueue_Handle to);
 
-/// @copydoc GenericVarLenEntryQueue::MoveEntries
+/// @copydoc pw::containers::internal::MoveVarLenEntries
 void pw_InlineVarLenEntryQueue_MoveEntries(
     pw_InlineVarLenEntryQueue_Handle from, pw_InlineVarLenEntryQueue_Handle to);
 
-/// @copydoc GenericVarLenEntryQueue::MoveEntriesOverwrite
+/// @copydoc pw::containers::internal::MoveVarLenEntriesOverwrite
 void pw_InlineVarLenEntryQueue_MoveEntriesOverwrite(
     pw_InlineVarLenEntryQueue_Handle from, pw_InlineVarLenEntryQueue_Handle to);
 

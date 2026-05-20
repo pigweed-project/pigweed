@@ -179,7 +179,7 @@ class Uuid {
  private:
   /// Create a Uuid from a string
   ///
-  /// @param string string containing uuid
+  /// @param uuid_str string containing uuid
   constexpr explicit Uuid(std::string_view uuid_str) : uuid_() {
     size_t out_hex_index = 2 * uuid_.size();  // UUID is stored little-endian.
     for (size_t i = 0; i < kStringSize; i++) {

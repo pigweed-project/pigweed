@@ -29,7 +29,7 @@ namespace pw::trace {
 
 /// A decoded trace event.
 ///
-/// See also @ref pw_trace_tokenized_TraceEvent.
+/// See also `pw_trace_tokenized_TraceEvent`.
 struct DecodedEvent {
   EventType type = EventType::PW_TRACE_EVENT_TYPE_INVALID;
   // TODO: https://pwbug.dev/448489618 - The 'flag' field in the token is

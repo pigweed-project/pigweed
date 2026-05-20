@@ -138,7 +138,7 @@ class MultiBufChunks {
     return mbv2_.has_value() ? &(**mbv2_) : nullptr;
   }
 
-  /// @copydoc pw::multibuf::v1::MultiBufChunks::size
+  /// @copydoc ::v1::MultiBufChunks::size
   constexpr size_t size() const;
 
   Chunk& front() {
@@ -466,7 +466,7 @@ class MultiBuf final : private MultiBufChunks {
   size_t offset_ = 0;
 };
 
-/// @}
+/// @endsubmodule
 
 // Template and constexpr method implementations.
 

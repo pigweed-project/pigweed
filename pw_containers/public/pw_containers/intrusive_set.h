@@ -118,7 +118,7 @@ class IntrusiveSet {
   /// SFINAE is used to disambiguate between this constructor and the one that
   /// takes an initializer list.
   ///
-  /// @param    Compare   Function with the signature `bool(T, T)` that is
+  /// @param    compare   Function with the signature `bool(T, T)` that is
   ///                     used to order items.
   template <typename Comparator>
   constexpr explicit IntrusiveSet(Comparator compare)

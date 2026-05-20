@@ -51,21 +51,21 @@ class UnorderedBucket final
   ~UnorderedBucket() { Base::Clear(); }
 
  private:
-  /// @copydoc `BucketBase::Add`
+  /// @copydoc internal::BucketBase::Add
   void DoAdd(BlockType& block);
 
-  /// @copydoc `BucketBase::RemoveAny`
+  /// @copydoc internal::BucketBase::RemoveAny
   BlockType* DoRemoveAny();
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::Remove
   bool DoRemove(BlockType& block) {
     return items_.remove(Base::GetItemFrom(block));
   }
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
   IntrusiveForwardList<UnorderedItem> items_;

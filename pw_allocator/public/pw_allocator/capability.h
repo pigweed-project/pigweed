@@ -102,6 +102,6 @@ inline constexpr Capabilities operator^(const Capabilities& lhs,
   return Capabilities(lhs.get() ^ rhs.get());
 }
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator

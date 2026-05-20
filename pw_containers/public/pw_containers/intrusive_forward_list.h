@@ -197,17 +197,17 @@ class IntrusiveForwardList {
 
   // Capacity
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::empty
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::empty
   [[nodiscard]] bool empty() const noexcept { return list().empty(); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::max_size
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::max_size
   constexpr size_type max_size() const noexcept {
     return std::numeric_limits<difference_type>::max();
   }
 
   // Modifiers
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::clear
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::clear
   void clear() { list().clear(); }
 
   /// Inserts the given `item` after the given position, `pos`.
@@ -238,10 +238,10 @@ class IntrusiveForwardList {
     return iterator(list().erase_after(first.item_, last.item_));
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::push_front
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::push_front
   void push_front(T& item) { list().push_front(item); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::pop_front
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::pop_front
   void pop_front() { list().pop_front(); }
 
   /// Exchanges this list's items with the `other` list's items.
@@ -253,7 +253,7 @@ class IntrusiveForwardList {
 
   // Operations
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::merge
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::merge
   ///
   /// This overload uses `T::operator<`.
   void merge(IntrusiveForwardList<T>& other) {
@@ -263,7 +263,7 @@ class IntrusiveForwardList {
                  });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::merge
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::merge
   template <typename Compare>
   void merge(IntrusiveForwardList<T>& other, Compare comp) {
     list().merge(other.list(), [comp](const ItemBase& a, const ItemBase& b) {
@@ -292,10 +292,10 @@ class IntrusiveForwardList {
     list().splice_after(pos.item_, other.list(), first.item_, last.item_);
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::remove
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::remove
   bool remove(const T& item) { return list().remove(item); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::remove_if
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::remove_if
   template <typename UnaryPredicate>
   size_type remove_if(UnaryPredicate pred) {
     return list().remove_if([pred](const ItemBase& item) -> bool {
@@ -303,10 +303,10 @@ class IntrusiveForwardList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::reverse
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::reverse
   void reverse() { list().reverse(); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::unique
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::unique
   ///
   /// This overload uses `T::operator==`.
   size_type unique() {
@@ -315,7 +315,7 @@ class IntrusiveForwardList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::unique
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::unique
   template <typename BinaryPredicate>
   size_type unique(BinaryPredicate pred) {
     return list().unique([pred](const ItemBase& a, const ItemBase& b) {
@@ -323,7 +323,7 @@ class IntrusiveForwardList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::sort
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::sort
   ///
   /// This overload uses `T::operator<`.
   void sort() {
@@ -332,7 +332,7 @@ class IntrusiveForwardList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::sort
+  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::sort
   template <typename Compare>
   void sort(Compare comp) {
     list().sort([comp](const ItemBase& a, const ItemBase& b) {
@@ -398,3 +398,6 @@ class IntrusiveForwardListItem final
 };
 
 }  // namespace pw
+
+/// @}
+/// @endmodule

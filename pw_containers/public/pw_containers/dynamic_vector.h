@@ -244,7 +244,6 @@ class DynamicVector {
   ///
   /// @param count The number of elements to assign.
   /// @param value The value to copy.
-  /// @return `true` if successful, `false` otherwise.
   void assign(size_type count, const value_type& value) {
     deque_.assign(count, value);
   }
@@ -256,7 +255,6 @@ class DynamicVector {
   /// Assigns new contents to the vector from an initializer list.
   ///
   /// @param init The initializer list to copy elements from.
-  /// @return `true` if successful, `false` otherwise.
   void assign(std::initializer_list<T> init) { deque_.assign(init); }
 
   [[nodiscard]] bool try_assign(std::initializer_list<T> init) {

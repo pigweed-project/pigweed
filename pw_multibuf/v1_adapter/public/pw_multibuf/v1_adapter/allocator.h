@@ -42,40 +42,40 @@ class MultiBufAllocator {
 
   virtual ~MultiBufAllocator() {}
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::Allocate
+  /// @copydoc ::v1::MultiBufAllocator::Allocate
   std::optional<MultiBuf> Allocate(size_t min_size) {
     return DoAllocate(min_size, min_size, /*contiguous=*/false);
   }
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::Allocate
+  /// @copydoc ::v1::MultiBufAllocator::Allocate
   std::optional<MultiBuf> Allocate(size_t min_size, size_t desired_size) {
     return DoAllocate(min_size, desired_size, /*contiguous=*/false);
   }
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::AllocateContiguous
+  /// @copydoc ::v1::MultiBufAllocator::AllocateContiguous
   std::optional<MultiBuf> AllocateContiguous(size_t min_size) {
     return DoAllocate(min_size, min_size, /*contiguous=*/true);
   }
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::AllocateContiguous
+  /// @copydoc ::v1::MultiBufAllocator::AllocateContiguous
   std::optional<MultiBuf> AllocateContiguous(size_t min_size,
                                              size_t desired_size) {
     return DoAllocate(min_size, desired_size, /*contiguous=*/true);
   }
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::GetBackingCapacity
+  /// @copydoc ::v1::MultiBufAllocator::GetBackingCapacity
   std::optional<size_t> GetBackingCapacity() { return DoGetBackingCapacity(); }
 
  private:
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::Allocate
+  /// @copydoc ::v1::MultiBufAllocator::Allocate
   virtual std::optional<MultiBuf> DoAllocate(size_t min_size,
                                              size_t desired_size,
                                              bool contiguous) = 0;
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::GetBackingCapacity
+  /// @copydoc ::v1::MultiBufAllocator::GetBackingCapacity
   virtual std::optional<size_t> DoGetBackingCapacity() = 0;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter

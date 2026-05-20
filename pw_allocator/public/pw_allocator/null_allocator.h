@@ -36,10 +36,10 @@ class NullAllocator final : public AbstractAllocator {
 
  protected:
   /// @copydoc Allocator::Allocate
-  void* DoAllocate(Layout) override { return nullptr; }
+  void* DoAllocate([[maybe_unused]] Layout layout) override { return nullptr; }
 
   /// @copydoc Allocator::Deallocate
-  void DoDeallocate(void*) override {}
+  void DoDeallocate([[maybe_unused]] void* ptr) override {}
 };
 
 /// Returns a reference to a NullAllocator singleton.

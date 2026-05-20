@@ -45,7 +45,7 @@ class TraceBuffer {
   /// the provided destination span. The number of bytes read is written
   /// to bytes_read
   ///
-  /// @returns @Status
+  /// @returns
   /// * @OK: Data successfully read from the ring buffer.
   /// * @OUT_OF_RANGE: No entries in ring buffer to pop.
   /// * @RESOURCE_EXHAUSTED - Destination data span was smaller number of bytes
@@ -56,7 +56,7 @@ class TraceBuffer {
   /// Pop and discard the oldest stored data chunk of data from the ring
   /// buffer.
   ///
-  /// @returns @Status
+  /// @returns
   /// * @OK: Data successfully read from the ring buffer.
   /// * @OUT_OF_RANGE: No entries in ring buffer to pop.
   constexpr Status PopFront();

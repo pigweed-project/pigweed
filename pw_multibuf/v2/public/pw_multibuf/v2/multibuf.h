@@ -1023,9 +1023,7 @@ class BasicMultiBuf {
   }
 };
 
-/// @}
-
-/// @}
+/// @endsubmodule
 
 namespace internal {
 
@@ -1112,18 +1110,18 @@ class GenericMultiBuf final
 
   // Accessors.
 
-  /// @copydoc BasicMultiBuf<>::get_allocator
+  /// @copydoc ::BasicMultiBuf<>::get_allocator
   constexpr Allocator& get_allocator() const { return deque_.get_allocator(); }
 
-  /// @copydoc BasicMultiBuf<>::empty
+  /// @copydoc ::BasicMultiBuf<>::empty
   constexpr bool empty() const { return deque_.empty(); }
 
-  /// @copydoc BasicMultiBuf<>::at_capacity
+  /// @copydoc ::BasicMultiBuf<>::at_capacity
   constexpr bool at_capacity() const {
     return deque_.size() == deque_.capacity();
   }
 
-  /// @copydoc BasicMultiBuf<>::size
+  /// @copydoc ::BasicMultiBuf<>::size
   constexpr size_t size() const {
     return static_cast<size_t>(cend() - cbegin());
   }
@@ -1144,30 +1142,98 @@ class GenericMultiBuf final
 
   // Mutators.
 
-  /// @copydoc BasicMultiBuf<>::TryReserveChunks
+  /// @copydoc ::BasicMultiBuf<>::TryReserveChunks
   [[nodiscard]] bool TryReserveChunks(size_t num_chunks) {
     return TryReserveLayers(num_layers(), num_chunks);
   }
 
-  /// @copydoc BasicMultiBuf<>::TryReserveForInsert
-  /// @{
+  /// Attempts to modify this object to be able to insert the given MultiBuf,
+  /// and returns whether successful.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    mb      MultiBuf to be inserted.
   [[nodiscard]] bool TryReserveForInsert(const_iterator pos,
                                          const GenericMultiBuf& mb);
-  [[nodiscard]] bool TryReserveForInsert(const_iterator pos);
-  /// @}
 
-  /// @copydoc BasicMultiBuf<>::Insert
-  /// @{
+  /// Attempts to modify this object to be able to insert a chunk at the given
+  /// position, and returns whether successful.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  [[nodiscard]] bool TryReserveForInsert(const_iterator pos);
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    mb      MultiBuf to be inserted.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos, GenericMultiBuf&& mb);
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    bytes   Unowned memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos, ConstByteSpan bytes);
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    owned   Owned memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos, UniquePtr<const std::byte[]>&& owned);
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    owned   Owned memory to be inserted.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos, UniquePtr<std::byte[]>&& owned) {
     return Insert(pos, UniquePtr<const std::byte[]>(std::move(owned)));
   }
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    shared  Shared memory to be inserted.
+  /// @param    offset  Used to denote a subspan of `shared`.
+  /// @param    length  Used to denote a subspan of `shared`.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos,
                   const SharedPtr<const std::byte[]>& shared,
                   size_t offset,
                   size_t length);
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    shared  Shared memory to be inserted.
+  /// @param    offset  Used to denote a subspan of `shared`.
+  /// @param    length  Used to denote a subspan of `shared`.
+  /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos,
                   const SharedPtr<std::byte[]>& shared,
                   size_t offset,
@@ -1175,72 +1241,72 @@ class GenericMultiBuf final
     return Insert(pos, SharedPtr<const std::byte[]>(shared), offset, length);
   }
 
-  /// @copydoc BasicMultiBuf<>::IsRemovable
+  /// @copydoc ::BasicMultiBuf<>::IsRemovable
   [[nodiscard]] constexpr bool IsRemovable(const_iterator pos,
                                            size_t size) const {
     return pos != cend() && size != 0 &&
            size <= static_cast<size_t>(cend() - pos);
   }
 
-  /// @copydoc BasicMultiBuf<>::Remove
+  /// @copydoc ::BasicMultiBuf<>::Remove
   Result<GenericMultiBuf> Remove(const_iterator pos, size_t size);
 
-  /// @copydoc BasicMultiBuf<>::PopFrontFragment
+  /// @copydoc ::BasicMultiBuf<>::PopFrontFragment
   Result<GenericMultiBuf> PopFrontFragment();
 
-  /// @copydoc BasicMultiBuf<>::Discard
+  /// @copydoc ::BasicMultiBuf<>::Discard
   Result<const_iterator> Discard(const_iterator pos, size_t size);
 
-  /// @copydoc BasicMultiBuf<>::IsReleasable
+  /// @copydoc ::BasicMultiBuf<>::IsReleasable
   [[nodiscard]] bool IsReleasable(const_iterator pos) const;
 
-  /// @copydoc BasicMultiBuf<>::Release
+  /// @copydoc ::BasicMultiBuf<>::Release
   UniquePtr<std::byte[]> Release(const_iterator pos);
 
-  /// @copydoc BasicMultiBuf<>::IsShareable
+  /// @copydoc ::BasicMultiBuf<>::IsShareable
   [[nodiscard]] bool IsShareable(const_iterator pos) const;
 
-  /// @copydoc BasicMultiBuf<>::Share
+  /// @copydoc ::BasicMultiBuf<>::Share
   SharedPtr<std::byte[]> Share(const_iterator pos) const;
 
-  /// @copydoc BasicMultiBuf<>::CopyTo
+  /// @copydoc ::BasicMultiBuf<>::CopyTo
   size_t CopyTo(ByteSpan dst, size_t offset) const {
     return CopyToImpl(dst, offset, 0);
   }
 
-  /// @copydoc BasicMultiBuf<>::CopyFrom
+  /// @copydoc ::BasicMultiBuf<>::CopyFrom
   size_t CopyFrom(ConstByteSpan src, size_t offset);
 
-  /// @copydoc BasicMultiBuf<>::Get
+  /// @copydoc ::BasicMultiBuf<>::Get
   ConstByteSpan Get(ByteSpan copy, size_t offset) const;
 
-  /// @copydoc BasicMultiBuf<>::Clear
+  /// @copydoc ::BasicMultiBuf<>::Clear
   void Clear();
 
-  /// @copydoc BasicMultiBuf<>::ShrinkToFit
+  /// @copydoc ::BasicMultiBuf<>::ShrinkToFit
   void ShrinkToFit();
 
   // Layerable methods.
 
-  /// @copydoc BasicMultiBuf<>::NumFragments
+  /// @copydoc ::BasicMultiBuf<>::NumFragments
   size_type NumFragments() const;
 
-  /// @copydoc BasicMultiBuf<>::TryReserveLayers
+  /// @copydoc ::BasicMultiBuf<>::TryReserveLayers
   [[nodiscard]] bool TryReserveLayers(size_t num_layers, size_t num_chunks = 1);
 
-  /// @copydoc BasicMultiBuf<>::AddLayer
+  /// @copydoc ::BasicMultiBuf<>::AddLayer
   [[nodiscard]] bool AddLayer(size_t offset, size_t length = dynamic_extent);
 
-  /// @copydoc BasicMultiBuf<>::SealTopLayer
+  /// @copydoc ::BasicMultiBuf<>::SealTopLayer
   void SealTopLayer();
 
-  /// @copydoc BasicMultiBuf<>::UnsealTopLayer
+  /// @copydoc ::BasicMultiBuf<>::UnsealTopLayer
   void UnsealTopLayer();
 
-  /// @copydoc BasicMultiBuf<>::TruncateTopLayer
+  /// @copydoc ::BasicMultiBuf<>::TruncateTopLayer
   void TruncateTopLayer(size_t length);
 
-  /// @copydoc BasicMultiBuf<>::PopLayer
+  /// @copydoc ::BasicMultiBuf<>::PopLayer
   void PopLayer();
 
   // Implementation methods.

@@ -41,7 +41,8 @@ fuzzer::Domain<Request> ArbitraryRequest(size_t max_size);
 ///
 /// See https://github.com/google/fuzztest/blob/main/doc/domains-reference.md
 ///
-/// @param  max_size  Size of the largest allocation that can be requested.
+/// @tparam kMaxRequests  Maximum number of requests in the sequence.
+/// @tparam kMaxSize      Size of the largest allocation that can be requested.
 template <size_t kMaxRequests, size_t kMaxSize>
 auto ArbitraryRequests() {
   return fuzzer::VectorOf<kMaxRequests>(ArbitraryRequest(kMaxSize));
@@ -102,6 +103,6 @@ inline auto DefaultArbitraryRequests() {
   return pw::allocator::test::ArbitraryRequests<kMaxRequests, kMaxSize>();
 }
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator::test

@@ -27,7 +27,7 @@
 /// within the C++ standard library, based on pw_containers. The following
 /// standard library sets of functions are covered within this file:
 ///
-///   * <algorithm> functions
+///   * `<algorithm>` functions
 ///
 /// The standard library functions operate on iterator ranges; the functions
 /// within this API operate on containers, though many return iterator ranges.
@@ -50,35 +50,35 @@ namespace pw {
 /// @{
 namespace containers {
 
-/// Container-based version of the <algorithm> `std::all_of()` function to
+/// Container-based version of the `<algorithm>` `std::all_of()` function to
 /// test if all elements within a container satisfy a condition.
 template <typename C, typename Pred>
 bool AllOf(const C& c, Pred&& pred) {
   return std::all_of(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::any_of()` function to
+/// Container-based version of the `<algorithm>` `std::any_of()` function to
 /// test if any element in a container fulfills a condition.
 template <typename C, typename Pred>
 bool AnyOf(const C& c, Pred&& pred) {
   return std::any_of(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::none_of()` function to
+/// Container-based version of the `<algorithm>` `std::none_of()` function to
 /// test if no elements in a container fulfill a condition.
 template <typename C, typename Pred>
 bool NoneOf(const C& c, Pred&& pred) {
   return std::none_of(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::for_each()` function to
+/// Container-based version of the `<algorithm>` `std::for_each()` function to
 /// apply a function to a container's elements.
 template <typename C, typename Function>
 std::decay_t<Function> ForEach(C&& c, Function&& f) {
   return std::for_each(std::begin(c), std::end(c), std::forward<Function>(f));
 }
 
-/// Container-based version of the <algorithm> `std::find()` function to find
+/// Container-based version of the `<algorithm>` `std::find()` function to find
 /// the first element containing the passed value within a container value.
 template <typename C, typename T>
 internal_algorithm::ContainerIter<C> Find(C& c, T&& value) {
@@ -92,21 +92,21 @@ bool Contains(const C& c, T&& value) {
   return Find(c, std::forward<T>(value)) != std::end(c);
 }
 
-/// Container-based version of the <algorithm> `std::find_if()` function to find
-/// the first element in a container matching the given condition.
+/// Container-based version of the `<algorithm>` `std::find_if()` function to
+/// find the first element in a container matching the given condition.
 template <typename C, typename Pred>
 internal_algorithm::ContainerIter<C> FindIf(C& c, Pred&& pred) {
   return std::find_if(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::find_if_not()` function to
-/// find the first element in a container not matching the given condition.
+/// Container-based version of the `<algorithm>` `std::find_if_not()` function
+/// to find the first element in a container not matching the given condition.
 template <typename C, typename Pred>
 internal_algorithm::ContainerIter<C> FindIfNot(C& c, Pred&& pred) {
   return std::find_if_not(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::find_end()` function to
+/// Container-based version of the `<algorithm>` `std::find_end()` function to
 /// find the last subsequence within a container.
 template <typename Sequence1, typename Sequence2>
 internal_algorithm::ContainerIter<Sequence1> FindEnd(Sequence1& sequence,
@@ -130,7 +130,7 @@ internal_algorithm::ContainerIter<Sequence1> FindEnd(Sequence1& sequence,
                        std::forward<BinaryPredicate>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::find_first_of()` function
+/// Container-based version of the `<algorithm>` `std::find_first_of()` function
 /// to find the first element within the container that is also within the
 /// options container.
 template <typename C1, typename C2>
@@ -154,7 +154,7 @@ internal_algorithm::ContainerIter<C1> FindFirstOf(C1& container,
                             std::forward<BinaryPredicate>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::adjacent_find()` function
+/// Container-based version of the `<algorithm>` `std::adjacent_find()` function
 /// to find equal adjacent elements within a container.
 template <typename Sequence>
 internal_algorithm::ContainerIter<Sequence> AdjacentFind(Sequence& sequence) {
@@ -171,15 +171,15 @@ internal_algorithm::ContainerIter<Sequence> AdjacentFind(
                             std::forward<BinaryPredicate>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::count()` function to count
-/// values that match within a container.
+/// Container-based version of the `<algorithm>` `std::count()` function to
+/// count values that match within a container.
 template <typename C, typename T>
 internal_algorithm::ContainerDifferenceType<const C> Count(const C& c,
                                                            T&& value) {
   return std::count(std::begin(c), std::end(c), std::forward<T>(value));
 }
 
-/// Container-based version of the <algorithm> `std::count_if()` function to
+/// Container-based version of the `<algorithm>` `std::count_if()` function to
 /// count values matching a condition within a container.
 template <typename C, typename Pred>
 internal_algorithm::ContainerDifferenceType<const C> CountIf(const C& c,
@@ -187,7 +187,7 @@ internal_algorithm::ContainerDifferenceType<const C> CountIf(const C& c,
   return std::count_if(std::begin(c), std::end(c), std::forward<Pred>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::mismatch()` function to
+/// Container-based version of the `<algorithm>` `std::mismatch()` function to
 /// return the first element where two ordered containers differ. Applies `==`
 /// to the first N elements of `c1` and `c2`, where N = min(size(c1), size(c2)).
 template <typename C1, typename C2>
@@ -228,7 +228,7 @@ internal_algorithm::ContainerIterPairType<C1, C2> Mismatch(
   return std::make_pair(first1, first2);
 }
 
-/// Container-based version of the <algorithm> `std::equal()` function to
+/// Container-based version of the `<algorithm>` `std::equal()` function to
 /// test whether two containers are equal.
 ///
 /// @note The semantics of `Equal()` are slightly different than those of
@@ -261,8 +261,8 @@ bool Equal(const C1& c1, const C2& c2, BinaryPredicate&& pred) {
                      std::forward<BinaryPredicate>(pred)));
 }
 
-/// Container-based version of the <algorithm> `std::is_permutation()` function
-/// to test whether a container is a permutation of another.`
+/// Container-based version of the `<algorithm>` `std::is_permutation()`
+/// function to test whether a container is a permutation of another.`
 template <typename C1, typename C2>
 bool IsPermutation(const C1& c1, const C2& c2) {
   using std::begin;
@@ -284,7 +284,7 @@ bool IsPermutation(const C1& c1, const C2& c2, BinaryPredicate&& pred) {
                              std::forward<BinaryPredicate>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::search()` function to
+/// Container-based version of the `<algorithm>` `std::search()` function to
 /// search a container for a subsequence.
 template <typename Sequence1, typename Sequence2>
 internal_algorithm::ContainerIter<Sequence1> Search(Sequence1& sequence,
@@ -308,7 +308,7 @@ internal_algorithm::ContainerIter<Sequence1> Search(Sequence1& sequence,
                      std::forward<BinaryPredicate>(pred));
 }
 
-/// Container-based version of the <algorithm> `std::search_n()` function to
+/// Container-based version of the `<algorithm>` `std::search_n()` function to
 /// search a container for the first sequence of N elements.
 template <typename Sequence, typename Size, typename T>
 internal_algorithm::ContainerIter<Sequence> SearchN(Sequence& sequence,

@@ -37,7 +37,7 @@ class AsyncCore;  // Forward declaration for function declaration.
 /// and a RPC server.
 system::AsyncCore& System();
 
-/// @copydoc pw::system::StartAndClobberTheStack
+/// @copydoc ::system::StartAndClobberTheStack
 /// @deprecated Use pw::system::StartAndClobberTheStack() for more visibility
 /// at the call site. The two functions are otherwise the same.
 [[deprecated("Use pw::system::StartAndClobberTheStack()")]] [[noreturn]] void

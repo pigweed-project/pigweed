@@ -146,7 +146,7 @@ class FixedQueue final : private containers::StorageBaseFor<T, kInlineCapacity>,
 
 /// Specialization of `FixedQueue` using an external static or dynamically
 /// allocated, but fixed, storage buffer. Equivalent to
-/// @ref FixedDeque<T, containers::kExternalStorage, SizeType> "FixedDeque<T>".
+/// @ref FixedDeque.
 template <typename T, typename S>
 class FixedQueue<T, containers::kExternalStorage, S> final
     : public Queue<T, S> {

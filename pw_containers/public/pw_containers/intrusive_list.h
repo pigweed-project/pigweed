@@ -203,10 +203,13 @@ class IntrusiveList {
 
   // Capacity
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::empty
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::empty
   [[nodiscard]] bool empty() const noexcept { return list_.empty(); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::size
+  /// Returns the number of elements in the intrusive list.
+  ///
+  /// This operation is O(n) because it iterates through the list to count the
+  /// elements.
   size_t size() const {
     return static_cast<size_type>(std::distance(begin(), end()));
   }
@@ -216,7 +219,7 @@ class IntrusiveList {
 
   // Modifiers
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::clear
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::clear
   void clear() { list_.clear(); }
 
   /// Inserts the given `item` before the given position, `pos`.
@@ -251,16 +254,16 @@ class IntrusiveList {
     return iterator(list_.erase_after((--first).item_, last.item_));
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::push_back
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::push_back
   void push_back(T& item) { list_.push_back(item); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::pop_back
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::pop_back
   void pop_back() { list_.pop_back(); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::push_front
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::push_front
   void push_front(T& item) { list_.push_front(item); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::pop_front
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::pop_front
   void pop_front() { list_.pop_front(); }
 
   /// Exchanges this list's items with the `other` list's items.
@@ -270,7 +273,7 @@ class IntrusiveList {
 
   // Operations
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::merge
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::merge
   ///
   /// This overload uses `T::operator<`.
   void merge(IntrusiveList<T>& other) {
@@ -279,7 +282,7 @@ class IntrusiveList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::merge
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::merge
   template <typename Compare>
   void merge(IntrusiveList<T>& other, Compare comp) {
     list_.merge(other.list_, [comp](const ItemBase& a, const ItemBase& b) {
@@ -308,10 +311,10 @@ class IntrusiveList {
     list_.splice_after((--pos).item_, other.list_, (--first).item_, last.item_);
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::remove
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::remove
   bool remove(const T& item) { return list_.remove(item); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::remove_if
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::remove_if
   template <typename UnaryPredicate>
   size_type remove_if(UnaryPredicate pred) {
     return list_.remove_if([pred](const ItemBase& item) -> bool {
@@ -319,10 +322,10 @@ class IntrusiveList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::reverse
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::reverse
   void reverse() { std::reverse(begin(), end()); }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::unique
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::unique
   ///
   /// This overload uses `T::operator==`.
   size_type unique() {
@@ -331,7 +334,7 @@ class IntrusiveList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::unique
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::unique
   template <typename BinaryPredicate>
   size_type unique(BinaryPredicate pred) {
     return list_.unique([pred](const ItemBase& a, const ItemBase& b) -> bool {
@@ -339,7 +342,7 @@ class IntrusiveList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::sort
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::sort
   ///
   /// This overload uses `T::operator<`.
   void sort() {
@@ -348,7 +351,7 @@ class IntrusiveList {
     });
   }
 
-  /// @copydoc internal::GenericIntrusiveList<ItemBase>::sort
+  /// @copydoc ::internal::GenericIntrusiveList<ItemBase>::sort
   template <typename Compare>
   void sort(Compare comp) {
     list_.sort([comp](const ItemBase& a, const ItemBase& b) -> bool {
@@ -383,14 +386,14 @@ class IntrusiveList {
   [[deprecated("See b/362348318 for background and workarounds.")]]
 #endif  // PW_CONTAINERS_INTRUSIVE_LIST_SUPPRESS_DEPRECATION_WARNING
 
-/// @copydoc pw::containers::future::IntrusiveForwardList
+/// @copydoc containers::future::IntrusiveForwardList
 template <typename T>
 using IntrusiveList PW_CONTAINERS_INTRUSIVE_LIST_DEPRECATED =
     containers::internal::LegacyIntrusiveList<T>;
 
 #else  // PW_CONTAINERS_USE_LEGACY_INTRUSIVE_LIST
 
-/// @copydoc pw::containers::future::IntrusiveList
+/// @copydoc containers::future::IntrusiveList
 template <typename T>
 using IntrusiveList = containers::future::IntrusiveList<T>;
 

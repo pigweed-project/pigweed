@@ -25,6 +25,8 @@
 
 namespace pw::multibuf::v1_adapter {
 
+/// @submodule{pw_multibuf,v1_adapter}
+
 /// A `MultiBufAllocator` that provides its best-fit allocator and mimics
 /// `v1::SimpleAllocator`.
 ///
@@ -82,10 +84,10 @@ class SimpleAllocator : public MultiBufAllocator {
    private:
     using iterator = DynamicVector<Region>::iterator;
 
-    /// @copydoc ChunkAllocator::AllocateRegion
+    /// @copydoc internal::ChunkAllocator::AllocateRegion
     Region* AllocateRegion(size_t min_size, size_t desired_size) override;
 
-    /// @copydoc ChunkAllocator::TryDeallocateRegion
+    /// @copydoc internal::ChunkAllocator::TryDeallocateRegion
     size_t TryDeallocateRegion(void* ptr) override;
 
     /// Splits the region given by `iter` at the given `offeset`, and returns
@@ -105,13 +107,13 @@ class SimpleAllocator : public MultiBufAllocator {
     DynamicVector<Region> subregions_;
   };
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::Allocate
+  /// @copydoc ::v1::MultiBufAllocator::Allocate
   std::optional<MultiBuf> DoAllocate(size_t min_size,
                                      size_t desired_size,
                                      bool contiguous) override
       PW_LOCKS_EXCLUDED(mutex_);
 
-  /// @copydoc pw::multibuf::v1::MultiBufAllocator::GetBackingCapacity
+  /// @copydoc ::v1::MultiBufAllocator::GetBackingCapacity
   std::optional<size_t> DoGetBackingCapacity() override
       PW_LOCKS_EXCLUDED(mutex_);
 
@@ -120,6 +122,6 @@ class SimpleAllocator : public MultiBufAllocator {
   SimpleChunkAllocator chunk_allocator_ PW_GUARDED_BY(mutex_);
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter

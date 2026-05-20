@@ -77,3 +77,5 @@ namespace pw::perf_test {
 void RunAllTests(EventHandler& handler);
 
 }  // namespace pw::perf_test
+
+/// @endmodule

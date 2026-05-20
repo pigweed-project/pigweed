@@ -190,8 +190,6 @@ class RemoteService2 {
   /// returns it in the reply.
   /// @param handle The descriptor handle to read.
   /// @param options Options that apply to the read.
-  /// @param result_sender Set to a result containing the value of the
-  /// descriptor on success.
   /// @retval kInvalidHandle `handle` is invalid.
   /// @retval kInvalidParameters `options` is invalid.
   /// @retval kReadNotPermitted

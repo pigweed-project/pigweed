@@ -22,13 +22,7 @@
 
 #include "pw_polyfill/static_assert.h"
 
-/// @module{pw_preprocessor}
-
-/// @defgroup pw_preprocessor_internal Internal
-/// @{
-
-/// @defgroup pw_preprocessor_compiler Compiler
-/// @{
+/// @submodule{pw_preprocessor,compiler}
 
 /// Marks a struct or class as packed.
 ///
@@ -280,7 +274,6 @@
 #define PW_VA_OPT_SUPPORTED() 0  // Don't bother checking on old compilers.
 #else
 #define PW_VA_OPT_SUPPORTED() _PW_VA_OPT_SUPPORTED()
-/// @}
 
 #define _PW_VA_OPT_SUPPORTED(...) _PW_VA_OPT_SUPPORTED_##__VA_OPT__()
 #define _PW_VA_OPT_SUPPORTED_ 1
@@ -296,3 +289,5 @@
 #else
 #define PW_NO_UNIQUE_ADDRESS
 #endif  // PW_NO_UNIQUE_ADDRESS
+
+/// @endsubmodule

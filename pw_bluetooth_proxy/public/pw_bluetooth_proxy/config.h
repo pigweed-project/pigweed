@@ -34,3 +34,5 @@
 /// which point the client provided pw::Allocator will be used instead.
 #define PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE 1024
 #endif  // PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE
+
+/// @endmodule

@@ -151,7 +151,9 @@ class Deallocator {
   /// @code{.cpp}
   /// class MyAllocator : public Allocator {
   ///  private:
-  ///   Layout MyGetLayoutFromPointer(const void* ptr) { /* ... */ }
+  ///   Layout MyGetLayoutFromPointer(const void* ptr) {
+  ///     …
+  ///   }
   ///
   ///   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) override {
   ///     PW_MODIFY_DIAGNOSTICS_PUSH();
@@ -307,7 +309,7 @@ class Deallocator {
   const Capabilities capabilities_;
 };
 
-/// @}
+/// @endsubmodule
 
 // Template and inline method implementations.
 

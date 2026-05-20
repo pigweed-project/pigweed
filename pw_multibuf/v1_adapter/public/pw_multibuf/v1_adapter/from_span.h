@@ -31,6 +31,6 @@ std::optional<v1_adapter::MultiBuf> FromSpan(
     ByteSpan region,
     Function<void(ByteSpan)>&& deleter);
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter

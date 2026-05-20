@@ -260,6 +260,7 @@ filegroup(
     srcs = [
         "public/pw_multibuf/v1_adapter/allocator.h",
         "public/pw_multibuf/v1_adapter/chunk.h",
+        "public/pw_multibuf/v1_adapter/internal/chunk_allocator.h",
         "public/pw_multibuf/v1_adapter/multibuf.h",
         "public/pw_multibuf/v1_adapter/simple_allocator.h",
         "public/pw_multibuf/v1_adapter/single_chunk_region_tracker.h",

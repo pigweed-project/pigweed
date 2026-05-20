@@ -85,7 +85,7 @@ class TypedPool : public ChunkPool {
   /// This method is similar to ``Allocator::New``, except that it is specific
   /// to the pool's object type.
   ///
-  /// @param[in]  args...     Arguments passed to the object constructor.
+  /// @param[in]  args        Arguments passed to the object constructor.
   template <int&... kExplicitGuard, typename... Args>
   T* New(Args&&... args);
 
@@ -94,7 +94,7 @@ class TypedPool : public ChunkPool {
   /// This method is similar to ``Allocator::MakeUnique``, except that it is
   /// specific to the pool's object type.
   ///
-  /// @param[in]  args...     Arguments passed to the object constructor.
+  /// @param[in]  args        Arguments passed to the object constructor.
   template <int&... kExplicitGuard, typename... Args>
   UniquePtr<T> MakeUnique(Args&&... args) {
     return UniquePtr<T>(New(std::forward<Args>(args)...), *this);

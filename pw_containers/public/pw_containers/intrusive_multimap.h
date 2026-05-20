@@ -123,8 +123,6 @@ class IntrusiveMultiMap {
   ///
   /// @param  compare   Function with the signature `bool(Key, Key)` that is
   ///                   used to order items.
-  /// @param  get_key   Function with signature `Key(const T&)` that returns the
-  ///                   value that items are sorted on.
   template <typename Comparator>
   constexpr explicit IntrusiveMultiMap(Comparator compare)
       : IntrusiveMultiMap(std::move(compare),

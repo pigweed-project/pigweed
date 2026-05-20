@@ -953,7 +953,10 @@ class [[nodiscard]] ReceiveFuture final
 
  private:
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<T>;
+  /// @endcond
   friend Receiver<T>;
   template <typename, typename>
   friend class CallbackTask;
@@ -1007,7 +1010,10 @@ class [[nodiscard]] ReceiveFuture<void> final
 
  private:
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<void>;
+  /// @endcond
   friend Receiver<void>;
   template <typename, typename>
   friend class CallbackTask;
@@ -1228,7 +1234,10 @@ class [[nodiscard]] SendFuture final
 
  private:
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<T>;
+  /// @endcond
   friend Sender<T>;
 
   SendFuture(internal::Channel<T>* channel, const T& value)
@@ -1289,7 +1298,10 @@ class [[nodiscard]] SendFuture<void> final
 
  private:
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<void>;
+  /// @endcond
   friend Sender<void>;
 
   explicit SendFuture(internal::Channel<void>* channel)
@@ -1371,7 +1383,10 @@ class SendReservation {
   }
 
  private:
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<T>;
+  /// @endcond
   friend class ReserveSendFuture<T>;
   friend class Sender<T>;
 
@@ -1409,7 +1424,10 @@ class [[nodiscard]] ReserveSendFuture final
 
  private:
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend internal::Channel<T>;
+  /// @endcond
   friend Sender<T>;
 
   explicit ReserveSendFuture(internal::Channel<T>* channel)

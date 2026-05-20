@@ -41,4 +41,6 @@ class Notification {
   BroadcastValueProvider<void> provider_;
 };
 
+/// @endsubmodule
+
 }  // namespace pw::async2

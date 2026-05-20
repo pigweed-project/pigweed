@@ -152,7 +152,7 @@ class BlockAllocatorTest : public ::testing::Test {
   std::array<void*, kNumPtrs> ptrs_;
 };
 
-/// @}
+/// @endsubmodule
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test fixture template method implementations.

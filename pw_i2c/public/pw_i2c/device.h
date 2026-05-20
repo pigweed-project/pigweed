@@ -44,8 +44,6 @@ class Device {
   /// @param[in] initiator A reference to a `pw::i2c::Initiator` instance.
   ///
   /// @param[in] device_address The address of the I2C device.
-  ///
-  /// @returns A `pw::i2c::Device` instance.
   constexpr Device(Initiator& initiator, Address device_address)
       : initiator_(initiator), device_address_(device_address) {}
 

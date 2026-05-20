@@ -60,6 +60,9 @@ class VarLenEntryQueueIterator {
   constexpr VarLenEntryQueueIterator& operator=(
       const VarLenEntryQueueIterator&) = default;
 
+  /// Advances the iterator to the next entry in the queue.
+  ///
+  /// @returns A reference to this iterator after advancing.
   constexpr VarLenEntryQueueIterator& operator++() {
     size_type entry_size = ReadVarLenEntryEncodedSize(data_, offset_);
     IncrementWithWrap(
@@ -74,6 +77,9 @@ class VarLenEntryQueueIterator {
     return previous_value;
   }
 
+  /// Returns the entry pointed to by the iterator.
+  ///
+  /// @returns The entry.
   constexpr reference operator*() const {
     LoadEntry();
     return entry_;
@@ -83,6 +89,9 @@ class VarLenEntryQueueIterator {
     return &entry_;
   }
 
+  /// Compares two iterators for equality.
+  ///
+  /// @returns true if they refer to the same position in the same queue.
   [[nodiscard]] friend constexpr bool operator==(
       const VarLenEntryQueueIterator& lhs,
       const VarLenEntryQueueIterator& rhs) {
@@ -166,13 +175,13 @@ struct pw_InlineVarLenEntryQueue_ConstIterator {
   uint32_t internal_offset;
 };
 
-/// @copydoc VarLenEntryQueueIterator::operator++
+/// @copydoc pw::containers::internal::VarLenEntryQueueIterator::operator++
 void pw_InlineVarLenEntryQueue_Iterator_Advance(
     pw_InlineVarLenEntryQueue_Iterator* iterator);
 void pw_InlineVarLenEntryQueue_ConstIterator_Advance(
     pw_InlineVarLenEntryQueue_ConstIterator* iterator);
 
-/// @copydoc VarLenEntryQueueIterator::operator==
+/// @copydoc pw::containers::internal::VarLenEntryQueueIterator::operator==
 bool pw_InlineVarLenEntryQueue_Iterator_Equal(
     const pw_InlineVarLenEntryQueue_Iterator* lhs,
     const pw_InlineVarLenEntryQueue_Iterator* rhs);
@@ -180,7 +189,7 @@ bool pw_InlineVarLenEntryQueue_ConstIterator_Equal(
     const pw_InlineVarLenEntryQueue_ConstIterator* lhs,
     const pw_InlineVarLenEntryQueue_ConstIterator* rhs);
 
-/// @copydoc VarLenEntryQueueIterator::operator*
+/// @copydoc pw::containers::internal::VarLenEntryQueueIterator::operator*
 pw_InlineVarLenEntryQueue_Entry pw_InlineVarLenEntryQueue_GetEntry(
     const pw_InlineVarLenEntryQueue_Iterator* iterator);
 pw_InlineVarLenEntryQueue_ConstEntry pw_InlineVarLenEntryQueue_GetConstEntry(

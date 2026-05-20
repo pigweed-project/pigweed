@@ -85,3 +85,5 @@ static_assert(((PW_MALLOC_MIN_BUCKET_SIZE - 1) & PW_MALLOC_MIN_BUCKET_SIZE) ==
 /// Defaults to 2KiB.
 #define PW_MALLOC_DUAL_FIRST_FIT_THRESHOLD 2048
 #endif  // PW_MALLOC_DUAL_FIRST_FIT_THRESHOLD
+
+/// @endmodule

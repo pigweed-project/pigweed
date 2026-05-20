@@ -43,8 +43,8 @@ void InitSystemAllocator(ByteSpan heap);
 ///
 /// @param  heap_low_addr   The inclusive start of the region of memory to use
 ///                         as a heap. This MUST be less than `heap_high_addr`.
-/// @param  heap            The exclusive end of the region of memory to use as
-///                         a heap. This MUST be less than `heap_high_addr`.
+/// @param  heap_high_addr  The exclusive end of the region of memory to use as
+///                         a heap. This MUST be greater than `heap_low_addr`.
 void InitSystemAllocator(void* heap_low_addr, void* heap_high_addr);
 
 /// Sets the memory to be used by the system allocator.

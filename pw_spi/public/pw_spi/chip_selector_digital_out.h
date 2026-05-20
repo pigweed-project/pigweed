@@ -30,8 +30,8 @@ class DigitalOutChipSelector : public ChipSelector {
 
   /// Set a `pw::digital_io::DigitalOut` state as a chip select signal.
   ///
-  /// @param[active] true Set the DigitalOut to `kActive`
-  /// @param[active] false Set the DigitalOut to `kInactive`
+  /// @param active  `true` to set the DigitalOut to `kActive`, `false` to set
+  ///                the DigitalOut to `kInactive`.
   inline Status SetActive(bool active) override {
     return cs_pin_.SetState(active ? pw::digital_io::State::kActive
                                    : pw::digital_io::State::kInactive);

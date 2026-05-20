@@ -113,10 +113,10 @@ constexpr uint64_t MaxValueInBytes(size_t bytes) {
 
 /// @brief Computes the size of an integer when encoded as a varint.
 ///
-/// @param integer The integer whose encoded size is to be computed. `integer`
+/// @param value The integer whose encoded size is to be computed. `value`
 /// can be signed or unsigned.
 ///
-/// @returns The size of `integer` when encoded as a varint.
+/// @returns The size of `value` when encoded as a varint.
 template <typename T,
           typename = std::enable_if_t<std::is_integral<T>::value ||
                                       std::is_convertible<T, uint64_t>::value>>

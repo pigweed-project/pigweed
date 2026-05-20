@@ -210,6 +210,10 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_string/format.h",
+        "public/pw_string/internal/config.h",
+        "public/pw_string/internal/length.h",
+        "public/pw_string/internal/string_common_functions.inc",
+        "public/pw_string/internal/string_impl.h",
         "public/pw_string/string.h",
         "public/pw_string/string_builder.h",
         "public/pw_string/utf_codecs.h",

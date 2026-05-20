@@ -63,19 +63,19 @@ class SequencedBucket final
   void set_threshold(size_t threshold) { threshold_ = threshold; }
 
  private:
-  /// @copydoc `BucketBase::Add`
+  /// @copydoc internal::BucketBase::Add
   void DoAdd(BlockType& block);
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 
-  /// @copydoc `BucketBase::RemoveAny`
+  /// @copydoc internal::BucketBase::RemoveAny
   BlockType* DoRemoveAny();
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::Remove
   bool DoRemove(BlockType& block);
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
   containers::future::IntrusiveList<SequencedItem> items_;

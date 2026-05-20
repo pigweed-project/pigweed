@@ -401,6 +401,10 @@
 /// [Home](../../pw_json/docs.html)
 /// @endmaindocs
 
+/// @defgroup pw_json_builder_api Builder API
+/// @ingroup pw_json
+/// @brief Serialize JSON into fixed-size buffers.
+
 /// @defgroup pw_kvs pw_kvs
 /// @brief Lightweight, persistent key-value store.
 /// @maindocs
@@ -543,6 +547,14 @@
 /// @maindocs
 /// [Home](../../pw_preprocessor/docs.html)
 /// @endmaindocs
+
+/// @defgroup pw_preprocessor_compiler Compiler
+/// @ingroup pw_preprocessor_internal
+/// @brief Public compiler attributes and macros.
+
+/// @defgroup pw_preprocessor_internal Internal
+/// @ingroup pw_preprocessor
+/// @brief Internal implementation details.
 
 /// @defgroup pw_protobuf pw_protobuf
 /// @brief Expressive interface for encoding and decoding protocol buffers

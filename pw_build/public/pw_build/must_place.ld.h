@@ -199,3 +199,5 @@
 /// change to PW_MUST_PLACE
 #define PW_MUST_NOT_PLACE(isection)  \
     _PW_MUST_NOT_PLACE(isection, __section_not_place_, __COUNTER__)
+
+/// @endmodule

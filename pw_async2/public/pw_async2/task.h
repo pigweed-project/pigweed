@@ -34,6 +34,8 @@ namespace pw::async2 {
 
 class Dispatcher;
 
+/// @endsubmodule
+
 /// @submodule{pw_async2,context}
 
 /// Asynchronous context for functions running on a `Dispatcher`.
@@ -77,6 +79,10 @@ class Context {
 
   constexpr Context() = default;
 };
+
+/// @endsubmodule
+
+/// @submodule{pw_async2,tasks}
 
 /// Result from `Dispatcher::RunTask`. Reports the state of the task when it
 /// finished running.
@@ -337,6 +343,10 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   // debug logs.
   log::Token name_;
 };
+
+/// @endsubmodule
+
+/// @submodule{pw_async2,context}
 
 inline PendingType Context::Unschedule() {
   static_cast<Task&>(*this).waker_requirement_ = Task::kNoWakerNeeded;

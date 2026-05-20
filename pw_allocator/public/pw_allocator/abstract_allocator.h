@@ -33,9 +33,12 @@ class AbstractAllocator : public pw::Allocator {
       : pw::Allocator(capabilities) {}
 
   /// @copydoc Allocator::Resize
-  bool DoResize(void*, size_t) override { return false; }
+  bool DoResize([[maybe_unused]] void* ptr,
+                [[maybe_unused]] size_t new_size) override {
+    return false;
+  }
 
-  /// @copydoc Deallocator::GetAllocated
+  /// @copydoc Allocator::GetAllocated
   size_t DoGetAllocated() const override { return size_t(-1); }
 
   /// @copydoc Allocator::MeasureFragmentation

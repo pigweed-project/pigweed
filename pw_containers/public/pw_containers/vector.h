@@ -519,6 +519,7 @@ bool operator>=(const Vector<T, kLhsSize>& lhs,
 
 // Function implementations
 
+/// @cond
 template <typename T>
 void Vector<T, vector_impl::kGeneric>::clear() noexcept {
   if constexpr (!std::is_trivially_destructible_v<value_type>) {
@@ -702,5 +703,6 @@ void Vector<T, vector_impl::kGeneric>::ShiftEntriesForInsert(
   // Move the remaining items to existing slots.
   std::move_backward(first, last, end());
 }
+/// @endcond
 
 }  // namespace pw

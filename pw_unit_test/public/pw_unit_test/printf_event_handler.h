@@ -44,8 +44,7 @@ class PrintfEventHandler final : public GoogleTestStyleEventHandler {
   }
 };
 
+/// @endsubmodule
 }  // namespace unit_test
-
-/// @}
 
 }  // namespace pw

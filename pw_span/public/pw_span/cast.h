@@ -110,5 +110,6 @@ internal::SpanFromBytes<const ResultT, kSourceExtentBytes> span_cast(
 }
 
 /// @}
+/// @endmodule
 
 }  // namespace pw

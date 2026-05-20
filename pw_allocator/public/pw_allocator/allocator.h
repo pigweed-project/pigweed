@@ -75,7 +75,6 @@ class Allocator : public Deallocator {
   /// pointer.
   ///
   /// @tparam     T            A bounded array type, like `int[3]`.
-  /// @param[in]  count        Number of objects to allocate.
   template <typename T,
             int&... kExplicitGuard,
             typename ElementType = std::remove_extent_t<T>,
@@ -189,10 +188,10 @@ class Allocator : public Deallocator {
                                                   std::forward<Args>(args)...);
   }
 
-  /// Constructs an array of `size` objects, and wraps it in a `UniquePtr`
+  /// Constructs an array of `size` objects, and wraps it in a `SharedPtr`.
   ///
   /// The returned value may contain null if allocating memory for the object
-  /// fails. Callers must check for null before using the `UniquePtr`.
+  /// fails. Callers must check for null before using the `SharedPtr`.
   ///
   /// @tparam     T            An array type.
   /// @param[in]  size         Number of objects to allocate.
@@ -215,15 +214,12 @@ class Allocator : public Deallocator {
     return SharedPtr<T>::Create(this, size, alignment);
   }
 
-  /// Constructs an `alignment`-byte aligned array of `size` objects, and wraps
-  /// it in a `SharedPtr`
+  /// Constructs an array of objects and wraps it in a `SharedPtr`.
   ///
   /// The returned value may contain null if allocating memory for the object
   /// fails. Callers must check for null before using the `SharedPtr`.
   ///
-  /// @tparam     T            An array type.
-  /// @param[in]  size         Number of objects to allocate.
-  /// @param[in]  alignment    Object alignment.
+  /// @tparam     T            A bounded array type, like `int[3]`.
   template <typename T, std::enable_if_t<is_bounded_array_v<T>, int> = 0>
   [[nodiscard]] SharedPtr<T> MakeShared() {
     return SharedPtr<T>::Create(

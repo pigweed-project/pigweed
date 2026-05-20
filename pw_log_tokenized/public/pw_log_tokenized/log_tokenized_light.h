@@ -46,6 +46,8 @@
         PW_TOKENIZER_ARG_TYPES(__VA_ARGS__) PW_COMMA_ARGS(__VA_ARGS__)); \
   } while (0)
 
+/// @endmodule
+
 /// @cond
 PW_EXTERN_C_START
 

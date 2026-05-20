@@ -64,18 +64,18 @@ class SortedBucketBase : public BucketBase<Derived, BlockType, SortedItem> {
 
   const IntrusiveForwardList<SortedItem>& items() const { return items_; }
 
-  /// @copydoc `BucketBase::Add`
+  /// @copydoc ::BucketBase::Add
   void DoAdd(BlockType& block);
 
-  /// @copydoc `BucketBase::RemoveAny`
+  /// @copydoc ::BucketBase::RemoveAny
   BlockType* DoRemoveAny();
 
-  /// @copydoc `BucketBase::Remove`
+  /// @copydoc ::BucketBase::Remove
   bool DoRemove(BlockType& block) {
     return items_.remove(Base::GetItemFrom(block));
   }
 
-  /// @copydoc `Bucket::Remove`
+  /// @copydoc ::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
  private:
@@ -100,7 +100,10 @@ class ForwardSortedBucket final
       internal::SortedBucketBase<ForwardSortedBucket<BlockType>, BlockType>;
 
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend typename Base::Base;
+  /// @endcond
 
   /// Returns a lambda that tests if the block storing an item has an inner size
   /// larger than the given `inner_size`.
@@ -108,7 +111,7 @@ class ForwardSortedBucket final
   /// This lambda can be used with `std::find_if` and `FindPrevIf`.
   static constexpr auto MakeAddPredicate(size_t inner_size);
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc ::internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 };
 
@@ -128,7 +131,10 @@ class ReverseSortedBucket final
       internal::SortedBucketBase<ReverseSortedBucket<BlockType>, BlockType>;
 
   friend Base;
+  // Suppress `no uniquely matching class member found` Doxygen error
+  /// @cond
   friend typename Base::Base;
+  /// @endcond
 
   /// Returns a lambda that tests if the block storing an item has an inner size
   /// smaller than the given `inner_size`.
@@ -136,7 +142,7 @@ class ReverseSortedBucket final
   /// This lambda can be used with `std::find_if` and `FindPrevIf`.
   static constexpr auto MakeAddPredicate(size_t inner_size);
 
-  /// @copydoc `BucketBase::FindLargest`
+  /// @copydoc ::internal::BucketBase::FindLargest
   const BlockType* DoFindLargest() const;
 };
 

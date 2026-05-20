@@ -51,3 +51,5 @@ namespace pw::kvs {
 inline constexpr size_t kMaxFlashAlignment = PW_KVS_MAX_FLASH_ALIGNMENT;
 
 }  // namespace pw::kvs
+
+/// @endmodule

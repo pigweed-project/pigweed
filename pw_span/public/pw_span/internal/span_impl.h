@@ -416,7 +416,7 @@ class span : public pw_span_internal::ExtentStorage<Extent> {
   T* data_;
 };
 
-/// @}
+/// @endmodule
 
 // span<T, Extent>::extent can not be declared inline prior to C++17, hence this
 // definition is required.

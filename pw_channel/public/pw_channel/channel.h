@@ -95,7 +95,7 @@ class Channel {
   async2::PollResult<multibuf::MultiBuf> PendRead(async2::Context& cx);
   /// @copydoc AnyChannel::PendReadyToWrite
   async2::Poll<Status> PendReadyToWrite(pw::async2::Context& cx);
-  /// @copydoc AnyChannel::PendAllocateBuffer
+  /// @copydoc AnyChannel::PendAllocateWriteBuffer
   async2::PollOptional<multibuf::MultiBuf> PendAllocateWriteBuffer(
       async2::Context& cx, size_t min_bytes);
   /// @copydoc AnyChannel::StageWrite

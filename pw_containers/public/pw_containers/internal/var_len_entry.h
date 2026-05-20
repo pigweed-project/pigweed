@@ -91,6 +91,9 @@ class VarLenEntry {
 
   constexpr size_t size() const { return data1_.size() + data2_.size(); }
 
+  /// Returns a reference to the byte at the specified index.
+  ///
+  /// @param index  The index of the byte to return.
   constexpr reference at(size_t index) const;
 
   constexpr reference operator[](size_t index) const { return at(index); }
@@ -246,7 +249,7 @@ struct pw_InlineVarLenEntryQueue_ConstEntry {
   uint32_t size_2;
 };
 
-/// @copydoc VarLenEntry::copy
+/// @copydoc pw::containers::internal::VarLenEntry::copy
 uint32_t pw_InlineVarLenEntryQueue_Entry_Copy(
     const pw_InlineVarLenEntryQueue_Entry* entry, void* dest, uint32_t count);
 uint32_t pw_InlineVarLenEntryQueue_ConstEntry_Copy(
@@ -254,7 +257,7 @@ uint32_t pw_InlineVarLenEntryQueue_ConstEntry_Copy(
     void* dest,
     uint32_t count);
 
-/// @copydoc VarLenEntry::at
+/// @copydoc pw::containers::internal::VarLenEntry::at
 uint8_t pw_InlineVarLenEntryQueue_Entry_At(
     const pw_InlineVarLenEntryQueue_Entry* entry, size_t index);
 uint8_t pw_InlineVarLenEntryQueue_ConstEntry_At(

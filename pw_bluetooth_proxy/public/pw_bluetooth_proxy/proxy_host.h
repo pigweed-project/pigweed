@@ -48,10 +48,7 @@ namespace pw::bluetooth::proxy {
 class ProxyHost : public L2capChannelManagerInterface {
  public:
   /// Creates an `ProxyHost` that will process HCI packets.
-  /// @param[in] send_to_host_fn Callback that will be called when proxy wants
-  /// to send HCI packet towards the host.
-  /// @param[in] send_to_controller_fn - Callback that will be called when
-  /// proxy wants to send HCI packet towards the controller.
+  ///
   /// Constructor for dynamic credit sharing mode.
   ///
   /// In this mode, both host and proxy share the single pool of available

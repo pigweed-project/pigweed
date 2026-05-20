@@ -59,7 +59,7 @@ class SingleChunkRegionTracker : private internal::SingleChunkAllocator {
 
   ByteSpan Region() const { return Base::buffer(); }
 
-  /// @copydoc pw::multibuf::v1::SingleChunkRegionTracker::GetChunk
+  /// @copydoc ::v1::SingleChunkRegionTracker::GetChunk
   std::optional<OwnedChunk> GetChunk(size_t size) {
     return Base::AllocateChunk(size);
   }
@@ -73,6 +73,6 @@ class SingleChunkRegionTracker : private internal::SingleChunkAllocator {
   allocator::FirstFitAllocator<allocator::TinyBlock> metadata_allocator_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::multibuf::v1_adapter

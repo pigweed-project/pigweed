@@ -40,3 +40,5 @@
 #else
 #define _PW_SPAN_ASSERT(arg)
 #endif  // PW_SPAN_ENABLE_ASSERTS
+
+/// @endmodule

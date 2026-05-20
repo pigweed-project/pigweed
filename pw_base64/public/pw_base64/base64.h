@@ -94,8 +94,8 @@ constexpr size_t EncodedSize(size_t binary_size_bytes) {
 ///
 /// @param[in] binary The binary data to encode.
 ///
-/// @param[out] The output buffer where the encoded data is placed. Exactly
-/// `EncodedSize(binary_size_bytes)` bytes is written.
+/// @param[out] output The output buffer where the encoded data is placed.
+/// Exactly `EncodedSize(binary_size_bytes)` bytes is written.
 ///
 /// @note Encodes to the standard alphabet with `+` and `/` for characters `62`
 /// and `63`.

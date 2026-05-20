@@ -207,11 +207,10 @@ class BlockAllocator : public internal::GenericBlockAllocator {
   /// Selects a free block to allocate from.
   ///
   /// This method represents the allocator-specific strategy of choosing which
-  /// block should be used to satisfy allocation requests. If the returned
-  /// result indicates success, `block` will be replaced by the chosen block.
+  /// block should be used to satisfy allocation requests.
   ///
-  /// @param  block   Used to return the chosen block.
   /// @param  layout  Same as ``Allocator::Allocate``.
+  /// @returns The chosen block, or an error status.
   virtual BlockResult<BlockType> ChooseBlock(Layout layout) = 0;
 
   /// Indicates that a block will no longer be free.
@@ -220,7 +219,7 @@ class BlockAllocator : public internal::GenericBlockAllocator {
   /// bookkeeeping.
   ///
   /// @param  block   The block being freed.
-  virtual void ReserveBlock(BlockType&) {}
+  virtual void ReserveBlock([[maybe_unused]] BlockType& block) {}
 
   /// Indicates that a block is now free.
   ///
@@ -228,7 +227,7 @@ class BlockAllocator : public internal::GenericBlockAllocator {
   /// bookkeeeping.
   ///
   /// @param  block   The block being freed.
-  virtual void RecycleBlock(BlockType&) {}
+  virtual void RecycleBlock([[maybe_unused]] BlockType& block) {}
 
   /// Completes any pending deallocations.
   ///

@@ -30,4 +30,6 @@ void pw_log_tokenized_HandleLog(uint32_t metadata,
                                 const uint8_t encoded_message[],
                                 size_t size_bytes);
 
+/// @endmodule
+
 PW_EXTERN_C_END

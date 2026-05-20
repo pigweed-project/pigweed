@@ -195,6 +195,6 @@ class TestHarness {
   std::optional<size_t> max_size_;
 };
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::allocator::test
