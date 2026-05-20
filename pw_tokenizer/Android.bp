@@ -16,28 +16,57 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-cc_library_static {
-    name: "pw_detokenizer",
-    defaults: [
-        "pw_android_common_backends",
-        "pw_android_common_target_support",
-    ],
-    export_include_dirs: ["public"],
-    header_libs: [
-        "fuchsia_sdk_lib_stdcompat",
-        "pw_assert",
-        "pw_log",
-    ],
-    export_header_lib_headers: [
-        "fuchsia_sdk_lib_stdcompat",
-        "pw_assert",
-        "pw_log",
-    ],
+filegroup {
+    name: "pw_detokenizer_src_files",
     srcs: [
         "base64.cc",
         "csv.cc",
         "decode.cc",
         "detokenize.cc",
+    ],
+}
+
+cc_library_headers {
+    name: "pw_detokenizer_include_dirs",
+    export_include_dirs: ["public"],
+    host_supported: true,
+    vendor_available: true,
+}
+
+// Downstream projects can configure the pw_tokenizer by defining their own
+// static library and changing the flags found under
+// pw_tokenizer/public/pw_tokenizer/config.h
+//
+// cc_library_static {
+//    name: "custom_detokenizer",
+//    defaults: ["pw_detokenizer_defaults"],
+//    cflags: [
+//        "-DPW_TOKENIZER_NESTED_PREFIX_STR=\"`\"",
+//    ],
+//    include_dirs: [
+//        "external/pigweed",
+//    ],
+// }
+cc_defaults {
+    name: "pw_detokenizer_defaults",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    header_libs: [
+        "fuchsia_sdk_lib_stdcompat",
+        "pw_assert",
+        "pw_log",
+        "pw_detokenizer_include_dirs",
+    ],
+    export_header_lib_headers: [
+        "fuchsia_sdk_lib_stdcompat",
+        "pw_assert",
+        "pw_log",
+        "pw_detokenizer_include_dirs",
+    ],
+    srcs: [
+        ":pw_detokenizer_src_files",
     ],
     static_libs: [
         "pw_base64",
@@ -63,6 +92,13 @@ cc_library_static {
         "pw_span",
         "pw_stream",
         "pw_varint",
+    ],
+}
+
+cc_library_static {
+    name: "pw_detokenizer",
+    defaults: [
+        "pw_detokenizer_defaults",
     ],
 }
 
