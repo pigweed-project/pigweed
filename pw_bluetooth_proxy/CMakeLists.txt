@@ -40,6 +40,8 @@ pw_add_library(pw_bluetooth_proxy.config INTERFACE
     public/pw_bluetooth_proxy/config.h
   PUBLIC_INCLUDES
     public
+  PUBLIC_DEPS
+    ${pw_bluetooth_proxy_CONFIG}
 )
 
 pw_add_library(pw_bluetooth_proxy.system_clock_backend INTERFACE
