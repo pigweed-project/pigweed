@@ -13,6 +13,7 @@
 # the License.
 
 load("@pigweed//pw_toolchain/rust:no_stdlibs.bzl", "build_with_core_only", "build_with_no_stdlibs")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_stdlib_filegroup")
 
 exports_files(glob(["**"]))
@@ -39,6 +40,19 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+cargo_build_script(
+    name = "compiler_builtins_build_script",
+    srcs = glob(["lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/*.rs"]),
+    crate_features = [
+        "unmangled-names",
+    ],
+    crate_root = "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/build.rs",
+    data = glob([
+        "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/**/*",
+    ]),
+    edition = "2024",
+)
+
 rust_library(
     name = "compiler_builtins",
     srcs = glob([
@@ -60,6 +74,9 @@ rust_library(
     ],
     crate_root = "lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/src/lib.rs",
     edition = "2024",
+    deps = [
+        ":compiler_builtins_build_script",
+    ],
 )
 
 rust_library(
