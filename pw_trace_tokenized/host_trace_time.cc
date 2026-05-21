@@ -29,7 +29,7 @@ auto start = steady_clock::now();
 // Define trace time as a counter for tests.
 PW_TRACE_TIME_TYPE pw_trace_GetTraceTime() {
   auto delta = steady_clock::now() - start;
-  return floor<microseconds>(delta).count();
+  return static_cast<PW_TRACE_TIME_TYPE>(floor<microseconds>(delta).count());
 }
 
 // Microsecond time source

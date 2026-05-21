@@ -112,7 +112,7 @@ TEST(TokenizedTrace, Overflow) {
   pw::trace::TraceBuffer* buf = pw::trace::GetBuffer();
 
   // Add samples until entry count stops increasing.
-  uint32_t last_entry_count = 0;
+  size_t last_entry_count = 0;
   size_t count = 0;
   while (buf->EntryCount() == 0 || buf->EntryCount() > last_entry_count) {
     last_entry_count = buf->EntryCount();

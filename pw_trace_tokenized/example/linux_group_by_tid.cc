@@ -46,7 +46,7 @@ pw_trace_TraceEventReturnFlags TraceEventCallback(
   if ((event->event_type == PW_TRACE_EVENT_TYPE_INSTANT) ||
       (event->event_type == PW_TRACE_EVENT_TYPE_DURATION_START) ||
       (event->event_type == PW_TRACE_EVENT_TYPE_DURATION_END)) {
-    event->trace_id = syscall(__NR_gettid);
+    event->trace_id = static_cast<uint32_t>(syscall(__NR_gettid));
   }
   return PW_TRACE_EVENT_RETURN_FLAGS_NONE;
 }
@@ -65,7 +65,7 @@ void ExampleTask(void* /*arg*/) {
 }
 
 void RunThreadedTraceSampleApp() {
-  std::srand(std::time(nullptr));
+  std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
   // Start threads to show parallel processing.
   int num_threads = 5;

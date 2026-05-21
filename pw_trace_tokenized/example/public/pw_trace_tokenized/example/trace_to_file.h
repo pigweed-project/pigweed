@@ -55,7 +55,8 @@ class TraceToFile {
                                 const void* bytes,
                                 size_t size) {
     std::ofstream* out = reinterpret_cast<std::ofstream*>(user_data);
-    out->write(reinterpret_cast<const char*>(bytes), size);
+    out->write(reinterpret_cast<const char*>(bytes),
+               static_cast<std::streamsize>(size));
   }
 
   static void TraceSinkEndBlock(void* user_data) {
