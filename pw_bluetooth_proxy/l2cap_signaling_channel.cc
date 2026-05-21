@@ -31,43 +31,21 @@
 
 namespace pw::bluetooth::proxy {
 
-namespace {
-uint16_t ChannelIdForTransport(AclTransportType transport) {
-  if (transport == AclTransportType::kBrEdr) {
-    return cpp23::to_underlying(emboss::L2capFixedCid::ACL_U_SIGNALING);
-  }
-  return cpp23::to_underlying(emboss::L2capFixedCid::LE_U_SIGNALING);
-}
-}  // namespace
-
 L2capSignalingChannel::L2capSignalingChannel(
     L2capChannelManager& l2cap_channel_manager)
     : l2cap_channel_manager_(l2cap_channel_manager) {}
 
 Status L2capSignalingChannel::Init(uint16_t connection_handle,
                                    AclTransportType transport) {
-  Allocator& allocator = l2cap_channel_manager_.impl().allocator();
-
-  UniquePtr<L2capChannel> channel = allocator.MakeUnique<L2capChannel>(
-      l2cap_channel_manager_,
-      /*rx_multibuf_allocator=*/nullptr,
-      connection_handle,
-      transport,
-      /*local_cid=*/ChannelIdForTransport(transport),
-      /*remote_cid=*/ChannelIdForTransport(transport),
-      /*event_fn=*/nullptr);
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
-  PW_TRY(channel->InitBasic(
-      pw::bind_member<&L2capSignalingChannel::HandlePayloadFromController>(
-          this),
-      pw::bind_member<&L2capSignalingChannel::HandlePayloadFromHost>(this)));
-  // Registers channel with L2capChannelManager.
-  PW_TRY(channel->Start());
-  // The channel has been registered with L2capChannelManager, which now
-  // owns it.
-  channel_ = channel.Release();
+  PW_TRY_ASSIGN(
+      channel_,
+      l2cap_channel_manager_.CreateSignalingChannel(
+          connection_handle,
+          transport,
+          pw::bind_member<&L2capSignalingChannel::HandlePayloadFromController>(
+              this),
+          pw::bind_member<&L2capSignalingChannel::HandlePayloadFromHost>(
+              this)));
   return OkStatus();
 }
 

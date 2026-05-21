@@ -28,6 +28,10 @@ namespace pw::bluetooth::proxy {
 L2capChannelManager::L2capChannelManager(AclDataChannel& acl_data_channel,
                                          Allocator& allocator)
     : acl_data_channel_(acl_data_channel),
+      channels_by_local_cid_(allocator),
+      channels_by_remote_cid_(allocator),
+      stale_(allocator),
+      allocator_(allocator),
       impl_(*this, allocator),
       logical_links_(allocator) {}
 
@@ -117,8 +121,7 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
       break;
     }
 
-    L2capChannel::Handle& handle = *lrd_channel_;
-    L2capChannel& channel = *handle;
+    L2capChannel& channel = lrd_channel_->second;
     manager_.Advance(lrd_channel_);
 
     // If we can reserve a send credit for the channel's type, attempt to
@@ -128,7 +131,7 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     // If we have made it all the way around without dequeueing a packet or
     // receiving an notification of new credits, we are done for now.
     std::optional<AclDataChannel::SendCredit> credit =
-        manager_.acl_data_channel_.ReserveSendCredit(handle->transport());
+        manager_.acl_data_channel_.ReserveSendCredit(channel.transport());
     if (!credit.has_value()) {
       if (lrd_channel_ == round_robin_terminus_) {
         break;
@@ -150,9 +153,8 @@ async2::Poll<> L2capChannelManagerImpl::DoDrainChannelQueuesIfNewTx(
     // If no packet was returned and the channel is stale, no further packets
     // will be received and the channel can be removed.
     if (channel.IsStale()) {
-      manager_.DeregisterChannelLocked(channel);
-      channel.Close();
-      allocator_.Delete(&channel);
+      auto node = manager_.DeregisterChannelLocked(channel);
+      node->mapped().Close();
     }
 
     // Done if we have made it all the way around.

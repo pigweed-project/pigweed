@@ -49,6 +49,9 @@ class GenericL2capChannelImpl {
   /// @copydoc GenericL2capChannel::Init
   Status Init() PW_LOCKS_EXCLUDED(L2capChannelImpl::mutex());
 
+  /// @copydoc GenericL2capChannel::Start
+  void Start() PW_LOCKS_EXCLUDED(L2capChannelImpl::mutex());
+
   /// @copydoc GenericL2capChannel::Write
   StatusWithMultiBuf Write(multibuf::MultiBuf&& payload)
       PW_LOCKS_EXCLUDED(L2capChannelImpl::mutex());

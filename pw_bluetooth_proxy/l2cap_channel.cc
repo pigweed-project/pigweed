@@ -48,24 +48,22 @@ L2capChannel::~L2capChannel() {
   // Block until there are no outstanding borrows. Callers (namely
   // L2capChannelManager) MUST NOT be holding the `static_mutex_` when this
   // destructor is called.
-  std::unique_lock lock(impl_.mutex_);
-  impl_.BlockWhileBorrowed(lock);
+  {
+    std::unique_lock lock(impl_.mutex_);
+    impl_.BlockWhileBorrowed(lock);
 
-  PW_LOG_INFO(
-      "btproxy: L2capChannel dtor - transport_: %u, connection_handle_ : "
-      "%#x, local_cid_: %#x, remote_cid_: %#x, state_: %u",
-      cpp23::to_underlying(transport_),
-      connection_handle(),
-      local_cid(),
-      remote_cid(),
-      cpp23::to_underlying(state_));
+    PW_LOG_INFO(
+        "btproxy: L2capChannel dtor - transport_: %u, connection_handle_ : "
+        "%#x, local_cid_: %#x, remote_cid_: %#x, state_: %u",
+        cpp23::to_underlying(transport_),
+        connection_handle(),
+        local_cid(),
+        remote_cid(),
+        cpp23::to_underlying(state_));
 
-  // Most channels are explicitly closed, with the exception of the signaling
-  // channels. Ensure those that are not are deregistered before destruction.
-  if (state_ != State::kClosed) {
-    l2cap_channel_manager_.DeregisterChannel(*this);
+    impl_.ClearQueue();
   }
-  impl_.ClearQueue();
+  impl_.Close();
 }
 
 void L2capChannel::Stop() {
@@ -199,8 +197,9 @@ L2capChannel::L2capChannel(L2capChannelManager& l2cap_channel_manager,
                            ChannelEventCallback&& event_fn)
     : l2cap_channel_manager_(l2cap_channel_manager),
       transport_(transport),
-      local_handle_(*this, MakeKey(connection_handle, local_cid)),
-      remote_handle_(*this, MakeKey(connection_handle, remote_cid)),
+      connection_handle_(connection_handle),
+      local_cid_(local_cid),
+      remote_cid_(remote_cid),
       event_fn_(std::move(event_fn)),
       rx_multibuf_allocator_(rx_multibuf_allocator),
       impl_(*this) {
@@ -214,7 +213,7 @@ L2capChannel::L2capChannel(L2capChannelManager& l2cap_channel_manager,
   PW_CHECK(AreValidParameters(connection_handle, local_cid, remote_cid));
 }
 
-Status L2capChannel::Start() {
+void L2capChannel::Start() {
   PW_LOG_INFO(
       "btproxy: L2capChannel initialized: "
       "transport_: %u, connection_handle_ : %u, "
@@ -223,11 +222,8 @@ Status L2capChannel::Start() {
       connection_handle(),
       local_cid(),
       remote_cid());
-  PW_TRY(l2cap_channel_manager_.RegisterChannel(*this));
-
   std::lock_guard lock(impl_.mutex_);
   state_ = State::kRunning;
-  return OkStatus();
 }
 
 bool L2capChannel::AreValidParameters(uint16_t connection_handle,

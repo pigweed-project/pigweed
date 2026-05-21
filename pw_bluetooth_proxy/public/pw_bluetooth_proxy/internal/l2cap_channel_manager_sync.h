@@ -24,7 +24,7 @@
 #include "pw_allocator/best_fit.h"
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
-#include "pw_containers/intrusive_map.h"
+#include "pw_containers/dynamic_map.h"
 #include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
 
@@ -44,8 +44,10 @@ class L2capChannelManagerImpl;
 /// modification.
 class L2capChannelManagerImpl {
  public:
-  using L2capChannelMap = IntrusiveMap<uint32_t, L2capChannel::Handle>;
+  using L2capChannelMap = DynamicMap<uint32_t, L2capChannel>;
+  using L2capChannelRefMap = DynamicMap<uint32_t, L2capChannel*>;
   using L2capChannelIterator = L2capChannelMap::iterator;
+  using L2capChannelNode = L2capChannelMap::node_type;
 
   L2capChannelManagerImpl(L2capChannelManager& manager, Allocator& allocator);
   ~L2capChannelManagerImpl();

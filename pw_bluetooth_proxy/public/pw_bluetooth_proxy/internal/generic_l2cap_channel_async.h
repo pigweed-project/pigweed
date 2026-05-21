@@ -50,6 +50,9 @@ class GenericL2capChannelImpl {
   /// @copydoc GenericL2capChannel::Init
   Status Init();
 
+  /// @copydoc GenericL2capChannel::Start
+  void Start();
+
   /// @copydoc GenericL2capChannel::Write
   StatusWithMultiBuf Write(multibuf::MultiBuf&& payload);
 

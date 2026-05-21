@@ -30,6 +30,10 @@ namespace pw::bluetooth::proxy {
 L2capChannelManager::L2capChannelManager(AclDataChannel& acl_data_channel,
                                          Allocator& allocator)
     : acl_data_channel_(acl_data_channel),
+      channels_by_local_cid_(allocator),
+      channels_by_remote_cid_(allocator),
+      stale_(allocator),
+      allocator_(allocator),
       impl_(*this, allocator),
       logical_links_(allocator) {}
 
@@ -111,7 +115,7 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
 
       // If we have a credit for the channel's type, attempt to dequeue
       // packet from channel.
-      channel = &**lrd_channel_;
+      channel = &lrd_channel_->second;
       std::optional<AclDataChannel::SendCredit>& current_credit =
           credits.at(channel->transport());
       if (current_credit.has_value()) {
@@ -144,9 +148,8 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
 
       if (channel->impl_.IsStale() && channel->impl_.PayloadQueueEmpty()) {
         // The channel is stale and its queue is empty, so it can be removed.
-        manager_.DeregisterChannelLocked(*channel);
-        channel->Close();
-        allocator_.Delete(channel);
+        auto node = manager_.DeregisterChannelLocked(*channel);
+        node->mapped().Close();
         continue;
       }
 

@@ -30,7 +30,6 @@
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/internal/mutex.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
-#include "pw_containers/intrusive_map.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
@@ -129,8 +128,8 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   // Initialize the channel for GATT Notify mode. Must be called before `Start`.
   Status InitGattNotify(uint16_t attribute_handle);
 
-  // Registers the channel. Must be called for channel to be active.
-  Status Start();
+  // Activates the channel. Must be called for channel to be active.
+  void Start();
 
   //-------------
   //  Status (internal public)
@@ -230,13 +229,11 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   State state() const;
 
-  constexpr uint16_t local_cid() const { return local_handle_.channel_id(); }
+  constexpr uint16_t local_cid() const { return local_cid_; }
 
-  constexpr uint16_t remote_cid() const { return remote_handle_.channel_id(); }
+  constexpr uint16_t remote_cid() const { return remote_cid_; }
 
-  constexpr uint16_t connection_handle() const {
-    return local_handle_.connection_handle();
-  }
+  constexpr uint16_t connection_handle() const { return connection_handle_; }
 
   constexpr AclTransportType transport() const { return transport_; }
 
@@ -385,49 +382,15 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   [[nodiscard]] bool IsStale() const { return impl_.IsStale(); }
 
   //-------------
-  // Handles and keys for maps
+  // Keys for maps
   //-------------
 
-  // Mappable handle to the internal channel.
-  //
-  // An intrusively mapped item can only be in one map at a time. Since channels
-  // are mapped by keys derived from both local and remote CIDs, the channels
-  // are not mappable items theselves, but have a handle for each map.
-  class Handle : public IntrusiveMap<uint32_t, Handle>::Pair {
-   public:
-    constexpr Handle(L2capChannel& channel, uint32_t key)
-        : IntrusiveMap<uint32_t, Handle>::Pair(key), channel_(channel) {}
-
-    constexpr uint16_t connection_handle() const {
-      return static_cast<uint16_t>(key() >> 16);
-    }
-
-    constexpr uint16_t channel_id() const {
-      return static_cast<uint16_t>(key() & 0xFFFF);
-    }
-
-    constexpr L2capChannel* get() { return &channel_; }
-    constexpr const L2capChannel* get() const { return &channel_; }
-
-    constexpr L2capChannel& operator*() { return *get(); }
-    constexpr const L2capChannel& operator*() const { return *get(); }
-
-    constexpr L2capChannel* operator->() { return get(); }
-    constexpr const L2capChannel* operator->() const { return get(); }
-
-   private:
-    L2capChannel& channel_;
-  };
-
   // Produces a key from a connection handle and local or remote CID that can be
-  // used to look up a channel handle in the manager's local or remote channel
-  // map, respectively.
+  // used to look up a channel in the manager's local or remote channel map,
+  // respectively.
   static constexpr uint32_t MakeKey(uint16_t connection_handle, uint16_t cid) {
     return (uint32_t(connection_handle) << 16) | cid;
   }
-
-  Handle& local_handle() { return local_handle_; }
-  Handle& remote_handle() { return remote_handle_; }
 
   internal::L2capChannelImpl& impl() { return impl_; }
 
@@ -444,11 +407,14 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   const AclTransportType transport_;
 
-  // L2CAP channel handle using the ID of local endpoint.
-  Handle local_handle_;
+  // The HCI connection handle associated with this channel's logical link.
+  const uint16_t connection_handle_;
 
-  // L2CAP channel handle using the ID of remote endpoint.
-  Handle remote_handle_;
+  // The local L2CAP channel identifier (CID).
+  const uint16_t local_cid_;
+
+  // The remote L2CAP channel identifier (CID).
+  const uint16_t remote_cid_;
 
   // Notify clients of asynchronous events encountered such as errors.
   const ChannelEventCallback event_fn_;

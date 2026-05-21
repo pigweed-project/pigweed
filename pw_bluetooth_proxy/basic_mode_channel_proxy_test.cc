@@ -490,6 +490,44 @@ TEST_F(BasicModeChannelProxyTest, CheckWriteParameterFailsBufferSizeUnknown) {
   TearDown();
 }
 
+TEST_F(BasicModeChannelProxyTest, RegisterExistingChannelFailsAlreadyExists) {
+  ProxyHost proxy = CreateProxy();
+  SendEvents(proxy);
+
+  Result<UniquePtr<ChannelProxy>> channel1_result =
+      CreateChannelWithSpanCallbacks(proxy);
+  PW_TEST_ASSERT_OK(channel1_result);
+
+  // Attempting to intercept again with the same parameters while channel1 is
+  // active should fail with AlreadyExists.
+  Result<UniquePtr<ChannelProxy>> channel2_result =
+      CreateChannelWithSpanCallbacks(proxy);
+  EXPECT_EQ(channel2_result.status(), Status::AlreadyExists());
+
+  TearDown();
+}
+
+TEST_F(BasicModeChannelProxyTest, ReplaceStaleChannelSuccess) {
+  ProxyHost proxy = CreateProxy();
+  SendEvents(proxy);
+
+  // Create first channel.
+  Result<UniquePtr<ChannelProxy>> channel1_result =
+      CreateChannelWithSpanCallbacks(proxy);
+  PW_TEST_ASSERT_OK(channel1_result);
+
+  // Destroy the client channel so that the underlying internal channel becomes
+  // stale.
+  channel1_result.value().Reset();
+
+  // Re-intercepting with the same parameters should replace the stale channel.
+  Result<UniquePtr<ChannelProxy>> channel2_result =
+      CreateChannelWithSpanCallbacks(proxy);
+  PW_TEST_ASSERT_OK(channel2_result);
+
+  TearDown();
+}
+
 }  // namespace
 
 }  // namespace pw::bluetooth::proxy

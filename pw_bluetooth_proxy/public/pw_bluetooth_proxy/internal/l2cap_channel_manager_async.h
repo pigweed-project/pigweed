@@ -26,7 +26,7 @@
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
-#include "pw_containers/intrusive_map.h"
+#include "pw_containers/dynamic_map.h"
 #include "pw_function/function.h"
 #include "pw_thread/id.h"
 
@@ -43,8 +43,10 @@ namespace internal {
 /// runs concurrent tasks sequentially.
 class L2capChannelManagerImpl {
  public:
-  using L2capChannelMap = IntrusiveMap<uint32_t, L2capChannel::Handle>;
+  using L2capChannelMap = DynamicMap<uint32_t, L2capChannel>;
+  using L2capChannelRefMap = DynamicMap<uint32_t, L2capChannel*>;
   using L2capChannelIterator = L2capChannelMap::iterator;
+  using L2capChannelNode = L2capChannelMap::node_type;
 
   L2capChannelManagerImpl(L2capChannelManager& manager, Allocator& allocator);
 

@@ -60,8 +60,10 @@ GenericL2capChannelImpl::~GenericL2capChannelImpl() {
 Status GenericL2capChannelImpl::Init() {
   PW_TRY(channel_->impl().Connect(request_handle_, request_sender_));
   channel_->impl().Connect(payload_sender_);
-  return channel_->Start();
+  return OkStatus();
 }
+
+void GenericL2capChannelImpl::Start() { channel_->Start(); }
 
 StatusWithMultiBuf GenericL2capChannelImpl::Write(
     multibuf::MultiBuf&& payload) {

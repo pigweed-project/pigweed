@@ -56,10 +56,14 @@ GenericL2capChannelImpl::~GenericL2capChannelImpl() {
   }
 }
 
-Status GenericL2capChannelImpl::Init() {
-  PW_TRY_ASSIGN(BorrowedL2capChannel borrowed,
-                BorrowL2capChannel(L2capChannel::State::kNew));
-  return borrowed->Start();
+Status GenericL2capChannelImpl::Init() { return OkStatus(); }
+
+void GenericL2capChannelImpl::Start() {
+  auto result = BorrowL2capChannel(L2capChannel::State::kNew);
+  if (result.ok()) {
+    BorrowedL2capChannel borrowed = std::move(*result);
+    borrowed->Start();
+  }
 }
 
 StatusWithMultiBuf GenericL2capChannelImpl::Write(

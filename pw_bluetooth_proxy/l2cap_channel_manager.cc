@@ -20,6 +20,7 @@
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 #include "pw_bluetooth_proxy/internal/channel_proxy_impl.h"
+#include "pw_bluetooth_proxy/internal/l2cap_signaling_channel.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_containers/algorithm.h"
 #include "pw_containers/flat_map.h"
@@ -74,23 +75,27 @@ Result<L2capCoc> L2capChannelManager::AcquireL2capCoc(
     return Status::InvalidArgument();
   }
 
-  UniquePtr<L2capChannel> channel =
-      impl_.allocator().MakeUnique<L2capChannel>(*this,
-                                                 &rx_multibuf_allocator,
-                                                 connection_handle,
-                                                 AclTransportType::kLe,
-                                                 /*local_cid=*/rx_config.cid,
-                                                 /*remote_cid=*/tx_config.cid,
-                                                 std::move(event_fn));
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
+  uint32_t key = L2capChannel::MakeKey(connection_handle, rx_config.cid);
 
-  PW_TRY(channel->InitCreditBasedFlowControl(
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              &rx_multibuf_allocator,
+                              connection_handle,
+                              AclTransportType::kLe,
+                              rx_config.cid,
+                              tx_config.cid,
+                              std::move(event_fn)));
+
+  PW_TRY(channel_node->mapped().InitCreditBasedFlowControl(
       rx_config, tx_config, std::move(receive_fn)));
-  L2capCoc client_channel(*channel, tx_config.mtu);
+
+  L2capCoc client_channel(channel_node->mapped(), tx_config.mtu);
   PW_TRY(client_channel.Init());
-  channel.Release();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  client_channel.Start();
+
   return client_channel;
 }
 
@@ -118,22 +123,28 @@ Result<BasicL2capChannel> L2capChannelManager::AcquireBasicL2capChannel(
           connection_handle, local_cid, remote_cid)) {
     return Status::InvalidArgument();
   }
-  UniquePtr<L2capChannel> channel =
-      impl_.allocator().MakeUnique<L2capChannel>(*this,
-                                                 &rx_multibuf_allocator,
-                                                 connection_handle,
-                                                 transport,
-                                                 local_cid,
-                                                 remote_cid,
-                                                 std::move(event_fn));
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
-  PW_TRY(channel->InitBasic(std::move(payload_from_controller_fn),
-                            std::move(payload_from_host_fn)));
-  BasicL2capChannel client_channel(*channel);
+
+  uint32_t key = L2capChannel::MakeKey(connection_handle, local_cid);
+
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              &rx_multibuf_allocator,
+                              connection_handle,
+                              transport,
+                              local_cid,
+                              remote_cid,
+                              std::move(event_fn)));
+
+  PW_TRY(channel_node->mapped().InitBasic(std::move(payload_from_controller_fn),
+                                          std::move(payload_from_host_fn)));
+
+  BasicL2capChannel client_channel(channel_node->mapped());
   PW_TRY(client_channel.Init());
-  channel.Release();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  client_channel.Start();
+
   return client_channel;
 }
 
@@ -159,35 +170,96 @@ Result<GattNotifyChannel> L2capChannelManager::AcquireGattNotifyChannel(
               emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL))) {
     return Status::InvalidArgument();
   }
-  UniquePtr<L2capChannel> channel = impl_.allocator().MakeUnique<L2capChannel>(
-      *this,
-      /*rx_multibuf_allocator=*/nullptr,
-      connection_handle,
-      AclTransportType::kLe,
-      /*local_cid=*/
-      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
-      /*remote_cid=*/
-      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
-      std::move(event_fn));
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
-  PW_TRY(channel->InitGattNotify(attribute_handle));
-  GattNotifyChannel client_channel(*channel, attribute_handle);
+
+  uint16_t local_cid =
+      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL);
+  uint16_t remote_cid =
+      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL);
+  uint32_t key = L2capChannel::MakeKey(connection_handle, local_cid);
+
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              /*rx_multibuf_allocator=*/nullptr,
+                              connection_handle,
+                              AclTransportType::kLe,
+                              local_cid,
+                              remote_cid,
+                              std::move(event_fn)));
+
+  PW_TRY(channel_node->mapped().InitGattNotify(attribute_handle));
+
+  GattNotifyChannel client_channel(channel_node->mapped(), attribute_handle);
   PW_TRY(client_channel.Init());
-  channel.Release();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  client_channel.Start();
+
   return client_channel;
 }
 
-Status L2capChannelManager::RegisterChannel(L2capChannel& channel) {
-  std::lock_guard lock(channels_mutex());
-  return RegisterChannelLocked(channel);
+Result<L2capChannel*> L2capChannelManager::CreateSignalingChannel(
+    uint16_t connection_handle,
+    AclTransportType transport,
+    L2capChannel::FromControllerFn&& from_controller_fn,
+    L2capChannel::FromHostFn&& from_host_fn) {
+  uint16_t local_cid =
+      (transport == AclTransportType::kBrEdr)
+          ? static_cast<uint16_t>(emboss::L2capFixedCid::ACL_U_SIGNALING)
+          : static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_SIGNALING);
+  uint32_t key = L2capChannel::MakeKey(connection_handle, local_cid);
+
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              /*rx_multibuf_allocator=*/nullptr,
+                              connection_handle,
+                              transport,
+                              local_cid,
+                              local_cid,
+                              /*event_fn=*/nullptr));
+
+  PW_TRY(channel_node->mapped().InitBasic(std::move(from_controller_fn),
+                                          std::move(from_host_fn)));
+
+  L2capChannel& channel = channel_node->mapped();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  channel.Start();
+
+  return &channel;
 }
 
-Status L2capChannelManager::RegisterChannelLocked(L2capChannel& channel) {
-  auto result = channels_by_local_cid_.insert(channel.local_handle());
-  if (!result.second) {
-    L2capChannel& previous = **(result.first);
+template <typename... Args>
+Result<UniquePtr<L2capChannelManager::L2capChannelNode>>
+L2capChannelManager::CreateChannel(uint32_t key, Args&&... args) {
+  auto node = allocator_.MakeUnique<L2capChannelManager::L2capChannelNode>(
+      key, *this, std::forward<Args>(args)...);
+  if (node == nullptr) {
+    return Status::ResourceExhausted();
+  }
+  return node;
+}
+
+Status L2capChannelManager::RegisterChannel(
+    UniquePtr<L2capChannelNode>&& node) {
+  std::lock_guard lock(channels_mutex());
+  return RegisterChannelLocked(std::move(node));
+}
+
+Status L2capChannelManager::RegisterChannelLocked(
+    UniquePtr<L2capChannelNode>&& node) {
+  UniquePtr<L2capChannelNode> taken_node = std::move(node);
+
+  L2capChannel& channel = taken_node->mapped();
+  uint32_t local_key =
+      L2capChannel::MakeKey(channel.connection_handle(), channel.local_cid());
+  uint32_t remote_key =
+      L2capChannel::MakeKey(channel.connection_handle(), channel.remote_cid());
+
+  auto it = channels_by_local_cid_.find(local_key);
+  if (it != channels_by_local_cid_.end()) {
+    L2capChannel& previous = it->second;
     if (!previous.IsStale()) {
       PW_LOG_WARN(
           "Attempt to register channel that matches an existing channel: %#x "
@@ -197,27 +269,44 @@ Status L2capChannelManager::RegisterChannelLocked(L2capChannel& channel) {
           channel.remote_cid());
       return Status::AlreadyExists();
     }
-    DeregisterChannelLocked(previous);
-    previous.Close();
-    impl_.allocator().Delete(&previous);
-    result = channels_by_local_cid_.insert(channel.local_handle());
+    auto deregistered_node = DeregisterChannelLocked(previous);
+    deregistered_node->mapped().Close();
   }
-  PW_CHECK(result.second);
-  PW_CHECK(channels_by_remote_cid_.insert(channel.remote_handle()).second);
+
+  auto remote_result =
+      channels_by_remote_cid_.try_emplace(remote_key, &channel);
+  if (!remote_result.has_value()) {
+    return Status::ResourceExhausted();
+  }
+  PW_CHECK(remote_result->second);
+
+  auto local_result = channels_by_local_cid_.insert(std::move(taken_node));
+  PW_CHECK(local_result.inserted);
+
   impl_.OnRegister();
   return OkStatus();
 }
 
 void L2capChannelManager::DeregisterChannel(L2capChannel& channel) {
   std::lock_guard lock(channels_mutex());
-  DeregisterChannelLocked(channel);
+  (void)DeregisterChannelLocked(channel);
 }
 
-void L2capChannelManager::DeregisterChannelLocked(L2capChannel& channel) {
+UniquePtr<L2capChannelManager::L2capChannelNode>
+L2capChannelManager::DeregisterChannelLocked(L2capChannel& channel) {
   impl_.OnDeregister(channel);
-  channels_by_local_cid_.erase(channel.local_handle());
-  channels_by_remote_cid_.erase(channel.remote_handle());
+
+  uint32_t local_key =
+      L2capChannel::MakeKey(channel.connection_handle(), channel.local_cid());
+  uint32_t remote_key =
+      L2capChannel::MakeKey(channel.connection_handle(), channel.remote_cid());
+
+  auto node = channels_by_local_cid_.take(local_key);
+  channels_by_remote_cid_.erase(remote_key);
+
   impl_.OnDeletion();
+
+  return node;
 }
 
 void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
@@ -228,10 +317,9 @@ void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
     channels_by_remote_cid_.clear();
     for (auto iter = channels_by_local_cid_.begin();
          iter != channels_by_local_cid_.end();) {
-      L2capChannel& channel = **iter;
-      iter = channels_by_local_cid_.erase(iter);
-      channel.Close(event);
-      stale_.insert(channel.local_handle());
+      auto node = channels_by_local_cid_.take(iter++);
+      node->mapped().Close(event);
+      stale_.insert(std::move(node));
     }
     impl_.OnDeletion();
   }
@@ -239,15 +327,10 @@ void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
 }
 
 void L2capChannelManager::DeleteStaleChannels() {
-  L2capChannelMap stale;
+  L2capChannelMap stale(impl_.allocator());
   {
     std::lock_guard channels_lock(channels_mutex());
     stale.swap(stale_);
-  }
-  for (auto iter = stale.begin(); iter != stale.end();) {
-    L2capChannel& channel = **iter;
-    iter = stale.erase(iter);
-    impl_.allocator_.Delete(&channel);
   }
 }
 
@@ -313,10 +396,10 @@ L2capChannel* L2capChannelManager::FindChannelByLocalCidLocked(
     uint16_t connection_handle, uint16_t local_cid) PW_NO_LOCK_SAFETY_ANALYSIS {
   uint32_t key = L2capChannel::MakeKey(connection_handle, local_cid);
   auto it = channels_by_local_cid_.find(key);
-  if (it == channels_by_local_cid_.end() || (*it)->IsStale()) {
+  if (it == channels_by_local_cid_.end() || it->second.IsStale()) {
     return nullptr;
   }
-  return it->get();
+  return &it->second;
 }
 
 L2capChannel* L2capChannelManager::FindChannelByRemoteCidLocked(
@@ -324,10 +407,10 @@ L2capChannel* L2capChannelManager::FindChannelByRemoteCidLocked(
     uint16_t remote_cid) PW_NO_LOCK_SAFETY_ANALYSIS {
   uint32_t key = L2capChannel::MakeKey(connection_handle, remote_cid);
   auto it = channels_by_remote_cid_.find(key);
-  if (it == channels_by_remote_cid_.end() || (*it)->IsStale()) {
+  if (it == channels_by_remote_cid_.end() || it->second->IsStale()) {
     return nullptr;
   }
-  return it->get();
+  return it->second;
 }
 
 void L2capChannelManager::Advance(L2capChannelIterator& it) {
@@ -370,12 +453,12 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
     uint32_t key = L2capChannel::MakeKey(connection_handle, 0);
     auto channel_it = channels_by_local_cid_.lower_bound(key);
     while (channel_it != channels_by_local_cid_.end()) {
-      L2capChannel& channel = **channel_it++;
+      L2capChannel& channel = (channel_it++)->second;
       if (channel.connection_handle() == connection_handle &&
           channel.state() == L2capChannel::State::kRunning) {
-        DeregisterChannelLocked(channel);
-        channel.Close();
-        stale_.insert(channel.local_handle());
+        auto node = DeregisterChannelLocked(channel);
+        node->mapped().Close();
+        stale_.insert(std::move(node));
       }
     }
   }
@@ -395,10 +478,9 @@ void L2capChannelManager::HandleDisconnectionCompleteLocked(
       L2capChannel::MakeKey(params.connection_handle, params.local_cid);
   auto it = channels_by_local_cid_.find(key);
   if (it != channels_by_local_cid_.end()) {
-    L2capChannel& channel = **it;
-    DeregisterChannelLocked(channel);
-    channel.Close();
-    impl_.allocator().Delete(&channel);
+    L2capChannel& channel = it->second;
+    auto node = DeregisterChannelLocked(channel);
+    node->mapped().Close();
   }
   status_tracker_.HandleDisconnectionComplete(params);
 }
@@ -496,21 +578,20 @@ L2capChannelManager::DoInterceptBasicModeChannel(
     return Status::InvalidArgument();
   }
 
-  UniquePtr<L2capChannel> channel = impl_.allocator().MakeUnique<L2capChannel>(
-      *this,
-      /*rx_multibuf_allocator=*/&multibuf_allocator_,
-      static_cast<uint16_t>(connection_handle),
-      transport,
-      local_channel_id,
-      remote_channel_id,
-      std::move(event_fn));
+  uint32_t key = L2capChannel::MakeKey(static_cast<uint16_t>(connection_handle),
+                                       local_channel_id);
 
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              &multibuf_allocator_,
+                              static_cast<uint16_t>(connection_handle),
+                              transport,
+                              local_channel_id,
+                              remote_channel_id,
+                              std::move(event_fn)));
 
   std::optional<uint16_t> max_l2cap_payload_size =
-      channel->MaxL2capPayloadSize();
+      channel_node->mapped().MaxL2capPayloadSize();
   if (!max_l2cap_payload_size.has_value()) {
     PW_LOG_ERROR("Maximum L2CAP payload size is not set.");
     return Status::FailedPrecondition();
@@ -518,18 +599,22 @@ L2capChannelManager::DoInterceptBasicModeChannel(
 
   UniquePtr<internal::ChannelProxyImpl> channel_proxy =
       impl_.allocator().MakeUnique<internal::ChannelProxyImpl>(
-          max_l2cap_payload_size.value(), *channel);
+          max_l2cap_payload_size.value(), channel_node->mapped());
   if (channel_proxy == nullptr) {
     return Status::ResourceExhausted();
   }
 
-  PW_TRY(channel->InitBasic(
+  PW_TRY(channel_node->mapped().InitBasic(
       variant_cast<L2capChannel::FromControllerFn>(
           std::move(payload_from_controller_fn)),
       variant_cast<L2capChannel::FromHostFn>(std::move(payload_from_host_fn))));
 
   PW_TRY(channel_proxy->Init());
-  channel.Release();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  channel_proxy->Start();
+
   return channel_proxy;
 }
 
@@ -558,20 +643,20 @@ L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
     return Status::InvalidArgument();
   }
 
-  UniquePtr<L2capChannel> channel = impl_.allocator().MakeUnique<L2capChannel>(
-      *this,
-      /*rx_multibuf_allocator=*/&multibuf_allocator_,
-      cpp23::to_underlying(connection_handle),
-      AclTransportType::kLe,
-      /*local_cid=*/rx_config.cid,
-      /*remote_cid=*/tx_config.cid,
-      std::move(event_fn));
-  if (channel == nullptr) {
-    return Status::ResourceExhausted();
-  }
+  uint32_t key = L2capChannel::MakeKey(cpp23::to_underlying(connection_handle),
+                                       rx_config.cid);
+
+  PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
+                CreateChannel(key,
+                              &multibuf_allocator_,
+                              cpp23::to_underlying(connection_handle),
+                              AclTransportType::kLe,
+                              rx_config.cid,
+                              tx_config.cid,
+                              std::move(event_fn)));
 
   std::optional<uint16_t> max_l2cap_payload_size =
-      channel->MaxL2capPayloadSize();
+      channel_node->mapped().MaxL2capPayloadSize();
   if (!max_l2cap_payload_size.has_value()) {
     PW_LOG_ERROR("Maximum L2CAP payload size is not set.");
     return Status::FailedPrecondition();
@@ -579,15 +664,20 @@ L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
 
   UniquePtr<internal::ChannelProxyImpl> channel_proxy =
       impl_.allocator().MakeUnique<internal::ChannelProxyImpl>(
-          max_l2cap_payload_size.value(), *channel);
+          max_l2cap_payload_size.value(), channel_node->mapped());
   if (channel_proxy == nullptr) {
     return Status::ResourceExhausted();
   }
 
-  PW_TRY(channel->InitCreditBasedFlowControl(
+  PW_TRY(channel_node->mapped().InitCreditBasedFlowControl(
       rx_config, tx_config, std::move(receive_fn)));
+
   PW_TRY(channel_proxy->Init());
-  channel.Release();
+
+  PW_TRY(RegisterChannel(std::move(channel_node)));
+
+  channel_proxy->Start();
+
   return channel_proxy;
 }
 
@@ -595,11 +685,11 @@ namespace internal {
 
 void L2capChannelManagerImpl::OnDeregister(const L2capChannel& channel) {
   if (lrd_channel_ != manager_.channels_by_local_cid_.end() &&
-      lrd_channel_->get() == &channel) {
+      &lrd_channel_->second == &channel) {
     manager_.Advance(lrd_channel_);
   }
   if (round_robin_terminus_ != manager_.channels_by_local_cid_.end() &&
-      round_robin_terminus_->get() == &channel) {
+      &round_robin_terminus_->second == &channel) {
     manager_.Advance(round_robin_terminus_);
   }
 }

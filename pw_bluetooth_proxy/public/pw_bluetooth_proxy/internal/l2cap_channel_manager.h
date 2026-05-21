@@ -23,6 +23,7 @@
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_bluetooth_proxy/internal/l2cap_logical_link.h"
+#include "pw_bluetooth_proxy/internal/l2cap_signaling_channel.h"
 #include "pw_bluetooth_proxy/internal/l2cap_status_tracker.h"
 #include "pw_bluetooth_proxy/internal/locked_l2cap_channel.h"
 #include "pw_bluetooth_proxy/internal/mutex.h"
@@ -92,15 +93,11 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       ChannelEventCallback&& event_fn)
       PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
 
-  // Start proxying L2CAP packets addressed to `channel` arriving from
-  // the controller and allow `channel` to send & queue Tx L2CAP packets.
-  //
-  // @returns
-  // * @OK: Channel was registered.
-  // * @ALREADY_EXISTS: An active channel with the same connection handle, local
-  //                    CID, and remote CID is already registered.
-  Status RegisterChannel(L2capChannel& channel)
-      PW_LOCKS_EXCLUDED(channels_mutex());
+  pw::Result<L2capChannel*> CreateSignalingChannel(
+      uint16_t connection_handle,
+      AclTransportType transport,
+      L2capChannel::FromControllerFn&& from_controller_fn,
+      L2capChannel::FromHostFn&& from_host_fn);
 
   // Stop proxying L2CAP packets addressed to `channel` and stop sending L2CAP
   // packets queued in `channel`, if `channel` is currently registered.
@@ -215,10 +212,12 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   }
 
  private:
-  using L2capChannelPredicate = pw::Function<bool(L2capChannel&)>;
   using L2capChannelMap = internal::L2capChannelManagerImpl::L2capChannelMap;
+  using L2capChannelRefMap =
+      internal::L2capChannelManagerImpl::L2capChannelRefMap;
   using L2capChannelIterator =
       internal::L2capChannelManagerImpl::L2capChannelIterator;
+  using L2capChannelNode = internal::L2capChannelManagerImpl::L2capChannelNode;
 
   static constexpr internal::Mutex& channels_mutex()
       PW_LOCK_RETURNED(internal::L2capChannelManagerImpl::channels_mutex()) {
@@ -230,18 +229,39 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   void Advance(L2capChannelIterator& it)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
+  // Constructs a new `L2capChannelNode`.
+  //
+  // @returns
+  // * A `UniquePtr` to the newly created channel node on success.
+  // * @RESOURCE_EXHAUSTED: Node allocation failed.
+  template <typename... Args>
+  Result<UniquePtr<L2capChannelNode>> CreateChannel(uint32_t key,
+                                                    Args&&... args);
+
+  // Start proxying L2CAP packets addressed to `channel` arriving from
+  // the controller and allow `channel` to send & queue Tx L2CAP packets.
+  //
+  // @returns
+  // * @OK: Channel was registered.
+  // * @ALREADY_EXISTS: An active channel with the same connection handle, local
+  //                    CID, and remote CID is already registered.
+  Status RegisterChannel(UniquePtr<L2capChannelNode>&& node)
+      PW_LOCKS_EXCLUDED(channels_mutex());
+
   // RegisterChannel with channels_mutex_ already acquired.
   //
   // @returns
   // * @OK: Channel was registered.
   // * @ALREADY_EXISTS: An active channel with the same connection handle, local
   // CID, and remote CID is already registered.
-  Status RegisterChannelLocked(L2capChannel& channel)
+  Status RegisterChannelLocked(UniquePtr<L2capChannelNode>&& node)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
   // Stop proxying L2CAP packets addressed to `channel` and stop sending L2CAP
-  // packets queued in `channel`, if `channel` is currently registered.
-  void DeregisterChannelLocked(L2capChannel& channel)
+  // packets queued in `channel`, if `channel` is currently registered. Returns
+  // the extracted channel node, transferring ownership of the channel to the
+  // caller.
+  UniquePtr<L2capChannelNode> DeregisterChannelLocked(L2capChannel& channel)
       PW_EXCLUSIVE_LOCKS_REQUIRED(channels_mutex());
 
   // Delete a channel, which must be deregister and closed before calling.
@@ -274,12 +294,16 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // Reference to the ACL data channel owned by the proxy.
   AclDataChannel& acl_data_channel_;
 
-  // List of registered L2CAP channels.
+  // Active L2CAP channels mapped by local CID (owns nodes).
   L2capChannelMap channels_by_local_cid_ PW_GUARDED_BY(channels_mutex());
-  L2capChannelMap channels_by_remote_cid_ PW_GUARDED_BY(channels_mutex());
+
+  // Secondary L2CAP channel lookup mapped by remote CID (non-owning).
+  L2capChannelRefMap channels_by_remote_cid_ PW_GUARDED_BY(channels_mutex());
 
   // Stale L2CAP channels awaiting deletion.
   L2capChannelMap stale_ PW_GUARDED_BY(channels_mutex());
+
+  Allocator& allocator_;
 
   // Implementation-specific details that may vary between sync and async modes.
   friend class internal::L2capChannelManagerImpl;
