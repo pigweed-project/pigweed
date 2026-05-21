@@ -55,5 +55,17 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pw_bytes/rust:pw_bytes",
+        "//pw_kernel/lib/unittest:test_logger",
+    ],
+)
+
+rust_library(
+    name = "test_logger",
+    srcs = ["test_logger.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pw_log/rust:pw_log",
     ],
 )

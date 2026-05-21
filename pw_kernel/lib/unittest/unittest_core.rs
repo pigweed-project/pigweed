@@ -15,6 +15,7 @@
 #![no_std]
 
 pub use pw_bytes;
+pub use test_logger;
 
 // SAFETY: Mutation of `TEST_LIST` is only permitted to occur in `add_test`.
 static mut TEST_LIST: Option<&'static Test> = None;
@@ -86,13 +87,13 @@ macro_rules! run_all_tests {
 macro_rules! declare_loggers {
     () => {
         (
-            |test: &$crate::Test| pw_log::info!("🔄 [{}] RUNNING", test.name as &str),
+            |test: &$crate::Test| $crate::test_logger::start(test.name),
             |test: &$crate::Test, e: $crate::TestError| {
-                pw_log::error!("❌ [{}] FAILED", test.name as &str);
+                $crate::test_logger::failed(test.name);
                 pw_log::error!("❌ ├─ {}:{}:", e.file as &str, e.line as u32);
                 pw_log::error!("❌ └─ {}", e.message as &str);
             },
-            |test: &$crate::Test| pw_log::info!("✅ [{}] PASSED", test.name as &str),
+            |test: &$crate::Test| $crate::test_logger::passed(test.name),
         )
     };
 }

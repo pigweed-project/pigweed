@@ -24,9 +24,9 @@ rust_app(
     visibility = ["//visibility:public"],
     deps = [
         "//pw_kernel/lib/time",
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
     ],
 )

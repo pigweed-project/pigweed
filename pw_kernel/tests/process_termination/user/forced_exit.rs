@@ -15,12 +15,11 @@
 #![no_std]
 #![no_main]
 
-use pw_log::info;
 use userspace::process_entry;
 
 #[process_entry("forced_exit")]
 fn main() {
-    info!("I am the forced exit process. Spinning...");
+    test_logger::info!("I am the forced exit process. Spinning...");
     loop {
         let _ = userspace::time::sleep_until(userspace::time::Instant::MAX);
     }

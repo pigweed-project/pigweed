@@ -21,7 +21,6 @@ use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
 fn handle_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("IPC service starting");
     loop {
         // Wait for an IPC or a USER signal from the initiator.
         let wait_return =
@@ -82,7 +81,7 @@ fn handle_iovec_ipc() -> Result<()> {
     let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
 
     let s = core::str::from_utf8(&buffer[..len]).expect("utf8 string");
-    pw_log::info!("IPC received: {}", s as &str);
+    test_logger::step_info!("IPC received: {}", s as &str);
 
     // Convert the message to lowercase.
     for b in buffer[..len].iter_mut() {
@@ -106,7 +105,7 @@ fn entry() -> Result<()> {
     handle_ipcs().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
-        pw_log::error!("IPC service error: {}", *e as u32);
+        test_logger::step_failed!("IPC service error: {}", *e as u32);
         let _ = syscall::debug_shutdown(Err(*e));
     })
 }

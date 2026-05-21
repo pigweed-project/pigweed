@@ -16,7 +16,6 @@
 #![no_main]
 
 use control_commands::Command;
-use pw_log::info;
 use pw_status::Error;
 use restart_codegen::handle;
 use userspace::syscall::Signals;
@@ -26,21 +25,21 @@ use userspace::{process_entry, syscall};
 const EXIT_DELAY: Duration = Duration::from_millis(500);
 
 fn handle_modify_state() {
-    info!("ModifyState received: Adding IPC handles to WAIT_GROUP");
+    test_logger::step_info!("ModifyState received: Adding IPC handles to WAIT_GROUP");
     if let Err(e) = syscall::wait_group_add(
         handle::WAIT_GROUP,
         handle::IPC_CONTROL_HANDLER,
         Signals::READABLE,
         42,
     ) {
-        info!("Failed to add to wait group");
+        test_logger::step_failed!("Failed to add to wait group");
         let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
     if let Err(e) =
         syscall::wait_group_add(handle::WAIT_GROUP, handle::IPC_RESET, Signals::READABLE, 43)
     {
-        info!("Failed to add initiator to wait group");
+        test_logger::step_failed!("Failed to add initiator to wait group");
         let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
@@ -48,16 +47,16 @@ fn handle_modify_state() {
 }
 
 fn handle_verify_reset() {
-    info!("VerifyReset received: Verifying reset");
+    test_logger::step_info!("VerifyReset received: Verifying reset");
     match syscall::wait_group_remove(handle::WAIT_GROUP, handle::IPC_CONTROL_HANDLER) {
         Err(Error::NotFound) => {}
         Ok(()) => {
-            info!("Object was NOT removed from wait group on reset!");
+            test_logger::step_failed!("Object was NOT removed from wait group on reset!");
             let _ = syscall::debug_shutdown(Err(Error::Internal));
             loop {}
         }
         Err(e) => {
-            info!("Failed to remove object from wait group");
+            test_logger::step_failed!("Failed to remove object from wait group");
             let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
@@ -65,21 +64,22 @@ fn handle_verify_reset() {
     match syscall::wait_group_remove(handle::WAIT_GROUP, handle::IPC_RESET) {
         Err(Error::NotFound) => {}
         Ok(()) => {
-            info!("Initiator was NOT removed from wait group on reset!");
+            test_logger::step_failed!("Initiator was NOT removed from wait group on reset!");
             let _ = syscall::debug_shutdown(Err(Error::Internal));
             loop {}
         }
         Err(e) => {
-            info!("Failed to remove initiator from wait group");
+            test_logger::step_failed!("Failed to remove initiator from wait group");
             let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
     }
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
+    test_logger::step_passed!("Reset verified");
 }
 
 fn handle_block_initiator() -> ! {
-    info!("BlockInitiator received: Doing nothing to block initiator");
+    test_logger::step_info!("BlockInitiator received: Doing nothing to block initiator");
     loop {
         if sleep_until(Instant::MAX).is_err() {
             panic!("canceled");
@@ -88,7 +88,7 @@ fn handle_block_initiator() -> ! {
 }
 
 fn handle_async_transact() -> ! {
-    info!("AsyncTransact received: Initiating async transaction on IPC_RESET");
+    test_logger::step_info!("AsyncTransact received: Initiating async transaction on IPC_RESET");
     let msg = [42u8];
     let mut reply = [0u8; 1];
     unsafe {
@@ -106,15 +106,15 @@ fn handle_async_transact() -> ! {
 }
 
 fn handle_sleep_and_exit() -> ! {
-    info!("SleepAndExit received: Sleeping and then exiting");
+    test_logger::step_info!("SleepAndExit received: Sleeping and then exiting");
     let _ = sleep_until(SystemClock::now() + EXIT_DELAY);
     syscall::process_exit(0);
 }
 
 fn handle_set_control_user_signal() {
-    info!("SetControlUserSignal received: Setting peer USER signal to true");
+    test_logger::step_info!("SetControlUserSignal received: Setting peer USER signal to true");
     if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_CONTROL_HANDLER, true) {
-        info!("Failed to set peer user signal on IPC_CONTROL_HANDLER");
+        test_logger::step_failed!("Failed to set peer user signal on IPC_CONTROL_HANDLER");
         let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
@@ -122,9 +122,11 @@ fn handle_set_control_user_signal() {
 }
 
 fn handle_set_reset_user_signal() {
-    info!("SetResetUserSignal received: Setting peer USER signal to true on IPC_RESET");
+    test_logger::step_info!(
+        "SetResetUserSignal received: Setting peer USER signal to true on IPC_RESET"
+    );
     if let Err(e) = syscall::object_set_peer_user_signal(handle::IPC_RESET, true) {
-        info!("Failed to set peer user signal on IPC_RESET");
+        test_logger::step_failed!("Failed to set peer user signal on IPC_RESET");
         let _ = syscall::debug_shutdown(Err(e));
         loop {}
     }
@@ -132,31 +134,33 @@ fn handle_set_reset_user_signal() {
 }
 
 fn handle_verify_user_signal_preserved() {
-    info!("VerifyUserSignalPreserved received: Verifying Signals::USER is still set");
+    test_logger::step_info!(
+        "VerifyUserSignalPreserved received: Verifying Signals::USER is still set"
+    );
     let wait_res = syscall::object_wait(
         handle::IPC_CONTROL_HANDLER,
         Signals::USER,
         SystemClock::now(),
     );
     if wait_res.is_err() {
-        info!("Signals::USER was lost on restart!");
+        test_logger::step_failed!("Signals::USER was lost on restart!");
         let _ = syscall::debug_shutdown(Err(Error::Internal));
         loop {}
     }
-    info!("Signals::USER correctly remained set on restart!");
+    test_logger::step_passed!("Signals::USER correctly remained set on restart!");
     let _ = syscall::channel_respond(handle::IPC_CONTROL_HANDLER, &[0]);
 }
 
 #[process_entry("restart")]
 fn main() {
-    info!("I am the object_reset process.");
+    test_logger::step_info!("I am the object_reset process");
 
     loop {
         // Wait for a command from `main`
         if let Err(e) =
             syscall::object_wait(handle::IPC_CONTROL_HANDLER, Signals::READABLE, Instant::MAX)
         {
-            info!("Failed to wait for command");
+            test_logger::step_failed!("Failed to wait for command");
             let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
@@ -164,7 +168,7 @@ fn main() {
         // Read the command
         let mut cmd = [0u8; 1];
         if let Err(e) = syscall::channel_read_exact(handle::IPC_CONTROL_HANDLER, 0, &mut cmd) {
-            info!("Failed to read command");
+            test_logger::step_failed!("Failed to read command");
             let _ = syscall::debug_shutdown(Err(e));
             loop {}
         }
@@ -172,7 +176,7 @@ fn main() {
         let command = match Command::try_from(cmd[0]) {
             Ok(c) => c,
             Err(_) => {
-                info!("Unknown command received");
+                test_logger::step_failed!("Unknown command received");
                 let _ = syscall::debug_shutdown(Err(Error::InvalidArgument));
                 loop {}
             }

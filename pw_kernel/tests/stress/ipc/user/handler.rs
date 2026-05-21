@@ -21,7 +21,7 @@ use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
 fn handle_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("IPC service starting");
+    test_logger::step_info!("IPC service starting");
     loop {
         // Wait for an IPC to come in.
         let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)
@@ -44,7 +44,7 @@ fn handle_uppercase_ipcs() -> Result<()> {
         };
         let upper_c = c.to_ascii_uppercase();
 
-        pw_log::info!("Received {}, uppercase {}", c as char, upper_c as char);
+        test_logger::step_passed!("Received {}, uppercase {}", c as char, upper_c as char);
 
         // Respond to the IPC with the uppercase character.
         let mut response_buffer = [0u8; size_of::<char>() * 2];
@@ -59,7 +59,7 @@ fn entry() -> Result<()> {
     handle_uppercase_ipcs().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
-        pw_log::error!("IPC service error: {}", *e as u32);
+        test_logger::step_failed!("IPC service error: {}", *e as u32);
         let _ = syscall::debug_shutdown(Err(*e));
     })
 }

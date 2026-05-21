@@ -15,14 +15,13 @@
 #![no_std]
 #![no_main]
 
-use pw_log::info;
 use pw_status::Result;
 use time::Clock;
 use userspace::time::{Duration, sleep_until};
 use userspace::{entry, syscall};
 
 fn clock_test() -> Result<()> {
-    info!("🔄 ├─ Testing SystemClock::now() advances");
+    test_logger::step_start!("Testing SystemClock::now() advances");
     let start = userspace::time::SystemClock::now();
     let mut end = start;
     let mut count = 0;
@@ -31,47 +30,47 @@ fn clock_test() -> Result<()> {
         count += 1;
     }
     if end > start {
-        info!("✅ ├─ Clock advanced");
+        test_logger::step_passed!("Clock advanced");
         Ok(())
     } else {
-        pw_log::error!("Clock did not advance");
+        test_logger::step_failed!("Clock did not advance");
         Err(pw_status::Error::Internal)
     }
 }
 
 fn sleep_test() -> Result<()> {
-    info!("🔄 ├─ Testing sleep_until");
+    test_logger::step_start!("Testing sleep_until");
     let start = userspace::time::SystemClock::now();
     let delay = Duration::from_millis(100);
     let deadline = start + delay;
 
     if let Err(err) = sleep_until(deadline) {
-        pw_log::error!("sleep_until failed");
+        test_logger::step_failed!("sleep_until failed");
         return Err(err);
     }
 
     let end = userspace::time::SystemClock::now();
     if end >= deadline {
-        info!("✅ ├─ sleep_until slept for at least the requested time");
+        test_logger::step_passed!("sleep_until slept for at least the requested time");
         Ok(())
     } else {
-        pw_log::error!("sleep_until returned before deadline");
+        test_logger::step_failed!("sleep_until returned before deadline");
         Err(pw_status::Error::Internal)
     }
 }
 
 fn do_test() -> Result<()> {
-    info!("🔄 [User Clock Test] RUNNING");
+    test_logger::start("User Clock Test");
     clock_test()?;
     sleep_test()?;
-    info!("✅ └─ PASSED");
+    test_logger::passed("User Clock Test");
     Ok(())
 }
 
 #[entry]
 fn main_entry() -> Result<()> {
     let ret = do_test().inspect_err(|_| {
-        pw_log::error!("❌ ├─ FAILED");
+        test_logger::failed("User Clock Test");
     });
 
     let _ = syscall::debug_shutdown(ret);
@@ -80,7 +79,7 @@ fn main_entry() -> Result<()> {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("❌ PANIC");
+    test_logger::step_failed!("PANIC");
     let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

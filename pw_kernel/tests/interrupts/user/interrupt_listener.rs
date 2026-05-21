@@ -26,7 +26,7 @@ static INTERRUPT_COUNT: AtomicU32 = AtomicU32::new(1);
 
 fn handle_interrupt(interrupts: Signals) -> Result<()> {
     if !interrupts.contains(signals::TEST_IRQ) {
-        pw_log::error!(
+        test_logger::step_failed!(
             "Interrupt on wrong signal. {} not in {}",
             signals::TEST_IRQ.bits() as u32,
             interrupts.bits() as u32
@@ -51,7 +51,7 @@ fn handle_interrupt(interrupts: Signals) -> Result<()> {
     };
 
     if len != RECV_BUF_LEN {
-        pw_log::error!(
+        test_logger::step_failed!(
             "Received {} bytes, {} expected",
             len as usize,
             RECV_BUF_LEN as usize
@@ -67,11 +67,11 @@ fn run_test() -> Result<()> {
         let wait_return =
             syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX)
                 .inspect_err(|_| {
-                    pw_log::error!("Failed to wait on interrupt");
+                    test_logger::step_failed!("Failed to wait on interrupt");
                 })?;
 
         if !wait_return.pending_signals.contains(signals::TEST_IRQ) || wait_return.user_data != 0 {
-            pw_log::error!("Incorrect WaitReturn values");
+            test_logger::step_failed!("Incorrect WaitReturn values");
             return Err(Error::Internal);
         }
 

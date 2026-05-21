@@ -33,7 +33,6 @@ use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Kernel};
 use kernel_config::{KernelConfig, KernelConfigInterface};
-use pw_log::{error, info};
 use pw_status::Result;
 
 pub struct TestThread<K: Kernel> {
@@ -87,6 +86,8 @@ struct TestThreadArgs<'a, K: Kernel> {
 }
 
 pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()> {
+    test_logger::start("Kernel Mutex Stress Test");
+
     let thread_1_args = TestThreadArgs {
         thread_index: 1,
         counter: &state.test_counter,
@@ -136,11 +137,11 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
     loop {
         let deadline = kernel.now() + Duration::from_millis(600);
         let Ok(counter) = state.test_counter.lock_until(deadline) else {
-            error!("Observer: Timeout");
+            test_logger::step_failed!("Observer: Timeout");
             continue;
         };
         if *counter % 1000 == 0 {
-            info!("Counter value {}", *counter as u64);
+            test_logger::step_info!("Counter value {}", *counter as u64);
         }
 
         drop(counter);
@@ -148,7 +149,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
 }
 
 fn increment_thread_entry<K: Kernel>(_kernel: K, args: &TestThreadArgs<K>) {
-    info!("Increment Thread {}", args.thread_index as usize);
+    test_logger::step_info!("Increment Thread {}", args.thread_index as usize);
     loop {
         let mut counter = args.counter.lock();
         *counter = (*counter).wrapping_add(1);

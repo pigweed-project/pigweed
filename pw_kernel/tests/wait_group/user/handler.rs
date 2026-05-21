@@ -21,13 +21,13 @@ use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 fn wait_group() -> Result<()> {
-    pw_log::info!("🔄 WaitGroup service starting");
+    test_logger::info!("WaitGroup service starting");
 
     syscall::wait_group_add(handle::WAIT_GROUP_1, handle::IPC_A, Signals::READABLE, 11)?;
     syscall::wait_group_add(handle::WAIT_GROUP_1, handle::IPC_B, Signals::READABLE, 22)?;
 
     for i in 0..3 {
-        pw_log::info!("waiting for objects iteration {}", i as usize);
+        test_logger::info!("waiting for objects iteration {}", i as usize);
         let wait_return =
             syscall::object_wait(handle::WAIT_GROUP_1, Signals::READABLE, Instant::MAX)?;
 
@@ -57,11 +57,11 @@ fn wait_group() -> Result<()> {
                 (handle::IPC_A, 'c')
             }
             _ => {
-                pw_log::info!("Unknown iteration: {}", i as usize);
+                test_logger::error!("Unknown iteration: {}", i as usize);
                 return Err(Error::Internal);
             }
         };
-        pw_log::info!("done waiting on objects iteration {}", i as usize);
+        test_logger::info!("done waiting on objects iteration {}", i as usize);
 
         // Read the payload.
         let mut buffer = [0u8; size_of::<char>()];
@@ -77,7 +77,7 @@ fn wait_group() -> Result<()> {
         };
 
         if c != expected_char {
-            pw_log::error!(
+            test_logger::error!(
                 "Received {} character, {} expected",
                 c as char,
                 expected_char as char
@@ -91,7 +91,7 @@ fn wait_group() -> Result<()> {
         syscall::channel_respond(ipc_handle, &response_buffer)?;
     }
 
-    pw_log::info!("🔄 Objects can only be in one wait group");
+    test_logger::info!("Objects can only be in one wait group");
     let add_res =
         syscall::wait_group_add(handle::WAIT_GROUP_2, handle::IPC_A, Signals::READABLE, 3);
     if let Err(e) = add_res {
@@ -102,7 +102,7 @@ fn wait_group() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    pw_log::info!("🔄 Object removed from incorrect wait group");
+    test_logger::info!("Object removed from incorrect wait group");
     let remove_res = syscall::wait_group_remove(handle::WAIT_GROUP_2, handle::IPC_A);
     if let Err(e) = remove_res {
         if e != Error::NotFound {
@@ -115,7 +115,7 @@ fn wait_group() -> Result<()> {
     syscall::wait_group_remove(handle::WAIT_GROUP_1, handle::IPC_B)?;
     syscall::wait_group_remove(handle::WAIT_GROUP_1, handle::IPC_A)?;
 
-    pw_log::info!("🔄 Object removed when not in any wait group");
+    test_logger::info!("Object removed when not in any wait group");
     let remove_res = syscall::wait_group_remove(handle::WAIT_GROUP_1, handle::IPC_A);
     if let Err(e) = remove_res {
         if e != Error::NotFound {
@@ -125,7 +125,7 @@ fn wait_group() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    pw_log::info!("🔄 Waiting on empty wait group");
+    test_logger::info!("Waiting on empty wait group");
     let wait_return = syscall::object_wait(handle::WAIT_GROUP_1, Signals::READABLE, Instant::MAX);
     if let Err(e) = wait_return {
         if e != Error::InvalidArgument {
@@ -135,7 +135,7 @@ fn wait_group() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    pw_log::info!("🔄 Nested wait groups not supported");
+    test_logger::info!("Nested wait groups not supported");
     let add_res = syscall::wait_group_add(
         handle::WAIT_GROUP_1,
         handle::WAIT_GROUP_2,
@@ -159,7 +159,7 @@ fn entry() -> Result<()> {
     wait_group().inspect_err(|e| {
         // On error, log that it occurred and, since this is written as a test,
         // shut down the system with the error code.
-        pw_log::error!("WaitGroup service error: {}", *e as u32);
+        test_logger::error!("WaitGroup service error: {}", *e as u32);
         let _ = syscall::debug_shutdown(Err(*e));
     })
 }

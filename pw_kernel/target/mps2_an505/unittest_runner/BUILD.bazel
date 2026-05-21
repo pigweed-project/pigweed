@@ -41,6 +41,7 @@ rust_test(
         ":linker_script",
         "//pw_kernel/kernel",
         "//pw_kernel/kernel/tests:integration_tests",
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/lib/unittest:unittest_core",
         "//pw_kernel/subsys/console:console_backend",
         "//pw_kernel/target:target_common",

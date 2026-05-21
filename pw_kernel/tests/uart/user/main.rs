@@ -36,7 +36,7 @@ fn read_expected_value(expected_value: u8) -> Result<()> {
     };
 
     if buffer[0] != expected_value {
-        pw_log::error!(
+        test_logger::step_failed!(
             "UART read() wrong value {} (expected {})",
             buffer[0] as u8,
             expected_value as u8
@@ -63,7 +63,7 @@ fn test_uart_interrupts() -> Result<()> {
     read_expected_value(7)?;
 
     if !uart.read().is_none() {
-        pw_log::error!("Buffer not empty after read");
+        test_logger::step_failed!("Buffer not empty after read");
         return Err(Error::FailedPrecondition);
     }
 
@@ -73,7 +73,7 @@ fn test_uart_interrupts() -> Result<()> {
     }
 
     if !uart.read().is_none() {
-        pw_log::error!("Buffer not empty after multiple reads");
+        test_logger::step_failed!("Buffer not empty after multiple reads");
         return Err(Error::FailedPrecondition);
     }
 
@@ -82,10 +82,13 @@ fn test_uart_interrupts() -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("User UART Test");
     let ret = test_uart_interrupts()
-        .inspect(|_| pw_log::info!("✅ PASSED"))
-        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+        .inspect(|_| test_logger::passed("User UART Test"))
+        .inspect_err(|e| {
+            test_logger::failed("User UART Test");
+            test_logger::step_failed!("status code: {}", *e as u32);
+        });
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);

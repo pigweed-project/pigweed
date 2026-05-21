@@ -21,7 +21,7 @@ use userspace::time::{Clock, Duration, Instant, SystemClock};
 use userspace::{process_entry, syscall};
 
 fn test_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("Ipc test starting");
+    test_logger::step_start!("Uppercase IPC test");
     for c in 'a'..='z' {
         const SEND_BUF_LEN: usize = size_of::<char>();
         const RECV_BUF_LEN: usize = size_of::<char>() * 2;
@@ -36,7 +36,7 @@ fn test_uppercase_ipcs() -> Result<()> {
 
         // The handler side always sends 8 bytes to make up two full Rust `char`s
         if len != RECV_BUF_LEN {
-            pw_log::error!(
+            test_logger::step_failed!(
                 "Received {} bytes, {} expected",
                 len as usize,
                 RECV_BUF_LEN as usize
@@ -59,7 +59,7 @@ fn test_uppercase_ipcs() -> Result<()> {
         let char1: char = char1;
 
         // Log the response character
-        pw_log::info!(
+        test_logger::step_info!(
             "Sent {}, received ({},{})",
             c as char,
             char0 as char,
@@ -77,27 +77,29 @@ fn test_uppercase_ipcs() -> Result<()> {
         }
     }
 
+    test_logger::step_passed!("All characters received correctly");
+
     test_ipc_preserves_user_signal()?;
 
     // Test object_set_peer_user_signal: signal the handler and wait for the echo back.
     // Level-triggered model: the initiator raises USER on the handler, the handler
     // echoes USER back on the initiator and then lowers it.  The initiator only
     // observes; it does not clear the signal the handler raised.
-    pw_log::info!("Testing object_set_peer_user_signal");
+    test_logger::step_start!("Testing object_set_peer_user_signal");
     syscall::object_set_peer_user_signal(handle::IPC, true).map_err(|_| Error::Internal)?;
     let wait_return = syscall::object_wait(handle::IPC, Signals::USER, Instant::MAX)
         .map_err(|_| Error::Internal)?;
     if !wait_return.pending_signals.contains(Signals::USER) {
         return Err(Error::Internal);
     }
-    pw_log::info!("object_set_peer_user_signal round-trip OK");
+    test_logger::step_passed!("object_set_peer_user_signal round-trip OK");
 
     Ok(())
 }
 
 /// Tests that IPC transactions do not wipe out or reset active Signals::USER signals.
 fn test_ipc_preserves_user_signal() -> Result<()> {
-    pw_log::info!("📋 Testing that IPC transactions preserve Signals::USER");
+    test_logger::step_start!("Testing that IPC transactions preserve Signals::USER");
 
     let mut send_buf = [0u8; size_of::<char>()];
     let mut recv_buf = [0u8; size_of::<char>() * 2];
@@ -110,7 +112,7 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
     // Verify that Signals::USER is active on our initiator
     let wait_res = syscall::object_wait(handle::IPC, Signals::USER, SystemClock::now());
     if wait_res.is_err() {
-        pw_log::error!("❌ Expected Signals::USER to be set on initiator");
+        test_logger::error!("Expected Signals::USER to be set on initiator");
         return Err(Error::Internal);
     }
 
@@ -121,10 +123,12 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
     // Verify that Signals::USER remained active and was not wiped out by the transaction response!
     let wait_res = syscall::object_wait(handle::IPC, Signals::USER, SystemClock::now());
     if wait_res.is_err() {
-        pw_log::error!("❌ Signals::USER was reset or wiped out by the IPC transaction response!");
+        test_logger::error!(
+            "Signals::USER was reset or wiped out by the IPC transaction response!"
+        );
         return Err(Error::Internal);
     }
-    pw_log::info!("✅ Signals::USER correctly remained set across the IPC transaction!");
+    test_logger::step_passed!("Signals::USER correctly remained set across the IPC transaction!");
 
     // Tell the handler to lower the USER signal
     '#'.encode_utf8(&mut send_buf);
@@ -133,7 +137,7 @@ fn test_ipc_preserves_user_signal() -> Result<()> {
 }
 
 fn test_iovec_ipc() -> Result<()> {
-    pw_log::info!("Ipc iovec test");
+    test_logger::step_start!("IPC iovec test");
     let req1 = b"THIS";
     let req2 = b"IS";
     let req3 = b"A";
@@ -156,13 +160,23 @@ fn test_iovec_ipc() -> Result<()> {
 
     if len != 11 {
         return Err(Error::Unknown);
+    } else {
+        test_logger::step_info!("length correct");
     }
+
     if &rsp1 != b"thisis" {
         return Err(Error::Unknown);
+    } else {
+        test_logger::step_info!("response 1 correct");
     }
+
     if &rsp2 != b"atest" {
         return Err(Error::Unknown);
+    } else {
+        test_logger::step_info!("response 2 correct");
     }
+
+    test_logger::step_passed!("All iovec responses correct");
 
     Ok(())
 }
@@ -175,11 +189,14 @@ fn execute_tests() -> Result<()> {
 
 #[process_entry("initiator")]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("IPC Test");
 
     let ret = execute_tests()
-        .inspect(|_| pw_log::info!("✅ PASSED"))
-        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+        .inspect(|_| test_logger::passed("IPC Test"))
+        .inspect_err(|e| {
+            test_logger::failed("IPC Test");
+            test_logger::error!("status code: {}", *e as u32);
+        });
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);

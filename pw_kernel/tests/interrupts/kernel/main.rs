@@ -38,8 +38,8 @@ fn wait_for_count(expected: u32) -> Result<()> {
 
     let count = INTERRUPT_COUNT.load(Ordering::SeqCst);
     if count != expected {
-        pw_log::error!(
-            "❌ Assert failed: count={}, expected={}, timeout={}",
+        test_logger::step_failed!(
+            "Assert failed: count={}, expected={}, timeout={}",
             count as u32,
             expected as u32,
             timeout as i32
@@ -51,7 +51,7 @@ fn wait_for_count(expected: u32) -> Result<()> {
 }
 
 pub fn main<K: Kernel>(kernel: K, test_irq: u32) -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Kernel Interrupts Test");
 
     K::InterruptController::enable_interrupt(test_irq);
 
@@ -67,6 +67,6 @@ pub fn main<K: Kernel>(kernel: K, test_irq: u32) -> Result<()> {
     K::InterruptController::trigger_interrupt(test_irq);
     wait_for_count(3)?;
 
-    pw_log::info!("✅ PASSED");
+    test_logger::passed("Kernel Interrupts Test");
     Ok(())
 }

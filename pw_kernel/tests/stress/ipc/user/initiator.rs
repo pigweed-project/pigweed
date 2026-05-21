@@ -20,7 +20,7 @@ use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 fn test_uppercase_ipcs() -> Result<()> {
-    pw_log::info!("IPC test starting");
+    test_logger::step_start!("Uppercase IPC test");
     for c in 'a'..='z' {
         const SEND_BUF_LEN: usize = size_of::<char>();
         const RECV_BUF_LEN: usize = size_of::<char>() * 2;
@@ -35,7 +35,7 @@ fn test_uppercase_ipcs() -> Result<()> {
 
         // The handler side always sends 8 bytes to make up two full Rust `char`s
         if len != RECV_BUF_LEN {
-            pw_log::error!(
+            test_logger::step_failed!(
                 "Received {} bytes, {} expected",
                 len as usize,
                 RECV_BUF_LEN as usize
@@ -58,7 +58,7 @@ fn test_uppercase_ipcs() -> Result<()> {
         let char1: char = char1;
 
         // Log the response character
-        pw_log::info!(
+        test_logger::step_passed!(
             "Sent {}, received ({},{})",
             c as char,
             char0 as char,
@@ -81,13 +81,13 @@ fn test_uppercase_ipcs() -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Stress IPC Test");
 
     let mut pass = 0;
     loop {
         let _ = test_uppercase_ipcs()
-            .inspect(|_| pw_log::info!("✅ PASSED {}", pass as u32))
-            .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+            .inspect(|_| test_logger::step_passed!("PASSED {}", pass as u32))
+            .inspect_err(|e| test_logger::step_failed!("FAILED: {}", *e as u32));
         pass += 1;
     }
 }

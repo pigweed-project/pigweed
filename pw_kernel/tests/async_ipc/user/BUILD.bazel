@@ -37,8 +37,8 @@ rust_process(
     edition = "2024",
     tags = ["kernel"],
     deps = [
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
     ],
 )
@@ -53,8 +53,8 @@ rust_process(
     edition = "2024",
     tags = ["kernel"],
     deps = [
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
     ],
 )
@@ -69,8 +69,8 @@ rust_process(
     edition = "2024",
     tags = ["kernel"],
     deps = [
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
     ],
 )
@@ -84,8 +84,8 @@ rust_app(
     visibility = ["//visibility:public"],
     deps = [
         "//pw_kernel/lib/time",
+        "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/userspace",
-        "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
     ],
 )

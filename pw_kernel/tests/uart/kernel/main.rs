@@ -27,7 +27,7 @@ pub trait TestUart {
 }
 
 pub fn main<K: Kernel, U: TestUart>(_kernel: K) -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Kernel UART Test");
 
     // enable lo to support writing and then reading back the result.
     U::enable_loopback();
@@ -64,6 +64,6 @@ pub fn main<K: Kernel, U: TestUart>(_kernel: K) -> Result<()> {
         "Buffer empty multiple reads"
     );
 
-    pw_log::info!("✅ PASSED");
+    test_logger::passed("Kernel UART Test");
     Ok(())
 }

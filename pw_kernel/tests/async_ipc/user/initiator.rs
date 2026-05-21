@@ -27,8 +27,6 @@ const NUM_HANDLERS: u32 = 3;
 const ITERATIONS: usize = 100;
 
 fn test_async_cancel() -> Result<()> {
-    pw_log::info!("Async Cancel test starting");
-
     let send_buf = [0x42];
     let mut recv_buf = [0u8; 1];
 
@@ -44,24 +42,24 @@ fn test_async_cancel() -> Result<()> {
             recv_buf.len(),
         )
     } {
-        pw_log::error!("channel_async_transact failed (1): {}", e as u32);
+        test_logger::error!("channel_async_transact failed (1): {}", e as u32);
         return Err(e);
     }
 
     // 2. Cancel it
     if let Err(e) = channel_async_cancel(handle::IPC_1) {
-        pw_log::error!("channel_async_cancel failed: {}", e as u32);
+        test_logger::error!("channel_async_cancel failed: {}", e as u32);
         return Err(e);
     }
 
     // 3. Verify that finishing a cancelled transaction fails with Unavailable
     let Err(err) = channel_async_transact_complete(handle::IPC_1) else {
-        pw_log::error!("channel_async_transact_complete succeeded on cancelled transaction");
+        test_logger::error!("channel_async_transact_complete succeeded on cancelled transaction");
         return Err(Error::Internal);
     };
 
     if err != Error::Unavailable {
-        pw_log::error!(
+        test_logger::error!(
             "channel_async_transact_complete returned unexpected error: {}",
             err as u32
         );
@@ -74,12 +72,12 @@ fn test_async_cancel() -> Result<()> {
         Signals::READABLE,
         SystemClock::now() + Duration::from_millis(10),
     ) else {
-        pw_log::error!("object_wait succeeded on cancelled transaction");
+        test_logger::error!("object_wait succeeded on cancelled transaction");
         return Err(Error::Internal);
     };
 
     if err != Error::DeadlineExceeded {
-        pw_log::error!("object_wait returned unexpected error: {}", err as u32);
+        test_logger::error!("object_wait returned unexpected error: {}", err as u32);
         return Err(err);
     }
 
@@ -95,7 +93,7 @@ fn test_async_cancel() -> Result<()> {
             recv_buf.len(),
         )
     } {
-        pw_log::error!("channel_async_transact failed (2): {}", e as u32);
+        test_logger::error!("channel_async_transact failed (2): {}", e as u32);
         return Err(e);
     }
 
@@ -103,12 +101,12 @@ fn test_async_cancel() -> Result<()> {
     let ret = match object_wait(handle::IPC_1, Signals::READABLE, Instant::MAX) {
         Ok(res) => res,
         Err(e) => {
-            pw_log::error!("object_wait failed: {}", e as u32);
+            test_logger::error!("object_wait failed: {}", e as u32);
             return Err(e);
         }
     };
     if !ret.pending_signals.contains(Signals::READABLE) {
-        pw_log::error!("object_wait returned success but READABLE is missing");
+        test_logger::error!("object_wait returned success but READABLE is missing");
         return Err(Error::Internal);
     }
 
@@ -116,13 +114,13 @@ fn test_async_cancel() -> Result<()> {
     let len = match channel_async_transact_complete(handle::IPC_1) {
         Ok(l) => l,
         Err(e) => {
-            pw_log::error!("channel_async_transact_complete failed: {}", e as u32);
+            test_logger::error!("channel_async_transact_complete failed: {}", e as u32);
             return Err(e);
         }
     };
 
     if len != 1 {
-        pw_log::error!("Length mismatch: got {}", len as u32);
+        test_logger::error!("Length mismatch: got {}", len as u32);
         return Err(Error::Internal);
     }
 
@@ -130,15 +128,13 @@ fn test_async_cancel() -> Result<()> {
 }
 
 fn test_increment_async_ipcs() -> Result<()> {
-    pw_log::info!("Async Ipc test starting");
-
     let handles = [handle::IPC_1, handle::IPC_2, handle::IPC_3];
     let increments = [1u8, 2u8, 3u8];
 
     // Add channels to wait group.
     for (i, &h) in handles.iter().enumerate() {
         if let Err(e) = wait_group_add(handle::WAIT_GROUP, h, Signals::READABLE, i) {
-            pw_log::error!(
+            test_logger::error!(
                 "wait_group_add failed for handle {}: {}",
                 i as u32,
                 e as u32
@@ -166,7 +162,7 @@ fn test_increment_async_ipcs() -> Result<()> {
                     recv_buffers[i].len(),
                 )
             } {
-                pw_log::error!(
+                test_logger::error!(
                     "channel_async_transact failed for handle {}: {}",
                     i as u32,
                     e as u32
@@ -182,7 +178,7 @@ fn test_increment_async_ipcs() -> Result<()> {
             let result = match object_wait(handle::WAIT_GROUP, Signals::READABLE, Instant::MAX) {
                 Ok(res) => res,
                 Err(e) => {
-                    pw_log::error!("object_wait failed: {}", e as u32);
+                    test_logger::error!("object_wait failed: {}", e as u32);
                     return Err(e);
                 }
             };
@@ -201,7 +197,7 @@ fn test_increment_async_ipcs() -> Result<()> {
             let recv_len = match channel_async_transact_complete(handles[idx]) {
                 Ok(len) => len,
                 Err(e) => {
-                    pw_log::error!(
+                    test_logger::error!(
                         "channel_async_transact_complete failed for handle {}: {}",
                         idx as u32,
                         e as u32
@@ -211,7 +207,7 @@ fn test_increment_async_ipcs() -> Result<()> {
             };
 
             if recv_len != 1 {
-                pw_log::error!(
+                test_logger::error!(
                     "Length mismatch for handler {}: got {}",
                     (idx + 1) as u32,
                     recv_len as u32
@@ -223,7 +219,7 @@ fn test_increment_async_ipcs() -> Result<()> {
             let expected = val_u8.wrapping_add(increments[idx]);
 
             if received != expected {
-                pw_log::error!(
+                test_logger::error!(
                     "Value mismatch handler {}: sent {}, got {}, want {}",
                     (idx + 1) as u32,
                     val as u32,
@@ -236,7 +232,7 @@ fn test_increment_async_ipcs() -> Result<()> {
             completed_count += 1;
         }
 
-        pw_log::info!("Iteration {} passed", val as u32);
+        test_logger::info!("Iteration {} passed", val as u32);
     }
 
     Ok(())
@@ -244,12 +240,15 @@ fn test_increment_async_ipcs() -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Async IPC Test");
 
     let ret = test_async_cancel()
         .and_then(|_| test_increment_async_ipcs())
-        .inspect(|_| pw_log::info!("✅ PASSED"))
-        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+        .inspect(|_| test_logger::passed("Async IPC Test"))
+        .inspect_err(|e| {
+            test_logger::failed("Async IPC Test");
+            test_logger::error!("status code: {}", *e as u32);
+        });
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = userspace::syscall::debug_shutdown(ret);
@@ -259,7 +258,7 @@ fn entry() -> Result<()> {
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // Attempt to log panic (might fail if lock held?)
-    // pw_log::error!("Panic: {:?}", _info);
+    // test_logger::error!("PANIC");
     use userspace::syscall::debug_shutdown;
     let _ = debug_shutdown(Err(pw_status::Error::Internal));
     loop {}

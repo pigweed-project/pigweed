@@ -23,7 +23,7 @@ mod common_handler;
 #[process_entry("handler1")]
 fn entry() -> Result<()> {
     common_handler::handle_increment_ipc(handle::IPC_1, 1).inspect_err(|e| {
-        pw_log::error!("IPC service 1 error: {}", *e as u32);
+        test_logger::step_failed!("IPC service 1 error: {}", *e as u32);
         let _ = userspace::syscall::debug_shutdown(Err(*e));
     })
 }

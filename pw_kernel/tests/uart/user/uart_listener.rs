@@ -24,7 +24,7 @@ use userspace::{entry, syscall};
 
 fn handle_interrupt(uart: &mut Uart, interrupts: Signals) -> Result<()> {
     if !interrupts.contains(signals::UART0) {
-        pw_log::error!(
+        test_logger::step_failed!(
             "Interrupt on wrong signal. {} not in {}",
             signals::UART0.bits() as u32,
             interrupts.bits() as u32
@@ -34,7 +34,7 @@ fn handle_interrupt(uart: &mut Uart, interrupts: Signals) -> Result<()> {
 
     let value = uart.read();
     if value.is_none() {
-        pw_log::error!("No data to read");
+        test_logger::step_failed!("No data to read");
         return Err(Error::FailedPrecondition);
     }
 
@@ -54,7 +54,7 @@ fn handle_interrupt(uart: &mut Uart, interrupts: Signals) -> Result<()> {
     };
 
     if len != RECV_BUF_LEN {
-        pw_log::error!(
+        test_logger::step_failed!(
             "Received {} bytes, {} expected",
             len as usize,
             RECV_BUF_LEN as usize
@@ -73,12 +73,12 @@ fn entry() -> Result<()> {
         let wait_return =
             syscall::object_wait(handle::UART_INTERRUPTS, signals::UART0, Instant::MAX)
                 .inspect_err(|e| {
-                    pw_log::error!("Failed to wait on interrupt");
+                    test_logger::step_failed!("Failed to wait on interrupt");
                     let _ = syscall::debug_shutdown(Err(*e));
                 })?;
 
         if !wait_return.pending_signals.contains(signals::UART0) || wait_return.user_data != 0 {
-            pw_log::error!("Incorrect WaitReturn values");
+            test_logger::step_failed!("Incorrect WaitReturn values");
             let _ = syscall::debug_shutdown(Err(Error::Internal));
             return Err(Error::Internal);
         }

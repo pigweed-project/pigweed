@@ -16,7 +16,6 @@
 #![no_main]
 
 use main_codegen::handle;
-use pw_log::info;
 use pw_status::Result;
 use userspace::time::{Clock, Duration, SystemClock};
 use userspace::{entry, syscall};
@@ -24,42 +23,42 @@ use userspace::{entry, syscall};
 const PROCESS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn do_test() -> Result<()> {
-    info!("🔄 [User Process Termination Stress] RUNNING");
+    test_logger::start("User Process Termination Stress");
 
     let mut pass = 0;
 
     loop {
-        info!("🔄 ├─ Pass {}", pass as u32);
+        test_logger::step_info!("Pass {}", pass as u32);
 
         if let Err(err) = syscall::task_terminate(handle::FORCED_EXIT_PROCESS) {
-            pw_log::error!("Failed to terminate extra process");
+            test_logger::step_failed!("Failed to terminate extra process");
             return Err(err);
         }
 
-        info!("🔄 ├─ Waiting", pass as u32);
+        test_logger::step_info!("Waiting {}", pass as u32);
         let deadline = SystemClock::now() + PROCESS_JOIN_TIMEOUT;
         if let Err(err) = syscall::object_wait(
             handle::FORCED_EXIT_PROCESS,
             syscall::Signals::JOINABLE,
             deadline,
         ) {
-            pw_log::error!("Failed to wait for extra process to become joinable");
+            test_logger::step_failed!("Failed to wait for extra process to become joinable");
             return Err(err);
         }
 
-        info!("🔄 ├─ Joining", pass as u32);
+        test_logger::step_info!("Joining {}", pass as u32);
         match syscall::task_join(handle::FORCED_EXIT_PROCESS) {
             Err(err) => return Err(err),
             Ok(syscall::ExitStatus::TerminatedBySyscall) => (),
             Ok(_) => {
-                pw_log::error!("❌ ├─ Process joined with unexpected status");
+                test_logger::step_failed!("Process joined with unexpected status");
                 return Err(pw_status::Error::Internal);
             }
         }
 
-        info!("🔄 ├─ Starting", pass as u32);
+        test_logger::step_info!("Starting {}", pass as u32);
         if let Err(err) = syscall::process_start(handle::FORCED_EXIT_PROCESS) {
-            pw_log::error!("Failed to restart extra process");
+            test_logger::step_failed!("Failed to restart extra process");
             return Err(err);
         }
 
@@ -70,8 +69,8 @@ fn do_test() -> Result<()> {
 #[entry]
 fn main_entry() -> Result<()> {
     let ret = do_test().inspect_err(|e| {
-        pw_log::error!("❌ FAILED");
-        pw_log::error!("❌ status code: {}", *e as u32);
+        test_logger::failed("User Process Termination Stress");
+        test_logger::step_failed!("status code: {}", *e as u32);
     });
 
     let _ = syscall::debug_shutdown(ret);
@@ -80,7 +79,7 @@ fn main_entry() -> Result<()> {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("❌ PANIC");
+    test_logger::step_failed!("PANIC");
     let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }

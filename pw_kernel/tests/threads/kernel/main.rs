@@ -19,7 +19,6 @@ use kernel::sync::event::{Event, EventConfig, EventSignaler};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Kernel};
 use kernel_config::{KernelConfig, KernelConfigInterface};
-use pw_log::info;
 use pw_status::Result;
 
 pub struct AppState<K: Kernel> {
@@ -50,7 +49,7 @@ struct ThreadAArgs<'a, K: Kernel> {
 }
 
 pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Kernel Threads Test");
 
     let thread_b_args = ThreadAArgs {
         test_counter: &state.test_counter,
@@ -69,7 +68,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
 
     kernel::start_thread(kernel, thread_b);
 
-    info!("Thread A re-using bootstrap thread");
+    test_logger::info!("Thread A re-using bootstrap thread");
     thread_a(kernel, &state.test_counter);
 
     let wait_result = state
@@ -77,15 +76,15 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
         .wait_until(kernel.now() + Duration::from_secs(1));
 
     match wait_result {
-        Ok(()) => pw_log::info!("✅ PASSED"),
-        Err(err) => pw_log::error!("❌ FAILED: {}", err as u32),
+        Ok(()) => test_logger::passed("Kernel Threads Test"),
+        Err(_err) => test_logger::failed("Kernel Threads Test"),
     }
 
     wait_result
 }
 
 fn test_thread_entry_b<K: Kernel>(kernel: K, args: &ThreadAArgs<K>) {
-    info!("Thread B starting");
+    test_logger::info!("Thread B starting");
     thread_b(kernel, args);
 }
 
@@ -93,26 +92,26 @@ fn thread_a<K: Kernel>(kernel: K, test_counter: &Mutex<K, u64>) {
     for _ in 0..3 {
         let mut counter = test_counter.lock();
         let _ = kernel::sleep_until(kernel, kernel.now() + Duration::from_secs(1));
-        info!("Thread A: Incrementing counter");
+        test_logger::info!("Thread A: Incrementing counter");
         *counter = (*counter).saturating_add(1);
     }
-    info!("Thread A: Done");
+    test_logger::info!("Thread A: Done");
 }
 
 fn thread_b<K: Kernel>(kernel: K, args: &ThreadAArgs<K>) {
     for _ in 0..4 {
         let deadline = kernel.now() + Duration::from_millis(600);
         let Ok(counter) = args.test_counter.lock_until(deadline) else {
-            info!("Thread B: Timeout");
+            test_logger::info!("Thread B: Timeout");
             continue;
         };
-        info!("Thread B: Counter value {}", *counter as u64);
+        test_logger::info!("Thread B: Counter value {}", *counter as u64);
         pw_assert::assert!(*counter < 4);
 
         drop(counter);
         // Give Thread A a chance to acquire the mutex.
         kernel::yield_timeslice(kernel);
     }
-    info!("Thread B: Done");
+    test_logger::info!("Thread B: Done");
     args.done_signaler.signal();
 }

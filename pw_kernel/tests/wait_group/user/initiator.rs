@@ -20,7 +20,7 @@ use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 fn send_char(ipc_channel: u32, c: char, iteration: usize) -> Result<()> {
-    pw_log::info!("Sending {} on channel {}", c as char, ipc_channel as u32);
+    test_logger::info!("Sending {} on channel {}", c as char, ipc_channel as u32);
 
     const SEND_BUF_LEN: usize = size_of::<char>();
     const RECV_BUF_LEN: usize = size_of::<usize>();
@@ -34,7 +34,7 @@ fn send_char(ipc_channel: u32, c: char, iteration: usize) -> Result<()> {
         syscall::channel_transact(ipc_channel, &send_buf, &mut recv_buf, Instant::MAX)?;
 
     if len != RECV_BUF_LEN {
-        pw_log::error!(
+        test_logger::error!(
             "Received {} bytes, {} expected",
             len as usize,
             RECV_BUF_LEN as usize
@@ -44,7 +44,7 @@ fn send_char(ipc_channel: u32, c: char, iteration: usize) -> Result<()> {
 
     let ret = usize::from_ne_bytes(recv_buf.try_into().unwrap());
     if ret != iteration {
-        pw_log::error!(
+        test_logger::error!(
             "Received {} return value, {} expected",
             ret as usize,
             iteration as usize
@@ -56,7 +56,7 @@ fn send_char(ipc_channel: u32, c: char, iteration: usize) -> Result<()> {
 }
 
 fn test_wait_group() -> Result<()> {
-    pw_log::info!("Wait group test starting");
+    test_logger::info!("Wait group test starting");
     send_char(handle::IPC_A, 'a', 0)?;
     send_char(handle::IPC_B, 'b', 1)?;
     send_char(handle::IPC_A, 'c', 2)?;
@@ -66,11 +66,14 @@ fn test_wait_group() -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("Wait Group Test");
 
     let ret = test_wait_group()
-        .inspect(|_| pw_log::info!("✅ PASSED"))
-        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+        .inspect(|_| test_logger::passed("Wait Group Test"))
+        .inspect_err(|e| {
+            test_logger::failed("Wait Group Test");
+            test_logger::error!("status code: {}", *e as u32);
+        });
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);

@@ -38,7 +38,7 @@ fn read_expected_value(expected_value: u32) -> Result<()> {
 
     let received_value = u32::from_le_bytes(buffer);
     if received_value != expected_value {
-        pw_log::error!(
+        test_logger::step_failed!(
             "Interrupt count wrong value {} (expected {})",
             received_value as u32,
             expected_value as u32
@@ -67,10 +67,13 @@ fn test_interrupts() -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    pw_log::info!("🔄 RUNNING");
+    test_logger::start("User Interrupts Test");
     let ret = test_interrupts()
-        .inspect(|_| pw_log::info!("✅ PASSED"))
-        .inspect_err(|e| pw_log::error!("❌ FAILED: {}", *e as u32));
+        .inspect(|_| test_logger::passed("User Interrupts Test"))
+        .inspect_err(|e| {
+            test_logger::failed("User Interrupts Test");
+            test_logger::step_failed!("status code: {}", *e as u32);
+        });
 
     // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);

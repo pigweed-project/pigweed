@@ -15,11 +15,10 @@
 #![no_std]
 #![no_main]
 
-use pw_log::info;
 use userspace::process_entry;
 
 #[process_entry("clean_exit")]
 fn main() -> u32 {
-    info!("I am the clean exit process. Exiting...");
+    test_logger::info!("I am the clean exit process. Exiting...");
     42
 }

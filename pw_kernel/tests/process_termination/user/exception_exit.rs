@@ -15,16 +15,15 @@
 #![no_std]
 #![no_main]
 
-use pw_log::{error, info};
 use pw_status::{Error, Result};
 use userspace::process_entry;
 
 #[process_entry("exception_exit")]
 fn main() -> Result<()> {
-    info!("I am the exception exit process. Triggering exception...");
+    test_logger::info!("I am the exception exit process. Triggering exception...");
     unsafe {
         core::ptr::null_mut::<u32>().write_volatile(42);
     }
-    error!("Exception trigger FAILED!");
+    test_logger::error!("Exception trigger FAILED!");
     Err(Error::Internal)
 }

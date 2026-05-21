@@ -17,7 +17,6 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use main_codegen::handle;
-use pw_log::info;
 use pw_status::Result;
 use userspace::{entry, syscall};
 
@@ -26,21 +25,21 @@ static THREAD_DONE: AtomicU32 = AtomicU32::new(0);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn test_thread_entry(_arg: usize) -> ! {
-    info!("Test thread started");
+    test_logger::info!("Test thread started");
     THREAD_DONE.store(1, Ordering::SeqCst);
-    info!("Test thread exiting");
+    test_logger::info!("Test thread exiting");
 
     syscall::thread_exit(42);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn spin_thread_entry(_arg: usize) -> ! {
-    info!("Spin thread started");
+    test_logger::info!("Spin thread started");
     loop {}
 }
 
 fn do_test() -> Result<()> {
-    info!("🔄 [User Thread Termination] RUNNING");
+    test_logger::start("User Thread Termination");
 
     let thread_handle = handle::TEST_THREAD;
 
@@ -50,10 +49,10 @@ fn do_test() -> Result<()> {
     let initial_sp =
         unsafe { core::ptr::addr_of_mut!(THREAD_STACK).cast::<u8>().add(1024) as usize };
 
-    info!("🔄 ├─ Starting test thread");
+    test_logger::info!("Starting test thread");
     syscall::thread_start(thread_handle, initial_pc, initial_sp)?;
 
-    info!("🔄 ├─ Waiting for test thread to terminate");
+    test_logger::info!("Waiting for test thread to terminate");
     syscall::object_wait(
         thread_handle,
         syscall::Signals::JOINABLE,
@@ -61,24 +60,24 @@ fn do_test() -> Result<()> {
     )?;
     let status = syscall::task_join(thread_handle)?;
     if status != syscall::ExitStatus::Success(42) {
-        pw_log::error!("❌ ├─ Thread joined with unexpected status");
+        test_logger::error!("Thread joined with unexpected status");
         return Err(pw_status::Error::Internal);
     }
 
-    info!("🔄 ├─ Thread joined");
+    test_logger::info!("Thread joined");
     let done = THREAD_DONE.load(Ordering::SeqCst);
     if done != 1 {
         return Err(pw_status::Error::Internal);
     }
 
-    info!("🔄 ├─ Starting test thread again for external termination");
+    test_logger::info!("Starting test thread again for external termination");
     let initial_pc = spin_thread_entry as *const () as usize;
     syscall::thread_start(thread_handle, initial_pc, initial_sp)?;
 
-    info!("🔄 ├─ Terminating test thread from main thread");
+    test_logger::info!("Terminating test thread from main thread");
     syscall::task_terminate(thread_handle)?;
 
-    info!("🔄 ├─ Waiting for test thread to terminate");
+    test_logger::info!("Waiting for test thread to terminate");
     syscall::object_wait(
         thread_handle,
         syscall::Signals::JOINABLE,
@@ -86,10 +85,10 @@ fn do_test() -> Result<()> {
     )?;
     let status = syscall::task_join(thread_handle)?;
     if status != syscall::ExitStatus::TerminatedBySyscall {
-        pw_log::error!("❌ ├─ Thread joined with unexpected status (expected TerminatedBySyscall)");
+        test_logger::error!("Thread joined with unexpected status (expected TerminatedBySyscall)");
         return Err(pw_status::Error::Internal);
     }
-    info!("🔄 ├─ Thread joined (terminated from outside)");
+    test_logger::info!("Thread joined (terminated from outside)");
 
     Ok(())
 }
@@ -97,10 +96,10 @@ fn do_test() -> Result<()> {
 #[entry]
 fn main_entry() -> Result<()> {
     let ret = do_test()
-        .inspect(|_| pw_log::info!("✅ └─ PASSED"))
+        .inspect(|_| test_logger::passed("User Thread Termination"))
         .inspect_err(|e| {
-            pw_log::error!("❌ ├─ FAILED");
-            pw_log::error!("❌ └─ status code: {}", *e as u32);
+            test_logger::failed("User Thread Termination");
+            test_logger::error!("status code: {}", *e as u32);
         });
 
     let _ = syscall::debug_shutdown(ret);
@@ -109,7 +108,7 @@ fn main_entry() -> Result<()> {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("❌ PANIC");
+    test_logger::error!("PANIC");
     let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     loop {}
 }
