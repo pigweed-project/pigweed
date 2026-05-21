@@ -126,6 +126,7 @@ pub fn initialize<K: Kernel>(kernel: K) {
     // incremented.
     unsafe {
         let kernel_process = sched_state.kernel_process.get();
+        (*kernel_process).state = ProcessState::Active;
         (*kernel_process).manually_increment_ref_count();
         let kernel_process = ForeignBox::new(NonNull::new_unchecked(kernel_process));
 
@@ -137,7 +138,11 @@ pub fn add_process<K: Kernel>(kernel: K, mut process: ForeignBox<Process<K>>) ->
     let mut sched_state = kernel.get_scheduler().lock(kernel);
     let process_ref = ProcessRef::new(NonNull::from(&mut *process), kernel);
 
-    process.state = ProcessState::New;
+    // The only way for a `ForeignBox<Process<K>>` to exist outside the scheduler,
+    // is for it to be newly created or to have been returned by the scheduler from a join.
+    // In both cases, the process is in the `Inactive` state.
+    pw_assert::assert!(process.state == ProcessState::Inactive);
+    process.state = ProcessState::Active;
 
     // SAFETY: We are taking ownership of the ForeignBox and interacting with the
     // scheduler state which we have locked.
@@ -419,22 +424,22 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         _kernel: K,
         thread: &mut Thread<K>,
         mut process_ref: ProcessRef<K>,
-    ) {
+    ) -> Result<()> {
         thread.state = State::Initial;
 
         // SAFETY: *process is only accessed with the scheduler lock held.
         unsafe {
             let process = process_ref.process.as_mut();
-            // Assert that the parent process is added to the scheduler.
-            pw_assert::assert!(
-                process.link.is_linked(),
-                "Tried to add a Thread to an unregistered Process"
-            );
+            // Assert that the parent process is active.
+            if process.state != ProcessState::Active {
+                return Err(Error::FailedPrecondition);
+            }
             // Add thread to processes thread list.
             process.add_to_thread_list(thread);
         }
 
         thread.set_process(process_ref);
+        Ok(())
     }
 
     pub fn thread_initialize_kernel<A: ThreadArg>(
@@ -459,7 +464,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             );
         }
 
-        self.thread_initialize(kernel, thread, process_ref)
+        // The kernel process is bootstrapped as active, and any attempt to
+        // terminate it will panic. Therefore, this initialization must always succeed.
+        pw_assert::assert!(self.thread_initialize(kernel, thread, process_ref).is_ok());
     }
 
     pub fn thread_reinitialize_kernel<A: ThreadArg>(
@@ -487,7 +494,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             );
         }
 
-        self.thread_initialize(kernel, thread, process_ref)
+        // The kernel process is bootstrapped as active, and any attempt to
+        // terminate it will panic. Therefore, this initialization must always succeed.
+        pw_assert::assert!(self.thread_initialize(kernel, thread, process_ref).is_ok());
     }
 
     #[cfg(feature = "user_space")]
@@ -525,8 +534,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             )?;
         }
 
-        self.thread_initialize(kernel, thread, process_ref);
-        Ok(())
+        self.thread_initialize(kernel, thread, process_ref)
     }
 
     fn thread_get_state(&self, thread: &ThreadRef<K>) -> thread::State {
@@ -772,11 +780,18 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         status: ExitStatus,
     ) {
         let mut ptr = process_ref.process;
+        pw_assert::assert!(
+            ptr.as_ptr() != self.kernel_process.get(),
+            "Tried to terminate the kernel process"
+        );
+        // SAFETY: `process_ref` guarantees that the pointed-to process is alive.
+        // Holding the scheduler lock (via `&mut self`) guarantees exclusive mutable
+        // access. The returned mutable reference `proc` is local to this function
+        // and does not outlive the lock.
         let proc = unsafe { ptr.as_mut() };
 
-        match proc.state {
-            ProcessState::Terminating | ProcessState::Terminated => return,
-            _ => {}
+        if proc.state != ProcessState::Active {
+            return;
         }
 
         // Set state to terminating
@@ -842,6 +857,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
                     .remove_element(process_ref.process)
                     .unwrap_unchecked()
             };
+            process_box.state = ProcessState::Inactive;
 
             // Clear JOINABLE signal.
             #[cfg(feature = "user_space")]
@@ -922,21 +938,21 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         self
     }
 
-    #[must_use]
     pub fn process_add_thread(
-        self,
+        &self,
         process_ref: &mut ProcessRef<K>,
         thread_ref: &mut ThreadRef<K>,
-    ) -> Self {
+    ) -> Result<()> {
         // SAFETY: Scheduler lock is held ensuring exclusive access to process_ref
-        // and thread_ref as well as fulfilling the precondistion of `add_to_thread_list`.
+        // and thread_ref as well as fulfilling the precondition of `add_to_thread_list`.
         unsafe {
-            process_ref
-                .process
-                .as_mut()
-                .add_to_thread_list(thread_ref.thread.as_mut());
+            let process = process_ref.process.as_mut();
+            if process.state != ProcessState::Active {
+                return Err(Error::FailedPrecondition);
+            }
+            process.add_to_thread_list(thread_ref.thread.as_mut());
         }
-        self
+        Ok(())
     }
 }
 

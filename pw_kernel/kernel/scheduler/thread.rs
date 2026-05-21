@@ -222,22 +222,28 @@ pub(super) fn to_string(s: State) -> &'static str {
     }
 }
 
+/// Runtime state of a Process.
 #[derive(Copy, Clone, PartialEq)]
 pub enum ProcessState {
-    New,
-    Ready,
+    /// Process is registered with the scheduled because it is either new or has been joined.
+    Inactive,
+
+    /// Process is registered with the scheduler and participates in execution.
+    Active,
+
+    /// Process termination has been requested; threads are being terminated.
     Terminating,
+
+    /// Process has no active threads and is terminated, waiting to be joined.
     Terminated,
-    Joined,
 }
 
 pub(super) fn process_state_to_string(s: ProcessState) -> &'static str {
     match s {
-        ProcessState::New => "New",
-        ProcessState::Ready => "Ready",
+        ProcessState::Inactive => "Inactive",
+        ProcessState::Active => "Active",
         ProcessState::Terminating => "Terminating",
         ProcessState::Terminated => "Terminated",
-        ProcessState::Joined => "Joined",
     }
 }
 
@@ -343,7 +349,7 @@ impl<K: Kernel> Process<K> {
             object: None,
             thread_list: UnsafeList::new(),
             ref_count: K::AtomicUsize::ZERO,
-            state: ProcessState::New,
+            state: ProcessState::Inactive,
             join_event: None,
             exit_status: None,
         }
@@ -581,11 +587,11 @@ impl<K: Kernel> ProcessRef<K> {
         sched
     }
 
-    pub fn add_thread(&mut self, kernel: K, thread_ref: &mut ThreadRef<K>) {
-        let _ = kernel
+    pub fn add_thread(&mut self, kernel: K, thread_ref: &mut ThreadRef<K>) -> Result<()> {
+        kernel
             .get_scheduler()
             .lock(kernel)
-            .process_add_thread(self, thread_ref);
+            .process_add_thread(self, thread_ref)
     }
 
     pub fn range_has_access(&self, region_type: MemoryRegionType, range: Range<usize>) -> bool {
