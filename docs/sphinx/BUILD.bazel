@@ -426,6 +426,7 @@ sphinx_build_binary(
 # code and assets to our CDN.
 sphinx_docs(
     name = "docs",
+    allow_persistent_workers = False,
     config = "conf.py",
     extra_opts = [
         "--silent",

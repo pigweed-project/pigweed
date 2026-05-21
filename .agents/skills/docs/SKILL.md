@@ -2,7 +2,7 @@
 name: docs
 description: >-
   Use for ALL documentation-related workflows: rst style guide,
-  changelog updates
+  changelog updates, C/C++ API reference (Doxygen)
 ---
 
 # Docs
@@ -38,6 +38,7 @@ Each of the sections below represents a workflow. Summary:
 
 * rst: Align with Pigweed's reStructuredText (reST) style guide.
 * changelog: Update the Pigweed changelog.
+* doxygen: Create C/C++ API reference content.
 
 All workflows follow this pattern:
 
@@ -78,3 +79,16 @@ Guards:
 * "analyze this codebase in relation to the c++ 2026 changelog"
 
 Path: `//docs/agents/changelog/AGENTS.md`
+
+### doxygen
+
+Triggers:
+
+* A target in `//docs/doxygen` has failed to build
+* The user is attempting to create new C/C++ API reference content
+
+Guards:
+
+* "search the doxygen docs"
+
+Path: `//docs/agents/doxygen/AGENTS.md`
