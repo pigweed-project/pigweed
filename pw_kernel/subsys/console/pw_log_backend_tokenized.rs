@@ -60,10 +60,10 @@ pub mod __private {
 // print the log level.
 #[macro_export]
 macro_rules! pw_log_backend {
-  ($log_level:expr, $format_string:literal $(, $args:expr)* $(,)?) => {{
+  ($log_level:expr, $($format_string:literal)PW_FMT_CONCAT+ $(, $args:expr)* $(,)?) => {{
     let _ = $crate::__private::tokenize_core_fmt_to_writer!(
       $crate::__private::TokenizedWriter,
-      "[{}] " PW_FMT_CONCAT $format_string,
+      "[{}] " PW_FMT_CONCAT $($format_string)PW_FMT_CONCAT+,
       $crate::__private::log_level_tag($log_level) as &str,
       $($args),*);
   }};

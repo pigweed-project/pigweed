@@ -99,3 +99,30 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
 
     output
 }
+
+#[cfg(test)]
+mod fmt_concat_tests {
+    use pw_log_backend::pw_log_backend;
+    use pw_log_backend_api::LogLevel;
+
+    use super::*;
+
+    #[test]
+    fn fmt_concat_prints_to_stdout() {
+        assert_eq!(
+            run_with_capture(|| pw_log_backend!(LogLevel::Info, "Hello " PW_FMT_CONCAT "Pigweed")),
+            "[INF] Hello Pigweed\n"
+        );
+    }
+
+    #[test]
+    fn fmt_concat_with_arg_prints_to_stdout() {
+        assert_eq!(
+            run_with_capture(
+                #[allow(clippy::unnecessary_cast)]
+                || pw_log_backend!(LogLevel::Info, "The answer is " PW_FMT_CONCAT "{}", 42 as i32)
+            ),
+            "[INF] The answer is 42\n"
+        );
+    }
+}

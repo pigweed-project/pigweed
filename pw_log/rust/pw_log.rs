@@ -66,14 +66,31 @@ pub mod __private {
 /// log!(LogLevel::Info, "Log fact: A {} log has a Janka hardness of {} lbf.",
 ///      "Spruce Pine" as &str, 700 as i32);
 /// ```
+///
+/// Multiple string literals can be concatenated using the `PW_FMT_CONCAT` operator.
+///
+/// This is particularly useful when writing wrapper macros that need to prepend
+/// a prefix to a format string.
+///
+/// ```
+/// use pw_log::{log, LogLevel};
+///
+/// macro_rules! my_info_log {
+///     ($format_string:literal $(, $args:expr)* $(,)?) => {
+///         log!(LogLevel::Info, "[MyModule] " PW_FMT_CONCAT $format_string $(, $args)*)
+///     };
+/// }
+///
+/// my_info_log!("The answer is {}.", 42 as i32);
+/// ```
 #[macro_export]
 macro_rules! log {
-  ($log_level:expr, $format_string:literal $(,)?) => {{
+  ($log_level:expr, $($format_string:literal)PW_FMT_CONCAT+ $(, $args:expr)* $(,)?) => {{
     use $crate::__private as __pw_log_crate;
-    $crate::__private::pw_log_backend!($log_level, $format_string)
+    $crate::__private::pw_log_backend!($log_level, $($format_string)PW_FMT_CONCAT+, $($args),*)
   }};
 
-  ($log_level:expr, $format_string:literal, $($args:expr),* $(,)?) => {{
+  ($log_level:expr, $format_string:literal $(, $args:expr)* $(,)?) => {{
     use $crate::__private as __pw_log_crate;
     $crate::__private::pw_log_backend!($log_level, $format_string, $($args),*)
   }};
@@ -121,9 +138,9 @@ macro_rules! pw_logf {
 /// ```
 #[macro_export]
 macro_rules! debug {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Debug, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Debug, $($args)*)
   }};
 }
 
@@ -162,9 +179,9 @@ macro_rules! pw_log_debugf {
 /// ```
 #[macro_export]
 macro_rules! info {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Info, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Info, $($args)*)
   }};
 }
 
@@ -204,9 +221,9 @@ macro_rules! pw_log_infof {
 /// ```
 #[macro_export]
 macro_rules! warn {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Warn, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Warn, $($args)*)
   }};
 }
 
@@ -246,9 +263,9 @@ macro_rules! pw_log_warnf {
 /// ```
 #[macro_export]
 macro_rules! error {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Error, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Error, $($args)*)
   }};
 }
 
@@ -288,9 +305,9 @@ macro_rules! pw_log_errorf {
 /// ```
 #[macro_export]
 macro_rules! critical {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Critical, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Critical, $($args)*)
   }};
 }
 
@@ -330,9 +347,9 @@ macro_rules! pw_log_criticalf {
 /// ```
 #[macro_export]
 macro_rules! fatal {
-  ($($args:expr),* $(,)?) => {{
+  ($($args:tt)*) => {{
     use $crate::__private as __pw_log_crate;
-    __pw_log_crate::log!(__pw_log_crate::LogLevel::Fatal, $($args),*)
+    __pw_log_crate::log!(__pw_log_crate::LogLevel::Fatal, $($args)*)
   }};
 }
 

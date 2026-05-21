@@ -40,6 +40,11 @@ pub mod __private {
 // Implement the `pw_log` backend API.
 #[macro_export]
 macro_rules! pw_log_backend {
+  ($log_level:expr, $($format_string:literal)PW_FMT_CONCAT+ $(, $args:expr)* $(,)?) => {{
+    use $crate::__private as __pw_log_backend_crate;
+    $crate::__private::_pw_log_backend!($log_level, $($format_string)PW_FMT_CONCAT+, $($args),*);
+  }};
+
   ($log_level:expr, $format_string:literal $(, $args:expr)* $(,)?) => {{
     use $crate::__private as __pw_log_backend_crate;
     $crate::__private::_pw_log_backend!($log_level, $format_string, $($args),*);
