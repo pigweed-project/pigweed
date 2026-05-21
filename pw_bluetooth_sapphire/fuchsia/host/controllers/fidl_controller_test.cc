@@ -462,6 +462,7 @@ TEST_F(FidlControllerTest, VendorGetFeatures) {
   RunLoopUntilIdle();
   ASSERT_TRUE(features.has_value());
   EXPECT_TRUE(*features & FidlController::FeaturesBits::kSetAclPriorityCommand);
+  EXPECT_TRUE(*features & FidlController::FeaturesBits::kHciSco);
 
   std::optional<pw::Status> close_status;
   controller()->Close([&](pw::Status status) { close_status = status; });

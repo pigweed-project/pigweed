@@ -27,6 +27,11 @@ namespace fhbt = fuchsia_hardware_bluetooth;
 using ReceivedPacket = fhbt::ReceivedPacket;
 
 namespace {
+pw::bluetooth::Controller::FeaturesBits StandardFeatures() {
+  // HCI SCO is not vendor specific and is a standard feature.
+  return pw::bluetooth::Controller::FeaturesBits::kHciSco;
+}
+
 pw::bluetooth::Controller::FeaturesBits VendorFeaturesToFeaturesBits(
     fhbt::VendorFeatures features) {
   pw::bluetooth::Controller::FeaturesBits out{0};
@@ -366,7 +371,7 @@ void FidlController::GetFeatures(
         }
 
         FidlController::FeaturesBits features_bits =
-            VendorFeaturesToFeaturesBits(result.value());
+            VendorFeaturesToFeaturesBits(result.value()) | StandardFeatures();
         cb(features_bits);
       });
 }
