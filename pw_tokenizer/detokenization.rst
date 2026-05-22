@@ -75,6 +75,46 @@ The Python, C++, TypeScript, and Java detokenization tools support detokenizing
 
      "$pEVTYQkkUmhZam1RPT0=" → "Nested message: $RhYjmQ==" → "Nested message: Wow!"
 
+
+--------------------
+Collision resolution
+--------------------
+Since ``pw_tokenizer`` uses 32-bit token hashes, hash collisions can occur. To
+handle collisions, detokenizers rank candidates using a scoring algorithm.
+
+When a message is detokenized, candidates are sorted according to the following
+scoring rules, from highest priority to lowest:
+
+1. **Decoding success**: Candidates that decoded all arguments successfully are
+   preferred over those that failed to decode.
+2. **All bytes consumed**: Candidates that consumed all provided argument bytes
+   are preferred over those that left remaining bytes.
+3. **Fewest decoding errors**: Candidates with fewer argument decoding errors
+   are preferred.
+4. **Most decoded arguments**: Candidates that successfully decoded more of
+   their arguments are preferred.
+5. **Newest database entry**: Candidates with a more recent removal date (or
+   those never removed from the database) are preferred.
+
+The best candidate is used if the detokenizer can determine an unambiguous
+winner.
+
+Collision rules for nested tokens
+=================================
+When detokenizing nested tokens in text logs:
+
+* **Base64 nested tokens**: A Base64 nested token is decoded whenever the
+  scoring rules yield a single best result. If there is a tie, the token remains
+  undecoded in the text.
+
+  To handle cases when argument data is intentionally dropped, messages that
+  fail to decode because they have no argument data are decoded if there is only
+  one matching token.
+
+* **Plain nested tokens (base 10/16)**: Plain 32-bit tokens are detokenized if
+  there is exactly one match in the database, or if there are multiple matches
+  but only one active (never-removed) match.
+
 ------------------------
 Detokenization in Python
 ------------------------
@@ -340,8 +380,6 @@ For messages that are encoded in Base64, use ``Detokenizer::detokenizeBase64``.
 `detokenizeBase64` will also attempt to detokenize nested Base64 tokens. There
 is also `detokenizeUint8Array` that works just like `detokenize` but expects
 `Uint8Array` instead of a `Frame` argument.
-
-
 
 .. _module-pw_tokenizer-cli-detokenizing:
 

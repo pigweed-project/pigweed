@@ -1285,6 +1285,37 @@ class DetokenizeNestedDomains(unittest.TestCase):
             'This is a double-nested token :)',
         )
 
+    def test_nested_token_unresolved_collisions_do_not_decode(self) -> None:
+        detok = detokenize.Detokenizer(
+            tokens.Database(
+                [
+                    tokens.TokenizedStringEntry(0, 'This is a message', ''),
+                    tokens.TokenizedStringEntry(0, 'Uh oh, collision!', ''),
+                    tokens.TokenizedStringEntry(1, 'There are two', ''),
+                    tokens.TokenizedStringEntry(1, 'But this has %d', ''),
+                ]
+            )
+        )
+
+        self.assertFalse(detok.detokenize(b'\x00\0\0\0').ok())
+        self.assertTrue(detok.detokenize(b'\x01\0\0\0').ok())
+
+        self.assertEqual(
+            detok.detokenize_text('$AAAAAA=='),
+            '$AAAAAA==',
+            'Should not decode due to a collision',
+        )
+        self.assertEqual(
+            detok.detokenize_text('$AQAAAA=='),
+            'There are two',
+            'Collision resolves, should decode',
+        )
+
+        # Collision resolution logic doesn't apply for base 10/16 nested
+        # messages since they can't have arguments.
+        self.assertEqual(detok.detokenize_text('$#00000000'), '$#00000000')
+        self.assertEqual(detok.detokenize_text('$#00000001'), '$#00000001')
+
 
 if __name__ == '__main__':
     unittest.main()

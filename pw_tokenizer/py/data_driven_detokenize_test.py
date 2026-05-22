@@ -83,6 +83,13 @@ TEST_CASES = (
     TestCase('${ }16==', 'd7 encodes as 16=='),
     TestCase('${\r\t\n }16==', 'd7 encodes as 16=='),
     TestCase('$64==', '$64==++++'),
+    TestCase('$AgAAAA==', 'My arg %s %d'),
+    TestCase('$#0000000a', 'Active message'),
+    TestCase('$10#0000000010', 'Active message'),
+    TestCase('$CgAAAA==', 'Active message'),
+    TestCase('$#0000000b', '$#0000000b'),
+    TestCase('$10#0000000011', '$10#0000000011'),
+    TestCase('$CwAAAA==', '$CwAAAA=='),
 )
 
 OPTIONALLY_TOKENIZED_TEST_CASES = (
@@ -123,10 +130,15 @@ WITH_COLLISIONS_CASES_BINARY = (
 # Databases
 _TEST_DATABASE = (
     b'TOKENS\0\0'
-    b'\x08\x00\x00\x00'  # Number of tokens in this database.
+    b'\x0d\x00\x00\x00'  # Number of tokens in this database (13).
     b'\0\0\x00\x00'
     b'\x01\x00\x00\x00----'
+    b'\x02\x00\x00\x00\xff\xff\xff\xff'
     b'\x05\x00\x00\x00----'
+    b'\x0a\x00\x00\x00\x01\x01\xe4\x07'
+    b'\x0a\x00\x00\x00\xff\xff\xff\xff'
+    b'\x0b\x00\x00\x00\xff\xff\xff\xff'
+    b'\x0b\x00\x00\x00\xff\xff\xff\xff'
     b'\xd7\x00\x00\x00----'
     b'\xeb\x00\x00\x00----'
     b'\xFF\x00\x00\x00----'
@@ -134,7 +146,12 @@ _TEST_DATABASE = (
     b'\xEE\xEE\xEE\xEE----'
     b'\x9D\xA7\x97\xF8----'
     b'One\0'
+    b'My arg %s %d\0'
     b'TWO\0'
+    b'Old message\0'
+    b'Active message\0'
+    b'Active message 1\0'
+    b'Active message 2\0'
     b'd7 encodes as 16==\0'
     b'$64==+\0'  # recursively decodes to itself with a + after it
     b'333\0'

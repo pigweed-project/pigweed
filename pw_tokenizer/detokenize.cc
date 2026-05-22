@@ -283,10 +283,26 @@ class NestedMessageDetokenizer {
   }
 
   void DetokenizeOnce(uint32_t token) {
-    if (auto result = detokenizer_.DatabaseLookup(token, domain());
-        result.size() == 1) {
+    auto result = detokenizer_.DatabaseLookup(token, domain());
+    const TokenizedStringEntry* matching_entry = nullptr;
+
+    // Detokenize if there is only one match, or if there are multiple matches
+    // but only one that is active.
+    if (result.size() == 1u) {
+      matching_entry = &result.front();
+    } else if (result.size() > 1u) {
+      for (const auto& entry : result) {
+        if (entry.second == TokenDatabase::kDateRemovedNever &&
+            std::exchange(matching_entry, &entry) != nullptr) {
+          matching_entry = nullptr;
+          break;
+        }
+      }
+    }
+
+    if (matching_entry != nullptr) {
       std::string replacement =
-          result.front().first.Format(span<const uint8_t>()).value();
+          matching_entry->first.Format(span<const uint8_t>()).value();
       output_.replace(message_start_, output_.size(), replacement);
       output_changed_ = true;
     }
@@ -294,7 +310,11 @@ class NestedMessageDetokenizer {
   }
 
   void DetokenizeOnceBase64(span<const std::byte> bytes) {
-    if (auto result = detokenizer_.Detokenize(bytes, domain()); result.ok()) {
+    // Detokenize if there is an unambiguous match, or if there is only one
+    // match that failed to decode because no argument data was provided.
+    if (auto result = detokenizer_.Detokenize(bytes, domain());
+        result.ok() ||
+        (result.matches().size() == 1u && bytes.size() == sizeof(uint32_t))) {
       output_.replace(message_start_, output_.size(), result.BestString());
       output_changed_ = true;
     }

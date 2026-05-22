@@ -436,10 +436,14 @@ class Detokenizer:
         token = int(token_str, int(base))
         entries = self.database.domains[domain][token]
 
+        # Detokenize if there is only one match, or if there are multiple
+        # matches but only one that is active.
+        # TODO: b/401878237 - report collisions in the decoded output
         if len(entries) == 1:
             return str(entries[0]).encode()
 
-        # TODO(gschen): improve token collision reporting
+        if len(active := [e for e in entries if e.date_removed is None]) == 1:
+            return str(active[0]).encode()
 
         return original
 
@@ -460,7 +464,15 @@ class Detokenizer:
                 recursion=0,
             )
 
-            if detokenized_string.matches():
+            # TODO: b/401878237 - report collisions in the decoded output
+            # Detokenize if there is an unambiguous match, or if there is only
+            # one match that failed to decode because no argument data was
+            # provided
+            if detokenized_string.ok() or (
+                len(detokenized_string.matches()) == 1
+                and len(detokenized_string.encoded_message)
+                == ENCODED_TOKEN.size
+            ):
                 return str(detokenized_string).encode()
 
         except binascii.Error:
