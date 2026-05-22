@@ -17,7 +17,7 @@ import io
 from typing import Iterator, NamedTuple
 
 from pw_build.generated_tests import TestGenerator, PyTest, Context
-from pw_build.generated_tests import cc_string, main
+from pw_build.generated_tests import cc_string, java_string, java_bytes, main
 from pw_tokenizer import tokens
 from pw_tokenizer.detokenize import Detokenizer
 
@@ -37,6 +37,23 @@ using namespace std::literals::string_view_literals;
 
 _CPP_FOOTER = """
 }  // namespace
+"""
+
+_JAVA_HEADER = """\
+package dev.pigweed.pw_tokenizer;
+
+import static com.google.common.truth.Truth.assertThat;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.JUnit4;
+
+@RunWith(JUnit4.class)
+public final class DataDrivenDetokenizerTest {
+"""
+
+_JAVA_FOOTER = """\
+}
 """
 
 
@@ -245,6 +262,38 @@ constexpr pw::tokenizer::TokenDatabase kDataWithCollisions =
     pw::tokenizer::TokenDatabase::Create<kDataWithCollisionsRaw>();
 """
 
+_TEST_DB_STR = java_string(
+    str(
+        Detokenizer(
+            tokens.Database(tokens.parse_binary(io.BytesIO(_TEST_DATABASE)))
+        ).database
+    )
+)
+_ARGS_DB_STR = java_string(
+    str(
+        Detokenizer(
+            tokens.Database(
+                tokens.parse_binary(io.BytesIO(_DATA_WITH_ARGUMENTS))
+            )
+        ).database
+    )
+)
+_COLLISIONS_DB_STR = java_string(
+    str(
+        Detokenizer(
+            tokens.Database(
+                tokens.parse_binary(io.BytesIO(_DATA_WITH_COLLISIONS))
+            )
+        ).database
+    )
+)
+
+_JAVA_DATABASE_DEFS = f"""\
+  private static final String TEST_DATABASE = {_TEST_DB_STR};
+  private static final String DATA_WITH_ARGUMENTS = {_ARGS_DB_STR};
+  private static final String DATA_WITH_COLLISIONS = {_COLLISIONS_DB_STR};
+"""
+
 
 def _cpp_test_text(ctx: Context) -> Iterator[str]:
     data, expected = ctx.test_case
@@ -255,6 +304,18 @@ TEST(DetokenizeTest, {ctx.cc_name()}) {{
 }}"""
 
 
+def _java_test_text(ctx: Context) -> Iterator[str]:
+    data, expected = ctx.test_case
+    yield f"""\
+  @Test
+  public void {ctx.java_name()}() {{
+    try (Detokenizer detok = Detokenizer.fromCsv(TEST_DATABASE)) {{
+      assertThat(detok.detokenizeText({java_string(data)}))
+          .isEqualTo({java_string(expected)});
+    }}
+  }}"""
+
+
 def _cpp_test_optional(ctx: Context) -> Iterator[str]:
     data, expected = ctx.test_case
     yield f"""\
@@ -263,6 +324,25 @@ TEST(DetokenizeOptionalTest, {ctx.cc_name()}) {{
   constexpr std::string_view data = {cc_string(data)}sv;
   EXPECT_EQ(detok.DecodeOptionallyTokenizedData(pw::as_bytes(pw::span(data))), {cc_string(expected)});
 }}"""  # pylint: disable=line-too-long
+
+
+def _java_test_optional(ctx: Context) -> Iterator[str]:
+    data, expected = ctx.test_case
+    db = tokens.Database(tokens.parse_binary(io.BytesIO(_TEST_DATABASE)))
+    detok = Detokenizer(db)
+    if not detok.detokenize(data).ok():
+        assertion = ".isNull()"
+    else:
+        assertion = f".isEqualTo({java_string(expected)})"
+
+    yield f"""\
+  @Test
+  public void {ctx.java_name()}() {{
+    try (Detokenizer detok = Detokenizer.fromCsv(TEST_DATABASE)) {{
+      assertThat(detok.detokenize({java_bytes(data)}))
+          {assertion};
+    }}
+  }}"""
 
 
 def _cpp_test_with_args(ctx: Context) -> Iterator[str]:
@@ -276,6 +356,25 @@ TEST(DetokenizeWithArgsBinTest, {ctx.cc_name()}) {{
 }}"""
 
 
+def _java_test_with_args(ctx: Context) -> Iterator[str]:
+    data, expected = ctx.test_case
+    db = tokens.Database(tokens.parse_binary(io.BytesIO(_DATA_WITH_ARGUMENTS)))
+    detok = Detokenizer(db)
+    if not detok.detokenize(data).ok():
+        assertion = ".isNull()"
+    else:
+        assertion = f".isEqualTo({java_string(expected)})"
+
+    yield f"""\
+  @Test
+  public void {ctx.java_name()}() {{
+    try (Detokenizer detok = Detokenizer.fromCsv(DATA_WITH_ARGUMENTS)) {{
+      assertThat(detok.detokenize({java_bytes(data)}))
+          {assertion};
+    }}
+  }}"""
+
+
 def _cpp_test_with_collisions(ctx: Context) -> Iterator[str]:
     data, expected = ctx.test_case
     yield f"""\
@@ -286,21 +385,44 @@ TEST(DetokenizeWithCollisionsTest, {ctx.cc_name()}) {{
 }}"""  # pylint: disable=line-too-long
 
 
+def _java_test_with_collisions(ctx: Context) -> Iterator[str]:
+    data, expected = ctx.test_case
+    db = tokens.Database(tokens.parse_binary(io.BytesIO(_DATA_WITH_COLLISIONS)))
+    detok = Detokenizer(db)
+    if not detok.detokenize(data).ok():
+        assertion = ".isNull()"
+    else:
+        assertion = f".isEqualTo({java_string(expected)})"
+
+    yield f"""\
+  @Test
+  public void {ctx.java_name()}() {{
+    try (Detokenizer detok = Detokenizer.fromCsv(DATA_WITH_COLLISIONS)) {{
+      assertThat(detok.detokenize({java_bytes(data)}))
+          {assertion};
+    }}
+  }}"""
+
+
 _BASIC_TESTS = TestGenerator(
     TEST_CASES,
     cc_test=(_cpp_test_text, _CPP_HEADER + _CPP_DATABASE_DEFS, ''),
+    java_test=(_java_test_text, _JAVA_HEADER + _JAVA_DATABASE_DEFS, ''),
 )
 _OPTIONALLY_TOKENIZED_TESTS = TestGenerator(
     OPTIONALLY_TOKENIZED_TEST_CASES,
     cc_test=(_cpp_test_optional, '', ''),
+    java_test=(_java_test_optional, '', ''),
 )
 _WITH_ARGS_BINARY_TESTS = TestGenerator(
     WITH_ARGS_SUCCESSFUL_CASES_BINARY,
     cc_test=(_cpp_test_with_args, '', ''),
+    java_test=(_java_test_with_args, '', ''),
 )
 _WITH_COLLISIONS_TESTS = TestGenerator(
     WITH_COLLISIONS_CASES_BINARY,
     cc_test=(_cpp_test_with_collisions, '', _CPP_FOOTER),
+    java_test=(_java_test_with_collisions, '', _JAVA_FOOTER),
 )
 
 

@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Tools for generating Pigweed tests that execute in C++ and Python.
+"""Tools for generating tests that execute in Python, TypeScript, C++, and Java.
 
 This module provides a way to write data-driven tests that can be executed in
 multiple languages, ensuring that the implementations behave identically.
@@ -96,6 +96,8 @@ _HEADER_CPP = _COPYRIGHT + '// clang-format off\n'
 
 _HEADER_TS = _COPYRIGHT + '/* eslint-env browser, jasmine */\n'
 
+_HEADER_JAVA = _HEADER_CPP
+
 
 class Error(Exception):
     """Base class for exceptions raised by this module."""
@@ -138,6 +140,13 @@ class Context(Generic[T]):
         name = ''.join(c if c.isalnum() else ' ' for c in self.group.lower())
         return f'{name} {self.count}' if self.total > 1 else name
 
+    def java_name(self) -> str:
+        name = ''.join(
+            w.capitalize() for w in self.group.replace('-', ' ').split(' ')
+        )
+        name = ''.join(c if c.isalnum() else '_' for c in name)
+        return f'{name}_{self.count}' if self.total > 1 else name
+
 
 # Test cases are specified as a sequence of strings or test case instances. The
 # strings are used to separate the tests into named groups. For example:
@@ -163,6 +172,8 @@ PyTestGenerator = Callable[[Context[T]], PyTest]
 CcTestGenerator = Callable[[Context[T]], Iterable[str]]
 
 JsTestGenerator = Callable[[Context[T]], Iterable[str]]
+
+JavaTestGenerator = Callable[[Context[T]], Iterable[str]]
 
 
 @dataclass(frozen=True)
@@ -197,6 +208,22 @@ class TsTest:
     footer: str
 
 
+@dataclass(frozen=True)
+class JavaTest:
+    """Captures how to generate a Java test.
+
+    Attributes:
+      generator: Function that takes a :class:`Context` and produces the Java
+          test.
+      header: Header that is output before the tests.
+      footer: Footer that is output after the tests.
+    """
+
+    generator: JavaTestGenerator
+    header: str
+    footer: str
+
+
 def _to_test(test_class: type[T], value: tuple | T | None) -> T | None:
     if value is None:
         return None
@@ -221,11 +248,13 @@ class TestGenerator(Generic[T]):
         *,
         cc_test: tuple[CcTestGenerator, str, str] | CcTest | None = None,
         ts_test: tuple[JsTestGenerator, str, str] | TsTest | None = None,
+        java_test: tuple[JavaTestGenerator, str, str] | JavaTest | None = None,
     ) -> None:
         self._cases: dict[str, list[T]] = defaultdict(list)
 
         self._cc_test = _to_test(CcTest, cc_test)
         self._ts_test = _to_test(TsTest, ts_test)
+        self._java_test = _to_test(JavaTest, java_test)
 
         message = ''
 
@@ -307,6 +336,24 @@ class TestGenerator(Generic[T]):
             output.write(line)
             output.write('\n')
 
+    def _generate_java_tests(self, test: JavaTest) -> Iterator[str]:
+        yield test.header
+
+        for ctx in self._test_contexts():
+            yield from test.generator(ctx)
+            yield ''
+
+        yield test.footer
+
+    def java_tests(self, output: TextIO) -> None:
+        """Writes Java unit tests for each test case to the given file."""
+        if self._java_test is None:
+            raise NotImplementedError('java_test was not set!')
+
+        for line in self._generate_java_tests(self._java_test):
+            output.write(line)
+            output.write('\n')
+
 
 _CPP_ESCAPES = {
     ord(b'"'): r'\"',
@@ -359,18 +406,41 @@ def cc_string(data: str | bytes) -> str:
     return ''.join(_to_chars(data))
 
 
+def java_string(data: str) -> str:
+    """Formats a string as a Java string literal."""
+    escaped = (
+        data.replace('\\', '\\\\')
+        .replace('"', '\\"')
+        .replace('\n', '\\n')
+        .replace('\r', '\\r')
+    )
+    return f'"{escaped}"'
+
+
+def java_bytes(data: bytes) -> str:
+    """Formats a bytes object as a Java byte array literal."""
+    return 'new byte[] {{{}}}'.format(
+        ', '.join(f'(byte) 0x{byte:02x}' for byte in data)
+    )
+
+
 def _parse_test_generation_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Generate unit test files')
     tests = parser.add_mutually_exclusive_group()
     tests.add_argument(
         '--generate-cc-test',
-        type=argparse.FileType('w'),
+        type=argparse.FileType('w', encoding='UTF-8'),
         help='Generate the C++ test file',
     )
     tests.add_argument(
         '--generate-ts-test',
-        type=argparse.FileType('w'),
+        type=argparse.FileType('w', encoding='UTF-8'),
         help='Generate the TypeScript test file',
+    )
+    tests.add_argument(
+        '--generate-java-test',
+        type=argparse.FileType('w', encoding='UTF-8'),
+        help='Generate the Java test file',
     )
     return parser.parse_known_args()[0]
 
@@ -387,6 +457,12 @@ def _ts_tests(tests: Iterable[TestGenerator], output: TextIO) -> None:
         test.ts_tests(output)
 
 
+def _java_tests(tests: Iterable[TestGenerator], output: TextIO) -> None:
+    output.write(_HEADER_JAVA)
+    for test in tests:
+        test.java_tests(output)
+
+
 def main(*tests: TestGenerator) -> None:
     """Runs the test generation or the Python tests.
 
@@ -399,5 +475,7 @@ def main(*tests: TestGenerator) -> None:
         _cc_tests(tests, args.generate_cc_test)
     elif args.generate_ts_test:
         _ts_tests(tests, args.generate_ts_test)
+    elif args.generate_java_test:
+        _java_tests(tests, args.generate_java_test)
     else:
         unittest.main()

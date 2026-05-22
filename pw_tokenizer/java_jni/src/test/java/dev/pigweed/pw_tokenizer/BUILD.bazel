@@ -37,3 +37,29 @@ java_test(
         "@pigweed_maven_deps//:com_google_truth_truth",
     ],
 )
+
+genrule(
+    name = "generate_data_driven_detokenize_test",
+    outs = ["DataDrivenDetokenizerTest.java"],
+    cmd = "$(location //pw_tokenizer/py:generate_data_driven_detokenize_test) --generate-java-test $@",
+    tools = ["//pw_tokenizer/py:generate_data_driven_detokenize_test"],
+    visibility = ["//visibility:private"],
+)
+
+java_test(
+    name = "DataDrivenDetokenizerTest",
+    size = "small",
+    srcs = [":generate_data_driven_detokenize_test"],
+    tags = [
+        "jni",
+        "noasan",
+        "nomsan",
+        "notsan",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    test_class = "dev.pigweed.pw_tokenizer.DataDrivenDetokenizerTest",
+    deps = [
+        "//pw_tokenizer/java_jni/src/main/java/dev/pigweed/pw_tokenizer:detokenizer",
+        "@pigweed_maven_deps//:com_google_truth_truth",
+    ],
+)
