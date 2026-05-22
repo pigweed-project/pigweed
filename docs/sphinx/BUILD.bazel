@@ -426,7 +426,14 @@ sphinx_build_binary(
 # code and assets to our CDN.
 sphinx_docs(
     name = "docs",
-    allow_persistent_workers = False,
+    # Persistent worker dramatically speeds up iterative docs builds. Tradeoff
+    # is that the docs build becomes non-hermetic. If Sphinx is failing at
+    # `Ignored unreadable document` it means you're having non-hermetic caching
+    # issues. Set `allow_persistent_workers` to `False`, re-run the docs build
+    # (this one will be longer because it's a hermetic build), and then set it
+    # back to `True` to get faster iterative builds.
+    # https://github.com/bazel-contrib/rules_python/pull/2938
+    allow_persistent_workers = True,
     config = "conf.py",
     extra_opts = [
         "--silent",
