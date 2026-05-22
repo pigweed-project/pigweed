@@ -198,13 +198,6 @@ General tips:
      -  /// @copydoc internal::GenericIntrusiveList<ItemBase>::clear
      +  /// @copydoc containers::internal::GenericIntrusiveList<ItemBase>::clear
 
-* Fully qualify the target:
-
-  .. code-block:: diff
-
-     -  /// @copydoc MultiBufChunks::insert
-     +  /// @copydoc pw::multibuf::v1::MultiBufChunks::insert
-
 * Remove backticks from the target name.
 
   .. code-block:: diff
@@ -231,16 +224,16 @@ General tips:
        MultiBufChunks::push_front(std::move(chunk));
      }
 
-   The ``MultiBufChunks`` class did indeed have a ``push_front`` method. The
-   issue was that ``MultiBufChunks`` was annotated with
-   ``PW_MULTIBUF_DEPRECATED`` and Doxygen was instructed to ignore this
-   definition. See `Preprocessing
-   <https://www.doxygen.nl/manual/preprocessing.html>`_.
+  The ``MultiBufChunks`` class did indeed have a ``push_front`` method. The
+  issue was that ``MultiBufChunks`` was annotated with
+  ``PW_MULTIBUF_DEPRECATED`` and Doxygen was instructed to ignore this
+  definition. See `Preprocessing
+  <https://www.doxygen.nl/manual/preprocessing.html>`_.
 
-   .. code-block:: text
+  .. code-block:: text
 
-      PREDEFINED             = … \
-                               PW_MULTIBUF_DEPRECATED=
+     PREDEFINED             = … \
+                              PW_MULTIBUF_DEPRECATED=
 
 ``Argument … from the argument list of … has multiple @param documentation sections``
 =====================================================================================
@@ -262,9 +255,8 @@ General tips:
   .. code-block:: diff
 
      -  /// @param foo The integer...
-     -  constexpr size_t EncodedSize(T value)
      +  /// @param value The integer...
-     +  constexpr size_t EncodedSize(T value)
+        constexpr size_t EncodedSize(T value)
 
 * If the function signature does not name the parameter, provide a
   name and use that for ``@param``. Avoid unused parameter warnings by
@@ -272,9 +264,9 @@ General tips:
 
   .. code-block:: diff
 
-     -  /// @param Status A status...
+     /// @param Status A status...
+
      -  void FinalizeRead(Status) override;
-     +  /// @param status A status...
      +  void FinalizeRead(Status status) override;
 
 * Delete the ``@param`` documentation if the parameter has been recently
@@ -361,17 +353,25 @@ General tips:
   before starting a ``@cond`` block, and reopen the group after ``@endcond`` if
   necessary.
 
-* Avoid C-style strings inside of ``@code`` blocks.
+* Avoid C-style inline comments inside of ``@code`` blocks.
 
-  .. code-block:: diff
+  No:
 
-     /// @code
+  .. code-block:: cpp
 
-     -  ///   Layout MyGetLayoutFromPointer(const void* ptr) { /* ... */ }
-     +  ///   Layout MyGetLayoutFromPointer(const void* ptr) {
-     +  ///     …
-     +  ///   }
-        /// @endcode
+     /// @code{.cpp}
+     ///   Layout MyGetLayoutFromPointer(const void* ptr) { /* ... */ }
+     /// @endcode
+
+  Yes:
+
+  .. code-block:: cpp
+
+     /// @code{.cpp}
+     ///   Layout MyGetLayoutFromPointer(const void* ptr) {
+     ///     …
+     ///   }
+     /// @endcode
 
 .. note::
 
@@ -453,7 +453,6 @@ General tips:
   adding a title after the group ID should fix the missing title warning.
 
   .. code-block:: text
-     :caption: A diff demonstrating how to add a title to a group
 
      -  ///   @defgroup foo
      +  ///   @defgroup foo Foo
