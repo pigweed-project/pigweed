@@ -14,7 +14,7 @@
 #![no_std]
 
 use foreign_box::ForeignBox;
-use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread, ThreadRef};
+use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread, ThreadHandle};
 use kernel::sync::event::{Event, EventConfig};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Instant, Kernel, Priority};
@@ -35,7 +35,7 @@ pub struct TestState<K: Kernel> {
     utility_stack: StackStorage<TEST_THREAD_STACK_SIZE>,
     event: Event<K>,
     mutex: Mutex<K, u32>,
-    thread_ref_event: Event<K>,
+    thread_handle_event: Event<K>,
 }
 
 impl<K: Kernel> TestState<K> {
@@ -55,14 +55,14 @@ impl<K: Kernel> TestState<K> {
             utility_stack: StackStorage::ZEROED,
             event: Event::new(kernel, EventConfig::ManualReset),
             mutex: Mutex::new(kernel, 0),
-            thread_ref_event: Event::new(kernel, EventConfig::ManualReset),
+            thread_handle_event: Event::new(kernel, EventConfig::ManualReset),
         }
     }
 }
 
 pub fn wait_for_thread_state<K: Kernel>(
     kernel: K,
-    thread: &ThreadRef<K>,
+    thread: &ThreadHandle<K>,
     state: thread::State,
 ) -> Result<()> {
     let deadline = kernel.now() + Duration::from_millis(500);
@@ -107,12 +107,12 @@ pub fn test_main<K: Kernel>(kernel: K, state: &'static mut TestState<K>) -> Resu
     let thread = run_test("Mutex", || mutex_test(kernel, thread, &state.mutex))?;
 
     let thread = run_test("Tread Ref Drop", || {
-        thread_ref_drop_test(
+        thread_handle_drop_test(
             kernel,
             thread,
             &mut state.utility_thread,
             &mut state.utility_stack,
-            &mut state.thread_ref_event,
+            &mut state.thread_handle_event,
         )
     })?;
 
@@ -142,17 +142,17 @@ fn terminate_sleep_test<K: Kernel>(
         terminate_sleep_thread_entry,
         0,
     );
-    let mut thread_ref = kernel::start_thread(kernel, thread);
+    let mut thread_handle = kernel::start_thread(kernel, thread);
 
     // Spin until the termination thread is in the sleep's wait queue.
-    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingInterruptible)?;
+    wait_for_thread_state(kernel, &thread_handle, thread::State::WaitingInterruptible)?;
     test_logger::info!("Termination thread observed in waiting state, terminating");
 
-    thread_ref.terminate(kernel, ExitStatus::TerminatedBySyscall)?;
+    thread_handle.terminate(kernel, ExitStatus::TerminatedBySyscall)?;
 
     test_logger::info!("Joining thread");
 
-    let (thread, status) = thread_ref.join(kernel)?;
+    let (thread, status) = thread_handle.join(kernel)?;
     pw_assert::assert!(status == ExitStatus::Success(0));
     test_logger::info!("Joined");
 
@@ -183,15 +183,15 @@ fn signaled_termination_test<K: Kernel>(
 ) -> Result<ForeignBox<Thread<K>>> {
     test_logger::info!("Starting signaled thread");
     thread.re_initialize_kernel_thread(kernel, signaled_sleep_entry, event);
-    let thread_ref = kernel::start_thread(kernel, thread);
+    let thread_handle = kernel::start_thread(kernel, thread);
 
-    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingInterruptible)?;
+    wait_for_thread_state(kernel, &thread_handle, thread::State::WaitingInterruptible)?;
 
     test_logger::info!("Signaling signaled thread");
     event.get_signaler().signal();
 
     test_logger::info!("Joining signaled thread");
-    let (thread, status) = thread_ref.join(kernel)?;
+    let (thread, status) = thread_handle.join(kernel)?;
     pw_assert::assert!(status == ExitStatus::Success(0));
     test_logger::info!("Joined");
 
@@ -216,22 +216,26 @@ fn mutex_test<K: Kernel>(
 
     test_logger::info!("Starting mutex thread");
     thread.re_initialize_kernel_thread(kernel, mutex_entry, mutex);
-    let mut thread_ref = kernel::start_thread(kernel, thread);
+    let mut thread_handle = kernel::start_thread(kernel, thread);
 
-    wait_for_thread_state(kernel, &thread_ref, thread::State::WaitingNonInterruptible)?;
+    wait_for_thread_state(
+        kernel,
+        &thread_handle,
+        thread::State::WaitingNonInterruptible,
+    )?;
     test_logger::info!("Observed in waiting state, terminating");
 
-    thread_ref.terminate(kernel, ExitStatus::TerminatedByKernel)?;
+    thread_handle.terminate(kernel, ExitStatus::TerminatedByKernel)?;
 
     // Mutexes are non-interruptible so the thread should still be in the waiting
     // state after the termination request.
-    pw_assert::assert!(thread_ref.get_state(kernel) == thread::State::WaitingNonInterruptible);
+    pw_assert::assert!(thread_handle.get_state(kernel) == thread::State::WaitingNonInterruptible);
 
     test_logger::info!("Releasing mutex");
     drop(guard);
 
     test_logger::info!("Joining mutex thread");
-    let (thread, status) = thread_ref.join(kernel)?;
+    let (thread, status) = thread_handle.join(kernel)?;
     pw_assert::assert!(status == ExitStatus::Success(0));
     test_logger::info!("Joined");
 
@@ -261,12 +265,12 @@ fn mutex_entry<K: Kernel>(kernel: K, mutex: &'static Mutex<K, u32>) {
     *mutex.lock() = 1;
 }
 
-struct ThreadRefUtilityArgs<'a, K: Kernel> {
-    test_thread_ref: Option<ThreadRef<K>>,
+struct ThreadHandleUtilityArgs<'a, K: Kernel> {
+    test_thread_handle: Option<ThreadHandle<K>>,
     event: &'a mut Event<K>,
 }
 
-fn thread_ref_drop_test<K: Kernel>(
+fn thread_handle_drop_test<K: Kernel>(
     kernel: K,
     mut test_thread: ForeignBox<Thread<K>>,
     utility_thread: &'static mut Thread<K>,
@@ -274,12 +278,12 @@ fn thread_ref_drop_test<K: Kernel>(
     event: &'static mut Event<K>,
 ) -> Result<ForeignBox<Thread<K>>> {
     test_logger::info!("Starting signaled thread");
-    test_thread.re_initialize_kernel_thread(kernel, thread_ref_drop_entry, 0);
-    let test_thread_ref = kernel::start_thread(kernel, test_thread);
+    test_thread.re_initialize_kernel_thread(kernel, thread_handle_drop_entry, 0);
+    let test_thread_handle = kernel::start_thread(kernel, test_thread);
 
     let signaler = event.get_signaler();
-    let mut utility_args = ThreadRefUtilityArgs {
-        test_thread_ref: Some(test_thread_ref.clone()),
+    let mut utility_args = ThreadHandleUtilityArgs {
+        test_thread_handle: Some(test_thread_handle.clone()),
         event,
     };
     let utility_thread = thread::init_thread_in(
@@ -288,23 +292,23 @@ fn thread_ref_drop_test<K: Kernel>(
         utility_stack,
         "Utility Thread",
         Priority::DEFAULT_PRIORITY,
-        thread_ref_drop_utility_entry,
+        thread_handle_drop_utility_entry,
         &mut utility_args,
     );
-    let utility_thread_ref = kernel::start_thread(kernel, utility_thread);
+    let utility_thread_handle = kernel::start_thread(kernel, utility_thread);
 
     // Wait for the test thread to exit and be in the termination queue waiting
     // to be joined.
-    wait_for_thread_state(kernel, &test_thread_ref, thread::State::Terminated)?;
+    wait_for_thread_state(kernel, &test_thread_handle, thread::State::Terminated)?;
 
     // The thread should also be marked as terminating.
-    pw_assert::assert!(test_thread_ref.is_terminating(kernel));
+    pw_assert::assert!(test_thread_handle.is_terminating(kernel));
 
     // An immediate attempt to join should time out because the utility thread
     // still holds a reference to it.
     test_logger::info!("Attempting initial join of test thread");
-    let test_thread_ref =
-        match test_thread_ref.join_until(kernel, kernel.now() + Duration::from_millis(500)) {
+    let test_thread_handle =
+        match test_thread_handle.join_until(kernel, kernel.now() + Duration::from_millis(500)) {
             kernel::scheduler::JoinResult::Joined(_, _) => {
                 pw_assert::panic!("Initial join should have timed out");
             }
@@ -317,12 +321,12 @@ fn thread_ref_drop_test<K: Kernel>(
     signaler.signal();
 
     test_logger::info!("Joining test thread");
-    let (test_thread, status) = test_thread_ref.join(kernel)?;
+    let (test_thread, status) = test_thread_handle.join(kernel)?;
     pw_assert::assert!(status == ExitStatus::Success(0));
     test_logger::info!("Joined");
 
     test_logger::info!("Joining utility thread");
-    let (utility_thread, status) = utility_thread_ref.join(kernel)?;
+    let (utility_thread, status) = utility_thread_handle.join(kernel)?;
     pw_assert::assert!(status == ExitStatus::Success(0));
     utility_thread.consume();
     test_logger::info!("Joined");
@@ -330,17 +334,17 @@ fn thread_ref_drop_test<K: Kernel>(
     Ok(test_thread)
 }
 
-fn thread_ref_drop_entry<K: Kernel>(_kernel: K, _arg: usize) {
+fn thread_handle_drop_entry<K: Kernel>(_kernel: K, _arg: usize) {
     test_logger::info!("Test thread started and exiting");
 }
 
-fn thread_ref_drop_utility_entry<K: Kernel>(kernel: K, args: &mut ThreadRefUtilityArgs<K>) {
+fn thread_handle_drop_utility_entry<K: Kernel>(kernel: K, args: &mut ThreadHandleUtilityArgs<K>) {
     test_logger::info!("Utility thread waiting for signal");
     let _ = args.event.wait();
     test_logger::info!("Got signal to drop thread ref.  Waiting for test to enter join()");
     let _ = kernel::sleep_until(kernel, kernel.now() + Duration::from_millis(500));
 
     test_logger::info!("Dropping thread ref");
-    let _ = args.test_thread_ref.take();
+    let _ = args.test_thread_handle.take();
     test_logger::info!("Exiting");
 }

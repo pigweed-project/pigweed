@@ -351,7 +351,7 @@ fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     // TODO: b/510812835 - infallible syscalls.
     let exit_code = args.next_u32().unwrap_or(0);
     let mut sched = kernel.get_scheduler().lock(kernel);
-    let current_process = sched.current_process_ref().clone();
+    let current_process = sched.current_process_handle().clone();
     sched.process_terminate(
         kernel,
         &current_process,

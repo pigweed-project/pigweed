@@ -450,18 +450,18 @@ impl<K: Kernel> Process<K> {
     }
 }
 
-pub struct ProcessRef<K: Kernel> {
+pub struct ProcessHandle<K: Kernel> {
     pub(crate) process: NonNull<Process<K>>,
     kernel: K,
 }
 
-// Safety: ProcessRef is a handle to a reference counted process.  All operations
+// Safety: ProcessHandle is a handle to a reference counted process.  All operations
 // on the process are protected by the scheduler lock or atomic operations.
-unsafe impl<K: Kernel> Send for ProcessRef<K> {}
-unsafe impl<K: Kernel> Sync for ProcessRef<K> {}
+unsafe impl<K: Kernel> Send for ProcessHandle<K> {}
+unsafe impl<K: Kernel> Sync for ProcessHandle<K> {}
 
-impl<K: Kernel> ProcessRef<K> {
-    // `ProcessRef`s should only be created when adding a process to the
+impl<K: Kernel> ProcessHandle<K> {
+    // `ProcessHandle`s should only be created when adding a process to the
     // scheduler.
     pub(super) fn new(process: NonNull<Process<K>>, kernel: K) -> Self {
         unsafe {
@@ -485,7 +485,13 @@ impl<K: Kernel> ProcessRef<K> {
 
     /// Returns the current state of the process.
     #[must_use]
-    pub fn get_state(&self) -> ProcessState {
+    pub fn get_state_locked(
+        &self,
+        _sched: &SpinLockGuard<'_, K, SchedulerState<K>>,
+    ) -> ProcessState {
+        // SAFETY: `self.process` is guaranteed to be valid because it is reference
+        // counted.  The state is guaranteed to be coherent because the sched lock
+        // is taken.
         unsafe { self.process.as_ref().state }
     }
 
@@ -531,17 +537,19 @@ impl<K: Kernel> ProcessRef<K> {
             match res {
                 crate::scheduler::ProcessTryJoinResult::Err {
                     error: e,
-                    process: process_ref,
+                    process: process_handle,
                 } => {
                     return crate::scheduler::ProcessJoinResult::Err {
                         error: e,
-                        process: process_ref,
+                        process: process_handle,
                     };
                 }
                 crate::scheduler::ProcessTryJoinResult::Joined(process_box, status) => {
                     return crate::scheduler::ProcessJoinResult::Joined(process_box, status);
                 }
-                crate::scheduler::ProcessTryJoinResult::Wait(process_ref) => self = process_ref,
+                crate::scheduler::ProcessTryJoinResult::Wait(process_handle) => {
+                    self = process_handle
+                }
             };
 
             if let Err(e) = join_event.wait_until(deadline) {
@@ -558,7 +566,7 @@ impl<K: Kernel> ProcessRef<K> {
         }
     }
 
-    /// Drop the `ProcessRef` while the scheduler lock is held.
+    /// Drop the `ProcessHandle` while the scheduler lock is held.
     ///
     /// This is an internal version for use by the scheduler while it is holding
     /// the scheduler lock.
@@ -587,21 +595,26 @@ impl<K: Kernel> ProcessRef<K> {
         sched
     }
 
-    pub fn add_thread(&mut self, kernel: K, thread_ref: &mut ThreadRef<K>) -> Result<()> {
+    pub fn add_thread(&mut self, kernel: K, thread_handle: &mut ThreadHandle<K>) -> Result<()> {
         kernel
             .get_scheduler()
             .lock(kernel)
-            .process_add_thread(self, thread_ref)
+            .process_add_thread(self, thread_handle)
     }
 
-    pub fn range_has_access(&self, region_type: MemoryRegionType, range: Range<usize>) -> bool {
-        // SAFETY: `self.process` is valid because `ProcessRef` guarantees the
+    pub fn range_has_access_locked(
+        &self,
+        _sched: &SpinLockGuard<'_, K, SchedulerState<K>>,
+        region_type: MemoryRegionType,
+        range: Range<usize>,
+    ) -> bool {
+        // SAFETY: `self.process` is valid because `ProcessHandle` guarantees the
         // lifetime of the pointed-to `Process`.
         unsafe { self.process.as_ref().range_has_access(region_type, range) }
     }
 }
 
-impl<K: Kernel> Clone for ProcessRef<K> {
+impl<K: Kernel> Clone for ProcessHandle<K> {
     fn clone(&self) -> Self {
         unsafe {
             self.process
@@ -617,7 +630,7 @@ impl<K: Kernel> Clone for ProcessRef<K> {
     }
 }
 
-impl<K: Kernel> Drop for ProcessRef<K> {
+impl<K: Kernel> Drop for ProcessHandle<K> {
     fn drop(&mut self) {
         unsafe {
             let prev_value = self
@@ -651,19 +664,19 @@ pub enum ThreadOwner<K: Kernel> {
 
 /// A reference counted reference to a [`Thread`].
 ///
-/// A `ThreadRef` can has a limited set of APIs that are safe to call without
+/// A `ThreadHandle` can has a limited set of APIs that are safe to call without
 /// holding the scheduler lock.
-pub struct ThreadRef<K: Kernel> {
+pub struct ThreadHandle<K: Kernel> {
     pub(crate) thread: NonNull<Thread<K>>,
     kernel: K,
 }
 
-// Safety: ThreadRef is a handle to a reference counted thread.  All operations
+// Safety: ThreadHandle is a handle to a reference counted thread.  All operations
 // on the thread are protected by the scheduler lock or atomic operations.
-unsafe impl<K: Kernel> Send for ThreadRef<K> {}
-unsafe impl<K: Kernel> Sync for ThreadRef<K> {}
+unsafe impl<K: Kernel> Send for ThreadHandle<K> {}
+unsafe impl<K: Kernel> Sync for ThreadHandle<K> {}
 
-impl<K: Kernel> ThreadRef<K> {
+impl<K: Kernel> ThreadHandle<K> {
     /// Join the referenced thread.
     ///
     /// Waits until the all other references to the thread are dropped and the
@@ -678,7 +691,7 @@ impl<K: Kernel> ThreadRef<K> {
 
     pub fn try_join(self, kernel: K) -> crate::scheduler::TryJoinResult<K> {
         let sched = kernel.get_scheduler().lock(kernel);
-        let (_, res) = self.try_join_locked(kernel, sched);
+        let (_sched, res) = self.try_join_locked(kernel, sched);
         res
     }
 
@@ -713,17 +726,17 @@ impl<K: Kernel> ThreadRef<K> {
             match res {
                 TryJoinResult::Err {
                     error: e,
-                    thread: thread_ref,
+                    thread: thread_handle,
                 } => {
                     return JoinResult::Err {
                         error: e,
-                        thread: thread_ref,
+                        thread: thread_handle,
                     };
                 }
                 TryJoinResult::Joined(thread_box, status) => {
                     return JoinResult::Joined(thread_box, status);
                 }
-                TryJoinResult::Wait(thread_ref) => self = thread_ref,
+                TryJoinResult::Wait(thread_handle) => self = thread_handle,
             };
 
             if let Err(e) = join_event.wait_until(deadline) {
@@ -752,8 +765,8 @@ impl<K: Kernel> ThreadRef<K> {
     /// This is an ASYNCHRONOUS operation. The thread is marked as terminating,
     /// but it may not exit immediately.
     ///
-    /// To wait for the thread to terminate, call [`ThreadRef::join()`] or
-    /// [`ThreadRef::join_until()`].
+    /// To wait for the thread to terminate, call [`ThreadHandle::join()`] or
+    /// [`ThreadHandle::join_until()`].
     pub fn terminate(&mut self, kernel: K, status: ExitStatus) -> Result<()> {
         kernel
             .get_scheduler()
@@ -768,7 +781,7 @@ impl<K: Kernel> ThreadRef<K> {
 
     /// Returns true if the thread is in the terminating state.
     ///
-    /// Note: This is a parallel state to the state returned by [`ThreadRef::is_terminating()`].
+    /// Note: This is a parallel state to the state returned by [`ThreadHandle::is_terminating()`].
     pub fn is_terminating(&self, kernel: K) -> bool {
         kernel
             .get_scheduler()
@@ -777,7 +790,7 @@ impl<K: Kernel> ThreadRef<K> {
     }
 }
 
-impl<K: Kernel> Clone for ThreadRef<K> {
+impl<K: Kernel> Clone for ThreadHandle<K> {
     fn clone(&self) -> Self {
         unsafe {
             self.thread
@@ -793,7 +806,7 @@ impl<K: Kernel> Clone for ThreadRef<K> {
     }
 }
 
-impl<K: Kernel> Drop for ThreadRef<K> {
+impl<K: Kernel> Drop for ThreadHandle<K> {
     fn drop(&mut self) {
         unsafe {
             let prev_value = self
@@ -822,7 +835,7 @@ pub struct Thread<K: Kernel> {
     // Active state link (run queue, wait queue, etc)
     pub active_link: Link,
 
-    process: Option<ProcessRef<K>>,
+    process: Option<ProcessHandle<K>>,
 
     pub(super) state: State,
     pub(super) stack: Stack,
@@ -854,7 +867,7 @@ list::define_adapter!(pub ThreadListAdapter<K: Kernel> => Thread<K>::active_link
 list::define_adapter!(pub ProcessThreadListAdapter<K: Kernel> => Thread<K>::process_link);
 
 impl<K: Kernel> Thread<K> {
-    pub(super) fn take_process(&mut self) -> ProcessRef<K> {
+    pub(super) fn take_process(&mut self) -> ProcessHandle<K> {
         let Some(process) = self.process.take() else {
             pw_assert::panic!("Thread does not have a process");
         };
@@ -955,7 +968,7 @@ impl<K: Kernel> Thread<K> {
             .thread_initialize_kernel(kernel, self, entry_point, arg)
     }
 
-    pub(super) fn set_process(&mut self, process: ProcessRef<K>) {
+    pub(super) fn set_process(&mut self, process: ProcessHandle<K>) {
         self.process = Some(process);
     }
 
@@ -967,7 +980,7 @@ impl<K: Kernel> Thread<K> {
     pub unsafe fn initialize_non_priv_thread(
         &mut self,
         kernel: K,
-        process: ProcessRef<K>,
+        process: ProcessHandle<K>,
         initial_pc: usize,
         initial_sp: usize,
         args: (usize, usize, usize),
@@ -991,19 +1004,19 @@ impl<K: Kernel> Thread<K> {
     }
 
     /// Returns a reference to the thread's parent process.
-    pub fn process(&self) -> ProcessRef<K> {
+    pub fn process(&self) -> ProcessHandle<K> {
         // SAFETY: The returned process references is bound to an immutable
         // borrow of the thread the `process` pointer can not change.
-        let Some(process_ref) = self.process.as_ref() else {
+        let Some(process_handle) = self.process.as_ref() else {
             pw_assert::panic!("Thread does not have a process");
         };
-        process_ref.clone()
+        process_handle.clone()
     }
 
-    /// Return a reference counted `ThreadRef` for this thread.
-    pub(super) fn get_ref(&self, kernel: K) -> ThreadRef<K> {
+    /// Return a reference counted `ThreadHandle` for this thread.
+    pub(super) fn get_ref(&self, kernel: K) -> ThreadHandle<K> {
         self.ref_count.fetch_add(1, Ordering::Acquire);
-        ThreadRef {
+        ThreadHandle {
             thread: NonNull::from_ref(self),
             kernel,
         }

@@ -19,7 +19,7 @@ use syscall_defs::ExitStatus;
 use crate::Kernel;
 use crate::object::{KernelObject, ObjectBase, Signals};
 use crate::scheduler::SchedulerState;
-use crate::scheduler::thread::{Process, ProcessRef};
+use crate::scheduler::thread::{Process, ProcessHandle};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
 #[derive(Clone)]
@@ -32,7 +32,7 @@ pub struct MainThread<K: Kernel> {
 
 enum ProcessState<K: Kernel> {
     Stopped(ForeignBox<Process<K>>),
-    Running(ProcessRef<K>),
+    Running(ProcessHandle<K>),
     Empty,
 }
 
@@ -112,13 +112,13 @@ impl<K: Kernel> ProcessObject<K> {
         let self_rc = unsafe { foreign_box::ForeignRcState::create_ref_from_inner(self) };
         process.object = Some(self_rc.clone());
 
-        let process_ref = crate::scheduler::add_process(kernel, process);
-        state.process_state = ProcessState::Running(process_ref.clone());
+        let process_handle = crate::scheduler::add_process(kernel, process);
+        state.process_state = ProcessState::Running(process_handle.clone());
 
         if let Some(main_thread) = &state.main_thread {
             main_thread.thread.start(
                 kernel,
-                process_ref,
+                process_handle,
                 main_thread.initial_pc,
                 main_thread.initial_sp,
                 main_thread.args,
@@ -129,20 +129,20 @@ impl<K: Kernel> ProcessObject<K> {
     }
 
     pub fn terminate(&self, kernel: K) -> Result<()> {
-        let process_ref = {
+        let process_handle = {
             let state = self.state.lock(kernel);
             match &state.process_state {
-                ProcessState::Running(process_ref) => process_ref.clone(),
+                ProcessState::Running(process_handle) => process_handle.clone(),
                 ProcessState::Stopped(_) => return Err(Error::FailedPrecondition),
                 ProcessState::Empty => return Err(Error::Internal),
             }
         };
-        process_ref.terminate(kernel, ExitStatus::TerminatedBySyscall);
+        process_handle.terminate(kernel, ExitStatus::TerminatedBySyscall);
         Ok(())
     }
 
     pub fn join(&self, kernel: K) -> Result<ExitStatus> {
-        let process_ref = {
+        let process_handle = {
             let mut state = self.state.lock(kernel);
             match core::mem::replace(&mut state.process_state, ProcessState::Empty) {
                 ProcessState::Running(p) => p,
@@ -154,7 +154,7 @@ impl<K: Kernel> ProcessObject<K> {
         };
 
         use crate::scheduler::ProcessTryJoinResult;
-        match process_ref.try_join(kernel) {
+        match process_handle.try_join(kernel) {
             ProcessTryJoinResult::Joined(process, status) => {
                 #[cfg(feature = "user_space")]
                 process.reset_objects(kernel)?;
@@ -162,17 +162,17 @@ impl<K: Kernel> ProcessObject<K> {
                 state.process_state = ProcessState::Stopped(process);
                 Ok(status)
             }
-            ProcessTryJoinResult::Wait(process_ref) => {
+            ProcessTryJoinResult::Wait(process_handle) => {
                 let mut state = self.state.lock(kernel);
-                state.process_state = ProcessState::Running(process_ref);
+                state.process_state = ProcessState::Running(process_handle);
                 Err(Error::Unavailable)
             }
             ProcessTryJoinResult::Err {
                 error,
-                process: process_ref,
+                process: process_handle,
             } => {
                 let mut state = self.state.lock(kernel);
-                state.process_state = ProcessState::Running(process_ref);
+                state.process_state = ProcessState::Running(process_handle);
                 Err(error)
             }
         }

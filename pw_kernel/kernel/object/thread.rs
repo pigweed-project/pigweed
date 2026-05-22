@@ -18,13 +18,13 @@ use syscall_defs::ExitStatus;
 
 use crate::Kernel;
 use crate::object::{KernelObject, ObjectBase, Signals};
-use crate::scheduler::thread::{ProcessRef, Thread, ThreadRef};
+use crate::scheduler::thread::{ProcessHandle, Thread, ThreadHandle};
 use crate::scheduler::{SchedulerState, TryJoinResult};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
 enum State<K: Kernel> {
     Stopped(ForeignBox<Thread<K>>),
-    Running(ThreadRef<K>),
+    Running(ThreadHandle<K>),
     Empty,
 }
 
@@ -75,7 +75,7 @@ impl<K: Kernel> ThreadObject<K> {
     pub fn start(
         &self,
         kernel: K,
-        process_ref: ProcessRef<K>,
+        process_handle: ProcessHandle<K>,
         initial_pc: usize,
         initial_sp: usize,
         args: (usize, usize, usize),
@@ -93,24 +93,30 @@ impl<K: Kernel> ThreadObject<K> {
         thread.object = Some(self_rc.clone());
 
         unsafe {
-            thread.initialize_non_priv_thread(kernel, process_ref, initial_pc, initial_sp, args)?;
+            thread.initialize_non_priv_thread(
+                kernel,
+                process_handle,
+                initial_pc,
+                initial_sp,
+                args,
+            )?;
         }
-        let thread_ref = crate::scheduler::start_thread(kernel, thread);
-        *state = State::Running(thread_ref);
+        let thread_handle = crate::scheduler::start_thread(kernel, thread);
+        *state = State::Running(thread_handle);
         Ok(())
     }
 
     pub fn terminate(&self, kernel: K) -> Result<()> {
-        let mut thread_ref = {
+        let mut thread_handle = {
             let state = self.state.lock(kernel);
             match &*state {
-                State::Running(thread_ref) => thread_ref.clone(),
+                State::Running(thread_handle) => thread_handle.clone(),
                 State::Stopped(_) => return Err(Error::FailedPrecondition),
                 State::Empty => return Err(Error::Internal),
             }
         };
         // Call terminate without holding the state lock
-        thread_ref.terminate(kernel, ExitStatus::TerminatedBySyscall)
+        thread_handle.terminate(kernel, ExitStatus::TerminatedBySyscall)
     }
 
     pub fn join_locked<'a>(
@@ -118,7 +124,7 @@ impl<K: Kernel> ThreadObject<K> {
         kernel: K,
         sched: SpinLockGuard<'a, K, SchedulerState<K>>,
     ) -> (SpinLockGuard<'a, K, SchedulerState<K>>, Result<ExitStatus>) {
-        let thread_ref = {
+        let thread_handle = {
             let mut state = self.state.lock(kernel);
             match core::mem::replace(&mut *state, State::Empty) {
                 State::Running(t) => t,
@@ -129,7 +135,7 @@ impl<K: Kernel> ThreadObject<K> {
             }
         };
 
-        let res = thread_ref.try_join_locked(kernel, sched);
+        let res = thread_handle.try_join_locked(kernel, sched);
 
         match res {
             (sched, crate::scheduler::TryJoinResult::Joined(thread, status)) => {
@@ -137,20 +143,20 @@ impl<K: Kernel> ThreadObject<K> {
                 *state = State::Stopped(thread);
                 (sched, Ok(status))
             }
-            (sched, crate::scheduler::TryJoinResult::Wait(thread_ref)) => {
+            (sched, crate::scheduler::TryJoinResult::Wait(thread_handle)) => {
                 let mut state = self.state.lock(kernel);
-                *state = State::Running(thread_ref);
+                *state = State::Running(thread_handle);
                 (sched, Err(Error::Unavailable))
             }
             (
                 sched,
                 TryJoinResult::Err {
                     error,
-                    thread: thread_ref,
+                    thread: thread_handle,
                 },
             ) => {
                 let mut state = self.state.lock(kernel);
-                *state = State::Running(thread_ref);
+                *state = State::Running(thread_handle);
                 (sched, Err(error))
             }
         }
@@ -181,7 +187,7 @@ impl<K: Kernel> KernelObject<K> for ThreadObject<K> {
     }
 
     fn thread_start(&self, kernel: K, initial_pc: usize, initial_sp: usize) -> Result<()> {
-        let process = kernel.get_scheduler().lock(kernel).current_process_ref();
+        let process = kernel.get_scheduler().lock(kernel).current_process_handle();
         self.start(kernel, process.clone(), initial_pc, initial_sp, (0, 0, 0))
     }
 

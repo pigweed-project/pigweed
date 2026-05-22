@@ -19,7 +19,9 @@ use pw_status::{Error, Result};
 use vectored_buffer::{Slice, vectored_buffer_copy};
 
 use crate::Kernel;
-use crate::scheduler::thread::ProcessRef;
+use crate::scheduler::SchedulerState;
+use crate::scheduler::thread::ProcessHandle;
+use crate::sync::spinlock::SpinLockGuard;
 
 /// A `Buffer` represents a buffer or vector of buffers in a user process.
 pub enum Buffer {
@@ -46,48 +48,56 @@ impl Buffer {
         }
     }
 
-    fn _check_access<K: Kernel>(
+    fn _check_access_locked<K: Kernel>(
+        sched: &SpinLockGuard<'_, K, SchedulerState<K>>,
         start: usize,
         size: usize,
         access_type: MemoryRegionType,
-        process: &ProcessRef<K>,
+        process_handle: &ProcessHandle<K>,
     ) -> Result<usize> {
         if size > 0 {
             // We only need to check if the size is greater than zero.
             // The pointer for zero-sized objects will be invalid, so
             // we shouldn't check access.
-            if !process.range_has_access(access_type, start..(start + size)) {
+            if !process_handle.range_has_access_locked(sched, access_type, start..(start + size)) {
                 return Err(Error::PermissionDenied);
             }
         }
         Ok(size)
     }
-    fn check_access<K: Kernel>(
+    fn check_access_locked<K: Kernel>(
         &self,
+        sched: &SpinLockGuard<'_, K, SchedulerState<K>>,
         access_type: MemoryRegionType,
-        process: &ProcessRef<K>,
+        process_handle: &ProcessHandle<K>,
     ) -> Result<usize> {
         let total_size = match self {
-            Buffer::Flat(buf) => {
-                Self::_check_access(buf.addr.as_ptr() as usize, buf.length, access_type, process)?
-            }
+            Buffer::Flat(buf) => Self::_check_access_locked(
+                sched,
+                buf.addr.as_ptr().addr(),
+                buf.length,
+                access_type,
+                process_handle,
+            )?,
 
             Buffer::Vector(vec) => {
                 let mut sum = 0;
                 // First make sure we can access the vector of slices.
-                let _ = Self::_check_access(
-                    vec.addr.as_ptr() as usize,
+                let _ = Self::_check_access_locked(
+                    sched,
+                    vec.addr.as_ptr().addr(),
                     vec.length * core::mem::size_of::<Slice<u8>>(),
                     access_type,
-                    process,
+                    process_handle,
                 )?;
                 // Then check each item in the vector and sum up the total size in bytes.
                 for item in vec.as_slice() {
-                    sum += Self::_check_access(
-                        item.addr.as_ptr() as usize,
+                    sum += Self::_check_access_locked(
+                        sched,
+                        item.addr.as_ptr().addr(),
                         item.length,
                         access_type,
-                        process,
+                        process_handle,
                     )?;
                 }
                 sum
@@ -131,7 +141,7 @@ impl SyscallBuffer {
         length: isize,
     ) -> Result<Self> {
         let sched = kernel.get_scheduler().lock(kernel);
-        let process = sched.current_thread().process();
+        let process_handle = sched.current_thread().process();
         let buffer = Buffer::new(address, length)?;
 
         // SAFETY: Since there is no dynamic memory and processes can not be
@@ -139,7 +149,7 @@ impl SyscallBuffer {
         // and still uphold the invariant that the processes access rights are respected.
         //
         // TODO: https://pwbug.dev/442660183 - Handle access checks with process termination.
-        let size = buffer.check_access(access_type, &process)?;
+        let size = buffer.check_access_locked(&sched, access_type, &process_handle)?;
         Ok(Self {
             buffer,
             size,
