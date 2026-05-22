@@ -159,9 +159,16 @@ class DetokenizedString:
             else:
                 self.failures.append(result)
 
+        if not decode_attempts or not decode_attempts[0][1].ok():
+            self._ok = False
+        elif len(decode_attempts) == 1:
+            self._ok = True
+        else:
+            self._ok = decode_attempts[0][0] > decode_attempts[1][0]
+
     def ok(self) -> bool:
-        """True if exactly one string decoded the arguments successfully."""
-        return len(self.successes) == 1
+        """True if the message decoded successfully and unambiguously."""
+        return self._ok
 
     def matches(self) -> list[decode.FormattedString]:
         """Returns the strings that matched the token, best matches first."""

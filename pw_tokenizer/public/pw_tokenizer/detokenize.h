@@ -60,22 +60,10 @@ class DetokenizedString {
                     const span<const TokenizedStringEntry>& entries,
                     const span<const std::byte>& arguments);
 
-  DetokenizedString() : has_token_(false) {}
+  DetokenizedString() : has_token_(false), ok_(false) {}
 
-  /// True if there was only one match that decoded successfully.
-  bool ok() const {
-    bool successful_decode = false;
-    for (const auto& match : matches_) {
-      if (match.ok()) {
-        if (successful_decode) {
-          return false;
-        }
-        successful_decode = true;
-      }
-    }
-
-    return successful_decode;
-  }
+  /// True the message decoded successfully and unambiguously.
+  bool ok() const { return ok_; }
 
   /// Returns the strings that matched the token, with the best matches first.
   const std::vector<DecodedFormatString>& matches() const { return matches_; }
@@ -95,6 +83,7 @@ class DetokenizedString {
   uint32_t token_;
   std::string best_string_;
   bool has_token_;
+  bool ok_;
   std::vector<DecodedFormatString> matches_;
 };
 

@@ -406,7 +406,7 @@ class DetokenizeWithCollisions(unittest.TestCase):
 
     def test_collision_no_args_favors_most_recently_present(self) -> None:
         no_args = self.detok.detokenize(b'\xad\xba\0\0')
-        self.assertFalse(no_args.ok())
+        self.assertTrue(no_args.ok())
         self.assertEqual(len(no_args.successes), 2)
         self.assertEqual(len(no_args.failures), 5)
         self.assertEqual(len(no_args.matches()), 7)
@@ -420,8 +420,7 @@ class DetokenizeWithCollisions(unittest.TestCase):
         self,
     ) -> None:
         multiple_correct = self.detok.detokenize(b'\xad\xba\0\0\x7a')
-        self.assertFalse(multiple_correct.ok())
-        self.assertIn('ERROR', repr(multiple_correct))
+        self.assertTrue(multiple_correct.ok())
         self.assertEqual(len(multiple_correct.successes), 2)
         self.assertEqual(len(multiple_correct.failures), 5)
         self.assertEqual(len(multiple_correct.matches()), 7)

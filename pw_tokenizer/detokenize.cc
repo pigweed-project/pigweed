@@ -427,6 +427,15 @@ DetokenizedString::DetokenizedString(
   }
 
   std::sort(results.begin(), results.end(), IsBetterResult);
+
+  if (results.empty() || !results[0].first.ok()) {
+    ok_ = false;
+  } else if (results.size() == 1u) {
+    ok_ = true;
+  } else {
+    ok_ = IsBetterResult(results[0], results[1]);
+  }
+
   for (auto& result : results) {
     matches_.push_back(std::move(result.first));
   }

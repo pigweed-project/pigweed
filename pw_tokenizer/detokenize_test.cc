@@ -542,7 +542,8 @@ TEST_F(DetokenizeWithCollisions, Collision_OkIfExactlyOneSuccess) {
   EXPECT_EQ(result.BestString(), "One arg 1234567");
 }
 
-TEST_F(DetokenizeWithCollisions, Collision_NotOkIfMultipleSuccessfulDecodes) {
+TEST_F(DetokenizeWithCollisions,
+       Collision_OkIfMultipleSuccessfulDecodesWithClearWinner) {
   auto result = detok_.Detokenize("\0\0\0\0"sv);
   ASSERT_EQ(result.matches().size(), 7u);
   ASSERT_EQ(std::count_if(result.matches().begin(),
@@ -550,7 +551,7 @@ TEST_F(DetokenizeWithCollisions, Collision_NotOkIfMultipleSuccessfulDecodes) {
                           [](const auto& item) { return item.ok(); }),
             2);
 
-  EXPECT_FALSE(result.ok());
+  EXPECT_TRUE(result.ok());
   EXPECT_EQ(result.BestString(), "This string is present");
 }
 
