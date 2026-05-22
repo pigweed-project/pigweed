@@ -90,6 +90,10 @@ TEST_CASES = (
     TestCase('$#0000000b', '$#0000000b'),
     TestCase('$10#0000000011', '$10#0000000011'),
     TestCase('$CwAAAA==', '$CwAAAA=='),
+    TestCase('$AAAAAaAA', 'Base64 is valid hexadecimal 16'),
+    TestCase('$64#AAAAAaAA', 'Base64 is valid hexadecimal 16'),
+    TestCase('$000000000000', 'Base64 is valid base 10 -39 26 -4970 26'),
+    TestCase('$64#000000000000', 'Base64 is valid base 10 -39 26 -4970 26'),
 )
 
 OPTIONALLY_TOKENIZED_TEST_CASES = (
@@ -130,7 +134,7 @@ WITH_COLLISIONS_CASES_BINARY = (
 # Databases
 _TEST_DATABASE = (
     b'TOKENS\0\0'
-    b'\x0d\x00\x00\x00'  # Number of tokens in this database (13).
+    b'\x0f\x00\x00\x00'  # Number of tokens in this database (15).
     b'\0\0\x00\x00'
     b'\x01\x00\x00\x00----'
     b'\x02\x00\x00\x00\xff\xff\xff\xff'
@@ -142,6 +146,8 @@ _TEST_DATABASE = (
     b'\xd7\x00\x00\x00----'
     b'\xeb\x00\x00\x00----'
     b'\xFF\x00\x00\x00----'
+    b'\x00\x00\x00\x01----'
+    b'\xd3\x4d\x34\xd3----'
     b'\xFF\xEE\xEE\xDD----'
     b'\xEE\xEE\xEE\xEE----'
     b'\x9D\xA7\x97\xF8----'
@@ -155,6 +161,8 @@ _TEST_DATABASE = (
     b'd7 encodes as 16==\0'
     b'$64==+\0'  # recursively decodes to itself with a + after it
     b'333\0'
+    b'Base64 is valid hexadecimal %d\0'
+    b'Base64 is valid base 10 %d %d %d %d\0'
     b'FOUR\0'
     b'$AQAAAA==\0'
     b'\xe2\x96\xa0msg\xe2\x99\xa6This is $AQAAAA== message\xe2\x96\xa0'

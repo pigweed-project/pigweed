@@ -70,50 +70,45 @@ _LOG = logging.getLogger('pw_tokenizer')
 ENCODED_TOKEN = struct.Struct('<I')
 _BASE64_CHARS = string.ascii_letters + string.digits + '+/-_='
 DEFAULT_RECURSION = 5
-NESTED_TOKEN_BASE_PREFIX = encode.NESTED_TOKEN_BASE_PREFIX.encode()
-NESTED_DOMAIN_START_PREFIX = encode.NESTED_DOMAIN_START_PREFIX.encode()
-NESTED_DOMAIN_END_PREFIX = encode.NESTED_DOMAIN_END_PREFIX.encode()
 
-_BASE8_TOKEN_REGEX = rb'(?P<base8>[0-7]{11})'
-_BASE10_TOKEN_REGEX = rb'(?P<base10>[0-9]{10})'
-_BASE16_TOKEN_REGEX = rb'(?P<base16>[A-Fa-f0-9]{8})'
+_BASE10_TOKEN_REGEX = r'(?P<base10>[0-9]{10})'
+_BASE16_TOKEN_REGEX = r'(?P<base16>[A-Fa-f0-9]{8})'
 _BASE64_TOKEN_REGEX = (
-    rb'(?P<base64>'
+    r'(?P<base64>'
     # Tokenized Base64 contains 0 or more blocks of four Base64 chars.
-    rb'(?:[A-Za-z0-9+/\-_]{4})*'
+    r'(?:[A-Za-z0-9+/\-_]{4})*'
     # The last block of 4 chars may have one or two padding chars (=).
-    rb'(?:[A-Za-z0-9+/\-_]{3}=|[A-Za-z0-9+/\-_]{2}==)?'
-    rb')'
-)
-_NESTED_TOKEN_FORMATS = (
-    _BASE8_TOKEN_REGEX,
-    _BASE10_TOKEN_REGEX,
-    _BASE16_TOKEN_REGEX,
-    _BASE64_TOKEN_REGEX,
+    r'(?:[A-Za-z0-9+/\-_]{3}=|[A-Za-z0-9+/\-_]{2}==)?'
+    r')'
 )
 
 
 def _token_regex(prefix: str) -> Pattern[bytes]:
     """Returns a regular expression for prefixed tokenized strings."""
+    base_prefix = re.escape(encode.NESTED_TOKEN_BASE_PREFIX)
+
     return re.compile(
-        # Tokenized strings start with the prefix character ($).
-        re.escape(prefix.encode())
-        # Optional; no domain specifier defaults to (empty) domain.
-        # Brackets ({}) specifies domain string
-        + rb'(?P<domainspec>('
-        + NESTED_DOMAIN_START_PREFIX
-        + rb'(?P<domain>\s*|\s*[a-zA-Z_:][a-zA-Z0-9_:\s]*)'
-        + NESTED_DOMAIN_END_PREFIX
-        + rb'))?'
-        # Optional; no base specifier defaults to BASE64.
-        # Hash (#) with no number specified defaults to Base-16.
-        + rb'(?P<basespec>(?P<base>[0-9]*)?'
-        + NESTED_TOKEN_BASE_PREFIX
-        + rb')?'
-        # Match one of the following token formats.
-        + rb'('
-        + rb'|'.join(_NESTED_TOKEN_FORMATS)
-        + rb')'
+        (
+            # Tokenized strings start with the prefix character (e.g. '$').
+            fr'{re.escape(prefix)}'
+            # Optional domain specifier, e.g. '{domain}' (defaults to empty).
+            fr'(?P<domainspec>('
+            fr'{re.escape(encode.NESTED_DOMAIN_START_PREFIX)}'
+            fr'(?P<domain>\s*|\s*[a-zA-Z_:][a-zA-Z0-9_:\s]*)'
+            fr'{re.escape(encode.NESTED_DOMAIN_END_PREFIX)}'
+            fr'))?'
+            fr'(?:'
+            # Non-Base64 tokens: base prefix (e.g. '#', '10#', or '16#'),
+            # followed by either 10 decimal digits or 8 hexadecimal digits.
+            fr'(?P<basespec>(?P<base>10|16)?{base_prefix})'
+            fr'(?:{_BASE10_TOKEN_REGEX}|{_BASE16_TOKEN_REGEX})'
+            fr'|'
+            # Base64 messages: optionally prefixed with base (e.g. '64#'),
+            # followed by a Base64 encoded token and its arguments.
+            fr'(?P<basespec_b64>(?P<base_b64>[0-9]*)?{base_prefix})?'
+            fr'{_BASE64_TOKEN_REGEX}'
+            fr')'
+        ).encode()
     )
 
 

@@ -234,11 +234,10 @@ The optional ``DOMAIN`` specifies the token domain. If this option is omitted,
 the default (empty) domain is assumed.
 
 The optional ``BASE`` defines the numeric base encoding of the token. Accepted
-values are 8, 10, 16, and 64. If the hash symbol ``#`` is used without
-specifying a number, the base is assumed to be 16. If the base option is
-omitted entirely, the base defaults to 64 for backward compatibility. All
-encodings except Base64 are not case sensitive. This may be expanded to support
-other bases in the future.
+values are 10, 16, and 64. If the hash symbol ``#`` is used without specifying a
+number, the base is assumed to be 16. If the base option is omitted entirely,
+the base defaults to 64 for backward compatibility. All encodings except Base64
+are not case sensitive. Other bases may be supported in the future.
 
 Non-Base64 tokens are encoded strictly as 32-bit integers with padding.
 Base64 data may additionally encode string arguments for the detokenized token,
