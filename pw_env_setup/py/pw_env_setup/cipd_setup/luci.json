@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:24e856048d206800c77c164df3dfe8689b8ccfe7"
+        "git_revision:00fe8382fb3ac81ae960521397a5ddaf33e81a26"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
