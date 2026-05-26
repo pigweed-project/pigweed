@@ -79,6 +79,11 @@ class FakeVendorServer final
     completer.Reply(fit::success(std::move(hci_client_end)));
   }
 
+  void GetCrashParameters(
+      GetCrashParametersCompleter::Sync& completer) override {
+    completer.Reply(fit::error(ZX_ERR_NOT_SUPPORTED));
+  }
+
   void handle_unknown_method(
       ::fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::Vendor>
           metadata,

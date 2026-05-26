@@ -292,6 +292,11 @@ void EmulatorDevice::OpenSnoop(OpenSnoopCompleter::Sync& completer) {
   completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
 }
 
+void EmulatorDevice::GetCrashParameters(
+    GetCrashParametersCompleter::Sync& completer) {
+  completer.ReplyError(ZX_ERR_NOT_SUPPORTED);
+}
+
 void EmulatorDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
