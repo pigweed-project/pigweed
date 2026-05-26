@@ -1,0 +1,110 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+import("$dir_pw_build/python_action.gni")
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_toolchain/generate_toolchain.gni")
+
+# Generates a C++ library with versioned enums.
+#
+# Args:
+#   public: Standard .h files containing enum definitions.
+#   deps: Dependencies (other pw_cc_enum targets).
+#   include_dirs: List containing exactly one path to include for generated headers.
+template("pw_cc_enum") {
+  assert(defined(invoker.public), "pw_cc_enum requires public")
+  assert(defined(invoker.include_dirs), "pw_cc_enum requires include_dirs")
+  _include_dirs = invoker.include_dirs
+  assert(_include_dirs == [ _include_dirs[0] ],
+         "include_dirs must have exactly one path")
+
+  assert(
+      _include_dirs[0] != ".",
+      "pw_cc_enum does not allow '.' as include_dirs. " +
+          "Since GN doesn't isolate headers, it is too easy for sources to " +
+          "accidentally include original headers instead of generated ones.")
+
+  _out_dir = "${target_gen_dir}/${target_name}"
+  _out_files = []
+  foreach(_hdr, invoker.public) {
+    _out_files += [ "$_out_dir/include/" + rebase_path(_hdr, _include_dirs[0]) ]
+  }
+
+  _base_cc_file = "$_out_dir/${target_name}.base.cc"
+  write_file(_base_cc_file, [ "// placeholder" ])
+
+  _base_target = "${target_name}._base"
+  pw_source_set(_base_target) {
+    forward_variables_from(invoker, [ "testonly" ])
+    sources = [ _base_cc_file ]
+    if (defined(invoker.deps)) {
+      deps = invoker.deps
+    }
+    public_deps = [
+      "$dir_pw_enum:_generate_internal_do_not_use",
+      "$dir_pw_tokenizer",
+    ]
+    visibility = [ ":*" ]
+  }
+
+  _generate_target = "${target_name}.generate"
+  pw_python_action(_generate_target) {
+    forward_variables_from(invoker, [ "testonly" ])
+    module = "pw_enum.generate_gn"
+    python_deps = [ "$dir_pw_enum/py" ]
+    inputs = invoker.public
+    outputs = _out_files
+    args = rebase_path(invoker.public, root_build_dir) + [ "--outputs" ] +
+           rebase_path(_out_files, root_build_dir) +
+           [
+             "--base-cc",
+             rebase_path(_base_cc_file, root_build_dir),
+             "--toolchain-ninja",
+             rebase_path("$root_out_dir/toolchain.ninja", root_build_dir),
+             "--target-ninja",
+             rebase_path(get_label_info(":$_base_target", "target_out_dir") +
+                             "/$_base_target.ninja",
+                         root_build_dir),
+           ]
+    deps = [ ":$_base_target" ]
+    visibility = [ ":*" ]
+  }
+
+  config("${target_name}.public_includes") {
+    # Use -iquote so generated headers take priority over source directories.
+    cflags_cc = [ "-iquote" + rebase_path("$_out_dir/include", root_build_dir) ]
+    include_dirs = [ "$_out_dir/include" ]
+    visibility = [ ":*" ]
+  }
+
+  pw_source_set(target_name) {
+    forward_variables_from(invoker,
+                           [
+                             "testonly",
+                             "visibility",
+                           ])
+    public = _out_files
+    public_deps = [
+      "$dir_pw_enum:_generate_internal_do_not_use",
+      "$dir_pw_tokenizer",
+    ]
+    if (defined(invoker.deps)) {
+      public_deps += invoker.deps
+    }
+    deps = [ ":$_generate_target" ]
+
+    public_configs = [ ":${target_name}.public_includes" ]
+  }
+}

@@ -353,6 +353,12 @@
 /// [Home](../../pw_elf/docs.html)
 /// @endmaindocs
 
+/// @defgroup pw_enum pw_enum
+/// @brief Automatic versioned tokenized enum support.
+/// @maindocs
+/// [Home](../../pw_enum/docs.html)
+/// @endmaindocs
+
 /// @defgroup pw_function pw_function
 /// @brief Embedded-friendly `std::function`.
 /// @maindocs

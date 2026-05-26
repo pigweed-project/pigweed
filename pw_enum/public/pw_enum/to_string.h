@@ -15,6 +15,8 @@
 
 #include <type_traits>
 
+/// @module{pw_enum}
+
 namespace pw {
 
 /// Returns a string representation of a given enumerator.
@@ -31,3 +33,5 @@ constexpr const char* EnumToString(T value) {
 }
 
 }  // namespace pw
+
+/// @}

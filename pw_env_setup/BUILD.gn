@@ -42,6 +42,7 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_docgen/py",
     "$dir_pw_doctor/py",
     "$dir_pw_emu/py",
+    "$dir_pw_enum/py",
     "$dir_pw_env_setup/py",
     "$dir_pw_env_setup_zephyr/py",
     "$dir_pw_hdlc/py",

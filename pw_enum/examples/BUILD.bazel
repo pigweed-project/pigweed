@@ -1,0 +1,79 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("//pw_enum:pw_cc_enum.bzl", "pw_cc_enum")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
+
+# DOCSTAG: [pw_enum-examples-basic-bazel]
+pw_cc_enum(
+    name = "basic_enum",
+    hdrs = ["private/enum_example/basic_enum.h"],
+    strip_include_prefix = "private",
+)
+
+pw_cc_enum(
+    name = "other_enum",
+    hdrs = ["private/enum_example/other_enum.h"],
+    strip_include_prefix = "private",
+    deps = [":basic_enum"],
+)
+
+cc_library(
+    name = "basic_enum_example",
+    srcs = ["basic_enum.cc"],
+    deps = [
+        ":basic_enum",
+        ":other_enum",
+        "//pw_enum",
+        "//pw_log",
+        "//pw_log:args",
+        "//pw_tokenizer",
+    ],
+)
+# DOCSTAG: [pw_enum-examples-basic-bazel]
+
+# DOCSTAG: [pw_enum-examples-advanced-bazel]
+pw_cc_enum(
+    name = "advanced_enum",
+    hdrs = ["enum_example/references_other_enum.h"],
+    strip_include_prefix = ".",
+    deps = [":basic_enum"],
+)
+# DOCSTAG: [pw_enum-examples-advanced-bazel]
+
+pw_cc_test(
+    name = "basic_enum_test",
+    srcs = ["basic_enum_test.cc"],
+    deps = [
+        ":basic_enum",
+        ":basic_enum_example",
+        ":other_enum",
+        "//pw_log",
+        "//pw_log:args",
+    ],
+)
+
+filegroup(
+    name = "docs_sources",
+    srcs = [
+        "BUILD.bazel",
+        "basic_enum.cc",
+        "basic_enum_test.cc",
+        "enum_example/references_other_enum.h",
+        "private/enum_example/basic_enum.h",
+        "private/enum_example/other_enum.h",
+    ],
+    visibility = ["//pw_enum:__subpackages__"],
+)
