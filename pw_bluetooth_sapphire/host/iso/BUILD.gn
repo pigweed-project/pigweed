@@ -52,8 +52,12 @@ pw_source_set("iso") {
 
 pw_source_set("testing") {
   testonly = pw_unit_test_TESTONLY
-  public =
-      [ "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h" ]
+  public = [
+    "public/pw_bluetooth_sapphire/internal/host/iso/fake_cig_stream_creator.h",
+    "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_group.h",
+    "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_group_manager_provider.h",
+    "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h",
+  ]
   public_configs = [ ":public_include_path" ]
   public_deps = [ ":iso" ]
 }

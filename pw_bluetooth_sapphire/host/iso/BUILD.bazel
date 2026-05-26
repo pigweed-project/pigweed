@@ -63,6 +63,9 @@ cc_library(
     name = "testing",
     testonly = True,
     hdrs = [
+        "public/pw_bluetooth_sapphire/internal/host/iso/fake_cig_stream_creator.h",
+        "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_group.h",
+        "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_group_manager_provider.h",
         "public/pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h",
     ],
     features = ["-conversion_warnings"],

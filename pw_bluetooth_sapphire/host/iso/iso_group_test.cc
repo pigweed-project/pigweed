@@ -16,6 +16,7 @@
 
 #include <unordered_set>
 
+#include "pw_bluetooth_sapphire/internal/host/iso/fake_cig_stream_creator.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/mock_controller.h"
@@ -24,40 +25,7 @@
 namespace bt::iso {
 namespace {
 
-using testing::FakeIsoStream;
-
-// FakeCigStreamCreator
-// Holds an unordered_map of `FakeIsoStream`s, accessible from outside
-// with the const `streams()` accessor.
-// Implements CigStreamCreator.
-class FakeCigStreamCreator : public CigStreamCreator {
- public:
-  FakeCigStreamCreator() : weak_self_(this) {}
-  ~FakeCigStreamCreator() override = default;
-
-  WeakSelf<IsoStream>::WeakPtr CreateCisConfiguration(
-      CigCisIdentifier id,
-      hci_spec::ConnectionHandle cis_handle,
-      CisEstablishedCallback on_established_cb,
-      pw::Callback<void()> on_closed_cb) override {
-    auto stream = std::make_unique<FakeIsoStream>(
-        cis_handle, std::move(on_established_cb), std::move(on_closed_cb));
-    auto weak_stream = stream->GetWeakPtr();
-    streams_.emplace(id, std::move(stream));
-    return weak_stream;
-  }
-
-  const std::unordered_map<CigCisIdentifier, std::unique_ptr<FakeIsoStream>>&
-  streams() const {
-    return streams_;
-  }
-
-  CigStreamCreator::WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
-
- private:
-  std::unordered_map<CigCisIdentifier, std::unique_ptr<FakeIsoStream>> streams_;
-  WeakSelf<FakeCigStreamCreator> weak_self_;
-};
+using testing::FakeCigStreamCreator;
 
 class IsoGroupTest : public bt::testing::FakeDispatcherControllerTest<
                          bt::testing::MockController> {
