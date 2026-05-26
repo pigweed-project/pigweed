@@ -21,12 +21,17 @@
 
 namespace bt::iso {
 
+hci_spec::ConnectionHandle IsoStreamManager::Connection::handle() const {
+  PW_CHECK(is_peripheral());
+  return *handle_;
+}
+
 IsoStreamManager::IsoStreamManager(
-    hci_spec::ConnectionHandle handle,
+    Connection conn,
     hci::Transport::WeakPtr hci,
     pw::async::Dispatcher& dispatcher,
     pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider)
-    : acl_handle_(handle),
+    : conn_(conn),
       hci_(std::move(hci)),
       dispatcher_(dispatcher),
       wake_lease_provider_(wake_lease_provider),
@@ -36,19 +41,21 @@ IsoStreamManager::IsoStreamManager(
   PW_CHECK(cmd_.is_alive());
 
   auto weak_self = GetWeakPtr();
-  cis_request_handler_ = cmd_->AddLEMetaEventHandler(
-      hci_spec::kLECISRequestSubeventCode,
-      [self = weak_self](const hci::EventPacket& event) {
-        if (!self.is_alive()) {
-          return hci::CommandChannel::EventCallbackResult::kRemove;
-        }
-        self->OnCisRequest(event);
-        return hci::CommandChannel::EventCallbackResult::kContinue;
-      });
+  if (conn_.is_peripheral()) {
+    cis_request_handler_ = cmd_->AddLEMetaEventHandler(
+        hci_spec::kLECISRequestSubeventCode,
+        [self = weak_self](const hci::EventPacket& event) {
+          if (!self.is_alive()) {
+            return hci::CommandChannel::EventCallbackResult::kRemove;
+          }
+          self->OnCisRequest(event);
+          return hci::CommandChannel::EventCallbackResult::kContinue;
+        });
+  }
 }
 
 IsoStreamManager::~IsoStreamManager() {
-  if (cmd_.is_alive()) {
+  if (cmd_.is_alive() && conn_.is_peripheral()) {
     cmd_->RemoveEventHandler(cis_request_handler_);
   }
   if (hci_.is_alive()) {
@@ -74,6 +81,10 @@ AcceptCisStatus IsoStreamManager::AcceptCis(CigCisIdentifier id,
          "CIS: %u)",
          id.cig_id(),
          id.cis_id());
+
+  if (conn_.is_central()) {
+    return AcceptCisStatus::kNotPeripheral;
+  }
 
   if (accept_handlers_.count(id) != 0) {
     return AcceptCisStatus::kAlreadyExists;
@@ -107,6 +118,7 @@ IsoStream::WeakPtr IsoStreamManager::CreateCisConfiguration(
 
 void IsoStreamManager::OnCisRequest(const hci::EventPacket& event) {
   PW_CHECK(event.event_code() == hci_spec::kLEMetaEventCode);
+  PW_CHECK(conn_.is_peripheral());
 
   auto event_view =
       event.view<pw::bluetooth::emboss::LECISRequestSubeventView>();
@@ -127,12 +139,12 @@ void IsoStreamManager::OnCisRequest(const hci::EventPacket& event) {
          cis_id);
 
   // Ignore any requests that are not intended for this connection.
-  if (request_handle != acl_handle_) {
+  if (request_handle != conn_.handle()) {
     bt_log(DEBUG,
            "iso",
            "ignoring incoming stream request for handle 0x%x (ours: 0x%x)",
            request_handle,
-           acl_handle_);
+           conn_.handle());
     return;
   }
 

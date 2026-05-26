@@ -339,7 +339,7 @@ class LowEnergyConnection final : public sm::Delegate {
   // operating as a Central, |iso_mgr_| is used to establish an outgoing
   // connection to a peer. When operating as a Peripheral, |iso_mgr_| is used to
   // allow incoming requests for specified CIG/CIS combinations.
-  std::optional<iso::IsoStreamManager> iso_mgr_;
+  std::unique_ptr<iso::IsoStreamManager> iso_mgr_;
 
   struct InspectProperties {
     inspect::StringProperty peer_id;

@@ -26,17 +26,60 @@ namespace bt::iso {
 
 // Responsible for owning and managing IsoStream objects associated with a
 // single LE connection.
-// When operating as a Central, establishes an outgoing streams. When operating
-// as a Peripheral, processes incoming stream requests .
+// When operating as a Central, establishes outgoing streams. When operating
+// as a Peripheral, processes incoming stream requests.
 class IsoStreamManager final : public CigStreamCreator {
  public:
-  explicit IsoStreamManager(
+  static std::unique_ptr<IsoStreamManager> CreatePeripheral(
       hci_spec::ConnectionHandle handle,
       hci::Transport::WeakPtr hci,
       pw::async::Dispatcher& dispatcher,
-      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider);
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider) {
+    return std::unique_ptr<IsoStreamManager>(
+        new IsoStreamManager(Connection::Peripheral(handle),
+                             std::move(hci),
+                             dispatcher,
+                             wake_lease_provider));
+  }
+
+  static std::unique_ptr<IsoStreamManager> CreateCentral(
+      hci::Transport::WeakPtr hci,
+      pw::async::Dispatcher& dispatcher,
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider) {
+    return std::unique_ptr<IsoStreamManager>(
+        new IsoStreamManager(Connection::Central(),
+                             std::move(hci),
+                             dispatcher,
+                             wake_lease_provider));
+  }
+
   ~IsoStreamManager() override;
 
+ private:
+  class Connection {
+   public:
+    static Connection Central() { return Connection(std::nullopt); }
+    static Connection Peripheral(hci_spec::ConnectionHandle handle) {
+      return Connection(handle);
+    }
+
+    bool is_peripheral() const { return handle_.has_value(); }
+    bool is_central() const { return !handle_.has_value(); }
+    hci_spec::ConnectionHandle handle() const;
+
+   private:
+    explicit Connection(std::optional<hci_spec::ConnectionHandle> handle)
+        : handle_(handle) {}
+    std::optional<hci_spec::ConnectionHandle> handle_;
+  };
+
+  explicit IsoStreamManager(
+      Connection conn,
+      hci::Transport::WeakPtr hci,
+      pw::async::Dispatcher& dispatcher,
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider);
+
+ public:
   // Start waiting on an incoming request to create an Isochronous channel for
   // the specified CIG/CIS |id|. If we are already waiting on |id|, or if a
   // stream has already been established with the given |id|, returns
@@ -77,7 +120,7 @@ class IsoStreamManager final : public CigStreamCreator {
   void RejectCisRequest(
       const pw::bluetooth::emboss::LECISRequestSubeventView& event_view);
 
-  hci_spec::ConnectionHandle acl_handle_;
+  Connection conn_;
 
   // LE event handler for incoming CIS requests
   hci::CommandChannel::EventHandlerId cis_request_handler_;

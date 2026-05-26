@@ -46,7 +46,7 @@ class IsoStreamManagerTest : public MockControllerTestBase {
                                         /*max_num_packets=*/5);
     transport()->InitializeIsoDataChannel(iso_buffer_info);
     iso_stream_manager_ =
-        std::make_unique<IsoStreamManager>(kAclConnectionHandleId1,
+        IsoStreamManager::CreatePeripheral(kAclConnectionHandleId1,
                                            transport()->GetWeakPtr(),
                                            dispatcher(),
                                            lease_provider());
@@ -298,6 +298,23 @@ TEST_F(IsoStreamManagerTest, CreateCisConfiguration) {
 
   EXPECT_TRUE(on_established_cb_called);
   EXPECT_FALSE(on_closed_cb_called);
+}
+
+TEST_F(IsoStreamManagerTest, AcceptCisFailsWhenNotPeripheral) {
+  // Create an IsoStreamManager without an ACL connection handle (Central role)
+  auto central_manager = IsoStreamManager::CreateCentral(
+      transport()->GetWeakPtr(), dispatcher(), lease_provider());
+
+  const CigCisIdentifier kId(0x14, 0x04);
+
+  // AcceptCis should fail immediately with kNotPeripheral
+  AcceptCisStatus status = central_manager->AcceptCis(
+      kId,
+      [](pw::bluetooth::emboss::StatusCode,
+         std::optional<WeakSelf<IsoStream>::WeakPtr>,
+         const std::optional<CisEstablishedParameters>&) {});
+
+  EXPECT_EQ(status, AcceptCisStatus::kNotPeripheral);
 }
 
 }  // namespace bt::iso

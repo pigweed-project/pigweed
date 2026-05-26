@@ -127,7 +127,7 @@ LowEnergyConnection::LowEnergyConnection(
   // Only create an IsoStreamManager if the controller supports Isochronous
   // streams.
   if (low_energy_state.IsConnectedIsochronousStreamSupported()) {
-    iso_mgr_.emplace(
+    iso_mgr_ = iso::IsoStreamManager::CreatePeripheral(
         link_->handle(), hci_->GetWeakPtr(), dispatcher_, wake_lease_provider);
   }
 
