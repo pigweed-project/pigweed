@@ -35,11 +35,13 @@ pw_source_set("iso") {
   ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_bluetooth:emboss_hci_commands",
     "$dir_pw_bluetooth:emboss_hci_data",
     "$dir_pw_bluetooth:emboss_hci_events",
     "$dir_pw_bluetooth_sapphire/host/common",
     "$dir_pw_bluetooth_sapphire/host/hci-spec",
     "$dir_pw_bluetooth_sapphire/host/transport",
+    "$dir_pw_result:expected",
     dir_pw_function,
     dir_pw_span,
   ]

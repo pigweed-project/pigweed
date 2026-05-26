@@ -16,10 +16,41 @@
 
 #include <pw_assert/check.h>
 
+#include <unordered_set>
+
 #include "pw_bluetooth/hci_commands.emb.h"
 
 namespace bt::iso {
 namespace {
+constexpr uint8_t kCisRetransmissionCount = 2;
+
+pw::bluetooth::emboss::LECISPacking ConvertPacking(CigPacking packing) {
+  switch (packing) {
+    case CigPacking::kSequential:
+      return pw::bluetooth::emboss::LECISPacking::SEQUENTIAL;
+    case CigPacking::kInterleaved:
+      return pw::bluetooth::emboss::LECISPacking::INTERLEAVED;
+  }
+  PW_CRASH("Unhandled packing value: %#02x", static_cast<uint8_t>(packing));
+}
+
+pw::bluetooth::emboss::LECISFraming ConvertFraming(CigFraming framing) {
+  switch (framing) {
+    case CigFraming::kUnframed:
+      return pw::bluetooth::emboss::LECISFraming::UNFRAMED;
+    case CigFraming::kFramed:
+      return pw::bluetooth::emboss::LECISFraming::FRAMED;
+  }
+  PW_CRASH("Unhandled framing value: %#02x", static_cast<uint8_t>(framing));
+}
+
+template <typename... WriterTraits>
+bool AllowAllPhys(
+    typename pw::bluetooth::emboss::GenericLECISPHYOptionsView<WriterTraits...>
+        phys) {
+  return phys.le_1m().TryToWrite(true) && phys.le_2m().TryToWrite(true) &&
+         phys.le_coded().TryToWrite(true);
+}
 
 class IsoGroupImpl final : public IsoGroup {
  public:
@@ -209,14 +240,203 @@ class IsoGroupImpl final : public IsoGroup {
   using State = Fsm::State;
 
   // IsoGroup overrides.
+  void SetParams(CigParams cig_params,
+                 std::vector<CigCisParams> cis_params,
+                 SetParamsCallback callback) override;
   WeakPtr GetWeakPtr() override { return weak_self_.GetWeakPtr(); }
 
   // Impl-specific.
+  void HandleSetCIGParametersCommandCompleteEvent(
+      const hci::EventPacket& cmd_complete,
+      std::vector<CigCisParams> cis_params,
+      SetParamsCallback callback);
+
   Fsm fsm_{State::kNotCreated};
+  std::optional<pw::bluetooth::emboss::LESleepClockAccuracyRange>
+      worst_case_sca_;
 
   // Keep last, must be destroyed before any other member.
   WeakSelf<IsoGroupImpl> weak_self_;
 };
+
+void IsoGroupImpl::SetParams(CigParams cig_params,
+                             std::vector<CigCisParams> cis_params,
+                             IsoGroup::SetParamsCallback callback) {
+  if (!fsm_.CanSetParams()) {
+    bt_log(ERROR, "iso", "Invalid state (%s) for SetParams.", fsm_.ToString());
+    callback(pw::unexpected(HostError::kFailed));
+    return;
+  }
+
+  std::unordered_set<hci_spec::CisIdentifier> cis_ids;
+  for (const auto& cis : cis_params) {
+    if (streams_.count(cis.config.cis_id) > 0 ||
+        cis_ids.count(cis.config.cis_id) > 0) {
+      bt_log(ERROR,
+             "iso",
+             "Attempt to configure existing or duplicate CIS ID %#02x",
+             cis.config.cis_id);
+      callback(pw::unexpected(HostError::kInvalidParameters));
+      return;
+    }
+    cis_ids.insert(cis.config.cis_id);
+  }
+
+  const size_t packet_size =
+      pw::bluetooth::emboss::LESetCIGParametersCommand::MinSizeInBytes() +
+      (pw::bluetooth::emboss::LESetCIGParametersCISOptions::MinSizeInBytes() *
+       cis_params.size());
+  auto cmd_packet = hci::CommandPacket::New<
+      pw::bluetooth::emboss::LESetCIGParametersCommandWriter>(
+      hci_spec::kLESetCIGParameters, packet_size);
+
+  // From Bluetooth Core Spec v6.2, Vol 4, Part E, 7.8.97:
+  // If the Host cannot get the sleep clock accuracy from all the Peripherals,
+  // it shall set the Worst_Case_SCA parameter to zero.
+  worst_case_sca_ = cig_params.worst_case_sca;
+  auto sca = worst_case_sca_.value_or(
+      static_cast<pw::bluetooth::emboss::LESleepClockAccuracyRange>(0));
+
+  auto cmd_view = cmd_packet.view_t();
+  PW_CHECK(cmd_view.IsComplete());
+  PW_CHECK(cmd_view.cig_id().TryToWrite(id()));
+  PW_CHECK(cmd_view.sdu_interval_c_to_p().TryToWrite(
+      cig_params.sdu_interval_c_to_p));
+  PW_CHECK(cmd_view.sdu_interval_p_to_c().TryToWrite(
+      cig_params.sdu_interval_p_to_c));
+  PW_CHECK(cmd_view.worst_case_sca().TryToWrite(sca));
+  PW_CHECK(cmd_view.packing().TryToWrite(ConvertPacking(cig_params.packing)));
+  PW_CHECK(cmd_view.framing().TryToWrite(ConvertFraming(cig_params.framing)));
+  PW_CHECK(cmd_view.max_transport_latency_c_to_p().TryToWrite(
+      cig_params.max_transport_latency_c_to_p));
+  PW_CHECK(cmd_view.max_transport_latency_p_to_c().TryToWrite(
+      cig_params.max_transport_latency_p_to_c));
+  PW_CHECK(cmd_view.cis_count().TryToWrite(cis_params.size()));
+
+  PW_CHECK(cmd_view.IsComplete());
+  for (size_t i = 0; i < cis_params.size(); ++i) {
+    auto cis_options = cmd_view.cis_options()[i];
+    PW_CHECK(cis_options.cis_id().TryToWrite(cis_params[i].config.cis_id));
+    PW_CHECK(cis_options.max_sdu_c_to_p().TryToWrite(
+        cis_params[i].config.max_sdu_c_to_p));
+    PW_CHECK(cis_options.max_sdu_p_to_c().TryToWrite(
+        cis_params[i].config.max_sdu_p_to_c));
+    PW_CHECK(AllowAllPhys(cis_options.phy_c_to_p()));
+    PW_CHECK(AllowAllPhys(cis_options.phy_p_to_c()));
+    PW_CHECK(cis_options.rtn_c_to_p().TryToWrite(kCisRetransmissionCount));
+    PW_CHECK(cis_options.rtn_p_to_c().TryToWrite(kCisRetransmissionCount));
+  }
+
+  PW_CHECK(cmd_view.Ok());
+
+  hci_->command_channel()
+      ->SendCommand(
+          std::move(cmd_packet),
+          [self = weak_self_.GetWeakPtr(),
+           cis_params_capture = std::move(cis_params),
+           callback_capture = std::move(callback)](
+              auto, const hci::EventPacket& cmd_complete) mutable {
+            if (!self.is_alive()) {
+              bt_log(WARN,
+                     "iso",
+                     "Object destroyed during set CIG parameters command");
+              callback_capture(pw::unexpected(HostError::kFailed));
+              return;
+            }
+
+            self->HandleSetCIGParametersCommandCompleteEvent(
+                std::move(cmd_complete),
+                std::move(cis_params_capture),
+                std::move(callback_capture));
+          })
+      .IgnoreError();
+}
+
+void IsoGroupImpl::HandleSetCIGParametersCommandCompleteEvent(
+    const hci::EventPacket& cmd_complete,
+    std::vector<CigCisParams> cis_params,
+    IsoGroup::SetParamsCallback callback) {
+  auto result = cmd_complete.unchecked_view<
+      pw::bluetooth::emboss::LESetCIGParametersCommandCompleteEventView>();
+  if (!result.Ok()) {
+    bt_log(ERROR, "iso", "Invalid set CIG parameters return");
+    callback(pw::unexpected(HostError::kPacketMalformed));
+    return;
+  }
+
+  if (pw::bluetooth::emboss::StatusCode status = result.status().Read();
+      status != pw::bluetooth::emboss::StatusCode::SUCCESS) {
+    bt_log(WARN,
+           "iso",
+           "Failed set CIG parameters command (%#02x)",
+           static_cast<uint8_t>(status));
+    callback(pw::unexpected(HostError::kFailed));
+    return;
+  }
+
+  if (!fsm_.TransitionTo(State::kConfigurable).ok()) {
+    bt_log(ERROR,
+           "iso",
+           "Could not transition to 'Configurable' from '%s'.",
+           fsm_.ToString());
+    callback(pw::unexpected(HostError::kFailed));
+    return;
+  }
+
+  if (result.cig_id().Read() != id()) {
+    bt_log(ERROR,
+           "iso",
+           "Incorrect CIG ID in response (expected %#02x, got %#02x)",
+           id(),
+           result.cig_id().Read());
+    callback(pw::unexpected(HostError::kFailed));
+    return;
+  }
+
+  if (result.cis_count().Read() != cis_params.size()) {
+    bt_log(ERROR,
+           "iso",
+           "Incorrect CIS count in response (expected %#02zx, got %#02x)",
+           cis_params.size(),
+           result.cis_count().Read());
+    callback(pw::unexpected(HostError::kFailed));
+    return;
+  }
+
+  for (size_t i = 0; i < result.cis_count().Read(); ++i) {
+    hci_spec::CisIdentifier cis_id = cis_params[i].config.cis_id;
+    auto cis_closed_callback = [self = weak_self_.GetWeakPtr(), cis_id] {
+      if (!self.is_alive()) {
+        return;
+      }
+      self->streams_.erase(cis_id);
+    };
+
+    if (!cig_stream_creator_.is_alive()) {
+      bt_log(ERROR, "iso", "Dependency destroyed while setting up CIG");
+      callback(pw::unexpected(HostError::kFailed));
+      return;
+    }
+
+    auto [_, success] =
+        streams_.emplace(cis_id,
+                         cig_stream_creator_->CreateCisConfiguration(
+                             {id(), cis_id},
+                             result.connection_handles()[i].Read(),
+                             std::move(cis_params[i].on_established_cb),
+                             cis_closed_callback));
+    if (!success) {
+      bt_log(ERROR,
+             "iso",
+             "Failed to emplace stream with CIS ID %#02x (already exists)",
+             cis_id);
+      callback(pw::unexpected(HostError::kInvalidParameters));
+      return;
+    }
+  }
+
+  callback({});
+}
 
 }  // namespace
 

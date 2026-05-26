@@ -18,6 +18,9 @@
 #include <pw_bluetooth/hci_events.emb.h>
 #include <pw_function/function.h>
 
+#include <optional>
+
+#include "pw_bluetooth_sapphire/internal/host/common/identifier.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
@@ -134,6 +137,11 @@ struct CigParams {
   CigFraming framing;
   uint16_t max_transport_latency_c_to_p;
   uint16_t max_transport_latency_p_to_c;
+
+  /// The worst-case sleep clock accuracy range to use. If not supplied,
+  /// the system will assume the worst possible value as required by spec.
+  std::optional<pw::bluetooth::emboss::LESleepClockAccuracyRange>
+      worst_case_sca;
 };
 
 struct CisConfigParams {

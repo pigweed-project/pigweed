@@ -45,12 +45,14 @@ cc_library(
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
+        "//pw_bluetooth:emboss_hci_commands",
         "//pw_bluetooth:emboss_hci_data",
         "//pw_bluetooth:emboss_hci_events",
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/hci-spec",
         "//pw_bluetooth_sapphire/host/transport",
         "//pw_function",
+        "//pw_result:expected",
         "//pw_span",
     ],
 )

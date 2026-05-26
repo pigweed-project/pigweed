@@ -21,6 +21,8 @@
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_stream.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/transport.h"
+#include "pw_result/expected.h"
+#include "pw_span/span.h"
 
 namespace bt::iso {
 class IsoGroup {
@@ -33,6 +35,19 @@ class IsoGroup {
       hci::Transport::WeakPtr hci,
       CigStreamCreator::WeakPtr cig_stream_creator,
       OnClosedCallback on_closed_callback);
+
+  // Create the CIG or update parameters for a CIG that has already been
+  // configured, and add new CIS configs. See the HCI Set CIG Parameters command
+  // for details.
+  //
+  // `callback` will be invoked with `HostError::kInvalidParameters` if trying
+  // to configure duplicate or already-existing CIS IDs, or another relevant
+  // HostError if an error occurs during underlying operations.
+  using SetParamsResult = pw::expected<void, HostError>;
+  using SetParamsCallback = pw::Callback<void(SetParamsResult)>;
+  virtual void SetParams(CigParams cig_params,
+                         std::vector<CigCisParams> cis_params,
+                         SetParamsCallback callback) = 0;
 
   [[nodiscard]] hci_spec::CigIdentifier id() const { return id_; }
   const std::unordered_map<hci_spec::CisIdentifier, IsoStream::WeakPtr>&
