@@ -19,6 +19,7 @@
 #include <pw_preprocessor/compiler.h>
 
 #include <optional>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -64,6 +65,14 @@ bool ShouldStopAlwaysAutoConnecting(pw::bluetooth::emboss::StatusCode err) {
       return false;
   }
   PW_MODIFY_DIAGNOSTICS_POP();
+}
+
+pw::bluetooth::emboss::LESleepClockAccuracyRange WorstCaseSca(
+    pw::bluetooth::emboss::LESleepClockAccuracyRange a,
+    pw::bluetooth::emboss::LESleepClockAccuracyRange b) {
+  using ScaType =
+      std::underlying_type_t<pw::bluetooth::emboss::LESleepClockAccuracyRange>;
+  return static_cast<ScaType>(a) < static_cast<ScaType>(b) ? a : b;
 }
 
 // During the initial connection to a peripheral we use the initial high
@@ -141,7 +150,8 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
     pw::async::Dispatcher& dispatcher,
     pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
     PeriodicAdvertisingSyncManager::TransferSyncFn&&
-        transfer_periodic_advertising_sync_fn)
+        transfer_periodic_advertising_sync_fn,
+    iso::IsoGroupManager::CreateCigDependency create_cig_dependency)
     : dispatcher_(dispatcher),
       hci_(std::move(hci)),
       security_mode_(LESecurityMode::Mode1),
@@ -164,6 +174,18 @@ LowEnergyConnectionManager::LowEnergyConnectionManager(
   PW_DCHECK(hci_.is_alive());
   PW_DCHECK(hci_connector_);
   PW_DCHECK(local_address_delegate_);
+
+  if (adapter_state_.low_energy_state.IsFeatureSupported(
+          hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral)) {
+    central_iso_stream_manager_ = iso::IsoStreamManager::CreateCentral(
+        hci_, dispatcher_, wake_lease_provider_);
+
+    // Initialize the ISO group Manager.
+    iso_group_manager_ = std::make_unique<iso::IsoGroupManager>(
+        hci_,
+        central_iso_stream_manager_->GetWeakPtr(),
+        std::move(create_cig_dependency));
+  }
 }
 
 LowEnergyConnectionManager::~LowEnergyConnectionManager() {
@@ -546,6 +568,42 @@ void LowEnergyConnectionManager::OpenL2capChannel(
 
   connection->UpgradeSecurity(
       security_level, connection->bondable_mode(), std::move(pairing_cb));
+}
+
+void LowEnergyConnectionManager::CreateCig(
+    iso::CigParams cig_params,
+    std::vector<iso::CigCisParams> cis_params,
+    iso::IsoGroupManager::CreateCigCompleteCallback callback,
+    iso::IsoGroup::OnClosedCallback on_closed_callback,
+    std::vector<PeerId> expected_peers) {
+  if (!iso_group_manager_) {
+    callback(pw::unexpected(HostError::kNotSupported));
+    return;
+  }
+
+  if (!cig_params.worst_case_sca.has_value() && !expected_peers.empty()) {
+    bool all_peers_have_sca = true;
+    auto worst_sca =
+        pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20;
+    for (PeerId peer_id : expected_peers) {
+      Peer* peer = peer_cache_->FindById(peer_id);
+      if (!peer || !peer->le() ||
+          !peer->le()->sleep_clock_accuracy().has_value()) {
+        all_peers_have_sca = false;
+        break;
+      }
+      worst_sca =
+          WorstCaseSca(worst_sca, peer->le()->sleep_clock_accuracy().value());
+    }
+    if (all_peers_have_sca) {
+      cig_params.worst_case_sca = worst_sca;
+    }
+  }
+
+  iso_group_manager_->CreateCig(std::move(cig_params),
+                                std::move(cis_params),
+                                std::move(callback),
+                                std::move(on_closed_callback));
 }
 
 void LowEnergyConnectionManager::SetDisconnectCallbackForTesting(

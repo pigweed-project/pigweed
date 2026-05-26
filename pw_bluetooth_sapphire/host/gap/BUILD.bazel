@@ -216,6 +216,7 @@ pw_cc_test(
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/gatt:testing",
         "//pw_bluetooth_sapphire/host/hci:testing",
+        "//pw_bluetooth_sapphire/host/iso:testing",
         "//pw_bluetooth_sapphire/host/l2cap:testing",
         "//pw_bluetooth_sapphire/host/sm",
         "//pw_bluetooth_sapphire/host/sm:testing",

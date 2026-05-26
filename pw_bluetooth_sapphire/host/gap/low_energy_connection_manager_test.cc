@@ -40,6 +40,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci/legacy_low_energy_scanner.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connector.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/fake_iso_group.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_l2cap.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
@@ -58,6 +59,7 @@ namespace {
 
 using namespace inspect::testing;
 
+using bt::iso::testing::FakeIsoGroup;
 using bt::sm::BondableMode;
 using bt::testing::FakeController;
 using bt::testing::FakePeer;
@@ -141,28 +143,6 @@ class LowEnergyConnectionManagerTest : public TestingBase {
     discovery_manager_ = std::make_unique<LowEnergyDiscoveryManager>(
         scanner_.get(), peer_cache_.get(), packet_filter_config, dispatcher());
 
-    PeriodicAdvertisingSyncManager::TransferSyncFn transfer_sync_fn =
-        [this](hci::SyncId sync_id,
-               hci_spec::ConnectionHandle handle,
-               uint16_t service_data,
-               auto) {
-          sync_transfers_.push_back({sync_id, handle, service_data});
-        };
-
-    conn_mgr_ = std::make_unique<LowEnergyConnectionManager>(
-        transport()->GetWeakPtr(),
-        &addr_delegate_,
-        connector_.get(),
-        peer_cache_.get(),
-        l2cap_.get(),
-        gatt_->GetWeakPtr(),
-        discovery_manager_->GetWeakPtr(),
-        fit::bind_member<&TestSmFactory::CreateSm>(sm_factory_.get()),
-        adapter_state_,
-        dispatcher(),
-        lease_provider(),
-        std::move(transfer_sync_fn));
-
     test_device()->set_connection_state_callback(
         fit::bind_member<
             &LowEnergyConnectionManagerTest::OnConnectionStateChanged>(this));
@@ -187,8 +167,38 @@ class LowEnergyConnectionManagerTest : public TestingBase {
   // Deletes |conn_mgr_|.
   void DeleteConnMgr() { conn_mgr_ = nullptr; }
 
+  // Get the connection manager, creating it if it doesn't exist. By creating
+  // it lazily, tests may set different parameters before initialization.
+  LowEnergyConnectionManager* conn_mgr() {
+    if (!conn_mgr_) {
+      PeriodicAdvertisingSyncManager::TransferSyncFn transfer_sync_fn =
+          [this](hci::SyncId sync_id,
+                 hci_spec::ConnectionHandle handle,
+                 uint16_t service_data,
+                 auto) {
+            sync_transfers_.push_back({sync_id, handle, service_data});
+          };
+
+      conn_mgr_ = std::make_unique<LowEnergyConnectionManager>(
+          transport()->GetWeakPtr(),
+          &addr_delegate_,
+          connector_.get(),
+          peer_cache_.get(),
+          l2cap_.get(),
+          gatt_->GetWeakPtr(),
+          discovery_manager_->GetWeakPtr(),
+          fit::bind_member<&TestSmFactory::CreateSm>(sm_factory_.get()),
+          adapter_state_,
+          dispatcher(),
+          lease_provider(),
+          std::move(transfer_sync_fn),
+          fit::bind_member<&LowEnergyConnectionManagerTest::CreateCig>(this));
+    }
+
+    return conn_mgr_.get();
+  }
+
   PeerCache* peer_cache() const { return peer_cache_.get(); }
-  LowEnergyConnectionManager* conn_mgr() const { return conn_mgr_.get(); }
   l2cap::testing::FakeL2cap* fake_l2cap() const { return l2cap_.get(); }
   gatt::testing::FakeLayer* fake_gatt() { return gatt_.get(); }
   LowEnergyDiscoveryManager* discovery_mgr() {
@@ -216,6 +226,8 @@ class LowEnergyConnectionManagerTest : public TestingBase {
   periodic_advertising_sync_transfers() const {
     return sync_transfers_;
   }
+
+  pw::span<FakeIsoGroup::WeakPtr> iso_groups() { return iso_groups_; }
 
  private:
   // Called by |connector_| when a new remote initiated connection is received.
@@ -263,6 +275,20 @@ class LowEnergyConnectionManagerTest : public TestingBase {
     }
   }
 
+  std::unique_ptr<iso::IsoGroup> CreateCig(
+      hci_spec::CigIdentifier id,
+      hci::Transport::WeakPtr hci,
+      iso::CigStreamCreator::WeakPtr cig_stream_creator,
+      iso::IsoGroup::OnClosedCallback on_closed_callback) {
+    auto fake_cig =
+        std::make_unique<FakeIsoGroup>(id,
+                                       std::move(hci),
+                                       std::move(cig_stream_creator),
+                                       std::move(on_closed_callback));
+    iso_groups_.push_back(fake_cig->GetWeakPtrForFake());
+    return fake_cig;
+  }
+
   std::unique_ptr<l2cap::testing::FakeL2cap> l2cap_;
   hci::FakeLocalAddressDelegate addr_delegate_{dispatcher()};
   std::unique_ptr<PeerCache> peer_cache_;
@@ -273,6 +299,7 @@ class LowEnergyConnectionManagerTest : public TestingBase {
   std::unique_ptr<LowEnergyAddressManager> address_manager_;
   std::unique_ptr<LowEnergyDiscoveryManager> discovery_manager_;
   std::unique_ptr<LowEnergyConnectionManager> conn_mgr_;
+  std::vector<FakeIsoGroup::WeakPtr> iso_groups_;
 
   AdapterState adapter_state_ = {};
 
@@ -4723,6 +4750,335 @@ TEST_F(LowEnergyConnectionManagerTest,
   test_device()->SendCommandChannelPacket(request_packet);
   RunUntilIdle();
   EXPECT_EQ(reject_count, 0);
+}
+
+TEST_F(LowEnergyConnectionManagerTest, CreateCigFailsWhenIsoNotSupported) {
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+  iso::CisConfigParams cis_config_params_0{
+      .cis_id = 0, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+  iso::CisConfigParams cis_config_params_1{
+      .cis_id = 1, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+
+  // Create a CIG.
+  std::vector<iso::CigCisParams> cig_cis_params;
+  cig_cis_params.push_back({cis_config_params_0, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  cig_cis_params.push_back({cis_config_params_1, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  bool create_cig_complete_cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      std::move(cig_cis_params),
+      [&](auto result) {
+        create_cig_complete_cb_called = true;
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error(), HostError::kNotSupported);
+      },
+      [&](auto&) {
+        FAIL();  // Should not be closed.
+      },
+      {PeerId(1)});
+
+  // Ensure it failed.
+  RunUntilIdle();
+  EXPECT_TRUE(create_cig_complete_cb_called);
+}
+
+TEST_F(LowEnergyConnectionManagerTest, CreateCigFailsWhenIsoPeripheralOnly) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral));
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+  iso::CisConfigParams cis_config_params_0{
+      .cis_id = 0, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+  iso::CisConfigParams cis_config_params_1{
+      .cis_id = 1, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+
+  // Create a CIG.
+  std::vector<iso::CigCisParams> cig_cis_params;
+  cig_cis_params.push_back({cis_config_params_0, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  cig_cis_params.push_back({cis_config_params_1, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  bool create_cig_complete_cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      std::move(cig_cis_params),
+      [&](auto result) {
+        create_cig_complete_cb_called = true;
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error(), HostError::kNotSupported);
+      },
+      [](auto&) {
+        FAIL();  // Should not be closed.
+      },
+      {PeerId(1)});
+
+  // Ensure it failed.
+  RunUntilIdle();
+  EXPECT_TRUE(create_cig_complete_cb_called);
+}
+
+TEST_F(LowEnergyConnectionManagerTest, CreateCig) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+  iso::CisConfigParams cis_config_params_0{
+      .cis_id = 0, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+  iso::CisConfigParams cis_config_params_1{
+      .cis_id = 1, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+
+  // Create a fake peer to connect to.
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  // Connect to the peer.
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  auto callback = [&conn_handle](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_handle = std::move(result).value();
+  };
+  conn_mgr()->Connect(peer->identifier(), callback, kConnectionOptions);
+  RunUntilIdle();
+  EXPECT_EQ(1u, connected_peers().size());
+  ASSERT_TRUE(conn_handle);
+
+  // Create a CIG.
+  std::vector<iso::CigCisParams> cig_cis_params;
+  cig_cis_params.push_back({cis_config_params_0, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  cig_cis_params.push_back({cis_config_params_1, [](auto, auto, auto) {
+                              FAIL();  // Should not be established.
+                            }});
+  bool create_cig_complete_cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      std::move(cig_cis_params),
+      [&](auto result) {
+        EXPECT_TRUE(result.has_value());
+        create_cig_complete_cb_called = true;
+      },
+      [](auto&) {
+        FAIL();  // Should not be closed.
+      },
+      {PeerId(1)});
+
+  // Ensure it completed.
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(create_cig_complete_cb_called);
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CreateCigPopulatesWorstCaseScaAllPeersKnown) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+
+  auto* peer1 = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto* peer2 = peer_cache()->NewPeer(
+      DeviceAddress(DeviceAddress::Type::kLEPublic, {2}), /*connectable=*/true);
+
+  peer1->MutLe().set_sleep_clock_accuracy(
+      pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_51_TO_75);
+  peer2->MutLe().set_sleep_clock_accuracy(
+      pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_101_TO_150);
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+
+  bool cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      {},
+      [&](auto result) {
+        cb_called = true;
+        EXPECT_TRUE(result.has_value());
+      },
+      [](auto&) {},
+      {peer1->identifier(), peer2->identifier()});
+
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_EQ(iso_groups()[0]->last_cig_params().worst_case_sca,
+            pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_101_TO_150);
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CreateCigLeavesWorstCaseScaNulloptWhenPeerUnknown) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+
+  auto* peer1 = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto* peer2 = peer_cache()->NewPeer(
+      DeviceAddress(DeviceAddress::Type::kLEPublic, {2}), /*connectable=*/true);
+
+  peer1->MutLe().set_sleep_clock_accuracy(
+      pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_51_TO_75);
+  // peer2 SCA remains unknown.
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+
+  bool cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      {},
+      [&](auto result) {
+        cb_called = true;
+        EXPECT_TRUE(result.has_value());
+      },
+      [](auto&) {},
+      {peer1->identifier(), peer2->identifier()});
+
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_FALSE(iso_groups()[0]->last_cig_params().worst_case_sca.has_value());
+}
+
+// Verify that if any expected peer is not present in the peer cache,
+// we cannot compute the worst-case SCA, so worst_case_sca is left as nullopt.
+TEST_F(LowEnergyConnectionManagerTest,
+       CreateCigLeavesWorstCaseScaNulloptWhenPeerNotCached) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+
+  // Connect and cache one peer with sleep clock accuracy.
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  peer->MutLe().set_sleep_clock_accuracy(
+      pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_51_TO_75);
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+
+  bool cb_called = false;
+  // Pass one cached peer and one non-cached peer (PeerId 999).
+  // The missing peer should cause the SCA calculation to abort and leave the
+  // result empty.
+  conn_mgr()->CreateCig(
+      cig_params,
+      {},
+      [&](auto result) {
+        cb_called = true;
+        EXPECT_TRUE(result.has_value());
+      },
+      [](auto&) {},
+      {peer->identifier(), PeerId(999)});
+
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_FALSE(iso_groups()[0]->last_cig_params().worst_case_sca.has_value());
+}
+
+TEST_F(LowEnergyConnectionManagerTest, CreateCigRespectsProvidedWorstCaseSca) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  peer->MutLe().set_sleep_clock_accuracy(
+      pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_51_TO_75);
+
+  iso::CigParams cig_params{
+      .sdu_interval_c_to_p = 10000,
+      .sdu_interval_p_to_c = 10000,
+      .packing = iso::CigPacking::kSequential,
+      .framing = iso::CigFraming::kUnframed,
+      .max_transport_latency_c_to_p = 0,
+      .max_transport_latency_p_to_c = 0,
+      .worst_case_sca =
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20};
+
+  bool cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      {},
+      [&](auto result) {
+        cb_called = true;
+        EXPECT_TRUE(result.has_value());
+      },
+      [](auto&) {},
+      {peer->identifier()});
+
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_EQ(iso_groups()[0]->last_cig_params().worst_case_sca,
+            pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20);
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CreateCigLeavesWorstCaseScaNulloptWhenNoPeers) {
+  adapter_state().low_energy_state.set_supported_features(static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 0,
+                            .max_transport_latency_p_to_c = 0,
+                            .worst_case_sca = std::nullopt};
+
+  bool cb_called = false;
+  conn_mgr()->CreateCig(
+      cig_params,
+      {},
+      [&](auto result) {
+        cb_called = true;
+        EXPECT_TRUE(result.has_value());
+      },
+      [](auto&) {});
+
+  ASSERT_EQ(iso_groups().size(), 1u);
+  iso_groups()[0]->CompleteSetParams({});
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_FALSE(iso_groups()[0]->last_cig_params().worst_case_sca.has_value());
 }
 
 class LowEnergyConnectionManagerIsoSupportedTest

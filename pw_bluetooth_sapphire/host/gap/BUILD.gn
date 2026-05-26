@@ -184,6 +184,7 @@ pw_test("gap_test") {
     "$dir_pw_bluetooth_sapphire/host/common",
     "$dir_pw_bluetooth_sapphire/host/gatt:testing",
     "$dir_pw_bluetooth_sapphire/host/hci:testing",
+    "$dir_pw_bluetooth_sapphire/host/iso:testing",
     "$dir_pw_bluetooth_sapphire/host/l2cap:testing",
     "$dir_pw_bluetooth_sapphire/host/sm",
     "$dir_pw_bluetooth_sapphire/host/sm:testing",

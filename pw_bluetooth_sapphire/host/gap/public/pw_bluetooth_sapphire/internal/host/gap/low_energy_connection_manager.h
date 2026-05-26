@@ -32,6 +32,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connector.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/iso_group_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/error.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/security_manager.h"
@@ -106,7 +107,10 @@ class LowEnergyConnectionManager final {
       pw::async::Dispatcher& dispatcher,
       pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
       PeriodicAdvertisingSyncManager::TransferSyncFn&&
-          transfer_periodic_advertising_sync_fn);
+          transfer_periodic_advertising_sync_fn,
+      // Overrideable dependencies for testing.
+      iso::IsoGroupManager::CreateCigDependency create_cig =
+          iso::IsoGroup::CreateCig);
   ~LowEnergyConnectionManager();
 
   // Allows a caller to claim shared ownership over a connection to the
@@ -184,6 +188,15 @@ class LowEnergyConnectionManager final {
                         l2cap::ChannelParameters params,
                         sm::SecurityLevel security_level,
                         l2cap::ChannelCallback cb);
+
+  // Create a Connected Isochronous Group with the supplied params. Once created
+  // and configured with the controller, the `CreateCigComplete` callback will
+  // be called.
+  void CreateCig(iso::CigParams cig_params,
+                 std::vector<iso::CigCisParams> cis_params,
+                 iso::IsoGroupManager::CreateCigCompleteCallback callback,
+                 iso::IsoGroup::OnClosedCallback on_closed_callback,
+                 std::vector<PeerId> expected_peers = {});
 
   // TODO(armansito): Add a PeerCache::Observer interface and move these
   // callbacks there.
@@ -403,6 +416,16 @@ class LowEnergyConnectionManager final {
 
   PeriodicAdvertisingSyncManager::TransferSyncFn
       transfer_periodic_advertising_sync_fn_;
+
+  // ISO stream manager. This only manages streams created *by this host as a
+  // central*. For streams managed in the peripheral role, each connection has
+  // its own IsoStreamManager. This must be destroyed after `iso_group_manager_`
+  // below.
+  std::unique_ptr<iso::IsoStreamManager> central_iso_stream_manager_;
+
+  // ISO group manager, this must be destroyed after the
+  // LowEnergyConnectionManager below because it references this.
+  std::unique_ptr<iso::IsoGroupManager> iso_group_manager_;
 
   struct InspectProperties {
     // Count of connection failures in the past 10 minutes.
