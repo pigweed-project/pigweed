@@ -758,6 +758,10 @@ inline constexpr uint16_t kConnectionHandleMax = 0x0EFF;
 // The maximum value that can ve used for a 8-bit advertising set handle.
 inline constexpr uint8_t kAdvertisingHandleMax = 0xEF;
 
+// The maximum value that can be used for a CIG ID.
+inline constexpr uint8_t kMaxCigId = 0xEF;
+
+
 // The maximum value that can be set for the length of an Inquiry
 inline constexpr uint8_t kInquiryLengthMax = 0x30;
 
