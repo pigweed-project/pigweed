@@ -82,7 +82,7 @@ Result<H4PacketWithH4> GattNotifyTxEngine::GenerateNextPacket(
   PW_CHECK(att_frame_size == bframe.payload().BackingStorage().SizeInBytes());
   Result<emboss::AttHandleValueNtfWriter> att_notify =
       MakeEmbossWriter<emboss::AttHandleValueNtfWriter>(
-          attribute_value.size(),
+          static_cast<int32_t>(attribute_value.size()),
           bframe.payload().BackingStorage().data(),
           att_frame_size);
   PW_CHECK_OK(att_notify);

@@ -579,8 +579,8 @@ StatusWithMultiBuf Gatt::SendNotification(internal::ServerId server_id,
       span_cast<uint8_t>(multibuf.ContiguousSpan().value());
 
   Result<emboss::AttHandleValueNtfWriter> writer =
-      MakeEmbossWriter<emboss::AttHandleValueNtfWriter>(value.size(),
-                                                        &multibuf_span);
+      MakeEmbossWriter<emboss::AttHandleValueNtfWriter>(
+          static_cast<int32_t>(value.size()), &multibuf_span);
   PW_CHECK(writer.ok());
   writer->attribute_opcode().Write(emboss::AttOpcode::ATT_HANDLE_VALUE_NTF);
   writer->attribute_handle().Write(cpp23::to_underlying(value_handle));
@@ -628,7 +628,7 @@ bool Gatt::OnAttHandleValueNtfFromController(
 
   Result<emboss::AttHandleValueNtfView> view =
       MakeEmbossView<emboss::AttHandleValueNtfView>(
-          attribute_size,
+          static_cast<int32_t>(attribute_size),
           reinterpret_cast<const uint8_t*>(payload.data()),
           payload.size());
   if (!view.ok()) {
@@ -685,7 +685,7 @@ bool Gatt::OnAttWriteCmdFromController(ConstByteSpan payload,
 
   Result<emboss::AttWriteCmdView> view =
       MakeEmbossView<emboss::AttWriteCmdView>(
-          attribute_size,
+          static_cast<int32_t>(attribute_size),
           reinterpret_cast<const uint8_t*>(payload.data()),
           payload.size());
   if (!view.ok()) {

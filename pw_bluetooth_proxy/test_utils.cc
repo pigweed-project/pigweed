@@ -373,7 +373,7 @@ Status ProxyHostTest::SendL2capConfigureReq(ProxyHost& proxy,
                   static_cast<uint16_t>(kConfigureReqLen)));
 
   auto configure_req_writer = MakeEmbossWriter<emboss::L2capConfigureReqWriter>(
-      cframe.writer.payload().SizeInBytes(),
+      static_cast<uint32_t>(cframe.writer.payload().SizeInBytes()),
       cframe.writer.payload().BackingStorage().data(),
       cframe.writer.payload().SizeInBytes());
   configure_req_writer->command_header().code().Write(
@@ -430,7 +430,7 @@ Status ProxyHostTest::SendL2capConfigureRsp(
                   kConfigureRspLen));
 
   auto configure_rsp_writer = MakeEmbossWriter<emboss::L2capConfigureRspWriter>(
-      cframe.writer.payload().SizeInBytes(),
+      static_cast<uint32_t>(cframe.writer.payload().SizeInBytes()),
       cframe.writer.payload().BackingStorage().data(),
       cframe.writer.payload().SizeInBytes());
   configure_rsp_writer->command_header().code().Write(

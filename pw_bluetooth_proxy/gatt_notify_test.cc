@@ -56,7 +56,7 @@ Result<AttNotifyWithStorage> SetupAttNotify(
   EXPECT_EQ(att_size, frame.bframe.writer.payload().SizeInBytes());
   PW_TRY_ASSIGN(frame.writer,
                 MakeEmbossWriter<emboss::AttHandleValueNtfWriter>(
-                    attribute_value.size(),
+                    static_cast<int32_t>(attribute_value.size()),
                     frame.bframe.writer.payload().BackingStorage().data(),
                     frame.bframe.writer.payload().SizeInBytes()));
   EXPECT_TRUE(frame.writer.IsComplete());

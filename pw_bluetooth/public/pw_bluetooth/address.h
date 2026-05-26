@@ -57,8 +57,9 @@ class Address {
               (str_addr[8] == ':') && (str_addr[11] == ':') &&
               (str_addr[14] == ':'));
     for (size_t i = 0; i < sizeof(addr_); i++) {
-      uint16_t value = (string::HexToNibble(str_addr[3 * i]) << 4u) |
-                       string::HexToNibble(str_addr[3 * i + 1]);
+      uint8_t value =
+          static_cast<uint8_t>((string::HexToNibble(str_addr[3 * i]) << 4u) |
+                               string::HexToNibble(str_addr[3 * i + 1]));
       addr_[sizeof(addr_) - 1 - i] = value;
       PW_ASSERT(value <= 0xff);
     }
