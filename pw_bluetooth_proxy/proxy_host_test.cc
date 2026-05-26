@@ -4955,6 +4955,251 @@ TEST_F(AclFragTest, UnhandledRecombinedPdu) {
   }
 }
 
+TEST_F(AclFragTest, RecombineMaxValidSizePdu) {
+  // L2CAP Basic Header is 4 bytes.
+  // We want total L2CAP frame to be 2048 bytes (the proxy limit).
+  // So L2CAP payload is 2044 bytes.
+  constexpr uint32_t kL2capPayloadSize = 2044;
+  constexpr uint32_t kFirstFragmentPayloadSize = 100;
+  constexpr uint32_t kSecondFragmentPayloadSize =
+      kL2capPayloadSize - kFirstFragmentPayloadSize;
+
+  // Create a custom allocator with enough memory for the 2048-byte recombined
+  // buffer. Needs to hold at least kH4AclHeaderSize (5) + 2048 = 2053 bytes.
+  // We'll allocate 16384 bytes to be safe.
+  std::array<std::byte, 16384> recombine_buffer_storage;
+  pw::multibuf::SimpleAllocator recombine_allocator{
+      recombine_buffer_storage, allocator::GetLibCAllocator()};
+
+  // Pre-allocate the expected H4 packet that the proxy will output.
+  // Size will be 1 (H4 indicator) + 4 (ACL header) + 4 (L2CAP header) +
+  // kL2capPayloadSize = 2053 bytes.
+  constexpr size_t kExpectedH4Size =
+      1 + emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+      emboss::BasicL2capHeader::IntrinsicSizeInBytes() + kL2capPayloadSize;
+  std::array<uint8_t, kExpectedH4Size> expected_h4;
+  {
+    Result<emboss::AclDataFrameWriter> acl =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(
+            pw::span(expected_h4).subspan(1));
+    acl->header().handle().Write(kHandle);
+    acl->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::FIRST_FLUSHABLE);
+    acl->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl->data_total_length().Write(
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() + kL2capPayloadSize);
+
+    emboss::BFrameWriter bframe = emboss::MakeBFrameView(
+        acl->payload().BackingStorage().data(), acl->payload().SizeInBytes());
+    bframe.pdu_length().Write(kL2capPayloadSize);
+    bframe.channel_id().Write(kLocalCid);
+    // Fill payload with some recognizable pattern, e.g., 0xA5.
+    std::fill(bframe.payload().BackingStorage().begin(),
+              bframe.payload().BackingStorage().end(),
+              0xA5);
+  }
+
+  struct {
+    int channel_pdus_received = 0;
+    int to_host_acls = 0;
+    pw::span<const uint8_t> expected_h4;
+  } capture;
+  capture.expected_h4 = expected_h4;
+
+  pw::Function<void(H4PacketWithHci && packet)>&& send_to_host_fn(
+      [&capture](H4PacketWithHci&& packet) {
+        if (packet.GetH4Type() == emboss::H4PacketType::EVENT) {
+          return;
+        }
+        ++capture.to_host_acls;
+        EXPECT_EQ(packet.GetH4Type(), emboss::H4PacketType::ACL_DATA);
+
+        // Verify size.
+        ASSERT_EQ(packet.GetHciSpan().size() + 1, capture.expected_h4.size());
+
+        // Verify contents.
+        auto expected_hci = capture.expected_h4.subspan(1);
+        EXPECT_TRUE(std::equal(packet.GetHciSpan().begin(),
+                               packet.GetHciSpan().end(),
+                               expected_hci.begin(),
+                               expected_hci.end()));
+      });
+  pw::Function<void(H4PacketWithH4 && packet)>&& send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(
+      proxy, /*num_credits_to_reserve=*/0));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(capture.to_host_acls, 0);
+
+  BasicL2capChannel channel = BuildBasicL2capChannel(
+      proxy,
+      BasicL2capParameters{
+          .rx_multibuf_allocator = &recombine_allocator,
+          .handle = kHandle,
+          .local_cid = kLocalCid,
+          .payload_from_controller_fn =
+              [&capture](multibuf::MultiBuf&& buffer) {
+                capture.channel_pdus_received++;
+                // Return unhandled to trigger forwarding
+                return multibuf::MultiBuf(std::move(buffer));
+              },
+      });
+
+  // Construct and send fragment 1.
+  {
+    constexpr size_t kFirstFragmentHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragmentPayloadSize;
+    std::array<uint8_t, kFirstFragmentHciSize> hci_first;
+    Result<emboss::AclDataFrameWriter> acl =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_first);
+    acl->header().handle().Write(kHandle);
+    acl->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+    acl->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl->data_total_length().Write(
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragmentPayloadSize);
+
+    emboss::BFrameWriter bframe = emboss::MakeBFrameView(
+        acl->payload().BackingStorage().data(), acl->payload().SizeInBytes());
+    bframe.pdu_length().Write(
+        kL2capPayloadSize);  // The TOTAL payload size is 2044.
+    bframe.channel_id().Write(kLocalCid);
+    std::fill(bframe.payload().BackingStorage().begin(),
+              bframe.payload().BackingStorage().end(),
+              0xA5);
+
+    H4PacketWithHci h4_send{emboss::H4PacketType::ACL_DATA, hci_first};
+    proxy.HandleH4HciFromController(std::move(h4_send));
+
+    EXPECT_EQ(capture.to_host_acls, 0);
+    EXPECT_EQ(capture.channel_pdus_received, 0);
+  }
+
+  // Construct and send fragment 2 (continuing fragment).
+  {
+    constexpr size_t kSecondFragmentHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        kSecondFragmentPayloadSize;
+    std::array<uint8_t, kSecondFragmentHciSize> hci_cont;
+    Result<emboss::AclDataFrameWriter> acl =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_cont);
+    acl->header().handle().Write(kHandle);
+    acl->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+    acl->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl->data_total_length().Write(kSecondFragmentPayloadSize);
+
+    std::fill(acl->payload().BackingStorage().begin(),
+              acl->payload().BackingStorage().end(),
+              0xA5);
+
+    H4PacketWithHci h4_send{emboss::H4PacketType::ACL_DATA, hci_cont};
+    proxy.HandleH4HciFromController(std::move(h4_send));
+
+    // Recombined ACL packet should be delivered to host since channel rejected
+    // it.
+    EXPECT_EQ(capture.to_host_acls, 1);
+    // Channel received the PDU, but rejected it.
+    EXPECT_EQ(capture.channel_pdus_received, 1);
+  }
+}
+
+TEST_F(AclFragTest, PassThroughLargePdu) {
+  // L2CAP Basic Header is 4 bytes.
+  // We want total L2CAP frame to be 2049 bytes (which exceeds the 2048-byte
+  // proxy limit). So L2CAP payload is 2045 bytes.
+  constexpr uint32_t kL2capPayloadSize = 2045;
+  constexpr uint32_t kFirstFragmentPayloadSize = 100;
+  constexpr uint32_t kSecondFragmentPayloadSize =
+      kL2capPayloadSize - kFirstFragmentPayloadSize;
+
+  ProxyHost proxy = GetProxy();
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(packets_sent_to_host_, 1);
+
+  BasicL2capChannel channel = GetL2capChannel(proxy);
+
+  // Construct and send fragment 1.
+  {
+    constexpr size_t kFirstFragmentHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragmentPayloadSize;
+    std::array<uint8_t, kFirstFragmentHciSize> hci_first;
+    Result<emboss::AclDataFrameWriter> acl =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_first);
+    acl->header().handle().Write(kHandle);
+    acl->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::FIRST_NON_FLUSHABLE);
+    acl->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl->data_total_length().Write(
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragmentPayloadSize);
+
+    emboss::BFrameWriter bframe = emboss::MakeBFrameView(
+        acl->payload().BackingStorage().data(), acl->payload().SizeInBytes());
+    bframe.pdu_length().Write(
+        kL2capPayloadSize);  // The TOTAL payload size is 2045.
+    bframe.channel_id().Write(kLocalCid);
+    std::fill(bframe.payload().BackingStorage().begin(),
+              bframe.payload().BackingStorage().end(),
+              0xA5);
+
+    H4PacketWithHci h4_send{emboss::H4PacketType::ACL_DATA, hci_first};
+    proxy.HandleH4HciFromController(std::move(h4_send));
+
+    // First fragment should be passed through to host.
+    EXPECT_EQ(packets_sent_to_host_, 2);
+  }
+
+  // Construct and send fragment 2 (continuing fragment).
+  {
+    constexpr size_t kSecondFragmentHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        kSecondFragmentPayloadSize;
+    std::array<uint8_t, kSecondFragmentHciSize> hci_cont;
+    Result<emboss::AclDataFrameWriter> acl =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_cont);
+    acl->header().handle().Write(kHandle);
+    acl->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+    acl->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl->data_total_length().Write(kSecondFragmentPayloadSize);
+
+    std::fill(acl->payload().BackingStorage().begin(),
+              acl->payload().BackingStorage().end(),
+              0xA5);
+
+    H4PacketWithHci h4_send{emboss::H4PacketType::ACL_DATA, hci_cont};
+    proxy.HandleH4HciFromController(std::move(h4_send));
+
+    // Second fragment should also be passed through to host.
+    EXPECT_EQ(packets_sent_to_host_, 3);
+  }
+
+  // Channel should NOT have received anything.
+  ExpectClientReceivedPayloadsAndClear({});
+}
+
 TEST_F(AclFragTest, RecombinationWorksWithSplitPayloads) {
   ProxyHost proxy = GetProxy();
   StartDispatcherOnCurrentThread(proxy);

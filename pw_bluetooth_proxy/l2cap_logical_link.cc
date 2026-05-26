@@ -16,6 +16,8 @@
 
 #include <pw_bluetooth/emboss_util.h>
 
+#include <cinttypes>
+
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_sync.h"
@@ -48,6 +50,9 @@ std::optional<LockedL2capChannel> GetLockedChannel(
 static constexpr std::uint8_t kH4PacketIndicatorSize = 1;
 constexpr std::uint64_t kH4AclHeaderSize =
     emboss::AclDataFrameHeader::IntrinsicSizeInBytes() + kH4PacketIndicatorSize;
+// 2048 was selected because it is larger than the PDU sizes needed by most
+// profiles, and Android uses a MPS of 1010.
+constexpr size_t kMaxRecombinedPduSize = 2048;
 }  // namespace
 
 L2capLogicalLink::L2capLogicalLink(uint16_t connection_handle,
@@ -205,14 +210,30 @@ L2capLogicalLink::HandleAclData(Direction direction,
 
       const uint16_t acl_payload_size = acl.data_total_length().Read();
 
-      const uint16_t l2cap_frame_length =
+      const uint32_t l2cap_frame_length =
           emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
           l2cap_header.pdu_length().Read();
+
+      if (l2cap_frame_length > kMaxRecombinedPduSize) {
+        PW_LOG_INFO(
+            "ACL packet %s for channel %#x on connection %#x has L2CAP frame "
+            "length (%" PRIu32
+            " bytes) larger than max recombined PDU size (%zu "
+            "bytes). "
+            "Passing through.",
+            DirectionToString(direction),
+            channel->channel().local_cid(),
+            handle,
+            l2cap_frame_length,
+            kMaxRecombinedPduSize);
+        return {.handled = false, .recombined_buffer = std::nullopt};
+      }
 
       if (l2cap_frame_length < acl_payload_size) {
         PW_LOG_ERROR(
             "ACL packet %s for channel %#x on connection %#x has payload "
-            "(%u bytes) larger than specified L2CAP PDU size (%u bytes). "
+            "(%u bytes) larger than specified L2CAP PDU size (%" PRIu32
+            " bytes). "
             "Dropping.",
             DirectionToString(direction),
             channel->channel().local_cid(),
@@ -444,8 +465,12 @@ L2capLogicalLink::HandleAclData(Direction direction,
         emboss::AclDataPacketBoundaryFlag::FIRST_FLUSHABLE);
     recombined_acl->header().broadcast_flag().Write(
         acl.header().broadcast_flag().Read());
-    recombined_acl->data_total_length().Write(h4_span.size() -
-                                              kH4AclHeaderSize);
+
+    size_t acl_payload_size = h4_span.size() - kH4AclHeaderSize;
+    // This check must pass because we don't recombine packets larger than
+    // kMaxRecombinedPduSize.
+    PW_CHECK(acl_payload_size <= std::numeric_limits<uint16_t>::max());
+    recombined_acl->data_total_length().Write(acl_payload_size);
 
     // We still return handled = true here since the fragment ACL packet was
     // consumed to make the recombined packet.
