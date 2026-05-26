@@ -38,9 +38,16 @@ message Action {
     // Some build actions like Bazel need to be run from the invoker CWD.
     // WARNING: Do not ever use this to generate files into the source tree.
     INVOKER_CWD = 2;
+    // Use a project subdirectory as the invocation location. The
+    // directory must be specified in project_working_subdir.
+    PROJECT_SUBDIR = 3;
   }
 
   InvocationLocation run_from = 4;
+
+  // Alternative subdir to use as the working directory if
+  // InvocationLocation is set to PROJECT_SUBDIR.
+  string project_working_subdir = 5;
 }
 
 message JobResponse {

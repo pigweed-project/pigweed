@@ -116,29 +116,38 @@ class BazelBuildDriver(BuildDriver):
             *other_args,
         ]
 
-        actions.actions.append(self._canonicalize_args(build.build_config))
-        actions.actions.append(
-            build_driver_pb2.Action(
-                executable='bazelisk',
-                args=[*startup_args, 'build', *common_args, *build.targets],
-                env=build.build_config.env,
-                run_from=build_driver_pb2.Action.InvocationLocation.INVOKER_CWD,
-            )
-        )
         driver_options = self.unpack_driver_options(
             pigweed_build_driver_pb2.BazelDriverOptions,
             build.build_config.driver_options,
         )
 
+        run_from = build_driver_pb2.Action.InvocationLocation.INVOKER_CWD
+        env = build.build_config.env
+        project_working_subdir = ''
+        if driver_options.project_working_subdir:
+            project_working_subdir = driver_options.project_working_subdir
+            run_from = build_driver_pb2.Action.InvocationLocation.PROJECT_SUBDIR
+
+        actions.actions.append(
+            self._canonicalize_args(build.build_config, project_working_subdir)
+        )
+        actions.actions.append(
+            build_driver_pb2.Action(
+                executable='bazelisk',
+                args=[*startup_args, 'build', *common_args, *build.targets],
+                env=env,
+                run_from=run_from,
+                project_working_subdir=project_working_subdir,
+            )
+        )
         if not driver_options.no_test:
             actions.actions.append(
                 build_driver_pb2.Action(
                     executable='bazelisk',
                     args=[*startup_args, 'test', *common_args, *build.targets],
-                    env=build.build_config.env,
-                    run_from=(
-                        build_driver_pb2.Action.InvocationLocation.INVOKER_CWD
-                    ),
+                    env=env,
+                    run_from=run_from,
+                    project_working_subdir=project_working_subdir,
                 )
             )
         return actions
@@ -148,10 +157,23 @@ class BazelBuildDriver(BuildDriver):
     ) -> build_driver_pb2.JobResponse:
         """Generate a sequence of actions to run a Bazel-hosted tool."""
         actions = build_driver_pb2.JobResponse()
-        actions.actions.append(self._canonicalize_args(tool.build_config))
-
         startup_args, other_args = self._split_startup_args(
             tool.build_config.args
+        )
+
+        driver_options = self.unpack_driver_options(
+            pigweed_build_driver_pb2.BazelDriverOptions,
+            tool.build_config.driver_options,
+        )
+
+        run_from = build_driver_pb2.Action.InvocationLocation.INVOKER_CWD
+        project_working_subdir = ''
+        if driver_options.project_working_subdir:
+            project_working_subdir = driver_options.project_working_subdir
+            run_from = build_driver_pb2.Action.InvocationLocation.PROJECT_SUBDIR
+
+        actions.actions.append(
+            self._canonicalize_args(tool.build_config, project_working_subdir)
         )
 
         bazel_run_action = build_driver_pb2.Action(
@@ -167,7 +189,8 @@ class BazelBuildDriver(BuildDriver):
                 '${FORWARDED_LAUNCH_ARGS}',
             ],
             env=tool.build_config.env,
-            run_from=build_driver_pb2.Action.InvocationLocation.INVOKER_CWD,
+            run_from=run_from,
+            project_working_subdir=project_working_subdir,
         )
         actions.actions.append(bazel_run_action)
         return actions
@@ -209,16 +232,22 @@ class BazelBuildDriver(BuildDriver):
     @staticmethod
     def _canonicalize_args(
         build_config: workflows_pb2.BuildConfig,
+        project_working_subdir: str = '',
     ) -> build_driver_pb2.Action:
         """Ensures that Bazel configs don't include target patterns."""
         startup_args, other_args = BazelBuildDriver._split_startup_args(
             build_config.args
         )
+        run_from = build_driver_pb2.Action.InvocationLocation.INVOKER_CWD
+        if project_working_subdir:
+            run_from = build_driver_pb2.Action.InvocationLocation.PROJECT_SUBDIR
+
         return build_driver_pb2.Action(
             executable='bazelisk',
             args=[*startup_args, 'canonicalize-flags', '--', *other_args],
             env=build_config.env,
-            run_from=build_driver_pb2.Action.InvocationLocation.INVOKER_CWD,
+            run_from=run_from,
+            project_working_subdir=project_working_subdir,
         )
 
 

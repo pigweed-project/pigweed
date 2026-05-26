@@ -196,13 +196,24 @@ class WorkflowsManager:
 
     def _action_working_dir(
         self,
-        run_from: build_driver_pb2.Action.InvocationLocation.ValueType,
+        action: build_driver_pb2.Action,
         build_dir: Path,
     ) -> Path:
-        if run_from == build_driver_pb2.Action.InvocationLocation.PROJECT_ROOT:
+        if (
+            action.run_from
+            == build_driver_pb2.Action.InvocationLocation.PROJECT_ROOT
+        ):
             return self._project_root
-        if run_from == build_driver_pb2.Action.InvocationLocation.INVOKER_CWD:
+        if (
+            action.run_from
+            == build_driver_pb2.Action.InvocationLocation.INVOKER_CWD
+        ):
             return self._working_dir
+        if (
+            action.run_from
+            == build_driver_pb2.Action.InvocationLocation.PROJECT_SUBDIR
+        ):
+            return self._project_root / action.project_working_subdir
         return build_dir
 
     def _postprocess_job_response(
@@ -214,7 +225,7 @@ class WorkflowsManager:
         """Updates the incoming JobResponse to expand all variables."""
         for action in job_response.actions:
             working_dir = self._action_working_dir(
-                action.run_from,
+                action,
                 build_dir,
             )
             # TODO: https://pwbug.dev/428715231 - Define these elsewhere
@@ -319,7 +330,7 @@ class WorkflowsManager:
                 )
                 for action in job_response.actions:
                     working_dir = self._action_working_dir(
-                        action.run_from,
+                        action,
                         build_dir,
                     )
                     targets = (
