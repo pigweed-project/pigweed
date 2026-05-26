@@ -55,19 +55,19 @@ enum NonTokenizedThing { kNovember, kOscar, kPapa };
 enum NamespaceThing { kHotel, kIndia, kJuliett };
 
 TEST(TokenizeEnums, KnownValues_1) {
-  constexpr const char* log_value = ::pw::tokenizer::EnumToString(kBravo);
+  constexpr const char* log_value = PwEnumToString(kBravo);
   EXPECT_STREQ("kBravo", log_value);
 }
 
 TEST(TokenizeEnums, KnownValues_2) {
   constexpr const char* log_value =
-      ::pw::tokenizer::EnumToString(::this_is_a_test::ScopedThing::kLima);
+      PwEnumToString(::this_is_a_test::ScopedThing::kLima);
   EXPECT_STREQ("kLima", log_value);
 }
 
 TEST(TokenizeEnums, KnownValues_3) {
   constexpr const char* log_value =
-      ::pw::tokenizer::EnumToString(::this_is_a_test::ScopedThing2::kLima);
+      PwEnumToString(::this_is_a_test::ScopedThing2::kLima);
   EXPECT_STREQ("LIMA", log_value);
 }
 
@@ -75,7 +75,7 @@ TEST(TokenizeEnums, KnownValues_3) {
 #if PW_NC_TEST(TokenizeUnknownValue)
   PW_NC_EXPECT("no matching function for call");
 
-  ::pw::tokenizer::EnumToString(kOscar);
+  PwEnumToString(kOscar);
 #endif  // PW_NC_TEST
 }
 
@@ -91,22 +91,23 @@ enum ManyThing { kQuebec, kRomeo, kSierra };
 
 TEST(TokenizeEnums, BadEnumValue) {
   EXPECT_STREQ("Unknown ::this_is_a_test::Thing value",
-               ::pw::tokenizer::EnumToString(static_cast<Thing>(-100)));
+               PwEnumToString(static_cast<Thing>(-100)));
 }
 
 }  // namespace
-}  // namespace this_is_a_test
-
-namespace this_is_also_a_test {
-
-PW_TOKENIZE_ENUM(::this_is_a_test::NamespaceThing, kHotel, kIndia, kJuliett);
 
 [[maybe_unused]] void TokenizeInDifferentNamespace() {
 #if PW_NC_TEST(TokenizeInDifferentNamespace)
   PW_NC_EXPECT("no matching function for call");
 
-  ::pw::tokenizer::EnumToString(::this_is_a_test::NamespaceThing::kHotel);
+  PwEnumToString(::this_is_a_test::NamespaceThing::kHotel);
 #endif  // PW_NC_TEST
 }
+
+}  // namespace this_is_a_test
+
+namespace this_is_also_a_test {
+
+PW_TOKENIZE_ENUM(::this_is_a_test::NamespaceThing, kHotel, kIndia, kJuliett);
 
 }  // namespace this_is_also_a_test

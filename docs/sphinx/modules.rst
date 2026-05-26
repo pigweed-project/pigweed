@@ -57,6 +57,7 @@ Modules
    pw_doctor/docs
    pw_elf/docs
    pw_emu/docs
+   pw_enum/docs
    pw_env_setup/docs
    pw_env_setup_zephyr/docs
    pw_file/docs

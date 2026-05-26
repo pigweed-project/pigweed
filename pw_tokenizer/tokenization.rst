@@ -287,11 +287,11 @@ form of the enum value.
 
 The macro also supports returing the string version of the enum value in the
 case that there is a non-tokenizing backend, using
-:cc:`EnumToString <pw::tokenizer::EnumToString>`.
+:cc:`EnumToString <pw::EnumToString>`.
 
 All enum values in the enum declaration must be present in the macro, and the
 macro must be in the same namespace as the enum to be able to use the
-:cc:`EnumToString <pw::tokenizer::EnumToString>` function and avoid compiler errors.
+:cc:`EnumToString <pw::EnumToString>` function and avoid compiler errors.
 
 .. literalinclude: enum_test.cc
    :language: cpp

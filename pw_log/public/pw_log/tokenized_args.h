@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include "pw_enum/to_string.h"
 #include "pw_tokenizer/enum.h"
 
 /// @submodule{pw_log,tokenized_args}
@@ -81,7 +82,7 @@
 ///
 /// For non-tokenizing backends, defaults to the string representation of the
 /// enum.
-#define PW_LOG_ENUM(enumerator) ::pw::tokenizer::EnumToString(enumerator)
+#define PW_LOG_ENUM(enumerator) ::pw::EnumToString(enumerator)
 
 /// If nested tokenization is supported by the logging backend, this is an
 /// alias for `PW_NESTED_TOKEN_FMT`.

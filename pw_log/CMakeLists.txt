@@ -50,6 +50,7 @@ pw_add_library(pw_log.args INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_enum
     pw_tokenizer
 )
 

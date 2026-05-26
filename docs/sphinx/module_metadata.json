@@ -393,6 +393,13 @@
       "C++"
     ]
   },
+  "pw_enum": {
+    "tagline": "Rich enum support",
+    "status": "unstable",
+    "languages": [
+      "C++"
+    ]
+  },
   "pw_emu": {
     "tagline": "Flexible emulators frontend",
     "status": "experimental",

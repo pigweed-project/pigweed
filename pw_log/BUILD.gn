@@ -71,7 +71,10 @@ pw_source_set("rate_limited") {
 
 pw_source_set("args") {
   public_configs = [ ":public_include_path" ]
-  public_deps = [ dir_pw_tokenizer ]
+  public_deps = [
+    dir_pw_enum,
+    dir_pw_tokenizer,
+  ]
   public = [ "public/pw_log/tokenized_args.h" ]
 }
 
@@ -177,6 +180,7 @@ pw_test("log_enum_test") {
   deps = [
     ":args",
     ":pw_log",
+    "$dir_pw_enum",
     "$dir_pw_unit_test:constexpr",
     dir_pw_tokenizer,
   ]

@@ -61,6 +61,7 @@ filegroup(
         "//pw_digital_io_mcuxpresso:doxygen",
         "//pw_display:doxygen",
         "//pw_elf:doxygen",
+        "//pw_enum:doxygen",
         "//pw_function:doxygen",
         "//pw_hdlc:doxygen",
         "//pw_hex_dump:doxygen",

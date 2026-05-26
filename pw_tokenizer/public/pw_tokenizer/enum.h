@@ -32,14 +32,12 @@ constexpr auto EnumToToken(T value) {
   return static_cast<Token>(value);
 }
 
-/// Returns a string representation of a given enumerator value name.
 /// @brief Returns a string representation of a given enumerator value name.
-/// Used in the case of a non-tokenizing log backend.
-/// @param value enumerator value
-/// @return constexpr char array
+/// @deprecated Use `pw::EnumToString` from pw_enum/to_string.h instead.
 template <typename T>
+[[deprecated("Use pw::EnumToString from pw_enum/to_string.h instead")]]
 constexpr const char* EnumToString(T value) {
-  return PwTokenizerEnumToString(value);
+  return PwEnumToString(value);
 }
 
 /// @}
@@ -52,22 +50,22 @@ constexpr const char* EnumToString(T value) {
 /// enumerator must be present to compile and have the enumerator be tokenized
 /// successfully.
 /// This macro should be in the same namespace as the enum declaration to use
-/// the `pw::tokenizer::EnumToString` function and avoid compilation errors.
-#define PW_TOKENIZE_ENUM(fully_qualified_name, ...)               \
-  PW_APPLY(_PW_TOKENIZE_ENUMERATOR,                               \
-           _PW_SEMICOLON,                                         \
-           fully_qualified_name,                                  \
-           __VA_ARGS__);                                          \
-  [[maybe_unused]] constexpr const char* PwTokenizerEnumToString( \
-      fully_qualified_name _pw_enum_value) {                      \
-    switch (_pw_enum_value) {                                     \
-      PW_APPLY(_PW_TOKENIZE_TO_STRING_CASE,                       \
-               _PW_SEMICOLON,                                     \
-               fully_qualified_name,                              \
-               __VA_ARGS__);                                      \
-    }                                                             \
-    return "Unknown " #fully_qualified_name " value";             \
-  }                                                               \
+/// the `pw::EnumToString` function and avoid compilation errors.
+#define PW_TOKENIZE_ENUM(fully_qualified_name, ...)      \
+  PW_APPLY(_PW_TOKENIZE_ENUMERATOR,                      \
+           _PW_SEMICOLON,                                \
+           fully_qualified_name,                         \
+           __VA_ARGS__);                                 \
+  [[maybe_unused]] constexpr const char* PwEnumToString( \
+      fully_qualified_name _pw_enum_value) {             \
+    switch (_pw_enum_value) {                            \
+      PW_APPLY(_PW_TOKENIZE_TO_STRING_CASE,              \
+               _PW_SEMICOLON,                            \
+               fully_qualified_name,                     \
+               __VA_ARGS__);                             \
+    }                                                    \
+    return "Unknown " #fully_qualified_name " value";    \
+  }                                                      \
   static_assert(true)
 
 /// Tokenizes a custom string for each given values within an enumerator. All
@@ -76,22 +74,22 @@ constexpr const char* EnumToString(T value) {
 /// custom string) must be present to compile and have the custom strings be
 /// tokenized successfully.
 /// This macro should be in the same namespace as the enum declaration to use
-/// the `pw::tokenizer::EnumToString` function and avoid compilation errors.
-#define PW_TOKENIZE_ENUM_CUSTOM(fully_qualified_name, ...)        \
-  PW_APPLY(_PW_TOKENIZE_ENUMERATOR_CUSTOM,                        \
-           _PW_SEMICOLON,                                         \
-           fully_qualified_name,                                  \
-           __VA_ARGS__);                                          \
-  [[maybe_unused]] constexpr const char* PwTokenizerEnumToString( \
-      fully_qualified_name _pw_enum_value) {                      \
-    switch (_pw_enum_value) {                                     \
-      PW_APPLY(_PW_TOKENIZE_TO_STRING_CASE_CUSTOM,                \
-               _PW_SEMICOLON,                                     \
-               fully_qualified_name,                              \
-               __VA_ARGS__);                                      \
-    }                                                             \
-    return "Unknown " #fully_qualified_name " value";             \
-  }                                                               \
+/// the `pw::EnumToString` function and avoid compilation errors.
+#define PW_TOKENIZE_ENUM_CUSTOM(fully_qualified_name, ...) \
+  PW_APPLY(_PW_TOKENIZE_ENUMERATOR_CUSTOM,                 \
+           _PW_SEMICOLON,                                  \
+           fully_qualified_name,                           \
+           __VA_ARGS__);                                   \
+  [[maybe_unused]] constexpr const char* PwEnumToString(   \
+      fully_qualified_name _pw_enum_value) {               \
+    switch (_pw_enum_value) {                              \
+      PW_APPLY(_PW_TOKENIZE_TO_STRING_CASE_CUSTOM,         \
+               _PW_SEMICOLON,                              \
+               fully_qualified_name,                       \
+               __VA_ARGS__);                               \
+    }                                                      \
+    return "Unknown " #fully_qualified_name " value";      \
+  }                                                        \
   static_assert(true)
 
 /// @}

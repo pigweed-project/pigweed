@@ -79,7 +79,10 @@ cc_library(
         "public/pw_log/tokenized_args.h",
     ],
     strip_include_prefix = "public",
-    deps = ["//pw_tokenizer"],
+    deps = [
+        "//pw_enum",
+        "//pw_tokenizer",
+    ],
 )
 
 label_flag(
