@@ -35,6 +35,8 @@
 #include "pw_bluetooth_sapphire/internal/host/gap/periodic_advertising_sync_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/types.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/iso_group.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sdp/server.h"
 #include "pw_bluetooth_sapphire/internal/host/sdp/service_discoverer.h"
@@ -302,6 +304,29 @@ class Adapter {
     virtual bool PrivacyEnabled() const = 0;
     // Returns the current LE address.
     virtual const DeviceAddress CurrentAddress() const = 0;
+
+    // Create a Connected Isochronous Group (CIG) with the supplied parameters.
+    // Once the CIG is created and configured with the controller, |callback|
+    // will be invoked with the result.
+    //
+    // |on_closed_callback| is invoked when the CIG is shut down or closed.
+    //
+    // |expected_peers| is the list of peer IDs that are expected to connect to
+    // this CIG. If provided, the local host will use the sleep clock accuracy
+    // (SCA) values of these cached peers to compute the worst-case SCA for the
+    // CIG parameters.
+    void CreateCig(iso::CigParams cig_params,
+                   std::vector<iso::CigCisParams> cis_params,
+                   iso::IsoGroupManager::CreateCigCompleteCallback callback,
+                   iso::IsoGroup::OnClosedCallback on_closed_callback,
+                   std::vector<PeerId> expected_peers = {}) {
+      DoCreateCig(std::move(cig_params),
+                  std::move(cis_params),
+                  std::move(callback),
+                  std::move(on_closed_callback),
+                  std::move(expected_peers));
+    }
+
     // Register a callback to be notified any time the LE address changes.
     virtual void register_address_changed_callback(fit::closure callback) = 0;
 
@@ -320,6 +345,14 @@ class Adapter {
     // Sets a new scan period to any future and ongoing discovery procedures.
     virtual void set_scan_period_for_testing(
         pw::chrono::SystemClock::duration period) = 0;
+
+   private:
+    virtual void DoCreateCig(
+        iso::CigParams cig_params,
+        std::vector<iso::CigCisParams> cis_params,
+        iso::IsoGroupManager::CreateCigCompleteCallback callback,
+        iso::IsoGroup::OnClosedCallback on_closed_callback,
+        std::vector<PeerId> expected_peers) = 0;
   };
 
   virtual LowEnergy* le() const = 0;

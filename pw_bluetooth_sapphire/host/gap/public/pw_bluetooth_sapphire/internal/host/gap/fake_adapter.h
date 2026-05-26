@@ -177,6 +177,14 @@ class FakeAdapter final : public Adapter {
       return fake_address_delegate_.current_address();
     }
 
+    void DoCreateCig(iso::CigParams /*cig_params*/,
+                     std::vector<iso::CigCisParams> /*cis_params*/,
+                     iso::IsoGroupManager::CreateCigCompleteCallback callback,
+                     iso::IsoGroup::OnClosedCallback /*on_closed_callback*/,
+                     std::vector<PeerId> /*expected_peers*/) override {
+      callback(pw::unexpected(HostError::kNotSupported));
+    }
+
     void register_address_changed_callback(fit::closure callback) override {
       fake_address_delegate_.register_address_changed_callback(
           std::move(callback));

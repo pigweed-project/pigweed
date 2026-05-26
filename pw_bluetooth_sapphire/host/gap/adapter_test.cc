@@ -23,11 +23,14 @@
 #include "pw_bluetooth_sapphire/internal/host/gatt/fake_layer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_l2cap.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/inspect.h"
+#include "pw_bluetooth_sapphire/internal/host/testing/test_packets.h"
+#include "pw_result/expected.h"
 
 namespace bt::gap {
 namespace {
@@ -2177,6 +2180,99 @@ TEST_F(AdapterTest,
   ASSERT_TRUE(transfer_result.has_value());
   EXPECT_FALSE(transfer_result->is_ok());
   EXPECT_TRUE(transfer_result->error_value().is(HostError::kNotSupported));
+}
+
+TEST_F(AdapterTest, CreateCigSuccess) {
+  FakeController::Settings settings;
+  settings.ApplyExtendedLEConfig();
+  settings.le_features |= static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral);
+  test_device()->set_settings(settings);
+  EXPECT_TRUE(EnsureInitialized());
+
+  bool set_cig_received = false;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLESetCIGParameters, [&](fit::closure /*resume*/) {
+        set_cig_received = true;
+        auto response = testing::LESetCIGParametersCompletePacket(
+            0, {0x0042}, pw::bluetooth::emboss::StatusCode::SUCCESS);
+        test_device()->SendCommandChannelPacket(response);
+      });
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 5,
+                            .max_transport_latency_p_to_c = 5,
+                            .worst_case_sca = std::nullopt};
+  iso::CisConfigParams cis_config{
+      .cis_id = 1, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+
+  std::vector<iso::CigCisParams> cis_params;
+  cis_params.push_back(iso::CigCisParams{
+      .config = cis_config,
+      .on_established_cb =
+          [](pw::bluetooth::emboss::StatusCode,
+             std::optional<WeakSelf<iso::IsoStream>::WeakPtr>,
+             const std::optional<iso::CisEstablishedParameters>&) {}});
+
+  bool callback_called = false;
+  auto callback = [&](pw::expected<iso::IsoGroup::WeakPtr, HostError> result) {
+    callback_called = true;
+    ASSERT_TRUE(result.has_value());
+    EXPECT_TRUE(result.value().is_alive());
+  };
+
+  adapter()->le()->CreateCig(
+      cig_params, std::move(cis_params), std::move(callback), [](auto&) {});
+
+  RunUntilIdle();
+  EXPECT_TRUE(set_cig_received);
+  EXPECT_TRUE(callback_called);
+
+  test_device()->clear_pause_listener_for_opcode(hci_spec::kLESetCIGParameters);
+}
+
+TEST_F(AdapterTest, CreateCigNotSupported) {
+  // Do not set ConnectedIsochronousStreamCentral feature.
+  FakeController::Settings settings;
+  settings.ApplyExtendedLEConfig();
+  settings.le_features &= ~static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral);
+  test_device()->set_settings(settings);
+  EXPECT_TRUE(EnsureInitialized());
+
+  iso::CigParams cig_params{.sdu_interval_c_to_p = 10000,
+                            .sdu_interval_p_to_c = 10000,
+                            .packing = iso::CigPacking::kSequential,
+                            .framing = iso::CigFraming::kUnframed,
+                            .max_transport_latency_c_to_p = 5,
+                            .max_transport_latency_p_to_c = 5,
+                            .worst_case_sca = std::nullopt};
+  iso::CisConfigParams cis_config{
+      .cis_id = 1, .max_sdu_c_to_p = 100, .max_sdu_p_to_c = 100};
+
+  std::vector<iso::CigCisParams> cis_params;
+  cis_params.push_back(iso::CigCisParams{
+      .config = cis_config,
+      .on_established_cb =
+          [](pw::bluetooth::emboss::StatusCode,
+             std::optional<WeakSelf<iso::IsoStream>::WeakPtr>,
+             const std::optional<iso::CisEstablishedParameters>&) {}});
+
+  bool callback_called = false;
+  auto callback = [&](pw::expected<iso::IsoGroup::WeakPtr, HostError> result) {
+    callback_called = true;
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), HostError::kNotSupported);
+  };
+
+  adapter()->le()->CreateCig(
+      cig_params, std::move(cis_params), std::move(callback), [](auto&) {});
+
+  RunUntilIdle();
+  EXPECT_TRUE(callback_called);
 }
 
 }  // namespace
