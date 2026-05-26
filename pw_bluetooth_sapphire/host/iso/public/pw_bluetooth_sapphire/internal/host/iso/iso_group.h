@@ -49,6 +49,14 @@ class IsoGroup {
                          std::vector<CigCisParams> cis_params,
                          SetParamsCallback callback) = 0;
 
+  struct CreateCisData {
+    PeerId peer_id;
+    hci_spec::CisIdentifier cis_id;
+    hci_spec::ConnectionHandle acl_handle;
+    std::optional<pw::bluetooth::emboss::LESleepClockAccuracyRange> sca;
+  };
+  virtual pw::Status CreateCises(pw::span<CreateCisData> establish_data) = 0;
+
   [[nodiscard]] hci_spec::CigIdentifier id() const { return id_; }
   const std::unordered_map<hci_spec::CisIdentifier, IsoStream::WeakPtr>&
   streams() const {

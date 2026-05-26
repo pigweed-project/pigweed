@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_group.h"
 
+#include <unordered_set>
+
 #include "pw_bluetooth_sapphire/internal/host/iso/fake_iso_stream.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/mock_controller.h"
@@ -324,6 +326,28 @@ TEST_F(IsoGroupTest, SetParamsSingleCis) {
   EXPECT_EQ(cig_stream_creator_->streams().size(), 1u);
   EXPECT_EQ(cig->streams().size(), 1u);
 
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kCisConfigParams.cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LECreateCISCommandPacket(
+          std::vector<bt::testing::CreateCisHandles>{{kCisHandle1, 0x000A}}));
+
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  EXPECT_EQ(cig->streams().size(), 1u);
+
   // Close the stream, ensure it is removed from the CIG.
   ASSERT_TRUE(
       cig_stream_creator_->streams().count({kCigId, kCisConfigParams.cis_id}));
@@ -411,6 +435,32 @@ TEST_F(IsoGroupTest, FullHappyPath) {
 
   EXPECT_TRUE(callback_called);
   EXPECT_EQ(cig_stream_creator_->streams().size(), 2u);
+  EXPECT_EQ(cig->streams().size(), 2u);
+
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kCisConfigParams[0].cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kCisConfigParams[1].cis_id,
+                            .acl_handle = 0x000B,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LECreateCISCommandPacket(
+                            std::vector<bt::testing::CreateCisHandles>{
+                                {kCisHandle1, 0x000A}, {kCisHandle2, 0x000B}}));
+
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
   EXPECT_EQ(cig->streams().size(), 2u);
 
   // Close the streams, ensure they are removed from the CIG.
@@ -745,6 +795,225 @@ TEST_F(IsoGroupTest, SetParamsExistingCisId) {
 
   EXPECT_TRUE(callback_called_duplicate);
   EXPECT_EQ(cig->streams().size(), 1u);
+}
+
+TEST_F(IsoGroupTest, CreateCises) {
+  constexpr hci_spec::CigIdentifier kCigId = 0x99;
+  constexpr uint32_t kSduIntervalCToP = 0x000F0E0D;
+  constexpr uint32_t kSduIntervalPToC = 0x000C0B0A;
+  constexpr uint16_t kMaxTransportLatencyCToP = 0x0102;
+  constexpr uint16_t kMaxTransportLatencyPToC = 0x0304;
+
+  auto cig = IsoGroup::CreateCig(kCigId,
+                                 transport()->GetWeakPtr(),
+                                 cig_stream_creator_->GetWeakPtr(),
+                                 [](IsoGroup&) {});
+
+  CigParams cig_params = {
+      .sdu_interval_c_to_p = kSduIntervalCToP,
+      .sdu_interval_p_to_c = kSduIntervalPToC,
+      .packing = CigPacking::kSequential,
+      .framing = CigFraming::kUnframed,
+      .max_transport_latency_c_to_p = kMaxTransportLatencyCToP,
+      .max_transport_latency_p_to_c = kMaxTransportLatencyPToC,
+      .worst_case_sca = std::nullopt,
+  };
+
+  constexpr hci_spec::ConnectionHandle kCisHandle1 = 0x0001;
+  constexpr CisConfigParams kCisConfigParams = {
+      .cis_id = 0x01,
+      .max_sdu_c_to_p = 0x100,
+      .max_sdu_p_to_c = 0x200,
+  };
+
+  std::vector<CigCisParams> cis_params;
+  cis_params.push_back({kCisConfigParams, [](auto, auto, auto) { FAIL(); }});
+
+  bool callback_called = false;
+  cig->SetParams(std::move(cig_params),
+                 std::move(cis_params),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kCigId,
+          kSduIntervalCToP,
+          kSduIntervalPToC,
+          static_cast<pw::bluetooth::emboss::LESleepClockAccuracyRange>(0),
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kMaxTransportLatencyCToP,
+          kMaxTransportLatencyPToC,
+          pw::span<const CisConfigParams>(&kCisConfigParams, 1)));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kCigId, {kCisHandle1}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+
+  // Now try to establish with any peer.
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(2),
+                            .cis_id = kCisConfigParams.cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LECreateCISCommandPacket(
+          std::vector<bt::testing::CreateCisHandles>{{kCisHandle1, 0x000A}}));
+  RunUntilIdle();
+}
+
+TEST_F(IsoGroupTest, CreateCisesPeerScaWorseThanCigWorstCase) {
+  constexpr hci_spec::CigIdentifier kCigId = 0x99;
+  constexpr uint32_t kSduIntervalCToP = 0x000F0E0D;
+  constexpr uint32_t kSduIntervalPToC = 0x000C0B0A;
+  constexpr uint16_t kMaxTransportLatencyCToP = 0x0102;
+  constexpr uint16_t kMaxTransportLatencyPToC = 0x0304;
+
+  auto cig = IsoGroup::CreateCig(kCigId,
+                                 transport()->GetWeakPtr(),
+                                 cig_stream_creator_->GetWeakPtr(),
+                                 [](IsoGroup&) {});
+
+  CigParams cig_params = {
+      .sdu_interval_c_to_p = kSduIntervalCToP,
+      .sdu_interval_p_to_c = kSduIntervalPToC,
+      .packing = CigPacking::kSequential,
+      .framing = CigFraming::kUnframed,
+      .max_transport_latency_c_to_p = kMaxTransportLatencyCToP,
+      .max_transport_latency_p_to_c = kMaxTransportLatencyPToC,
+      .worst_case_sca =
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+  };
+
+  constexpr hci_spec::ConnectionHandle kCisHandle1 = 0x0001;
+  constexpr CisConfigParams kCisConfigParams = {
+      .cis_id = 0x01,
+      .max_sdu_c_to_p = 0x100,
+      .max_sdu_p_to_c = 0x200,
+  };
+
+  std::vector<CigCisParams> cis_params;
+  cis_params.push_back({kCisConfigParams, [](auto, auto, auto) { FAIL(); }});
+
+  bool callback_called = false;
+  cig->SetParams(std::move(cig_params),
+                 std::move(cis_params),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kCigId,
+          kSduIntervalCToP,
+          kSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kMaxTransportLatencyCToP,
+          kMaxTransportLatencyPToC,
+          pw::span<const CisConfigParams>(&kCisConfigParams, 1)));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kCigId, {kCisHandle1}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back(
+      {.peer_id = PeerId(2),
+       .cis_id = kCisConfigParams.cis_id,
+       .acl_handle = 0x000A,
+       .sca =
+           pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_251_TO_500});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::Status::FailedPrecondition());
+}
+
+TEST_F(IsoGroupTest, CreateCisesCisNotFound) {
+  constexpr hci_spec::CigIdentifier kCigId = 0x99;
+  constexpr uint32_t kSduIntervalCToP = 0x000F0E0D;
+  constexpr uint32_t kSduIntervalPToC = 0x000C0B0A;
+  constexpr uint16_t kMaxTransportLatencyCToP = 0x0102;
+  constexpr uint16_t kMaxTransportLatencyPToC = 0x0304;
+
+  auto cig = IsoGroup::CreateCig(kCigId,
+                                 transport()->GetWeakPtr(),
+                                 cig_stream_creator_->GetWeakPtr(),
+                                 [](IsoGroup&) {});
+
+  CigParams cig_params = {
+      .sdu_interval_c_to_p = kSduIntervalCToP,
+      .sdu_interval_p_to_c = kSduIntervalPToC,
+      .packing = CigPacking::kSequential,
+      .framing = CigFraming::kUnframed,
+      .max_transport_latency_c_to_p = kMaxTransportLatencyCToP,
+      .max_transport_latency_p_to_c = kMaxTransportLatencyPToC,
+      .worst_case_sca =
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+  };
+
+  constexpr hci_spec::ConnectionHandle kCisHandle1 = 0x0001;
+  constexpr CisConfigParams kCisConfigParams = {
+      .cis_id = 0x01,
+      .max_sdu_c_to_p = 0x100,
+      .max_sdu_p_to_c = 0x200,
+  };
+
+  std::vector<CigCisParams> cis_params;
+  cis_params.push_back({kCisConfigParams, [](auto, auto, auto) { FAIL(); }});
+
+  bool callback_called = false;
+  cig->SetParams(std::move(cig_params),
+                 std::move(cis_params),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kCigId,
+          kSduIntervalCToP,
+          kSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kMaxTransportLatencyCToP,
+          kMaxTransportLatencyPToC,
+          pw::span<const CisConfigParams>(&kCisConfigParams, 1)));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kCigId, {kCisHandle1}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+
+  // Try to create CIS with spurious ID (0x02), which wasn't configured.
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(2),
+                            .cis_id = 0x02,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::Status::NotFound());
 }
 
 }  // namespace

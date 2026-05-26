@@ -16,8 +16,6 @@
 
 #include <pw_assert/check.h>
 
-#include <unordered_set>
-
 #include "pw_bluetooth/hci_commands.emb.h"
 
 namespace bt::iso {
@@ -243,6 +241,7 @@ class IsoGroupImpl final : public IsoGroup {
   void SetParams(CigParams cig_params,
                  std::vector<CigCisParams> cis_params,
                  SetParamsCallback callback) override;
+  pw::Status CreateCises(pw::span<CreateCisData> establish_data) override;
   WeakPtr GetWeakPtr() override { return weak_self_.GetWeakPtr(); }
 
   // Impl-specific.
@@ -350,6 +349,77 @@ void IsoGroupImpl::SetParams(CigParams cig_params,
                 std::move(callback_capture));
           })
       .IgnoreError();
+}
+
+pw::Status IsoGroupImpl::CreateCises(pw::span<CreateCisData> establish_data) {
+  if (!fsm_.CanCreateCis()) {
+    bt_log(
+        ERROR, "iso", "Invalid state (%s). for CreateCises.", fsm_.ToString());
+    return pw::Status::FailedPrecondition();
+  }
+
+  if (establish_data.empty()) {
+    return pw::OkStatus();
+  }
+
+  const size_t packet_size =
+      pw::bluetooth::emboss::LECreateCISCommand::MinSizeInBytes() +
+      (pw::bluetooth::emboss::LECreateCISCommand::ConnectionInfo::
+           IntrinsicSizeInBytes() *
+       establish_data.size());
+  auto cmd_packet =
+      hci::CommandPacket::New<pw::bluetooth::emboss::LECreateCISCommandWriter>(
+          hci_spec::kLECreateCIS, packet_size);
+
+  // Emboss does not like `requires: 0x01 <= this` for the cis_count when the
+  // packet is initialized to all zeroes, even in `IsComplete`. This is because
+  // the count is technically invalid.
+  // See https://github.com/google/emboss/issues/240
+  auto cmd_view =
+      cmd_packet
+          .unchecked_view<pw::bluetooth::emboss::LECreateCISCommandWriter>();
+  cmd_view.cis_count().Write(establish_data.size());
+  PW_CHECK(cmd_view.IsComplete());
+
+  for (size_t i = 0; i < establish_data.size(); ++i) {
+    auto cis_iter = streams_.find(establish_data[i].cis_id);
+    if (cis_iter == streams_.end()) {
+      bt_log(WARN,
+             "iso",
+             "Attempted to establish CIS that is not part of this CIG");
+      return pw::Status::NotFound();
+    }
+    if (!cis_iter->second.is_alive()) {
+      bt_log(WARN, "iso", "Attempted to establish CIS that has been destroyed");
+      return pw::Status::FailedPrecondition();
+    }
+
+    if (establish_data[i].sca.has_value() && worst_case_sca_.has_value()) {
+      if (establish_data[i].sca.value() < worst_case_sca_.value()) {
+        bt_log(WARN,
+               "iso",
+               "Attempted to establish CIS to peer with worse SCA than CIG "
+               "worst case");
+        return pw::Status::FailedPrecondition();
+      }
+    }
+
+    cmd_view.cis_connection_info()[i].cis_connection_handle().Write(
+        cis_iter->second->cis_handle());
+    cmd_view.cis_connection_info()[i].acl_connection_handle().Write(
+        establish_data[i].acl_handle);
+  }
+
+  PW_CHECK(cmd_view.Ok());
+
+  // Note: The callback is nullptr because the command status does not tell us
+  // anything about establishing the streams, instead those streams will handle
+  // their own established event and call their `OnEstablishedCallback`s.
+  hci_->command_channel()
+      ->SendCommand(
+          std::move(cmd_packet), nullptr, hci_spec::kCommandStatusEventCode)
+      .IgnoreError();
+  return pw::OkStatus();
 }
 
 void IsoGroupImpl::HandleSetCIGParametersCommandCompleteEvent(
