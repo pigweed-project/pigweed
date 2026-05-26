@@ -199,24 +199,50 @@ mod tests {
         assert!(ring_buffer.push(10));
         assert!(ring_buffer.push(20));
         assert!(ring_buffer.push(30));
+        // 0   1   2   3
+        // [T  _   _   H]
+        // 10  20  30  .
 
-        assert_eq!(ring_buffer.pop(), Some(10)); // tail advances to 1
+        assert_eq!(ring_buffer.pop(), Some(10));
+        // 0   1   2   3
+        // _   [T  _   H]
+        // .   20  30  .
 
-        assert!(ring_buffer.push(40)); // Wraps head to 0
+        assert_eq!(ring_buffer.pop(), Some(20));
+        // 0   1   2   3
+        // _   _   [T  H]
+        // .   .   30  .
 
-        // Contiguous segment from tail (1) to end of buffer (4) is &[20, 30]
+        assert!(ring_buffer.push(40));
+        // 0   1   2   3
+        // H]  _   [T  _
+        // .   .   30  40
+
+        assert!(ring_buffer.push(50));
+        // 0   1   2   3
+        // _   H]  [T  _
+        // 50  .   30  40
+
+        // Active elements: 30 (at 2), 40 (at 3), 50 (at 0)
+        // Contiguous segment from tail (2) to end of buffer (3) is &[30, 40]
         let popped1 = ring_buffer.pop_slice(5, |slice| {
-            assert_eq!(slice, &[20, 30]);
+            assert_eq!(slice, &[30, 40]);
             slice.len()
         });
-        assert_eq!(popped1, 2); // tail wraps to 0
+        assert_eq!(popped1, 2);
+        // 0   1   2   3
+        // [T  H]  _   _
+        // 50  .   .   .
 
-        // Next contiguous segment is &[40]
+        // Next contiguous segment is &[50]
         let popped2 = ring_buffer.pop_slice(5, |slice| {
-            assert_eq!(slice, &[40]);
+            assert_eq!(slice, &[50]);
             slice.len()
         });
         assert_eq!(popped2, 1);
+        // 0   1     2   3
+        // _   [TH]  _   _
+        // 50  .     .   .
 
         assert!(ring_buffer.is_empty());
     }
