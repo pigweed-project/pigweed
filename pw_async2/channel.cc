@@ -49,12 +49,13 @@ void BaseChannelFuture::StoreAndAddRefIfNonnull(BaseChannel* channel) {
 }
 
 void BaseChannelFuture::MoveFrom(BaseChannelFuture& other) {
-  core_ = std::move(other.core_);
   if (other.channel_ == nullptr) {
-    return;
+    core_.Reset();
+  } else {
+    std::lock_guard lock(*other.channel_);
+    core_ = std::move(other.core_);
+    channel_ = std::exchange(other.channel_, nullptr);
   }
-  std::lock_guard lock(*other.channel_);
-  channel_ = std::exchange(other.channel_, nullptr);
 }
 
 void BaseChannelFuture::RemoveFromChannel() {

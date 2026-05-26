@@ -117,7 +117,8 @@ class BaseChannelFuture {
   void StoreAndAddRefIfNonnull(BaseChannel* channel)
       PW_LOCKS_EXCLUDED(*channel);
 
-  void MoveFrom(BaseChannelFuture& other) PW_LOCKS_EXCLUDED(*other.channel_);
+  void MoveFrom(BaseChannelFuture& other)
+      PW_LOCKS_EXCLUDED(*channel_, *other.channel_);
 
   BaseChannel* channel_;
   FutureCore core_;
