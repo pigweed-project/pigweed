@@ -22,9 +22,47 @@
 src:*/absl/meta/type_traits.h
 
 [undef]
-src:*/google/protobuf/port_def.inc
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/common/pico_base_headers/include/pico/types.h
+src:*/src/rp2_common/cmsis/include/cmsis/rename_exceptions.h
+src:*/src/rp2_common/hardware_base/include/hardware/address_mapped.h
+src:*/src/rp2_common/hardware_exception/include/hardware/exception.h
+src:*/src/rp2_common/hardware_gpio/include/hardware/gpio_coproc.h
+src:*/src/rp2_common/hardware_gpio/include/hardware/gpio.h
+src:*/src/rp2_common/hardware_irq/include/hardware/irq.h
+src:*/src/rp2_common/hardware_uart/include/hardware/uart.h
+src:*/src/rp2_common/pico_platform_compiler/include/pico/platform/compiler.h
+src:*/src/rp2_common/pico_stdio_usb/include/pico/stdio_usb.h
+src:*/src/rp2350/hardware_regs/include/hardware/platform_defs.h
 
 [switch-enum]
 # TODO: https://pwbug.dev/479918154 - Can be removed after protobuf is updated
 # to a version with the fix.
 src:*/protobuf/google/protobuf/map_field.h
+
+[character-conversion]
+# TODO: https://pwbug.dev/515084904 - Update googletest so we can remove these.
+src:*/googletest/include/gtest/gtest-printers.h
+
+[implicit-int-conversion]
+# TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
+src:*/runtime/cpp/emboss_prelude.h
+
+[sign-conversion]
+# TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
+src:*/pw_bluetooth/att.emb.h
+src:*/pw_bluetooth/hci_android.emb.h
+src:*/pw_bluetooth/hci_commands.emb.h
+src:*/pw_bluetooth/hci_common.emb.h
+src:*/pw_bluetooth/hci_data.emb.h
+src:*/pw_bluetooth/hci_events.emb.h
+src:*/pw_bluetooth/hci_test.emb.h
+src:*/pw_bluetooth/l2cap_frames.emb.h
+src:*/pw_bluetooth/rfcomm_frames.emb.h
+src:*/pw_bluetooth/snoop.emb.h
+src:*/pw_multibuf/examples/protocol.emb.h
+
+[macro-redefined]
+# TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
+src:*/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/RP2350.h
+src:*/src/rp2350/hardware_regs/include/hardware/regs/addressmap.h
