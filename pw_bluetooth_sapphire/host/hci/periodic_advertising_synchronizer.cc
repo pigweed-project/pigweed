@@ -536,6 +536,32 @@ void PeriodicAdvertisingSynchronizer::SendCreateSyncCancelCommand() {
       .IgnoreError();
 }
 
+void PeriodicAdvertisingSynchronizer::SendTerminateSyncCommand(
+    hci_spec::SyncHandle sync_handle) {
+  auto command = CommandPacket::New<
+      pw::bluetooth::emboss::LEPeriodicAdvertisingTerminateSyncCommandWriter>(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_TERMINATE_SYNC);
+  command.view_t().sync_handle().Write(sync_handle);
+
+  transport_->command_channel()
+      ->SendCommand(std::move(command),
+                    [self = weak_self_.GetWeakPtr(), sync_handle](
+                        auto, const EventPacket& complete_event) {
+                      if (!self.is_alive()) {
+                        return;
+                      }
+                      Result<> result = complete_event.ToResult();
+                      if (result.is_error()) {
+                        bt_log(WARN,
+                               "hci",
+                               "failed to terminate sync (handle: %d): %s",
+                               sync_handle,
+                               bt_str(result.error_value()));
+                      }
+                    })
+      .IgnoreError();
+}
+
 void PeriodicAdvertisingSynchronizer::SendAddDeviceToListCommand(
     const AdvertiserListEntry& entry) {
   bt_log(DEBUG,
@@ -651,13 +677,22 @@ void PeriodicAdvertisingSynchronizer::SendRemoveDeviceFromListCommand(
 
 void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
     const EventPacket& event) {
-  PW_CHECK(state_ == State::kCreateSyncPending ||
-           state_ == State::kCreateSyncCancelPending);
-  state_ = State::kIdle;
-
   std::optional<ParsedSyncEstablishedSubevent> parsed_event =
       ParseSyncEstablishedSubevent(event);
   PW_CHECK(parsed_event);
+
+  if (state_ != State::kCreateSyncPending &&
+      state_ != State::kCreateSyncCancelPending) {
+    bt_log(WARN,
+           "hci",
+           "Unexpected sync established event in state: %d",
+           static_cast<int>(state_));
+    if (parsed_event->status == StatusCode::SUCCESS) {
+      SendTerminateSyncCommand(parsed_event->sync_handle);
+    }
+    return;
+  }
+  state_ = State::kIdle;
 
   bt_log(DEBUG,
          "hci",
@@ -690,24 +725,7 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
            "hci",
            "unexpected sync established event, terminating sync (handle: %d)",
            parsed_event->sync_handle);
-    auto command = CommandPacket::New<
-        pw::bluetooth::emboss::LEPeriodicAdvertisingTerminateSyncCommandWriter>(
-        pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_TERMINATE_SYNC);
-    command.view_t().sync_handle().Write(parsed_event->sync_handle);
-    transport_->command_channel()
-        ->SendCommand(std::move(command),
-                      [self = weak_self_.GetWeakPtr()](
-                          auto, const EventPacket& complete_event) {
-                        Result<> result = complete_event.ToResult();
-                        if (result.is_error()) {
-                          bt_log(WARN,
-                                 "hci",
-                                 "failed to terminate unexpected sync: %s",
-                                 bt_str(result.error_value()));
-                          return;
-                        }
-                      })
-        .IgnoreError();
+    SendTerminateSyncCommand(parsed_event->sync_handle);
     MaybeUpdateAdvertiserList();
     return;
   }

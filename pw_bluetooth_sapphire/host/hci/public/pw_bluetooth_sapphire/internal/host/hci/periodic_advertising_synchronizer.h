@@ -240,6 +240,7 @@ class PeriodicAdvertisingSynchronizer final {
   void SendCreateSyncCommand(const SyncOptions& options,
                              bool advertiser_list_full = false);
   void SendCreateSyncCancelCommand();
+  void SendTerminateSyncCommand(hci_spec::SyncHandle sync_handle);
   void SendAddDeviceToListCommand(const AdvertiserListEntry& entry);
   void SendRemoveDeviceFromListCommand(const AdvertiserListEntry& entry);
 

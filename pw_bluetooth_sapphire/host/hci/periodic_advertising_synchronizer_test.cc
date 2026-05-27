@@ -1326,6 +1326,32 @@ TEST_F(PeriodicAdvertisingSynchronizerTest,
   EXPECT_EQ(delegate.last_error().value(), Error(HostError::kCanceled));
 }
 
+TEST_F(PeriodicAdvertisingSynchronizerTest, UnsolicitedSyncEstablished) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+  constexpr hci_spec::SyncHandle kSyncHandle = 0x01;
+  constexpr uint16_t kSyncPacketInterval = 0x000A;
+
+  DynamicByteBuffer sync_established_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kSyncHandle,
+          kAdvSid,
+          addr,
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          kSyncPacketInterval,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+
+  ExpectTerminateSync(test_device(), kSyncHandle);
+
+  test_device()->SendCommandChannelPacket(sync_established_event);
+  RunUntilIdle();
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(delegate.sync_established_count(), 0);
+}
+
 TEST_F(PeriodicAdvertisingSynchronizerTest,
        CreateSyncMultipleRequestsSameAddress) {
   TestDelegate delegate1;
