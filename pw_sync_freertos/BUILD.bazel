@@ -61,7 +61,6 @@ cc_library(
     ],
     deps = [
         ":config_override",
-        "//pw_preprocessor:arch",
         "@freertos",
     ],
 )

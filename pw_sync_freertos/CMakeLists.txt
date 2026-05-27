@@ -22,7 +22,6 @@ pw_add_library(pw_sync_freertos.config INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_preprocessor.arch
     pw_third_party.freertos
     ${pw_sync_freertos_CONFIG}
 )
