@@ -205,6 +205,11 @@ Coro<void> WaitUntilFive(CoroContext, FakeFuture& fut) {
   EXPECT_EQ(co_await fut, 5);
 }
 
+Coro<Status> AwaitVoidCoroWrapper(CoroContext cx, FakeFuture& fut) {
+  co_await WaitUntilFive(cx, fut);
+  co_return OkStatus();
+}
+
 TEST_F(CoroTest, AwaitVoidCoro) {
   FakeFuture fut;
   CoroContext cx(alloc_);
@@ -220,6 +225,24 @@ TEST_F(CoroTest, AwaitVoidCoro) {
   fut.last_waker.Wake();
   dispatcher.RunToCompletion();
 
+  EXPECT_EQ(fut.poll_count, 2);
+}
+
+TEST_F(CoroTest, AwaitVoidCoroInsideAnotherCoroutine) {
+  FakeFuture fut;
+  CoroTask task(AwaitVoidCoroWrapper(alloc_, fut));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(fut.poll_count, 1);
+
+  fut.return_value = 5;
+  fut.last_waker.Wake();
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), OkStatus());
   EXPECT_EQ(fut.poll_count, 2);
 }
 

@@ -449,7 +449,7 @@ class Awaitable final {
   //
   // This is automatically invoked by the language runtime when the promise's
   // `resume()` method is called.
-  value_type&& await_resume()
+  std::add_rvalue_reference_t<value_type> await_resume()
     requires(!std::is_void_v<value_type>)
   {
     // await_resume() is never called after allocation failure because the
@@ -489,7 +489,11 @@ class Awaitable final {
     auto result = get().Pend(cx);
     if (result.state() == CoroPollState::kReady) {
       state_.coro_or_future.~CoroOrFuture();
-      new (&state_.result) Value(std::move(*result));
+      if constexpr (std::is_void_v<value_type>) {
+        new (&state_.result) Value();
+      } else {
+        new (&state_.result) Value(std::move(*result));
+      }
       is_ready_ = true;
     }
     return result.state();
