@@ -40,10 +40,7 @@ inline ThreadNotification::~ThreadNotification() = default;
 inline bool ThreadNotification::try_acquire() {
   // Enforce the pw::sync::ThreadNotification IRQ contract.
   PW_DASSERT(!interrupt::InInterruptContext());
-  std::lock_guard lock(native_type_.shared_spin_lock);
-  const bool notified = native_type_.notified;
-  native_type_.notified = false;
-  return notified;
+  return native_type_.get_and_clear_notified();
 }
 
 inline ThreadNotification::native_handle_type

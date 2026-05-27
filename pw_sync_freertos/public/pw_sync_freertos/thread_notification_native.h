@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <mutex>
+#include <utility>
+
 #include "FreeRTOS.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_sync/interrupt_spin_lock.h"
@@ -29,6 +32,11 @@ struct NativeThreadNotification {
   // all ISL instances without any risk of spin contention between different
   // instances.
   PW_CONSTINIT inline static InterruptSpinLock shared_spin_lock = {};
+
+  bool get_and_clear_notified() {
+    std::lock_guard lock(shared_spin_lock);
+    return std::exchange(notified, false);
+  }
 };
 using NativeThreadNotificationHandle = NativeThreadNotification&;
 
