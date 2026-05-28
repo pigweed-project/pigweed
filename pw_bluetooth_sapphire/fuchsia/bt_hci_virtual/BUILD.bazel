@@ -30,6 +30,7 @@ load(
     "fuchsia_licenses_collection",
     "fuchsia_licenses_spdx",
 )
+load("//pw_bluetooth_sapphire/fuchsia:cipd.bzl", "CIPD_ROOT")
 load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
@@ -222,7 +223,7 @@ fuchsia_licenses_spdx(
 fuchsia_cipd_releases(
     name = "bt_hci_virtual_x64_cipd",
     testonly = True,
-    cipd_prefix = "fuchsia/prebuilt/bt-hci-virtual",
+    cipd_prefix = CIPD_ROOT + "/prebuilt/bt-hci-virtual",
     extra_content = {
         ":README.fuchsia.md": "README.fuchsia",
         ":bt_hci_virtual_x64_licenses.spdx.json": "licenses.spdx.json",
@@ -236,7 +237,7 @@ fuchsia_cipd_releases(
 fuchsia_cipd_releases(
     name = "bt_hci_virtual_arm64_cipd",
     testonly = True,
-    cipd_prefix = "fuchsia/prebuilt/bt-hci-virtual",
+    cipd_prefix = CIPD_ROOT + "/prebuilt/bt-hci-virtual",
     extra_content = {
         ":README.fuchsia.md": "README.fuchsia",
         ":bt_hci_virtual_arm64_licenses.spdx.json": "licenses.spdx.json",
@@ -250,7 +251,7 @@ fuchsia_cipd_releases(
 fuchsia_cipd_releases(
     name = "bt_hci_virtual_riscv64_cipd",
     testonly = True,
-    cipd_prefix = "fuchsia/prebuilt/bt-hci-virtual",
+    cipd_prefix = CIPD_ROOT + "/prebuilt/bt-hci-virtual",
     extra_content = {
         ":README.fuchsia.md": "README.fuchsia",
         ":bt_hci_virtual_riscv64_licenses.spdx.json": "licenses.spdx.json",

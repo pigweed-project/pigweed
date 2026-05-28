@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load(
     "@fuchsia_infra//infra:infra.bzl",
     "FUCHSIA_TEST_TARGET",
@@ -24,6 +25,17 @@ license(
     name = "license_fuchsia",
     package_name = "pw_bluetooth_sapphire (Fuchsia)",
     license_text = "@pigweed//:LICENSE",
+)
+
+bool_flag(
+    name = "internal_release",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "internal_release_enabled",
+    flag_values = {":internal_release": "True"},
+    visibility = ["//visibility:public"],
 )
 
 qemu_tests = [

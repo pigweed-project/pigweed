@@ -296,6 +296,9 @@ build:ide --output_groups=+pw_cc_compile_commands_fragments
 common:airlock --action_env=PIGWEED_PIP_INDEX_URL=https://us-python.pkg.dev/artifact-foundry-prod/python-3p-trusted/simple
 common:airlock --credential_helper=*.pkg.dev=%workspace%/pw_build/cred_helper.sh
 
+# Release fuchsia artifacts to `@cipd//turquoise_internal/...` instead of `@cipd//fuchsia/...`.
+common:internal_release --//pw_bluetooth_sapphire/fuchsia:internal_release=True
+
 # User bazelrc file
 # =================
 # See https://bazel.build/configure/best-practices#bazelrc-file
