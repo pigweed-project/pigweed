@@ -835,7 +835,14 @@ def cmake_gcc(ctx: PresubmitContext):
     build.gn_check(ctx)
 
 
-def bthost_package(ctx: PresubmitContext) -> None:
+def bthost_package_internal(ctx: PresubmitContext) -> None:
+    bthost_package(ctx, extra_configs=("--config=internal_release",))
+
+
+def bthost_package(
+    ctx: PresubmitContext,
+    extra_configs: Sequence[str] = (),
+) -> None:
     """Builds, tests, and prepares bt_host for upload."""
     # Test that `@fuchsia_sdk` isn't fetched when building non-fuchsia targets.
     # We specifically want to disallow this behavior because `@fuchsia_sdk` is
@@ -846,6 +853,7 @@ def bthost_package(ctx: PresubmitContext) -> None:
         # TODO: https://pwbug.dev/392092401 - Use `--override_module` instead of
         # `--override_repository` here once this dep is migrated to bzlmod.
         '--override_repository=fuchsia_sdk=/disallow/fuchsia_sdk/download/',
+        *extra_configs,
         '//pw_status/...',
     ]
     try:
@@ -859,7 +867,7 @@ def bthost_package(ctx: PresubmitContext) -> None:
         raise PresubmitFailure(failure_message) from exc
 
     target = '//pw_bluetooth_sapphire/fuchsia:infra'
-    build_bazel(ctx, 'build', '--config=fuchsia', target)
+    build_bazel(ctx, 'build', '--config=fuchsia', *extra_configs, target)
 
     # Explicitly specify TEST_UNDECLARED_OUTPUTS_DIR_OVERRIDE as that will allow
     # `orchestrate`'s output (eg: ffx host + target logs, test stdout/stderr) to
@@ -870,6 +878,7 @@ def bthost_package(ctx: PresubmitContext) -> None:
         ctx,
         'run',
         '--config=fuchsia',
+        *extra_configs,
         f'{target}.test_all',
         env=dict(
             os.environ,
@@ -883,6 +892,7 @@ def bthost_package(ctx: PresubmitContext) -> None:
             ctx,
             'build',
             '--config=fuchsia',
+            *extra_configs,
             '--output_groups=builder_manifest',
             target,
             stdout=outs,
@@ -1152,6 +1162,7 @@ OTHER_CHECKS = (
     # keep-sorted: start
     bazel_checks.lockfile_check,
     bthost_package,
+    bthost_package_internal,
     build.gn_gen_check,
     cmake_clang,
     cmake_gcc,
