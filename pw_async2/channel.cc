@@ -50,7 +50,7 @@ void BaseChannelFuture::StoreAndAddRefIfNonnull(BaseChannel* channel) {
 
 void BaseChannelFuture::MoveFrom(BaseChannelFuture& other) {
   if (other.channel_ == nullptr) {
-    core_.Reset();
+    core_ = std::move(other.core_);
   } else {
     std::lock_guard lock(*other.channel_);
     core_ = std::move(other.core_);
