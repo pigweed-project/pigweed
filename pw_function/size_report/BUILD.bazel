@@ -24,7 +24,6 @@ licenses(["notice"])
 pw_cc_size_binary(
     name = "pointer_base",
     srcs = ["pointer_base.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -34,7 +33,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "basic_function",
     srcs = ["basic_function.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -46,7 +44,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_BASE=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -58,7 +55,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_FUNCTION_POINTER=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -70,7 +66,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_STATIC_LAMBDA=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -82,7 +77,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_SIMPLE_LAMBDA=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -94,7 +88,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_CAPTURING_LAMBDA=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -106,7 +99,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_MULTI_CAPTURING_LAMBDA=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",
@@ -118,7 +110,6 @@ pw_cc_size_binary(
     srcs = ["callable_size.cc"],
     copts = ["-Wno-unused-private-field"],
     defines = ["_CUSTOM_CLASS=1"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_bloat:bloat_this_binary",
         "//pw_function",

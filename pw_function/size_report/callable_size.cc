@@ -74,5 +74,5 @@ int main() {
 #endif
 
   int foo = callable_size.PreventOptimization();
-  return sizeof(callable_size) + foo;
+  return static_cast<int>(sizeof(callable_size)) + foo;
 }
