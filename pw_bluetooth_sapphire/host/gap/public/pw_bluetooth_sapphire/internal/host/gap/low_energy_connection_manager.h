@@ -178,6 +178,16 @@ class LowEnergyConnectionManager final {
   // rejected.
   void SetPairingDelegate(const PairingDelegate::WeakPtr& delegate);
 
+  // Attempts to acquire a new reference (handle) to an existing LE connection
+  // identified by |peer_id|.
+  //
+  // If a connection to the peer exists, a new LowEnergyConnectionHandle
+  // is returned, increasing the reference count on the underlying
+  // connection object.
+  //
+  // If no connection to the peer exists, returns nullptr.
+  std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(PeerId peer_id);
+
   // Opens a new L2CAP channel to service |psm| on |peer_id| using the preferred
   // parameters |params|.
   //

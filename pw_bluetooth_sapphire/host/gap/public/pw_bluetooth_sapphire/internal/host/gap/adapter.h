@@ -327,6 +327,9 @@ class Adapter {
                   std::move(expected_peers));
     }
 
+    virtual std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(
+        PeerId peer_id) = 0;
+
     // Register a callback to be notified any time the LE address changes.
     virtual void register_address_changed_callback(fit::closure callback) = 0;
 

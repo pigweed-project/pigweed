@@ -5133,6 +5133,45 @@ INSTANTIATE_TEST_SUITE_P(
         hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral,
         hci_spec::LESupportedFeature::kConnectedIsochronousStreamCentral));
 
+TEST_F(LowEnergyConnectionManagerTest, AddConnectionRef) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  // Before connection, AddConnectionRef should return nullptr.
+  EXPECT_EQ(nullptr, conn_mgr()->AddConnectionRef(peer->identifier()));
+
+  // Connect and obtain first handle.
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  auto callback = [&conn_handle](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_handle = std::move(result).value();
+  };
+  conn_mgr()->Connect(peer->identifier(), callback, kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(conn_handle);
+
+  // AddConnectionRef should now return a valid handle synchronously.
+  auto conn_ref2 = conn_mgr()->AddConnectionRef(peer->identifier());
+  ASSERT_TRUE(conn_ref2);
+  EXPECT_TRUE(conn_ref2->active());
+
+  // Release the first handle; the connection should remain active because of
+  // conn_ref2.
+  conn_handle = nullptr;
+  RunUntilIdle();
+  EXPECT_EQ(1u, connected_peers().size());
+  EXPECT_TRUE(conn_ref2->active());
+
+  // Release the second handle; the connection should be destroyed.
+  conn_ref2 = nullptr;
+  RunUntilIdle();
+  EXPECT_TRUE(connected_peers().empty());
+
+  // AddConnectionRef should return nullptr again.
+  EXPECT_EQ(nullptr, conn_mgr()->AddConnectionRef(peer->identifier()));
+}
+
 TEST_F(LowEnergyConnectionManagerTest, TransferPeriodicAdvertisingSync) {
   auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
   EXPECT_TRUE(peer->temporary());

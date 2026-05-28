@@ -518,6 +518,15 @@ void LowEnergyConnectionManager::SetPairingDelegate(
   }
 }
 
+std::unique_ptr<LowEnergyConnectionHandle>
+LowEnergyConnectionManager::AddConnectionRef(PeerId peer_id) {
+  auto iter = connections_.find(peer_id);
+  if (iter == connections_.end()) {
+    return nullptr;
+  }
+  return iter->second->AddRef();
+}
+
 void LowEnergyConnectionManager::OpenL2capChannel(
     PeerId peer_id,
     l2cap::Psm psm,

@@ -185,6 +185,11 @@ class FakeAdapter final : public Adapter {
       callback(pw::unexpected(HostError::kNotSupported));
     }
 
+    std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(
+        PeerId /*peer_id*/) override {
+      return nullptr;
+    }
+
     void register_address_changed_callback(fit::closure callback) override {
       fake_address_delegate_.register_address_changed_callback(
           std::move(callback));

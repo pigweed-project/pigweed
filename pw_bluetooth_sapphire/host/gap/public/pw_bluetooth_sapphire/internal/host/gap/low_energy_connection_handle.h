@@ -110,7 +110,7 @@ class LowEnergyConnectionHandle final {
   PeriodicAdvertisingSyncManager::TransferSyncFn
       transfer_periodic_advertising_sync_fn_;
 
-  BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyConnectionHandle);
+  BT_DISALLOW_COPY_ASSIGN_AND_MOVE(LowEnergyConnectionHandle);
 };
 
 }  // namespace bt::gap

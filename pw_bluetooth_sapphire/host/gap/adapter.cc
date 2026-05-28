@@ -233,6 +233,11 @@ class AdapterImpl final : public Adapter {
                                                   std::move(expected_peers));
     }
 
+    std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(
+        PeerId peer_id) override {
+      return adapter_->le_connection_manager_->AddConnectionRef(peer_id);
+    }
+
     void register_address_changed_callback(fit::closure callback) override {
       auto cb = [addr_changed_cb = std::move(callback)](auto) {
         addr_changed_cb();
