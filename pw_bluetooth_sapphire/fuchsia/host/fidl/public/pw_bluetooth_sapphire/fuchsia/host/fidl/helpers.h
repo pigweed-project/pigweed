@@ -347,6 +347,19 @@ pw::bluetooth::emboss::StatusCode FidlHciErrorToStatusCode(
 fuchsia::bluetooth::le::CisEstablishedParameters CisEstablishedParametersToFidl(
     const bt::iso::CisEstablishedParameters& params_in);
 
+bt::iso::CigPacking FidlToCigPacking(
+    const fuchsia::bluetooth::le::CigPacking& packing);
+
+bt::iso::CigFraming FidlToCigFraming(
+    const fuchsia::bluetooth::le::CigFramingOptions& framing);
+
+std::optional<bt::iso::CigParams> FidlToCigParams(
+    const fuchsia::bluetooth::le::CigParameters& params);
+
+std::optional<bt::iso::CigCisParams> FidlToCigCisParams(
+    const fuchsia::bluetooth::le::CisRequestedParameters& params,
+    bt::iso::CisEstablishedCallback callback);
+
 bt::DeviceAddress::Type FidlToDeviceAddressType(
     fuchsia::bluetooth::AddressType addr_type);
 

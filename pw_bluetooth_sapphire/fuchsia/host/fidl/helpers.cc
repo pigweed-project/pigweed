@@ -3049,6 +3049,94 @@ fuchsia::bluetooth::le::CisEstablishedParameters CisEstablishedParametersToFidl(
   return params_out;
 }
 
+bt::iso::CigPacking FidlToCigPacking(
+    const fuchsia::bluetooth::le::CigPacking& packing) {
+  switch (packing) {
+    case fuchsia::bluetooth::le::CigPacking::SEQUENTIAL:
+      return bt::iso::CigPacking::kSequential;
+    case fuchsia::bluetooth::le::CigPacking::INTERLEAVED:
+      return bt::iso::CigPacking::kInterleaved;
+  }
+  PW_CRASH("Unhandled CigPacking");
+}
+
+bt::iso::CigFraming FidlToCigFraming(
+    const fuchsia::bluetooth::le::CigFramingOptions& framing) {
+  switch (framing) {
+    case fuchsia::bluetooth::le::CigFramingOptions::UNFRAMED:
+      return bt::iso::CigFraming::kUnframed;
+    case fuchsia::bluetooth::le::CigFramingOptions::FRAMED:
+      return bt::iso::CigFraming::kFramed;
+  }
+  PW_CRASH("Unhandled CigFramingOptions");
+}
+
+std::optional<bt::iso::CigParams> FidlToCigParams(
+    const fuchsia::bluetooth::le::CigParameters& params) {
+  bt::iso::CigParams out;
+
+  if (!params.has_sdu_interval_c_to_p()) {
+    bt_log(WARN, "fidl", "CigParameters missing sdu_interval_c_to_p");
+    return std::nullopt;
+  }
+  out.sdu_interval_c_to_p = params.sdu_interval_c_to_p();
+
+  if (!params.has_sdu_interval_p_to_c()) {
+    bt_log(WARN, "fidl", "CigParameters missing sdu_interval_p_to_c");
+    return std::nullopt;
+  }
+  out.sdu_interval_p_to_c = params.sdu_interval_p_to_c();
+
+  if (params.has_packing()) {
+    out.packing = FidlToCigPacking(params.packing());
+  } else {
+    out.packing = bt::iso::CigPacking::kSequential;
+  }
+
+  if (params.has_framing()) {
+    out.framing = FidlToCigFraming(params.framing());
+  } else {
+    out.framing = bt::iso::CigFraming::kUnframed;
+  }
+
+  if (!params.has_max_transport_latency_c_to_p()) {
+    bt_log(WARN, "fidl", "CigParameters missing max_transport_latency_c_to_p");
+    return std::nullopt;
+  }
+  out.max_transport_latency_c_to_p = params.max_transport_latency_c_to_p();
+
+  if (!params.has_max_transport_latency_p_to_c()) {
+    bt_log(WARN, "fidl", "CigParameters missing max_transport_latency_p_to_c");
+    return std::nullopt;
+  }
+  out.max_transport_latency_p_to_c = params.max_transport_latency_p_to_c();
+
+  return out;
+}
+
+std::optional<bt::iso::CigCisParams> FidlToCigCisParams(
+    const fuchsia::bluetooth::le::CisRequestedParameters& params,
+    bt::iso::CisEstablishedCallback callback) {
+  if (!params.has_cis_id()) {
+    bt_log(WARN, "fidl", "CisRequestedParameters missing cis_id");
+    return std::nullopt;
+  }
+
+  return bt::iso::CigCisParams{
+      .config =
+          bt::iso::CisConfigParams{
+              .cis_id = params.cis_id(),
+              .max_sdu_c_to_p = params.has_max_sdu_size_outgoing()
+                                    ? params.max_sdu_size_outgoing()
+                                    : static_cast<uint16_t>(0),
+              .max_sdu_p_to_c = params.has_max_sdu_size_incoming()
+                                    ? params.max_sdu_size_incoming()
+                                    : static_cast<uint16_t>(0),
+          },
+      .on_established_cb = std::move(callback),
+  };
+}
+
 bt::DeviceAddress::Type FidlToDeviceAddressType(fbt::AddressType addr_type) {
   switch (addr_type) {
     case fbt::AddressType::PUBLIC:

@@ -2909,5 +2909,128 @@ TEST(HelpersTest, SyncReportFromBroadcastIsochronousGroupInfo) {
   EXPECT_EQ(out.broadcast_isochronous_group_info_report()->timestamp(), 1u);
 }
 
+TEST(HelpersTest, FidlToCigParams) {
+  fble::CigParameters input;
+  input.set_sdu_interval_c_to_p(10000);
+  input.set_sdu_interval_p_to_c(12000);
+  input.set_packing(fble::CigPacking::INTERLEAVED);
+  input.set_framing(fble::CigFramingOptions::FRAMED);
+  input.set_max_transport_latency_c_to_p(20);
+  input.set_max_transport_latency_p_to_c(25);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  ASSERT_TRUE(output.has_value());
+  EXPECT_EQ(output->sdu_interval_c_to_p, 10000u);
+  EXPECT_EQ(output->sdu_interval_p_to_c, 12000u);
+  EXPECT_EQ(output->packing, bt::iso::CigPacking::kInterleaved);
+  EXPECT_EQ(output->framing, bt::iso::CigFraming::kFramed);
+  EXPECT_EQ(output->max_transport_latency_c_to_p, 20u);
+  EXPECT_EQ(output->max_transport_latency_p_to_c, 25u);
+  EXPECT_FALSE(output->worst_case_sca.has_value());
+}
+
+TEST(HelpersTest, FidlToCigCisParams) {
+  fble::CisRequestedParameters input;
+  input.set_cis_id(42);
+  input.set_max_sdu_size_outgoing(128);
+  input.set_max_sdu_size_incoming(256);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream;
+  input.set_connection_stream(stream.NewRequest());
+
+  bool cb_called = false;
+  auto callback = [&](auto, auto, auto) { cb_called = true; };
+
+  std::optional<bt::iso::CigCisParams> output =
+      FidlToCigCisParams(input, std::move(callback));
+  ASSERT_TRUE(output.has_value());
+  EXPECT_EQ(output->config.cis_id, 42);
+  EXPECT_EQ(output->config.max_sdu_c_to_p, 128);
+  EXPECT_EQ(output->config.max_sdu_p_to_c, 256);
+
+  output->on_established_cb(
+      pw::bluetooth::emboss::StatusCode::SUCCESS, std::nullopt, std::nullopt);
+  EXPECT_TRUE(cb_called);
+}
+
+TEST(HelpersTest, FidlToCigParamsMissingSduIntervalCToP) {
+  fble::CigParameters input;
+  input.set_sdu_interval_p_to_c(12000);
+  input.set_max_transport_latency_c_to_p(20);
+  input.set_max_transport_latency_p_to_c(25);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  EXPECT_FALSE(output.has_value());
+}
+
+TEST(HelpersTest, FidlToCigParamsMissingSduIntervalPToC) {
+  fble::CigParameters input;
+  input.set_sdu_interval_c_to_p(10000);
+  input.set_max_transport_latency_c_to_p(20);
+  input.set_max_transport_latency_p_to_c(25);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  EXPECT_FALSE(output.has_value());
+}
+
+TEST(HelpersTest, FidlToCigParamsMissingMaxLatencyCToP) {
+  fble::CigParameters input;
+  input.set_sdu_interval_c_to_p(10000);
+  input.set_sdu_interval_p_to_c(12000);
+  input.set_max_transport_latency_p_to_c(25);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  EXPECT_FALSE(output.has_value());
+}
+
+TEST(HelpersTest, FidlToCigParamsMissingMaxLatencyPToC) {
+  fble::CigParameters input;
+  input.set_sdu_interval_c_to_p(10000);
+  input.set_sdu_interval_p_to_c(12000);
+  input.set_max_transport_latency_c_to_p(20);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  EXPECT_FALSE(output.has_value());
+}
+
+TEST(HelpersTest, FidlToCigCisParamsMissingCisId) {
+  fble::CisRequestedParameters input;
+  input.set_max_sdu_size_outgoing(128);
+  input.set_max_sdu_size_incoming(256);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream;
+  input.set_connection_stream(stream.NewRequest());
+
+  auto callback = [](auto, auto, auto) {};
+  std::optional<bt::iso::CigCisParams> output =
+      FidlToCigCisParams(input, std::move(callback));
+  EXPECT_FALSE(output.has_value());
+}
+
+TEST(HelpersTest, FidlToCigParamsDefaults) {
+  fble::CigParameters input;
+  input.set_sdu_interval_c_to_p(10000);
+  input.set_sdu_interval_p_to_c(12000);
+  input.set_max_transport_latency_c_to_p(20);
+  input.set_max_transport_latency_p_to_c(25);
+
+  std::optional<bt::iso::CigParams> output = FidlToCigParams(input);
+  ASSERT_TRUE(output.has_value());
+  EXPECT_EQ(output->packing, bt::iso::CigPacking::kSequential);
+  EXPECT_EQ(output->framing, bt::iso::CigFraming::kUnframed);
+}
+
+TEST(HelpersTest, FidlToCigCisParamsDefaults) {
+  fble::CisRequestedParameters input;
+  input.set_cis_id(42);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream;
+  input.set_connection_stream(stream.NewRequest());
+
+  auto callback = [](auto, auto, auto) {};
+  std::optional<bt::iso::CigCisParams> output =
+      FidlToCigCisParams(input, std::move(callback));
+  ASSERT_TRUE(output.has_value());
+  EXPECT_EQ(output->config.max_sdu_c_to_p, 0);
+  EXPECT_EQ(output->config.max_sdu_p_to_c, 0);
+}
+
 }  // namespace
 }  // namespace bthost::fidl_helpers
