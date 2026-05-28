@@ -50,6 +50,7 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
   }
 
   void set_connection(Connection& conn) { connection_ = conn; }
+  void clear_connection() { connection_ = std::nullopt; }
 
   Status Send(ConstByteSpan data) override {
     using pw::rpc::internal::pwpb::PacketType;
