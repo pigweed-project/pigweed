@@ -941,5 +941,22 @@ TEST_F(JsonObjectTest, TestOverflow) {
   EXPECT_EQ(object_.data()[object_.size()], '\0');
 }
 
+TEST(JsonBuilder, KeyEscapingOverflowRecovery) {
+  pw::JsonBuffer<10> json;
+  pw::JsonObject& obj = json.StartObject();
+
+  EXPECT_STREQ(json.data(), "{}");
+  EXPECT_EQ(json.size(), 2u);
+
+  // Try to add key that overflows due to escaping.
+  obj.Add("\x01", "value");
+  EXPECT_EQ(json.status(), pw::Status::ResourceExhausted());
+
+  EXPECT_STREQ(json.data(), "{}");
+  EXPECT_EQ(json.size(), 2u);
+  EXPECT_EQ(json.data()[json.size()], '\0');
+  EXPECT_EQ(std::string_view(json), "{}"sv);
+}
+
 }  // namespace
 }  // namespace pw

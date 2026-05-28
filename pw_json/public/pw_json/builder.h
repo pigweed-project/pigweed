@@ -943,6 +943,8 @@ constexpr bool JsonBuilder::JsonObjectAddKey(std::string_view key) {
     return false;
   }
 
+  const size_t original_size = json_size_;
+
   // If this is the first key, just drop the }. Otherwise, add a comma.
   if (size() == 2) {
     json_size_ = 1;
@@ -955,6 +957,10 @@ constexpr bool JsonBuilder::JsonObjectAddKey(std::string_view key) {
   auto written =
       json_impl::WriteQuotedString(key, &buffer_[json_size_], remaining() - 3);
   if (!written.ok()) {
+    update_status(written.status());
+    json_size_ = original_size;
+    buffer_[json_size_ - 1] = '}';
+    buffer_[json_size_] = '\0';
     return false;
   }
 
