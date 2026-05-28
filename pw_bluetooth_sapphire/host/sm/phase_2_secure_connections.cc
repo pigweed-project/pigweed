@@ -125,14 +125,15 @@ void Phase2SecureConnections::OnPeerPublicKey(
 
   EcdhKey peer_key = std::move(*maybe_peer_key);
   PW_CHECK(local_ecdh_.has_value());
-  if (peer_key.GetPublicKeyX() == local_ecdh_->GetPublicKeyX() &&
-      peer_key.GetPublicKeyY() == local_ecdh_->GetPublicKeyY()) {
+
+  if (peer_key.GetPublicKeyX() == local_ecdh_->GetPublicKeyX()) {
     // NOTE(fxbug.dev/42161018): When passkey entry is used, the non-initiating
-    // device can reflect our public key (which we send in plaintext). The
-    // inputs to the hash that we disclose bit- by-bit in ScStage1Passkey are
-    // the two public keys, our nonce, and one bit of our passkey, so if the
-    // peer uses the same public key then it can easily brute force for the
-    // passkey bit.
+    // device can reflect our public key (which we send in plaintext) or a
+    // negated version of it. The inputs to the hash that we disclose bit-by-bit
+    // in ScStage1Passkey are the two public keys, our nonce, and one bit of our
+    // passkey, so if the peer uses the same (or negated) public key then it can
+    // easily brute force for the passkey bit. Checking matching X coordinate
+    // covers both cases. See Core Spec v6.2, Vol 3, Part H, 2.3.5.6.1.
     bt_log(WARN,
            "sm",
            "peer public ECDH key mirrors local public ECDH key "

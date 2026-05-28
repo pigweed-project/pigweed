@@ -420,6 +420,51 @@ TEST_F(Phase2SecureConnectionsTest, RejectsPublicKeyIdenticalToLocalKey) {
   EXPECT_EQ(1, listener()->pairing_error_count());
 }
 
+TEST_F(Phase2SecureConnectionsTest, RejectsPublicKeyWithNegatedY) {
+  // Read local key sent to peer
+  fake_chan()->SetSendCallback(
+      [this](ByteBufferPtr sdu) {
+        auto reader = ValidPacketReader::ParseSdu(sdu).value();
+        if (reader.code() == kPairingPublicKey) {
+          mut_local_key() = EcdhKey::ParseFromPublicKey(
+              reader.payload<PairingPublicKeyParams>());
+        }
+      },
+      dispatcher());
+
+  phase_2_sc()->Start();
+  RunUntilIdle();
+  ASSERT_TRUE(local_key().has_value());
+
+  auto local_serialized = local_key()->GetSerializedPublicKey();
+
+  // P-256 prime in Little Endian
+  const std::array<uint8_t, 32> p = {
+      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+      0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF};
+
+  // Calculate the negated Y coordinate of the local key
+  PairingPublicKeyParams negated_key = local_serialized;
+  int borrow = 0;
+  for (size_t i = 0; i < 32; ++i) {
+    int diff = p[i] - local_serialized.y[i] - borrow;
+    if (diff < 0) {
+      diff += 256;
+      borrow = 1;
+    } else {
+      borrow = 0;
+    }
+    negated_key.y[i] = static_cast<uint8_t>(diff);
+  }
+
+  const auto kPairingPublicKeyCmd = MakeCmd(kPairingPublicKey, negated_key);
+  const StaticByteBuffer kExpectedFailure{kPairingFailed,
+                                          ErrorCode::kInvalidParameters};
+  EXPECT_TRUE(ReceiveAndExpect(kPairingPublicKeyCmd, kExpectedFailure));
+  EXPECT_EQ(1, listener()->pairing_error_count());
+}
+
 TEST_F(Phase2SecureConnectionsTest, ReceivePeerPublicKeyTwice) {
   phase_2_sc()->Start();
   const auto kPairingPublicKeyCmd =
