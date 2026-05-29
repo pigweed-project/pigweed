@@ -54,6 +54,7 @@ cc_library_static {
     ],
     export_include_dirs: [
         "public",
+        "public_overrides/system_clock_backend",
     ],
     static_libs: [
         "pw_allocator",
