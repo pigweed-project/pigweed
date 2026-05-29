@@ -29,8 +29,9 @@ filegroup {
 cc_library_headers {
     name: "pw_detokenizer_include_dirs",
     export_include_dirs: ["public"],
-    host_supported: true,
-    vendor_available: true,
+    defaults: [
+        "pw_android_common_target_support",
+    ],
 }
 
 // Downstream projects can configure the pw_tokenizer by defining their own
