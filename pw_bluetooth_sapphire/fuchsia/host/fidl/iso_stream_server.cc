@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/iso_stream_server.h"
 
+#include <lib/async/cpp/task.h>
+#include <lib/async/default.h>
 #include <lib/fidl/cpp/wire/channel.h>
 #include <pw_assert/check.h>
 #include <pw_bluetooth/hci_data.emb.h>
@@ -33,6 +35,12 @@ IsoStreamServer::IsoStreamServer(
   set_error_handler([this](zx_status_t) { OnClosed(); });
 }
 
+IsoStreamServer::~IsoStreamServer() {
+  if (iso_stream_.has_value() && iso_stream_->is_alive()) {
+    (*iso_stream_)->Close();
+  }
+}
+
 void IsoStreamServer::OnStreamEstablished(
     bt::iso::IsoStream::WeakPtr stream_ptr,
     const bt::iso::CisEstablishedParameters& connection_params) {
@@ -44,6 +52,10 @@ void IsoStreamServer::OnStreamEstablished(
       bthost::fidl_helpers::CisEstablishedParametersToFidl(connection_params);
   request.set_established_params(std::move(params));
   binding()->events().OnEstablished(std::move(request));
+
+  if (establishment_cb_) {
+    establishment_cb_(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  }
 }
 
 void IsoStreamServer::OnStreamEstablishmentFailed(
@@ -56,6 +68,17 @@ void IsoStreamServer::OnStreamEstablishmentFailed(
   fuchsia::bluetooth::le::IsochronousStreamOnEstablishedRequest request;
   request.set_result(ZX_ERR_INTERNAL);
   binding()->events().OnEstablished(std::move(request));
+
+  if (establishment_cb_) {
+    establishment_cb_(status);
+  }
+
+  async::PostTask(async_get_default_dispatcher(),
+                  [self = weak_self_.GetWeakPtr()]() {
+                    if (self.is_alive()) {
+                      self->Close(ZX_ERR_INTERNAL);
+                    }
+                  });
 }
 
 void IsoStreamServer::SetupDataPath(
@@ -233,12 +256,16 @@ void IsoStreamServer::OnClosed() {
     (*iso_stream_)->Close();
   }
   // This may free our instance.
-  on_closed_cb_();
+  if (on_closed_cb_) {
+    on_closed_cb_();
+  }
 }
 
 void IsoStreamServer::Close(zx_status_t epitaph) {
-  binding()->Close(epitaph);
-  OnClosed();
+  if (binding()->is_bound()) {
+    binding()->Close(epitaph);
+    OnClosed();
+  }
 }
 
 void IsoStreamServer::handle_unknown_method(uint64_t ordinal,

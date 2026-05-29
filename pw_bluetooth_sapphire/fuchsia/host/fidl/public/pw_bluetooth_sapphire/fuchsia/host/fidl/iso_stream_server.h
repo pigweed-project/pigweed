@@ -29,6 +29,8 @@ class IsoStreamServer
       fidl::InterfaceRequest<fuchsia::bluetooth::le::IsochronousStream> request,
       fit::callback<void()> on_closed_cb);
 
+  ~IsoStreamServer() override;
+
   void OnStreamEstablished(
       bt::iso::IsoStream::WeakPtr stream_ptr,
       const bt::iso::CisEstablishedParameters& connection_params);
@@ -38,6 +40,20 @@ class IsoStreamServer
   void OnClosed();
 
   void Close(zx_status_t epitaph);
+
+  void set_on_closed_cb(fit::callback<void()> cb) {
+    on_closed_cb_ = std::move(cb);
+  }
+
+  void set_establishment_callback(
+      fit::callback<void(pw::bluetooth::emboss::StatusCode)> cb) {
+    establishment_cb_ = std::move(cb);
+  }
+
+  std::optional<bt::iso::IsoStream::WeakPtr>& stream() { return iso_stream_; }
+  const std::optional<bt::iso::IsoStream::WeakPtr>& stream() const {
+    return iso_stream_;
+  }
 
   using WeakPtr = WeakSelf<IsoStreamServer>::WeakPtr;
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
@@ -68,6 +84,7 @@ class IsoStreamServer
 
   ReadCallback hanging_read_cb_;
   fit::callback<void()> on_closed_cb_;
+  fit::callback<void(pw::bluetooth::emboss::StatusCode)> establishment_cb_;
 
   std::optional<bt::iso::IsoStream::WeakPtr> iso_stream_;
 

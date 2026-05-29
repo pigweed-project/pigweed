@@ -81,6 +81,7 @@ class IsoStreamServerTest : public TestingBase {
  protected:
   void OnClosed() { on_closed_called_times_++; }
   void CloseProxy() { client_ = nullptr; }
+  void DestroyServer() { server_ = nullptr; }
   IsoStreamServer* server() const { return server_.get(); }
   fuchsia::bluetooth::le::IsochronousStreamPtr* client() { return &client_; }
   std::optional<zx_status_t> epitaph() const { return epitaph_; }
@@ -219,7 +220,7 @@ TEST_F(IsoStreamServerTest, StreamEstablishedSuccessfully) {
 
 // Verify that on failure we properly notify the client, set status code to
 // ZX_ERR_INTERNAL, and don't pass back any stream parameters.
-TEST_F(IsoStreamServerTest, StreamNotEstablished) {
+TEST_F(IsoStreamServerTest, StreamNotEstablishedUnspecifiedError) {
   EXPECT_EQ(on_established_events_.size(), 0u);
   server()->OnStreamEstablishmentFailed(
       pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR);
@@ -230,7 +231,10 @@ TEST_F(IsoStreamServerTest, StreamNotEstablished) {
   EXPECT_EQ(event1.result(), ZX_ERR_INTERNAL);
   ASSERT_FALSE(event1.has_established_params());
   on_established_events_.pop();
+}
 
+TEST_F(IsoStreamServerTest, StreamNotEstablishedUnknownCommand) {
+  EXPECT_EQ(on_established_events_.size(), 0u);
   server()->OnStreamEstablishmentFailed(
       pw::bluetooth::emboss::StatusCode::UNKNOWN_COMMAND);
   RunLoopUntilIdle();
@@ -495,6 +499,51 @@ TEST_F(IsoStreamServerDataTest, DoubleReadWithNoDataReceived) {
   ASSERT_TRUE(status);
   EXPECT_EQ(*status, ZX_ERR_BAD_STATE);
   EXPECT_EQ(on_closed_called_times_, 1u);
+}
+
+TEST_F(IsoStreamServerTest, DestructorClosesHostStream) {
+  fake_iso_stream()->TriggerEstablishedCallback();
+  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
+                                kCisParameters);
+  RunLoopUntilIdle();
+  EXPECT_TRUE(fake_iso_stream()->is_established());
+
+  // Destroy the server.
+  DestroyServer();
+
+  // The underlying fake stream should now be closed.
+  EXPECT_FALSE(fake_iso_stream()->is_established());
+}
+
+TEST_F(IsoStreamServerTest, EstablishmentCallbackCalledOnSuccess) {
+  std::optional<pw::bluetooth::emboss::StatusCode> establishment_status;
+  server()->set_establishment_callback(
+      [&](pw::bluetooth::emboss::StatusCode status) {
+        establishment_status = status;
+      });
+
+  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
+                                kCisParameters);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(establishment_status.has_value());
+  EXPECT_EQ(*establishment_status, pw::bluetooth::emboss::StatusCode::SUCCESS);
+}
+
+TEST_F(IsoStreamServerTest, EstablishmentCallbackCalledOnFailure) {
+  std::optional<pw::bluetooth::emboss::StatusCode> establishment_status;
+  server()->set_establishment_callback(
+      [&](pw::bluetooth::emboss::StatusCode status) {
+        establishment_status = status;
+      });
+
+  server()->OnStreamEstablishmentFailed(
+      pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR);
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(establishment_status.has_value());
+  EXPECT_EQ(*establishment_status,
+            pw::bluetooth::emboss::StatusCode::UNSPECIFIED_ERROR);
 }
 
 }  // namespace
