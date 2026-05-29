@@ -863,7 +863,9 @@
     {
       "name": "sandbox",
       "description": "Place for sandbox steps",
-      "builds": []
+      "builds": [
+        "docs"
+      ]
     }
   ]
 }
