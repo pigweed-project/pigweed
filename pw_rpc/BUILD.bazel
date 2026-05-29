@@ -251,6 +251,20 @@ config_setting(
 )
 
 cc_library(
+    name = "lockless_channel_send_config",
+    defines = [
+        "PW_RPC_LOCKLESS_CHANNEL_SEND=1",
+    ],
+)
+
+config_setting(
+    name = "lockless_channel_send_config_setting",
+    flag_values = {
+        ":config_override": ":lockless_channel_send_config",
+    },
+)
+
+cc_library(
     name = "completion_request_callback_config_enabled",
     defines = [
         "PW_RPC_COMPLETION_REQUEST_CALLBACK=1",
@@ -479,6 +493,20 @@ pw_cc_test(
     deps = [
         ":internal_test_utils",
         ":pw_rpc",
+    ],
+)
+
+pw_cc_test(
+    name = "lockless_channel_send_test",
+    srcs = ["lockless_channel_send_test.cc"],
+    deps = [
+        ":internal_test_utils",
+        ":pw_rpc",
+        "//pw_sync:binary_semaphore",
+        "//pw_thread:sleep",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_thread:yield",
     ],
 )
 

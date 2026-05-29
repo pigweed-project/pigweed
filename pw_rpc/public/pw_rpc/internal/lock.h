@@ -56,4 +56,54 @@ class PW_SCOPED_LOCKABLE RpcLockGuard {
 // Releases the RPC lock, yields, and reacquires it.
 void YieldRpcLock() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
+struct LocklessSendState {
+  int active_sends PW_GUARDED_BY(rpc_lock()) = 0;
+  bool channel_modification_pending PW_GUARDED_BY(rpc_lock()) = false;
+};
+
+inline LocklessSendState& lockless_send_state() {
+  static LocklessSendState state;
+  return state;
+}
+
+// Helper RAII class to manage the channel modification lock.
+class ScopedChannelModificationLock {
+ public:
+  ScopedChannelModificationLock() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      lockless_send_state().channel_modification_pending = true;
+      while (lockless_send_state().active_sends > 0) {
+        YieldRpcLock();
+      }
+    }
+  }
+  ScopedChannelModificationLock(const ScopedChannelModificationLock&) = delete;
+  ScopedChannelModificationLock& operator=(
+      const ScopedChannelModificationLock&) = delete;
+  ~ScopedChannelModificationLock() {
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      lockless_send_state().channel_modification_pending = false;
+    }
+  }
+};
+
+class ScopedActiveSend {
+ public:
+  ScopedActiveSend() PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      while (lockless_send_state().channel_modification_pending) {
+        YieldRpcLock();
+      }
+      lockless_send_state().active_sends++;
+    }
+  }
+  ScopedActiveSend(const ScopedActiveSend&) = delete;
+  ScopedActiveSend& operator=(const ScopedActiveSend&) = delete;
+  ~ScopedActiveSend() {
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      lockless_send_state().active_sends--;
+    }
+  }
+};
+
 }  // namespace pw::rpc::internal

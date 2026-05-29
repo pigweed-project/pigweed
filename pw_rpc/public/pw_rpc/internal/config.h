@@ -193,6 +193,18 @@
 #define PW_RPC_DYNAMIC_ALLOCATION 0
 #endif  // PW_RPC_DYNAMIC_ALLOCATION
 
+/// Whether to remove the requirement that Channel::Send hold the pw_rpc global
+/// lock while calling ChannelOutput::Send.
+///
+/// This option depends on PW_RPC_DYNAMIC_ALLOCATION being enabled.
+#ifndef PW_RPC_LOCKLESS_CHANNEL_SEND
+#define PW_RPC_LOCKLESS_CHANNEL_SEND 0
+#endif  // PW_RPC_LOCKLESS_CHANNEL_SEND
+
+static_assert(
+    !PW_RPC_LOCKLESS_CHANNEL_SEND || PW_RPC_DYNAMIC_ALLOCATION,
+    "PW_RPC_LOCKLESS_CHANNEL_SEND requires PW_RPC_DYNAMIC_ALLOCATION");
+
 /// If set to 0, disables the ability to create RPC call objects directly on the
 /// stack using the regular client. This forces the use of DynamicClient, which
 /// allocates call objects on the heap. This can be useful in environments with
@@ -296,6 +308,10 @@ constexpr std::bool_constant<PW_RPC_METHOD_STORES_TYPE> kMethodStoresType;
 template <typename...>
 constexpr std::bool_constant<PW_RPC_DYNAMIC_ALLOCATION>
     kDynamicAllocationEnabled;
+
+template <typename...>
+constexpr std::bool_constant<PW_RPC_LOCKLESS_CHANNEL_SEND>
+    kLocklessChannelSendEnabled;
 
 inline constexpr size_t kNanopbStructMinBufferSize =
     PW_RPC_NANOPB_STRUCT_MIN_BUFFER_SIZE;

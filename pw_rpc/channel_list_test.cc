@@ -84,11 +84,12 @@ TEST(ChannelList, DefaultOutputCorrectlyConfigured) {
   TestChannelOutput default_channel_output("default");
   std::array<Channel, 1> channels = {Channel::Create<kChannelId>(nullptr)};
   ChannelList list(channels);
+
+  RpcLockGuard lock_guard;
   ASSERT_EQ(list.SetDefaultChannelOutput(default_channel_output), OkStatus());
 
   ChannelBase* channel = list.Get(kNonExistentChannelId);
   ASSERT_NE(channel, nullptr);
-  RpcLockGuard lock_guard;
   ASSERT_EQ(channel->Send(kPacket), OkStatus());
 
   EXPECT_TRUE(default_channel_output.received_data);
@@ -98,6 +99,8 @@ TEST(ChannelList, SetDefaultChannelOutputFailsIfAlreadySet) {
   TestChannelOutput default_channel_output("default");
   std::array<Channel, 1> channels = {Channel::Create<kChannelId>(nullptr)};
   ChannelList list(channels);
+
+  RpcLockGuard lock_guard;
   ASSERT_EQ(list.SetDefaultChannelOutput(default_channel_output), OkStatus());
 
   EXPECT_EQ(list.SetDefaultChannelOutput(default_channel_output),

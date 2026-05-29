@@ -112,27 +112,42 @@ class ChannelOutput {
   // ChannelOutput::kUnlimited.
   virtual size_t MaximumTransmissionUnit() { return kUnlimited; }
 
+#if PW_RPC_LOCKLESS_CHANNEL_SEND
+#define PW_RPC_CHANNEL_OUTPUT_SEND_LOCK_REQUIREMENT
+#else
+#define PW_RPC_CHANNEL_OUTPUT_SEND_LOCK_REQUIREMENT \
+  PW_EXCLUSIVE_LOCKS_REQUIRED(internal::rpc_lock())
+#endif
+
   // Sends an encoded RPC packet. Returns OK if further packets may be sent,
   // even if the current packet could not be sent. Returns any other status if
   // the Channel is no longer able to send packets.
   //
-  // The RPC system’s internal lock is held while this function is called. Avoid
-  // long-running operations, since these will delay any other users of the RPC
-  // system.
+  // By default, the RPC system’s internal lock is held while this function is
+  // called. Avoid long-running operations, since these will delay any other
+  // users of the RPC system.
+  //
+  // If PW_RPC_LOCKLESS_CHANNEL_SEND is enabled, the global lock is released
+  // before calling Send(). In this case, implementations should still avoid
+  // long-running operations as they will block channel modifications (adding,
+  // moving, or deleting channels).
   //
   // !!! DANGER !!!
   //
   // No pw_rpc APIs may be accessed in this function! Implementations MUST NOT
   // access any RPC endpoints (pw::rpc::Client, pw::rpc::Server) or call objects
   // (pw::rpc::ServerReaderWriter, pw::rpc::ClientReaderWriter, etc.) inside the
-  // Send() function or any descendent calls. Doing so will result in deadlock!
+  // Send() function or any descendent calls.
+  //
+  // When `PW_RPC_LOCKLESS_CHANNEL_SEND` is disabled, doing so will result in
+  // deadlock. Even when enabled, this is still a good rule to follow.
   // RPC APIs may be used by other threads, just not within Send().
   //
   // The buffer provided in packet must NOT be accessed outside of this
   // function. It must be sent immediately or copied elsewhere before the
   // function returns.
   virtual Status Send(span<const std::byte> buffer)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::rpc_lock()) = 0;
+      PW_RPC_CHANNEL_OUTPUT_SEND_LOCK_REQUIREMENT = 0;
 
  private:
   const char* name_;

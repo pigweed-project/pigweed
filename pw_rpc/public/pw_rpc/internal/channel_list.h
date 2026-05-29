@@ -74,7 +74,8 @@ class ChannelList {
   //   RESOURCE_EXHAUSTED - no unassigned channels are available; only possible
   //       if PW_RPC_DYNAMIC_ALLOCATION is disabled
   //
-  Status Add(uint32_t channel_id, ChannelOutput& output);
+  Status Add(uint32_t channel_id, ChannelOutput& output)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
   // Sets the default channel output. Returns:
   //
@@ -82,14 +83,15 @@ class ChannelList {
   //   ALREADY_EXISTS - a default channel output is already present; remove it
   //       first
   //
-  Status SetDefaultChannelOutput(ChannelOutput& output);
+  Status SetDefaultChannelOutput(ChannelOutput& output)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
   // Removes the channel with the requested ID. Returns:
   //
   //   OK - the channel was removed
   //   NOT_FOUND - no channel with the provided ID was found
   //
-  Status Remove(uint32_t channel_id);
+  Status Remove(uint32_t channel_id) PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock());
 
 #if PW_RPC_DYNAMIC_ALLOCATION
   PW_RPC_DYNAMIC_CONTAINER(Channel) channels_;

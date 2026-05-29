@@ -435,6 +435,7 @@ pw_test_group("tests") {
     ":callback_test",
     ":channel_list_test",
     ":channel_test",
+    ":lockless_channel_send_test",
     ":client_server_test",
     ":test_helpers_test",
     ":fake_channel_output_test",
@@ -509,6 +510,20 @@ pw_test("channel_test") {
 
   # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
   configs = [ "$dir_pw_build:conversion_warnings" ]
+}
+
+pw_test("lockless_channel_send_test") {
+  enable_if = pw_thread_THREAD_BACKEND == "$dir_pw_thread_stl:thread"
+  deps = [
+    ":common",
+    ":test_utils",
+    "$dir_pw_sync:binary_semaphore",
+    "$dir_pw_thread:sleep",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_thread:yield",
+  ]
+  sources = [ "lockless_channel_send_test.cc" ]
 }
 
 pw_python_action("generate_ids_test") {

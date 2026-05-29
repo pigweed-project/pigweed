@@ -49,6 +49,8 @@ Status OverwriteChannelId(ByteSpan rpc_packet, uint32_t channel_id_under_128) {
 }
 
 Status ChannelBase::Send(const Packet& packet) {
+  ScopedActiveSend active_send;
+
   static constexpr bool kLogAllOutgoingPackets = false;
   if constexpr (kLogAllOutgoingPackets) {
     PW_LOG_INFO("pw_rpc channel sending RPC packet type %u for %u:%08x/%08x",
@@ -74,7 +76,15 @@ Status ChannelBase::Send(const Packet& packet) {
 
   PW_CHECK_NOTNULL(output_);
 
+  if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+    rpc_lock().unlock();
+  }
+
   Status sent = output_->Send(encoded.value());
+
+  if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+    rpc_lock().lock();
+  }
 
   if (!sent.ok()) {
     PW_LOG_ERROR("Channel %u failed to send packet with status %u",

@@ -44,6 +44,8 @@ const Channel* ChannelList::Get(uint32_t channel_id) const {
 }
 
 Status ChannelList::Add(uint32_t channel_id, ChannelOutput& output) {
+  ScopedChannelModificationLock lock;
+
   if (Get(channel_id) != nullptr) {
     return Status::AlreadyExists();
   }
@@ -63,15 +65,20 @@ Status ChannelList::Add(uint32_t channel_id, ChannelOutput& output) {
 }
 
 Status ChannelList::SetDefaultChannelOutput(ChannelOutput& output) {
+  ScopedChannelModificationLock lock;
+
   if (default_channel_.assigned()) {
     return Status::AlreadyExists();
   }
 
   default_channel_ = Channel::Create<kDefaultChannelOutputChannelId>(&output);
+
   return OkStatus();
 }
 
 Status ChannelList::Remove(uint32_t channel_id) {
+  ScopedChannelModificationLock lock;
+
   Channel* channel = Get(channel_id);
 
   if (channel == nullptr) {

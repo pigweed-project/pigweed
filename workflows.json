@@ -305,6 +305,21 @@
       ]
     },
     {
+      "name": "rpc_lockless_channel_send",
+      "build_config": {
+        "name": "rpc_lockless_channel_send_config",
+        "description": "RPC lockless channel send enabled",
+        "build_type": "bazel",
+        "args": [
+          "--//pw_rpc:config_override=//pw_rpc:lockless_channel_send_config",
+          "--//pw_rpc:config_override=//pw_rpc:dynamic_allocation_config"
+        ]
+      },
+      "targets": [
+        "//pw_rpc/..."
+      ]
+    },
+    {
       "name": "grpc",
       "build_config": {
         "name": "grpc_config",
@@ -695,6 +710,7 @@
       "builds": [
         "rpc_callback",
         "rpc_dynamic_allocation",
+        "rpc_lockless_channel_send",
         "grpc"
       ]
     },
