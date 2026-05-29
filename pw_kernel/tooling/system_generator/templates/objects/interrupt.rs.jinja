@@ -23,9 +23,9 @@
         // if adding a helper function which takes the signal_mask_table as an
         // argument reduces code size.
         let signal_mask_table: [u32; {{ object.irqs | length }}] = [
-        {%- for irq in object.irqs %}
-            {{irq.number}}{% if not loop.last %},{% endif %}
-        {%- endfor %}
+        {% for irq in object.irqs %}
+            {{irq.number}},
+        {% endfor %}
         ];
 
         // Depending on the number of IRQs an object is handling a find first set
@@ -47,9 +47,9 @@
     unsafe { {{object.object_ref_name}}.set(interrupt.clone()) };
 
     // Enable the interrupts for all interrupts handled by interrupt objects.
-    {%- for irq in object.irqs %}
+    {% for irq in object.irqs %}
     <arch::Arch as kernel::Arch>::InterruptController::enable_interrupt({{irq.number}});
-    {%- endfor %}
+    {% endfor %}
 
     interrupt
 }

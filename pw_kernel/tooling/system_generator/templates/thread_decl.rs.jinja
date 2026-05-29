@@ -16,11 +16,11 @@
     let (mut thread, _stack) = unsafe {
         kernel::declare_non_priv_thread!(
             "{{thread.name}}",
-            {% if thread.priority -%}
+            {% if thread.priority %}
             kernel::Priority::{{ thread.priority }},
-            {%- else -%}
+            {% else %}
             kernel::Priority::DEFAULT_PRIORITY,
-            {%- endif %}
+            {% endif %}
             {# PROCESS_ID is declared by proces_decl.rs.jinja which invokes
                 this template. #}
             PROCESS_ID,

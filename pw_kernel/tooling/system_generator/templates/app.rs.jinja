@@ -14,56 +14,56 @@
 #![no_std]
 
 pub mod handle {
-{%- for object in process.objects %}
+{% for object in process.objects %}
     #[allow(unused)]
     pub const {{object.name | to_upper_ident }}: u32 = {{loop.index0}};
-{%- endfor %}
+{% endfor %}
 }
 
 pub mod mapping {
-{%- for mapping in process.memory_mappings %}
+{% for mapping in process.memory_mappings %}
     #[allow(unused)]
     pub const {{mapping.name | to_upper_ident }}_START_ADDRESS: usize = {{mapping.start_address | hex}};
-{%- endfor %}
+{% endfor %}
 }
 
 pub mod signals {
     #[allow(unused_imports)]
     use syscall_defs::Signals;
 
-    {%- for object in process.objects %}
-        {%- if object.type == "interrupt" %}
-            {%- for irq in object.irqs %}
-                {%- set mapped_signal = object.interrupt_signal_map[irq.name] %}
+    {% for object in process.objects %}
+        {% if object.type == "interrupt" %}
+            {% for irq in object.irqs %}
+                {% set mapped_signal = object.interrupt_signal_map[irq.name] %}
     #[allow(unused)]
     pub const {{irq.name | upper}}: syscall_defs::Signals = {{mapped_signal}};
-            {%- endfor %}
-        {%- endif -%}
-    {%- endfor %}
+            {% endfor %}
+        {% endif %}
+    {% endfor %}
 }
 
 pub mod interrupts {
-    {%- for object in process.objects %}
-        {%- if object.type == "interrupt" %}
-            {%- for irq in object.irqs %}
+    {% for object in process.objects %}
+        {% if object.type == "interrupt" %}
+            {% for irq in object.irqs %}
     #[allow(unused)]
     pub const {{irq.name | upper}}: u32 = {{irq.number}};
-            {%- endfor %}
-        {%- endif -%}
+            {% endfor %}
+        {% endif %}
     {% endfor %}
 }
 
 pub mod constants {
     {% for constant in app.constants %}
-        {%- if constant.type == "string" %}
-            {%- set type = "&str" %}
-        {%- else %}
-            {%- set type = constant.type %}
-        {%- endif -%}
+        {% if constant.type == "string" %}
+            {% set type = "&str" %}
+        {% else %}
+            {% set type = constant.type %}
+        {% endif %}
     #[allow(unused)]
     pub const {{constant.name | to_upper_ident }}: {{type}} =
-        {%- if constant.type == "string" %}"{{constant.value}}"
-        {%- elif constant.type == "char" %}'{{constant.value}}'
-        {%- else %}{{constant.value}}{% endif %};
-    {%- endfor %}
+        {% if constant.type == "string" %}"{{constant.value}}"
+        {% elif constant.type == "char" %}'{{constant.value}}'
+        {% else %}{{constant.value}}{% endif %};
+    {% endfor %}
 }

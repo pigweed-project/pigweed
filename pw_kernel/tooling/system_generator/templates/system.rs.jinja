@@ -16,7 +16,7 @@
 #![expect(clippy::redundant_closure_call)]
 
 {% if kernel.interrupt_table %}
-{%- include "interrupts" -%}
+{% include "interrupts" %}
 {% endif %}
 
 {% if userspace %}
@@ -34,12 +34,12 @@ pub fn start() {
     let kernel = arch::Arch;
 
     // Declare all main process objects first so that other apps can reference them.
-    {%- for app in apps %}
-    {%- for process in app.processes %}
+    {% for app in apps %}
+    {% for process in app.processes %}
     let object_{{process.name | to_lower_ident}}_process =
         {% include "object_process" %};
-    {%- endfor %}
-    {%- endfor %}
+    {% endfor %}
+    {% endfor %}
 
 
     // Channel handlers are declared first so that initiators can reference them.
@@ -47,80 +47,80 @@ pub fn start() {
     // The first is a `dyn KernelObject<K>` which is suitable for adding to a
     // processes object table.  The second is a `ChannelHandlerObject<K>` which
     // is suitable for creating a `ChannelInitiator` object
-    {%- for app in apps %}
-    {%- for process in app.processes %}
-    {%- for object in process.objects %}
-        {% if object.type == "channel_handler" -%}
+    {% for app in apps %}
+    {% for process in app.processes %}
+    {% for object in process.objects %}
+        {% if object.type == "channel_handler" %}
             let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}} =
                 {% include "object_channel_handler" %};
             #[allow(unused_variables)]
             let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}_handler =
                 object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}.clone();
 
-        {%- endif -%}
+        {% endif %}
         // Other objects declared later.
-    {%- endfor -%}
-    {%- endfor -%}
-    {%- endfor -%}
+    {% endfor %}
+    {% endfor %}
+    {% endfor %}
 
 
-    {%- for app in apps %}
-    {%- for process in app.processes %}
+    {% for app in apps %}
+    {% for process in app.processes %}
     let start_fn_{{process.name | to_lower_ident}} = {{app.start_fn_address | hex}}_usize;
 
     const MEMORY_CONFIG_{{process.name | to_upper_ident}}: MemoryConfig = MemoryConfig::const_new(&[
-        {%- for mapping in process.memory_mappings %}
+        {% for mapping in process.memory_mappings %}
         memory_config::MemoryRegion::new(
-            {% if mapping.type == "device" -%}
+            {% if mapping.type == "device" %}
             memory_config::MemoryRegionType::Device,
-            {% elif mapping.type == "read_only_executable" -%}
+            {% elif mapping.type == "read_only_executable" %}
             memory_config::MemoryRegionType::ReadOnlyExecutable,
-            {% elif mapping.type == "read_write_data" -%}
+            {% elif mapping.type == "read_write_data" %}
             memory_config::MemoryRegionType::ReadWriteData,
-            {% endif -%}
+            {% endif %}
             {{mapping.start_address | hex}},
             {{(mapping.start_address + mapping.size_bytes) | hex}},
         ),
-        {%- endfor -%}
+        {% endfor %}
     ]);
 
-    {%- for object in process.objects %}
+    {% for object in process.objects %}
         let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident }} =
-        {% if object.type == "channel_handler" -%}
+        {% if object.type == "channel_handler" %}
                 // Reference to handler object already declared above.
                 object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}
-        {% elif object.type == "channel_initiator" -%}
+        {%- elif object.type == "channel_initiator" %}
             {% include "object_channel_initiator" %}
-        {% elif object.type == "interrupt" -%}
+        {%- elif object.type == "interrupt" %}
             {% include "object_interrupt" %}
         {%- elif object.type == "process" %}
             {{object.process_object_name}}.clone()
         {%- elif object.type == "thread" %}
             {% include "object_thread" %}
-        {% elif object.type == "wait_group" -%}
+        {%- elif object.type == "wait_group" %}
             {% include "object_wait_group" %}
         {%- endif -%}
         ;
-    {%- endfor %}
+    {% endfor %}
 
     let object_table_{{process.name | to_lower_ident}}: ForeignBox<dyn ObjectTable<K>> = unsafe {
         static_foreign_box!(
             [ForeignRc<<K as kernel::Arch>::AtomicUsize, dyn KernelObject<K>>; {{process.objects | length}}],
             [
-                {%- for object in process.objects %}
+                {% for object in process.objects %}
                     upcast_foreign_rc!(
                         object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}.clone()
                         => dyn KernelObject<K>
                     ),
-                {%- endfor %}
+                {% endfor %}
             ]
         )
     };
-    {%- set process_index = loop.index0 %}
+    {% set process_index = loop.index0 %}
     {# Declare storage for and initialize processes and their threads.  This
        binds the declared processes and threads to the process and thread
        objects declared above. #}
-    {%- include "process_decl" %}
+    {% include "process_decl" %}
 
     if let Err(e) = object_{{process.name | to_lower_ident}}_process.start(arch::Arch) {
         kernel::macro_exports::pw_assert::panic!(
@@ -128,8 +128,8 @@ pub fn start() {
             e as i32
         );
     }
-    {%- endfor %}
-{%- endfor %}
+    {% endfor %}
+{% endfor %}
 }
-{%- endif %}
+{% endif %}
 {% endif %}

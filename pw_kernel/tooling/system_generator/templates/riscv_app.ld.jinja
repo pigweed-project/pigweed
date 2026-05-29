@@ -221,9 +221,9 @@ SECTIONS
   }
 }
 
-{%- if app.is_multi_process_app %}
+{% if app.is_multi_process_app %}
 ASSERT(SIZEOF(.static_init_ram) == 0,
 "Error: Multi-app binaries must not contain statically initialized data (.data).");
 ASSERT(SIZEOF(.zero_init_ram) == 0,
 "Error: Multi-app binaries must not contain zero-initialized data (.bss).");
-{%- endif %}
+{% endif %}

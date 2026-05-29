@@ -31,12 +31,12 @@ use syscall_defs::Signals;
 {% if userspace %}
 {% for app in apps %}
     {% for process in app.processes %}
-        {%- for object in process.objects %}
-            {%- if object.type == "interrupt" %}
+        {% for object in process.objects %}
+            {% if object.type == "interrupt" %}
 static {{object.object_ref_name}}: StaticContext<ForeignRc<<arch::Arch as kernel::Arch>::AtomicUsize, InterruptObject<arch::Arch>>> = StaticContext::new();
-                {%- for irq in object.irqs %}
-                    {%- set handler_name = object.handlers[irq.number] %}
-                    {%- set mapped_signal = object.interrupt_signal_map[irq.name] %}
+                {% for irq in object.irqs %}
+                    {% set handler_name = object.handlers[irq.number] %}
+                    {% set mapped_signal = object.interrupt_signal_map[irq.name] %}
 #[arch::interrupt]
 extern "C" fn {{handler_name}}(from_userspace: bool) {
     if let Some(object) = unsafe { {{object.object_ref_name}}.get() } {
@@ -47,13 +47,13 @@ extern "C" fn {{handler_name}}(from_userspace: bool) {
     }
 }
                 {% endfor %}
-            {%- endif -%}
-        {%- endfor -%}
-    {%- endfor -%}
-{%- endfor %}
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+{% endfor %}
 {% endif %}
 
-{%- for irq in kernel.interrupt_table.table %}
+{% for irq in kernel.interrupt_table.table %}
 unsafe extern "C" {
     {% if bare_interrupt_table_entries %}
     fn interrupt_handler_{{irq}}();
@@ -61,22 +61,22 @@ unsafe extern "C" {
     fn interrupt_handler_{{irq}}(from_userspace: bool);
     {% endif %}
 }
-{%- endfor %}
+{% endfor %}
 
 #[unsafe(no_mangle)]
-{% if kernel.interrupt_table.link_section -%}
+{% if kernel.interrupt_table.link_section %}
 #[unsafe(link_section = "{{kernel.interrupt_table.link_section}}")]
-{% endif -%}
+{% endif %}
 // The interrupt table is a sparsely populated array, who's indexes correspond to the IRQ number of the handler.  The table size is the
 // highest IRQ number + 1.
 // On Cortex-M, the table starts after the exception entries in the vector table, as defined by the linker script.
 static PW_KERNEL_INTERRUPT_TABLE_ARRAY: [ArchInterruptTableEntry; {{kernel.interrupt_table.table_size}}] = {
     #[allow(unused_mut)]
     let mut interrupt_table: [ArchInterruptTableEntry; {{kernel.interrupt_table.table_size}}] = [None; {{kernel.interrupt_table.table_size}}];
-{%- for irq in kernel.interrupt_table.combined_ordered_table %}
-    {%- set handler_name = kernel.interrupt_table.combined_ordered_table[irq] %}
+{% for irq in kernel.interrupt_table.combined_ordered_table %}
+    {% set handler_name = kernel.interrupt_table.combined_ordered_table[irq] %}
     interrupt_table[{{irq}}] = Some({{handler_name}});
-{%- endfor %}
+{% endfor %}
     interrupt_table
 };
 
@@ -96,8 +96,8 @@ macro_rules! declare_kernel_interrupt_handlers {
         #[allow(unused_imports)]
         use kernel::interrupt_controller::InterruptController;
 
-        {%- for irq in kernel.interrupt_table.table %}
-            {%- set handler_name = kernel.interrupt_table.table[irq] %}
+        {% for irq in kernel.interrupt_table.table %}
+            {% set handler_name = kernel.interrupt_table.table[irq] %}
         #[unsafe(no_mangle)]
         #[arch::interrupt]
         unsafe extern "C" fn interrupt_handler_{{irq}}(from_userspace: bool) {
@@ -106,6 +106,6 @@ macro_rules! declare_kernel_interrupt_handlers {
             {{handler_name}}(arch::Arch);
             <arch::Arch as kernel::Arch>::InterruptController::kernel_interrupt_handler_exit(arch::Arch, {{irq}}, guard);
         }
-        {%- endfor %}
+        {% endfor %}
     };
 }

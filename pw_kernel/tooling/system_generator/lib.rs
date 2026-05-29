@@ -386,6 +386,8 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
             env: Environment::new(),
             validators: vec![Box::new(crate::validation::IdentifierValidator)],
         };
+        instance.env.set_lstrip_blocks(true);
+        instance.env.set_trim_blocks(true);
 
         // Run manifest validation first before rendering any templates.
         for validator in &instance.validators {
