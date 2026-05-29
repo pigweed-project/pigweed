@@ -35,6 +35,7 @@ cc_library_static {
     header_libs: [
         "pw_assert",
         "pw_chrono",
+        "pw_enum",
         "pw_log",
         "pw_sync",
         "pw_thread",
@@ -42,6 +43,7 @@ cc_library_static {
     export_header_lib_headers: [
         "pw_assert",
         "pw_chrono",
+        "pw_enum",
         "pw_log",
         "pw_sync",
     ],
