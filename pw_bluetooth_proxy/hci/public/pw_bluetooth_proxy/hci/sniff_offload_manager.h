@@ -135,7 +135,7 @@ class SniffOffloadManager final {
                       OnErrorFunc&& on_error,
                       async2::TimeProvider<Clock>& time_provider);
 
-  SniffOffloadManager(allocator::Allocator& allocator,
+  SniffOffloadManager(Allocator& allocator,
                       async2::Dispatcher& dispatcher,
                       SendCommandFunc&& send_command,
                       SendEventFunc&& send_event,

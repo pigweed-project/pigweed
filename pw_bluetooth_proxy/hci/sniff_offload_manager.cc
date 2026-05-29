@@ -265,7 +265,7 @@ SniffOffloadManager::SniffOffloadManager(
       on_error_(std::move(on_error)),
       connections_(allocator) {}
 
-SniffOffloadManager::SniffOffloadManager(allocator::Allocator& allocator,
+SniffOffloadManager::SniffOffloadManager(Allocator& allocator,
                                          async2::Dispatcher& dispatcher,
                                          SendCommandFunc&& send_command,
                                          SendEventFunc&& send_event,

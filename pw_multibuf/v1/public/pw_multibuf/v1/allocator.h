@@ -38,7 +38,7 @@ inline constexpr ContiguityRequirement kNeedsContiguous =
 
 /// Interface for allocating ``MultiBuf`` objects.
 ///
-/// A ``MultiBufAllocator`` differs from a regular ``pw::allocator::Allocator``
+/// A ``MultiBufAllocator`` differs from a regular ``pw::Allocator``
 /// in that they may provide support for:
 /// - Asynchronous allocation.
 /// - Non-contiguous buffer allocation.

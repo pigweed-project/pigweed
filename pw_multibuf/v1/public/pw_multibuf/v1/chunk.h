@@ -270,7 +270,7 @@ class PW_MULTIBUF_DEPRECATED Chunk {
 ///   allocating space for the `Chunk` object itself, not the memory to which it
 ///   refers. This can be implemented straightforwardly by delegating to an
 ///   existing generic allocator such as `malloc` or a
-///   `pw::allocator::Allocator` implementation.
+///   `pw::Allocator` implementation.
 class PW_MULTIBUF_DEPRECATED ChunkRegionTracker {
  public:
   /// Creates the first `Chunk` referencing a whole region of memory.
