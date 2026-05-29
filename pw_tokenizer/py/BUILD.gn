@@ -30,6 +30,9 @@ pw_python_package("py") {
     }
   }
   sources = [
+    "data_driven_detokenize_test_cc.py",
+    "data_driven_detokenize_test_java.py",
+    "detokenize_test_cases.py",
     "generate_argument_types_macro.py",
     "generate_hash_macro.py",
     "generate_hash_test_data.py",

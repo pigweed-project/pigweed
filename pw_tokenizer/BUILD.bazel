@@ -278,7 +278,7 @@ run_binary(
         "--generate-cc-test",
         "$(execpath :data_driven_detokenize_test.cc)",
     ],
-    tool = "//pw_tokenizer/py:generate_data_driven_detokenize_test",
+    tool = "//pw_tokenizer/py:data_driven_detokenize_test_generator",
     visibility = ["//visibility:private"],
 )
 

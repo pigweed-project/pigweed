@@ -117,7 +117,13 @@ pw_py_binary(
 
 pw_py_library(
     name = "data_driven_detokenize_test_lib",
-    srcs = ["data_driven_detokenize_test.py"],
+    srcs = [
+        "data_driven_detokenize_test.py",
+        "data_driven_detokenize_test_cc.py",
+        "data_driven_detokenize_test_java.py",
+        "detokenize_test_cases.py",
+    ],
+    imports = ["."],
     deps = [
         ":pw_tokenizer",
         "//pw_build/py:pw_build",
@@ -125,7 +131,7 @@ pw_py_library(
 )
 
 pw_py_binary(
-    name = "generate_data_driven_detokenize_test",
+    name = "data_driven_detokenize_test_generator",
     srcs = ["data_driven_detokenize_test.py"],
     main = "data_driven_detokenize_test.py",
     deps = [":data_driven_detokenize_test_lib"],
