@@ -311,8 +311,7 @@
         "description": "RPC lockless channel send enabled",
         "build_type": "bazel",
         "args": [
-          "--//pw_rpc:config_override=//pw_rpc:lockless_channel_send_config",
-          "--//pw_rpc:config_override=//pw_rpc:dynamic_allocation_config"
+          "--//pw_rpc:config_override=//pw_rpc:lockless_channel_send_config"
         ]
       },
       "targets": [

@@ -255,6 +255,9 @@ cc_library(
     defines = [
         "PW_RPC_LOCKLESS_CHANNEL_SEND=1",
     ],
+    deps = [
+        ":dynamic_allocation_config",
+    ],
 )
 
 config_setting(
