@@ -761,20 +761,26 @@ class WriteNestedMessageMethod(ProtoMethod):
         return 'Write{}Message'.format(self._field.name())
 
     def template_id(self) -> str | None:
-        return 'template <typename WriteFunc>'
+        return None
 
     def return_type(self, from_root: bool = False) -> str:
         return '::pw::Status'
 
     def params(self) -> list[tuple[str, str]]:
-        return [('WriteFunc', 'write_message')]
+        sub_encoder = self._encoder_type()
+        return [
+            (
+                f'::pw::FunctionRef<::pw::Status({sub_encoder}&)>',
+                'write_message',
+            )
+        ]
 
     def body(self) -> list[str]:
         encoder_cast_func = _encoder_cast(self._encoder_type())
         return [
             f'return {self._base_class}::WriteNestedMessage(',
             f'    {self.field_cast()},',
-            f'    [&write_message]({_STREAM_ENCODER}& encoder) {{',
+            f'    [write_message]({_STREAM_ENCODER}& encoder) {{',
             f'      return write_message({encoder_cast_func}(encoder));',
             '    }',
             ');',
