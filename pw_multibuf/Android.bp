@@ -30,6 +30,7 @@ cc_library_static {
     export_include_dirs: [
         "public",
         "v1/public",
+        "v1/public_overrides",
     ],
     srcs: [
         "v1/chunk.cc",
@@ -75,6 +76,7 @@ cc_library_static {
     export_include_dirs: [
         "public",
         "v1/public",
+        "v1/public_overrides",
     ],
     header_libs: [
         "pw_sync",
@@ -178,9 +180,10 @@ cc_library_static {
     export_include_dirs: [
         "public",
         "v2/public",
+        "v2/public_overrides",
     ],
     srcs: [
-        "v2/generic_multibuf.cc"
+        "v2/generic_multibuf.cc",
     ],
     header_libs: [
         "pw_assert",
@@ -206,16 +209,3 @@ cc_library_static {
     ],
 }
 // LINT.ThenChange(BUILD.bazel, BUILD.gn, CMakeLists.txt)
-
-cc_library_headers {
-    name: "pw_multibuf_headers",
-    defaults: [
-        "pw_android_common_backends",
-        "pw_android_common_target_support",
-    ],
-    export_include_dirs: [
-        "public",
-        "v1/public",
-        "v2/public",
-    ],
-}
