@@ -910,7 +910,7 @@ TEST_F(IsoGroupTest, CreateCisesPeerScaWorseThanCigWorstCase) {
        .sca =
            pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_251_TO_500});
 
-  EXPECT_EQ(cig->CreateCises(establish_data), pw::Status::FailedPrecondition());
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::Status::OutOfRange());
 }
 
 TEST_F(IsoGroupTest, CreateCisesCisNotFound) {

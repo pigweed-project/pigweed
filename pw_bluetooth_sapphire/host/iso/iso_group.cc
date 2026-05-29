@@ -400,7 +400,7 @@ pw::Status IsoGroupImpl::CreateCises(pw::span<CreateCisData> establish_data) {
                "iso",
                "Attempted to establish CIS to peer with worse SCA than CIG "
                "worst case");
-        return pw::Status::FailedPrecondition();
+        return pw::Status::OutOfRange();
       }
     }
 
