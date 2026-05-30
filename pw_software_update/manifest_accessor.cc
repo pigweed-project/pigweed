@@ -45,6 +45,13 @@ ManifestAccessor ManifestAccessor::FromManifest(protobuf::Message manifest) {
   return ManifestAccessor(targets_metadata, user_manifest);
 }
 
+stream::IntervalReader ManifestAccessor::GetUserManifest() {
+  if (!GetTargetFile(kUserManifestTargetFileName).ok()) {
+    return stream::IntervalReader();
+  }
+  return user_manifest_.GetBytesReader();
+}
+
 protobuf::RepeatedMessages ManifestAccessor::GetTargetFiles() {
   PW_TRY(status());
   return targets_metadata_.AsRepeatedMessages(

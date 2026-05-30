@@ -139,6 +139,7 @@ class UpdateBundleAccessor {
   Result<uint64_t> GetTotalPayloadSize();
 
  private:
+  friend class UpdateBundleTestPeer;
   // Union is a temporary measure to allow for migration from the BlobStore
   // constructor to the OpenableReader constructor. The BlobStoreOpenableReader
   // should never be accessed directly. Access it through the update_reader_.

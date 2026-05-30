@@ -81,7 +81,12 @@ USER_MANIFEST_FILE_NAME = 'user_manifest'
 TARGET_FILES = {
     'file1': 'file 1 content'.encode(),
     'file2': 'file 2 content'.encode(),
-    USER_MANIFEST_FILE_NAME: 'user manfiest content'.encode(),
+    USER_MANIFEST_FILE_NAME: 'user manifest content'.encode(),
+}
+
+TARGET_FILES_WITHOUT_USER_MANIFEST = {
+    'file1': 'file 1 content'.encode(),
+    'file2': 'file 2 content'.encode(),
 }
 
 
@@ -259,6 +264,19 @@ class Bundle:
             private_key_private_pem_bytes(self._targets_prod_key),
         )
 
+    def generate_dev_signed_bundle_without_user_manifest(
+        self,
+    ) -> UpdateBundle:
+        """Generate a dev signed bundle without a user manifest."""
+        targets = metadata.gen_targets_metadata(
+            TARGET_FILES_WITHOUT_USER_MANIFEST,
+            metadata.DEFAULT_HASHES,
+            TEST_TARGETS_VERSION,
+        )
+        return self.generate_dev_signed_bundle(
+            targets_metadata_override=targets
+        )
+
     def generate_manifest(self) -> Manifest:
         """Generates the manifest"""
         manifest = Manifest()
@@ -297,6 +315,15 @@ def main() -> int:
         signed_root_metadata=dev_signed_root
     )
     manifest_proto = test_bundle.generate_manifest()
+    invalid_manifest_proto = Manifest()
+    invalid_manifest_proto.targets_metadata['targets'].CopyFrom(
+        metadata.gen_targets_metadata(
+            TARGET_FILES_WITHOUT_USER_MANIFEST,
+            metadata.DEFAULT_HASHES,
+            TEST_TARGETS_VERSION,
+        )
+    )
+    invalid_manifest_proto.user_manifest = 'user manifest content'.encode()
     prod_signed_root = test_bundle.generate_prod_signed_root_metadata()
     prod_signed_bundle = test_bundle.generate_prod_signed_bundle(
         None, prod_signed_root
@@ -304,6 +331,13 @@ def main() -> int:
     dev_signed_bundle_with_prod_root = test_bundle.generate_dev_signed_bundle(
         signed_root_metadata=prod_signed_root
     )
+
+    test_bundle_with_sideloaded_user_manifest = (
+        test_bundle.generate_dev_signed_bundle_without_user_manifest()
+    )
+    test_bundle_with_sideloaded_user_manifest.target_payloads[
+        USER_MANIFEST_FILE_NAME
+    ] = 'user manifest content'.encode()
 
     # Generates a prod root metadata that fails signature verification against
     # the dev root (i.e. it has a bad prod signature). This is done by making
@@ -437,6 +471,17 @@ def main() -> int:
         header.write(
             proto_array_declaration(
                 dev_signed_bundle_with_prod_root, 'kTestDevBundleWithProdRoot'
+            )
+        )
+        header.write(
+            proto_array_declaration(
+                test_bundle_with_sideloaded_user_manifest,
+                'kTestDevBundleWithSideloadedUserManifest',
+            )
+        )
+        header.write(
+            proto_array_declaration(
+                invalid_manifest_proto, 'kTestInvalidOnDeviceManifest'
             )
         )
         header.write(

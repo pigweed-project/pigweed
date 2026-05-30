@@ -27,6 +27,15 @@
 #define ASSERT_FAIL(status) ASSERT_NE(OkStatus(), status)
 
 namespace pw::software_update {
+
+class UpdateBundleTestPeer {
+ public:
+  static ManifestAccessor GetOnDeviceManifest(
+      UpdateBundleAccessor& update_bundle) {
+    return update_bundle.GetOnDeviceManifest();
+  }
+};
+
 namespace {
 
 constexpr size_t kBufferSize = 256;
@@ -149,6 +158,10 @@ class UpdateBundleTest : public testing::Test {
 
   TestBundledUpdateBackend& backend() { return backend_; }
 
+  ManifestAccessor GetOnDeviceManifest(UpdateBundleAccessor& update_bundle) {
+    return UpdateBundleTestPeer::GetOnDeviceManifest(update_bundle);
+  }
+
   void StageTestBundle(ConstByteSpan bundle_data) {
     PW_TEST_ASSERT_OK(bundle_blob_.Init());
     blob_store::BlobStore::BlobWriter blob_writer(bundle_blob(),
@@ -233,6 +246,24 @@ TEST_F(UpdateBundleTest, GetTargetPayload) {
   }
 }
 
+TEST_F(UpdateBundleTest, GetUserManifest) {
+  backend().SetTrustedRoot(kDevSignedRoot);
+  StageTestBundle(kTestDevBundle);
+  UpdateBundleAccessor update_bundle(blob_reader(), backend());
+
+  PW_TEST_ASSERT_OK(update_bundle.OpenAndVerify());
+
+  {
+    stream::IntervalReader res = update_bundle.GetManifest().GetUserManifest();
+    PW_TEST_ASSERT_OK(res.status());
+
+    const char kExpectedContent[] = "user manifest content";
+    char read_buffer[sizeof(kExpectedContent) + 1] = {0};
+    ASSERT_TRUE(res.Read(read_buffer, sizeof(kExpectedContent)).ok());
+    ASSERT_STREQ(read_buffer, kExpectedContent);
+  }
+}
+
 TEST_F(UpdateBundleTest, PersistManifest) {
   backend().SetTrustedRoot(kDevSignedRoot);
   StageTestBundle(kTestDevBundle);
@@ -252,6 +283,61 @@ TEST_F(UpdateBundleTest, PersistManifest) {
   ASSERT_EQ(
       memcmp(manifest_buffer, kTestBundleManifest, sizeof(kTestBundleManifest)),
       0);
+}
+
+TEST_F(UpdateBundleTest, RejectUnverifiedUserManifest) {
+  backend().SetTrustedRoot(kDevSignedRoot);
+  StageTestBundle(kTestDevBundleWithSideloadedUserManifest);
+  UpdateBundleAccessor update_bundle(blob_reader(), backend());
+
+  PW_TEST_ASSERT_OK(update_bundle.OpenAndVerify());
+
+  // Extracted verified targets_metadata. Because "user_manifest" is omitted
+  // from the TargetsMetadata in this bundle, GetUserManifest() MUST return
+  // !ok().
+  ManifestAccessor manifest = update_bundle.GetManifest();
+  stream::IntervalReader res = manifest.GetUserManifest();
+  ASSERT_FALSE(res.ok());
+}
+
+TEST_F(UpdateBundleTest, GetOnDeviceManifest) {
+  backend().SetTrustedRoot(kDevSignedRoot);
+  backend().SetCurrentManifest(kTestBundleManifest);
+  StageTestBundle(kTestDevBundle);
+  UpdateBundleAccessor update_bundle(blob_reader(), backend());
+
+  PW_TEST_ASSERT_OK(update_bundle.OpenAndVerify());
+
+  {
+    stream::IntervalReader res =
+        GetOnDeviceManifest(update_bundle).GetUserManifest();
+    PW_TEST_ASSERT_OK(res.status());
+
+    const char kExpectedContent[] = "user manifest content";
+    char read_buffer[sizeof(kExpectedContent) + 1] = {0};
+    ASSERT_TRUE(res.Read(read_buffer, sizeof(kExpectedContent)).ok());
+    ASSERT_STREQ(read_buffer, kExpectedContent);
+  }
+}
+
+TEST_F(UpdateBundleTest, RejectUnverifiedOnDeviceUserManifest) {
+  backend().SetTrustedRoot(kDevSignedRoot);
+
+  // Fake flash with a stored manifest that contains the user_manifest payload,
+  // but omits it from the targets_metadata target_files.
+  std::byte invalid_manifest_buffer[sizeof(kTestInvalidOnDeviceManifest)] = {};
+  memcpy(invalid_manifest_buffer,
+         kTestInvalidOnDeviceManifest,
+         sizeof(kTestInvalidOnDeviceManifest));
+  backend().SetCurrentManifest(invalid_manifest_buffer);
+
+  UpdateBundleAccessor update_bundle(blob_reader(), backend());
+
+  {
+    ManifestAccessor safe_manifest = GetOnDeviceManifest(update_bundle);
+    stream::IntervalReader res = safe_manifest.GetUserManifest();
+    ASSERT_FALSE(res.ok());
+  }
 }
 
 TEST_F(UpdateBundleTest, PersistManifestFailIfNotVerified) {

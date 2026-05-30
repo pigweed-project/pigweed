@@ -34,9 +34,7 @@ class ManifestAccessor {
   bool ok() { return status().ok(); }
 
   // Retrieves the "user manifest" blob, which is product specific and optional.
-  pw::stream::IntervalReader GetUserManifest() {
-    return user_manifest_.GetBytesReader();
-  }
+  pw::stream::IntervalReader GetUserManifest();
 
   // Enumerates all target files as a list of `message TargetFile{...}`.
   protobuf::RepeatedMessages GetTargetFiles();
