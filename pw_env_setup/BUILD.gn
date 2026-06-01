@@ -29,6 +29,7 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_build/py:workflows",
     "$dir_pw_build_info/py",
     "$dir_pw_build_mcuxpresso/py",
+    "$dir_pw_bytes/py",
     "$dir_pw_change/py",
     "$dir_pw_chrono/py",
     "$dir_pw_cli/py",

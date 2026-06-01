@@ -381,6 +381,7 @@ sphinx_build_binary(
         "//pw_build/py:pigweed_build",
         "//pw_build/py:pw_build",
         "//pw_build/py:pw_project_builder",
+        "//pw_bytes/py:pw_bytes",
         "//pw_console/py:pw_console",
         "//pw_containers/py:inline_var_len_entry_queue",
         "//pw_docgen/py:pw_docgen",

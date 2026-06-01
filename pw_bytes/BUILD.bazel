@@ -193,6 +193,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "python.rst",
         ":byte_builder_size_report",
     ],
     prefix = "pw_bytes/",

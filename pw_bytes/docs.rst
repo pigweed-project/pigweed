@@ -98,6 +98,12 @@ Zephyr
 To enable ``pw_bytes`` for Zephyr add ``CONFIG_PIGWEED_BYTES=y`` to the
 project's configuration.
 
+----------
+Python API
+----------
+``pw_bytes`` provides a Python package containing binary stream read/write
+utilities. See :ref:`module-pw_bytes-python` for details.
+
 --------
 Rust API
 --------
@@ -111,3 +117,4 @@ Rust API
    code_size
    design
    guide
+   python
