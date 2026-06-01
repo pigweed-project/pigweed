@@ -25,9 +25,10 @@ use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::multi::{many0, many0_count};
 use nom::sequence::pair;
 
+use crate::parser_util::{fixed_width, precision};
 use crate::{
     Alignment, Argument, ConversionSpec, Flag, FormatFragment, FormatString, MinFieldWidth,
-    Precision, Primitive, Style, fixed_width, precision,
+    Precision, Primitive, Style,
 };
 
 /// The `name` in a `{name}` format string.  Matches a Rust identifier.

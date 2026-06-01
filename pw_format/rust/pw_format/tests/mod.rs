@@ -13,4 +13,5 @@
 // the License.
 
 mod core_fmt;
+mod format;
 mod printf;

@@ -31,10 +31,13 @@ rust_library(
     name = "pw_format",
     srcs = [
         "pw_format/core_fmt.rs",
+        "pw_format/format_string.rs",
         "pw_format/lib.rs",
         "pw_format/macros.rs",
+        "pw_format/parser_util.rs",
         "pw_format/printf.rs",
         "pw_format/tests/core_fmt.rs",
+        "pw_format/tests/format.rs",
         "pw_format/tests/mod.rs",
         "pw_format/tests/printf.rs",
     ],

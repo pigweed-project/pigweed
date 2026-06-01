@@ -13,6 +13,8 @@
 // the License.
 #![allow(clippy::literal_string_with_formatting_args)]
 
+use std::collections::HashSet;
+
 use crate::*;
 
 #[test]

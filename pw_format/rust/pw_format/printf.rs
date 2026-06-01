@@ -21,9 +21,10 @@ use nom::character::complete::anychar;
 use nom::combinator::{map, map_res};
 use nom::multi::many0;
 
+use crate::parser_util::{precision, width};
 use crate::{
     Alignment, Argument, ConversionSpec, Flag, FormatFragment, FormatString, Length, Primitive,
-    Style, precision, width,
+    Style,
 };
 
 fn map_specifier(value: char) -> Result<(Primitive, Style), String> {
