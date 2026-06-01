@@ -30,8 +30,6 @@
 #include "pw_string/string.h"
 #include "pw_sync/inline_borrowable.h"
 #include "pw_sync/thread_notification.h"
-#include "pw_thread/thread.h"
-#include "pw_thread/thread_core.h"
 
 namespace pw::grpc {
 namespace internal {
@@ -77,7 +75,7 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 //
 // One thread should be dedicated to driving reads (ProcessFrame calls), while
 // another thread (implemented by SendQueue) handles all writes. Refer to
-// the ConnectionThread class for an implementation of this.
+// test_pw_rpc_server.cc for an example implementation of this.
 //
 // By default, each gRPC message must be entirely contained within a single
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
@@ -413,50 +411,6 @@ class Connection {
   sync::InlineBorrowable<SharedState> shared_state_;
   Reader reader_;
   Writer writer_;
-};
-
-class ConnectionThread : public Connection, public thread::ThreadCore {
- public:
-  // The ConnectionCloseCallback will be called when this thread is shutting
-  // down and all data has finished sending. It will be called from this
-  // ConnectionThread.
-  using ConnectionCloseCallback = Function<void()>;
-
-  ConnectionThread(stream::NonSeekableReaderWriter& stream,
-                   const thread::Options& send_thread_options,
-                   RequestCallbacks& callbacks,
-                   ConnectionCloseCallback&& connection_close_callback,
-                   Allocator* message_assembly_allocator,
-                   Allocator& send_allocator)
-      : Connection(stream.as_reader(),
-                   send_queue_,
-                   callbacks,
-                   message_assembly_allocator,
-                   send_allocator),
-        send_queue_thread_options_(send_thread_options),
-        connection_close_callback_(std::move(connection_close_callback)),
-        send_queue_(stream, send_allocator) {}
-
-  // Process the connection. Does not return until the connection is closed.
-  void Run() override {
-    Thread send_thread(send_queue_thread_options_,
-                       [this]() { send_queue_.Run(); });
-    Status status = ProcessConnectionPreface();
-    while (status.ok()) {
-      status = ProcessFrame();
-    }
-
-    send_queue_.RequestStop();
-    send_thread.join();
-    if (connection_close_callback_) {
-      connection_close_callback_();
-    }
-  }
-
- private:
-  const thread::Options& send_queue_thread_options_;
-  ConnectionCloseCallback connection_close_callback_;
-  DefaultSendQueue send_queue_;
 };
 
 }  // namespace pw::grpc

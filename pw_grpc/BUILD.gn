@@ -47,8 +47,6 @@ pw_source_set("connection") {
     "$dir_pw_string",
     "$dir_pw_sync:inline_borrowable",
     "$dir_pw_sync:thread_notification",
-    "$dir_pw_thread:thread",
-    "$dir_pw_thread:thread_core",
   ]
 }
 
@@ -138,6 +136,7 @@ pw_executable("test_pw_rpc_server") {
   sources = [ "test_pw_rpc_server.cc" ]
   deps = [
     ":connection",
+    ":default_send_queue",
     ":echo_cc.pwpb_rpc",
     ":grpc_channel_output",
     ":pw_rpc_handler",
@@ -157,6 +156,7 @@ pw_executable("test_pw_rpc_server") {
     "$dir_pw_string",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
+    "$dir_pw_thread:thread_core",
   ]
 }
 

@@ -93,8 +93,6 @@ cc_library(
         "//pw_string:string",
         "//pw_sync:inline_borrowable",
         "//pw_sync:thread_notification",
-        "//pw_thread:thread",
-        "//pw_thread:thread_core",
     ],
 )
 
@@ -212,6 +210,7 @@ cc_binary(
     srcs = ["test_pw_rpc_server.cc"],
     deps = [
         ":connection",
+        ":default_send_queue",
         ":echo_pwpb_rpc",
         ":grpc_channel_output",
         ":pw_rpc_handler",
@@ -233,6 +232,7 @@ cc_binary(
         "//pw_string",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
+        "//pw_thread:thread_core",
     ],
 )
 

@@ -24,6 +24,7 @@
 #include "pw_bytes/span.h"
 #include "pw_checksum/crc32.h"
 #include "pw_grpc/connection.h"
+#include "pw_grpc/default_send_queue.h"
 #include "pw_grpc/examples/echo/echo.rpc.pwpb.h"
 #include "pw_grpc/grpc_channel_output.h"
 #include "pw_grpc/pw_rpc_handler.h"
@@ -39,6 +40,7 @@
 #include "pw_stream/stream.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_thread/thread_core.h"
 
 using pw::grpc::StreamId;
 
@@ -179,6 +181,51 @@ class EchoService
   bool quiet_ = false;
 };
 
+class ConnectionThread : public pw::grpc::Connection,
+                         public pw::thread::ThreadCore {
+ public:
+  // The ConnectionCloseCallback will be called when this thread is shutting
+  // down and all data has finished sending. It will be called from this
+  // ConnectionThread.
+  using ConnectionCloseCallback = pw::Function<void()>;
+
+  ConnectionThread(pw::stream::NonSeekableReaderWriter& stream,
+                   const pw::thread::Options& send_thread_options,
+                   pw::grpc::Connection::RequestCallbacks& callbacks,
+                   ConnectionCloseCallback&& connection_close_callback,
+                   pw::Allocator* message_assembly_allocator,
+                   pw::Allocator& send_allocator)
+      : pw::grpc::Connection(stream.as_reader(),
+                             send_queue_,
+                             callbacks,
+                             message_assembly_allocator,
+                             send_allocator),
+        send_queue_thread_options_(send_thread_options),
+        connection_close_callback_(std::move(connection_close_callback)),
+        send_queue_(stream, send_allocator) {}
+
+  // Process the connection. Does not return until the connection is closed.
+  void Run() override {
+    pw::Thread send_thread(send_queue_thread_options_,
+                           [this]() { send_queue_.Run(); });
+    pw::Status status = ProcessConnectionPreface();
+    while (status.ok()) {
+      status = ProcessFrame();
+    }
+
+    send_queue_.RequestStop();
+    send_thread.join();
+    if (connection_close_callback_) {
+      connection_close_callback_();
+    }
+  }
+
+ private:
+  const pw::thread::Options& send_queue_thread_options_;
+  ConnectionCloseCallback connection_close_callback_;
+  pw::grpc::DefaultSendQueue send_queue_;
+};
+
 constexpr uint32_t kTestChannelId = 1;
 
 }  // namespace
@@ -241,7 +288,7 @@ int main(int argc, char* argv[]) {
     pw::allocator::BestFitAllocator<> send_allocator(send_allocator_data);
     pw::thread::test::TestThreadContext connection_thread_context;
     pw::thread::test::TestThreadContext send_thread_context;
-    pw::grpc::ConnectionThread conn(
+    ConnectionThread conn(
         *socket,
         send_thread_context.options(),
         handler,
