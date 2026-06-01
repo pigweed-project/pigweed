@@ -387,3 +387,54 @@ func testRPC(t *testing.T, call func(t *testing.T, ctx context.Context, msg stri
 		})
 	}
 }
+
+func TestFullWindowBlockedSend(t *testing.T) {
+	setupTest(t, 1)
+
+	addr := "localhost:" + strconv.Itoa(*port)
+	conn, err := grpc.Dial(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithInitialWindowSize(500),
+		grpc.WithInitialConnWindowSize(500),
+	)
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	echo_client := pb.NewEchoClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := echo_client.ServerStreamingEcho(ctx, &pb.EchoRequest{Message: "block"})
+	if err != nil {
+		t.Fatalf("Failed to call ServerStreamingEcho %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		resp, err := client.Recv()
+		if err != nil {
+			t.Fatalf("Failed to receive message %d: %v", i, err)
+		}
+		if len(resp.Message) != 200 {
+			t.Fatalf("Unexpected message size %d, want 200", len(resp.Message))
+		}
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	for i := 2; i < 10; i++ {
+		resp, err := client.Recv()
+		if err != nil {
+			t.Fatalf("Failed to receive message %d: %v", i, err)
+		}
+		if len(resp.Message) != 200 {
+			t.Fatalf("Unexpected message size %d, want 200", len(resp.Message))
+		}
+	}
+
+	_, err = client.Recv()
+	if err != io.EOF {
+		t.Fatalf("Expected EOF, got %v", err)
+	}
+}

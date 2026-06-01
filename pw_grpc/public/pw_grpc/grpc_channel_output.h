@@ -27,8 +27,7 @@ namespace pw::grpc {
 
 class GrpcChannelOutput : public rpc::ChannelOutput {
  public:
-  GrpcChannelOutput() : pw::rpc::ChannelOutput("grpc") {}
-
+  GrpcChannelOutput() : rpc::ChannelOutput("grpc") {}
   // This interface provides an API for the channel output to notify and lookup
   // info in PwRpcHandler when handling output packets.
   class PwRpcHandlerInterface {

@@ -54,6 +54,9 @@ boolean_constraint_value(
 cc_library(
     name = "pw_rpc_config",
     defines = PW_GRPC_PW_RPC_CONFIG_OVERRIDES,
+    deps = [
+        "//pw_rpc:lockless_channel_send_config",
+    ],
 )
 
 cc_library(
@@ -89,6 +92,7 @@ cc_library(
         "//pw_string",
         "//pw_string:string",
         "//pw_sync:inline_borrowable",
+        "//pw_sync:thread_notification",
         "//pw_thread:thread",
         "//pw_thread:thread_core",
     ],

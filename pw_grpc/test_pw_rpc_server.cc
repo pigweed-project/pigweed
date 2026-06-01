@@ -101,8 +101,22 @@ class EchoService
       PW_LOG_INFO("not writing server streaming echo");
       return;
     }
-    for (size_t i = 0; i < 3; ++i) {
-      last_writer_.Write({.message = request.message}).IgnoreError();
+    size_t num_responses = 3;
+    bool block = request.message.compare("block") == 0;
+    if (block) {
+      num_responses = 10;
+    }
+    std::string big_msg(200, 'a');
+    for (size_t i = 0; i < num_responses; ++i) {
+      if (block) {
+        auto status =
+            last_writer_.Write({.message = std::string_view(big_msg)});
+        if (!status.ok()) {
+          PW_LOG_ERROR("Write failed with status %u", status.code());
+        }
+      } else {
+        last_writer_.Write({.message = request.message}).IgnoreError();
+      }
     }
     last_writer_.Finish(pw::OkStatus()).IgnoreError();
   }

@@ -21,7 +21,6 @@
 
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
-#include "pw_chrono/system_clock.h"
 #include "pw_grpc_private/hpack.h"
 #include "pw_log/log.h"
 #include "pw_numeric/checked_arithmetic.h"
@@ -310,6 +309,9 @@ void Connection::SharedState::ForAllStreams(
 }
 
 Connection::Stream* Connection::SharedState::LookupStream(StreamId id) {
+  if (id == 0) {
+    return nullptr;
+  }
   for (size_t i = 0; i < streams_.size(); i++) {
     if (streams_[i].id == id) {
       return &streams_[i];
@@ -324,15 +326,13 @@ Status Connection::SharedState::DrainResponseQueue(Stream& stream) {
 
     if (static_cast<int32_t>(message_size) > stream.send_window ||
         static_cast<int32_t>(message_size) > connection_send_window_) {
-      // TODO(b/471320234): remove after debugging
-      if (!stream.debug_logged_no_window) {
-        stream.debug_logged_no_window = true;
-        PW_LOG_WARN("stream id=%d not enough window: msg=%zu ssw=%d csw=%d",
-                    stream.id,
-                    message_size,
-                    stream.send_window,
-                    connection_send_window_);
-      }
+      // Should not happen since we blocked waiting for window before queueing
+      // data. Race?
+      PW_LOG_WARN("stream id=%d not enough window: msg=%zu ssw=%d csw=%d",
+                  stream.id,
+                  message_size,
+                  stream.send_window,
+                  connection_send_window_);
       break;
     }
 
@@ -514,8 +514,9 @@ Status Connection::SharedState::SendSettingsAck() {
 
 Status Connection::Writer::SendResponseMessage(StreamId stream_id,
                                                ConstByteSpan message) {
-  auto state = connection_.LockState();
-
+  if (stream_id == 0) {
+    return Status::InvalidArgument();
+  }
   if (message.size() > kMaxGrpcMessageSize) {
     PW_LOG_WARN("Message %" PRIu32 " bytes on id=%" PRIu32
                 " exceeds maximum message size",
@@ -524,30 +525,65 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
     return Status::InvalidArgument();
   }
 
-  PW_TRY_ASSIGN(DataFrame data_frame,
-                DataFrame::Create(state->send_allocator(), message.size()));
+  while (true) {
+    auto state = connection_.LockState();
+    auto stream = state->LookupStream(stream_id);
+    if (!stream) {
+      return Status::NotFound();
+    }
 
-  WireFrameHeader frame(FrameHeader{
-      .payload_length = static_cast<uint32_t>(data_frame.frame_payload_size()),
-      .type = FrameType::DATA,
-      .flags = 0,
-      .stream_id = stream_id,
-  });
+    const size_t message_size = message.size();
+    if (static_cast<int32_t>(message_size) <= stream->send_window &&
+        static_cast<int32_t>(message_size) <= state->connection_send_window()) {
+      // Enough window!
+      PW_TRY_ASSIGN(DataFrame data_frame,
+                    DataFrame::Create(state->send_allocator(), message.size()));
 
-  ConstByteSpan frame_span = ObjectAsBytes(frame);
-  std::copy_n(frame_span.begin(),
-              frame_span.size(),
-              data_frame.writable_frame_header().begin());
+      WireFrameHeader frame(FrameHeader{
+          .payload_length =
+              static_cast<uint32_t>(data_frame.frame_payload_size()),
+          .type = FrameType::DATA,
+          .flags = 0,
+          .stream_id = stream_id,
+      });
 
-  ByteBuilder prefix(data_frame.writable_message_prefix());
-  prefix.PutUint8(0);
-  prefix.PutUint32(static_cast<uint32_t>(message.size()), endian::big);
+      ConstByteSpan frame_span = ObjectAsBytes(frame);
+      std::copy_n(frame_span.begin(),
+                  frame_span.size(),
+                  data_frame.writable_frame_header().begin());
 
-  std::copy_n(message.begin(),
-              message.size(),
-              data_frame.writable_message_payload().begin());
+      ByteBuilder prefix(data_frame.writable_message_prefix());
+      prefix.PutUint8(0);
+      prefix.PutUint32(static_cast<uint32_t>(message.size()), endian::big);
 
-  return state->QueueStreamResponse(stream_id, std::move(data_frame));
+      std::copy_n(message.begin(),
+                  message.size(),
+                  data_frame.writable_message_payload().begin());
+
+      return state->QueueStreamResponse(stream_id, std::move(data_frame));
+    }
+
+    // Not enough window! Wait for it.
+    PW_LOG_DEBUG("Conn.Send DATA id=%" PRIu32
+                 " BLOCKED waiting for window (sw=%d, cw=%d)",
+                 stream_id,
+                 stream->send_window,
+                 state->connection_send_window());
+    stream->is_waiting_for_window = true;
+
+    connection_.UnlockState(std::move(state));
+    stream->window_notification.acquire();
+
+    // Check if connection closed or stream reset
+    state = connection_.LockState();
+    if (state->connection_closed()) {
+      return Status::Unavailable();
+    }
+    stream = state->LookupStream(stream_id);
+    if (!stream) {
+      return Status::Unavailable();
+    }
+  }
 }
 
 Status Connection::SharedState::QueueStreamResponse(StreamId id,
@@ -595,6 +631,9 @@ Status Connection::SharedState::SendQueuedDataFrame(Connection::Stream& stream,
 
 Status Connection::Writer::SendResponseComplete(StreamId stream_id,
                                                 Status response_code) {
+  if (stream_id == 0) {
+    return Status::InvalidArgument();
+  }
   auto state = connection_.LockState();
   auto stream = state->LookupStream(stream_id);
   if (!stream) {
@@ -1052,6 +1091,12 @@ Status Connection::SharedState::AddConnectionSendWindow(int32_t delta) {
 
   DrainResponseQueues().IgnoreError();
 
+  for (Stream& stream : streams_) {
+    if (stream.id != 0) {
+      stream.SignalWindowAvailable();
+    }
+  }
+
   return OkStatus();
 }
 
@@ -1063,6 +1108,7 @@ Status Connection::SharedState::AddAllStreamsSendWindow(int32_t delta) {
     if (!CheckedIncrement(streams_[i].send_window, delta)) {
       return Status::Internal();
     }
+    streams_[i].SignalWindowAvailable();
   }
 
   DrainResponseQueues().IgnoreError();
@@ -1082,6 +1128,8 @@ Status Connection::SharedState::AddStreamSendWindow(StreamId id,
   }
 
   DrainResponseQueues().IgnoreError();
+
+  stream->SignalWindowAvailable();
 
   return OkStatus();
 }

@@ -13,4 +13,4 @@
 // the License.
 
 grpc.examples.echo.EchoRequest.message max_size:64
-grpc.examples.echo.EchoResponse.message max_size:64
+grpc.examples.echo.EchoResponse.message max_size:256

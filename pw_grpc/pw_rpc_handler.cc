@@ -16,6 +16,11 @@
 
 #include <cinttypes>
 
+#include "pw_rpc/internal/config.h"
+
+static_assert(PW_RPC_LOCKLESS_CHANNEL_SEND,
+              "pw_grpc requires PW_RPC_LOCKLESS_CHANNEL_SEND to be enabled.");
+
 namespace pw::grpc {
 
 using pw::rpc::internal::pwpb::PacketType;

@@ -29,6 +29,7 @@
 #include "pw_stream/stream.h"
 #include "pw_string/string.h"
 #include "pw_sync/inline_borrowable.h"
+#include "pw_sync/thread_notification.h"
 #include "pw_thread/thread.h"
 #include "pw_thread/thread_core.h"
 
@@ -123,12 +124,12 @@ class Connection {
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
   Status ProcessConnectionPreface() {
-    return reader_.ProcessConnectionPreface();
+    return HandleReadError(reader_.ProcessConnectionPreface());
   }
 
   // Reads from stream and processes next frame on connection. Returns OK
   // as long as connection is open. Should be called from a single thread.
-  Status ProcessFrame() { return reader_.ProcessFrame(); }
+  Status ProcessFrame() { return HandleReadError(reader_.ProcessFrame()); }
 
   // Sends a response message for an RPC. The `message` will not be accessed
   // after this method returns. Thread safe.
@@ -198,11 +199,10 @@ class Connection {
   // * half-closed (local) is merged into close, because once a grpc server has
   //   sent a response, the RPC is complete
   struct Stream {
-    constexpr Stream(Allocator& allocator) : response_queue(allocator) {}
+    Stream(Allocator& allocator) : response_queue(allocator) {}
     StreamId id = 0;
     bool half_closed = false;
     bool started_response = false;
-    bool debug_logged_no_window = false;
     int32_t send_window = 0;
     int32_t recv_window = kTargetStreamWindowSize;
 
@@ -225,18 +225,28 @@ class Connection {
         uint32_t received;
       } message;
     } assembly{};
+    pw::sync::ThreadNotification window_notification;
+    bool is_waiting_for_window = false;
+
+    void SignalWindowAvailable() {
+      if (is_waiting_for_window) {
+        is_waiting_for_window = false;
+        window_notification.release();
+      }
+    }
 
     void Reset() {
       id = 0;
       half_closed = false;
       started_response = false;
-      debug_logged_no_window = false;
       send_window = 0;
       recv_window = kTargetStreamWindowSize;
       response_queue.clear();
 
       assembly_buffer = nullptr;
       assembly = {};
+
+      SignalWindowAvailable();
     }
   };
 
@@ -295,6 +305,16 @@ class Connection {
     }
 
     Allocator& send_allocator() { return send_allocator_; }
+    int32_t connection_send_window() const { return connection_send_window_; }
+
+    void Close() {
+      connection_closed_ = true;
+      for (Stream& stream : streams_) {
+        stream.Reset();
+      }
+    }
+
+    bool connection_closed() const { return connection_closed_; }
 
    private:
     // Called whenever there is new data to send or a WINDOW_UPDATE message has
@@ -311,6 +331,7 @@ class Connection {
     std::array<Stream, internal::kMaxConcurrentStreams> streams_;
     int32_t connection_send_window_ = kDefaultInitialWindowSize;
     int32_t connection_recv_window_ = kTargetConnectionWindowSize;
+    bool connection_closed_ = false;
 
     // Allocator for fragmented grpc message reassembly
     Allocator* message_assembly_allocator_;
@@ -370,6 +391,14 @@ class Connection {
     StreamId last_stream_id_ = 0;
   };
 
+  Status HandleReadError(Status status) {
+    if (!status.ok()) {
+      auto state = LockState();
+      state->Close();
+    }
+    return status;
+  }
+
   sync::BorrowedPointer<SharedState> LockState() {
     return shared_state_.acquire();
   }
@@ -416,6 +445,7 @@ class ConnectionThread : public Connection, public thread::ThreadCore {
     while (status.ok()) {
       status = ProcessFrame();
     }
+
     send_queue_.RequestStop();
     send_thread.join();
     if (connection_close_callback_) {
