@@ -436,6 +436,20 @@ TEST(Decoder, DelimitedFieldSizeLargerThanRemainingSpan_ReturnsDataLoss) {
   EXPECT_EQ(decoder.Next(), Status::DataLoss());
 }
 
+TEST(Decoder, DelimitedFieldSizeOverflow_ReturnsDataLoss) {
+  // field key: field 1, wire type delimited -> 0x0A
+  // length: 4294967292 (0xFFFFFFFC) encoded as LEB128: 0xFC, 0xFF, 0xFF, 0xFF,
+  // 0x0F
+  std::array<std::byte, 6> input = {static_cast<std::byte>(0x0A),
+                                    static_cast<std::byte>(0xFC),
+                                    static_cast<std::byte>(0xFF),
+                                    static_cast<std::byte>(0xFF),
+                                    static_cast<std::byte>(0xFF),
+                                    static_cast<std::byte>(0x0F)};
+  Decoder decoder(input);
+  EXPECT_EQ(decoder.Next(), Status::DataLoss());
+}
+
 void DoesNotCrash(ConstByteSpan buffer) {
   // Place the input buffer in the middle of a poisoned memory region to catch
   // if the decoder attempts to read beyond its bounds in either direction.

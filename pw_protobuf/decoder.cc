@@ -161,7 +161,8 @@ Decoder::FieldSize Decoder::GetFieldSize() const {
       break;
   }
 
-  if (key_size + expected_value_size > proto_.size()) {
+  if (expected_value_size > proto_.size() ||
+      key_size > proto_.size() - expected_value_size) {
     return FieldSize::Invalid();
   }
 
