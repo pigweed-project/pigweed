@@ -68,9 +68,10 @@
 // Case: no argument (no specified domain)
 #define _PW_NESTED_TOKEN_FMT_0()                                    \
   PW_TOKENIZER_NESTED_PREFIX_STR "{" PW_TOKENIZER_NESTED_PREFIX_STR \
-                                 "#%" PRIx32 "}#%08" PRIx32
+                                 "#%08" PRIx32 "}#%08" PRIx32
 
 // Case: one argument (specified domain)
 #define _PW_NESTED_TOKEN_FMT_1(domain_value)                        \
   PW_TOKENIZER_NESTED_PREFIX_STR "{" PW_TOKENIZER_NESTED_PREFIX_STR \
-                                 "{" domain_value "}#%" PRIx32 "}#%08" PRIx32
+                                 "{" domain_value "}#%08" PRIx32    \
+                                 "}#%08" PRIx32

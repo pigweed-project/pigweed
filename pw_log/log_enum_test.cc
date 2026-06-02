@@ -68,12 +68,12 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogTokenOrString_TokenizingBackend, {
 
 PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt1_TokenizingBackend, {
   constexpr char nested_token[] = PW_LOG_NESTED_TOKEN_FMT();
-  PW_TEST_EXPECT_STREQ("${$#%" PRIx32 "}#%08" PRIx32, nested_token);
+  PW_TEST_EXPECT_STREQ("${$#%08" PRIx32 "}#%08" PRIx32, nested_token);
 });
 
 PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_TokenizingBackend, {
   constexpr char nested_token[] = PW_LOG_NESTED_TOKEN_FMT("enum_domain");
-  PW_TEST_EXPECT_STREQ("${${enum_domain}#%" PRIx32 "}#%08" PRIx32,
+  PW_TEST_EXPECT_STREQ("${${enum_domain}#%08" PRIx32 "}#%08" PRIx32,
                        nested_token);
 });
 
