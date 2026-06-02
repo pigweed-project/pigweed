@@ -502,3 +502,30 @@ pw_compile_commands_generator(
     ],
     visibility = ["//pw_ide/py:__subpackages__"],
 )
+
+pw_compile_commands_generator(
+    name = "test_conflict_1",
+    display_name = "Name 1",
+    platform = "@bazel_tools//tools:host_platform",
+    tags = ["manual"],
+)
+
+pw_compile_commands_generator(
+    name = "test_conflict_2",
+    display_name = "Name 2",
+    platform = "@bazel_tools//tools:host_platform",
+    tags = ["manual"],
+)
+
+pw_compile_commands_generator(
+    name = "test_conflict_generator_new",
+    tags = [
+        "cache_buster",
+        "manual",
+    ],
+    visibility = ["//pw_ide/py:__subpackages__"],
+    deps = [
+        ":test_conflict_1",
+        ":test_conflict_2",
+    ],
+)

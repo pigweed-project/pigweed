@@ -12,6 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+import * as fs from 'fs';
 import * as path from 'path';
 
 import { glob } from 'glob';
@@ -37,10 +38,12 @@ const CDB_DIRS = () =>
 export class Target {
   private _name: string;
   private _dir: string;
+  private _displayName?: string;
 
-  constructor(name: string, dir?: string) {
+  constructor(name: string, dir?: string, displayName?: string) {
     this._name = name;
     this._dir = dir ?? path.join(CDB_FILE_DIRS[0], name);
+    this._displayName = displayName;
   }
 
   get name() {
@@ -58,6 +61,10 @@ export class Target {
   }
 
   get displayName() {
+    if (this._displayName) {
+      return this._displayName;
+    }
+
     if (path.dirname(this._dir) === CDB_FILE_DIRS[0]) {
       return this._name;
     }
@@ -74,20 +81,35 @@ export async function availableTargets(): Promise<Target[]> {
   // Get targets from the standard compile commands directories.
   const directoryTargets = (
     await Promise.all(
-      CDB_DIRS().map(async (cwd) =>
-        // For each compile commands dir, get the name of every sub dir in the
-        // that contains a compile commands file.
-        (await glob(`**/${CDB_FILE_NAME}`, { cwd }))
-          .map((filePath) => {
-            const name = path.basename(path.dirname(filePath));
-            const dir = path.join(cwd, name);
-            return new Target(name, dir);
-          })
-          // Filter out a catch-all database in the root compile commands dir
-          .filter((target) => target.name.trim() !== '.'),
+      CDB_DIRS().map(
+        async (cwd) =>
+          // For each compile commands dir, get the name of every sub dir in the
+          // that contains a compile commands file.
+          await Promise.all(
+            (await glob(`**/${CDB_FILE_NAME}`, { cwd })).map(
+              async (filePath) => {
+                const name = path.basename(path.dirname(filePath));
+                const dir = path.join(cwd, name);
+                let displayName: string | undefined;
+                try {
+                  const displayNamePath = path.join(dir, 'display_name.txt');
+                  displayName = await fs.promises.readFile(
+                    displayNamePath,
+                    'utf-8',
+                  );
+                  displayName = displayName.trim();
+                } catch (e) {
+                  // ignore
+                }
+                return new Target(name, dir, displayName);
+              },
+            ),
+          ),
       ),
     )
-  ).flat();
+  )
+    .flat()
+    .filter((target) => target.name.trim() !== '.');
 
   // Get targets from the unprocessed mapping file.
   const unprocessedTargets = Object.entries(await loadUnprocessedMapping()).map(

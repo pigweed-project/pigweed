@@ -50,8 +50,30 @@ suite('getPreconfiguredTargets', () => {
 
   test('returns targets when they exist', async () => {
     const stdout =
-      '/BUILD.bazel:10:1: pw_compile_commands_generator rule //:update_compile_commands\n' +
-      '/BUILD.bazel:20:1: pw_compile_commands_generator rule //:other_target\n';
+      JSON.stringify({
+        type: 'RULE',
+        rule: {
+          name: '//:update_compile_commands',
+          location: '/BUILD.bazel:100:1',
+          attribute: [
+            {
+              name: 'display_name',
+              type: 'STRING',
+              stringValue: 'All Platforms',
+            },
+          ],
+        },
+      }) +
+      '\n' +
+      JSON.stringify({
+        type: 'RULE',
+        rule: {
+          name: '//:other_target',
+          location: '/BUILD.bazel:200:1',
+          attribute: [],
+        },
+      }) +
+      '\n';
     const spawnFn = createMockSpawn(stdout, '', 0);
 
     const result = await getPreconfiguredTargets(
@@ -61,8 +83,8 @@ suite('getPreconfiguredTargets', () => {
     );
 
     assert.deepStrictEqual(result, [
-      '//:update_compile_commands',
-      '//:other_target',
+      { label: '//:update_compile_commands', displayName: 'All Platforms' },
+      { label: '//:other_target', displayName: undefined },
     ]);
   });
 

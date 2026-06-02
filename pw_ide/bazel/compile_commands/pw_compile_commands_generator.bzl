@@ -16,6 +16,7 @@
 _CompileCommandsTargetPatternsInfo = provider(
     "A set of target patterns used for compile command collection for a single platform",
     fields = {
+        "display_name": "(str) Optional display name for the platform",
         "patterns": "(depset[str]) Bazel target patterns that will be used to evaluate these patterns",
         "platform": "(label) Platform that will be used to evaluate the requested target patterns",
     },
@@ -66,12 +67,15 @@ def _collect_target_patterns(ctx):
     the requesting rule.
     """
     patterns_by_platform = {}
+    display_names_by_platform = {}
 
     if ctx.attr.platform:
         platform_label = ctx.attr.platform
         patterns_by_platform[platform_label] = depset(
             ctx.attr.target_patterns,
         )
+        if hasattr(ctx.attr, "display_name") and ctx.attr.display_name:
+            display_names_by_platform[platform_label] = ctx.attr.display_name
 
     for dep in ctx.attr.deps:
         if _CompileCommandsGroupInfo in dep:
@@ -85,6 +89,16 @@ def _collect_target_patterns(ctx):
                         platform_patterns.patterns,
                     ],
                 )
+                if hasattr(platform_patterns, "display_name") and platform_patterns.display_name:
+                    if platform_label in display_names_by_platform:
+                        if display_names_by_platform[platform_label] != platform_patterns.display_name:
+                            fail("Conflicting display names for platform {}: found '{}' and '{}'".format(
+                                platform_label,
+                                display_names_by_platform[platform_label],
+                                platform_patterns.display_name,
+                            ))
+                    else:
+                        display_names_by_platform[platform_label] = platform_patterns.display_name
 
     platform_patterns_list = []
     for platform, patterns in patterns_by_platform.items():
@@ -92,6 +106,7 @@ def _collect_target_patterns(ctx):
             _CompileCommandsTargetPatternsInfo(
                 platform = platform,
                 patterns = patterns,
+                display_name = display_names_by_platform.get(platform, ""),
             ),
         )
 
@@ -127,6 +142,7 @@ def _target_patterns_to_json(compile_commands_patterns):
     output_patterns = []
     for platform_pattern in compile_commands_patterns.platform_patterns:
         output_patterns.append({
+            "display_name": platform_pattern.display_name,
             "platform": str(platform_pattern.platform),
             "target_patterns": platform_pattern.patterns.to_list(),
         })
@@ -171,6 +187,7 @@ _pw_compile_commands_generator = rule(
     attrs = {
         "config_out": attr.output(mandatory = True),
         "deps": attr.label_list(providers = [_CompileCommandsGroupInfo]),
+        "display_name": attr.string(),
         "platform": attr.string(),
         "symlink_prefix": attr.string(default = ""),
         "target_patterns": attr.string_list(),
@@ -179,8 +196,11 @@ _pw_compile_commands_generator = rule(
     executable = True,
 )
 
-def pw_compile_commands_generator(name, target_patterns = None, deps = None, platform = None, symlink_prefix = "", **kwargs):
+def pw_compile_commands_generator(name, target_patterns = None, deps = None, platform = None, symlink_prefix = "", display_name = "", **kwargs):
     """A rule that can be used to build a compile command database.
+
+    Each instance of `pw_compile_commands_generator` is intended to represent
+    a unique target platform.
 
     This rule can be `bazel run` to generate a compile command database at
     the root of the workspace.
@@ -193,6 +213,7 @@ def pw_compile_commands_generator(name, target_patterns = None, deps = None, pla
         in this database.
       platform: The platform to use to evaluate the provided `target_patterns`.
       symlink_prefix: The prefix used for Bazel convenience symlinks (e.g. "out/").
+      display_name: Optional display name for the platform.
       **kwargs: Extra arguments to pass to the underlying `native_binary` rule.
     """
     if target_patterns == None:
@@ -221,6 +242,7 @@ def pw_compile_commands_generator(name, target_patterns = None, deps = None, pla
         # Don't follow aliases, they technically mean different things from
         # a configuration perspective.
         platform = str(native.package_relative_label(platform)) if platform else None,
+        display_name = display_name,
         tags = kwargs.pop("tags", []) + ["pw_compile_commands_generator"],
         **kwargs
     )

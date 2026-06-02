@@ -181,7 +181,7 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 ):
                     base_name = path.name[: -len(_FRAGMENT_SUFFIX)]
                     config_str = base_name.split('.')[-1]
-                    yield config_str, path
+                    yield config_str, path, None
 
         self.mock_collect_fragments.side_effect = collect_fragments_side_effect
 
@@ -1110,6 +1110,55 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         # Should contain ONLY safe.cc
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['file'], 'safe.cc')
+
+    def test_merge_groups_with_display_name(self):
+        """Tests that display_name from groups is written to file."""
+        fragment_path = self.output_path / f'target.p1{_FRAGMENT_SUFFIX}'
+        self.fs.create_file(
+            fragment_path,
+            contents=(
+                '[{"file": "a.cc", '
+                '"directory": "__WORKSPACE_ROOT__", '
+                '"arguments": []}]'
+            ),
+        )
+
+        groups_file = self.workspace_root / 'groups.json'
+        self.fs.create_file(
+            groups_file,
+            contents=json.dumps(
+                {
+                    'compile_commands_patterns': [
+                        {
+                            'platform': 'p1',
+                            'target_patterns': ['//t1'],
+                            'display_name': 'Platform 1',
+                        },
+                    ]
+                }
+            ),
+        )
+
+        with mock.patch(
+            'pw_ide.merger._run_bazel_build_for_fragments'
+        ) as mock_build:
+            mock_build.return_value = {fragment_path}
+
+            with mock.patch.object(
+                sys,
+                'argv',
+                ['merger.py', f'--compile-command-groups={groups_file}'],
+            ):
+                self.assertEqual(merger.main(), 0)
+
+        display_name_path = (
+            self.workspace_root
+            / '.compile_commands'
+            / 'p1'
+            / 'display_name.txt'
+        )
+        self.assertTrue(display_name_path.exists())
+        self.assertEqual(display_name_path.read_text(), 'Platform 1')
 
     def test_relativize_path(self):
         """Test _relativize_path logic."""

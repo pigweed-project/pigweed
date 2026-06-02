@@ -328,7 +328,7 @@ def _build_and_collect_fragments(
     forwarded_args: list[str],
     verbose: bool,
     execution_root: Path,
-) -> Iterator[tuple[str, Path]]:
+) -> Iterator[tuple[str, Path, None]]:
     """Collects fragments using `bazel cquery`."""
     if forwarded_args and forwarded_args[0] == '--':
         # Remove initial double-dash.
@@ -362,14 +362,14 @@ def _build_and_collect_fragments(
         config_str = base_name.split(".")[-1]
         if "size_report" in config_str or config_str.endswith("-exec"):
             continue
-        yield config_str, fragment
+        yield config_str, fragment, None
 
 
 def _build_and_collect_fragments_from_groups(
     groups_file: Path,
     verbose: bool,
     execution_root: Path,
-) -> Iterator[tuple[str, Path]]:
+) -> Iterator[tuple[str, Path, str | None]]:
     """Collects fragments using patterns from a JSON file."""
     # When running interactively, passing a local file will cause this to fail
     # since the path isn't relative to the sandbox. This is intentional, as
@@ -389,10 +389,12 @@ def _build_and_collect_fragments_from_groups(
 
     # Dictionary keeping track of platform names for valid fragments found.
     fragment_platform_map: dict[Path, str] = {}
+    fragment_display_name_map: dict[Path, str] = {}
 
     for i, group in enumerate(compile_commands_patterns):
         platform = group.get('platform')
         targets = group.get('target_patterns')
+        display_name = group.get('display_name')
 
         if not platform or not targets:
             _LOG.warning("Skipping invalid compile command group: %s", group)
@@ -448,17 +450,21 @@ def _build_and_collect_fragments_from_groups(
                     )
                     ignored_fragments.add(fragment)
                     del known_fragments[fragment]
-                    if fragment in fragment_platform_map:
-                        del fragment_platform_map[fragment]
+                    fragment_platform_map.pop(fragment, None)
+                    fragment_display_name_map.pop(fragment, None)
             else:
                 known_fragments[fragment] = content_hash
                 fragment_platform_map[fragment] = sanitized_platform
+                if display_name:
+                    fragment_display_name_map[fragment] = display_name
 
     if has_errors:
         return
 
     for fragment in known_fragments.keys():
-        yield fragment_platform_map[fragment], fragment
+        yield fragment_platform_map[
+            fragment
+        ], fragment, fragment_display_name_map.get(fragment)
 
 
 def _collect_fragments(
@@ -466,7 +472,7 @@ def _collect_fragments(
     forwarded_args: list[str],
     verbose: bool,
     compile_command_groups: Path | None = None,
-) -> Iterator[tuple[str, Path]]:
+) -> Iterator[tuple[str, Path, str | None]]:
     """Dispatches to the correct fragment collection method."""
     if compile_command_groups:
         yield from _build_and_collect_fragments_from_groups(
@@ -742,7 +748,7 @@ def _validate_environment() -> tuple[Path, Path, Path, Path]:
 def _find_fragments(
     execution_root_path: Path,
     args: argparse.Namespace,
-) -> dict[str, list[Path]]:
+) -> tuple[dict[str, list[Path]], dict[str, str]]:
     """Finds all compile command fragments and groups them by platform.
 
     Returns:
@@ -766,10 +772,14 @@ def _find_fragments(
         sys.exit(1)
 
     fragments_by_platform: dict[str, list[Path]] = collections.defaultdict(list)
-    for platform_str, fragment in all_fragments:
-        fragments_by_platform[platform_str].append(fragment)
+    display_names_by_platform: dict[str, str] = {}
 
-    return fragments_by_platform
+    for platform_str, fragment, display_name in all_fragments:
+        fragments_by_platform[platform_str].append(fragment)
+        if display_name and platform_str not in display_names_by_platform:
+            display_names_by_platform[platform_str] = display_name
+
+    return fragments_by_platform, display_names_by_platform
 
 
 def _process_platform(
@@ -779,6 +789,7 @@ def _process_platform(
     output_dir: Path,
     bazel_paths: tuple[Path, Path, Path],
     symlink_prefix: str = '',
+    display_name: str | None = None,
 ) -> None:
     """Processes a single platform, merging fragments and writing output files.
 
@@ -816,6 +827,8 @@ def _process_platform(
 
     platform_dir = output_dir / platform
     platform_dir.mkdir(exist_ok=True)
+    if display_name:
+        (platform_dir / "display_name.txt").write_text(display_name)
     merged_json_path = platform_dir / "compile_commands.json"
 
     final_target_infos: dict[str, Any] = {}
@@ -1027,7 +1040,9 @@ def main() -> int:
         execution_root_path,
     ) = _validate_environment()
 
-    fragments_by_platform = _find_fragments(execution_root_path, args)
+    fragments_by_platform, display_names_by_platform = _find_fragments(
+        execution_root_path, args
+    )
 
     _LOG.debug(
         "Found fragments for %s.",
@@ -1068,6 +1083,7 @@ def main() -> int:
             output_dir,
             (bazel_output_path, output_base_path, execution_root_path),
             args.symlink_prefix,
+            display_name=display_names_by_platform.get(platform),
         )
 
     (output_dir / 'pw_lastGenerationTime.txt').write_text(str(int(time.time())))

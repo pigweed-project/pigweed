@@ -43,6 +43,10 @@ command. See below for build system-specific details.
       targets must be run via ``bazel run`` to generate updated compile commands
       databases.
 
+      .. note::
+         Each instance of ``pw_compile_commands_generator`` is intended to
+         represent a unique target platform.
+
       This method provides wide code intelligence coverage by analyzing all targets
       specified in the generator target. It ensures that code intelligence is
       available for all configured platforms without needing to build them first.

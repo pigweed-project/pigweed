@@ -24,6 +24,7 @@ import {
   CDB_FILE_DIR,
   CDB_FILE_NAME,
 } from './paths';
+import { decodeBazelName } from '../bazelUtils';
 
 import { didChangeClangdConfig, didChangeTarget } from '../events';
 
@@ -125,14 +126,23 @@ export async function setCompileCommandsTarget(
 ): Promise<void> {
   const currentTarget = getTarget();
   const targets = await availableTargets();
-  const targetNameMap = Object.fromEntries(
-    targets.map((target) => [target.displayName, target]),
-  );
 
-  const targetEntries = targets.map((target) => ({
-    label: target.displayName,
-    iconPath: markIfActive(target === currentTarget),
-  }));
+  const targetEntries = targets.map((target) => {
+    const decodedName = decodeBazelName(target.name);
+    const label =
+      target.displayName !== target.name
+        ? `${target.displayName} (${decodedName})`
+        : decodedName;
+    return {
+      label,
+      target,
+      iconPath: markIfActive(target === currentTarget),
+    };
+  });
+
+  const targetNameMap = Object.fromEntries(
+    targetEntries.map((entry) => [entry.label, entry.target]),
+  );
 
   if (targetEntries.length === 0) {
     vscode.window

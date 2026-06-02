@@ -630,6 +630,37 @@ class CompileCommandsViaGroupsTest(StandardCompileCommandsTests):
         cls._load_databases()
 
 
+class CompileCommandsConflictTest(CompileCommandsTestBase):
+    """Tests that conflicting display names result in a failure."""
+
+    def test_conflicting_display_names(self):
+        target = (
+            '//pw_ide/bazel/compile_commands/test:'
+            'test_conflict_generator_new_target_patterns.json'
+        )
+
+        result = subprocess.run(
+            ['bazel', 'build', target],
+            capture_output=True,
+            cwd=self.project_root,
+            text=True,
+            check=False,
+        )
+
+        # Verify that the build failed.
+        self.assertNotEqual(
+            result.returncode,
+            0,
+            f"Build should have failed. Output:\n"
+            f"STDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}",
+        )
+
+        # Verify the error message.
+        self.assertIn('Conflicting display names for platform', result.stderr)
+        self.assertIn("found 'Name 1' and 'Name 2'", result.stderr)
+
+
 class CompileCommandsWithSymlinkPrefixTest(CompileCommandsTestBase):
     """Tests compile commands generated with a custom symlink prefix."""
 

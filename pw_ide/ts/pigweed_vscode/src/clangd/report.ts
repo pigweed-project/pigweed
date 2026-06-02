@@ -29,7 +29,7 @@ interface CipdReport {
   compileCommandsPath?: string;
   bazelCompileCommandsManualBuildCommand?: string;
   bazelCompileCommandsLastBuildCommand?: string;
-  preconfiguredTargets?: string[];
+  preconfiguredTargets?: { label: string; displayName?: string }[];
   [key: string]: any;
 }
 

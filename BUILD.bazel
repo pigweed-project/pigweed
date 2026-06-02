@@ -100,23 +100,9 @@ copy_file(
     allow_symlink = True,
 )
 
-# Creates a set of compile command databases that merges
-# all of the databases produced by its deps.
-pw_compile_commands_generator(
-    name = "update_compile_commands",
-    deps = [
-        ":update_host_compile_commands",
-        ":update_host_googletest_compile_commands",
-        ":update_rp2040_compile_commands",
-        ":update_rp2350_compile_commands",
-    ] + select({
-        "@platforms//os:linux": [":refresh_compile_commands_for_fuchsia_sdk"],
-        "//conditions:default": [],
-    }),
-)
-
 pw_compile_commands_generator(
     name = "update_host_compile_commands",
+    display_name = "Host",
     platform = "@bazel_tools//tools:host_platform",
     target_patterns = [
         "//...",
@@ -125,6 +111,7 @@ pw_compile_commands_generator(
 
 pw_compile_commands_generator(
     name = "update_host_googletest_compile_commands",
+    display_name = "Host (GoogleTest)",
     platform = "//targets/host:host_googletest",
     target_patterns = [
         "//...",
@@ -133,6 +120,7 @@ pw_compile_commands_generator(
 
 pw_compile_commands_generator(
     name = "update_rp2040_compile_commands",
+    display_name = "RP2040",
     platform = "//targets/rp2040",
     target_patterns = [
         "//...",
@@ -141,6 +129,7 @@ pw_compile_commands_generator(
 
 pw_compile_commands_generator(
     name = "update_rp2350_compile_commands",
+    display_name = "RP2350",
     platform = "//targets/rp2040:rp2350",
     target_patterns = [
         "//...",
@@ -149,6 +138,7 @@ pw_compile_commands_generator(
 
 pw_compile_commands_generator(
     name = "refresh_compile_commands_for_fuchsia_sdk",
+    display_name = "Fuchsia SDK",
     platform = "//targets/fuchsia:fuchsia_host",
     target_compatible_with = select({
         "@platforms//os:linux": [],

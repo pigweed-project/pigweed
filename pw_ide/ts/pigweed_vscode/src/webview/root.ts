@@ -14,6 +14,7 @@
 
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+import { decodeBazelName } from './bazelUtils';
 
 interface vscode {
   postMessage(message: { type: string; data?: any }): void;
@@ -33,8 +34,8 @@ type CipdReport = {
   compileCommandsPath?: string;
   lastBuildPlatformCount?: number;
   activeFileCount?: number;
-  availableTargets?: { name: string; path: string }[];
-  preconfiguredTargets?: string[];
+  availableTargets?: { name: string; displayName?: string }[];
+  preconfiguredTargets?: { label: string; displayName?: string }[];
 };
 
 const vscode = acquireVsCodeApi();
@@ -75,7 +76,7 @@ export class Root extends LitElement {
       this.cipdReport.preconfiguredTargets.length > 0
     ) {
       this.selectedPreconfiguredTarget =
-        this.cipdReport.preconfiguredTargets[0];
+        this.cipdReport.preconfiguredTargets[0].label;
     }
   }
 
@@ -106,6 +107,20 @@ export class Root extends LitElement {
       this.cipdReport.targetSelected &&
       this.cipdReport.isCompileCommandsGenerated
     );
+  }
+
+  private _getTargetDisplayName(name?: string): string {
+    if (!name) return 'None';
+    const target = this.cipdReport.availableTargets?.find(
+      (t) => t.name === name,
+    );
+    return (
+      target?.displayName || name.replace(/____/g, '//').replace(/__/g, ':')
+    );
+  }
+
+  private get _selectedTargetDisplayName(): string {
+    return this._getTargetDisplayName(this.cipdReport.targetSelected);
   }
 
   private _openDebugDetails(e: MouseEvent) {
@@ -193,11 +208,11 @@ export class Root extends LitElement {
                           ${this.cipdReport.preconfiguredTargets?.map(
                             (target) => html`
                               <option
-                                value=${target}
-                                ?selected=${target ===
+                                value=${target.label}
+                                ?selected=${target.label ===
                                 this.selectedPreconfiguredTarget}
                               >
-                                ${target}
+                                ${target.displayName || target.label}
                               </option>
                             `,
                           )}
@@ -236,33 +251,38 @@ export class Root extends LitElement {
                   `}
             </div>
           </li>
-          <li>
-            <b>Platform</b>
-            <div class="step-detail">
-              ${this.cipdReport.availableTargets &&
-              this.cipdReport.availableTargets.length > 1
-                ? html`
+          ${this.cipdReport.availableTargets &&
+          this.cipdReport.availableTargets.length > 1
+            ? html`
+                <li>
+                  <b>Platform</b>
+                  <div class="step-detail">
                     <div class="vscode-select">
                       <select @change=${this._selectTarget}>
                         ${this.cipdReport.availableTargets.map(
-                          (target: { name: string }) => html`
+                          (target: {
+                            name: string;
+                            displayName?: string;
+                          }) => html`
                             <option
                               value=${target.name}
                               ?selected=${target.name ===
                               this.cipdReport.targetSelected}
                             >
-                              ${target.name.replace(/__/g, ':')}
+                              ${target.displayName
+                                ? `${target.displayName} (${decodeBazelName(
+                                    target.name,
+                                  )})`
+                                : decodeBazelName(target.name)}
                             </option>
                           `,
                         )}
                       </select>
                     </div>
-                  `
-                : `Selected: ${(this.cipdReport.targetSelected ?? 'None')
-                    .replace(/____/g, '//')
-                    .replace(/__/g, ':')}`}
-            </div>
-          </li>
+                  </div>
+                </li>
+              `
+            : ''}
           <li>
             <b>Enjoy code intelligence</b>
             <div class="step-detail">${activeFileText}</div>
@@ -315,12 +335,14 @@ export class Root extends LitElement {
                 </option>`
               : ''}
             ${this.cipdReport.availableTargets.map(
-              (target: { name: string }) => html`
+              (target: { name: string; displayName?: string }) => html`
                 <option
                   value=${target.name}
                   ?selected=${target.name === this.cipdReport.targetSelected}
                 >
-                  ${target.name.replace(/____/g, '//').replace(/__/g, ':')}
+                  ${target.displayName
+                    ? `${target.displayName} (${decodeBazelName(target.name)})`
+                    : decodeBazelName(target.name)}
                 </option>
               `,
             )}
@@ -329,9 +351,7 @@ export class Root extends LitElement {
       `;
     } else {
       platformStepDetail = this.cipdReport.targetSelected
-        ? `Selected: ${this.cipdReport.targetSelected
-            .replace(/____/g, '//')
-            .replace(/__/g, ':')}`
+        ? `Selected: ${this._selectedTargetDisplayName}`
         : currentStepIndex === 1
           ? 'Select a platform from the build'
           : 'Selected: No platforms detected';
@@ -351,11 +371,11 @@ export class Root extends LitElement {
                         ${this.cipdReport.preconfiguredTargets?.map(
                           (target) => html`
                             <option
-                              value=${target}
-                              ?selected=${target ===
+                              value=${target.label}
+                              ?selected=${target.label ===
                               this.selectedPreconfiguredTarget}
                             >
-                              ${target}
+                              ${target.displayName || target.label}
                             </option>
                           `,
                         )}
@@ -393,10 +413,15 @@ export class Root extends LitElement {
           </div>
         `,
       },
-      {
-        title: `Platform`,
-        detail: platformStepDetail,
-      },
+      ...(this.cipdReport.availableTargets &&
+      this.cipdReport.availableTargets.length > 1
+        ? [
+            {
+              title: `Platform`,
+              detail: platformStepDetail,
+            },
+          ]
+        : []),
       {
         title: 'Enjoy code intelligence',
         detail: 'Not enabled yet',
@@ -719,7 +744,7 @@ export class Root extends LitElement {
             this.cipdReport.preconfiguredTargets.length > 0
           ) {
             this.selectedPreconfiguredTarget =
-              this.cipdReport.preconfiguredTargets[0];
+              this.cipdReport.preconfiguredTargets[0].label;
           }
 
           this.requestUpdate();

@@ -25,6 +25,8 @@ import {
 
 import { RefreshStatus } from './refreshManager';
 import { settings } from './settings/vscode';
+import { availableTargets } from './clangd/paths';
+import { decodeBazelName } from './bazelUtils';
 
 const DEFAULT_TARGET_TEXT = 'Select a Target';
 const ICON_IDLE = '$(check)';
@@ -68,10 +70,26 @@ export class TargetStatusBarItem extends Disposable {
     this.statusBarItem.text = this.label();
   };
 
-  updateTarget = (target?: string): void => {
+  updateTarget = async (target?: string): Promise<void> => {
     const rawTarget =
       target ?? settings.codeAnalysisTarget() ?? DEFAULT_TARGET_TEXT;
-    this.targetText = rawTarget.replace(/____/g, '//').replace(/__/g, ':');
+
+    if (rawTarget === DEFAULT_TARGET_TEXT) {
+      this.targetText = DEFAULT_TARGET_TEXT;
+      this.updateProps();
+      return;
+    }
+
+    const targets = await availableTargets();
+    const match = targets.find((t) => t.name === rawTarget);
+
+    const decodedName = decodeBazelName(rawTarget);
+
+    if (match && match.displayName) {
+      this.targetText = `${match.displayName} (${decodedName})`;
+    } else {
+      this.targetText = decodedName;
+    }
 
     this.updateProps();
   };
