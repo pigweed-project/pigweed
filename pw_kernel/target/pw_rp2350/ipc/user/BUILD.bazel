@@ -30,6 +30,7 @@ system_image(
 system_image_test(
     name = "ipc_test",
     image = ":ipc",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

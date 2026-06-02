@@ -23,8 +23,8 @@ test:k_common --platform_suffix=test
 
 common:k_doctest --config=k_common
 common:k_doctest --platforms=//pw_kernel/target/host:doctest
-build:k_doctest --build_tag_filters=-do_not_build,-kernel_panic_test
-test:k_doctest --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_panic_test
+build:k_doctest --build_tag_filters=-do_not_build
+test:k_doctest --test_tag_filters=-integration,-do_not_build,-do_not_run_test
 
 # Lint configuration
 # ==================

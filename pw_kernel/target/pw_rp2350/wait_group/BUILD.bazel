@@ -33,6 +33,7 @@ system_image(
 system_image_test(
     name = "wait_group_test",
     image = ":wait_group",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

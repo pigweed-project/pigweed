@@ -32,6 +32,7 @@ system_image(
 system_image_test(
     name = "clock_test",
     image = ":clock",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

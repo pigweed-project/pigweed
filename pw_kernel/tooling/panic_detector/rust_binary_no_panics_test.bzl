@@ -14,19 +14,6 @@
 """Rule to validate a rust binary contains no panics.
 """
 
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-
-def _disable_tests_transition_impl(settings, _attr):
-    new_settings = dict(settings)
-    new_settings["//pw_kernel:enable_tests"] = False
-    return [new_settings]
-
-disable_tests_transition = transition(
-    implementation = _disable_tests_transition_impl,
-    inputs = [],
-    outputs = ["//pw_kernel:enable_tests"],
-)
-
 def _rust_binary_no_panics_test_impl(ctx):
     binary = ctx.files.binary[0]
     run_script = ctx.actions.declare_file("%s.sh" % ctx.label.name)
@@ -36,26 +23,37 @@ def _rust_binary_no_panics_test_impl(ctx):
         image = binary.short_path,
     ))
 
-    return [DefaultInfo(
-        files = depset([run_script]),
-        runfiles = ctx.runfiles([
-            ctx.executable._panic_detector,
-            binary,
-        ]),
-        executable = run_script,
-    )]
+    # When running no_panic tests, some bazel configs will use
+    # --run_under="//pw_kernel/tooling:qemu.
+    # Set this env var to tell the qemu wrapper script to invoke
+    # the host binary directly and not try to run under qemu.
+    env = dict(ctx.attr.env)
+    env["PW_RUNNER_PASSTHROUGH"] = "1"
+
+    return [
+        DefaultInfo(
+            files = depset([run_script]),
+            runfiles = ctx.runfiles([
+                ctx.executable._panic_detector,
+                binary,
+            ]),
+            executable = run_script,
+        ),
+        RunEnvironmentInfo(
+            environment = env,
+        ),
+    ]
 
 _rust_binary_no_panics_test = rule(
     implementation = _rust_binary_no_panics_test_impl,
     test = True,
     attrs = {
         "binary": attr.label(
-            doc = "rust binary to validate",
-            # When checking for panics, ensure the binary to
-            # be checked is compiled without the tests, as test
-            # code, is, well, panicky by design...
-            cfg = disable_tests_transition,
             mandatory = True,
+        ),
+        "env": attr.string_dict(
+            doc = "Environment variables to set for the test",
+            default = {},
         ),
         "_panic_detector": attr.label(
             executable = True,
@@ -74,14 +72,6 @@ def rust_binary_no_panics_test(name, binary, **kwargs):
         binary: Target to check for panics
         **kwargs: Args to pass through to the underlying rule.
     """
-
-    if kwargs.get("target_compatible_with") == None:
-        kwargs["target_compatible_with"] = incompatible_with_mcu()
-
-    tags = kwargs.get("tags", default = [])
-    tags.append("kernel_panic_test")
-    kwargs["tags"] = tags
-
     _rust_binary_no_panics_test(
         name = name,
         binary = binary,

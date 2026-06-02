@@ -33,6 +33,7 @@ system_image(
 system_image_test(
     name = "async_ipc_test",
     image = ":async_ipc",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

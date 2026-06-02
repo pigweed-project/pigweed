@@ -32,6 +32,7 @@ system_image(
 system_image_test(
     name = "thread_termination_test",
     image = ":thread_termination",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

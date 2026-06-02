@@ -30,6 +30,7 @@ system_image(
 system_image_test(
     name = "interrupts_test",
     image = ":interrupts",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

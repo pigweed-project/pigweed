@@ -33,6 +33,7 @@ system_image(
 system_image_test(
     name = "process_termination_test",
     image = ":process_termination",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
@@ -40,6 +41,7 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":process_termination",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 filegroup(

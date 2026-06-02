@@ -33,11 +33,13 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":thread_termination",
     tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 system_image_test(
     name = "thread_termination_test",
     image = ":thread_termination",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

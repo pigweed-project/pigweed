@@ -29,6 +29,7 @@ system_image(
 system_image_test(
     name = "threads_test",
     image = ":threads",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
