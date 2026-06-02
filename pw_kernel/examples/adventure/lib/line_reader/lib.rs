@@ -62,6 +62,7 @@ impl<const SIZE: usize> LineReader<SIZE> {
     ///
     /// let reader = LineReader::<128>::new();
     /// ```
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             buffer: [0; SIZE],
@@ -113,9 +114,9 @@ impl<const SIZE: usize> LineReader<SIZE> {
     /// ```
     pub fn next_line(&mut self) -> Option<&str> {
         let search_slice = &self.buffer[self.start..self.end];
-        let Some(pos) = search_slice.iter().position(|&b| b == b'\n' || b == b'\r') else {
-            return None;
-        };
+        let pos = search_slice
+            .iter()
+            .position(|&b| b == b'\n' || b == b'\r')?;
 
         let line_end = self.start + pos;
         let line = core::str::from_utf8(&self.buffer[self.start..line_end]).ok()?;

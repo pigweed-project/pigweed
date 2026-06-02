@@ -48,3 +48,38 @@ common:remote_cache --remote_cache=grpcs://remotebuildexecution.googleapis.com
 common:remote_cache --remote_instance_name=projects/pigweed-rbe-open/instances/default-instance
 common:remote_cache --remote_upload_local_results=false
 
+# Lint configuration
+# ==================
+# Enable clippy lints
+build:lint --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build:lint --output_groups=+clippy_checks
+build:lint --@rules_rust//rust/settings:clippy_flags="\
+-Dclippy::cast_lossless,\
+-Dclippy::cast_possible_truncation,\
+-Dclippy::cast_possible_wrap,\
+-Dclippy::cast_precision_loss,\
+-Dclippy::cast_sign_loss,\
+-Dclippy::char_lit_as_u8,\
+-Dclippy::fn_to_numeric_cast,\
+-Dclippy::fn_to_numeric_cast_with_truncation,\
+-Dclippy::ptr_as_ptr,-Dclippy::unnecessary_cast,\
+-Dinvalid_reference_casting,\
+-Dclippy::alloc_instead_of_core,\
+-Dclippy::as_underscore,\
+-Dclippy::assertions_on_result_states,\
+-Dclippy::correctness,\
+-Dclippy::dbg_macro,\
+-Dclippy::decimal_literal_representation,\
+-Dclippy::double_must_use,\
+-Dclippy::missing_safety_doc,\
+-Dclippy::must_use_candidate,\
+-Dclippy::must_use_unit,\
+-Dclippy::obfuscated_if_else,\
+-Dclippy::perf,\
+-Dclippy::return_self_not_must_use,\
+-Dclippy::std_instead_of_core,\
+-Dclippy::style,\
+-Dclippy::suspicious,\
+-Dclippy::unimplemented,\
+-Dclippy::unnested_or_patterns,\
+-Aclippy::new_without_default"

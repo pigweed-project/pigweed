@@ -39,6 +39,21 @@
         "@type": "pw.build.proto.BazelDriverOptions",
         "project_working_subdir": "pw_kernel/examples/adventure"
       }
+    },
+    {
+      "name": "k_adventure_lint_config",
+      "description": "Kernel adventure example lint config",
+      "build_type": "bazel",
+      "args": [
+        "--config=host",
+        "--config=lint"
+      ],
+      "env": {},
+      "driver_options": {
+        "@type": "pw.build.proto.BazelDriverOptions",
+        "project_working_subdir": "pw_kernel/examples/adventure",
+        "no_test": true
+      }
     }
   ],
   "output_specs": [],
@@ -491,6 +506,13 @@
       ]
     },
     {
+      "name": "k_adventure_lint",
+      "use_config": "k_adventure_lint_config",
+      "targets": [
+        "//..."
+      ]
+    },
+    {
       "name": "clang_tidy",
       "build_config": {
         "name": "clang_tidy_config",
@@ -786,6 +808,7 @@
         "k_qemu_mps2_an505",
         "k_qemu_virt_riscv32",
         "k_adventure",
+        "k_adventure_lint",
         "k_rp2350",
         "k_host_lint",
         "k_qemu_mps2_an505_lint",

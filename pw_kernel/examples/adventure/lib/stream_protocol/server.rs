@@ -31,6 +31,7 @@ pub struct StreamServer<const BUFFER_SIZE: usize> {
 
 impl<const BUFFER_SIZE: usize> StreamServer<BUFFER_SIZE> {
     /// Creates a new `StreamServer` instance for the given channel handle.
+    #[must_use]
     pub const fn new(ipc_handle: u32) -> Self {
         Self {
             ipc_handle,
@@ -80,6 +81,7 @@ impl<const BUFFER_SIZE: usize> StreamServer<BUFFER_SIZE> {
 
         let response = ResponseHeader {
             status: pw_status::OK,
+            #[allow(clippy::cast_possible_truncation)]
             length: payload_len as u32,
         };
         syscall::channel_respond(self.ipc_handle, response.as_bytes())
@@ -121,6 +123,7 @@ impl<const BUFFER_SIZE: usize> StreamServer<BUFFER_SIZE> {
 
         let response_header = ResponseHeader {
             status: pw_status::OK,
+            #[allow(clippy::cast_possible_truncation)]
             length: payload_length as u32,
         };
 

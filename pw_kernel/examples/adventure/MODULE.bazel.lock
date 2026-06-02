@@ -681,7 +681,7 @@
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "v18j2IkEr8EoDIw+4Kz/em+LxIvnj/ExM99f8cG/0Xg=",
-        "usagesDigest": "2PqWEHPZHrJJ7csvYlw+IHcmw5Fj+HFper56tAzHSnU=",
+        "usagesDigest": "CATiwNgUGIETYpF/WAOhkqCHbJC4aESsK9trffzeD6s=",
         "recordedInputs": [
           "REPO_MAPPING:pigweed+,bazel_tools bazel_tools"
         ],
@@ -707,7 +707,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-arm64",
-              "tag": "git_revision:4a32bbe46e23913ff5850d79b264913154a883e9"
+              "tag": "git_revision:96556515cd87746f53d67aec3015775d6c97ef00"
             }
           },
           "rust_toolchain_host_linux_x86_64": {
@@ -731,7 +731,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-amd64",
-              "tag": "git_revision:4a32bbe46e23913ff5850d79b264913154a883e9"
+              "tag": "git_revision:96556515cd87746f53d67aec3015775d6c97ef00"
             }
           },
           "rust_toolchain_host_macos_aarch64": {
@@ -755,7 +755,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-arm64",
-              "tag": "git_revision:4a32bbe46e23913ff5850d79b264913154a883e9"
+              "tag": "git_revision:96556515cd87746f53d67aec3015775d6c97ef00"
             }
           },
           "rust_toolchain_host_macos_x86_64": {
@@ -779,7 +779,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-amd64",
-              "tag": "git_revision:4a32bbe46e23913ff5850d79b264913154a883e9"
+              "tag": "git_revision:96556515cd87746f53d67aec3015775d6c97ef00"
             }
           },
           "rust_toolchain_target_thumbv6m-none-eabi_armv6-m": {

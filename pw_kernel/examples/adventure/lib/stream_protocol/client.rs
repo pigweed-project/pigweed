@@ -28,6 +28,7 @@ pub struct StreamClient {
 
 impl StreamClient {
     /// Creates a new `StreamClient` instance for the given channel handle.
+    #[must_use]
     pub const fn new(ipc_handle: u32) -> Self {
         Self { ipc_handle }
     }

@@ -23,6 +23,7 @@ pub struct RingBuffer<const SIZE: usize> {
 
 impl<const SIZE: usize> RingBuffer<SIZE> {
     /// Creates a new, empty `RingBuffer` instance.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             buffer: [0; SIZE],
@@ -133,6 +134,7 @@ impl<const SIZE: usize> RingBuffer<SIZE> {
     }
 
     /// Returns `true` if the ring buffer contains no elements.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.head == self.tail
     }
