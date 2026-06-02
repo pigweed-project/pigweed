@@ -83,3 +83,93 @@ fn examples_from_rfc4648_section_2_encode_correctly() {
     assert_eq!(encode_str(&input[0..5], &mut output_buffer), Ok("Zm9vYmE="));
     assert_eq!(encode_str(&input[0..6], &mut output_buffer), Ok("Zm9vYmFy"));
 }
+
+#[test]
+fn decoded_size_correctly_calculates_size() {
+    for (expected_decoded_output, encoded_input) in single_char::test_cases() {
+        assert_eq!(
+            decoded_size(encoded_input.as_bytes()),
+            expected_decoded_output.len()
+        );
+    }
+    for (expected_decoded_output, encoded_input) in random_data::test_cases() {
+        assert_eq!(
+            decoded_size(encoded_input.as_bytes()),
+            expected_decoded_output.len()
+        );
+    }
+}
+
+#[test]
+fn single_characters_decode_correctly() {
+    for (expected_decoded_output, encoded_input) in single_char::test_cases() {
+        let mut output_buffer = vec![0u8; max_decoded_size(encoded_input.len())];
+        let decode_len = decode(encoded_input.as_bytes(), &mut output_buffer).unwrap();
+        assert_eq!(&output_buffer[0..decode_len], expected_decoded_output);
+    }
+}
+
+#[test]
+fn random_data_decodes_correctly() {
+    for (expected_decoded_output, encoded_input) in random_data::test_cases() {
+        let mut output_buffer = vec![0u8; max_decoded_size(encoded_input.len())];
+        let decode_len = decode(encoded_input.as_bytes(), &mut output_buffer).unwrap();
+        assert_eq!(&output_buffer[0..decode_len], expected_decoded_output);
+    }
+}
+
+#[test]
+fn examples_from_rfc4648_section_2_decode_correctly() {
+    let mut output_buffer = vec![0u8; 6];
+
+    assert_eq!(decode(b"", &mut output_buffer), Ok(0));
+
+    let len = decode(b"Zg==", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"f");
+
+    let len = decode(b"Zm8=", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"fo");
+
+    let len = decode(b"Zm9v", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"foo");
+
+    let len = decode(b"Zm9vYg==", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"foob");
+
+    let len = decode(b"Zm9vYmE=", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"fooba");
+
+    let len = decode(b"Zm9vYmFy", &mut output_buffer).unwrap();
+    assert_eq!(&output_buffer[0..len], b"foobar");
+}
+
+#[test]
+fn invalid_data_returns_error() {
+    let mut output_buffer = vec![0u8; 10];
+
+    // Invalid length (not multiple of 4)
+    assert_eq!(
+        decode(b"Zg=", &mut output_buffer),
+        Err(Error::InvalidArgument)
+    );
+
+    // Invalid characters
+    assert_eq!(
+        decode(b"Zg*=", &mut output_buffer),
+        Err(Error::InvalidArgument)
+    );
+
+    // Invalid padding
+    assert_eq!(
+        decode(b"Zg===", &mut output_buffer),
+        Err(Error::InvalidArgument)
+    );
+}
+
+#[test]
+fn too_small_output_buffer_returns_error_for_decode() {
+    let mut output_buffer = vec![0u8; 2];
+    let input = b"Zm9v"; // "foo" -> 3 bytes
+
+    assert_eq!(decode(input, &mut output_buffer), Err(Error::OutOfRange));
+}
