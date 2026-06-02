@@ -339,7 +339,7 @@ int RUN_ALL_TESTS();
 /// See `GTEST_HAS_DEATH_TEST`.
 #define EXPECT_DEATH_IF_SUPPORTED(statement, regex) \
   if (0) {                                          \
-    static_cast<void>(statement);                   \
+    statement;                                      \
     static_cast<void>(regex);                       \
   }                                                 \
   static_assert(true, "Macros must be terminated with a semicolon")

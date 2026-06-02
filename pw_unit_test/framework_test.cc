@@ -475,5 +475,16 @@ TEST(PigweedTest, ScopedTrace) {
   SCOPED_TRACE("text");
 }
 
+TEST(ExpectDeath, StatementIsNotEvaluated) {
+  int i = 0;
+  EXPECT_DEATH_IF_SUPPORTED(
+      {
+        i += 1;
+        PW_CRASH("This party's over.");
+      },
+      "This party's over");
+  EXPECT_EQ(i, 0);
+}
+
 }  // namespace
 }  // namespace pw
