@@ -19,15 +19,13 @@
 #include "config.h"
 #include "fsl_clock.h"
 #include "fsl_i3c.h"
-#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
-#include "fsl_i3c_dma.h"
-#include "pw_dma_mcuxpresso/dma.h"
-#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
 #include "pw_bytes/span.h"
 #include "pw_clock_tree/clock_tree.h"
 #include "pw_containers/vector.h"
 #include "pw_i2c/initiator.h"
 #include "pw_i2c_mcuxpresso/i3c_ccc.h"
+#include "pw_i2c_mcuxpresso/i3c_driver.h"
+#include "pw_i2c_mcuxpresso/i3c_interrupt_driver.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_sync/mutex.h"
@@ -46,23 +44,36 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
     bool enable_open_drain_stop;  // Whether to emit open-drain speed STOP.
     bool enable_open_drain_high;  // Enable Open-Drain High to be 1 PPBAUD count
                                   // for I3C messages, or 1 ODBAUD.
-#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
-    dma::McuxpressoDmaChannel& rx_dma_channel;  // Receive DMA channel
-    dma::McuxpressoDmaChannel& tx_dma_channel;  // Transmit DMA channel
-#endif                                          // PW_I2C_MCUXPRESSO_I3C_USE_DMA
   };
 
+  /// Construct I3c Initiator with a config, a clock tree element,
+  /// and a custom interface driver to the fsl_i3c layer.
+  I3cMcuxpressoInitiator(const Config& config,
+                         pw::clock_tree::Element& clock_tree_element,
+                         I3cDriver& i3c_driver)
+      : Initiator(Initiator::Feature::kStandard),
+        config_(config),
+        base_(reinterpret_cast<I3C_Type*>(config.base_address)),
+        clock_tree_element_(clock_tree_element),
+        driver_(i3c_driver) {}
+
+  /// Construct I3c Initiator with a config, a clock tree element
   I3cMcuxpressoInitiator(const Config& config,
                          pw::clock_tree::Element& clock_tree_element)
       : Initiator(Initiator::Feature::kStandard),
         config_(config),
         base_(reinterpret_cast<I3C_Type*>(config.base_address)),
-        clock_tree_element_(clock_tree_element) {}
+        clock_tree_element_(clock_tree_element),
+        default_driver_(std::in_place),
+        driver_(default_driver_.value()) {}
 
+  /// Construct I3c Initiator with a config
   I3cMcuxpressoInitiator(const Config& config)
       : Initiator(Initiator::Feature::kStandard),
         config_(config),
-        base_(reinterpret_cast<I3C_Type*>(config.base_address)) {}
+        base_(reinterpret_cast<I3C_Type*>(config.base_address)),
+        default_driver_(std::in_place),
+        driver_(default_driver_.value()) {}
 
   ~I3cMcuxpressoInitiator() final;
 
@@ -178,21 +189,6 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
       PW_LOCKS_EXCLUDED(mutex_);
 
  private:
-  // inclusive-language: disable
-#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
-  using Handle = i3c_master_dma_handle_t;
-  using Callbacks = i3c_master_dma_callback_t;
-  static constexpr auto I3C_MasterTransferFunc = I3C_MasterTransferDMA;
-  static constexpr auto I3C_MasterTransferAbortFunc =
-      I3C_MasterTransferAbortDMA;
-#else   // PW_I2C_MCUXPRESSO_I3C_USE_DMA
-  using Handle = i3c_master_handle_t;
-  using Callbacks = i3c_master_transfer_callback_t;
-  static constexpr auto I3C_MasterTransferFunc = I3C_MasterTransferNonBlocking;
-  static constexpr auto I3C_MasterTransferAbortFunc = I3C_MasterTransferAbort;
-#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
-  // inclusive-language: enable
-
   pw::Status DoTransferCcc(I3cCccAction rnw,
                            I3cCcc ccc_id,
                            pw::i2c::Address address,
@@ -210,16 +206,8 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
   pw::Status AddAssignedI3cAddress(pw::i2c::Address address);
 
   // inclusive-language: disable
-  Status InitiateNonBlockingTransferUntil(
-      chrono::SystemClock::time_point deadline,
-      i3c_master_transfer_t* transfer);
-
-  // Non-blocking I3C transfer callback.
-  static void TransferCompleteCallback(I3C_Type* base,
-                                       Handle* handle,
-                                       status_t status,
-                                       void* initiator_ptr);
-
+  Status InitiateTransferUntil(chrono::SystemClock::time_point deadline,
+                               i3c_master_transfer_t* transfer);
   // inclusive-language: enable
 
   // Request that a target use its i2c static address as its i3c dynamic
@@ -241,12 +229,11 @@ class I3cMcuxpressoInitiator final : public pw::i2c::Initiator {
   std::optional<pw::Vector<Address, I3C_MAX_DEVCNT>> i3c_static_address_list_;
   pw::Vector<Address, I3C_MAX_DEVCNT> i3c_assigned_addresses_;
 
-  // Transfer completion status for non-blocking I3C transfer.
-  sync::TimedThreadNotification callback_complete_notification_;
-  std::atomic<status_t> transfer_status_;
+  // Default fsl_i3c interrupt-based driver
+  std::optional<I3cInterruptDriver> default_driver_;
 
-  Callbacks initiator_callbacks_;
-  Handle handle_ PW_GUARDED_BY(mutex_);
+  // Driver for interfacing with fsl_i3c transfer subsystems
+  I3cDriver& driver_;
 };
 
 }  // namespace pw::i2c

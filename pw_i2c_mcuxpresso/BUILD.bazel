@@ -117,10 +117,19 @@ cc_library(
 
 cc_library(
     name = "i3c_initiator",
-    srcs = ["i3c_initiator.cc"],
+    srcs = [
+        "i3c_common.cc",
+        "i3c_dma_driver.cc",
+        "i3c_initiator.cc",
+        "i3c_interrupt_driver.cc",
+    ],
     hdrs = [
         "public/pw_i2c_mcuxpresso/config.h",
+        "public/pw_i2c_mcuxpresso/i3c_common.h",
+        "public/pw_i2c_mcuxpresso/i3c_dma_driver.h",
+        "public/pw_i2c_mcuxpresso/i3c_driver.h",
         "public/pw_i2c_mcuxpresso/i3c_initiator.h",
+        "public/pw_i2c_mcuxpresso/i3c_interrupt_driver.h",
     ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",

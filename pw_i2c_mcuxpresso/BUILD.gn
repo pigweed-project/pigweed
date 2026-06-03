@@ -83,7 +83,11 @@ if (pw_third_party_mcuxpresso_SDK != "") {
     public = [
       "public/pw_i2c_mcuxpresso/config.h",
       "public/pw_i2c_mcuxpresso/i3c_ccc.h",
+      "public/pw_i2c_mcuxpresso/i3c_common.h",
+      "public/pw_i2c_mcuxpresso/i3c_dma_driver.h",
+      "public/pw_i2c_mcuxpresso/i3c_driver.h",
       "public/pw_i2c_mcuxpresso/i3c_initiator.h",
+      "public/pw_i2c_mcuxpresso/i3c_interrupt_driver.h",
     ]
     public_deps = [
       "$dir_pw_chrono:system_clock",
@@ -96,7 +100,12 @@ if (pw_third_party_mcuxpresso_SDK != "") {
       "$dir_pw_sync:timed_thread_notification",
       "$pw_third_party_mcuxpresso_SDK",
     ]
-    sources = [ "i3c_initiator.cc" ]
+    sources = [
+      "i3c_common.cc",
+      "i3c_dma_driver.cc",
+      "i3c_initiator.cc",
+      "i3c_interrupt_driver.cc",
+    ]
     deps = [ "$dir_pw_log" ]
   }
 }

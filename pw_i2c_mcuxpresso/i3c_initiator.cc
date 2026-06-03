@@ -22,6 +22,8 @@
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
 #include "pw_function/scope_guard.h"
+#include "pw_i2c_mcuxpresso/i3c_common.h"
+#include "pw_i2c_mcuxpresso/i3c_driver.h"
 #include "pw_log/log.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
@@ -31,25 +33,6 @@ using cpp23::to_underlying;
 
 namespace pw::i2c {
 namespace {
-pw::Status HalStatusToPwStatus(status_t status) {
-  switch (status) {
-    case kStatus_Success:
-      return pw::OkStatus();
-    case kStatus_I3C_Timeout:
-      return pw::Status::DeadlineExceeded();
-    case kStatus_I3C_Nak:
-    case kStatus_I3C_Busy:
-    case kStatus_I3C_IBIWon:
-    case kStatus_I3C_WriteAbort:
-      return pw::Status::Unavailable();
-    case kStatus_I3C_HdrParityError:
-    case kStatus_I3C_CrcError:
-    case kStatus_I3C_MsgError:
-      return pw::Status::DataLoss();
-    default:
-      return pw::Status::Unknown();
-  }
-}
 
 constexpr uint32_t kI3cInitOpenDrainBaudRate = 2000000;
 constexpr uint32_t kI3cInitPushPullBaudRate = 4000000;
@@ -85,24 +68,7 @@ void I3cMcuxpressoInitiator::Enable() {
 
   I3C_MasterInit(base_, &masterConfig, CLOCK_GetI3cClkFreq());
 
-  // The I3C handle differs in that it takes a struct of three callbacks.
-  initiator_callbacks_ = {
-      .slave2Master = nullptr,
-      .ibiCallback = nullptr,
-      .transferComplete = I3cMcuxpressoInitiator::TransferCompleteCallback};
-
-  // Create the handle for the non-blocking transfer and register callback.
-#if PW_I2C_MCUXPRESSO_I3C_USE_DMA
-  I3C_MasterTransferCreateHandleDMA(base_,
-                                    &handle_,
-                                    &initiator_callbacks_,
-                                    this,
-                                    config_.rx_dma_channel.handle(),
-                                    config_.tx_dma_channel.handle());
-#else   // PW_I2C_MCUXPRESSO_I3C_USE_DMA
-  I3C_MasterTransferCreateHandle(base_, &handle_, &initiator_callbacks_, this);
-#endif  // PW_I2C_MCUXPRESSO_I3C_USE_DMA
-
+  driver_.Init(base_);
   enabled_ = true;
 }
 
@@ -119,48 +85,18 @@ void I3cMcuxpressoInitiator::Disable() {
   PW_CHECK_OK(clock_tree_element_.Acquire());
   pw::ScopeGuard guard([this] { clock_tree_element_.Release().IgnoreError(); });
 
-  I3C_MasterDeinit(base_);
+  driver_.DeInit();
   enabled_ = false;
 }
 
 I3cMcuxpressoInitiator::~I3cMcuxpressoInitiator() { Disable(); }
 
-void I3cMcuxpressoInitiator::TransferCompleteCallback(
-    I3C_Type*,
-    I3cMcuxpressoInitiator::Handle*,
-    status_t status,
-    void* initiator_ptr) {
-  I3cMcuxpressoInitiator& initiator =
-      *static_cast<I3cMcuxpressoInitiator*>(initiator_ptr);
-  initiator.transfer_status_ = status;
-
-  // We cannot release clock_tree_element_ here since we are in an ISR.
-  // It is released where callback_complete_notification_ is waited on.
-  initiator.callback_complete_notification_.release();
-}
-
-Status I3cMcuxpressoInitiator::InitiateNonBlockingTransferUntil(
+Status I3cMcuxpressoInitiator::InitiateTransferUntil(
     chrono::SystemClock::time_point deadline, i3c_master_transfer_t* transfer) {
   // Acquire the clock_tree_element. Make sure it's released on any function
   // exits through a scoped guard.
   PW_CHECK_OK(clock_tree_element_.Acquire());
-  pw::ScopeGuard guard([this] { clock_tree_element_.Release().IgnoreError(); });
-
-  const status_t status = I3C_MasterTransferFunc(base_, &handle_, transfer);
-  if (status != kStatus_Success) {
-    return HalStatusToPwStatus(status);
-  }
-
-  if (!callback_complete_notification_.try_acquire_until(deadline)) {
-    I3C_MasterTransferAbortFunc(base_, &handle_);
-    return Status::DeadlineExceeded();
-  }
-
-  if (transfer_status_ != kStatus_Success) {
-    PW_LOG_INFO("NonBlockingTransfer failed transfer status %d",
-                transfer_status_.load());
-  }
-  return HalStatusToPwStatus(transfer_status_);
+  return driver_.InitiateTransferUntil(deadline, transfer);
 }
 
 pw::Status I3cMcuxpressoInitiator::SetDynamicAddressList(
@@ -442,7 +378,7 @@ pw::Status I3cMcuxpressoInitiator::DoTransferCcc(I3cCccAction rnw,
     transfer.dataSize = 0;
     transfer.busType = kI3C_TypeI3CSdr;
 
-    PW_TRY(InitiateNonBlockingTransferUntil(kCccDeadline, &transfer));
+    PW_TRY(InitiateTransferUntil(kCccDeadline, &transfer));
 
     transfer.flags = kI3C_TransferRepeatedStartFlag;
     transfer.slaveAddress = uint32_t{address.GetSevenBit()};
@@ -453,7 +389,7 @@ pw::Status I3cMcuxpressoInitiator::DoTransferCcc(I3cCccAction rnw,
     transfer.dataSize = buffer.size();
     transfer.busType = kI3C_TypeI3CSdr;
 
-    return InitiateNonBlockingTransferUntil(kCccDeadline, &transfer);
+    return InitiateTransferUntil(kCccDeadline, &transfer);
   }
   return HalStatusToPwStatus(status);
 }
@@ -517,7 +453,7 @@ Status I3cMcuxpressoInitiator::DoTransferFor(
       status_t sdk_status = I3C_MasterTransferBlocking(base_, &transfer);
       PW_TRY(HalStatusToPwStatus(sdk_status));
     } else {
-      PW_TRY(InitiateNonBlockingTransferUntil(deadline, &transfer));
+      PW_TRY(InitiateTransferUntil(deadline, &transfer));
     }
   }
 

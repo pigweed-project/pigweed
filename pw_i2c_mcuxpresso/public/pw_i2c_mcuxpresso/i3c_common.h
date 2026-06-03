@@ -11,10 +11,14 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+
 #pragma once
 
-/// @submodule{pw_i2c_mcuxpresso,config}
+#include "fsl_i3c.h"
+#include "pw_status/status.h"
 
-#include <stdint.h>
+namespace pw::i2c {
 
-/// @}
+pw::Status HalStatusToPwStatus(status_t status);
+
+}  // namespace pw::i2c
