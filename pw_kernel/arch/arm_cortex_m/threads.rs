@@ -166,6 +166,14 @@ impl Arch for crate::Arch {
 
             // TODO: make sure this always drops interrupts, may need to force a cpsid here.
             drop(sched_state);
+
+            // Ensure that the next instructions happen after the interrupts are enabled.
+            // This prevents pipelining/out-of-order execution from preventing PendSV from
+            // firing before we disable interrupts again.
+            unsafe {
+                core::arch::asm!("isb sy", options(nostack, preserves_flags));
+            }
+
             pw_assert::debug_assert!(
                 <crate::Arch as kernel::Arch>::InterruptController::interrupts_enabled()
             );
