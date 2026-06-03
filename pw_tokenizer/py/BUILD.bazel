@@ -121,6 +121,7 @@ pw_py_library(
         "data_driven_detokenize_test.py",
         "data_driven_detokenize_test_cc.py",
         "data_driven_detokenize_test_java.py",
+        "data_driven_detokenize_test_rust.py",
         "detokenize_test_cases.py",
     ],
     imports = ["."],

@@ -30,26 +30,31 @@ from detokenize_test_cases import (
 )
 import data_driven_detokenize_test_cc as cc
 import data_driven_detokenize_test_java as java
+import data_driven_detokenize_test_rust as rust
 
 _BASIC_TESTS = TestGenerator(
     TEST_CASES,
     cc_test=cc.BASIC_TESTS,
     java_test=java.BASIC_TESTS,
+    rust_test=rust.BASIC_TESTS,
 )
 _OPTIONALLY_TOKENIZED_TESTS = TestGenerator(
     OPTIONALLY_TOKENIZED_TEST_CASES,
     cc_test=cc.OPTIONALLY_TOKENIZED_TESTS,
     java_test=java.OPTIONALLY_TOKENIZED_TESTS,
+    rust_test=rust.OPTIONALLY_TOKENIZED_TESTS,
 )
 _WITH_ARGS_BINARY_TESTS = TestGenerator(
     WITH_ARGS_SUCCESSFUL_CASES_BINARY,
     cc_test=cc.WITH_ARGS_BINARY_TESTS,
     java_test=java.WITH_ARGS_BINARY_TESTS,
+    rust_test=rust.WITH_ARGS_BINARY_TESTS,
 )
 _WITH_COLLISIONS_TESTS = TestGenerator(
     WITH_COLLISIONS_CASES_BINARY,
     cc_test=cc.WITH_COLLISIONS_TESTS,
     java_test=java.WITH_COLLISIONS_TESTS,
+    rust_test=rust.WITH_COLLISIONS_TESTS,
 )
 
 

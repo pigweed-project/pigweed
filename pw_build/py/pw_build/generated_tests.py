@@ -96,6 +96,8 @@ _HEADER_TS = _COPYRIGHT + '/* eslint-env browser, jasmine */\n'
 
 _HEADER_JAVA = _HEADER_CPP
 
+_HEADER_RUST = _COPYRIGHT
+
 
 class Error(Exception):
     """Base class for exceptions raised by this module."""
@@ -173,6 +175,8 @@ JsTestGenerator = Callable[[Context[T]], Iterable[str]]
 
 JavaTestGenerator = Callable[[Context[T]], Iterable[str]]
 
+RustTestGenerator = Callable[[Context[T]], Iterable[str]]
+
 
 @dataclass(frozen=True)
 class CcTest:
@@ -222,6 +226,22 @@ class JavaTest:
     footer: str
 
 
+@dataclass(frozen=True)
+class RustTest:
+    """Captures how to generate a Rust test.
+
+    Attributes:
+      generator: Function that takes a :class:`Context` and produces the Rust
+          test.
+      header: Header that is output before the tests.
+      footer: Footer that is output after the tests.
+    """
+
+    generator: RustTestGenerator
+    header: str
+    footer: str
+
+
 def _to_test(test_class: type[T], value: tuple | T | None) -> T | None:
     if value is None:
         return None
@@ -247,12 +267,14 @@ class TestGenerator(Generic[T]):
         cc_test: tuple[CcTestGenerator, str, str] | CcTest | None = None,
         ts_test: tuple[JsTestGenerator, str, str] | TsTest | None = None,
         java_test: tuple[JavaTestGenerator, str, str] | JavaTest | None = None,
+        rust_test: tuple[RustTestGenerator, str, str] | RustTest | None = None,
     ) -> None:
         self._cases: dict[str, list[T]] = defaultdict(list)
 
         self._cc_test = _to_test(CcTest, cc_test)
         self._ts_test = _to_test(TsTest, ts_test)
         self._java_test = _to_test(JavaTest, java_test)
+        self._rust_test = _to_test(RustTest, rust_test)
 
         message = ''
 
@@ -352,6 +374,24 @@ class TestGenerator(Generic[T]):
             output.write(line)
             output.write('\n')
 
+    def _generate_rust_tests(self, test: RustTest) -> Iterator[str]:
+        yield test.header
+
+        for ctx in self._test_contexts():
+            yield from test.generator(ctx)
+            yield ''
+
+        yield test.footer
+
+    def rust_tests(self, output: TextIO) -> None:
+        """Writes Rust unit tests for each test case to the given file."""
+        if self._rust_test is None:
+            raise NotImplementedError('rust_test was not set!')
+
+        for line in self._generate_rust_tests(self._rust_test):
+            output.write(line)
+            output.write('\n')
+
 
 _CPP_ESCAPES = {
     ord(b'"'): r'\"',
@@ -422,6 +462,23 @@ def java_bytes(data: bytes) -> str:
     )
 
 
+def rust_string(data: str) -> str:
+    """Formats a string as a Rust string literal."""
+    escaped = (
+        data.replace('\\', '\\\\')
+        .replace('"', '\\"')
+        .replace('\n', '\\n')
+        .replace('\r', '\\r')
+        .replace('\t', '\\t')
+    )
+    return f'"{escaped}"'
+
+
+def rust_bytes(data: bytes) -> str:
+    """Formats a bytes object as a Rust byte slice literal (e.g. &[1, 2, 3])."""
+    return f"&[{', '.join(str(b) for b in data)}]"
+
+
 def _parse_test_generation_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Generate unit test files')
     tests = parser.add_mutually_exclusive_group()
@@ -439,6 +496,11 @@ def _parse_test_generation_args() -> argparse.Namespace:
         '--generate-java-test',
         type=argparse.FileType('w', encoding='UTF-8'),
         help='Generate the Java test file',
+    )
+    tests.add_argument(
+        '--generate-rust-test',
+        type=argparse.FileType('w', encoding='UTF-8'),
+        help='Generate the Rust test file',
     )
     return parser.parse_known_args()[0]
 
@@ -461,6 +523,12 @@ def _java_tests(tests: Iterable[TestGenerator], output: TextIO) -> None:
         test.java_tests(output)
 
 
+def _rust_tests(tests: Iterable[TestGenerator], output: TextIO) -> None:
+    output.write(_HEADER_RUST)
+    for test in tests:
+        test.rust_tests(output)
+
+
 def main(*tests: TestGenerator) -> None:
     """Runs the test generation or the Python tests.
 
@@ -475,5 +543,7 @@ def main(*tests: TestGenerator) -> None:
         _ts_tests(tests, args.generate_ts_test)
     elif args.generate_java_test:
         _java_tests(tests, args.generate_java_test)
+    elif args.generate_rust_test:
+        _rust_tests(tests, args.generate_rust_test)
     else:
         unittest.main()

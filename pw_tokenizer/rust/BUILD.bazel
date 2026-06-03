@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_doc_test", "rust_library", "rust_proc_macro", "rust_test")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
@@ -86,6 +87,8 @@ rust_doc(
 rust_library(
     name = "pw_tokenizer",
     srcs = [
+        "pw_tokenizer/detokenize.rs",
+        "pw_tokenizer/detokenize/csv.rs",
         "pw_tokenizer/internal.rs",
         "pw_tokenizer/lib.rs",
     ],
@@ -98,6 +101,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pw_tokenizer_core",
+        "//pw_base64/rust:pw_base64",
         "//pw_bytes/rust:pw_bytes",
         "//pw_format/rust:pw_format_core",
         "//pw_status/rust:pw_status",
@@ -138,4 +142,27 @@ rust_doc(
     name = "pw_tokenizer_doc",
     crate = ":pw_tokenizer",
     target_compatible_with = incompatible_with_mcu(),
+)
+
+run_binary(
+    name = "generate_data_driven_detokenize_test",
+    outs = ["data_driven_detokenize_test.rs"],
+    args = [
+        "--generate-rust-test",
+        "$(execpath :data_driven_detokenize_test.rs)",
+    ],
+    tool = "//pw_tokenizer/py:data_driven_detokenize_test_generator",
+    visibility = ["//visibility:private"],
+)
+
+rust_test(
+    name = "data_driven_detokenize_test",
+    srcs = [":generate_data_driven_detokenize_test"],
+    crate_features = select({
+        "//pw_build/constraints/rust:std": ["std"],
+        "//conditions:default": [""],
+    }),
+    edition = "2024",
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [":pw_tokenizer"],
 )

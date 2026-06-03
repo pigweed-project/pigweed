@@ -61,6 +61,10 @@ use pw_status::Result;
 #[doc(hidden)]
 pub mod internal;
 
+/// Detokenization support.
+#[cfg(feature = "std")]
+pub mod detokenize;
+
 #[doc(hidden)]
 // Creating a __private namespace allows us a way to get to the modules
 // we need from macros by doing:
