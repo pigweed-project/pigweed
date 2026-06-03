@@ -17,6 +17,7 @@
 
 #include "pw_software_update/update_bundle_accessor.h"
 
+#include <bitset>
 #include <cstddef>
 #include <cstring>
 #include <string_view>
@@ -94,6 +95,8 @@ Status VerifyMetadataSignatures(protobuf::Bytes message,
   // signatures can be verified using the allowed keys.
   size_t verified_count = 0;
   size_t total_signatures = 0;
+  std::bitset<PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS> allowed_key_used;
+
   for (protobuf::Message signature : signatures) {
     total_signatures++;
     protobuf::Bytes key_id =
@@ -114,18 +117,30 @@ Status VerifyMetadataSignatures(protobuf::Bytes message,
     // Note that the function assumes that the key id is properly derived
     // from the key (via sha256).
     bool key_id_is_allowed = false;
+    size_t allowed_key_index = 0;
     for (protobuf::Bytes trusted : allowed_key_ids) {
+      if (allowed_key_index >= PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS) {
+        PW_LOG_ERROR("Exceeded maximum supported allowed keys (%d)",
+                     static_cast<int>(PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS));
+        return Status::ResourceExhausted();
+      }
       Result<bool> key_id_equal = trusted.Equal(key_id_buf);
       PW_TRY(key_id_equal.status());
       if (key_id_equal.value()) {
         key_id_is_allowed = true;
         break;
       }
+      allowed_key_index++;
     }
 
     if (!key_id_is_allowed) {
       PW_LOG_DEBUG("Skipping a key id not listed in allowed key ids");
       LogKeyId(key_id_buf);
+      continue;
+    }
+
+    if (allowed_key_used.test(allowed_key_index)) {
+      PW_LOG_DEBUG("Skipping a duplicate key id");
       continue;
     }
 
@@ -154,6 +169,7 @@ Status VerifyMetadataSignatures(protobuf::Bytes message,
     Result<bool> res = VerifyEcdsaSignature(key_val, sha256_digest, sig);
     PW_TRY(res.status());
     if (res.value()) {
+      allowed_key_used.set(allowed_key_index);
       verified_count++;
       if (verified_count == threshold.value()) {
         return OkStatus();
@@ -567,7 +583,7 @@ Status UpdateBundleAccessor::VerifyTargetsMetadata() {
       signed_top_level_targets_metadata.AsMessage(static_cast<uint32_t>(
           SignedTargetsMetadata::Fields::kSerializedTargetsMetadata));
 
-  // Get the sigantures from the signed targets metadata.
+  // Get the signatures from the signed targets metadata.
   protobuf::RepeatedMessages signatures =
       signed_top_level_targets_metadata.AsRepeatedMessages(
           static_cast<uint32_t>(SignedTargetsMetadata::Fields::kSignatures));
@@ -584,13 +600,13 @@ Status UpdateBundleAccessor::VerifyTargetsMetadata() {
       static_cast<uint32_t>(RootMetadata::Fields::kKeys));
   PW_TRY(key_mapping.status());
 
-  // Get the target metadtata signature requirement from the trusted root.
+  // Get the target metadata signature requirement from the trusted root.
   protobuf::Message signature_requirement =
       trusted_root.AsMessage(static_cast<uint32_t>(
           RootMetadata::Fields::kTargetsSignatureRequirement));
   PW_TRY(signature_requirement.status());
 
-  // Verify the sigantures
+  // Verify the signatures
   Status sig_res =
       VerifyMetadataSignatures(top_level_targets_metadata.ToBytes(),
                                signatures,

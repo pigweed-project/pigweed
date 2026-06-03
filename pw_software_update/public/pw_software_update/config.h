@@ -20,6 +20,11 @@
 // The maximum allowed length of a target name.
 #define MAX_TARGET_NAME_LENGTH 32
 
+// The maximum allowed number of keys for a given signature requirement.
+#ifndef PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS
+#define PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS 8
+#endif  // PW_SOFTWARE_UPDATE_MAX_ALLOWED_KEYS
+
 // The maximum allowed payload size in bytes. This is used to mitigate DoS
 // attacks.
 #ifndef PW_SOFTWARE_UPDATE_MAX_TARGET_PAYLOAD_SIZE

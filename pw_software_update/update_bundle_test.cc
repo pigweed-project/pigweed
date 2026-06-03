@@ -612,4 +612,12 @@ TEST_F(UpdateBundleTest,
   ASSERT_FAIL(update_bundle.OpenAndVerify());
 }
 
+TEST_F(UpdateBundleTest, VerifyDuplicateSignaturesRejected) {
+  backend().SetTrustedRoot(kDevMultiSigSignedRoot);
+  StageTestBundle(kTestMultiSigDuplicateSignedBundle);
+  UpdateBundleAccessor update_bundle(blob_reader(), backend());
+
+  ASSERT_FAIL(update_bundle.OpenAndVerify());
+}
+
 }  // namespace pw::software_update

@@ -27,6 +27,7 @@ from pw_software_update.tuf_pb2 import (
     SignedRootMetadata,
     TargetsMetadata,
     SignedTargetsMetadata,
+    SignatureRequirement,
 )
 
 HEADER = """// Copyright 2021 The Pigweed Authors
@@ -49,6 +50,9 @@ HEADER = """// Copyright 2021 The Pigweed Authors
 
 """
 
+# CONFIRMEDTESTKEY - The following are mock elliptic curve signing private keys
+# used strictly for generating the hermetic test bundles in our unit tests.
+# None of these keys are used in any production systems.
 TEST_DEV_KEY = """-----BEGIN PRIVATE KEY-----
 MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgVgMQBOTJyx1xOafy
 WTs2VkACf7Uo3RbP9Vun+oKXtMihRANCAATV7XJljxeUs2z2wqM5Q/kohAra1620
@@ -76,26 +80,26 @@ geWonkusMP0+MXopnmN0QlpgaCnG40TSr/W+wFjRmNCklL4dXk01oCwD
 TEST_ROOT_VERSION = 2
 TEST_TARGETS_VERSION = 2
 
-USER_MANIFEST_FILE_NAME = 'user_manifest'
+USER_MANIFEST_FILE_NAME = "user_manifest"
 
 TARGET_FILES = {
-    'file1': 'file 1 content'.encode(),
-    'file2': 'file 2 content'.encode(),
-    USER_MANIFEST_FILE_NAME: 'user manifest content'.encode(),
+    "file1": "file 1 content".encode(),
+    "file2": "file 2 content".encode(),
+    USER_MANIFEST_FILE_NAME: "user manifest content".encode(),
 }
 
 TARGET_FILES_WITHOUT_USER_MANIFEST = {
-    'file1': 'file 1 content'.encode(),
-    'file2': 'file 2 content'.encode(),
+    "file1": "file 1 content".encode(),
+    "file2": "file 2 content".encode(),
 }
 
 
 def byte_array_declaration(data: bytes, name: str) -> str:
     """Generates a byte C array declaration for a byte array"""
-    type_name = '[[maybe_unused]] const std::byte'
-    byte_str = ''.join([f'std::byte{{0x{b:02x}}},' for b in data])
-    array_body = f'{{{byte_str}}}'
-    return f'{type_name} {name}[] = {array_body};'
+    type_name = "[[maybe_unused]] const std::byte"
+    byte_str = "".join([f"std::byte{{0x{b:02x}}}," for b in data])
+    array_body = f"{{{byte_str}}}"
+    return f"{type_name} {name}[] = {array_body};"
 
 
 def proto_array_declaration(proto, name: str) -> str:
@@ -224,7 +228,7 @@ class Bundle:
         if signed_root_metadata:
             bundle.root_metadata.CopyFrom(signed_root_metadata)
 
-        bundle.targets_metadata['targets'].CopyFrom(
+        bundle.targets_metadata["targets"].CopyFrom(
             SignedTargetsMetadata(
                 serialized_targets_metadata=targets_metadata.SerializeToString()
             )
@@ -264,6 +268,57 @@ class Bundle:
             private_key_private_pem_bytes(self._targets_prod_key),
         )
 
+    def generate_multi_sig_root_metadata(self) -> RootMetadata:
+        """Generates a root metadata with target signature threshold of 2"""
+        common = metadata.gen_common_metadata(
+            metadata.RoleType.ROOT, version=TEST_ROOT_VERSION
+        )
+        root_keys = [
+            keys.import_ecdsa_public_key(
+                private_key_public_pem_bytes(self._root_dev_key)
+            )
+        ]
+        targets_keys = [
+            keys.import_ecdsa_public_key(
+                private_key_public_pem_bytes(self._targets_dev_key)
+            )
+        ]
+        return RootMetadata(
+            common_metadata=common,
+            consistent_snapshot=False,
+            keys=root_keys + targets_keys,
+            root_signature_requirement=SignatureRequirement(
+                key_ids=[k.key_id for k in root_keys], threshold=1
+            ),
+            targets_signature_requirement=SignatureRequirement(
+                key_ids=[k.key_id for k in targets_keys], threshold=2
+            ),
+        )
+
+    def generate_multi_sig_dev_signed_root_metadata(self) -> SignedRootMetadata:
+        """Generates a dev signed root metadata with multi-sig requirements."""
+        signed_root = SignedRootMetadata()
+        root_metadata_proto = self.generate_multi_sig_root_metadata()
+        signed_root.serialized_root_metadata = (
+            root_metadata_proto.SerializeToString()
+        )
+        return dev_sign.sign_root_metadata(
+            signed_root, private_key_private_pem_bytes(self._root_dev_key)
+        )
+
+    def generate_multi_sig_duplicate_signed_bundle(
+        self, signed_root: SignedRootMetadata
+    ) -> UpdateBundle:
+        """Generates a bundle with duplicate targets metadata signatures."""
+        bundle = self.generate_unsigned_bundle(signed_root_metadata=signed_root)
+        bundle = dev_sign.sign_update_bundle(
+            bundle, private_key_private_pem_bytes(self._targets_dev_key)
+        )
+        bundle = dev_sign.sign_update_bundle(
+            bundle, private_key_private_pem_bytes(self._targets_dev_key)
+        )
+        return bundle
+
     def generate_dev_signed_bundle_without_user_manifest(
         self,
     ) -> UpdateBundle:
@@ -280,7 +335,7 @@ class Bundle:
     def generate_manifest(self) -> Manifest:
         """Generates the manifest"""
         manifest = Manifest()
-        manifest.targets_metadata['targets'].CopyFrom(
+        manifest.targets_metadata["targets"].CopyFrom(
             self.generate_targets_metadata()
         )
         if USER_MANIFEST_FILE_NAME in self._payloads:
@@ -308,6 +363,15 @@ def main() -> int:
 
     dev_signed_root = test_bundle.generate_dev_signed_root_metadata()
     dev_signed_bundle = test_bundle.generate_dev_signed_bundle()
+    multi_sig_dev_signed_root = (
+        test_bundle.generate_multi_sig_dev_signed_root_metadata()
+    )
+    multi_sig_duplicate_signed_bundle = (
+        test_bundle.generate_multi_sig_duplicate_signed_bundle(
+            multi_sig_dev_signed_root
+        )
+    )
+
     dev_signed_bundle_with_root = test_bundle.generate_dev_signed_bundle(
         signed_root_metadata=dev_signed_root
     )
@@ -316,14 +380,14 @@ def main() -> int:
     )
     manifest_proto = test_bundle.generate_manifest()
     invalid_manifest_proto = Manifest()
-    invalid_manifest_proto.targets_metadata['targets'].CopyFrom(
+    invalid_manifest_proto.targets_metadata["targets"].CopyFrom(
         metadata.gen_targets_metadata(
             TARGET_FILES_WITHOUT_USER_MANIFEST,
             metadata.DEFAULT_HASHES,
             TEST_TARGETS_VERSION,
         )
     )
-    invalid_manifest_proto.user_manifest = 'user manifest content'.encode()
+    invalid_manifest_proto.user_manifest = "user manifest content".encode()
     prod_signed_root = test_bundle.generate_prod_signed_root_metadata()
     prod_signed_bundle = test_bundle.generate_prod_signed_bundle(
         None, prod_signed_root
@@ -337,7 +401,7 @@ def main() -> int:
     )
     test_bundle_with_sideloaded_user_manifest.target_payloads[
         USER_MANIFEST_FILE_NAME
-    ] = 'user manifest content'.encode()
+    ] = "user manifest content".encode()
 
     # Generates a prod root metadata that fails signature verification against
     # the dev root (i.e. it has a bad prod signature). This is done by making
@@ -347,7 +411,7 @@ def main() -> int:
         bad_prod_signature
     )
     # Compromises the signature.
-    signed_bad_prod_signature.signatures[0].sig = b'1' * 64
+    signed_bad_prod_signature.signatures[0].sig = b"1" * 64
     signed_bad_prod_signature_bundle = test_bundle.generate_prod_signed_bundle(
         None, signed_bad_prod_signature
     )
@@ -385,12 +449,12 @@ def main() -> int:
     )
 
     # Generates a bundle with a bad target signature.
-    bad_targets_siganture = test_bundle.generate_prod_signed_bundle(
+    bad_targets_signature = test_bundle.generate_prod_signed_bundle(
         None, prod_signed_root
     )
     # Compromises the signature.
-    bad_targets_siganture.targets_metadata['targets'].signatures[0].sig = (
-        b'1' * 64
+    bad_targets_signature.targets_metadata["targets"].signatures[0].sig = (
+        b"1" * 64
     )
 
     # Generates a bundle with rollback attempt
@@ -420,7 +484,7 @@ def main() -> int:
     #    that it does not cause verification failure.
     for idx, payload_file in enumerate(TARGET_FILES.items()):
         mismatched_hash_targets = test_bundle.generate_targets_metadata()
-        mismatched_hash_targets.target_files[idx].hashes[0].hash = b'0' * 32
+        mismatched_hash_targets.target_files[idx].hashes[0].hash = b"0" * 32
         mismatched_hash_targets_bundle = (
             test_bundle.generate_prod_signed_bundle(
                 mismatched_hash_targets, prod_signed_root
@@ -453,67 +517,78 @@ def main() -> int:
         personalized_out_bundle.target_payloads.pop(file_name)
         personalized_out_bundles.append(personalized_out_bundle)
 
-    with open(args.output_header, 'w') as header:
+    with open(args.output_header, "w") as header:
         header.write(HEADER)
         header.write(
-            proto_array_declaration(dev_signed_bundle, 'kTestDevBundle')
+            proto_array_declaration(dev_signed_bundle, "kTestDevBundle")
         )
         header.write(
             proto_array_declaration(
-                dev_signed_bundle_with_root, 'kTestDevBundleWithRoot'
+                dev_signed_bundle_with_root, "kTestDevBundleWithRoot"
             )
         )
         header.write(
             proto_array_declaration(
-                unsigned_bundle_with_root, 'kTestUnsignedBundleWithRoot'
+                unsigned_bundle_with_root, "kTestUnsignedBundleWithRoot"
             )
         )
         header.write(
             proto_array_declaration(
-                dev_signed_bundle_with_prod_root, 'kTestDevBundleWithProdRoot'
+                dev_signed_bundle_with_prod_root, "kTestDevBundleWithProdRoot"
             )
         )
         header.write(
             proto_array_declaration(
                 test_bundle_with_sideloaded_user_manifest,
-                'kTestDevBundleWithSideloadedUserManifest',
+                "kTestDevBundleWithSideloadedUserManifest",
             )
         )
         header.write(
             proto_array_declaration(
-                invalid_manifest_proto, 'kTestInvalidOnDeviceManifest'
+                invalid_manifest_proto, "kTestInvalidOnDeviceManifest"
             )
         )
         header.write(
-            proto_array_declaration(manifest_proto, 'kTestBundleManifest')
+            proto_array_declaration(manifest_proto, "kTestBundleManifest")
         )
-        header.write(proto_array_declaration(dev_signed_root, 'kDevSignedRoot'))
+        header.write(proto_array_declaration(dev_signed_root, "kDevSignedRoot"))
         header.write(
-            proto_array_declaration(prod_signed_bundle, 'kTestProdBundle')
+            proto_array_declaration(prod_signed_bundle, "kTestProdBundle")
         )
         header.write(
             proto_array_declaration(
                 mismatched_root_key_and_signature_bundle,
-                'kTestMismatchedRootKeyAndSignature',
+                "kTestMismatchedRootKeyAndSignature",
             )
         )
         header.write(
             proto_array_declaration(
-                signed_bad_prod_signature_bundle, 'kTestBadProdSignature'
+                signed_bad_prod_signature_bundle, "kTestBadProdSignature"
             )
         )
         header.write(
             proto_array_declaration(
-                bad_targets_siganture, 'kTestBadTargetsSignature'
+                bad_targets_signature, "kTestBadTargetsSignature"
             )
         )
         header.write(
             proto_array_declaration(
-                targets_rollback_bundle, 'kTestTargetsRollback'
+                targets_rollback_bundle, "kTestTargetsRollback"
             )
         )
         header.write(
-            proto_array_declaration(root_rollback_bundle, 'kTestRootRollback')
+            proto_array_declaration(root_rollback_bundle, "kTestRootRollback")
+        )
+        header.write(
+            proto_array_declaration(
+                multi_sig_dev_signed_root, "kDevMultiSigSignedRoot"
+            )
+        )
+        header.write(
+            proto_array_declaration(
+                multi_sig_duplicate_signed_bundle,
+                "kTestMultiSigDuplicateSignedBundle",
+            )
         )
 
         for idx, mismatched_hash_bundle in enumerate(
@@ -522,7 +597,7 @@ def main() -> int:
             header.write(
                 proto_array_declaration(
                     mismatched_hash_bundle,
-                    f'kTestBundleMismatchedTargetHashFile{idx}',
+                    f"kTestBundleMismatchedTargetHashFile{idx}",
                 )
             )
 
@@ -530,7 +605,7 @@ def main() -> int:
             header.write(
                 proto_array_declaration(
                     missing_hash_bundle,
-                    f'kTestBundleMissingTargetHashFile{idx}',
+                    f"kTestBundleMissingTargetHashFile{idx}",
                 )
             )
 
@@ -540,7 +615,7 @@ def main() -> int:
             header.write(
                 proto_array_declaration(
                     mismatched_length_bundle,
-                    f'kTestBundleMismatchedTargetLengthFile{idx}',
+                    f"kTestBundleMismatchedTargetLengthFile{idx}",
                 )
             )
 
@@ -548,13 +623,13 @@ def main() -> int:
             header.write(
                 proto_array_declaration(
                     personalized_out_bundle,
-                    f'kTestBundlePersonalizedOutFile{idx}',
+                    f"kTestBundlePersonalizedOutFile{idx}",
                 )
             )
     subprocess.run(
         [
-            'clang-format',
-            '-i',
+            "clang-format",
+            "-i",
             args.output_header,
         ],
         check=True,
