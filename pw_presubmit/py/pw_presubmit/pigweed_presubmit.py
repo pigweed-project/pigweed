@@ -149,14 +149,18 @@ def gn_quick_build_check(ctx: PresubmitContext):
     build.gn_gen(ctx)
 
 
-def _gn_main_build_check_targets() -> Sequence[str]:
-    build_targets = [
-        'check_modules',
-        *_at_all_optimization_levels('stm32f429i'),
-        *_at_all_optimization_levels(f'host_{_HOST_COMPILER}'),
+def _gn_python_build_check_targets() -> Sequence[str]:
+    return [
         'python.tests',
         'python.lint',
         'pigweed_pypi_distribution',
+    ]
+
+
+def _gn_host_build_check_targets() -> Sequence[str]:
+    build_targets = [
+        'check_modules',
+        *_at_all_optimization_levels(f'host_{_HOST_COMPILER}'),
     ]
 
     # Since there is no mac-arm64 bloaty binary in CIPD, Arm Macs use the x86_64
@@ -169,6 +173,22 @@ def _gn_main_build_check_targets() -> Sequence[str]:
         build_targets.append('default')
 
     return build_targets
+
+
+def _gn_stm_build_check_targets() -> Sequence[str]:
+    return [
+        'check_modules',
+        *_at_all_optimization_levels('stm32f429i'),
+    ]
+
+
+def _gn_main_build_check_targets() -> Sequence[str]:
+    return [
+        *_gn_python_build_check_targets(),
+        *_gn_host_build_check_targets(),
+        *_gn_stm_build_check_targets(),
+        'check_modules',
+    ]
 
 
 def _gn_platform_build_check_targets() -> Sequence[str]:
@@ -212,6 +232,39 @@ def _gn_combined_build_check_targets() -> Sequence[str]:
         *_gn_platform_build_check_targets(),
     ]
 
+
+gn_python_build_check = PigweedGnGenNinja(
+    name='gn_python_build_check',
+    doc='Run most Python checks.',
+    path_filter=upstream_checks.BUILD_FILE_FILTER,
+    gn_args=dict(
+        pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
+        pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
+    ),
+    ninja_targets=_gn_python_build_check_targets(),
+)
+
+gn_host_build_check = PigweedGnGenNinja(
+    name='gn_host_build_check',
+    doc='Run most host checks.',
+    path_filter=upstream_checks.BUILD_FILE_FILTER,
+    gn_args=dict(
+        pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
+        pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
+    ),
+    ninja_targets=_gn_host_build_check_targets(),
+)
+
+gn_stm_build_check = PigweedGnGenNinja(
+    name='gn_stm_build_check',
+    doc='Run most STM32F429I checks.',
+    path_filter=upstream_checks.BUILD_FILE_FILTER,
+    gn_args=dict(
+        pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
+        pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
+    ),
+    ninja_targets=_gn_stm_build_check_targets(),
+)
 
 gn_main_build_check = PigweedGnGenNinja(
     name='gn_main_build_check',
@@ -1141,7 +1194,7 @@ def build_env_setup(ctx: PresubmitContext):
 def static_analysis(ctx: PresubmitContext):
     """Runs all available static analysis tools."""
     build.gn_gen(ctx)
-    build.ninja(ctx, 'python.lint', 'static_analysis')
+    build.ninja(ctx, 'check_modules', 'python.lint', 'static_analysis')
     build.gn_check(ctx)
 
 
@@ -1174,8 +1227,11 @@ OTHER_CHECKS = (
     gn_all,
     gn_clang_build,
     gn_combined_build_check,
+    gn_host_build_check,
     gn_main_build_check,
     gn_platform_build_check,
+    gn_python_build_check,
+    gn_stm_build_check,
     module_owners.presubmit_check(),
     npm_presubmit.npm_test,
     npm_presubmit.vscode_test,
