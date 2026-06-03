@@ -32,6 +32,7 @@ pub extern "C" fn main() -> core::ffi::c_int {
 
 #[cfg(test)]
 mod test_links {
+    use foreign_box as _;
     use list as _;
     use pw_assert as _;
     use time as _;

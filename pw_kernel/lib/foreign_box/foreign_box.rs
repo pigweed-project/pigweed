@@ -11,9 +11,8 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-
-// This module uses the std test harness to allow catching of panics.
-#![cfg_attr(not(test), no_std)]
+#![no_std]
+#![cfg_attr(test, no_main)]
 
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
@@ -23,26 +22,6 @@ use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 use pw_atomic::AtomicUsize;
-
-macro_rules! local_panic {
-    ($msg:literal $(,)?) => {{
-        if cfg!(feature = "core_panic") {
-            panic!($msg);
-        } else {
-            pw_assert::panic!($msg);
-        }
-
-    }};
-
-    ($msg:literal, $($args:expr),* $(,)?) => {{
-        #[allow(clippy::unnecessary_cast)]
-        if cfg!(feature = "core_panic") {
-            panic!($msg, $($args),*);
-        } else {
-            pw_assert::panic!($msg, $($args),*);
-        }
-    }};
-}
 
 pub struct ForeignBox<T: ?Sized> {
     inner: NonNull<T>,
@@ -88,7 +67,7 @@ impl<T: ?Sized> ForeignBox<T> {
     #[must_use]
     pub unsafe fn new_from_ptr(ptr: *mut T) -> Self {
         let Some(ptr) = NonNull::new(ptr) else {
-            local_panic!("Null pointer");
+            pw_assert::panic!("Null pointer");
         };
         unsafe { Self::new(ptr) }
     }
@@ -121,7 +100,7 @@ impl<T: ?Sized> ForeignBox<T> {
 impl<T: ?Sized> Drop for ForeignBox<T> {
     fn drop(&mut self) {
         if !self.consumed {
-            local_panic!(
+            pw_assert::panic!(
                 "ForeignBox@{:08x} dropped before being consumed!",
                 self.inner.as_ptr().cast::<()>() as usize
             );
@@ -222,6 +201,10 @@ impl<A: AtomicUsize, T: ?Sized> ForeignRcState<A, T> {
         // lifecycle.
         ForeignRc { state: self }
     }
+
+    pub fn ref_count(&self) -> &A {
+        &self.ref_count
+    }
 }
 
 impl<A: AtomicUsize, T: Sized> ForeignRcState<A, T> {
@@ -244,6 +227,11 @@ pub struct ForeignRc<A: AtomicUsize + 'static, T: ?Sized + 'static> {
 }
 
 impl<A: AtomicUsize, T: ?Sized> ForeignRc<A, T> {
+    #[must_use]
+    pub fn state(&self) -> &ForeignRcState<A, T> {
+        self.state
+    }
+
     #[doc(hidden)]
     /// Map a `ForeignRc` into a compatible type.
     ///
@@ -416,76 +404,71 @@ macro_rules! static_foreign_rc {
 
 #[cfg(test)]
 mod tests {
-    // Ensure that the console backend (needed for pw_log) is linked.
-    use console_backend as _;
+    use unittest::test;
 
     use super::*;
+
     #[test]
-    fn consume_returns_the_same_pointer() {
+    fn consume_returns_the_same_pointer() -> unittest::Result<()> {
         let mut value = 0xdecafbad_u32;
         let ptr = &raw mut value;
         let foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
         let consumed_ptr = foreign_box.consume();
 
-        assert_eq!(ptr, consumed_ptr.as_ptr());
-    }
-
-    #[should_panic]
-    #[test]
-    fn non_consumed_box_panics_when_dropped() {
-        let mut value = 0xdecafbad_u32;
-        let ptr = &raw mut value;
-        let _foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
-
-        // Should panic when foreign_box is dropped as it goes out of scope.
+        unittest::assert_eq!(ptr, consumed_ptr.as_ptr());
+        Ok(())
     }
 
     #[test]
-    fn value_can_be_read_through_as_ref() {
+    fn value_can_be_read_through_as_ref() -> unittest::Result<()> {
         let mut value = 0xdecafbad_u32;
         let ptr = &raw mut value;
         let foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
-        assert_eq!(value, *(foreign_box.as_ref()));
+        unittest::assert_eq!(value, *(foreign_box.as_ref()));
 
         // Prevent foreign_box from being dropped.
         let _ = foreign_box.consume();
+        Ok(())
     }
 
     #[test]
-    fn value_can_be_modified_through_as_mut() {
+    fn value_can_be_modified_through_as_mut() -> unittest::Result<()> {
         let mut value = 0xdecafbad_u32;
         let ptr = &raw mut value;
         let mut foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
         *(foreign_box.as_mut()) = 0xcafecafe;
 
-        assert_eq!(unsafe { ptr.read_volatile() }, 0xcafecafe);
+        unittest::assert_eq!(unsafe { ptr.read_volatile() }, 0xcafecafe);
 
         // Prevent foreign_box from being dropped.
         let _ = foreign_box.consume();
+        Ok(())
     }
 
     #[test]
-    fn value_can_be_read_through_deref() {
+    fn value_can_be_read_through_deref() -> unittest::Result<()> {
         let mut value = 0xdecafbad_u32;
         let ptr = &raw mut value;
         let foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
-        assert_eq!(value, *foreign_box);
+        unittest::assert_eq!(value, *foreign_box);
 
         // Prevent foreign_box from being dropped.
         let _ = foreign_box.consume();
+        Ok(())
     }
 
     #[test]
-    fn value_can_be_modified_through_deref_mut() {
+    fn value_can_be_modified_through_deref_mut() -> unittest::Result<()> {
         let mut value = 0xdecafbad_u32;
         let ptr = &raw mut value;
         let mut foreign_box = unsafe { ForeignBox::new(NonNull::new_unchecked(ptr)) };
         *foreign_box = 0xcafecafe;
 
-        assert_eq!(unsafe { ptr.read_volatile() }, 0xcafecafe);
+        unittest::assert_eq!(unsafe { ptr.read_volatile() }, 0xcafecafe);
 
         // Prevent foreign_box from being dropped.
         let _ = foreign_box.consume();
+        Ok(())
     }
 
     trait TestDynTrait {
@@ -519,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn supports_dynamic_dispatch() {
+    fn supports_dynamic_dispatch() -> unittest::Result<()> {
         let mut times_one_val = TimesOne { val: 10 };
         let ptr = &raw mut times_one_val;
         let times_one_box = unsafe { ForeignBox::<dyn TestDynTrait>::new_from_ptr(ptr) };
@@ -528,107 +511,32 @@ mod tests {
         let ptr = &raw mut times_two_val;
         let times_two_box = unsafe { ForeignBox::<dyn TestDynTrait>::new_from_ptr(ptr) };
 
-        assert_eq!(get_number(&times_one_box), 10);
-        assert_eq!(get_number(&times_two_box), 20);
+        unittest::assert_eq!(get_number(&times_one_box), 10);
+        unittest::assert_eq!(get_number(&times_two_box), 20);
 
         times_one_box.consume();
         times_two_box.consume();
+        Ok(())
     }
 
     #[test]
-    fn rc_box_ref_count_is_correct() {
-        let state = ForeignRcState::<core::sync::atomic::AtomicUsize, _>::new(0xdecafbad_u32);
-        let state = Box::leak(Box::new(state));
-        assert_eq!(state.ref_count.load(Ordering::SeqCst), 1);
-
-        // SAFETY: We haven't called any methods on `state` (okay, we loaded the
-        // `ref_count`, but that doesn't modify anything).
-        let rc = unsafe { state.create_first_ref() };
-
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
-
-        let r1 = rc.clone();
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 2);
-
-        let r2 = rc.clone();
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 3);
-
-        drop(r1);
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 2);
-
-        drop(r2);
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn rc_box_can_be_read_through_deref() {
-        let state = ForeignRcState::<core::sync::atomic::AtomicUsize, _>::new(0xdecafbad_u32);
-        let state = Box::leak(Box::new(state));
-        // SAFETY: We haven't called any methods on `state`.
-        let rc = unsafe { state.create_first_ref() };
-
-        assert_eq!(*rc, 0xdecafbad_u32);
-    }
-
-    #[test]
-    fn rc_upcast_compiles_and_has_coherent_refcount() {
-        trait UpcastTestTrait {
-            fn number(&self) -> u32;
-        }
-
-        struct UpcastTestStruct {
-            val: u32,
-        }
-
-        impl UpcastTestTrait for UpcastTestStruct {
-            fn number(&self) -> u32 {
-                self.val
-            }
-        }
-
-        let val = UpcastTestStruct { val: 42 };
-        let state = ForeignRcState::<core::sync::atomic::AtomicUsize, _>::new(val);
-        let state = Box::leak(Box::new(state));
-        let rc = unsafe { state.create_first_ref() };
-
-        let upcasted = upcast_foreign_rc!(rc => dyn UpcastTestTrait);
-        assert_eq!(upcasted.number(), 42);
-        assert_eq!(upcasted.state.ref_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn rc_ref_from_inner_increments_ref_count() {
-        let val = 42;
-        let state = ForeignRcState::<core::sync::atomic::AtomicUsize, _>::new(val);
-        let state = Box::leak(Box::new(state));
-        let rc = unsafe { state.create_first_ref() };
-
-        let inner: &i32 = &rc;
-        let rc2 = unsafe {
-            ForeignRcState::<core::sync::atomic::AtomicUsize, i32>::create_ref_from_inner(inner)
-        };
-
-        assert_eq!(*rc, 42);
-        assert_eq!(*rc2, 42);
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 2);
-    }
-
-    #[test]
-    fn static_foreign_box_can_be_created_and_consumed() {
+    fn static_foreign_box_can_be_created_and_consumed() -> unittest::Result<()> {
         let b = unsafe { static_foreign_box!(u32, 42) };
-        assert_eq!(*b, 42);
+        unittest::assert_eq!(*b, 42);
         let ptr = b.consume();
-        assert_eq!(unsafe { ptr.read() }, 42);
+        unittest::assert_eq!(unsafe { ptr.read() }, 42);
+        Ok(())
     }
 
     #[test]
-    fn static_foreign_rc_ref_count_is_correct() {
+    fn static_foreign_rc_ref_count_is_correct() -> unittest::Result<()> {
         let rc = unsafe { static_foreign_rc!(core::sync::atomic::AtomicUsize, u32, 42) };
-        assert_eq!(*rc, 42);
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
+        unittest::assert_eq!(*rc, 42);
+        unittest::assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
         let rc2 = rc.clone();
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 2);
+        unittest::assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 2);
         drop(rc2);
-        assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
+        unittest::assert_eq!(rc.state.ref_count.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 }

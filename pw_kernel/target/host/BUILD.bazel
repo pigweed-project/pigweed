@@ -41,6 +41,7 @@ rust_test(
     deps = [
         # As the host unittest_runner intentionally doesn't depend
         # on the kernel, each test must be manually depended on.
+        "//pw_kernel/lib/foreign_box",
         "//pw_kernel/lib/list",
         "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/time",

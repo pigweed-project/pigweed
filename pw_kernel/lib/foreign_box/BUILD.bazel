@@ -14,6 +14,7 @@
 
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
+load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -21,23 +22,26 @@ rust_library(
     name = "foreign_box",
     srcs = ["foreign_box.rs"],
     edition = "2024",
+    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
     deps = [
         "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/pw_atomic",
-    ],
+    ] + KERNEL_TEST_DEPS,
 )
 
-# foreign_box uses the std rust test harness to allow asserting that it panics
-# in the correct places.
+# foreign_box_std_test uses the std rust test harness to allow asserting that it
+# panics in the correct places.  Non-panicking or alloc tests use the unittest runner
+# to allow running the tests on device.
 rust_test(
-    name = "foreign_box_test",
-    crate = ":foreign_box",
-    crate_features = ["core_panic"],
+    name = "foreign_box_std_test",
+    srcs = ["foreign_box_std_test.rs"],
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
-    deps = ["//pw_kernel/subsys/console:console_backend"],
+    deps = [
+        ":foreign_box",
+    ],
 )
 
 rust_doc_test(
