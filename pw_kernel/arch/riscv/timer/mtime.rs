@@ -53,10 +53,11 @@ impl TimerInterface for Timer {
         }
         Self::disable();
         Self::set_next_monotonic_tick();
-        Self::enable();
     }
 
-    fn init() {}
+    fn init() {
+        Self::enable();
+    }
 
     fn enable() {
         unsafe {
