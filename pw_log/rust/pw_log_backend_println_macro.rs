@@ -70,6 +70,13 @@ impl CoreFmtFormatMacroGenerator for LogfGenerator<'_> {
         let format_string = format!("[{{}}] {format_string}");
         Ok(quote! {
           {
+            // A limitation of the tokenizer macro is that untyped formats
+            // are not supported, so instead of ("{}", x), the following
+            // ("{}", x as type) must be used  instead. All the log stmts
+            // now all use explicit casts even when using a different backend.
+            // So match the behavior of the tokenized logger and also ignore
+            // unnecessary casts here.
+            #![allow(clippy::unnecessary_cast)]
             extern crate std;
             use std::println;
             println!(#format_string, __pw_log_backend_crate::log_level_tag(#log_level), #(#args),*);
