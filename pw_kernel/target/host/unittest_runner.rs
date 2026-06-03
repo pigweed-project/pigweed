@@ -12,10 +12,28 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-pub use kernel_config::KernelConfigInterface;
+#![no_main]
 
-pub struct KernelConfig;
+#[unsafe(no_mangle)]
+pub extern "C" fn main() -> core::ffi::c_int {
+    #[cfg(test)]
+    {
+        let ret = match unittest_core::run_bare_metal_tests!() {
+            unittest_core::TestsResult::AllPassed => 0,
+            unittest_core::TestsResult::SomeFailed => 1,
+        };
+        pw_log::info!("Test runner exited with code {}", ret);
+        ret
+    }
 
-impl KernelConfigInterface for KernelConfig {
-    const SYSTEM_CLOCK_HZ: u64 = 0;
+    #[cfg(not(test))]
+    0
+}
+
+#[cfg(test)]
+mod test_links {
+    use list as _;
+    use pw_assert as _;
+    use time as _;
+    use vectored_buffer as _;
 }

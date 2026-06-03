@@ -45,8 +45,22 @@ bool_flag(
 )
 
 config_setting(
-    name = "userspace_build_enabled",
+    name = "userspace_build_flag_enabled",
     flag_values = {":userspace_build": "True"},
+)
+
+config_setting(
+    name = "is_os_none",
+    constraint_values = ["@platforms//os:none"],
+)
+
+selects.config_setting_group(
+    name = "userspace_build_enabled",
+    match_all = [
+        ":userspace_build_flag_enabled",
+        # Don't enable userspace on host builds.
+        ":is_os_none",
+    ],
 )
 
 # When building a system with userspace enabled, both the kernel and the

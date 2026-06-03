@@ -110,9 +110,6 @@ pw_rust_docs(
         "-Z",
         "unstable-options",
         "--enable-index-page",
-        # Generates kernel docs with the host arch.  To generate arch specific
-        # docs, use `//pw_kernel/kernel:docs` with the correct `--config`
-        "--cfg=feature=\"arch_host\"",
         "--cfg=feature=\"std_panic_handler\"",
     ],
     tags = ["kernel"],

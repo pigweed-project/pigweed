@@ -13,24 +13,18 @@
 # the License.
 
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_test")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//pw_kernel:flags.bzl", "KERNEL_COMMON_FLAGS")
-
-COMMON_DEPS = [
-    "//pw_kernel/arch/host:arch_host",
-    "//pw_kernel/kernel",
-    "//pw_kernel/subsys/console:console_backend",
-]
 
 platform(
     name = "host",
     flags = flags_from_dict(
         KERNEL_COMMON_FLAGS | {
-            "//pw_kernel/config:kernel_config": ":config",
-            "//pw_kernel/subsys/console:console_backend": "//pw_kernel/subsys/console:console_backend_stdio",
-            # For simplicity have the host use basic logger rather than tokenized logger.
-            "//pw_log/rust:pw_log_backend": "//pw_kernel:log_backend_basic",
+            # Activate the default panic handler so tests don't need to register one.
+            "//pw_kernel/lib/pw_assert:default_handler": "true",
+            # Use the println backend To avoid pulling in the implicit console dep.
+            "//pw_log/rust:pw_log_backend": "@pigweed//pw_log/rust:pw_log_backend_println",
         },
     ),
     parents = ["@bazel_tools//tools:host_platform"],
@@ -41,7 +35,6 @@ platform(
     name = "doctest",
     flags = flags_from_dict(
         KERNEL_COMMON_FLAGS | {
-            "//pw_kernel/config:kernel_config": ":config",
             # Activate the default panic handler so rustdoc tests don't need to register one.
             "//pw_kernel/lib/pw_assert:default_handler": "true",
             # Use the println backend To avoid pulling in the implicit console dep.
@@ -52,36 +45,21 @@ platform(
     visibility = ["//visibility:private"],
 )
 
-rust_binary(
-    name = "target",
-    srcs = ["target.rs"],
-    edition = "2024",
-    tags = ["kernel"],
-    target_compatible_with = incompatible_with_mcu(),
-    deps = COMMON_DEPS,
-)
-
 rust_test(
     name = "unittest_runner",
-    srcs = ["target.rs"],
+    srcs = ["unittest_runner.rs"],
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     use_libtest_harness = False,
-    deps = COMMON_DEPS + [
-        "//pw_kernel/lib/unittest:unittest_core",
-        "//pw_log/rust:pw_log",
-    ],
-)
-
-rust_library(
-    name = "config",
-    srcs = ["config.rs"],
-    crate_name = "kernel_config",
-    edition = "2024",
-    tags = ["kernel"],
-    target_compatible_with = incompatible_with_mcu(),
     deps = [
-        "//pw_kernel/config:kernel_config_interface",
+        # As the host unittest_runner intentionally doesn't depend
+        # on the kernel, each test must be manually depended on.
+        "//pw_kernel/lib/list",
+        "//pw_kernel/lib/pw_assert",
+        "//pw_kernel/lib/time",
+        "//pw_kernel/lib/unittest:unittest_core",
+        "//pw_kernel/lib/vectored_buffer",
+        "//pw_log/rust:pw_log",
     ],
 )

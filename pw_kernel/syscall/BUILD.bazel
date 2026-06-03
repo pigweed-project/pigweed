@@ -25,6 +25,10 @@ rust_library(
     ],
     edition = "2024",
     tags = ["kernel"],
+    target_compatible_with = select({
+        "//pw_kernel/userspace:userspace_build_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//pw_status/rust:pw_status",
         "@rust_crates//:bitflags",
@@ -35,17 +39,20 @@ rust_library(
     name = "syscall_user",
     srcs = [
         "syscall_user/arm_cortex_m.rs",
-        "syscall_user/host.rs",
         "syscall_user/lib.rs",
         "syscall_user/riscv.rs",
     ],
     crate_features = selects.with_or({
         SUPPORTED_CORTEX_M_CPUS: ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
-        "//conditions:default": ["arch_host"],
+        "//conditions:default": [],
     }),
     edition = "2024",
     tags = ["kernel"],
+    target_compatible_with = select({
+        "//pw_kernel/userspace:userspace_build_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":syscall_defs",
         "//pw_status/rust:pw_status",

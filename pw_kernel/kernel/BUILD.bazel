@@ -73,7 +73,6 @@ rust_library(
         SUPPORTED_CORTEX_M_CPUS: ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
         "//conditions:default": [
-            "arch_host",
             "std_panic_handler",
         ],
     }),
@@ -126,7 +125,6 @@ rust_doc(
         "@platforms//cpu:armv8-m": ["--cfg=feature=\"arch_arm_cortex_m\""],
         "@platforms//cpu:riscv32": ["--cfg=feature=\"arch_riscv\""],
         "//conditions:default": [
-            "--cfg=feature=\"arch_host\"",
             "--cfg=feature=\"std_panic_handler\"",
         ],
     }),

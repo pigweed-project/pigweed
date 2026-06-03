@@ -20,7 +20,11 @@ unsafe extern "C" {
 
 #[cfg(feature = "default_handler")]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn pw_assert_HandleFailure() -> ! {
+/// # Safety
+/// The default_handler panic handler is safe, but
+/// the unsafe keyword is required to match the non-default
+/// panic handler signature.
+pub unsafe extern "C-unwind" fn pw_assert_HandleFailure() -> ! {
     core::panic!("pw_assert panic")
 }
 

@@ -24,8 +24,3 @@ pub use arm_cortex_m::SysCall;
 mod riscv;
 #[cfg(feature = "arch_riscv")]
 pub use riscv::SysCall;
-
-#[cfg(feature = "arch_host")]
-mod host;
-#[cfg(feature = "arch_host")]
-pub use host::SysCall;
