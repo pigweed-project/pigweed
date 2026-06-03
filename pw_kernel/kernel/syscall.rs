@@ -484,7 +484,17 @@ pub fn handle_syscall<'a, K: Kernel>(
     //
     // This allows [`arch::arm_cortex_m::in_interrupt_handler()`] to treat
     // active SVCalls as not in interrupt context.
-    let id: SysCallId = id.into();
+    let id = match SysCallId::try_from(id) {
+        Ok(id) => id,
+        Err(_) => {
+            log_if::debug_if!(
+                SYSCALL_DEBUG,
+                "syscall: unknown syscall {}",
+                u32::from(id) as u32
+            );
+            return SysCallReturnValue::from(-(Error::InvalidArgument as isize) as i64);
+        }
+    };
     let res = {
         match id {
             SysCallId::ObjectWait => handle_object_wait(kernel, args).into(),
@@ -512,9 +522,11 @@ pub fn handle_syscall<'a, K: Kernel>(
             SysCallId::DebugNop => 0u64.into(),
             SysCallId::DebugTriggerInterrupt => handle_debug_trigger_interrupt(kernel, args).into(),
             SysCallId::DebugClockNow => handle_debug_clock_now(kernel, args).into(),
-            _ => {
-                log_if::debug_if!(SYSCALL_DEBUG, "syscall: unknown syscall {}", id as u32);
-                SysCallReturnValue::from(-(Error::InvalidArgument as isize) as i64)
+            SysCallId::SysCallLowerBound
+            | SysCallId::SysCallUpperBound
+            | SysCallId::DebugSysCallLowerBound
+            | SysCallId::DebugSysCallUpperBound => {
+                pw_assert::panic!("Marker variants are unreachable");
             }
         }
     };

@@ -337,42 +337,58 @@ impl From<Result<ExitStatus>> for SysCallReturnValue {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 #[repr(u16)]
-#[non_exhaustive]
 pub enum SysCallId {
     // IDs are not ABI stable yet and are subject to change.
-    ChannelAsyncCancel = 0x0000,
-    ChannelAsyncTransact = 0x0001,
-    ChannelAsyncTransactComplete = 0x0002,
-    ChannelRead = 0x0003,
-    ChannelRespond = 0x0004,
-    ChannelTransact = 0x0005,
-    InterruptAck = 0x0006,
-    ObjectWait = 0x0007,
-    ProcessExit = 0x0008,
-    ProcessStart = 0x0009,
-    RaisePeerUserSignal = 0x000a,
-    TaskJoin = 0x000b,
-    TaskTerminate = 0x000c,
-    ThreadExit = 0x000d,
-    ThreadStart = 0x000e,
-    WaitGroupAdd = 0x000f,
-    WaitGroupRemove = 0x0010,
+    SysCallLowerBound = 0x0000,
+    ChannelAsyncCancel = 0x0001,
+    ChannelAsyncTransact = 0x0002,
+    ChannelAsyncTransactComplete = 0x0003,
+    ChannelRead = 0x0004,
+    ChannelRespond = 0x0005,
+    ChannelTransact = 0x0006,
+    InterruptAck = 0x0007,
+    ObjectWait = 0x0008,
+    ProcessExit = 0x0009,
+    ProcessStart = 0x000a,
+    RaisePeerUserSignal = 0x000b,
+    TaskJoin = 0x000c,
+    TaskTerminate = 0x000d,
+    ThreadExit = 0x000e,
+    ThreadStart = 0x000f,
+    WaitGroupAdd = 0x0010,
+    WaitGroupRemove = 0x0011,
+    // Upper bound for standard system calls.
+    SysCallUpperBound = 0x0012,
 
     // System calls prefixed with 0xF000 are reserved development/debugging use.
-    DebugPutc = 0xf000,
-    DebugShutdown = 0xf001,
-    DebugLog = 0xf002,
-    DebugNop = 0xf003,
-    DebugTriggerInterrupt = 0xf004,
-    DebugClockNow = 0xf005,
+    DebugSysCallLowerBound = 0xf000,
+    DebugPutc = 0xf001,
+    DebugShutdown = 0xf002,
+    DebugLog = 0xf003,
+    DebugNop = 0xf004,
+    DebugTriggerInterrupt = 0xf005,
+    DebugClockNow = 0xf006,
+    // Upper bound for debug system calls.
+    DebugSysCallUpperBound = 0xf007,
 }
 
-impl From<u16> for SysCallId {
-    fn from(value: u16) -> Self {
-        // SAFETY: SysCallId is repr(u16) and non-exhaustive.
-        unsafe { core::mem::transmute::<u16, SysCallId>(value) }
+impl TryFrom<u16> for SysCallId {
+    type Error = Error;
+
+    fn try_from(value: u16) -> Result<Self> {
+        if (value > SysCallId::SysCallLowerBound as u16
+            && value < SysCallId::SysCallUpperBound as u16)
+            || (value > SysCallId::DebugSysCallLowerBound as u16
+                && value < SysCallId::DebugSysCallUpperBound as u16)
+        {
+            // SAFETY: The value is guaranteed to be a valid SysCallId variant
+            // because it falls within the valid ranges of defined variants.
+            Ok(unsafe { core::mem::transmute::<u16, SysCallId>(value) })
+        } else {
+            Err(Error::InvalidArgument)
+        }
     }
 }
 
@@ -785,4 +801,58 @@ pub trait SysCallInterface {
     fn debug_trigger_interrupt(irq: u32) -> Result<()>;
 
     fn debug_clock_now() -> u64;
+}
+
+#[cfg(test)]
+mod tests {
+    use unittest::test;
+
+    use super::*;
+
+    #[test]
+    fn test_syscall_id_try_from_valid() -> unittest::Result<()> {
+        for i in (SysCallId::SysCallLowerBound as u16 + 1)..(SysCallId::SysCallUpperBound as u16) {
+            // SAFETY: The loop range guarantees `i` is a valid standard SysCallId.
+            let expected = unsafe { core::mem::transmute::<u16, SysCallId>(i) };
+            unittest::assert_eq!(SysCallId::try_from(i), Ok(expected));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_syscall_id_try_from_valid_debug() -> unittest::Result<()> {
+        for i in (SysCallId::DebugSysCallLowerBound as u16 + 1)
+            ..(SysCallId::DebugSysCallUpperBound as u16)
+        {
+            // SAFETY: The loop range guarantees `i` is a valid debug SysCallId.
+            let expected = unsafe { core::mem::transmute::<u16, SysCallId>(i) };
+            unittest::assert_eq!(SysCallId::try_from(i), Ok(expected));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_syscall_id_try_from_invalid() -> unittest::Result<()> {
+        unittest::assert_eq!(
+            SysCallId::try_from(SysCallId::SysCallLowerBound as u16),
+            Err(Error::InvalidArgument)
+        );
+        unittest::assert_eq!(
+            SysCallId::try_from(SysCallId::SysCallUpperBound as u16),
+            Err(Error::InvalidArgument)
+        );
+        unittest::assert_eq!(
+            SysCallId::try_from(SysCallId::DebugSysCallLowerBound as u16),
+            Err(Error::InvalidArgument)
+        );
+        unittest::assert_eq!(
+            SysCallId::try_from(SysCallId::DebugSysCallUpperBound as u16),
+            Err(Error::InvalidArgument)
+        );
+        unittest::assert_eq!(
+            SysCallId::try_from(SysCallId::DebugSysCallUpperBound as u16 + 1),
+            Err(Error::InvalidArgument)
+        );
+        Ok(())
+    }
 }
