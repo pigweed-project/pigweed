@@ -97,6 +97,14 @@ impl<T, A: Adapter<T>> ForeignList<T, A> {
     }
 }
 
+impl<T, A: Adapter<T>> Drop for ForeignList<T, A> {
+    fn drop(&mut self) {
+        if !self.is_empty() {
+            pw_assert::panic!("ForeignList dropped while non-empty");
+        }
+    }
+}
+
 impl<T, A: Adapter<T>> ForeignList<T, A> {
     pub fn sorted_insert_by_key<F: FnMut(&T) -> K, K: Ord>(
         &mut self,
@@ -175,6 +183,9 @@ impl<T, A: Adapter<T>> RandomAccessKey<T, A> {
 ///
 /// let removed_element = list.remove_element(key2);
 /// assert_eq!(removed_element.consume(), NonNull::new(&raw mut element2).unwrap());
+///
+/// let _ = list.remove_element(key1).consume();
+/// let _ = list.remove_element(key3).consume();
 /// ```
 ///
 pub struct RandomAccessForeignList<T, A: Adapter<T>> {
