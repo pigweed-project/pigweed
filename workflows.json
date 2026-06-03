@@ -355,21 +355,6 @@
       ]
     },
     {
-      "name": "k_doctest",
-      "build_config": {
-        "name": "k_doctest_config",
-        "description": "Kernel doc test config",
-        "build_type": "bazel",
-        "args": [
-          "--config=k_doctest"
-        ],
-        "env": {}
-      },
-      "targets": [
-        "//pw_kernel/..."
-      ]
-    },
-    {
       "name": "k_qemu_mps2_an505",
       "build_config": {
         "name": "k_qemu_mps2_an505_config",
@@ -804,7 +789,6 @@
       "description": "Kernel-related builds/configurations",
       "builds": [
         "k_host",
-        "k_doctest",
         "k_qemu_mps2_an505",
         "k_qemu_virt_riscv32",
         "k_adventure",

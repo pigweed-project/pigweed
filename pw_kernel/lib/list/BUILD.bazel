@@ -33,9 +33,6 @@ rust_library(
 rust_doc_test(
     name = "list_doc_test",
     crate = ":list",
-    tags = [
-        "kernel",
-        "kernel_doc_test",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )

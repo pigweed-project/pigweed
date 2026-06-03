@@ -32,9 +32,6 @@ rust_library(
 rust_doc_test(
     name = "vectored_buffer_doc_test",
     crate = ":vectored_buffer",
-    tags = [
-        "kernel",
-        "kernel_doc_test",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )

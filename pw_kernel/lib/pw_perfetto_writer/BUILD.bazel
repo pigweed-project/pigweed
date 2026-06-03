@@ -32,17 +32,13 @@ rust_library(
 rust_test(
     name = "pw_perfetto_writer_test",
     crate = ":pw_perfetto_writer",
-    tags = [
-        "kernel",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_doc_test(
     name = "pw_perfetto_writer_doc_test",
     crate = ":pw_perfetto_writer",
-    tags = [
-        "kernel",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )

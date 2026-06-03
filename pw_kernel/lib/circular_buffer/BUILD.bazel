@@ -33,9 +33,6 @@ rust_library(
 rust_doc_test(
     name = "circular_buffer_doc_test",
     crate = ":circular_buffer",
-    tags = [
-        "kernel",
-        "kernel_doc_test",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )

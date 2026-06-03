@@ -31,20 +31,6 @@ platform(
     visibility = ["//visibility:private"],
 )
 
-platform(
-    name = "doctest",
-    flags = flags_from_dict(
-        KERNEL_COMMON_FLAGS | {
-            # Activate the default panic handler so rustdoc tests don't need to register one.
-            "//pw_kernel/lib/pw_assert:default_handler": "true",
-            # Use the println backend To avoid pulling in the implicit console dep.
-            "//pw_log/rust:pw_log_backend": "@pigweed//pw_log/rust:pw_log_backend_println",
-        },
-    ),
-    parents = ["@bazel_tools//tools:host_platform"],
-    visibility = ["//visibility:private"],
-)
-
 rust_test(
     name = "unittest_runner",
     srcs = ["unittest_runner.rs"],

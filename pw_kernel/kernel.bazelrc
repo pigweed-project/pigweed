@@ -12,19 +12,14 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-build:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
-test:k_common --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test
+build:k_common --build_tag_filters=-do_not_build
+test:k_common --test_tag_filters=-integration,-do_not_build,-do_not_run_test
 test:k_common --@pigweed//pw_kernel:enable_tests=true
 # Place the test build in a separate directory to the build directory to avoid trashing the build
 # cache when switching between test and build commands.
 # TODO: b/485267571 - Investigate if we can remove the need for this by removing the
 # //pw_kernel:enable_tests flag.
 test:k_common --platform_suffix=test
-
-common:k_doctest --config=k_common
-common:k_doctest --platforms=//pw_kernel/target/host:doctest
-build:k_doctest --build_tag_filters=-do_not_build
-test:k_doctest --test_tag_filters=-integration,-do_not_build,-do_not_run_test
 
 # Lint configuration
 # ==================

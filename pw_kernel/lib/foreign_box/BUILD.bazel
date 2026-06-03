@@ -43,9 +43,6 @@ rust_test(
 rust_doc_test(
     name = "foreign_box_doc_test",
     crate = ":foreign_box",
-    tags = [
-        "kernel",
-        "kernel_doc_test",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )

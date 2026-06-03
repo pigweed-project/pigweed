@@ -52,9 +52,6 @@ rust_library(
 rust_doc_test(
     name = "pw_kernel_tracing_doc_test",
     crate = ":pw_kernel_tracing",
-    tags = [
-        "kernel",
-        "kernel_doc_test",
-    ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )
