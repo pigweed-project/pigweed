@@ -33,16 +33,16 @@
           name: "test_process",
           ram_size_bytes: 65536,
           objects: [
-            { name: "forced_exit_process", type: "process", linked_process: "forced_exit" }
-          ],
-          threads: [
+            { name: "forced_exit_process", type: "process", linked_process: "forced_exit" },
             {
               name: "main_thread",
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
             {
               name: "test_thread",
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -55,15 +55,16 @@
         {
           name: "forced_exit",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "forced_exit_thread_1",
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
             {
               name: "forced_exit_thread_2",
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

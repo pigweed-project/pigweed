@@ -43,11 +43,10 @@
             {
               name: "main_loop_wait_group",
               type: "wait_group"
-            }
-          ],
-          threads: [
+            },
             {
               name: "main_thread",
+              type: "thread",
               kernel_stack_size_bytes: 2048,
             },
           ],
@@ -80,6 +79,11 @@
               name: "main_loop_wait_group",
               type: "wait_group",
             },
+            {
+              name: "driver_thread",
+              type: "thread",
+              kernel_stack_size_bytes: 2048,
+            },
           ],
           memory_mappings: [
             {
@@ -88,12 +92,6 @@
               start_address: 0x10000000,
               size_bytes: 0x1000,
             }
-          ],
-          threads: [
-            {
-              name: "driver_thread",
-              kernel_stack_size_bytes: 2048,
-            },
           ],
         },
       ],
@@ -119,10 +117,9 @@
               handler_process: "uart_driver_16550",
               handler_object_name: "game_ipc_handler",
             },
-          ],
-          threads: [
             {
               name: "game_thread",
+              type: "thread",
               kernel_stack_size_bytes: 2048,
             },
           ],

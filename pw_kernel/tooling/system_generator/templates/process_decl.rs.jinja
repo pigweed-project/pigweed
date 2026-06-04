@@ -27,8 +27,8 @@ the License.
     )};
     process.object = Some(object_{{process.name | to_lower_ident}}_process.clone());
 
-    // TODO: https://pwbug.dev/496950345 - Merge with object declaration.
-    {% for thread in process.threads %}
+    {% for object in process.objects if object.type == "thread" %}
+        {% set thread = object %}
         {% include "thread_decl" %}
     {% endfor %}
 
@@ -36,9 +36,8 @@ the License.
 
     let initial_sp = {{ process.ram_start_address | hex }}_u64 + {{ process.ram_size_bytes | hex }}_u64;
 
-    // TODO: https://pwbug.dev/496970887 - Don't assume thread 0 is main.
     let main_thread_object =
-        object_{{process.name | to_lower_ident}}_{{process.threads[0].name | to_lower_ident}}
+        object_{{process.name | to_lower_ident}}_{{process.main_thread_name | to_lower_ident}}
         .clone();
     let main_thread = Some(kernel::object::MainThread {
         thread: main_thread_object,

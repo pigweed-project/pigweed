@@ -67,41 +67,41 @@
               name: "wait_group",
               type: "wait_group",
             },
-          ],
-          threads: [
             {
               name: "main_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
             {
               name: "test_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
         {
           name: "clean_exit",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "clean_exit_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
         {
           name: "forced_exit",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "forced_exit_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -123,23 +123,22 @@
               handler_process: "main",
               handler_object_name: "ipc_reset",
             },
-          ],
-          threads: [
             {
               name: "restart_thread",
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
         {
           name: "exception_exit",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "exception_exit_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

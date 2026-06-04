@@ -32,7 +32,7 @@ use mpu_validation::pmsav7::validate_pmsav7_layout;
 use system_config::ObjectConfig::Interrupt;
 use system_config::{
     InterruptTableConfig, MemoryMapping, MemoryMappingType, ObjectConfig, ProcessObjectConfig,
-    SystemConfig, ThreadObjectConfig,
+    SystemConfig,
 };
 
 #[derive(Debug, Parser)]
@@ -590,13 +590,8 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
     }
 
     fn populate_thread_objects(process: &mut system_config::ProcessConfig) {
-        for thread in &process.threads {
-            process
-                .objects
-                .push(ObjectConfig::Thread(ThreadObjectConfig {
-                    name: thread.name.clone(),
-                }));
-        }
+        // Save the main_thread_name for template usage.
+        process.main_thread_name = Some(process.get_main_thread().name.clone());
     }
 
     fn populate_process_and_thread_objects(&mut self) -> Result<()> {

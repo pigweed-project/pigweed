@@ -31,10 +31,10 @@
         {
           name: "clock_test_process",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "main_thread",
+              type: "thread",
               kernel_stack_size_bytes: 2048,
             },
           ],

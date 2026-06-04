@@ -36,12 +36,11 @@
               name: "ipc",
               type: "channel_handler",
             },
-          ],
-          threads: [
             {
               name: "interrupt_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -79,12 +78,11 @@
               handler_process: "interrupt",
               handler_object_name: "ipc",
             },
-          ],
-          threads: [
             {
               name: "interrupt_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

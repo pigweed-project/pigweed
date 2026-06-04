@@ -168,13 +168,44 @@ pub struct ProcessConfig {
     pub ram_size_bytes: u64,
     #[serde(skip_deserializing)]
     pub ram_start_address: u64,
+    #[serde(skip_deserializing)]
+    pub main_thread_name: Option<String>,
 
     #[serde(default)]
     pub memory_mappings: Vec<MemoryMapping>,
 
     #[serde(default)]
     pub objects: Vec<ObjectConfig>,
-    pub threads: Vec<ThreadConfig>,
+}
+
+impl ProcessConfig {
+    pub fn threads(&self) -> impl Iterator<Item = &ThreadObjectConfig> {
+        self.objects.iter().filter_map(|object| match object {
+            ObjectConfig::Thread(thread) => Some(thread),
+            _ => None,
+        })
+    }
+
+    pub fn threads_mut(&mut self) -> impl Iterator<Item = &mut ThreadObjectConfig> {
+        self.objects.iter_mut().filter_map(|object| match object {
+            &mut ObjectConfig::Thread(ref mut thread) => Some(thread),
+            _ => None,
+        })
+    }
+
+    #[must_use]
+    pub fn get_main_thread(&self) -> &ThreadObjectConfig {
+        // TODO: https://pwbug.dev/496970887 - Don't assume thread 0 is main.
+        if let Some(thread) = self.threads().next() {
+            return thread;
+        }
+
+        // Should not reach this far, each process needs at least one thread.
+        panic!(
+            "Process `{}` must have at least one thread defined.",
+            self.name
+        );
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -233,6 +264,10 @@ pub struct ProcessObjectConfig {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ThreadObjectConfig {
     pub name: String,
+    pub kernel_stack_size_bytes: Option<u64>,
+    pub priority: Option<String>,
+    #[serde(skip_deserializing)]
+    pub stack_size_expression: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -273,16 +308,6 @@ pub struct InterruptConfig {
 #[serde(deny_unknown_fields)]
 pub struct WaitGroupConfig {
     pub name: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ThreadConfig {
-    pub name: String,
-    pub kernel_stack_size_bytes: Option<u64>,
-    pub priority: Option<String>,
-    #[serde(skip_deserializing)]
-    pub stack_size_expression: String,
 }
 
 impl<A: ArchConfigInterface> SystemConfig<A> {
@@ -330,7 +355,7 @@ impl<A: ArchConfigInterface> SystemConfig<A> {
                     ));
                 }
 
-                for thread in &mut process.threads {
+                for thread in &mut process.threads_mut() {
                     if thread.priority.is_none() {
                         thread.priority = Some("DEFAULT_PRIORITY".to_string());
                     }
@@ -361,13 +386,6 @@ impl<A: ArchConfigInterface> SystemConfig<A> {
                     process.objects.iter().map(|o| o.name()),
                     &format!(
                         "objects for process {} in app {}",
-                        process.name, app_config.name
-                    ),
-                )?;
-                Self::check_unique_names(
-                    process.threads.iter().map(|t| t.name.as_str()),
-                    &format!(
-                        "threads for process {} in app {}",
                         process.name, app_config.name
                     ),
                 )?;

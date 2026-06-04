@@ -32,17 +32,18 @@
         {
           name: "main",
           ram_size_bytes: 65536,
-          objects: [],
-          threads: [
+          objects: [
             {
               name: "main_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
             {
               name: "test_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

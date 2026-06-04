@@ -54,13 +54,12 @@
             {
               name: "wait_group",
               type: "wait_group",
-            }
-          ],
-          threads: [
+            },
             {
               name: "initiator_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -78,12 +77,11 @@
               name: "ipc_1",
               type: "channel_handler",
             },
-          ],
-          threads: [
             {
               name: "handler1_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -95,12 +93,11 @@
               name: "ipc_2",
               type: "channel_handler",
             },
-          ],
-          threads: [
             {
               name: "handler2_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -112,12 +109,11 @@
               name: "ipc_3",
               type: "channel_handler",
             },
-          ],
-          threads: [
             {
               name: "handler3_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

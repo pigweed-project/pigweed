@@ -34,6 +34,12 @@
               name: "ipc",
               type: "channel_handler",
             },
+            {
+              name: "uart_thread",
+              // Generous stacks size pending kernel stack size optimization.
+              kernel_stack_size_bytes: 2048,
+              type: "thread",
+            },
           ],
           memory_mappings: [
             {
@@ -42,13 +48,6 @@
               start_address: 0x10000000,
               size_bytes: 0x2000,
             }
-          ],
-          threads: [
-            {
-              name: "uart_thread",
-              // Generous stacks size pending kernel stack size optimization.
-              kernel_stack_size_bytes: 2048,
-            },
           ],
         },
       ],
@@ -77,6 +76,12 @@
               handler_process: "test_uart",
               handler_object_name: "ipc",
             },
+            {
+              name: "uart_listener_thread",
+              // Generous stacks size pending kernel stack size optimization.
+              kernel_stack_size_bytes: 2048,
+              type: "thread",
+            },
           ],
           memory_mappings: [
             {
@@ -85,13 +90,6 @@
               start_address: 0x10000000,
               size_bytes: 0x2000,
             }
-          ],
-          threads: [
-            {
-              name: "uart_listener_thread",
-              // Generous stacks size pending kernel stack size optimization.
-              kernel_stack_size_bytes: 2048,
-            },
           ],
         },
       ],

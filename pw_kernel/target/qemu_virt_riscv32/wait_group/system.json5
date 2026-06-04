@@ -45,12 +45,11 @@
               handler_process: "handler",
               handler_object_name: "ipc_b",
             },
-          ],
-          threads: [
             {
               name: "initiator_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -80,12 +79,11 @@
               name: "wait_group_2",
               type: "wait_group",
             },
-          ],
-          threads: [
             {
               name: "handler_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

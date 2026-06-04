@@ -113,10 +113,12 @@ impl<A: ArchConfigInterface> ManifestValidator<A> for IdentifierValidator {
                     object_names.check(object.name(), &context)?;
                 }
 
-                let mut thread_names = IdentifierValidatorContext::new();
-                for thread in &process.threads {
-                    let context = format!("thread `{}` in process `{}`", thread.name, process.name);
-                    thread_names.check(thread.name.as_str(), &context)?;
+                let thread_count = &process.threads().count();
+                if *thread_count < 1 {
+                    return Err(anyhow!(
+                        "Process `{}` has no threads. At least one thread must be declared.",
+                        process.name,
+                    ));
                 }
             }
         }
@@ -188,14 +190,12 @@ mod tests {
                 objects: vec![crate::system_config::ObjectConfig::Thread(
                     crate::system_config::ThreadObjectConfig {
                         name: "valid_thread_obj".to_string(),
+                        kernel_stack_size_bytes: None,
+                        priority: None,
+                        stack_size_expression: "".to_string(),
                     },
                 )],
-                threads: vec![crate::system_config::ThreadConfig {
-                    name: "valid_thread".to_string(),
-                    kernel_stack_size_bytes: None,
-                    priority: None,
-                    stack_size_expression: "".to_string(),
-                }],
+                main_thread_name: None,
             }],
             constants: vec![ConstConfig::U32 {
                 name: "valid_const".to_string(),
@@ -256,15 +256,13 @@ mod tests {
                 }],
                 objects: vec![crate::system_config::ObjectConfig::Thread(
                     crate::system_config::ThreadObjectConfig {
-                        name: "obj1".to_string(),
+                        name: "thread1".to_string(),
+                        kernel_stack_size_bytes: None,
+                        priority: None,
+                        stack_size_expression: "".to_string(),
                     },
                 )],
-                threads: vec![crate::system_config::ThreadConfig {
-                    name: "thread1".to_string(),
-                    kernel_stack_size_bytes: None,
-                    priority: None,
-                    stack_size_expression: "".to_string(),
-                }],
+                main_thread_name: None,
             }],
             constants: vec![ConstConfig::U32 {
                 name: "const1".to_string(),
@@ -310,10 +308,10 @@ mod tests {
         assert!(validator.validate(&config).is_err());
         config.base.apps[0].processes[0].objects.pop();
 
-        // Duplicate thread name
-        let t = config.base.apps[0].processes[0].threads[0].clone();
-        config.base.apps[0].processes[0].threads.push(t);
+        // No thread objects should cause an error.
+        let t = config.base.apps[0].processes[0].objects[0].clone();
+        config.base.apps[0].processes[0].objects.pop();
         assert!(validator.validate(&config).is_err());
-        config.base.apps[0].processes[0].threads.pop();
+        config.base.apps[0].processes[0].objects.push(t);
     }
 }

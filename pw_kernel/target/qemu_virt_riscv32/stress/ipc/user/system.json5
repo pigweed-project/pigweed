@@ -38,13 +38,12 @@
               type: "channel_initiator",
               handler_process: "handler",
               handler_object_name: "ipc",
-            }
-          ],
-          threads: [
+            },
             {
               name: "initiator_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
@@ -62,12 +61,11 @@
               name: "ipc",
               type: "channel_handler",
             },
-          ],
-          threads: [
             {
               name: "handler_thread",
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },
