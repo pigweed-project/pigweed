@@ -14,34 +14,17 @@
 #![no_main]
 #![no_std]
 
-use core::sync::atomic::{AtomicU32, Ordering};
-
 use pw_status::{Error, Result};
 use test_interrupt_listener_codegen::{handle, signals};
+use test_messages::TestScenario;
 use userspace::syscall::Signals;
-use userspace::time::Instant;
+use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
 
-static INTERRUPT_COUNT: AtomicU32 = AtomicU32::new(1);
-
-fn handle_interrupt(interrupts: Signals) -> Result<()> {
-    if !interrupts.contains(signals::TEST_IRQ) {
-        test_logger::step_failed!(
-            "Interrupt on wrong signal. {} not in {}",
-            signals::TEST_IRQ.bits() as u32,
-            interrupts.bits() as u32
-        );
-        return Err(Error::FailedPrecondition);
-    }
-
-    const SEND_BUF_LEN: usize = size_of::<u32>();
+fn notify_main(scenario: TestScenario) -> Result<()> {
     const RECV_BUF_LEN: usize = 0;
-    let mut send_buf = [0u8; SEND_BUF_LEN];
+    let send_buf = [scenario as u8];
     let mut recv_buf = [0u8; RECV_BUF_LEN];
-
-    let count = INTERRUPT_COUNT.fetch_add(1, Ordering::SeqCst);
-    send_buf.copy_from_slice(&count.to_le_bytes());
-    let _ = syscall::interrupt_ack(handle::TEST_INTERRUPTS, interrupts);
 
     let len = match syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX) {
         Ok(val) => val,
@@ -62,21 +45,92 @@ fn handle_interrupt(interrupts: Signals) -> Result<()> {
     Ok(())
 }
 
-fn run_test() -> Result<()> {
-    loop {
-        let wait_return =
-            syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX)
-                .inspect_err(|_| {
-                    test_logger::step_failed!("Failed to wait on interrupt");
-                })?;
+fn test_wait_interrupt() -> Result<()> {
+    test_logger::step_start!("Testing wait on interrupt");
 
-        if !wait_return.pending_signals.contains(signals::TEST_IRQ) || wait_return.user_data != 0 {
-            test_logger::step_failed!("Incorrect WaitReturn values");
-            return Err(Error::Internal);
-        }
+    let wait_return =
+        syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX)
+            .inspect_err(|_| {
+                test_logger::step_failed!("Failed to wait on interrupt");
+            })?;
 
-        handle_interrupt(wait_return.pending_signals)?;
+    if !wait_return.pending_signals.contains(signals::TEST_IRQ) {
+        test_logger::step_failed!(
+            "Incorrect WaitReturn signals: {:#x}",
+            wait_return.pending_signals.bits() as u32
+        );
+        return Err(Error::Internal);
     }
+
+    syscall::interrupt_ack(handle::TEST_INTERRUPTS, wait_return.pending_signals)?;
+
+    test_logger::step_passed!("Wait on interrupt succeeded");
+
+    notify_main(TestScenario::WaitInterrupt)?;
+
+    Ok(())
+}
+
+fn test_wait_group_interrupt() -> Result<()> {
+    test_logger::step_start!("Testing wait on wait group containing interrupt");
+
+    syscall::wait_group_add(
+        handle::INTERRUPT_WAIT_GROUP,
+        handle::TEST_INTERRUPTS,
+        signals::TEST_IRQ,
+        handle::TEST_INTERRUPTS as usize,
+    )?;
+
+    let wait_return = syscall::object_wait(
+        handle::INTERRUPT_WAIT_GROUP,
+        Signals::READABLE,
+        Instant::MAX,
+    )
+    .inspect_err(|_| {
+        test_logger::step_failed!("Failed to wait on wait group for interrupt");
+    })?;
+
+    if !wait_return.pending_signals.contains(signals::TEST_IRQ)
+        || wait_return.user_data != handle::TEST_INTERRUPTS as usize
+    {
+        test_logger::step_failed!(
+            "Incorrect WaitReturn values: pending_signals = {}, user_data = {}",
+            wait_return.pending_signals.bits() as u32,
+            wait_return.user_data as u32
+        );
+        return Err(Error::Internal);
+    }
+
+    syscall::interrupt_ack(handle::TEST_INTERRUPTS, wait_return.pending_signals)?;
+
+    // Verify that the wait group is no longer signaled (it should time out waiting).
+    let Err(err) = syscall::object_wait(
+        handle::INTERRUPT_WAIT_GROUP,
+        Signals::READABLE,
+        SystemClock::now(),
+    ) else {
+        test_logger::step_failed!("WaitGroup remained signaled after interrupt ack");
+        return Err(Error::Internal);
+    };
+    if err != Error::DeadlineExceeded {
+        test_logger::step_failed!(
+            "WaitGroup wait failed with unexpected error: {}",
+            err as u32
+        );
+        return Err(err);
+    }
+
+    test_logger::step_passed!("Wait on wait group containing interrupt succeeded");
+
+    notify_main(TestScenario::WaitGroupInterrupt)?;
+
+    Ok(())
+}
+
+fn run_test() -> Result<()> {
+    test_wait_interrupt()?;
+    test_wait_group_interrupt()?;
+    Ok(())
 }
 
 #[entry]

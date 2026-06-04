@@ -14,34 +14,33 @@
 #![no_main]
 #![no_std]
 
-use core::mem::size_of;
-
 use pw_status::{Error, Result};
 use test_interrupts_codegen::{constants, handle};
+use test_messages::TestScenario;
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
-fn read_expected_value(expected_value: u32) -> Result<()> {
-    // the interrupt listener responds on IPC with the interrupt count.
+fn read_expected_scenario(expected_scenario: TestScenario) -> Result<()> {
+    // the interrupt listener responds on IPC with the interrupt scenario.
     let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
 
     if !wait_return.pending_signals.contains(Signals::READABLE) || wait_return.user_data != 0 {
         return Err(Error::Internal);
     }
 
-    let mut buffer = [0u8; size_of::<u32>()];
+    let mut buffer = [0u8; size_of::<TestScenario>()];
     let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
     if len != buffer.len() {
         return Err(Error::OutOfRange);
     };
 
-    let received_value = u32::from_le_bytes(buffer);
-    if received_value != expected_value {
+    let received_scenario = TestScenario::try_from(buffer[0])?;
+    if received_scenario != expected_scenario {
         test_logger::step_failed!(
-            "Interrupt count wrong value {} (expected {})",
-            received_value as u32,
-            expected_value as u32
+            "Unexpected test scenario received: {} (expected {})",
+            received_scenario as u8,
+            expected_scenario as u8
         );
         return Err(Error::Internal);
     }
@@ -52,17 +51,19 @@ fn read_expected_value(expected_value: u32) -> Result<()> {
     Ok(())
 }
 
+fn test_wait_interrupt() -> Result<()> {
+    syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
+    read_expected_scenario(TestScenario::WaitInterrupt)
+}
+
+fn test_wait_group_interrupt() -> Result<()> {
+    syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
+    read_expected_scenario(TestScenario::WaitGroupInterrupt)
+}
+
 fn test_interrupts() -> Result<()> {
-    syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
-    read_expected_value(1)?;
-
-    syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
-    read_expected_value(2)?;
-
-    syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
-    read_expected_value(3)?;
-
-    Ok(())
+    test_wait_interrupt()?;
+    test_wait_group_interrupt()
 }
 
 #[entry]

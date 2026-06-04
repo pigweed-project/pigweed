@@ -73,6 +73,10 @@
               ]
             },
             {
+              name: "interrupt_wait_group",
+              type: "wait_group",
+            },
+            {
               name: "ipc",
               type: "channel_initiator",
               handler_process: "interrupt",

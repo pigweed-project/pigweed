@@ -54,7 +54,7 @@ impl<K: Kernel> KernelObject<K> for InterruptObject<K> {
 
     fn interrupt_ack(&self, kernel: K, signal_mask: Signals) -> Result<()> {
         // Clear the signaled interrupts.
-        self.base.state.lock(kernel).active_signals -= signal_mask;
+        self.base.signal(kernel, |signals| signals - signal_mask);
         (self.ack_irqs)(signal_mask);
         Ok(())
     }
