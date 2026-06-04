@@ -158,26 +158,13 @@ def _gn_python_build_check_targets() -> Sequence[str]:
 
 
 def _gn_host_build_check_targets() -> Sequence[str]:
-    build_targets = [
-        'check_modules',
+    return [
         *_at_all_optimization_levels(f'host_{_HOST_COMPILER}'),
     ]
-
-    # Since there is no mac-arm64 bloaty binary in CIPD, Arm Macs use the x86_64
-    # binary. However, Arm Macs in Pigweed CI disable Rosetta 2, so skip the
-    # 'default' build on those machines for now.
-    #
-    # TODO: b/368387791 - Add 'default' for all platforms when Arm Mac bloaty is
-    # available.
-    if platform.machine() != 'arm64' or sys.platform != 'darwin':
-        build_targets.append('default')
-
-    return build_targets
 
 
 def _gn_stm_build_check_targets() -> Sequence[str]:
     return [
-        'check_modules',
         *_at_all_optimization_levels('stm32f429i'),
     ]
 
@@ -187,7 +174,6 @@ def _gn_main_build_check_targets() -> Sequence[str]:
         *_gn_python_build_check_targets(),
         *_gn_host_build_check_targets(),
         *_gn_stm_build_check_targets(),
-        'check_modules',
     ]
 
 
@@ -1194,7 +1180,13 @@ def build_env_setup(ctx: PresubmitContext):
 def static_analysis(ctx: PresubmitContext):
     """Runs all available static analysis tools."""
     build.gn_gen(ctx)
-    build.ninja(ctx, 'check_modules', 'python.lint', 'static_analysis')
+    build.ninja(
+        ctx,
+        'check_modules',
+        'python.lint',
+        'static_analysis',
+        'warn_if_modules_out_of_date',
+    )
     build.gn_check(ctx)
 
 
