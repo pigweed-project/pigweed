@@ -192,20 +192,6 @@ impl ProcessConfig {
             _ => None,
         })
     }
-
-    #[must_use]
-    pub fn get_main_thread(&self) -> &ThreadObjectConfig {
-        // TODO: https://pwbug.dev/496970887 - Don't assume thread 0 is main.
-        if let Some(thread) = self.threads().next() {
-            return thread;
-        }
-
-        // Should not reach this far, each process needs at least one thread.
-        panic!(
-            "Process `{}` must have at least one thread defined.",
-            self.name
-        );
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -268,6 +254,11 @@ pub struct ThreadObjectConfig {
     pub priority: Option<String>,
     #[serde(skip_deserializing)]
     pub stack_size_expression: String,
+    /// Boolean flag to tag this thread as the main thread for the
+    /// parent process. If only one thread is defined this can be
+    /// omitted.
+    #[serde(default)]
+    pub main_thread: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

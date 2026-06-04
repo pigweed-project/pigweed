@@ -120,6 +120,27 @@ impl<A: ArchConfigInterface> ManifestValidator<A> for IdentifierValidator {
                         process.name,
                     ));
                 }
+
+                let main_thread_count = &process
+                    .threads()
+                    .filter(|thread| thread.main_thread)
+                    .count();
+                if *main_thread_count > 1 {
+                    return Err(anyhow!(
+                        "Process `{}` has multiple `main_thread` flags. Only one `main_thread` may be declared.",
+                        process.name,
+                    ));
+                }
+
+                if *thread_count > 1 && *main_thread_count < 1 {
+                    return Err(anyhow!(
+                        concat!(
+                            "Process `{}` has multiple threads but none are marked with `main_thread: true`. ",
+                            "At least one thread must be the `main_thread` when multiple are defined.",
+                        ),
+                        process.name,
+                    ));
+                }
             }
         }
         Ok(())
@@ -193,6 +214,7 @@ mod tests {
                         kernel_stack_size_bytes: None,
                         priority: None,
                         stack_size_expression: "".to_string(),
+                        main_thread: false,
                     },
                 )],
                 main_thread_name: None,
@@ -260,6 +282,7 @@ mod tests {
                         kernel_stack_size_bytes: None,
                         priority: None,
                         stack_size_expression: "".to_string(),
+                        main_thread: true,
                     },
                 )],
                 main_thread_name: None,
@@ -313,5 +336,50 @@ mod tests {
         config.base.apps[0].processes[0].objects.pop();
         assert!(validator.validate(&config).is_err());
         config.base.apps[0].processes[0].objects.push(t);
+
+        // Multiple main_thread flags should error.
+        config.base.apps[0].processes[0]
+            .objects
+            .push(crate::system_config::ObjectConfig::Thread(
+                crate::system_config::ThreadObjectConfig {
+                    name: "thread2".to_string(),
+                    kernel_stack_size_bytes: None,
+                    priority: None,
+                    stack_size_expression: "".to_string(),
+                    main_thread: true,
+                },
+            ));
+        assert!(validator.validate(&config).is_err());
+        config.base.apps[0].processes[0].objects.pop();
+
+        // Multiple threads without a main_thread flag should error.
+        let t2 = config.base.apps[0].processes[0].objects[0].clone();
+        config.base.apps[0].processes[0].objects.pop();
+        config.base.apps[0].processes[0]
+            .objects
+            .push(crate::system_config::ObjectConfig::Thread(
+                crate::system_config::ThreadObjectConfig {
+                    name: "thread3".to_string(),
+                    kernel_stack_size_bytes: None,
+                    priority: None,
+                    stack_size_expression: "".to_string(),
+                    main_thread: false,
+                },
+            ));
+        config.base.apps[0].processes[0]
+            .objects
+            .push(crate::system_config::ObjectConfig::Thread(
+                crate::system_config::ThreadObjectConfig {
+                    name: "thread4".to_string(),
+                    kernel_stack_size_bytes: None,
+                    priority: None,
+                    stack_size_expression: "".to_string(),
+                    main_thread: false,
+                },
+            ));
+        assert!(validator.validate(&config).is_err());
+        config.base.apps[0].processes[0].objects.pop();
+        config.base.apps[0].processes[0].objects.pop();
+        config.base.apps[0].processes[0].objects.push(t2);
     }
 }

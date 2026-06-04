@@ -590,8 +590,25 @@ impl<'a, A: ArchConfigInterface + Serialize> SystemGenerator<'a, A> {
     }
 
     fn populate_thread_objects(process: &mut system_config::ProcessConfig) {
+        if process.threads().count() == 1 {
+            // Mark the first thread as the main_thread.
+            if let Some(thread) = process.threads_mut().next() {
+                thread.main_thread = true;
+            }
+        }
+
+        let main_thread = process
+            .threads()
+            .find(|t| t.main_thread)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Process `{}` must have at least one thread defined.",
+                    process.name
+                )
+            });
+
         // Save the main_thread_name for template usage.
-        process.main_thread_name = Some(process.get_main_thread().name.clone());
+        process.main_thread_name = Some(main_thread.name.clone());
     }
 
     fn populate_process_and_thread_objects(&mut self) -> Result<()> {

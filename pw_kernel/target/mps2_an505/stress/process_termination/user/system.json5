@@ -38,6 +38,7 @@
               name: "main_thread",
               kernel_stack_size_bytes: 2048,
               type: "thread",
+              main_thread: true,
             },
             {
               name: "test_thread",
@@ -60,6 +61,7 @@
               name: "forced_exit_thread_1",
               kernel_stack_size_bytes: 2048,
               type: "thread",
+              main_thread: true,
             },
             {
               name: "forced_exit_thread_2",
