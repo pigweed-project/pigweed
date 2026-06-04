@@ -42,7 +42,9 @@ filegroup(
 
 cargo_build_script(
     name = "compiler_builtins_build_script",
-    srcs = glob(["lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/*.rs"]),
+    srcs = glob(["lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins/*.rs"]) + [
+        "lib/rustlib/src/rust/library/compiler-builtins/libm/configure.rs",
+    ],
     crate_features = [
         "unmangled-names",
     ],
