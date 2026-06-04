@@ -599,7 +599,7 @@ std::unordered_set<UUID> AdvertisingData::service_uuids() const {
                                                    const ByteBuffer& data) {
   size_t encoded_size = EncodedServiceDataSize(uuid, data.view());
   if (encoded_size > kMaxEncodedServiceDataLength) {
-    bt_log(WARN,
+    bt_log(DEBUG,
            "gap-le",
            "SetServiceData for UUID %s failed: (UUID+data) size %zu > maximum "
            "allowed size %du",
@@ -1008,7 +1008,7 @@ bool AdvertisingData::BoundedUuids::AddUuid(UUID uuid) {
   PW_CHECK(set_.size() <= bound_);
   if (set_.size() < bound_) {
     if (!set_.insert(uuid).second) {
-      bt_log(INFO,
+      bt_log(DEBUG,
              "gap-le",
              "Skipping addition of duplicate UUID %s to AD",
              bt_str(uuid));
@@ -1016,7 +1016,7 @@ bool AdvertisingData::BoundedUuids::AddUuid(UUID uuid) {
     return true;
   }
   if (set_.find(uuid) != set_.end()) {
-    bt_log(INFO,
+    bt_log(DEBUG,
            "gap-le",
            "Skipping addition of duplicate UUID %s to AD",
            bt_str(uuid));

@@ -20,7 +20,7 @@
 
 namespace bt::hci {
 
-using AdvertisementId = Identifier<uint64_t>;
+using AdvertisementId = bt::AdvertisementId;
 
 // This class allocates AdvertisingHandles and AdvertisementIds and provides
 // mappings between them.

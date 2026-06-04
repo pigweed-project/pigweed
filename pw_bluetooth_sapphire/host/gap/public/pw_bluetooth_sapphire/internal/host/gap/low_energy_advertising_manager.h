@@ -34,7 +34,7 @@ class Transport;
 
 namespace gap {
 
-using AdvertisementId = Identifier<uint64_t>;
+using AdvertisementId = bt::AdvertisementId;
 inline constexpr AdvertisementId kInvalidAdvertisementId(0u);
 
 class LowEnergyAdvertisingManager;

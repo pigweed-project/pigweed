@@ -286,7 +286,7 @@ void AndroidExtendedLowEnergyAdvertiser::StartAdvertising(
   // if there is an operation currently in progress, enqueue this operation and
   // we will get to it the next time we have a chance
   if (!hci_cmd_runner().IsReady()) {
-    bt_log(INFO,
+    bt_log(DEBUG,
            "hci-le",
            "hci cmd runner not ready, queuing advertisement commands for now");
 
@@ -424,7 +424,7 @@ void AndroidExtendedLowEnergyAdvertiser::StopAdvertising(
   // we will get to it the next time we have a chance
   if (!hci_cmd_runner().IsReady()) {
     bt_log(
-        INFO,
+        DEBUG,
         "hci-le",
         "hci cmd runner not ready, queueing stop advertising command for now");
     op_queue_.push(

@@ -86,6 +86,18 @@ inline constexpr PeerId kInvalidPeerId(0u);
 // kInvalidPeerId.
 PeerId RandomPeerId();
 
+// Opaque identifier type for advertisements.
+class AdvertisementId : public Identifier<uint64_t> {
+ public:
+  constexpr explicit AdvertisementId(uint64_t value)
+      : Identifier<uint64_t>(value) {}
+  constexpr AdvertisementId() : AdvertisementId(0u) {}
+
+  std::string ToString() const {
+    return bt_lib_cpp_string::StringPrintf("%" PRIx64, value());
+  }
+};
+
 }  // namespace bt
 
 // Specialization of std::hash for std::unordered_set, std::unordered_map, etc.
@@ -101,6 +113,13 @@ struct hash<bt::Identifier<T>> {
 template <>
 struct hash<bt::PeerId> {
   size_t operator()(const bt::PeerId& id) const {
+    return std::hash<decltype(id.value())>()(id.value());
+  }
+};
+
+template <>
+struct hash<bt::AdvertisementId> {
+  size_t operator()(const bt::AdvertisementId& id) const {
     return std::hash<decltype(id.value())>()(id.value());
   }
 };
