@@ -25,16 +25,27 @@ import { existsSync } from 'fs';
 const createClangdSymlinkTarget =
   '@pigweed//pw_toolchain/host_clang:copy_clangd' as const;
 
+let cachedExecRoot: string | undefined;
+let cachedClangdPath: string | undefined;
+
 function getBazelExecRoot(): string | undefined {
+  if (cachedExecRoot) {
+    return cachedExecRoot;
+  }
   const cmd = getReliableBazelExecutable();
   if (!cmd) return;
   const args = ['info', 'execution_root'];
   logger.info(`Running ${cmd} ${args.join(' ')}`);
   const result = child_process.spawnSync(cmd, args, { cwd: workingDir.get() });
-  return result.stdout.toString().trim();
+  cachedExecRoot = result.stdout.toString().trim();
+  return cachedExecRoot;
 }
 
 export const clangdPath = () => {
+  if (cachedClangdPath && existsSync(cachedClangdPath)) {
+    return cachedClangdPath;
+  }
+
   const cmd = getReliableBazelExecutable();
   if (!cmd) return;
   const args = ['cquery', createClangdSymlinkTarget, '--output=files'];
@@ -57,6 +68,7 @@ export const clangdPath = () => {
   const absoluteClangdPath = path.join(execRoot, relativeClangdPath);
 
   if (existsSync(absoluteClangdPath)) {
+    cachedClangdPath = absoluteClangdPath;
     return absoluteClangdPath;
   }
 
@@ -64,6 +76,7 @@ export const clangdPath = () => {
   // which can happen with the bazel-out symlink.
   const workspaceRelativePath = path.join(workingDir.get(), relativeClangdPath);
   if (existsSync(workspaceRelativePath)) {
+    cachedClangdPath = workspaceRelativePath;
     return workspaceRelativePath;
   }
 

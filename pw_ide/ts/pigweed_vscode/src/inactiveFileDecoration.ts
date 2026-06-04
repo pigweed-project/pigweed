@@ -29,6 +29,7 @@ import {
 
 // Ensure FileStatus is imported as a value (enum) and not just a type
 import { ClangdActiveFilesCache, FileStatus, CDB_FILE_DIR } from './clangd';
+import { availableTargets } from './clangd/paths';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Disposable } from './disposables';
@@ -51,16 +52,21 @@ const didChangeFileDecorations = new EventEmitter<Uri[]>();
 const makeDecoration = (
   target?: string,
 ): Record<FileStatus, FileDecoration | undefined> => ({
-  ACTIVE: undefined,
+  ACTIVE: {
+    badge: '✓',
+    tooltip: `This file is built in the ${
+      target ? `"${target}"` : 'current'
+    } target.`,
+  },
   INACTIVE: {
-    badge: 'ℹ️',
+    badge: '𝓲',
     color: new ThemeColor('disabledForeground'),
     tooltip: `This file is not built in the ${
       target ? `"${target}"` : 'current'
     } target. Code intelligence will not work.`,
   },
   ORPHANED: {
-    badge: 'ℹ️',
+    badge: '𝓲',
     color: new ThemeColor('disabledForeground'),
     tooltip: `This file is not built in the ${
       target ? `"${target}"` : 'current'
@@ -187,12 +193,16 @@ export class InactiveFileDecorationProvider
     }
 
     const workspaceFiles = await vscode.workspace.findFiles(
-      '**/*.{c,cc,cpp}', // include
+      '**/*.{c,cc,cpp,h,hh,hpp,hxx}', // include
       '**/{.*,bazel*,external}/**', // exclude
     );
 
+    const allAvailableTargets = await availableTargets();
+    const matchedTarget = allAvailableTargets.find((t) => t.name === target);
+    const targetDisplayName = matchedTarget?.displayName || target;
+
     // Create the static part of the decoration map once
-    const decorationMap = makeDecoration(target);
+    const decorationMap = makeDecoration(targetDisplayName);
 
     for (const uri of workspaceFiles) {
       // Fetch status only if the feature is enabled
@@ -266,7 +276,7 @@ export class InactiveFileDecorationProvider
 
     const uri = editor.document.uri;
     // Only apply banners to files potentially relevant to C/C++ analysis
-    if (!/\.(c|cc|cpp)$/.test(uri.fsPath)) {
+    if (!/\.(c|cc|cpp|h|hh|hpp|hxx)$/.test(uri.fsPath)) {
       editor.setDecorations(this.bannerDecorationType, []);
       return;
     }
@@ -340,20 +350,26 @@ export class InactiveFileDecorationProvider
       (status === 'INACTIVE' || status === 'ORPHANED') &&
       editor.selection.active.line >= 5
     ) {
+      const allAvailableTargets = await availableTargets();
+      const displayTargets = targets.map((t) => {
+        const matched = allAvailableTargets.find((at) => at.name === t);
+        return matched?.displayName || t;
+      });
+
       const maxTargetsToShow = 3;
-      const truncatedTargets = targets.slice(0, maxTargetsToShow);
-      const andMore = targets.length > maxTargetsToShow ? '...' : '';
+      const truncatedTargets = displayTargets.slice(0, maxTargetsToShow);
+      const andMore = displayTargets.length > maxTargetsToShow ? '...' : '';
 
       const message =
         status === 'INACTIVE' && targets.length > 0
-          ? `ℹ️ Not built in active target ("${target}"). For code intelligence, switch to: ${truncatedTargets
+          ? `𝓲 Not in active target. Switch to: ${truncatedTargets
               .map((t: string) => `"${t}"`)
               .join(', ')}${andMore}`
-          : `ℹ️ Compile this file to see code intelligence.`;
+          : `𝓲 Generate compile commands to see code intelligence for this file`;
 
       const hoverMessage =
         status === 'INACTIVE' && targets.length > 0
-          ? `This file is not in the active "${target}" target, so code intelligence may be incorrect. To fix this, switch to a target that builds this file. This file is included in the following targets: ${targets
+          ? `This file is not in the active "${target}" target, so code intelligence may be incorrect. To fix this, switch to a target that builds this file. This file is included in the following targets: ${displayTargets
               .map((t: string) => `"${t}"`)
               .join(', ')}.`
           : `This file is not included in the compilation for any known target. Clangd features like completion, diagnostics, and navigation will not be available.`;

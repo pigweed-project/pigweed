@@ -146,6 +146,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private _isExtensionDisabled = false;
+  private _isGenerating = false;
+  private _activeGeneratingTarget?: string;
+  private _generatingTimeout: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -305,6 +308,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           }
           terminal.show();
           terminal.sendText(`cd "${cwd}" && ${bazelBinary} run ${target}`);
+
+          this._isGenerating = true;
+          this._activeGeneratingTarget = target;
+          this.sendCipdReport();
+
+          if (this._generatingTimeout) {
+            clearTimeout(this._generatingTimeout);
+          }
+          this._generatingTimeout = setTimeout(() => {
+            if (this._isGenerating) {
+              this._isGenerating = false;
+              this._activeGeneratingTarget = undefined;
+              this.sendCipdReport();
+            }
+          }, 15000); // 15 seconds timeout
+
           break;
         }
         case 'openDocs': {
@@ -331,7 +350,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             );
           }
 
-          await this.sendCipdReport();
           break;
         }
       }
@@ -340,6 +358,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   private async sendCipdReport() {
     let report = await getCipdReport();
+
+    if (report.isGenerating) {
+      this._isGenerating = false;
+      if (this._generatingTimeout) {
+        clearTimeout(this._generatingTimeout);
+        this._generatingTimeout = undefined;
+      }
+    }
+
     const pathForBazelBuildInterceptor = getBazelInterceptorPath();
     if (!pathForBazelBuildInterceptor) return;
     const bazelInterceptorExists = existsSync(pathForBazelBuildInterceptor);
@@ -358,14 +385,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
     }
 
+    const isGenerating = this._isGenerating || report.isGenerating;
+    if (!isGenerating) {
+      this._activeGeneratingTarget = undefined;
+    }
+
     report = {
       ...report,
+      isGenerating,
+      activeGeneratingTarget: this._activeGeneratingTarget,
       isBazelInterceptorEnabled: bazelInterceptorExists,
       lastBuildPlatformCount,
       activeFileCount,
       availableTargets: targets.map((t) => ({
         name: t.name,
         displayName: t.displayName,
+        lastGeneratedAt: t.lastGeneratedAt,
       })),
     };
     logging.info('getCipdReport reported: ' + JSON.stringify(report));

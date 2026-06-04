@@ -32,7 +32,7 @@ import time
 try:
     from pw_build import gn_resolver
     from pw_build.python_package import load_packages
-except (ImportError, ModuleNotFoundError):
+except (ImportError, ModuleNotFoundError, OSError):
     # Load from python_package from this directory if pw_build is not available.
     from python_package import load_packages  # type: ignore
     import gn_resolver  # type: ignore

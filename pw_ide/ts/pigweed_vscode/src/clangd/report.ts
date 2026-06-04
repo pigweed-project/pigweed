@@ -12,12 +12,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+import * as fs from 'fs';
 import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { getReliableBazelExecutable } from '../bazel';
 import { getTarget, CDB_FILE_DIR, LAST_BAZEL_COMMAND_FILE_NAME } from './paths';
 import { clangdPath } from './bazel';
 import { settings, workingDir } from '../settings/vscode';
+
+import { LockManager } from './lock';
 
 import { getPreconfiguredTargets } from '../bazelQuery';
 
@@ -30,10 +33,19 @@ interface CipdReport {
   bazelCompileCommandsManualBuildCommand?: string;
   bazelCompileCommandsLastBuildCommand?: string;
   preconfiguredTargets?: { label: string; displayName?: string }[];
+  isGenerating?: boolean;
+  isStale?: boolean;
   [key: string]: any;
 }
 
-export default async function getCipdReport() {
+export function calculateIsStale(lastGenTimeStr: string, now: number): boolean {
+  const lastGenTime = parseInt(lastGenTimeStr, 10);
+  if (isNaN(lastGenTime)) return false;
+  const fiveDaysInSeconds = 5 * 24 * 60 * 60;
+  return now - lastGenTime > fiveDaysInSeconds;
+}
+
+export default async function getCipdReport(fsObj = fs) {
   const report: CipdReport = {};
 
   // Check if clangd is found
@@ -50,7 +62,7 @@ export default async function getCipdReport() {
 
   // Check if compile_commands exists
   report['isCompileCommandsGenerated'] = target
-    ? existsSync(target.path)
+    ? fsObj.existsSync(target.path)
     : false;
   report['compileCommandsPath'] = target?.path;
 
@@ -62,11 +74,10 @@ export default async function getCipdReport() {
     CDB_FILE_DIR,
     LAST_BAZEL_COMMAND_FILE_NAME,
   );
-  if (existsSync(lastCommandPath)) {
-    report['bazelCompileCommandsLastBuildCommand'] = readFileSync(
-      lastCommandPath,
-      'utf-8',
-    ).trim();
+  if (fsObj.existsSync(lastCommandPath)) {
+    report['bazelCompileCommandsLastBuildCommand'] = fsObj
+      .readFileSync(lastCommandPath, 'utf-8')
+      .trim();
   } else {
     report['bazelCompileCommandsLastBuildCommand'] = '';
   }
@@ -75,6 +86,30 @@ export default async function getCipdReport() {
   report['preconfiguredTargets'] = await getPreconfiguredTargets(
     workingDir.get(),
   );
+
+  // Check if lockfile exists
+  const lockManager = new LockManager(fsObj);
+  report['isGenerating'] = lockManager.isLocked();
+
+  // Check if stale
+  const lastGenTimePath = path.join(
+    workingDir.get(),
+    CDB_FILE_DIR,
+    'pw_lastGenerationTime.txt',
+  );
+  if (fsObj.existsSync(lastGenTimePath)) {
+    try {
+      const lastGenTimeStr = fsObj
+        .readFileSync(lastGenTimePath, 'utf-8')
+        .trim();
+      const now = Math.floor(Date.now() / 1000);
+      report['isStale'] = calculateIsStale(lastGenTimeStr, now);
+    } catch (e) {
+      report['isStale'] = false;
+    }
+  } else {
+    report['isStale'] = false;
+  }
 
   return report;
 }

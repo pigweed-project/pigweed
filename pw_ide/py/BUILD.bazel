@@ -28,6 +28,7 @@ pw_py_library(
         "pw_ide/editors.py",
         "pw_ide/exceptions.py",
         "pw_ide/ide_query.py",
+        "pw_ide/lock.py",
         "pw_ide/merger.py",
         "pw_ide/python.py",
         "pw_ide/settings.py",
@@ -118,7 +119,10 @@ pw_py_binary(
     name = "update_compile_commands",
     srcs = ["pw_ide/merger.py"],
     main = "pw_ide/merger.py",
-    deps = ["//pw_cli/py:pw_cli"],
+    deps = [
+        ":pw_ide",
+        "//pw_cli/py:pw_cli",
+    ],
 )
 
 pw_py_binary(
@@ -159,6 +163,15 @@ pw_py_test(
         ":pw_ide",
         "@pigweed_python_packages//pyfakefs",
     ],
+)
+
+pw_py_test(
+    name = "lock_test",
+    srcs = [
+        "lock_test.py",
+        "test_cases.py",
+    ],
+    deps = [":pw_ide"],
 )
 
 pw_py_test(

@@ -37,7 +37,7 @@ import {
 
 import { getSettingsData, syncSettingsSharedToProject } from './configParsing';
 import { Disposer } from './disposables';
-import { didInit, linkRefreshManagerToEvents } from './events';
+import { didChangeTarget, didInit, linkRefreshManagerToEvents } from './events';
 import { checkExtensions } from './extensionManagement';
 import { InactiveFileDecorationProvider } from './inactiveFileDecoration';
 import logger, { output } from './logging';
@@ -74,6 +74,7 @@ import { commandRegisterer, VscCommandCallback } from './utils';
 import { shouldSupportGn } from './gn';
 import { shouldSupportCmake } from './cmake';
 import { CompileCommandsWatcher } from './clangd/compileCommandsWatcher';
+import { LockfileWatcher } from './clangd/lockfileWatcher';
 import { existsSync, statSync } from 'node:fs';
 import { checkClangdVersion } from './clangd/extensionChecker';
 import { handleInactiveFileCodeIntelligenceEnabled } from './clangd/activeFilesCache';
@@ -401,6 +402,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.extensionUri,
     clangdActiveFilesCache,
   );
+
+  disposer.add(new LockfileWatcher(provider));
+  disposer.add(didChangeTarget.event(() => provider.refresh()));
 
   refreshManager.on(async () => {
     await provider.refresh();

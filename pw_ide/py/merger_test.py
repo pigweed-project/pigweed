@@ -1640,6 +1640,73 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         self.assertEqual(data[0]['file'], 'third_party/my_lib/foo.c')
         self.assertEqual(data[0]['arguments'], ['-Ithird_party/my_lib/include'])
 
+    @mock.patch('pw_ide.merger._validate_environment')
+    @mock.patch('pathlib.Path.unlink')
+    def test_lockfile_creation_and_deletion(
+        self, mock_unlink, mock_validate_env
+    ):
+        """Test that lockfile is created and deleted during execution."""
+        mock_validate_env.return_value = (
+            self.workspace_root,
+            self.output_path,
+            self.output_base,
+            self.execution_root,
+        )
+        _create_fragment(
+            self.fs,
+            self.output_path,
+            't1',
+            'k8-fastbuild',
+            [
+                {
+                    'file': 'a.cc',
+                    'directory': '__WORKSPACE_ROOT__',
+                    'arguments': [],
+                }
+            ],
+        )
+
+        self.assertEqual(merger.main(), 0)
+
+        # Verify unlink was called (meaning it intended to delete it)
+        self.assertTrue(mock_unlink.called)
+
+        # Verify file was created with correct PID (survives because of mock)
+        lockfile_path = "/workspace/.compile_commands/pw.lock"
+        self.assertTrue(self.fs.exists(lockfile_path))
+        file_obj = self.fs.get_object(lockfile_path)
+        self.assertEqual(file_obj.contents.strip(), str(os.getpid()))
+
+    @mock.patch('pathlib.Path.unlink')
+    def test_lockfile_not_deleted_if_pid_mismatch(self, mock_unlink):
+        """Test that lockfile is not deleted if PID does not match."""
+        _create_fragment(
+            self.fs,
+            self.output_path,
+            't1',
+            'k8-fastbuild',
+            [
+                {
+                    'file': 'a.cc',
+                    'directory': '__WORKSPACE_ROOT__',
+                    'arguments': [],
+                }
+            ],
+        )
+
+        original_read_text = Path.read_text
+
+        def mock_read_text(self_path, *args, **kwargs):
+            if str(self_path).endswith('pw.lock'):
+                return "999999"
+            return original_read_text(self_path, *args, **kwargs)
+
+        with mock.patch('pathlib.Path.read_text', mock_read_text):
+            self.assertEqual(merger.main(), 0)
+
+        # Verify unlink was NOT called
+        self.assertFalse(mock_unlink.called)
+
 
 class TestRunBazelStreaming(unittest.TestCase):
     """Tests for _run_bazel streaming behavior."""

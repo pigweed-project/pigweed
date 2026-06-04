@@ -176,8 +176,8 @@
 }
 
 .target-selection-row .vscode-button {
-  min-width: 56px;
-  padding: 1px 4px;
+  min-width: 80px;
+  padding: 1px 8px;
 }
 .input-button-row {
   display: flex;
@@ -469,6 +469,40 @@
   color: var(--vscode-editor-foreground);
   background-color: rgba(0, 0, 0, 0.1);
   /* Semi-transparent background */
+}
+
+/* Premium CSS Tooltip */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+}
+tr.tooltip-container {
+  display: table-row;
+}
+.tooltip-container .tooltip-text {
+  visibility: hidden;
+  width: 220px;
+  background-color: var(--vscode-notifications-background, #252526);
+  color: var(--vscode-notifications-foreground, #cccccc);
+  text-align: center;
+  border: 1px solid var(--vscode-panel-border, #808080);
+  border-radius: 4px;
+  padding: 6px 10px;
+  position: absolute;
+  z-index: 100;
+  top: 125%;
+  left: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease-in-out;
+  pointer-events: none;
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
 }
 
 .disabled-overlay p {

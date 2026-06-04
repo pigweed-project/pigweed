@@ -301,6 +301,7 @@
     "js-yaml": "^4.1.0",
     "lit": "^3.2.1",
     "node_modules-path": "^2.0.8",
+    "timeago.js": "^4.0.2",
     "yaml": "^2.7.0",
     "zod": "^3.24.1"
   },
@@ -311,6 +312,7 @@
     "@types/js-yaml": "^4.0.9",
     "@types/mocha": "^10.0.1",
     "@types/node": "^20.14.10",
+    "@types/sinon": "^21.0.1",
     "@types/vscode": "^1.75.0",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
@@ -323,6 +325,7 @@
     "node-polyfill-webpack-plugin": "^4.0.0",
     "prettier": "^3.3.2",
     "rimraf": "^6.0.1",
+    "sinon": "^18.0.0",
     "style-loader": "^4.0.0",
     "ts-jest": "^29.2.2",
     "ts-loader": "^9.5.1",

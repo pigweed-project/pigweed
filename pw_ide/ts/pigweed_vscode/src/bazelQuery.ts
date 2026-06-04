@@ -15,6 +15,18 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
 import { getReliableBazelExecutable } from './bazel';
+import * as fs from 'fs';
+import logger from './logging';
+
+let cachedPreconfiguredTargets:
+  | { label: string; displayName?: string }[]
+  | undefined;
+let cachedBuildBazelMtime: number | undefined;
+
+export function _resetCache() {
+  cachedPreconfiguredTargets = undefined;
+  cachedBuildBazelMtime = undefined;
+}
 
 /**
  * Checks if the root BUILD.bazel file contains `pw_compile_commands_generator` targets.
@@ -29,6 +41,17 @@ export async function getPreconfiguredTargets(
 ): Promise<{ label: string; displayName?: string }[]> {
   if (!bazelBinary) return [];
 
+  const buildBazelPath = path.join(cwd, 'BUILD.bazel');
+  try {
+    const stat = await fs.promises.stat(buildBazelPath);
+    if (cachedPreconfiguredTargets && cachedBuildBazelMtime === stat.mtimeMs) {
+      return cachedPreconfiguredTargets;
+    }
+    cachedBuildBazelMtime = stat.mtimeMs;
+  } catch (e) {
+    // ignore
+  }
+
   return new Promise((resolve) => {
     const env = {
       ...process.env,
@@ -38,6 +61,8 @@ export async function getPreconfiguredTargets(
 
     const query =
       'attr(tags, "pw_compile_commands_generator", attr(generator_function, "pw_compile_commands_generator", //:*))';
+
+    logger.info(`Running ${bazelBinary} query '${query}'`);
 
     const child = spawnFn(
       bazelBinary,
@@ -93,9 +118,11 @@ export async function getPreconfiguredTargets(
 
       targets.sort((a, b) => (a.lineNumber || 0) - (b.lineNumber || 0));
 
-      resolve(
-        targets.map(({ label, displayName }) => ({ label, displayName })),
-      );
+      cachedPreconfiguredTargets = targets.map(({ label, displayName }) => ({
+        label,
+        displayName,
+      }));
+      resolve(cachedPreconfiguredTargets);
     });
 
     child.on('error', () => {

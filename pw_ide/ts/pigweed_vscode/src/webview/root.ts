@@ -14,7 +14,7 @@
 
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { decodeBazelName } from './bazelUtils';
+import { format } from 'timeago.js';
 
 interface vscode {
   postMessage(message: { type: string; data?: any }): void;
@@ -34,8 +34,15 @@ type CipdReport = {
   compileCommandsPath?: string;
   lastBuildPlatformCount?: number;
   activeFileCount?: number;
-  availableTargets?: { name: string; displayName?: string }[];
+  availableTargets?: {
+    name: string;
+    displayName?: string;
+    lastGeneratedAt?: string;
+  }[];
   preconfiguredTargets?: { label: string; displayName?: string }[];
+  isGenerating?: boolean;
+  activeGeneratingTarget?: string;
+  isStale?: boolean;
 };
 
 const vscode = acquireVsCodeApi();
@@ -85,14 +92,11 @@ export class Root extends LitElement {
     this.selectedPreconfiguredTarget = selectElement.value;
   }
 
-  private _runPreconfiguredTarget(e?: MouseEvent) {
-    e?.preventDefault();
-    if (this.selectedPreconfiguredTarget) {
-      vscode.postMessage({
-        type: 'runPreconfiguredTarget',
-        data: this.selectedPreconfiguredTarget,
-      });
-    }
+  private _runPreconfiguredTarget(label: string) {
+    vscode.postMessage({
+      type: 'runPreconfiguredTarget',
+      data: label,
+    });
   }
 
   private _selectTarget(e: Event) {
@@ -171,230 +175,176 @@ export class Root extends LitElement {
       </div>`;
     }
 
-    const activeFileCount = this.cipdReport.activeFileCount || 0;
-    const activeFileText = `${activeFileCount} file${
-      activeFileCount === 1 ? '' : 's'
-    } on the current platform`;
-
-    // Healthy state
-    if (this._isCodeIntelligenceHealthy) {
-      return html` <div class="code-intelligence-status-card">
-        ${header}
-        <div class="status-line status-success">
-          <span>✅</span>
-          <span
-            >${isPreconfigured
-              ? html`<span style="color: gray"
-                  >Code intelligence is <b>preconfigured</b> in
-                  <code>BUILD.bazel</code></span
-                >`
-              : 'Code intelligence is configured and working'}
-            (<a href="#" @click=${this._openDebugDetails}>see details</a
-            >).</span
-          >
-        </div>
-        <ol class="status-steps">
-          <li>
-            <b>Generate compile commands</b>
-            <div class="step-detail">
-              ${isPreconfigured
-                ? html`
-                    Select a target to generate compile commands:
-                    <div class="target-selection-row">
-                      <div class="vscode-select">
-                        <select
-                          @change=${this._handlePreconfiguredTargetChange}
-                        >
-                          ${this.cipdReport.preconfiguredTargets?.map(
-                            (target) => html`
-                              <option
-                                value=${target.label}
-                                ?selected=${target.label ===
-                                this.selectedPreconfiguredTarget}
-                              >
-                                ${target.displayName || target.label}
-                              </option>
-                            `,
-                          )}
-                        </select>
-                      </div>
-                      <div
-                        class="vscode-button"
-                        role="button"
-                        tabindex="0"
-                        @click=${this._runPreconfiguredTarget}
-                        @keydown=${(e: KeyboardEvent) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            this._runPreconfiguredTarget();
-                          }
-                        }}
-                      >
-                        Generate
-                      </div>
-                    </div>
-                  `
-                : html`
-                    <p style="margin-top:0;">
-                      No preconfigured targets found. Please configure a
-                      <code>pw_compile_commands_generator</code> target in your
-                      <code>BUILD.bazel</code> to enable C++ code intelligence.
-                    </p>
-                    <p>
-                      See the
-                      <a
-                        href="https://pigweed.dev/pw_ide/guide/"
-                        target="_blank"
-                        >Pigweed IDE Guide</a
-                      >
-                      for more details.
-                    </p>
-                  `}
-            </div>
-          </li>
-          ${this.cipdReport.availableTargets &&
-          this.cipdReport.availableTargets.length > 1
-            ? html`
-                <li>
-                  <b>Platform</b>
-                  <div class="step-detail">
-                    <div class="vscode-select">
-                      <select @change=${this._selectTarget}>
-                        ${this.cipdReport.availableTargets.map(
-                          (target: {
-                            name: string;
-                            displayName?: string;
-                          }) => html`
-                            <option
-                              value=${target.name}
-                              ?selected=${target.name ===
-                              this.cipdReport.targetSelected}
-                            >
-                              ${target.displayName
-                                ? `${target.displayName} (${decodeBazelName(
-                                    target.name,
-                                  )})`
-                                : decodeBazelName(target.name)}
-                            </option>
-                          `,
-                        )}
-                      </select>
-                    </div>
-                  </div>
-                </li>
-              `
-            : ''}
-          <li>
-            <b>Enjoy code intelligence</b>
-            <div class="step-detail">${activeFileText}</div>
-          </li>
-        </ol>
-      </div>`;
-    }
-
-    // Broken state
-    if (!this.cipdReport.bazelPath || !this.cipdReport.clangdPath) {
+    if (!this.cipdReport.clangdPath) {
       return html` <div class="code-intelligence-status-card">
         ${header}
         <div class="status-line status-error">
           <span>❌</span>
-          <span
-            >Code intelligence is not working (<a
-              href="#"
-              @click=${this._openDebugDetails}
-              >see details</a
-            >).</span
+          <span style="color: red">Clangd not found.</span>
+          <button
+            class="vscode-button"
+            @click="${() => {
+              vscode.postMessage({
+                type: 'retryClangdPath',
+              });
+            }}"
           >
+            Repair
+          </button>
+        </div>
+      </div>`;
+    }
+
+    if (!this.cipdReport.bazelPath) {
+      return html` <div class="code-intelligence-status-card">
+        ${header}
+        <div class="status-line status-error">
+          <span>❌</span>
+          <span style="color: red"
+            >Bazel not found. Please ensure Bazel/Bazelisk is installed.</span
+          >
+        </div>
+      </div>`;
+    }
+
+    if (!isPreconfigured) {
+      return html` <div class="code-intelligence-status-card">
+        ${header}
+        <div class="status-line status-error">
+          <span>❌</span>
+          <span style="color: red">
+            <a href="https://pigweed.dev/pw_ide/guide/" target="_blank"
+              >Configure compile commands in your project</a
+            >
+          </span>
         </div>
       </div>`;
     }
 
     // First run / In-progress state
-    let currentStepIndex = 0;
-    if (
-      !this.cipdReport.availableTargets ||
-      this.cipdReport.availableTargets.length === 0
-    ) {
-      currentStepIndex = 0;
-    } else if (!this.cipdReport.targetSelected) {
-      currentStepIndex = 1;
-    } else {
-      currentStepIndex = 2; // All steps before "Enjoy" are done.
-    }
-
-    let platformStepDetail;
-    if (
-      this.cipdReport.availableTargets &&
-      this.cipdReport.availableTargets.length > 1
-    ) {
-      platformStepDetail = html`
-        <div class="vscode-select">
-          <select @change=${this._selectTarget}>
-            ${!this.cipdReport.targetSelected
-              ? html`<option value="" disabled selected>
-                  Select a platform
-                </option>`
-              : ''}
-            ${this.cipdReport.availableTargets.map(
-              (target: { name: string; displayName?: string }) => html`
-                <option
-                  value=${target.name}
-                  ?selected=${target.name === this.cipdReport.targetSelected}
-                >
-                  ${target.displayName
-                    ? `${target.displayName} (${decodeBazelName(target.name)})`
-                    : decodeBazelName(target.name)}
-                </option>
-              `,
-            )}
-          </select>
-        </div>
-      `;
-    } else {
-      platformStepDetail = this.cipdReport.targetSelected
-        ? `Selected: ${this._selectedTargetDisplayName}`
-        : currentStepIndex === 1
-          ? 'Select a platform from the build'
-          : 'Selected: No platforms detected';
-    }
+    const currentStepIndex = this.cipdReport.isCompileCommandsGenerated ? 1 : 0;
 
     const steps = [
       {
-        title: 'Generate compile commands',
+        title: 'Select or generate compile commands',
         detail: html`
           <div class="step-detail">
             ${isPreconfigured
               ? html`
-                  Select a target to generate compile commands:
-                  <div class="target-selection-row">
-                    <div class="vscode-select">
-                      <select @change=${this._handlePreconfiguredTargetChange}>
-                        ${this.cipdReport.preconfiguredTargets?.map(
-                          (target) => html`
-                            <option
-                              value=${target.label}
-                              ?selected=${target.label ===
-                              this.selectedPreconfiguredTarget}
+                  <table
+                    class="targets-table"
+                    style="width: 100%; border-collapse: collapse; margin-top: 8px;"
+                  >
+                    <thead>
+                      <tr
+                        style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);"
+                      >
+                        <th style="padding: 8px;">Target</th>
+                        <th style="padding: 8px;">Last generated at</th>
+                        <th style="padding: 8px;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${this.cipdReport.preconfiguredTargets?.map((target) => {
+                        const matchedTarget =
+                          this.cipdReport.availableTargets?.find(
+                            (t) =>
+                              t.displayName === target.displayName ||
+                              t.name === target.label,
+                          );
+                        const lastGeneratedAt = matchedTarget?.lastGeneratedAt;
+                        const formattedTime = lastGeneratedAt
+                          ? format(lastGeneratedAt)
+                          : 'Never';
+                        const fullTime = lastGeneratedAt
+                          ? new Date(lastGeneratedAt).toLocaleString()
+                          : 'Never';
+                        const isTargetGenerating =
+                          this.cipdReport.isGenerating &&
+                          this.cipdReport.activeGeneratingTarget ===
+                            target.label;
+
+                        const isGenerated = !!matchedTarget;
+                        const isActive =
+                          matchedTarget &&
+                          this.cipdReport.targetSelected === matchedTarget.name;
+
+                        const rowStyle = `
+                            border-bottom: 1px solid var(--vscode-panel-border);
+                            cursor: ${isGenerated ? 'pointer' : 'not-allowed'};
+                            background-color: ${
+                              isActive
+                                ? 'var(--vscode-list-activeSelectionBackground)'
+                                : 'transparent'
+                            };
+                            color: ${
+                              isActive
+                                ? 'var(--vscode-list-activeSelectionForeground)'
+                                : 'inherit'
+                            };
+                            ${isActive ? 'font-weight: 600;' : ''}
+                          `;
+
+                        const tooltip = isGenerated
+                          ? ''
+                          : "Click 'Generate' to build compile commands for this target before selecting it.";
+
+                        return html`
+                          <tr
+                            class="${isGenerated ? '' : 'tooltip-container'}"
+                            style="${rowStyle}"
+                            @click=${() => {
+                              if (isGenerated && matchedTarget) {
+                                vscode.postMessage({
+                                  type: 'selectTarget',
+                                  data: matchedTarget.name,
+                                });
+                              }
+                            }}
+                          >
+                            <td
+                              style="padding: 8px; border-left: 3px solid ${isActive
+                                ? 'var(--vscode-button-background)'
+                                : 'transparent'};"
                             >
                               ${target.displayName || target.label}
-                            </option>
-                          `,
-                        )}
-                      </select>
-                    </div>
-                    <div
-                      class="vscode-button"
-                      role="button"
-                      tabindex="0"
-                      @click=${this._runPreconfiguredTarget}
-                      @keydown=${(e: KeyboardEvent) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          this._runPreconfiguredTarget();
-                        }
-                      }}
-                    >
-                      Generate
-                    </div>
-                  </div>
+                              ${isGenerated
+                                ? ''
+                                : html`
+                                    <span
+                                      class="tooltip-text"
+                                      style="left: 12px; transform: none;"
+                                    >
+                                      Click 'Generate' to build compile commands
+                                      for this target before selecting it.
+                                    </span>
+                                  `}
+                            </td>
+                            <td style="padding: 8px;" title="${fullTime}">
+                              ${formattedTime}
+                            </td>
+                            <td style="padding: 8px;">
+                              <button
+                                class="vscode-button"
+                                style="padding: 2px 8px; font-size: 11px; min-width: auto;"
+                                ?disabled=${this.cipdReport.isGenerating}
+                                @click=${(e: Event) => {
+                                  e.stopPropagation();
+                                  this._runPreconfiguredTarget(target.label);
+                                }}
+                              >
+                                ${isTargetGenerating
+                                  ? 'Generating...'
+                                  : isGenerated
+                                    ? 'Regenerate'
+                                    : 'Generate'}
+                              </button>
+                            </td>
+                          </tr>
+                        `;
+                      })}
+                    </tbody>
+                  </table>
                 `
               : html`
                   <p style="margin-top:0;">
@@ -413,31 +363,45 @@ export class Root extends LitElement {
           </div>
         `,
       },
-      ...(this.cipdReport.availableTargets &&
-      this.cipdReport.availableTargets.length > 1
-        ? [
-            {
-              title: `Platform`,
-              detail: platformStepDetail,
-            },
-          ]
-        : []),
       {
         title: 'Enjoy code intelligence',
         detail: 'Not enabled yet',
       },
     ];
 
+    let statusHtml;
+    if (!this.cipdReport.isCompileCommandsGenerated) {
+      statusHtml = html`
+        <div class="status-line status-error">
+          <span>❌</span>
+          <span style="color: red"
+            >Generate compile commands from below to enable code
+            intelligence.</span
+          >
+        </div>
+      `;
+    } else if (this.cipdReport.isStale) {
+      statusHtml = html`
+        <div class="status-line status-warning">
+          <span>⚠️</span>
+          <span style="color: orange"
+            >Code intelligence working but stale.</span
+          >
+        </div>
+      `;
+    } else {
+      statusHtml = html`
+        <div class="status-line status-success">
+          <span>✅</span>
+          <span style="color: green"
+            >Code intelligence configured and working.</span
+          >
+        </div>
+      `;
+    }
+
     return html` <div class="code-intelligence-status-card">
-      ${header}
-      <div class="status-line status-info">
-        <span>ℹ️</span>
-        <span
-          >Compile commands are <b>preconfigured</b> in
-          <code>BUILD.bazel</code>
-          (<a href="#" @click=${this._openDebugDetails}>see details</a>).</span
-        >
-      </div>
+      ${header} ${statusHtml}
       <ol class="status-steps">
         ${steps.map((step, index) => {
           let detailContent;

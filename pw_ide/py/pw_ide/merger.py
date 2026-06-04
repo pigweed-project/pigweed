@@ -36,16 +36,18 @@ from typing import Any, NamedTuple
 
 from pw_cli import color, plural
 
+from pw_ide.lock import LockFile, LockAlreadyHeldError
+
 _LOG = logging.getLogger(__name__)
 
 # A unique suffix to identify fragments created by our aspect.
-_FRAGMENT_SUFFIX = '.pw_aspect.compile_commands.json'
+_FRAGMENT_SUFFIX = ".pw_aspect.compile_commands.json"
 
-_COMPILE_COMMANDS_OUTPUT_GROUP = 'pw_cc_compile_commands_fragments'
+_COMPILE_COMMANDS_OUTPUT_GROUP = "pw_cc_compile_commands_fragments"
 
 _COMPILE_COMMANDS_ASPECT = (
-    '@pigweed//pw_ide/bazel/compile_commands:pw_cc_compile_commands_aspect.bzl'
-    '%pw_cc_compile_commands_aspect'
+    "@pigweed//pw_ide/bazel/compile_commands:pw_cc_compile_commands_aspect.bzl"
+    "%pw_cc_compile_commands_aspect"
 )
 
 # Supported architectures for clangd, based on the provided list.
@@ -135,46 +137,46 @@ class CompileCommand(NamedTuple):
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--out-dir',
-        '-o',
+        "--out-dir",
+        "-o",
         type=Path,
         help=(
-            'Where to write merged compile commands. By default, outputs are '
-            'written to $BUILD_WORKSPACE_DIRECTORY/.compile_commands'
+            "Where to write merged compile commands. By default, outputs are "
+            "written to $BUILD_WORKSPACE_DIRECTORY/.compile_commands"
         ),
     )
     parser.add_argument(
-        '--compile-command-groups',
+        "--compile-command-groups",
         type=Path,
-        help='Path to a JSON file with compile command patterns.',
+        help="Path to a JSON file with compile command patterns.",
     )
     parser.add_argument(
-        '--symlink-prefix',
-        default='bazel-',
+        "--symlink-prefix",
+        default="bazel-",
         help=(
-            'The prefix used for Bazel convenience symlinks '
-            '(e.g. \"out/\"). This informs where to look for '
-            '\"out\" and \"external\" symlinks.'
+            "The prefix used for Bazel convenience symlinks "
+            '(e.g. "out/"). This informs where to look for '
+            '"out" and "external" symlinks.'
         ),
     )
     parser.add_argument(
-        '--verbose',
-        '-v',
-        action='store_true',
-        help='Enable verbose output.',
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose output.",
     )
     parser.add_argument(
-        '--overwrite-threshold',
+        "--overwrite-threshold",
         type=int,
         help=(
-            'Skips regeneration if any existing compile commands databases are '
-            'newer than the specified unix timestamp. This is primarily '
-            'intended for internal use to prevent manually generated compile '
-            'commands from being clobbered by automatic generation.'
+            "Skips regeneration if any existing compile commands databases are "
+            "newer than the specified unix timestamp. This is primarily "
+            "intended for internal use to prevent manually generated compile "
+            "commands from being clobbered by automatic generation."
         ),
     )
     parser.add_argument(
-        'bazel_args',
+        "bazel_args",
         nargs=argparse.REMAINDER,
         help=(
             'Arguments after "--" are used to guide compile command generation.'
@@ -207,9 +209,9 @@ _INCLUDE_PREFIXES = ("-I", "-isystem", "-iquote", "-isysroot")
 
 _SUPPORTED_SUBCOMMANDS = set(
     (
-        'build',
-        'test',
-        'run',
+        "build",
+        "test",
+        "run",
     )
 )
 
@@ -219,14 +221,14 @@ def _run_bazel(
 ) -> subprocess.CompletedProcess[str]:
     """Runs bazel with the given arguments."""
     cmd = (
-        os.environ.get('BAZEL_REAL', 'bazelisk'),
+        os.environ.get("BAZEL_REAL", "bazelisk"),
         *args,
     )
-    _LOG.debug('Executing Bazel command: %s', shlex.join(cmd))
+    _LOG.debug("Executing Bazel command: %s", shlex.join(cmd))
 
     if stream:
         print(
-            'Generating compile commands (Actions completed / total):',
+            "Generating compile commands (Actions completed / total):",
             flush=True,
         )
         process = subprocess.Popen(
@@ -241,9 +243,9 @@ def _run_bazel(
         is_atty = sys.stdout.isatty()
         assert process.stdout is not None
         for line in process.stdout:
-            if re.search(r'\[\d+\s*/\s*\d+\]', line):
+            if re.search(r"\[\d+\s*/\s*\d+\]", line):
                 if is_atty:
-                    print(line.strip(), end='\r', flush=True)
+                    print(line.strip(), end="\r", flush=True)
                 else:
                     print(line.strip(), flush=True)
 
@@ -253,7 +255,7 @@ def _run_bazel(
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, cmd)
 
-        return subprocess.CompletedProcess(cmd, process.returncode, '', '')
+        return subprocess.CompletedProcess(cmd, process.returncode, "", "")
 
     return subprocess.run(
         cmd,
@@ -273,37 +275,37 @@ def _run_bazel_build_for_fragments(
     # We use a temporary directory as the symlink prefix so we can parse the
     # output and find resulting files.
     with tempfile.TemporaryDirectory() as tmp_dir:
-        bep_path = Path(tmp_dir) / 'compile_command_bep.json'
+        bep_path = Path(tmp_dir) / "compile_command_bep.json"
         command = list(build_args)
         command.extend(
             (
-                '--show_result=0',
-                f'--aspects={_COMPILE_COMMANDS_ASPECT}',
-                f'--output_groups={_COMPILE_COMMANDS_OUTPUT_GROUP}',
+                "--show_result=0",
+                f"--aspects={_COMPILE_COMMANDS_ASPECT}",
+                f"--output_groups={_COMPILE_COMMANDS_OUTPUT_GROUP}",
                 # This also makes all paths resolve as absolute.
-                '--experimental_convenience_symlinks=ignore',
-                f'--build_event_json_file={bep_path}',
+                "--experimental_convenience_symlinks=ignore",
+                f"--build_event_json_file={bep_path}",
             )
         )
-        _LOG.debug('Executing Bazel command: %s', shlex.join(command))
+        _LOG.debug("Executing Bazel command: %s", shlex.join(command))
         try:
             _run_bazel(
                 command,
-                cwd=os.environ['BUILD_WORKING_DIRECTORY'],
+                cwd=os.environ["BUILD_WORKING_DIRECTORY"],
                 stream=not verbose,
             )
         except subprocess.CalledProcessError as e:
-            _LOG.fatal('Failed to generate compile commands fragments: %s', e)
-            if hasattr(e, 'stderr') and e.stderr:
-                _LOG.fatal('Stderr: %s', e.stderr)
+            _LOG.fatal("Failed to generate compile commands fragments: %s", e)
+            if hasattr(e, "stderr") and e.stderr:
+                _LOG.fatal("Stderr: %s", e.stderr)
             return set()
 
         fragments = set()
         for line in bep_path.read_text().splitlines():
             event = json.loads(line)
-            for file in event.get('namedSetOfFiles', {}).get('files', []):
-                file_path = file.get('name', '')
-                file_path_prefix = file.get('pathPrefix', [])
+            for file in event.get("namedSetOfFiles", {}).get("files", []):
+                file_path = file.get("name", "")
+                file_path_prefix = file.get("pathPrefix", [])
 
                 if not file_path.endswith(_FRAGMENT_SUFFIX):
                     continue
@@ -311,8 +313,8 @@ def _run_bazel_build_for_fragments(
                 if not file_path or not file_path_prefix:
                     # This should never happen.
                     _LOG.warning(
-                        'Malformed file entry missing `name` and/or '
-                        '`pathPrefix`: %s',
+                        "Malformed file entry missing `name` and/or "
+                        "`pathPrefix`: %s",
                         file,
                     )
                     continue
@@ -330,14 +332,14 @@ def _build_and_collect_fragments(
     execution_root: Path,
 ) -> Iterator[tuple[str, Path, None]]:
     """Collects fragments using `bazel cquery`."""
-    if forwarded_args and forwarded_args[0] == '--':
+    if forwarded_args and forwarded_args[0] == "--":
         # Remove initial double-dash.
         forwarded_args.pop(0)
 
     # `bazel run` commands might bundle a `--`. These application-specific
     # arguments will cause problems when calling `bazel build`, so remove them.
     try:
-        forwarded_args = forwarded_args[: forwarded_args.index('--')]
+        forwarded_args = forwarded_args[: forwarded_args.index("--")]
     except ValueError:
         pass
 
@@ -351,9 +353,9 @@ def _build_and_collect_fragments(
     if subcommand_index is None:
         return
 
-    _LOG.info('⏳ Generating compile commands...')
+    _LOG.info("⏳ Generating compile commands...")
     build_args = list(forwarded_args)
-    build_args[subcommand_index] = 'build'
+    build_args[subcommand_index] = "build"
     fragments = _run_bazel_build_for_fragments(
         build_args, verbose, execution_root
     )
@@ -374,7 +376,7 @@ def _build_and_collect_fragments_from_groups(
     # When running interactively, passing a local file will cause this to fail
     # since the path isn't relative to the sandbox. This is intentional, as
     # the JSON format isn't intended to be user-facing.
-    with open(groups_file, 'r') as f:
+    with open(groups_file, "r") as f:
         try:
             patterns = json.load(f)
         except json.JSONDecodeError:
@@ -384,7 +386,7 @@ def _build_and_collect_fragments_from_groups(
     known_fragments: dict[Path, int] = {}
     ignored_fragments: set[Path] = set()
     has_errors = False
-    compile_commands_patterns = patterns.get('compile_commands_patterns', [])
+    compile_commands_patterns = patterns.get("compile_commands_patterns", [])
     total_groups = len(compile_commands_patterns)
 
     # Dictionary keeping track of platform names for valid fragments found.
@@ -392,29 +394,29 @@ def _build_and_collect_fragments_from_groups(
     fragment_display_name_map: dict[Path, str] = {}
 
     for i, group in enumerate(compile_commands_patterns):
-        platform = group.get('platform')
-        targets = group.get('target_patterns')
-        display_name = group.get('display_name')
+        platform = group.get("platform")
+        targets = group.get("target_patterns")
+        display_name = group.get("display_name")
 
         if not platform or not targets:
             _LOG.warning("Skipping invalid compile command group: %s", group)
             continue
 
         # Workaround for Bazel 7+ canonical label format in target patterns
-        targets = [t[2:] if t.startswith('@@//') else t for t in targets]
+        targets = [t[2:] if t.startswith("@@//") else t for t in targets]
 
         _LOG.info(
-            '⏳ Generating compile commands for group %d/%d (%s)...',
+            "⏳ Generating compile commands for group %d/%d (%s)...",
             i + 1,
             total_groups,
             platform,
         )
         build_args = [
-            'build',
-            '--noshow_progress',
-            '--noshow_loading_progress',
-            '--workspace_status_command=/usr/bin/true',
-            '--platforms',
+            "build",
+            "--noshow_progress",
+            "--noshow_loading_progress",
+            "--workspace_status_command=/usr/bin/true",
+            "--platforms",
             platform,
             *targets,
         ]
@@ -422,7 +424,7 @@ def _build_and_collect_fragments_from_groups(
             build_args, verbose, execution_root
         )
 
-        sanitized_platform = platform.replace('/', '__').replace(':', '__')
+        sanitized_platform = platform.replace("/", "__").replace(":", "__")
 
         # Multiple builds may generate the same fragments. It's possible that
         # you can end up with multiple conflicting definitions of the same
@@ -442,10 +444,10 @@ def _build_and_collect_fragments_from_groups(
             if fragment in known_fragments:
                 if known_fragments[fragment] != content_hash:
                     _LOG.warning(
-                        'Fragment file %s was generated by multiple groups '
-                        'with different content (this can happen if different '
-                        'bazel flags produce different compile commands for '
-                        'the same file). Skipping this fragment.',
+                        "Fragment file %s was generated by multiple groups "
+                        "with different content (this can happen if different "
+                        "bazel flags produce different compile commands for "
+                        "the same file). Skipping this fragment.",
                         fragment,
                     )
                     ignored_fragments.add(fragment)
@@ -505,17 +507,17 @@ class PrettyFormatter(logging.Formatter):
         """Formats the log record."""
         message = record.getMessage()
         if record.levelno >= logging.ERROR:
-            level_prefix = '❌ '
+            level_prefix = "❌ "
             message = self._colors.red(message)
         elif record.levelno >= logging.WARNING:
-            level_prefix = '⚠️ '
+            level_prefix = "⚠️ "
             message = self._colors.yellow(message)
         elif record.levelno == logging.DEBUG:
-            level_prefix = ''
+            level_prefix = ""
             message = self._gray(message)
         else:
-            level_prefix = ''
-        return f'{level_prefix}{message}'
+            level_prefix = ""
+        return f"{level_prefix}{message}"
 
 
 def _setup_logging(log_level: int):
@@ -530,7 +532,7 @@ def _get_bazel_info_multi(keys: list[str], cwd: str) -> dict[str, Path] | None:
     """Gets values from `bazel info {keys}`."""
     try:
         output_str = _run_bazel(
-            ['info'] + keys,
+            ["info"] + keys,
             cwd=cwd,
         ).stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -540,8 +542,8 @@ def _get_bazel_info_multi(keys: list[str], cwd: str) -> dict[str, Path] | None:
     results = {}
 
     for line in output_str.splitlines():
-        if ':' in line:
-            k, v = line.split(':', 1)
+        if ":" in line:
+            k, v = line.split(":", 1)
             results[k.strip()] = Path(v.strip())
     return results
 
@@ -656,33 +658,33 @@ def _load_commands_for_platform(
                 # reliably will tell us whether or not definitions truly
                 # collide.
                 command_tuple = (
-                    command_dict['file'],
-                    str(command_dict.get('outputs', [])),
+                    command_dict["file"],
+                    str(command_dict.get("outputs", [])),
                 )
                 if command_tuple in commands_by_file:
                     existing_cmd = commands_by_file[command_tuple]
-                    if existing_cmd['arguments'] != command_dict['arguments']:
-                        if command_dict['file'].endswith(
-                            ('.h', '.hh', '.hpp', '.hxx')
+                    if existing_cmd["arguments"] != command_dict["arguments"]:
+                        if command_dict["file"].endswith(
+                            (".h", ".hh", ".hpp", ".hxx")
                         ):
                             _LOG.debug(
-                                'Header flags conflict for %s; using existing',
-                                command_dict['file'],
+                                "Header flags conflict for %s; using existing",
+                                command_dict["file"],
                             )
                             continue
 
                         _LOG.error(
-                            'Conflict for file %s in platform %s',
-                            command_dict['file'],
+                            "Conflict for file %s in platform %s",
+                            command_dict["file"],
                             platform,
                         )
                         _LOG.error(
-                            'Existing command: %s',
-                            shlex.join(existing_cmd['arguments']),
+                            "Existing command: %s",
+                            shlex.join(existing_cmd["arguments"]),
                         )
                         _LOG.error(
-                            'New command: %s',
-                            shlex.join(command_dict['arguments']),
+                            "New command: %s",
+                            shlex.join(command_dict["arguments"]),
                         )
                         return None
                 else:
@@ -709,14 +711,14 @@ def _validate_environment() -> tuple[Path, Path, Path, Path]:
     workspace_root = Path(workspace_root_str).resolve()
 
     info_dict = _get_bazel_info_multi(
-        ['output_path', 'output_base', 'execution_root'], workspace_root_str
+        ["output_path", "output_base", "execution_root"], workspace_root_str
     )
     if info_dict is None:
         sys.exit(1)
 
-    bazel_output_path = info_dict.get('output_path')
-    output_base_path = info_dict.get('output_base')
-    execution_root_path = info_dict.get('execution_root')
+    bazel_output_path = info_dict.get("output_path")
+    output_base_path = info_dict.get("output_base")
+    execution_root_path = info_dict.get("execution_root")
 
     if not all([bazel_output_path, output_base_path, execution_root_path]):
         _LOG.fatal("Failed to get all required Bazel paths")
@@ -788,7 +790,7 @@ def _process_platform(
     workspace_root: Path,
     output_dir: Path,
     bazel_paths: tuple[Path, Path, Path],
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
     display_name: str | None = None,
 ) -> None:
     """Processes a single platform, merging fragments and writing output files.
@@ -889,7 +891,7 @@ def _process_platform(
 
     # Target info was processed early to support global flag borrowing
 
-    (output_dir / 'pw_lastGenerationTime.txt').write_text(str(int(time.time())))
+    (output_dir / "pw_lastGenerationTime.txt").write_text(str(int(time.time())))
 
 
 def _update_files_map(
@@ -916,7 +918,7 @@ def _process_target_infos(
     output_base_path: Path,
     relative_to: Path | None,
     platform_dir: Path,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> tuple[dict[str, list[str]], dict[str, Any], dict[str, list[str]]]:
     """Processes target infos and writes deps_mapping.json."""
     final_target_infos: dict[str, Any] = {}
@@ -1040,57 +1042,68 @@ def main() -> int:
         execution_root_path,
     ) = _validate_environment()
 
-    fragments_by_platform, display_names_by_platform = _find_fragments(
-        execution_root_path, args
-    )
-
-    _LOG.debug(
-        "Found fragments for %s.",
-        plural.plural(fragments_by_platform, 'platform'),
-    )
-
-    # Union of all platforms found
-    all_platforms = set(fragments_by_platform.keys())
-
     output_dir = args.out_dir
     if not output_dir:
         output_dir = Path(workspace_root) / ".compile_commands"
 
-    if output_dir.exists():
-        # Make the generator a list so it can be reused.
-        existing_databases = list(output_dir.rglob('*/compile_commands.json'))
+    output_dir.mkdir(exist_ok=True)
+    lockfile_path = output_dir / "pw.lock"
 
-        if args.overwrite_threshold and any(
-            db.stat().st_mtime > args.overwrite_threshold
-            for db in existing_databases
-        ):
+    try:
+        with LockFile(lockfile_path):
+            fragments_by_platform, display_names_by_platform = _find_fragments(
+                execution_root_path, args
+            )
+
             _LOG.debug(
-                'Skipping regeneration; fresh compile commands database '
-                'already exists'
+                "Found fragments for %s.",
+                plural.plural(fragments_by_platform, "platform"),
+            )
+
+            # Union of all platforms found
+            all_platforms = set(fragments_by_platform.keys())
+
+            # Make the generator a list so it can be reused.
+            existing_databases = list(
+                output_dir.rglob("*/compile_commands.json")
+            )
+
+            if args.overwrite_threshold and any(
+                db.stat().st_mtime > args.overwrite_threshold
+                for db in existing_databases
+            ):
+                _LOG.debug(
+                    "Skipping regeneration; fresh compile commands database "
+                    "already exists"
+                )
+                return 0
+
+            for platform in all_platforms:
+                _process_platform(
+                    platform,
+                    fragments_by_platform.get(platform, []),
+                    workspace_root,
+                    output_dir,
+                    (bazel_output_path, output_base_path, execution_root_path),
+                    args.symlink_prefix,
+                    display_name=display_names_by_platform.get(platform),
+                )
+
+            (output_dir / "pw_lastGenerationTime.txt").write_text(
+                str(int(time.time()))
+            )
+            _LOG.info(
+                "✅ Successfully created compilation databases in: %s",
+                output_dir,
             )
             return 0
-
-        for f in existing_databases:
-            f.unlink()
-
-    output_dir.mkdir(exist_ok=True)
-
-    for platform in all_platforms:
-        _process_platform(
-            platform,
-            fragments_by_platform.get(platform, []),
-            workspace_root,
-            output_dir,
-            (bazel_output_path, output_base_path, execution_root_path),
-            args.symlink_prefix,
-            display_name=display_names_by_platform.get(platform),
+    except LockAlreadyHeldError as e:
+        _LOG.fatal(
+            "Another instance of the merger script is "
+            "already running (PID: %d). Exiting.",
+            e.pid,
         )
-
-    (output_dir / 'pw_lastGenerationTime.txt').write_text(str(int(time.time())))
-    _LOG.info(
-        "✅ Successfully created compilation databases in: %s", output_dir
-    )
-    return 0
+        return 1
 
 
 def _resolve_virtual_include_dynamic(
@@ -1099,11 +1112,11 @@ def _resolve_virtual_include_dynamic(
     execution_root_path: Path,
     relative_to: Path | None,
     prefix: str,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> str | None:
     """Helper to dynamically resolve a virtual include directory's real path."""
     try:
-        for f in abs_v_dir.rglob('*'):
+        for f in abs_v_dir.rglob("*"):
             if f.is_file() or f.is_symlink():
                 real_f = f.resolve()
                 rel_parts = f.relative_to(abs_v_dir).parts
@@ -1139,7 +1152,7 @@ def remap_virtual_includes(
     bazel_output_path: Path,
     execution_root_path: Path,
     relative_to: Path | None = None,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> CompileCommand:
     """Remaps virtual includes using a map or dynamic symlink resolution.
 
@@ -1180,7 +1193,7 @@ def remap_virtual_includes(
             new_args.append(prefix + virtual_mappings_map[path_part])
             continue
 
-        if '_virtual_includes/' not in arg:
+        if "_virtual_includes/" not in arg:
             new_args.append(arg)
             continue
 
@@ -1188,12 +1201,12 @@ def remap_virtual_includes(
         path_str = arg[len(prefix) :]
         path = Path(path_str)
 
-        if path.is_relative_to('bazel-out'):
+        if path.is_relative_to("bazel-out"):
             # Handle bazel-out paths by anchoring them to the actual bazel
             # output path. path is something like
             # bazel-out/k8-fastbuild/bin/...
             # we want to strip bazel-out/ and join with bazel_output_path
-            abs_v_dir = bazel_output_path / path.relative_to('bazel-out')
+            abs_v_dir = bazel_output_path / path.relative_to("bazel-out")
         else:
             abs_v_dir = path
 
@@ -1222,16 +1235,16 @@ def _get_bazel_out_symlink_prefix(
 ) -> str:
     # Resolve via symlink (e.g. 'bazel-out' or 'out/out')
     # Bazel creates symlinks as [prefix]out, [prefix]bin, etc.
-    symlink_name = symlink_prefix + 'out'
+    symlink_name = symlink_prefix + "out"
     symlink_path = os.path.join(relative_to_str, symlink_name)
     if os.path.exists(symlink_path):
         return symlink_name
 
-    standard_symlink = os.path.join(relative_to_str, 'bazel-out')
+    standard_symlink = os.path.join(relative_to_str, "bazel-out")
     if os.path.exists(standard_symlink):
-        return 'bazel-out'
+        return "bazel-out"
 
-    return ''
+    return ""
 
 
 @functools.lru_cache(maxsize=10000)
@@ -1248,17 +1261,17 @@ def _resolve_bazel_out_path_str(
         if prefix:
             return f"{prefix}/{path_suffix}"
 
-    return os.path.join(bazel_output_path_str, *path_suffix.split('/'))
+    return os.path.join(bazel_output_path_str, *path_suffix.split("/"))
 
 
 def resolve_bazel_out_paths(
     command: CompileCommand,
     bazel_output_path: Path,
     relative_to: Path | None = None,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> CompileCommand:
     """Replaces bazel-out paths with their real paths."""
-    marker = 'bazel-out/'
+    marker = "bazel-out/"
     new_args = []
 
     if relative_to:
@@ -1300,20 +1313,20 @@ def _resolve_single_external_path(
     path_str: str,
     output_base_str: str,
     relative_to_str: str | None = None,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> str | None:
     """Resolves a single external path against the output base.
 
     We use string operations and os.path instead of pathlib.Path here to
     minimize overhead in hot paths, as this is called frequently.
     """
-    external_root = os.path.join(output_base_str, 'external')
+    external_root = os.path.join(output_base_str, "external")
 
     # Ensure we have an absolute path to work with
     if os.path.isabs(path_str):
         abs_path = path_str
-    elif path_str.startswith('external/'):
-        abs_path = os.path.join(external_root, path_str[len('external/') :])
+    elif path_str.startswith("external/"):
+        abs_path = os.path.join(external_root, path_str[len("external/") :])
     else:
         return None
 
@@ -1327,7 +1340,7 @@ def _resolve_single_external_path(
         # We use string prefix check here instead of os.path.relpath as it's
         # more robust in some environments and mock filesystems.
         if resolved_path == relative_to_str:
-            return '.'
+            return "."
         if resolved_path.startswith(relative_to_str + os.sep):
             return resolved_path[len(relative_to_str) + 1 :]
 
@@ -1335,19 +1348,19 @@ def _resolve_single_external_path(
         # workspace.
 
         # Check first at the prefix (e.g. 'out/external')
-        symlink_path = os.path.join(relative_to_str, symlink_prefix, 'external')
+        symlink_path = os.path.join(relative_to_str, symlink_prefix, "external")
 
         # If prefix doesn't have it, check at sibling of bazel-out in prefix
         if not os.path.exists(symlink_path) and symlink_prefix.endswith(
-            'bazel-'
+            "bazel-"
         ):
             symlink_path = os.path.join(
-                relative_to_str, symlink_prefix[: -len('bazel-')], 'external'
+                relative_to_str, symlink_prefix[: -len("bazel-")], "external"
             )
 
         # Fallback to workspace root
         if not os.path.exists(symlink_path):
-            symlink_path = os.path.join(relative_to_str, 'external')
+            symlink_path = os.path.join(relative_to_str, "external")
 
         if os.path.exists(symlink_path):
             # Try to see if it's relative to the REAL external root
@@ -1367,7 +1380,7 @@ def resolve_external_paths(
     command: CompileCommand,
     output_base: Path,
     relative_to: Path | None = None,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> CompileCommand:
     """Replaces external paths with their real paths."""
     # Standard compiler flags for include paths.
@@ -1411,8 +1424,8 @@ def resolve_external_paths(
         # Optimization: only process if it looks like an absolute path
         # to output base, or a relative external/ path.
         if (
-            not relevant_part_str.startswith('/')
-            and not relevant_part_str.startswith('external/')
+            not relevant_part_str.startswith("/")
+            and not relevant_part_str.startswith("external/")
             and output_base_str not in relevant_part_str
         ):
             new_args.append(new_arg)
@@ -1461,7 +1474,7 @@ def resolve_target_info_paths(
     bazel_output_path: Path,
     output_base_path: Path,
     relative_to: Path | None = None,
-    symlink_prefix: str = '',
+    symlink_prefix: str = "",
 ) -> dict:
     """Resolves paths in a target info dictionary.
 
@@ -1481,8 +1494,8 @@ def resolve_target_info_paths(
             resolved_path = _resolve_single_external_path(
                 p, output_base_str, relative_to_str, symlink_prefix
             )
-            if not resolved_path and p.startswith('bazel-out/'):
-                path_suffix = p[len('bazel-out/') :]
+            if not resolved_path and p.startswith("bazel-out/"):
+                path_suffix = p[len("bazel-out/") :]
                 resolved_path = _resolve_bazel_out_path_str(
                     path_suffix,
                     relative_to_str,

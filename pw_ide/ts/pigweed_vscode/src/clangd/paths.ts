@@ -39,11 +39,18 @@ export class Target {
   private _name: string;
   private _dir: string;
   private _displayName?: string;
+  private _lastGeneratedAt?: string;
 
-  constructor(name: string, dir?: string, displayName?: string) {
+  constructor(
+    name: string,
+    dir?: string,
+    displayName?: string,
+    lastGeneratedAt?: string,
+  ) {
     this._name = name;
     this._dir = dir ?? path.join(CDB_FILE_DIRS[0], name);
     this._displayName = displayName;
+    this._lastGeneratedAt = lastGeneratedAt;
   }
 
   get name() {
@@ -75,6 +82,10 @@ export class Target {
     const dirName = path.basename(path.dirname(this._dir));
     return `${this._name} (${dirName})`;
   }
+
+  get lastGeneratedAt() {
+    return this._lastGeneratedAt;
+  }
 }
 
 export async function availableTargets(): Promise<Target[]> {
@@ -101,7 +112,18 @@ export async function availableTargets(): Promise<Target[]> {
                 } catch (e) {
                   // ignore
                 }
-                return new Target(name, dir, displayName);
+
+                let lastGeneratedAt: string | undefined;
+                try {
+                  const stat = await fs.promises.stat(
+                    path.join(dir, CDB_FILE_NAME),
+                  );
+                  lastGeneratedAt = stat.mtime.toISOString();
+                } catch (e) {
+                  // ignore
+                }
+
+                return new Target(name, dir, displayName, lastGeneratedAt);
               },
             ),
           ),

@@ -65,6 +65,8 @@ group("bazel_only") {
     "pw_ide/cleaner.py",
     "pw_ide/ide_query.py",
     "ide_query_test.py",
+    "lock_test.py",
+    "pw_ide/lock.py",
     "pw_ide/merger.py",
     "pw_ide/verify_db.py",
   ]
