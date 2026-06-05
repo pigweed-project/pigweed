@@ -72,7 +72,7 @@ impl ImageInfo {
     fn get_section_data<'a>(obj_file: &File<'a>, section_name: &str) -> Result<&'a [u8]> {
         let section = obj_file
             .section_by_name(section_name)
-            .context("Failed to find .pw_kernel.annotations.stack section")?;
+            .with_context(|| format!("Failed to find section {}", section_name))?;
 
         let data = section.data().context("Failed to read section data")?;
         Ok(data)
