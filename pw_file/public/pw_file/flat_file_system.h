@@ -81,7 +81,8 @@ class FlatFileSystemService
     return minimum_entries *
            protobuf::SizeOfDelimitedField(
                pwpb::ListResponse::Fields::kPaths,
-               EncodedPathProtoSizeBytes(max_file_name_length));
+               static_cast<uint32_t>(
+                   EncodedPathProtoSizeBytes(max_file_name_length)));
   }
 
   // Constructs a flat file system from a static list of file entries.
@@ -114,8 +115,9 @@ class FlatFileSystemService
   // Returns the maximum size of a single encoded Path proto.
   static constexpr size_t EncodedPathProtoSizeBytes(
       size_t max_file_name_length) {
-    return protobuf::SizeOfFieldString(pwpb::Path::Fields::kPath,
-                                       max_file_name_length) +
+    return protobuf::SizeOfFieldString(
+               pwpb::Path::Fields::kPath,
+               static_cast<uint32_t>(max_file_name_length)) +
            protobuf::SizeOfFieldEnum(pwpb::Path::Fields::kPermissions,
                                      pwpb::Path::Permissions::READ_AND_WRITE) +
            protobuf::SizeOfFieldUint32(pwpb::Path::Fields::kSizeBytes) +

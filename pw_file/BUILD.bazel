@@ -68,7 +68,6 @@ cc_library(
     hdrs = [
         "public/pw_file/flat_file_system.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -86,7 +85,6 @@ pw_cc_test(
     srcs = [
         "flat_file_system_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":file_proto_pwpb",
         ":flat_file_system",

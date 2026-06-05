@@ -206,8 +206,8 @@ Status KeyValueStore::InitializeMetadata() {
       entry_address = next_entry_address;
 
       // Update of the number of writable bytes in this sector.
-      sector.set_writable_bytes(sector_size_bytes -
-                                (entry_address - sector_address));
+      sector.set_writable_bytes(static_cast<uint16_t>(
+          sector_size_bytes - (entry_address - sector_address)));
     }
 
     if (sector_corrupt_bytes > 0) {
@@ -255,7 +255,7 @@ Status KeyValueStore::InitializeMetadata() {
       SectorDescriptor& sector = sectors_.FromAddress(address);
 
       if (read_result.ok()) {
-        sector.AddValidBytes(entry.size());
+        sector.AddValidBytes(static_cast<uint16_t>(entry.size()));
         index++;
       } else {
         corrupt_entries++;
@@ -391,7 +391,8 @@ Status KeyValueStore::ScanForEntry(const SectorDescriptor& sector,
   // Entry::kMinAlignmentBytes. However, that multiple can vary between entries.
   // When scanning, we don't have an entry to tell us what the current alignment
   // is, so the minimum alignment is used to be exhaustive.
-  for (Address address = AlignUp(start_address, Entry::kMinAlignmentBytes);
+  for (Address address = static_cast<Address>(
+           AlignUp(start_address, Entry::kMinAlignmentBytes));
        sectors_.AddressInSector(sector, address);
        address += Entry::kMinAlignmentBytes) {
     uint32_t magic;
@@ -426,7 +427,8 @@ Status KeyValueStore::RemoveDeletedKeyEntries() {
       PW_TRY(ReadEntry(entry_metadata, entry));
 
       for (Address address : entry_metadata.addresses()) {
-        sectors_.FromAddress(address).RemoveValidBytes(entry.size());
+        sectors_.FromAddress(address).RemoveValidBytes(
+            static_cast<uint16_t>(entry.size()));
       }
 
       it = entry_cache_.RemoveEntry(it);
@@ -773,7 +775,8 @@ KeyValueStore::EntryMetadata KeyValueStore::UpdateKeyDescriptor(
     size_t prior_size) {
   // Remove valid bytes for the old entry and its copies, which are now stale.
   for (Address address : prior_metadata->addresses()) {
-    sectors_.FromAddress(address).RemoveValidBytes(prior_size);
+    sectors_.FromAddress(address).RemoveValidBytes(
+        static_cast<uint16_t>(prior_size));
   }
 
   prior_metadata->Reset(entry.descriptor(prior_metadata->hash()), new_address);
@@ -874,8 +877,8 @@ Status KeyValueStore::AppendEntry(const Entry& entry,
     PW_TRY(MarkSectorCorruptIfNotOk(entry.VerifyChecksumInFlash(), &sector));
   }
 
-  sector.RemoveWritableBytes(result.size());
-  sector.AddValidBytes(result.size());
+  sector.RemoveWritableBytes(static_cast<uint16_t>(result.size()));
+  sector.AddValidBytes(static_cast<uint16_t>(result.size()));
   return OkStatus();
 }
 
@@ -898,8 +901,8 @@ StatusWithSize KeyValueStore::CopyEntryToSector(Entry& entry,
   }
   // Entry was written successfully; update descriptor's address and the sector
   // descriptors to reflect the new entry.
-  new_sector->RemoveWritableBytes(result.size());
-  new_sector->AddValidBytes(result.size());
+  new_sector->RemoveWritableBytes(static_cast<uint16_t>(result.size()));
+  new_sector->AddValidBytes(static_cast<uint16_t>(result.size()));
 
   return result;
 }
@@ -924,7 +927,8 @@ Status KeyValueStore::RelocateEntry(const EntryMetadata& metadata,
   Address new_address = sectors_.NextWritableAddress(*new_sector);
   PW_TRY_ASSIGN(const size_t result_size,
                 CopyEntryToSector(entry, new_sector, new_address));
-  sectors_.FromAddress(address).RemoveValidBytes(result_size);
+  sectors_.FromAddress(address).RemoveValidBytes(
+      static_cast<uint16_t>(result_size));
   address = new_address;
 
   return OkStatus();
@@ -1094,7 +1098,8 @@ Status KeyValueStore::GarbageCollectSector(
     sector_to_gc.mark_corrupt();
     internal_stats_.sector_erase_count++;
     PW_TRY(partition_.Erase(sectors_.BaseAddress(sector_to_gc), 1));
-    sector_to_gc.set_writable_bytes(partition_.sector_size_bytes());
+    sector_to_gc.set_writable_bytes(
+        static_cast<uint16_t>(partition_.sector_size_bytes()));
   }
 
   PW_LOG_DEBUG("  Garbage Collect sector %u complete",
@@ -1387,8 +1392,8 @@ void KeyValueStore::LogDebugInfo() const {
   for (size_t sector_id = 0; sector_id < sectors_.size(); ++sector_id) {
     // Read sector data. Yes, this will blow the stack on embedded.
     std::array<byte, 500> raw_sector_data;  // TODO!!!
-    [[maybe_unused]] StatusWithSize sws =
-        partition_.Read(sector_id * sector_size_bytes, raw_sector_data);
+    [[maybe_unused]] StatusWithSize sws = partition_.Read(
+        static_cast<Address>(sector_id * sector_size_bytes), raw_sector_data);
     PW_LOG_DEBUG("Read: %u bytes", unsigned(sws.size()));
 
     PW_LOG_DEBUG("  base    addr  offs   0  1  2  3  4  5  6  7");

@@ -46,7 +46,10 @@ TEST(Entry, Size_RoundsUpToAlignment) {
   FakeFlashMemory flash(buffer, 64, 2, 1);
 
   for (size_t alignment_bytes = 1; alignment_bytes <= 4096; ++alignment_bytes) {
-    FlashPartition partition(&flash, 0, flash.sector_count(), alignment_bytes);
+    FlashPartition partition(&flash,
+                             0,
+                             static_cast<uint32_t>(flash.sector_count()),
+                             static_cast<uint32_t>(alignment_bytes));
     const size_t align = AlignUp(alignment_bytes, Entry::kMinAlignmentBytes);
 
     static constexpr byte value_bytes[4096 + Entry::kMinAlignmentBytes] = {};
@@ -65,7 +68,8 @@ TEST(Entry, Size_RoundsUpToAlignment) {
 
 TEST(Entry, Construct_ValidEntry) {
   FakeFlashMemoryBuffer<64, 2> flash(16);
-  FlashPartition partition(&flash, 0, flash.sector_count());
+  FlashPartition partition(
+      &flash, 0, static_cast<uint32_t>(flash.sector_count()));
 
   auto entry =
       Entry::Valid(partition, 1, kFormat, "k", as_bytes(span("123")), 9876);
@@ -78,7 +82,8 @@ TEST(Entry, Construct_ValidEntry) {
 
 TEST(Entry, Construct_Tombstone) {
   FakeFlashMemoryBuffer<64, 2> flash(16);
-  FlashPartition partition(&flash, 0, flash.sector_count());
+  FlashPartition partition(
+      &flash, 0, static_cast<uint32_t>(flash.sector_count()));
 
   auto entry = Entry::Tombstone(partition, 1, kFormat, "key", 123);
 
@@ -206,7 +211,8 @@ TEST_F(ValidEntryInFlash, ReadValue_WithOffset_PastEnd) {
 
 TEST(ValidEntry, Write) {
   FakeFlashMemoryBuffer<1024, 4> flash;
-  FlashPartition partition(&flash, 0, flash.sector_count(), 32);
+  FlashPartition partition(
+      &flash, 0, static_cast<uint32_t>(flash.sector_count()), 32);
 
   Entry entry = Entry::Valid(
       partition, 64, kFormatWithChecksum, "key45", kValue1, kTransactionId1);
@@ -538,17 +544,22 @@ TEST_F(ValidEntryInFlash, UpdateAndCopy_NoChecksum_UpdatesToNewFormat) {
 TEST_F(ValidEntryInFlash, UpdateAndCopyMultple_DifferentFormat) {
   ASSERT_EQ(OkStatus(), entry_.Update(kFormatWithSum, kTransactionId1 + 6));
 
-  FlashPartition::Address new_address = entry_.size();
+  FlashPartition::Address new_address =
+      static_cast<FlashPartition::Address>(entry_.size());
 
   for (int i = 0; i < 10; i++) {
-    StatusWithSize copy_result = entry_.Copy(new_address + (i * entry_.size()));
+    StatusWithSize copy_result = entry_.Copy(
+        new_address + static_cast<FlashPartition::Address>(i) *
+                          static_cast<FlashPartition::Address>(entry_.size()));
     ASSERT_EQ(OkStatus(), copy_result.status());
     ASSERT_EQ(kEntry1.size(), copy_result.size());
   }
 
   for (int j = 0; j < 10; j++) {
     Entry entry;
-    FlashPartition::Address read_address = (new_address + (j * entry_.size()));
+    FlashPartition::Address read_address =
+        new_address + static_cast<FlashPartition::Address>(j) *
+                          static_cast<FlashPartition::Address>(entry_.size());
     ASSERT_EQ(OkStatus(),
               Entry::Read(partition_, read_address, kFormatsWithSum, &entry));
 
@@ -563,7 +574,8 @@ TEST_F(ValidEntryInFlash, UpdateAndCopyMultple_DifferentFormat) {
 TEST_F(ValidEntryInFlash, DifferentFormat_UpdatedCopy_FailsWithWrongMagic) {
   ASSERT_EQ(OkStatus(), entry_.Update(kFormatWithSum, kTransactionId1 + 6));
 
-  FlashPartition::Address new_address = entry_.size();
+  FlashPartition::Address new_address =
+      static_cast<FlashPartition::Address>(entry_.size());
 
   StatusWithSize copy_result = entry_.Copy(new_address);
   ASSERT_EQ(OkStatus(), copy_result.status());

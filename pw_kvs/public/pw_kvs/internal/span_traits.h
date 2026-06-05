@@ -53,7 +53,11 @@ using Extent = ExtentImpl<std::remove_cv_t<std::remove_reference_t<T>>>;
 template <int&... ExplicitArgumentBarrier, typename It, typename EndOrSize>
 constexpr auto make_span(It it, EndOrSize end_or_size) noexcept {
   using T = std::remove_reference_t<iter_reference_t<It>>;
-  return span<T>(it, end_or_size);
+  if constexpr (std::is_integral_v<EndOrSize>) {
+    return span<T>(it, static_cast<size_t>(end_or_size));
+  } else {
+    return span<T>(it, end_or_size);
+  }
 }
 
 // make_span utility function that deduces both the span's value_type and extent

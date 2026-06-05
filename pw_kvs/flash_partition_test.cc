@@ -53,8 +53,8 @@ void WriteData(FlashPartition& partition, uint8_t fill_byte) {
   // write_size-size, the remainder is not written.
   for (size_t sector_index = 0; sector_index < partition.sector_count();
        sector_index++) {
-    FlashPartition::Address address =
-        sector_index * partition.sector_size_bytes();
+    FlashPartition::Address address = static_cast<FlashPartition::Address>(
+        sector_index * partition.sector_size_bytes());
 
     for (size_t chunk_index = 0; chunk_index < chunks_per_sector;
          chunk_index++) {
@@ -70,8 +70,8 @@ void WriteData(FlashPartition& partition, uint8_t fill_byte) {
   // Count the errors and print if any errors are found.
   for (size_t sector_index = 0; sector_index < partition.sector_count();
        sector_index++) {
-    FlashPartition::Address address =
-        sector_index * partition.sector_size_bytes();
+    FlashPartition::Address address = static_cast<FlashPartition::Address>(
+        sector_index * partition.sector_size_bytes());
 
     for (size_t chunk_index = 0; chunk_index < chunks_per_sector;
          chunk_index++) {
@@ -152,8 +152,8 @@ TEST(FlashPartitionTest, EraseTest) {
   // Write to the first page of each sector.
   for (size_t sector_index = 0; sector_index < test_partition.sector_count();
        sector_index++) {
-    FlashPartition::Address address =
-        sector_index * test_partition.sector_size_bytes();
+    FlashPartition::Address address = static_cast<FlashPartition::Address>(
+        sector_index * test_partition.sector_size_bytes());
 
     StatusWithSize status = test_partition.Write(address, as_bytes(data_span));
     ASSERT_EQ(OkStatus(), status.status());
@@ -175,8 +175,8 @@ TEST(FlashPartitionTest, EraseTest) {
   // Read the first page of each sector and make sure it has been erased.
   for (size_t sector_index = 0; sector_index < test_partition.sector_count();
        sector_index++) {
-    FlashPartition::Address address =
-        sector_index * test_partition.sector_size_bytes();
+    FlashPartition::Address address = static_cast<FlashPartition::Address>(
+        sector_index * test_partition.sector_size_bytes());
 
     StatusWithSize status =
         test_partition.Read(address, data_span.size_bytes(), data_span.data());
@@ -267,7 +267,8 @@ TEST(FlashPartitionTest, IsErased) {
   auto data_span = span(test_data);
 
   // Write the chunk with fill byte.
-  StatusWithSize status = test_partition.Write(write_size, as_bytes(data_span));
+  StatusWithSize status = test_partition.Write(
+      static_cast<FlashPartition::Address>(write_size), as_bytes(data_span));
   ASSERT_EQ(OkStatus(), status.status());
   ASSERT_EQ(data_span.size_bytes(), status.size());
 
@@ -277,7 +278,9 @@ TEST(FlashPartitionTest, IsErased) {
   // Check the chunk that was written.
   EXPECT_EQ(OkStatus(),
             test_partition.IsRegionErased(
-                write_size, data_span.size_bytes(), &is_erased));
+                static_cast<FlashPartition::Address>(write_size),
+                data_span.size_bytes(),
+                &is_erased));
   EXPECT_EQ(false, is_erased);
 
   // Check a region that starts erased but later has been written.
@@ -338,7 +341,8 @@ TEST(FlashPartitionTest, EndOfWrittenData) {
   while (remaining_bytes > 0) {
     size_t write_size = std::min(remaining_bytes, data_span.size_bytes());
     write_sws =
-        test_partition.Write(offset, as_bytes(data_span.first(write_size)));
+        test_partition.Write(static_cast<FlashPartition::Address>(offset),
+                             as_bytes(data_span.first(write_size)));
     EXPECT_EQ(OkStatus(), write_sws.status());
     EXPECT_EQ(write_size, write_sws.size());
     remaining_bytes -= write_size;

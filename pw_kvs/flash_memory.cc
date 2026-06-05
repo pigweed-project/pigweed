@@ -42,7 +42,8 @@ Status FlashPartition::Writer::DoWrite(ConstByteSpan data) {
     return OkStatus();
   }
 
-  const StatusWithSize sws = partition_.Write(position_, data);
+  const StatusWithSize sws =
+      partition_.Write(static_cast<Address>(position_), data);
   if (sws.ok()) {
     position_ += data.size_bytes();
   }
@@ -56,8 +57,8 @@ StatusWithSize FlashPartition::Reader::DoRead(ByteSpan data) {
 
   size_t bytes_to_read = std::min(data.size_bytes(), read_limit_ - position_);
 
-  const StatusWithSize sws =
-      partition_.Read(position_, data.first(bytes_to_read));
+  const StatusWithSize sws = partition_.Read(static_cast<Address>(position_),
+                                             data.first(bytes_to_read));
   if (sws.ok()) {
     position_ += bytes_to_read;
   }
@@ -88,8 +89,9 @@ FlashPartition::FlashPartition(
       flash_start_sector_index_(flash_start_sector_index),
       alignment_bytes_(
           alignment_bytes == 0
-              ? flash_.alignment_bytes()
-              : std::max(alignment_bytes, uint32_t(flash_.alignment_bytes()))),
+              ? static_cast<uint32_t>(flash_.alignment_bytes())
+              : std::max(alignment_bytes,
+                         static_cast<uint32_t>(flash_.alignment_bytes()))),
       permission_(permission) {
   uint32_t misalignment = (alignment_bytes_ % flash_.alignment_bytes());
   PW_DCHECK_UINT_EQ(misalignment,
@@ -142,8 +144,10 @@ Status FlashPartition::IsRegionErased(Address source_flash_address,
   while (length > 0u) {
     // Check earlier that length is aligned, no need to round up
     size_t read_size = std::min(sizeof(read_buffer), length);
-    PW_TRY(
-        Read(source_flash_address + offset, read_size, read_buffer).status());
+    PW_TRY(Read(static_cast<Address>(source_flash_address + offset),
+                read_size,
+                read_buffer)
+               .status());
 
     for (byte b : span(read_buffer, read_size)) {
       if (b != erased_byte) {
@@ -171,7 +175,8 @@ StatusWithSize FlashPartition::EndOfWrittenData() {
 
     length -= read_size;
 
-    PW_TRY_WITH_SIZE(Read(length, read_size, read_buffer));
+    PW_TRY_WITH_SIZE(
+        Read(static_cast<Address>(length), read_size, read_buffer));
 
     for (size_t offset = read_size; offset > 0; offset--) {
       if (read_buffer[offset - 1] != erased_byte) {

@@ -67,7 +67,10 @@ class FlashPartitionWithStats : public FlashPartition {
         sector_counters_.begin(), sector_counters_.end(), 0ul);
   }
 
-  void ResetCounters() { sector_counters_.assign(sector_count(), 0); }
+  void ResetCounters() {
+    sector_counters_.assign(
+        static_cast<Vector<size_t>::size_type>(sector_count()), 0);
+  }
 
  protected:
   FlashPartitionWithStats(
@@ -83,7 +86,9 @@ class FlashPartitionWithStats : public FlashPartition {
                        alignment_bytes,
                        permission),
         sector_counters_(sector_counters) {
-    sector_counters_.assign(FlashPartition::sector_count(), 0);
+    sector_counters_.assign(
+        static_cast<Vector<size_t>::size_type>(FlashPartition::sector_count()),
+        0);
   }
 
  private:
@@ -108,7 +113,10 @@ class FlashPartitionWithStatsBuffer : public FlashPartitionWithStats {
 
   FlashPartitionWithStatsBuffer(FlashMemory* flash)
       : FlashPartitionWithStatsBuffer(
-            flash, 0, flash->sector_count(), flash->alignment_bytes()) {}
+            flash,
+            0,
+            static_cast<uint32_t>(flash->sector_count()),
+            static_cast<uint32_t>(flash->alignment_bytes())) {}
 
  private:
   // If PW_KVS_RECORD_PARTITION_STATS is not set, use zero size vector which

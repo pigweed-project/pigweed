@@ -107,7 +107,7 @@ class FlashStreamTest : public ::testing::Test {
     FlashPartition::Reader reader(partition_);
     ASSERT_EQ(reader.ConservativeReadLimit(), flash_.buffer().size_bytes());
 
-    ASSERT_EQ(reader.Seek(start_offset), OkStatus());
+    ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(start_offset)), OkStatus());
     ASSERT_EQ(reader.ConservativeReadLimit(),
               flash_.buffer().size_bytes() - start_offset);
 
@@ -205,7 +205,7 @@ TEST_F(FlashStreamTest, Read_Multiple_Seeks) {
 
   for (size_t i = 0; i < kSeekReadIterations; i++) {
     size_t start_offset = kSeekReadSizeBytes + (i * 2 * kSeekReadSizeBytes);
-    ASSERT_EQ(reader.Seek(start_offset), OkStatus());
+    ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(start_offset)), OkStatus());
     ASSERT_EQ(start_offset, reader.Tell());
 
     ByteSpan read_chunk = span(source_buffer_).first(kSeekReadSizeBytes);
@@ -241,16 +241,19 @@ TEST_F(FlashStreamTest, Read_Seeks_With_Limit) {
   ASSERT_EQ(reader.ConservativeReadLimit(), kSeekReadSizeBytes);
   ASSERT_EQ(0u, reader.Tell());
 
-  ASSERT_EQ(reader.Seek(1u), OkStatus());
+  ASSERT_EQ(reader.Seek(1), OkStatus());
   ASSERT_EQ(reader.ConservativeReadLimit(), (kSeekReadSizeBytes - 1));
   ASSERT_EQ(1u, reader.Tell());
 
-  ASSERT_EQ(reader.Seek(kSeekReadSizeBytes), OkStatus());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(kSeekReadSizeBytes)),
+            OkStatus());
   ASSERT_EQ(reader.ConservativeReadLimit(), 0u);
   ASSERT_EQ(kSeekReadSizeBytes, reader.Tell());
 
-  ASSERT_EQ(reader.Seek(kSeekReadSizeBytes + 1), Status::OutOfRange());
-  ASSERT_EQ(reader.Seek(2 * kSeekReadSizeBytes), Status::OutOfRange());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(kSeekReadSizeBytes + 1)),
+            Status::OutOfRange());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(2 * kSeekReadSizeBytes)),
+            Status::OutOfRange());
 
   reader.SetReadLimit(kPartitionSize + 5);
   ASSERT_EQ(reader.ConservativeReadLimit(),
@@ -275,7 +278,7 @@ TEST_F(FlashStreamTest, Read_Seek_Forward_and_Back) {
     // Seek and read going forward.
     for (size_t i = 0; i < kSeekReadIterations; i++) {
       size_t start_offset = kSeekReadSizeBytes + (i * 2 * kSeekReadSizeBytes);
-      ASSERT_EQ(reader.Seek(start_offset), OkStatus());
+      ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(start_offset)), OkStatus());
       ASSERT_EQ(start_offset, reader.Tell());
 
       ByteSpan read_chunk = span(source_buffer_).first(kSeekReadSizeBytes);
@@ -291,7 +294,7 @@ TEST_F(FlashStreamTest, Read_Seek_Forward_and_Back) {
     // Seek and read going backward.
     for (size_t j = (kSeekReadIterations * 2); j > 0; j--) {
       size_t start_offset = (j - 1) * kSeekReadSizeBytes;
-      ASSERT_EQ(reader.Seek(start_offset), OkStatus());
+      ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(start_offset)), OkStatus());
       ASSERT_EQ(start_offset, reader.Tell());
       ASSERT_GE(reader.ConservativeReadLimit(), kSeekReadSizeBytes);
 
@@ -409,7 +412,7 @@ TEST_F(FlashStreamTest, Read_Past_End_After_Seek) {
 
   static const size_t kBytesForFinalRead = 50;
   size_t start_offset = flash_.buffer().size_bytes() - kBytesForFinalRead;
-  ASSERT_EQ(reader.Seek(start_offset), OkStatus());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(start_offset)), OkStatus());
 
   ASSERT_EQ(start_offset, reader.Tell());
   ASSERT_EQ(reader.ConservativeReadLimit(), kBytesForFinalRead);
@@ -450,7 +453,8 @@ TEST_F(FlashStreamTest, Read_Out_Of_Range_After_Seek) {
 
   ByteSpan read_chunk = span(source_buffer_);
 
-  ASSERT_EQ(reader.Seek(flash_.buffer().size_bytes()), OkStatus());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(flash_.buffer().size_bytes())),
+            OkStatus());
   ASSERT_EQ(reader.Tell(), flash_.buffer().size_bytes());
   ASSERT_EQ(reader.ConservativeReadLimit(), 0U);
 
@@ -465,7 +469,8 @@ TEST_F(FlashStreamTest, Reader_Seek_Ops) {
   FlashPartition::Reader reader(partition_);
 
   // Seek from 0 to past end.
-  ASSERT_EQ(reader.Seek(kPartitionSizeBytes + 5), Status::OutOfRange());
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(kPartitionSizeBytes + 5)),
+            Status::OutOfRange());
   ASSERT_EQ(reader.Tell(), 0U);
 
   // Seek to end then seek again going past end.
@@ -473,7 +478,7 @@ TEST_F(FlashStreamTest, Reader_Seek_Ops) {
   ASSERT_EQ(reader.Tell(), 0U);
   ASSERT_EQ(reader.ConservativeReadLimit(), kPartitionSizeBytes);
 
-  ASSERT_EQ(reader.Seek(kPartitionSizeBytes,
+  ASSERT_EQ(reader.Seek(static_cast<ptrdiff_t>(kPartitionSizeBytes),
                         FlashPartition::Reader::Whence::kCurrent),
             OkStatus());
   ASSERT_EQ(reader.Tell(), kPartitionSizeBytes);

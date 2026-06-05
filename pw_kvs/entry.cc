@@ -149,9 +149,10 @@ StatusWithSize Entry::ReadValue(span<byte> buffer, size_t offset_bytes) const {
   const size_t remaining_bytes = value_size() - offset_bytes;
   const size_t read_size = std::min(buffer.size(), remaining_bytes);
 
-  StatusWithSize result = partition().Read(
-      address_ + sizeof(EntryHeader) + key_length() + offset_bytes,
-      buffer.subspan(0, read_size));
+  StatusWithSize result =
+      partition().Read(static_cast<Address>(address_ + sizeof(EntryHeader) +
+                                            key_length() + offset_bytes),
+                       buffer.subspan(0, read_size));
   PW_TRY_WITH_SIZE(result);
 
   if (read_size != remaining_bytes) {
@@ -165,8 +166,9 @@ Status Entry::ValueMatches(span<const std::byte> value) const {
     return Status::NotFound();
   }
 
-  Address address = address_ + sizeof(EntryHeader) + key_length();
-  Address end = address + value_size();
+  Address address =
+      static_cast<Address>(address_ + sizeof(EntryHeader) + key_length());
+  Address end = static_cast<Address>(address + value_size());
   const std::byte* value_ptr = value.data();
 
   std::array<std::byte, 2 * kMinAlignmentBytes> buffer;
@@ -288,7 +290,7 @@ Status Entry::CalculateChecksumFromFlash() {
   Address address = address_ + sizeof(EntryHeader);
   // To handle alignment changes, do not read the padding. The padding is added
   // after checksumming the key and value from flash.
-  const Address end = address_ + content_size();
+  const Address end = static_cast<Address>(address_ + content_size());
 
   std::array<std::byte, 2 * kMinAlignmentBytes> buffer;
   while (address < end) {

@@ -33,7 +33,6 @@ cc_library(
         "public/pw_blob_store/blob_store.h",
         "public/pw_blob_store/internal/metadata_format.h",
     ],
-    features = ["-conversion_warnings"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
     deps = [
@@ -55,7 +54,6 @@ cc_library(
     srcs = ["flat_file_system_entry.cc"],
     hdrs = ["public/pw_blob_store/flat_file_system_entry.h"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     implementation_deps = ["//pw_assert:check"],
@@ -75,7 +73,6 @@ pw_cc_test(
         "blob_store_test.cc",
     ],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     # TODO: b/385375184 - Fix this test!
@@ -96,7 +93,6 @@ pw_cc_test(
     srcs = [
         "blob_store_chunk_write_test.cc",
     ],
-    features = ["-conversion_warnings"],
     deps = [
         ":pw_blob_store",
         "//pw_kvs:crc16",
@@ -113,7 +109,6 @@ pw_cc_test(
         "blob_store_deferred_write_test.cc",
     ],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     deps = [
@@ -130,7 +125,6 @@ pw_cc_test(
     name = "flat_file_system_entry_test",
     srcs = ["flat_file_system_entry_test.cc"],
     features = [
-        "-conversion_warnings",
         "-ctad_warnings",
     ],
     deps = [

@@ -160,8 +160,8 @@ StatusWithSize BlobStore::ResumeWrite() {
   // written data was corrupted.
   written_sectors = written_sectors == 0 ? 0 : written_sectors - 1;
 
-  size_t written_bytes_on_resume =
-      written_sectors * partition_.sector_size_bytes();
+  uint32_t written_bytes_on_resume =
+      static_cast<uint32_t>(written_sectors * partition_.sector_size_bytes());
 
   // Erase the 2 sectors after the kept written sectors. This is a full sector
   // and any possible partitial sector after the kept data.
@@ -176,8 +176,8 @@ StatusWithSize BlobStore::ResumeWrite() {
   valid_data_ = true;
   writer_open_ = true;
 
-  PW_LOG_DEBUG("Blob writer open for resume with %zu bytes",
-               written_bytes_on_resume);
+  PW_LOG_DEBUG("Blob writer open for resume with %u bytes",
+               static_cast<unsigned>(written_bytes_on_resume));
 
   return StatusWithSize(OkStatus(), written_bytes_on_resume);
 }
@@ -474,7 +474,7 @@ StatusWithSize BlobStore::Read(size_t offset, ByteSpan dest) const {
   size_t available_bytes = ReadableDataBytes() - offset;
   size_t read_size = std::min(available_bytes, dest.size_bytes());
 
-  return partition_.Read(offset, dest.first(read_size));
+  return partition_.Read(static_cast<uint32_t>(offset), dest.first(read_size));
 }
 
 Result<ConstByteSpan> BlobStore::GetMemoryMappedBlob() const {
@@ -576,7 +576,8 @@ Status BlobStore::CalculateChecksumFromFlash(size_t bytes_to_check,
   checksum_algo_->Reset();
 
   kvs::FlashPartition::Address address = 0;
-  const kvs::FlashPartition::Address end = bytes_to_check;
+  const kvs::FlashPartition::Address end =
+      static_cast<kvs::FlashPartition::Address>(bytes_to_check);
 
   constexpr size_t kReadBufferSizeBytes = 32;
   std::array<std::byte, kReadBufferSizeBytes> buffer;
@@ -703,7 +704,7 @@ Status BlobStore::BlobWriter::WriteMetadata() {
   metadata_builder.PutUint32(calculated_checksum);
   metadata_builder.PutUint32(store_.flash_address_);
   metadata_builder.PutUint32(internal::MetadataVersion::kLatest);
-  metadata_builder.PutUint8(store_.file_name_length_);
+  metadata_builder.PutUint8(static_cast<uint8_t>(store_.file_name_length_));
   PW_DCHECK_INT_EQ(metadata_builder.size(), sizeof(BlobMetadataHeader));
   PW_DCHECK_OK(metadata_builder.status());
 

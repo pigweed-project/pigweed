@@ -24,7 +24,6 @@ licenses(["notice"])
 pw_cc_size_binary(
     name = "base",
     srcs = ["base.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -35,7 +34,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "base_with_only_flash",
     srcs = ["base_with_only_flash.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -49,7 +47,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "with_kvs",
     srcs = ["with_kvs.cc"],
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",

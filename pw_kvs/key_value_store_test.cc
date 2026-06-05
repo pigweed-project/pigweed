@@ -54,7 +54,8 @@ struct FlashWithPartitionFake {
   // Default to 16 byte alignment, which is common in practice.
   FlashWithPartitionFake() : FlashWithPartitionFake(16) {}
   FlashWithPartitionFake(size_t alignment_bytes)
-      : memory(alignment_bytes), partition(&memory, 0, memory.sector_count()) {}
+      : memory(alignment_bytes),
+        partition(&memory, 0, static_cast<uint32_t>(memory.sector_count())) {}
 
   FakeFlashMemoryBuffer<kSectorSizeBytes, kSectorCount> memory;
   FlashPartition partition;
@@ -98,9 +99,10 @@ struct FlashWithPartitionFake {
 typedef FlashWithPartitionFake<4 * 128 /*sector size*/, 6 /*sectors*/> Flash;
 
 FakeFlashMemoryBuffer<1024, 60> large_test_flash(8);
-FlashPartition large_test_partition(&large_test_flash,
-                                    0,
-                                    large_test_flash.sector_count());
+FlashPartition large_test_partition(
+    &large_test_flash,
+    0,
+    static_cast<uint32_t>(large_test_flash.sector_count()));
 
 constexpr std::array<const char*, 3> keys{"TestKey1", "Key2", "TestKey3"};
 
@@ -115,7 +117,8 @@ constexpr EntryFormat default_format{.magic = 0xa6cb3c16,
 TEST(InitCheck, TooFewSectors) {
   // Use test flash with 1 x 4k sectors, 16 byte alignment
   FakeFlashMemoryBuffer<4 * 1024, 1> test_flash(16);
-  FlashPartition test_partition(&test_flash, 0, test_flash.sector_count());
+  FlashPartition test_partition(
+      &test_flash, 0, static_cast<uint32_t>(test_flash.sector_count()));
 
   // For KVS magic value always use a random 32 bit integer rather than a
   // human readable 4 bytes. See pw_kvs/format.h for more information.
@@ -147,7 +150,8 @@ TEST(InitCheck, TooManySectors) {
   FakeFlashMemoryBuffer<4 * 1024, 5> test_flash(16);
 
   // Set FlashPartition to have 0 sectors.
-  FlashPartition test_partition(&test_flash, 0, test_flash.sector_count());
+  FlashPartition test_partition(
+      &test_flash, 0, static_cast<uint32_t>(test_flash.sector_count()));
 
   // For KVS magic value always use a random 32 bit integer rather than a
   // human readable 4 bytes. See pw_kvs/format.h for more information.

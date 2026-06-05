@@ -109,8 +109,8 @@ class EntryCache {
 
     // Updates the internal EntryMetadata object.
     value_type& operator*() const {
-      metadata_.addresses_ = entry_cache_->addresses(
-          metadata_.descriptor_ - entry_cache_->descriptors_.begin());
+      metadata_.addresses_ = entry_cache_->addresses(static_cast<size_t>(
+          metadata_.descriptor_ - entry_cache_->descriptors_.begin()));
       return metadata_;
     }
     value_type* operator->() const { return &operator*(); }

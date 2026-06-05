@@ -130,8 +130,8 @@ EntryMetadata EntryCache::AddNew(const KeyDescriptor& descriptor,
 EntryCache::iterator EntryCache::RemoveEntry(iterator& entry_it) {
   PW_DCHECK_PTR_EQ(entry_it.entry_cache_, this);
 
-  const unsigned int index_to_remove =
-      entry_it.metadata_.descriptor_ - &descriptors_.front();
+  const unsigned int index_to_remove = static_cast<unsigned int>(
+      entry_it.metadata_.descriptor_ - &descriptors_.front());
   const KeyDescriptor last_desc = descriptors_[descriptors_.size() - 1];
 
   // Since order is not important, this copies the last descriptor into the
@@ -172,17 +172,19 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
     return OkStatus();
   }
 
+  const size_t idx = static_cast<size_t>(index);
+
   // Existing entry is old; replace the existing entry with the new one.
-  if (descriptor.transaction_id > descriptors_[index].transaction_id) {
-    descriptors_[index] = descriptor;
-    ResetAddresses(index, address);
+  if (descriptor.transaction_id > descriptors_[idx].transaction_id) {
+    descriptors_[idx] = descriptor;
+    ResetAddresses(idx, address);
     return OkStatus();
   }
 
   // If the entries have a duplicate transaction ID, add the new (redundant)
   // entry to the existing descriptor.
-  if (descriptors_[index].transaction_id == descriptor.transaction_id) {
-    if (descriptors_[index].key_hash != descriptor.key_hash) {
+  if (descriptors_[idx].transaction_id == descriptor.transaction_id) {
+    if (descriptors_[idx].key_hash != descriptor.key_hash) {
       PW_LOG_ERROR("Duplicate entry for key 0x%08" PRIx32
                    " with transaction ID %" PRIu32 " has non-matching hash",
                    descriptor.key_hash,
@@ -192,7 +194,7 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
 
     // Verify that this entry is not in the same sector as an existing copy of
     // this same key.
-    for (Address existing_address : addresses(index)) {
+    for (Address existing_address : addresses(idx)) {
       if (existing_address / sector_size_bytes == address / sector_size_bytes) {
         PW_LOG_DEBUG("Multiple Redundant entries in same sector %u",
                      unsigned(address / sector_size_bytes));
@@ -200,7 +202,7 @@ Status EntryCache::AddNewOrUpdateExisting(const KeyDescriptor& descriptor,
       }
     }
 
-    AddAddressIfRoom(index, address);
+    AddAddressIfRoom(idx, address);
   } else {
     PW_LOG_DEBUG("Found stale entry when appending; ignoring");
   }
@@ -222,7 +224,7 @@ size_t EntryCache::present_entries() const {
 int EntryCache::FindIndex(uint32_t key_hash) const {
   for (size_t i = 0; i < descriptors_.size(); ++i) {
     if (descriptors_[i].key_hash == key_hash) {
-      return i;
+      return static_cast<int>(i);
     }
   }
   return -1;

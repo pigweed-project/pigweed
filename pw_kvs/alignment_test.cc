@@ -81,7 +81,7 @@ TEST(AlignedWriter, DestructorFlushes) {
   });
 
   {
-    AlignedWriterBuffer<64> writer(3, output);
+    AlignedWriterBuffer<64> writer(size_t(3), output);
     ASSERT_EQ(OkStatus(),
               writer.Write(as_bytes(span("What is this?"))).status());
     EXPECT_EQ(called_with_bytes, 0u);  // Buffer not full; no output yet.
@@ -118,7 +118,7 @@ TEST(AlignedWriter, Write_NoFurtherWritesOnFailure) {
   OutputWithErrorInjection output;
 
   {
-    AlignedWriterBuffer<4> writer(3, output);
+    AlignedWriterBuffer<4> writer(size_t(3), output);
     ASSERT_EQ(OkStatus(),
               writer.Write(as_bytes(span("Everything is fine."))).status());
     output.state = OutputWithErrorInjection::kBreakOnNext;
@@ -135,7 +135,7 @@ TEST(AlignedWriter, Write_ReturnsTotalBytesWritten) {
     return StatusWithSize(return_status, data.size());
   });
 
-  AlignedWriterBuffer<22> writer(10, output);
+  AlignedWriterBuffer<22> writer(size_t(10), output);
 
   StatusWithSize result = writer.Write(as_bytes(span("12345678901"sv)));
   EXPECT_EQ(OkStatus(), result.status());
@@ -156,7 +156,7 @@ TEST(AlignedWriter, Flush_Ok_ReturnsTotalBytesWritten) {
   OutputToFunction output(
       [](span<const byte> data) { return StatusWithSize(data.size()); });
 
-  AlignedWriterBuffer<4> writer(2, output);
+  AlignedWriterBuffer<4> writer(size_t(2), output);
 
   EXPECT_EQ(OkStatus(), writer.Write(as_bytes(span("12345678901"sv))).status());
 
@@ -170,7 +170,7 @@ TEST(AlignedWriter, Flush_Error_ReturnsTotalBytesWritten) {
     return StatusWithSize::Aborted(data.size());
   });
 
-  AlignedWriterBuffer<20> writer(10, output);
+  AlignedWriterBuffer<20> writer(size_t(10), output);
 
   EXPECT_EQ(0u, writer.Write(as_bytes(span("12345678901"sv))).size());
 
@@ -234,7 +234,7 @@ TEST(AlignedWriter, WriteFromInput_OutputError) {
   InputWithErrorInjection input;
   OutputWithErrorInjection output;
 
-  AlignedWriterBuffer<4> writer(3, output);
+  AlignedWriterBuffer<4> writer(size_t(3), output);
   output.state = OutputWithErrorInjection::kBreakOnNext;
 
   StatusWithSize result = writer.Write(input, kData.size());

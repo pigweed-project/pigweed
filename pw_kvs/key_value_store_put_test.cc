@@ -34,7 +34,7 @@ constexpr size_t kMaxUsableSectors = 256;
 FakeFlashMemoryBuffer<4 * 1024, 6> test_flash(16);
 
 FlashPartitionWithStatsBuffer<kMaxUsableSectors> test_partition(
-    &test_flash, 0, test_flash.sector_count());
+    &test_flash, 0, static_cast<uint32_t>(test_flash.sector_count()));
 
 ChecksumCrc16 checksum;
 
@@ -61,8 +61,8 @@ TEST_F(EmptyInitializedKvs, Put_VaryingKeysAndValues) {
   test_partition.ResetCounters();
 
   for (int i = 0; i < kPutIterations; ++i) {
-    for (unsigned key_size = 1; key_size < sizeof(value); ++key_size) {
-      for (unsigned value_size = 0; value_size < sizeof(value); ++value_size) {
+    for (size_t key_size = 1; key_size < sizeof(value); ++key_size) {
+      for (size_t value_size = 0; value_size < sizeof(value); ++value_size) {
         ASSERT_EQ(OkStatus(),
                   kvs_.Put(std::string_view(value, key_size),
                            as_bytes(span(value, value_size))));

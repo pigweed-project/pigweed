@@ -45,11 +45,12 @@ class FlashPartitionWithLogicalSectors : public FlashPartition {
 
   FlashPartitionWithLogicalSectors(FlashMemory* flash,
                                    size_t flash_sectors_per_logical_sector)
-      : FlashPartitionWithLogicalSectors(flash,
-                                         flash_sectors_per_logical_sector,
-                                         0,
-                                         flash->sector_count(),
-                                         flash->alignment_bytes()) {}
+      : FlashPartitionWithLogicalSectors(
+            flash,
+            flash_sectors_per_logical_sector,
+            0,
+            static_cast<uint32_t>(flash->sector_count()),
+            static_cast<uint32_t>(flash->alignment_bytes())) {}
 
   size_t sector_size_bytes() const override {
     return flash_.sector_size_bytes() * flash_sectors_per_logical_sector_;

@@ -49,7 +49,8 @@ Status FlatFileSystemService::EnumerateFile(
         .WritePath(reinterpret_cast<const char*>(file_name_buffer_.data()),
                    sws.size())
         .IgnoreError();
-    encoder.WriteSizeBytes(entry.SizeBytes()).IgnoreError();
+    encoder.WriteSizeBytes(static_cast<uint32_t>(entry.SizeBytes()))
+        .IgnoreError();
     encoder.WritePermissions(entry.Permissions()).IgnoreError();
     encoder.WriteFileId(entry.FileId()).IgnoreError();
   }

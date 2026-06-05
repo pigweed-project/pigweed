@@ -112,8 +112,10 @@ class Sectors {
   // Resets the Sectors list. Must be called before using the object.
   void Reset() {
     last_new_ = descriptors_.begin();
-    descriptors_.assign(partition_.sector_count(),
-                        SectorDescriptor(partition_.sector_size_bytes()));
+    descriptors_.assign(static_cast<Vector<SectorDescriptor>::size_type>(
+                            partition_.sector_count()),
+                        SectorDescriptor(static_cast<uint16_t>(
+                            partition_.sector_size_bytes())));
   }
 
   // The last sector that was selected as the "new empty sector" to write to.
@@ -135,14 +137,15 @@ class Sectors {
   // Checks if an address is in the particular sector.
   bool AddressInSector(const SectorDescriptor& sector, Address address) const {
     const Address sector_base = BaseAddress(sector);
-    const Address sector_end = sector_base + partition_.sector_size_bytes();
+    const Address sector_end =
+        static_cast<Address>(sector_base + partition_.sector_size_bytes());
 
     return ((address >= sector_base) && (address < sector_end));
   }
 
   // Returns the first address in the provided sector.
   Address BaseAddress(const SectorDescriptor& sector) const {
-    return Index(sector) * partition_.sector_size_bytes();
+    return static_cast<Address>(Index(sector) * partition_.sector_size_bytes());
   }
 
   SectorDescriptor& FromAddress(Address address) const {
@@ -152,8 +155,9 @@ class Sectors {
   }
 
   Address NextWritableAddress(const SectorDescriptor& sector) const {
-    return BaseAddress(sector) + partition_.sector_size_bytes() -
-           sector.writable_bytes();
+    return static_cast<Address>(BaseAddress(sector) +
+                                partition_.sector_size_bytes() -
+                                sector.writable_bytes());
   }
 
   // Finds either an existing sector with enough space that is not the sector to
@@ -192,7 +196,7 @@ class Sectors {
 
   // Returns the index of the provided sector. Used for logging.
   unsigned Index(const SectorDescriptor& sector) const {
-    return &sector - descriptors_.begin();
+    return static_cast<unsigned>(&sector - descriptors_.begin());
   }
   unsigned Index(const SectorDescriptor* s) const { return Index(*s); }
   unsigned Index(Address address) const { return Index(FromAddress(address)); }

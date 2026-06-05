@@ -51,7 +51,7 @@ TEST_F(SectorsTest, AddressInSector) {
   SectorDescriptor& sector = sectors_.FromAddress(128);
 
   EXPECT_FALSE(sectors_.AddressInSector(sector, 127));
-  for (size_t address = 128; address < 256; ++address) {
+  for (FlashPartition::Address address = 128; address < 256; ++address) {
     EXPECT_TRUE(sectors_.AddressInSector(sector, address));
   }
   EXPECT_FALSE(sectors_.AddressInSector(sector, 256));
@@ -59,13 +59,13 @@ TEST_F(SectorsTest, AddressInSector) {
 }
 
 TEST_F(SectorsTest, BaseAddressAndFromAddress) {
-  for (size_t address = 0; address < 128; ++address) {
+  for (FlashPartition::Address address = 0; address < 128; ++address) {
     EXPECT_EQ(0u, sectors_.BaseAddress(sectors_.FromAddress(address)));
   }
-  for (size_t address = 128; address < 256; ++address) {
+  for (FlashPartition::Address address = 128; address < 256; ++address) {
     EXPECT_EQ(128u, sectors_.BaseAddress(sectors_.FromAddress(address)));
   }
-  for (size_t address = 256; address < 384; ++address) {
+  for (FlashPartition::Address address = 256; address < 384; ++address) {
     EXPECT_EQ(256u, sectors_.BaseAddress(sectors_.FromAddress(address)));
   }
 }

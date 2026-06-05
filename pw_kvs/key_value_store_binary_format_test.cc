@@ -711,7 +711,9 @@ TEST_F(InitializedRedundantMultiMagicKvs, RecoversLossOfSecondSector) {
   EXPECT_EQ(stats.corrupt_sectors_recovered, 0u);
   EXPECT_EQ(stats.missing_redundant_entries_recovered, 0u);
 
-  EXPECT_EQ(OkStatus(), partition_.Erase(partition_.sector_size_bytes(), 1));
+  EXPECT_EQ(OkStatus(),
+            partition_.Erase(
+                static_cast<uint32_t>(partition_.sector_size_bytes()), 1));
 
   ASSERT_CONTAINS_ENTRY("key1", "value1");
   ASSERT_CONTAINS_ENTRY("k2", "value2");

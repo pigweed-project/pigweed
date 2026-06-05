@@ -261,11 +261,11 @@ class InitializedEntryCache : public EmptyEntryCache {
         sectors_(sector_descriptors_, partition_, nullptr),
         format_(kFormat) {
     sectors_.Reset();
-    size_t address = 0;
+    EntryCache::Address address = 0;
     auto entry = entries_.AddNew(kDescriptor, address);
 
     address += kSize1;
-    entry.AddNewAddress(kSize1);
+    entry.AddNewAddress(static_cast<EntryCache::Address>(kSize1));
 
     address += kSize1;
     entries_.AddNew({.key_hash = Hash(kCollision1),

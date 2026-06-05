@@ -26,8 +26,6 @@ licenses(["notice"])
 pw_cc_size_binary(
     name = "base",
     srcs = ["base.cc"],
-    # TODO: b/259746255 - Fix the conversion warnings coming from pw_kvs.
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -43,8 +41,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "basic_blob",
     srcs = ["basic_blob.cc"],
-    # TODO: b/259746255 - Fix the conversion warnings coming from pw_kvs.
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",
@@ -61,8 +57,6 @@ pw_cc_size_binary(
 pw_cc_size_binary(
     name = "deferred_write_blob",
     srcs = ["deferred_write_blob.cc"],
-    # TODO: b/259746255 - Fix the conversion warnings coming from pw_kvs.
-    features = ["-conversion_warnings"],
     deps = [
         "//pw_assert:check",
         "//pw_bloat:bloat_this_binary",

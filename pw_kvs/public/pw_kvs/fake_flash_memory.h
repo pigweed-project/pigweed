@@ -62,7 +62,8 @@ class FlashError {
                        size_t delay)
       : status_(status),
         begin_(address),
-        end_(address + size),  // not used if address is kAnyAddress
+        end_(static_cast<FlashMemory::Address>(
+            address + size)),  // not used if address is kAnyAddress
         delay_(delay),
         remaining_(times) {}
 

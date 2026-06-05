@@ -68,8 +68,13 @@ class Entry {
                      std::string_view key,
                      span<const std::byte> value,
                      uint32_t transaction_id) {
-    return Entry(
-        partition, address, format, key, value, value.size(), transaction_id);
+    return Entry(partition,
+                 address,
+                 format,
+                 key,
+                 value,
+                 static_cast<uint16_t>(value.size()),
+                 transaction_id);
   }
 
   // Creates a new Entry for a tombstone entry, which marks a deleted key.
@@ -148,7 +153,9 @@ class Entry {
   void set_address(Address address) { address_ = address; }
 
   // The address at which the next possible entry could be located.
-  Address next_address() const { return address() + size(); }
+  Address next_address() const {
+    return static_cast<Address>(address() + size());
+  }
 
   // Total size of this entry, including padding.
   size_t size() const { return AlignUp(content_size(), alignment_bytes()); }
@@ -215,7 +222,8 @@ class Entry {
   void AddPaddingBytesToChecksum() const;
 
   static constexpr uint8_t alignment_bytes_to_units(size_t alignment_bytes) {
-    return (alignment_bytes + 15) / 16 - 1;  // An alignment of 0 is invalid.
+    return static_cast<uint8_t>((alignment_bytes + 15) / 16 -
+                                1);  // An alignment of 0 is invalid.
   }
 
   FlashPartition* partition_;

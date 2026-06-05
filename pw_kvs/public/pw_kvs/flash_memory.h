@@ -47,9 +47,9 @@ class FlashMemory {
               uint32_t start_address = 0,
               uint32_t sector_start = 0,
               std::byte erased_memory_content = std::byte(0xFF))
-      : sector_size_(sector_size),
-        flash_sector_count_(sector_count),
-        alignment_(alignment),
+      : sector_size_(static_cast<uint32_t>(sector_size)),
+        flash_sector_count_(static_cast<uint32_t>(sector_count)),
+        alignment_(static_cast<uint32_t>(alignment)),
         start_address_(start_address),
         start_sector_(sector_start),
         erased_memory_content_(erased_memory_content) {
@@ -238,8 +238,10 @@ class FlashPartition {
 
   // Creates a FlashPartition that uses the entire flash with its alignment.
   FlashPartition(FlashMemory* flash)
-      : FlashPartition(
-            flash, 0, flash->sector_count(), flash->alignment_bytes()) {}
+      : FlashPartition(flash,
+                       0,
+                       static_cast<uint32_t>(flash->sector_count()),
+                       static_cast<uint32_t>(flash->alignment_bytes())) {}
 
   FlashPartition(FlashPartition&&) = default;
   FlashPartition(const FlashPartition&) = delete;
@@ -354,10 +356,11 @@ class FlashPartition {
   // space. If the partition reserves additional space in the sector, the flash
   // address space may not be contiguous, and this conversion accounts for that.
   virtual FlashMemory::Address PartitionToFlashAddress(Address address) const {
-    return flash_.start_address() +
-           (flash_start_sector_index_ - flash_.start_sector()) *
-               flash_.sector_size_bytes() +
-           address;
+    return static_cast<FlashMemory::Address>(
+        flash_.start_address() +
+        (flash_start_sector_index_ - flash_.start_sector()) *
+            flash_.sector_size_bytes() +
+        address);
   }
 
   bool writable() const {

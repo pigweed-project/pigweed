@@ -33,7 +33,7 @@ class WearTest : public ::testing::Test {
  protected:
   WearTest()
       : flash_(internal::Entry::kMinAlignmentBytes),
-        partition_(&flash_, 0, flash_.sector_count()),
+        partition_(&flash_, 0, static_cast<uint32_t>(flash_.sector_count())),
         kvs_(&partition_, format) {
     EXPECT_EQ(OkStatus(), kvs_.Init());
   }
