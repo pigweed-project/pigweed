@@ -52,6 +52,13 @@
           type: "u32",
           value: 42
         },
+        {
+          name: "test_irq2",
+          ram_size_bytes: 65536,
+          type: "u32",
+          value: 43
+        },
+
       ],
     },
     {
@@ -70,6 +77,10 @@
                   name: "test_irq",
                   number: 42,
                 },
+                {
+                  name: "test_irq2",
+                  number: 43,
+                }
               ]
             },
             {

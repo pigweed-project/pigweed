@@ -18,15 +18,21 @@ use pw_status::{Error, Result};
 use test_interrupt_listener_codegen::{handle, signals};
 use test_messages::TestScenario;
 use userspace::syscall::Signals;
-use userspace::time::{Clock, Instant, SystemClock};
+use userspace::time::{Clock, Duration, Instant, SystemClock, sleep_until};
 use userspace::{entry, syscall};
 
-fn notify_main(scenario: TestScenario) -> Result<()> {
+fn notify_main(scenario: TestScenario, signals: Signals) -> Result<()> {
     const RECV_BUF_LEN: usize = 0;
     let send_buf = [scenario as u8];
     let mut recv_buf = [0u8; RECV_BUF_LEN];
 
-    let len = match syscall::channel_transact(handle::IPC, &send_buf, &mut recv_buf, Instant::MAX) {
+    let bits = signals.bits();
+    let len = match syscall::channel_transact(
+        handle::IPC,
+        &[send_buf.as_slice(), bits.to_le_bytes().as_slice()],
+        &mut recv_buf,
+        Instant::MAX,
+    ) {
         Ok(val) => val,
         Err(err) => {
             return Err(err);
@@ -48,15 +54,18 @@ fn notify_main(scenario: TestScenario) -> Result<()> {
 fn test_wait_interrupt() -> Result<()> {
     test_logger::step_start!("Testing wait on interrupt");
 
-    let wait_return =
-        syscall::object_wait(handle::TEST_INTERRUPTS, signals::TEST_IRQ, Instant::MAX)
-            .inspect_err(|_| {
-                test_logger::step_failed!("Failed to wait on interrupt");
-            })?;
+    let wait_return = syscall::object_wait(
+        handle::TEST_INTERRUPTS,
+        signals::TEST_IRQ | signals::TEST_IRQ2,
+        Instant::MAX,
+    )
+    .inspect_err(|_| {
+        test_logger::step_failed!("Failed to wait on interrupt");
+    })?;
 
     if !wait_return.pending_signals.contains(signals::TEST_IRQ) {
         test_logger::step_failed!(
-            "Incorrect WaitReturn signals: {:#x}",
+            "Incorrect WaitReturn signals: {:#010x}",
             wait_return.pending_signals.bits() as u32
         );
         return Err(Error::Internal);
@@ -66,7 +75,7 @@ fn test_wait_interrupt() -> Result<()> {
 
     test_logger::step_passed!("Wait on interrupt succeeded");
 
-    notify_main(TestScenario::WaitInterrupt)?;
+    notify_main(TestScenario::WaitInterrupt, wait_return.pending_signals)?;
 
     Ok(())
 }
@@ -81,6 +90,9 @@ fn test_wait_group_interrupt() -> Result<()> {
         handle::TEST_INTERRUPTS as usize,
     )?;
 
+    // Sleep for a bit to give the test program the opportunity to signal more than one interrupt
+    // before we wait for interrupts.
+    sleep_until(SystemClock::now() + Duration::from_millis(50))?;
     let wait_return = syscall::object_wait(
         handle::INTERRUPT_WAIT_GROUP,
         Signals::READABLE,
@@ -122,7 +134,10 @@ fn test_wait_group_interrupt() -> Result<()> {
 
     test_logger::step_passed!("Wait on wait group containing interrupt succeeded");
 
-    notify_main(TestScenario::WaitGroupInterrupt)?;
+    notify_main(
+        TestScenario::WaitGroupInterrupt,
+        wait_return.pending_signals,
+    )?;
 
     Ok(())
 }

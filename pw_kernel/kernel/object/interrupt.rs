@@ -34,7 +34,7 @@ impl<K: Kernel> InterruptObject<K> {
     }
 
     pub fn interrupt(&self, kernel: K, signal_mask: Signals) {
-        self.base.signal(kernel, |_| signal_mask);
+        self.base.signal(kernel, |current| current | signal_mask);
     }
 }
 

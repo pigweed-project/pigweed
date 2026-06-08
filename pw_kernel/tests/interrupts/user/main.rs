@@ -21,7 +21,10 @@ use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
-fn read_expected_scenario(expected_scenario: TestScenario) -> Result<()> {
+fn read_expected_scenario(
+    expected_scenario: TestScenario,
+    expected_signals: Signals,
+) -> Result<()> {
     // the interrupt listener responds on IPC with the interrupt scenario.
     let wait_return = syscall::object_wait(handle::IPC, Signals::READABLE, Instant::MAX)?;
 
@@ -30,17 +33,26 @@ fn read_expected_scenario(expected_scenario: TestScenario) -> Result<()> {
     }
 
     let mut buffer = [0u8; size_of::<TestScenario>()];
-    let len = syscall::channel_read(handle::IPC, 0, &mut buffer)?;
-    if len != buffer.len() {
+    let mut bits = [0u8; size_of::<u32>()];
+    let len = syscall::channel_read(
+        handle::IPC,
+        0,
+        &mut [buffer.as_mut_slice(), bits.as_mut_slice()],
+    )?;
+    if len != buffer.len() + bits.len() {
         return Err(Error::OutOfRange);
     };
 
+    let expected_bits = expected_signals.bits();
     let received_scenario = TestScenario::try_from(buffer[0])?;
-    if received_scenario != expected_scenario {
+    let received_bits = u32::from_le_bytes(bits);
+    if received_scenario != expected_scenario || received_bits != expected_bits {
         test_logger::step_failed!(
-            "Unexpected test scenario received: {} (expected {})",
+            "Unexpected test scenario received: {} (expected {}) with bits {:#010x} (expected {:#010x})",
             received_scenario as u8,
-            expected_scenario as u8
+            expected_scenario as u8,
+            received_bits as u32,
+            expected_bits as u32,
         );
         return Err(Error::Internal);
     }
@@ -53,12 +65,19 @@ fn read_expected_scenario(expected_scenario: TestScenario) -> Result<()> {
 
 fn test_wait_interrupt() -> Result<()> {
     syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
-    read_expected_scenario(TestScenario::WaitInterrupt)
+    syscall::debug_trigger_interrupt(constants::TEST_IRQ2)?;
+    // The interrupt signal bits start at bit 16 aka Signals::INTERRUPT_A.
+    // Since we signalled both test_irqs, we'll expect to see both INTERRUPT_A
+    // and INTERRUPT_B signals.
+    read_expected_scenario(
+        TestScenario::WaitInterrupt,
+        Signals::INTERRUPT_A | Signals::INTERRUPT_B,
+    )
 }
 
 fn test_wait_group_interrupt() -> Result<()> {
     syscall::debug_trigger_interrupt(constants::TEST_IRQ)?;
-    read_expected_scenario(TestScenario::WaitGroupInterrupt)
+    read_expected_scenario(TestScenario::WaitGroupInterrupt, Signals::INTERRUPT_A)
 }
 
 fn test_interrupts() -> Result<()> {
