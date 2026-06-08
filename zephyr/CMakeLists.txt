@@ -22,6 +22,7 @@ pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_CONTAINERS              pw_container
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_DIGITAL_IO              pw_digital_io)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_FUNCTION                pw_function)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_HDLC_RPC                pw_hdlc.default_addresses pw_hdlc.encoder pw_hdlc.decoder )
+pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_I2C                     pw_i2c.address pw_i2c.initiator pw_i2c.register_device pw_i2c.device)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_MULTISINK               pw_multisink)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_MULTISINK_UTIL          pw_multisink.util)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_PREPROCESSOR            pw_preprocessor)

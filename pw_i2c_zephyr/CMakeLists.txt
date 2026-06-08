@@ -34,6 +34,12 @@ pw_add_library(pw_i2c_zephyr STATIC
 )
 if(CONFIG_PIGWEED_I2C)
   zephyr_append_cmake_library(pw_i2c_zephyr)
+  # Include directory needs to be manually added. Typically
+  # pw_zephyrize_libraries_ifdef is used, however, this creates a dependency
+  # cycle. The cmake library above doesn't propagage the include directory
+  # to its dependencies and only registers the library to be used in final
+  # linking.
+  zephyr_include_directories(public)
 endif()
 
 pw_add_library(pw_i2c_zephyr.responder STATIC
