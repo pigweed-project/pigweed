@@ -263,6 +263,9 @@ using the trace_rpc_server.
 
 ``trace_tokenized.py`` can be used to decode a binary file of trace data.
 
+``token_label.py`` can be used to register a handler for
+decoding tokenized labels (format ``@pw_trace_tokenized_token_label``).
+
 --------
 Examples
 --------

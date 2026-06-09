@@ -395,6 +395,71 @@ class TestTraceGenerateJson(unittest.TestCase):
             },
         )
 
+    def test_generate_json_custom_fmt_parameterized(self) -> None:
+        """Tests custom data format handler with parameters."""
+        handler_called = False
+
+        def handler(event, line):
+            nonlocal handler_called
+            handler_called = True
+            line["args"] = {"fmt": event.data_fmt}
+
+        trace.clear_plugin_data_format_handlers()
+        trace.register_plugin_data_format_handler(
+            "@pw_plugin_fmt_test", handler
+        )
+
+        event = trace.TraceEvent(
+            event_type=trace.TraceType.INSTANTANEOUS,
+            module="module",
+            label="label",
+            timestamp_us=10,
+            has_data=True,
+            data_fmt="@pw_plugin_fmt_test:param1:param2",
+            data=b"",
+        )
+        json_lines = trace.generate_trace_json([event])
+        self.assertEqual(1, len(json_lines))
+        self.assertTrue(handler_called)
+        self.assertEqual(
+            json.loads(json_lines[0])["args"],
+            {"fmt": "@pw_plugin_fmt_test:param1:param2"},
+        )
+
+    def test_generate_json_custom_fmt_exception(self) -> None:
+        """Tests that custom data format handler exceptions."""
+
+        def handler(event, line):
+            raise ValueError("Test error")
+
+        trace.clear_plugin_data_format_handlers()
+        trace.register_plugin_data_format_handler(
+            "@pw_plugin_exception_test", handler
+        )
+
+        event = trace.TraceEvent(
+            event_type=trace.TraceType.INSTANTANEOUS,
+            module="module",
+            label="label",
+            timestamp_us=10,
+            has_data=True,
+            data_fmt="@pw_plugin_exception_test",
+            data=b"\x01\x02\x03",
+        )
+        json_lines = trace.generate_trace_json([event])
+        self.assertEqual(1, len(json_lines))
+        parsed = json.loads(json_lines[0])
+        self.assertEqual(
+            parsed["args"],
+            {
+                "error": (
+                    "Plugin handler @pw_plugin_exception_test "
+                    "failed: Test error"
+                )
+            },
+        )
+        self.assertEqual(parsed["data"], "010203")
+
 
 if __name__ == '__main__':
     unittest.main()

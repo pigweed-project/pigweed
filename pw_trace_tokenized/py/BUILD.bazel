@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,6 +23,7 @@ pw_py_library(
     srcs = [
         "pw_trace_tokenized/__init__.py",
         "pw_trace_tokenized/get_trace.py",
+        "pw_trace_tokenized/token_label.py",
         "pw_trace_tokenized/trace_tokenized.py",
     ],
     imports = ["."],
@@ -32,5 +33,13 @@ pw_py_library(
         "//pw_tokenizer/py:pw_tokenizer",
         "//pw_trace/py:pw_trace",
         "@pigweed_python_packages//pyserial",
+    ],
+)
+
+pw_py_test(
+    name = "token_label_test",
+    srcs = ["token_label_test.py"],
+    deps = [
+        ":pw_trace_tokenized",
     ],
 )

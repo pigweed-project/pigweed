@@ -219,6 +219,22 @@ Currently the included python tool supports a few different options for
     data_format_string = "@pw_py_map_fmt:{Field: l, Field2: l }"
     data = 0x1400000014000000
     args = {Field: 20, Field2:20}
+- Pluggable format handlers - Custom data format handlers can be implemented
+  within Pigweed or by clients. These data formats are not supported by default;
+  clients must explicitly register a custom handler using the decoder's
+  `register_plugin_data_format_handler()` API to enable specialized decoding.
+
+  The plugin format string can optionally include parameters after a colon, for example
+  ``@format_name:yyy``. The decoder will look up the handler using the portion
+  of the string before the first colon (e.g. ``@format_name``). The event passed
+  to the handler contains the entire format string, allowing it to process the
+  parameters.
+
+  Currently, Pigweed implements the following plugin format:
+
+  - **`@pw_trace_tokenized_token_label`** - Extracts a token (little-endian, first
+    4-bytes of the data field) and looks it up in a database to resolve and use
+    the result as the trace event label.
 
 .. tip::
 

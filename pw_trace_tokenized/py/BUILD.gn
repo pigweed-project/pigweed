@@ -26,8 +26,10 @@ pw_python_package("py") {
   sources = [
     "pw_trace_tokenized/__init__.py",
     "pw_trace_tokenized/get_trace.py",
+    "pw_trace_tokenized/token_label.py",
     "pw_trace_tokenized/trace_tokenized.py",
   ]
+  tests = [ "token_label_test.py" ]
   python_deps = [
     "$dir_pw_hdlc/py",
     "$dir_pw_log:protos.python",

@@ -25,10 +25,11 @@ from enum import Enum
 import json
 import logging
 import struct
-from typing import Iterable, NamedTuple
+from typing import Any, Callable, Dict, Iterable, NamedTuple, TypeAlias
 
 _LOG = logging.getLogger('pw_trace')
 _ORDERING_CHARS = ("@", "=", "<", ">", "!")
+_PLUGIN_DATA_FORMAT_HANDLERS = {}
 
 
 class TraceType(Enum):
@@ -60,6 +61,36 @@ class TraceEvent(NamedTuple):
     has_data: bool = False
     data_fmt: str = ""
     data: bytes = b''
+
+
+# A Callable that processes a plugin data format.
+# - TraceEvent: The trace event containing data to be decoded.
+# - dict[str, Any]: The line dictionary that the handler can modify
+#   in place (e.g. modifying the name, tid, scope, or adding to args).
+DataFormatHandler: TypeAlias = Callable[[TraceEvent, dict[str, Any]], None]
+
+
+def register_plugin_data_format_handler(
+    plugin_fmt: str, handler: DataFormatHandler
+) -> None:
+    """Registers a handler for a plugin data format string.
+
+    Args:
+      plugin_fmt: The data format string.
+      handler: The callable DataFormatHandler to process the trace format.
+    """
+    if plugin_fmt in _PLUGIN_DATA_FORMAT_HANDLERS:
+        _LOG.warning(
+            "Plugin data format handler for %s already registered. "
+            "Overriding previous handler.",
+            plugin_fmt,
+        )
+    _PLUGIN_DATA_FORMAT_HANDLERS[plugin_fmt] = handler
+
+
+def clear_plugin_data_format_handlers() -> None:
+    """Clears all registered plugin data format handlers."""
+    _PLUGIN_DATA_FORMAT_HANDLERS.clear()
 
 
 def event_has_trace_id(event_type):
@@ -153,7 +184,7 @@ def generate_trace_json(events: Iterable[TraceEvent]):
             _LOG.error("Invalid sample")
             continue
 
-        line = {
+        line: Dict[str, Any] = {
             "pid": event.module,
             "name": (event.label),
             "ts": event.timestamp_us,
@@ -218,7 +249,17 @@ def generate_trace_json(events: Iterable[TraceEvent]):
             elif event.data_fmt.startswith("@pw_py_map_fmt:"):
                 line["args"] = decode_map_fmt_args(event)
             else:
-                line["args"] = {"data": event.data.hex()}
+                plugin_key = event.data_fmt.split(':', 1)[0]
+                if handler := _PLUGIN_DATA_FORMAT_HANDLERS.get(plugin_key):
+                    try:
+                        handler(event, line)
+                    except ValueError as e:
+                        line.setdefault("args", {})[
+                            "error"
+                        ] = f"Plugin handler {plugin_key} failed: {e}"
+                        line["data"] = event.data.hex()
+                else:
+                    line["args"] = {"data": event.data.hex()}
 
         # Encode as JSON
         json_lines.append(json.dumps(line))
