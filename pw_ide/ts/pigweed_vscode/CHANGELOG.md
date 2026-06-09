@@ -1,5 +1,12 @@
 # Change Log
 
+## [1.10.4] - 2026-06-08
+
+### ✨ Features & Improvements
+
+* The extension has been overhauled with many improvements to Bazel compile command generation.
+* Automatic generation has been removed and replaced with a much better manual generation process.
+
 ## [1.10.3] - 2026-03-25
 
 ### 🐛 Bug Fixes
