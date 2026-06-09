@@ -207,6 +207,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 'build',
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
+                '--',
                 '//...',
             ],
         )
@@ -220,6 +221,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 'test',
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
+                '--',
                 '//...',
             ],
         )
@@ -259,6 +261,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 'build',
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
+                '--',
                 '//...',
             ],
         )
@@ -300,6 +303,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 'build',
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
+                '--',
                 '//...',
             ],
         )
@@ -400,6 +404,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
                 '--verbose_failures',
+                '--',
                 '//...',
             ],
         )
@@ -419,6 +424,7 @@ class TestBazelBuildDriver(unittest.TestCase):
                 '--symlink_prefix=${BUILD_ROOT}/bazel-',
                 '--config=rp2040',
                 '--verbose_failures',
+                '--',
                 '//...',
             ],
         )

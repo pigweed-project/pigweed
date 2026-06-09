@@ -134,7 +134,13 @@ class BazelBuildDriver(BuildDriver):
         actions.actions.append(
             build_driver_pb2.Action(
                 executable='bazelisk',
-                args=[*startup_args, 'build', *common_args, *build.targets],
+                args=[
+                    *startup_args,
+                    'build',
+                    *common_args,
+                    "--",
+                    *build.targets,
+                ],
                 env=env,
                 run_from=run_from,
                 project_working_subdir=project_working_subdir,
@@ -144,7 +150,13 @@ class BazelBuildDriver(BuildDriver):
             actions.actions.append(
                 build_driver_pb2.Action(
                     executable='bazelisk',
-                    args=[*startup_args, 'test', *common_args, *build.targets],
+                    args=[
+                        *startup_args,
+                        'test',
+                        *common_args,
+                        "--",
+                        *build.targets,
+                    ],
                     env=env,
                     run_from=run_from,
                     project_working_subdir=project_working_subdir,
