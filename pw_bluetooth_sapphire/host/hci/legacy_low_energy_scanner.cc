@@ -179,12 +179,14 @@ LegacyLowEnergyScanner::ParseAdvertisingReports(const EventPacket& event) {
 
 // Returns a DeviceAddress and whether or not that DeviceAddress has been
 // resolved
-static std::tuple<DeviceAddress, bool> BuildDeviceAddress(
+static std::optional<std::tuple<DeviceAddress, bool>> BuildDeviceAddress(
     pw::bluetooth::emboss::LEAddressType report_type,
     pw::bluetooth::emboss::BdAddrView address_view) {
   std::optional<DeviceAddress::Type> address_type =
       DeviceAddress::LeAddrToDeviceAddr(report_type);
-  PW_DCHECK(address_type);
+  if (!address_type.has_value()) {
+    return std::nullopt;
+  }
 
   bool resolved = false;
   switch (report_type) {
@@ -218,8 +220,16 @@ void LegacyLowEnergyScanner::OnAdvertisingReportEvent(
       continue;
     }
 
-    const auto& [address, resolved] =
+    auto address_opt =
         BuildDeviceAddress(report.address_type().Read(), report.address());
+    if (!address_opt.has_value()) {
+      bt_log(WARN,
+             "hci-le",
+             "ignoring advertising report: invalid address type (type: 0x%02x)",
+             static_cast<uint8_t>(report.address_type().Read()));
+      continue;
+    }
+    const auto& [address, resolved] = *address_opt;
 
     bool needs_scan_rsp = false;
     bool connectable = false;

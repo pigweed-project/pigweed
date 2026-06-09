@@ -437,4 +437,36 @@ TEST_F(ExtendedLowEnergyScannerTest, IncompleteTruncatedNonScannable) {
   EXPECT_TRUE(callback_called);
 }
 
+TEST_F(ExtendedLowEnergyScannerTest,
+       ParseAdvertisingReportsInvalidAddressType) {
+  size_t data_size = peer(1)->advertising_data().size();
+  size_t reports_size = report_prefix_size + data_size;
+  size_t packet_size = event_prefix_size + reports_size;
+
+  auto event = hci::EventPacket::New<LEExtendedAdvertisingReportSubeventWriter>(
+      hci_spec::kLEMetaEventCode, packet_size);
+  auto packet = event.view_t();
+  packet.le_meta_event().subevent_code().Write(
+      hci_spec::kLEExtendedAdvertisingReportSubeventCode);
+  packet.num_reports().Write(1);
+
+  LEExtendedAdvertisingReportDataWriter report(
+      packet.reports().BackingStorage().begin(), reports_size);
+  peer(1)->FillExtendedAdvertisingReport(report,
+                                         peer(1)->advertising_data(),
+                                         /*is_fragmented=*/false,
+                                         /*is_scan_response=*/false);
+
+  // Overwrite with invalid address type.
+  report.address_type().Write(
+      static_cast<pw::bluetooth::emboss::LEExtendedAddressType>(0x04));
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  // Verify that the scanner delegate is not called for the malformed report.
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+
+  RunUntilIdle();
+}
+
 }  // namespace bt::hci

@@ -191,7 +191,7 @@ pw::bluetooth::emboss::LEOwnAddressType DeviceAddress::DeviceAddrToLeOwnAddr(
   }
 }
 
-DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
+std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
     pw::bluetooth::emboss::LEAddressType type) {
   switch (type) {
     case pw::bluetooth::emboss::LEAddressType::PUBLIC:
@@ -203,12 +203,12 @@ DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLERandom;
     }
     default: {
-      PW_CRASH("invalid LEAddressType");
+      return std::nullopt;
     }
   }
 }
 
-DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
+std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
     pw::bluetooth::emboss::LEPeerAddressType type) {
   switch (type) {
     case pw::bluetooth::emboss::LEPeerAddressType::PUBLIC: {
@@ -221,12 +221,12 @@ DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLEAnonymous;
     }
     default: {
-      PW_CRASH("invalid LEPeerAddressType");
+      return std::nullopt;
     }
   }
 }
 
-DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
+std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
     pw::bluetooth::emboss::LEPeerAddressTypeNoAnon type) {
   switch (type) {
     case pw::bluetooth::emboss::LEPeerAddressTypeNoAnon::PUBLIC: {
@@ -236,7 +236,7 @@ DeviceAddress::Type DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLERandom;
     }
     default: {
-      PW_CRASH("invalid LEPeerAddressTypeNoAnon");
+      return std::nullopt;
     }
   }
 }

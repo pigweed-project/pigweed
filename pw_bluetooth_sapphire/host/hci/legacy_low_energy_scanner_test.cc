@@ -226,4 +226,32 @@ TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsNotEnoughData) {
   RunUntilIdle();
 }
 
+TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsInvalidAddressType) {
+  {
+    auto peer = std::make_unique<FakePeer>(kPublicAddr,
+                                           dispatcher(),
+                                           /*connectable=*/false,
+                                           /*scannable=*/false,
+                                           /*send_advertising_report=*/false);
+    peer->set_advertising_data(kPlainAdvDataBytes);
+    test_device()->AddPeer(std::move(peer));
+  }
+
+  // Verify that the scanner delegate is not called for the malformed report.
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+
+  ASSERT_TRUE(StartScan(true));
+  RunUntilIdle();
+
+  auto peer = test_device()->FindPeer(kPublicAddr);
+  DynamicByteBuffer buffer = peer->BuildLegacyAdvertisingReportEvent(false);
+
+  // Overwrite the address type of the first report (at offset 5) to an invalid
+  // value.
+  buffer[5] = 0x04;
+
+  test_device()->SendCommandChannelPacket(buffer);
+  RunUntilIdle();
+}
+
 }  // namespace bt::hci

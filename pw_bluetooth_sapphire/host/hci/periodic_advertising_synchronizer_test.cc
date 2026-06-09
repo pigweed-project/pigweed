@@ -271,6 +271,97 @@ TEST_F(PeriodicAdvertisingSynchronizerTest, CreateSyncSuccessV2) {
   ExpectTerminateSync(test_device(), kSyncHandle);
 }
 
+TEST_F(PeriodicAdvertisingSynchronizerTest,
+       CreateSyncInvalidAddressTypeIsIgnored) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+
+  auto add_to_list_packet =
+      bt::testing::LEAddDeviceToPeriodicAdvertiserListPacket(addr, kAdvSid);
+  auto add_to_list_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), add_to_list_packet, &add_to_list_complete);
+
+  auto command_status_rsp = bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/false,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &command_status_rsp);
+
+  auto sync_result = synchronizer()->CreateSync(
+      addr, kAdvSid, {.filter_duplicates = false}, delegate);
+  EXPECT_TRUE(sync_result.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  StaticByteBuffer kMalformedEvent(
+      hci_spec::kLEMetaEventCode,
+      0x10,  // parameter_total_size
+      0x0E,  // Subevent code: LE Periodic Advertising Sync Established
+      0x00,  // status: Success
+      // sync_handle: 0x0000
+      0x00,
+      0x00,
+      0x00,  // advertising_sid
+      0x04,  // advertiser_address_type (Invalid!)
+      // advertiser_address: 0xFFEEDDCCBBAA
+      0xAA,
+      0xBB,
+      0xCC,
+      0xDD,
+      0xEE,
+      0xFF,
+      0x01,  // advertiser_phy
+      // periodic_advertising_interval: 0x0006
+      0x06,
+      0x00,
+      0x00  // advertiser_clock_accuracy
+  );
+
+  auto cancel_cmd = bt::testing::LEPeriodicAdvertisingCreateSyncCancelPacket();
+  auto cancel_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto sync_established_cancel_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::OPERATION_CANCELLED_BY_HOST,
+          /*handle=*/0,
+          /*sid=*/0,
+          DeviceAddress(DeviceAddress::Type::kLEPublic, {0}),
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x0006,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        cancel_cmd,
+                        &cancel_complete,
+                        &sync_established_cancel_event);
+
+  auto remove_from_list_packet =
+      bt::testing::LERemoveDeviceFromPeriodicAdvertiserListPacket(addr,
+                                                                  kAdvSid);
+  auto remove_from_list_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOVE_DEVICE_FROM_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), remove_from_list_packet, &remove_from_list_complete);
+
+  test_device()->SendCommandChannelPacket(kMalformedEvent);
+  RunUntilIdle();
+
+  // Verify that the malformed Sync Established event is ignored, and the
+  // pending sync request is terminated with a kPacketMalformed error
+  EXPECT_EQ(delegate.sync_established_count(), 0);
+  EXPECT_EQ(delegate.sync_lost_count(), 1);
+  ASSERT_TRUE(delegate.last_error().has_value());
+  EXPECT_EQ(delegate.last_error().value(), Error(HostError::kPacketMalformed));
+}
+
 TEST_F(PeriodicAdvertisingSynchronizerTest, CreateSyncFailure) {
   TestDelegate delegate;
   DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});

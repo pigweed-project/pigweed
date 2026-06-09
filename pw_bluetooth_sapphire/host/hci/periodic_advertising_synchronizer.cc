@@ -65,16 +65,22 @@ struct ParsedSyncEstablishedSubevent {
 };
 
 template <typename T>
-ParsedSyncEstablishedSubevent ParseSyncEstablishedSubeventHelper(
+std::optional<ParsedSyncEstablishedSubevent> ParseSyncEstablishedSubeventHelper(
     const EventPacket& event) {
   auto view = event.view<T>();
   ParsedSyncEstablishedSubevent result;
   result.status = view.status().Read();
   result.sync_handle = view.sync_handle().Read();
   result.advertising_sid = view.advertising_sid().Read();
-  result.address = DeviceAddress(
-      DeviceAddress::LeAddrToDeviceAddr(view.advertiser_address_type().Read()),
-      DeviceAddressBytes(view.advertiser_address()));
+
+  std::optional<DeviceAddress::Type> address_type =
+      DeviceAddress::LeAddrToDeviceAddr(view.advertiser_address_type().Read());
+  if (!address_type.has_value()) {
+    return std::nullopt;
+  }
+  result.address = DeviceAddress(*address_type,
+                                 DeviceAddressBytes(view.advertiser_address()));
+
   result.phy = view.advertiser_phy().Read();
   result.interval = view.periodic_advertising_interval().Read();
 
@@ -679,7 +685,12 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
     const EventPacket& event) {
   std::optional<ParsedSyncEstablishedSubevent> parsed_event =
       ParseSyncEstablishedSubevent(event);
-  PW_CHECK(parsed_event);
+  if (!parsed_event.has_value()) {
+    bt_log(WARN, "hci", "ignoring malformed Sync Established event");
+    FailRequestsWithEntriesInAdvertiserList(Error(HostError::kPacketMalformed));
+    MaybeUpdateAdvertiserList();
+    return;
+  }
 
   if (state_ != State::kCreateSyncPending &&
       state_ != State::kCreateSyncCancelPending) {

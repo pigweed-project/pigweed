@@ -1058,7 +1058,8 @@ void FakeController::CaptureLEConnectParams(
 
   le_connect_params_->own_address_type = params.own_address_type().Read();
   le_connect_params_->peer_address = DeviceAddress(
-      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read()),
+      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read())
+          .value(),
       DeviceAddressBytes(params.peer_address()));
 
   LEConnectParams::Parameters& connect_params =
@@ -1113,7 +1114,8 @@ void FakeController::CaptureLEConnectParams(
 
   le_connect_params_->own_address_type = params.own_address_type().Read();
   le_connect_params_->peer_address = DeviceAddress(
-      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read()),
+      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read())
+          .value(),
       DeviceAddressBytes(params.peer_address()));
 
   CaptureLEConnectParamsForPHY(params, LEConnectParams::InitiatingPHYs::kLE_1M);
@@ -1383,7 +1385,8 @@ void FakeController::OnLEExtendedCreateConnectionCommandReceived(
   }
 
   DeviceAddress::Type addr_type =
-      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read());
+      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read())
+          .value();
   const DeviceAddress peer_address(addr_type,
                                    DeviceAddressBytes(params.peer_address()));
 
@@ -1460,7 +1463,8 @@ void FakeController::SendEnhancedConnectionCompleteEvent(
     uint16_t max_latency,
     uint16_t supervision_timeout) {
   DeviceAddress::Type addr_type =
-      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read());
+      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read())
+          .value();
   const DeviceAddress peer_address(addr_type,
                                    DeviceAddressBytes(params.peer_address()));
 
@@ -1514,7 +1518,8 @@ void FakeController::SendConnectionCompleteEvent(
     const pwemb::LECreateConnectionCommandView& params,
     uint16_t interval) {
   DeviceAddress::Type addr_type =
-      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read());
+      DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read())
+          .value();
   const DeviceAddress peer_address(addr_type,
                                    DeviceAddressBytes(params.peer_address()));
 
@@ -1645,8 +1650,9 @@ void FakeController::OnLEAddDeviceToPeriodicAdvertiserListCommandReceived(
     return;
   }
 
-  DeviceAddress::Type addr_type = DeviceAddress::LeAddrToDeviceAddr(
-      params.advertiser_address_type().Read());
+  DeviceAddress::Type addr_type =
+      DeviceAddress::LeAddrToDeviceAddr(params.advertiser_address_type().Read())
+          .value();
   const DeviceAddress address(addr_type,
                               DeviceAddressBytes(params.advertiser_address()));
   PeriodicAdvertiserListEntry entry;
@@ -1675,8 +1681,9 @@ void FakeController::OnLERemoveDeviceFromPeriodicAdvertiserListCommandReceived(
     return;
   }
 
-  DeviceAddress::Type addr_type = DeviceAddress::LeAddrToDeviceAddr(
-      params.advertiser_address_type().Read());
+  DeviceAddress::Type addr_type =
+      DeviceAddress::LeAddrToDeviceAddr(params.advertiser_address_type().Read())
+          .value();
   const DeviceAddress address(addr_type,
                               DeviceAddressBytes(params.advertiser_address()));
   PeriodicAdvertiserListEntry entry;

@@ -397,10 +397,23 @@ template <typename T>
 void LowEnergyConnector::OnConnectionCompleteEvent(const EventPacket& event) {
   auto params = event.view<T>();
 
-  DeviceAddress::Type address_type =
+  std::optional<DeviceAddress::Type> address_type =
       DeviceAddress::LeAddrToDeviceAddr(params.peer_address_type().Read());
+  if (!address_type.has_value()) {
+    bt_log(WARN,
+           "hci-le",
+           "connection complete event ignored: invalid peer address type "
+           "(type: 0x%02x)",
+           static_cast<uint8_t>(params.peer_address_type().Read()));
+    if (pending_request_) {
+      OnCreateConnectionComplete(ToResult(HostError::kPacketMalformed),
+                                 nullptr);
+    }
+    return;
+  }
+
   DeviceAddressBytes address_bytes = DeviceAddressBytes(params.peer_address());
-  DeviceAddress peer_address = DeviceAddress(address_type, address_bytes);
+  DeviceAddress peer_address = DeviceAddress(*address_type, address_bytes);
 
   // First check if this event is related to the currently pending request.
   const bool matches_pending_request =

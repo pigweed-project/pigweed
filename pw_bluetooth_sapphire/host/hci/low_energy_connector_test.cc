@@ -112,6 +112,45 @@ class LowEnergyConnectorTest : public TestingBase,
     return packet;
   }
 
+  EventPacket CreateConnectionCompleteSubeventWithInvalidAddressType(
+      hci_spec::ConnectionHandle conn_handle,
+      const DeviceAddress& peer_address,
+      bool use_extended_operations) const {
+    if (use_extended_operations) {
+      EventPacket packet =
+          CreateConnectionCompleteSubevent(conn_handle, peer_address);
+      auto params =
+          packet.view<pw::bluetooth::emboss::
+                          LEEnhancedConnectionCompleteSubeventV1Writer>();
+
+      params.peer_address_type().Write(
+          static_cast<pw::bluetooth::emboss::LEAddressType>(0x04));  // Invalid!
+
+      return packet;
+    } else {
+      auto packet = hci::EventPacket::New<
+          pw::bluetooth::emboss::LEConnectionCompleteSubeventWriter>(
+          hci_spec::kLEMetaEventCode);
+      auto params = packet.view_t();
+
+      params.le_meta_event().subevent_code().Write(
+          hci_spec::kLEConnectionCompleteSubeventCode);
+      params.status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
+      params.connection_handle().Write(conn_handle);
+      params.role().Write(pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
+      params.peer_address().CopyFrom(peer_address.value().view());
+      params.peer_address_type().Write(
+          static_cast<pw::bluetooth::emboss::LEPeerAddressTypeNoAnon>(
+              0x04));  // Invalid!
+      params.connection_interval().Write(
+          hci_spec::defaults::kLEConnectionIntervalMin);
+      params.peripheral_latency().Write(0);
+      params.supervision_timeout().Write(10);
+
+      return packet;
+    }
+  }
+
   pw::async::HeapDispatcher& heap_dispatcher() { return heap_dispatcher_; }
   void DeleteConnector() { connector_ = nullptr; }
   bool request_canceled() const { return request_canceled_; }
@@ -297,6 +336,46 @@ TEST_P(LowEnergyConnectorTest, CreateConnectionEventError) {
       status);
   EXPECT_TRUE(in_connections().empty());
   EXPECT_FALSE(conn);
+}
+
+TEST_P(LowEnergyConnectorTest, CreateConnectionEventInvalidAddressType) {
+  auto fake_peer = std::make_unique<FakePeer>(kTestAddress, dispatcher());
+
+  // Make sure the pending connect remains pending.
+  fake_peer->set_force_pending_connect(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  Result<> status = fit::ok();
+  bool callback_called = false;
+
+  auto callback = [&](auto cb_status, auto /*cb_conn*/) {
+    status = cb_status;
+    callback_called = true;
+  };
+
+  connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      callback,
+      kPwConnectTimeout);
+
+  RunUntilIdle();
+  EXPECT_TRUE(connector()->request_pending());
+
+  bool use_extended_operations = GetParam();
+  EventPacket packet = CreateConnectionCompleteSubeventWithInvalidAddressType(
+      0x0001, kTestAddress, use_extended_operations);
+
+  test_device()->SendCommandChannelPacket(packet.data());
+  RunUntilIdle();
+
+  EXPECT_FALSE(connector()->request_pending());
+  EXPECT_TRUE(callback_called);
+  EXPECT_TRUE(status.is_error());
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
 }
 
 // Controller reports error from HCI LE Connection Complete event

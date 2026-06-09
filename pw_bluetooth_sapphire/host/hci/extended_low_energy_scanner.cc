@@ -180,11 +180,13 @@ ExtendedLowEnergyScanner::ParseAdvertisingReports(const EventPacket& event) {
   return reports;
 }
 
-static std::tuple<DeviceAddress, bool> BuildDeviceAddress(
+static std::optional<std::tuple<DeviceAddress, bool>> BuildDeviceAddress(
     LEExtendedAddressType report_type, BdAddrView address_view) {
   std::optional<DeviceAddress::Type> address_type =
       DeviceAddress::LeAddrToDeviceAddr(report_type);
-  PW_DCHECK(address_type);
+  if (!address_type.has_value()) {
+    return std::nullopt;
+  }
 
   bool resolved = false;
   switch (report_type) {
@@ -214,8 +216,16 @@ void ExtendedLowEnergyScanner::OnExtendedAdvertisingReportEvent(
   std::vector<LEExtendedAdvertisingReportDataView> reports =
       ParseAdvertisingReports(event);
   for (LEExtendedAdvertisingReportDataView report : reports) {
-    const auto& [address, resolved] =
+    auto address_opt =
         BuildDeviceAddress(report.address_type().Read(), report.address());
+    if (!address_opt.has_value()) {
+      bt_log(WARN,
+             "hci-le",
+             "ignoring advertising report: invalid address type (type: 0x%02x)",
+             static_cast<uint8_t>(report.address_type().Read()));
+      continue;
+    }
+    const auto& [address, resolved] = *address_opt;
 
     bool is_directed = report.event_type().directed().Read();
     bool is_connectable = report.event_type().connectable().Read();
