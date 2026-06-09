@@ -12,12 +12,14 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("//pw_ide/bazel/compile_commands:pw_cc_compile_commands_aspect.bzl", "pw_cc_compile_commands_fragments")
 load("//pw_ide/bazel/compile_commands:pw_compile_commands_generator.bzl", "pw_compile_commands_generator")
+load("//pw_protobuf_compiler:pw_proto_library.bzl", "pwpb_proto_library")
 load(":cpp_gen.bzl", "cpp_gen")
 
 package(
@@ -433,30 +435,22 @@ cc_library(
     tags = ["manual"],
 )
 
-# This ensures that things like module map files are generated before
-# we integration test against clangd.
-filegroup(
-    name = "test_compile_commands_outputs",
-    srcs = [
-        ":basic_library_direct_includes",
-        ":basic_library_virtual_includes",
-        ":cpp_library_dep_external_library",
-        ":deep_chain_binary",
-        ":mcu_transition",
-        ":non_cpp_deps",
-        ":replicated_error_library",
-        ":sysroot_test_library",
-    ],
-    tags = ["manual"],
-    visibility = ["//pw_ide/py:__subpackages__"],
-)
+_TEST_TARGETS = [
+    ":basic_library_direct_includes",
+    ":basic_library_virtual_includes",
+    ":cpp_library_dep_external_library",
+    ":cpp_library_dep_test_pwpb",
+    ":deep_chain_binary",
+    ":mcu_transition",
+    ":non_cpp_deps",
+    ":replicated_error_library",
+    ":sysroot_test_library",
+]
 
 pw_cc_compile_commands_fragments(
     name = "test_compile_commands",
     tags = ["manual"],
-    targets = [
-        ":test_compile_commands_outputs",
-    ],
+    targets = _TEST_TARGETS,
     visibility = ["//pw_ide/py:__subpackages__"],
 )
 
@@ -476,8 +470,9 @@ pw_compile_commands_generator(
     tags = ["manual"],
     target_patterns = [
         "//pw_ide/bazel/compile_commands/test/...",
-        "//pw_ide/bazel/compile_commands/test:test_compile_commands_outputs",
-        "//pw_ide/bazel/compile_commands/test:cpp_library_dep_external_library",
+    ] + [
+        "//pw_ide/bazel/compile_commands/test" + t
+        for t in _TEST_TARGETS
     ],
 )
 
@@ -487,8 +482,9 @@ pw_compile_commands_generator(
     tags = ["manual"],
     target_patterns = [
         "//pw_ide/bazel/compile_commands/test/...",
-        ":test_compile_commands_outputs",
-        ":cpp_library_dep_external_library",
+    ] + [
+        "//pw_ide/bazel/compile_commands/test" + t
+        for t in _TEST_TARGETS
     ],
 )
 
@@ -527,5 +523,35 @@ pw_compile_commands_generator(
     deps = [
         ":test_conflict_1",
         ":test_conflict_2",
+    ],
+)
+
+proto_library(
+    name = "test_proto",
+    srcs = ["test.proto"],
+    tags = ["manual"],
+)
+
+pwpb_proto_library(
+    name = "test_pwpb",
+    tags = ["manual"],
+    deps = [":test_proto"],
+)
+
+cc_library(
+    name = "cpp_library_dep_test_pwpb",
+    srcs = ["cpp_to_test_pwpb.cc"],
+    hdrs = ["cpp_to_test_pwpb.h"],
+    tags = ["manual"],
+    deps = [
+        ":test_pwpb",
+        "//pw_assert:assert",
+        "//pw_containers:vector",
+        "//pw_preprocessor",
+        "//pw_protobuf",
+        "//pw_result",
+        "//pw_span",
+        "//pw_status",
+        "//pw_string:string",
     ],
 )

@@ -32,9 +32,7 @@ _MAX_NOP_TIME_SECONDS = 10.0
 
 
 # pylint: disable=line-too-long
-_TEST_CPP_TARGET = (
-    '//pw_ide/bazel/compile_commands/test:test_compile_commands_outputs'
-)
+_TEST_CPP_TARGET = '//pw_ide/bazel/compile_commands/test:test_compile_commands'
 # pylint: enable=line-too-long
 
 # If you want to change this target, pick something that pulls in the Pico SDK,

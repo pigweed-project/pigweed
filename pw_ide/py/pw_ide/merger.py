@@ -276,16 +276,17 @@ def _run_bazel_build_for_fragments(
     # output and find resulting files.
     with tempfile.TemporaryDirectory() as tmp_dir:
         bep_path = Path(tmp_dir) / "compile_command_bep.json"
-        command = list(build_args)
-        command.extend(
-            (
+        command = (
+            [build_args[0]]
+            + [
                 "--show_result=0",
                 f"--aspects={_COMPILE_COMMANDS_ASPECT}",
                 f"--output_groups={_COMPILE_COMMANDS_OUTPUT_GROUP}",
                 # This also makes all paths resolve as absolute.
                 "--experimental_convenience_symlinks=ignore",
                 f"--build_event_json_file={bep_path}",
-            )
+            ]
+            + build_args[1:]
         )
         _LOG.debug("Executing Bazel command: %s", shlex.join(command))
         try:
@@ -403,7 +404,9 @@ def _build_and_collect_fragments_from_groups(
             continue
 
         # Workaround for Bazel 7+ canonical label format in target patterns
-        targets = [t[2:] if t.startswith("@@//") else t for t in targets]
+        targets = [
+            t.replace("-@@//", "-//").replace("@@//", "//") for t in targets
+        ]
 
         _LOG.info(
             "⏳ Generating compile commands for group %d/%d (%s)...",
@@ -415,11 +418,10 @@ def _build_and_collect_fragments_from_groups(
             "build",
             "--noshow_progress",
             "--noshow_loading_progress",
-            "--workspace_status_command=/usr/bin/true",
             "--platforms",
             platform,
-            *targets,
-        ]
+            "--",
+        ] + targets
         group_fragments = _run_bazel_build_for_fragments(
             build_args, verbose, execution_root
         )

@@ -211,11 +211,11 @@ pw_py_binary(
         "integration_test_config.json",
         # Ensure compile commands are always available.
         "//pw_ide/bazel/compile_commands/test:test_compile_commands",
-        # Ensure generated files exist.
-        "//pw_ide/bazel/compile_commands/test:test_compile_commands_outputs",
+        # Omit test_compile_commands_outputs to test failure case
         # Ensure builtin module map is available for clangd in CI.
         "//pw_toolchain/host_clang:builtin_module_map",
     ],
+    main = "integration_test.py",
     deps = [
         ":clangd_binary",
         ":pw_ide",
@@ -233,8 +233,7 @@ pw_py_binary(
     data = [
         # Ensure compile commands are always available.
         "//pw_ide/bazel/compile_commands/test:test_compile_commands",
-        # Ensure generated files exist.
-        "//pw_ide/bazel/compile_commands/test:test_compile_commands_outputs",
+
         # This is used because we need something with a LOT of dependencies for
         # performance regression testing.
         "//pw_system:rp2040_system_example",

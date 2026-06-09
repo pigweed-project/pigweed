@@ -500,7 +500,36 @@ def _compile_commands_aspect_impl(target, ctx):
     providers = result.providers
     fragment_files = result.fragment_files
 
-    direct_files = fragment_files
+    _GENERATED_STRUCTURED_EXTS = (
+        ".pwpb.h",
+        ".pb.h",
+        ".nanopb.h",
+        ".cppmap",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".hxx",
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+    )
+    generated_files = []
+    for f in target.files.to_list():
+        if not f.is_source and f.path.endswith(_GENERATED_STRUCTURED_EXTS):
+            generated_files.append(f)
+
+    if CcInfo in target:
+        for f in target[CcInfo].compilation_context.headers.to_list():
+            if not f.is_source and f.path.endswith(_GENERATED_STRUCTURED_EXTS):
+                generated_files.append(f)
+
+    for action in target.actions:
+        for f in action.outputs.to_list():
+            if not f.is_source and f.path.endswith(".cppmap"):
+                generated_files.append(f)
+
+    direct_files = fragment_files + generated_files
     compile_command_fragments = depset(
         direct = direct_files,
         transitive = dep_fragments,

@@ -346,5 +346,13 @@
       "@bazel_tools//tools:host_platform",
       "//targets/rp2040:rp2040"
     ]
+  },
+  {
+    "name": "cpp_library_dep_test_pwpb",
+    "target": "//pw_ide/bazel/compile_commands/test:cpp_library_dep_test_pwpb",
+    "platforms": [
+      "@bazel_tools//tools:host_platform",
+      "//targets/rp2040:rp2040"
+    ]
   }
 ]

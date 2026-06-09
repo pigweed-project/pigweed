@@ -34,6 +34,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Disposable } from './disposables';
 
+export const fsUtils = {
+  realpathSync: (pathStr: string) => fs.realpathSync(pathStr),
+};
+
 import {
   didChangeClangdConfig,
   didChangeTarget,
@@ -205,6 +209,9 @@ export class InactiveFileDecorationProvider
     const decorationMap = makeDecoration(targetDisplayName);
 
     for (const uri of workspaceFiles) {
+      if (isGeneratedOrExternalFile(uri.fsPath, projectRoot)) {
+        continue;
+      }
       // Fetch status only if the feature is enabled
       const { status } = await this.activeFilesCache.fileStatus(
         projectRoot,
@@ -287,13 +294,19 @@ export class InactiveFileDecorationProvider
       return;
     }
 
-    const target = settings.codeAnalysisTarget();
-
     const projectRoot = await getPigweedProjectRoot(settings, workingDir);
     if (!projectRoot) {
       editor.setDecorations(this.bannerDecorationType, []); // Clear banner if no project root
       return;
     }
+
+    // Do not show banners on generated or external files (e.g., under bazel-out, external, environment)
+    if (isGeneratedOrExternalFile(uri.fsPath, projectRoot)) {
+      editor.setDecorations(this.bannerDecorationType, []);
+      return;
+    }
+
+    const target = settings.codeAnalysisTarget();
 
     const { status, targets, error } = await this.activeFilesCache.fileStatus(
       projectRoot,
@@ -399,4 +412,31 @@ export class InactiveFileDecorationProvider
     // Apply the decoration (or clear it if decorationsArray is empty)
     editor.setDecorations(this.bannerDecorationType, decorationsArray);
   }
+}
+
+/**
+ * Returns true if the file path is located under a generated or external directory
+ * (e.g., bazel-out, external, or environment).
+ */
+export function isGeneratedOrExternalFile(
+  filePath: string,
+  projectRoot?: string,
+): boolean {
+  if (/[/\\\\](bazel-[^/\\\\]+|external|environment)[/\\\\]/.test(filePath)) {
+    return true;
+  }
+  if (projectRoot) {
+    try {
+      const resolvedPath = fsUtils.realpathSync(filePath);
+      const resolvedRoot = fsUtils.realpathSync(projectRoot);
+      if (!resolvedPath.startsWith(resolvedRoot)) {
+        return true;
+      }
+    } catch (e) {
+      if (!filePath.startsWith(projectRoot)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

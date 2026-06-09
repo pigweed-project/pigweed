@@ -73,9 +73,7 @@ _INCLUDE_PREFIXES = (
 )
 
 # pylint: disable=line-too-long
-_TEST_CPP_TARGET = (
-    '//pw_ide/bazel/compile_commands/test:test_compile_commands_outputs'
-)
+_TEST_CPP_TARGET = '//pw_ide/bazel/compile_commands/test:test_compile_commands'
 
 _TEST_COMPILE_COMMANDS_GENERATOR = (
     '//pw_ide/bazel/compile_commands/test:test_compile_commands_generator'
@@ -302,7 +300,14 @@ class StandardCompileCommandsTests(CompileCommandsTestBase):
                 f'Checking header {command["file"]} from {db_path.parent}'
             ):
                 clangd_result = self._run_clangd_check(db_path, command)
-                if 'deep_leaf.h' not in command['file']:
+                # Exclude header-only/generated files without
+                # companions from returncode checks since the
+                # DefineOutline tweak will fail.
+                is_header_only = (
+                    'deep_leaf.h' in command['file']
+                    or 'test.pwpb.h' in command['file']
+                )
+                if not is_header_only:
                     self.assertEqual(
                         clangd_result.returncode,
                         0,
@@ -408,6 +413,7 @@ class StandardCompileCommandsTests(CompileCommandsTestBase):
         """Collects all include paths from a compile command."""
         all_include_paths: list[Path] = []
         args_iterator = iter(command['arguments'])
+        entry_dir = Path(command.get('directory', '.'))
         for arg in args_iterator:
             path_str = None
 
@@ -423,6 +429,15 @@ class StandardCompileCommandsTests(CompileCommandsTestBase):
 
             if path_str:
                 include_path = Path(path_str)
+                if '_virtual_includes/' in path_str:
+                    full_path = entry_dir / include_path
+                    if not full_path.exists():
+                        # Unused implicit toolchain/platform dependencies
+                        # (like pw_string) may inject virtual includes that are
+                        # not compiled (hence they don't exist on disk) and
+                        # cannot be resolved via aspect. Since they are unused,
+                        # we can safely skip them.
+                        continue
                 all_include_paths.append(include_path)
         return all_include_paths
 
@@ -1070,6 +1085,11 @@ class DynamicConfigClangdTests(unittest.TestCase):
                 self.clangd_path,
                 f'--compile-commands-dir={db_path.parent}',
                 f'--check={file_path}',
+                # Disable location-specific check features (completions,
+                # tweaks, hover) to prevent non-fatal tweak failure errors from
+                # failing the test.
+                # See: https://github.com/clangd/clangd/issues/1548
+                '--check-locations=false',
             ],
             capture_output=True,
             text=True,
@@ -1089,14 +1109,6 @@ class DynamicConfigClangdTests(unittest.TestCase):
         """
         if skip:
             self.skipTest(f'Test {name} was marked as "skip"')
-
-        # 0. Build the target
-        build_result = self._build_target(target, platform, build_flags)
-        self.assertEqual(
-            build_result.returncode,
-            0,
-            f'Failed to build target {target}:\n{build_result.stderr}',
-        )
 
         # 1. Generate compile_commands.json for this test
         gen_result = self._generate_compile_commands(

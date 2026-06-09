@@ -14,6 +14,7 @@
 """Tests for pw_ide.verify_db"""
 
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from pw_ide import verify_db
@@ -350,7 +351,8 @@ class VerifyDbTest(unittest.TestCase):
             verify_db.virtual_include_check(db, should_continue=True)
         )
 
-    def test_virtual_include_check_one_virtual_include(self):
+    @mock.patch('pw_ide.verify_db.Path.exists', return_value=True)
+    def test_virtual_include_check_one_virtual_include(self, _mock_exists):
         # One virtual include.
         db = _TEST_DB_VIRTUAL_INCLUDE
         self.assertFalse(
@@ -528,7 +530,8 @@ class VerifyDbTest(unittest.TestCase):
         options.unexpected_source_file_check(False)
         self.assertTrue(verify_db.verify_db(db, target_files, options))
 
-    def test_verify_db_virtual_include_check_only_invalid(self):
+    @mock.patch('pw_ide.verify_db.Path.exists', return_value=True)
+    def test_verify_db_virtual_include_check_only_invalid(self, _mock_exists):
         # Virtual include check only, invalid database (virtual include).
         target_files = [Path('a.cc')]
         db = _TEST_DB_VIRTUAL_INCLUDE

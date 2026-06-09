@@ -106,6 +106,9 @@ pw_compile_commands_generator(
     platform = "@bazel_tools//tools:host_platform",
     target_patterns = [
         "//...",
+        # Exclude build_origin because it depends on a custom workspace status script
+        # that is not set up in standard builds, which causes wildcard //... builds to fail.
+        "-//pw_build_info:build_origin",
     ],
 )
 
@@ -115,6 +118,9 @@ pw_compile_commands_generator(
     platform = "//targets/host:host_googletest",
     target_patterns = [
         "//...",
+        # Exclude build_origin because it depends on a custom workspace status script
+        # that is not set up in standard builds, which causes wildcard //... builds to fail.
+        "-//pw_build_info:build_origin",
     ],
 )
 
@@ -124,6 +130,9 @@ pw_compile_commands_generator(
     platform = "//targets/rp2040",
     target_patterns = [
         "//...",
+        # Exclude build_origin because it depends on a custom workspace status script
+        # that is not set up in standard builds, which causes wildcard //... builds to fail.
+        "-//pw_build_info:build_origin",
     ],
 )
 
@@ -133,6 +142,9 @@ pw_compile_commands_generator(
     platform = "//targets/rp2040:rp2350",
     target_patterns = [
         "//...",
+        # Exclude build_origin because it depends on a custom workspace status script
+        # that is not set up in standard builds, which causes wildcard //... builds to fail.
+        "-//pw_build_info:build_origin",
     ],
 )
 

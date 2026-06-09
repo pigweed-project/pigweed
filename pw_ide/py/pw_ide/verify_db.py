@@ -54,6 +54,7 @@ _HEADER_FILE_EXTENSIONS = ('.h', '.hpp', '.hh', '.hxx', '.h++')
 _SOURCE_FILE_EXTENSIONS = (
     _C_SOURCE_FILE_EXTENSIONS + _CPP_SOURCE_FILE_EXTENSIONS
 )
+_INCLUDE_PREFIXES = ('-I', '-isystem')
 
 _DB_JSON_SCHEMA_STRICT = {
     "type": "array",
@@ -586,13 +587,27 @@ def virtual_include_check(
             result = False
             return result
 
+        entry_dir = Path(entry.get('directory', '.'))
         for arg in args:
             _LOG.debug('Checking arg: %s', arg)
             if '/_virtual_includes/' in arg:
-                result = False
-                _LOG.warning('Found virtual include path: %s', arg)
-                if not should_continue:
-                    return result
+                prefix = ""
+                for p in _INCLUDE_PREFIXES:
+                    if arg.startswith(p):
+                        prefix = p
+                        break
+                path_part = arg[len(prefix) :]
+                full_path = entry_dir / path_part
+                # Unused implicit toolchain/platform dependencies (like
+                # pw_string) may inject virtual includes that are not compiled
+                # (hence they don't exist on disk) and cannot be resolved via
+                # aspect. Since they are unused and clangd does not need them,
+                # we can safely skip them.
+                if full_path.exists():
+                    result = False
+                    _LOG.warning('Found virtual include path: %s', arg)
+                    if not should_continue:
+                        return result
 
     if result:
         _LOG.info('No virtual include paths found in database.')
