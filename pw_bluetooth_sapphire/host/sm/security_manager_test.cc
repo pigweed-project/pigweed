@@ -4030,6 +4030,25 @@ TEST_F(ResponderPairingTest,
 }
 
 TEST_F(ResponderPairingTest,
+       RejectNoInputNoOutputLocalCapabilityInSecureConnectionsOnlyMode) {
+  SetUpSecurityManager(IOCapability::kNoInputNoOutput);
+  pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);
+  // The local device has NoInputNoOutput capabilities, thus cannot perform
+  // authenticated pairing which is required in Secure Connections Only mode.
+  ReceivePairingRequest(IOCapability::kDisplayYesNo,
+                        AuthReq::kBondingFlag | AuthReq::kSC);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  ASSERT_TRUE(received_error_code().has_value());
+  EXPECT_EQ(received_error_code().value(),
+            ErrorCode::kAuthenticationRequirements);
+  EXPECT_EQ(0, pairing_complete_count());
+  EXPECT_FALSE(peer().MutLe().is_pairing());
+}
+
+TEST_F(ResponderPairingTest,
        RejectInsufficientKeySizeRequestInSecureConnectionsOnlyMode) {
   SetUpSecurityManager(IOCapability::kKeyboardDisplay);
   pairing()->set_security_mode(gap::LESecurityMode::SecureConnectionsOnly);

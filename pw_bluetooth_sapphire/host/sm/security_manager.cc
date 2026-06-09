@@ -539,6 +539,17 @@ void SecurityManagerImpl::OnPairingRequest(
     required_level = SecurityLevel::kSecureAuthenticated;
   }
 
+  if (required_level >= SecurityLevel::kAuthenticated &&
+      low_energy_io_cap_ == IOCapability::kNoInputNoOutput) {
+    bt_log(WARN,
+           "sm",
+           "cannot fulfill authenticated security request as IOCapabilities "
+           "are NoInputNoOutput");
+    sm_chan_->SendMessageNoTimerReset(kPairingFailed,
+                                      ErrorCode::kAuthenticationRequirements);
+    return;
+  }
+
   if (bredr_link_.is_alive()) {
     if (!IsBrEdrCrossTransportKeyDerivationAllowed()) {
       bt_log(INFO,

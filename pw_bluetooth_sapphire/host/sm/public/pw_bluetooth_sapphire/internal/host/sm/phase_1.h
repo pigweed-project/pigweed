@@ -78,8 +78,8 @@ class Phase1 final : public PairingPhase, public PairingChannelHandler {
   //   Part C Section 9.4). |requested_level|: The minimum security level
   //   required by the local device for this pairing.
   //                      Must be at least SecurityLevel::kEncrypted. If
-  //                      authenticated, the ctor ASSERTs that |io_capabilities|
-  //                      can perform authenticated pairing.
+  //                      authenticated, |io_capability| must support
+  //                      authenticated pairing. Otherwise, pairing fails.
   //   |on_complete|: called at the end of Phase 1 with the resulting features.
   Phase1(PairingChannel::WeakPtr chan,
          Listener::WeakPtr listener,
