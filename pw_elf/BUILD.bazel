@@ -74,6 +74,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "python.rst",
         "//pw_elf/examples:docs",
     ],
     prefix = "pw_elf/",

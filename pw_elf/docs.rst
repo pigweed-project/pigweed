@@ -33,3 +33,16 @@ Read an ELF section into a buffer
 API reference
 -------------
 Moved: :cc:`pw_elf`
+
+------
+Python
+------
+The ``pw_elf`` Python package provides utilities to programmatically build
+ELF32 and ELF64 binary files from scratch. See :ref:`module-pw_elf-python` for
+details.
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   python
