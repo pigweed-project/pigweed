@@ -11,11 +11,12 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-py_library(
+pw_py_library(
     name = "py",
     srcs = [
         "pw_enum/__init__.py",
@@ -26,7 +27,7 @@ py_library(
     imports = ["."],
 )
 
-py_binary(
+pw_py_binary(
     name = "enum_generator",
     srcs = ["pw_enum/generate.py"],
     imports = ["."],
@@ -34,14 +35,15 @@ py_binary(
     deps = [":py"],
 )
 
-py_test(
+pw_py_test(
     name = "generate_test",
     srcs = ["generate_test.py"],
     deps = [":py"],
 )
 
-py_test(
+pw_py_test(
     name = "parse_test",
     srcs = ["parse_test.py"],
+    target_compatible_with = incompatible_with_mcu(),
     deps = [":py"],
 )

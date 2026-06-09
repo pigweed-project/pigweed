@@ -41,5 +41,6 @@ def pw_copy_and_patch_file_test(*, name, src, patch_file, expected, out, **kwarg
         name = name,
         file1 = expected,
         file2 = ":" + name + ".test",
+        target_compatible_with = incompatible_with_mcu(),
         **kwargs
     )

@@ -64,6 +64,7 @@ rust_test(
 rust_doc_test(
     name = "pw_format_doc_test",
     crate = ":pw_format",
+    target_compatible_with = incompatible_with_mcu(),
     deps = ["//pw_bytes/rust:pw_bytes"],
 )
 
