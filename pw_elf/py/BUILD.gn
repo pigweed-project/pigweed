@@ -24,8 +24,12 @@ pw_python_package("py") {
   sources = [
     "pw_elf/__init__.py",
     "pw_elf/builder.py",
+    "pw_elf/coredump.py",
   ]
-  tests = [ "builder_test.py" ]
+  tests = [
+    "builder_test.py",
+    "coredump_test.py",
+  ]
   python_deps = [ "$dir_pw_bytes/py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"

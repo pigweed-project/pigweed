@@ -17,3 +17,9 @@ pw_elf.builder
      ElfClass,
      ElfMachine,
      ElfType
+
+pw_elf.coredump
+===============
+.. automodule:: pw_elf.coredump
+   :members:
+     CoredumpBuilder

@@ -23,6 +23,7 @@ pw_py_library(
     srcs = [
         "pw_elf/__init__.py",
         "pw_elf/builder.py",
+        "pw_elf/coredump.py",
     ],
     imports = ["."],
     deps = [
@@ -33,6 +34,15 @@ pw_py_library(
 pw_py_test(
     name = "builder_test",
     srcs = ["builder_test.py"],
+    deps = [
+        ":pw_elf",
+        "@pigweed_python_packages//pyelftools",
+    ],
+)
+
+pw_py_test(
+    name = "coredump_test",
+    srcs = ["coredump_test.py"],
     deps = [
         ":pw_elf",
         "@pigweed_python_packages//pyelftools",
