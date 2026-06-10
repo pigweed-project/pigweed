@@ -722,5 +722,32 @@ TEST_F(LogicalLinkTest, SniffSuppression) {
   RunUntilIdle();
 }
 
+TEST_F(LogicalLinkTest, AutosniffModeChangeUndersizedEvent) {
+  ResetAndCreateNewLogicalLink(LinkType::kACL);
+  ASSERT_TRUE(link()->AutosniffEnabled());
+
+  QueueAclConnectionRetVal cmd_ids;
+  cmd_ids.extended_features_id = 1;
+  cmd_ids.fixed_channels_supported_id = 2;
+  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
+      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclExtFeaturesInfoReq(
+                            cmd_ids.extended_features_id, kConnHandle),
+                        &kExtFeaturesRsp);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
+                            cmd_ids.fixed_channels_supported_id, kConnHandle));
+
+  // Construct an undersized Mode Change event.
+  StaticByteBuffer undersized_event(hci_spec::kModeChangeEventCode,
+                                    0x01,  // parameter_total_size
+                                    0x00   // placeholder parameter
+  );
+  // This packet should be dropped without causing a crash.
+  test_device()->SendCommandChannelPacket(undersized_event);
+  RunUntilIdle();
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

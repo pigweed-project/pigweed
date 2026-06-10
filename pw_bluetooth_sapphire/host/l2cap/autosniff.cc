@@ -123,7 +123,12 @@ void Autosniff::ResetTimeout() {
 
 hci::CommandChannel::EventCallbackResult Autosniff::OnModeChange(
     const hci::EventPacket& event) {
-  const auto view = event.view<pw::bluetooth::emboss::ModeChangeEventView>();
+  auto view =
+      event.unchecked_view<pw::bluetooth::emboss::ModeChangeEventView>();
+  if (!view.Ok()) {
+    bt_log(ERROR, "autosniff", "Ignoring malformed Mode Change event");
+    return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
   const hci_spec::ConnectionHandle handle = view.connection_handle().Read();
   if (handle != this->handle_) {
     // We are not handling this event.
