@@ -15,7 +15,7 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 
-use crate::{Arg, FormatString, FormatStyle};
+use crate::{Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle};
 
 unsafe extern "C" {
     fn snprintf(str: *mut c_char, size: usize, format: *const c_char, ...) -> c_int;
@@ -103,15 +103,15 @@ fn test_int_simple() {
     let rust_result = format!("{}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -127,15 +127,15 @@ fn test_int_negative() {
     let rust_result = format!("{}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -151,15 +151,15 @@ fn test_int_width() {
     let rust_result = format!("{:5}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -175,15 +175,15 @@ fn test_int_zero_pad() {
     let rust_result = format!("{:05}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -199,17 +199,17 @@ fn test_int_left_justify() {
 
     let args = [Arg::Int(arg as i64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_int(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:<5}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:<5}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -223,8 +223,8 @@ fn test_int_precision() {
     let rust_result = "00042";
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
@@ -242,15 +242,15 @@ fn test_int_plus_sign() {
     let rust_result = format!("{:+5}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -264,8 +264,8 @@ fn test_int_space_sign() {
 
     let args = [Arg::Int(arg as i64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_int(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
@@ -284,17 +284,17 @@ fn test_uint_simple() {
 
     let args = [Arg::Uint(arg as u64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_uint(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -309,15 +309,15 @@ fn test_uint_hex() {
     let rust_result = format!("{:x}", arg);
 
     let parsed = FormatString::parse_printf(printf_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
 
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 
     let parsed = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
-    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf).unwrap();
-    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt).unwrap();
+    let printf_formatted_str = parsed.format(&args, FormatStyle::Printf);
+    let core_fmt_formatted_str = parsed.format(&args, FormatStyle::CoreFmt);
     assert_eq!(printf_formatted_str, c_result);
     assert_eq!(core_fmt_formatted_str, rust_result);
 }
@@ -333,17 +333,17 @@ fn test_uint_upper_hex() {
 
     let args = [Arg::Uint(arg as u64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_uint(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:X}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:X}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -358,17 +358,17 @@ fn test_uint_octal() {
 
     let args = [Arg::Uint(arg as u64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_uint(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:o}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:o}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -383,17 +383,17 @@ fn test_uint_alternate_hex() {
 
     let args = [Arg::Uint(arg as u64)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_uint(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:#x}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:#x}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -408,17 +408,17 @@ fn test_str_simple() {
 
     let args = [Arg::Str(arg.to_string())];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_str(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -433,17 +433,17 @@ fn test_str_precision() {
 
     let args = [Arg::Str(arg.to_string())];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_str(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:.3}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:.3}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -458,14 +458,14 @@ fn test_str_width() {
 
     let args = [Arg::Str(arg.to_string())];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_str(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, "     hello");
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, "     hello");
 
     // Skip cross-style test because parse_core_fmt fails to parse alignment for this case.
@@ -482,17 +482,17 @@ fn test_str_left_justify() {
 
     let args = [Arg::Str(arg.to_string())];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_str(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:<10}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:<10}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -507,17 +507,17 @@ fn test_char_simple() {
 
     let args = [Arg::Char(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_char(printf_format_str, arg as c_char);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -532,14 +532,14 @@ fn test_char_width() {
 
     let args = [Arg::Char(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_char(printf_format_str, arg as c_char);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, "    A");
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, "    A");
 
     // Skip cross-style test because parse_core_fmt fails to parse alignment for this case.
@@ -556,17 +556,17 @@ fn test_char_left_justify() {
 
     let args = [Arg::Char(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_char(printf_format_str, arg as c_char);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:<5}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:<5}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -581,17 +581,17 @@ fn test_float_simple() {
 
     let args = [Arg::Float(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_float(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -606,17 +606,17 @@ fn test_float_precision() {
 
     let args = [Arg::Float(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_float(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, c_result); // Both use precision 2
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:.2}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -631,17 +631,17 @@ fn test_float_width() {
 
     let args = [Arg::Float(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_float(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:10}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:10}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
@@ -656,56 +656,141 @@ fn test_float_left_justify() {
 
     let args = [Arg::Float(arg)];
 
-    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf).unwrap();
-    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
+    let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
     let c_result = call_snprintf_float(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
     assert_eq!(rust_core, format!("{:<10}", arg));
 
-    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt).unwrap();
+    let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
     assert_eq!(rust_core_parsed, format!("{:<10}", arg));
 
-    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf).unwrap();
+    let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);
 }
 
 #[test]
 fn test_mismatched_types() {
     let parsed = FormatString::parse_printf("%d").unwrap();
-    assert!(
-        parsed
-            .format(&[Arg::Str("hello".to_string())], FormatStyle::Printf)
-            .is_err()
+    assert_eq!(
+        parsed.format(&[Arg::Str("hello".to_string())], FormatStyle::Printf),
+        "%d"
     );
 
     let parsed = FormatString::parse_printf("%s").unwrap();
-    assert!(parsed.format(&[Arg::Int(42)], FormatStyle::Printf).is_err());
+    assert_eq!(parsed.format(&[Arg::Int(42)], FormatStyle::Printf), "%s");
 }
 
 #[test]
 fn test_custom_fill_characters() {
     let parsed = FormatString::parse_core_fmt("{:*<5}").unwrap();
     assert_eq!(
-        parsed
-            .format(&[Arg::Int(42)], FormatStyle::CoreFmt)
-            .unwrap(),
+        parsed.format(&[Arg::Int(42)], FormatStyle::CoreFmt),
         format!("{:*<5}", 42)
     );
 
     let parsed = FormatString::parse_core_fmt("{:->10}").unwrap();
     assert_eq!(
-        parsed
-            .format(&[Arg::Str("foo".to_string())], FormatStyle::CoreFmt)
-            .unwrap(),
+        parsed.format(&[Arg::Str("foo".to_string())], FormatStyle::CoreFmt),
         format!("{:->10}", "foo")
     );
 
     let parsed = FormatString::parse_core_fmt("{:x>5}").unwrap();
     assert_eq!(
-        parsed
-            .format(&[Arg::Int(42)], FormatStyle::CoreFmt)
-            .unwrap(),
+        parsed.format(&[Arg::Int(42)], FormatStyle::CoreFmt),
         format!("{:x>5}", 42)
     );
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum TestError {
+    BadValue,
+}
+
+struct TestFormatter;
+
+impl FormatError for TestFormatter {
+    type Error = TestError;
+
+    fn format_error(&self, spec: &ConversionSpec, error: &TestError) -> String {
+        format!("<[{} ERROR: {:?}]>", spec.to_printf(), error)
+    }
+    fn format_missing(&self, spec: &ConversionSpec) -> String {
+        format!("<[{} MISSING]>", spec.to_printf())
+    }
+    fn format_type_error(&self, spec: &ConversionSpec, arg: &Arg) -> String {
+        format!("<[{} TYPE_ERROR: {:?}]>", spec.to_printf(), arg)
+    }
+}
+
+#[test]
+fn format_with_errors_renders_successful_conversions_normally() {
+    let parsed = FormatString::parse_printf("Value: %d, String: %s, Float: %f").unwrap();
+    let args = [
+        Ok(Arg::Int(42)),
+        Ok(Arg::Str("hello".to_string())),
+        Ok(Arg::Float(std::f64::consts::PI)),
+    ];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(result, "Value: 42, String: hello, Float: 3.141593");
+}
+
+#[test]
+fn format_with_errors_renders_domain_specific_errors_via_format_error() {
+    let parsed = FormatString::parse_printf("Value: %d, String: %s, Float: %f").unwrap();
+    let args = [
+        Ok(Arg::Int(42)),
+        Err(TestError::BadValue),
+        Ok(Arg::Float(std::f64::consts::PI)),
+    ];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(
+        result,
+        "Value: 42, String: <[%s ERROR: BadValue]>, Float: 3.141593"
+    );
+}
+
+#[test]
+fn format_with_errors_renders_type_mismatches_via_format_type_error() {
+    let parsed = FormatString::parse_printf("Value: %d, String: %s, Float: %f").unwrap();
+    let args = [
+        Ok(Arg::Int(42)),
+        Ok(Arg::Int(123)), // mismatch for %s
+        Ok(Arg::Float(std::f64::consts::PI)),
+    ];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(
+        result,
+        "Value: 42, String: <[%s TYPE_ERROR: Int(123)]>, Float: 3.141593"
+    );
+}
+
+#[test]
+fn format_with_errors_renders_missing_arguments_via_format_missing() {
+    let parsed = FormatString::parse_printf("Value: %d, String: %s, Float: %f").unwrap();
+    let args = [Ok(Arg::Int(42))];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(
+        result,
+        "Value: 42, String: <[%s MISSING]>, Float: <[%f MISSING]>"
+    );
+}
+
+#[test]
+fn conversion_spec_to_string_reconstructs_format_string_representation() {
+    let test_cases = [
+        "%d", "%+d", "%-d", "% d", "%#o", "%05d", "%+05d", "%*d", "%.2f", "%.*f", "%ld", "%lld",
+        "%hhd", "%hd", "%Lf", "%jd", "%zd", "%td", "%e", "%E", "%x", "%X", "%u", "%c", "%s", "%p",
+        "%+05.2ld", "%-10s", "%08x", "%#010X",
+    ];
+
+    for spec_str in test_cases {
+        let parsed = FormatString::parse_printf(spec_str).unwrap();
+        assert_eq!(parsed.fragments.len(), 1);
+        let FormatFragment::Conversion(spec) = &parsed.fragments[0] else {
+            panic!("Expected a conversion specifier for {spec_str}");
+        };
+        assert_eq!(spec.to_printf(), spec_str);
+    }
 }

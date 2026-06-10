@@ -233,6 +233,70 @@ pub struct ConversionSpec {
     pub style: Style,
 }
 
+impl ConversionSpec {
+    /// Reconstructs the conversion specifier back to its printf format string representation (e.g., `%+05.2ld`).
+    pub fn to_printf(&self) -> String {
+        let mut s = String::from("%");
+        if self.flags.contains(&Flag::LeftJustify) {
+            s.push('-');
+        }
+        if self.flags.contains(&Flag::ForceSign) {
+            s.push('+');
+        }
+        if self.flags.contains(&Flag::SpaceSign) {
+            s.push(' ');
+        }
+        if self.flags.contains(&Flag::AlternateSyntax) {
+            s.push('#');
+        }
+        if self.flags.contains(&Flag::LeadingZeros) {
+            s.push('0');
+        }
+
+        match self.min_field_width {
+            MinFieldWidth::None => {}
+            MinFieldWidth::Fixed(w) => s.push_str(&w.to_string()),
+            MinFieldWidth::Variable => s.push('*'),
+        }
+
+        match self.precision {
+            Precision::None => {}
+            Precision::Fixed(p) => s.push_str(&format!(".{p}")),
+            Precision::Variable => s.push_str(".*"),
+        }
+
+        if let Some(length) = self.length {
+            s.push_str(match length {
+                Length::Char => "hh",
+                Length::Short => "h",
+                Length::Long => "l",
+                Length::LongLong => "ll",
+                Length::LongDouble => "L",
+                Length::IntMax => "j",
+                Length::Size => "z",
+                Length::PointerDiff => "t",
+            });
+        }
+
+        let type_char = match (self.primitive, self.style) {
+            (Primitive::Integer, _) => 'd',
+            (Primitive::Unsigned, Style::Octal) => 'o',
+            (Primitive::Unsigned, Style::Hex) => 'x',
+            (Primitive::Unsigned, Style::UpperHex) => 'X',
+            (Primitive::Unsigned, _) => 'u',
+            (Primitive::Float, Style::Exponential) => 'e',
+            (Primitive::Float, Style::UpperExponential) => 'E',
+            (Primitive::Float, _) => 'f',
+            (Primitive::Character, _) => 'c',
+            (Primitive::String, _) => 's',
+            (Primitive::Pointer, _) => 'p',
+            (Primitive::Untyped, _) => 'v',
+        };
+        s.push(type_char);
+        s
+    }
+}
+
 /// A fragment of a printf format string.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatFragment {
@@ -288,8 +352,42 @@ pub enum FormatStyle {
     CoreFmt,
 }
 
+/// A trait for formatting conversion specifiers that failed, were skipped, or were missing.
+pub trait FormatError {
+    /// The domain-specific error type.
+    type Error;
+
+    /// Renders a conversion specifier that failed with a domain-specific error.
+    fn format_error(&self, spec: &ConversionSpec, error: &Self::Error) -> String;
+
+    /// Renders a conversion specifier that was missing from the supplied arguments.
+    fn format_missing(&self, spec: &ConversionSpec) -> String;
+
+    /// Renders a conversion specifier that decoded successfully but failed to format (type mismatch).
+    fn format_type_error(&self, spec: &ConversionSpec, arg: &Arg) -> String;
+}
+
+/// Formatter that retains the original conversion specifier when formatting fails,
+/// parameterizing over `std::convert::Infallible` (which has no error state).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DefaultFormatter;
+
+impl FormatError for DefaultFormatter {
+    type Error = std::convert::Infallible;
+
+    fn format_error(&self, spec: &ConversionSpec, _error: &std::convert::Infallible) -> String {
+        spec.to_printf()
+    }
+    fn format_missing(&self, spec: &ConversionSpec) -> String {
+        spec.to_printf()
+    }
+    fn format_type_error(&self, spec: &ConversionSpec, _arg: &Arg) -> String {
+        spec.to_printf()
+    }
+}
+
 /// A parsed format string.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FormatString {
     /// The [FormatFragment]s that comprise the [FormatString].
     pub fragments: Vec<FormatFragment>,
@@ -297,25 +395,76 @@ pub struct FormatString {
 
 impl FormatString {
     /// Formats a parsed format string with provided arguments.
-    pub fn format(&self, args: &[Arg], style: FormatStyle) -> Result<String, String> {
+    pub fn format(&self, args: &[Arg], style: FormatStyle) -> String {
+        let result_args: Vec<Result<Arg, std::convert::Infallible>> =
+            args.iter().map(|arg| Ok(arg.clone())).collect();
+
+        self.format_with_errors(&result_args, style, &DefaultFormatter)
+    }
+
+    /// Formats a parsed format string with the provided argument states (Result<Arg, FE::Error>),
+    /// delegating formatting of any failures, missing arguments, or type mismatches
+    /// to the provided `FormatError` implementation.
+    pub fn format_with_errors<FE: FormatError>(
+        &self,
+        args: &[Result<Arg, FE::Error>],
+        style: FormatStyle,
+        error_formatter: &FE,
+    ) -> String {
         let mut output = String::new();
-        let mut arg_idx = 0;
+        let mut args_iter = args.iter();
 
         for fragment in &self.fragments {
-            match fragment {
-                FormatFragment::Literal(s) => output.push_str(s),
-                FormatFragment::Conversion(spec) => {
-                    if arg_idx >= args.len() {
-                        return Err("Not enough arguments".to_string());
-                    }
-                    let arg = &args[arg_idx];
-                    arg_idx += 1;
-                    self.format_value(spec, arg, style, &mut output)?;
-                }
-            }
+            self.format_fragment(
+                fragment,
+                &mut args_iter,
+                style,
+                error_formatter,
+                &mut output,
+            );
         }
 
-        Ok(output)
+        output
+    }
+
+    fn format_fragment<'a, FE: FormatError>(
+        &self,
+        fragment: &FormatFragment,
+        args: &mut impl Iterator<Item = &'a Result<Arg, FE::Error>>,
+        style: FormatStyle,
+        error_formatter: &FE,
+        output: &mut String,
+    ) where
+        FE::Error: 'a,
+    {
+        let spec = match fragment {
+            FormatFragment::Conversion(spec) => spec,
+            FormatFragment::Literal(s) => {
+                output.push_str(s);
+                return;
+            }
+        };
+
+        let Some(decoded) = args.next() else {
+            output.push_str(&error_formatter.format_missing(spec));
+            return;
+        };
+
+        let arg = match decoded {
+            Ok(arg) => arg,
+            Err(err) => {
+                output.push_str(&error_formatter.format_error(spec, err));
+                return;
+            }
+        };
+
+        let mut formatted = String::new();
+        match self.format_value(spec, arg, style, &mut formatted) {
+            Ok(()) => output.push_str(&formatted),
+            Err(_) => {
+                output.push_str(&error_formatter.format_type_error(spec, arg));
+            }
+        }
     }
 
     /// Parses a printf style format string.

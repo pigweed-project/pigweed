@@ -17,7 +17,9 @@
 use std::cmp;
 use std::collections::HashMap;
 
-use pw_format::{Arg, FormatString, FormatStyle};
+use pw_format::{
+    Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Primitive,
+};
 use pw_status::Result;
 use pw_varint::VarintDecode;
 
@@ -30,37 +32,161 @@ const DEFAULT_DOMAIN: &str = "";
 // detokenization cycle to continue for too long.
 const MAX_DECODE_PASSES: usize = 4;
 
+/// The result of an attempt to detokenize a string.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DetokenizeAttempt {
+    /// Detokenization succeeded.
+    Success(DecodedFormatString),
+    /// Detokenization failed because the format string could not be parsed.
+    Failure {
+        /// The original unparsed format string.
+        format_string: String,
+        /// The number of bytes that remained unparsed/unprocessed.
+        remaining_bytes: usize,
+    },
+}
+
+impl DetokenizeAttempt {
+    /// Returns the number of bytes that remained after decoding.
+    pub fn remaining_bytes(&self) -> usize {
+        match self {
+            Self::Success(res) => res.remaining_bytes(),
+            Self::Failure {
+                remaining_bytes, ..
+            } => *remaining_bytes,
+        }
+    }
+
+    /// Returns the number of arguments that failed to decode.
+    pub fn decoding_errors(&self) -> usize {
+        match self {
+            Self::Success(res) => res.decoding_errors(),
+            Self::Failure { .. } => 1,
+        }
+    }
+
+    /// Returns the result of decoding and formatting.
+    pub fn result(&self) -> Result<String> {
+        match self {
+            Self::Success(res) => res.result(),
+            Self::Failure { .. } => Err(pw_status::Error::InvalidArgument),
+        }
+    }
+
+    /// Returns the decoded format string, with conversion specifiers kept for any arguments that failed to decode.
+    pub fn value(&self) -> String {
+        match self {
+            Self::Success(res) => res.value(),
+            Self::Failure { format_string, .. } => format_string.clone(),
+        }
+    }
+
+    /// Returns the decoded format string, with error messages for any arguments that failed to decode.
+    pub fn value_with_errors(&self) -> String {
+        match self {
+            Self::Success(res) => res.value_with_errors(),
+            Self::Failure { format_string, .. } => format_string.clone(),
+        }
+    }
+}
+
 /// A string that has been detokenized. This struct tracks all possible results
 /// if there are token collisions.
 pub struct DetokenizedString {
     /// The token that was decoded.
-    pub token: u32,
-    /// The best match formatted string, or empty if decoding failed.
-    pub best_string: String,
+    pub token: Option<u32>,
     /// All possible decoded formatting matches, sorted by likelihood/score.
-    pub matches: Vec<DecodedFormatString>,
+    pub matches: Vec<DetokenizeAttempt>,
     /// True if the message decoded successfully and unambiguously.
     pub is_ok: bool,
-    /// True if a token was present in the encoded data.
-    pub has_token: bool,
+}
+
+impl DetokenizedString {
+    /// Returns the best match formatted string, or empty if decoding failed.
+    pub fn best_string(&self) -> String {
+        self.matches.first().map(|m| m.value()).unwrap_or_default()
+    }
+
+    /// Returns the best match formatted string, with error messages for any arguments that failed to decode.
+    pub fn best_string_with_errors(&self) -> String {
+        if let Some(res) = self.matches.first() {
+            res.value_with_errors()
+        } else if let Some(token) = self.token {
+            format!("<[unknown token {:08x}]>", token)
+        } else {
+            "<[missing token]>".to_string()
+        }
+    }
 }
 
 /// A decoded format string, which may contain error messages if decoding failed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DecodedFormatString {
-    /// The result of decoding and formatting.
-    pub result: Result<String>,
+    /// The parsed format string.
+    pub fmt_str: FormatString,
+    /// The decoded arguments, including any decoding errors.
+    pub decoded_args: Vec<std::result::Result<Arg, TokenizerError>>,
+    /// The number of bytes that remained after decoding.
+    pub remaining_bytes: usize,
+}
+
+impl DecodedFormatString {
+    /// Returns the number of bytes that remained after decoding.
+    pub fn remaining_bytes(&self) -> usize {
+        self.remaining_bytes
+    }
+
+    /// Returns the number of arguments that failed to decode.
+    pub fn decoding_errors(&self) -> usize {
+        self.decoded_args.iter().filter(|a| a.is_err()).count()
+    }
+
+    /// Returns the decoded format string, with conversion specifiers kept for any arguments that failed to decode.
+    pub fn value(&self) -> String {
+        let args: Vec<Arg> = self
+            .decoded_args
+            .iter()
+            .filter_map(|d| match d {
+                Ok(arg) => Some(arg.clone()),
+                _ => None,
+            })
+            .collect();
+        self.fmt_str.format(&args, FormatStyle::Printf)
+    }
+
+    /// Returns the decoded format string, with error messages for any arguments that failed to decode.
+    pub fn value_with_errors(&self) -> String {
+        self.fmt_str.format_with_errors(
+            &self.decoded_args,
+            FormatStyle::Printf,
+            &TokenizerErrorFormatter,
+        )
+    }
+
+    /// Returns the result of decoding and formatting.
+    pub fn result(&self) -> Result<String> {
+        if self.decoding_errors() > 0 || self.remaining_bytes > 0 {
+            Err(pw_status::Error::InvalidArgument)
+        } else {
+            Ok(self.value())
+        }
+    }
+
+    /// Returns the number of conversion specifiers in the format string.
+    pub fn argument_count(&self) -> usize {
+        self.fmt_str
+            .fragments
+            .iter()
+            .filter(|f| matches!(f, FormatFragment::Conversion(_)))
+            .count()
+    }
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct MatchResult {
-    decoded_format_string: DecodedFormatString,
-    has_errors: bool,
-    remaining_bytes: usize,
-    decoding_errors: usize,
-    argument_count: usize,
+    decoded_format_string: DetokenizeAttempt,
     date_removed: String,
-    format_string: String,
 }
 
 fn compare_date_removed(lhs: &str, rhs: &str) -> std::cmp::Ordering {
@@ -75,20 +201,44 @@ fn compare_date_removed(lhs: &str, rhs: &str) -> std::cmp::Ordering {
 }
 
 impl MatchResult {
+    fn has_errors(&self) -> bool {
+        match &self.decoded_format_string {
+            DetokenizeAttempt::Success(res) => res.result().is_err(),
+            DetokenizeAttempt::Failure { .. } => true,
+        }
+    }
+
+    fn remaining_bytes(&self) -> usize {
+        self.decoded_format_string.remaining_bytes()
+    }
+
+    fn decoding_errors(&self) -> usize {
+        self.decoded_format_string.decoding_errors()
+    }
+
+    fn argument_count(&self) -> usize {
+        match &self.decoded_format_string {
+            DetokenizeAttempt::Success(res) => res.argument_count(),
+            DetokenizeAttempt::Failure { .. } => 0,
+        }
+    }
+
     // Determines if one result is better than the other if collisions occurred.
     // This logic should match the collision resolution logic in detokenize.py.
     fn cmp_priority(&self, other: &Self) -> std::cmp::Ordering {
         // Favor the result for which decoding succeeded.
-        if self.has_errors != other.has_errors {
-            if !self.has_errors {
+        let self_has_errors = self.has_errors();
+        let other_has_errors = other.has_errors();
+        if self_has_errors != other_has_errors {
+            if !self_has_errors {
                 return std::cmp::Ordering::Greater;
             }
             return std::cmp::Ordering::Less;
         }
 
         // Favor the result for which all bytes were decoded.
-        let self_all_bytes = self.remaining_bytes == 0;
-        let other_all_bytes = other.remaining_bytes == 0;
+        let self_all_bytes = self.remaining_bytes() == 0;
+        let other_all_bytes = other.remaining_bytes() == 0;
         if self_all_bytes != other_all_bytes {
             if self_all_bytes {
                 return std::cmp::Ordering::Greater;
@@ -97,16 +247,20 @@ impl MatchResult {
         }
 
         // Favor the result with fewer decoding errors.
-        if self.decoding_errors != other.decoding_errors {
-            if self.decoding_errors < other.decoding_errors {
+        let self_decoding_errors = self.decoding_errors();
+        let other_decoding_errors = other.decoding_errors();
+        if self_decoding_errors != other_decoding_errors {
+            if self_decoding_errors < other_decoding_errors {
                 return std::cmp::Ordering::Greater;
             }
             return std::cmp::Ordering::Less;
         }
 
         // Favor the result that successfully decoded the most arguments.
-        if self.argument_count != other.argument_count {
-            if self.argument_count > other.argument_count {
+        let self_argument_count = self.argument_count();
+        let other_argument_count = other.argument_count();
+        if self_argument_count != other_argument_count {
+            if self_argument_count > other_argument_count {
                 return std::cmp::Ordering::Greater;
             }
             return std::cmp::Ordering::Less;
@@ -135,6 +289,48 @@ pub struct TokenizedStringEntry {
     pub format_string: String,
     /// The date when this entry was removed, or empty if it is still active.
     pub date_removed: String,
+}
+
+/// Errors that can occur when decoding or formatting tokenized arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenizerError {
+    /// The argument could not be decoded successfully.
+    DecodeError,
+    /// The argument was missing from the encoded payload.
+    Missing,
+    /// The argument was skipped because a previous error occurred.
+    Skipped,
+}
+
+type DecodeResult = std::result::Result<Arg, TokenizerError>;
+/// Formatter for detokenizer formatting errors, producing `<[spec ERROR]>`, `<[spec MISSING]>`, or `<[spec SKIPPED]>`.
+pub struct TokenizerErrorFormatter;
+
+impl FormatError for TokenizerErrorFormatter {
+    type Error = TokenizerError;
+
+    fn format_error(&self, spec: &ConversionSpec, error: &TokenizerError) -> String {
+        let spec_str = spec.to_printf();
+        match error {
+            TokenizerError::DecodeError => format_placeholder(&spec_str, "ERROR"),
+            TokenizerError::Missing => format_placeholder(&spec_str, "MISSING"),
+            TokenizerError::Skipped => format_placeholder(&spec_str, "SKIPPED"),
+        }
+    }
+
+    fn format_missing(&self, spec: &ConversionSpec) -> String {
+        let spec_str = spec.to_printf();
+        format_placeholder(&spec_str, "MISSING")
+    }
+
+    fn format_type_error(&self, spec: &ConversionSpec, _arg: &Arg) -> String {
+        let spec_str = spec.to_printf();
+        format_placeholder(&spec_str, "ERROR")
+    }
+}
+
+fn format_placeholder(spec: &str, message: &str) -> String {
+    format!("<[{spec} {message}]>")
 }
 
 impl Detokenizer {
@@ -211,11 +407,9 @@ impl Detokenizer {
         // The token is missing from the encoded data; there is nothing to do.
         if encoded.is_empty() {
             return DetokenizedString {
-                token: 0,
-                best_string: String::new(),
+                token: None,
                 matches: Vec::new(),
                 is_ok: false,
-                has_token: false,
             };
         }
 
@@ -232,24 +426,11 @@ impl Detokenizer {
 
         let entries = self.database_lookup(token, domain);
         for entry in entries {
-            let Ok(fmt_str) = FormatString::parse_printf(&entry.format_string) else {
-                match_results.push(MatchResult {
-                    decoded_format_string: DecodedFormatString {
-                        result: Err(pw_status::Error::InvalidArgument),
-                    },
-                    has_errors: true,
-                    remaining_bytes: arguments.len(),
-                    decoding_errors: 1,
-                    argument_count: 0,
-                    date_removed: entry.date_removed.clone(),
-                    format_string: entry.format_string.clone(),
-                });
-                continue;
-            };
-
+            let fmt_str_res = FormatString::parse_printf(&entry.format_string)
+                .map_err(|_| pw_status::Error::InvalidArgument);
             let res = self.attempt_detokenize(
                 &entry.format_string,
-                &fmt_str,
+                fmt_str_res,
                 arguments,
                 &entry.date_removed,
             );
@@ -259,7 +440,7 @@ impl Detokenizer {
         // Sort the match results by priority (best first).
         match_results.sort_by(|a, b| b.cmp_priority(a));
 
-        let is_ok = if match_results.is_empty() || match_results[0].has_errors {
+        let is_ok = if match_results.is_empty() || match_results[0].has_errors() {
             false
         } else if match_results.len() == 1 {
             true
@@ -267,108 +448,89 @@ impl Detokenizer {
             match_results[0].is_better_than(&match_results[1])
         };
 
-        let mut best_string = String::new();
-        if let Some(res) = match_results.first() {
-            if let Ok(s) = &res.decoded_format_string.result {
-                best_string = s.clone();
-            } else {
-                best_string = res.format_string.clone();
-            }
-        }
-
-        let matches: Vec<DecodedFormatString> = match_results
+        let matches: Vec<DetokenizeAttempt> = match_results
             .into_iter()
             .map(|r| r.decoded_format_string)
             .collect();
 
         DetokenizedString {
-            token,
-            best_string,
+            token: Some(token),
             matches,
             is_ok,
-            has_token: true,
         }
     }
 
     fn attempt_detokenize(
         &self,
         entry_format_string: &str,
-        fmt_str: &FormatString,
+        fmt_str_res: Result<FormatString>,
         arguments: &[u8],
         date_removed: &str,
     ) -> MatchResult {
-        let mut args = Vec::new();
-        let mut cursor = 0;
-        let mut decoding_errors = 0;
-        let mut argument_count = 0;
-        let mut error = None;
+        let mut remaining = arguments;
+        let mut fatal_error = None;
+        let mut decoded_args = Vec::new();
 
-        for fragment in &fmt_str.fragments {
-            let pw_format::FormatFragment::Conversion(spec) = fragment else {
-                continue;
-            };
-            argument_count += 1;
-            if error.is_some() {
-                decoding_errors += 1;
-                continue;
-            }
-            if cursor >= arguments.len() {
-                error = Some(pw_status::Error::InvalidArgument);
-                decoding_errors += 1;
-                continue;
-            }
-            let decode_res = match spec.primitive {
-                pw_format::Primitive::Integer => decode_int_arg(&arguments[cursor..]),
-                pw_format::Primitive::Unsigned => decode_uint_arg(&arguments[cursor..]),
-                pw_format::Primitive::Character => decode_char_arg(&arguments[cursor..]),
-                pw_format::Primitive::Pointer => decode_ptr_arg(&arguments[cursor..]),
-                pw_format::Primitive::Float => decode_float_arg(&arguments[cursor..]),
-                pw_format::Primitive::String => decode_str_arg(&arguments[cursor..]),
-                _ => Err(pw_status::Error::Unimplemented),
-            };
-            match decode_res {
-                Ok((arg, len)) => {
-                    args.push(arg);
-                    cursor += len;
-                }
-                Err(e) => {
-                    error = Some(e);
-                    decoding_errors += 1;
-                }
-            }
-        }
+        if let Ok(fmt_str) = fmt_str_res {
+            let conversions: Vec<&ConversionSpec> = fmt_str
+                .fragments
+                .iter()
+                .filter_map(|fragment| match fragment {
+                    FormatFragment::Conversion(spec) => Some(spec),
+                    FormatFragment::Literal(_) => None,
+                })
+                .collect();
 
-        let format_result = if let Some(e) = error {
-            Err(e)
-        } else if cursor < arguments.len() {
-            Err(pw_status::Error::InvalidArgument)
+            for conversion in conversions {
+                let (next_remaining, decode_res) = match conversion.primitive {
+                    Primitive::Integer => decode_int_arg(remaining),
+                    Primitive::Unsigned => decode_uint_arg(remaining),
+                    Primitive::Character => decode_char_arg(remaining),
+                    Primitive::Pointer => decode_ptr_arg(remaining),
+                    Primitive::Float => decode_float_arg(remaining),
+                    Primitive::String => decode_str_arg(remaining),
+                    _ => (remaining, Err(TokenizerError::DecodeError)),
+                };
+                remaining = next_remaining;
+
+                if fatal_error.is_some() {
+                    decoded_args.push(Err(TokenizerError::Skipped));
+                    continue;
+                }
+
+                if decode_res.is_err() {
+                    fatal_error = Some(pw_status::Error::InvalidArgument);
+                }
+
+                decoded_args.push(decode_res);
+            }
+
+            let remaining_bytes = remaining.len();
+
+            MatchResult {
+                decoded_format_string: DetokenizeAttempt::Success(DecodedFormatString {
+                    fmt_str,
+                    decoded_args,
+                    remaining_bytes,
+                }),
+                date_removed: date_removed.to_string(),
+            }
         } else {
-            fmt_str
-                .format(&args, FormatStyle::Printf)
-                .map_err(|_| pw_status::Error::InvalidArgument)
-        };
-
-        let has_errors = format_result.is_err();
-        let remaining_bytes = arguments.len().saturating_sub(cursor);
-
-        MatchResult {
-            decoded_format_string: DecodedFormatString {
-                result: format_result,
-            },
-            has_errors,
-            remaining_bytes,
-            decoding_errors,
-            argument_count,
-            date_removed: date_removed.to_string(),
-            format_string: entry_format_string.to_string(),
+            MatchResult {
+                decoded_format_string: DetokenizeAttempt::Failure {
+                    format_string: entry_format_string.to_string(),
+                    remaining_bytes: arguments.len(),
+                },
+                date_removed: date_removed.to_string(),
+            }
         }
     }
 
     /// Detokenizes a parsed format string with arguments.
     pub fn detokenize_parsed(&self, fmt_str: &FormatString, arguments: &[u8]) -> Result<String> {
-        self.attempt_detokenize("", fmt_str, arguments, "")
+        self.attempt_detokenize("", Ok(fmt_str.clone()), arguments, "")
             .decoded_format_string
-            .result
+            .result()
     }
 
     /// Decodes and detokenizes nested tokenized messages in a string.
@@ -387,57 +549,78 @@ impl Detokenizer {
     }
 }
 
-fn decode_int_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    let (len, val) =
-        i64::varint_decode(arguments).map_err(|_| pw_status::Error::InvalidArgument)?;
-    Ok((Arg::Int(val), len))
-}
-
-fn decode_uint_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    let (len, val) =
-        i64::varint_decode(arguments).map_err(|_| pw_status::Error::InvalidArgument)?;
-    Ok((Arg::Uint(val as u64), len))
-}
-
-fn decode_char_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    let (len, val) =
-        i64::varint_decode(arguments).map_err(|_| pw_status::Error::InvalidArgument)?;
-    let ch = char::from_u32(val as u32).unwrap_or(' ');
-    Ok((Arg::Char(ch), len))
-}
-
-fn decode_ptr_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    let (len, val) =
-        i64::varint_decode(arguments).map_err(|_| pw_status::Error::InvalidArgument)?;
-    Ok((Arg::Ptr(val as usize), len))
-}
-
-fn decode_float_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    if arguments.len() < 4 {
-        return Err(pw_status::Error::InvalidArgument);
+fn decode_varint_arg(input: &[u8]) -> (&[u8], std::result::Result<i64, TokenizerError>) {
+    if input.is_empty() {
+        return (input, Err(TokenizerError::Missing));
     }
-    let bytes = arguments[..4]
-        .try_into()
-        .map_err(|_| pw_status::Error::InvalidArgument)?;
-    let val = f32::from_le_bytes(bytes);
-    Ok((Arg::Float(val as f64), 4))
+    match i64::varint_decode(input) {
+        Ok((len, val)) => (&input[len..], Ok(val)),
+        Err(_) => {
+            let consumed = std::cmp::min(10, input.len());
+            (&input[consumed..], Err(TokenizerError::DecodeError))
+        }
+    }
 }
 
-fn decode_str_arg(arguments: &[u8]) -> Result<(Arg, usize)> {
-    if arguments.is_empty() {
-        return Err(pw_status::Error::InvalidArgument);
+fn decode_int_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    let (remaining, res) = decode_varint_arg(input);
+    (remaining, res.map(Arg::Int))
+}
+
+fn decode_uint_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    let (remaining, res) = decode_varint_arg(input);
+    (remaining, res.map(|val| Arg::Uint(val as u64)))
+}
+
+fn decode_char_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    let (remaining, res) = decode_varint_arg(input);
+    let char_res =
+        res.and_then(|val| char::from_u32(val as u32).ok_or(TokenizerError::DecodeError));
+    (remaining, char_res.map(Arg::Char))
+}
+
+fn decode_ptr_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    let (remaining, res) = decode_varint_arg(input);
+    (remaining, res.map(|val| Arg::Ptr(val as usize)))
+}
+
+fn decode_float_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    if input.is_empty() {
+        return (input, Err(TokenizerError::Missing));
     }
-    let len_byte = arguments[0];
+    let Some((float_data, rest)) = input.split_at_checked(4) else {
+        return (&[], Err(TokenizerError::DecodeError));
+    };
+
+    match float_data.try_into() {
+        Ok(bytes) => {
+            let val = f32::from_le_bytes(bytes);
+            (rest, Ok(Arg::Float(val as f64)))
+        }
+        Err(_) => (rest, Err(TokenizerError::DecodeError)),
+    }
+}
+
+fn decode_str_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+    if input.is_empty() {
+        return (input, Err(TokenizerError::Missing));
+    }
+    let len_byte = input[0];
     let truncated = (len_byte & 0x80) != 0;
     let len = (len_byte & 0x7f) as usize;
-    if arguments.len() < 1 + len {
-        return Err(pw_status::Error::InvalidArgument);
+    let Some((string_data, rest)) = input.split_at_checked(1 + len) else {
+        return (&[], Err(TokenizerError::DecodeError));
+    };
+    match std::str::from_utf8(&string_data[1..]) {
+        Ok(s) => {
+            let mut decoded = s.to_string();
+            if truncated {
+                decoded.push_str("[...]");
+            }
+            (rest, Ok(Arg::Str(decoded)))
+        }
+        Err(_) => (rest, Err(TokenizerError::DecodeError)),
     }
-    let mut s = String::from_utf8_lossy(&arguments[1..1 + len]).to_string();
-    if truncated {
-        s.push_str("[...]");
-    }
-    Ok((Arg::Str(s), 1 + len))
 }
 
 #[allow(dead_code)]
@@ -731,8 +914,8 @@ impl<'a> NestedMessageDetokenizer<'a> {
 
         if let Some(entry) = matching_entry
             && let Ok(fmt_str) = FormatString::parse_printf(&entry.format_string)
-            && let Ok(replacement) = fmt_str.format(&[], FormatStyle::Printf)
         {
+            let replacement = fmt_str.format(&[], FormatStyle::Printf);
             self.output
                 .replace_range(self.message_start..self.output.len(), &replacement);
         }
@@ -747,7 +930,7 @@ impl<'a> NestedMessageDetokenizer<'a> {
             .detokenize_with_domain(bytes, &self.domain());
         if result.is_ok || (result.matches.len() == 1 && bytes.len() == 4) {
             self.output
-                .replace_range(self.message_start..self.output.len(), &result.best_string);
+                .replace_range(self.message_start..self.output.len(), &result.best_string());
         }
         self.reset_message();
     }
@@ -855,10 +1038,10 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let encoded = 1u32.to_le_bytes();
         let result = detok.detokenize_with_domain(&encoded, "domain1");
-        assert_eq!(result.best_string, "Hello");
+        assert_eq!(result.best_string(), "Hello");
 
         let result = detok.detokenize_with_domain(&encoded, "domain2");
-        assert_eq!(result.best_string, "World");
+        assert_eq!(result.best_string(), "World");
     }
 
     #[test]
@@ -874,7 +1057,8 @@ mod tests {
     fn test_detokenize_best_string_missing_token_is_empty() {
         let detok = Detokenizer::from_csv("").unwrap();
         let result = detok.detokenize(&[]);
-        assert_eq!(result.best_string, "");
+        assert_eq!(result.best_string(), "");
+        assert_eq!(result.token, None);
     }
 
     #[test]
@@ -882,7 +1066,8 @@ mod tests {
         let detok = Detokenizer::from_csv("").unwrap();
         let encoded = 1u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
-        assert_eq!(result.best_string, "");
+        assert_eq!(result.best_string(), "");
+        assert_eq!(result.token, Some(1));
     }
 
     #[test]
@@ -890,7 +1075,7 @@ mod tests {
         let csv = "00000042,,,Hello World\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
         let result = detok.detokenize(&[0x42, 0x00]);
-        assert_eq!(result.best_string, "Hello World");
+        assert_eq!(result.best_string(), "Hello World");
     }
 
     #[test]
@@ -909,7 +1094,7 @@ mod tests {
         encoded.push(84); // Varint encoded 42
         let result = detok.detokenize(&encoded);
         assert_eq!(result.matches.len(), 1);
-        assert_eq!(result.best_string, "Hello 42");
+        assert_eq!(result.best_string(), "Hello 42");
     }
 
     #[test]
@@ -918,7 +1103,7 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let encoded = 1u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
-        assert_eq!(result.best_string, "");
+        assert_eq!(result.best_string(), "");
     }
 
     #[test]
@@ -930,7 +1115,7 @@ mod tests {
         encoded.push(84); // Varint encoded 42
         let result = detok.detokenize(&encoded);
         assert!(result.is_ok);
-        assert_eq!(result.best_string, "crocodile 42");
+        assert_eq!(result.best_string(), "crocodile 42");
     }
 
     #[test]
@@ -942,7 +1127,7 @@ mod tests {
         encoded.push(84); // Varint encoded 42
         let result = detok.detokenize(&encoded);
         assert!(!result.is_ok);
-        assert_eq!(result.best_string, "crocodile 42");
+        assert_eq!(result.best_string(), "crocodile 42");
     }
 
     #[test]
@@ -953,7 +1138,7 @@ mod tests {
         let encoded = 1u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
         assert!(result.is_ok);
-        assert_eq!(result.best_string, "alligator");
+        assert_eq!(result.best_string(), "alligator");
     }
 
     #[test]
@@ -964,7 +1149,7 @@ mod tests {
         let encoded = 1u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
         assert!(result.is_ok);
-        assert_eq!(result.best_string, "alligator");
+        assert_eq!(result.best_string(), "alligator");
     }
 
     #[test]
@@ -977,7 +1162,7 @@ mod tests {
         encoded.push(84); // Varint encoded 42
         let result = detok.detokenize(&encoded);
         assert!(result.is_ok);
-        assert_eq!(result.best_string, "crocodile 42 42");
+        assert_eq!(result.best_string(), "crocodile 42 42");
     }
 
     #[test]
@@ -986,7 +1171,7 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let encoded = 0x12345678u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
-        assert_eq!(result.best_string, "Hello World");
+        assert_eq!(result.best_string(), "Hello World");
     }
 
     #[test]
@@ -1013,7 +1198,7 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let encoded = 0x12345678u32.to_le_bytes();
         let result = detok.detokenize(&encoded);
-        assert_eq!(result.best_string, "crocodile!");
+        assert_eq!(result.best_string(), "crocodile!");
     }
 
     #[test]
@@ -1038,9 +1223,9 @@ mod tests {
         encoded.push(84);
         let result = detok.detokenize(&encoded);
         assert!(!result.is_ok);
-        assert_eq!(result.best_string, "Hello");
+        assert_eq!(result.best_string(), "Hello");
         assert_eq!(
-            result.matches[0].result,
+            result.matches[0].result(),
             Err(pw_status::Error::InvalidArgument)
         );
     }
@@ -1066,5 +1251,119 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let result = detok.detokenize_text("This is a $#00000004");
         assert_eq!(result, "This is a deeply nested argument.");
+    }
+
+    #[test]
+    fn test_detokenize_decoding_errors() {
+        //
+        // The following test cases were adapted from the C++ tests.
+        //
+
+        // The %d %s has token 1
+        let csv = "00000001,,,The %d %s\n";
+        let detok = Detokenizer::from_csv(csv).unwrap();
+
+        // WrongStringLength_IsErrorAndConsumesRestOfString
+        // encoded = 1 (token) + \x06 (varint 3) + \x0a (string len 10) + musketeer (len 9)
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.push(0x06);
+        encoded.push(0x0a);
+        encoded.extend_from_slice(b"musketeer");
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string(), "The 3 %s");
+        assert_eq!(result.best_string_with_errors(), "The 3 <[%s ERROR]>");
+        assert_eq!(result.matches[0].remaining_bytes(), 0);
+        assert_eq!(result.matches[0].decoding_errors(), 1);
+
+        // UnterminatedVarint_IsError
+        // encoded = 1 (token) + \x80 (unterminated varint)
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.push(0x80);
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string(), "The %d %s");
+        assert_eq!(
+            result.best_string_with_errors(),
+            "The <[%d ERROR]> <[%s SKIPPED]>"
+        );
+        assert_eq!(result.matches[0].remaining_bytes(), 0);
+        assert_eq!(result.matches[0].decoding_errors(), 2);
+
+        // UnterminatedVarint_ConsumesUpToMaxVarintSize
+        // encoded = 1 (token) + 12 bytes of \x80
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.extend_from_slice(&[0x80; 12]);
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string(), "The %d %s");
+        assert_eq!(
+            result.best_string_with_errors(),
+            "The <[%d ERROR]> <[%s SKIPPED]>"
+        );
+        assert_eq!(result.matches[0].remaining_bytes(), 1); // 12 - 10 - 1 = 1
+        assert_eq!(result.matches[0].decoding_errors(), 2);
+
+        // MissingArguments_IsDecodeError
+        // encoded = 1 (token)
+        let encoded = 1u32.to_le_bytes();
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string(), "The %d %s");
+        assert_eq!(
+            result.best_string_with_errors(),
+            "The <[%d MISSING]> <[%s SKIPPED]>"
+        );
+        assert_eq!(result.matches[0].remaining_bytes(), 0);
+        assert_eq!(result.matches[0].decoding_errors(), 2);
+
+        //
+        // The following test cases were adapted from the C++ tests.
+        //
+
+        // Case 1: %c with value -1
+        let csv = "00000001,,,\"Why, %c\"\n";
+        let detok = Detokenizer::from_csv(csv).unwrap();
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.push(0x01); // Zig-zag varint encoded -1 is 1 (0x01)
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string_with_errors(), "Why, <[%c ERROR]>");
+
+        // Case 2: %sXY%+ldxy%u with b'\x83N\x80!\x01\x02'
+        let csv2 = "00000002,,,%sXY%+ldxy%u\n";
+        let detok2 = Detokenizer::from_csv(csv2).unwrap();
+        let mut encoded2 = 2u32.to_le_bytes().to_vec();
+        encoded2.extend_from_slice(&[0x83, b'N', 0x80, b'!', 0x01, 0x02]);
+        let result2 = detok2.detokenize(&encoded2);
+        assert_eq!(
+            result2.best_string_with_errors(),
+            "<[%s ERROR]>XY<[%+ld SKIPPED]>xy<[%u SKIPPED]>"
+        );
+
+        // Case 3: %s%lld%9u with b'\x82$\x80\x80'
+        let csv3 = "00000003,,,%s%lld%9u\n";
+        let detok3 = Detokenizer::from_csv(csv3).unwrap();
+        let mut encoded3 = 3u32.to_le_bytes().to_vec();
+        encoded3.extend_from_slice(&[0x82, b'$', 0x80, 0x80]);
+        let result3 = detok3.detokenize(&encoded3);
+        assert_eq!(
+            result3.best_string_with_errors(),
+            "<[%s ERROR]><[%lld SKIPPED]><[%9u SKIPPED]>"
+        );
+
+        // Case 4: %c with b'\xff\xff\xff\xff\x0f'
+        let csv4 = "00000004,,,%c\n";
+        let detok4 = Detokenizer::from_csv(csv4).unwrap();
+        let mut encoded4 = 4u32.to_le_bytes().to_vec();
+        encoded4.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x0f]);
+        let result4 = detok4.detokenize(&encoded4);
+        assert_eq!(result4.best_string_with_errors(), "<[%c ERROR]>");
+
+        // Case 5: %p%d%d with b'\x02\x80'
+        let csv5 = "00000005,,,%p%d%d\n";
+        let detok5 = Detokenizer::from_csv(csv5).unwrap();
+        let mut encoded5 = 5u32.to_le_bytes().to_vec();
+        encoded5.extend_from_slice(&[0x02, 0x80]);
+        let result5 = detok5.detokenize(&encoded5);
+        assert_eq!(
+            result5.best_string_with_errors(),
+            "0x1<[%d ERROR]><[%d SKIPPED]>"
+        );
     }
 }

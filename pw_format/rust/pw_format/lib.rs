@@ -79,8 +79,8 @@ mod parser_util;
 mod printf;
 
 pub use format_string::{
-    Alignment, Arg, Argument, ConversionSpec, Flag, FormatFragment, FormatString, FormatStyle,
-    Length, MinFieldWidth, Precision, Primitive, Style,
+    Alignment, Arg, Argument, ConversionSpec, Flag, FormatError, FormatFragment, FormatString,
+    FormatStyle, Length, MinFieldWidth, Precision, Primitive, Style,
 };
 
 #[cfg(test)]

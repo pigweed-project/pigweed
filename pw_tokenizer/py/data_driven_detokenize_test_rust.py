@@ -76,7 +76,7 @@ def _generate_rust_detokenize_test(
         assertions = "assert!(!res.is_ok);"
     else:
         assertions = f"""assert!(res.is_ok);
-        assert_eq!(res.best_string, {rust_string(expected)});"""
+        assert_eq!(res.best_string(), {rust_string(expected)});"""
     yield f"""\
     #[test]
     fn {ctx.py_name()}() {{
