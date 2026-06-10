@@ -515,6 +515,42 @@ TEST_F(IsoStreamServerTest, DestructorClosesHostStream) {
   EXPECT_FALSE(fake_iso_stream()->is_established());
 }
 
+TEST_F(IsoStreamServerTest, NoDoubleCloseOnDestruction) {
+  // Set up a custom stream and server to track Close() calls and immediately
+  // delete the server upon closure
+  class CloseCounterStream final : public bt::iso::testing::FakeIsoStream {
+   public:
+    using FakeIsoStream::FakeIsoStream;
+
+    void Close() override {
+      close_calls_++;
+      FakeIsoStream::Close();
+    }
+
+    int close_calls() const { return close_calls_; }
+
+   private:
+    int close_calls_ = 0;
+  };
+
+  auto close_counter_stream = std::make_unique<CloseCounterStream>();
+  fidl::InterfaceHandle<fuchsia::bluetooth::le::IsochronousStream> handle;
+  std::unique_ptr<IsoStreamServer> test_server;
+  fuchsia::bluetooth::le::IsochronousStreamPtr test_client;
+  test_server = std::make_unique<IsoStreamServer>(
+      handle.NewRequest(), [&]() { test_server = nullptr; });
+  test_client.Bind(std::move(handle), dispatcher());
+
+  test_server->OnStreamEstablished(close_counter_stream->GetWeakPtr(),
+                                   kCisParameters);
+  RunLoopUntilIdle();
+
+  // Disconnect the client proxy and verify the stream was closed exactly once
+  test_client = nullptr;
+  RunLoopUntilIdle();
+  EXPECT_EQ(close_counter_stream->close_calls(), 1);
+}
+
 TEST_F(IsoStreamServerTest, EstablishmentCallbackCalledOnSuccess) {
   std::optional<pw::bluetooth::emboss::StatusCode> establishment_status;
   server()->set_establishment_callback(

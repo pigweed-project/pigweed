@@ -254,6 +254,7 @@ void IsoStreamServer::Read(ReadCallback callback) {
 void IsoStreamServer::OnClosed() {
   if (iso_stream_.has_value() && iso_stream_->is_alive()) {
     (*iso_stream_)->Close();
+    iso_stream_.reset();
   }
   // This may free our instance.
   if (on_closed_cb_) {
