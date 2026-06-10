@@ -706,6 +706,11 @@ inline constexpr size_t kMaxSynchronousDataPacketPayloadSize = 255;
 // See Core Spec v5.4, Vol 4, Part E, Section 5.4.5
 inline constexpr size_t kMaxIsochronousDataPacketPayloadSize = 16384;
 
+// The minimum number of bytes in an Isochronous data packet payload, to
+// accommodate the mandatory SDU header size.
+// See Core Spec v6.3, Vol 4, Part E, Section 5.4.5
+inline constexpr size_t kMinIsoDataPacketLength = 4;
+
 // Values that can be used in HCI Read|WriteFlowControlMode commands.
 enum class FlowControlMode : uint8_t {
   // Packet based data flow control mode (default for a Primary Controller)

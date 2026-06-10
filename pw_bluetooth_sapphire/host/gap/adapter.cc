@@ -1323,7 +1323,7 @@ void AdapterImpl::InitializeStep2() {
           }
           uint16_t iso_mtu = params.iso_data_packet_length().Read();
           uint8_t iso_max_count = params.total_num_iso_data_packets().Read();
-          if (iso_mtu && iso_max_count) {
+          if (iso_mtu >= hci_spec::kMinIsoDataPacketLength && iso_max_count) {
             state_.low_energy_state.iso_data_buffer_info_ =
                 hci::DataBufferInfo(iso_mtu, iso_max_count);
           }

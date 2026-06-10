@@ -1883,6 +1883,24 @@ TEST_F(AdapterTest, IsoDataChannelNotInitializedNoBufferData) {
   EXPECT_FALSE(transport()->iso_data_channel());
 }
 
+TEST_F(AdapterTest, IsoDataChannelNotInitializedUndersizedBuffer) {
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  settings.le_features |= static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral);
+  settings.iso_data_packet_length = hci_spec::kMinIsoDataPacketLength - 1;
+  settings.total_num_iso_data_packets = 1;
+  test_device()->set_settings(settings);
+
+  bool success = false;
+  auto init_cb = [&](bool cb_success) { success = cb_success; };
+  InitializeAdapter(std::move(init_cb));
+  EXPECT_TRUE(success);
+  EXPECT_FALSE(transport()->iso_data_channel());
+  EXPECT_FALSE(
+      adapter()->state().low_energy_state.iso_data_buffer_info().IsAvailable());
+}
+
 TEST_F(AdapterScoAndIsoDisabledTest, IsoDataChannelNoControllerSupport) {
   FakeController::Settings settings;
   settings.ApplyDualModeDefaults();

@@ -228,9 +228,14 @@ void IsoDataChannelImpl::TrySendPackets() {
     }
     packet_sent_this_iteration = true;
 
-    PW_CHECK(
-        (packet->size() - kFrameHeaderSize) <= buffer_info_.max_data_length(),
-        "Unfragmented packet received, cannot send.");
+    if ((packet->size() - kFrameHeaderSize) > buffer_info_.max_data_length()) {
+      bt_log(ERROR,
+             "hci",
+             "Dropping oversized ISO packet (size: %zu, max: %zu)",
+             packet->size() - kFrameHeaderSize,
+             buffer_info_.max_data_length());
+      continue;
+    }
     hci_->SendIsoData(packet->view().subspan());
 
     --available_buffers_;

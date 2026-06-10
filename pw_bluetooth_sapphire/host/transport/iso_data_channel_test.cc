@@ -444,8 +444,7 @@ TEST_F(IsoDataChannelTests, OversizedPackets) {
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
-    EXPECT_DEATH_IF_SUPPORTED(connection.SendData(std::move(packet)),
-                              "Unfragmented packet");
+    connection.SendData(std::move(packet));
   }
 
   {
@@ -462,8 +461,7 @@ TEST_F(IsoDataChannelTests, OversizedPackets) {
         /*status_flag = */
         pw::bluetooth::emboss::IsoDataPacketStatus::VALID_DATA,
         sdu);
-    EXPECT_DEATH_IF_SUPPORTED(connection.SendData(std::move(packet)),
-                              "Unfragmented packet");
+    connection.SendData(std::move(packet));
   }
 
   {
@@ -478,8 +476,7 @@ TEST_F(IsoDataChannelTests, OversizedPackets) {
         /*iso_sdu_length=*/std::nullopt,
         /*status_flag = */ std::nullopt,
         sdu);
-    EXPECT_DEATH_IF_SUPPORTED(connection.SendData(std::move(packet)),
-                              "Unfragmented packet");
+    connection.SendData(std::move(packet));
   }
 
   RunUntilIdle();
@@ -734,6 +731,26 @@ TEST_F(IsoDataChannelTests, NocpExceedsPendingPacketCount) {
       testing::NumberOfCompletedPacketsPacket(kIsoHandle1, 1));
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
+}
+
+// Test fixture that does not initialize the transport with the default ISO
+// buffer.
+class UninitializedIsoDataChannelTest : public TestBase {
+ public:
+  void SetUp() override {
+    TestBase::SetUp(pw::bluetooth::Controller::FeaturesBits::kHciIso);
+  }
+
+  IsoDataChannel* iso_data_channel() { return transport()->iso_data_channel(); }
+};
+
+TEST_F(UninitializedIsoDataChannelTest,
+       RejectUndersizedMaxDataLengthDuringInitialization) {
+  // Verify that transport initialization fails if max_data_length is too small
+  // to hold the minimum required SDU header size
+  DataBufferInfo invalid_buffer_info(hci_spec::kMinIsoDataPacketLength - 1,
+                                     kDefaultMaxNumPackets);
+  EXPECT_FALSE(transport()->InitializeIsoDataChannel(invalid_buffer_info));
 }
 
 }  // namespace bt::hci

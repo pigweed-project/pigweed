@@ -124,7 +124,10 @@ bool Transport::InitializeScoDataChannel(const DataBufferInfo& buffer_info) {
 }
 
 bool Transport::InitializeIsoDataChannel(const DataBufferInfo& buffer_info) {
-  PW_CHECK(buffer_info.IsAvailable());
+  if (!buffer_info.IsAvailable() ||
+      buffer_info.max_data_length() < hci_spec::kMinIsoDataPacketLength) {
+    return false;
+  }
 
   iso_data_channel_ = IsoDataChannel::Create(buffer_info,
                                              command_channel_.get(),
