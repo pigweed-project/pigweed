@@ -115,6 +115,15 @@ void IsoDataChannelImpl::OnRxPacket(pw::span<const std::byte> buffer) {
   const uint8_t* data = reinterpret_cast<const uint8_t*>(buffer.data());
   auto header_view =
       pw::bluetooth::emboss::MakeIsoDataFrameHeaderView(data, buffer.size());
+  if (!header_view.Ok()) {
+    bt_log(ERROR,
+           "hci",
+           "malformed ISO header (invalid fields or size - expected at least "
+           "%zu bytes, got %zu)",
+           kFrameHeaderSize,
+           buffer.size());
+    return;
+  }
 
   hci_spec::ConnectionHandle handle = header_view.connection_handle().Read();
   if (connections_.count(handle) == 0) {

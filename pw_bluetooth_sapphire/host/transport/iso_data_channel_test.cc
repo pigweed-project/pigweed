@@ -206,6 +206,20 @@ TEST_F(IsoDataChannelTests, DataDemuxification) {
   }
 }
 
+TEST_F(IsoDataChannelTests, ShortRxPacket) {
+  ASSERT_NE(iso_data_channel(), nullptr);
+  constexpr hci_spec::ConnectionHandle kIsoHandle = 0x123;
+  IsoMockConnectionInterface connection(*iso_data_channel(), lease_provider());
+  iso_data_channel()->RegisterConnection(kIsoHandle, connection.GetWeakPtr());
+
+  // Send an undersized packet and verify that it gets dropped.
+  std::vector<uint8_t> short_packet = {0x01};
+  test_device()->SendIsoDataChannelPacket(
+      pw::span(reinterpret_cast<const std::byte*>(short_packet.data()),
+               short_packet.size()));
+  EXPECT_EQ(connection.received_packets()->size(), 0u);
+}
+
 TEST_F(IsoDataChannelTests, SendData) {
   ASSERT_NE(iso_data_channel(), nullptr);
   constexpr hci_spec::ConnectionHandle kIsoHandle1 = 0x123;
