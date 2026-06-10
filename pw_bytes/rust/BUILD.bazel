@@ -20,14 +20,14 @@ rust_library(
     srcs = [
         "pw_bytes.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
 )
 
 rust_test(
     name = "pw_bytes_test",
     crate = ":pw_bytes",
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )

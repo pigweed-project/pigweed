@@ -17,7 +17,7 @@ load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 rust_binary(
     name = "run_scripts",
     srcs = ["run_scripts.rs"],
-    edition = "2018",
+    edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )

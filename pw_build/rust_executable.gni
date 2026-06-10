@@ -35,7 +35,7 @@ template("pw_rust_executable") {
   pw_internal_build_target(target_name) {
     forward_variables_from(invoker, "*")
 
-    _edition = "2024"
+    _edition = "2021"
     if (defined(invoker.edition)) {
       _edition = invoker.edition
     }

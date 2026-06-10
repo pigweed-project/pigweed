@@ -29,7 +29,7 @@ rust_library(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     deps = [
         "//pw_status/rust:pw_status",
         "//pw_stream/rust:pw_stream",
@@ -43,7 +43,7 @@ rust_test(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )

@@ -24,7 +24,7 @@ rust_library(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
         ":pw_log_backend",
@@ -59,7 +59,7 @@ rust_library(
     srcs = [
         "pw_log_backend_api.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
 )
 
@@ -69,7 +69,7 @@ rust_library(
         "pw_log_backend_println.rs",
     ],
     crate_name = "pw_log_backend",
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = [":pw_log_backend_println_macro"],
     # TODO: b/343467774 - provide no_std backend by default
     tags = ["manual"],
@@ -84,7 +84,7 @@ rust_proc_macro(
     srcs = [
         "pw_log_backend_println_macro.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
         ":pw_log_backend_api",
@@ -107,7 +107,7 @@ rust_library(
         "pw_log_backend_printf/varargs.rs",
     ],
     crate_name = "pw_log_backend",
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = [":pw_log_backend_printf_macro"],
     # TODO: b/343467774 - provide no_std backend by default
     target_compatible_with = incompatible_with_mcu(),
@@ -126,7 +126,7 @@ rust_library(
         "pw_log_backend_printf/varargs.rs",
     ],
     crate_name = "pw_log_backend_printf",
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = [":pw_log_backend_printf_macro"],
     # TODO: b/343467774 - provide no_std backend by default
     target_compatible_with = incompatible_with_mcu(),
@@ -143,7 +143,7 @@ rust_library(
 rust_test(
     name = "pw_log_backend_printf_test",
     crate = ":pw_log_backend_printf_docs",
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -159,7 +159,7 @@ rust_proc_macro(
     srcs = [
         "pw_log_backend_printf_macro.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
         ":pw_log_backend_api",
@@ -177,7 +177,7 @@ rust_library(
         "backend_tests.rs",
         "printf_backend_test.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
         ":pw_log_backend_api",
@@ -190,7 +190,7 @@ rust_library(
 rust_test(
     name = "printf_backend_test_test",
     crate = ":printf_backend_test",
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -201,7 +201,7 @@ rust_library(
         "backend_tests.rs",
         "println_backend_test.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     target_compatible_with = select({
         # This test needs unstable features.
         "@rules_rust//rust/toolchain/channel:nightly": [],
@@ -217,7 +217,7 @@ rust_library(
 rust_test(
     name = "println_backend_test_test",
     crate = ":println_backend_test",
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )

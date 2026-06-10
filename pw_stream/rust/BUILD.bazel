@@ -25,7 +25,7 @@ rust_library(
         "//pw_build/constraints/rust:no_std": ["no_std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = ["@rust_crates//:paste"],
     visibility = ["//visibility:public"],
     deps = [
@@ -41,7 +41,7 @@ rust_test(
         "//pw_build/constraints/rust:no_std": ["no_std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )

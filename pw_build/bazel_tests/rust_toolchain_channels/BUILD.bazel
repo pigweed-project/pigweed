@@ -23,7 +23,7 @@ rust_proc_macro(
         "@rules_rust//rust/toolchain/channel:nightly": ["nightly"],
         "//conditions:default": [],
     }),
-    edition = "2024",
+    edition = "2021",
     deps = [
         "@rust_crates//:quote",
     ],
@@ -34,7 +34,7 @@ rust_test(
     srcs = [
         "nightly_toolchain.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = [
         ":nightly_proc_macro",
     ],

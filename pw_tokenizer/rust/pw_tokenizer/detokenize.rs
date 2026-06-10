@@ -905,19 +905,19 @@ impl<'a> NestedMessageDetokenizer<'a> {
             matching_entry = Some(&entries[0]);
         } else if entries.len() > 1 {
             let mut active_entries = entries.iter().filter(|e| e.date_removed.is_empty());
-            if let Some(first) = active_entries.next()
-                && active_entries.next().is_none()
-            {
-                matching_entry = Some(first);
+            if let Some(first) = active_entries.next() {
+                if active_entries.next().is_none() {
+                    matching_entry = Some(first);
+                }
             }
         }
 
-        if let Some(entry) = matching_entry
-            && let Ok(fmt_str) = FormatString::parse_printf(&entry.format_string)
-        {
-            let replacement = fmt_str.format(&[], FormatStyle::Printf);
-            self.output
-                .replace_range(self.message_start..self.output.len(), &replacement);
+        if let Some(entry) = matching_entry {
+            if let Ok(fmt_str) = FormatString::parse_printf(&entry.format_string) {
+                let replacement = fmt_str.format(&[], FormatStyle::Printf);
+                self.output
+                    .replace_range(self.message_start..self.output.len(), &replacement);
+            }
         }
         self.reset_message();
     }

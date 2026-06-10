@@ -19,7 +19,7 @@ package(default_visibility = ["//visibility:public"])
 rust_binary(
     name = "hello",
     srcs = ["src/main.rs"],
-    edition = "2024",
+    edition = "2021",
     linker_script = "//pw_rust/examples/linker_scripts:linker_script_for_rust_examples",
     target_compatible_with = select({
         "//pw_rust/examples/linker_scripts:linker_script_unset": ["@platforms//:incompatible"],

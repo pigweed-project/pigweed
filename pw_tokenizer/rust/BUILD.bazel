@@ -21,7 +21,7 @@ rust_proc_macro(
     srcs = [
         "pw_tokenizer_macro.rs",
     ],
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
     deps = [
         ":pw_tokenizer_core",
@@ -36,7 +36,7 @@ rust_proc_macro(
 rust_test(
     name = "pw_tokenizer_macro_test",
     crate = ":pw_tokenizer_macro",
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -51,7 +51,7 @@ rust_library(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     visibility = ["//visibility:public"],
 )
 
@@ -62,7 +62,7 @@ rust_test(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [],
     }),
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -96,7 +96,7 @@ rust_library(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     proc_macro_deps = [":pw_tokenizer_macro"],
     visibility = ["//visibility:public"],
     deps = [
@@ -122,7 +122,7 @@ rust_test(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -162,7 +162,7 @@ rust_test(
         "//pw_build/constraints/rust:std": ["std"],
         "//conditions:default": [""],
     }),
-    edition = "2024",
+    edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
     deps = [":pw_tokenizer"],
 )
