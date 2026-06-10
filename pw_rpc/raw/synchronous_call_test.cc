@@ -157,17 +157,18 @@ TEST_F(RawSynchronousCallTest, SynchronousCallFor) {
   set_response("broccoli", Status::NotFound());
 
   InlineString<32> reply;
+  const auto on_completed = [&reply](ConstByteSpan response, Status status) {
+    EXPECT_EQ(Status::NotFound(), status);
+    reply.assign(reinterpret_cast<const char*>(response.data()),
+                 response.size());
+  };
   ASSERT_EQ(OkStatus(),
             SynchronousCallFor<TestService::TestUnaryRpc>(
                 client(),
                 channel().id(),
                 {},
                 chrono::SystemClock::for_at_least(std::chrono::seconds(1)),
-                [&reply](ConstByteSpan response, Status status) {
-                  EXPECT_EQ(Status::NotFound(), status);
-                  reply.assign(reinterpret_cast<const char*>(response.data()),
-                               response.size());
-                }));
+                on_completed));
   EXPECT_EQ("broccoli", reply);
 }
 

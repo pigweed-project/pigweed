@@ -35,7 +35,10 @@ TEST(PigweedTest, ExpectBool) {
 
   EXPECT_FALSE(0);
   EXPECT_FALSE(0.0f);
-  EXPECT_FALSE(-0.0f);
+
+  // Avoid a -Wliteral-conversion converting to bool
+  constexpr float negative_zero = -0.0f;
+  EXPECT_FALSE(negative_zero);
 }
 
 TEST(PigweedTest, ExpectBasicComparisons) {

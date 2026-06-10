@@ -77,8 +77,8 @@ class GenericDequeBase {
   constexpr void MoveAssignIndices(GenericDequeBase& other) noexcept {
     capacity_ = std::exchange(other.capacity_, 0);
     count_ = std::exchange(other.count_, 0);
-    head_ = cpp20::exchange(other.head_, 0);
-    tail_ = cpp20::exchange(other.tail_, 0);
+    head_ = cpp20::exchange(other.head_, static_cast<SizeType>(0));
+    tail_ = cpp20::exchange(other.tail_, static_cast<SizeType>(0));
   }
 
   void SwapIndices(GenericDequeBase& other) noexcept {

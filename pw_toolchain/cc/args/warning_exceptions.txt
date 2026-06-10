@@ -30,6 +30,8 @@ src:*/src/rp2_common/hardware_exception/include/hardware/exception.h
 src:*/src/rp2_common/hardware_gpio/include/hardware/gpio_coproc.h
 src:*/src/rp2_common/hardware_gpio/include/hardware/gpio.h
 src:*/src/rp2_common/hardware_irq/include/hardware/irq.h
+src:*/src/rp2_common/hardware_sync_spin_lock/include/hardware/sync/spin_lock.h
+src:*/src/rp2_common/hardware_sync/include/hardware/sync.h
 src:*/src/rp2_common/hardware_uart/include/hardware/uart.h
 src:*/src/rp2_common/pico_platform_compiler/include/pico/platform/compiler.h
 src:*/src/rp2_common/pico_stdio_usb/include/pico/stdio_usb.h
@@ -49,6 +51,21 @@ src:*/googletest/include/gtest/gtest-printers.h
 src:*/runtime/cpp/emboss_prelude.h
 
 [sign-conversion]
+# TODO: https://pwbug.dev/434779927 - Can be removed after abseil is updated.
+src:*/absl/container/internal/container_memory.h
+src:*/absl/hash/internal/hash.h
+src:*/absl/random/uniform_int_distribution.h
+
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/internal/coverage.h
+src:*/fuzztest/internal/domains/aggregate_of_impl.h
+src:*/fuzztest/internal/table_of_recent_compares.h
+src:*/fuzztest/internal/domains/container_mutation_helpers.h
+src:*/fuzztest/internal/domains/container_of_impl.h
+src:*/fuzztest/internal/domains/serialization_helpers.h
+src:*/fuzztest/internal/domains/value_mutation_helpers.h
+src:*/fuzztest/internal/type_support.h
+
 # TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
 src:*/pw_bluetooth/att.emb.h
 src:*/pw_bluetooth/hci_android.emb.h
@@ -66,3 +83,57 @@ src:*/pw_multibuf/examples/protocol.emb.h
 # TODO: https://pwbug.dev/515082792 - Update pico-sdk so we can remove these.
 src:*/src/rp2_common/cmsis/stub/CMSIS/Device/RP2350/Include/RP2350.h
 src:*/src/rp2350/hardware_regs/include/hardware/regs/addressmap.h
+
+[nullability-extension]
+# TODO: https://pwbug.dev/434779927 - Can be removed after abseil is updated.
+src:*/absl/base/call_once.h
+src:*/absl/base/internal/endian.h
+src:*/absl/base/internal/unaligned_access.h
+src:*/absl/log/internal/check_op.h
+src:*/absl/log/internal/log_message.h
+src:*/absl/log/internal/vlog_config.h
+src:*/absl/status/internal/status_internal.h
+src:*/absl/status/internal/statusor_internal.h
+src:*/absl/status/status.h
+src:*/absl/status/statusor.h
+src:*/absl/strings/ascii.h
+src:*/absl/strings/cord_analysis.h
+src:*/absl/strings/cord.h
+src:*/absl/strings/escaping.h
+src:*/absl/strings/numbers.h
+src:*/absl/strings/str_cat.h
+src:*/absl/strings/str_format.h
+src:*/absl/strings/string_view.h
+src:*/absl/strings/strip.h
+src:*/absl/synchronization/mutex.h
+src:*/absl/types/span.h
+
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/internal/type_support.h
+
+[gcc-compat]
+# TODO: https://pwbug.dev/434779927 - Can be removed after abseil is updated.
+src:*/absl/strings/internal/str_format/bind.h
+src:*/absl/strings/internal/str_format/parser.h
+src:*/absl/strings/numbers.h
+
+[nullability-completeness]
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/internal/type_support.h
+
+[shadow]
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/internal/meta.h
+src:*/fuzztest/internal/serialization.h
+src:*/fuzztest/internal/type_support.h
+
+[unused-parameter]
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/internal/domains/arbitrary_impl.h
+src:*/fuzztest/internal/domains/bit_gen_ref.h
+src:*/fuzztest/internal/domains/domain_base.h
+src:*/fuzztest/internal/meta.h
+
+[shorten-64-to-32]
+// TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
+src:*/fuzztest/fuzzing_bit_gen.h

@@ -1030,18 +1030,15 @@ TEST_F(ReadTransfer, InitialPacketFails_OnCompletedCalledWithDataLoss) {
 
   context_.output().set_send_status(Status::Unauthenticated());
 
-  ASSERT_EQ(OkStatus(),
-            legacy_client_
-                .Read(
-                    14,
-                    writer,
-                    [&transfer_status](Status status) {
-                      ASSERT_EQ(transfer_status,
-                                Status::Unknown());  // Must only call once
-                      transfer_status = status;
-                    },
-                    kTestTimeout)
-                .status());
+  const auto on_completed = [&transfer_status](Status status) {
+    ASSERT_EQ(transfer_status,
+              Status::Unknown());  // Must only call once
+    transfer_status = status;
+  };
+
+  ASSERT_EQ(
+      OkStatus(),
+      legacy_client_.Read(14, writer, on_completed, kTestTimeout).status());
   transfer_thread_.WaitUntilEventIsProcessed();
 
   EXPECT_EQ(transfer_status, Status::Internal());

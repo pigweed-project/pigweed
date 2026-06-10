@@ -1852,7 +1852,7 @@ TEST_F(HelpersAdapterTest, PeerToFidlBondingData_BredrData) {
   ASSERT_TRUE(data.bredr_bond().has_link_key());
   EXPECT_TRUE(fidl::Equals(kTestKeyFidl, data.bredr_bond().link_key()));
   ASSERT_TRUE(data.has_device_class());
-  EXPECT_EQ(0x080424, data.device_class().value);
+  EXPECT_EQ(0x080424U, data.device_class().value);
 }
 
 TEST_F(HelpersAdapterTest, PeerToFidlBondingData_IncludesBredrServices) {

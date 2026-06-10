@@ -3792,7 +3792,7 @@ TEST_F(ProfileServerTestFakeAdapter, SearchResultsFlowControl) {
 
   EXPECT_EQ(result_cbs.size(), ProfileServer::kMaxUnackedSearchResults);
   EXPECT_EQ(search_results.service_found_count(),
-            ProfileServer::kMaxUnackedSearchResults + 1);
+            ProfileServer::kMaxUnackedSearchResults + 1U);
   EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id_excess_1);
   EXPECT_EQ(search_results.attributes().value()[0].element().url(),
             "https://foobar.dev/excess_1");
@@ -3803,7 +3803,7 @@ TEST_F(ProfileServerTestFakeAdapter, SearchResultsFlowControl) {
 
   EXPECT_EQ(result_cbs.size(), ProfileServer::kMaxUnackedSearchResults);
   EXPECT_EQ(search_results.service_found_count(),
-            ProfileServer::kMaxUnackedSearchResults + 2);
+            ProfileServer::kMaxUnackedSearchResults + 2U);
   EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id_excess_2);
   EXPECT_EQ(search_results.attributes().value()[0].element().url(),
             "https://foobar.dev/excess_2");
@@ -3815,7 +3815,7 @@ TEST_F(ProfileServerTestFakeAdapter, SearchResultsFlowControl) {
   }
 
   EXPECT_EQ(search_results.service_found_count(),
-            ProfileServer::kMaxUnackedSearchResults + 2);
+            ProfileServer::kMaxUnackedSearchResults + 2U);
 }
 
 TEST_F(ProfileServerTestFakeAdapter, SearchWithMissingUuidFails) {

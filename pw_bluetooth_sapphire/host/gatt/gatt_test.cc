@@ -436,7 +436,7 @@ TEST_F(GattTest, ServiceDiscoveryFailureShutsDownConnection) {
 
 #ifndef NINSPECT
 TEST_F(GattTest, ServiceDiscoveryFailureIsAggregated) {
-  for (int i = 0; i < 10; i++) {
+  for (size_t i = 0; i < 10; i++) {
     auto client = std::make_unique<testing::FakeClient>(dispatcher());
     client->set_discover_services_callback([](ServiceKind) {
       return ToResult(att::ErrorCode::kRequestNotSupported);
