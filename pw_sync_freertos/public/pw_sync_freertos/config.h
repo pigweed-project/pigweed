@@ -40,8 +40,17 @@
 // ports such as all Cortex-M ports upstream in FreeRTOS do not actually require
 // the scheduler to be locked as the interrupt which is used to context switch
 // is masked by taskENTER_CRITICAL (e.g. PendSV for Cortex-M).
+//
+// This is disabled by default for all Cortex-M ports as taskENTER_CRITICAL will
+// always mask the PendSV interrupt, meaning there is no risk that a call to
+// xTaskNotifyGive, xSemaphoreGive, or other signaling API could result in a
+// direct context switch until InterruptSpinLock::unlock() is called. Disabling
+// this on a Cortex-M55 results in a 175 CPU cycle reduction across a lock and
+// unlock cycle for a thread context.
 #ifndef PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK
-#define PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK 1
+#include "pw_preprocessor/arch.h"
+#define PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK \
+  !(_PW_ARCH_ARM_CORTEX_M)
 #endif  // PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK
 
 namespace pw::sync::freertos::config {

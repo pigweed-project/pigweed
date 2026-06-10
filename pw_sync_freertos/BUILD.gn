@@ -38,6 +38,7 @@ pw_source_set("config") {
   public = [ "public/pw_sync_freertos/config.h" ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_preprocessor:arch",
     "$pw_external_freertos",
     pw_sync_freertos_CONFIG,
   ]

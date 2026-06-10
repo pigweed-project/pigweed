@@ -45,7 +45,7 @@ PendSV for Cortex-M).
 
 This behavior is controlled through
 ``PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK`` which defaults to
-true.
+false for Cortex-M architectures and true for all other targets.
 
 .. Note::
   Scheduler State API support is required in your FreeRTOS Configuration, i.e.
