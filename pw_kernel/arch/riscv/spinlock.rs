@@ -12,10 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// use core::arch::asm;
+use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
-use core::sync::atomic::{Ordering, compiler_fence};
 
 use riscv::register::*;
 
@@ -31,7 +30,13 @@ impl InterruptGuard {
         unsafe {
             mstatus::clear_mie();
         }
-        compiler_fence(Ordering::SeqCst);
+        // A hardware fence rather than compiler_fence is required on RISC-V to
+        // prevent the CPU from reordering memory accesses (including volatile operations) across
+        // the CSR write. Acquire ordering ("fence r, rw") is sufficient because we only need to
+        // prevent subsequent memory accesses from being reordered before the interrupt disable.
+        unsafe {
+            asm!("fence r, rw", options(nostack, preserves_flags));
+        }
         Self {
             saved_interrupt_enable,
         }
@@ -41,7 +46,13 @@ impl InterruptGuard {
 impl Drop for InterruptGuard {
     #[inline]
     fn drop(&mut self) {
-        compiler_fence(Ordering::SeqCst);
+        // A hardware fence rather than compiler_fence is required on RISC-V to
+        // ensure all memory accesses (like releasing the spinlock) are visible before interrupts are
+        // re-enabled via the CSR write. Release ordering ("fence rw, w") is sufficient because we
+        // only need to ensure all prior memory writes are visible before the interrupt enable.
+        unsafe {
+            asm!("fence rw, w", options(nostack, preserves_flags));
+        }
         if self.saved_interrupt_enable {
             unsafe {
                 mstatus::set_mie();
