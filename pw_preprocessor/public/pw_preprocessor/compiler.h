@@ -267,6 +267,61 @@
 #define PW_ATTRIBUTE_LIFETIME_BOUND
 #endif  // PW_ATTRIBUTE_LIFETIME_BOUND
 
+/// Internal attribute; name and documentation TBD.
+///
+/// This is a copy of `ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY`.
+#if PW_HAVE_CPP_ATTRIBUTE(clang::lifetime_capture_by)
+#define PW_INTERNAL_ATTRIBUTE_CAPTURED_BY(Owner) \
+  [[clang::lifetime_capture_by(Owner)]]
+#else
+#define PW_INTERNAL_ATTRIBUTE_CAPTURED_BY(Owner)
+#endif
+
+/// `PW_ATTRIBUTE_VIEW` indicates that a type is solely a "view" of data that it
+/// points to, similarly to a span, string_view, or other non-owning reference
+/// type.
+/// This enables diagnosing certain lifetime issues similar to those enabled by
+/// `PW_ATTRIBUTE_LIFETIME_BOUND`, such as:
+///
+///   struct PW_ATTRIBUTE_VIEW StringView {
+///     template<class R>
+///     StringView(const R&);
+///   };
+///
+///   StringView f(std::string s) {
+///     return s;  // warning: address of stack memory returned
+///   }
+///
+/// This is a copy of `ABSL_ATTRIBUTE_VIEW`.
+#if PW_HAVE_CPP_ATTRIBUTE(gsl::Pointer)
+#define PW_ATTRIBUTE_VIEW [[gsl::Pointer]]
+#else
+#define PW_ATTRIBUTE_VIEW
+#endif  // PW_ATTRIBUTE_VIEW
+
+/// `PW_ATTRIBUTE_OWNER` indicates that a type is a container, smart pointer, or
+/// similar class that owns all the data that it points to.
+/// This enables diagnosing certain lifetime issues similar to those enabled by
+/// PW_ATTRIBUTE_LIFETIME_BOUND, such as:
+///
+///   struct PW_ATTRIBUTE_VIEW StringView {
+///     template<class R>
+///     StringView(const R&);
+///   };
+///
+///   struct PW_ATTRIBUTE_OWNER String {};
+///
+///   StringView f(String s) {
+///     return s;  // warning: address of stack memory returned
+///   }
+///
+/// This is a copy of `ABSL_ATTRIBUTE_OWNER`.
+#if PW_HAVE_CPP_ATTRIBUTE(gsl::Owner)
+#define PW_ATTRIBUTE_OWNER [[gsl::Owner]]
+#else
+#define PW_ATTRIBUTE_OWNER
+#endif  // PW_ATTRIBUTE_OWNER
+
 /// Evaluates to 1 if `__VA_OPT__` is supported, regardless of the C or C++
 /// standard in use.
 #if (defined(__clang_major__) && __clang_major__ < 9) || \
