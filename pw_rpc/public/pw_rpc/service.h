@@ -69,6 +69,11 @@ class Service : public IntrusiveList<Service>::Item {
   constexpr Service(uint32_t id, const T& method)
       : id_(id), methods_(&method), method_size_(sizeof(T)), method_count_(1) {}
 
+  ~Service() {
+    internal::RpcLockGuard lock;
+    unlist();
+  }
+
  private:
   friend class Server;
   friend class ServiceTestHelper;
