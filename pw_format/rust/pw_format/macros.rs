@@ -37,7 +37,7 @@ use std::collections::VecDeque;
 use std::marker::PhantomData;
 
 use proc_macro2::Ident;
-use quote::{ToTokens, format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;

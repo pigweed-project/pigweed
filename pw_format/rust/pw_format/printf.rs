@@ -14,12 +14,12 @@
 
 use std::collections::HashSet;
 
-use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_till1};
 use nom::character::complete::anychar;
 use nom::combinator::{map, map_res};
 use nom::multi::many0;
+use nom::IResult;
 
 use crate::parser_util::{precision, width};
 use crate::{

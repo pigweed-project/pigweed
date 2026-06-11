@@ -20,14 +20,13 @@ use std::ffi::CString;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use pw_format::macros::{
-    Arg, CoreFmtFormatStringParser, FormatAndArgsFlavor, FormatStringParser,
+    generate_printf, Arg, CoreFmtFormatStringParser, FormatAndArgsFlavor, FormatStringParser,
     PrintfFormatMacroGenerator, PrintfFormatStringFragment, PrintfFormatStringParser, Result,
-    generate_printf,
 };
 use pw_tokenizer_core::TOKENIZER_ENTRY_MAGIC;
-use quote::{ToTokens, format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
-use syn::{Expr, LitStr, Token, parse_macro_input};
+use syn::{parse_macro_input, Expr, LitStr, Token};
 
 type TokenStream2 = proc_macro2::TokenStream;
 

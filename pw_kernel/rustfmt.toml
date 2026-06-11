@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-edition = "2021"
-style_edition = "2021"
+edition = "2024"
+style_edition = "2024"
 unstable_features = true
 
 # Prevent carriage returns

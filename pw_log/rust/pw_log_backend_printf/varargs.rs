@@ -174,7 +174,7 @@ pub trait VarArgs: Clone {
     /// up the stack is responsible for initializing valid [`VarArgs`] that
     /// will cause printf to execute in a sound manner.
     unsafe fn call_printf(self, format_str: *const c_uchar, log_level_str: *const c_uchar)
-    -> c_int;
+        -> c_int;
 }
 
 #[derive(Clone)]

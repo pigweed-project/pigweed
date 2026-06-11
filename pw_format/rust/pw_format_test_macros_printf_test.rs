@@ -13,7 +13,7 @@
 // the License.
 
 #[allow(unused_imports)]
-use pw_format::{Style, macros::FormatParams};
+use pw_format::{macros::FormatParams, Style};
 
 // Used to record calls into the test generator from `generator_test_macro!`.
 #[derive(Debug, PartialEq)]

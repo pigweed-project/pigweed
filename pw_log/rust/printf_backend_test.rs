@@ -48,7 +48,7 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     // Use statements here instead of at the module level to scope them to the
     // above #[cfg(test)]
     use std::fs::File;
-    use std::io::{Read, stdout};
+    use std::io::{stdout, Read};
     use std::os::fd::AsRawFd;
 
     use nix::unistd::{dup, dup2, pipe};

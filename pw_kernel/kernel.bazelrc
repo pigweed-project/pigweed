@@ -66,7 +66,7 @@ build:k_lint --@rules_rust//rust/settings:clippy_flags="\
 
 # Enforce rustfmt formatting
 build:k_lint --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:k_lint --@rules_rust//rust/settings:rustfmt.toml=//:rustfmt.toml
+build:k_lint --@rules_rust//rust/settings:rustfmt.toml=//pw_kernel:rustfmt.toml
 build:k_lint --output_groups=+rustfmt_checks
 
 # Host target configuration

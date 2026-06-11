@@ -17,6 +17,10 @@ load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
 
+exports_files(
+    ["rustfmt.toml"],
+)
+
 alias(
     name = "gen_rust_project",
     actual = "@rules_rust//tools/rust_analyzer:gen_rust_project",

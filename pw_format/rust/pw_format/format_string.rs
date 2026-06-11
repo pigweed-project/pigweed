@@ -14,7 +14,7 @@
 
 use std::collections::HashSet;
 
-use quote::{ToTokens, quote};
+use quote::{quote, ToTokens};
 
 use crate::{core_fmt, printf};
 
