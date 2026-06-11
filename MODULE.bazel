@@ -19,8 +19,8 @@ module(
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
-bazel_dep(name = "aspect_rules_js", version = "2.1.3")
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "aspect_rules_js", version = "2.3.8")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "boringssl", version = "0.20241024.0")
 
 # TODO: https://github.com/google/emboss/issues/164 - Wire up the emboss repo to
@@ -29,7 +29,7 @@ bazel_dep(name = "emboss", version = "2025.1003.000719", repo_name = "com_google
 
 # LINT.ThenChange(/pw_package/py/pw_package/packages/emboss.py:emboss)
 bazel_dep(name = "freertos", version = "10.5.1.bcr.4")
-bazel_dep(name = "fuzztest", version = "20250805.0")
+bazel_dep(name = "fuzztest", version = "20260219.0")
 bazel_dep(name = "gazelle", version = "0.48.0", repo_name = "bazel_gazelle")
 
 # When this version is bumped, remove the patch referenced below if included
@@ -42,7 +42,7 @@ bazel_dep(name = "picotool", version = "2.2.1-develop.bcr.20260407-d1a8d35")
 bazel_dep(name = "platforms", version = "1.0.0")
 
 # LINT.IfChange(protobuf)
-bazel_dep(name = "protobuf", version = "33.4", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
 # LINT.ThenChange(pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json,pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list:protobuf)
 
 bazel_dep(name = "re2", version = "2025-11-05.bcr.1")
@@ -128,7 +128,7 @@ git_repository = use_repo_rule(
 
 git_repository(
     name = "bazel_clang_tidy",
-    commit = "db677011c7363509a288a9fb3bf0a50830bbf791",
+    commit = "c4d35e0d0b838309358e57a2efed831780f85cd0",
     remote = "https://github.com/erenon/bazel_clang_tidy.git",
 )
 

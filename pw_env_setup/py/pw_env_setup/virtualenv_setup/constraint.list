@@ -54,7 +54,7 @@ pathspec==0.11.1
 platformdirs==4.3.6
 prompt-toolkit==3.0.43
 # LINT.IfChange(protobuf)
-protobuf==6.33.4
+protobuf==6.33.5
 # LINT.ThenChange(//MODULE.bazel:protobuf,//pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json)
 proto-plus==1.27.1
 psutil==7.1.0

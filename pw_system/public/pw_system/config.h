@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 // PW_SYSTEM_LOG_BUFFER_SIZE is the log buffer size which determines how many
 // log entries can be buffered prior to streaming them.

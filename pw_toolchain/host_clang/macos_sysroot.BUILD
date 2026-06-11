@@ -21,7 +21,6 @@ cc_sysroot(
     sysroot = ":root",
     data = [":root"],
     allowlist_include_directories = [
-        ":usr-include",
         ":CoreFoundation.framework-Headers",
         ":IOKit.framework-Headers",
         ":Security.framework-Headers",
