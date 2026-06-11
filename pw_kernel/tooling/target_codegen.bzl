@@ -134,9 +134,13 @@ def target_codegen(
             "@pigweed//pw_kernel/kernel",
             "@pigweed//pw_kernel/lib/foreign_box",
             "@pigweed//pw_kernel/lib/memory_config",
-            "@pigweed//pw_kernel/syscall:syscall_defs",
             "@pigweed//pw_log/rust:pw_log",
             "@pigweed//pw_kernel/lib/pw_atomic",
-        ],
+        ] + select({
+            "@pigweed//pw_kernel/userspace:userspace_build_enabled": [
+                "@pigweed//pw_kernel/syscall:syscall_defs",
+            ],
+            "//conditions:default": [],
+        }),
         **kwargs
     )

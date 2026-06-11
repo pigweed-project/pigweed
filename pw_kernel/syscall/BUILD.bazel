@@ -20,6 +20,17 @@ load("//pw_kernel/arch/arm_cortex_m:defs.bzl", "SUPPORTED_CORTEX_M_CPUS")
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
+    name = "exit_status",
+    srcs = [
+        "exit_status.rs",
+    ],
+    edition = "2024",
+    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
+    tags = ["kernel"],
+    deps = KERNEL_TEST_DEPS,
+)
+
+rust_library(
     name = "syscall_defs",
     srcs = [
         "syscall_defs.rs",
@@ -32,6 +43,7 @@ rust_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":exit_status",
         "//pw_status/rust:pw_status",
         "@rust_crates//:bitflags",
     ] + KERNEL_TEST_DEPS,

@@ -13,13 +13,13 @@
 // the License.
 #![no_std]
 
+use exit_status::ExitStatus;
 use foreign_box::ForeignBox;
 use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread, ThreadHandle};
 use kernel::sync::event::{Event, EventConfig};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Instant, Kernel, Priority};
 use pw_status::{Error, Result};
-use syscall_defs::ExitStatus;
 
 // Test cases needed:
 // * Thread in interruptible wait (event/sleep) returns immediately upon being terminated.

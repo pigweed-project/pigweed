@@ -185,7 +185,7 @@ impl SysCallInterface for SysCall {
         let ret = SysCallReturnValue::from(unsafe { task_join(handle) });
         // SAFETY: The kernel guarantees that if the syscall succeeds, the return value
         // corresponds to either a valid ExitStatus or a valid Error.
-        unsafe { ExitStatus::from_raw(ret) }
+        unsafe { ret.to_exit_status() }
     }
 
     #[inline(always)]

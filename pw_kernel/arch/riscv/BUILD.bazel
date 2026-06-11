@@ -108,11 +108,16 @@ rust_library(
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/regs",
         "//pw_kernel/lib/time",
-        "//pw_kernel/syscall:syscall_defs",
+        "//pw_kernel/syscall:exit_status",
         "//pw_status/rust:pw_status",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:riscv",
-    ] + KERNEL_TEST_DEPS,
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": [
+            "//pw_kernel/syscall:syscall_defs",
+        ],
+        "//conditions:default": [],
+    }) + KERNEL_TEST_DEPS,
 )
 
 rust_doc(

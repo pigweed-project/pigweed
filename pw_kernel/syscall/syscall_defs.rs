@@ -457,34 +457,9 @@ pub struct WaitReturn {
     pub pending_signals: Signals,
 }
 
-/// Exit status of a process or thread.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[repr(C, usize)]
-#[non_exhaustive]
-pub enum ExitStatus {
-    //
-    // 0 is left out as a niche for Option<ExitStatus>.
-    //
-    /// The process or thread exited successfully with the given status code.
-    Success(u32) = 1,
-    /// The process or thread was terminated due to an unhandled exception.
-    UnhandledException(usize) = 2,
-    /// The process or thread was forcibly terminated by another entity via a syscall.
-    TerminatedBySyscall = 3,
-    /// The process or thread was directly terminated by the kernel.
-    TerminatedByKernel = 4,
-    /// The thread was terminated because its containing process was terminated.
-    ProcessTerminated = 5,
-    //
-    // Discriminant values must be within the range of positive isize values.
-    //
-}
+pub use exit_status::ExitStatus;
 
-// Enforce that ExitStatus can cleanly fit into the two register sized
-// SysCallReturnValue.
-const _: () = assert!(core::mem::size_of::<ExitStatus>() == 2 * core::mem::size_of::<usize>());
-
-impl ExitStatus {
+impl SysCallReturnValue {
     /// Converts a `SysCallReturnValue` to a `Result<ExitStatus>`.
     ///
     /// # Safety
@@ -497,8 +472,8 @@ impl ExitStatus {
     ///
     /// These preconditions are satisfied the return values of the `thread_terminate()`
     /// and `process_terminate()` system calls.
-    pub unsafe fn from_raw(ret: SysCallReturnValue) -> Result<ExitStatus> {
-        let val = ret.value[0].cast_signed();
+    pub unsafe fn to_exit_status(self) -> Result<ExitStatus> {
+        let val = self.value[0].cast_signed();
         if val < 0 {
             let val = (-val).cast_unsigned();
             // SAFETY: Caller guarantees a valid `Error` value.
@@ -507,7 +482,7 @@ impl ExitStatus {
         } else {
             // SAFETY: The caller guarantees that if it is not an error, the value
             // corresponds to a valid variant of `ExitStatus`.
-            Ok(unsafe { core::mem::transmute::<[usize; 2], ExitStatus>(ret.value) })
+            Ok(unsafe { core::mem::transmute::<[usize; 2], ExitStatus>(self.value) })
         }
     }
 }

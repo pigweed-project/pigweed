@@ -16,6 +16,7 @@ use core::arch::{asm, naked_asm};
 use core::mem;
 use core::ptr::NonNull;
 
+use exit_status::ExitStatus;
 use kernel::Arch;
 use kernel::interrupt_controller::InterruptController;
 use kernel::scheduler::thread::Stack;
@@ -24,7 +25,6 @@ use kernel::sync::spinlock::SpinLockGuard;
 use log_if::debug_if;
 #[cfg(feature = "user_space")]
 use pw_status::Result;
-use syscall_defs::ExitStatus;
 
 use crate::protection::MemoryConfig;
 use crate::regs::MStatusVal;

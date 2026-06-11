@@ -85,6 +85,11 @@ rust_library(
         "//conditions:default": [],
     }),
     tags = ["kernel"],
+    target_compatible_with = selects.with_or({
+        SUPPORTED_CORTEX_M_CPUS: [],
+        "@platforms//cpu:riscv32": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//pw_kernel/config:kernel_config",
         "//pw_kernel/lib/foreign_box",
@@ -100,11 +105,16 @@ rust_library(
         "//pw_kernel/lib/time",
         "//pw_kernel/lib/vectored_buffer",
         "//pw_kernel/subsys/console",
-        "//pw_kernel/syscall:syscall_defs",
+        "//pw_kernel/syscall:exit_status",
         "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
         "@rust_crates//:bitflags",
-    ] + selects.with_or({
+    ] + select({
+        "//pw_kernel/userspace:userspace_build_enabled": [
+            "//pw_kernel/syscall:syscall_defs",
+        ],
+        "//conditions:default": [],
+    }) + selects.with_or({
         SUPPORTED_CORTEX_M_CPUS: CORTEX_M_DEPS,
         "@platforms//cpu:riscv32": RISCV_DEPS,
         "//conditions:default": [],

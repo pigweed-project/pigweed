@@ -35,6 +35,7 @@ use core::cell::UnsafeCell;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
+use exit_status::ExitStatus;
 use foreign_box::ForeignBox;
 use list::*;
 use memory_config::MemoryConfig as _;
@@ -43,7 +44,6 @@ use pw_atomic::{
 };
 use pw_log::info;
 use pw_status::{Error, Result};
-use syscall_defs::ExitStatus;
 use time::Instant;
 
 #[cfg(feature = "user_space")]

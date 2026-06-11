@@ -18,6 +18,7 @@ use core::ops::Range;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
+use exit_status::ExitStatus;
 #[cfg(not(feature = "user_space"))]
 use foreign_box::ForeignBox;
 #[cfg(feature = "user_space")]
@@ -27,7 +28,6 @@ use memory_config::{MemoryConfig as _, MemoryRegionType};
 use pw_atomic::{AtomicAdd, AtomicSub, AtomicZero};
 use pw_log::info;
 use pw_status::Result;
-use syscall_defs::ExitStatus;
 use time::Instant;
 
 use crate::Kernel;

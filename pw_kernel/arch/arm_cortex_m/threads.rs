@@ -19,6 +19,7 @@ use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 
 use cortex_m::peripheral::{SCB, *};
+use exit_status::ExitStatus;
 use kernel::interrupt_controller::InterruptController;
 use kernel::scheduler::thread::Stack;
 use kernel::scheduler::{self, SchedulerState, ThreadLocalState};
@@ -31,7 +32,6 @@ use pw_cast::CastInto as _;
 use pw_log::info;
 #[cfg(feature = "user_space")]
 use pw_status::{Error, Result};
-use syscall_defs::ExitStatus;
 
 use crate::exceptions::{
     ExcReturn, ExcReturnFrameType, ExcReturnMode, ExcReturnRegisterStacking, ExcReturnStack,

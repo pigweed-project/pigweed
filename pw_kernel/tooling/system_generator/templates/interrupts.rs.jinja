@@ -23,12 +23,12 @@ use kernel::interrupt_controller::{StaticContext, InterruptController, Interrupt
 
 type ArchInterruptTableEntry = InterruptTableEntry<<arch::Arch as kernel::Arch>::InterruptController>;
 
-#[allow(unused_imports)]
 {% if userspace %}
+#[allow(unused_imports)]
 use kernel::object::InterruptObject;
-{% endif %}
 #[allow(unused_imports)]
 use syscall_defs::Signals;
+{% endif %}
 
 {% if userspace %}
 {% for app in apps %}

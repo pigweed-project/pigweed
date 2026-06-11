@@ -28,7 +28,7 @@ rust_library(
         "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/pw_atomic",
         "//pw_kernel/lib/unittest:test_logger",
-        "//pw_kernel/syscall:syscall_defs",
+        "//pw_kernel/syscall:exit_status",
         "//pw_status/rust:pw_status",
     ],
 )
