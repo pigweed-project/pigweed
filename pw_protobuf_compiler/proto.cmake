@@ -178,6 +178,45 @@ function(pw_proto_library NAME)
     OUT_DIR
       "${out_dir}"
   )
+  _pw_python_proto_library("${NAME}"
+    SOURCES
+      ${sources}
+    INPUTS
+      ${inputs}
+    DEPS
+      ${arg_DEPS}
+    INCLUDE_FILE
+      "${include_file}"
+    OUT_DIR
+      "${out_dir}"
+  )
+
+  if("${NAME}" STREQUAL "pw_rpc.protos")
+    if(TARGET pw_rpc.protos._generate.pwpb)
+      add_dependencies(pw_rpc.protos._generate.pwpb
+        pw_protobuf.codegen_protos.python
+        pw_protobuf.common_proto.python
+        pw_protobuf.status_proto.python
+        pw_protobuf.field_options_proto.python
+      )
+    endif()
+    if(TARGET pw_rpc.protos._generate.nanopb)
+      add_dependencies(pw_rpc.protos._generate.nanopb
+        pw_protobuf.codegen_protos.python
+        pw_protobuf.common_proto.python
+        pw_protobuf.status_proto.python
+        pw_protobuf.field_options_proto.python
+      )
+    endif()
+    if(TARGET pw_rpc.protos._generate.nanopb_rpc)
+      add_dependencies(pw_rpc.protos._generate.nanopb_rpc
+        pw_protobuf.codegen_protos.python
+        pw_protobuf.common_proto.python
+        pw_protobuf.status_proto.python
+        pw_protobuf.field_options_proto.python
+      )
+    endif()
+  endif()
 endfunction(pw_proto_library)
 
 # Args for generate_protos.py
@@ -207,7 +246,7 @@ function(_pw_generate_protos TARGET LANGUAGE)
   # Export the output files to the caller's scope so it can use them if needed.
   set(generated_outputs "${outputs}" PARENT_SCOPE)
 
-  if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows")
+  if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows" AND NOT "${arg_PLUGIN}" STREQUAL "")
       foreach(source_file IN LISTS SOURCES)
         get_filename_component(dir "${source_file}" DIRECTORY)
         get_filename_component(name "${source_file}" NAME_WE)
@@ -216,17 +255,51 @@ function(_pw_generate_protos TARGET LANGUAGE)
   endif()
 
   set(script "$ENV{PW_ROOT}/pw_protobuf_compiler/py/pw_protobuf_compiler/generate_protos.py")
-  add_custom_command(
-    COMMAND
-      python3
-      "${script}"
+
+  set(args_to_pass
       --language "${LANGUAGE}"
-      --plugin-path "${arg_PLUGIN}"
       --include-file "${arg_INCLUDE_FILE}"
       --nanopb-pb2-dir "${_pw_protobuf_compiler_NANOPB_PB2_DIR}"
       --compile-dir "${arg_OUT_DIR}/sources"
       --out-dir "${arg_OUT_DIR}/${LANGUAGE}"
       --sources ${arg_SOURCES}
+  )
+
+  if(NOT "${arg_PLUGIN}" STREQUAL "")
+    list(APPEND args_to_pass --plugin-path "${arg_PLUGIN}")
+  endif()
+
+  # Construct PYTHONPATH for the protoc plugins.
+  set(python_paths
+      "$ENV{PW_ROOT}/pw_protobuf/py"
+      "$ENV{PW_ROOT}/pw_status/py"
+      "$ENV{PW_ROOT}/pw_protobuf_compiler/py"
+      "$ENV{PW_ROOT}/pw_rpc/py"
+      "$ENV{PW_ROOT}/pw_stream/py"
+      "$ENV{PW_ROOT}/pw_log/py"
+      "$ENV{PW_ROOT}/pw_cli/py"
+  )
+  if(NOT "${pw_protobuf_compiler_PYTHON_OUT_DIR}" STREQUAL "")
+    list(APPEND python_paths "${pw_protobuf_compiler_PYTHON_OUT_DIR}/python")
+  endif()
+
+  if("${CMAKE_HOST_SYSTEM_NAME}" STREQUAL "Windows")
+    set(separator ";")
+  else()
+    set(separator ":")
+  endif()
+  string(REPLACE ";" "${separator}" python_path "${python_paths}")
+
+  if(NOT "$ENV{PYTHONPATH}" STREQUAL "")
+    set(python_path "${python_path}${separator}$ENV{PYTHONPATH}")
+  endif()
+
+  add_custom_command(
+    COMMAND
+      ${CMAKE_COMMAND} -E env "PYTHONPATH=${python_path}"
+      python3
+      "${script}"
+      ${args_to_pass}
       "${pw_protobuf_compiler_GENERATE_PROTOS_ARGS}"
     DEPENDS
       ${script}
@@ -322,6 +395,9 @@ function(_pw_pwpb_rpc_library NAME)
     DEPENDS
       ${arg_DEPS}
       "$ENV{PW_ROOT}/pw_rpc/py/pw_rpc/plugin.py"
+      # Python RPC plugins import pw_rpc, which requires the generated
+      # pw_rpc.protos.python (packet_pb2.py) to be built first.
+      pw_rpc.protos.python
   )
 
   # Create the library with the generated source files.
@@ -373,6 +449,9 @@ function(_pw_raw_rpc_library NAME)
     DEPENDS
       ${arg_DEPS}
       "$ENV{PW_ROOT}/pw_rpc/py/pw_rpc/plugin.py"
+      # Python RPC plugins import pw_rpc, which requires the generated
+      # pw_rpc.protos.python (packet_pb2.py) to be built first.
+      pw_rpc.protos.python
   )
 
   # Create the library with the generated source files.
@@ -509,6 +588,9 @@ function(_pw_nanopb_rpc_library NAME)
       DEPENDS
         ${arg_DEPS}
         "$ENV{PW_ROOT}/pw_rpc/py/pw_rpc/plugin.py"
+        # Python RPC plugins import pw_rpc, which requires the generated
+        # pw_rpc.protos.python (packet_pb2.py) to be built first.
+        pw_rpc.protos.python
     )
 
     # Create the library with the generated source files.
@@ -528,3 +610,48 @@ function(_pw_nanopb_rpc_library NAME)
     add_dependencies("${NAME}.nanopb_rpc" "${NAME}._generate.nanopb_rpc")
   endif()
 endfunction(_pw_nanopb_rpc_library)
+
+# Internal function that creates a python proto library.
+function(_pw_python_proto_library NAME)
+  pw_parse_arguments(
+    NUM_POSITIONAL_ARGS
+      1
+    ONE_VALUE_ARGS
+      INCLUDE_FILE
+      OUT_DIR
+    MULTI_VALUE_ARGS
+      SOURCES
+      INPUTS
+      DEPS
+  )
+
+  # Python protos depend on other python protos.
+  set(python_deps "${arg_DEPS}")
+  list(TRANSFORM python_deps APPEND .python)
+
+  if(NOT "${pw_protobuf_compiler_PYTHON_OUT_DIR}" STREQUAL "")
+    set(python_out_dir "${pw_protobuf_compiler_PYTHON_OUT_DIR}")
+  else()
+    set(python_out_dir "${arg_OUT_DIR}")
+  endif()
+
+  _pw_generate_protos("${NAME}" python
+    OUTPUT_EXTS
+      "_pb2.py"
+    INCLUDE_FILE
+      "${arg_INCLUDE_FILE}"
+    OUT_DIR
+      "${python_out_dir}"
+    SOURCES
+      ${arg_SOURCES}
+    INPUTS
+      ${arg_INPUTS}
+    DEPENDS
+      ${python_deps}
+  )
+
+  # Create a custom target to represent the python proto library.
+  add_custom_target("${NAME}.python")
+  add_dependencies("${NAME}.python" "${NAME}._generate.python")
+
+endfunction(_pw_python_proto_library)

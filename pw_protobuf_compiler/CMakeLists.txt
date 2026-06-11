@@ -72,3 +72,4 @@ if(NOT "${dir_pw_third_party_nanopb}" STREQUAL "")
       pw_protobuf_compiler
   )
 endif()
+
