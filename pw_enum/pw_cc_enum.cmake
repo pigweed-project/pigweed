@@ -76,7 +76,7 @@ function(pw_cc_enum NAME)
   set(content "${content}${out_dir}/base.cc\n")
 
   file(GENERATE
-    OUTPUT "${out_dir}/flags.txt"
+    OUTPUT "${out_dir}/flags-$<COMPILE_LANGUAGE>.txt"
     CONTENT "${content}"
   )
 
@@ -106,10 +106,10 @@ function(pw_cc_enum NAME)
             ${arg_HEADERS}
             "--outputs" ${output_files}
             "--compiler" "${CMAKE_CXX_COMPILER}"
-            "--compiler-flags" "${out_dir}/flags.txt"
+            "--compiler-flags" "${out_dir}/flags-CXX.txt"
             "--base-cc" "${out_dir}/base.cc"
     DEPENDS ${arg_HEADERS}
-            "${out_dir}/flags.txt"
+            "${out_dir}/flags-CXX.txt"
             "$ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Generating versioned enums for ${NAME}"
