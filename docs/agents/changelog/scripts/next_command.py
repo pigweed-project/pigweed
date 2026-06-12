@@ -16,7 +16,7 @@
 import common
 
 
-def get_next(shas: list[str], data: dict, count: int = 25) -> list[str]:
+def get_next(shas: list[str], data: dict, count: int = 10) -> list[str]:
     """Gets the next unacknowledged SHAs from the list of repository SHAs."""
     done = {sha for sha, _ in _all_commits(data)}
     next_shas = []
@@ -80,14 +80,19 @@ def _all_stories(data: dict):
 
 
 def check_stories(data: dict) -> dict:
-    """Verifies that every story has a title, body, highlight, and score."""
+    """Verifies that every story has the expected fields."""
     invalid_stories = []
     for category_name, story_id, story in _all_stories(data):
-        missing = [
-            field
-            for field in ["title", "body", "highlight", "score"]
-            if field not in story
-        ]
+        missing = []
+        for field in ["title", "body", "highlight", "score", "example"]:
+            if field not in story:
+                missing.append(field)
+
+        if "example" in story:
+            if story_id == "misc":
+                if story["example"] != "":
+                    missing.append("example (must be empty string for misc)")
+
         if missing:
             invalid_stories.append(
                 {
@@ -152,8 +157,8 @@ def next_command(args) -> None:
     stories_data = check_stories(data)
     if not stories_data.get("valid", True):
         instructions = (
-            "Fix the incomplete stories that were found in data.toml. "
-            "Every story must have a title, body, highlight, and score."
+            "Fix the incomplete stories that were found in data.toml. Every "
+            "story must have a title, body, highlight, score, and example."
         )
         common.write_json_resource(
             "next.json",

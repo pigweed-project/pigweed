@@ -67,6 +67,17 @@
       "pw_work_queue",
     ]
   },
+  bluetooth: {
+    title: "Bluetooth",
+    show: true,
+    modules: [
+      "pw_bluetooth",
+      "pw_bluetooth_hci",
+      "pw_bluetooth_profiles",
+      "pw_bluetooth_proxy",
+      "pw_bluetooth_sapphire",
+    ]
+  },
   build: {
     title: "Build systems",
     show: true,
@@ -256,11 +267,6 @@
     title: "Networking",
     show: true,
     modules: [
-      "pw_bluetooth",
-      "pw_bluetooth_hci",
-      "pw_bluetooth_profiles",
-      "pw_bluetooth_proxy",
-      "pw_bluetooth_sapphire",
       "pw_channel",
       "pw_flatbuffers",
       "pw_multisink",

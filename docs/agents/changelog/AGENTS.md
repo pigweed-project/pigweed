@@ -92,6 +92,9 @@ body = """
 highlight = """
 …
 """
+example = """
+…
+"""
 score = 600
 
 [stories.<category_id>.<story_id>.commits."7818487b04e22ebbf2fc477c770c563e9fc0b5ed"]
@@ -135,6 +138,28 @@ body = """Introduced ``pw::DynamicMap``, a sorted map container that uses a call
 `highlight` is a one-sentence summary of the story. This may be presented
 at the top of the changelog update. `highlight` must not redundantly repeat
 the information provided in `title`.
+
+#### `example`
+
+`example` is a code example showing how to use the new feature or API.
+It must include the reStructuredText code-block directive and the code itself
+must be indented by 3 spaces. For example:
+
+```toml
+example = """
+.. code-block:: cpp
+
+   int n = 5 + 6;
+"""
+```
+
+If a code example is not useful for the story, use your judgment and set
+`example` to an empty string `""""""`.
+
+See `//docs/agents/rst/AGENTS.md` for guidance on what language values (lexer
+short names) to use for the `.. code-block:: <lang>` directive.
+
+For `misc` stories, `example` must always be set to `""""""`.
 
 #### `commits`
 
@@ -254,8 +279,8 @@ url = "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/388292"
 #### Dump miscellaneous commits into `stories.<category_id>.misc`
 
 When you encounter miscellaneous commits with 0 or low user-facing impact,
-you should dump them all into a `stories.<category_id>.misc` story and set the
-`score` to `0`.
+you should dump them all into a `stories.<category_id>.misc` story, set the
+`score` to `0`, and set `example` to `""""""`.
 
 ## 5. End
 

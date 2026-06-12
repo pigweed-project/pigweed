@@ -170,6 +170,11 @@ def _build_story_section(
         rst.append(f"CLs: {', '.join(links)}")
         rst.append("")
 
+    example = story.get("example", "")
+    if example and example.strip():
+        rst.append(example.strip('\n'))
+        rst.append("")
+
     return rst
 
 

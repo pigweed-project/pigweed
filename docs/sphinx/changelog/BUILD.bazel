@@ -19,6 +19,7 @@ sphinx_docs_library(
     srcs = [
         "2026/03.rst",
         "2026/04.rst",
+        "2026/05.rst",
         "index.rst",
     ],
     visibility = ["//visibility:public"],

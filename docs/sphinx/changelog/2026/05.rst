@@ -1,0 +1,407 @@
+===============================
+What's new in Pigweed: May 2026
+===============================
+.. changelog_highlights_start
+
+Highlights:
+
+* Cryptography and security: :ref:`changelog-2026-05-crypto-crypto-chacha20` -
+  ``pw_crypto`` now supports the ChaCha20 stream cipher.
+
+* C++ data structures and utilities: - :ref:`changelog-2026-05-cpp-pw-enum-module`
+  ``pw_enum`` provides automatic stringification and tokenization of C++
+  enums.
+
+* Async and concurrency: :ref:`changelog-2026-05-async-async2-void-channels` -
+  Improved support for ``void`` channels, which can be used to signal tasks
+  without transmitting data, as well as using ``co_await`` for coroutines that
+  return ``void``.
+
+* Developer tools: :ref:`changelog-2026-05-dev-console-open-files` -
+  ``pw_console`` now directly supports opening and viewing log files (including
+  zip archives).
+
+.. changelog_highlights_end
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-05-async-async2-void-channels:
+
+Notification channels and void coroutines in pw_async2
+======================================================
+Added support for ``void`` channels (such as ``MpmcChannelHandle<void>``) in
+``pw_async2``, which function as notification channels to signal tasks without
+transmitting data. Additionally, you can now use ``co_await`` with coroutines
+that return ``void``. CLs: `1 <https://pwrev.dev/372356>`__,
+`2 <https://pwrev.dev/414132>`__
+
+.. code-block:: cpp
+
+   #include "pw_async2/channel.h"
+   #include "pw_async2/coro.h"
+
+   using namespace pw::async2;
+
+   // A coroutine that waits for a notification on a receiver
+   Coro<void> WaitAndNotify(Receiver<void> receiver) {
+     // co_awaiting a void-resolving future (like Receive() on a void receiver)
+     // is now supported.
+     co_await receiver.Receive();
+     co_return;
+   }
+
+   Coro<void> Task(Allocator& alloc) {
+     // Create a void (notification) channel
+     auto channel_opt = CreateMpmcChannel<void>(alloc, 2);
+     MpmcChannelHandle<void>& handle = *channel_opt;
+
+     Sender<void> sender = handle.CreateSender();
+     Receiver<void> receiver = handle.CreateReceiver();
+
+     // Send a notification (no data value needed)
+     sender.TrySend().IgnoreError();
+
+     // Run the waiter
+     co_await WaitAndNotify(
+         std::move(receiver));  // or handle.CreateReceiver() directly
+   }
+
+.. _changelog-2026-05-async-async2-thread-safety:
+
+Thread safety fixes in pw_async2
+================================
+Fixed a data race in ``ValueFuture<void>`` by ensuring the internal lock is
+held during move and query operations. Also ensured channel futures hold the
+lock when moving a ``FutureCore`` object to prevent data races, and corrected
+channel future move behavior when the associated channel is closed. CLs: `1
+<https://pwrev.dev/408072>`__, `2 <https://pwrev.dev/412012>`__, `3
+<https://pwrev.dev/414953>`__
+
+---------
+Bluetooth
+---------
+
+.. _changelog-2026-05-bluetooth-sapphire-security-fixes:
+
+Security fixes in pw_bluetooth_sapphire
+=======================================
+Fixed two security vulnerabilities in ``pw_bluetooth_sapphire``:
+
+* Resolved a Use-After-Free in ``A2dpOffloadManager`` where a dangling callback
+  was retained after link destruction.
+* Added validation to the Secure Connections pairing phase to reject mirrored
+  or negated peer public keys (preventing passkey reflection attacks).
+
+CLs: `1 <https://pwrev.dev/409252>`__, `2 <https://pwrev.dev/414972>`__
+
+.. _changelog-2026-05-bluetooth-sapphire-le-audio:
+
+LE Audio Isochronous Channels support in pw_bluetooth_sapphire
+==============================================================
+Added initial support for Bluetooth LE Audio Isochronous Channels in
+``pw_bluetooth_sapphire``. This includes implementing Connected Isochronous
+Groups (CIG) parameter configuration (``SetParams``) with peer SCA validation,
+Connected Isochronous Stream (CIS) creation, introducing the
+``IsoGroupManager`` to manage these resources, and improving the Fuchsia FIDL
+``IsoStreamServer`` lifetime management. CLs: `1 <https://pwrev.dev/316621>`__,
+`2 <https://pwrev.dev/398153>`__, `3 <https://pwrev.dev/415513>`__, `4
+<https://pwrev.dev/316622>`__, `5 <https://pwrev.dev/412712>`__, `6
+<https://pwrev.dev/316620>`__, `7 <https://pwrev.dev/398154>`__
+
+.. _changelog-2026-05-bluetooth-bluetooth-proxy-large-pdus:
+
+Passthrough support for large L2CAP PDUs in pw_bluetooth_proxy
+==============================================================
+Updated ``pw_bluetooth_proxy`` to pass through L2CAP Protocol Data Units (PDUs)
+larger than the recombination buffer limit (typically 2KB) directly to the host,
+fragment by fragment. This allows supporting profiles that require large maximum
+transmission units (MTUs) (like object transfer or OTA updates) without
+increasing the proxy's memory footprint. CLs: `1 <https://pwrev.dev/412055>`__
+
+---------------------------------
+C++ data structures and utilities
+---------------------------------
+
+.. _changelog-2026-05-cpp-pw-enum-module:
+
+New pw_enum module
+==================
+The new ``pw_enum`` module supports automatic stringification and tokenization
+of C++ enums. As part of this introduction, the ``EnumToString`` helper was
+moved from ``pw_tokenizer`` to ``pw_enum``. Additionally, a code generation tool
+was introduced to automatically generate ``pw_enum`` stringification helper
+definitions directly from C++ header files, reducing manual boilerplate. CLs:
+`1 <https://pwrev.dev/393993>`__, `2 <https://pwrev.dev/393992>`__
+
+.. tab-set::
+
+   .. tab-item:: status.h
+
+      .. code-block:: cpp
+
+         #include "pw_enum/generate.h"
+
+         namespace my::app {
+         enum class ConnectionState : uint8_t {
+           kDisconnected = 0,
+           kConnecting,
+           kConnected,
+         };
+         }  // namespace my::app
+
+         // Register the enum for code generation
+         PW_ENUM(my::app::ConnectionState, kDisconnected, kConnecting, kConnected);
+
+   .. tab-item:: BUILD.bazel
+
+      .. code-block:: python
+
+         load("//pw_enum:pw_cc_enum.bzl", "pw_cc_enum")
+
+         pw_cc_enum(
+             name = "connection_state_enum",
+             hdrs = ["status.h"],
+         )
+
+   .. tab-item:: main.cc
+
+      .. code-block:: cpp
+
+         #include "pw_enum/to_string.h"
+         #include "pw_log/log.h"
+
+         void LogState(my::app::ConnectionState state) {
+           PW_LOG_INFO("State changed to: %s", pw::EnumToString(state));
+         }
+
+.. _changelog-2026-05-cpp-function-ref-updates:
+
+Lifetime bound checks for pw::FunctionRef
+=========================================
+Introduced ``PW_ATTRIBUTE_LIFETIME_BOUND`` to ``pw::FunctionRef`` constructors.
+This allows Clang to detect at compile time when a ``FunctionRef`` is
+initialized with a temporary object (such as a lambda) that does not live long
+enough, preventing dangling pointers. CLs: `1 <https://pwrev.dev/407992>`__
+
+.. code-block:: cpp
+
+   #include "pw_function/function_ref.h"
+
+   void CallTwice(pw::FunctionRef<void()> callback) {
+     callback();
+     callback();
+   }
+
+   void Run() {
+     // OK: Temporary lambda passed to a function call. The FunctionRef
+     // argument does not outlive the temporary lambda.
+     CallTwice([]() { /* ... */ });
+
+     // Warning/Error with Clang: The FunctionRef outlives the temporary lambda.
+     // pw::FunctionRef<void()> ref = []() {};
+   }
+
+-------------------------
+Cryptography and security
+-------------------------
+
+.. _changelog-2026-05-crypto-crypto-chacha20:
+
+ChaCha20 cipher support in pw_crypto
+====================================
+Added support for the ChaCha20 stream cipher to ``pw_crypto``. CLs:
+`1 <https://pwrev.dev/409753>`__
+
+.. code-block:: cpp
+
+   #include "pw_crypto/chacha20.h"
+   #include "pw_status/status.h"
+
+   void EncryptDecrypt(pw::ConstByteSpan key,
+                       pw::ConstByteSpan nonce,
+                       pw::ConstByteSpan plaintext,
+                       pw::ByteSpan ciphertext) {
+     // Encrypt / Decrypt (ChaCha20 is symmetric, same operation for both)
+     pw::Status status =
+         pw::crypto::chacha20::Crypt(key, nonce, plaintext, ciphertext);
+     if (!status.ok()) {
+       // Handle error
+     }
+   }
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-05-dev-console-open-files:
+
+Log file viewing in pw_console
+==============================
+You can now open and view text files directly in ``pw_console``, including files
+compressed in ``.zip`` archives. Users can merge multiple log files into a
+single chronological view or open them in separate tabs, with progress bars
+showing load status. CLs: `1 <https://pwrev.dev/373361>`__
+
+.. code-block:: console
+
+   # Open multiple log files in separate tabs
+   pw-console --open-files log1.txt log2.txt
+
+   # Open multiple log files and merge them into a single chronological view
+   pw-console --open-files log1.txt log2.txt --merge-open-files
+
+   # Open an Android bugreport zip file directly
+   pw-console --open-bugreport bugreport.zip
+
+.. _changelog-2026-05-dev-downstream-module-creation:
+
+Downstream module creation with pw_module
+=========================================
+Enabled the ``pw module create`` command for downstream projects. Downstream
+developers can now use this tool to generate all the required boilerplate for a
+new module, including source files, tests, documentation, and build files for
+GN, Bazel, and CMake, with custom prefixes. CLs: `1
+<https://pwrev.dev/395452>`__
+
+.. code-block:: console
+
+   # Create a new module named "app_sensors" with support for Bazel and GN
+   # (automatically deduces prefix "app")
+   pw module create --build-systems bazel,gn --languages cc app_sensors
+
+.. _changelog-2026-05-dev-ide-improvements:
+
+Performance and usability improvements to pw_ide
+================================================
+Compile database generation was optimized by replacing ``pathlib.Path`` with
+raw string or ``os.path`` operations and batching ``bazel info`` calls,
+resulting in up to a 6x speedup. Usability improvements include real-time Bazel
+progress streaming, better ``clangd`` header support by no longer filtering out
+``.h`` and ``.hpp`` files, and improved symlink management to correctly handle
+and replace broken symlinks in the workspace. CLs: `1
+<https://pwrev.dev/397613>`__, `2 <https://pwrev.dev/401992>`__, `3
+<https://pwrev.dev/396335>`__, `4 <https://pwrev.dev/396312>`__, `5
+<https://pwrev.dev/410713>`__
+
+------
+Kernel
+------
+
+.. _changelog-2026-05-kernel-kernel-vectored-io:
+
+Vectored I/O for channel transactions in pw_kernel
+==================================================
+Channel transactions now support vectored I/O (scatter-gather), allowing
+userspace applications to pass arrays of slices for IPC
+transactions, reducing copying overhead. CLs: `1 <https://pwrev.dev/353196>`__
+
+.. code-block:: rust
+
+   use userspace::syscall;
+   use userspace::time::Instant;
+
+   fn TransactVectored(channel_handle: u32) -> Result<(), pw_status::Error> {
+       let header: &[u8] = b"MSG_TYPE_1";
+       let body: &[u8] = b"Payload data...";
+
+       // Scatter-gather send buffers
+       let send_buffers = [header, body];
+       let mut recv_buffer = [0u8; 128];
+
+       // channel_transact accepts arrays of slices for vectored I/O
+       syscall::channel_transact(
+           channel_handle,
+           &send_buffers,
+           &mut recv_buffer,
+           Instant::MAX,
+       )?;
+       Ok(())
+   }
+
+.. _changelog-2026-05-kernel-kernel-unified-task-apis:
+
+Updated join and terminate syscalls
+===================================
+The process and thread join syscalls (``process_join`` and ``thread_join``)
+have been unified into a single syscall: ``task_join``. Likewise,
+``process_terminate`` and ``thread_terminate`` were unified into
+``task_terminate``.  CLs: `1 <https://pwrev.dev/405193>`__
+
+.. code-block:: rust
+
+   use userspace::syscall;
+
+   fn ManageTask(task_handle: u32) -> Result<(), pw_status::Error> {
+       // Terminate a task (thread or process)
+       syscall::task_terminate(task_handle)?;
+
+       // Wait for it to exit
+       let _exit_status = syscall::task_join(task_handle)?;
+       Ok(())
+   }
+
+--------------------------------------
+Logging, debugging, and crash handling
+--------------------------------------
+
+.. _changelog-2026-05-log-rust-log-concat:
+
+Compile-time format string concatenation in Rust pw_log
+=======================================================
+Added support for compile-time format string concatenation using the
+``PW_FMT_CONCAT`` operator in Rust ``pw_log`` macros. This enables writing
+custom wrapper macros that can prepend prefixes (like module names) to format
+strings before tokenization or logging. CLs: `1 <https://pwrev.dev/411692>`__
+
+.. code-block:: rust
+
+   use pw_log::{log, LogLevel};
+
+   // Define a wrapper macro that prepends a module prefix
+   macro_rules! my_info_log {
+       ($format_string:literal $(, $args:expr)* $(,)? ) => {
+           // Concatenate string literals at compile time using PW_FMT_CONCAT
+           log!(LogLevel::Info, "[MyModule] " PW_FMT_CONCAT $format_string $(, $args)*)
+       };
+   }
+
+   fn main() {
+       // Logs: [MyModule] The answer is 42.
+       my_info_log!("The answer is {}.", 42);
+   }
+
+---
+RPC
+---
+
+.. _changelog-2026-05-rpc-rpc-local-encoding-buffers:
+
+Concurrency and lock reduction in pw_rpc
+========================================
+When dynamic allocation is enabled, packet encoding now uses local,
+stack-allocated buffers instead of a single global buffer, reducing lock
+contention. Additionally, introduced the ``PW_RPC_LOCKLESS_CHANNEL_SEND``
+configuration option, which allows releasing the global RPC lock before calling
+``ChannelOutput::Send``, further reducing lock hold times. To support this
+dynamic allocation path for complex nested messages, the
+``PW_RPC_PWPB_SCRATCH_BUFFER_SIZE_BYTES`` macro was added to allow customizing
+the scratch buffer size used when calculating encoded message sizes. CLs: `1
+<https://pwrev.dev/401273>`__, `2 <https://pwrev.dev/406812>`__, `3
+<https://pwrev.dev/411372>`__, `4 <https://pwrev.dev/415616>`__
+
+------------
+Tokenization
+------------
+
+.. _changelog-2026-05-token-tokenizer-correctness:
+
+Improved collision handling and correctness in pw_tokenizer
+===========================================================
+Updated Python and C++ detokenization logic  to prevent silent, incorrect
+decoding when token collisions occur. It now only detokenizes if there is an
+unambiguous winner, and ``ok()`` correctly reports status when collision
+resolution succeeds. Also fixed a Python regex bug that confused nested Base64
+tokens with Base10/16 tokens. CLs: `1 <https://pwrev.dev/412054>`__, `2
+<https://pwrev.dev/412913>`__, `3 <https://pwrev.dev/412373>`__

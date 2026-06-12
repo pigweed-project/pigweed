@@ -17,7 +17,6 @@ import datetime
 import json
 import os
 import sys
-import textwrap
 import tomllib
 from pathlib import Path
 
@@ -126,27 +125,6 @@ def get_data(year: int, month: int) -> dict:
         return data
 
 
-def wrap_text(text: str, width: int = 80) -> str:
-    """Wraps text predictably across multiple lines."""
-    paragraphs = text.split('\n\n')
-    wrapped_paragraphs = [
-        (
-            '\n'.join(
-                textwrap.wrap(
-                    p,
-                    width=width,
-                    break_long_words=False,
-                    break_on_hyphens=False,
-                )
-            )
-            if p.strip()
-            else ''
-        )
-        for p in paragraphs
-    ]
-    return '\n\n'.join(wrapped_paragraphs)
-
-
 def build_toml_lines(data: dict) -> str:
     """Uses tomlkit to build the data.toml file programmatically."""
     doc = tomlkit.document()
@@ -172,11 +150,12 @@ def build_toml_lines(data: dict) -> str:
                 s_table["score_reason"] = story["score_reason"]
 
             s_table["title"] = story["title"]
-            s_table["body"] = tomlkit.string(
-                wrap_text(story["body"].strip()), multiline=True
-            )
+            s_table["body"] = tomlkit.string(story["body"], multiline=True)
             s_table["highlight"] = tomlkit.string(
-                wrap_text(story["highlight"].strip()), multiline=True
+                story["highlight"], multiline=True
+            )
+            s_table["example"] = tomlkit.string(
+                story["example"], multiline=True
             )
 
             commits = story.get("commits", {})
@@ -186,11 +165,11 @@ def build_toml_lines(data: dict) -> str:
                     commit = commits[sha]
                     c_table = tomlkit.table()
                     c_table["summary"] = tomlkit.string(
-                        wrap_text(commit["summary"].strip()), multiline=True
+                        commit["summary"], multiline=True
                     )
-                    c_table["date"] = commit.get("date", "")
-                    c_table["title"] = commit.get("title", "")
-                    c_table["url"] = commit.get("url", "")
+                    c_table["date"] = commit.get("date") or ""
+                    c_table["title"] = commit.get("title") or ""
+                    c_table["url"] = commit.get("url") or ""
                     commits_table[sha] = c_table
                 s_table["commits"] = commits_table
 
