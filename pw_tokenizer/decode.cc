@@ -91,6 +91,16 @@ std::string ErrorMessage(ArgStatus status,
   return result;
 }
 
+DecodedArg MakeErrorArg(ArgStatus status,
+                        std::string_view spec,
+                        size_t total_arguments_size,
+                        size_t bytes_consumed) {
+  return DecodedArg(status,
+                    spec,
+                    status.HasError(ArgStatus::kDecodeError)
+                        ? total_arguments_size
+                        : bytes_consumed);
+}
 }  // namespace
 
 DecodedArg::DecodedArg(ArgStatus error,
@@ -114,11 +124,16 @@ StringSegment StringSegment::ParseFormatSpec(const char* format) {
   i += SkipFlags(&format[i]);
 
   // Skip the field width.
+  const size_t width_asterisk_pos = format[i] == '*' ? i : kNoAsterisk;
   i += SkipAsteriskOrInteger(&format[i]);
 
   // Skip the precision.
+  size_t precision_asterisk_pos = kNoAsterisk;
   if (format[i] == '.') {
     i += 1;
+    if (format[i] == '*') {
+      precision_asterisk_pos = i;
+    }
     i += SkipAsteriskOrInteger(&format[i]);
   }
 
@@ -148,7 +163,11 @@ StringSegment StringSegment::ParseFormatSpec(const char* format) {
     return StringSegment();
   }
 
-  return {std::string_view(format, i + 1), type, VarargSize(length, spec)};
+  return StringSegment(std::string_view(format, i + 1),
+                       type,
+                       VarargSize(length, spec),
+                       width_asterisk_pos,
+                       precision_asterisk_pos);
 }
 
 StringSegment::ArgSize StringSegment::VarargSize(std::array<char, 2> length,
@@ -172,8 +191,9 @@ StringSegment::ArgSize StringSegment::VarargSize(std::array<char, 2> length,
   return VarargSize<int>();
 }
 
-DecodedArg StringSegment::DecodeString(
-    const span<const uint8_t>& arguments) const {
+DecodedArg StringSegment::DecodeString(const span<const uint8_t>& arguments,
+                                       const char* format,
+                                       size_t raw_size_bytes) const {
   if (arguments.empty()) {
     return DecodedArg(ArgStatus::kMissing, text_);
   }
@@ -199,11 +219,13 @@ DecodedArg StringSegment::DecodeString(
     value.append("[...]");
   }
 
-  return DecodedArg::FromValue(text_.c_str(), value.c_str(), 1 + size, status);
+  return DecodedArg::FromValue(
+      text_.c_str(), format, value.c_str(), raw_size_bytes + 1 + size, status);
 }
 
-DecodedArg StringSegment::DecodeInteger(
-    const span<const uint8_t>& arguments) const {
+DecodedArg StringSegment::DecodeInteger(const span<const uint8_t>& arguments,
+                                        const char* format,
+                                        size_t raw_size_bytes) const {
   if (arguments.empty()) {
     return DecodedArg(ArgStatus::kMissing, text_);
   }
@@ -224,14 +246,19 @@ DecodedArg StringSegment::DecodeInteger(
   }
 
   if (local_size_ == k32Bit) {
-    return DecodedArg::FromValue(
-        text_.c_str(), static_cast<uint32_t>(value), bytes);
+    return DecodedArg::FromValue(text_.c_str(),
+                                 format,
+                                 static_cast<uint32_t>(value),
+                                 raw_size_bytes + bytes);
   }
-  return DecodedArg::FromValue(text_.c_str(), value, bytes);
+  return DecodedArg::FromValue(
+      text_.c_str(), format, value, raw_size_bytes + bytes);
 }
 
 DecodedArg StringSegment::DecodeFloatingPoint(
-    const span<const uint8_t>& arguments) const {
+    const span<const uint8_t>& arguments,
+    const char* format,
+    size_t raw_size_bytes) const {
   static_assert(sizeof(float) == 4u);
   if (arguments.size() < sizeof(float)) {
     return DecodedArg(ArgStatus::kMissing, text_);
@@ -239,26 +266,90 @@ DecodedArg StringSegment::DecodeFloatingPoint(
 
   float value;
   std::memcpy(&value, arguments.data(), sizeof(value));
-  return DecodedArg::FromValue(text_.c_str(), value, sizeof(value));
+  return DecodedArg::FromValue(
+      text_.c_str(), format, value, raw_size_bytes + sizeof(value));
+}
+
+DecodedArg StringSegment::DecodeStringOrNumber(
+    const span<const uint8_t>& arguments,
+    const char* format,
+    size_t raw_size_bytes) const {
+  if (type_ == kString) {
+    return DecodeString(arguments, format, raw_size_bytes);
+  }
+  if (type_ == kSignedInt || type_ == kUnsigned32 || type_ == kUnsigned64) {
+    return DecodeInteger(arguments, format, raw_size_bytes);
+  }
+  if (type_ == kFloatingPoint) {
+    return DecodeFloatingPoint(arguments, format, raw_size_bytes);
+  }
+  return DecodedArg(ArgStatus::kDecodeError, text_);
 }
 
 DecodedArg StringSegment::Decode(const span<const uint8_t>& arguments) const {
-  switch (type_) {
-    case kLiteral:
-      return DecodedArg(text_);
-    case kPercent:
-      return DecodedArg("%");
-    case kString:
-      return DecodeString(arguments);
-    case kSignedInt:
-    case kUnsigned32:
-    case kUnsigned64:
-      return DecodeInteger(arguments);
-    case kFloatingPoint:
-      return DecodeFloatingPoint(arguments);
+  if (type_ == kLiteral) {
+    return DecodedArg(text_);
+  }
+  if (type_ == kPercent) {
+    return DecodedArg("%");
   }
 
-  return DecodedArg(ArgStatus::kDecodeError, text_);
+  if (width_asterisk_pos_ == kNoAsterisk &&
+      precision_asterisk_pos_ == kNoAsterisk) {
+    return DecodeStringOrNumber(arguments, text_.c_str(), 0);
+  }
+
+  return DecodeArgWithAsterisks(arguments);
+}
+
+DecodedArg StringSegment::DecodeArgWithAsterisks(
+    const span<const uint8_t>& arguments) const {
+  size_t bytes_consumed = 0;
+  ArgStatus status = ArgStatus::kOk;
+  span<const uint8_t> remaining_arguments = arguments;
+
+  auto decode_asterisk =
+      [&remaining_arguments, &status, &bytes_consumed](int64_t& val) -> bool {
+    if (remaining_arguments.empty()) {
+      status.Update(ArgStatus::kMissing);
+      return false;
+    }
+    size_t bytes = varint::Decode(as_bytes(remaining_arguments), &val);
+    if (bytes == 0u) {
+      status.Update(ArgStatus::kDecodeError);
+      return false;
+    }
+    bytes_consumed += bytes;
+    remaining_arguments = remaining_arguments.subspan(bytes);
+    return true;
+  };
+
+  int64_t width_val = 0;
+  if (width_asterisk_pos_ != kNoAsterisk && !decode_asterisk(width_val)) {
+    return MakeErrorArg(status, text_, arguments.size(), bytes_consumed);
+  }
+  int64_t precision_val = 0;
+  if (precision_asterisk_pos_ != kNoAsterisk &&
+      !decode_asterisk(precision_val)) {
+    return MakeErrorArg(status, text_, arguments.size(), bytes_consumed);
+  }
+
+  std::string resolved = text_;
+  if (precision_asterisk_pos_ != kNoAsterisk) {
+    // Ignore negative precision, as required by the C99 standard.
+    if (precision_val < 0) {
+      resolved.erase(precision_asterisk_pos_ - 1, 2);
+    } else {
+      resolved.replace(
+          precision_asterisk_pos_, 1, std::to_string(precision_val));
+    }
+  }
+  if (width_asterisk_pos_ != kNoAsterisk) {
+    resolved.replace(width_asterisk_pos_, 1, std::to_string(width_val));
+  }
+
+  return DecodeStringOrNumber(
+      remaining_arguments, resolved.c_str(), bytes_consumed);
 }
 
 DecodedArg StringSegment::Skip() const {

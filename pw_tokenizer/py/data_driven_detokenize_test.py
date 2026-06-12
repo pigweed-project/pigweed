@@ -23,6 +23,8 @@ from detokenize_test_cases import (
     TEST_CASES,
     OPTIONALLY_TOKENIZED_TEST_CASES,
     WITH_ARGS_SUCCESSFUL_CASES_BINARY,
+    WITH_ARGS_STAR_CASES_BINARY,
+    WITH_ARGS_PERCENT_G_CASES_BINARY,
     WITH_COLLISIONS_CASES_BINARY,
     TEST_DATABASE,
     DATA_WITH_ARGUMENTS,
@@ -49,6 +51,20 @@ _WITH_ARGS_BINARY_TESTS = TestGenerator(
     cc_test=cc.WITH_ARGS_BINARY_TESTS,
     java_test=java.WITH_ARGS_BINARY_TESTS,
     rust_test=rust.WITH_ARGS_BINARY_TESTS,
+)
+_WITH_ARGS_STAR_TESTS = TestGenerator(
+    WITH_ARGS_STAR_CASES_BINARY,
+    cc_test=cc.WITH_ARGS_BINARY_TESTS,
+    java_test=java.WITH_ARGS_BINARY_TESTS,
+    # TODO: b/523305904 - Support * width and precision in Rust.
+    rust_test=rust.skip_test('with_args_star_tests'),
+)
+_WITH_ARGS_PERCENT_G_TESTS = TestGenerator(
+    WITH_ARGS_PERCENT_G_CASES_BINARY,
+    cc_test=cc.WITH_ARGS_BINARY_TESTS,
+    java_test=java.WITH_ARGS_BINARY_TESTS,
+    # TODO: b/523306892 - Support %g and %G format specifiers in Rust.
+    rust_test=rust.skip_test('with_args_percent_g_tests'),
 )
 _WITH_COLLISIONS_TESTS = TestGenerator(
     WITH_COLLISIONS_CASES_BINARY,
@@ -116,6 +132,30 @@ DetokenizeWithArgsBinTest = _WITH_ARGS_BINARY_TESTS.python_tests(
     ),
 )
 
+DetokenizeWithArgsStarTest = _WITH_ARGS_STAR_TESTS.python_tests(
+    'DetokenizeWithArgsStarTest',
+    lambda ctx: _define_py_test_binary(
+        Detokenizer(
+            tokens.Database(
+                tokens.parse_binary(io.BytesIO(DATA_WITH_ARGUMENTS))
+            )
+        ),
+        ctx,
+    ),
+)
+
+DetokenizeWithArgsPercentGTest = _WITH_ARGS_PERCENT_G_TESTS.python_tests(
+    'DetokenizeWithArgsPercentGTest',
+    lambda ctx: _define_py_test_binary(
+        Detokenizer(
+            tokens.Database(
+                tokens.parse_binary(io.BytesIO(DATA_WITH_ARGUMENTS))
+            )
+        ),
+        ctx,
+    ),
+)
+
 DetokenizeWithCollisionsTest = _WITH_COLLISIONS_TESTS.python_tests(
     'DetokenizeWithCollisionsTest',
     lambda ctx: _define_py_test_binary(
@@ -134,5 +174,7 @@ if __name__ == '__main__':
         _BASIC_TESTS,
         _OPTIONALLY_TOKENIZED_TESTS,
         _WITH_ARGS_BINARY_TESTS,
+        _WITH_ARGS_STAR_TESTS,
+        _WITH_ARGS_PERCENT_G_TESTS,
         _WITH_COLLISIONS_TESTS,
     )

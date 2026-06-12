@@ -54,6 +54,7 @@ cc_defaults {
         "pw_android_common_backends",
         "pw_android_common_target_support",
     ],
+    local_include_dirs: ["private"],
     header_libs: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",

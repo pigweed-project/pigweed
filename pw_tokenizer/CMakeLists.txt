@@ -129,9 +129,9 @@ pw_add_library(pw_tokenizer.detokenize_from_this_program STATIC
 
 pw_add_library(pw_tokenizer._csv STATIC
   HEADERS
-    pw_tokenizer_private/csv.h
+    private/pw_tokenizer_private/csv.h
   PUBLIC_INCLUDES
-    .
+    private
   SOURCES
     csv.cc
   PRIVATE_DEPS
@@ -141,7 +141,9 @@ pw_add_library(pw_tokenizer._csv STATIC
 pw_add_test(pw_tokenizer.csv_test
   SOURCES
     csv_test.cc
-    pw_tokenizer_private/csv.h
+    private/pw_tokenizer_private/csv.h
+  PRIVATE_INCLUDES
+    private
   PRIVATE_DEPS
     pw_tokenizer._csv
   GROUPS
@@ -176,9 +178,9 @@ pw_add_test(pw_tokenizer.argument_types_test
   SOURCES
     argument_types_test_c.c
     argument_types_test.cc
-    pw_tokenizer_private/argument_types_test.h
+    private/pw_tokenizer_private/argument_types_test.h
   PRIVATE_INCLUDES
-    .
+    private
   PRIVATE_DEPS
     pw_tokenizer
   GROUPS
@@ -199,10 +201,10 @@ pw_add_test(pw_tokenizer.base64_test
 pw_add_test(pw_tokenizer.decode_test
   SOURCES
     decode_test.cc
-    pw_tokenizer_private/tokenized_string_decoding_test_data.h
-    pw_tokenizer_private/varint_decoding_test_data.h
+    private/pw_tokenizer_private/tokenized_string_decoding_test_data.h
+    private/pw_tokenizer_private/varint_decoding_test_data.h
   PRIVATE_INCLUDES
-    .
+    private
   PRIVATE_DEPS
     pw_varint
     pw_tokenizer.decoder
@@ -214,9 +216,11 @@ pw_add_test(pw_tokenizer.decode_test
 pw_add_test(pw_tokenizer.detokenize_test
   SOURCES
     detokenize_test.cc
-    pw_tokenizer_private/tokenize_test.h
+    private/pw_tokenizer_private/printf_support.h
+    private/pw_tokenizer_private/printf_support.cc
+    private/pw_tokenizer_private/tokenize_test.h
   PRIVATE_INCLUDES
-    .
+    private
   PRIVATE_DEPS
     pw_base64
     pw_tokenizer.decoder
@@ -240,9 +244,9 @@ pw_add_test(pw_tokenizer.encode_args_test
 pw_add_test(pw_tokenizer.hash_test
   SOURCES
     hash_test.cc
-    pw_tokenizer_private/generated_hash_test_cases.h
+    private/pw_tokenizer_private/generated_hash_test_cases.h
   PRIVATE_INCLUDES
-    .
+    private
   PRIVATE_DEPS
     pw_tokenizer
   GROUPS
@@ -264,9 +268,9 @@ pw_add_test(pw_tokenizer.tokenize_test
   SOURCES
     tokenize_test_c.c
     tokenize_test.cc
-    pw_tokenizer_private/tokenize_test.h
+    private/pw_tokenizer_private/tokenize_test.h
   PRIVATE_INCLUDES
-    .
+    private
   PRIVATE_DEPS
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_string.string

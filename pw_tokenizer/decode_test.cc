@@ -248,5 +248,40 @@ TEST_F(DecodedFormatStringTest, DecodingErrors_TwoArgs_IsZero) {
   EXPECT_EQ(0u, two_args_.Format("\x02\x02").decoding_errors());
 }
 
+TEST(TokenizedStringDecode, AsteriskModifiers) {
+  // %*d: width = 5 (zigzag 10 = \x0a), value = 42 (zigzag 84 = \x54)
+  EXPECT_EQ(FormatString("%*d").Format("\x0a\x54"sv).value(), "   42");
+
+  // %*d: width = -5 (zigzag 9 = \x09), value = 42 (zigzag 84 = \x54)
+  EXPECT_EQ(FormatString("%*d").Format("\x09\x54"sv).value(), "42   ");
+
+  // %.*s: precision = 3 (zigzag 6 = \x06), value = "hello" (\x05hello)
+  EXPECT_EQ(FormatString("%.*s").Format("\x06\x05hello"sv).value(), "hel");
+
+  // %*.*f: width = 8 (\x10), precision = 2 (\x04), value = 3.14159f
+  // (\xd0\x0f\x49\x40)
+  EXPECT_EQ(FormatString("%*.*f").Format("\x10\x04\xd0\x0f\x49\x40"sv).value(),
+            "    3.14");
+
+  // %*.*f: width = 8 (\x10), precision = -2 (\x03), value = 3.14159f
+  // (\xd0\x0f\x49\x40) C++ snprintf treats negative precision as ignored, so it
+  // defaults to 6: "3.141590"
+  EXPECT_EQ(FormatString("%*.*f").Format("\x10\x03\xd0\x0f\x49\x40"sv).value(),
+            "3.141590");
+}
+
+TEST(TokenizedStringDecode, InvalidAsterisks) {
+  // Format strings with invalid/multiple asterisks should be treated as plain
+  // literals
+  EXPECT_EQ(FormatString("%**d").text(), "%**d");
+  EXPECT_EQ(FormatString("%**d").Format("").value(), "%**d");
+
+  EXPECT_EQ(FormatString("%***d").text(), "%***d");
+  EXPECT_EQ(FormatString("%***d").Format("").value(), "%***d");
+
+  EXPECT_EQ(FormatString("%*.*.*f").text(), "%*.*.*f");
+  EXPECT_EQ(FormatString("%*.*.*f").Format("").value(), "%*.*.*f");
+}
+
 }  // namespace
 }  // namespace pw::tokenizer

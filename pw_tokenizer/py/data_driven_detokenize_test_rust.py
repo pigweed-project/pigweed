@@ -122,3 +122,12 @@ WITH_COLLISIONS_TESTS = (
     "mod with_collisions_tests {\n    use super::*;\n",
     "}\n",
 )
+
+
+def skip_test(module_name: str) -> tuple:
+    """Returns a test config that generates an empty Rust module (no tests)."""
+    return (
+        lambda ctx: (),
+        f"mod {module_name} {{\n",
+        "}\n",
+    )

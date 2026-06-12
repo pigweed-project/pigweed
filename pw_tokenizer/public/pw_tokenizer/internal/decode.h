@@ -79,7 +79,8 @@ class DecodedArg {
   // string using the provided format string. The number of bytes that were
   // decoded to get the value are provided in raw_size_bytes.
   template <typename ArgumentType>
-  static DecodedArg FromValue(const char* format_string,
+  static DecodedArg FromValue(const char* spec,
+                              const char* format_string,
                               ArgumentType value,
                               size_t raw_size_bytes,
                               ArgStatus arg_status = ArgStatus::kOk);
@@ -142,6 +143,18 @@ class StringSegment {
 
   const std::string& text() const { return text_; }
 
+  enum Type {
+    kLiteral,
+    kPercent,  // %% format specifier
+    kString,
+    kSignedInt,
+    kUnsigned32,
+    kUnsigned64,
+    kFloatingPoint,
+  };
+
+  Type type() const { return type_; }
+
   friend bool operator==(const StringSegment& lhs, const StringSegment& rhs) {
     return lhs.type_ == rhs.type_ && lhs.local_size_ == rhs.local_size_ &&
            lhs.text_ == rhs.text_;
@@ -152,15 +165,7 @@ class StringSegment {
   }
 
  private:
-  enum Type {
-    kLiteral,
-    kPercent,  // %% format specifier
-    kString,
-    kSignedInt,
-    kUnsigned32,
-    kUnsigned64,
-    kFloatingPoint,
-  };
+  static constexpr size_t kNoAsterisk = std::string::npos;
 
   // Varargs-promoted size of args on this machine; only needed for ints or %p.
   enum ArgSize : bool { k32Bit, k64Bit };
@@ -180,15 +185,40 @@ class StringSegment {
   StringSegment(std::string_view text, Type type, ArgSize local_size)
       : text_(text), type_(type), local_size_(local_size) {}
 
-  DecodedArg DecodeString(const span<const uint8_t>& arguments) const;
+  StringSegment(std::string_view text,
+                Type type,
+                ArgSize local_size,
+                size_t width_asterisk_pos,
+                size_t precision_asterisk_pos)
+      : text_(text),
+        type_(type),
+        local_size_(local_size),
+        width_asterisk_pos_(width_asterisk_pos),
+        precision_asterisk_pos_(precision_asterisk_pos) {}
 
-  DecodedArg DecodeInteger(const span<const uint8_t>& arguments) const;
+  DecodedArg DecodeString(const span<const uint8_t>& arguments,
+                          const char* format,
+                          size_t raw_size_bytes) const;
 
-  DecodedArg DecodeFloatingPoint(const span<const uint8_t>& arguments) const;
+  DecodedArg DecodeInteger(const span<const uint8_t>& arguments,
+                           const char* format,
+                           size_t raw_size_bytes) const;
+
+  DecodedArg DecodeFloatingPoint(const span<const uint8_t>& arguments,
+                                 const char* format,
+                                 size_t raw_size_bytes) const;
+
+  DecodedArg DecodeStringOrNumber(const span<const uint8_t>& arguments,
+                                  const char* format,
+                                  size_t raw_size_bytes) const;
+
+  DecodedArg DecodeArgWithAsterisks(const span<const uint8_t>& arguments) const;
 
   std::string text_;
   Type type_;
   ArgSize local_size_;  // Arg size to use for snprintf on this machine.
+  size_t width_asterisk_pos_ = kNoAsterisk;
+  size_t precision_asterisk_pos_ = kNoAsterisk;
 };
 
 // The result of decoding a tokenized message with a FormatString. Stores
@@ -249,6 +279,8 @@ class FormatString {
   // Returns the raw, unformatted version of this string.
   std::string text() const;
 
+  span<const StringSegment> segments() const { return segments_; }
+
   friend bool operator==(const FormatString& lhs, const FormatString& rhs) {
     return lhs.segments_ == rhs.segments_;
   }
@@ -265,11 +297,12 @@ PW_MODIFY_DIAGNOSTICS_PUSH();
 PW_MODIFY_DIAGNOSTIC(ignored, "-Wformat-nonliteral");
 // Implementation of DecodedArg::FromValue template function.
 template <typename ArgumentType>
-DecodedArg DecodedArg::FromValue(const char* format,
+DecodedArg DecodedArg::FromValue(const char* spec,
+                                 const char* format,
                                  ArgumentType value,
                                  size_t raw_size_bytes,
                                  ArgStatus status) {
-  DecodedArg arg(format, raw_size_bytes, status);
+  DecodedArg arg(spec, raw_size_bytes, status);
   const int value_size = std::snprintf(nullptr, 0u, format, value);
 
   if (value_size < 0) {

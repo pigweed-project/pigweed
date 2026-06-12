@@ -24,6 +24,7 @@ _CPP_HEADER = """
 #include <string_view>
 
 #include "pw_bytes/array.h"
+#include "pw_tokenizer_private/printf_support.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -80,8 +81,12 @@ def _cpp_test_with_args(ctx: Context) -> Iterator[str]:
 TEST(DetokenizeWithArgsBinTest, {ctx.cc_name()}) {{
   const pw::tokenizer::Detokenizer detok(kDataWithArguments);
   constexpr std::string_view data = {cc_string(data)}sv;
-  EXPECT_EQ(detok.Detokenize(pw::as_bytes(pw::span(data))).BestString(),
-  {cc_string(expected)});
+  const auto result = detok.Detokenize(pw::as_bytes(pw::span(data)));
+  if (pw::tokenizer::test::FormatIsSupported(detok, data)) {{
+    EXPECT_EQ(result.BestString(), {cc_string(expected)});
+  }} else {{
+    EXPECT_NE(result.BestString(), {cc_string(expected)});
+  }}
 }}"""
 
 

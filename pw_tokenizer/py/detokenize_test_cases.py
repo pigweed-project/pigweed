@@ -84,12 +84,37 @@ WITH_ARGS_SUCCESSFUL_CASES_BINARY = (
     TestCaseBytes(
         b'\x0e\x0f\x00\x01\x80\x01\x04them', 'Now there are 64 of them!'
     ),
+    TestCaseBytes(b'\x01\x00\x0d\xf0\xd0\x0f\x49\x40', '3.141590'),
+    TestCaseBytes(b'\x01\x00\x0d\xf0\xd0\x0f\x49\xc0', '-3.141590'),
+    TestCaseBytes(b'\x01\x00\x0d\xf0\x00\x00\x00\x00', '0.000000'),
+    TestCaseBytes(b'\x02\x00\x0d\xf0\xd0\x0f\x49\x40', '3.14'),
+    TestCaseBytes(b'\x03\x00\x0d\xf0\xd0\x0f\x49\x40', '  3.1'),
+    TestCaseBytes(b'\x04\x00\x0d\xf0\xd0\x0f\x49\x40', '+3.141590'),
+    TestCaseBytes(b'\x05\x00\x0d\xf0\xd0\x0f\x49\x40', '3'),
     TestCaseBytes(b'\xAA\xAA\xAA\xAA\xfc\x01', '~!'),
     TestCaseBytes(b'\xCC\xCC\xCC\xCC\xfe\xff\x07', '65535!'),
     TestCaseBytes(b'\xDD\xDD\xDD\xDD\xfe\xff\x07', '65535!'),
     TestCaseBytes(b'\xDD\xDD\xDD\xDD\xfe\xff\xff\xff\x1f', '4294967295!'),
     TestCaseBytes(b'\xEE\xEE\xEE\xEE\xfe\xff\x07', '65535!'),
     TestCaseBytes(b'\xEE\xEE\xEE\xEE\xfe\xff\xff\xff\x1f', '4294967295!'),
+    TestCaseBytes(b'\xFF\xFF\xFF\xFF\xfe\xff\xff\xff\x1f', '4294967295!'),
+)
+
+WITH_ARGS_STAR_CASES_BINARY = (
+    'With args star binary',
+    TestCaseBytes(b'\xe4\x1e\x7d\x41\x0a\x54', '   42'),
+    TestCaseBytes(b'\xe4\x1e\x7d\x41\x09\x54', '42   '),
+    TestCaseBytes(b'\x16\xbf\x18\x3c\x06\x05hello', 'hel'),
+    TestCaseBytes(b'\xe0\x6b\x83\x6b\x10\x04\xd0\x0f\x49\x40', '    3.14'),
+    TestCaseBytes(b'\x03\xf0\x46\x3f\x0a\x54', '%**d'),
+    TestCaseBytes(b'\x5e\x19\xe6\xad\x10\x04\xd0\x0f\x49\x40', '%*.*.*f'),
+)
+
+WITH_ARGS_PERCENT_G_CASES_BINARY = (
+    'With args percent g binary',
+    TestCaseBytes(b'\x06\x00\x0d\xf0\xd0\x0f\x49\x40', '3.14159'),
+    TestCaseBytes(b'\x07\x00\x0d\xf0\xd0\x0f\x49\x40', '3.14'),
+    TestCaseBytes(b'\x08\x00\x0d\xf0\x00\x29\x8b\x49', '1.14E+06'),
 )
 
 WITH_COLLISIONS_CASES_BINARY = (
@@ -147,26 +172,52 @@ TEST_DATABASE = (
 
 DATA_WITH_ARGUMENTS = (
     b'TOKENS\0\0'
-    b'\x09\x00\x00\x00'
+    b'\x16\x00\x00\x00'
     b'\0\0\x00\x00'
     b'\x00\x00\x00\x00----'
-    b'\x0A\x0B\x0C\x0D----'
-    b'\x0E\x0F\x00\x01----'
-    b'\xAA\xAA\xAA\xAA----'
-    b'\xBB\xBB\xBB\xBB----'
-    b'\xCC\xCC\xCC\xCC----'
-    b'\xDD\xDD\xDD\xDD----'
-    b'\xEE\xEE\xEE\xEE----'
-    b'\xFF\xFF\xFF\xFF----'
+    b'\x0a\x0b\x0c\x0d----'
+    b'\x0e\x0f\x00\x01----'
+    b'\x01\x00\x0d\xf0----'
+    b'\x02\x00\x0d\xf0----'
+    b'\x03\x00\x0d\xf0----'
+    b'\x04\x00\x0d\xf0----'
+    b'\x05\x00\x0d\xf0----'
+    b'\xaa\xaa\xaa\xaa----'
+    b'\xbb\xbb\xbb\xbb----'
+    b'\xcc\xcc\xcc\xcc----'
+    b'\xdd\xdd\xdd\xdd----'
+    b'\xee\xee\xee\xee----'
+    b'\xff\xff\xff\xff----'
+    b'\xe4\x1e\x7d\x41----'
+    b'\x16\xbf\x18\x3c----'
+    b'\xe0\x6b\x83\x6b----'
+    b'\x03\xf0\x46\x3f----'
+    b'\x5e\x19\xe6\xad----'
+    b'\x06\x00\x0d\xf0----'
+    b'\x07\x00\x0d\xf0----'
+    b'\x08\x00\x0d\xf0----'
     b'\0'
     b'Use the %s, %s.\0'
     b'Now there are %d of %s!\0'
+    b'%f\0'
+    b'%.2f\0'
+    b'%5.1f\0'
+    b'%+f\0'
+    b'%.0f\0'
     b'%c!\0'
     b'%hhu!\0'
     b'%hu!\0'
     b'%u!\0'
     b'%lu!\0'
-    b'%llu!'
+    b'%llu!\0'
+    b'%*d\0'
+    b'%.*s\0'
+    b'%*.*f\0'
+    b'%**d\0'
+    b'%*.*.*f\0'
+    b'%g\0'
+    b'%.3g\0'
+    b'%G\0'
 )
 
 DATA_WITH_COLLISIONS = (

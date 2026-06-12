@@ -36,6 +36,11 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
+config("private_include_path") {
+  include_dirs = [ "private" ]
+  visibility = [ ":*" ]
+}
+
 config("linker_script") {
   inputs = [ "pw_tokenizer_linker_sections.ld" ]
   lib_dirs = [ "." ]
@@ -188,8 +193,9 @@ pw_source_set("detokenize_from_this_program") {
 }
 
 pw_source_set("csv") {
-  public = [ "pw_tokenizer_private/csv.h" ]
+  public = [ "private/pw_tokenizer_private/csv.h" ]
   sources = [ "csv.cc" ]
+  public_configs = [ ":private_include_path" ]
   deps = [ dir_pw_log ]
   visibility = [ ":*" ]
 
@@ -257,8 +263,9 @@ pw_test("argument_types_test") {
   sources = [
     "argument_types_test.cc",
     "argument_types_test_c.c",
-    "pw_tokenizer_private/argument_types_test.h",
+    "private/pw_tokenizer_private/argument_types_test.h",
   ]
+  configs = [ ":private_include_path" ]
   deps = [ ":pw_tokenizer" ]
 
   if (pw_arduino_build_CORE_PATH != "") {
@@ -277,9 +284,10 @@ pw_test("base64_test") {
 pw_test("decode_test") {
   sources = [
     "decode_test.cc",
-    "pw_tokenizer_private/tokenized_string_decoding_test_data.h",
-    "pw_tokenizer_private/varint_decoding_test_data.h",
+    "private/pw_tokenizer_private/tokenized_string_decoding_test_data.h",
+    "private/pw_tokenizer_private/varint_decoding_test_data.h",
   ]
+  configs = [ ":private_include_path" ]
   deps = [
     ":decoder",
     "$dir_pw_varint",
@@ -305,7 +313,12 @@ pw_python_action("generate_data_driven_detokenize_test") {
 }
 
 pw_test("detokenize_test") {
-  sources = [ "detokenize_test.cc" ]
+  sources = [
+    "detokenize_test.cc",
+    "private/pw_tokenizer_private/printf_support.cc",
+    "private/pw_tokenizer_private/printf_support.h",
+  ]
+  configs = [ ":private_include_path" ]
   deps = [
     ":base64",
     ":decoder",
@@ -358,8 +371,9 @@ pw_test("enum_test") {
 pw_test("hash_test") {
   sources = [
     "hash_test.cc",
-    "pw_tokenizer_private/generated_hash_test_cases.h",
+    "private/pw_tokenizer_private/generated_hash_test_cases.h",
   ]
+  configs = [ ":private_include_path" ]
   deps = [ ":pw_tokenizer" ]
 }
 
@@ -375,10 +389,11 @@ pw_test("token_database_test") {
 
 pw_test("tokenize_test") {
   sources = [
-    "pw_tokenizer_private/tokenize_test.h",
+    "private/pw_tokenizer_private/tokenize_test.h",
     "tokenize_test.cc",
     "tokenize_test_c.c",
   ]
+  configs = [ ":private_include_path" ]
   deps = [
     ":pw_tokenizer",
     "$dir_pw_string:string",

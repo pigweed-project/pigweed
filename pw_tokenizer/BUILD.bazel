@@ -162,8 +162,9 @@ cc_library(
 cc_library(
     name = "csv",
     srcs = ["csv.cc"],
-    hdrs = ["pw_tokenizer_private/csv.h"],
+    hdrs = ["private/pw_tokenizer_private/csv.h"],
     implementation_deps = ["//pw_log"],
+    includes = ["private"],
     visibility = ["//visibility:private"],
 )
 
@@ -218,8 +219,9 @@ pw_cc_test(
     srcs = [
         "argument_types_test.cc",
         "argument_types_test_c.c",
-        "pw_tokenizer_private/argument_types_test.h",
+        "private/pw_tokenizer_private/argument_types_test.h",
     ],
+    includes = ["private"],
     deps = [
         ":pw_tokenizer",
         "//pw_polyfill",
@@ -242,9 +244,10 @@ pw_cc_test(
     name = "decode_test",
     srcs = [
         "decode_test.cc",
-        "pw_tokenizer_private/tokenized_string_decoding_test_data.h",
-        "pw_tokenizer_private/varint_decoding_test_data.h",
+        "private/pw_tokenizer_private/tokenized_string_decoding_test_data.h",
+        "private/pw_tokenizer_private/varint_decoding_test_data.h",
     ],
+    includes = ["private"],
     # TODO: https://pwbug.dev/346628514 - Fix this for rp2040
     target_compatible_with = select({
         "//pw_build/constraints/chipset:rp2040": ["@platforms//:incompatible"],
@@ -286,8 +289,11 @@ pw_cc_test(
     name = "detokenize_test",
     srcs = [
         "detokenize_test.cc",
+        "private/pw_tokenizer_private/printf_support.cc",
+        "private/pw_tokenizer_private/printf_support.h",
         ":generate_data_driven_detokenize_test",
     ],
+    includes = ["private"],
     deps = [
         ":base64",
         ":decoder",
@@ -347,8 +353,9 @@ pw_cc_test(
     name = "hash_test",
     srcs = [
         "hash_test.cc",
-        "pw_tokenizer_private/generated_hash_test_cases.h",
+        "private/pw_tokenizer_private/generated_hash_test_cases.h",
     ],
+    includes = ["private"],
     tags = ["noclangtidy"],
     deps = [
         ":pw_tokenizer",
@@ -375,11 +382,12 @@ pw_cc_test(
 pw_cc_test(
     name = "tokenize_test",
     srcs = [
-        "pw_tokenizer_private/tokenize_test.h",
+        "private/pw_tokenizer_private/tokenize_test.h",
         "tokenize_test.cc",
         "tokenize_test_c.c",
     ],
     has_nc_test = True,
+    includes = ["private"],
     # TODO: b/344050496 - get working on rp2040 and stm32f429i
     target_compatible_with = incompatible_with_mcu(),
     deps = [

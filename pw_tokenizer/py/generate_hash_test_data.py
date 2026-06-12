@@ -15,7 +15,7 @@
 """Generates test data for hash_test.cc."""
 
 import datetime
-import os
+from pathlib import Path
 import random
 
 from pw_tokenizer import tokens
@@ -162,18 +162,14 @@ def generate_test_cases(test_case_template):
         yield test_case(test_case_template, random_string(length + 1))
 
 
-def generate_file(
-    path_array, header_template, footer_template, test_case_template
-):
-    path = os.path.realpath(
-        os.path.join(os.path.dirname(__file__), *path_array)
-    )
+def generate_file(path, header_template, footer_template, test_case_template):
+    full_path = (Path(__file__).parent / path).resolve()
 
-    with open(path, 'w') as output:
+    with open(full_path, 'w') as output:
         output.write(
             SHARED_HEADER.format(
                 year=datetime.date.today().year,
-                script=os.path.basename(__file__),
+                script=Path(__file__).name,
             )
         )
         output.write(
@@ -186,26 +182,21 @@ def generate_file(
             output.write(case)
 
         output.write(footer_template)
-        print('Wrote test data to', path)
+        print('Wrote test data to', full_path)
 
 
 if __name__ == '__main__':
     generate_file(
-        [
-            '..',
-            'pw_tokenizer_private',
-            'generated_hash_test_cases.h',
-        ],
+        Path('..')
+        / 'private'
+        / 'pw_tokenizer_private'
+        / 'generated_hash_test_cases.h',
         CPP_HEADER,
         CPP_FOOTER,
         _CPP_TEST_CASE,
     )
     generate_file(
-        [
-            '..',
-            'rust',
-            'pw_tokenizer_core_test_cases.rs',
-        ],
+        Path('..') / 'rust' / 'pw_tokenizer_core_test_cases.rs',
         RUST_HEADER,
         RUST_FOOTER,
         _RUST_TEST_CASE,
