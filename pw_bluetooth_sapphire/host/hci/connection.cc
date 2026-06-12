@@ -48,7 +48,7 @@ Connection::Connection(hci_spec::ConnectionHandle handle,
                                        std::move(on_disconnection_complete)](
                                       const EventPacket& event) mutable {
     return Connection::OnDisconnectionComplete(
-        self, handle, event, std::move(on_disconnection_complete_cb));
+        self, handle, event, on_disconnection_complete_cb);
   };
   hci_->command_channel()->AddEventHandler(
       hci_spec::kDisconnectionCompleteEventCode,
@@ -71,7 +71,7 @@ CommandChannel::EventCallbackResult Connection::OnDisconnectionComplete(
     const WeakSelf<Connection>::WeakPtr& self,
     hci_spec::ConnectionHandle handle,
     const EventPacket& event,
-    fit::callback<void()> on_disconnection_complete) {
+    fit::callback<void()>& on_disconnection_complete) {
   PW_CHECK(event.event_code() == hci_spec::kDisconnectionCompleteEventCode);
 
   auto view =

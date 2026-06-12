@@ -431,6 +431,164 @@ TEST_P(LinkTypeConnectionTest, LinkRegistrationAndRemoteDisconnection) {
   // |acl_connection_1| is destroyed in test destructor
   EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kHandle1));
 }
+// This test verifies that in a multi-connection scenario, the disconnection
+// complete callback for a connection is not prematurely destroyed when a
+// different connection disconnects.
+//
+// The bug was that the global event handler for Disconnection Complete captured
+// the callback by value and moved it into the handler function. If the event
+// was for a different connection, the handler returned early, destroying the
+// callback and leaving the connection with a null callback. When that
+// connection eventually disconnected, its callback (which clears controller
+// packet counts) was not run, leaking controller buffer space.
+//
+// We verify this by registering 3 connections, triggering a disconnect on Conn
+// 0 (which would destroy Conn 1 & 2's callbacks if the bug is present), and
+// then verifying that Conn 1's subsequent disconnect still successfully clears
+// its packet count and allows Conn 2's blocked packets to be sent.
+TEST_P(LinkTypeConnectionTest,
+       MultiConnectionDisconnectionCallbackDestruction) {
+  const bt::LinkType ll_type = GetParam();
+  const hci_spec::ConnectionHandle kHandle0 = 0x0001;
+  const hci_spec::ConnectionHandle kHandle1 = 0x0002;
+  const hci_spec::ConnectionHandle kHandle2 = 0x0003;
+
+  const auto& kBufferInfo =
+      ll_type == bt::LinkType::kACL ? kBrEdrBufferInfo : kLeBufferInfo;
+
+  // 1. Register three connections (Conn 0, Conn 1, Conn 2).
+  FakeAclConnection acl_connection_0(acl_data_channel(), kHandle0, ll_type);
+  FakeAclConnection acl_connection_1(acl_data_channel(), kHandle1, ll_type);
+  FakeAclConnection acl_connection_2(acl_data_channel(), kHandle2, ll_type);
+
+  acl_data_channel()->RegisterConnection(acl_connection_0.GetWeakPtr());
+  acl_data_channel()->RegisterConnection(acl_connection_1.GetWeakPtr());
+  acl_data_channel()->RegisterConnection(acl_connection_2.GetWeakPtr());
+
+  auto hci_connection_0 =
+      NewConnection(pw::bluetooth::emboss::ConnectionRole::CENTRAL, kHandle0);
+  auto hci_connection_1 =
+      NewConnection(pw::bluetooth::emboss::ConnectionRole::CENTRAL, kHandle1);
+  auto hci_connection_2 =
+      NewConnection(pw::bluetooth::emboss::ConnectionRole::CENTRAL, kHandle2);
+
+  // 2. Fill up controller buffer using Conn 0
+  for (size_t i = 0; i < kBufferInfo.max_num_packets(); i++) {
+    const StaticByteBuffer kPacket(LowerBits(kHandle0),
+                                   UpperBits(kHandle0),
+                                   0x01,
+                                   0x00,
+                                   static_cast<uint8_t>(i));
+    EXPECT_ACL_PACKET_OUT(test_device(), kPacket);
+
+    ACLDataPacketPtr packet =
+        ACLDataPacket::New(kHandle0,
+                           hci_spec::ACLPacketBoundaryFlag::kFirstNonFlushable,
+                           hci_spec::ACLBroadcastFlag::kPointToPoint,
+                           /*payload_size=*/1);
+    packet->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
+    acl_connection_0.QueuePacket(std::move(packet));
+    RunUntilIdle();
+  }
+
+  // 3. Queue a packet on Conn 1 (which gets blocked).
+  ACLDataPacketPtr packet_1 =
+      ACLDataPacket::New(kHandle1,
+                         hci_spec::ACLPacketBoundaryFlag::kFirstNonFlushable,
+                         hci_spec::ACLBroadcastFlag::kPointToPoint,
+                         /*payload_size=*/1);
+  packet_1->mutable_view()->mutable_payload_data()[0] = 0xff;
+  acl_connection_1.QueuePacket(std::move(packet_1));
+  RunUntilIdle();
+
+  // Packet for |acl_connection_1| should not have been sent because controller
+  // buffer is full
+  EXPECT_EQ(acl_connection_0.queued_packets().size(), 0u);
+  EXPECT_EQ(acl_connection_1.queued_packets().size(), 1u);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  // Unregister Conn 0.
+  acl_data_channel()->UnregisterConnection(kHandle0);
+
+  // 4. Remotely disconnect Conn 0.
+  // Disconnection Complete handler should clear controller packet counts, so
+  // packet for |kHandle1| should be sent.
+  // This also triggers the bug: Conn 1 and Conn 2's disconnection callbacks
+  // are destroyed.
+  DynamicByteBuffer disconnection_complete_0(
+      bt::testing::DisconnectionCompletePacket(kHandle0));
+
+  // We expect Conn 1's packet to be sent now.
+  EXPECT_ACL_PACKET_OUT(
+      test_device(),
+      StaticByteBuffer(
+          LowerBits(kHandle1), UpperBits(kHandle1), 0x01, 0x00, 0xff));
+
+  test_device()->SendCommandChannelPacket(disconnection_complete_0);
+  RunUntilIdle();
+
+  // 5. Verifies Conn 1's packet is sent (buffer freed).
+  EXPECT_EQ(acl_connection_1.queued_packets().size(), 0u);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  // 6. Queues packets on Conn 2 until blocked (1 packet remains queued).
+  // Buffer has 1 packet (Conn 1's packet). Fill it up.
+  size_t remaining_space = kBufferInfo.max_num_packets() - 1;
+  for (size_t i = 0; i < remaining_space; i++) {
+    const StaticByteBuffer kPacket(LowerBits(kHandle1),
+                                   UpperBits(kHandle1),
+                                   0x01,
+                                   0x00,
+                                   static_cast<uint8_t>(i));
+    EXPECT_ACL_PACKET_OUT(test_device(), kPacket);
+
+    ACLDataPacketPtr p =
+        ACLDataPacket::New(kHandle1,
+                           hci_spec::ACLPacketBoundaryFlag::kFirstNonFlushable,
+                           hci_spec::ACLBroadcastFlag::kPointToPoint,
+                           /*payload_size=*/1);
+    p->mutable_view()->mutable_payload_data()[0] = static_cast<uint8_t>(i);
+    acl_connection_1.QueuePacket(std::move(p));
+    RunUntilIdle();
+  }
+
+  // Queue 1 packet on Conn 2 (should be blocked).
+  ACLDataPacketPtr packet_2 =
+      ACLDataPacket::New(kHandle2,
+                         hci_spec::ACLPacketBoundaryFlag::kFirstNonFlushable,
+                         hci_spec::ACLBroadcastFlag::kPointToPoint,
+                         /*payload_size=*/1);
+  packet_2->mutable_view()->mutable_payload_data()[0] = 0xee;
+  acl_connection_2.QueuePacket(std::move(packet_2));
+  RunUntilIdle();
+
+  EXPECT_EQ(acl_connection_2.queued_packets().size(), 1u);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  // Unregister Conn 1.
+  acl_data_channel()->UnregisterConnection(kHandle1);
+
+  // 7. Remotely disconnect Conn 1.
+  // We EXPECT Conn 2's packet to be sent.
+  EXPECT_ACL_PACKET_OUT(
+      test_device(),
+      StaticByteBuffer(
+          LowerBits(kHandle2), UpperBits(kHandle2), 0x01, 0x00, 0xee));
+
+  DynamicByteBuffer disconnection_complete_1(
+      bt::testing::DisconnectionCompletePacket(kHandle1));
+  test_device()->SendCommandChannelPacket(disconnection_complete_1);
+  RunUntilIdle();
+
+  // 8. Verification:
+  // If bug is fixed, Conn 2's packet is sent (queue size 0).
+  EXPECT_EQ(acl_connection_2.queued_packets().size(), 0u);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  // Cleanup Conn 2.
+  acl_data_channel()->UnregisterConnection(kHandle2);
+  EXPECT_CMD_PACKET_OUT(test_device(), bt::testing::DisconnectPacket(kHandle2));
+}
 
 TEST_F(ConnectionTest, StartEncryptionFailsAsLowEnergyPeripheral) {
   auto conn =

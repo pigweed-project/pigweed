@@ -103,7 +103,7 @@ class Connection {
       const WeakSelf<Connection>::WeakPtr& self,
       hci_spec::ConnectionHandle handle,
       const EventPacket& event,
-      fit::callback<void()> on_disconnection_complete);
+      fit::callback<void()>& on_disconnection_complete);
 
   static void LogDisconnectionComplete(
       const WeakSelf<Connection>::WeakPtr& self,

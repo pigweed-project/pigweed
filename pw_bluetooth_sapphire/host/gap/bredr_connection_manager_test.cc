@@ -4319,8 +4319,7 @@ TEST_F(
   EXPECT_EQ(connection_1.queued_packets().size(), 0u);
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
 
-  // Connection handle |kConnectionHandle| should have been unregistered with
-  // ACL Data Channel.
+  acl_data_channel()->UnregisterConnection(kConnectionHandle2);
   QueueDisconnection(kConnectionHandle2);
 }
 
