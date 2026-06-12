@@ -236,6 +236,9 @@ test:rp2040 --run_under=//targets/rp2040/py:unit_test_client
 build:rp2350 --platforms=@pigweed//targets/rp2040:rp2350
 test:rp2350 --run_under=//targets/rp2040/py:unit_test_client
 
+# Pigweed RP2350 based dev board platforms.
+build:pw_rp2350_freertos --platforms=@pigweed//targets/pw_rp2350/freertos:pw_rp2350
+
 # Config for the stm32f429i_disc1 baremetal platform.
 build:stm32f429i_baremetal --platforms=//targets/stm32f429i_disc1:stm32f429i_baremetal
 

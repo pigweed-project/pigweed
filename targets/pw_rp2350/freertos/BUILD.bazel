@@ -1,0 +1,156 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_build:merge_flags.bzl", "flags_from_dict")
+load("//pw_build:pw_cc_binary.bzl", "pw_cc_binary")
+load("//targets/rp2040:flash.bzl", "flash_rp2350")
+load("//third_party/freertos:flags.bzl", "FREERTOS_FLAGS")
+load(":transition.bzl", "rp2350_binary")
+
+platform(
+    name = "pw_rp2350",
+    constraint_values = [
+        "@freertos//:port_ARM_CM33_NTZ",
+        "@freertos//:disable_task_statics",
+        "@pico-sdk//bazel/constraint:rp2350",
+        "@platforms//cpu:armv8-m",
+        "@platforms//os:none",
+        "//pw_build/constraints/rtos:freertos",
+        "//pw_interrupt_cortex_m:backend",
+        "//pw_cpu_exception:enabled",
+        "//pw_build/constraints/arm:cortex-m33",
+        "//pw_build/constraints/rust:no_std",
+        ":freertos_config_cv",
+    ],
+    flags = flags_from_dict(FREERTOS_FLAGS | {
+        "//pw_assert:assert_backend": "//pw_assert_trap:assert_backend",
+        "//pw_assert:assert_backend_impl": "//pw_assert_trap:impl",
+        "//pw_assert:check_backend": "//pw_assert_trap:check_backend",
+        "//pw_assert:check_backend_impl": "//pw_assert_trap:impl",
+        "//pw_build:default_module_config": ":pigweed_module_config",
+        "//pw_cpu_exception:entry_backend": "//pw_cpu_exception_cortex_m:cpu_exception",
+        "//pw_cpu_exception:entry_backend_impl": "//pw_cpu_exception_cortex_m:cpu_exception_impl",
+        "//pw_cpu_exception:handler_backend": "//pw_cpu_exception:basic_handler",
+        "//pw_cpu_exception:support_backend": "//pw_cpu_exception_cortex_m:support",
+        "//pw_interrupt:backend": "//pw_interrupt_cortex_m:context",
+        "//pw_log/rust:pw_log_backend": ":rust_log_basic_backend",
+        "//pw_log:backend": "//pw_log_basic",
+        "//pw_log:backend_impl": "//pw_log_basic:impl",
+        "//pw_sys_io:backend": "//pw_sys_io_rp2040",
+        "//pw_toolchain:cortex-m_toolchain_kind": "clang",
+        "@freertos//:freertos_config": ":freertos_config",
+        "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
+        "@pico-sdk//bazel/config:PICO_CONFIG_EXTRA_HEADER": ":pico_config_extra_header",
+        "@pico-sdk//bazel/config:PICO_STDIO_UART": True,
+        "@pico-sdk//bazel/config:PICO_STDIO_USB": True,
+        "@pico-sdk//bazel/config:PICO_TOOLCHAIN": "clang",
+    }),
+)
+
+# These need to get linked into every `cc_binary` for the linker
+# to succeed.
+cc_library(
+    name = "extra_platform_libs",
+    deps = [
+        "//pw_build:default_link_extra_lib",
+        "//pw_libcxx",
+        "@pico-sdk//src/rp2_common/pico_clib_interface:llvm_libc_interface",
+        "@pico-sdk//src/rp2_common/pico_stdlib",
+    ],
+    alwayslink = 1,
+)
+
+constraint_value(
+    name = "freertos_config_cv",
+    constraint_setting = "@freertos//:freertos_config_setting",
+)
+
+cc_library(
+    name = "freertos_config",
+    hdrs = [
+        "config/FreeRTOSConfig.h",
+    ],
+    strip_include_prefix = "config",
+    target_compatible_with = [":freertos_config_cv"],
+    deps = [
+        "//third_party/freertos:config_assert",
+        "@pico-sdk//src/rp2_common/cmsis:cmsis_core",
+    ],
+)
+
+cc_library(
+    name = "pico_config_extra_header",
+    hdrs = [
+        "config/pico_config_extra_headers.h",
+    ],
+    strip_include_prefix = "config",
+)
+
+# This is a duplication of the contents of pigweed_module_config.h since we
+# can't do a -include because copts do not propagate to dependencies.
+cc_library(
+    name = "pigweed_module_config",
+    hdrs = ["config/pigweed_module_config.h"],
+    defines = [
+        # LINT.IfChange
+        "PW_ASSERT_BASIC_ACTION=PW_ASSERT_BASIC_ACTION_EXIT",
+        # LINT.ThenChange(//targets/rp2350/freertos/config/pigweed_module_config.h)
+    ],
+)
+
+rust_library(
+    name = "rust_log_basic_backend",
+    srcs = ["rust_log_basic_backend.rs"],
+    crate_name = "pw_log_backend",
+    edition = "2021",
+)
+
+rust_library(
+    name = "entry",
+    srcs = ["entry.rs"],
+    edition = "2021",
+    deps = [
+        "//pw_log/rust:pw_log",
+    ],
+)
+
+pw_cc_binary(
+    name = "boot",
+    srcs = [
+        "boot.cc",
+    ],
+    target_compatible_with = [":freertos_config_cv"],
+    deps = [
+        ":entry",
+        ":extra_platform_libs",
+        ":freertos_config",
+        "//pw_log",
+        "//pw_preprocessor",
+        "//third_party/freertos:support",
+        "@freertos",
+        "@pico-sdk//src/rp2_common/hardware_exception:hardware_exception",
+    ],
+)
+
+rp2350_binary(
+    name = "binary",
+    binary = ":boot",
+)
+
+flash_rp2350(
+    name = "flash",
+    rp2350_binary = ":binary",
+)

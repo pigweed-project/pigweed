@@ -125,6 +125,18 @@ pw_compile_commands_generator(
 )
 
 pw_compile_commands_generator(
+    name = "update_pw_rp2350_freertos_compile_commands",
+    display_name = "PW RP2350 FreeRTOS",
+    platform = "//targets/pw_rp2350/freertos:pw_rp2350",
+    target_patterns = [
+        "//...",
+        # Exclude build_origin because it depends on a custom workspace status script
+        # that is not set up in standard builds, which causes wildcard //... builds to fail.
+        "-//pw_build_info:build_origin",
+    ],
+)
+
+pw_compile_commands_generator(
     name = "update_rp2040_compile_commands",
     display_name = "RP2040",
     platform = "//targets/rp2040",
