@@ -859,7 +859,9 @@ more details.
 -------------
 Compatibility
 -------------
-The facade is compatible with both C and C++.
+* C
+* C++
+* `Rust </rustdoc/pw_assert>`_
 
 ---------------------------------------
 C Standard Library `assert` Replacement

@@ -13,22 +13,65 @@
 // the License.
 #![no_std]
 
+//! # pw_assert
+//!
+//! `pw_assert` provides crash-safe assert and panic macros that route to a
+//! central handler, [`pw_assert_HandleFailure`]. This is designed for embedded
+//! systems where standard library panics might not be suitable, or where
+//! specific logging/recovery behavior is needed.
+//!
+//! The macros in this crate are designed to be drop-in replacements for
+//! `core::panic!`, `core::assert!`, etc., but they route through `pw_log` to
+//! log the failure before calling the crash handler.
+//!
+//! # Example
+//!
+//! ```no_run
+//! #[unsafe(no_mangle)]
+//! #[allow(non_snake_case)]
+//! pub extern "C" fn pw_assert_HandleFailure() -> ! {
+//!     pw_log::error!("Panicking!");
+//!     loop {}
+//! }
+//! ```
+//!
+//! ```no_run
+//! pw_assert::assert!(42 == 16, "Stack start is not aligned");
+//!
+//! pw_assert::panic!("Unhandled interrupt: irq={}", 16 as u32);
+//!
+//! pw_assert::debug_assert!(1 == 0);
+//!
+//! pw_assert::debug_panic!("Next monotonic tick overflow");
+//! ```
+
 #[cfg(not(feature = "default_handler"))]
 unsafe extern "C" {
+    /// The crash handler called by asserts and panics when they fail.
+    ///
+    /// Since the `default_handler` feature is disabled, the application must
+    /// provide an implementation of this function with the `#[no_mangle]` attribute.
+    ///
+    /// This function must not return.
     pub fn pw_assert_HandleFailure() -> !;
 }
 
 #[cfg(feature = "default_handler")]
 #[allow(non_snake_case)]
+/// Default implementation of the crash handler.
+///
+/// This implementation simply delegates to `core::panic!`.
+///
 /// # Safety
-/// The default_handler panic handler is safe, but
-/// the unsafe keyword is required to match the non-default
-/// panic handler signature.
+///
+/// The default_handler panic handler is safe, but the unsafe keyword is
+/// required to match the non-default panic handler signature.
 pub unsafe extern "C-unwind" fn pw_assert_HandleFailure() -> ! {
     core::panic!("pw_assert panic")
 }
 
 // Re-export pw_log for use by panic/assert macros.
+#[doc(hidden)]
 pub mod __private {
     pub use pw_log::fatal;
 }
@@ -84,6 +127,18 @@ macro_rules! __private_log_panic_banner {
     };
 }
 
+/// Panics unconditionally.
+///
+/// This macro logs a panic banner and the formatted message at `FATAL` level
+/// using `pw_log`, and then calls the crash handler [`pw_assert_HandleFailure`].
+///
+/// # Examples
+///
+/// ```no_run
+/// pw_assert::panic!("Something went terribly wrong!");
+///
+/// pw_assert::panic!("Error code: {}", 42 as i32);
+/// ```
 #[macro_export]
 macro_rules! panic {
   ($format_string:literal $(,)?) => {{
@@ -103,6 +158,19 @@ macro_rules! panic {
   }};
 }
 
+/// Panics unconditionally when debug_assertions are enabled
+///
+/// If `debug_assertions` are enabled, this behaves exactly like [`panic!`].
+/// If `debug_assertions` are disabled, this macro is a no-op.
+///
+/// `debug_assertions` can be enabled by setting this bazel label to `True`
+/// `@pigweed//pw_assert/rust:debug_assertions`.
+///
+/// # Examples
+///
+/// ```no_run
+/// pw_assert::debug_panic!("This should never happen in debug mode.");
+/// ```
 #[macro_export]
 #[cfg(feature = "debug_assertions")]
 macro_rules! debug_panic {
@@ -123,6 +191,7 @@ macro_rules! debug_panic {
   }};
 }
 
+/// Panics unconditionally when debug_assertions are enabled.
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_panic {
@@ -130,6 +199,19 @@ macro_rules! debug_panic {
     ($format_string:literal, $($args:expr),* $(,)?) => {{}};
 }
 
+/// Asserts that a condition is true.
+///
+/// If the condition evaluates to `false`, this macro logs a panic banner,
+/// logs the failure (including line number and optional custom message) at
+/// `FATAL` level using `pw_log`, and then calls [`pw_assert_HandleFailure`].
+///
+/// # Examples
+///
+/// ```no_run
+/// let x = 5;
+/// pw_assert::assert!(x > 0);
+/// pw_assert::assert!(x == 5, "x should be 5, but was {}", x as i32);
+/// ```
 #[macro_export]
 macro_rules! assert {
   ($condition:expr $(,)?) => {{
@@ -156,6 +238,20 @@ macro_rules! assert {
   }};
 }
 
+/// Asserts that a condition is true when debug_assertions are enabled.
+///
+/// If `debug_assertions` are enabled, this behaves exactly like [`assert!`].
+/// If `debug_assertions` are disabled, this macro is a no-op.
+///
+/// `debug_assertions` can be enabled by setting this bazel label to `True`
+/// `@pigweed//pw_assert/rust:debug_assertions`.
+///
+/// # Examples
+///
+/// ```no_run
+/// let x = 5;
+/// pw_assert::debug_assert!(x == 5);
+/// ```
 #[macro_export]
 #[cfg(feature = "debug_assertions")]
 macro_rules! debug_assert {
@@ -183,6 +279,7 @@ macro_rules! debug_assert {
   };
 }
 
+/// Asserts that a condition is true when debug_assertions are enabled.
 #[macro_export]
 #[cfg(not(feature = "debug_assertions"))]
 macro_rules! debug_assert {
@@ -190,6 +287,23 @@ macro_rules! debug_assert {
     ($condition:expr, $($args:expr),* $(,)?) => {};
 }
 
+/// Asserts that two expressions are equal (equivalent to `assert_eq!`).
+///
+/// If the expressions are not equal, this macro logs a panic banner, logs the
+/// failure (including the values of the expressions and optional custom
+/// message) at `FATAL` level using `pw_log`, and then calls
+/// [`pw_assert_HandleFailure`].
+///
+/// Note that due to `pw_log` requirements, both expressions must be cast
+/// expressions (e.g., `x as i32`).
+///
+/// # Examples
+///
+/// ```no_run
+/// let x = 5;
+/// pw_assert::eq!(x as i32, 5 as i32);
+/// pw_assert::eq!(x as i32, 5 as i32, "x should be 5");
+/// ```
 #[macro_export]
 macro_rules! eq {
   ($condition_a:expr, $condition_b:expr $(,)?) => {{
@@ -218,6 +332,23 @@ macro_rules! eq {
   }};
 }
 
+/// Asserts that two expressions are not equal (equivalent to `assert_ne!`).
+///
+/// If the expressions are equal, this macro logs a panic banner, logs the
+/// failure (including the values of the expressions and optional custom
+/// message) at `FATAL` level using `pw_log`, and then calls
+/// [`pw_assert_HandleFailure`].
+///
+/// Note that due to `pw_log` requirements, both expressions must be cast
+/// expressions (e.g., `x as i32`).
+///
+/// # Examples
+///
+/// ```no_run
+/// let x = 5;
+/// pw_assert::ne!(x as i32, 6 as i32);
+/// pw_assert::ne!(x as i32, 6 as i32, "x should not be 6");
+/// ```
 #[macro_export]
 macro_rules! ne {
   ($condition_a:expr, $condition_b:expr $(,)?) => {{

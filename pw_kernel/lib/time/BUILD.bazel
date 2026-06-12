@@ -27,7 +27,7 @@ rust_library(
     rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
     deps = [
-        "//pw_kernel/lib/pw_assert",
+        "//pw_assert/rust:pw_assert",
     ] + KERNEL_TEST_DEPS,
 )
 

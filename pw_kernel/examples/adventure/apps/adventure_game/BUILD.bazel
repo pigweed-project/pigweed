@@ -24,7 +24,7 @@ rust_app(
     deps = [
         "//lib/line_reader",
         "//lib/stream_protocol",
-        "@pigweed//pw_kernel/lib/pw_assert",
+        "@pigweed//pw_assert/rust:pw_assert",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",

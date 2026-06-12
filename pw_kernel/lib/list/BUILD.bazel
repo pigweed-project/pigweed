@@ -28,8 +28,8 @@ rust_library(
     rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
     deps = [
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/lib/foreign_box",
-        "//pw_kernel/lib/pw_assert",
     ] + KERNEL_TEST_DEPS,
 )
 

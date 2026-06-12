@@ -24,6 +24,7 @@
 //!
 //! The following Pigweed modules are available in Rust:
 //!
+//! - [`pw_assert`](../pw_assert/index.html) - Flexible crash triggering and handling.
 //! - [`pw_base64`](../pw_base64/index.html) - Base64 encoding and decoding.
 //! - [`pw_bytes`](../pw_bytes/index.html) - Byte manipulation utilities.
 //! - [`pw_format`](../pw_format/index.html) - Formatting support.

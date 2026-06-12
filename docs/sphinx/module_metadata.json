@@ -44,7 +44,8 @@
     "status": "stable",
     "languages": [
       "C",
-      "C++"
+      "C++",
+      "Rust"
     ]
   },
   "pw_assert_basic": {

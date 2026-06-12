@@ -42,7 +42,7 @@ rust_app(
     visibility = ["//visibility:public"],
     deps = [
         ":test_messages",
-        "//pw_kernel/lib/pw_assert",
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",

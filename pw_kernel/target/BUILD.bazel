@@ -22,7 +22,7 @@ rust_library(
     edition = "2024",
     tags = ["kernel"],
     deps = [
-        "//pw_kernel/lib/pw_assert",
+        "//pw_assert/rust:pw_assert",
         "//pw_log/rust:pw_log",
     ],
 )

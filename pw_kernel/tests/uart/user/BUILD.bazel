@@ -40,8 +40,8 @@ rust_app(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/drivers/uart/uart_16550:uart_16550_user",
-        "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",

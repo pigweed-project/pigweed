@@ -27,8 +27,8 @@ rust_library(
         "//conditions:default": [],
     }),
     deps = [
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/kernel",
-        "//pw_kernel/lib/pw_assert",
         "//pw_kernel/lib/unittest:test_logger",
         "//pw_status/rust:pw_status",
     ],

@@ -17,7 +17,7 @@
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 
 KERNEL_COMMON_FLAGS = {
-    "@pigweed//pw_kernel/lib/pw_assert:debug_assertions": True,
+    "@pigweed//pw_assert/rust:debug_assertions": True,
     # Default to using the tokenized backend.  Platforms can overwrite this value
     "@pigweed//pw_log/rust:pw_log_backend": "@pigweed//pw_kernel:log_backend_tokenized",
     "@pigweed//pw_toolchain:cortex-m_toolchain_kind": "clang",

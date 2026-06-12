@@ -22,7 +22,7 @@ platform(
     flags = flags_from_dict(
         KERNEL_COMMON_FLAGS | {
             # Activate the default panic handler so tests don't need to register one.
-            "//pw_kernel/lib/pw_assert:default_handler": "true",
+            "//pw_assert/rust:default_handler": "true",
             # Use the println backend To avoid pulling in the implicit console dep.
             "//pw_log/rust:pw_log_backend": "@pigweed//pw_log/rust:pw_log_backend_println",
         },
@@ -43,7 +43,7 @@ rust_test(
         # on the kernel, each test must be manually depended on.
         "//pw_kernel/lib/foreign_box",
         "//pw_kernel/lib/list",
-        "//pw_kernel/lib/pw_assert",
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/lib/time",
         "//pw_kernel/lib/unittest:unittest_core",
         "//pw_kernel/lib/vectored_buffer",

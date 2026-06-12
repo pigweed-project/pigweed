@@ -96,7 +96,7 @@ pw_rust_docs(
     # crates in topological order.
     crates = [
         "//pw_status/rust:pw_status",
-        "//pw_kernel/lib/pw_assert",
+        "//pw_assert/rust:pw_assert",
         "//pw_kernel/lib/foreign_box",
         "//pw_kernel/lib/list",
         "//pw_kernel/lib/circular_buffer",
