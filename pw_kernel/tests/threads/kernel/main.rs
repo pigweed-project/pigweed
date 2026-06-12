@@ -13,8 +13,7 @@
 // the License.
 #![no_std]
 
-use kernel::scheduler::Priority;
-use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread};
+use kernel::scheduler::{self, Priority, StackStorage, StackStorageExt as _, Thread};
 use kernel::sync::event::{Event, EventConfig, EventSignaler};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Kernel};
@@ -34,7 +33,7 @@ impl<K: Kernel> AppState<K> {
             thread: Thread::new(
                 "",
                 Priority::DEFAULT_PRIORITY,
-                kernel::scheduler::thread::Stack::new(),
+                kernel::scheduler::Stack::new(),
             ),
             stack: StackStorage::ZEROED,
             test_counter: Mutex::new(kernel, 0),
@@ -56,7 +55,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
         done_signaler: state.thread_a_done_event.get_signaler(),
     };
 
-    let thread_b = thread::init_thread_in(
+    let thread_b = scheduler::init_thread_in(
         kernel,
         &mut state.thread,
         &mut state.stack,

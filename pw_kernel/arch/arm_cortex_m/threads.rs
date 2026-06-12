@@ -21,8 +21,7 @@ use core::ptr::NonNull;
 use cortex_m::peripheral::{SCB, *};
 use exit_status::ExitStatus;
 use kernel::interrupt_controller::InterruptController;
-use kernel::scheduler::thread::Stack;
-use kernel::scheduler::{self, SchedulerState, ThreadLocalState};
+use kernel::scheduler::{self, SchedulerState, Stack, ThreadLocalState};
 use kernel::sync::spinlock::SpinLockGuard;
 use kernel::{Arch, Kernel};
 use log_if::debug_if;
@@ -316,7 +315,7 @@ impl Arch for crate::Arch {
     }
 }
 
-impl kernel::scheduler::thread::ThreadState for ArchThreadState {
+impl kernel::scheduler::ThreadState for ArchThreadState {
     type MemoryConfig = crate::protection::MemoryConfig;
 
     const NEW: Self = Self {

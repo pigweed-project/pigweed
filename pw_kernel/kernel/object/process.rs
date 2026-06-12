@@ -18,8 +18,7 @@ use syscall_defs::ExitStatus;
 
 use crate::Kernel;
 use crate::object::{KernelObject, ObjectBase, Signals};
-use crate::scheduler::SchedulerState;
-use crate::scheduler::thread::{Process, ProcessHandle};
+use crate::scheduler::{Process, ProcessHandle, SchedulerState};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
 #[derive(Clone)]

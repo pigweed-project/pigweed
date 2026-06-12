@@ -19,8 +19,7 @@ use core::ptr::NonNull;
 use exit_status::ExitStatus;
 use kernel::Arch;
 use kernel::interrupt_controller::InterruptController;
-use kernel::scheduler::thread::Stack;
-use kernel::scheduler::{self, SchedulerState, ThreadLocalState};
+use kernel::scheduler::{self, SchedulerState, Stack, ThreadLocalState};
 use kernel::sync::spinlock::SpinLockGuard;
 use log_if::debug_if;
 #[cfg(feature = "user_space")]
@@ -234,7 +233,7 @@ impl Arch for super::Arch {
     }
 }
 
-impl kernel::scheduler::thread::ThreadState for ArchThreadState {
+impl kernel::scheduler::ThreadState for ArchThreadState {
     type MemoryConfig = crate::protection::MemoryConfig;
     const NEW: Self = Self {
         frame: core::ptr::null_mut(),

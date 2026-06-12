@@ -18,7 +18,7 @@ use foreign_box::ForeignBox;
 use list::{ForeignList, Link};
 use time::Instant;
 
-use crate::scheduler::Kernel;
+use crate::Kernel;
 
 list::define_adapter!(pub TimerCallbackListAdapter<K: Kernel> => Timer<K>::link);
 

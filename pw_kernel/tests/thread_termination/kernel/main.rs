@@ -15,7 +15,7 @@
 
 use exit_status::ExitStatus;
 use foreign_box::ForeignBox;
-use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread, ThreadHandle};
+use kernel::scheduler::{self, StackStorage, StackStorageExt as _, Thread, ThreadHandle};
 use kernel::sync::event::{Event, EventConfig};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Instant, Kernel, Priority};
@@ -44,13 +44,13 @@ impl<K: Kernel> TestState<K> {
             thread: Thread::new(
                 "test thread",
                 Priority::DEFAULT_PRIORITY,
-                kernel::scheduler::thread::Stack::new(),
+                kernel::scheduler::Stack::new(),
             ),
             stack: StackStorage::ZEROED,
             utility_thread: Thread::new(
                 "utility thread",
                 Priority::DEFAULT_PRIORITY,
-                kernel::scheduler::thread::Stack::new(),
+                kernel::scheduler::Stack::new(),
             ),
             utility_stack: StackStorage::ZEROED,
             event: Event::new(kernel, EventConfig::ManualReset),
@@ -63,7 +63,7 @@ impl<K: Kernel> TestState<K> {
 pub fn wait_for_thread_state<K: Kernel>(
     kernel: K,
     thread: &ThreadHandle<K>,
-    state: thread::State,
+    state: scheduler::State,
 ) -> Result<()> {
     let deadline = kernel.now() + Duration::from_millis(500);
     while thread.get_state(kernel) != state {
@@ -133,7 +133,7 @@ fn terminate_sleep_test<K: Kernel>(
 ) -> Result<ForeignBox<Thread<K>>> {
     // As the first test, this initializes the thread for the first time as
     // as opposed to taking a `ForeignBox<Thread<K>>` like the other tests.
-    let thread = thread::init_thread_in(
+    let thread = scheduler::init_thread_in(
         kernel,
         thread,
         stack,
@@ -145,7 +145,11 @@ fn terminate_sleep_test<K: Kernel>(
     let mut thread_handle = kernel::start_thread(kernel, thread);
 
     // Spin until the termination thread is in the sleep's wait queue.
-    wait_for_thread_state(kernel, &thread_handle, thread::State::WaitingInterruptible)?;
+    wait_for_thread_state(
+        kernel,
+        &thread_handle,
+        scheduler::State::WaitingInterruptible,
+    )?;
     test_logger::info!("Termination thread observed in waiting state, terminating");
 
     thread_handle.terminate(kernel, ExitStatus::TerminatedBySyscall)?;
@@ -185,7 +189,11 @@ fn signaled_termination_test<K: Kernel>(
     thread.re_initialize_kernel_thread(kernel, signaled_sleep_entry, event);
     let thread_handle = kernel::start_thread(kernel, thread);
 
-    wait_for_thread_state(kernel, &thread_handle, thread::State::WaitingInterruptible)?;
+    wait_for_thread_state(
+        kernel,
+        &thread_handle,
+        scheduler::State::WaitingInterruptible,
+    )?;
 
     test_logger::info!("Signaling signaled thread");
     event.get_signaler().signal();
@@ -221,7 +229,7 @@ fn mutex_test<K: Kernel>(
     wait_for_thread_state(
         kernel,
         &thread_handle,
-        thread::State::WaitingNonInterruptible,
+        scheduler::State::WaitingNonInterruptible,
     )?;
     test_logger::info!("Observed in waiting state, terminating");
 
@@ -229,7 +237,9 @@ fn mutex_test<K: Kernel>(
 
     // Mutexes are non-interruptible so the thread should still be in the waiting
     // state after the termination request.
-    pw_assert::assert!(thread_handle.get_state(kernel) == thread::State::WaitingNonInterruptible);
+    pw_assert::assert!(
+        thread_handle.get_state(kernel) == scheduler::State::WaitingNonInterruptible
+    );
 
     test_logger::info!("Releasing mutex");
     drop(guard);
@@ -286,7 +296,7 @@ fn thread_handle_drop_test<K: Kernel>(
         test_thread_handle: Some(test_thread_handle.clone()),
         event,
     };
-    let utility_thread = thread::init_thread_in(
+    let utility_thread = scheduler::init_thread_in(
         kernel,
         utility_thread,
         utility_stack,
@@ -299,7 +309,7 @@ fn thread_handle_drop_test<K: Kernel>(
 
     // Wait for the test thread to exit and be in the termination queue waiting
     // to be joined.
-    wait_for_thread_state(kernel, &test_thread_handle, thread::State::Terminated)?;
+    wait_for_thread_state(kernel, &test_thread_handle, scheduler::State::Terminated)?;
 
     // The thread should also be marked as terminating.
     pw_assert::assert!(test_thread_handle.is_terminating(kernel));

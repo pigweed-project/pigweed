@@ -18,10 +18,9 @@ use foreign_box::ForeignBox;
 use list::ForeignList;
 
 use crate::Kernel;
-use crate::scheduler::Priority;
 use crate::scheduler::priority_bitmask::PriorityBitmask;
-use crate::scheduler::thread::ThreadOwner;
-use crate::thread::{Thread, ThreadListAdapter};
+use crate::scheduler::thread::{ThreadListAdapter, ThreadOwner};
+use crate::scheduler::{Priority, Thread};
 
 type RunQueue<K> = ForeignList<Thread<K>, ThreadListAdapter<K>>;
 
@@ -91,7 +90,7 @@ impl<K: Kernel> SchedulerAlgorithm<K> {
                 i += 1;
             }
 
-            // SAFETY: All elements have been initiailzed in the loop above.
+            // SAFETY: All elements have been initialized in the loop above.
             unsafe {
                 core::mem::transmute::<
                     [MaybeUninit<RunQueue<K>>; Priority::NUM_PRIORITIES],

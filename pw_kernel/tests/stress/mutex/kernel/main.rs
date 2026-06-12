@@ -28,8 +28,7 @@
 //! or panic.
 #![no_std]
 
-use kernel::scheduler::Priority;
-use kernel::scheduler::thread::{self, StackStorage, StackStorageExt as _, Thread};
+use kernel::scheduler::{self, Priority, StackStorage, StackStorageExt as _, Thread};
 use kernel::sync::mutex::Mutex;
 use kernel::{Duration, Kernel};
 use kernel_config::{KernelConfig, KernelConfigInterface};
@@ -54,7 +53,7 @@ impl<K: Kernel> AppState<K> {
                 thread: Thread::new(
                     "mutex thread 1",
                     Priority::DEFAULT_PRIORITY,
-                    kernel::scheduler::thread::Stack::new(),
+                    kernel::scheduler::Stack::new(),
                 ),
                 stack: StackStorage::ZEROED,
             },
@@ -62,7 +61,7 @@ impl<K: Kernel> AppState<K> {
                 thread: Thread::new(
                     "mutex thread 2",
                     Priority::DEFAULT_PRIORITY,
-                    kernel::scheduler::thread::Stack::new(),
+                    kernel::scheduler::Stack::new(),
                 ),
                 stack: StackStorage::ZEROED,
             },
@@ -70,7 +69,7 @@ impl<K: Kernel> AppState<K> {
                 thread: Thread::new(
                     "mutex thread 3",
                     Priority::DEFAULT_PRIORITY,
-                    kernel::scheduler::thread::Stack::new(),
+                    kernel::scheduler::Stack::new(),
                 ),
                 stack: StackStorage::ZEROED,
             },
@@ -92,7 +91,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
         thread_index: 1,
         counter: &state.test_counter,
     };
-    let thread_1 = thread::init_thread_in(
+    let thread_1 = scheduler::init_thread_in(
         kernel,
         &mut state.thread_1.thread,
         &mut state.thread_1.stack,
@@ -106,7 +105,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
         thread_index: 2,
         counter: &state.test_counter,
     };
-    let thread_2 = thread::init_thread_in(
+    let thread_2 = scheduler::init_thread_in(
         kernel,
         &mut state.thread_2.thread,
         &mut state.thread_2.stack,
@@ -120,7 +119,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
         thread_index: 3,
         counter: &state.test_counter,
     };
-    let thread_3 = thread::init_thread_in(
+    let thread_3 = scheduler::init_thread_in(
         kernel,
         &mut state.thread_3.thread,
         &mut state.thread_3.stack,

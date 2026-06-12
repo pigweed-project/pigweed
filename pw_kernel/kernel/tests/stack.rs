@@ -16,7 +16,7 @@
 mod tests {
     use core::mem::MaybeUninit;
 
-    use kernel::scheduler::thread::{Stack, StackStorage};
+    use kernel::scheduler::{Stack, StackStorage};
     use unittest::test;
 
     #[test]

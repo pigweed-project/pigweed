@@ -34,16 +34,15 @@ use interrupt_controller::InterruptController;
 use kernel_config::{KernelConfig, KernelConfigInterface};
 #[cfg(feature = "user_space")]
 pub use object::NullObjectTable;
-#[doc(hidden)]
-pub use scheduler::thread::{Process, Stack, StackStorage, StackStorageExt, Thread, ThreadState};
-use scheduler::timer::TimerQueue;
-use scheduler::{PreemptDisableGuard, SchedulerState, ThreadLocalState, thread};
+use scheduler::{PreemptDisableGuard, SchedulerState, ThreadLocalState, TimerQueue};
 pub use scheduler::{Priority, sleep_until, start_thread, yield_timeslice};
+#[doc(hidden)]
+pub use scheduler::{Process, Stack, StackStorage, StackStorageExt, Thread, ThreadState};
 use sync::spinlock::{BareSpinLock, SpinLock, SpinLockGuard};
 #[cfg(feature = "user_space")]
 pub use syscall::SyscallArgs;
 
-pub trait Arch: 'static + Copy + thread::ThreadArg {
+pub trait Arch: 'static + Copy + scheduler::ThreadArg {
     type ThreadState: ThreadState;
     type BareSpinLock: BareSpinLock;
     type Clock: time::Clock;
@@ -323,7 +322,7 @@ pub fn main<K: Kernel>(kernel: K, init_state: &'static mut InitKernelState<K>) -
     // Prepare the scheduler for thread initialization.
     scheduler::initialize(kernel);
 
-    let bootstrap_thread = thread::init_thread_in(
+    let bootstrap_thread = scheduler::init_thread_in(
         kernel,
         &mut init_state.bootstrap_thread.thread,
         init_state.bootstrap_thread.stack,
@@ -350,7 +349,7 @@ fn bootstrap_thread_entry<K: Kernel>(
 
     kernel.init();
 
-    let idle_thread = thread::init_thread_in(
+    let idle_thread = scheduler::init_thread_in(
         kernel,
         &mut idle_thread_storage.thread,
         idle_thread_storage.stack,

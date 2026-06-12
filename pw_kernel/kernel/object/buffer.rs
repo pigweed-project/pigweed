@@ -19,8 +19,7 @@ use pw_status::{Error, Result};
 use vectored_buffer::{Slice, vectored_buffer_copy};
 
 use crate::Kernel;
-use crate::scheduler::SchedulerState;
-use crate::scheduler::thread::ProcessHandle;
+use crate::scheduler::{ProcessHandle, SchedulerState};
 use crate::sync::spinlock::SpinLockGuard;
 
 /// A `Buffer` represents a buffer or vector of buffers in a user process.

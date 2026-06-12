@@ -18,8 +18,7 @@ use syscall_defs::ExitStatus;
 
 use crate::Kernel;
 use crate::object::{KernelObject, ObjectBase, Signals};
-use crate::scheduler::thread::{ProcessHandle, Thread, ThreadHandle};
-use crate::scheduler::{SchedulerState, TryJoinResult};
+use crate::scheduler::{ProcessHandle, SchedulerState, Thread, ThreadHandle, TryJoinResult};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
 enum State<K: Kernel> {

@@ -13,7 +13,7 @@
 // the License.
 
 use crate::Kernel;
-use crate::scheduler::thread::State;
+use crate::scheduler::State;
 
 /// Traces a context switch event.
 ///

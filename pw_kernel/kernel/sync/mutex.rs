@@ -19,8 +19,7 @@ use pw_status::Result;
 use time::Instant;
 
 use crate::Kernel;
-use crate::scheduler::thread::Thread;
-use crate::scheduler::{WaitQueueLock, WaitType};
+use crate::scheduler::{Thread, WaitQueueLock, WaitType};
 
 const MUTEX_DEBUG: bool = false;
 macro_rules! mutex_debug {
