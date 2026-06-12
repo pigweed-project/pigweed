@@ -21,21 +21,19 @@
 #include "pw_preprocessor/compiler.h"
 #include "task.h"
 
-extern "C" void entry();
+extern "C" void pw_boot_rust_entry(void*);
 
 constexpr size_t kEntryStackSize = configMINIMAL_STACK_SIZE;
 
 StackType_t entry_task_stack[kEntryStackSize];
 StaticTask_t entry_task_buffer;
 
-static void entry_task(void*) { entry(); }
-
 int main() {
   stdio_init_all();
 
   PW_LOG_INFO("Pigweed RP2350 Target Board booting FreeRTOS");
 
-  xTaskCreateStatic(entry_task,
+  xTaskCreateStatic(pw_boot_rust_entry,
                     "entry_task",
                     kEntryStackSize,
                     nullptr,

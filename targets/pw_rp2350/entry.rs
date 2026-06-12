@@ -12,6 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #![no_std]
+#![no_main]
+
+use pw_boot::entry;
 
 #[cfg(target_os = "none")]
 #[panic_handler]
@@ -20,13 +23,13 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[no_mangle]
-pub extern "C" fn entry() {
+#[entry]
+fn entry() -> ! {
     pw_log::info!("Rust entry");
 
     let mut count: usize = 0;
     loop {
-        pw_log::info!("Rust loop: {}", count as i32);
+        pw_log::info!("Loop: {}", count as i32);
         count += 1;
         // Convert to spinning on SystemClock::now() once pw_time lands.
         unsafe {
