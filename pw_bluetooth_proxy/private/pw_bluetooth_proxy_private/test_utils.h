@@ -336,6 +336,10 @@ class ProxyHostTest : public testing::Test {
                                        uint16_t handle,
                                        emboss::StatusCode status);
 
+  // Send a LE Meta event with the given subevent code to `proxy`.
+  Status SendLeMetaEvent(ProxyHost& proxy,
+                         emboss::LeSubEventCode subevent_code);
+
   // Send a Disconnection_Complete event to `proxy` indicating the provided
   // `handle` has disconnected.
   Status SendDisconnectionCompleteEvent(

@@ -282,6 +282,346 @@ TEST_F(PassthroughTest, ToHostPassesEqualCommandComplete) {
   EXPECT_EQ(send_capture.sends_called, 1);
 }
 
+TEST_F(PassthroughTest, BlockEvent) {
+  std::array<uint8_t, emboss::InquiryCompleteEventView::SizeInBytes()>
+      hci_arr{};
+  H4PacketWithHci h4_packet{emboss::H4PacketType::UNKNOWN, hci_arr};
+  PW_TEST_EXPECT_OK(CreateNonInteractingToHostBuffer(h4_packet));
+
+  struct {
+    uint8_t sends_called;
+  } send_capture = {0};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture]([[maybe_unused]] H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // 1. Block the event.
+  proxy.SetEventBlocked(emboss::EventCode::INQUIRY_COMPLETE, true);
+  EXPECT_TRUE(proxy.IsEventBlocked(emboss::EventCode::INQUIRY_COMPLETE));
+
+  // 2. Send the event.
+  proxy.HandleH4HciFromController(std::move(h4_packet));
+
+  // 3. Verify it was NOT forwarded.
+  EXPECT_EQ(send_capture.sends_called, 0);
+
+  // 4. Unblock the event.
+  proxy.SetEventBlocked(emboss::EventCode::INQUIRY_COMPLETE, false);
+  EXPECT_FALSE(proxy.IsEventBlocked(emboss::EventCode::INQUIRY_COMPLETE));
+
+  // 5. Send it again.
+  H4PacketWithHci h4_packet2{emboss::H4PacketType::UNKNOWN, hci_arr};
+  PW_TEST_EXPECT_OK(CreateNonInteractingToHostBuffer(h4_packet2));
+
+  proxy.HandleH4HciFromController(std::move(h4_packet2));
+
+  // 6. Verify it WAS forwarded.
+  EXPECT_EQ(send_capture.sends_called, 1);
+}
+
+TEST_F(PassthroughTest, BlockLeSubevent) {
+  struct {
+    uint8_t sends_called;
+  } send_capture = {0};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture]([[maybe_unused]] H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  emboss::LeSubEventCode subevent_code =
+      emboss::LeSubEventCode::DATA_LENGTH_CHANGE;
+
+  // 1. Block the subevent.
+  proxy.SetLeSubeventBlocked(subevent_code, true);
+  EXPECT_TRUE(proxy.IsLeSubeventBlocked(subevent_code));
+
+  // 2. Send the subevent.
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_code));
+
+  // 3. Verify it was NOT forwarded.
+  EXPECT_EQ(send_capture.sends_called, 0);
+
+  // 4. Unblock the subevent.
+  proxy.SetLeSubeventBlocked(subevent_code, false);
+  EXPECT_FALSE(proxy.IsLeSubeventBlocked(subevent_code));
+
+  // 5. Send it again.
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_code));
+
+  // 6. Verify it WAS forwarded.
+  EXPECT_EQ(send_capture.sends_called, 1);
+}
+
+TEST_F(PassthroughTest, BlockParentLeMetaEventBlocksSubevents) {
+  struct {
+    uint8_t sends_called;
+  } send_capture = {0};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture]([[maybe_unused]] H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  emboss::LeSubEventCode subevent_code =
+      emboss::LeSubEventCode::DATA_LENGTH_CHANGE;
+
+  // 1. Block the parent LE_META_EVENT.
+  proxy.SetEventBlocked(emboss::EventCode::LE_META_EVENT, true);
+  EXPECT_TRUE(proxy.IsEventBlocked(emboss::EventCode::LE_META_EVENT));
+
+  // 2. Send a subevent (which is NOT individually blocked).
+  proxy.SetLeSubeventBlocked(subevent_code, false);
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_code));
+
+  // 3. Verify it was NOT forwarded because parent is blocked.
+  EXPECT_EQ(send_capture.sends_called, 0);
+}
+
+TEST_F(PassthroughTest, BlockParentLeMetaEventBlocksMalformed) {
+  struct {
+    uint8_t sends_called;
+  } send_capture = {0};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture]([[maybe_unused]] H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // 1. Block the parent LE_META_EVENT.
+  proxy.SetEventBlocked(emboss::EventCode::LE_META_EVENT, true);
+  EXPECT_TRUE(proxy.IsEventBlocked(emboss::EventCode::LE_META_EVENT));
+
+  // 2. Create a too-short LE_META_EVENT packet.
+  // The minimum size to contain an event code and a subevent code is 3 bytes
+  // (EventHeader + 1 byte for subevent).
+  std::array<uint8_t, emboss::EventHeader::IntrinsicSizeInBytes()> hci_arr{};
+  H4PacketWithHci h4_packet{emboss::H4PacketType::EVENT, hci_arr};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto event_view,
+      MakeEmbossWriter<emboss::EventHeaderWriter>(h4_packet.GetHciSpan()));
+  event_view.event_code().Write(emboss::EventCode::LE_META_EVENT);
+  event_view.parameter_total_size().Write(0);
+
+  // 3. Send the malformed LE_META_EVENT.
+  proxy.HandleH4HciFromController(std::move(h4_packet));
+
+  // 4. Verify it was NOT forwarded because the parent event is blocked, even
+  // though it's malformed.
+  EXPECT_EQ(send_capture.sends_called, 0);
+}
+
+TEST_F(PassthroughTest, BlockEventANotB) {
+  struct {
+    uint8_t sends_called;
+    emboss::EventCode last_sent_code;
+  } send_capture = {0, emboss::EventCode::INQUIRY_COMPLETE};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture](H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+        auto event =
+            MakeEmbossView<emboss::EventHeaderView>(packet.GetHciSpan());
+        if (event.ok()) {
+          send_capture.last_sent_code = event->event_code().Read();
+        }
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  emboss::EventCode event_a = emboss::EventCode::INQUIRY_COMPLETE;
+  emboss::EventCode event_b = emboss::EventCode::HARDWARE_ERROR;
+
+  // 1. Block Event A.
+  proxy.SetEventBlocked(event_a, true);
+  EXPECT_TRUE(proxy.IsEventBlocked(event_a));
+  EXPECT_FALSE(proxy.IsEventBlocked(event_b));
+
+  // 2. Send Event A (should be blocked).
+  std::array<uint8_t, emboss::EventHeader::IntrinsicSizeInBytes()> hci_arr_a{};
+  H4PacketWithHci h4_packet_a{emboss::H4PacketType::EVENT, hci_arr_a};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto event_view_a,
+      MakeEmbossWriter<emboss::EventHeaderWriter>(h4_packet_a.GetHciSpan()));
+  event_view_a.event_code().Write(event_a);
+  event_view_a.parameter_total_size().Write(0);
+
+  proxy.HandleH4HciFromController(std::move(h4_packet_a));
+  EXPECT_EQ(send_capture.sends_called, 0);
+
+  // 3. Send Event B (should NOT be blocked).
+  std::array<uint8_t, emboss::EventHeader::IntrinsicSizeInBytes()> hci_arr_b{};
+  H4PacketWithHci h4_packet_b{emboss::H4PacketType::EVENT, hci_arr_b};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto event_view_b,
+      MakeEmbossWriter<emboss::EventHeaderWriter>(h4_packet_b.GetHciSpan()));
+  event_view_b.event_code().Write(event_b);
+  event_view_b.parameter_total_size().Write(0);
+
+  proxy.HandleH4HciFromController(std::move(h4_packet_b));
+  EXPECT_EQ(send_capture.sends_called, 1);
+  EXPECT_EQ(send_capture.last_sent_code, event_b);
+}
+
+TEST_F(PassthroughTest, BlockLeSubeventANotB) {
+  struct {
+    uint8_t sends_called;
+    emboss::LeSubEventCode last_sent_subevent;
+  } send_capture = {0, emboss::LeSubEventCode::CONNECTION_COMPLETE};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture](H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+        auto event =
+            MakeEmbossView<emboss::LEMetaEventView>(packet.GetHciSpan());
+        if (event.ok()) {
+          send_capture.last_sent_subevent = event->subevent_code_enum().Read();
+        }
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  emboss::LeSubEventCode subevent_a =
+      emboss::LeSubEventCode::DATA_LENGTH_CHANGE;
+  emboss::LeSubEventCode subevent_b =
+      emboss::LeSubEventCode::PHY_UPDATE_COMPLETE;
+
+  // 1. Block Subevent A.
+  proxy.SetLeSubeventBlocked(subevent_a, true);
+  EXPECT_TRUE(proxy.IsLeSubeventBlocked(subevent_a));
+  EXPECT_FALSE(proxy.IsLeSubeventBlocked(subevent_b));
+
+  // 2. Send Subevent A (should be blocked).
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_a));
+  EXPECT_EQ(send_capture.sends_called, 0);
+
+  // 3. Send Subevent B (should NOT be blocked).
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_b));
+  EXPECT_EQ(send_capture.sends_called, 1);
+  EXPECT_EQ(send_capture.last_sent_subevent, subevent_b);
+}
+
+TEST_F(PassthroughTest, ResetFilters) {
+  struct {
+    uint8_t sends_called;
+  } send_capture = {0};
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&send_capture]([[maybe_unused]] H4PacketWithHci&& packet) {
+        send_capture.sends_called++;
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // 1. Block all possible events and subevents (0-255).
+  for (uint16_t i = 0; i < 256; ++i) {
+    proxy.SetEventBlocked(static_cast<emboss::EventCode>(i), true);
+    proxy.SetLeSubeventBlocked(static_cast<emboss::LeSubEventCode>(i), true);
+  }
+
+  // Verify they are blocked.
+  for (uint16_t i = 0; i < 256; ++i) {
+    EXPECT_TRUE(proxy.IsEventBlocked(static_cast<emboss::EventCode>(i)));
+    EXPECT_TRUE(
+        proxy.IsLeSubeventBlocked(static_cast<emboss::LeSubEventCode>(i)));
+  }
+
+  // 2. Reset filters.
+  proxy.ResetFilters();
+
+  // Verify they are all unblocked.
+  for (uint16_t i = 0; i < 256; ++i) {
+    EXPECT_FALSE(proxy.IsEventBlocked(static_cast<emboss::EventCode>(i)));
+    EXPECT_FALSE(
+        proxy.IsLeSubeventBlocked(static_cast<emboss::LeSubEventCode>(i)));
+  }
+
+  // 3. Send one event and one subevent and verify they are forwarded.
+  emboss::EventCode event_code = emboss::EventCode::INQUIRY_COMPLETE;
+  emboss::LeSubEventCode subevent_code =
+      emboss::LeSubEventCode::DATA_LENGTH_CHANGE;
+
+  std::array<uint8_t, emboss::EventHeader::IntrinsicSizeInBytes()> hci_arr{};
+  H4PacketWithHci h4_packet{emboss::H4PacketType::EVENT, hci_arr};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto event_view,
+      MakeEmbossWriter<emboss::EventHeaderWriter>(h4_packet.GetHciSpan()));
+  event_view.event_code().Write(event_code);
+  event_view.parameter_total_size().Write(0);
+
+  proxy.HandleH4HciFromController(std::move(h4_packet));
+
+  PW_TEST_ASSERT_OK(SendLeMetaEvent(proxy, subevent_code));
+
+  EXPECT_EQ(send_capture.sends_called, 2);
+}
+
 // ########## BadPacketTest
 // The proxy should not affect buffers it can't process (it should just pass
 // them on).

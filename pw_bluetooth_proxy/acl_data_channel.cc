@@ -381,8 +381,8 @@ AclDataChannel::ProcessSpecificLEReadBufferSizeCommandCompleteEvent<
     emboss::LEReadBufferSizeV2CommandCompleteEventWriter>(
     emboss::LEReadBufferSizeV2CommandCompleteEventWriter read_buffer_event);
 
-void AclDataChannel::HandleNumberOfCompletedPacketsEvent(
-    H4PacketWithHci&& h4_packet) {
+bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
+    H4PacketWithHci& h4_packet) {
   Result<emboss::NumberOfCompletedPacketsEventWriter> nocp_event =
       MakeEmbossWriter<emboss::NumberOfCompletedPacketsEventWriter>(
           h4_packet.GetHciSpan());
@@ -390,8 +390,7 @@ void AclDataChannel::HandleNumberOfCompletedPacketsEvent(
     PW_LOG_ERROR(
         "Buffer is too small for NUMBER_OF_COMPLETED_PACKETS event. So "
         "will not process.");
-    hci_transport_.SendToHost(std::move(h4_packet));
-    return;
+    return true;
   }
 
   bool should_send_to_host = false;
@@ -463,9 +462,7 @@ void AclDataChannel::HandleNumberOfCompletedPacketsEvent(
     }
   }
 
-  if (should_send_to_host) {
-    hci_transport_.SendToHost(std::move(h4_packet));
-  }
+  return should_send_to_host;
 }
 
 void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {

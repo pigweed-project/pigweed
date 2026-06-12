@@ -163,7 +163,7 @@ class AclDataChannel {
 
   // Remove completed packets from `nocp_event` as necessary to reclaim LE ACL
   // credits that are associated with our credit-allocated connections.
-  void HandleNumberOfCompletedPacketsEvent(H4PacketWithHci&& h4_packet);
+  bool HandleNumberOfCompletedPacketsEvent(H4PacketWithHci& h4_packet);
 
   // Drains the ACL queue for the given transport using fair round-robin
   // dynamic sharing between the host and proxy.

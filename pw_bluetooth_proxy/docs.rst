@@ -129,6 +129,34 @@ To override the backend, set the appropriate variable in your build system:
 - **CMake:** ``pw_bluetooth_proxy.clock_BACKEND``
 - **Bazel:** Use the ``clock_backend`` label flag.
 
+HCI Event Filtering
+===================
+``ProxyHost`` supports runtime configuration of HCI event and LE Meta subevent
+filtering. This allows the container to block specific events from reaching the
+host.
+
+By default, no events are blocked.
+
+To block or unblock an event, use:
+- :cc:`pw::bluetooth::proxy::ProxyHost::SetEventBlocked`
+- :cc:`pw::bluetooth::proxy::ProxyHost::SetLeSubeventBlocked`
+
+To query the block status of an event, use:
+- :cc:`pw::bluetooth::proxy::ProxyHost::IsEventBlocked`
+- :cc:`pw::bluetooth::proxy::ProxyHost::IsLeSubeventBlocked`
+
+To reset all filters (unblock all events), use:
+- :cc:`pw::bluetooth::proxy::ProxyHost::ResetFilters`
+
+.. note::
+   Blocking the parent ``LE_META_EVENT`` will block all LE Meta subevents,
+   regardless of their individual block status.
+
+.. note::
+   Resetting the proxy via :cc:`pw::bluetooth::proxy::ProxyHost::Reset` does
+   *not* reset the filters. To reset filters, you must explicitly call
+   :cc:`pw::bluetooth::proxy::ProxyHost::ResetFilters`.
+
 .. _module-pw_bluetooth_proxy-reference:
 
 -------------

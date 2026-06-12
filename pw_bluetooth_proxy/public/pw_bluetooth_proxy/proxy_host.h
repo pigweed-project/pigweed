@@ -14,6 +14,9 @@
 
 #pragma once
 
+#include <bitset>
+
+#include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/gatt_notify_channel.h"
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 #include "pw_bluetooth_proxy/internal/hci_transport.h"
@@ -24,6 +27,8 @@
 #include "pw_function/function.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_status/status.h"
+#include "pw_sync/lock_annotations.h"
+#include "pw_sync/mutex.h"
 
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
 #include "pw_bluetooth_proxy/internal/proxy_host_sync.h"
@@ -102,6 +107,31 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// them and sends `L2capChannelEvent::kChannelClosedByOther`.
   ~ProxyHost() override;
 
+  // ##### Configuration APIs
+
+  /// Configures whether a specific HCI event should be blocked from reaching
+  /// the host. By default, no events are blocked.
+  ///
+  /// @param[in] event_code The HCI event code to filter.
+  /// @param[in] blocked    True to block the event, false to allow it.
+  void SetEventBlocked(emboss::EventCode event_code, bool blocked);
+
+  /// Configures whether a specific LE Meta subevent should be blocked from
+  /// reaching the host. By default, no subevents are blocked.
+  ///
+  /// @param[in] subevent_code The LE Meta subevent code to filter.
+  /// @param[in] blocked       True to block the subevent, false to allow it.
+  void SetLeSubeventBlocked(emboss::LeSubEventCode subevent_code, bool blocked);
+
+  /// Resets all filters, allowing all events and subevents to pass through.
+  void ResetFilters();
+
+  /// Checks if a specific HCI event is currently blocked.
+  bool IsEventBlocked(emboss::EventCode event_code) const;
+
+  /// Checks if a specific LE Meta subevent is currently blocked.
+  bool IsLeSubeventBlocked(emboss::LeSubEventCode subevent_code) const;
+
   // ##### Container API
   // Containers are expected to call these functions (in addition to ctor).
 
@@ -157,6 +187,9 @@ class ProxyHost : public L2capChannelManagerInterface {
   ///
   /// May also be called by container to notify proxy that the Bluetooth system
   /// is being otherwise reset.
+  ///
+  /// Note: Resetting the proxy does not reset configured event filters. Use
+  /// `ResetFilters()` to clear them.
   ///
   /// Warning: Outstanding H4 packets are not invalidated upon reset. If they
   /// are destructed post-reset, packets generated post-reset are liable to be
@@ -404,10 +437,10 @@ class ProxyHost : public L2capChannelManagerInterface {
   void HandleAclFromController(H4PacketWithHci&& h4_packet);
 
   // Process an LE_META_EVENT
-  void HandleLeMetaEvent(H4PacketWithHci&& h4_packet);
+  bool HandleLeMetaEvent(H4PacketWithHci& h4_packet);
 
   // Process a Command_Complete event.
-  void HandleCommandCompleteEvent(H4PacketWithHci&& h4_packet);
+  bool HandleCommandCompleteEvent(H4PacketWithHci& h4_packet);
 
   // Handle HCI Command packet from the host.
   void HandleCommandFromHost(H4PacketWithH4&& h4_packet);
@@ -461,6 +494,12 @@ class ProxyHost : public L2capChannelManagerInterface {
 
   // Keeps track of the L2CAP-based channels managed by the proxy.
   L2capChannelManager l2cap_channel_manager_;
+
+  mutable sync::Mutex filter_mutex_;
+
+  // Storage for blocked events (256 bits for 256 possible codes)
+  std::bitset<256> blocked_events_ PW_GUARDED_BY(filter_mutex_);
+  std::bitset<256> blocked_le_subevents_ PW_GUARDED_BY(filter_mutex_);
 };
 
 }  // namespace pw::bluetooth::proxy

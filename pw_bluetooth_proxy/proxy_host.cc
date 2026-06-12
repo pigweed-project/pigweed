@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_proxy/proxy_host.h"
 
+#include <mutex>
+
 #include "pw_bluetooth/emboss_util.h"
 #include "pw_bluetooth/hci_commands.emb.h"
 #include "pw_bluetooth/hci_common.emb.h"
@@ -66,6 +68,34 @@ ProxyHost::~ProxyHost() {
   acl_data_channel_.Reset();
   l2cap_channel_manager_.DeregisterAndCloseChannels(
       L2capChannelEvent::kChannelClosedByOther);
+}
+
+void ProxyHost::SetEventBlocked(emboss::EventCode event_code, bool blocked) {
+  std::lock_guard lock(filter_mutex_);
+  blocked_events_.set(static_cast<uint8_t>(event_code), blocked);
+}
+
+void ProxyHost::SetLeSubeventBlocked(emboss::LeSubEventCode subevent_code,
+                                     bool blocked) {
+  std::lock_guard lock(filter_mutex_);
+  blocked_le_subevents_.set(static_cast<uint8_t>(subevent_code), blocked);
+}
+
+void ProxyHost::ResetFilters() {
+  std::lock_guard lock(filter_mutex_);
+  blocked_events_.reset();
+  blocked_le_subevents_.reset();
+}
+
+bool ProxyHost::IsEventBlocked(emboss::EventCode event_code) const {
+  std::lock_guard lock(filter_mutex_);
+  return blocked_events_.test(static_cast<uint8_t>(event_code));
+}
+
+bool ProxyHost::IsLeSubeventBlocked(
+    emboss::LeSubEventCode subevent_code) const {
+  std::lock_guard lock(filter_mutex_);
+  return blocked_le_subevents_.test(static_cast<uint8_t>(subevent_code));
 }
 
 void ProxyHost::DoReset() {
@@ -124,12 +154,16 @@ void ProxyHost::HandleEventFromController(H4PacketWithHci&& h4_packet) {
     return;
   }
 
+  bool should_send_to_host = true;
+  bool should_deliver_pending_events = true;
+  emboss::EventCode event_code = event->event_code().Read();
+
   PW_MODIFY_DIAGNOSTICS_PUSH();
   PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
-  switch (event->event_code().Read()) {
+  switch (event_code) {
     case emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS: {
-      acl_data_channel_.HandleNumberOfCompletedPacketsEvent(
-          std::move(h4_packet));
+      should_send_to_host =
+          acl_data_channel_.HandleNumberOfCompletedPacketsEvent(h4_packet);
       break;
     }
     case emboss::EventCode::DISCONNECTION_COMPLETE: {
@@ -143,11 +177,10 @@ void ProxyHost::HandleEventFromController(H4PacketWithHci&& h4_packet) {
         acl_data_channel_.ProcessDisconnectionCompleteEvent(
             conn_handle, dc_event->reason().Read());
       }
-      hci_transport_.SendToHost(std::move(h4_packet));
       break;
     }
     case emboss::EventCode::COMMAND_COMPLETE: {
-      HandleCommandCompleteEvent(std::move(h4_packet));
+      should_send_to_host = HandleCommandCompleteEvent(h4_packet);
       break;
     }
     case emboss::EventCode::CONNECTION_COMPLETE: {
@@ -161,21 +194,26 @@ void ProxyHost::HandleEventFromController(H4PacketWithHci&& h4_packet) {
             connection_complete_event->connection_handle().Read(),
             AclTransportType::kBrEdr);
       }
-      hci_transport_.SendToHost(std::move(h4_packet));
       break;
     }
     case emboss::EventCode::LE_META_EVENT: {
-      HandleLeMetaEvent(std::move(h4_packet));
+      should_send_to_host = HandleLeMetaEvent(h4_packet);
       break;
     }
     default: {
-      hci_transport_.SendToHost(std::move(h4_packet));
-      return;
+      should_deliver_pending_events = false;
+      break;
     }
   }
   PW_MODIFY_DIAGNOSTICS_POP();
 
-  l2cap_channel_manager_.DeliverPendingEvents();
+  if (should_send_to_host && !IsEventBlocked(event_code)) {
+    hci_transport_.SendToHost(std::move(h4_packet));
+  }
+
+  if (should_deliver_pending_events) {
+    l2cap_channel_manager_.DeliverPendingEvents();
+  }
 }
 
 void ProxyHost::HandleAclFromController(H4PacketWithHci&& h4_packet) {
@@ -186,15 +224,14 @@ void ProxyHost::HandleAclFromController(H4PacketWithHci&& h4_packet) {
   l2cap_channel_manager_.DeliverPendingEvents();
 }
 
-void ProxyHost::HandleLeMetaEvent(H4PacketWithHci&& h4_packet) {
+bool ProxyHost::HandleLeMetaEvent(H4PacketWithHci& h4_packet) {
   pw::span<uint8_t> hci_buffer = h4_packet.GetHciSpan();
   Result<emboss::LEMetaEventView> le_meta_event_view =
       MakeEmbossView<emboss::LEMetaEventView>(hci_buffer);
   if (!le_meta_event_view.ok()) {
     PW_LOG_ERROR(
         "Buffer is too small for LE_META_EVENT event. So will not process.");
-    hci_transport_.SendToHost(std::move(h4_packet));
-    return;
+    return true;
   }
 
   PW_MODIFY_DIAGNOSTICS_PUSH();
@@ -207,8 +244,7 @@ void ProxyHost::HandleLeMetaEvent(H4PacketWithHci&& h4_packet) {
         OnConnectionCompleteSuccess(event->connection_handle().Read(),
                                     AclTransportType::kLe);
       }
-      hci_transport_.SendToHost(std::move(h4_packet));
-      return;
+      break;
     }
     case emboss::LeSubEventCode::ENHANCED_CONNECTION_COMPLETE_V1: {
       Result<emboss::LEEnhancedConnectionCompleteSubeventV1View> event =
@@ -218,8 +254,7 @@ void ProxyHost::HandleLeMetaEvent(H4PacketWithHci&& h4_packet) {
         OnConnectionCompleteSuccess(event->connection_handle().Read(),
                                     AclTransportType::kLe);
       }
-      hci_transport_.SendToHost(std::move(h4_packet));
-      return;
+      break;
     }
     case emboss::LeSubEventCode::ENHANCED_CONNECTION_COMPLETE_V2: {
       Result<emboss::LEEnhancedConnectionCompleteSubeventV2View> event =
@@ -229,25 +264,24 @@ void ProxyHost::HandleLeMetaEvent(H4PacketWithHci&& h4_packet) {
         OnConnectionCompleteSuccess(event->connection_handle().Read(),
                                     AclTransportType::kLe);
       }
-      hci_transport_.SendToHost(std::move(h4_packet));
-      return;
+      break;
     }
     default:
       break;
   }
   PW_MODIFY_DIAGNOSTICS_POP();
-  hci_transport_.SendToHost(std::move(h4_packet));
+
+  return !IsLeSubeventBlocked(le_meta_event_view->subevent_code_enum().Read());
 }
 
-void ProxyHost::HandleCommandCompleteEvent(H4PacketWithHci&& h4_packet) {
+bool ProxyHost::HandleCommandCompleteEvent(H4PacketWithHci& h4_packet) {
   pw::span<uint8_t> hci_buffer = h4_packet.GetHciSpan();
   Result<emboss::CommandCompleteEventView> command_complete_event =
       MakeEmbossView<emboss::CommandCompleteEventView>(hci_buffer);
   if (!command_complete_event.ok()) {
     PW_LOG_ERROR(
         "Buffer is too small for COMMAND_COMPLETE event. So will not process.");
-    hci_transport_.SendToHost(std::move(h4_packet));
-    return;
+    return true;
   }
 
   PW_MODIFY_DIAGNOSTICS_PUSH();
@@ -298,7 +332,7 @@ void ProxyHost::HandleCommandCompleteEvent(H4PacketWithHci&& h4_packet) {
       break;
   }
   PW_MODIFY_DIAGNOSTICS_POP();
-  hci_transport_.SendToHost(std::move(h4_packet));
+  return true;
 }
 
 void ProxyHost::HandleCommandFromHost(H4PacketWithH4&& h4_packet) {

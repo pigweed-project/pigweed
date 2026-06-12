@@ -278,6 +278,21 @@ Status ProxyHostTest::SendLeConnectionCompleteEvent(ProxyHost& proxy,
   return OkStatus();
 }
 
+Status ProxyHostTest::SendLeMetaEvent(ProxyHost& proxy,
+                                      emboss::LeSubEventCode subevent_code) {
+  std::array<uint8_t, emboss::LEMetaEvent::IntrinsicSizeInBytes()> hci_arr{};
+  H4PacketWithHci event{emboss::H4PacketType::EVENT, hci_arr};
+  PW_TRY_ASSIGN(
+      auto view,
+      MakeEmbossWriter<emboss::LEMetaEventWriter>(event.GetHciSpan()));
+  view.header().event_code().Write(emboss::EventCode::LE_META_EVENT);
+  view.header().parameter_total_size().Write(1);  // 1 byte for subevent code
+  view.subevent_code_enum().Write(subevent_code);
+  proxy.HandleH4HciFromController(std::move(event));
+  RunDispatcher();
+  return OkStatus();
+}
+
 // Send a Disconnection_Complete event to `proxy` indicating the provided
 // `handle` has disconnected.
 Status ProxyHostTest::SendDisconnectionCompleteEvent(ProxyHost& proxy,
