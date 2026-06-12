@@ -133,7 +133,11 @@ class Deque : public containers::internal::
     // Asserts that a buffer is aligned at least as T.
     static constexpr Aligned Assert(std::byte* data, size_t size) {
       void* buffer_start = data;
-      PW_ASSERT(reinterpret_cast<uintptr_t>(buffer_start) % alignof(T) == 0);
+      // Avoid "%" in the PW_ASSERT condition being misinterpreted as a format
+      // specifier: https://pigweed.dev/pw_assert/#in-conditions
+      uintptr_t misalignment =
+          reinterpret_cast<uintptr_t>(buffer_start) % alignof(T);
+      PW_ASSERT(misalignment == 0);
       return Aligned(data, size);
     }
 
