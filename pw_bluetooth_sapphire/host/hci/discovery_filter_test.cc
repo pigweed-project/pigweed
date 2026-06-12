@@ -1254,6 +1254,14 @@ TEST(DiscoveryFilterTest, Pathloss) {
   EXPECT_FALSE(filter.Matches(kDataWithTxPower, true, kNotMatchingRSSI));
   EXPECT_TRUE(filter.Matches(std::nullopt, true, kNotMatchingRSSI));
 
+  // Test case for overflow
+  // tx_power = 20, rssi = -120. Pathloss = 140. Threshold = 80.
+  // Pathloss (140) > Threshold (80), so it should NOT match.
+  filter.set_pathloss(80);
+  const auto kDataWithOverflowTxPower(
+      AdvertisingData::FromBytes(StaticByteBuffer(0x02, 0x0A, 20)).value());
+  EXPECT_FALSE(filter.Matches(kDataWithOverflowTxPower, true, -120));
+
   // Finally, an empty filter should always succeed.
   filter.Reset();
   EXPECT_FALSE(filter.pathloss());

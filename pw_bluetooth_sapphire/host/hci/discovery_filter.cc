@@ -70,14 +70,14 @@ bool DiscoveryFilter::Matches(
       }
       // Otherwise we fall back to RSSI passing if tx_power was not set.
     } else {
-      int8_t tx_power_lvl = *advertising_data->get().tx_power();
+      int tx_power_lvl = *advertising_data->get().tx_power();
       if (tx_power_lvl < rssi) {
         bt_log(WARN,
                "gap",
                "reported tx-power level is less than RSSI, failed pathloss");
         return false;
       }
-      int8_t pathloss = tx_power_lvl - rssi;
+      int pathloss = tx_power_lvl - rssi;
       if (pathloss > *pathloss_) {
         return false;
       }
