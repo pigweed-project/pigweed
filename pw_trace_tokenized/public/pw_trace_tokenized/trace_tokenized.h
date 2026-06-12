@@ -218,4 +218,7 @@ TokenizedTracer& GetTokenizedTracer();
       PW_STRINGIFY(event_type) "|" PW_STRINGIFY(flags) "|" module "|" group \
                                                        "|" label "|" type)
 
+/// data format string that this backend supports
+#define PW_TRACE_TOKENIZED_TOKEN_LABEL "@pw_trace_tokenized_token_label"
+
 /// @endmodule

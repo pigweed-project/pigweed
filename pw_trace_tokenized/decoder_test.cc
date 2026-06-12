@@ -88,5 +88,134 @@ TEST(TokenizedDecoder, ReadSizePrefixed) {
   EXPECT_EQ(result->timestamp_usec, kTimeOffset + (2 * 150 * kTicksPerSec));
 }
 
+TEST(TokenizedDecoder, DetokenizeLabel) {
+  // token (hex!), date, domain ,string
+  static constexpr char kTokenDbCsv[] =
+      "11223344,,trace,"
+      "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel|"
+      "@pw_trace_tokenized_token_label\n"
+      "12345678,,trace,DetokenizedLabel\n";
+
+  pw::Result<Detokenizer> detok = Detokenizer::FromCsv(kTokenDbCsv);
+  PW_CHECK_OK(detok);
+
+  constexpr auto kLabelTokenBytes = bytes::Array<0x78, 0x56, 0x34, 0x12>();
+  constexpr auto kEncoded =
+      bytes::Concat(bytes::Array<0x44, 0x33, 0x22, 0x11>(),  // string token
+                    bytes::Array<0x96, 0x01>(),              // ticks = 150
+                    kLabelTokenBytes);
+  constexpr auto kEncodedWithPrefix =
+      bytes::Concat(std::byte{kEncoded.size()},  // length prefix
+                    kEncoded);
+
+  TokenizedDecoder decoder(*detok, kTicksPerSec);
+
+  stream::MemoryReader reader(kEncodedWithPrefix);
+  auto result = decoder.ReadSizePrefixed(reader);
+  PW_TEST_ASSERT_OK(result);
+
+  EXPECT_EQ(result->type, EventType::PW_TRACE_EVENT_TYPE_INSTANT);
+  EXPECT_STREQ(result->flags_str.c_str(), "0");
+  EXPECT_STREQ(result->module.c_str(), "MyModule");
+  EXPECT_STREQ(result->group.c_str(), "MyGroup");
+  EXPECT_STREQ(result->label.c_str(), "DetokenizedLabel");
+  EXPECT_TRUE(result->data.empty());
+  EXPECT_TRUE(result->data_fmt.empty());
+}
+
+TEST(TokenizedDecoder, DetokenizeLabelFails) {
+  static constexpr char kTokenDbCsv[] =
+      "11223344,,trace,"
+      "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel|"
+      "@pw_trace_tokenized_token_label\n";
+
+  pw::Result<Detokenizer> detok = Detokenizer::FromCsv(kTokenDbCsv);
+  PW_CHECK_OK(detok);
+
+  TokenizedDecoder decoder(*detok, kTicksPerSec);
+
+  // Case 1: Mismatched data size (2 bytes instead of 4)
+  {
+    constexpr auto kBadData = bytes::Array<0x78, 0x56>();
+    constexpr auto kEncoded =
+        bytes::Concat(bytes::Array<0x44, 0x33, 0x22, 0x11>(),  // string token
+                      bytes::Array<0x96, 0x01>(),              // ticks = 150
+                      kBadData);
+    constexpr auto kEncodedWithPrefix =
+        bytes::Concat(std::byte{kEncoded.size()}, kEncoded);
+
+    stream::MemoryReader reader(kEncodedWithPrefix);
+    auto result = decoder.ReadSizePrefixed(reader);
+    EXPECT_EQ(result.status(), Status::DataLoss());
+  }
+
+  // Case 2: Token not in DB
+  {
+    constexpr auto kUnknownTokenBytes = bytes::Array<0x99, 0x99, 0x99, 0x99>();
+    constexpr auto kEncoded =
+        bytes::Concat(bytes::Array<0x44, 0x33, 0x22, 0x11>(),  // string token
+                      bytes::Array<0x96, 0x01>(),              // ticks = 150
+                      kUnknownTokenBytes);
+    constexpr auto kEncodedWithPrefix =
+        bytes::Concat(std::byte{kEncoded.size()}, kEncoded);
+
+    stream::MemoryReader reader(kEncodedWithPrefix);
+    auto result = decoder.ReadSizePrefixed(reader);
+    EXPECT_EQ(result.status(), Status::DataLoss());
+  }
+
+  // Case 3: Token collision for label
+  {
+    static constexpr char kTokenDbCsvWithCollision[] =
+        "11223344,,trace,"
+        "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel|"
+        "@pw_trace_tokenized_token_label\n"
+        "12345678,,trace,LabelOne\n"
+        "12345678,,trace,LabelTwo\n";
+
+    pw::Result<Detokenizer> detok_collision =
+        Detokenizer::FromCsv(kTokenDbCsvWithCollision);
+    PW_CHECK_OK(detok_collision);
+
+    TokenizedDecoder decoder_collision(*detok_collision, kTicksPerSec);
+
+    constexpr auto kLabelTokenBytes =
+        bytes::Array<0x78, 0x56, 0x34, 0x12>();  // 0x12345678
+    constexpr auto kEncoded =
+        bytes::Concat(bytes::Array<0x44, 0x33, 0x22, 0x11>(),  // string token
+                      bytes::Array<0x96, 0x01>(),              // ticks = 150
+                      kLabelTokenBytes);
+    constexpr auto kEncodedWithPrefix =
+        bytes::Concat(std::byte{kEncoded.size()}, kEncoded);
+
+    stream::MemoryReader reader(kEncodedWithPrefix);
+    auto result = decoder_collision.ReadSizePrefixed(reader);
+    EXPECT_EQ(result.status(), Status::DataLoss());
+  }
+}
+
+TEST(TokenizedDecoder, MainTokenCollision) {
+  static constexpr char kTokenDbCsv[] =
+      "11223344,,trace,"
+      "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel1\n"
+      "11223344,,trace,"
+      "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel2\n";
+
+  pw::Result<Detokenizer> detok = Detokenizer::FromCsv(kTokenDbCsv);
+  PW_CHECK_OK(detok);
+
+  TokenizedDecoder decoder(*detok, kTicksPerSec);
+
+  constexpr auto kEncoded =
+      bytes::Concat(bytes::Array<0x44, 0x33, 0x22, 0x11>(),  // string token
+                    bytes::Array<0x96, 0x01>());             // ticks = 150
+  constexpr auto kEncodedWithPrefix =
+      bytes::Concat(std::byte{kEncoded.size()}, kEncoded);
+
+  stream::MemoryReader reader(kEncodedWithPrefix);
+  auto result = decoder.ReadSizePrefixed(reader);
+  EXPECT_EQ(result.status(), Status::DataLoss());
+}
+
 }  // namespace
 }  // namespace pw::trace

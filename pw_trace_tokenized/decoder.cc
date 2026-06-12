@@ -34,6 +34,7 @@ namespace {
 using cpp23::to_underlying;
 
 constexpr std::string_view kDomain = "trace";
+constexpr const char* kTokenLabelDataFmt = "@pw_trace_tokenized_token_label";
 
 // Token string: "event_type|flag|module|group|label|<optional DATA_FMT>"
 enum class TokenIdx {
@@ -107,6 +108,22 @@ std::vector<std::string_view> Split(std::string_view input, char delimiter) {
   return result;
 }
 
+Result<std::string_view> GetUniqueString(
+    const tokenizer::DetokenizedString& detok_result, uint32_t token) {
+  if (detok_result.matches().empty()) {
+    PW_LOG_WARN("Failed to detokenize token: 0x%08x (no matches)",
+                static_cast<unsigned int>(token));
+    return Status::DataLoss();
+  }
+  if (detok_result.matches().size() > 1) {
+    PW_LOG_WARN("Token collision for token 0x%08x: %zu matches",
+                static_cast<unsigned int>(token),
+                detok_result.matches().size());
+    return Status::DataLoss();
+  }
+  return detok_result.BestString();
+}
+
 }  // namespace
 
 Result<DecodedEvent> TokenizedDecoder::ReadSizePrefixed(
@@ -130,12 +147,8 @@ Result<DecodedEvent> TokenizedDecoder::Decode(ConstByteSpan data) {
   // Detokenize
   tokenizer::DetokenizedString detok_result =
       detokenizer_.Detokenize(ObjectAsBytes(token), kDomain);
-  std::string_view token_string = detok_result.BestString();
-  if (token_string.empty()) {
-    PW_LOG_WARN("Failed to detokenize: 0x%08x",
-                static_cast<unsigned int>(token));
-    return Status::DataLoss();
-  }
+  PW_TRY_ASSIGN(std::string_view token_string,
+                GetUniqueString(detok_result, token));
 
   // Split token string:
   // "event_type|flag|module|group|label|<optional DATA_FMT>"
@@ -178,9 +191,25 @@ Result<DecodedEvent> TokenizedDecoder::Decode(ConstByteSpan data) {
 
   // Data
   if (has_data) {
-    size_t n = reader.ConservativeReadLimit();
-    event.data.resize(n);
-    PW_TRY(reader.Read(event.data));
+    if (event.data_fmt == kTokenLabelDataFmt) {
+      if (reader.ConservativeReadLimit() != 4) {
+        PW_LOG_WARN("Mismatched data size for %s: expected 4, got %zu",
+                    kTokenLabelDataFmt,
+                    reader.ConservativeReadLimit());
+        return Status::DataLoss();
+      }
+      PW_TRY_ASSIGN(uint32_t label_token, ReadInt<uint32_t>(reader));
+      tokenizer::DetokenizedString detok_label =
+          detokenizer_.Detokenize(ObjectAsBytes(label_token), kDomain);
+      PW_TRY_ASSIGN(std::string_view label_string,
+                    GetUniqueString(detok_label, label_token));
+      event.label = label_string;
+      event.data_fmt.clear();
+    } else {
+      size_t n = reader.ConservativeReadLimit();
+      event.data.resize(n);
+      PW_TRY(reader.Read(event.data));
+    }
   }
 
   return event;
