@@ -58,12 +58,14 @@ cc_defaults {
     header_libs: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
         "pw_detokenizer_include_dirs",
     ],
     export_header_lib_headers: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
         "pw_detokenizer_include_dirs",
     ],
@@ -73,7 +75,6 @@ cc_defaults {
     static_libs: [
         "pw_base64",
         "pw_bytes",
-        "pw_containers",
         "pw_elf_reader",
         "pw_log_tokenized",
         "pw_polyfill",
@@ -86,7 +87,6 @@ cc_defaults {
     export_static_lib_headers: [
         "pw_base64",
         "pw_bytes",
-        "pw_containers",
         "pw_elf_reader",
         "pw_polyfill",
         "pw_preprocessor",
@@ -118,14 +118,15 @@ cc_library_static {
     ],
     header_libs: [
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
     ],
     export_header_lib_headers: [
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
     ],
     static_libs: [
-        "pw_containers",
         "pw_log_tokenized",
         "pw_polyfill",
         "pw_preprocessor",
@@ -133,7 +134,6 @@ cc_library_static {
         "pw_varint",
     ],
     export_static_lib_headers: [
-        "pw_containers",
         "pw_log_tokenized",
         "pw_polyfill",
         "pw_preprocessor",
@@ -152,9 +152,14 @@ cc_library_static {
     srcs: [
         "base64.cc",
     ],
+    header_libs: [
+        "pw_containers_headers",
+    ],
+    export_header_lib_headers: [
+        "pw_containers_headers",
+    ],
     static_libs: [
         "pw_base64",
-        "pw_containers",
         "pw_preprocessor",
         "pw_span",
         "pw_string",
@@ -162,7 +167,6 @@ cc_library_static {
     ],
     export_static_lib_headers: [
         "pw_base64",
-        "pw_containers",
         "pw_preprocessor",
         "pw_span",
         "pw_string",

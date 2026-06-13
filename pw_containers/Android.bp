@@ -35,9 +35,9 @@ cc_library_static {
     export_include_dirs: ["public"],
     header_libs: [
         "pw_assert",
-        "pw_log",
     ],
     static_libs: [
+        "pw_allocator",
         "pw_bytes",
         "pw_numeric",
         "pw_polyfill",
@@ -45,13 +45,67 @@ cc_library_static {
         "pw_span",
         "pw_varint",
     ],
+    whole_static_libs: [
+        // TODO: https://pwbug.dev/523306525 - Remove this
+        // when all consumers depend on it directly.
+        "pw_containers_intrusive_lists",
+    ],
+    export_static_lib_headers: [
+        "pw_allocator",
+        // TODO: https://pwbug.dev/523306525 - Remove this
+        // when all consumers depend on it directly.
+        "pw_containers_intrusive_lists",
+    ],
     srcs: [
         "aa_tree_item.cc",
         "aa_tree.cc",
         "inline_var_len_entry_queue.cc",
-        "intrusive_item.cc",
-        "intrusive_queue.cc",
         "var_len_entry.cc",
         "var_len_entry_queue_iterator.cc",
+    ],
+}
+
+cc_library_static {
+    name: "pw_containers_intrusive_item",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    export_include_dirs: ["public"],
+    header_libs: [
+        "pw_assert",
+    ],
+    srcs: [
+        "intrusive_item.cc",
+    ],
+}
+
+// An amalgamation of:
+// - intrusive_list_common
+// - intrusive_forward_list
+// - intrusive_list
+// - intrusive_queue
+//
+// Does NOT include aa-based intrusive collections like:
+// - intrusive_map
+// - intrusive_multimap
+// - intrusive_set
+// - intrusive_multiset
+//
+cc_library_static {
+    name: "pw_containers_intrusive_lists",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    export_include_dirs: ["public"],
+    whole_static_libs: [
+        "pw_containers_intrusive_item",
+    ],
+    export_static_lib_headers: [
+        "pw_containers_intrusive_item",
+    ],
+    srcs: [
+        "intrusive_queue.cc",
     ],
 }

@@ -25,15 +25,17 @@ cc_library {
     export_include_dirs: ["public"],
     header_libs: [
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
     ],
     export_header_lib_headers: [
         "pw_assert",
+        "pw_containers_headers",
         "pw_log",
     ],
     static_libs: [
         "pw_base64",
-        "pw_containers",
+        "pw_containers_intrusive_lists",
         "pw_preprocessor",
         "pw_span",
         "pw_tokenizer",
@@ -41,7 +43,7 @@ cc_library {
     ],
     export_static_lib_headers: [
         "pw_base64",
-        "pw_containers",
+        "pw_containers_intrusive_lists",
         "pw_preprocessor",
         "pw_span",
         "pw_tokenizer",
