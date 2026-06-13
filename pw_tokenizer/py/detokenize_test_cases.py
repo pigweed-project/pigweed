@@ -91,13 +91,29 @@ WITH_ARGS_SUCCESSFUL_CASES_BINARY = (
     TestCaseBytes(b'\x03\x00\x0d\xf0\xd0\x0f\x49\x40', '  3.1'),
     TestCaseBytes(b'\x04\x00\x0d\xf0\xd0\x0f\x49\x40', '+3.141590'),
     TestCaseBytes(b'\x05\x00\x0d\xf0\xd0\x0f\x49\x40', '3'),
-    TestCaseBytes(b'\xAA\xAA\xAA\xAA\xfc\x01', '~!'),
-    TestCaseBytes(b'\xCC\xCC\xCC\xCC\xfe\xff\x07', '65535!'),
-    TestCaseBytes(b'\xDD\xDD\xDD\xDD\xfe\xff\x07', '65535!'),
-    TestCaseBytes(b'\xDD\xDD\xDD\xDD\xfe\xff\xff\xff\x1f', '4294967295!'),
-    TestCaseBytes(b'\xEE\xEE\xEE\xEE\xfe\xff\x07', '65535!'),
-    TestCaseBytes(b'\xEE\xEE\xEE\xEE\xfe\xff\xff\xff\x1f', '4294967295!'),
-    TestCaseBytes(b'\xFF\xFF\xFF\xFF\xfe\xff\xff\xff\x1f', '4294967295!'),
+    TestCaseBytes(b'\x50\x00\x0d\xf0\x82\x01', 'Char A'),
+    TestCaseBytes(b'\x60\x00\x0d\xf0\x00', 'String '),
+    TestCaseBytes(b'\x60\x00\x0d\xf0\x05\x68\x65\x6c\x6c\x6f', 'String hello'),
+    TestCaseBytes(b'\x60\x00\x0d\xf0\x83\x61\x62\x63', 'String abc[...]'),
+    TestCaseBytes(b'\x70\x00\x0d\xf0\x09', '-5!'),
+    TestCaseBytes(b'\x70\x00\x0d\xf0\xfe\x01', '127!'),
+    TestCaseBytes(b'\x71\x00\x0d\xf0\xff\xff\x03', '-32768!'),
+    TestCaseBytes(b'\x72\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x73\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x74\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x75\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x76\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x80\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x81\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\x82\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(b'\xbb\xbb\xbb\xbb\xfe\x03', '255!'),
+    TestCaseBytes(b'\xaa\xaa\xaa\xaa\xfc\x01', '~!'),
+    TestCaseBytes(b'\xcc\xcc\xcc\xcc\xfe\xff\x07', '65535!'),
+    TestCaseBytes(b'\xdd\xdd\xdd\xdd\xfe\xff\x07', '65535!'),
+    TestCaseBytes(b'\xdd\xdd\xdd\xdd\xfe\xff\xff\xff\x1f', '4294967295!'),
+    TestCaseBytes(b'\xee\xee\xee\xee\xfe\xff\x07', '65535!'),
+    TestCaseBytes(b'\xee\xee\xee\xee\xfe\xff\xff\xff\x1f', '4294967295!'),
+    TestCaseBytes(b'\xff\xff\xff\xff\xfe\xff\xff\xff\x1f', '4294967295!'),
 )
 
 WITH_ARGS_STAR_CASES_BINARY = (
@@ -112,9 +128,14 @@ WITH_ARGS_STAR_CASES_BINARY = (
 
 WITH_ARGS_PERCENT_G_CASES_BINARY = (
     'With args percent g binary',
-    TestCaseBytes(b'\x06\x00\x0d\xf0\xd0\x0f\x49\x40', '3.14159'),
-    TestCaseBytes(b'\x07\x00\x0d\xf0\xd0\x0f\x49\x40', '3.14'),
-    TestCaseBytes(b'\x08\x00\x0d\xf0\x00\x29\x8b\x49', '1.14E+06'),
+    TestCaseBytes(b'\x30\x00\x0d\xf0\x00\x00\x20\x40', 'Short 2.5'),
+    TestCaseBytes(b'\x31\x00\x0d\xf0\x00\x00\x20\x40', 'Short 2.5'),
+)
+
+WITH_ARGS_PERCENT_E_CASES_BINARY = (
+    'With args percent e binary',
+    TestCaseBytes(b'\x20\x00\x0d\xf0\x00\x00\x20\x40', 'Exp 2.500000e+00'),
+    TestCaseBytes(b'\x21\x00\x0d\xf0\x00\x00\x20\x40', 'Exp 2.500000E+00'),
 )
 
 WITH_COLLISIONS_CASES_BINARY = (
@@ -146,12 +167,12 @@ TEST_DATABASE = (
     b'\x0b\x00\x00\x00\xff\xff\xff\xff'
     b'\xd7\x00\x00\x00----'
     b'\xeb\x00\x00\x00----'
-    b'\xFF\x00\x00\x00----'
+    b'\xff\x00\x00\x00----'
     b'\x00\x00\x00\x01----'
     b'\xd3\x4d\x34\xd3----'
-    b'\xFF\xEE\xEE\xDD----'
-    b'\xEE\xEE\xEE\xEE----'
-    b'\x9D\xA7\x97\xF8----'
+    b'\xff\xee\xee\xdd----'
+    b'\xee\xee\xee\xee----'
+    b'\x9d\xa7\x97\xf8----'
     b'One\0'
     b'My arg %s %d\0'
     b'TWO\0'
@@ -172,57 +193,89 @@ TEST_DATABASE = (
 
 DATA_WITH_ARGUMENTS = (
     b'TOKENS\0\0'
-    b'\x16\x00\x00\x00'
+    b'\x26\0\0\0'
     b'\0\0\x00\x00'
-    b'\x00\x00\x00\x00----'
-    b'\x0a\x0b\x0c\x0d----'
-    b'\x0e\x0f\x00\x01----'
-    b'\x01\x00\x0d\xf0----'
-    b'\x02\x00\x0d\xf0----'
-    b'\x03\x00\x0d\xf0----'
-    b'\x04\x00\x0d\xf0----'
-    b'\x05\x00\x0d\xf0----'
-    b'\xaa\xaa\xaa\xaa----'
-    b'\xbb\xbb\xbb\xbb----'
-    b'\xcc\xcc\xcc\xcc----'
-    b'\xdd\xdd\xdd\xdd----'
-    b'\xee\xee\xee\xee----'
-    b'\xff\xff\xff\xff----'
-    b'\xe4\x1e\x7d\x41----'
-    b'\x16\xbf\x18\x3c----'
-    b'\xe0\x6b\x83\x6b----'
-    b'\x03\xf0\x46\x3f----'
-    b'\x5e\x19\xe6\xad----'
-    b'\x06\x00\x0d\xf0----'
-    b'\x07\x00\x0d\xf0----'
-    b'\x08\x00\x0d\xf0----'
-    b'\0'
-    b'Use the %s, %s.\0'
-    b'Now there are %d of %s!\0'
-    b'%f\0'
-    b'%.2f\0'
-    b'%5.1f\0'
-    b'%+f\0'
-    b'%.0f\0'
-    b'%c!\0'
-    b'%hhu!\0'
-    b'%hu!\0'
-    b'%u!\0'
-    b'%lu!\0'
-    b'%llu!\0'
-    b'%*d\0'
-    b'%.*s\0'
-    b'%*.*f\0'
-    b'%**d\0'
-    b'%*.*.*f\0'
-    b'%g\0'
-    b'%.3g\0'
-    b'%G\0'
+    b'\x00\x00\x00\x00----'  # 01
+    b'\x0e\x0f\x00\x01----'  # 02
+    b'\x0a\x0b\x0c\x0d----'  # 03
+    b'\x16\xbf\x18\x3c----'  # 04
+    b'\x03\xf0\x46\x3f----'  # 05
+    b'\xe4\x1e\x7d\x41----'  # 06
+    b'\xe0\x6b\x83\x6b----'  # 07
+    b'\xaa\xaa\xaa\xaa----'  # 08
+    b'\x5e\x19\xe6\xad----'  # 09
+    b'\xbb\xbb\xbb\xbb----'  # 10
+    b'\xcc\xcc\xcc\xcc----'  # 11
+    b'\xdd\xdd\xdd\xdd----'  # 12
+    b'\xee\xee\xee\xee----'  # 13
+    b'\x01\x00\x0d\xf0----'  # 14
+    b'\x02\x00\x0d\xf0----'  # 15
+    b'\x03\x00\x0d\xf0----'  # 16
+    b'\x04\x00\x0d\xf0----'  # 17
+    b'\x05\x00\x0d\xf0----'  # 18
+    b'\x10\x00\x0d\xf0----'  # 19
+    b'\x20\x00\x0d\xf0----'  # 20
+    b'\x21\x00\x0d\xf0----'  # 21
+    b'\x30\x00\x0d\xf0----'  # 22
+    b'\x31\x00\x0d\xf0----'  # 23
+    b'\x40\x00\x0d\xf0----'  # 24
+    b'\x41\x00\x0d\xf0----'  # 25
+    b'\x50\x00\x0d\xf0----'  # 26
+    b'\x60\x00\x0d\xf0----'  # 27
+    b'\x70\x00\x0d\xf0----'  # 28
+    b'\x71\x00\x0d\xf0----'  # 29
+    b'\x72\x00\x0d\xf0----'  # 30
+    b'\x73\x00\x0d\xf0----'  # 31
+    b'\x74\x00\x0d\xf0----'  # 32
+    b'\x75\x00\x0d\xf0----'  # 33
+    b'\x76\x00\x0d\xf0----'  # 34
+    b'\x80\x00\x0d\xf0----'  # 35
+    b'\x81\x00\x0d\xf0----'  # 36
+    b'\x82\x00\x0d\xf0----'  # 37
+    b'\xff\xff\xff\xff----'  # 38
+    b'\0'  # 01
+    b'Now there are %d of %s!\0'  # 02
+    b'Use the %s, %s.\0'  # 03
+    b'%.*s\0'  # 04
+    b'%**d\0'  # 05
+    b'%*d\0'  # 06
+    b'%*.*f\0'  # 07
+    b'%c!\0'  # 08
+    b'%*.*.*f\0'  # 09
+    b'%hhu!\0'  # 10
+    b'%hu!\0'  # 11
+    b'%u!\0'  # 12
+    b'%lu!\0'  # 13
+    b'%f\0'  # 14
+    b'%.2f\0'  # 15
+    b'%5.1f\0'  # 16
+    b'%+f\0'  # 17
+    b'%.0f\0'  # 18
+    b'Pointer %p\0'  # 19
+    b'Exp %e\0'  # 20
+    b'Exp %E\0'  # 21
+    b'Short %g\0'  # 22
+    b'Short %G\0'  # 23
+    b'HexFloat %a\0'  # 24
+    b'HexFloat %A\0'  # 25
+    b'Char %c\0'  # 26
+    b'String %s\0'  # 27
+    b'%hhd!\0'  # 28
+    b'%hd!\0'  # 29
+    b'%ld!\0'  # 30
+    b'%lld!\0'  # 31
+    b'%jd!\0'  # 32
+    b'%zd!\0'  # 33
+    b'%td!\0'  # 34
+    b'%ju!\0'  # 35
+    b'%zu!\0'  # 36
+    b'%tu!\0'  # 37
+    b'%llu!\0'  # 38
 )
 
 DATA_WITH_COLLISIONS = (
     b'TOKENS\0\0'
-    b'\x0F\x00\x00\x00'
+    b'\x0f\x00\x00\x00'
     b'\0\0\x00\x00'
     b'\x00\x00\x00\x00\xff\xff\xff\xff'
     b'\x00\x00\x00\x00\x01\x02\x03\x04'
@@ -231,14 +284,14 @@ DATA_WITH_COLLISIONS = (
     b'\x00\x00\x00\x00\xff\xff\xff\xff'
     b'\x00\x00\x00\x00\xff\xff\xff\xff'
     b'\x00\x00\x00\x00\xff\xff\xff\xff'
-    b'\xAA\xAA\xAA\xAA\x00\x00\x00\x00'
-    b'\xAA\xAA\xAA\xAA\xff\xff\xff\xff'
-    b'\xBB\xBB\xBB\xBB\xff\xff\xff\xff'
-    b'\xBB\xBB\xBB\xBB\xff\xff\xff\xff'
-    b'\xCC\xCC\xCC\xCC\xff\xff\xff\xff'
-    b'\xCC\xCC\xCC\xCC\xff\xff\xff\xff'
-    b'\xDD\xDD\xDD\xDD\xff\xff\xff\xff'
-    b'\xDD\xDD\xDD\xDD\xff\xff\xff\xff'
+    b'\xaa\xaa\xaa\xaa\x00\x00\x00\x00'
+    b'\xaa\xaa\xaa\xaa\xff\xff\xff\xff'
+    b'\xbb\xbb\xbb\xbb\xff\xff\xff\xff'
+    b'\xbb\xbb\xbb\xbb\xff\xff\xff\xff'
+    b'\xcc\xcc\xcc\xcc\xff\xff\xff\xff'
+    b'\xcc\xcc\xcc\xcc\xff\xff\xff\xff'
+    b'\xdd\xdd\xdd\xdd\xff\xff\xff\xff'
+    b'\xdd\xdd\xdd\xdd\xff\xff\xff\xff'
     b'This string is present\0'
     b'This string is removed\0'
     b'One arg %d\0'

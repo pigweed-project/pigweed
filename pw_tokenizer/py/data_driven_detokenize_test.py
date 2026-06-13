@@ -25,6 +25,7 @@ from detokenize_test_cases import (
     WITH_ARGS_SUCCESSFUL_CASES_BINARY,
     WITH_ARGS_STAR_CASES_BINARY,
     WITH_ARGS_PERCENT_G_CASES_BINARY,
+    WITH_ARGS_PERCENT_E_CASES_BINARY,
     WITH_COLLISIONS_CASES_BINARY,
     TEST_DATABASE,
     DATA_WITH_ARGUMENTS,
@@ -65,6 +66,13 @@ _WITH_ARGS_PERCENT_G_TESTS = TestGenerator(
     java_test=java.WITH_ARGS_BINARY_TESTS,
     # TODO: b/523306892 - Support %g and %G format specifiers in Rust.
     rust_test=rust.skip_test('with_args_percent_g_tests'),
+)
+_WITH_ARGS_PERCENT_E_TESTS = TestGenerator(
+    WITH_ARGS_PERCENT_E_CASES_BINARY,
+    cc_test=cc.WITH_ARGS_BINARY_TESTS,
+    java_test=java.WITH_ARGS_BINARY_TESTS,
+    # TODO: b/352358580 - Support %e and %E format specifiers in Rust.
+    rust_test=rust.skip_test('with_args_percent_e_tests'),
 )
 _WITH_COLLISIONS_TESTS = TestGenerator(
     WITH_COLLISIONS_CASES_BINARY,
@@ -156,6 +164,18 @@ DetokenizeWithArgsPercentGTest = _WITH_ARGS_PERCENT_G_TESTS.python_tests(
     ),
 )
 
+DetokenizeWithArgsPercentETest = _WITH_ARGS_PERCENT_E_TESTS.python_tests(
+    'DetokenizeWithArgsPercentETest',
+    lambda ctx: _define_py_test_binary(
+        Detokenizer(
+            tokens.Database(
+                tokens.parse_binary(io.BytesIO(DATA_WITH_ARGUMENTS))
+            )
+        ),
+        ctx,
+    ),
+)
+
 DetokenizeWithCollisionsTest = _WITH_COLLISIONS_TESTS.python_tests(
     'DetokenizeWithCollisionsTest',
     lambda ctx: _define_py_test_binary(
@@ -176,5 +196,6 @@ if __name__ == '__main__':
         _WITH_ARGS_BINARY_TESTS,
         _WITH_ARGS_STAR_TESTS,
         _WITH_ARGS_PERCENT_G_TESTS,
+        _WITH_ARGS_PERCENT_E_TESTS,
         _WITH_COLLISIONS_TESTS,
     )
