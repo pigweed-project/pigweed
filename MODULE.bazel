@@ -212,9 +212,9 @@ RUST_VERSION = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d
 
 # TODO(b/488384121): Setup a roller
 # ROLL: Warning: this variable is automatically updated.
-# ROLL: Last updated 2026-05-30.
-# ROLL: By https://cr-buildbucket.appspot.com/build/8680346583617326017.
-RUST_ANALYZER_VERSION = "git_revision:96556515cd87746f53d67aec3015775d6c97ef00"
+# ROLL: Last updated 2026-06-13.
+# ROLL: By https://cr-buildbucket.appspot.com/build/8679078224510607057.
+RUST_ANALYZER_VERSION = "git_revision:e79b8223f7e0f000d75e7bf9a8f5b590ff7eb7f8"
 
 pw_rust.toolchain(
     cipd_tag = RUST_VERSION,
