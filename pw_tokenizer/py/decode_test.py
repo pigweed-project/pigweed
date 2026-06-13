@@ -744,6 +744,44 @@ class TestIntegerDecoding(unittest.TestCase):
                 .value,
             )
 
+    def test_zero_precision_zero_value_with_asterisks(self) -> None:
+        result = decode.FormatString('%*.*d').format(b'\x00\x00\x00')
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '')
+
+        result = decode.FormatString('%*.*d').format(b'\x0a\x00\x00')
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '     ')
+
+    def test_zero_precision_zero_value_with_plus_and_space(self) -> None:
+        result = decode.FormatString('%+5.0d').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '    +')
+
+        result = decode.FormatString('% 5.0d').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '     ')
+
+        result = decode.FormatString('%+.0d').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '+')
+
+        result = decode.FormatString('% .0d').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, ' ')
+
+        result = decode.FormatString('%#.0o').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '0')
+
+        result = decode.FormatString('%#5.0o').format(encode.encode_args(0))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '    0')
+
+        result = decode.FormatString('%#*o').format(encode.encode_args(-10, 10))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '012       ')
+
 
 # pylint: disable=too-many-public-methods
 class TestFloatDecoding(unittest.TestCase):
@@ -1026,6 +1064,13 @@ class TestFloatDecoding(unittest.TestCase):
         result = decode.FormatString('%.0f').format(encode.encode_args(0.0))
         self.assertTrue(result.ok())
         self.assertEqual(result.value, '0')
+
+    def test_negative_precision(self) -> None:
+        result = decode.FormatString('%*.*f').format(
+            b'\x10\x03\xd0\x0f\x49\x40'
+        )
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '3.141590')
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
@@ -1571,6 +1616,20 @@ class TestStringDecoding(unittest.TestCase):
         self.assertFalse(result.ok())
         self.assertEqual(result.remaining, encode.encode_args('hello'))
 
+    def test_truncated_string(self) -> None:
+        result = decode.FormatString('%.*s').format(b'\x14\x85hello')
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, 'hello[...]')
+
+        result = decode.FormatString('%*.*s').format(b'\x18\x14\x85hello')
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '  hello[...]')
+
+    def test_negative_precision(self) -> None:
+        result = decode.FormatString('%.*s').format(b'\x03\x05hello')
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, 'hello')
+
 
 class TestPointerDecoding(unittest.TestCase):
     """Tests decoding pointer values."""
@@ -1748,6 +1807,20 @@ class TestPointerDecoding(unittest.TestCase):
         )
         self.assertTrue(result.ok())
         self.assertEqual(result.value, '     0x00000000')
+        self.assertEqual(result.remaining, b'')
+
+    def test_pointer_with_minus_leading_zeros(self) -> None:
+        result = decode.FormatString('%-12p').format(encode.encode_args(0x1234))
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '0x00001234  ')
+        self.assertEqual(result.remaining, b'')
+
+    def test_pointer_dynamic_width_negative(self) -> None:
+        result = decode.FormatString('%*p').format(
+            encode.encode_args(-12, 0x1234)
+        )
+        self.assertTrue(result.ok())
+        self.assertEqual(result.value, '0x00001234  ')
         self.assertEqual(result.remaining, b'')
 
 

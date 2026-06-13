@@ -237,7 +237,7 @@ class FormatSpec:
     )
 
     # Conversions to make format strings Python compatible.
-    _REMAP_TYPE = {'a': 'f', 'A': 'F', 'p': 'X'}
+    REMAP_TYPE = {'a': 'f', 'A': 'F', 'p': 'X'}
 
     # Conversion specifiers by type; n is not supported.
     SIGNED_INT = frozenset('di')
@@ -306,27 +306,27 @@ class FormatSpec:
 
         # If we are going to add additional characters to the output, we add to
         # width_bias to ensure user-provided widths are reduced by that amount.
-        self._width_bias = 0
+        self.width_bias = 0
         # Some of our machinery requires that we maintain a minimum precision
         # width to ensure a certain amount of digits gets printed. This
         # increases the user-provided precision in these cases if it was not
         # enough.
-        self._minimum_precision = 0
+        self.minimum_precision = 0
         # Python's handling of %#o is non-standard and prepends a 0o
         # instead of single 0.
         if self.type == 'o' and '#' in self.flags:
-            self._width_bias = 1
+            self.width_bias = 1
         # Python does not support %p natively.
         if self.type == 'p':
-            self._width_bias = 2
-            self._minimum_precision = 8
+            self.width_bias = 2
+            self.minimum_precision = 8
 
         # If we have a concrete width, we reduce it by any width bias.
         # Otherwise, we either have no width or width is *, where the decoding
         # logic will handle the width bias.
         parsed_width = int(self.width.replace('*', '') or '0')
-        if parsed_width > self._width_bias:
-            self.width = f'{parsed_width - self._width_bias}'
+        if parsed_width > self.width_bias:
+            self.width = f'{parsed_width - self.width_bias}'
 
         # Python %-operator does not support `.` without a
         # trailing number. `.` is defined to be equivalent to `.0`.
@@ -339,9 +339,9 @@ class FormatSpec:
         if (
             self.precision != '.*'
             and int(self.precision.replace('.', '') or '0')
-            < self._minimum_precision
+            < self.minimum_precision
         ):
-            self.precision = f'.{self._minimum_precision}'
+            self.precision = f'.{self.minimum_precision}'
 
         # The Python %-format machinery never requires the length
         # modifier to work correctly, and it doesn't support all of the
@@ -353,7 +353,7 @@ class FormatSpec:
                 self.flags,
                 self.width,
                 self.precision,
-                self._REMAP_TYPE.get(self.type, self.type),
+                self.REMAP_TYPE.get(self.type, self.type),
             ]
         )
 
@@ -414,7 +414,7 @@ class FormatSpec:
                 self.flags.replace('0', ' '),
                 self.width,
                 self.precision,
-                self._REMAP_TYPE.get(self.type, self.type),
+                self.REMAP_TYPE.get(self.type, self.type),
             ]
         )
 
@@ -427,12 +427,17 @@ class FormatSpec:
         def merge_optional_str(*args: str | None) -> str | None:
             return ' '.join(a for a in args if a) or None
 
+        adjusted_width = None
+        if width is not None:
+            sign = -1 if width.value < 0 else 1
+            adjusted_width = sign * max(0, abs(width.value) - self.width_bias)
+
         if width is not None and precision is not None:
             return DecodedArg(
                 main.specifier,
                 (
-                    width.value - self._width_bias,
-                    max(precision.value, self._minimum_precision),
+                    adjusted_width,
+                    precision.value,
                     main.value,
                 ),
                 width.raw_data + precision.raw_data + main.raw_data,
@@ -443,7 +448,7 @@ class FormatSpec:
         if width is not None:
             return DecodedArg(
                 main.specifier,
-                (width.value - self._width_bias, main.value),
+                (adjusted_width, main.value),
                 width.raw_data + main.raw_data,
                 width.status | main.status,
                 merge_optional_str(width.error, main.error),
@@ -452,7 +457,7 @@ class FormatSpec:
         if precision is not None:
             return DecodedArg(
                 main.specifier,
-                (max(precision.value, self._minimum_precision), main.value),
+                (precision.value, main.value),
                 precision.raw_data + main.raw_data,
                 precision.status | main.status,
                 merge_optional_str(precision.error, main.error),
@@ -614,47 +619,128 @@ class DecodedArg:
         # The %% specifier is always OK and should always be printed normally.
         self._status = status if self.specifier.type != '%' else self.OK
 
+    def _parse_format_args(self) -> tuple[int | None, int | None, Any]:
+        width_val = None
+        precision_val = None
+        main_val = self.value
+
+        if self.specifier.width == '*':
+            if self.specifier.precision == '.*':
+                width_val, precision_val, main_val = self.value
+            else:
+                width_val, main_val = self.value
+        elif self.specifier.precision == '.*':
+            precision_val, main_val = self.value
+
+        if width_val is None and self.specifier.width:
+            width_val = int(self.specifier.width)
+        if precision_val is None and self.specifier.precision:
+            prec_str = self.specifier.precision.lstrip('.')
+            precision_val = int(prec_str) if prec_str else 0
+
+        return width_val, precision_val, main_val
+
+    def _format_zero_precision_zero_value(
+        self, width_val: int | None, precision_val: int | None, main_val: Any
+    ) -> str | None:
+        """Formats zero-precision integer conversions with a value of zero."""
+        is_integer_specifier_type = self.specifier.type in 'diuoxX'
+        if not (
+            is_integer_specifier_type and precision_val == 0 and main_val == 0
+        ):
+            return None
+
+        if self.specifier.type in 'di':
+            if '+' in self.specifier.flags:
+                base_string = '+'
+            elif ' ' in self.specifier.flags:
+                base_string = ' '
+            else:
+                base_string = ''
+        elif self.specifier.type == 'o' and '#' in self.specifier.flags:
+            base_string = '0'
+        else:
+            base_string = ''
+
+        if width_val is None:
+            return base_string
+
+        # We are bypassing formatting, so need the original width.
+        width = abs(width_val) + self.specifier.width_bias
+        pad_count = max(0, width - len(base_string))
+        left_align = '-' in self.specifier.flags or width_val < 0
+        if left_align:
+            return base_string + ' ' * pad_count
+        return ' ' * pad_count + base_string
+
     def format(self) -> str:
         """Returns formatted version of this argument, with error handling."""
-        if self.status == self.TRUNCATED:
-            return self.specifier.compatible % (self.value + '[...]')
-
         if self.ok():
+            width_val, precision_val, main_val = self._parse_format_args()
+
+            if self.status & self.TRUNCATED:
+                main_val = main_val + '[...]'
+
             # Check if we are effectively .0{diuoxX} with a 0 value (this
             # includes .* with (0, 0)). C standard says a value of 0 with 0
             # precision produces an empty string.
-            is_integer_specifier_type = self.specifier.type in 'diuoxX'
-            is_simple_0_precision_with_0_value = self.value == 0 and (
-                self.specifier.precision == '.0'
-                or self.specifier.precision == '.'
+            zero_prec_result = self._format_zero_precision_zero_value(
+                width_val, precision_val, main_val
             )
-            is_star_0_precision_with_0_value = (
-                self.value == (0, 0) and self.specifier.precision == '.*'
-            )
-            if is_integer_specifier_type and (
-                is_simple_0_precision_with_0_value
-                or is_star_0_precision_with_0_value
+            if zero_prec_result is not None:
+                return zero_prec_result
+
+            # Construct compatible specifier dynamically
+            flags = self.specifier.flags
+            if (
+                self.specifier.type in FormatSpec.FLOATING_POINT
+                and not math.isfinite(main_val)
             ):
-                return ''
+                flags = flags.replace('0', ' ')
+
+            compatible_spec = '%' + flags
+            fmt_args = []
+
+            if self.specifier.width == '*':
+                compatible_spec += '*'
+                fmt_args.append(width_val)
+            elif self.specifier.width:
+                compatible_spec += self.specifier.width
+
+            # Ignore precision if unset or negative (in accordance with C99).
+            if precision_val is not None and precision_val >= 0:
+                if self.specifier.precision == '.*':
+                    compatible_spec += '.*'
+                    assert precision_val is not None
+                    fmt_args.append(
+                        max(precision_val, self.specifier.minimum_precision)
+                    )
+                elif self.specifier.precision:
+                    compatible_spec += self.specifier.precision
+
+            compatible_spec += FormatSpec.REMAP_TYPE.get(
+                self.specifier.type, self.specifier.type
+            )
+
+            if len(fmt_args) == 0:
+                format_value = main_val
+            elif len(fmt_args) == 1:
+                format_value = (fmt_args[0], main_val)
+            else:
+                format_value = (fmt_args[0], fmt_args[1], main_val)
 
             try:
                 # Python has a nonstandard alternative octal form.
                 if self.specifier.type == 'o' and '#' in self.specifier.flags:
-                    return self._format_alternative_octal()
-
-                # Python doesn't pad zeros correctly for inf/nan.
-                if self.specifier.type in FormatSpec.FLOATING_POINT and (
-                    self.value == math.inf
-                    or self.value == -math.inf
-                    or self.value == math.nan
-                ):
-                    return self._format_text_float()
+                    return _format_alternative_octal(
+                        compatible_spec, format_value
+                    )
 
                 # Python doesn't have a native pointer formatter.
                 if self.specifier.type == 'p':
-                    return self._format_pointer()
+                    return _format_pointer(compatible_spec, format_value)
 
-                return self.specifier.compatible % self.value
+                return compatible_spec % format_value
             except (OverflowError, TypeError, ValueError) as err:
                 self._status |= self.DECODE_ERROR
                 self.error = err
@@ -675,56 +761,53 @@ class DecodedArg:
 
         return '<[{} ({})]>'.format(message, self.value)
 
-    def _format_alternative_octal(self) -> str:
-        """Formats an alternative octal specifier.
-
-        This potentially throws OverflowError, TypeError, or ValueError.
-        """
-        compatible_specifier = self.specifier.compatible.replace('#', '')
-        result = compatible_specifier % self.value
-
-        # Find index of the first non-space, non-plus, and non-zero
-        # character. If we cannot find anything, we will simply
-        # prepend a 0 to the formatted string.
-        counter = 0
-        for i, value in enumerate(result):
-            if value not in ' +0':
-                counter = i
-                break
-        return result[:counter] + '0' + result[counter:]
-
-    def _format_text_float(self) -> str:
-        """Formats a float specifier with txt value (e.g. NAN, INF).
-
-        This potentially throws OverflowError, TypeError, or ValueError.
-        """
-        return self.specifier.text_float_safe_compatible() % self.value
-
-    def _format_pointer(self) -> str:
-        """Formats a pointer specifier.
-
-        This potentially throws OverflowError, TypeError, or ValueError.
-        """
-        result = self.specifier.compatible % self.value
-
-        # Find index of the first non-space, non-plus, and non-zero
-        # character (unless we hit the first of the 8 required hex
-        # digits).
-        counter = 0
-        for i, value in enumerate(result[:-7]):
-            if value not in ' +0' or i == len(result) - 8:
-                counter = i
-                break
-
-        # Insert the pointer 0x prefix in after the leading `+`,
-        # space, or `0`
-        return result[:counter] + '0x' + result[counter:]
-
     def __str__(self) -> str:
         return self.format()
 
     def __repr__(self) -> str:
         return f'DecodedArg({self})'
+
+
+def _format_alternative_octal(compatible_spec: str, value: Any) -> str:
+    """Formats an alternative octal specifier.
+
+    This potentially throws OverflowError, TypeError, or ValueError.
+    """
+    compatible_specifier = compatible_spec.replace('#', '')
+    result = compatible_specifier % value
+
+    # Find index of the first non-space, non-plus, and non-zero
+    # character. If we cannot find anything, we will simply
+    # prepend a 0 to the formatted string.
+    counter = 0
+    for i, val in enumerate(result):
+        if val not in ' +0':
+            counter = i
+            break
+    return result[:counter] + '0' + result[counter:]
+
+
+def _format_pointer(compatible_spec: str, value: Any) -> str:
+    """Formats a pointer specifier.
+
+    This potentially throws OverflowError, TypeError, or ValueError.
+    """
+    result = compatible_spec % value
+
+    # Find the index of the first non-space character.
+    first_non_space = len(result)
+    for i, char in enumerate(result):
+        if char != ' ':
+            first_non_space = i
+            break
+
+    # If the first non-space character is a sign, insert 0x after it.
+    if first_non_space < len(result) and result[first_non_space] in '+-':
+        insert_idx = first_non_space + 1
+    else:
+        insert_idx = first_non_space
+
+    return result[:insert_idx] + '0x' + result[insert_idx:]
 
 
 def parse_format_specifiers(format_string: str) -> Iterable[FormatSpec]:

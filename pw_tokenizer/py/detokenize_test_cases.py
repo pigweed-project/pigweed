@@ -124,6 +124,7 @@ WITH_ARGS_STAR_CASES_BINARY = (
     TestCaseBytes(b'\xe0\x6b\x83\x6b\x10\x04\xd0\x0f\x49\x40', '    3.14'),
     TestCaseBytes(b'\x03\xf0\x46\x3f\x0a\x54', '%**d'),
     TestCaseBytes(b'\x5e\x19\xe6\xad\x10\x04\xd0\x0f\x49\x40', '%*.*.*f'),
+    TestCaseBytes(b'\xe0\x6b\x83\x6b\x10\x03\xd0\x0f\x49\x40', '3.141590'),
 )
 
 WITH_ARGS_PERCENT_G_CASES_BINARY = (
