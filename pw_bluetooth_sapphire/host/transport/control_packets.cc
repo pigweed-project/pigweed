@@ -98,16 +98,9 @@ std::optional<pw::bluetooth::emboss::StatusCode> EventPacket::StatusCode()
     case hci_spec::kAuthenticationCompleteEventCode:
       return StatusCodeFromView<
           pw::bluetooth::emboss::AuthenticationCompleteEventView>();
-    case hci_spec::kRemoteNameRequestCompleteEventCode: {
-      // Tests expect that a kPacketMalformed status is returned for incomplete
-      // events, even if they contain the status field.
-      pw::bluetooth::emboss::RemoteNameRequestCompleteEventView event_view(
-          data().data(), size());
-      if (!event_view.IsComplete()) {
-        return std::nullopt;
-      }
-      return event_view.status().UncheckedRead();
-    }
+    case hci_spec::kRemoteNameRequestCompleteEventCode:
+      return StatusCodeFromView<
+          pw::bluetooth::emboss::RemoteNameRequestCompleteEventView>();
     case hci_spec::kEncryptionChangeEventCode:
       return StatusCodeFromView<
           pw::bluetooth::emboss::EncryptionChangeEventV1View>();

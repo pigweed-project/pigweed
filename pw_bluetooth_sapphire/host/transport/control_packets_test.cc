@@ -40,6 +40,23 @@ TEST(EmbossControlPackets, TooSmallCommandCompleteEventWhenReadingStatus) {
   EXPECT_FALSE(packet.StatusCode().has_value());
 }
 
+TEST(EmbossControlPackets, ToResultReturnsErrorForTruncatedEvent) {
+  // Create a truncated LEAdvertisingSetTerminatedSubevent packet (requires 8
+  // bytes).
+  StaticByteBuffer buffer(hci_spec::kLEMetaEventCode,
+                          0x02,  // parameter_total_size
+                          hci_spec::kLEAdvertisingSetTerminatedSubeventCode,
+                          0x00  // status (success)
+  );
+
+  EventPacket packet = EventPacket::New(buffer.size());
+  packet.mutable_data().Write(buffer);
+
+  // Verify that ToResult() returns a kPacketMalformed error, even though the
+  // status field in the packet indicates success.
+  EXPECT_EQ(packet.ToResult(), ToResult(HostError::kPacketMalformed));
+}
+
 TEST(EmbossControlPackets, CommandCompleteEventWithStatus) {
   StaticByteBuffer buffer(hci_spec::kCommandCompleteEventCode,
                           0x04,  // size

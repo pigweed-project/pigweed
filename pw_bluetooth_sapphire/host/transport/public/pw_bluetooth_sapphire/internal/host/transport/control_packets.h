@@ -215,7 +215,7 @@ class EventPacket : public DynamicPacket {
   std::optional<pw::bluetooth::emboss::StatusCode> StatusCodeFromView() const {
     // Don't use view(), which asserts on IsComplete().
     T packet_view(data().data(), size());
-    if (!packet_view.status().Ok()) {
+    if (!packet_view.Ok()) {
       return std::nullopt;
     }
     return packet_view.status().UncheckedRead();
