@@ -71,14 +71,16 @@ enum RfcommLengthExtended:
 
 enum RfcommHeaderLength:
   [maximum_bits: 3]
-  WITHOUT_LENGTH = 2
-  WITH_LENGTH = 3
+  WITHOUT_LENGTH       = 2
+  WITH_LENGTH          = 3
   WITH_EXTENDED_LENGTH = 4
+
 
 enum RfcommDataFrameOverhead:
   [maximum_bits: 3]
   WITH_SHORT_HEADER = 4
-  WITH_LONG_HEADER = 5
+  WITH_LONG_HEADER  = 5
+
 
 enum RfcommMaxInfoSize:
   [maximum_bits: 16]

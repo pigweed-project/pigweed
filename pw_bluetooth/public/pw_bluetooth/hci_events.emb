@@ -1563,6 +1563,8 @@ struct SynchronousConnectionCompleteEvent:
 
 # 7.7.37 Sniff Subrating event
 # HCI_Sniff_Subrating
+
+
 struct SniffSubratingEvent:
   let hdr_size = hci.EventHeader.$size_in_bytes
   0     [+hdr_size]  hci.EventHeader  header

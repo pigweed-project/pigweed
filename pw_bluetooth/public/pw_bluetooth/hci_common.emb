@@ -831,6 +831,7 @@ enum LeSubEventCode:
   REQUEST_PEER_SCA_COMPLETE                      = 0x1F
   CIS_REQUEST                                    = 0x1A
   BIG_INFO_ADVERTISING_REPORT                    = 0x22
+  SUBRATE_CHANGE                                 = 0x23
   PERIODIC_ADVERTISING_SYNC_ESTABLISHED_V2       = 0x24
   PERIODIC_ADVERTISING_REPORT_V2                 = 0x25
   PERIODIC_ADVERTISING_SYNC_TRANSFER_RECEIVED_V2 = 0x26

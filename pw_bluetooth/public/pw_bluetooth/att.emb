@@ -89,6 +89,7 @@ enum AttOpcode:
 
 # ========== 3.4.5 Writing attributes ==========
 
+
 struct AttWriteCmd(attribute_size: UInt:16):
   -- 3.4.5.3 ATT_WRITE_CMD
   0     [+1]               AttOpcode               attribute_opcode
