@@ -105,7 +105,7 @@ class ForwardingChannelOutput : public ChannelOutput {
     return packets[sent_packets_].Encode(packet_buffer);
   }
 
-  std::atomic<uint16_t> sent_packets_ = 0;
+  std::atomic<uint32_t> sent_packets_ = 0;
 
   const TestPacketProcessor server_packet_processor_;
   const TestPacketProcessor client_packet_processor_;
