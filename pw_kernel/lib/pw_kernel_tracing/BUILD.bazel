@@ -39,7 +39,7 @@ rust_library(
     tags = ["kernel"],
     deps = [
                "//pw_kernel/lib/pw_atomic",
-               "//pw_kernel/lib/time",
+               "//pw_time/rust:pw_time_core",
            ] + select({
                "@pigweed//pw_build/constraints/rust:std": [
                    "@rust_crates//:byteorder",

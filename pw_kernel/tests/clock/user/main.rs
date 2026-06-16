@@ -16,17 +16,16 @@
 #![no_main]
 
 use pw_status::Result;
-use time::Clock;
-use userspace::time::{Duration, sleep_until};
+use userspace::time::{Clock, Duration, SystemClock, sleep_until};
 use userspace::{entry, syscall};
 
 fn clock_test() -> Result<()> {
     test_logger::step_start!("Testing SystemClock::now() advances");
-    let start = userspace::time::SystemClock::now();
+    let start = SystemClock::now();
     let mut end = start;
     let mut count = 0;
     while end == start && count < 1000000 {
-        end = userspace::time::SystemClock::now();
+        end = SystemClock::now();
         count += 1;
     }
     if end > start {
@@ -40,7 +39,7 @@ fn clock_test() -> Result<()> {
 
 fn sleep_test() -> Result<()> {
     test_logger::step_start!("Testing sleep_until");
-    let start = userspace::time::SystemClock::now();
+    let start = SystemClock::now();
     let delay = Duration::from_millis(100);
     let deadline = start + delay;
 
@@ -49,7 +48,7 @@ fn sleep_test() -> Result<()> {
         return Err(err);
     }
 
-    let end = userspace::time::SystemClock::now();
+    let end = SystemClock::now();
     if end >= deadline {
         test_logger::step_passed!("sleep_until slept for at least the requested time");
         Ok(())

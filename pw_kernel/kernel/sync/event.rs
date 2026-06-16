@@ -17,7 +17,7 @@ use core::sync::atomic::Ordering;
 
 use pw_atomic::{AtomicAdd, AtomicLoad, AtomicSub, AtomicZero};
 use pw_status::Result;
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::scheduler::{WaitQueueLock, WaitQueueLockGuard, WaitType};
 use crate::{Kernel, SchedulerState, SpinLockGuard};

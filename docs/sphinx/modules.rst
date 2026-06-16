@@ -115,6 +115,7 @@ Modules
    pw_system/docs
    pw_target_runner/docs
    pw_thread/docs
+   pw_time/docs
    pw_tls_client/docs
    pw_tokenizer/docs
    pw_toolchain/docs

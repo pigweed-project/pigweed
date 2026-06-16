@@ -19,8 +19,8 @@ use core::ptr::NonNull;
 use foreign_box::{ForeignBox, ForeignRc};
 use list::{self, Link, RandomAccessForeignList};
 use pw_status::{Error, Result};
+use pw_time_core::Instant;
 pub use syscall_defs::{ExitStatus, Signals, WaitReturn};
-use time::Instant;
 
 use crate::Kernel;
 use crate::object::wait_group::WaitGroupMember;

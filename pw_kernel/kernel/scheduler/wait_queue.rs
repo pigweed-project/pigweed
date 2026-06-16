@@ -21,7 +21,7 @@ use foreign_box::ForeignBox;
 use foreign_box::ForeignBox;
 use list::ForeignList;
 use pw_status::{Error, Result};
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::Kernel;
 use crate::scheduler::RescheduleReason;

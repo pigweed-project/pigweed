@@ -15,7 +15,7 @@
 use kernel::interrupt_controller::InterruptGuard;
 use kernel::scheduler;
 use kernel_config::{KernelConfig, RiscVKernelConfigInterface};
-use time::Clock as _;
+use pw_time_core::Clock as _;
 
 #[cfg(feature = "timer_mtime")]
 mod mtime;
@@ -38,11 +38,11 @@ trait TimerInterface {
 
 pub struct Clock;
 
-impl time::Clock for Clock {
+impl pw_time_core::Clock for Clock {
     const TICKS_PER_SEC: u64 = KernelConfig::MTIME_HZ;
 
-    fn now() -> time::Instant<Self> {
-        time::Instant::from_ticks(Timer::get_current_monotonic_tick())
+    fn now() -> pw_time_core::Instant<Self> {
+        pw_time_core::Instant::from_ticks(Timer::get_current_monotonic_tick())
     }
 }
 

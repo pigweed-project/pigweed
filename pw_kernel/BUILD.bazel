@@ -104,7 +104,7 @@ pw_rust_docs(
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/regs",
-        "//pw_kernel/lib/time",
+        "//pw_time/rust:pw_time_core",
         "//pw_kernel/lib/unittest",
         "//pw_kernel/syscall:syscall_defs",
         "//pw_kernel/syscall:syscall_user",

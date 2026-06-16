@@ -40,11 +40,11 @@ rust_process(
     visibility = ["//visibility:public"],
     deps = [
         ":control_commands",
-        "//pw_kernel/lib/time",
         "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",
         "//pw_status/rust:pw_status",
+        "//pw_time/rust:pw_time_core",
     ],
 )
 

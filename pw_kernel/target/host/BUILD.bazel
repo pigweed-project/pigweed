@@ -44,7 +44,7 @@ rust_test(
         "//pw_kernel/lib/foreign_box",
         "//pw_kernel/lib/list",
         "//pw_assert/rust:pw_assert",
-        "//pw_kernel/lib/time",
+        "//pw_time/rust:pw_time_core",
         "//pw_kernel/lib/unittest:unittest_core",
         "//pw_kernel/lib/vectored_buffer",
         "//pw_log/rust:pw_log",

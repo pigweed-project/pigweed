@@ -347,6 +347,7 @@ sphinx_docs_library(
         "//pw_thread_stl:docs",
         "//pw_thread_threadx:docs",
         "//pw_thread_zephyr:docs",
+        "//pw_time:docs",
         "//pw_tls_client:docs",
         "//pw_tls_client_boringssl:docs",
         "//pw_tls_client_mbedtls:docs",

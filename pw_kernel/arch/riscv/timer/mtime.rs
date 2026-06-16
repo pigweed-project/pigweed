@@ -18,7 +18,7 @@ use kernel_config::{
     KernelConfig, KernelConfigInterface, MTimeTimerConfigInterface, RiscVKernelConfigInterface,
 };
 use pw_log::info;
-use time::Duration;
+use pw_time_core::Duration;
 
 use crate::spinlock::InterruptGuard;
 use crate::timer::{Clock, TimerInterface};
@@ -88,7 +88,7 @@ impl TimerInterface for Timer {
         let now = Self::get_current_monotonic_tick();
 
         let ticks_per_monotonic: Duration<Clock> =
-            time::Duration::from_millis((1000 / KernelConfig::SCHEDULER_TICK_HZ).into());
+            pw_time_core::Duration::from_millis((1000 / KernelConfig::SCHEDULER_TICK_HZ).into());
         // safe to cast to u64 as ticks_per_monotonic will never be negative here,
         let next = now.checked_add(ticks_per_monotonic.ticks().cast_unsigned());
         if let Some(val) = next {

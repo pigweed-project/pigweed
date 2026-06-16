@@ -901,6 +901,13 @@
   "pw_thread_zephyr": {
     "status": "stable"
   },
+  "pw_time": {
+    "tagline": "Robust time, instants, and durations for multiple clock domains",
+    "status": "experimental",
+    "languages": [
+      "Rust"
+    ]
+  },
   "pw_tls_client": {
     "status": "stable"
   },

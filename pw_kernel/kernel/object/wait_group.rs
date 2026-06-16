@@ -15,8 +15,8 @@
 use foreign_box::{ForeignRc, ForeignRcState};
 use list::RandomAccessForeignList;
 use pw_status::{Error, Result};
+use pw_time_core::Instant;
 use syscall_defs::WaitReturn;
-use time::Instant;
 
 use crate::Kernel;
 use crate::object::{

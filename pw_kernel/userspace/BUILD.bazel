@@ -104,11 +104,28 @@ rust_library(
     deps = [
         "//pw_kernel/config:kernel_config",
         "//pw_kernel/lib/pw_cast",
-        "//pw_kernel/lib/time",
         "//pw_kernel/syscall:syscall_defs",
         "//pw_kernel/syscall:syscall_user",
         "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
+        "//pw_time/rust:pw_time_core",
+    ],
+)
+
+rust_library(
+    name = "pw_time_backend",
+    srcs = [
+        "pw_time_backend.rs",
+    ],
+    crate_name = "pw_time_backend",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = select({
+        ":userspace_build_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":userspace",
     ],
 )
 

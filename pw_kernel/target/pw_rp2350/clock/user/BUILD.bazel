@@ -69,11 +69,11 @@ rust_binary(
         ":linker_script",
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "//pw_kernel/kernel",
-        "//pw_kernel/lib/time",
         "//pw_kernel/subsys/console:console_backend",
         "//pw_kernel/target:target_common",
         "//pw_kernel/target/pw_rp2350:entry",
         "//pw_kernel/userspace",
         "//pw_log/rust:pw_log",
+        "//pw_time/rust:pw_time_core",
     ],
 )

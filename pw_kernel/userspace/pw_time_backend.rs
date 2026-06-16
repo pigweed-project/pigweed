@@ -12,27 +12,5 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #![no_std]
-#![no_main]
 
-use console_backend as _;
-use entry as _;
-use target_common::{TargetInterface, declare_target};
-
-pub struct Target {}
-
-impl TargetInterface for Target {
-    const NAME: &'static str = "PW RP2350 Clock Test";
-
-    fn console_init() {
-        console_backend::init();
-    }
-
-    fn main() -> ! {
-        codegen::start();
-        loop {
-            let _ = kernel::sleep_until(arch_arm_cortex_m::Arch, pw_time_core::Instant::MAX);
-        }
-    }
-}
-
-declare_target!(Target);
+pub use userspace::time::SystemClock;

@@ -15,7 +15,7 @@
 
 use pw_atomic::{AtomicBool, AtomicUsize};
 use pw_log::info;
-pub use time::{Duration, Instant};
+pub use pw_time_core::{Duration, Instant};
 
 pub mod interrupt_controller;
 #[cfg(feature = "user_space")]
@@ -45,7 +45,7 @@ pub use syscall::SyscallArgs;
 pub trait Arch: 'static + Copy + scheduler::ThreadArg {
     type ThreadState: ThreadState;
     type BareSpinLock: BareSpinLock;
-    type Clock: time::Clock;
+    type Clock: pw_time_core::Clock;
     type AtomicBool: AtomicBool;
     type AtomicUsize: AtomicUsize;
     #[cfg(feature = "user_space")]
@@ -434,5 +434,4 @@ pub mod __private {
 
     pub use foreign_box;
     pub use kernel_config;
-    pub use time;
 }

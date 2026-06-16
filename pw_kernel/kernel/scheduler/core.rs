@@ -25,7 +25,7 @@ use pw_atomic::{
 };
 use pw_log::info;
 use pw_status::{Error, Result};
-use time::Instant;
+use pw_time_core::Instant;
 
 #[cfg(feature = "user_space")]
 use crate::object::NullObjectTable;

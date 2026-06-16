@@ -17,8 +17,8 @@ use memory_config::MemoryRegionType;
 use pw_cast::CastInto as _;
 use pw_log::info;
 use pw_status::{Error, Result};
+use pw_time_core::{Clock, Instant};
 use syscall_defs::{ExitStatus, Signals, SysCallId, SysCallReturnValue, WaitReturn};
-use time::{Clock, Instant};
 
 use crate::Kernel;
 use crate::interrupt_controller::InterruptController;

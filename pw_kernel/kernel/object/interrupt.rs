@@ -13,7 +13,7 @@
 // the License.
 
 use pw_status::Result;
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::Kernel;
 use crate::object::{KernelObject, ObjectBase, Signals, WaitReturn};

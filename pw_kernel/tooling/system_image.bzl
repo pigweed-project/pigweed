@@ -26,6 +26,7 @@ def _target_transition_impl(_, attr):
         str(Label("//pw_kernel/userspace:userspace_build")): attr.userspace,
         # Only unittests should ever enable tests
         str(Label("//pw_kernel:enable_tests")): False,
+        str(Label("@pigweed//pw_time/rust:pw_time_backend")): str(Label("//pw_kernel/userspace:pw_time_backend")),
     }
 
     return flags
@@ -38,6 +39,7 @@ _target_transition = transition(
         str(Label("//pw_kernel/target:system_config_file")),
         str(Label("//pw_kernel/userspace:userspace_build")),
         str(Label("//pw_kernel:enable_tests")),
+        str(Label("@pigweed//pw_time/rust:pw_time_backend")),
     ],
 )
 
@@ -49,6 +51,7 @@ def _app_target_transition_impl(_, attr):
         str(Label("//pw_kernel/userspace:is_app_build")): True,
         # Only unittests should ever enable tests
         str(Label("//pw_kernel:enable_tests")): False,
+        str(Label("@pigweed//pw_time/rust:pw_time_backend")): str(Label("//pw_kernel/userspace:pw_time_backend")),
     }
 
     return flags
@@ -62,6 +65,7 @@ _app_target_transition = transition(
         str(Label("//pw_kernel/userspace:userspace_build")),
         str(Label("//pw_kernel/userspace:is_app_build")),
         str(Label("//pw_kernel:enable_tests")),
+        str(Label("@pigweed//pw_time/rust:pw_time_backend")),
     ],
 )
 

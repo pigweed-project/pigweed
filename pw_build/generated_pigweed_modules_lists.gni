@@ -211,6 +211,7 @@ declare_args() {
   dir_pw_thread_stl = get_path_info("../pw_thread_stl", "abspath")
   dir_pw_thread_threadx = get_path_info("../pw_thread_threadx", "abspath")
   dir_pw_thread_zephyr = get_path_info("../pw_thread_zephyr", "abspath")
+  dir_pw_time = get_path_info("../pw_time", "abspath")
   dir_pw_tls_client = get_path_info("../pw_tls_client", "abspath")
   dir_pw_tls_client_boringssl =
       get_path_info("../pw_tls_client_boringssl", "abspath")
@@ -407,6 +408,7 @@ declare_args() {
     dir_pw_thread_stl,
     dir_pw_thread_threadx,
     dir_pw_thread_zephyr,
+    dir_pw_time,
     dir_pw_tls_client,
     dir_pw_tls_client_boringssl,
     dir_pw_tls_client_mbedtls,
@@ -598,6 +600,7 @@ declare_args() {
     "$dir_pw_thread_stl:tests",
     "$dir_pw_thread_threadx:tests",
     "$dir_pw_thread_zephyr:tests",
+    "$dir_pw_time:tests",
     "$dir_pw_tls_client:tests",
     "$dir_pw_tls_client_boringssl:tests",
     "$dir_pw_tls_client_mbedtls:tests",

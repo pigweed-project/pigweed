@@ -169,6 +169,7 @@ pw_thread_freertos
 pw_thread_stl
 pw_thread_threadx
 pw_thread_zephyr
+pw_time
 pw_tls_client
 pw_tls_client_boringssl
 pw_tls_client_mbedtls

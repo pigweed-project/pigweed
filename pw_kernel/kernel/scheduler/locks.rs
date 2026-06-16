@@ -17,7 +17,7 @@ use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
 use pw_status::Result;
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::Kernel;
 use crate::scheduler::algorithm::RescheduleReason;

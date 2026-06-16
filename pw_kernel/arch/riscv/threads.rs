@@ -202,8 +202,8 @@ impl Arch for super::Arch {
         }
     }
 
-    fn now(self) -> time::Instant<super::timer::Clock> {
-        use time::Clock as _;
+    fn now(self) -> pw_time_core::Instant<super::timer::Clock> {
+        use pw_time_core::Clock as _;
         super::timer::Clock::now()
     }
 

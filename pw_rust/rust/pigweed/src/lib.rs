@@ -31,6 +31,7 @@
 //! - [`pw_log`](../pw_log/index.html) - Logging facade.
 //! - [`pw_status`](../pw_status/index.html) - Status codes and results.
 //! - [`pw_stream`](../pw_stream/index.html) - Traits for streaming data.
+//! - [`pw_time`](../pw_time/index.html) - Time types and clock facilities.
 //! - [`pw_tokenizer`](../pw_tokenizer/index.html) - String tokenization.
 //! - [`pw_varint`](../pw_varint/index.html) - Variable-length integer encoding.
 //!

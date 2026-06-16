@@ -26,7 +26,7 @@ use list::*;
 use pw_atomic::{AtomicAdd, AtomicSub, AtomicZero};
 use pw_log::info;
 use pw_status::Result;
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::Kernel;
 #[cfg(feature = "user_space")]

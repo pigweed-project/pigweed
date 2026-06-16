@@ -27,7 +27,7 @@ impl TargetInterface for Target {
     fn main() -> ! {
         codegen::start();
         loop {
-            let _ = kernel::sleep_until(arch_arm_cortex_m::Arch, time::Instant::MAX);
+            let _ = kernel::sleep_until(arch_arm_cortex_m::Arch, pw_time_core::Instant::MAX);
         }
     }
 

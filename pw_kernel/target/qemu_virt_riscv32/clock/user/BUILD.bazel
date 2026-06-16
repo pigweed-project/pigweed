@@ -76,12 +76,12 @@ rust_binary(
         ":linker_script",
         "//pw_kernel/arch/riscv:arch_riscv",
         "//pw_kernel/kernel",
-        "//pw_kernel/lib/time",
         "//pw_kernel/subsys/console:console_backend",
         "//pw_kernel/target:target_common",
         "//pw_kernel/target/qemu_virt_riscv32:entry",
         "//pw_kernel/userspace",
         "//pw_log/rust:pw_log",
+        "//pw_time/rust:pw_time_core",
         "@rust_crates//:riscv-semihosting",
     ],
 )

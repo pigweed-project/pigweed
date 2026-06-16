@@ -17,7 +17,7 @@ use kernel::scheduler;
 use kernel::sync::spinlock::SpinLock;
 use kernel_config::{CortexMKernelConfigInterface, KernelConfig, KernelConfigInterface};
 use pw_log::info;
-use time::Clock as _;
+use pw_time_core::Clock as _;
 
 use crate::regs::Regs;
 
@@ -27,10 +27,10 @@ const SYSTICK_RELOAD_VALUE: u32 = KernelConfig::SYS_TICK_HZ / KernelConfig::SCHE
 
 pub struct Clock {}
 
-impl time::Clock for Clock {
+impl pw_time_core::Clock for Clock {
     const TICKS_PER_SEC: u64 = KernelConfig::SYS_TICK_HZ as u64;
 
-    fn now() -> time::Instant<Self> {
+    fn now() -> pw_time_core::Instant<Self> {
         let mut ticks = TICKS.lock(crate::Arch);
         let systick_regs = Regs::get().systick;
         let mut current = systick_regs.cvr.read().current();
@@ -49,7 +49,7 @@ impl time::Clock for Clock {
         // - ticks is the systick count * reload period
         // - delta is the amount of time that has passed within the current systick
         let res = *ticks + delta;
-        time::Instant::from_ticks(res)
+        pw_time_core::Instant::from_ticks(res)
     }
 }
 

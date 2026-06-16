@@ -16,7 +16,7 @@ use core::ptr::NonNull;
 
 use foreign_box::ForeignBox;
 use list::{ForeignList, Link};
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::Kernel;
 

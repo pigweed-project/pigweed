@@ -14,7 +14,7 @@
 
 use foreign_box::{ForeignRc, ForeignRcState};
 use pw_status::{Error, Result};
-use time::Instant;
+use pw_time_core::Instant;
 
 use crate::object::{KernelObject, ObjectBase, Signals, SyscallBuffer, WaitReturn};
 use crate::sync::mutex::Mutex;

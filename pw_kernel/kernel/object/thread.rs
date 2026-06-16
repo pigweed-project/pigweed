@@ -180,7 +180,7 @@ impl<K: Kernel> KernelObject<K> for ThreadObject<K> {
         &self,
         kernel: K,
         signal_mask: Signals,
-        deadline: time::Instant<K::Clock>,
+        deadline: pw_time_core::Instant<K::Clock>,
     ) -> Result<crate::object::WaitReturn> {
         self.base.wait_until(kernel, signal_mask, deadline)
     }

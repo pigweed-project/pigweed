@@ -107,9 +107,9 @@ rust_library(
         "//pw_kernel/lib/pw_atomic",
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/regs",
-        "//pw_kernel/lib/time",
         "//pw_kernel/syscall:exit_status",
         "//pw_status/rust:pw_status",
+        "//pw_time/rust:pw_time_core",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:riscv",
     ] + select({

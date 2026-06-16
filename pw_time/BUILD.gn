@@ -11,22 +11,15 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-load("//pw_kernel/tooling:rust_app.bzl", "rust_app")
 
-rust_app(
-    name = "main",
-    srcs = [
-        "main.rs",
-    ],
-    codegen_crate_name = "main_codegen",
-    edition = "2024",
-    tags = ["kernel"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//pw_kernel/lib/unittest:test_logger",
-        "//pw_kernel/syscall:syscall_user",
-        "//pw_kernel/userspace",
-        "//pw_status/rust:pw_status",
-        "//pw_time/rust:pw_time_core",
-    ],
-)
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_docgen/docs.gni")
+import("$dir_pw_unit_test/test.gni")
+
+pw_test_group("tests") {
+}
+
+pw_doc_group("docs") {
+  sources = [ "docs.rst" ]
+}

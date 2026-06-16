@@ -105,12 +105,12 @@ rust_library(
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/regs",
-        "//pw_kernel/lib/time",
         "//pw_kernel/lib/vectored_buffer",
         "//pw_kernel/subsys/console",
         "//pw_kernel/syscall:exit_status",
         "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
+        "//pw_time/rust:pw_time_core",
         "@rust_crates//:bitflags",
     ] + select({
         "//pw_kernel/userspace:userspace_build_enabled": [

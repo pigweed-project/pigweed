@@ -39,7 +39,7 @@ pub fn trace_context_switch<K: Kernel>(
     #[allow(clippy::cast_possible_truncation)]
     {
         use pw_kernel_tracing::{ContextSwitchEvent, EventType};
-        use time::Clock;
+        use pw_time_core::Clock;
         kernel.get_state().trace_buffer.add_record(
             // TODO: https://pigweed.dev/issues/477681143 - Add target specific
             // timestamp scaling.
