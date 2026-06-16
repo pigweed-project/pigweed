@@ -219,6 +219,7 @@ html_theme_options = {
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/styling.html#configure-pygments-theme
     'pygments_light_style': 'pigweed_code_light_style',
     'pygments_dark_style': 'pigweed_code_style',
+    'search_as_you_type': True,
 }
 
 if 'LUCI_IS_TRY' in os.environ and os.environ['LUCI_IS_TRY'] == '1':

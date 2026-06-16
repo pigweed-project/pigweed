@@ -53,16 +53,7 @@ the License.
   {# The following scripts are loaded after the main content in order to
      improve load performance. Background:
      https://developer.chrome.com/docs/lighthouse/performance/render-blocking-resources #}
-  {% if pagename == 'search' %}
-    {# Search tools are already loaded on search page. Don't load them twice. #}
-  {% else %}
-    {# Load Sphinx's built-in search tools so that our custom inline search
-       experience (see pigweed.js) can work on all pages. #}
-    <script src="{{ pathto('_static/searchtools.js', 1) | e }}"></script>
-    <script src="{{ pathto('_static/language_data.js', 1) | e }}"></script>
-    <script src="{{ pathto('searchindex.js', 1) | e }}"></script>
-  {% endif %}
-  {# Always load pigweed.js after Sphinx's search scripts because pigweed.js
+  {# Always load pigweed.js after Sphinx's scripts because pigweed.js
      relies on classes and data from Sphinx's scripts. #}
   <script src="{{ pathto('_static/js/pigweed.js', 1) | e }}"></script>
 {% endblock docs_main %}

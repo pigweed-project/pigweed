@@ -87,6 +87,10 @@ details.sd-dropdown {
   margin-top: 1em;
 }
 
+#search-results {
+  overflow-y: hidden !important;
+}
+
 /********** Dark mode styles ***********/
 /* https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/styling.html#color-variables */
 
@@ -181,33 +185,6 @@ html[data-theme='light'] {
   /* Theme toggle button. */
   .theme-switch-button:hover {
     color: var(--pst-color-secondary);
-  }
-}
-
-/* Search modal wrapper. The search modal is displayed after
- * focusing the search box in the header or pressing Ctrl+K. */
-.search-button__search-container {
-  /* Most of these tweaks are related to making our custom inline search
-   * results container (.pw-search-results) display correctly. */
-  background-color: var(--pst-color-background);
-  flex-direction: column;
-  height: 50vh;
-  .bd-search {
-    flex-grow: 0 !important;
-  }
-  /* Pigweed-custom search results container that we append
-   * after the search modal input. Search results are populated
-   * into this container. This enables you to see search results
-   * immediately after typing rather than needing to press Enter
-   * and go to the search results page.
-   *
-   * TODO: b/363034219 - Remove this custom code. */
-  .pw-search-results {
-    overflow-y: scroll;
-    padding: 1em;
-    a {
-      color: var(--pw-color-link);
-    }
   }
 }
 

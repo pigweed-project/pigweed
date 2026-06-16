@@ -143,12 +143,13 @@ Rationale for current choices:
 -------------
 Inline search
 -------------
-In the header of every page there's a search box. When you focus that search
-box (or press :kbd:`Ctrl+K`) a search modal appears. After you type some
-text in the search modal, you immediately see results below your search query.
-The inline search results UX is Pigweed-specific custom logic. That code
-lives in ``//docs/sphinx/_static/js/pigweed.js``. If :bug:`363034219` is successfully
-completed then we will remove this custom code from the Pigweed repo.
+In the header of every page there's a search box. When you focus that search box
+(or press :kbd:`Ctrl+K`) a search modal appears. After you type some text in the
+search modal, you immediately see results below your search query. This was
+originally Pigweed-specific code, but we upstreamed it to PyData Sphinx Theme in
+PR `#2093 <https://github.com/pydata/pydata-sphinx-theme/pull/2093>`_. The
+feature is enabled by setting ``html_theme_options['search_as_you_type']`` to
+``True`` in :cs:`docs/sphinx/conf.py`.
 
 .. _contrib-docs-website-search-nosearch:
 
