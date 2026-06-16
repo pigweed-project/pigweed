@@ -54,6 +54,11 @@ fn notify_main(scenario: TestScenario, signals: Signals) -> Result<()> {
 fn test_wait_interrupt() -> Result<()> {
     test_logger::step_start!("Testing wait on interrupt");
 
+    // This test is designed to test multiple interrupts firing/pending. In
+    // order to ensure that there are no errors in the logic surrounding
+    // multiple pending interrupts, we wait Nms to guarantee they have
+    // all fired.
+    sleep_until(SystemClock::now() + Duration::from_millis(50))?;
     let wait_return = syscall::object_wait(
         handle::TEST_INTERRUPTS,
         signals::TEST_IRQ | signals::TEST_IRQ2,
@@ -90,9 +95,6 @@ fn test_wait_group_interrupt() -> Result<()> {
         handle::TEST_INTERRUPTS as usize,
     )?;
 
-    // Sleep for a bit to give the test program the opportunity to signal more than one interrupt
-    // before we wait for interrupts.
-    sleep_until(SystemClock::now() + Duration::from_millis(50))?;
     let wait_return = syscall::object_wait(
         handle::INTERRUPT_WAIT_GROUP,
         Signals::READABLE,
