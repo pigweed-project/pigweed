@@ -12,9 +12,6 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-using fuchsia.platform;
-using fuchsia.devicetree;
-
 if fuchsia.devicetree.FIRST_COMPATIBLE == "bt" {
   true;
 } else {
