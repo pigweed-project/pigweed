@@ -1375,7 +1375,7 @@ struct WriteSniffOffloadEnableCommand:
   $next [+2]         UInt                          max_latency
     -- Maximum latency.
     -- Time = N * 0.625 ms
-    [requires: 0x0002 <= this <= 0xFFFE]
+    [requires: 0x0000 <= this <= 0xFFFE]
 
   $next [+2]         UInt                          min_remote_timeout
     -- Minimum sniff mode timeout that the remote device may use.
