@@ -21,6 +21,7 @@
 #include "pw_metric_proto/metric_service.pwpb.h"
 #include "pw_protobuf/encoder.h"
 #include "pw_protobuf/serialized_size.h"
+#include "pw_span/span.h"
 #include "pw_status/status.h"
 
 namespace pw::metric {
@@ -148,38 +149,30 @@ class PwpbStreamingMetricWriter : public MetricWriter {
       return pw::Status::ResourceExhausted();
     }
 
-    // This struct bundles the necessary state for the lambda.
-    struct WriteContext {
-      const Vector<Token>& path;
-      const bool is_float;
-      const float float_value;
-      const uint32_t int_value;
-    };
-
-    // Read the atomic metric value into the context struct once to ensure the
-    // same value is used for both the sizing and writing passes of
-    // `WriteNestedMessage`. This prevents a race condition where the metric's
-    // value could change between the two passes.
-    const WriteContext context = {
-        .path = path,
-        .is_float = metric.is_float(),
-        .float_value = metric.is_float() ? metric.as_float() : 0.0f,
-        .int_value = metric.is_float() ? 0 : metric.as_int(),
-    };
+    // Read the atomic metric value once to ensure the same value is used for
+    // both the sizing and writing passes of `WriteNestedMessage`. This prevents
+    // a race condition where the metric's value could change between the two
+    // passes.
+    const bool is_float = metric.is_float();
+    const float float_value = is_float ? metric.as_float() : 0.0f;
+    const uint32_t int_value = is_float ? 0 : metric.as_int();
+    const pw::span<const Token> path_span = path;
 
     // Use the two-pass WriteNestedMessage API to write the metric directly to
     // the stream without an intermediate buffer. The lambda will be called
     // twice: once to measure the size, and a second time to write.
     pw::Status status = parent_encoder_.WriteNestedMessage(
-        field_number_, [&context](pw::protobuf::StreamEncoder& base_encoder) {
+        field_number_,
+        [path_span, is_float, float_value, int_value](
+            pw::protobuf::StreamEncoder& base_encoder) {
           auto& metric_encoder = pw::protobuf::StreamEncoderCast<
               pw::metric::proto::pwpb::Metric::StreamEncoder>(base_encoder);
 
-          metric_encoder.WriteTokenPath(context.path).IgnoreError();
-          if (context.is_float) {
-            metric_encoder.WriteAsFloat(context.float_value).IgnoreError();
+          metric_encoder.WriteTokenPath(path_span).IgnoreError();
+          if (is_float) {
+            metric_encoder.WriteAsFloat(float_value).IgnoreError();
           } else {
-            metric_encoder.WriteAsInt(context.int_value).IgnoreError();
+            metric_encoder.WriteAsInt(int_value).IgnoreError();
           }
           return metric_encoder.status();
         });
