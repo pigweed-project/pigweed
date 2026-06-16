@@ -507,4 +507,53 @@ TEST(InMemoryKvs, Put_MaxValueSize) {
   EXPECT_EQ(Status::InvalidArgument(), kvs.Put("K", big_data));
 }
 
+TEST(InMemoryKvs, SectorWritableBytesUnderflow) {
+  // 1. Create a fake flash with 4096-byte sectors, and 4 sectors.
+  FakeFlashMemoryBuffer<4096, 4> test_flash(16);
+  FlashPartition test_partition(
+      &test_flash, 0, static_cast<uint32_t>(test_flash.sector_count()));
+
+  // 2. Erase the partition.
+  PW_TEST_ASSERT_OK(test_partition.Erase());
+
+  // 3. Define format.
+  constexpr EntryFormat format{.magic = 0x12345678, .checksum = nullptr};
+
+  // 4. Manually construct and write a spanning entry header in Sector 1.
+  // We will place the crafted entry at the beginning of Sector 1 (address
+  // 0x1000). Value size is 8000 bytes, so it spans way beyond Sector 1 (size
+  // 4096).
+  EntryHeader header;
+  header.magic = format.magic;
+  header.checksum = 0;
+  header.alignment_units = 0;   // 16-byte alignment
+  header.key_length_bytes = 1;  // key: "k"
+  header.value_size_bytes = 8000;
+  header.transaction_id = 1;
+
+  // Write the entry header at address 0x1000
+  PW_TEST_ASSERT_OK(test_partition.Write(0x1000, as_bytes(span(&header, 1))));
+  // Write the key "k" at address 0x1010, padded/aligned to 16 bytes
+  char key[16] = {'k'};
+  PW_TEST_ASSERT_OK(test_partition.Write(0x1010, as_bytes(span(key))));
+
+  // 5. Initialize KVS with manual error recovery.
+  Options options;
+  options.recovery = ErrorRecovery::kManual;
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(
+      &test_partition, format, options);
+  // Init() should now return Status::DataLoss() because corruption (spanning
+  // entry) is detected.
+  EXPECT_EQ(kvs.Init(), Status::DataLoss());
+  EXPECT_TRUE(kvs.error_detected());
+
+  // 6. Get storage stats and assert that NO underflow occurred.
+  // Sector 1 is marked as corrupt and has 0 writable bytes.
+  // Sector 0 is empty (4096), but excluded as the first empty sector.
+  // Sector 2 and Sector 3 are empty and have 4096 writable bytes each.
+  // Total writable bytes = 4096 + 4096 = 8192.
+  KeyValueStore::StorageStats stats = kvs.GetStorageStats();
+  EXPECT_EQ(stats.writable_bytes, 8192u);
+}
+
 }  // namespace pw::kvs

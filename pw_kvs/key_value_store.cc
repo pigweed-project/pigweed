@@ -365,6 +365,15 @@ Status KeyValueStore::LoadEntry(Address entry_address,
   Entry entry;
   PW_TRY(Entry::Read(partition_, entry_address, formats_, &entry));
 
+  const size_t sector_size = partition_.sector_size_bytes();
+  if (entry.size() > (sector_size - (entry_address % sector_size))) {
+    PW_LOG_ERROR(
+        "Entry at address %u has size %u which exceeds sector boundary",
+        unsigned(entry_address),
+        unsigned(entry.size()));
+    return Status::DataLoss();
+  }
+
   // Read the key from flash & validate the entry (which reads the value).
   Entry::KeyBuffer key_buffer;
   PW_TRY_ASSIGN(size_t key_length, entry.ReadKey(key_buffer));
