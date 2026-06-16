@@ -14,7 +14,7 @@
 
 #include "controller.h"
 
-#include <lib/driver/component/cpp/driver_export.h>
+#include <lib/driver/component/cpp/driver_export2.h>
 #include <pw_assert/check.h>
 
 #include <memory>
@@ -22,16 +22,12 @@
 
 namespace bt_hci_virtual {
 
-VirtualController::VirtualController(
-    fdf::DriverStartArgs start_args,
-    fdf::UnownedSynchronizedDispatcher driver_dispatcher)
-    : DriverBase("bt_hci_virtual",
-                 std::move(start_args),
-                 std::move(driver_dispatcher)),
-      node_(fidl::WireClient(std::move(node()), dispatcher())),
+VirtualController::VirtualController()
+    : DriverBase2("bt_hci_virtual"),
       devfs_connector_(fit::bind_member<&VirtualController::Connect>(this)) {}
 
-zx::result<> VirtualController::Start() {
+zx::result<> VirtualController::Start(fdf::DriverContext context) {
+  node_ = fidl::WireClient(take_node(), dispatcher());
   pw::log_fuchsia::InitializeLogging(dispatcher());
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
@@ -288,4 +284,4 @@ zx_status_t VirtualController::AddEmulatorChildNode(
 
 }  // namespace bt_hci_virtual
 
-FUCHSIA_DRIVER_EXPORT(bt_hci_virtual::VirtualController);
+FUCHSIA_DRIVER_EXPORT2(bt_hci_virtual::VirtualController);

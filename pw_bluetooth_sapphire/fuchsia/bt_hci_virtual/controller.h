@@ -16,7 +16,7 @@
 
 #include <fidl/fuchsia.driver.framework/cpp/fidl.h>
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
-#include <lib/driver/component/cpp/driver_base.h>
+#include <lib/driver/component/cpp/driver_base2.h>
 #include <lib/driver/devfs/cpp/connector.h>
 
 #include "pw_bluetooth_sapphire/fuchsia/bt_hci_virtual/emulator.h"
@@ -40,18 +40,16 @@ namespace bt_hci_virtual {
 // that their client needs. For more details, refer to
 // go/bluetooth-virtual-driver-doc.
 class VirtualController
-    : public fdf::DriverBase,
+    : public fdf::DriverBase2,
       public fidl::WireAsyncEventHandler<
           fuchsia_driver_framework::NodeController>,
       public fidl::WireAsyncEventHandler<fuchsia_driver_framework::Node>,
       public fidl::WireServer<fuchsia_hardware_bluetooth::VirtualController> {
  public:
-  explicit VirtualController(
-      fdf::DriverStartArgs start_args,
-      fdf::UnownedSynchronizedDispatcher driver_dispatcher);
+  VirtualController();
 
   // fdf::DriverBase overrides:
-  zx::result<> Start() override;
+  zx::result<> Start(fdf::DriverContext context) override;
 
   void handle_unknown_event(
       fidl::UnknownEventMetadata<fuchsia_driver_framework::Node> metadata)
