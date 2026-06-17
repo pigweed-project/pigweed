@@ -19,7 +19,7 @@ package {
 // Supported C++ version for Pigweed Android modules.
 cc_defaults {
     name: "pw_android_cpp_version",
-    cpp_std: "c++20",
+    // Use the Android platform's default C++ version
 }
 
 // List of Common Android backends and build flags used by Pigweed modules.
