@@ -85,7 +85,7 @@ mod tests {
                 loop {}
             }
         };
-        assert!(entry_impl(args, input).is_ok());
+        entry_impl(args, input).unwrap();
     }
 
     #[test]

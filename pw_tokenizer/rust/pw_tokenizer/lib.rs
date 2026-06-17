@@ -436,7 +436,7 @@ pub trait MessageWriter {
 mod tests {
     use super::*;
     extern crate self as pw_tokenizer;
-    use std::cell::RefCell;
+    use core::cell::RefCell;
 
     use pw_stream::{Cursor, Write};
 

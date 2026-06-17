@@ -14,7 +14,7 @@
 
 #![cfg(feature = "std")]
 
-use std::cmp;
+use core::cmp;
 use std::collections::HashMap;
 
 use pw_format::{
@@ -48,6 +48,7 @@ pub enum DetokenizeAttempt {
 
 impl DetokenizeAttempt {
     /// Returns the number of bytes that remained after decoding.
+    #[must_use]
     pub fn remaining_bytes(&self) -> usize {
         match self {
             Self::Success(res) => res.remaining_bytes(),
@@ -58,6 +59,7 @@ impl DetokenizeAttempt {
     }
 
     /// Returns the number of arguments that failed to decode.
+    #[must_use]
     pub fn decoding_errors(&self) -> usize {
         match self {
             Self::Success(res) => res.decoding_errors(),
@@ -74,6 +76,7 @@ impl DetokenizeAttempt {
     }
 
     /// Returns the decoded format string, with conversion specifiers kept for any arguments that failed to decode.
+    #[must_use]
     pub fn value(&self) -> String {
         match self {
             Self::Success(res) => res.value(),
@@ -82,6 +85,7 @@ impl DetokenizeAttempt {
     }
 
     /// Returns the decoded format string, with error messages for any arguments that failed to decode.
+    #[must_use]
     pub fn value_with_errors(&self) -> String {
         match self {
             Self::Success(res) => res.value_with_errors(),
@@ -103,11 +107,13 @@ pub struct DetokenizedString {
 
 impl DetokenizedString {
     /// Returns the best match formatted string, or empty if decoding failed.
+    #[must_use]
     pub fn best_string(&self) -> String {
         self.matches.first().map(|m| m.value()).unwrap_or_default()
     }
 
     /// Returns the best match formatted string, with error messages for any arguments that failed to decode.
+    #[must_use]
     pub fn best_string_with_errors(&self) -> String {
         if let Some(res) = self.matches.first() {
             res.value_with_errors()
@@ -125,23 +131,26 @@ pub struct DecodedFormatString {
     /// The parsed format string.
     pub fmt_str: FormatString,
     /// The decoded arguments, including any decoding errors.
-    pub decoded_args: Vec<std::result::Result<Arg, TokenizerError>>,
+    pub decoded_args: Vec<core::result::Result<Arg, TokenizerError>>,
     /// The number of bytes that remained after decoding.
     pub remaining_bytes: usize,
 }
 
 impl DecodedFormatString {
     /// Returns the number of bytes that remained after decoding.
+    #[must_use]
     pub fn remaining_bytes(&self) -> usize {
         self.remaining_bytes
     }
 
     /// Returns the number of arguments that failed to decode.
+    #[must_use]
     pub fn decoding_errors(&self) -> usize {
         self.decoded_args.iter().filter(|a| a.is_err()).count()
     }
 
     /// Returns the decoded format string, with conversion specifiers kept for any arguments that failed to decode.
+    #[must_use]
     pub fn value(&self) -> String {
         let args: Vec<Arg> = self
             .decoded_args
@@ -155,6 +164,7 @@ impl DecodedFormatString {
     }
 
     /// Returns the decoded format string, with error messages for any arguments that failed to decode.
+    #[must_use]
     pub fn value_with_errors(&self) -> String {
         self.fmt_str.format_with_errors(
             &self.decoded_args,
@@ -173,6 +183,7 @@ impl DecodedFormatString {
     }
 
     /// Returns the number of conversion specifiers in the format string.
+    #[must_use]
     pub fn argument_count(&self) -> usize {
         self.fmt_str
             .fragments
@@ -189,13 +200,13 @@ struct MatchResult {
     date_removed: String,
 }
 
-fn compare_date_removed(lhs: &str, rhs: &str) -> std::cmp::Ordering {
+fn compare_date_removed(lhs: &str, rhs: &str) -> core::cmp::Ordering {
     let lhs_never = lhs.is_empty();
     let rhs_never = rhs.is_empty();
     match (lhs_never, rhs_never) {
-        (true, true) => std::cmp::Ordering::Equal,
-        (true, false) => std::cmp::Ordering::Greater,
-        (false, true) => std::cmp::Ordering::Less,
+        (true, true) => core::cmp::Ordering::Equal,
+        (true, false) => core::cmp::Ordering::Greater,
+        (false, true) => core::cmp::Ordering::Less,
         (false, false) => lhs.cmp(rhs),
     }
 }
@@ -225,15 +236,15 @@ impl MatchResult {
 
     // Determines if one result is better than the other if collisions occurred.
     // This logic should match the collision resolution logic in detokenize.py.
-    fn cmp_priority(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp_priority(&self, other: &Self) -> core::cmp::Ordering {
         // Favor the result for which decoding succeeded.
         let self_has_errors = self.has_errors();
         let other_has_errors = other.has_errors();
         if self_has_errors != other_has_errors {
             if !self_has_errors {
-                return std::cmp::Ordering::Greater;
+                return core::cmp::Ordering::Greater;
             }
-            return std::cmp::Ordering::Less;
+            return core::cmp::Ordering::Less;
         }
 
         // Favor the result for which all bytes were decoded.
@@ -241,9 +252,9 @@ impl MatchResult {
         let other_all_bytes = other.remaining_bytes() == 0;
         if self_all_bytes != other_all_bytes {
             if self_all_bytes {
-                return std::cmp::Ordering::Greater;
+                return core::cmp::Ordering::Greater;
             }
-            return std::cmp::Ordering::Less;
+            return core::cmp::Ordering::Less;
         }
 
         // Favor the result with fewer decoding errors.
@@ -251,9 +262,9 @@ impl MatchResult {
         let other_decoding_errors = other.decoding_errors();
         if self_decoding_errors != other_decoding_errors {
             if self_decoding_errors < other_decoding_errors {
-                return std::cmp::Ordering::Greater;
+                return core::cmp::Ordering::Greater;
             }
-            return std::cmp::Ordering::Less;
+            return core::cmp::Ordering::Less;
         }
 
         // Favor the result that successfully decoded the most arguments.
@@ -261,9 +272,9 @@ impl MatchResult {
         let other_argument_count = other.argument_count();
         if self_argument_count != other_argument_count {
             if self_argument_count > other_argument_count {
-                return std::cmp::Ordering::Greater;
+                return core::cmp::Ordering::Greater;
             }
-            return std::cmp::Ordering::Less;
+            return core::cmp::Ordering::Less;
         }
 
         // Favor the result that was removed from the database most recently.
@@ -271,7 +282,7 @@ impl MatchResult {
     }
 
     fn is_better_than(&self, other: &Self) -> bool {
-        self.cmp_priority(other) == std::cmp::Ordering::Greater
+        self.cmp_priority(other) == core::cmp::Ordering::Greater
     }
 }
 
@@ -302,7 +313,7 @@ pub enum TokenizerError {
     Skipped,
 }
 
-type DecodeResult = std::result::Result<Arg, TokenizerError>;
+type DecodeResult = core::result::Result<Arg, TokenizerError>;
 /// Formatter for detokenizer formatting errors, producing `<[spec ERROR]>`, `<[spec MISSING]>`, or `<[spec SKIPPED]>`.
 pub struct TokenizerErrorFormatter;
 
@@ -387,6 +398,7 @@ impl Detokenizer {
     }
 
     /// Looks up database entries for a given token and domain.
+    #[must_use]
     pub fn database_lookup(&self, token: u32, domain: &str) -> &[TokenizedStringEntry] {
         let canonical_domain = canonicalize_domain(domain);
         self.database
@@ -398,11 +410,13 @@ impl Detokenizer {
 
     /// Decodes and detokenizes the binary encoded message. Returns a
     /// `DetokenizedString` that stores all possible detokenized string results.
+    #[must_use]
     pub fn detokenize(&self, encoded: &[u8]) -> DetokenizedString {
         self.detokenize_with_domain(encoded, DEFAULT_DOMAIN)
     }
 
     /// Overload of `detokenize` that takes a domain.
+    #[must_use]
     pub fn detokenize_with_domain(&self, encoded: &[u8], domain: &str) -> DetokenizedString {
         // The token is missing from the encoded data; there is nothing to do.
         if encoded.is_empty() {
@@ -534,6 +548,7 @@ impl Detokenizer {
     }
 
     /// Decodes and detokenizes nested tokenized messages in a string.
+    #[must_use]
     pub fn detokenize_text(&self, text: &str) -> String {
         let mut current = text.to_string();
         for _ in 0..MAX_DECODE_PASSES {
@@ -549,14 +564,14 @@ impl Detokenizer {
     }
 }
 
-fn decode_varint_arg(input: &[u8]) -> (&[u8], std::result::Result<i64, TokenizerError>) {
+fn decode_varint_arg(input: &[u8]) -> (&[u8], core::result::Result<i64, TokenizerError>) {
     if input.is_empty() {
         return (input, Err(TokenizerError::Missing));
     }
     match i64::varint_decode(input) {
         Ok((len, val)) => (&input[len..], Ok(val)),
         Err(_) => {
-            let consumed = std::cmp::min(10, input.len());
+            let consumed = core::cmp::min(10, input.len());
             (&input[consumed..], Err(TokenizerError::DecodeError))
         }
     }
@@ -611,7 +626,7 @@ fn decode_str_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     let Some((string_data, rest)) = input.split_at_checked(1 + len) else {
         return (&[], Err(TokenizerError::DecodeError));
     };
-    match std::str::from_utf8(&string_data[1..]) {
+    match core::str::from_utf8(&string_data[1..]) {
         Ok(s) => {
             let mut decoded = s.to_string();
             if truncated {
@@ -959,7 +974,7 @@ fn is_valid_date(s: &str) -> bool {
     })
 }
 
-fn base64_decode(s: &str) -> std::result::Result<Vec<u8>, String> {
+fn base64_decode(s: &str) -> core::result::Result<Vec<u8>, String> {
     let encoded_bytes = s.as_bytes();
     let mut output = vec![0u8; pw_base64::max_decoded_size(encoded_bytes.len())];
     match pw_base64::decode(encoded_bytes, &mut output) {

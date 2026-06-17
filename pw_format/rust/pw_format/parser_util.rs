@@ -27,7 +27,7 @@ fn variable_width(input: &str) -> IResult<&str, MinFieldWidth> {
 pub(crate) fn fixed_width(input: &str) -> IResult<&str, MinFieldWidth> {
     map_res(
         digit1,
-        |value: &str| -> Result<MinFieldWidth, std::num::ParseIntError> {
+        |value: &str| -> Result<MinFieldWidth, core::num::ParseIntError> {
             Ok(MinFieldWidth::Fixed(value.parse()?))
         },
     )(input)
@@ -50,7 +50,7 @@ fn fixed_precision(input: &str) -> IResult<&str, Precision> {
     let (input, _) = tag(".")(input)?;
     map_res(
         digit1,
-        |value: &str| -> Result<Precision, std::num::ParseIntError> {
+        |value: &str| -> Result<Precision, core::num::ParseIntError> {
             Ok(Precision::Fixed(value.parse()?))
         },
     )(input)

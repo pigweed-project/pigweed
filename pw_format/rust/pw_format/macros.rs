@@ -33,8 +33,8 @@
 //!
 //!
 
+use core::marker::PhantomData;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 
 use proc_macro2::Ident;
 use quote::{format_ident, quote, ToTokens};
@@ -66,6 +66,7 @@ pub struct Error {
 
 impl Error {
     /// Create a new proc macro evaluation error.
+    #[must_use]
     pub fn new(text: &str) -> Self {
         Self {
             text: text.to_string(),
@@ -290,14 +291,14 @@ impl ToTokens for Arg {
 /// A trait for parsing a string into a [`FormatString`].
 pub trait FormatStringParser {
     /// Parse `format_string` and return the results as a `[FormatString]`.
-    fn parse_format_string(format_string: &str) -> std::result::Result<FormatString, String>;
+    fn parse_format_string(format_string: &str) -> core::result::Result<FormatString, String>;
 }
 
 /// An implementation of [`FormatStringParser`] that parsers `printf` style format strings.
 #[derive(Debug)]
 pub struct PrintfFormatStringParser;
 impl FormatStringParser for PrintfFormatStringParser {
-    fn parse_format_string(format_string: &str) -> std::result::Result<FormatString, String> {
+    fn parse_format_string(format_string: &str) -> core::result::Result<FormatString, String> {
         FormatString::parse_printf(format_string)
     }
 }
@@ -306,7 +307,7 @@ impl FormatStringParser for PrintfFormatStringParser {
 #[derive(Debug)]
 pub struct CoreFmtFormatStringParser;
 impl FormatStringParser for CoreFmtFormatStringParser {
-    fn parse_format_string(format_string: &str) -> std::result::Result<FormatString, String> {
+    fn parse_format_string(format_string: &str) -> core::result::Result<FormatString, String> {
         FormatString::parse_core_fmt(format_string)
     }
 }

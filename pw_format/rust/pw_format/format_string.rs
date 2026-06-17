@@ -235,6 +235,7 @@ pub struct ConversionSpec {
 
 impl ConversionSpec {
     /// Reconstructs the conversion specifier back to its printf format string representation (e.g., `%+05.2ld`).
+    #[must_use]
     pub fn to_printf(&self) -> String {
         let mut s = String::from("%");
         if self.flags.contains(&Flag::LeftJustify) {
@@ -373,9 +374,9 @@ pub trait FormatError {
 struct DefaultFormatter;
 
 impl FormatError for DefaultFormatter {
-    type Error = std::convert::Infallible;
+    type Error = core::convert::Infallible;
 
-    fn format_error(&self, spec: &ConversionSpec, _error: &std::convert::Infallible) -> String {
+    fn format_error(&self, spec: &ConversionSpec, _error: &core::convert::Infallible) -> String {
         spec.to_printf()
     }
     fn format_missing(&self, spec: &ConversionSpec) -> String {
@@ -395,8 +396,9 @@ pub struct FormatString {
 
 impl FormatString {
     /// Formats a parsed format string with provided arguments.
+    #[must_use]
     pub fn format(&self, args: &[Arg], style: FormatStyle) -> String {
-        let result_args: Vec<Result<Arg, std::convert::Infallible>> =
+        let result_args: Vec<Result<Arg, core::convert::Infallible>> =
             args.iter().map(|arg| Ok(arg.clone())).collect();
 
         self.format_with_errors(&result_args, style, &DefaultFormatter)

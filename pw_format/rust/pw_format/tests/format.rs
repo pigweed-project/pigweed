@@ -574,7 +574,7 @@ fn test_char_left_justify() {
 fn test_float_simple() {
     let printf_format_str = "%f";
     let core_fmt_format_str = "{}";
-    let arg = std::f64::consts::PI;
+    let arg = core::f64::consts::PI;
 
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
@@ -599,7 +599,7 @@ fn test_float_simple() {
 fn test_float_precision() {
     let printf_format_str = "%.2f";
     let core_fmt_format_str = "{:.2}";
-    let arg = std::f64::consts::PI;
+    let arg = core::f64::consts::PI;
 
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
@@ -624,7 +624,7 @@ fn test_float_precision() {
 fn test_float_width() {
     let printf_format_str = "%10f";
     let core_fmt_format_str = "{:10}";
-    let arg = std::f64::consts::PI;
+    let arg = core::f64::consts::PI;
 
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
@@ -649,7 +649,7 @@ fn test_float_width() {
 fn test_float_left_justify() {
     let printf_format_str = "%-10f";
     let core_fmt_format_str = "{:<10}";
-    let arg = std::f64::consts::PI;
+    let arg = core::f64::consts::PI;
 
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
@@ -730,7 +730,7 @@ fn format_with_errors_renders_successful_conversions_normally() {
     let args = [
         Ok(Arg::Int(42)),
         Ok(Arg::Str("hello".to_string())),
-        Ok(Arg::Float(std::f64::consts::PI)),
+        Ok(Arg::Float(core::f64::consts::PI)),
     ];
     let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
     assert_eq!(result, "Value: 42, String: hello, Float: 3.141593");
@@ -742,7 +742,7 @@ fn format_with_errors_renders_domain_specific_errors_via_format_error() {
     let args = [
         Ok(Arg::Int(42)),
         Err(TestError::BadValue),
-        Ok(Arg::Float(std::f64::consts::PI)),
+        Ok(Arg::Float(core::f64::consts::PI)),
     ];
     let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
     assert_eq!(
@@ -757,7 +757,7 @@ fn format_with_errors_renders_type_mismatches_via_format_type_error() {
     let args = [
         Ok(Arg::Int(42)),
         Ok(Arg::Int(123)), // mismatch for %s
-        Ok(Arg::Float(std::f64::consts::PI)),
+        Ok(Arg::Float(core::f64::consts::PI)),
     ];
     let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
     assert_eq!(

@@ -97,11 +97,13 @@ const fn bits_2_3(char2: u8, char3: u8) -> u8 {
 
 /// Returns the size of the output buffer needed to encode an input buffer of
 /// size `input_size`.
+#[must_use]
 pub const fn encoded_size(input_size: usize) -> usize {
     input_size.div_ceil(3) * 4 // round up to a 3-byte group
 }
 
 /// Returns the maximum size of the decoded output for a given encoded size.
+#[must_use]
 pub const fn max_decoded_size(encoded_size: usize) -> usize {
     if encoded_size.is_multiple_of(4) {
         encoded_size / 4 * 3
@@ -111,6 +113,7 @@ pub const fn max_decoded_size(encoded_size: usize) -> usize {
 }
 
 /// Returns the exact size of the decoded output for a valid Base64 string.
+#[must_use]
 pub fn decoded_size(encoded: &[u8]) -> usize {
     if !encoded.len().is_multiple_of(4) || encoded.is_empty() {
         return 0;
@@ -126,6 +129,7 @@ pub fn decoded_size(encoded: &[u8]) -> usize {
 }
 
 /// Returns true if the provided character is a valid Base64 character.
+#[must_use]
 pub fn is_valid_char(c: char) -> bool {
     if !c.is_ascii() {
         return false;
@@ -135,6 +139,7 @@ pub fn is_valid_char(c: char) -> bool {
 }
 
 /// Returns true if the provided data is valid Base64.
+#[must_use]
 pub fn is_valid(encoded: &[u8]) -> bool {
     if encoded.is_empty() {
         return true;

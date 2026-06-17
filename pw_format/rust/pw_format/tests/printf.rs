@@ -70,68 +70,68 @@ fn test_percent() {
 
 #[test]
 fn test_percent_with_leading_plus_fails() {
-    assert!(FormatString::parse_printf("%+%").is_err());
+    FormatString::parse_printf("%+%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_leading_negative_fails() {
-    assert!(FormatString::parse_printf("%-%").is_err());
+    FormatString::parse_printf("%-%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_leading_space_fails() {
-    assert!(FormatString::parse_printf("% %").is_err());
+    FormatString::parse_printf("% %").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_leading_hash_fails() {
-    assert!(FormatString::parse_printf("%#%").is_err());
+    FormatString::parse_printf("%#%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_leading_zero_fails() {
-    assert!(FormatString::parse_printf("%0%").is_err());
+    FormatString::parse_printf("%0%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_length_fails() {
-    assert!(FormatString::parse_printf("%hh%").is_err());
-    assert!(FormatString::parse_printf("%h%").is_err());
-    assert!(FormatString::parse_printf("%l%").is_err());
-    assert!(FormatString::parse_printf("%L%").is_err());
-    assert!(FormatString::parse_printf("%j%").is_err());
-    assert!(FormatString::parse_printf("%z%").is_err());
-    assert!(FormatString::parse_printf("%t%").is_err());
+    FormatString::parse_printf("%hh%").unwrap_err();
+    FormatString::parse_printf("%h%").unwrap_err();
+    FormatString::parse_printf("%l%").unwrap_err();
+    FormatString::parse_printf("%L%").unwrap_err();
+    FormatString::parse_printf("%j%").unwrap_err();
+    FormatString::parse_printf("%z%").unwrap_err();
+    FormatString::parse_printf("%t%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_width_fails() {
-    assert!(FormatString::parse_printf("%9%").is_err());
+    FormatString::parse_printf("%9%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_multidigit_width_fails() {
-    assert!(FormatString::parse_printf("%10%").is_err());
+    FormatString::parse_printf("%10%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_star_width_fails() {
-    assert!(FormatString::parse_printf("%*%").is_err());
+    FormatString::parse_printf("%*%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_precision_fails() {
-    assert!(FormatString::parse_printf("%.5%").is_err());
+    FormatString::parse_printf("%.5%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_multidigit_precision_fails() {
-    assert!(FormatString::parse_printf("%.10%").is_err());
+    FormatString::parse_printf("%.10%").unwrap_err();
 }
 
 #[test]
 fn test_percent_with_star_precision_fails() {
-    assert!(FormatString::parse_printf("%*%").is_err());
+    FormatString::parse_printf("%*%").unwrap_err();
 }
 
 const INTEGERS: &[(&str, Primitive, Style)] = &[
@@ -972,25 +972,25 @@ fn test_char_with_minus() {
 #[test]
 fn test_char_with_plus() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%+c").is_ok());
+    FormatString::parse_printf("%+c").unwrap();
 }
 
 #[test]
 fn test_char_with_blank_space() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("% c").is_ok());
+    FormatString::parse_printf("% c").unwrap();
 }
 
 #[test]
 fn test_char_with_hash() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%#c").is_ok());
+    FormatString::parse_printf("%#c").unwrap();
 }
 
 #[test]
 fn test_char_with_zero() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%0c").is_ok());
+    FormatString::parse_printf("%0c").unwrap();
 }
 
 #[test]
@@ -1197,19 +1197,19 @@ fn test_char_with_star_width() {
 #[test]
 fn test_char_with_precision() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%.4c").is_ok());
+    FormatString::parse_printf("%.4c").unwrap();
 }
 
 #[test]
 fn test_long_char_with_hash() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%#lc").is_ok());
+    FormatString::parse_printf("%#lc").unwrap();
 }
 
 #[test]
 fn test_long_char_with_zero() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%0lc").is_ok());
+    FormatString::parse_printf("%0lc").unwrap();
 }
 
 #[test]
@@ -1255,25 +1255,25 @@ fn test_string_with_minus() {
 #[test]
 fn test_string_with_plus() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%+s").is_ok());
+    FormatString::parse_printf("%+s").unwrap();
 }
 
 #[test]
 fn test_string_with_blank_space() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("% s").is_ok());
+    FormatString::parse_printf("% s").unwrap();
 }
 
 #[test]
 fn test_string_with_hash() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%#s").is_ok());
+    FormatString::parse_printf("%#s").unwrap();
 }
 
 #[test]
 fn test_string_with_zero() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%0s").is_ok());
+    FormatString::parse_printf("%0s").unwrap();
 }
 
 #[test]
@@ -1560,11 +1560,11 @@ fn test_string_with_star_width_and_star_precision() {
 #[test]
 fn test_long_string_with_hash() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%#ls").is_ok());
+    FormatString::parse_printf("%#ls").unwrap();
 }
 
 #[test]
 fn test_long_string_with_zero() {
     // TODO: b/281750433 - This test should fail.
-    assert!(FormatString::parse_printf("%0ls").is_ok());
+    FormatString::parse_printf("%0ls").unwrap();
 }

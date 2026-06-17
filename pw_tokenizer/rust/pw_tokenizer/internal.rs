@@ -95,7 +95,7 @@ impl MessageWriter for CursorMessageWriter<'_> {
 
     fn finalize(self) -> Result<()> {
         // Ensure `tokenize_to_buffer` never calls `finalize()`.
-        unimplemented!();
+        Err(Error::Unimplemented)
     }
 }
 

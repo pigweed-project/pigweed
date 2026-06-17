@@ -41,6 +41,7 @@ impl Hasher {
     /// is the number of bytes of data to be used in calculating the hash.
     /// `data_len` is used to seed  the hash while `hash_len` controls how many
     /// bytes are hashed.
+    #[must_use]
     pub const fn new(data_len: usize, hash_len: usize) -> Self {
         {
             Self {
@@ -55,6 +56,7 @@ impl Hasher {
     /// Processes `bytes` and updates hash state.
     ///
     /// Consumes `self` and returns a [`Hasher`] with the updated state.
+    #[must_use]
     pub const fn process_bytes(mut self, bytes: &[u8]) -> Self {
         let bytes_left = self.hash_len - self.bytes_hashed;
 
@@ -81,6 +83,7 @@ impl Hasher {
     }
 
     /// Consume `self` and return the hash.
+    #[must_use]
     pub const fn hash(self) -> u32 {
         self.hash
     }
@@ -93,6 +96,7 @@ impl Hasher {
 /// let hash = hash_bytes(&[0x34, 0xd8, 0x3a, 0xbb, 0xf1, 0x0e, 0x07]);
 /// assert_eq!(hash, 0x9e624642);
 /// ```
+#[must_use]
 pub const fn hash_bytes(bytes: &[u8]) -> u32 {
     hash_bytes_fixed(bytes, bytes.len())
 }
@@ -105,6 +109,7 @@ pub const fn hash_bytes(bytes: &[u8]) -> u32 {
 /// let hash = hash_bytes_fixed(&[0x34, 0xd8, 0x3a, 0xbb, 0xf1, 0x0e, 0x07], 4);
 /// assert_eq!(hash, 0x92c5d2ac);
 /// ```
+#[must_use]
 pub const fn hash_bytes_fixed(bytes: &[u8], len: usize) -> u32 {
     Hasher::new(bytes.len(), len).process_bytes(bytes).hash()
 }
@@ -117,6 +122,7 @@ pub const fn hash_bytes_fixed(bytes: &[u8], len: usize) -> u32 {
 /// let hash = hash_string("I 💖 Pigweed");
 /// assert_eq!(hash, 0xe318d1b3);
 /// ```
+#[must_use]
 pub const fn hash_string(s: &str) -> u32 {
     hash_bytes(s.as_bytes())
 }

@@ -68,6 +68,7 @@ pub mod __private {
         }
     }
 
+    #[must_use]
     pub const fn log_level_tag(level: LogLevel) -> &'static str {
         match level {
             LogLevel::Debug => "DBG",

@@ -43,6 +43,7 @@ pub mod __private {
 
     pub use crate::varargs::{Arguments, VarArgs};
 
+    #[must_use]
     pub const fn log_level_tag(level: LogLevel) -> &'static str {
         match level {
             LogLevel::Debug => "DBG\0",

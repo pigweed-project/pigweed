@@ -103,30 +103,30 @@ build:rust_lint --@rules_rust//rust/settings:clippy_flags="\
 -Dinvalid_reference_casting,\
 -Dclippy::alloc_instead_of_core,\
 -Dclippy::as_underscore,\
+-Dclippy::assertions_on_result_states,\
 -Dclippy::correctness,\
 -Dclippy::dbg_macro,\
 -Dclippy::decimal_literal_representation,\
 -Dclippy::double_must_use,\
 -Dclippy::missing_safety_doc,\
+-Dclippy::must_use_candidate,\
 -Dclippy::must_use_unit,\
 -Dclippy::obfuscated_if_else,\
 -Dclippy::perf,\
+-Dclippy::return_self_not_must_use,\
+-Dclippy::std_instead_of_core,\
 -Dclippy::style,\
 -Dclippy::suspicious,\
+-Dclippy::unimplemented,\
 -Dclippy::unnested_or_patterns,\
 -Aclippy::new_without_default"
 
 # TODO: https://pwbug.dev/524291215 - The following lints used in pw_kernel fail elsewhere:
-# -Dclippy::assertions_on_result_states,\
 # -Dclippy::cast_lossless,\
 # -Dclippy::cast_possible_truncation,\
 # -Dclippy::cast_possible_wrap,\
 # -Dclippy::cast_sign_loss,\
-# -Dclippy::must_use_candidate,\
 # -Dclippy::ptr_as_ptr,\
-# -Dclippy::return_self_not_must_use,\
-# -Dclippy::std_instead_of_core,\
-# -Dclippy::unimplemented,\
 
 # Enforce rustfmt formatting
 build:rust_lint --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect

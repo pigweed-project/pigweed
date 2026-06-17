@@ -102,7 +102,7 @@ pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
     results
 }
 
-fn skip_to_newline(chars: &mut std::iter::Peekable<std::str::Chars>) {
+fn skip_to_newline(chars: &mut core::iter::Peekable<core::str::Chars>) {
     for c in chars.by_ref() {
         if c == '\n' {
             break;
