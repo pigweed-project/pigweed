@@ -111,22 +111,6 @@ test1@example.com
 test2@example.com
 """
 
-bad_prohibited1 = """\
-# Should raise OwnersProhibitedError.
-set noparent
-
-file:/foo/OWNERZ
-file:../OWNERS
-
-test1@example.com
-#Test 2 comment
-test2@example.com
-
-include file1.txt
-
-per-file foo.txt=test3@example.com
-"""
-
 bad_moving_comments = """\
 # Test comments move with the rule that follows them.
 test2@example.com
@@ -285,7 +269,6 @@ BAD_TEST_FILES = (
     ("bad_email", owners.OwnersInvalidLineError),
     ("bad_grant_combo", owners.OwnersUserGrantError),
     ("bad_ordering1", owners.OwnersStyleError),
-    ("bad_prohibited1", owners.OwnersProhibitedError),
 )
 
 STYLING_CHECKS = (

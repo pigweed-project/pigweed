@@ -281,17 +281,6 @@ class OwnersFile:
                 "grants, * already applies to all users."
             )
 
-        # NOTE: Using the include keyword in combination with a per-file rule is
-        # not possible.
-        # https://android-review.googlesource.com/plugins/code-owners/Documentation/backend-find-owners.html#syntax:~:text=NOTE%3A%20Using%20the%20include%20keyword%20in%20combination%20with%20a%20per%2Dfile%20rule%20is%20not%20possible.
-        if (
-            self.sections[OwnersFile._LineType.INCLUDE]
-            and self.sections[OwnersFile._LineType.PER_FILE]
-        ):
-            raise OwnersProhibitedError(
-                "'include' cannot be used with 'per-file'."
-            )
-
 
 class OwnersFormatter(FileFormatter):
     """A Python-native formatter for OWNERS files."""
