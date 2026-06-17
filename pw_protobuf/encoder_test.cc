@@ -946,5 +946,62 @@ TEST(StreamEncoder, ManualCloseEncoderWrites) {
   ASSERT_EQ(parent.size(), kExpectedSize);
 }
 
+TEST(StreamEncoder, CountingModeStatusPropagationOnFailure) {
+  std::byte dest_buffer[128];
+  MemoryWriter writer(dest_buffer);
+  // WriteNestedMessage uses a two-pass approach: the first pass always uses a
+  // temporary counting encoder under the hood to determine the size of the
+  // nested message. This test ensures that failures during this counting pass
+  // are correctly propagated.
+  StreamEncoder encoder(writer, {});
+
+  // Use a write_message function that fails.
+  auto status = encoder.WriteNestedMessage(
+      kTestProtoNestedField, [](StreamEncoder& nested_proto) {
+        // Write invalid field number (0) to trigger error
+        return nested_proto.WriteUint32(0, 42);
+      });
+  EXPECT_EQ(status, Status::InvalidArgument());
+  EXPECT_EQ(encoder.status(), Status::InvalidArgument());
+}
+
+TEST(StreamEncoder, CountingModeEmptyEncoderBehaviorDoNotWrite) {
+  std::byte dest_buffer[128];
+  MemoryWriter writer(dest_buffer);
+  StreamEncoder encoder(writer, {});
+
+  auto status = encoder.WriteNestedMessage(
+      kTestProtoNestedField,
+      [](StreamEncoder&) {
+        // Don't write anything, making it empty.
+        return OkStatus();
+      },
+      StreamEncoder::EmptyEncoderBehavior::kWriteNothing);
+
+  PW_TEST_ASSERT_OK(status);
+  PW_TEST_ASSERT_OK(encoder.status());
+  EXPECT_EQ(writer.bytes_written(), 0u);
+}
+
+TEST(StreamEncoder, ExplicitCountingEncoderWriteNoLimit) {
+  stream::CountingNullStream counting_stream;
+  StreamEncoder encoder(counting_stream);
+
+  // We can write data and it shouldn't fail due to size checks
+  EXPECT_EQ(encoder.WriteUint32(kTestProtoMagicNumberField, 42), OkStatus());
+
+  // Nested zero-scratch counting encoder
+  auto status = encoder.WriteNestedMessage(
+      kTestProtoNestedField, [](StreamEncoder& nested_proto) {
+        for (uint32_t i = 0; i < 100; ++i) {
+          PW_TRY(nested_proto.WriteUint32(kNestedProtoIdField, i));
+        }
+        return OkStatus();
+      });
+
+  PW_TEST_EXPECT_OK(status);
+  EXPECT_GT(counting_stream.bytes_written(), 0u);
+}
+
 }  // namespace
 }  // namespace pw::protobuf

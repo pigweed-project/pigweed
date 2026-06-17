@@ -56,12 +56,23 @@ Status StreamEncoder::WriteNestedMessage(
   nested_field_number_ = field_number;
   ScopeGuard unlock([this] { nested_field_number_ = 0; });
 
+  if (counting_mode()) {
+    bool write_when_empty =
+        (empty_encoder_behavior == EmptyEncoderBehavior::kWriteFieldNumber);
+    StreamEncoder counting_encoder(
+        *this, write_when_empty, NestedCountingEncoderTag{});
+    status_ = write_message(counting_encoder);
+    PW_TRY(status_);
+    CloseNestedMessage(counting_encoder);
+    return status_;
+  }
+
   ByteSpan scratch = GetNestedScratchBuffer(field_number);
 
   // First pass: we simply count the number of bytes encoded by the fields in
   // the submessage.
   stream::CountingNullStream count_stream;
-  StreamEncoder count_encoder(count_stream, scratch);
+  StreamEncoder count_encoder(count_stream);
 
   status_ = write_message(count_encoder);
   PW_TRY(status_);
@@ -141,6 +152,10 @@ StreamEncoder StreamEncoder::GetNestedEncoder(uint32_t field_number,
     return StreamEncoder(*this, ByteSpan(), false);
   }
 
+  if (counting_mode()) {
+    return StreamEncoder(*this, write_when_empty, NestedCountingEncoderTag{});
+  }
+
   ByteSpan nested_buffer = GetNestedScratchBuffer(field_number);
   return StreamEncoder(*this, nested_buffer, write_when_empty);
 }
@@ -183,13 +198,27 @@ void StreamEncoder::CloseNestedMessage(StreamEncoder& nested) {
     return;
   }
 
-  if (varint::EncodedSize(nested.memory_writer_.bytes_written()) >
-      config::kMaxVarintSize) {
+  size_t nested_bytes = nested.nested_bytes_written();
+
+  if (varint::EncodedSize(nested_bytes) > config::kMaxVarintSize) {
     status_ = Status::OutOfRange();
     return;
   }
 
-  if (!nested.memory_writer_.bytes_written() && !nested.write_when_empty_) {
+  if (!nested_bytes && !nested.write_when_empty_) {
+    return;
+  }
+
+  if (counting_mode()) {
+    status_.Update(UpdateStatusForWrite(
+        temp_field_number, WireType::kDelimited, nested_bytes));
+    if (!status_.ok()) {
+      return;
+    }
+    WriteVarint(FieldKey(temp_field_number, WireType::kDelimited))
+        .IgnoreError();
+    WriteVarint(nested_bytes).IgnoreError();
+    counting_stream_->Advance(nested_bytes);
     return;
   }
 
@@ -334,7 +363,8 @@ Status StreamEncoder::UpdateStatusForWrite(uint32_t field_number,
   status_.Update(field_size.status());
   PW_TRY(status_);
 
-  if (field_size.value() > writer_.ConservativeWriteLimit()) {
+  if (!counting_mode() &&
+      field_size.value() > writer_.ConservativeWriteLimit()) {
     status_ = Status::ResourceExhausted();
   }
 

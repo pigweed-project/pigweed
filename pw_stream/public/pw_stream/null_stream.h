@@ -48,12 +48,16 @@ class CountingNullStream final : public SeekableReaderWriter {
  public:
   constexpr CountingNullStream() : bytes_written_(0) {}
 
-  /// @returns The number of bytes provided to previous `Write` calls.
+  /// @returns The number of bytes provided to previous `Write` or `Advance`
+  /// calls.
   size_t bytes_written() const { return bytes_written_; }
+
+  /// Advances the internal count without writing any data.
+  void Advance(size_t count) { bytes_written_ += count; }
 
  private:
   Status DoWrite(ConstByteSpan data) final {
-    bytes_written_ += data.size();
+    Advance(data.size());
     return OkStatus();
   }
 

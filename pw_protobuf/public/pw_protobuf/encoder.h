@@ -35,6 +35,7 @@
 #include "pw_status/status_with_size.h"
 #include "pw_status/try.h"
 #include "pw_stream/memory_stream.h"
+#include "pw_stream/null_stream.h"
 #include "pw_stream/stream.h"
 #include "pw_varint/varint.h"
 
@@ -128,7 +129,17 @@ class StreamEncoder {
         parent_(nullptr),
         nested_field_number_(0),
         memory_writer_(scratch_buffer),
+        counting_stream_(nullptr),
         writer_(writer) {}
+
+  StreamEncoder(stream::CountingNullStream& counting_stream)
+      : status_(OkStatus()),
+        write_when_empty_(true),
+        parent_(nullptr),
+        nested_field_number_(0),
+        memory_writer_({}),
+        counting_stream_(&counting_stream),
+        writer_(counting_stream.as_seekable_writer()) {}
 
   // Precondition: Encoder has no active child encoder.
   //
@@ -678,8 +689,18 @@ class StreamEncoder {
         parent_(other.parent_),
         nested_field_number_(other.nested_field_number_),
         memory_writer_(std::move(other.memory_writer_)),
-        writer_(&other.writer_ == &other.memory_writer_ ? memory_writer_
-                                                        : other.writer_) {
+        nested_counting_stream_(std::move(other.nested_counting_stream_)),
+        counting_stream_(other.counting_stream_ ==
+                                 &other.nested_counting_stream_
+                             ? &nested_counting_stream_
+                             : other.counting_stream_),
+        writer_(other.counting_mode()
+                    ? (other.counting_stream_ == &other.nested_counting_stream_
+                           ? nested_counting_stream_.as_seekable_writer()
+                           : other.counting_stream_->as_seekable_writer())
+                    : (&other.writer_ == &other.memory_writer_
+                           ? memory_writer_
+                           : other.writer_)) {
     PW_ASSERT(nested_field_number_ == 0);
     // Make the nested encoder look like it has an open child to block writes
     // for the remainder of the object's life.
@@ -704,6 +725,8 @@ class StreamEncoder {
  private:
   friend class MemoryEncoder;
 
+  struct NestedCountingEncoderTag {};
+
   constexpr StreamEncoder(StreamEncoder& parent,
                           ByteSpan scratch_buffer,
                           bool write_when_empty = true)
@@ -712,6 +735,7 @@ class StreamEncoder {
         parent_(&parent),
         nested_field_number_(0),
         memory_writer_(scratch_buffer),
+        counting_stream_(nullptr),
         writer_(memory_writer_) {
     // If this encoder was spawned from a failed encoder, it should also start
     // in a failed state.
@@ -723,7 +747,32 @@ class StreamEncoder {
     }
   }
 
+  // Constructor for creating nested zero-scratch counting encoders.
+  StreamEncoder(StreamEncoder& parent,
+                bool write_when_empty,
+                NestedCountingEncoderTag)
+      : status_(OkStatus()),
+        write_when_empty_(write_when_empty),
+        parent_(&parent),
+        nested_field_number_(0),
+        memory_writer_({}),
+        nested_counting_stream_(),
+        counting_stream_(&nested_counting_stream_),
+        writer_(nested_counting_stream_.as_seekable_writer()) {
+    if (&parent != this) {
+      status_.Update(parent.status_);
+    }
+  }
+
+  // True if counting_stream_ is valid for this encoder.
+  constexpr bool counting_mode() const { return counting_stream_ != nullptr; }
+
   bool nested_encoder_open() const { return nested_field_number_ != 0; }
+
+  size_t nested_bytes_written() const {
+    return counting_mode() ? counting_stream_->bytes_written()
+                           : memory_writer_.bytes_written();
+  }
 
   // CloseNestedMessage() is called on the parent encoder as part of the nested
   // encoder destructor.
@@ -899,6 +948,13 @@ class StreamEncoder {
   // This memory writer is used for staging proto submessages to the
   // scratch_buffer.
   stream::MemoryWriter memory_writer_;
+
+  // Used only when constructed as a nested encoder in counting mode.
+  stream::CountingNullStream nested_counting_stream_;
+
+  // Set if constructed with a CountingNullStream instead of buffer for counting
+  // number of bytes to encode.
+  stream::CountingNullStream* counting_stream_;
 
   // All proto encode operations are directly written to this writer.
   stream::Writer& writer_;
