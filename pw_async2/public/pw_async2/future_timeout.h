@@ -292,7 +292,8 @@ template <typename Clock>
 void TimeoutOr([[maybe_unused]] ValueFuture<void>&& future,
                [[maybe_unused]] TimeProvider<Clock>& time_provider,
                [[maybe_unused]] typename Clock::duration delay) {
-  static_assert(false, "ValueFuture<void> cannot be used with TimeoutOr");
+  static_assert(!std::is_same_v<decltype(future), ValueFuture<void>&&>,
+                "ValueFuture<void> cannot be used with TimeoutOr");
 }
 
 /// Constructs a `FutureWithTimeout` for a `ValueFuture<T>` as the primary
