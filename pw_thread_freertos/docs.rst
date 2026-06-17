@@ -175,6 +175,8 @@ properly and ``pw_third_party_freertos_DISABLE_TASKS_STATICS`` to be enabled.
 To allow for peak stack usage measurement, the FreeRTOS config
 ``INCLUDE_uxTaskGetStackHighWaterMark`` should also be enabled.
 
+.. _module-pw_thread_freertos-sleep:
+
 --------------------
 Thread Sleep Backend
 --------------------
@@ -224,6 +226,8 @@ An ``Aborted`` error status is returned if the provided callback returns
    linking against internal statics from the FreeRTOS kernel,
    :ref:`pw_third_party_freertos_DISABLE_TASKS_STATICS <third_party-freertos_disable_task_statics>`
    must be used.
+
+.. _module-pw_thread_freertos-snapshot:
 
 --------------------
 Snapshot integration

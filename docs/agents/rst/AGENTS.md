@@ -399,6 +399,36 @@ No (when linking from a `pw_async2` doc to a `pw_channel` symbol):
 :cc:`pw::channel::AnyChannel::PendRead`
 ```
 
+### Cross-referencing docs in toctrees
+
+Adding a doc to a `toctree` causes that doc to appear in the "section
+navigation" section of the UI. However, adding a doc to 2 or more
+`toctree` nodes causes undefined behavior. Sometimes the doc will
+appear in one section navigation, othertimes it appears in another
+section navigation.
+
+To fix this, ensure that the doc has only 1 canonical `toctree`
+location in one particular doc across the entire site:
+
+```
+.. toctree::
+
+   foo
+```
+
+To cross-reference this doc so that it appears in other section
+navigations, use our custom `pw://` protocol:
+
+```
+.. toctree::
+
+   foo <pw://pw_foo/docs.html>
+```
+
+At build time, our custom Sphinx extension
+(`//docs/sphinx/_extensions/toctree.py`) intercepts it and rewrites it to the
+correct local relative path (e.g., `../../pw_allocator_zephyr/docs.html`).
+
 ## Iteration loop
 
 To check your work, build the documentation and resolve any errors:

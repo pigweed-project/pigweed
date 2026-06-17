@@ -132,6 +132,7 @@ manage memory.
 
    guide
    design
+   backends
    code_size
 
 .. grid:: 2

@@ -608,6 +608,39 @@ Line 22 containing the following text should be highlighted:
    file at tip-of-tree, but as the file changes over time, the link may
    eventually point to a different line than what you intended.
 
+.. _docs-style-rest-toctree-xref:
+
+----------------------------------
+Cross-referencing docs in toctrees
+----------------------------------
+Adding a doc to a ``toctree`` causes that doc to appear in the "section
+navigation" section of the UI. However, adding a doc to 2 or more
+``toctree`` nodes causes undefined behavior. Sometimes the doc will
+appear in one section navigation, othertimes it appears in another
+section navigation.
+
+To fix this, ensure that the doc has only 1 canonical, global ``toctree``
+location across the entire site:
+
+.. code-block:: rst
+
+   .. toctree::
+
+      foo
+
+To cross-reference this doc so that it appears in other section
+navigations, use our custom `pw://` protocol:
+
+.. code-block:: rst
+
+   .. toctree::
+
+      foo <pw://pw_foo/docs.html>
+
+At build time, our custom Sphinx extension
+(:cs:`//docs/sphinx/_extensions/toctree.py`) intercepts it and rewrites it to
+the correct local relative path (e.g. ``../../pw_foo/docs.html``).
+
 .. _docs-style-rest-doxylink:
 
 -----------------------

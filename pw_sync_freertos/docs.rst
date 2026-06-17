@@ -12,6 +12,8 @@ This is a set of backends for pw_sync based on FreeRTOS.
 Critical Section Lock Primitives
 --------------------------------
 
+.. _module-pw_sync_freertos-mutex:
+
 Mutex & TimedMutex
 ==================
 The FreeRTOS backend for the Mutex and TimedMutex use ``StaticSemaphore_t`` as
@@ -22,6 +24,8 @@ destructors.
 .. Note::
   Static allocation support is required in your FreeRTOS configuration, i.e.
   ``configSUPPORT_STATIC_ALLOCATION == 1``.
+
+.. _module-pw_sync_freertos-spinlock:
 
 InterruptSpinLock
 =================
@@ -159,6 +163,8 @@ for any FreeRTOS target.
 --------------------
 Signaling Primitives
 --------------------
+
+.. _module-pw_sync_freertos-threadnotification:
 
 ThreadNotification & TimedThreadNotification
 ============================================

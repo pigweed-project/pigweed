@@ -9,6 +9,8 @@ pw_chrono_freertos
 ``pw_chrono_freertos`` is a collection of ``pw_chrono`` backends that are
 implemented using FreeRTOS.
 
+.. _module-pw_chrono_freertos-systemclock:
+
 SystemClock backend
 -------------------
 The FreeRTOS based ``system_clock`` backend implements the
@@ -21,6 +23,8 @@ The ``SystemClock::now()`` must be used more than once per overflow of the
 native FreeRTOS ``xTaskGetTickCount*()`` overflow. Note that this duration may
 vary if ``portSUPPRESS_TICKS_AND_SLEEP()``, ``vTaskStepTick()``, and/or
 ``xTaskCatchUpTicks()`` are used.
+
+.. _module-pw_chrono_freertos-systemtimer:
 
 SystemTimer backend
 -------------------

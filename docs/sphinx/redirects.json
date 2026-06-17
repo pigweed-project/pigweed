@@ -149,5 +149,6 @@
   "seed/0130-update-sphinx-theme": "./0130.html",
   "seeds/index": "../seed/0000-index.html",
   "sense/index": "../showcases/sense/",
+  "third_party/freertos/docs": "../../os/freertos/index.html",
   "tour/index": "../showcases/sense/"
 }

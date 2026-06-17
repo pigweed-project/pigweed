@@ -38,6 +38,10 @@
   --font-stack-monospace: var(--pw-font-code);
 }
 
+a.external::after {
+  content: none !important;
+}
+
 code {
   /* Remove borders from inline code (i.e. code that appears within
    * paragraphs. Note that code blocks should have borders; those are

@@ -1,22 +1,17 @@
 .. _docs-os:
 
-==========
-OS support
-==========
+=====================
+OS abstraction layers
+=====================
 
-.. toctree::
-   :hidden:
-
-   zephyr/index
-
-Pigweed’s operating system abstraction layers are portable and configurable
-building blocks, giving users full control while maintaining high performance
-and low overhead.
+Pigweed's operating system abstraction layers (OSALs) are portable and
+configurable building blocks, giving users full control while maintaining high
+performance and low overhead.
 
 Although we primarily target smaller-footprint MMU-less 32-bit microcontrollers,
 the OS abstraction layers are written to work on everything from single-core
-bare metal low end microcontrollers to asymmetric multiprocessing (AMP) and
-symmetric multiprocessing (SMP) embedded systems using Real Time Operating
+bare-metal low-end microcontrollers to asymmetric multiprocessing (AMP) and
+symmetric multiprocessing (SMP) embedded systems using Real-Time Operating
 Systems (RTOS). They even fully work on your developer workstation on Linux,
 Windows, or MacOS!
 
@@ -26,7 +21,7 @@ Pigweed has ports for the following systems:
 
   * - **Environment**
     - **Status**
-  * - STL (Mac, Window, & Linux)
+  * - STL (Linux, macOS, Windows, Fuchsia)
     - **✔ Supported**
   * - `FreeRTOS <https://www.freertos.org/>`_
     - **✔ Supported**
@@ -36,7 +31,7 @@ Pigweed has ports for the following systems:
     - **✔ Supported**
   * - `SEGGER embOS <https://www.segger.com/products/rtos/embos/>`_
     - **✔ Supported**
-  * - Baremetal
+  * - Bare-metal
     - *In Progress*
 
 Pigweed's OS abstraction layers are divided by the **functional grouping of the
@@ -48,38 +43,46 @@ them, but also because this means they are compatible with existing helpers in
 the STL; for example, ``std::lock_guard``.
 
 ---------------
-Time Primitives
+Time primitives
 ---------------
-The :ref:`module-pw_chrono` module provides the building blocks for expressing
+:ref:`module-pw_chrono` provides the building blocks for expressing
 durations, timestamps, and acquiring the current time. This in turn is used by
 other modules, including  :ref:`module-pw_sync` and :ref:`module-pw_thread` as
-the basis for any time bound APIs (i.e. with timeouts and/or deadlines). Note
-that this module is optional and bare metal targets may opt not to use this.
+the basis for any time-bound APIs (i.e. with timeouts and/or deadlines). Note
+that this module is optional and bare-metal targets may opt not to use this.
 
 .. list-table::
 
   * - **Supported On**
     - **SystemClock**
+    - **SystemTimer**
   * - FreeRTOS
+    - :ref:`module-pw_chrono_freertos`
     - :ref:`module-pw_chrono_freertos`
   * - Zephyr
     - :ref:`module-pw_chrono_zephyr`
+    - :ref:`module-pw_chrono_zephyr`
   * - ThreadX
     - :ref:`module-pw_chrono_threadx`
+    - Planned
   * - embOS
+    - :ref:`module-pw_chrono_embos`
     - :ref:`module-pw_chrono_embos`
   * - STL
     - :ref:`module-pw_chrono_stl`
-  * - Baremetal
+    - :ref:`module-pw_chrono_stl`
+  * - Bare-metal
+    - Planned
     - Planned
 
 
-System Clock
+System clock
 ============
-For RTOS and HAL interactions, we provide a ``pw::chrono::SystemClock`` facade
-which provides 64 bit timestamps and duration support along with a C API. For
-C++ there is an optional virtual wrapper, ``pw::chrono::VirtualSystemClock``,
-around the singleton clock facade to enable dependency injection.
+For RTOS and HAL interactions, we provide a ``pw::chrono::SystemClock``
+:ref:`docs-glossary-facade` which provides 64-bit timestamps and duration
+support along with a C API. For C++ there is an optional virtual wrapper,
+``pw::chrono::VirtualSystemClock``, around the singleton clock facade to enable
+dependency injection.
 
 .. code-block:: cpp
 
@@ -91,9 +94,9 @@ around the singleton clock facade to enable dependency injection.
 
    void ThisSleeps() { pw::thread::sleep_for(42ms); }
 
-Unlike the STL's time bound templated APIs which are not specific to a
-particular clock, Pigweed's time bound APIs are strongly typed to use the
-``pw::chrono::SystemClock``'s ``duration`` and ``time_points`` directly.
+Unlike the STL's time-bound templated APIs which are not specific to a
+particular clock, Pigweed's time-bound APIs are strongly typed to use the
+``duration`` and ``time_points`` from ``pw::chrono::SystemClock`` directly.
 
 .. code-block:: cpp
 
@@ -104,15 +107,15 @@ particular clock, Pigweed's time bound APIs are strongly typed to use the
    }
 
 --------------------------
-Synchronization Primitives
+Synchronization primitives
 --------------------------
-The :ref:`module-pw_sync` provides the building blocks for synchronizing between
-threads and/or interrupts through signaling primitives and critical section lock
+:ref:`module-pw_sync` provides the building blocks for synchronizing between
+threads and/or interrupts through signaling primitives and critical-section lock
 primitives.
 
-Critical Section Lock Primitives
+Critical-section lock primitives
 ================================
-Pigweed's locks support Clang's thread safety lock annotations and the STL's
+Pigweed's locks support Clang's thread-safety lock annotations and the STL's
 RAII helpers.
 
 .. list-table::
@@ -127,7 +130,7 @@ RAII helpers.
     - :ref:`module-pw_sync_freertos`
   * - Zephyr
     - :ref:`module-pw_sync_zephyr`
-    - Planned
+    - :ref:`module-pw_sync_zephyr`
     - :ref:`module-pw_sync_zephyr`
   * - ThreadX
     - :ref:`module-pw_sync_threadx`
@@ -141,17 +144,17 @@ RAII helpers.
     - :ref:`module-pw_sync_stl`
     - :ref:`module-pw_sync_stl`
     - :ref:`module-pw_sync_stl`
-  * - Baremetal
+  * - Bare metal
     - Planned, not ready for use
     - ✗
     - Planned, not ready for use
 
 
-Thread Safe Mutex
+Thread-safe mutex
 -----------------
 The ``pw::sync::Mutex`` protects shared data from being simultaneously accessed
 by multiple threads. Optionally, the ``pw::sync::TimedMutex`` can be used as an
-extension with timeout and deadline based semantics.
+extension with timeout-based and deadline-based semantics.
 
 .. code-block:: cpp
 
@@ -166,7 +169,7 @@ extension with timeout and deadline based semantics.
      NotThreadSafeCriticalSection();
    }
 
-Interrupt Safe InterruptSpinLock
+Interrupt-safe InterruptSpinLock
 --------------------------------
 The ``pw::sync::InterruptSpinLock`` protects shared data from being
 simultaneously accessed by multiple threads and/or interrupts as a targeted
@@ -186,9 +189,9 @@ interrupt locks, this also works safely and efficiently on SMP systems.
      NotThreadSafeCriticalSection();
    }
 
-Signaling Primitives
+Signaling primitives
 ====================
-Native signaling primitives tend to vary more compared to critical section locks
+Native signaling primitives tend to vary more compared to critical-section locks
 across different platforms. For example, although common signaling primitives
 like semaphores are in most if not all RTOSes and even POSIX, it was not in the
 STL before C++20. Likewise many C++ developers are surprised that conditional
@@ -216,10 +219,10 @@ portability efficiency tradeoff does not have to be made up front.
     - :ref:`module-pw_sync_freertos`
     - :ref:`module-pw_sync_freertos`
   * - Zephyr
-    - :ref:`module-pw_sync_stl`
-    - :ref:`module-pw_sync_stl`
-    - Planned
-    - :ref:`module-pw_sync_stl`
+    - :ref:`module-pw_sync_zephyr`
+    - :ref:`module-pw_sync_zephyr`
+    - :ref:`module-pw_sync_zephyr`
+    - :ref:`module-pw_sync_zephyr`
   * - ThreadX
     - :ref:`module-pw_sync_threadx`
     - :ref:`module-pw_sync_threadx`
@@ -235,26 +238,26 @@ portability efficiency tradeoff does not have to be made up front.
     - :ref:`module-pw_sync_stl`
     - :ref:`module-pw_sync_stl`
     - :ref:`module-pw_sync_stl`
-  * - Baremetal
+  * - Bare metal
     - Planned
     - ✗
     - TBD
     - TBD
 
-Thread Notification
+Thread notification
 -------------------
 Pigweed intends to provide the ``pw::sync::ThreadNotification`` and
 ``pw::sync::TimedThreadNotification`` facades which permit a single consumer to
 block until an event occurs. This should be backed by the most efficient native
-primitive for a target, regardless of whether that is a semaphore, event flag
+primitive for a target, regardless of whether that is a semaphore, event-flag
 group, condition variable, direct task notification with a critical section, or
 something else.
 
-Counting Semaphore
+Counting semaphore
 ------------------
-The ``pw::sync::CountingSemaphore`` is a synchronization primitive that can be
+``pw::sync::CountingSemaphore`` is a synchronization primitive that can be
 used for counting events and/or resource management where receiver(s) can block
-on acquire until notifier(s) signal by invoking release.
+on ``acquire`` until notifier(s) signal by invoking ``release``.
 
 .. code-block:: cpp
 
@@ -271,9 +274,9 @@ on acquire until notifier(s) signal by invoking release.
      }
    }
 
-Binary Semaphore
+Binary semaphore
 ----------------
-The ``pw::sync::BinarySemaphore`` is a specialization of the counting semaphore
+``pw::sync::BinarySemaphore`` is a specialization of the counting semaphore
 with an arbitrary token limit of 1, meaning it's either full or empty.
 
 .. code-block:: cpp
@@ -287,10 +290,10 @@ with an arbitrary token limit of 1, meaning it's either full or empty.
    void BlockUntilResultReady() { result_ready_semaphore.acquire(); }
 
 --------------------
-Threading Primitives
+Threading primitives
 --------------------
-The :ref:`module-pw_thread` module provides the building blocks for creating and
-using threads including yielding and sleeping.
+:ref:`module-pw_thread` provides the building blocks for creating and
+using threads, including yielding and sleeping.
 
 .. list-table::
 
@@ -312,15 +315,15 @@ using threads including yielding and sleeping.
   * - STL
     - :ref:`module-pw_thread_stl`
     - :ref:`module-pw_thread_stl`
-  * - Baremetal
+  * - Bare metal
     - ✗
     - ✗
 
-Thread Creation
+Thread creation
 ===============
-The :cpp:type:`pw::Thread`’s API is C++11 STL ``std::thread`` like. Unlike
-``std::thread``, the Pigweed's API requires ``pw::thread::Options`` as an
-argument for creating a thread. This is used to give the user full control over
+The :cc:`pw::Thread` API is similar to ``std::thread`` from C++11 STL. Unlike
+``std::thread``, Pigweed's API requires ``pw::thread::Options`` as an
+argument for creating a thread. This provides full control over
 the native OS's threading options without getting in your way.
 
 .. code-block:: cpp
@@ -356,7 +359,7 @@ yielding the current thread.
    }
 
 ------------------
-Execution Contexts
+Execution contexts
 ------------------
 Code runs in *execution contexts*. Common examples of execution contexts on
 microcontrollers are **thread context** and **interrupt context**, though there
@@ -365,36 +368,36 @@ understand what API primitives are safe to call in what contexts.  Since the
 number of execution contexts is too large for Pigweed to cover exhaustively,
 Pigweed has the following classes of APIs:
 
-**Thread Safe APIs** - These APIs are safe to use in any execution context where
+**Thread-safe APIs** - These APIs are safe to use in any execution context where
 one can use blocking or yielding APIs such as sleeping, blocking on a mutex
 waiting on a semaphore.
 
-**Interrupt (IRQ) Safe APIs** - These APIs can be used in any execution context
+**Interrupt (IRQ)-safe APIs** - These APIs can be used in any execution context
 which cannot use blocking and yielding APIs. These APIs must protect themselves
-from preemption from maskable interrupts, etc. This includes critical section
+from preemption from maskable interrupts, etc. This includes critical-section
 thread contexts in addition to "real" interrupt contexts. Our definition
 explicitly excludes any interrupts which are not masked when holding a SpinLock,
-those are all considered non-maskable interrupts. An interrupt safe API may
-always be safely used in a context which permits thread safe APIs.
+those are all considered non-maskable interrupts. An interrupt-safe API may
+always be safely used in a context which permits thread-safe APIs.
 
-**Non-Maskable Interrupt (NMI) Safe APIs** - Like the Interrupt Safe APIs, these
+**Non-maskable interrupt (NMI)-safe APIs** - Like the interrupt-safe APIs, these
 can be used in any execution context which cannot use blocking or yielding APIs.
 In addition, these may be used by interrupts which are not masked when for
 example holding a SpinLock like CPU exceptions or C++/POSIX signals. These tend
-to come with significant overhead and restrictions compared to regular interrupt
+to come with significant overhead and restrictions compared to regular interrupt-
 safe APIs as they **cannot rely on critical sections**, instead
-only atomic signaling can be used. An interrupt safe API may always be
-used in a context which permits interrupt safe and thread safe APIs.
+only atomic signaling can be used. An interrupt-safe API may always be
+used in a context which permits interrupt-safe and thread-safe APIs.
 
 On naming
 =========
-Instead of having context specific APIs like FreeRTOS's ``...FromISR()``,
+Instead of having context-specific APIs like FreeRTOS's ``...FromISR()``,
 Pigweed has a single API which validates the context requirements through
-``DASSERT`` and ``DCHECK`` in the backends (user configurable). We did this for
+``DASSERT`` and ``DCHECK`` in the backends (user-configurable). We did this for
 a few reasons:
 
 #. **Too many contexts** - Since there are contexts beyond just thread,
-   interrupt, and NMI, having context-specific APIs would be a hard to
+   interrupt, and NMI, having context-specific APIs would be hard to
    maintain. The proliferation of postfixed APIs (``...FromISR``,
    ``...FromNMI``, ``...FromThreadCriticalSection``, and so on) would also be
    confusing for users.
@@ -409,7 +412,7 @@ a few reasons:
    and found it clunky and hard to maintain.
 
 -----------------------------
-Construction & Initialization
+Construction & initialization
 -----------------------------
 **TL;DR: Pigweed OS primitives are initialized through C++ construction.**
 
@@ -432,7 +435,7 @@ example and the other is a Mutex which only holds a handle to the native mutex
 type. This would then permit users who cannot construct their synchronization
 primitives to skip the optional static layer.
 
-Kernel / Platform Initialization Before C++ Global Static Constructors
+Kernel / platform initialization before C++ global static constructors
 ======================================================================
 What is this kernel and/or platform initialization that must be done first?
 
@@ -456,21 +459,31 @@ Pigweed is still actively expanding and improving its OS Abstraction Layers.
 That being said, the following concrete areas are being worked on and can be
 expected to land at some point in the future:
 
-1. We'd like to offer a system clock based timer abstraction facade which can be
-   used on either an RTOS or a hardware timer.
-2. We are evaluating a less-portable but very useful portability facade for
+1. We are evaluating a less-portable but very useful portability facade for
    event flags / groups. This would make it even easier to ensure all firmware
    can be fully executed on the host.
-3. Cooperative cancellation thread joining along with a ``std::jthread`` like
+2. Cooperative cancellation thread joining along with a ``std::jthread`` like
    wrapper is in progress.
-4. We'd like to add support for queues, message queues, and similar channel
+3. We'd like to add support for queues, message queues, and similar channel
    abstractions which also support interprocessor communication in a transparent
    manner.
-5. We're interested in supporting asynchronous worker queues and worker queue
+4. We're interested in supporting asynchronous worker queues and worker queue
    pools.
-6. Migrate HAL and similar APIs to use deadlines for the backend virtual
+5. Migrate HAL and similar APIs to use deadlines for the backend virtual
    interfaces to permit a smaller vtable which supports both public timeout and
    deadline semantics.
-7. Baremetal support is partially in place today, but it's not ready for use.
-8. Most of our APIs today are focused around synchronous blocking APIs, however
-   we would love to extend this to include asynchronous APIs.
+6. Bare metal support is partially in place today, but it's not ready for use.
+7. Work is ongoing to extend Pigweed's OS abstraction layers to support
+   asynchronous APIs, with the base framework established in the
+   :ref:`module-pw_async2` module.
+
+.. toctree::
+   :hidden:
+
+   self
+   zephyr/index
+   freertos/index
+   threadx/index
+   embos/index
+   stl/index
+   baremetal/index

@@ -503,6 +503,8 @@ that does not require any synchronization. ``NoLock`` is a `BasicLockable
 ``NoLock`` based on a boolean template parameter. This may be helpful when
 locking is conditionally enabled by a config macro.
 
+.. _module-pw_sync-thread-safety-lock-annotations:
+
 Thread Safety Lock Annotations
 ==============================
 Pigweed's critical section lock primitives support Clang's thread safety

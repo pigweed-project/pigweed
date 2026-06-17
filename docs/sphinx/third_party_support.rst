@@ -26,7 +26,6 @@ Software.
    third_party/crates_io/docs
    docker/docs
    third_party/emboss/docs
-   third_party/freertos/docs
    third_party/fuchsia/docs
    third_party/fuzztest/docs
    third_party/googletest/docs
