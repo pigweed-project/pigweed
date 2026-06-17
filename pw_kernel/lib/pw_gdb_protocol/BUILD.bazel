@@ -23,6 +23,7 @@ rust_library(
         "pw_gdb_protocol/packet.rs",
     ],
     edition = "2024",
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         "@rust_crates//:futures",
@@ -38,6 +39,7 @@ rust_binary(
     name = "cli",
     srcs = ["cli/main.rs"],
     edition = "2024",
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         ":pw_gdb_protocol",
@@ -51,6 +53,8 @@ rust_binary(
 rust_test(
     name = "pw_gdb_protocol_test",
     crate = ":pw_gdb_protocol",
+    edition = "2024",
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )

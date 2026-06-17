@@ -34,6 +34,7 @@ alias(
 alias(
     name = "presubmit",
     actual = "//pw_kernel/tooling:presubmit",
+    tags = ["kernel"],
 )
 
 # When this flag is set to `true`, any crate in the build graph will have its
@@ -60,6 +61,7 @@ alias(
         "//pw_kernel/userspace:is_app_build_enabled": "//pw_kernel/userspace/log_backend:basic",
         "//conditions:default": "//pw_kernel/subsys/console:pw_log_backend_basic",
     }),
+    tags = ["kernel"],
 )
 
 alias(
@@ -68,6 +70,7 @@ alias(
         "//pw_kernel/userspace:is_app_build_enabled": "//pw_kernel/userspace/log_backend:tokenized",
         "//conditions:default": "//pw_kernel/subsys/console:pw_log_backend_tokenized",
     }),
+    tags = ["kernel"],
 )
 
 sphinx_docs_library(

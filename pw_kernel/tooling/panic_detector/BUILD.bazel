@@ -29,6 +29,7 @@ rust_library(
     proc_macro_deps = [
         "@rust_crates//:bitfield-struct",
     ],
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
     deps = [
@@ -45,6 +46,7 @@ rust_binary(
         "main.rs",
     ],
     edition = "2024",
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
     deps = [

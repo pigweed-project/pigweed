@@ -19,5 +19,6 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "magic_values",
     srcs = ["magic_values.rs"],
-    edition = "2021",
+    edition = "2024",
+    tags = ["kernel"],
 )

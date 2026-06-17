@@ -21,6 +21,7 @@ rust_library(
     name = "console",
     srcs = ["console.rs"],
     edition = "2024",
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         "//pw_status/rust:pw_status",
@@ -32,6 +33,7 @@ rust_library(
     srcs = ["console_backend_stdio.rs"],
     crate_name = "console_backend",
     edition = "2024",
+    tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_status/rust:pw_status",
@@ -48,6 +50,7 @@ rust_library(
     }),
     crate_name = "console_backend",
     edition = "2024",
+    tags = ["kernel"],
     target_compatible_with = selects.with_or({
         SUPPORTED_CORTEX_M_CPUS: [],
         "@platforms//cpu:riscv32": [],
@@ -71,6 +74,7 @@ rust_library(
     srcs = ["colors.rs"],
     crate_features = ["color"],
     edition = "2024",
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         "//pw_bytes/rust:pw_bytes",
@@ -93,6 +97,7 @@ rust_library(
     crate_name = "pw_log_backend",
     edition = "2024",
     proc_macro_deps = ["//pw_kernel/lib/pw_log_helper:pw_log_backend_basic_macro"],
+    tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         ":colors",

@@ -89,6 +89,50 @@ common --//pw_toolchain/host_clang:layering_check
 common --experimental_propagate_custom_flag=@@rules_rust+//rust/toolchain/channel:channel
 common --experimental_propagate_custom_flag=@@rules_rust+//rust/settings:error_format
 
+# Rust Lint configuration
+# ==================
+# Enable clippy lints
+build:rust_lint --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
+build:rust_lint --output_groups=+clippy_checks
+build:rust_lint --@rules_rust//rust/settings:clippy_flags="\
+-Dclippy::cast_precision_loss,\
+-Dclippy::char_lit_as_u8,\
+-Dclippy::fn_to_numeric_cast,\
+-Dclippy::fn_to_numeric_cast_with_truncation,\
+-Dclippy::unnecessary_cast,\
+-Dinvalid_reference_casting,\
+-Dclippy::alloc_instead_of_core,\
+-Dclippy::as_underscore,\
+-Dclippy::correctness,\
+-Dclippy::dbg_macro,\
+-Dclippy::decimal_literal_representation,\
+-Dclippy::double_must_use,\
+-Dclippy::missing_safety_doc,\
+-Dclippy::must_use_unit,\
+-Dclippy::obfuscated_if_else,\
+-Dclippy::perf,\
+-Dclippy::style,\
+-Dclippy::suspicious,\
+-Dclippy::unnested_or_patterns,\
+-Aclippy::new_without_default"
+
+# TODO: https://pwbug.dev/524291215 - The following lints used in pw_kernel fail elsewhere:
+# -Dclippy::assertions_on_result_states,\
+# -Dclippy::cast_lossless,\
+# -Dclippy::cast_possible_truncation,\
+# -Dclippy::cast_possible_wrap,\
+# -Dclippy::cast_sign_loss,\
+# -Dclippy::must_use_candidate,\
+# -Dclippy::ptr_as_ptr,\
+# -Dclippy::return_self_not_must_use,\
+# -Dclippy::std_instead_of_core,\
+# -Dclippy::unimplemented,\
+
+# Enforce rustfmt formatting
+build:rust_lint --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:rust_lint --@rules_rust//rust/settings:rustfmt.toml=//:rustfmt.toml
+build:rust_lint --output_groups=+rustfmt_checks
+
 # Java related flags
 # ==================
 # Workaround for https://github.com/bazelbuild/rules_jvm_external/issues/445.

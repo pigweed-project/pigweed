@@ -240,8 +240,7 @@
         "description": "Run clippy checks",
         "build_type": "bazel",
         "args": [
-          "--aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect",
-          "--output_groups=clippy_checks"
+          "--config=rust_lint"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -260,8 +259,7 @@
         "build_type": "bazel",
         "args": [
           "--@rules_rust//rust/toolchain/channel=nightly",
-          "--aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect",
-          "--output_groups=clippy_checks"
+          "--config=rust_lint"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
