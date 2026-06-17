@@ -60,6 +60,32 @@ Status ChannelBase::Send(const Packet& packet) {
                 static_cast<unsigned>(packet.method_id()));
   }
 
+  PW_CHECK_NOTNULL(output_);
+
+  if (output_->SupportsSendPacket()) {
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      rpc_lock().unlock();
+    }
+
+    Status sent = output_->SendPacket(packet);
+
+    if constexpr (cfg::kLocklessChannelSendEnabled<>) {
+      rpc_lock().lock();
+    }
+
+    if (!sent.ok()) {
+      PW_LOG_ERROR("Channel %u failed to send packet with status %u",
+                   static_cast<unsigned>(id()),
+                   sent.code());
+      // Channel implementers are free to return whichever status makes sense in
+      // their context, but these are always mapped to UNKNOWN so the
+      // user-facing functions (e.g. Finish()) always return a fixed set of
+      // statuses.
+      return Status::Unknown();
+    }
+    return OkStatus();
+  }
+
   EncodingBuffer encoding_buffer;
   ByteSpan buffer = encoding_buffer.GetPacketBuffer(packet.payload().size());
 
@@ -73,8 +99,6 @@ Status ChannelBase::Send(const Packet& packet) {
         encoded.status().code());
     return Status::Internal();
   }
-
-  PW_CHECK_NOTNULL(output_);
 
   if constexpr (cfg::kLocklessChannelSendEnabled<>) {
     rpc_lock().unlock();

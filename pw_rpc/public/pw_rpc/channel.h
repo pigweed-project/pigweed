@@ -95,6 +95,8 @@ constexpr size_t MaxSafePayloadSize(
 
 class ChannelOutput {
  public:
+  using Packet = internal::Packet;
+
   // Returned from MaximumTransmissionUnit() to indicate that this ChannelOutput
   // imposes no limits on the MTU.
   static constexpr size_t kUnlimited = std::numeric_limits<size_t>::max();
@@ -148,6 +150,27 @@ class ChannelOutput {
   // function returns.
   virtual Status Send(span<const std::byte> buffer)
       PW_RPC_CHANNEL_OUTPUT_SEND_LOCK_REQUIREMENT = 0;
+
+  // Returns whether this ChannelOutput implements SendPacket().
+  //
+  // If this returns true, pw_rpc will call SendPacket() instead of encoding
+  // the packet and calling Send(). This allows bypassing packet encoding if
+  // the channel output does not need it (e.g. for gRPC).
+  virtual bool SupportsSendPacket() const { return false; }
+
+  // Sends an unencoded RPC packet.
+  //
+  // This is only called if SupportsSendPacket() returns true.
+  //
+  // Override this to implement custom packet sending logic that avoids
+  // the overhead of encoding the packet into a buffer.
+  //
+  // The same lock requirements and safety rules as Send() apply to this
+  // function.
+  virtual Status SendPacket(const Packet&)
+      PW_RPC_CHANNEL_OUTPUT_SEND_LOCK_REQUIREMENT {
+    return Status::Unimplemented();
+  }
 
  private:
   const char* name_;

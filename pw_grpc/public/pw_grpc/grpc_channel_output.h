@@ -51,16 +51,14 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
   void set_connection(Connection& conn) { connection_ = conn; }
   void clear_connection() { connection_ = std::nullopt; }
 
-  Status Send(ConstByteSpan data) override {
+  bool SupportsSendPacket() const override { return true; }
+
+  Status SendPacket(const rpc::internal::Packet& packet) override {
     using pw::rpc::internal::pwpb::PacketType;
 
     if (!connection_.has_value() || !callbacks_.has_value()) {
       return Status::FailedPrecondition();
     }
-
-    // TODO: b/319162657 - Avoid this extra decode
-    PW_TRY_ASSIGN(rpc::internal::Packet packet,
-                  rpc::internal::Packet::FromBuffer(data));
 
     switch (packet.type()) {
       case PacketType::kResponse: {
@@ -100,6 +98,12 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
     }
 
     return OkStatus();
+  }
+
+  Status Send(ConstByteSpan data) override {
+    PW_TRY_ASSIGN(rpc::internal::Packet packet,
+                  rpc::internal::Packet::FromBuffer(data));
+    return SendPacket(packet);
   }
 
  private:
