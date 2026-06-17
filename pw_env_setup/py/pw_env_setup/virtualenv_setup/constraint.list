@@ -90,7 +90,7 @@ sphinxcontrib-applehelp==2.0.0
 sphinxcontrib-devhelp==2.0.0
 sphinxcontrib-htmlhelp==2.1.0
 sphinxcontrib-jsmath==1.0.1
-sphinxcontrib-mermaid==0.9.2
+sphinxcontrib-mermaid==2.0.2
 sphinxcontrib-qthelp==2.0.0
 sphinxcontrib-serializinghtml==2.0.0
 sphinx-design==0.6.1

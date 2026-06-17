@@ -50,7 +50,6 @@ is used by default.
    **Every pw_python_action is run inside a venv**
    ^^^
    .. mermaid::
-      :caption:
 
       flowchart LR
         out[GN Build Dir<br/>fa:fa-folder out]
