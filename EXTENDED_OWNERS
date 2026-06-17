@@ -1,0 +1,18 @@
+# Syntax for OWNERS files can be found at
+# https://gerrit.googlesource.com/plugins/code-owners/+/HEAD/resources/Documentation/backend-find-owners.md
+#
+# Extended Pigweed team members.
+aarongreen@google.com #{LAST_RESORT_SUGGESTION}
+alizhang@google.com #{LAST_RESORT_SUGGESTION}
+cachinchilla@google.com #{LAST_RESORT_SUGGESTION}
+chadnorvell@google.com #{LAST_RESORT_SUGGESTION}
+cramertj@google.com #{LAST_RESORT_SUGGESTION}
+ewout@google.com #{LAST_RESORT_SUGGESTION}
+gwsq-pigweed@pigweed.google.com.iam.gserviceaccount.com
+mcgrathr@google.com #{LAST_RESORT_SUGGESTION}
+phosek@google.com #{LAST_RESORT_SUGGESTION}
+prabhukr@google.com #{LAST_RESORT_SUGGESTION}
+sychiu@google.com #{LAST_RESORT_SUGGESTION}
+tonymd@google.com #{LAST_RESORT_SUGGESTION}
+tpudlik@google.com #{LAST_RESORT_SUGGESTION}
+zyecheng@google.com #{LAST_RESORT_SUGGESTION}

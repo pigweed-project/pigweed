@@ -1,3 +1,7 @@
+# Syntax for OWNERS files can be found at
+# https://gerrit.googlesource.com/plugins/code-owners/+/HEAD/resources/Documentation/backend-find-owners.md
+#
+# Additional owners for updating bazel dependencies.
 benlawson@google.com
 drees@google.com
 erahm@google.com
