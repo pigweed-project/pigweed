@@ -842,6 +842,7 @@ def _run_cmake(ctx: PresubmitContext, toolchain='host_clang') -> None:
         '--fresh',
         f'-DCMAKE_TOOLCHAIN_FILE={toolchain_path}',
         '-DCMAKE_EXPORT_COMPILE_COMMANDS=1',
+        '-Dpw_ENABLE_CC_SANDBOX=OFF',
         f'-Ddir_pw_third_party_emboss={ctx.package_root / "emboss"}',
         f'-Ddir_pw_third_party_flatbuffers={ctx.package_root / "flatbuffers"}',
         f'-Ddir_pw_third_party_nanopb={ctx.package_root / "nanopb"}',
