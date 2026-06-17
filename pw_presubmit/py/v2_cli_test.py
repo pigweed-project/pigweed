@@ -152,6 +152,28 @@ class V2CliTest(unittest.TestCase):
         self.assertEqual(kwargs['mode'], orchestrator.Mode.FIX)
 
     @mock.patch('pw_presubmit.private.v2_cli._main')
+    def test_fix_override(self, mock_main) -> None:
+        mock_main.return_value = 0
+
+        v2_cli.main(
+            self.programs,
+            default_program="prog1",
+            argv=["--fix", "--output-dir", "out"],
+        )
+
+        mock_main.assert_called_once()
+        kwargs = mock_main.call_args.kwargs
+        self.assertEqual(kwargs['mode'], orchestrator.Mode.FIX)
+
+    def test_mode_and_fix_mutually_exclusive_fails(self) -> None:
+        with self.assertRaises(SystemExit):
+            v2_cli.main(
+                self.programs,
+                default_program="prog1",
+                argv=["--mode", "auto", "--fix", "--output-dir", "out"],
+            )
+
+    @mock.patch('pw_presubmit.private.v2_cli._main')
     def test_ui_override(self, mock_main) -> None:
         mock_main.return_value = 0
 

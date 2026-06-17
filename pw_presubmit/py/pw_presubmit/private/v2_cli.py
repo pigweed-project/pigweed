@@ -97,12 +97,20 @@ def add_arguments(
         type=Path,
         help='Directory where output files will be written.',
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         '--mode',
         type=orchestrator.Mode,
         choices=list(orchestrator.Mode),
         default=orchestrator.Mode.STOP,
         help='How to run the presubmit',
+    )
+    mode_group.add_argument(
+        '--fix',
+        action='store_const',
+        dest='mode',
+        const=orchestrator.Mode.FIX,
+        help='Apply automatic fixes if available (alias for --mode fix)',
     )
     parser.add_argument(
         '--ui',
