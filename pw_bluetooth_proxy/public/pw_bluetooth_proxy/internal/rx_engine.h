@@ -44,6 +44,8 @@ class RxEngine {
       pw::span<uint8_t> frame) = 0;
 
   virtual Status AddRxCredits(uint16_t additional_rx_credits) = 0;
+
+  virtual void Reset() {}
 };
 
 }  // namespace pw::bluetooth::proxy::internal

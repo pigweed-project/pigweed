@@ -291,6 +291,49 @@ TEST_F(CreditBasedFlowControlRxEngineTest, AddCredits) {
   EXPECT_EQ(replenished_credits(), 3u);
 }
 
+TEST_F(CreditBasedFlowControlRxEngineTest, Reset) {
+  // Send first PDU of a segmented SDU.
+  std::array<uint8_t, 9> pdu_0 = {// L2cap K-Frame:
+                                  0x05,
+                                  0x00,  // PDU length
+                                  0x60,
+                                  0x00,  // Local Channel ID
+                                  0x07,
+                                  0x00,  // SDU length
+                                         // Payload:
+                                  0x00,
+                                  0x01,
+                                  0x02};
+  RxEngine::HandlePduFromControllerReturnValue result_0 =
+      engine().HandlePduFromController(pdu_0);
+  ASSERT_TRUE(std::holds_alternative<std::monostate>(result_0));
+
+  // Reset the engine.
+  engine().Reset();
+
+  // Send a new first PDU of a different SDU.
+  const std::array<uint8_t, 3> kExpectedSdu = {0x0a, 0x0b, 0x0c};
+  std::array<uint8_t, 9> pdu_1 = {// L2cap K-Frame:
+                                  0x05,
+                                  0x00,  // PDU length
+                                  0x60,
+                                  0x00,  // Local Channel ID
+                                  0x03,
+                                  0x00,  // SDU length
+                                         // Payload:
+                                  0x0a,
+                                  0x0b,
+                                  0x0c};
+  RxEngine::HandlePduFromControllerReturnValue result_1 =
+      engine().HandlePduFromController(pdu_1);
+  // It should be complete because SDU length is 3 and we sent 3 bytes.
+  ASSERT_TRUE(std::holds_alternative<multibuf::MultiBuf>(result_1));
+  auto contiguous = std::get<multibuf::MultiBuf>(result_1).ContiguousSpan();
+  pw::span<uint8_t> sdu = span_cast<uint8_t>(*contiguous);
+  EXPECT_TRUE(std::equal(
+      sdu.begin(), sdu.end(), kExpectedSdu.begin(), kExpectedSdu.end()));
+}
+
 }  // namespace
 
 }  // namespace pw::bluetooth::proxy::internal

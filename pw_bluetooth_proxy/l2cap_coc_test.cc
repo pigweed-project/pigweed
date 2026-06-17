@@ -1214,6 +1214,70 @@ TEST_F(L2capCocReadTest, NoReadOnStoppedChannel) {
   proxy.HandleH4HciFromController(std::move(h4_packet));
 }
 
+TEST_F(L2capCocReadTest, StopFreesRxSdu) {
+  // Create a small allocator.
+  std::array<std::byte, 32> small_buffer{};
+  pw::multibuf::SimpleAllocator small_allocator(small_buffer,
+                                                allocator::GetLibCAllocator());
+
+  pw::Function<void(H4PacketWithHci && packet)>&& send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  pw::Function<void(H4PacketWithH4 && packet)>&& send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  // Acquire CoC using the small allocator.
+  uint16_t local_cid = 234;
+  uint16_t remote_cid = 456;
+  struct {
+    int receives_called = 0;
+  } capture;
+
+  pw::Result<L2capCoc> channel_res = proxy.AcquireL2capCoc(
+      small_allocator,
+      kConnectionHandle,
+      {.cid = local_cid, .mtu = 100, .mps = 100, .credits = 1},
+      {.cid = remote_cid, .mtu = 100, .mps = 100, .credits = 1},
+      [&capture](multibuf::MultiBuf&&) { ++capture.receives_called; },
+      nullptr);
+  PW_TEST_ASSERT_OK(channel_res);
+  L2capCoc channel = std::move(channel_res.value());
+
+  // Send a partial packet of 20 bytes.
+  std::array<uint8_t, 20> payload_0{};
+  payload_0.fill(1);
+  PW_TEST_ASSERT_OK_AND_ASSIGN(KFrameWithStorage kframe_0,
+                               SetupKFrame(kConnectionHandle,
+                                           local_cid,
+                                           /*mps=*/10,
+                                           /*segment_no=*/0,
+                                           payload_0));
+
+  H4PacketWithHci packet_0{emboss::H4PacketType::ACL_DATA,
+                           kframe_0.acl.hci_span()};
+  proxy.HandleH4HciFromController(std::move(packet_0));
+  RunDispatcher();
+
+  // Try to allocate another 20 bytes. It should fail.
+  auto alloc_res = small_allocator.AllocateContiguous(20);
+  EXPECT_FALSE(alloc_res.has_value());
+
+  // Stop the channel. This should reset RX engine and free rx_sdu_.
+  channel.Stop();
+
+  // Now we should be able to allocate 20 bytes again.
+  alloc_res = small_allocator.AllocateContiguous(20);
+  EXPECT_TRUE(alloc_res.has_value());
+}
+
 TEST_F(L2capCocReadTest, NoReadOnSameCidDifferentConnectionHandle) {
   pw::Function<void(H4PacketWithHci && packet)>&& send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});

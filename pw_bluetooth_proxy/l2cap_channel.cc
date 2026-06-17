@@ -67,6 +67,7 @@ L2capChannel::~L2capChannel() {
 }
 
 void L2capChannel::Stop() {
+  std::lock_guard rx_lock(rx_mutex_);
   std::lock_guard lock(impl_.mutex_);
   PW_LOG_INFO(
       "btproxy: L2capChannel::Stop - transport_: %u, connection_handle_: %#x, "
@@ -80,10 +81,19 @@ void L2capChannel::Stop() {
   PW_CHECK(state_ != State::kNew && state_ != State::kClosed);
   state_ = State::kStopped;
   impl_.ClearQueue();
+  std::visit(
+      [](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (!std::is_same_v<T, std::monostate>) {
+          arg.Reset();
+        }
+      },
+      rx_engine_);
 }
 
 void L2capChannel::Close(L2capChannelEvent event) {
   {
+    std::lock_guard rx_lock(rx_mutex_);
     std::lock_guard lock(impl_.mutex_);
     PW_LOG_INFO(
         "btproxy: L2capChannel::Close - transport_: %u, "
@@ -101,6 +111,14 @@ void L2capChannel::Close(L2capChannelEvent event) {
     }
     state_ = State::kClosed;
     impl_.ClearQueue();
+    std::visit(
+        [](auto&& arg) {
+          using T = std::decay_t<decltype(arg)>;
+          if constexpr (!std::is_same_v<T, std::monostate>) {
+            arg.Reset();
+          }
+        },
+        rx_engine_);
   }
 
   impl_.SendEvent(event);

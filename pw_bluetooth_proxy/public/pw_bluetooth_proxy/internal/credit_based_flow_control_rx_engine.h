@@ -48,6 +48,8 @@ class CreditBasedFlowControlRxEngine final : public RxEngine {
 
   Status AddRxCredits(uint16_t additional_rx_credits) override;
 
+  void Reset() override;
+
  private:
   uint16_t local_cid_;
   uint16_t rx_mtu_;

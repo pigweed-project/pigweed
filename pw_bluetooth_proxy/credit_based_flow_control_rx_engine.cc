@@ -174,4 +174,10 @@ Status CreditBasedFlowControlRxEngine::AddRxCredits(
   return OkStatus();
 }
 
+void CreditBasedFlowControlRxEngine::Reset() {
+  rx_sdu_ = std::nullopt;
+  rx_sdu_offset_ = 0;
+  rx_sdu_bytes_remaining_ = 0;
+}
+
 }  // namespace pw::bluetooth::proxy::internal
