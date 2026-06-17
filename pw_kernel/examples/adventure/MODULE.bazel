@@ -17,11 +17,21 @@ module(
     version = "0.0.1",
 )
 
+# DOCSTAG: [bazel_dep]
 bazel_dep(name = "pigweed")
+
+# Quickstart users should uncomment the `git_override` below and delete the
+# `local_path_override` that follows it.
+# git_override(
+#       module_name = "pigweed",
+#       commit = "603d02a539f7777187ff72bc39b48ee1000ca8b2",
+#       remote = "https://pigweed.googlesource.com/pigweed/pigweed.git",
+# )
 local_path_override(
     module_name = "pigweed",
     path = "../../..",
 )
+# DOCSTAG: [bazel_dep]
 
 bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_python", version = "1.8.3")

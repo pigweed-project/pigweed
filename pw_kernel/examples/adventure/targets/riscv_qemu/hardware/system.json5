@@ -29,6 +29,7 @@
         {
           name: "supervisor",
           ram_size_bytes: 65536,
+	  // DOCSTAG: [ipc]
           objects: [
             {
               name: "uart_driver_process",
@@ -50,6 +51,7 @@
               kernel_stack_size_bytes: 2048,
             },
           ],
+	  // DOCSTAG: [ipc]
         },
       ],
     },

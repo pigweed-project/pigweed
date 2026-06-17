@@ -28,6 +28,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# DOCSTAG: [codegen]
 target_codegen(
     name = "codegen",
     arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
@@ -35,6 +36,7 @@ target_codegen(
     system_config = ":system_config",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
+# DOCSTAG: [codegen]
 
 target_linker_script(
     name = "linker_script",
@@ -61,6 +63,7 @@ rust_binary(
     ],
 )
 
+# DOCSTAG: [sys]
 system_image(
     name = "adventure",
     apps = [
@@ -73,6 +76,7 @@ system_image(
     system_config = ":system_config",
     tags = ["kernel"],
 )
+# DOCSTAG: [sys]
 
 py_test(
     name = "integration_test",

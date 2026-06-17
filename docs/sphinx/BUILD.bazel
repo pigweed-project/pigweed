@@ -42,6 +42,9 @@ sphinx_docs_library(
     srcs = [
         "_static/css/pigweed.css",
         "_static/js/pigweed.js",
+        # TODO: b/525058207 - Enable images.
+        # "_static/svg/pw_kernel-tour-dark.svg",
+        # "_static/svg/pw_kernel-tour-light.svg",
     ],
     visibility = ["//visibility:private"],
 )
@@ -454,7 +457,7 @@ sphinx_docs(
     # (this one will be longer because it's a hermetic build), and then set it
     # back to `True` to get faster iterative builds.
     # https://github.com/bazel-contrib/rules_python/pull/2938
-    allow_persistent_workers = True,
+    allow_persistent_workers = False,
     config = "conf.py",
     extra_opts = [
         "--silent",

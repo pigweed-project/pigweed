@@ -6,163 +6,182 @@ Quickstart
 .. pigweed-module-subpage::
    :name: pw_kernel
 
-.. note::
+The easiest and fastest way to get started with ``pw_kernel`` is to copy our
+full-featured adventure example (:cs:`pw_kernel/examples/adventure`) and strip
+out whatever you don't need. Although the code is in
+:ref:`docs-glossary-upstream` the example is structured as an out-of-tree (i.e.
+self-contained) Bazel project, so you should be able to get it up and running
+within minutes.
 
-   This is an early draft. The content may change significantly over the
-   next few months.
+.. _module-pw_kernel-quickstart-setup:
 
-This quickstart shows you how to build and test ``pw_kernel`` within
-:ref:`docs-glossary-upstream`.
+-----
+Setup
+-----
+1. Clone the upstream Pigweed repo:
 
-We don't yet have documentation on how to pull ``pw_kernel`` into your project
-as a dependency and build your system on top of it. Stay tuned!
+   .. code-block:: console
 
--------------
-Prerequisites
--------------
-This quickstart assumes that you've got the :ref:`docs-glossary-upstream`
-repository set up for development. If not, see :ref:`docs-contributing`.
-Note that, since you aren't actually contributing code, you don't need to
-do all the steps in the contributing guide. You only need to do these steps:
+      git clone https://pigweed.googlesource.com/pigweed/pigweed --depth 1
 
-#. :ref:`docs-contributing-setup-devtools`
-#. :ref:`docs-contributing-clone`
+2. Move the :cs:`pw_kernel/examples/adventure` directory out of upstream
+   Pigweed:
 
-.. _module-pw_kernel-quickstart-config:
+   .. code-block:: console
 
---------------------
-Bazel configurations
---------------------
-``pw_kernel`` provides several Bazel configurations for different targets and
-build types:
+      mv pigweed/pw_kernel/examples/adventure app
 
-- ``k_host``: For building and running on your host machine (Linux, macOS).
-- ``k_qemu_mps2_an505``: For QEMU emulating an Arm Cortex-M33 based system (MPS2-AN505).
-- ``k_qemu_virt_riscv32``: For QEMU emulating a RISC-V 32-bit based system.
-- ``k_rp2350``: For the Raspberry Pi RP2350 microcontroller.
+   You can call it whatever you want but we'll assume ``app`` throughtout
+   this quickstart.
+
+3. Make ``app`` your working dir:
+
+   .. code-block:: console
+
+      cd app
+
+4. Open ``//MODULE.bazel``, uncomment the `git_override`_ invocation, and
+   delete (or comment out) the `local_path_override`_ invocation.
+
+   .. literalinclude:: ./examples/adventure/MODULE.bazel
+      :language: starlark
+      :start-after: DOCSTAG: [bazel_dep]
+      :end-before: DOCSTAG: [bazel_dep]
+      :linenos:
+
+   .. note::
+
+      This step essentially sets up ``app`` to be a completely standalone
+      project. Recall that this code example is hosted within the upstream
+      Pigweed repository. In that context, it's OK to assume that the
+      ``pigweed`` dependency can be found at the local path ``../../..``.
+      When using ``app`` as the starting point for your own project, however,
+      there's no need to separately download the upstream Pigweed repo to a
+      certain path. You can instead use ``git_override`` and let Bazel fetch
+      the dependency over the network.
 
 .. _module-pw_kernel-quickstart-build:
 
----------------
-Build pw_kernel
----------------
-To build ``pw_kernel`` for a given
-:ref:`configuration <module-pw_kernel-quickstart-config>`:
+-----
+Build
+-----
+1. Build the app for RV32 QEMU:
 
-.. code-block:: console
+   .. code-block:: console
 
-   bazelisk build --config <config> //pw_kernel/...
+      $ bazelisk build //targets/riscv_qemu/simulated:adventure
 
-For example, to build for the RP2350:
+   See :ref:`docs-install-bazel` if you don't have ``bazelisk`` installed.
 
-.. code-block:: console
+   .. dropdown:: Expected output
 
-   bazelisk build --config k_rp2350 //pw_kernel/...
+      .. code-block:: text
 
-.. _module-pw_kernel-quickstart-test:
+         INFO: Analyzed target //targets/riscv_qemu/simulated:adventure
+         (0 packages loaded, 0 targets configured).
+         INFO: Found 1 target...
+         Target //targets/riscv_qemu/simulated:adventure up-to-date:
+           bazel-bin/targets/riscv_qemu/simulated/adventure.elf
+           bazel-bin/targets/riscv_qemu/simulated/adventure.bin
+         INFO: Elapsed time: 21.401s, Critical Path: 20.03s
+         INFO: 48 processes: 5 internal, 43 linux-sandbox.
+         INFO: Build completed successfully, 48 total actions
 
----------
-Run tests
----------
-To run all ``pw_kernel`` tests for a given
-:ref:`configuration <module-pw_kernel-quickstart-config>`:
+.. _module-pw_kernel-quickstart-build-troubleshooting:
 
-.. code-block:: console
+Troubleshooting: ``No MODULE.bazel, REPO.bazel, or WORKSPACE file found``
+=========================================================================
+If you see this error:
 
-   bazelisk test --config <config> //pw_kernel/...
+.. code-block:: text
 
-For example, to run tests on the host:
+   Starting local Bazel server (9.1.0) and connecting to it...
+   ERROR: fetching pigweed+: java.io.IOException: No MODULE.bazel, REPO.bazel,
+   or WORKSPACE file found in …/external/pigweed+
+   ERROR: Error computing the main repository mapping: error during computation
+   of main repo mapping: No MODULE.bazel, REPO.bazel, or WORKSPACE file found
+   in …/external/pigweed+
 
-.. code-block:: console
+You need to modify ``MODULE.bazel`` as explained in
+:ref:`module-pw_kernel-quickstart-setup`.
 
-   bazelisk test --config k_host //pw_kernel/...
+.. _module-pw_kernel-quickstart-simulate:
 
-To run unittests tests for the RISC-V QEMU target and see all test output:
+--------
+Simulate
+--------
+1. Simulate the app on RV32 QEMU:
 
-.. code-block:: console
+   .. code-block:: console
 
-   bazelisk test --test_output=all --cache_test_results=no --config k_qemu_virt_riscv32 //pw_kernel/target/qemu_virt_riscv32/unittest_runner
+      $ bazelisk run @pigweed//pw_kernel/tooling:qemu_runner -- \
+          --cpu rv32 \
+          --machine virt \
+          --semihosting \
+          --image $(pwd)/bazel-bin/targets/riscv_qemu/simulated/adventure.elf
 
-Raspberry Pi RP2350
-===================
-You can run the tests on a physical RP2350-based board.
+   .. dropdown:: Expected output
 
-Build one of the tests:
+      .. code-block:: text
 
-.. code-block:: console
+         [INF] Initializing PLIC 0xc000000
+         [INF] Welcome to Maize on Adventure Example (RISCV QEMU)!
+         [INF] Starting monotonic timer
+         [INF] Created initial thread; bootstrapping
+         [INF] Context switching to first thread
+         [INF] Welcome to the first thread, continuing bootstrap
+         [INF] Starting thread 'idle' (0x81000090)
+         [INF] Allocating non-privileged process 'supervisor'
+         [INF] Allocating non-privileged thread 'main_thread'
+         [INF] Starting thread 'main_thread' (0x81002d38)
+         [INF] Allocating non-privileged process 'uart_driver_mock'
+         [INF] Allocating non-privileged thread 'driver_thread'
+         [INF] Starting thread 'driver_thread' (0x81002de0)
+         [INF] Allocating non-privileged process 'adventure_game'
+         [INF] Allocating non-privileged thread 'game_thread'
+         [INF] Starting thread 'game_thread' (0x81002d8c)
+         [INF] Supervisor started
+         [INF] Mock UART Driver started
+         [INF] Adventure Game started!
+         [INF] Game waiting for input...
+         [INF] Game received command: help
+         [INF] Game waiting for input...
+         [INF] Game received command: look
+         [INF] Game waiting for input...
+         [INF] Game received command: go north
+         [INF] Game waiting for input...
+         [INF] Game received command: crash
+         [INF] Exception frame 0x81001130:
+         [INF] ra  0x800bfbc0 t0 0x00000005 t1  0x800c01f8 t2  0x00000030
+         [INF] t3  0x00000008 t4 0x00000000 t5  0x8103fdbc t6  0x00000000
+         [INF] a0  0x00000000 a1 0x0000000c a2  0x00000010 a3  0x8103fe18
+         [INF] a4  0x00000008 a5 0x00f397da a6  0x00000000 a7  0x00000010
+         [INF] tp  0x00000000 gp 0x00000800 sp  0x8103fe40
+         [INF] mstatus 0x000000a0
+         [INF] mcause 0x00000005
+         [INF] mtval 0x00000000
+         [INF] epc 0x800bfcba
+         [INF] Terminating thread 'game_thread'
+         [INF] Exiting thread 'game_thread' (0x81002d8c)
+         [ERR] Process 'adventure_game' crashed due to unhandled exception 0
+         [WRN] Process 'adventure_game' exited, restarting...
+         [INF] Starting thread 'game_thread' (0x81002d8c)
+         [INF] Adventure Game started!
+         [INF] Game waiting for input...
+         [INF] Game received command: help
+         [INF] Game waiting for input...
+         [INF] Game received command: exit
+         [INF] Terminating thread 'game_thread'
+         [INF] Exiting thread 'game_thread' (0x81002d8c)
+         [INF] Process 'adventure_game' exited cleanly with code 0
+         [INF] Supervisor shutting down system due to successful game exit.
+         [INF] Shutting down with code 0
 
-   bazelisk build --config k_rp2350 //pw_kernel/target/pw_rp2350/ipc/user:ipc
+----------
+Next steps
+----------
+Check out :ref:`module-pw_kernel-tour` for an in-depth explanation of the
+software architecture of the adventure example.
 
-The output ELF files will be located in the ``bazel-bin/pw_kernel/target/pw_rp2350/ipc/user/`` directory.
-
-To view console output from the RP2350, connect to its serial port. The
-following commands will build the firmware (if necessary) and then connect to
-the device using
-:ref:`pw_tokenizer.serial_detokenizer <module-pw_tokenizer-cli-detokenizing>`
-to display human-readable logs. Replace ``<SERIAL_DEVICE>`` with your RP2350's
-serial port, e.g. ``/dev/ttyACM0`` on Linux or ``/dev/cu.usbmodemXXXXXX`` on
-macOS.
-
-.. _probe-rs: https://probe.rs
-.. _Installation: https://probe.rs/docs/getting-started/installation/
-
-You can flash the compiled ``.elf`` files to the RP2350 using `probe-rs`_.
-See `Installation`_.
-
-Flash one of the tests:
-
-.. code-block:: console
-
-   probe-rs download bazel-bin/pw_kernel/target/pw_rp2350/ipc/user/ipc.elf && probe-rs reset --chip rp2350
-
-Run one of the tests:
-
-.. code-block:: console
-
-   bazelisk run --config k_rp2350 //pw_kernel/target/pw_rp2350/ipc/user:ipc -- -d <SERIAL_DEVICE>
-
-.. tip::
-
-   For the best experience, start the console in one terminal window *before*
-   flashing the device in another. This ensures you capture all log messages
-   from boot and that the detokenizer uses the correct ELF database matching
-   the flashed firmware.
-
--------------
-VS Code setup
--------------
-.. _rust-analyzer: https://rust-analyzer.github.io/
-
-For the best Rust development experience, especially with VS Code, we recommend
-using `rust-analyzer`_.
-
-``rust-analyzer`` needs a ``rust-project.json`` file at the root of your workspace
-to understand the project structure, dependencies, and build configurations.
-You can generate this file using Bazel.
-
-For a given :ref:`configuration <module-pw_kernel-quickstart-config>`:
-
-.. code-block:: console
-
-   bazelisk run @rules_rust//tools/rust_analyzer:gen_rust_project -- --config <config> //pw_kernel/...
-
-Replace ``<config>`` with your chosen configuration, e.g. ``k_host``.
-
-This command creates or updates the ``rust-project.json`` file in your Pigweed
-project root.
-
-To enable ``rust-analyzer`` to provide real-time feedback (errors and warnings)
-in VS Code based on your Bazel build configuration, add the following to your
-Pigweed project's ``.vscode/settings.json`` file.
-
-.. code-block:: json
-
-   "rust-analyzer.check.overrideCommand": [
-     "bazelisk",
-     "build",
-     "--config=k_lint",
-     "--config=$CONFIG",
-     "--@rules_rust//:error_format=json",
-     "--experimental_ui_max_stdouterr_bytes=10485760",
-     "//pw_kernel/..."
-   ],
+.. _git_override: https://bazel.build/rules/lib/globals/module#git_override
+.. _local_path_override: https://bazel.build/rules/lib/globals/module#local_path_override

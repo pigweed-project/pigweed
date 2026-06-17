@@ -6,11 +6,6 @@ Design
 .. pigweed-module-subpage::
    :name: pw_kernel
 
-.. note::
-
-   This is an early draft. The content may change significantly over the
-   next few months.
-
 This document outlines the design philosophy, key features, and current
 capabilities of ``pw_kernel``.
 
@@ -71,8 +66,8 @@ Efficiency
   memory usage and minimal code footprint. Tools like
   :ref:`panic_detector <module-pw_kernel-guides-panic-detector>` help in
   significantly reducing code size, for instance, by identifying and eliminating
-  unnecessary panic paths, contributing to a kernel code size in the ~10kB
-  range for some configurations.
+  unnecessary panic paths, contributing to a kernel code size in the ~16-24kB
+  range.
 - **Zero-allocation design**: The kernel is designed to operate without dynamic
   memory allocation, ensuring predictable behavior and eliminating allocation
   failures. This is achieved through static allocation at build time and
@@ -99,7 +94,7 @@ As an experimental kernel, ``pw_kernel`` currently includes:
 - A preemptive scheduler with thread and process management.
 - Synchronization primitives: spinlocks, mutexes, and events.
 - Timer services and a timer queue for managing time-based events.
-- A system call interface for user-space applications to interact with the
+- A system call interface for userspace applications to interact with the
   kernel.
 - Basic exception handling tailored for supported architectures (Arm Cortex-M,
   RISC-V).
@@ -112,8 +107,12 @@ As an experimental kernel, ``pw_kernel`` currently includes:
   threads in run queues and wait queues. This implementation avoids dynamic
   memory allocation for list nodes and provides constant-time operations.
 - A channel-based IPC system designed for zero-allocation operation, where
-  each channel supports one message in flight at a time, with clear initiator
-  and handler roles.
+  each channel supports one message in flight at a time. IPC channels are
+  asymmetric: only the initiator side can start IPC transactions. The handler
+  side can use signals for out-of-band notifications.
 - A wait group mechanism for efficient event notification, inspired by epoll,
   where kernel objects have signal masks that can be waited on, with all
   allocations happening at add time rather than during wait operations.
+- The ability for userspace processes to monitor and control each other.
+- Shareable ``.text`` sections and :ref:`module-pw_tokenizer`-based logging
+  for reduced overall binary size.

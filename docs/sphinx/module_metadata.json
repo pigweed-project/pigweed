@@ -534,12 +534,12 @@
     ]
   },
   "pw_kernel": {
-    "tagline": "An experimental kernel for embedded systems",
+    "tagline": "A Rust-based kernel for embedded systems",
     "status": "experimental",
     "languages": [
       "Rust"
     ],
-    "size": "~10-16 kB"
+    "size": "~16-24 kB"
   },
   "pw_kvs": {
     "tagline": "Lightweight, persistent key-value store",

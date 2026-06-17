@@ -38,6 +38,7 @@ fn main() -> Result<()> {
     syscall::debug_shutdown(result)
 }
 
+// DOCSTAG: [tour]
 /// Encapsulates the supervisor setup and event loop execution,
 /// returning Ok(()) on successful game exit or a pw_status::Error on failures.
 fn run_supervisor() -> Result<()> {
@@ -94,6 +95,7 @@ fn run_supervisor() -> Result<()> {
         })?;
     }
 }
+// DOCSTAG: [tour]
 
 /// Helper function to log the exact exit status/reason for a terminated process.
 fn log_exit_status(process_handle: u32, status: ExitStatus) {

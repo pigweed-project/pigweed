@@ -133,9 +133,11 @@ impl<const BUFFER_SIZE: usize> StreamServer<BUFFER_SIZE> {
         Ok(header_size + payload_length)
     }
 
+    // DOCSTAG: [tour]
     /// Toggles the peer user signal (Signals::USER) on the client.
     fn set_data_available(&self, available: bool) -> Result<()> {
         syscall::object_set_peer_user_signal(self.ipc_handle, available)?;
         Ok(())
     }
+    // DOCSTAG: [tour]
 }

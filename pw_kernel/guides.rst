@@ -6,12 +6,8 @@ Guides
 .. pigweed-module-subpage::
    :name: pw_kernel
 
-.. note::
-
-   This is an early draft. The content may change significantly over the
-   next few months.
-
-This section provides guides for specific features and tools within ``pw_kernel``.
+This guide covers real-world usage topics such as unit testing and panic
+detecting.
 
 .. _module-pw_kernel-guides-unit-testing:
 
@@ -19,16 +15,15 @@ This section provides guides for specific features and tools within ``pw_kernel`
 Unit testing
 ------------
 ``pw_kernel`` includes a lightweight unit testing framework designed for both
-bare-metal and kernel-aware tests. This framework is crucial for ensuring the
-correctness and reliability of kernel primitives and application code.
+bare-metal and kernel-aware tests.
 
 Writing a test
 ==============
 Tests are written as standard Rust functions annotated with the ``#[test]``
-attribute from the ``unittest`` crate.
-The test function should return a ``unittest::Result<()>``.
+attribute from the ``unittest`` crate. The test function should return a
+``unittest::Result<()>``.
 
-Here's a simple example of a bare-metal test:
+Bare-metal test example:
 
 .. code-block:: rust
 
@@ -80,104 +75,80 @@ or timers), you can mark them as needing the kernel by passing the
        Ok(())
    }
 
-Running tests
-=============
-Tests are typically run via Bazel. See :ref:`module-pw_kernel-quickstart-test`.
-
-The test runner executes all discovered tests and reports their status.
-Bare-metal tests are run first, followed by kernel-aware tests if the kernel
-is initialized.
-
 .. _module-pw_kernel-guides-panic-detector:
 
 --------------
 Panic detector
 --------------
-``pw_kernel`` includes a tool called ``panic detector`` to statically
-analyze a compiled Rust binary (ELF file) to identify all potential panic
-locations. This is crucial for ensuring reliability and can significantly
-reduce code size by eliminating panic-handling overhead.
+``panic_detector`` scans a Rust binary and uses static analysis to display
+a list of all panic call sites.
 
-For detailed instructions on how to integrate and use this tool, see
-:ref:`module-pw_kernel-tooling-panic-detector`.
+Currently only ``rv32`` ELF files are supported.
 
-.. _module-pw_kernel-guides-intrusive-lists:
+Setup:
 
-----------------------
-Intrusive linked lists
-----------------------
-``pw_kernel`` provides a highly efficient and safe intrusive linked list
-implementation in :cs:`pw_kernel/lib/list`. This is a fundamental data structure
-used throughout the kernel, particularly in the scheduler for managing threads
-in run queues and wait queues.
+1. Add a panic handler to the Rust binary which will be used by
+   ``panic_detector`` to find the panic call sites.
 
-Example usage
-=============
-.. code-block:: rust
+   .. code-block:: rust
 
-   use kernel::lib::list::{self, Link, ForeignList, ForeignBox};
-   use core::ptr::NonNull;
+      #[panic_handler]
+      fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+          if let Some(location) = info.location() {
+              panic_is_possible(location.file().as_ptr(), location.file().len(), location.line(), location.column());
+          } else {
+              panic_is_possible(core::ptr::null(), 0, 0, 0);
+          }
+      }
 
-   // 1. Define your struct with an embedded `Link`.
-   struct MyListItem {
-       data: u32,
-       list_link: Link, // The intrusive link
-   }
+      #[unsafe(no_mangle)]
+      #[inline(never)]
+      extern "C" fn panic_is_possible(filename: *const u8, filename_len: usize, line: u32, col: u32) -> !{
+          // The arguments to this function are reverse-engineereddocs.html
+          // from the machine code by static analysis to
+          // display a list of all the panic call-sites to the
+          // user in the mutask_no_panic_test() error message.
+          // See welder/src/check_panic.rs for more details.
 
-   // 2. Define an adapter using the `define_adapter!` macro.
-   //    This connects `MyListItem` and its `list_link` field to the list logic.
-   list::define_adapter!(MyListItemAdapter => MyListItem.list_link);
+          // If this symbol exists in the binary, panics are
+          // possible. Presubmit tests can ensure that this symbol
+          // does not exist in the final binary.  Do not rename or
+          // remove this function.
+          core::hint::black_box(filename);
+          core::hint::black_box(filename_len);
+          core::hint::black_box(line);
+          core::hint::black_box(col);
+          loop {}
+      }
 
-   fn main_example() {
-       // Create a list that can hold `MyListItem`s.
-       let mut my_list = ForeignList::<MyListItem, MyListItemAdapter>::new();
+2. Add a test target to Bazel for the binary to validate.
 
-       // Create some items. In a real scenario, these might be ForeignBox::new_from_ptr
-       // from statically allocated buffers or a dedicated allocator.
-       // For simplicity, we'll imagine they are correctly managed ForeignBox instances.
-       // Note: ForeignBox requires that the underlying memory is valid for its
-       // entire lifetime and that it is not deallocated by other means.
-       let mut item1_storage = MyListItem { data: 10, list_link: Link::new() };
-       let item1 = unsafe { ForeignBox::new_from_ptr(&mut item1_storage) };
+   .. code-block:: bazel
 
-       let mut item2_storage = MyListItem { data: 20, list_link: Link::new() };
-       let item2 = unsafe { ForeignBox::new_from_ptr(&mut item2_storage) };
+      rust_binary(
+          name = "example",
+          srcs = ["main.rs"],
+      )
 
-       // Add items to the list.
-       my_list.push_back(item1);
-       my_list.push_front(item2); // item2 is now at the head.
+      load("//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 
-       // Iterate and access items (ForeignList provides safe iteration).
-       my_list.for_each(|item| {
-           // pw_log::info!("Item data: {}", item.data);
-           Ok::<(), ()>(()) // Placeholder Ok for the closure
-       }).unwrap();
+      rust_binary_no_panics_test(
+          name = "example_no_panic_test",
+          binary = ":example",
+      )
 
-       // Pop an item.
-       if let Some(popped_item) = my_list.pop_head() {
-           // pw_log::info!("Popped item data: {}", popped_item.data);
-           // IMPORTANT: The popped_item (a ForeignBox) must be consumed
-           // or it will panic on drop, ensuring ownership is handled.
-           popped_item.consume();
-       }
+3. Run the bazel test. If any panics are detected , ``panic_detector``
+   prints the locations to ``stdout``.
 
-       // Clean up remaining items
-       while let Some(item) = my_list.pop_head() {
-           item.consume();
-       }
-   }
+   .. code-block:: console
 
-Considerations
---------------
-- **ForeignBox**: The ``ForeignBox`` type is a smart pointer that ensures the
-  underlying memory is valid for its entire lifetime. It is crucial to call
-  ``consume()`` on a ``ForeignBox`` when it is no longer needed to prevent panics
-  on drop.
-- ``UnsafeList`` **is unsafe**: Requires careful handling to prevent dangling
-  pointers or double-frees if not using ``ForeignList``.
-- **Single List Membership**: An item can only be part of one list at a time
-  using a single ``Link`` member.
-
-The intrusive list is a powerful tool for performance-critical data structures
-within the kernel. You'll see it used in :cs:`pw_kernel/kernel/scheduler.rs` for
-managing thread queues.
+      $ bazel test //:example_no_panic_test
+      …
+      Found panic ufmt-0.2.0/src/helpers.rs line 58 column 13. Branch trace:
+        00103896 lui      a0,0x104           (task0_entry)
+        0010389e jal      ra,-1734           (task0_entry)
+        0010320a jalr     ra,ra,-82          (panic_const_add_overflow)
+        001031d2 jalr     ra,ra,-78          (core::panicking::panic_fmt)
+        00103192 jal      ra,2               (rust_begin_unwind)
+        00103194 addi     sp,sp,-16          (panic_is_possible)
+        …

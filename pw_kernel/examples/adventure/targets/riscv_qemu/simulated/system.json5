@@ -15,12 +15,14 @@
   arch: {
     type: "riscv",
   },
+  // DOCSTAG: [layout]
   kernel: {
     flash_start_address: 0x80000000,
     flash_size_bytes: 261120,
     ram_start_address: 0x81000000,
     ram_size_bytes: 65536,
   },
+  // DOCSTAG: [layout]
   apps: [
     {
       name: "supervisor",

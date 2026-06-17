@@ -21,6 +21,7 @@ use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
 
+// DOCSTAG: [tour]
 impl TargetInterface for Target {
     const NAME: &'static str = "Adventure Example (RISCV QEMU)";
 
@@ -45,5 +46,6 @@ impl TargetInterface for Target {
         loop {}
     }
 }
+// DOCSTAG: [tour]
 
 declare_target!(Target);
