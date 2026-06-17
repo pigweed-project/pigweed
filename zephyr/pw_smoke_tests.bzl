@@ -22,8 +22,14 @@ They are run there instead of here as the zephyr-bazel is not yet stable, and
 the setup is evolving.
 """
 
+# Note: If not specified, the default timeout is 5 seconds.
 ZEPHYR_PW_SMOKE_TESTS = {
     "pw_allocator_zephyr_test": {
         "deps": ["//pw_allocator_zephyr:heap_allocator_test"],
+        "timeout": 5,
+    },
+    "pw_chrono_zephyr_test": {
+        "deps": ["//pw_chrono_zephyr:system_timer_test"],
+        "timeout": 10,
     },
 }

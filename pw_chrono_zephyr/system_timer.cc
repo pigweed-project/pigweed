@@ -25,7 +25,9 @@
 namespace pw::chrono {
 namespace {
 
-constexpr SystemClock::duration kMinTimerPeriod = SystemClock::duration(1);
+constexpr SystemClock::duration kMinTimeout = SystemClock::duration(K_TICK_MIN);
+constexpr SystemClock::duration kMaxTimeout = pw::chrono::zephyr::kMaxTimeout;
+
 // Work synchronization objects must be in cache-coherent memory, which excludes
 // stacks on some architectures.
 static k_work_sync work_sync;
@@ -38,9 +40,6 @@ void HandleTimerWork(k_work* item) {
       CONTAINER_OF(delayable_item, backend::ZephyrWorkWrapper, work)->owner;
 
   sys_mutex_lock(&native_type->mutex, K_FOREVER);
-#ifdef CONFIG_TIMEOUT_64BIT
-  native_type->user_callback(native_type->expiry_deadline);
-#else
   // This cannot overflow as `expiry_deadline` is after the start of the epoch.
   const SystemClock::duration time_until_deadline =
       native_type->expiry_deadline - SystemClock::now();
@@ -50,9 +49,9 @@ void HandleTimerWork(k_work* item) {
     // We haven't met the deadline yet, reschedule as far out as possible.
     const SystemClock::duration period =
         std::min(pw::chrono::zephyr::kMaxTimeout, time_until_deadline);
-    k_work_schedule(&native_type->work_wrapper.work, K_TICKS(period.count()));
+    k_work_schedule(&native_type->work_wrapper.work,
+                    K_TICKS(static_cast<k_ticks_t>(period.count())));
   }
-#endif  // CONFIG_TIMEOUT_64BIT
   sys_mutex_unlock(&native_type->mutex);
 }
 
@@ -79,17 +78,15 @@ void SystemTimer::InvokeAt(SystemClock::time_point timestamp) {
 
   // Disallow past timestamps to avoid integer overflows.
   const SystemClock::time_point now = SystemClock::now();
-  native_type_.expiry_deadline = timestamp < now ? now : timestamp;
+  timestamp = timestamp < now ? now : timestamp;
+  native_type_.expiry_deadline = timestamp;
 
   const SystemClock::duration time_until_deadline = timestamp - now;
-  const SystemClock::duration period =
-      IS_ENABLED(CONFIG_TIMEOUT_64BIT)
-          ? time_until_deadline
-          : std::clamp(kMinTimerPeriod,
-                       time_until_deadline,
-                       pw::chrono::zephyr::kMaxTimeout);
+  const SystemClock::duration clamped =
+      std::clamp(kMinTimeout, time_until_deadline, kMaxTimeout);
 
-  k_work_schedule(&native_type_.work_wrapper.work, K_TICKS(period.count()));
+  k_work_reschedule(&native_type_.work_wrapper.work,
+                    K_TICKS(static_cast<k_ticks_t>(clamped.count())));
   sys_mutex_unlock(&native_type_.mutex);
 }
 

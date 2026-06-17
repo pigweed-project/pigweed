@@ -14,6 +14,7 @@
 
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("@zephyr//:cc.bzl", "zephyr_cc_library")
+load("@zephyr//:cc_test.bzl", "zephyr_cc_test")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
@@ -81,4 +82,15 @@ zephyr_cc_library(
         "public_overrides/pw_chrono_backend/system_timer_native.h",
     ],
     strip_include_prefix = "public_overrides",
+)
+
+zephyr_cc_test(
+    name = "system_timer_test",
+    srcs = ["system_timer_test.cc"],
+    deps = [
+        ":system_timer",
+        "//pw_chrono_zephyr:system_clock",
+        "//pw_sync_zephyr:binary_semaphore",
+        "//pw_sync_zephyr:timed_thread_notification",
+    ],
 )
