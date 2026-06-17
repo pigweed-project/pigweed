@@ -601,15 +601,19 @@ StatusWithSize KeyValueStore::Get(std::string_view key,
   PW_TRY_WITH_SIZE(ReadEntry(metadata, entry));
 
   StatusWithSize result = entry.ReadValue(value_buffer, offset_bytes);
-  if (result.ok() && options_.verify_on_read && offset_bytes == 0u) {
-    Status verify_result =
-        entry.VerifyChecksum(key, value_buffer.first(result.size()));
+  if (options_.verify_on_read) {
+    Status verify_result = OkStatus();
+    if (result.ok() && offset_bytes == 0u) {
+      verify_result =
+          entry.VerifyChecksum(key, value_buffer.first(result.size()));
+    } else if (result.ok() || result.status().IsResourceExhausted()) {
+      verify_result = entry.VerifyChecksumInFlash();
+    }
+
     if (!verify_result.ok()) {
       std::memset(value_buffer.data(), 0, result.size());
       return StatusWithSize(verify_result, 0);
     }
-
-    return StatusWithSize(verify_result, result.size());
   }
   return result;
 }

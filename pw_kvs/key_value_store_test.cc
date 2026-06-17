@@ -556,4 +556,94 @@ TEST(InMemoryKvs, SectorWritableBytesUnderflow) {
   EXPECT_EQ(stats.writable_bytes, 8192u);
 }
 
+TEST(InMemoryKvs, Get_PartialAndOffsetChecksumFailure) {
+  Flash flash;
+  ASSERT_EQ(OkStatus(), flash.partition.Erase());
+
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(&flash.partition,
+                                                          default_format);
+  ASSERT_EQ(OkStatus(), kvs.Init());
+
+  const char* key = "MyKey";
+  const char* value = "CorruptedData12345";  // 18 bytes
+  span<const std::byte> value_bytes = as_bytes(span(value, std::strlen(value)));
+
+  ASSERT_EQ(OkStatus(), kvs.Put(key, value_bytes));
+
+  span<std::byte> flash_buf = flash.memory.buffer();
+  bool found = false;
+  for (size_t i = 0; i <= flash_buf.size() - value_bytes.size(); ++i) {
+    if (std::memcmp(&flash_buf[i], value_bytes.data(), value_bytes.size()) ==
+        0) {
+      flash_buf[i] = std::byte{'X'};
+      found = true;
+      break;
+    }
+  }
+  ASSERT_TRUE(found);
+
+  // Test a partial read detects data loss
+  std::array<char, 5> small_buf = {};
+  StatusWithSize result = kvs.Get(key, as_writable_bytes(span(small_buf)));
+  EXPECT_EQ(Status::DataLoss(), result.status());
+  EXPECT_EQ(0u, result.size());
+  for (char c : small_buf) {
+    EXPECT_EQ(c, '\0');
+  }
+
+  // Test an offset read detects data loss
+  std::array<char, 13> offset_buf = {};
+  result = kvs.Get(key, as_writable_bytes(span(offset_buf)), 5);
+  EXPECT_EQ(Status::DataLoss(), result.status());
+  EXPECT_EQ(0u, result.size());
+  for (char c : offset_buf) {
+    EXPECT_EQ(c, '\0');
+  }
+
+  // Test offset read that is partial (ResourceExhausted)
+  std::array<char, 5> small_offset_buf = {};
+  result = kvs.Get(key, as_writable_bytes(span(small_offset_buf)), 5);
+  EXPECT_EQ(Status::DataLoss(), result.status());
+  EXPECT_EQ(0u, result.size());
+  for (char c : offset_buf) {
+    EXPECT_EQ(c, '\0');
+  }
+}
+
+TEST(InMemoryKvs, Get_PartialAndOffsetReadSuccess) {
+  Flash flash;
+  ASSERT_EQ(OkStatus(), flash.partition.Erase());
+
+  KeyValueStoreBuffer<kMaxEntries, kMaxUsableSectors> kvs(&flash.partition,
+                                                          default_format);
+  ASSERT_EQ(OkStatus(), kvs.Init());
+
+  const char* key = "MyKey";
+  const char* value = "UncorruptedData123";  // 18 bytes
+  span<const std::byte> value_bytes = as_bytes(span(value, std::strlen(value)));
+
+  ASSERT_EQ(OkStatus(), kvs.Put(key, value_bytes));
+
+  // Test partial read (ResourceExhausted)
+  std::array<char, 5> small_buf = {};
+  StatusWithSize result = kvs.Get(key, as_writable_bytes(span(small_buf)));
+  EXPECT_EQ(Status::ResourceExhausted(), result.status());
+  EXPECT_EQ(5u, result.size());
+  EXPECT_EQ(std::string_view(small_buf.data(), 5), "Uncor");
+
+  // Test offset read that fits entirely in buffer
+  std::array<char, 15> offset_buf = {};
+  result = kvs.Get(key, as_writable_bytes(span(offset_buf)), 5);
+  EXPECT_EQ(OkStatus(), result.status());
+  EXPECT_EQ(13u, result.size());
+  EXPECT_EQ(std::string_view(offset_buf.data(), 13), "ruptedData123");
+
+  // Test offset read that is partial (ResourceExhausted)
+  std::array<char, 5> small_offset_buf = {};
+  result = kvs.Get(key, as_writable_bytes(span(small_offset_buf)), 5);
+  EXPECT_EQ(Status::ResourceExhausted(), result.status());
+  EXPECT_EQ(5u, result.size());
+  EXPECT_EQ(std::string_view(small_offset_buf.data(), 5), "rupte");
+}
+
 }  // namespace pw::kvs
