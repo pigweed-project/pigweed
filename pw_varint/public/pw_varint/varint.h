@@ -327,7 +327,7 @@ constexpr size_t DecodeUnsigned(ConstByteSpan encoded,
 }
 
 template <typename U>
-constexpr size_t EncodeUnsigned(U uvalue, ByteSpan out_encoded) {
+constexpr size_t EncodeUnsignedFallback(U uvalue, ByteSpan out_encoded) {
   size_t written = 0;
   do {
     if (written >= out_encoded.size()) {
@@ -338,6 +338,18 @@ constexpr size_t EncodeUnsigned(U uvalue, ByteSpan out_encoded) {
 
   out_encoded[written - 1] &= static_cast<std::byte>(0x7f);
   return written;
+}
+
+template <typename U>
+constexpr size_t EncodeUnsigned(U uvalue, ByteSpan out_encoded) {
+  if (uvalue < 128) {
+    if (out_encoded.empty()) {
+      return 0u;
+    }
+    out_encoded[0] = static_cast<std::byte>(uvalue);
+    return 1u;
+  }
+  return EncodeUnsignedFallback(uvalue, out_encoded);
 }
 
 }  // namespace internal
