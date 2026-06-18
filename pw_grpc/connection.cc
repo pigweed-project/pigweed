@@ -180,10 +180,9 @@ Connection::Connection(stream::Reader& reader,
                        RequestCallbacks& callbacks,
                        Allocator* message_assembly_allocator,
                        Allocator& send_allocator)
-    : send_allocator_(send_allocator),
-      shared_state_(std::in_place,
+    : shared_state_(std::in_place,
                     message_assembly_allocator,
-                    send_allocator_,
+                    send_allocator,
                     send_queue),
       reader_(*this, callbacks, reader),
       writer_(*this) {}

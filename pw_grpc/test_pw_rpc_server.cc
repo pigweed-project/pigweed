@@ -20,6 +20,7 @@
 
 #include "pw_allocator/best_fit.h"
 #include "pw_allocator/libc_allocator.h"
+#include "pw_allocator/synchronized_allocator.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_checksum/crc32.h"
@@ -38,6 +39,7 @@
 #include "pw_status/try.h"
 #include "pw_stream/socket_stream.h"
 #include "pw_stream/stream.h"
+#include "pw_sync/mutex.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_thread/thread_core.h"
@@ -189,12 +191,13 @@ class ConnectionThread : public pw::grpc::Connection,
   // ConnectionThread.
   using ConnectionCloseCallback = pw::Function<void()>;
 
-  ConnectionThread(pw::stream::NonSeekableReaderWriter& stream,
-                   const pw::thread::Options& send_thread_options,
-                   pw::grpc::Connection::RequestCallbacks& callbacks,
-                   ConnectionCloseCallback&& connection_close_callback,
-                   pw::Allocator* message_assembly_allocator,
-                   pw::Allocator& send_allocator)
+  ConnectionThread(
+      pw::stream::NonSeekableReaderWriter& stream,
+      const pw::thread::Options& send_thread_options,
+      pw::grpc::Connection::RequestCallbacks& callbacks,
+      ConnectionCloseCallback&& connection_close_callback,
+      pw::Allocator* message_assembly_allocator,
+      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator)
       : pw::grpc::Connection(stream.as_reader(),
                              send_queue_,
                              callbacks,
@@ -285,7 +288,9 @@ int main(int argc, char* argv[]) {
     pw::allocator::LibCAllocator message_assembly_allocator;
 
     std::array<std::byte, kMaxSendQueueSize> send_allocator_data;
-    pw::allocator::BestFitAllocator<> send_allocator(send_allocator_data);
+    pw::allocator::BestFitAllocator<> raw_send_allocator(send_allocator_data);
+    pw::allocator::SynchronizedAllocator<pw::sync::Mutex> send_allocator(
+        raw_send_allocator);
     pw::thread::test::TestThreadContext connection_thread_context;
     pw::thread::test::TestThreadContext send_thread_context;
     ConnectionThread conn(

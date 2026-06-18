@@ -30,6 +30,22 @@ responses.
 Refer to the ``test_pw_rpc_server.cc`` file for detailed usage example of how to
 integrate into a ``pw_rpc`` network.
 
+----------------------------
+Thread Safety and Allocators
+----------------------------
+The ``Connection`` class and the ``SendQueue`` implementation typically run on
+different threads (e.g., one thread driving reads via ``ProcessFrame``, and
+another driving writes via ``SendQueue::Run``).
+
+Both ``Connection`` and ``SendQueue`` require access to an allocator for managing
+send buffers. To avoid data races:
+
+* They **must** share the same allocator reference.
+* This allocator **must** be externally synchronized (for example, by wrapping it
+  in a :cc:`pw::allocator::SynchronizedAllocator<pw::sync::Mutex>`).
+* The allocator **must** outlive both the ``Connection`` and the ``SendQueue``
+  instances.
+
 -----
 Build
 -----

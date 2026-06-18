@@ -14,6 +14,7 @@
 #pragma once
 
 #include "pw_allocator/allocator.h"
+#include "pw_allocator/synchronized_allocator.h"
 #include "pw_async/dispatcher.h"
 #include "pw_async_basic/dispatcher.h"
 #include "pw_containers/dynamic_deque.h"
@@ -33,10 +34,10 @@ namespace pw::grpc {
 // send.
 class DefaultSendQueue : public SendQueue {
  public:
-  DefaultSendQueue(stream::ReaderWriter& socket, Allocator& allocator)
-      : socket_(socket),
-        send_task_(pw::bind_member<&DefaultSendQueue::ProcessSendQueue>(this)),
-        queue_(allocator) {}
+  template <typename LockType>
+  DefaultSendQueue(stream::ReaderWriter& socket,
+                   allocator::SynchronizedAllocator<LockType>& allocator)
+      : DefaultSendQueue(socket, static_cast<Allocator&>(allocator)) {}
 
   // Thread safe. Queues buffer to be sent on send thread. Returns false if
   // there was no queue space available from allocator.
@@ -54,6 +55,11 @@ class DefaultSendQueue : public SendQueue {
       PW_LOCKS_EXCLUDED(send_mutex_);
 
  private:
+  DefaultSendQueue(stream::ReaderWriter& socket, Allocator& allocator)
+      : socket_(socket),
+        send_task_(pw::bind_member<&DefaultSendQueue::ProcessSendQueue>(this)),
+        queue_(allocator) {}
+
   void ProcessSendQueue(async::Context& context, Status status)
       PW_LOCKS_EXCLUDED(send_mutex_);
 

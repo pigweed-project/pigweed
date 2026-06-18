@@ -113,11 +113,17 @@ class Connection {
     virtual void OnCancel(StreamId id) = 0;
   };
 
+  template <typename LockType>
   Connection(stream::Reader& reader,
              SendQueue& send_queue,
              RequestCallbacks& callbacks,
              Allocator* message_assembly_allocator,
-             Allocator& send_allocator);
+             allocator::SynchronizedAllocator<LockType>& send_allocator)
+      : Connection(reader,
+                   send_queue,
+                   callbacks,
+                   message_assembly_allocator,
+                   static_cast<Allocator&>(send_allocator)) {}
 
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
@@ -160,6 +166,12 @@ class Connection {
   }
 
  private:
+  Connection(stream::Reader& reader,
+             SendQueue& send_queue,
+             RequestCallbacks& callbacks,
+             Allocator* message_assembly_allocator,
+             Allocator& send_allocator);
+
   // RFC 9113 §6.9.2. Flow control windows are unsigned 31-bit numbers, but
   // because of the following requirement from §6.9.2, we track flow control
   // windows with signed integers. "A change to SETTINGS_INITIAL_WINDOW_SIZE can
@@ -407,7 +419,6 @@ class Connection {
   }
 
   // Shared state that is thread-safe.
-  allocator::SynchronizedAllocator<sync::Mutex> send_allocator_;
   sync::InlineBorrowable<SharedState> shared_state_;
   Reader reader_;
   Writer writer_;

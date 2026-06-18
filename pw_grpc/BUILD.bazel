@@ -121,6 +121,7 @@ cc_library(
     deps = [
         ":send_queue",
         "//pw_allocator",
+        "//pw_allocator:synchronized_allocator",
         "//pw_async:dispatcher",
         "//pw_async_basic:dispatcher",
         "//pw_bytes",
@@ -216,6 +217,7 @@ cc_binary(
         ":pw_rpc_handler",
         "//pw_allocator:best_fit",
         "//pw_allocator:libc_allocator",
+        "//pw_allocator:synchronized_allocator",
         "//pw_assert_basic:pw_assert_basic_handler",
         "//pw_assert_log:assert_backend",
         "//pw_assert_log:check_backend",
@@ -230,6 +232,7 @@ cc_binary(
         "//pw_stream",
         "//pw_stream:socket_stream",
         "//pw_string",
+        "//pw_sync:mutex",
         "//pw_thread:test_thread_context",
         "//pw_thread:thread",
         "//pw_thread:thread_core",

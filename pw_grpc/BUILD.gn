@@ -67,6 +67,7 @@ pw_source_set("default_send_queue") {
   deps = [
     ":send_queue",
     "$dir_pw_allocator",
+    "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_async:dispatcher",
     "$dir_pw_async_basic:dispatcher",
     "$dir_pw_bytes",
@@ -141,6 +142,7 @@ pw_executable("test_pw_rpc_server") {
     ":grpc_channel_output",
     ":pw_rpc_handler",
     "$dir_pw_allocator:best_fit",
+    "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_assert_basic:pw_assert_basic_handler",
     "$dir_pw_assert_log:assert_backend",
     "$dir_pw_assert_log:check_backend",
@@ -154,6 +156,7 @@ pw_executable("test_pw_rpc_server") {
     "$dir_pw_stream",
     "$dir_pw_stream:socket_stream",
     "$dir_pw_string",
+    "$dir_pw_sync:mutex",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
     "$dir_pw_thread:thread_core",
