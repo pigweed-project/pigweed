@@ -31,6 +31,7 @@ constexpr size_t H4SizeForL2capData(uint16_t data_length) {
       emboss::AclDataFrameHeader::IntrinsicSizeInBytes() + l2cap_packet_size;
   return sizeof(emboss::H4PacketType) + acl_packet_size;
 }
+
 }  // namespace
 
 CreditBasedFlowControlTxEngine::CreditBasedFlowControlTxEngine(
@@ -103,7 +104,10 @@ Result<H4PacketWithH4> CreditBasedFlowControlTxEngine::GenerateNextPacket(
     first_kframe_writer->pdu_length().Write(pdu_data_size);
     first_kframe_writer->channel_id().Write(remote_cid_);
     first_kframe_writer->sdu_length().Write(sdu.size());
-    PW_CHECK(first_kframe_writer->Ok());
+    // Emboss's Ok() checks the payload array, which would trigger MSan
+    // use-of-uninitialized-value if checked before the payload is copied.
+    // So we only check IsComplete() bounds check here.
+    PW_CHECK(first_kframe_writer->IsComplete());
 
     auto payload = first_kframe_writer->payload();
     backing_storage =
@@ -115,6 +119,8 @@ Result<H4PacketWithH4> CreditBasedFlowControlTxEngine::GenerateNextPacket(
     PW_CHECK(subsequent_kframe_writer.ok());
     subsequent_kframe_writer->pdu_length().Write(pdu_data_size);
     subsequent_kframe_writer->channel_id().Write(remote_cid_);
+    PW_CHECK(subsequent_kframe_writer->IsComplete());
+
     auto payload = subsequent_kframe_writer->payload();
     backing_storage =
         span<uint8_t>(payload.BackingStorage().data(), payload.SizeInBytes());

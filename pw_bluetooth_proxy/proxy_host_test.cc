@@ -5317,7 +5317,7 @@ TEST_F(AclFragTest, RecombineMaxValidSizePdu) {
   constexpr size_t kExpectedH4Size =
       1 + emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
       emboss::BasicL2capHeader::IntrinsicSizeInBytes() + kL2capPayloadSize;
-  std::array<uint8_t, kExpectedH4Size> expected_h4;
+  std::array<uint8_t, kExpectedH4Size> expected_h4{};
   {
     Result<emboss::AclDataFrameWriter> acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(
@@ -5400,7 +5400,7 @@ TEST_F(AclFragTest, RecombineMaxValidSizePdu) {
         emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
         emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
         kFirstFragmentPayloadSize;
-    std::array<uint8_t, kFirstFragmentHciSize> hci_first;
+    std::array<uint8_t, kFirstFragmentHciSize> hci_first{};
     Result<emboss::AclDataFrameWriter> acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_first);
     acl->header().handle().Write(kHandle);
@@ -5433,7 +5433,7 @@ TEST_F(AclFragTest, RecombineMaxValidSizePdu) {
     constexpr size_t kSecondFragmentHciSize =
         emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
         kSecondFragmentPayloadSize;
-    std::array<uint8_t, kSecondFragmentHciSize> hci_cont;
+    std::array<uint8_t, kSecondFragmentHciSize> hci_cont{};
     Result<emboss::AclDataFrameWriter> acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_cont);
     acl->header().handle().Write(kHandle);
@@ -5482,7 +5482,7 @@ TEST_F(AclFragTest, PassThroughLargePdu) {
         emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
         emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
         kFirstFragmentPayloadSize;
-    std::array<uint8_t, kFirstFragmentHciSize> hci_first;
+    std::array<uint8_t, kFirstFragmentHciSize> hci_first{};
     Result<emboss::AclDataFrameWriter> acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_first);
     acl->header().handle().Write(kHandle);
@@ -5515,7 +5515,7 @@ TEST_F(AclFragTest, PassThroughLargePdu) {
     constexpr size_t kSecondFragmentHciSize =
         emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
         kSecondFragmentPayloadSize;
-    std::array<uint8_t, kSecondFragmentHciSize> hci_cont;
+    std::array<uint8_t, kSecondFragmentHciSize> hci_cont{};
     Result<emboss::AclDataFrameWriter> acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_cont);
     acl->header().handle().Write(kHandle);

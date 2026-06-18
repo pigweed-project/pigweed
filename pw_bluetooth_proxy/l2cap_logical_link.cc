@@ -17,6 +17,7 @@
 #include <pw_bluetooth/emboss_util.h>
 
 #include <cinttypes>
+#include <cstring>
 
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
@@ -455,6 +456,8 @@ L2capLogicalLink::HandleAclData(Direction direction,
     // Populate the H4 and ACL headers ahead of the recombined PDU.
     h4_span[0] = static_cast<uint8_t>(emboss::H4PacketType::ACL_DATA);
     pw::span<uint8_t> hci_span = h4_span.subspan(kH4PacketIndicatorSize);
+    std::memset(
+        hci_span.data(), 0, emboss::AclDataFrameHeader::IntrinsicSizeInBytes());
     Result<emboss::AclDataFrameWriter> recombined_acl =
         MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_span);
     PW_CHECK_OK(recombined_acl);

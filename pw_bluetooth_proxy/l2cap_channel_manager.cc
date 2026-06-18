@@ -14,6 +14,7 @@
 
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 
+#include <cstring>
 #include <mutex>
 #include <optional>
 
@@ -358,6 +359,9 @@ Result<H4PacketWithH4> L2capChannelManager::GetAclH4Packet(uint16_t size) {
         ForceDrainChannelQueues();
       });
   h4_packet.SetH4Type(emboss::H4PacketType::ACL_DATA);
+  std::memset(h4_packet.GetHciSpan().data(),
+              0,
+              emboss::AclDataFrameHeader::IntrinsicSizeInBytes());
 
   return h4_packet;
 }
