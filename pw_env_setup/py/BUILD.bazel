@@ -35,18 +35,27 @@ exports_files([
     "pw_env_setup/virtualenv_setup/upstream_requirements_windows_lock.txt",
 ] + glob(["pw_env_setup/**/*.json"]))
 
+filegroup(
+    # Default to an empty group since not all projects will use a pigweed.json.
+    name = "default_pigweed_json",
+    srcs = [],
+    visibility = ["//visibility:public"],
+)
+
 # Downstream projects should set this label flag to point to their pigweed.json
 # file.
 label_flag(
     name = "pigweed_json",
-    # We don't provide a default pigweed.json. Every project needs their own!
-    build_setting_default = "//pw_build:unspecified_backend",
+    build_setting_default = ":default_pigweed_json",
 )
 
 pw_py_library(
     name = "pw_env_setup",
     srcs = [
         "pw_env_setup/config_file.py",
+    ],
+    data = [
+        ":pigweed_json",
     ],
     imports = ["."],
     # Must have the same tags as pw_env_setup_private to avoid action conflicts.

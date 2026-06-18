@@ -20,9 +20,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
+
+_LOG = logging.getLogger(__name__)
 
 try:
     # This will only succeed when using config_file from Bazel.
@@ -93,7 +96,16 @@ def load(env: Mapping[str, str] | None = None) -> dict:
     env = _resolve_env(env)
 
     if use_runfiles:
-        config_path = path_from_runfiles()
+        try:
+            config_path = path_from_runfiles()
+        except ValueError:
+            _LOG.warning('pigweed.json not found; defaulting to empty config.')
+            _LOG.warning(
+                'To configure Pigweed, point the '
+                '//pw_env_setup/py:pigweed_json label flag to a filegroup '
+                'containing your pigweed.json file.'
+            )
+            return {}
     else:
         config_path = path(env=env)
 
