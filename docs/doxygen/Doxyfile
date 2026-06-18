@@ -226,6 +226,13 @@ TAB_SIZE               = 2
 # https://www.doxygen.nl/manual/config.html#cfg_use_mdfile_as_mainpage
 USE_MDFILE_AS_MAINPAGE = docs/doxygen/index.md
 
+# Do not generate a verbatim copy of each header that Doxygen processes.
+# These verbatim copies of headers can cause a lot of noise in our search
+# results.
+#
+# https://www.doxygen.nl/manual/config.html#cfg_verbatim_headers
+VERBATIM_HEADERS       = NO
+
 # https://www.doxygen.nl/manual/config.html#cfg_warn_as_error
 WARN_AS_ERROR          = YES
 
