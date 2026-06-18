@@ -19,3 +19,11 @@
   do {                     \
     PW_ASSERT(false);      \
   } while (0)
+
+#define CHRE_HANDLE_FATAL_ERROR(fmt, ...) \
+  do {                                    \
+    LOGE(fmt, ##__VA_ARGS__);             \
+    FATAL_ERROR_QUIT();                   \
+    while (1) {                           \
+    }                                     \
+  } while (0)
