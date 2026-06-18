@@ -1278,6 +1278,33 @@ TEST(Codegen, FindStream) {
   EXPECT_EQ(Pigweed::FindMagicNumber(reader).status(), Status::NotFound());
 }
 
+TEST(Codegen, FindBufferShadowed) {
+  // clang-format off
+  constexpr uint8_t proto_data[] = {
+    // pigweed.magic_number = 42
+    0x08, 0x2a,
+    // pigweed.magic_number = 99
+    0x08, 0x63,
+  };
+  // clang-format on
+
+  EXPECT_EQ(Pigweed::FindMagicNumber(as_bytes(span(proto_data))).value(), 99u);
+}
+
+TEST(Codegen, FindStreamShadowed) {
+  // clang-format off
+  constexpr uint8_t proto_data[] = {
+    // pigweed.magic_number = 42
+    0x08, 0x2a,
+    // pigweed.magic_number = 99
+    0x08, 0x63,
+  };
+  // clang-format on
+
+  stream::MemoryReader reader(as_bytes(span(proto_data)));
+  EXPECT_EQ(Pigweed::FindMagicNumber(reader).value(), 99u);
+}
+
 TEST(CodegenRepeated, Find) {
   // clang-format off
   constexpr uint8_t proto_data[] = {

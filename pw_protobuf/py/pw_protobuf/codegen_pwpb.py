@@ -464,7 +464,8 @@ class FindMethod(ReadMethod):
         else:
             lines += [
                 f'return {PROTOBUF_NAMESPACE}::{self._find_fn()}'
-                f'(message, {self.field_cast()});'
+                f'(message, {self.field_cast()}, '
+                '::pw::protobuf::Occurrence::kLast);'
             ]
         return lines
 
@@ -499,7 +500,8 @@ class FindStreamMethod(FindMethod):
         else:
             lines += [
                 f'return {PROTOBUF_NAMESPACE}::{self._find_fn()}'
-                f'(message_stream, {self.field_cast()});'
+                f'(message_stream, {self.field_cast()}, '
+                '::pw::protobuf::Occurrence::kLast);'
             ]
         return lines
 
@@ -2330,7 +2332,8 @@ class BytesFindStreamMethod(FindStreamMethod):
         lines: list[str] = []
         lines += [
             f'return {PROTOBUF_NAMESPACE}::{self._find_fn()}'
-            f'(message_stream, {self.field_cast()}, out);'
+            f'(message_stream, {self.field_cast()}, out, '
+            '::pw::protobuf::Occurrence::kLast);'
         ]
         return lines
 
@@ -2443,7 +2446,8 @@ class StringFindStreamMethod(FindStreamMethod):
         lines: list[str] = []
         lines += [
             f'return {PROTOBUF_NAMESPACE}::{self._find_fn()}'
-            f'(message_stream, {self.field_cast()}, out);'
+            f'(message_stream, {self.field_cast()}, out, '
+            '::pw::protobuf::Occurrence::kLast);'
         ]
         return lines
 
@@ -2467,7 +2471,8 @@ class StringFindStreamMethodInlineString(FindStreamMethod):
         lines: list[str] = []
         lines += [
             f'return {PROTOBUF_NAMESPACE}::{self._find_fn()}'
-            f'(message_stream, {self.field_cast()}, out);'
+            f'(message_stream, {self.field_cast()}, out, '
+            '::pw::protobuf::Occurrence::kLast);'
         ]
         return lines
 
@@ -2635,7 +2640,8 @@ class EnumFindMethod(FindMethod):
         lines += [
             '::pw::Result<uint32_t> result = '
             f'{PROTOBUF_NAMESPACE}::{self._find_fn()}'
-            f'(message, {self.field_cast()});',
+            f'(message, {self.field_cast()}, '
+            '::pw::protobuf::Occurrence::kLast);',
             'if (!result.ok()) {',
             '  return result.status();',
             '}',
@@ -2664,7 +2670,8 @@ class EnumFindStreamMethod(FindStreamMethod):
         lines += [
             '::pw::Result<uint32_t> result = '
             f'{PROTOBUF_NAMESPACE}::{self._find_fn()}'
-            f'(message_stream, {self.field_cast()});',
+            f'(message_stream, {self.field_cast()}, '
+            '::pw::protobuf::Occurrence::kLast);',
             'if (!result.ok()) {',
             '  return result.status();',
             '}',

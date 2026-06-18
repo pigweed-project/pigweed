@@ -598,6 +598,9 @@ The ``raw_values`` field can be iterated over as follows:
    read multiple fields, it is more efficient to instantiate your own decoder as
    described above.
 
+   For non-repeated fields, the last occurrence found is returned, in compliance
+   with the Protobuf specification.
+
 
 Direct Writers and Readers
 ==========================
@@ -716,11 +719,17 @@ boilerplate. ``pw_protobuf`` provides convenient :cc:`Find APIs
    have to read multiple fields, it is more efficient to instantiate your own
    decoder as described above.
 
+   You must specify whether to find the first or last occurrence using the
+   ``Occurrence`` argument. ``Occurrence::kLast`` is spec-compliant for
+   non-repeated fields.
+
 .. code-block:: cpp
 
    pw::Status PrintCustomerAge(pw::ConstByteSpan serialized_customer) {
      pw::Result<uint32_t> age =
-         pw::protobuf::FindUint32(serialized_customer, Customer::Fields::kAge);
+         pw::protobuf::FindUint32(serialized_customer,
+                                  Customer::Fields::kAge,
+                                  pw::protobuf::Occurrence::kLast);
      if (!age.ok()) {
        return age.status();
      }

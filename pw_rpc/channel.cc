@@ -35,8 +35,8 @@ namespace pw::rpc {
 namespace internal {
 
 Status OverwriteChannelId(ByteSpan rpc_packet, uint32_t channel_id_under_128) {
-  Result<ConstByteSpan> raw_field =
-      protobuf::FindRaw(rpc_packet, Fields::kChannelId);
+  Result<ConstByteSpan> raw_field = protobuf::FindRaw(
+      rpc_packet, Fields::kChannelId, protobuf::Occurrence::kLast);
   if (!raw_field.ok()) {
     return Status::DataLoss();  // Unexpected packet format
   }

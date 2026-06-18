@@ -44,6 +44,12 @@
 //
 namespace pw::protobuf {
 
+enum class Occurrence;
+
+namespace internal {
+class RawFinder;
+}  // namespace internal
+
 /// @module{pw_protobuf}
 
 // TODO(frolv): Rename this to MemoryDecoder to match the encoder naming.
@@ -163,8 +169,7 @@ class Decoder {
   }
 
  private:
-  // Allow only the FindRaw function to access the raw bytes of the field.
-  friend Result<ConstByteSpan> FindRaw(ConstByteSpan, uint32_t);
+  friend class internal::RawFinder;
 
   // Returns the raw field value. The decoder MUST be at a valid field.
   ConstByteSpan RawFieldBytes() { return GetFieldSize().ValueBytes(proto_); }
