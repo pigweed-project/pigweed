@@ -179,7 +179,9 @@ Result<DecodedEvent> TokenizedDecoder::Decode(ConstByteSpan data) {
   // Read time
   uint64_t time_delta;
   PW_TRY(varint::Read(reader, &time_delta));
-  last_timestamp_us_ += (usec_per_tick() * time_delta);
+  last_timestamp_us_ +=
+      (time_delta / ticks_per_sec_) * 1000000 +
+      ((time_delta % ticks_per_sec_) * 1000000) / ticks_per_sec_;
   event.timestamp_usec = last_timestamp_us_;
 
   // Trace ID

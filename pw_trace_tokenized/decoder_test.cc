@@ -217,5 +217,64 @@ TEST(TokenizedDecoder, MainTokenCollision) {
   EXPECT_EQ(result.status(), Status::DataLoss());
 }
 
+TEST(TokenizedDecoder, HighFrequencyTimestampCalculation) {
+  // Set up detokenizer
+  static constexpr char kTokenDbCsv[] =
+      "11223344,,trace,"
+      "PW_TRACE_EVENT_TYPE_INSTANT|0|MyModule|MyGroup|MyLabel\n";
+  pw::Result<Detokenizer> detok = Detokenizer::FromCsv(kTokenDbCsv);
+  PW_CHECK_OK(detok);
+
+  // --- Case 1: Underflow Test (High Frequency, Small Delta) ---
+  // Frequency: 30 MHz (generic high frequency > 1 MHz)
+  // Time Delta: 30,000 ticks (1 ms)
+  // Expected Microseconds: 1,000 us (1 ms)
+  {
+    constexpr uint64_t kHighFrequency = 30000000;
+    constexpr uint64_t kTimeDeltaTicks = 30000;
+
+    std::array<std::byte, 20> buffer;
+    buffer[1] = std::byte{0x44};
+    buffer[2] = std::byte{0x33};
+    buffer[3] = std::byte{0x22};
+    buffer[4] = std::byte{0x11};
+    size_t varint_size =
+        varint::Encode(kTimeDeltaTicks, pw::span<std::byte>(buffer).subspan(5));
+    buffer[0] = std::byte{static_cast<uint8_t>(4 + varint_size)};
+
+    TokenizedDecoder decoder(*detok, kHighFrequency);
+    stream::MemoryReader reader(
+        pw::span<std::byte>(buffer).first(1 + 4 + varint_size));
+    auto result = decoder.ReadSizePrefixed(reader);
+    PW_TEST_ASSERT_OK(result);
+    EXPECT_EQ(result->timestamp_usec, 1000u);
+  }
+
+  // --- Case 2: Overflow Test (High Frequency, Large Delta) ---
+  // Frequency: 1 GHz (1,000,000,000 Hz)
+  // Time Delta: 20,000,000,000,000 ticks (20,000 seconds)
+  // Expected Microseconds: 20,000,000,000 us (20,000 seconds)
+  {
+    constexpr uint64_t kHighFrequency = 1000000000;
+    constexpr uint64_t kTimeDeltaTicks = 20000000000000uLL;
+
+    std::array<std::byte, 20> buffer;
+    buffer[1] = std::byte{0x44};
+    buffer[2] = std::byte{0x33};
+    buffer[3] = std::byte{0x22};
+    buffer[4] = std::byte{0x11};
+    size_t varint_size =
+        varint::Encode(kTimeDeltaTicks, pw::span<std::byte>(buffer).subspan(5));
+    buffer[0] = std::byte{static_cast<uint8_t>(4 + varint_size)};
+
+    TokenizedDecoder decoder(*detok, kHighFrequency);
+    stream::MemoryReader reader(
+        pw::span<std::byte>(buffer).first(1 + 4 + varint_size));
+    auto result = decoder.ReadSizePrefixed(reader);
+    PW_TEST_ASSERT_OK(result);
+    EXPECT_EQ(result->timestamp_usec, 20000000000uLL);
+  }
+}
+
 }  // namespace
 }  // namespace pw::trace
