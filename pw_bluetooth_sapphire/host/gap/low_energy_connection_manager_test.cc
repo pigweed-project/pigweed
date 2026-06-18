@@ -3887,6 +3887,58 @@ TEST_F(LowEnergyConnectionManagerTest,
   }
 }
 
+TEST_F(LowEnergyConnectionManagerTest,
+       ConnectSucceedsThenAutoConnectTimesOutDisablesAutoConnect) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  auto success_cb = [&conn_handle](auto result) {
+    ASSERT_EQ(fit::ok(), result);
+    conn_handle = std::move(result).value();
+    EXPECT_TRUE(conn_handle->active());
+  };
+
+  conn_mgr()->Connect(peer->identifier(), success_cb, kConnectionOptions);
+  RunUntilIdle();
+  peer->MutLe().SetBondData(sm::PairingData{});
+
+  EXPECT_EQ(1u, connected_peers().count(kAddress0));
+  ASSERT_TRUE(conn_handle);
+  EXPECT_EQ(peer->identifier(), conn_handle->peer_identifier());
+  EXPECT_TRUE(peer->le()->should_auto_connect());
+  EXPECT_EQ(Peer::ConnectionState::kConnected, peer->le()->connection_state());
+
+  test_device()->Disconnect(peer->address());
+  RunUntilIdle();
+
+  EXPECT_EQ(Peer::ConnectionState::kNotConnected,
+            peer->le()->connection_state());
+  EXPECT_TRUE(peer->le()->should_auto_connect());
+
+  FakePeer* peer_ref = test_device()->FindPeer(peer->address());
+  ASSERT_TRUE(peer_ref);
+  peer_ref->set_force_pending_connect(true);
+
+  ConnectionResult result = fit::ok(nullptr);
+  auto failure_cb = [&result](auto res) { result = std::move(res); };
+
+  const LowEnergyConnectionOptions kAutoConnectOptions{.auto_connect = true};
+  conn_mgr()->Connect(peer->identifier(), failure_cb, kAutoConnectOptions);
+  ASSERT_TRUE(peer->le());
+  EXPECT_EQ(Peer::ConnectionState::kInitializing,
+            peer->le()->connection_state());
+
+  RunFor(kLECreateConnectionTimeout);
+
+  ASSERT_TRUE(result.is_error());
+  EXPECT_EQ(HostError::kTimedOut, result.error_value());
+  EXPECT_EQ(Peer::ConnectionState::kNotConnected,
+            peer->le()->connection_state());
+  EXPECT_FALSE(peer->le()->should_auto_connect());
+}
+
 #ifndef NINSPECT
 TEST_F(LowEnergyConnectionManagerTest, Inspect) {
   inspect::Inspector inspector;

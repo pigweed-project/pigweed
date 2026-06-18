@@ -46,25 +46,45 @@ namespace bt::gap {
 namespace {
 
 // If an auto-connect attempt fails with any of the following error codes, we
-// will stop auto- connecting to the peer until the next successful connection.
-// We have only observed this issue with the 0x3e
-// "kConnectionFailedToBeEstablished" error in the field, but have included
-// these other errors based on their descriptions in v5.2 Vol. 1 Part F
-// Section 2.
-bool ShouldStopAlwaysAutoConnecting(pw::bluetooth::emboss::StatusCode err) {
+// will stop autoconnecting to the peer until the next successful connection.
+bool ShouldStopAlwaysAutoConnecting(const hci::Error& err) {
   PW_MODIFY_DIAGNOSTICS_PUSH();
   PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
-  switch (err) {
-    case pw::bluetooth::emboss::StatusCode::CONNECTION_TIMEOUT:
-    case pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_SECURITY:
-    case pw::bluetooth::emboss::StatusCode::CONNECTION_ACCEPT_TIMEOUT_EXCEEDED:
-    case pw::bluetooth::emboss::StatusCode::CONNECTION_TERMINATED_BY_LOCAL_HOST:
-    case pw::bluetooth::emboss::StatusCode::CONNECTION_FAILED_TO_BE_ESTABLISHED:
-      return true;
-    default:
-      return false;
+
+  // We have only observed this issue with the 0x3e
+  // "kConnectionFailedToBeEstablished" error in the field, but have included
+  // these other errors based on their descriptions in v5.2 Vol. 1 Part
+  // F Section 2.
+  if (err.is_protocol_error()) {
+    switch (err.protocol_error()) {
+      case pw::bluetooth::emboss::StatusCode::CONNECTION_TIMEOUT:
+      case pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_SECURITY:
+      case pw::bluetooth::emboss::StatusCode::
+          CONNECTION_ACCEPT_TIMEOUT_EXCEEDED:
+      case pw::bluetooth::emboss::StatusCode::
+          CONNECTION_TERMINATED_BY_LOCAL_HOST:
+      case pw::bluetooth::emboss::StatusCode::
+          CONNECTION_FAILED_TO_BE_ESTABLISHED:
+        return true;
+      default:
+        return false;
+    }
   }
+
+  if (err.is_host_error()) {
+    switch (err.host_error()) {
+      // If the connection attempt times out, we should stop auto-connecting to
+      // prevent an endless cycle of connection attempts that repeatedly time
+      // out (e.g. if the peer is visible via advertisements but unreachable).
+      case bt::HostError::kTimedOut:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   PW_MODIFY_DIAGNOSTICS_POP();
+  return false;
 }
 
 pw::bluetooth::emboss::LESleepClockAccuracyRange WorstCaseSca(
@@ -766,21 +786,24 @@ void LowEnergyConnectionManager::ProcessConnectResult(
   if (result.is_error()) {
     const hci::Error err = result.error_value();
     Peer* const peer = peer_cache_->FindById(peer_id);
+
+    const bool is_connected =
+        peer && connections_.find(peer->identifier()) != connections_.end();
+    const bool is_auto_connect_attempt =
+        request.connection_options().auto_connect;
+
     // Peer may have been forgotten (causing this error).
     // A separate connection may have been established in the other direction
     // while this connection was connecting, in which case the peer state should
     // not be updated.
-    if (peer && connections_.find(peer->identifier()) == connections_.end()) {
-      if (request.connection_options().auto_connect &&
-          err.is_protocol_error() &&
-          ShouldStopAlwaysAutoConnecting(err.protocol_error())) {
-        // We may see a peer's connectable advertisements, but fail to establish
-        // a connection to the peer (e.g. due to asymmetrical radio TX power).
-        // Unsetting the AutoConnect flag here prevents a loop of "see peer
-        // device, attempt auto-connect, fail to establish connection".
-        peer->MutLe().set_auto_connect_behavior(
-            Peer::AutoConnectBehavior::kSkipUntilNextConnection);
-      }
+    if (!is_connected && is_auto_connect_attempt &&
+        ShouldStopAlwaysAutoConnecting(err)) {
+      // We may see a peer's connectable advertisements, but fail to establish
+      // a connection to the peer (e.g. due to asymmetrical radio TX power).
+      // Unsetting the AutoConnect flag here prevents a loop of "see peer
+      // device, attempt auto-connect, fail to establish connection".
+      peer->MutLe().set_auto_connect_behavior(
+          Peer::AutoConnectBehavior::kSkipUntilNextConnection);
     }
 
     const HostError host_error =
