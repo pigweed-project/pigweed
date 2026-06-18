@@ -14,6 +14,7 @@
 """Unit tests for client/digest_parser.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/client:digest_parser.bzl", "get_digest")
 
 def _get_digest_test_impl(ctx):
@@ -58,7 +59,7 @@ four sha256 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
 _get_digest_test = unittest.make(_get_digest_test_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         _get_digest_test,
     )

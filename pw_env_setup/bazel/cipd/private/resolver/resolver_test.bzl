@@ -14,6 +14,7 @@
 """Unit tests for resolver.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/resolver:resolver.bzl", "resolve_repo_configuration")
 
 def _resolve_repo_configurations_test_impl(ctx):
@@ -368,7 +369,7 @@ def _resolve_repo_configurations_test_impl(ctx):
 resolve_repo_configurations_test = unittest.make(_resolve_repo_configurations_test_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         resolve_repo_configurations_test,
     )

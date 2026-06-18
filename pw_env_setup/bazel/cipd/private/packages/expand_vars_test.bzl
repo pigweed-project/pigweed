@@ -14,6 +14,7 @@
 """Unit tests for packages/expand_vars.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/packages:expand_vars.bzl", "expand_vars")
 
 def _os(name, arch):
@@ -77,7 +78,7 @@ def _expand_vars_test_impl(ctx):
 expand_vars_test = unittest.make(_expand_vars_test_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         expand_vars_test,
     )

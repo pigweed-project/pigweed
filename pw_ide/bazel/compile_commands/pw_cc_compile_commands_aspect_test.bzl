@@ -14,6 +14,7 @@
 """Tests for pw_cc_compile_commands_aspect."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load(":pw_cc_compile_commands_aspect.bzl", "compile_commands_aspect_testing")
 
 def _overlapping_map_len_key(kv):
@@ -123,7 +124,7 @@ def _get_cpp_compile_commands_ignored_rule_test_impl(ctx):
 get_cpp_compile_commands_ignored_rule_test = unittest.make(_get_cpp_compile_commands_ignored_rule_test_impl)
 
 def pw_cc_compile_commands_aspect_test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         remap_arg_test,
         remap_target_infos_test,

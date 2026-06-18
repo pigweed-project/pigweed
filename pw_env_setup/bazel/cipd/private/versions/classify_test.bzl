@@ -15,6 +15,7 @@
 """Unit tests for classify.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/versions:classify.bzl", "is_immutable_version", "is_instance_id", "is_key_value_tag", "is_ref_tag")
 
 def _is_key_value_tag_test_impl(ctx):
@@ -119,7 +120,7 @@ def _is_immutable_test_impl(ctx):
 is_immutable_test = unittest.make(_is_immutable_test_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         is_key_value_tag_test,
         is_instance_id_test,

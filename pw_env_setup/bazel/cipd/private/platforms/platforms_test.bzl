@@ -14,6 +14,7 @@
 """Unit tests for platforms/platforms.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/platforms:platforms.bzl", "get_cipd_arch", "get_cipd_os_name", "get_cipd_platform")
 
 def _os(name, arch):
@@ -75,7 +76,7 @@ def _get_cipd_platform_test_impl(ctx):
 get_cipd_platform_test = unittest.make(_get_cipd_platform_test_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         get_cipd_os_name_test,
         get_cipd_arch_test,

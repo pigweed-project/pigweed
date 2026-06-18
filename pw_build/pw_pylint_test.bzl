@@ -16,6 +16,7 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
 load("//pw_build:pw_pylint.bzl", "PylintAspectForTestInfo", "is_rules_python_generated_source", "map_import_path_for_python_path", "pylint_aspect")
 
@@ -140,10 +141,12 @@ def pw_pylint_test_suite(name):
 
     is_rules_python_generated_source_test(
         name = name + "_is_rules_python_generated_source_test",
+        target_compatible_with = incompatible_with_mcu(),
     )
 
     map_import_path_for_python_path_test(
         name = name + "_map_import_path_for_python_path_test",
+        target_compatible_with = incompatible_with_mcu(),
     )
 
     py_library(
@@ -194,6 +197,7 @@ def pw_pylint_test_suite(name):
     pylint_aspect_test(
         name = name + "_aspect_test",
         target_under_test = ":" + name + "_py_lib",
+        target_compatible_with = incompatible_with_mcu(),
         # There should be one file, matching the .py source file above.
         expected_sources = [
             "pw_build/pw_pylint_test_example.py",

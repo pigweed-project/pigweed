@@ -15,6 +15,7 @@
 """Unit tests for relaxed_semver_parser.bzl."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//pw_build:pw_starlark_unittest.bzl", "pw_unittest_suite")
 load("//pw_env_setup/bazel/cipd/private/versions:relaxed_semver_parser.bzl", "parse")
 
 def _checked_parse(env, input, expect):
@@ -194,7 +195,7 @@ def _bazel_test_parse_exception_impl(ctx):
 bazel_parse_exception_test = unittest.make(_bazel_test_parse_exception_impl)
 
 def test_suite(name):
-    unittest.suite(
+    pw_unittest_suite(
         name,
         parse_basics_test,
         parse_epochs_test,

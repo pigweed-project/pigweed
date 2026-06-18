@@ -578,7 +578,7 @@ pw_py_test(
     target_compatible_with = select({
         "@platforms//os:windows": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),
+    }) + incompatible_with_mcu(),
 )
 
 sphinx_docs_library(
