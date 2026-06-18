@@ -12,10 +12,17 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//pw_build:binary_tools.bzl", "pw_elf_to_bin", "pw_elf_to_dump")
 load("//pw_build:pw_linker_script.bzl", "pw_linker_script")
+
+bzl_library(
+    name = "bazel_supports",
+    srcs = ["bazel_supports.bzl"],
+    visibility = ["//visibility:private"],
+)
 
 filegroup(
     name = "empty_file_target",

@@ -139,6 +139,15 @@ git_repository(
     remote = "https://pigweed.googlesource.com/third_party/github/sphinx-contrib/doxylink",
 )
 
+# Internal repo with Bazel support metadata
+# =========================================
+bazel_supports_repo = use_repo_rule(
+    "//pw_build/bazel_internal:bazel_supports.bzl",
+    "bazel_supports_repo",
+)
+
+bazel_supports_repo(name = "bazel_supports")
+
 # Configure libusb
 # ================
 #
@@ -190,6 +199,13 @@ register_toolchains(
     "//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imac",
     dev_dependency = True,
 )
+
+register_toolchains(
+    "//pw_toolchain:default_mcu_test_toolchain",
+    dev_dependency = True,
+)
+
+register_execution_platforms("//pw_grpc:test_platform")
 
 register_toolchains(
     "//pw_toolchain/fuchsia:all",

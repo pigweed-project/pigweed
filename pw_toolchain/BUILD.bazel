@@ -17,6 +17,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load(":default_test_toolchain.bzl", "pw_default_test_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -44,6 +45,9 @@ alias(
         "//conditions:default": "//pw_toolchain/arm_gcc:arm_gcc_toolchain_cortex-m",
     }),
 )
+
+# Used by pw_default_test_toolchain when necessary.
+toolchain_type(name = "unused_toolchain_type")
 
 # This is an interim solution to allow flag-based toolchain selection.
 # Do not rely on this, as it is likely to change.
@@ -99,6 +103,16 @@ toolchain(
     ],
     toolchain = ":cortex-m_cc_toolchain",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+pw_default_test_toolchain(
+    name = "default_mcu_test_toolchain",
+    target_compatible_with = [
+        "@platforms//os:none",
+    ],
+    toolchain = "@bazel_tools//tools/test:empty_toolchain",
+    toolchain_type = "@bazel_tools//tools/test:default_test_toolchain_type",
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
