@@ -570,12 +570,30 @@ void PeriodicAdvertisingSynchronizer::SendTerminateSyncCommand(
 
 void PeriodicAdvertisingSynchronizer::SendAddDeviceToListCommand(
     const AdvertiserListEntry& entry) {
+  PW_CHECK(state_ == State::kIdle);
+
+  std::optional<pw::bluetooth::emboss::LEPeerAddressTypeNoAnon> address_type =
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(entry.address.type());
+  if (!address_type.has_value()) {
+    bt_log(ERROR,
+           "hci",
+           "Invalid address type for periodic advertiser list: %hhu",
+           static_cast<uint8_t>(entry.address.type()));
+    auto iter = pending_requests_.find(entry);
+    if (iter != pending_requests_.end()) {
+      iter->second.delegate->OnSyncLost(iter->second.id,
+                                        Error(HostError::kInvalidParameters));
+      pending_requests_.erase(iter);
+    }
+    MaybeUpdateAdvertiserList();
+    return;
+  }
+
   bt_log(DEBUG,
          "hci",
          "adding device to periodic advertiser list: %s",
          bt_str(entry.address));
 
-  PW_CHECK(state_ == State::kIdle);
   state_ = State::kAddDevicePending;
 
   auto self = weak_self_.GetWeakPtr();
@@ -583,8 +601,7 @@ void PeriodicAdvertisingSynchronizer::SendAddDeviceToListCommand(
       pw::bluetooth::emboss::LEAddDeviceToPeriodicAdvertiserListCommandWriter>(
       pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST);
   auto view = add_cmd.view_t();
-  view.advertiser_address_type().Write(
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(entry.address.type()));
+  view.advertiser_address_type().Write(*address_type);
   view.advertiser_address().CopyFrom(entry.address.value().view());
   view.advertising_sid().Write(entry.advertising_sid);
   transport_->command_channel()
@@ -635,12 +652,25 @@ void PeriodicAdvertisingSynchronizer::SendAddDeviceToListCommand(
 
 void PeriodicAdvertisingSynchronizer::SendRemoveDeviceFromListCommand(
     const AdvertiserListEntry& entry) {
+  PW_CHECK(state_ == State::kIdle);
+
+  std::optional<pw::bluetooth::emboss::LEPeerAddressTypeNoAnon> address_type =
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(entry.address.type());
+  if (!address_type.has_value()) {
+    bt_log(ERROR,
+           "hci",
+           "Invalid address type for periodic advertiser list: %hhu",
+           static_cast<uint8_t>(entry.address.type()));
+    advertiser_list_.erase(entry);
+    MaybeUpdateAdvertiserList();
+    return;
+  }
+
   bt_log(DEBUG,
          "hci",
          "removing device from periodic advertiser list: %s",
          bt_str(entry.address));
 
-  PW_CHECK(state_ == State::kIdle);
   state_ = State::kRemoveDevicePending;
 
   auto self = weak_self_.GetWeakPtr();
@@ -650,8 +680,7 @@ void PeriodicAdvertisingSynchronizer::SendRemoveDeviceFromListCommand(
       pw::bluetooth::emboss::OpCode::
           LE_REMOVE_DEVICE_FROM_PERIODIC_ADVERTISER_LIST);
   auto view = remove_cmd.view_t();
-  view.advertiser_address_type().Write(
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(entry.address.type()));
+  view.advertiser_address_type().Write(*address_type);
   view.advertiser_address().CopyFrom(entry.address.value().view());
   view.advertising_sid().Write(entry.advertising_sid);
 

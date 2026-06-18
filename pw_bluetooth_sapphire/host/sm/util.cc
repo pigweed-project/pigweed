@@ -305,26 +305,27 @@ void Encrypt(const UInt128& key,
   Swap128(be_encrypt, out_encrypted_data);
 }
 
-void C1(const UInt128& tk,
-        const UInt128& rand,
-        const ByteBuffer& preq,
-        const ByteBuffer& pres,
-        const DeviceAddress& initiator_addr,
-        const DeviceAddress& responder_addr,
-        UInt128* out_confirm_value) {
+std::optional<UInt128> C1(const UInt128& tk,
+                          const UInt128& rand,
+                          const ByteBuffer& preq,
+                          const ByteBuffer& pres,
+                          const DeviceAddress& initiator_addr,
+                          const DeviceAddress& responder_addr) {
   PW_DCHECK(preq.size() == kPreqSize);
   PW_DCHECK(pres.size() == kPreqSize);
-  PW_DCHECK(out_confirm_value);
 
   UInt128 p1, p2;
 
   // Calculate p1 = pres || preq || rat’ || iat’
-  pw::bluetooth::emboss::LEAddressType iat =
+  std::optional<pw::bluetooth::emboss::LEAddressType> iat =
       DeviceAddress::DeviceAddrToLeAddr(initiator_addr.type());
-  pw::bluetooth::emboss::LEAddressType rat =
+  std::optional<pw::bluetooth::emboss::LEAddressType> rat =
       DeviceAddress::DeviceAddrToLeAddr(responder_addr.type());
-  p1[0] = static_cast<uint8_t>(iat);
-  p1[1] = static_cast<uint8_t>(rat);
+  if (!iat.has_value() || !rat.has_value()) {
+    return std::nullopt;
+  }
+  p1[0] = static_cast<uint8_t>(*iat);
+  p1[1] = static_cast<uint8_t>(*rat);
   std::memcpy(p1.data() + 2, preq.data(), preq.size());  // Bytes [2-8]
   std::memcpy(p1.data() + 2 + preq.size(), pres.data(), pres.size());  // [9-15]
 
@@ -342,7 +343,9 @@ void C1(const UInt128& tk,
   Xor128(rand, p1, &p1);
   Encrypt(tk, p1, &tmp);
   Xor128(tmp, p2, &tmp);
-  Encrypt(tk, tmp, out_confirm_value);
+  UInt128 out_confirm_value;
+  Encrypt(tk, tmp, &out_confirm_value);
+  return out_confirm_value;
 }
 
 void S1(const UInt128& tk,

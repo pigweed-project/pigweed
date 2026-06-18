@@ -143,15 +143,14 @@ class Phase2LegacyTest : public l2cap::testing::FakeChannelTest {
     preq.WriteObj(phase_args_.preq);
     pres.WriteObj(phase_args_.pres);
 
-    UInt128 out_value;
-    util::C1(tk128,
-             random,
-             preq,
-             pres,
-             *phase_args_.initiator_addr,
-             *phase_args_.responder_addr,
-             &out_value);
-    return out_value;
+    std::optional<UInt128> out_value = util::C1(tk128,
+                                                random,
+                                                preq,
+                                                pres,
+                                                *phase_args_.initiator_addr,
+                                                *phase_args_.responder_addr);
+    PW_CHECK(out_value.has_value());
+    return *out_value;
   }
 
   struct MatchingPair {

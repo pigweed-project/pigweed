@@ -151,14 +151,18 @@ void Phase2Legacy::HandleTemporaryKey(std::optional<uint32_t> maybe_tk) {
 
   // We have TK so we can generate the confirm value now.
   local_rand_ = Random<UInt128>();
-  local_confirm_ = UInt128();
-  util::C1(tk_.value(),
-           local_rand_.value(),
-           preq_,
-           pres_,
-           initiator_addr_,
-           responder_addr_,
-           &(local_confirm_.value()));
+  std::optional<UInt128> maybe_confirm = util::C1(tk_.value(),
+                                                  local_rand_.value(),
+                                                  preq_,
+                                                  pres_,
+                                                  initiator_addr_,
+                                                  responder_addr_);
+  if (!maybe_confirm.has_value()) {
+    bt_log(ERROR, "sm", "Failed to generate local confirm value!");
+    Abort(ErrorCode::kUnspecifiedReason);
+    return;
+  }
+  local_confirm_ = *maybe_confirm;
 
   // If we are the initiator then we just generated the "Mconfirm" value. We
   // start the exchange by sending this value to the peer. Otherwise this is the
@@ -244,15 +248,18 @@ void Phase2Legacy::OnPairingRandom(PairingRandomValue rand) {
 
   // We have the peer's confirm and rand. Verify the peer confirm to validate
   // the authentication.
-  UInt128 peer_confirm_check;
-  util::C1(tk_.value(),
-           peer_rand_.value(),
-           preq_,
-           pres_,
-           initiator_addr_,
-           responder_addr_,
-           &peer_confirm_check);
-  if (peer_confirm_check != peer_confirm_) {
+  std::optional<UInt128> peer_confirm_check = util::C1(tk_.value(),
+                                                       peer_rand_.value(),
+                                                       preq_,
+                                                       pres_,
+                                                       initiator_addr_,
+                                                       responder_addr_);
+  if (!peer_confirm_check.has_value()) {
+    bt_log(ERROR, "sm", "Failed to calculate peer confirm check value!");
+    Abort(ErrorCode::kUnspecifiedReason);
+    return;
+  }
+  if (*peer_confirm_check != peer_confirm_) {
     bt_log(WARN,
            "sm",
            "%sconfirm value does not match!",

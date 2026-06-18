@@ -515,7 +515,10 @@ class SecurityManagerTest : public l2cap::testing::FakeChannelTest,
       rsp_addr = &kPeerAddr;
     }
 
-    util::C1(tk128, random, *preq, *pres, *init_addr, *rsp_addr, out_value);
+    std::optional<UInt128> result =
+        util::C1(tk128, random, *preq, *pres, *init_addr, *rsp_addr);
+    PW_CHECK(result.has_value());
+    *out_value = *result;
   }
 
   UInt128 GenerateScConfirmValue(const LocalEcdhKey& peer_key,

@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 
 #include "pw_bluetooth/hci_common.emb.h"
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_string/format.h"
 
@@ -96,98 +97,87 @@ DeviceAddress::DeviceAddress(Type type,
                              std::array<uint8_t, kDeviceAddressSize> bytes)
     : DeviceAddress(type, DeviceAddressBytes(bytes)) {}
 
-pw::bluetooth::emboss::LEAddressType DeviceAddress::DeviceAddrToLeAddr(
-    DeviceAddress::Type type) {
-  PW_MODIFY_DIAGNOSTICS_PUSH();
-  PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
+std::optional<pw::bluetooth::emboss::LEAddressType>
+DeviceAddress::DeviceAddrToLeAddr(DeviceAddress::Type type) {
   switch (type) {
-    case DeviceAddress::Type::kLEPublic: {
+    case DeviceAddress::Type::kLEPublic:
       return pw::bluetooth::emboss::LEAddressType::PUBLIC;
-    }
-    case DeviceAddress::Type::kLERandom: {
+    case DeviceAddress::Type::kLERandom:
       return pw::bluetooth::emboss::LEAddressType::RANDOM;
-    }
-    default: {
-      PW_CRASH("invalid DeviceAddressType");
-    }
+    case DeviceAddress::Type::kBREDR:
+    case DeviceAddress::Type::kLEAnonymous:
+      bt_log(DEBUG,
+             "common",
+             "invalid DeviceAddress::Type for LEAddressType: %u",
+             static_cast<unsigned int>(type));
+      return std::nullopt;
   }
-  PW_MODIFY_DIAGNOSTICS_POP();
 }
 
-pw::bluetooth::emboss::LEPeerAddressType DeviceAddress::DeviceAddrToLePeerAddr(
-    Type type) {
+std::optional<pw::bluetooth::emboss::LEPeerAddressType>
+DeviceAddress::DeviceAddrToLePeerAddr(Type type) {
   switch (type) {
-    case DeviceAddress::Type::kBREDR: {
-      PW_CRASH("BR/EDR address not convertible to LE address");
-    }
-    case DeviceAddress::Type::kLEPublic: {
+    case DeviceAddress::Type::kLEPublic:
       return pw::bluetooth::emboss::LEPeerAddressType::PUBLIC;
-    }
-    case DeviceAddress::Type::kLERandom: {
+    case DeviceAddress::Type::kLERandom:
       return pw::bluetooth::emboss::LEPeerAddressType::RANDOM;
-    }
-    case DeviceAddress::Type::kLEAnonymous: {
+    case DeviceAddress::Type::kLEAnonymous:
       return pw::bluetooth::emboss::LEPeerAddressType::ANONYMOUS;
-    }
-    default: {
-      PW_CRASH("invalid DeviceAddressType");
-    }
+    case DeviceAddress::Type::kBREDR:
+      bt_log(
+          DEBUG, "common", "BR/EDR address not convertible to LE peer address");
+      return std::nullopt;
   }
 }
 
-pw::bluetooth::emboss::LEPeerAddressTypeNoAnon
+std::optional<pw::bluetooth::emboss::LEPeerAddressTypeNoAnon>
 DeviceAddress::DeviceAddrToLePeerAddrNoAnon(Type type) {
   switch (type) {
-    case DeviceAddress::Type::kBREDR: {
-      PW_CRASH("BR/EDR address not convertible to LE address");
-    }
-    case DeviceAddress::Type::kLEPublic: {
+    case DeviceAddress::Type::kLEPublic:
       return pw::bluetooth::emboss::LEPeerAddressTypeNoAnon::PUBLIC;
-    }
-    case DeviceAddress::Type::kLERandom: {
+    case DeviceAddress::Type::kLERandom:
       return pw::bluetooth::emboss::LEPeerAddressTypeNoAnon::RANDOM;
-    }
-    case DeviceAddress::Type::kLEAnonymous: {
-      PW_CRASH("invalid DeviceAddressType; anonymous type unsupported");
-    }
-    default: {
-      PW_CRASH("invalid DeviceAddressType");
-    }
+    case DeviceAddress::Type::kBREDR:
+    case DeviceAddress::Type::kLEAnonymous:
+      bt_log(DEBUG,
+             "common",
+             "invalid DeviceAddress::Type for LEPeerAddressTypeNoAnon: %u",
+             static_cast<unsigned int>(type));
+      return std::nullopt;
   }
 }
 
-pw::bluetooth::emboss::LEExtendedAddressType
+std::optional<pw::bluetooth::emboss::LEExtendedAddressType>
 DeviceAddress::DeviceAddrToLeExtendedAddr(Type type) {
   switch (type) {
-    case DeviceAddress::Type::kBREDR: {
-      PW_CRASH("BR/EDR address not convertible to LE address");
-    }
-    case DeviceAddress::Type::kLEPublic: {
+    case DeviceAddress::Type::kLEPublic:
       return pw::bluetooth::emboss::LEExtendedAddressType::PUBLIC;
-    }
-    case DeviceAddress::Type::kLERandom: {
+    case DeviceAddress::Type::kLERandom:
       return pw::bluetooth::emboss::LEExtendedAddressType::RANDOM;
-    }
-    case DeviceAddress::Type::kLEAnonymous: {
+    case DeviceAddress::Type::kLEAnonymous:
       return pw::bluetooth::emboss::LEExtendedAddressType::ANONYMOUS;
-    }
+    case DeviceAddress::Type::kBREDR:
+      bt_log(DEBUG,
+             "common",
+             "BR/EDR address not convertible to LE extended address");
+      return std::nullopt;
   }
 }
 
-pw::bluetooth::emboss::LEOwnAddressType DeviceAddress::DeviceAddrToLeOwnAddr(
-    Type type) {
+std::optional<pw::bluetooth::emboss::LEOwnAddressType>
+DeviceAddress::DeviceAddrToLeOwnAddr(Type type) {
   switch (type) {
-    case DeviceAddress::Type::kLERandom: {
+    case DeviceAddress::Type::kLERandom:
       return pw::bluetooth::emboss::LEOwnAddressType::RANDOM;
-    }
-    case DeviceAddress::Type::kLEPublic: {
+    case DeviceAddress::Type::kLEPublic:
       return pw::bluetooth::emboss::LEOwnAddressType::PUBLIC;
-    }
-    case DeviceAddress::Type::kLEAnonymous:
     case DeviceAddress::Type::kBREDR:
-    default: {
-      PW_CRASH("invalid DeviceAddressType");
-    }
+    case DeviceAddress::Type::kLEAnonymous:
+      bt_log(DEBUG,
+             "common",
+             "invalid DeviceAddress::Type for LEOwnAddressType: %u",
+             static_cast<unsigned int>(type));
+      return std::nullopt;
   }
 }
 
@@ -203,6 +193,10 @@ std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLERandom;
     }
     default: {
+      bt_log(DEBUG,
+             "common",
+             "invalid LEAddressType: %u",
+             static_cast<unsigned int>(type));
       return std::nullopt;
     }
   }
@@ -221,6 +215,10 @@ std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLEAnonymous;
     }
     default: {
+      bt_log(DEBUG,
+             "common",
+             "invalid LEPeerAddressType: %u",
+             static_cast<unsigned int>(type));
       return std::nullopt;
     }
   }
@@ -236,6 +234,10 @@ std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLERandom;
     }
     default: {
+      bt_log(DEBUG,
+             "common",
+             "invalid LEPeerAddressTypeNoAnon: %u",
+             static_cast<unsigned int>(type));
       return std::nullopt;
     }
   }
@@ -256,6 +258,10 @@ std::optional<DeviceAddress::Type> DeviceAddress::LeAddrToDeviceAddr(
       return DeviceAddress::Type::kLEAnonymous;
     }
     default: {
+      bt_log(DEBUG,
+             "common",
+             "invalid LEExtendedAddressType: %u",
+             static_cast<unsigned int>(type));
       return std::nullopt;
     }
   }

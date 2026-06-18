@@ -451,7 +451,7 @@ void FakeController::ConnectLowEnergy(const DeviceAddress& addr,
         view.status().Write(pwemb::StatusCode::SUCCESS);
         view.peer_address().CopyFrom(addr.value().view());
         view.peer_address_type().Write(
-            DeviceAddress::DeviceAddrToLeAddr(addr.type()));
+            DeviceAddress::DeviceAddrToLeAddr(addr.type()).value());
         view.peripheral_latency().Write(conn_params.latency());
         view.connection_interval().Write(conn_params.interval());
         view.supervision_timeout().Write(conn_params.supervision_timeout());
@@ -747,7 +747,7 @@ void FakeController::MaybeSendPeriodicAdvertisingSyncEstablishedEvent() {
     params.sync_handle().Write(sync_handle);
     params.advertising_sid().Write(entry.advertising_sid);
     params.advertiser_address_type().Write(
-        DeviceAddress::DeviceAddrToLeAddr(entry.address.type()));
+        DeviceAddress::DeviceAddrToLeAddr(entry.address.type()).value());
     params.advertiser_address().CopyFrom(entry.address.value().view());
     params.advertiser_phy().Write(pw::bluetooth::emboss::LEPhy::LE_1M);
     params.periodic_advertising_interval().Write(0x0006);  // 7.5ms, the minimum
@@ -1476,7 +1476,8 @@ void FakeController::SendEnhancedConnectionCompleteEvent(
       hci_spec::kLEEnhancedConnectionCompleteSubeventCode);
   view.status().Write(status);
   view.peer_address().CopyFrom(params.peer_address());
-  view.peer_address_type().Write(DeviceAddress::DeviceAddrToLeAddr(addr_type));
+  view.peer_address_type().Write(
+      DeviceAddress::DeviceAddrToLeAddr(addr_type).value());
   view.peripheral_latency().Write(max_latency);
   view.connection_interval().Write(interval);
   view.supervision_timeout().Write(supervision_timeout);
@@ -1532,7 +1533,7 @@ void FakeController::SendConnectionCompleteEvent(
   view.status().Write(status);
   view.peer_address().CopyFrom(params.peer_address());
   view.peer_address_type().Write(
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(addr_type));
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(addr_type).value());
 
   view.peripheral_latency().CopyFrom(params.max_latency());
   view.connection_interval().Write(interval);
@@ -2171,8 +2172,10 @@ void FakeController::OnLECreateConnectionCancel() {
     params.status().Write(pwemb::StatusCode::UNKNOWN_CONNECTION_ID);
     params.peer_address().CopyFrom(
         le_connect_params_->peer_address.value().view());
-    params.peer_address_type().Write(DeviceAddress::DeviceAddrToLeAddr(
-        le_connect_params_->peer_address.type()));
+    params.peer_address_type().Write(
+        DeviceAddress::DeviceAddrToLeAddr(
+            le_connect_params_->peer_address.type())
+            .value());
 
     RespondWithCommandComplete(pwemb::OpCode::LE_CREATE_CONNECTION_CANCEL,
                                pwemb::StatusCode::SUCCESS);
@@ -2189,7 +2192,8 @@ void FakeController::OnLECreateConnectionCancel() {
         le_connect_params_->peer_address.value().view());
     params.peer_address_type().Write(
         DeviceAddress::DeviceAddrToLePeerAddrNoAnon(
-            le_connect_params_->peer_address.type()));
+            le_connect_params_->peer_address.type())
+            .value());
 
     RespondWithCommandComplete(pwemb::OpCode::LE_CREATE_CONNECTION_CANCEL,
                                pwemb::StatusCode::SUCCESS);

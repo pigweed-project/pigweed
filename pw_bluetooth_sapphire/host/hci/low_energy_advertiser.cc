@@ -248,14 +248,15 @@ void LowEnergyAdvertiser::StartAdvertisingInternal(
   data.Copy(&staged_parameters_.data);
   scan_rsp.Copy(&staged_parameters_.scan_rsp);
 
-  pwemb::LEOwnAddressType own_addr_type =
+  std::optional<pwemb::LEOwnAddressType> own_address_type =
       DeviceAddress::DeviceAddrToLeOwnAddr(address.type());
+  PW_CHECK(own_address_type.has_value());
 
   AdvertisingEventProperties properties =
       GetAdvertisingEventProperties(data, scan_rsp, options, connect_callback);
   std::optional<SetAdvertisingParams> set_adv_params =
       BuildSetAdvertisingParams(
-          address, properties, options, own_addr_type, options.interval);
+          address, properties, options, *own_address_type, options.interval);
   if (!set_adv_params.has_value()) {
     bt_log(
         WARN, "hci-le", "failed to start advertising for %s", bt_str(address));

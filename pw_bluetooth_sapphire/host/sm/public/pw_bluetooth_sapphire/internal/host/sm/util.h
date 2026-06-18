@@ -103,13 +103,12 @@ void Encrypt(const UInt128& key,
 //                     the connection.
 //
 // The generated confirm value will be returned in |out_confirm_value|.
-void C1(const UInt128& tk,
-        const UInt128& rand,
-        const ByteBuffer& preq,
-        const ByteBuffer& pres,
-        const DeviceAddress& initiator_addr,
-        const DeviceAddress& responder_addr,
-        UInt128* out_confirm_value);
+std::optional<UInt128> C1(const UInt128& tk,
+                          const UInt128& rand,
+                          const ByteBuffer& preq,
+                          const ByteBuffer& pres,
+                          const DeviceAddress& initiator_addr,
+                          const DeviceAddress& responder_addr);
 
 // Implements the "Key Generation Function s1" to generate the STK for LE Legacy
 // Pairing described in Vol 3, Part H, 2.2.4.

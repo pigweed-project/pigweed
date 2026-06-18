@@ -65,6 +65,10 @@ bool LegacyLowEnergyScanner::StartScan(const ScanOptions& options,
 
 CommandPacket LegacyLowEnergyScanner::BuildSetScanParametersPacket(
     const DeviceAddress& local_address, const ScanOptions& options) const {
+  std::optional<pw::bluetooth::emboss::LEOwnAddressType> own_address_type =
+      DeviceAddress::DeviceAddrToLeOwnAddr(local_address.type());
+  PW_CHECK(own_address_type.has_value());
+
   auto packet = hci::CommandPacket::New<
       pw::bluetooth::emboss::LESetScanParametersCommandWriter>(
       hci_spec::kLESetScanParameters);
@@ -79,13 +83,7 @@ CommandPacket LegacyLowEnergyScanner::BuildSetScanParametersPacket(
   params.le_scan_window().Write(options.window);
   params.scanning_filter_policy().Write(options.filter_policy);
 
-  if (local_address.type() == DeviceAddress::Type::kLERandom) {
-    params.own_address_type().Write(
-        pw::bluetooth::emboss::LEOwnAddressType::RANDOM);
-  } else {
-    params.own_address_type().Write(
-        pw::bluetooth::emboss::LEOwnAddressType::PUBLIC);
-  }
+  params.own_address_type().Write(*own_address_type);
 
   return packet;
 }

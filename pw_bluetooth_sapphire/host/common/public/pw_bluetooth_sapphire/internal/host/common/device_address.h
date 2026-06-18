@@ -101,15 +101,16 @@ class DeviceAddress {
 
   // Utilities to convert between DeviceAddress::Type and the LE peer address
   // type.
-  static pw::bluetooth::emboss::LEAddressType DeviceAddrToLeAddr(Type type);
-  static pw::bluetooth::emboss::LEPeerAddressType DeviceAddrToLePeerAddr(
+  static std::optional<pw::bluetooth::emboss::LEAddressType> DeviceAddrToLeAddr(
       Type type);
-  static pw::bluetooth::emboss::LEPeerAddressTypeNoAnon
+  static std::optional<pw::bluetooth::emboss::LEPeerAddressType>
+  DeviceAddrToLePeerAddr(Type type);
+  static std::optional<pw::bluetooth::emboss::LEPeerAddressTypeNoAnon>
   DeviceAddrToLePeerAddrNoAnon(Type type);
-  static pw::bluetooth::emboss::LEExtendedAddressType
+  static std::optional<pw::bluetooth::emboss::LEExtendedAddressType>
   DeviceAddrToLeExtendedAddr(Type type);
-  static pw::bluetooth::emboss::LEOwnAddressType DeviceAddrToLeOwnAddr(
-      Type type);
+  static std::optional<pw::bluetooth::emboss::LEOwnAddressType>
+  DeviceAddrToLeOwnAddr(Type type);
 
   static std::optional<Type> LeAddrToDeviceAddr(
       pw::bluetooth::emboss::LEAddressType type);

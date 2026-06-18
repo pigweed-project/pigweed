@@ -85,14 +85,17 @@ CommandPacket ExtendedLowEnergyScanner::BuildSetScanParametersPacket(
       LESetExtendedScanParametersData::IntrinsicSizeInBytes();
   constexpr size_t packet_size = fixed_size + (num_phys * variable_size);
 
+  std::optional<pw::bluetooth::emboss::LEOwnAddressType> own_address_type =
+      DeviceAddress::DeviceAddrToLeOwnAddr(local_address.type());
+  PW_CHECK(own_address_type.has_value());
+
   auto packet =
       hci::CommandPacket::New<LESetExtendedScanParametersCommandWriter>(
           hci_spec::kLESetExtendedScanParameters, packet_size);
   auto params = packet.view_t();
 
   params.scanning_filter_policy().Write(options.filter_policy);
-  params.own_address_type().Write(
-      DeviceAddress::DeviceAddrToLeOwnAddr(local_address.type()));
+  params.own_address_type().Write(*own_address_type);
 
   // For maximum compatibility, Sapphire scans on all available PHYs.
   params.scanning_phys().le_1m().Write(true);

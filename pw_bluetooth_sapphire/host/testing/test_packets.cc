@@ -866,7 +866,7 @@ DynamicByteBuffer LEPeriodicAdvertisingCreateSyncPacket(
   view.advertising_sid().Write(sid);
 
   pw::bluetooth::emboss::LEPeerAddressTypeNoAnon address_type =
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type());
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type()).value();
 
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
@@ -892,7 +892,7 @@ DynamicByteBuffer LEAddDeviceToPeriodicAdvertiserListPacket(
       hci_spec::kLEAddDeviceToPeriodicAdvertiserList);
   auto view = packet.view_t();
   pw::bluetooth::emboss::LEPeerAddressTypeNoAnon address_type =
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type());
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type()).value();
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
   view.advertising_sid().Write(sid);
@@ -907,7 +907,7 @@ DynamicByteBuffer LERemoveDeviceFromPeriodicAdvertiserListPacket(
       hci_spec::kLERemoveDeviceFromPeriodicAdvertiserList);
   auto view = packet.view_t();
   pw::bluetooth::emboss::LEPeerAddressTypeNoAnon address_type =
-      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type());
+      DeviceAddress::DeviceAddrToLePeerAddrNoAnon(address.type()).value();
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
   view.advertising_sid().Write(sid);
@@ -934,7 +934,7 @@ DynamicByteBuffer LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
   view.sync_handle().Write(sync_handle);
   view.advertising_sid().Write(advertising_sid);
   pw::bluetooth::emboss::LEAddressType address_type =
-      DeviceAddress::DeviceAddrToLeAddr(address.type());
+      DeviceAddress::DeviceAddrToLeAddr(address.type()).value();
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
   view.advertiser_phy().Write(phy);
@@ -964,7 +964,7 @@ DynamicByteBuffer LEPeriodicAdvertisingSyncEstablishedEventPacketV2(
   view.sync_handle().Write(sync_handle);
   view.advertising_sid().Write(advertising_sid);
   pw::bluetooth::emboss::LEAddressType address_type =
-      DeviceAddress::DeviceAddrToLeAddr(address.type());
+      DeviceAddress::DeviceAddrToLeAddr(address.type()).value();
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
   view.advertiser_phy().Write(phy);
@@ -1101,7 +1101,7 @@ DynamicByteBuffer LEPeriodicAdvertisingSyncTransferReceivedEventPacket(
   view.sync_handle().Write(sync_handle);
   view.advertising_sid().Write(advertising_sid);
   pw::bluetooth::emboss::LEAddressType address_type =
-      DeviceAddress::DeviceAddrToLeAddr(address.type());
+      DeviceAddress::DeviceAddrToLeAddr(address.type()).value();
   view.advertiser_address_type().Write(address_type);
   view.advertiser_address().CopyFrom(address.value().view());
   view.advertiser_phy().Write(phy);

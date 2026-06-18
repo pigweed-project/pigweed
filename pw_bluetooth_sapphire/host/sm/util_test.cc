@@ -484,9 +484,16 @@ TEST(UtilTest, C1) {
                            0x1E,
                            0x1E}};
 
-  UInt128 result;
-  C1(tk, r, preq, pres, initiator_addr, responder_addr, &result);
-  EXPECT_TRUE(ContainersEqual(kExpected, result));
+  std::optional<UInt128> result =
+      C1(tk, r, preq, pres, initiator_addr, responder_addr);
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(ContainersEqual(kExpected, *result));
+
+  const DeviceAddress invalid_addr(DeviceAddress::Type::kBREDR,
+                                   {0xB6, 0xB5, 0xB4, 0xB3, 0xB2, 0xB1});
+  std::optional<UInt128> fail_result =
+      C1(tk, r, preq, pres, invalid_addr, responder_addr);
+  EXPECT_FALSE(fail_result.has_value());
 }
 
 // Tests "s1" using the sample data from Vol 3, Part H, 2.2.4.
