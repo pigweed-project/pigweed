@@ -12,32 +12,23 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #![no_std]
-#![no_main]
 
-use pw_boot::entry;
+pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface};
 
-#[cfg(target_os = "none")]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("Panic!");
-    loop {}
+pub struct KernelConfig;
+
+impl CortexMKernelConfigInterface for KernelConfig {
+    const SYS_TICK_HZ: u32 = 150_000_000;
+
+    const NUM_MPU_REGIONS: usize = 8;
 }
 
-#[entry]
-fn entry() -> ! {
-    pw_log::info!("Rust entry");
-
-    let mut count: usize = 0;
-    loop {
-        pw_log::info!("Loop: {}", count as i32);
-        count += 1;
-        // Convert to spinning on SystemClock::now() once pw_time lands.
-        unsafe {
-            vTaskDelay(1000);
-        }
-    }
+impl KernelConfigInterface for KernelConfig {
+    const SYSTEM_CLOCK_HZ: u64 = KernelConfig::SYS_TICK_HZ as u64;
 }
 
-extern "C" {
-    fn vTaskDelay(x_ticks_to_delay: u32);
+pub struct NvicConfig;
+
+impl NvicConfigInterface for NvicConfig {
+    const MAX_IRQS: u32 = 52;
 }

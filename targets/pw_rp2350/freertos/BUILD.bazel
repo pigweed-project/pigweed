@@ -13,6 +13,7 @@
 # the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//targets/rp2040:flash.bzl", "flash_rp2350")
 load("//third_party/freertos:flags.bzl", "FREERTOS_FLAGS")
@@ -49,6 +50,7 @@ platform(
         "//pw_log:backend_impl": "//pw_log_basic:impl",
         "//pw_sys_io:backend": "//pw_sys_io_rp2040",
         "//pw_toolchain:cortex-m_toolchain_kind": "clang",
+        "//targets/pw_rp2350:platform_deps": ":boot",
         "@freertos//:freertos_config": ":freertos_config",
         "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
         "@pico-sdk//bazel/config:PICO_CONFIG_EXTRA_HEADER": ":pico_config_extra_header",
@@ -109,12 +111,11 @@ cc_library(
 )
 
 cc_library(
-    name = "boot",
+    name = "boot_cc",
     srcs = [
         "boot.cc",
     ],
     target_compatible_with = [":freertos_config_cv"],
-    visibility = ["//targets/pw_rp2350:__subpackages__"],
     deps = [
         ":freertos_config",
         "//pw_log",
@@ -125,12 +126,22 @@ cc_library(
     ],
 )
 
+rust_library(
+    name = "boot",
+    srcs = ["boot.rs"],
+    edition = "2021",
+    deps = [
+        ":boot_cc",
+        "//pw_log/rust:pw_log",
+    ],
+)
+
 rp2350_binary(
-    name = "binary",
-    binary = "//targets/pw_rp2350:entry",
+    name = "loop_example_binary",
+    binary = "//targets/pw_rp2350:loop_example",
 )
 
 flash_rp2350(
-    name = "flash",
-    rp2350_binary = ":binary",
+    name = "flash_loop_example",
+    rp2350_binary = ":loop_example_binary",
 )

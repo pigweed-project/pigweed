@@ -105,9 +105,13 @@ pub mod __private {
         };
     }
 
+    declare_simple_argument!(u8);
     declare_simple_argument!(i32);
     declare_simple_argument!(u32);
     declare_simple_argument!(char);
+    declare_simple_argument!(i64);
+    declare_simple_argument!(u64);
+    declare_simple_argument!(usize);
 
     // &str needs a more complex implementation of [`Argument<T>`] since it needs
     // to append two arguments.

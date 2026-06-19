@@ -18,14 +18,19 @@ load("//pw_build:pw_rust_binary.bzl", "pw_rust_binary")
 package(default_visibility = ["//targets/pw_rp2350:__subpackages__"])
 
 pw_rust_binary(
-    name = "entry",
-    srcs = ["entry.rs"],
+    name = "loop_example",
+    srcs = ["loop_example.rs"],
     edition = "2021",
     deps = [
+        ":platform_deps",
         "//pw_boot/rust:pw_boot",
         "//pw_log/rust:pw_log",
-        "//targets/pw_rp2350/freertos:boot",
     ],
+)
+
+label_flag(
+    name = "platform_deps",
+    build_setting_default = "//pw_build:unspecified_backend",
 )
 
 rust_library(
