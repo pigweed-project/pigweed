@@ -672,7 +672,7 @@ git_override(
     module_name = "fuchsia_infra",
     # ROLL: Warning: this entry is automatically updated by
     # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed/tools.roll/fuchsia-infra-bazel-rules-roller
-    commit = "128154827129ba7c42ae1617cee1ebcd1597c528",
+    commit = "7e0784cb92888f30298ce730ce40451241ede89a",
     remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
 )
 
