@@ -105,7 +105,7 @@ cc_args(
 # flag to track the removal of `-ffreestanding` from our toolchains.
 bool_flag(
     name = "freestanding",
-    build_setting_default = True,
+    build_setting_default = False,
 )
 
 config_setting(

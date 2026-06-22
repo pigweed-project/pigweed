@@ -50,6 +50,9 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 common:cxx17 --//pw_toolchain/cc:cxx_standard=17
 common:cxx23 --//pw_toolchain/cc:cxx_standard=23
 
+# Enable freestanding mode for arm_gcc toolchain by default inside Pigweed's own builds.
+common --//pw_toolchain/arm_gcc:freestanding=True
+
 # Silence compiler warnings from external repositories.
 #
 # TODO: https://pwbug.dev/347317581 - This is supported by Bazel's default C++
