@@ -1805,6 +1805,10 @@ bool SniffOffloadManagerTest::CheckCommandCompleteEventSent(
   VERIFY_OR_RETURN(view.command_complete().Ok());
   VERIFY_OR_RETURN(view.command_complete().header().event_code().Read() ==
                    emboss::EventCode::COMMAND_COMPLETE);
+  VERIFY_OR_RETURN(
+      view.command_complete().header().parameter_total_size().Read() ==
+      emboss::SimpleCommandCompleteEvent::IntrinsicSizeInBytes() -
+          emboss::EventHeader::IntrinsicSizeInBytes());
 
   if (opcode.has_value()) {
     VERIFY_OR_RETURN(view.command_complete().command_opcode().Read() ==
@@ -1865,6 +1869,9 @@ bool SniffOffloadManagerTest::CheckLeGetVendorCapabilitiesCommandCompleteEvent(
                    emboss::EventCode::COMMAND_COMPLETE);
   VERIFY_OR_RETURN(view.command_complete().command_opcode().Read() ==
                    emboss::OpCode::ANDROID_LE_GET_VENDOR_CAPABILITIES);
+  VERIFY_OR_RETURN(
+      view.command_complete().header().parameter_total_size().Read() ==
+      event.size() - emboss::EventHeader::IntrinsicSizeInBytes());
 
   if (expected_status.has_value()) {
     VERIFY_OR_RETURN(view.status().Read() == *expected_status);

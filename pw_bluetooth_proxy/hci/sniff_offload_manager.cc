@@ -772,7 +772,7 @@ void SniffOffloadManager::SendCommandComplete(uint16_t opcode,
 
   evt_header.event_code().Write(emboss::EventCode::COMMAND_COMPLETE);
   evt_header.parameter_total_size().Write(
-      CommandCompleteEvent::IntrinsicSizeInBytes() -
+      SimpleCommandCompleteEvent::IntrinsicSizeInBytes() -
       EventHeader::IntrinsicSizeInBytes());
   cmd_complete.num_hci_command_packets().Write(1);
   cmd_complete.command_opcode_uint().Write(opcode);
