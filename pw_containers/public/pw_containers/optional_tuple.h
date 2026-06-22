@@ -49,6 +49,18 @@ struct Empty {};
 // Untagged optional type for use in OptionalTuple.
 template <typename T>
 union Maybe {
+  // For trivially default constructible types, prefer default-constructing the
+  // value over default-constructing the empty state to avoid a
+  // -WWmaybe-uninitialized when building with GCC.
+  template <
+      typename U = T,
+      typename = std::enable_if_t<std::is_trivially_default_constructible_v<U>>>
+  explicit constexpr Maybe(OptionalTupleNullPlaceholder) : value{} {}
+
+  template <typename U = T,
+            typename =
+                std::enable_if_t<!std::is_trivially_default_constructible_v<U>>,
+            int = 0>
   explicit constexpr Maybe(OptionalTupleNullPlaceholder) : none{} {}
 
   template <typename... Args>

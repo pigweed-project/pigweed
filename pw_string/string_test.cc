@@ -1519,7 +1519,7 @@ TEST(InlineString, PopBack) {
 #if PW_NC_TEST(PopBack_Empty)
   PW_NC_EXPECT("PW_ASSERT\(!empty\(\)\)");
   [[maybe_unused]] constexpr auto fail = [] {
-    InlineString<0> str;
+    InlineString<1> str;
     str.pop_back();
     return str;
   }();
@@ -1541,7 +1541,8 @@ TEST(InlineString, Append_BasicString) {
       InlineString<11>("a"), str.append(kSize10Capacity10), "a1234567890");
 
 #if PW_NC_TEST(Append_BasicString_DoesNotFit)
-  PW_NC_EXPECT("PW_ASSERT\(count <= max_size\(\) - index");
+  PW_NC_EXPECT(
+      "pw::InlineString must be at least as large as the source string");
   [[maybe_unused]] constexpr auto fail = [] {
     InlineString<3> str({0, 1});
     return str.append(kSize5Capacity10);
@@ -1701,10 +1702,11 @@ TEST(InlineString, AppendOperator_BasicString) {
   TEST_STRING(InlineString<6>("Hi"), str.append(4, '!'), "Hi!!!!");
 
 #if PW_NC_TEST(AppendOperator_BasicString_DoesNotFit)
-  PW_NC_EXPECT("PW_ASSERT\(count <= max_size\(\) - index");
+  PW_NC_EXPECT(
+      "pw::InlineString must be at least as large as the source string");
   [[maybe_unused]] constexpr auto fail = [] {
     InlineString<3> str({0, 1});
-    return str.append(kSize5Capacity10);
+    return str += kSize5Capacity10;
   }();
 #endif  // PW_NC_TEST
 }

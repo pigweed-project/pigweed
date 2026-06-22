@@ -11,7 +11,6 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-
 #include "pw_multibuf/v1_adapter/multibuf.h"
 
 #include <cstddef>
@@ -304,7 +303,7 @@ std::tuple<MultiBufChunks::iterator, OwnedChunk> MultiBuf::TakeChunk(
   OwnedChunk owned(mbv2->get_allocator(), chunk);
   if (mbv2->empty()) {
     Release();
-    return std::make_tuple(Chunks().end(), std::move(owned));
+    return std::make_tuple(MultiBufChunks::iterator(), std::move(owned));
   }
   return std::make_tuple(ToChunksIterator(*result), std::move(owned));
 }

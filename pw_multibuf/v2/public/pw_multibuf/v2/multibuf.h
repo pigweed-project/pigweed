@@ -1096,7 +1096,9 @@ class GenericMultiBuf final
 
   /// Constructs an empty MultiBuf.
   constexpr explicit GenericMultiBuf(Allocator& allocator)
-      : deque_(allocator) {}
+      : deque_(allocator),
+        entries_per_chunk_(Entry::kMinEntriesPerChunk),
+        observer_(nullptr) {}
 
   template <typename MultiBufType>
   constexpr MultiBufType& as() {
@@ -1587,6 +1589,8 @@ class GenericMultiBuf final
 /// @endcode
 template <typename MultiBufType>
 class Instance {
+  friend class v1_adapter::MultiBufChunks;
+
  public:
   constexpr explicit Instance(Allocator& allocator) : base_(allocator) {}
 

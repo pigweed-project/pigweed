@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <cstdint>
 #include <cstring>
 #include <type_traits>
 

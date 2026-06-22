@@ -21,9 +21,11 @@
 namespace pw::rpc {
 namespace {
 
-// std::ranges::equal is only supported in C++20 and later.
 bool DataEqual(pw::ConstByteSpan s1, pw::ConstByteSpan s2) {
-  return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end());
+  if (s1.size() != s2.size()) {
+    return false;
+  }
+  return s1.empty() || std::equal(s1.begin(), s1.end(), s2.begin());
 }
 
 TEST(BenchmarkService, Benchmark_UnaryEchoRequestMessage) {

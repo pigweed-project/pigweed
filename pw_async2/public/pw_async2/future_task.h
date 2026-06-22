@@ -21,6 +21,11 @@ namespace pw::async2 {
 
 /// @submodule{pw_async2,tasks}
 
+class FutureTaskBase : public Task {
+ protected:
+  FutureTaskBase() : Task(PW_ASYNC_TASK_NAME("FutureTask")) {}
+};
+
 /// Creates a task that pends a future until it completes.
 ///
 /// `FutureTask` can be initialized in a few ways:
@@ -35,7 +40,7 @@ namespace pw::async2 {
 /// `pw_async2`. Creating a task for each future is also less efficient than
 /// having one task work with multiple futures.
 template <typename T>
-class FutureTask final : public Task {
+class FutureTask final : public FutureTaskBase {
  public:
   /// The type of the future that is pended by this task.
   using future_type = std::remove_reference_t<T>;
@@ -51,7 +56,7 @@ class FutureTask final : public Task {
   /// permitted since since they cannot be pended.
   template <typename Arg, typename... Args>
   explicit constexpr FutureTask(Arg&& arg, Args&&... args)
-      : Task(PW_ASYNC_TASK_NAME("FutureTask")),
+      : FutureTaskBase(),
         future_(std::forward<Arg>(arg), std::forward<Args>(args)...),
         output_(Pending()) {}
 

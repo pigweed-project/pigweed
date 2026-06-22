@@ -181,10 +181,10 @@ class GenericDequeBase {
     }
   }
 
-  size_type capacity_;
-  size_type count_;
-  size_type head_;  // Inclusive offset for the front.
-  size_type tail_;  // Non-inclusive offset for the back.
+  size_type capacity_ = 0;
+  size_type count_ = 0;
+  size_type head_ = 0;  // Inclusive offset for the front.
+  size_type tail_ = 0;  // Non-inclusive offset for the back.
 };
 
 /// Generic array-based deque class.

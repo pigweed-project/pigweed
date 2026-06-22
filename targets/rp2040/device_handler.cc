@@ -18,10 +18,6 @@
 #include "pw_cpu_exception_cortex_m/snapshot.h"
 #include "pw_thread_freertos/snapshot.h"
 
-namespace pw::system::device_handler {
-
-namespace {
-
 // These symbols are added to the default pico_sdk linker script as part
 // of the build process. If the build fails due to missing these symbols,
 // it may be because a different linker script is configured and these
@@ -31,6 +27,10 @@ extern "C" uint32_t __pw_code_end;
 
 extern "C" uint32_t __StackBottom;
 extern "C" uint32_t __StackTop;
+
+namespace pw::system::device_handler {
+
+namespace {
 
 uintptr_t GetLinkerSymbolValue(const uint32_t& symbol) {
   return reinterpret_cast<uintptr_t>(&symbol);

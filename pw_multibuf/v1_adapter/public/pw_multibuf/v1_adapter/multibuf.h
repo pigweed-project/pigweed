@@ -95,8 +95,9 @@ class MultiBufChunks {
    private:
     friend class MultiBufChunks;
 
-    constexpr Iterator(const v2::MultiBuf& mbv2, size_type chunk)
-        : mbv2_(&(mbv2.generic())), index_(chunk) {
+    constexpr Iterator(const v2::internal::GenericMultiBuf& mbv2,
+                       size_type chunk)
+        : mbv2_(&mbv2), index_(chunk) {
       PW_ASSERT(chunk <= mbv2_->num_chunks());
       Update();
     }
@@ -105,7 +106,7 @@ class MultiBufChunks {
     constexpr void Update();
 
     const v2::internal::GenericMultiBuf* mbv2_ = nullptr;
-    size_type index_;
+    size_type index_ = 0;
     std::optional<Chunk> chunk_;
   };
 
@@ -147,19 +148,18 @@ class MultiBufChunks {
   }
 
   Chunk& back() {
-    const auto* mbv2 = v2();
-    last_ = *iterator(*mbv2, mbv2->generic().num_chunks() - 1);
+    const auto* mbv2 = generic_v2();
+    last_ = *iterator(*mbv2, mbv2->num_chunks() - 1);
     return *last_;
   }
 
   iterator begin() const {
-    const auto* mbv2 = v2();
+    const auto* mbv2 = generic_v2();
     return mbv2 == nullptr ? iterator() : iterator(*mbv2, 0);
   }
   iterator end() const {
-    const auto* mbv2 = v2();
-    return mbv2 == nullptr ? iterator()
-                           : iterator(*mbv2, mbv2->generic().num_chunks());
+    const auto* mbv2 = generic_v2();
+    return mbv2 == nullptr ? iterator() : iterator(*mbv2, mbv2->num_chunks());
   }
 
   const_iterator cbegin() const { return begin(); }
@@ -167,6 +167,13 @@ class MultiBufChunks {
 
  protected:
   constexpr MultiBufChunks() = default;
+
+  constexpr const v2::internal::GenericMultiBuf* generic_v2() const {
+    return mbv2_.has_value() ? &(mbv2_->base_) : nullptr;
+  }
+  constexpr v2::internal::GenericMultiBuf* generic_v2() {
+    return mbv2_.has_value() ? &(mbv2_->base_) : nullptr;
+  }
 
   v2::TrackedMultiBuf* Assign(Allocator& allocator) {
     mbv2_ = v2::TrackedMultiBuf::Instance(allocator);
@@ -493,13 +500,13 @@ constexpr void MultiBufChunks::Iterator<kMutability>::Update() {
 }
 
 constexpr size_t MultiBufChunks::size() const {
-  const auto* mbv2 = v2();
+  const auto* mbv2 = generic_v2();
   if (mbv2 == nullptr) {
     return 0;
   }
   size_t size = 0;
-  for (Entry::size_type i = 0; i < mbv2->generic().num_chunks(); ++i) {
-    if (mbv2->generic().GetLength(i) != 0) {
+  for (Entry::size_type i = 0; i < mbv2->num_chunks(); ++i) {
+    if (mbv2->GetLength(i) != 0) {
       ++size;
     }
   }

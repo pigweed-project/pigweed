@@ -64,6 +64,13 @@ static inline void atomic_unlock(__unused const volatile void* ptr,
 
 #else  // __clang__
 
+#define __atomic_test_and_set_c __atomic_test_and_set
+#define __atomic_load_c __atomic_load
+#define __atomic_store_c __atomic_store
+#define __atomic_exchange_c __atomic_exchange
+#define __atomic_compare_exchange_c __atomic_compare_exchange
+#define __atomic_is_lock_free_c __atomic_is_lock_free
+
 _Bool __atomic_test_and_set_c(volatile void* mem, __unused int model) {
   uint32_t save = atomic_lock(mem);
   bool result = *(volatile bool*)mem;
@@ -71,12 +78,6 @@ _Bool __atomic_test_and_set_c(volatile void* mem, __unused int model) {
   atomic_unlock(mem, save);
   return result;
 }
-
-#define __atomic_load_c __atomic_load
-#define __atomic_store_c __atomic_store
-#define __atomic_exchange_c __atomic_exchange
-#define __atomic_compare_exchange_c __atomic_compare_exchange
-#define __atomic_is_lock_free_c __atomic_is_lock_free
 
 #endif  // __clang__
 
