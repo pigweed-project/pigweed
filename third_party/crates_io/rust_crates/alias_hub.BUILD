@@ -558,3 +558,15 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "zngur-lib",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:zngur-lib",
+    }),
+    visibility = ["//visibility:public"],
+)
+

@@ -60,7 +60,8 @@ thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["full"] }
 tokio-util = { version = "0.7.17", features = ["compat"] }
 toml = "0.8.23"
-zngur = "0.7.0"
+zngur = "0.10.0"
+zngur-lib = "0.10.0"
 psm = "0.1.30"
 zerocopy = { version = "0.8.48", features = ["derive"] }
 
