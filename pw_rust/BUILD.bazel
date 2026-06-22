@@ -28,6 +28,8 @@ pw_rust_docs(
         "//pw_assert/rust:pw_assert",
         "//pw_time/rust:pw_time_core",
         "//pw_time/rust:pw_time",
+        "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_core",
+        "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock",
         "//pw_bytes/rust:pw_bytes",
         "//pw_format/rust:pw_format_core",
         "//pw_format/rust:pw_format",
