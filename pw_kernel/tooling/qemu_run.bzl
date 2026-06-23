@@ -23,14 +23,22 @@ def _qemu_run_impl(ctx):
     if ctx.attr.uart_tcp_port > 0:
         uart_arg = " --uart-tcp-port {}".format(ctx.attr.uart_tcp_port)
 
+    gdb_arg = ""
+    if ctx.attr.gdb_tcp_port > 0:
+        gdb_arg = " --gdb-tcp-port {}".format(ctx.attr.gdb_tcp_port)
+
+        if ctx.attr.pause_for_gdb:
+            gdb_arg += " --gdb-pause"
+
     script = """#!/bin/sh
-exec "{qemu_runner}" --cpu {cpu} --machine {machine} --semihosting --image "{image}"{uart_arg} "$@"
+exec "{qemu_runner}" --cpu {cpu} --machine {machine} --semihosting --image "{image}"{uart_arg}{gdb_arg} "$@"
 """.format(
         qemu_runner = ctx.executable._qemu_runner.short_path,
         cpu = ctx.attr.cpu,
         machine = ctx.attr.machine,
         image = elf_file.short_path,
         uart_arg = uart_arg,
+        gdb_arg = gdb_arg,
     )
 
     ctx.actions.write(
@@ -58,6 +66,10 @@ qemu_runner = rule(
             doc = "QEMU CPU type.",
             mandatory = True,
         ),
+        "gdb_tcp_port": attr.int(
+            doc = "Optional TCP port for gdb server.",
+            default = 0,
+        ),
         "image": attr.label(
             doc = "The system_image target to run.",
             mandatory = True,
@@ -66,6 +78,10 @@ qemu_runner = rule(
         "machine": attr.string(
             doc = "QEMU machine type.",
             mandatory = True,
+        ),
+        "pause_for_gdb": attr.bool(
+            doc = "If set, the guest will pause on startup.",
+            default = False,
         ),
         "uart_tcp_port": attr.int(
             doc = "Optional TCP port for serial console redirection.",

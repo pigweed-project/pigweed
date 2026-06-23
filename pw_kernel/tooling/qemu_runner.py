@@ -99,6 +99,20 @@ def _parse_args():
         type=int,
         help='Expose serial port over local TCP socket on this port',
     )
+    parser.add_argument(
+        '--gdb-tcp-port',
+        type=int,
+        help='Expose a gdb server over local TCP socket on this port.',
+    )
+    parser.add_argument(
+        '--gdb-pause',
+        action=argparse.BooleanOptionalAction,
+        help=(
+            'On startup, the guest will wait until the gdb client '
+            'sends a `continue` command. '
+            'Only applicable if the gdb tcp port is set.'
+        ),
+    )
     return parser.parse_known_args()
 
 
@@ -171,10 +185,23 @@ def _main(args) -> int:
     ]
 
     if args.semihosting:
-        qemu_args += [
-            "-semihosting-config",
-            "enable=on,target=native",
-        ]
+        qemu_args.extend(
+            [
+                "-semihosting-config",
+                "enable=on,target=native",
+            ]
+        )
+
+    if args.gdb_tcp_port:
+        qemu_args.extend(
+            [
+                "-gdb",
+                f"tcp:127.0.0.1:{args.gdb_tcp_port},server,wait",
+            ]
+        )
+
+        if args.gdb_pause:
+            qemu_args.append("-S")  # make the guest pause on startup
 
     if args.qemu_args:
         qemu_args.extend(args.qemu_args)
