@@ -16,7 +16,7 @@ use std::io;
 
 use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
-use crate::packet::Packet;
+use crate::packet::{BreakpointType, Packet, StopReply};
 
 /// A client for interacting with a GDB server.
 pub struct Client<S> {
@@ -82,6 +82,87 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             remaining_length -= chunk_length;
         }
         Ok(data)
+    }
+
+    /// Sets a software breakpoint at the specified address.
+    ///
+    /// The `kind` parameter is target-specific and architecture-dependent. In most
+    /// implementations, it represents the size of the breakpoint in bytes (e.g.,
+    /// the length of the instruction to be replaced).
+    ///
+    /// For example:
+    /// - ARM: 2 for 16-bit Thumb mode, 3 for 32-bit Thumb-2 mode, or 4 for 32-bit ARM mode.
+    /// - MIPS: 2 for MIPS16 mode, or 4 for 32-bit MIPS mode.
+    /// - RISC-V: 2 for 16-bit compressed instruction mode, or 4 for 32-bit instruction mode.
+    pub async fn insert_software_breakpoint(&mut self, addr: u64, kind: u64) -> io::Result<()> {
+        self.send_packet(&Packet::InsertBreakpoint {
+            t_type: BreakpointType::Software,
+            addr,
+            kind,
+        })
+        .await?;
+
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::Ok => Ok(()),
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            Packet::Empty => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "GDB server does not support software breakpoints",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected response to insert breakpoint",
+            )),
+        }
+    }
+
+    /// Removes a software breakpoint at the specified address.
+    ///
+    /// The `kind` parameter must match the `kind` used when the breakpoint was inserted.
+    /// It is target-specific and architecture-dependent, typically representing the size
+    /// of the breakpoint instruction in bytes.
+    pub async fn remove_software_breakpoint(&mut self, addr: u64, kind: u64) -> io::Result<()> {
+        self.send_packet(&Packet::RemoveBreakpoint {
+            t_type: BreakpointType::Software,
+            addr,
+            kind,
+        })
+        .await?;
+
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::Ok => Ok(()),
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            Packet::Empty => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "GDB server does not support software breakpoints",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected response to remove breakpoint",
+            )),
+        }
+    }
+
+    /// Continues target execution and waits for a stop reply.
+    pub async fn continue_execution(&mut self) -> io::Result<StopReply> {
+        self.send_packet(&Packet::Continue).await?;
+
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::StopReply(reply) => Ok(reply),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected response to continue execution",
+            )),
+        }
     }
 
     async fn send_packet(&mut self, packet: &Packet) -> io::Result<()> {
@@ -306,5 +387,36 @@ mod tests {
         expected.push(b'+');
 
         assert_eq!(stream.write_data, expected);
+    }
+
+    #[tokio::test]
+    async fn test_insert_remove_software_breakpoint() {
+        // Test insert
+        let response = b"+$OK#9a";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+        client.insert_software_breakpoint(0x1000, 4).await.unwrap();
+        assert_eq!(stream.write_data, b"$Z0,1000,4#d7+");
+
+        // Test remove
+        let response = b"+$OK#9a";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+        client.remove_software_breakpoint(0x1000, 4).await.unwrap();
+        assert_eq!(stream.write_data, b"$z0,1000,4#f7+");
+    }
+
+    #[tokio::test]
+    async fn test_continue_execution() {
+        let response = b"+$S02#b5";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+
+        // Suppose the system under test is paused
+        // we continue, and then it stops due to a SIGINT
+        let stop_reason = client.continue_execution().await.unwrap();
+
+        assert_eq!(stop_reason, StopReply::Signal(2));
+        assert_eq!(stream.write_data, b"$c#63+");
     }
 }

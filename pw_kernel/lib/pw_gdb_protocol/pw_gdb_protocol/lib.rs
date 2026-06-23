@@ -45,3 +45,4 @@ pub mod client;
 mod packet;
 
 pub use client::Client;
+pub use packet::{BreakpointType, StopReply};
