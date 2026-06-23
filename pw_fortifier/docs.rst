@@ -103,6 +103,10 @@ Included Scanners
 =================
 The following scanners are included in ``pw_fortifier``:
 
+*  ``BazelDepScanner``: Scans Bazel module dependencies declared in
+   ``MODULE.bazel`` files. It queries the Bazel Central Registry (BCR) API and
+   the upstream registry Git repository to determine dependency release history
+   and timestamps.
 *  ``BazelMavenScanner``: Scans Maven dependencies declared in ``MODULE.bazel``
    files. It resolves artifacts to their group, name, and version, and queries
    the Maven Central registry (or other configured repositories) for release

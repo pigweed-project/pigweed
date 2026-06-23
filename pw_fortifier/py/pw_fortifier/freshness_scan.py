@@ -19,6 +19,7 @@ import os
 import sys
 from datetime import date
 
+from pw_fortifier.bazel_dep_scanner import BazelDepScanner
 from pw_fortifier.bazel_maven_scanner import BazelMavenScanner
 from pw_fortifier.cargo_scanner import CargoScanner
 from pw_fortifier.go_mod_scanner import GoModScanner
@@ -54,6 +55,7 @@ def main() -> None:
         registry.prune(d)
 
     # Register all leaf concrete scanners
+    registry.register(BazelDepScanner())
     registry.register(BazelMavenScanner())
     registry.register(CargoScanner())
     registry.register(GoModScanner())

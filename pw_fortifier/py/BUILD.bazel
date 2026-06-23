@@ -22,12 +22,14 @@ pw_py_library(
     name = "pw_fortifier",
     srcs = [
         "pw_fortifier/__init__.py",
+        "pw_fortifier/bazel_dep_scanner.py",
         "pw_fortifier/bazel_maven_scanner.py",
         "pw_fortifier/bazel_repo_scanner.py",
         "pw_fortifier/bazel_scanner.py",
         "pw_fortifier/cargo_scanner.py",
         "pw_fortifier/find_core_owners.py",
         "pw_fortifier/freshness_scan.py",
+        "pw_fortifier/git_repo_scanner.py",
         "pw_fortifier/go_mod_scanner.py",
         "pw_fortifier/npm_scanner.py",
         "pw_fortifier/package_scanner.py",
@@ -104,5 +106,12 @@ pw_py_test(
     name = "bazel_maven_scanner_test",
     size = "small",
     srcs = ["bazel_maven_scanner_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "bazel_dep_scanner_test",
+    size = "small",
+    srcs = ["bazel_dep_scanner_test.py"],
     deps = [":pw_fortifier"],
 )
