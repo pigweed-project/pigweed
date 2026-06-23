@@ -118,6 +118,9 @@ The following scanners are included in ``pw_fortifier``:
    files. It extracts the package names and versions, resolves them against a
    corresponding ``Cargo.lock`` file to determine the exact versions in use,
    and queries the crates.io API to check for newer releases.
+*  ``CipdSetupScanner``: Scans CIPD setup JSON files in ``pw_env_setup``. It
+   queries the CIPD registry API (using the ``cipd`` tool) to resolve package
+   versions, release history, and timestamps.
 *  ``CopybaraScanner``: Scans Copybara packages defined by ``copy.bara.sky``
    files under ``third_party/``. It extracts the upstream repository URL,
    determines the currently imported revision from the local Git history, and

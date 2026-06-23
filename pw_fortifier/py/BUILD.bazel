@@ -29,6 +29,7 @@ pw_py_library(
         "pw_fortifier/bazel_scanner.py",
         "pw_fortifier/cargo_scanner.py",
         "pw_fortifier/cipd_scanner.py",
+        "pw_fortifier/cipd_setup_scanner.py",
         "pw_fortifier/copybara_scanner.py",
         "pw_fortifier/find_core_owners.py",
         "pw_fortifier/freshness_scan.py",
@@ -137,5 +138,12 @@ pw_py_test(
     name = "bazel_cipd_scanner_test",
     size = "small",
     srcs = ["bazel_cipd_scanner_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "cipd_setup_scanner_test",
+    size = "small",
+    srcs = ["cipd_setup_scanner_test.py"],
     deps = [":pw_fortifier"],
 )
