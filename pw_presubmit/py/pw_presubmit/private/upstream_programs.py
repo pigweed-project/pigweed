@@ -24,6 +24,13 @@ from pw_presubmit import (
 )
 from pw_presubmit.format.step import format_steps
 from pw_presubmit.private.step import Step
+from pw_presubmit.private.bazel import (
+    build_affected_targets,
+    test_affected_targets,
+    python_lint,
+    clang_tidy,
+)
+
 
 # Paths to completely exclude from presubmit checks.
 EXCLUDES = (
@@ -50,13 +57,20 @@ QUICK_COMMON = (
     # TODO: b/432484923 - Fix this check in Bazel.
     # build.bazel_lint,
     upstream_checks.owners_lint_checks,
-    upstream_checks.source_in_bazel_build(),
     upstream_checks.source_in_gn_build(),
     # TODO: b/432484923 - Implement this check in Bazel.
     # javascript_checks.eslint,
     json_check.presubmit_check,
     keep_sorted.presubmit_check,
     upstream_checks.todo_check_with_exceptions,
+)
+
+FULL_COMMON = QUICK_COMMON + (
+    upstream_checks.source_in_bazel_build(),
+    build_affected_targets,
+    test_affected_targets,
+    python_lint,
+    clang_tidy,
 )
 
 
@@ -68,6 +82,8 @@ def programs(
     This is a function to avoid evaluating all programs at import time, which
     might fail in some environments.
     """
+    formatting = tuple(format_steps(exclude=format_exclusions))
     return {
-        "quick": QUICK_COMMON + tuple(format_steps(exclude=format_exclusions)),
+        "quick": QUICK_COMMON + formatting,
+        "full": FULL_COMMON + formatting,
     }

@@ -104,6 +104,7 @@ class TestExamples(unittest.TestCase):
                 output_dir=tmp_path / 'output',
                 paths=(test_file,),
                 all_paths=(test_file,),
+                all_modified_paths=(test_file,),
             )
             ctx.output_dir.mkdir()
 

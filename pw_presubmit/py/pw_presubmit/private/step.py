@@ -54,6 +54,7 @@ class Context:
     output_dir: Path
     paths: tuple[Path, ...]
     all_paths: tuple[Path, ...]
+    all_modified_paths: tuple[Path, ...]
     # _failures is mutable despite the class being frozen.
     _failures: list[Failure] = dataclasses.field(default_factory=list)
 

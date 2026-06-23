@@ -208,6 +208,7 @@ class Orchestrator:
             output_dir=step_output_dir,
             paths=tuple(step.paths),
             all_paths=self._all_paths,
+            all_modified_paths=self._paths,
         )
 
         try:

@@ -64,6 +64,7 @@ pw_py_library(
         "pw_presubmit/owners_checks.py",
         "pw_presubmit/presubmit.py",
         "pw_presubmit/presubmit_context.py",
+        "pw_presubmit/private/bazel.py",
         "pw_presubmit/private/build_common.py",
         "pw_presubmit/private/orchestrator.py",
         "pw_presubmit/private/v2_cli.py",
@@ -551,6 +552,12 @@ pw_py_test(
 pw_py_test(
     name = "bazel_checks_test",
     srcs = ["bazel_checks_test.py"],
+    deps = [":pw_presubmit"],
+)
+
+pw_py_test(
+    name = "bazel_test",
+    srcs = ["bazel_test.py"],
     deps = [":pw_presubmit"],
 )
 

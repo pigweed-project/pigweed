@@ -1,8 +1,8 @@
 ---
 name: run_presubmit_checks
 description: >-
-  How to use pw_presubmit to prepare one or more commits for submission,
-automatically fixing issues like formatting.
+  Run presubmit checks on one or more commits. Prepare changes for submission
+  by automatically fixing issues like formatting.
 ---
 
 # Presubmit Stack Fix Skill
@@ -32,7 +32,7 @@ The `auto` mode in `pw_presubmit` streamlines the process of fixing presubmit is
 To run presubmit in auto mode on a stack of commits, use the following command:
 
 ```console
-$ ./pw presubmit --mode auto --ui minimal --base <BASE>
+$ ./pw presubmit --mode auto --ui minimal --program full --base <BASE>
 ```
 
 Replace `<BASE>` with the base commit of the stack (e.g., `origin/main` or a specific commit hash).
@@ -47,7 +47,13 @@ Replace `<BASE>` with the base commit of the stack (e.g., `origin/main` or a spe
 When the script fails on a commit:
 
 1.  **Identify the failure**: Look at the output to see which step failed and why.
-2.  **Fix the issues**: Manually fix the issues in the files.
+2.  **Fix the issues**: Manually fix the issues, if feasible. **Stop and ask the user for input** before proceeding if you encounter any of the following:
+
+    - Merge conflicts during the rebase that you are unsure how to resolve.
+    - Presubmit failures that require significant design changes or user input.
+    - The script failing repeatedly on the same commit after manual fixes.
+    - Issues that would require changing files unrelated to the current commit to fix.
+
 3.  **Stage and Amend**: You MUST amend the commit with your fixes before resuming. The script requires a clean working tree.
     ```console
     $ git add <fixed_files>
@@ -58,12 +64,3 @@ When the script fails on a commit:
     $ ./pw presubmit --resume /tmp/pw_presubmit_auto_XXXXXX/resume.json
     ```
     Replace `/tmp/pw_presubmit_auto_XXXXXX/resume.json` with the path provided in the failure message.
-
-### Complex Problems
-
-If you encounter complex problems that you cannot easily resolve, such as:
-- Merge conflicts during the rebase that you are unsure how to resolve.
-- Presubmit failures that require significant design changes or user input.
-- The script failing repeatedly on the same commit after manual fixes.
-
-**Ask the user for input** before proceeding.

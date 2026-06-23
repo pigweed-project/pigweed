@@ -16,9 +16,14 @@
 from __future__ import annotations
 
 import collections.abc
+import logging
 import os
 from pathlib import Path
+import shlex
+import subprocess
 from typing import Iterable, Iterator, Sequence
+
+_LOG = logging.getLogger('pw_presubmit')
 
 
 def relative_paths(paths: Iterable[Path], start: Path) -> Iterable[Path]:
@@ -74,3 +79,38 @@ def make_box(section_alignments: Sequence[str]) -> str:
             '{10}',
         ]
     )
+
+
+def run_subprocess(
+    args: Iterable[str],
+    cwd: Path | str | None = None,
+    allowed_returncodes: tuple[int, ...] = (0,),
+) -> subprocess.CompletedProcess:
+    """Invokes subprocess.run with the provided arguments.
+
+    Logs the full command created with shlex.join before starting at DEBUG
+    level.  If the command fails, logs the command at WARNING and includes the
+    full output.  Pipes stdout/stderr into one so the output matches how it
+    appears in the console.
+    """
+    args_list = list(args)
+    cmd_str = shlex.join(args_list)
+    _LOG.debug('Running command:\n%s', cmd_str)
+
+    res = subprocess.run(
+        args_list,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=cwd,
+    )
+
+    if res.returncode in allowed_returncodes:
+        _LOG.debug('Output:\n%s', res.stdout)
+    else:
+        _LOG.warning(
+            'Command failed with exit code %d:\n%s', res.returncode, cmd_str
+        )
+        _LOG.warning('Output:\n%s', res.stdout)
+
+    return res

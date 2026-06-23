@@ -396,7 +396,10 @@ sphinx_docs_library(
 
 sphinx_build_binary(
     name = "sphinx_build",
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "nomypy",
+    ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
     deps = [

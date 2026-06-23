@@ -78,6 +78,7 @@ class TestCodeFormattingStep(unittest.TestCase):
                 output_dir=Path(tmp),
                 paths=(p,),
                 all_paths=(p,),
+                all_modified_paths=(p,),
             )
 
             step.run(ctx)
@@ -95,6 +96,7 @@ class TestCodeFormattingStep(unittest.TestCase):
                 output_dir=Path(tmp),
                 paths=(p,),
                 all_paths=(p,),
+                all_modified_paths=(p,),
             )
 
             step.run(ctx)
@@ -112,6 +114,7 @@ class TestCodeFormattingStep(unittest.TestCase):
                 output_dir=Path(tmp),
                 paths=(p,),
                 all_paths=(p,),
+                all_modified_paths=(p,),
             )
 
             step.fix(ctx)

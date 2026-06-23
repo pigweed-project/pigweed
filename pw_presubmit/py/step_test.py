@@ -89,6 +89,7 @@ class TestStep(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         step.run(ctx)
         self.assertTrue(step.run_called)
@@ -102,6 +103,7 @@ class TestStep(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         step.run(ctx)
         self.assertTrue(step.run_called)
@@ -114,6 +116,7 @@ class TestStep(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         step.fix(ctx)
         self.assertTrue(ctx.failed)
@@ -127,6 +130,7 @@ class TestStep(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         step.fix(ctx)
         self.assertFalse(ctx.failed)
@@ -226,6 +230,7 @@ class TestStepDecorator(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         self.assertIsNone(my_step.fix(ctx))
         self.assertTrue(fix_called)
@@ -245,6 +250,7 @@ class TestStepDecorator(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         with self.assertRaises(NotImplementedError):
             my_step.fix(ctx)
@@ -265,6 +271,7 @@ class TestStepDecorator(unittest.TestCase):
             output_dir=Path('.'),
             paths=(),
             all_paths=(),
+            all_modified_paths=(),
         )
         self.assertIsNone(my_step.fix(ctx))
 
