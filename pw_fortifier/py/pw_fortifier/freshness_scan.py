@@ -22,6 +22,7 @@ from datetime import date
 from pw_fortifier.bazel_dep_scanner import BazelDepScanner
 from pw_fortifier.bazel_maven_scanner import BazelMavenScanner
 from pw_fortifier.cargo_scanner import CargoScanner
+from pw_fortifier.copybara_scanner import CopybaraScanner
 from pw_fortifier.go_mod_scanner import GoModScanner
 from pw_fortifier.npm_scanner import NpmScanner
 from pw_fortifier.pip_scanner import PipScanner
@@ -58,6 +59,7 @@ def main() -> None:
     registry.register(BazelDepScanner())
     registry.register(BazelMavenScanner())
     registry.register(CargoScanner())
+    registry.register(CopybaraScanner())
     registry.register(GoModScanner())
     npm_scanner = NpmScanner()
     npm_scanner.add_on_device_module('pw_web')
