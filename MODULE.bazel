@@ -172,7 +172,7 @@ pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_c
 LLVM_VERSION = "git_revision:a3f244e2d5550e110daee562b88bee247b75d66c"
 
 pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
-pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@12.2.MPACBTI-Rel1.1")
+pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@15.2.rel1.1")
 pw_cxx_toolchain.zephyr_gcc(cipd_tag = "version:3@1.0.0")
 pw_cxx_toolchain.zephyr_llvm(cipd_tag = "version:3@1.0.0")
 use_repo(pw_cxx_toolchain, "gcc_arm_none_eabi_toolchain", "llvm_toolchain", "zephyr_llvm_toolchain", "zephyr_toolchain")

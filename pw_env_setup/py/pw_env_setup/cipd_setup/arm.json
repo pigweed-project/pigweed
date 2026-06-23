@@ -1,16 +1,15 @@
 {
   "packages": [
     {
-      "path": "fuchsia/third_party/armgcc/${platform}",
+      "path": "fuchsia/third_party/3pp/armgcc/${platform}",
       "platforms": [
         "linux-amd64",
         "linux-arm64",
-        "mac-amd64",
         "mac-arm64",
         "windows-amd64"
       ],
       "tags": [
-        "version:2@12.2.MPACBTI-Rel1.1"
+        "version:2@15.2.rel1.1"
       ],
       "version_file": ".versions/gcc-arm-none-eabi.version"
     },

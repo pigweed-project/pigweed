@@ -33,7 +33,7 @@ _CipdResourceInfo = provider(
 _TOOLCHAIN_VARIANTS = {
     "arm_gcc": _CipdResourceInfo(
         repo_name = "gcc_arm_none_eabi_toolchain",
-        cipd_path = "fuchsia/third_party/armgcc/${os}-${arch}",
+        cipd_path = "fuchsia/third_party/3pp/armgcc/${os}-${arch}",
         build_file = "//pw_toolchain/build_external:arm_none_eabi_gcc.BUILD",
     ),
     "llvm": _CipdResourceInfo(

@@ -545,8 +545,8 @@
     },
     "//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
-        "bzlTransitiveDigest": "wxMkQnBPgcsYve8kyQGYL5X1lPaqDDsacizE/cf32ug=",
-        "usagesDigest": "6udOPzk3/C9ow/qHPMCVNRdrpS912K6+R2EMTqu9/MM=",
+        "bzlTransitiveDigest": "83Lni+yuAj/gUIJEnf3d1lwh2cpPe9RQ41EPkktoHV8=",
+        "usagesDigest": "umU+QYkl0QXzC7wE6yBiC4EeAa6sbkyrWuzsF0YeAUg=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -555,8 +555,8 @@
             "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
             "attributes": {
               "build_file": "@@//pw_toolchain/build_external:arm_none_eabi_gcc.BUILD",
-              "path": "fuchsia/third_party/armgcc/${os}-${arch}",
-              "tag": "version:2@12.2.MPACBTI-Rel1.1"
+              "path": "fuchsia/third_party/3pp/armgcc/${os}-${arch}",
+              "tag": "version:2@15.2.rel1.1"
             }
           },
           "llvm_toolchain": {
