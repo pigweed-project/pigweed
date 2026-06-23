@@ -99,6 +99,15 @@ The tool utilizes a registry-based architecture defined in
    all scanners, and ``freshness_scan.py`` formats and outputs these results as
    CSV to stdout.
 
+Included Scanners
+=================
+The following scanners are included in ``pw_fortifier``:
+
+*  ``CargoScanner``: Scans Rust Cargo dependencies declared in ``Cargo.toml``
+   files. It extracts the package names and versions, resolves them against a
+   corresponding ``Cargo.lock`` file to determine the exact versions in use,
+   and queries the crates.io API to check for newer releases.
+
 Extending the Scanner
 =====================
 The framework is designed to be easily extendable to support new package

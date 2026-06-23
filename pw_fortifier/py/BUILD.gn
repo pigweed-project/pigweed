@@ -25,11 +25,13 @@ pw_python_package("py") {
   }
   sources = [
     "pw_fortifier/__init__.py",
+    "pw_fortifier/cargo_scanner.py",
     "pw_fortifier/find_core_owners.py",
     "pw_fortifier/freshness_scan.py",
     "pw_fortifier/package_scanner.py",
   ]
   tests = [
+    "cargo_scanner_test.py",
     "find_core_owners_test.py",
     "freshness_scan_test.py",
     "package_scanner_test.py",

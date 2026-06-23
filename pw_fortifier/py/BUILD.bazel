@@ -22,6 +22,7 @@ pw_py_library(
     name = "pw_fortifier",
     srcs = [
         "pw_fortifier/__init__.py",
+        "pw_fortifier/cargo_scanner.py",
         "pw_fortifier/find_core_owners.py",
         "pw_fortifier/freshness_scan.py",
         "pw_fortifier/package_scanner.py",
@@ -61,5 +62,12 @@ pw_py_test(
     name = "freshness_scan_test",
     size = "small",
     srcs = ["freshness_scan_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "cargo_scanner_test",
+    size = "small",
+    srcs = ["cargo_scanner_test.py"],
     deps = [":pw_fortifier"],
 )
