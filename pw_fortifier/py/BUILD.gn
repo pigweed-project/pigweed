@@ -29,6 +29,7 @@ pw_python_package("py") {
     "pw_fortifier/find_core_owners.py",
     "pw_fortifier/freshness_scan.py",
     "pw_fortifier/go_mod_scanner.py",
+    "pw_fortifier/npm_scanner.py",
     "pw_fortifier/package_scanner.py",
   ]
   tests = [
@@ -36,6 +37,7 @@ pw_python_package("py") {
     "find_core_owners_test.py",
     "freshness_scan_test.py",
     "go_mod_scanner_test.py",
+    "npm_scanner_test.py",
     "package_scanner_test.py",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"

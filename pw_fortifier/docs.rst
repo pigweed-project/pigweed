@@ -110,6 +110,11 @@ The following scanners are included in ``pw_fortifier``:
 *  ``GoModScanner``: Scans Go module dependencies declared in ``go.mod``
    files. It queries the local ``go`` toolchain (using ``go list``) to resolve
    dependencies, their timestamps, and available newer versions.
+*  ``NpmScanner``: Scans Node.js NPM dependencies declared in ``package.json``
+   files. It extracts package names and versions, resolves them against a
+   corresponding ``package-lock.json`` file to determine the exact versions
+   in use, and queries the npm registry (using ``npm view``) to check for newer
+   releases.
 
 Extending the Scanner
 =====================
