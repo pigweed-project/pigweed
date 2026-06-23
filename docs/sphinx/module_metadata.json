@@ -430,6 +430,13 @@
       "Rust"
     ]
   },
+  "pw_fortifier": {
+    "tagline": "Tools and frameworks for defensive development",
+    "status": "experimental",
+    "languages": [
+      "Python"
+    ]
+  },
   "pw_function": {
     "tagline": "Embedded-friendly std::function",
     "status": "stable",

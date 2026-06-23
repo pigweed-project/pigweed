@@ -63,6 +63,7 @@ Modules
    pw_file/docs
    pw_flatbuffers/docs
    pw_format/docs
+   pw_fortifier/docs
    pw_function/docs
    pw_fuzzer/docs
    pw_grpc/docs

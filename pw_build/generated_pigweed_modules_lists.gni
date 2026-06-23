@@ -108,6 +108,7 @@ declare_args() {
   dir_pw_file = get_path_info("../pw_file", "abspath")
   dir_pw_flatbuffers = get_path_info("../pw_flatbuffers", "abspath")
   dir_pw_format = get_path_info("../pw_format", "abspath")
+  dir_pw_fortifier = get_path_info("../pw_fortifier", "abspath")
   dir_pw_function = get_path_info("../pw_function", "abspath")
   dir_pw_fuzzer = get_path_info("../pw_fuzzer", "abspath")
   dir_pw_grpc = get_path_info("../pw_grpc", "abspath")
@@ -311,6 +312,7 @@ declare_args() {
     dir_pw_file,
     dir_pw_flatbuffers,
     dir_pw_format,
+    dir_pw_fortifier,
     dir_pw_function,
     dir_pw_fuzzer,
     dir_pw_grpc,
@@ -503,6 +505,7 @@ declare_args() {
     "$dir_pw_file:tests",
     "$dir_pw_flatbuffers:tests",
     "$dir_pw_format:tests",
+    "$dir_pw_fortifier:tests",
     "$dir_pw_function:tests",
     "$dir_pw_fuzzer:tests",
     "$dir_pw_grpc:tests",

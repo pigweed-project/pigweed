@@ -72,6 +72,7 @@ pw_env_setup_zephyr
 pw_file
 pw_flatbuffers
 pw_format
+pw_fortifier
 pw_function
 pw_fuzzer
 pw_grpc
