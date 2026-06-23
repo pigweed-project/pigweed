@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -23,8 +23,13 @@ pw_py_library(
     srcs = [
         "pw_fortifier/__init__.py",
         "pw_fortifier/find_core_owners.py",
+        "pw_fortifier/freshness_scan.py",
+        "pw_fortifier/package_scanner.py",
     ],
     imports = ["."],
+    deps = [
+        "@pigweed_python_packages//requests",
+    ],
 )
 
 pw_py_test(
@@ -36,4 +41,25 @@ pw_py_test(
     deps = [
         ":pw_fortifier",
     ],
+)
+
+pw_py_binary(
+    name = "freshness_scan",
+    srcs = ["pw_fortifier/freshness_scan.py"],
+    tags = ["nomypy"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "package_scanner_test",
+    size = "small",
+    srcs = ["package_scanner_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "freshness_scan_test",
+    size = "small",
+    srcs = ["freshness_scan_test.py"],
+    deps = [":pw_fortifier"],
 )
