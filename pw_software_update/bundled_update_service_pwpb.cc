@@ -391,7 +391,17 @@ void BundledUpdateService::DoApply() {
 
   // TODO(davidrogers): Add new APPLY_REBOOTING to distinguish between pre and
   // post reboot.
-
+  //
+  // Note: PersistManifest() is intentionally NOT called here. Deciding when
+  // to commit trust to an incoming OTA (by persisting the manifest) is the
+  // responsibility of the client, as the timing can be complex (e.g. atomic
+  // multi-component updates, such as updating both earbuds and the charger
+  // case). Eagerly committing trust at the end of applying a single component
+  // update may be immature or unsafe. The client integration is expected to
+  // call UpdateBundleAccessor::PersistManifest() (or the legacy
+  // ManifestAccessor::WriteManifest()) at the appropriate integration-defined
+  // boundary, or skip it if the hardware lacks secure anti-rollback storage.
+  //
   // Finalize the apply.
   if (const Status status = backend_.ApplyReboot(); !status.ok()) {
     SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,

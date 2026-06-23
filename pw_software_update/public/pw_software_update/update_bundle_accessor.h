@@ -118,6 +118,25 @@ class UpdateBundleAccessor {
 
   // Writes out the manifest of the staged bundle via a backend-supplied writer.
   //
+  // Sourcing/applying an update and deciding when to trust/commit it (by
+  // persisting the manifest) is the sole responsibility of the
+  // pw_software_update client.
+  //
+  // Calling PersistManifest() signifies committing trust to the incoming OTA.
+  //
+  // The reference BundledUpdateService implementation does NOT automatically
+  // call PersistManifest() during DoApply(). Eagerly committing an update at
+  // the end of the apply phase may be undesirable for complex integrations
+  // (e.g. atomic multi-component/multi-device updates, where an update must
+  // succeed on all components before committing trust). Deciding the timing and
+  // discretion of when to persist the manifest is left to the client.
+  //
+  // Additionally, a client may choose to call the legacy
+  // ManifestAccessor::WriteManifest() to persist a manifest, or skip persisting
+  // it entirely if the hardware lacks secure anti-rollback storage (as
+  // non-secure storage rollback resistance does not provide meaningful
+  // security).
+  //
   // Returns:
   // FAILED_PRECONDITION - Bundle is not open and verified.
   Status PersistManifest();
