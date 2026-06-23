@@ -17,6 +17,7 @@
 import json
 import os
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -176,9 +177,46 @@ class TestQemuChannelsPty(TestQemu):
     _config.update(json.loads(json.dumps(TestQemu._config)))
     _config['qemu']['channels'] = {'type': 'pty'}
 
+    def _get_gdb_version(self) -> str:
+        gdb_cmd = self._config.get('gdb', [])
+        if not gdb_cmd:
+            return ''
+        gdb_cmd = gdb_cmd.copy()
+        gdb_cmd.append('--version')
+        try:
+            proc = subprocess.run(gdb_cmd, capture_output=True, text=True)
+            if proc.returncode == 0 and proc.stdout:
+                first_line = proc.stdout.splitlines()[0]
+                version_str = first_line.split()[-1]
+                return version_str
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            IndexError,
+            ValueError,
+        ):
+            pass
+        return ''
+
+    def _apply_gdb_version_workaround(self) -> None:
+        # Apply a workaround for GDB spinning at 100% CPU when making remote
+        # connections over PTY. As this problem seems to be specific to the
+        # version of GDB used (included with the ARM GCC 15 toolchain), we
+        # apply the workaround for that version only.
+
+        # Detect the problematic version
+        version_str = self._get_gdb_version()
+        if version_str == '16.3.90.20250906-git':
+            # Use tcp when connecting with gdb as the workaround.
+            self._config['qemu']['channels']['gdb'] = {
+                'type': 'tcp',
+            }
+
     def setUp(self):
         if sys.platform == 'win32':
             self.skipTest('pty not supported on win32')
+
+        self._apply_gdb_version_workaround()
         super().setUp()
 
     def test_get_path(self) -> None:
