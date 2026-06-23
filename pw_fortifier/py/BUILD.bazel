@@ -25,6 +25,7 @@ pw_py_library(
         "pw_fortifier/cargo_scanner.py",
         "pw_fortifier/find_core_owners.py",
         "pw_fortifier/freshness_scan.py",
+        "pw_fortifier/go_mod_scanner.py",
         "pw_fortifier/package_scanner.py",
     ],
     imports = ["."],
@@ -69,5 +70,12 @@ pw_py_test(
     name = "cargo_scanner_test",
     size = "small",
     srcs = ["cargo_scanner_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "go_mod_scanner_test",
+    size = "small",
+    srcs = ["go_mod_scanner_test.py"],
     deps = [":pw_fortifier"],
 )

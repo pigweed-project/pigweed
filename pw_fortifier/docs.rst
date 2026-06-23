@@ -107,6 +107,9 @@ The following scanners are included in ``pw_fortifier``:
    files. It extracts the package names and versions, resolves them against a
    corresponding ``Cargo.lock`` file to determine the exact versions in use,
    and queries the crates.io API to check for newer releases.
+*  ``GoModScanner``: Scans Go module dependencies declared in ``go.mod``
+   files. It queries the local ``go`` toolchain (using ``go list``) to resolve
+   dependencies, their timestamps, and available newer versions.
 
 Extending the Scanner
 =====================

@@ -20,6 +20,7 @@ import sys
 from datetime import date
 
 from pw_fortifier.cargo_scanner import CargoScanner
+from pw_fortifier.go_mod_scanner import GoModScanner
 from pw_fortifier.package_scanner import (
     PackageScannerRegistry,
     TIER0_ON_DEVICE,
@@ -51,6 +52,7 @@ def main() -> None:
 
     # Register all leaf concrete scanners
     registry.register(CargoScanner())
+    registry.register(GoModScanner())
 
     out_file = sys.stdout
     if args.output:
