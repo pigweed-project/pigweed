@@ -75,6 +75,7 @@ pw_python_package("py") {
     "pw_presubmit/presubmit_context.py",
     "pw_presubmit/private/__init__.py",
     "pw_presubmit/private/bazel.py",
+    "pw_presubmit/private/bootstrap.py",
     "pw_presubmit/private/build_common.py",
     "pw_presubmit/private/check.py",
     "pw_presubmit/private/events.py",
@@ -97,6 +98,7 @@ pw_python_package("py") {
   tests = [
     "bazel_checks_test.py",
     "bazel_test.py",
+    "bootstrap_test.py",
     "bazel_parser_test.py",
     "block_submission_test.py",
     "context_test.py",

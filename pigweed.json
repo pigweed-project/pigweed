@@ -106,7 +106,7 @@
       "relative_pigweed_root": ".",
       "project_actions": [
         {
-          "import_path": "pw_env_setup",
+          "import_path": "pw_env_setup/py/pw_env_setup",
           "module_name": "npm_action"
         }
       ],

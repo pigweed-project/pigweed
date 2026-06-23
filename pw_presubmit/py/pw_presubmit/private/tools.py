@@ -82,9 +82,11 @@ def make_box(section_alignments: Sequence[str]) -> str:
 
 
 def run_subprocess(
-    args: Iterable[str],
+    args: Iterable[str] | str,
     cwd: Path | str | None = None,
     allowed_returncodes: tuple[int, ...] = (0,),
+    env: dict[str, str] | None = None,
+    shell: bool = False,
 ) -> subprocess.CompletedProcess:
     """Invokes subprocess.run with the provided arguments.
 
@@ -93,8 +95,14 @@ def run_subprocess(
     full output.  Pipes stdout/stderr into one so the output matches how it
     appears in the console.
     """
-    args_list = list(args)
-    cmd_str = shlex.join(args_list)
+    args_list: str | list[str]
+    if isinstance(args, str):
+        args_list = args
+        cmd_str = args
+    else:
+        args_list = list(args)
+        cmd_str = shlex.join(args_list)
+
     _LOG.debug('Running command:\n%s', cmd_str)
 
     res = subprocess.run(
@@ -103,6 +111,9 @@ def run_subprocess(
         stderr=subprocess.STDOUT,
         text=True,
         cwd=cwd,
+        env=env,
+        shell=shell,
+        executable='/bin/bash' if shell and os.name != 'nt' else None,
     )
 
     if res.returncode in allowed_returncodes:

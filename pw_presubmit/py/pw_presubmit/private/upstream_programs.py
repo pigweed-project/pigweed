@@ -30,6 +30,13 @@ from pw_presubmit.private.bazel import (
     python_lint,
     clang_tidy,
 )
+from pw_presubmit.private.bootstrap import (
+    bootstrap,
+    cmake_tests,
+    gn_gen,
+    gn_ninja_build,
+    gn_ninja_python,
+)
 
 
 # Paths to completely exclude from presubmit checks.
@@ -71,6 +78,11 @@ FULL_COMMON = QUICK_COMMON + (
     test_affected_targets,
     python_lint,
     clang_tidy,
+    bootstrap,
+    cmake_tests,
+    gn_gen,
+    gn_ninja_build,
+    gn_ninja_python,
 )
 
 
