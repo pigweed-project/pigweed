@@ -13,7 +13,7 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
-include($ENV{PW_ROOT}/pw_enum/pw_cc_enum.cmake)
+include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 
 pw_add_library(pw_enum INTERFACE
   HEADERS
@@ -41,16 +41,16 @@ pw_add_test(pw_enum.to_string_test
     pw_enum
 )
 
-pw_cc_enum(pw_enum.base_enum
-  HEADERS
+pw_add_enum_library(pw_enum.base_enum
+  ENUM_HEADERS
     private/pw_enum_private/base_enum.h
   PUBLIC_INCLUDES
     private
 )
 
 # DOCSTAG: [pw_enum-basic-cmake]
-pw_cc_enum(pw_enum.basic_enum
-  HEADERS
+pw_add_enum_library(pw_enum.basic_enum
+  ENUM_HEADERS
     private/pw_enum_private/basic_enum.h
   PUBLIC_INCLUDES
     private
@@ -59,15 +59,15 @@ pw_cc_enum(pw_enum.basic_enum
 )
 # DOCSTAG: [pw_enum-basic-cmake]
 
-pw_cc_enum(pw_enum._complex_enum
-  HEADERS
+pw_add_enum_library(pw_enum._complex_enum
+  ENUM_HEADERS
     private/pw_enum_private/complex_enum.h
   PUBLIC_INCLUDES
     private
 )
 
-pw_cc_enum(pw_enum._standalone_enum
-  HEADERS
+pw_add_enum_library(pw_enum._standalone_enum
+  ENUM_HEADERS
     private/pw_enum_private/standalone_enum.h
   PUBLIC_INCLUDES
     private
@@ -80,8 +80,8 @@ pw_add_library(pw_enum._test_dep_lib INTERFACE
     private
 )
 
-pw_cc_enum(pw_enum._enum_with_deps
-  HEADERS
+pw_add_enum_library(pw_enum._enum_with_deps
+  ENUM_HEADERS
     private/pw_enum_private/enum_with_deps.h
   PUBLIC_INCLUDES
     private

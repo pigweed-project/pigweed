@@ -15,7 +15,7 @@
 import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_unit_test/test.gni")
-import("pw_cc_enum.gni")
+import("pw_cc_enum_source_set.gni")
 
 config("public_include_path") {
   include_dirs = [ "public" ]
@@ -48,29 +48,29 @@ pw_test("to_string_test") {
   sources = [ "to_string_test.cc" ]
 }
 
-pw_cc_enum("base_enum") {
-  public = [ "private/pw_enum_private/base_enum.h" ]
+pw_cc_enum_source_set("base_enum") {
+  enum_headers = [ "private/pw_enum_private/base_enum.h" ]
   include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }
 
 # DOCSTAG: [pw_enum-basic-gn]
-pw_cc_enum("basic_enum") {
-  public = [ "private/pw_enum_private/basic_enum.h" ]
-  deps = [ ":base_enum" ]
+pw_cc_enum_source_set("basic_enum") {
+  enum_headers = [ "private/pw_enum_private/basic_enum.h" ]
+  public_deps = [ ":base_enum" ]
   include_dirs = [ "private" ]
 }
 
 # DOCSTAG: [pw_enum-basic-gn]
 
-pw_cc_enum("complex_enum") {
-  public = [ "private/pw_enum_private/complex_enum.h" ]
+pw_cc_enum_source_set("complex_enum") {
+  enum_headers = [ "private/pw_enum_private/complex_enum.h" ]
   include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }
 
-pw_cc_enum("standalone_enum") {
-  public = [ "private/pw_enum_private/standalone_enum.h" ]
+pw_cc_enum_source_set("standalone_enum") {
+  enum_headers = [ "private/pw_enum_private/standalone_enum.h" ]
   include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }
@@ -81,9 +81,9 @@ pw_source_set("test_dep_lib") {
   visibility = [ ":*" ]
 }
 
-pw_cc_enum("enum_with_deps") {
-  public = [ "private/pw_enum_private/enum_with_deps.h" ]
-  deps = [ ":test_dep_lib" ]
+pw_cc_enum_source_set("enum_with_deps") {
+  enum_headers = [ "private/pw_enum_private/enum_with_deps.h" ]
+  public_deps = [ ":test_dep_lib" ]
   include_dirs = [ "private" ]
   visibility = [ ":*" ]
 }

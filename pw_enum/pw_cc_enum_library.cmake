@@ -14,30 +14,35 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
-# Generates a C++ library with versioned enums.
+# Defines a C++ library that automatically tokenizes versioned enums.
 #
 # Args:
-#   HEADERS: Standard .h files containing enum definitions.
-#   PUBLIC_DEPS: Dependencies (other pw_cc_enum targets).
+#   ENUM_HEADERS: Standard .h files containing enum definitions to tokenize (required).
+#   HEADERS: Public non-enum headers of the library.
+#   SOURCES: C++ source files of the library.
+#   PUBLIC_DEPS: Public dependencies.
+#   PRIVATE_DEPS: Private dependencies.
 #   PUBLIC_INCLUDES: Prefix to strip from the include path of generated headers.
-function(pw_cc_enum NAME)
+function(pw_add_enum_library NAME)
   pw_parse_arguments(
     NUM_POSITIONAL_ARGS 1
     ONE_VALUE_ARGS PUBLIC_INCLUDES
-    MULTI_VALUE_ARGS HEADERS PUBLIC_DEPS
+    MULTI_VALUE_ARGS ENUM_HEADERS HEADERS SOURCES PUBLIC_DEPS PRIVATE_DEPS
   )
 
-  if(NOT arg_HEADERS)
-    message(FATAL_ERROR "pw_cc_enum requires HEADERS")
+  if(NOT arg_ENUM_HEADERS)
+    message(FATAL_ERROR "pw_add_enum_library requires ENUM_HEADERS")
   endif()
+  set(enum_headers ${arg_ENUM_HEADERS})
+  set(other_headers ${arg_HEADERS})
 
   list(LENGTH arg_PUBLIC_INCLUDES public_includes_len)
   if(NOT public_includes_len EQUAL 1)
-    message(FATAL_ERROR "pw_cc_enum requires exactly one value for PUBLIC_INCLUDES")
+    message(FATAL_ERROR "pw_add_enum_library requires exactly one value for PUBLIC_INCLUDES")
   endif()
 
   if("${arg_PUBLIC_INCLUDES}" STREQUAL ".")
-    message(FATAL_ERROR "pw_cc_enum does not allow '.' as PUBLIC_INCLUDES. "
+    message(FATAL_ERROR "pw_add_enum_library does not allow '.' as PUBLIC_INCLUDES. "
         "Since CMake doesn't isolate headers, it is too easy for sources to "
         "accidentally include original headers instead of generated ones.")
   endif()
@@ -55,6 +60,7 @@ function(pw_cc_enum NAME)
   target_link_libraries("${NAME}._base_lib" PRIVATE
       pw_enum._generate_internal_do_not_use
       ${arg_PUBLIC_DEPS}
+      ${arg_PRIVATE_DEPS}
   )
 
   # Determine the C++ standard to use.
@@ -81,17 +87,17 @@ function(pw_cc_enum NAME)
   )
 
   set(output_files "")
-  foreach(header IN LISTS arg_HEADERS)
+  foreach(header IN LISTS enum_headers)
     cmake_path(IS_ABSOLUTE header is_absolute)
     if(is_absolute)
       message(FATAL_ERROR
-          "pw_cc_enum HEADERS must be relative, but '${header}' is absolute")
+          "pw_add_enum_library ENUM_HEADERS must be relative, but '${header}' is absolute")
     endif()
 
     cmake_path(IS_PREFIX arg_PUBLIC_INCLUDES "${header}" NORMALIZE is_prefix)
     if(NOT is_prefix)
       message(FATAL_ERROR
-          "pw_cc_enum HEADERS must be nested under the PUBLIC_INCLUDES path, "
+          "pw_add_enum_library ENUM_HEADERS must be nested under the PUBLIC_INCLUDES path, "
           "but '${header}' is not nested under '${arg_PUBLIC_INCLUDES}'.")
     endif()
 
@@ -103,12 +109,12 @@ function(pw_cc_enum NAME)
   add_custom_command(
     OUTPUT ${output_files}
     COMMAND python3 $ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py
-            ${arg_HEADERS}
+            ${enum_headers}
             "--outputs" ${output_files}
             "--compiler" "${CMAKE_CXX_COMPILER}"
             "--compiler-flags" "${out_dir}/flags-CXX.txt"
             "--base-cc" "${out_dir}/base.cc"
-    DEPENDS ${arg_HEADERS}
+    DEPENDS ${enum_headers}
             "${out_dir}/flags-CXX.txt"
             "$ENV{PW_ROOT}/pw_enum/py/pw_enum/generate.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -117,14 +123,29 @@ function(pw_cc_enum NAME)
 
   add_custom_target("${NAME}.generate" DEPENDS ${output_files})
 
-  pw_add_library("${NAME}" INTERFACE
+  if("${arg_SOURCES}" STREQUAL "")
+    set(lib_type INTERFACE)
+  else()
+    set(lib_type STATIC)
+  endif()
+
+  pw_add_library("${NAME}" ${lib_type}
+    SOURCES
+      ${arg_SOURCES}
+    GENERATED_HEADERS
+      ${output_files}
+    HEADERS
+      ${other_headers}
     PUBLIC_DEPS
       pw_tokenizer
       pw_enum._generate_internal_do_not_use
       ${arg_PUBLIC_DEPS}
+    PRIVATE_DEPS
+      ${arg_PRIVATE_DEPS}
+    # Use -iquote so generated headers take priority over source directories.
     PUBLIC_COMPILE_OPTIONS
-      # Use -iquote so generated headers take priority over source directories.
       "-iquote${out_dir}/include"
   )
+
   add_dependencies("${NAME}" "${NAME}.generate")
 endfunction()

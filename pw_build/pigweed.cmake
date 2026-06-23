@@ -194,7 +194,7 @@ endfunction()
 
 # Sets the provided variable to the multi_value_keywords from pw_add_library.
 macro(_pw_add_library_multi_value_args variable)
-  set("${variable}" SOURCES HEADERS
+  set("${variable}" SOURCES HEADERS GENERATED_HEADERS
                     PUBLIC_DEPS PRIVATE_DEPS
                     PUBLIC_INCLUDES PRIVATE_INCLUDES
                     PUBLIC_DEFINES PRIVATE_DEFINES
@@ -317,7 +317,6 @@ function(pw_add_library_generic NAME TYPE)
       SANDBOX
     MULTI_VALUE_ARGS
       ${multi_value_args}
-      GENERATED_HEADERS
       PRIVATE_COMPILE_OPTIONS_DEPS_BEFORE
   )
 
@@ -542,6 +541,8 @@ function(pw_add_library NAME TYPE)
       ${arg_SOURCES}
     HEADERS
       ${arg_HEADERS}
+    GENERATED_HEADERS
+      ${arg_GENERATED_HEADERS}
     PUBLIC_DEPS
       # TODO: b/232141950 - Apply compilation options that affect ABI
       # globally in the CMake build instead of injecting them into libraries.

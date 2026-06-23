@@ -13,19 +13,19 @@
 # the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//pw_enum:pw_cc_enum.bzl", "pw_cc_enum")
+load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 # DOCSTAG: [pw_enum-examples-basic-bazel]
-pw_cc_enum(
+pw_cc_enum_library(
     name = "basic_enum",
-    hdrs = ["private/enum_example/basic_enum.h"],
+    enum_headers = ["private/enum_example/basic_enum.h"],
     strip_include_prefix = "private",
 )
 
-pw_cc_enum(
+pw_cc_enum_library(
     name = "other_enum",
-    hdrs = ["private/enum_example/other_enum.h"],
+    enum_headers = ["private/enum_example/other_enum.h"],
     strip_include_prefix = "private",
     deps = [":basic_enum"],
 )
@@ -45,9 +45,9 @@ cc_library(
 # DOCSTAG: [pw_enum-examples-basic-bazel]
 
 # DOCSTAG: [pw_enum-examples-advanced-bazel]
-pw_cc_enum(
+pw_cc_enum_library(
     name = "advanced_enum",
-    hdrs = ["enum_example/references_other_enum.h"],
+    enum_headers = ["enum_example/references_other_enum.h"],
     strip_include_prefix = ".",
     deps = [":basic_enum"],
 )

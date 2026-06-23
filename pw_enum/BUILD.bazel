@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_enum:pw_cc_enum.bzl", "pw_cc_enum")
+load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:private"])
@@ -43,32 +43,32 @@ pw_cc_test(
     ],
 )
 
-pw_cc_enum(
+pw_cc_enum_library(
     name = "base_enum",
-    hdrs = ["private/pw_enum_private/base_enum.h"],
+    enum_headers = ["private/pw_enum_private/base_enum.h"],
     strip_include_prefix = "private",
 )
 
 # DOCSTAG: [pw_enum-basic-bazel]
-pw_cc_enum(
+pw_cc_enum_library(
     name = "basic_enum",
-    hdrs = ["private/pw_enum_private/basic_enum.h"],
+    enum_headers = ["private/pw_enum_private/basic_enum.h"],
     strip_include_prefix = "private",
     deps = [":base_enum"],
 )
 # DOCSTAG: [pw_enum-basic-bazel]
 
-pw_cc_enum(
+pw_cc_enum_library(
     name = "complex_enum",
     testonly = True,
-    hdrs = ["private/pw_enum_private/complex_enum.h"],
+    enum_headers = ["private/pw_enum_private/complex_enum.h"],
     strip_include_prefix = "private",
 )
 
-pw_cc_enum(
+pw_cc_enum_library(
     name = "standalone_enum",
     testonly = True,
-    hdrs = ["private/pw_enum_private/standalone_enum.h"],
+    enum_headers = ["private/pw_enum_private/standalone_enum.h"],
     strip_include_prefix = "private",
 )
 
@@ -79,10 +79,10 @@ cc_library(
     strip_include_prefix = "private",
 )
 
-pw_cc_enum(
+pw_cc_enum_library(
     name = "enum_with_deps",
     testonly = True,
-    hdrs = ["private/pw_enum_private/enum_with_deps.h"],
+    enum_headers = ["private/pw_enum_private/enum_with_deps.h"],
     strip_include_prefix = "private",
     deps = [":test_dep_lib"],
 )

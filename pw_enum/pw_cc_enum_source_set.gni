@@ -17,28 +17,33 @@ import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_toolchain/generate_toolchain.gni")
 
-# Generates a C++ library with versioned enums.
+# Defines a C++ source set that automatically enables versioned enum tokenization.
 #
 # Args:
-#   public: Standard .h files containing enum definitions.
-#   deps: Dependencies (other pw_cc_enum targets).
-#   include_dirs: List containing exactly one path to include for generated headers.
-template("pw_cc_enum") {
-  assert(defined(invoker.public), "pw_cc_enum requires public")
-  assert(defined(invoker.include_dirs), "pw_cc_enum requires include_dirs")
+#   enum_headers: List of standard .h files containing enum definitions to tokenize (required).
+#   include_dirs: List containing exactly one path to include for generated headers (required).
+#   public: Optional list of general public C++ headers.
+#   sources: Optional list of C++ implementation source files.
+#   deps: Dependencies.
+#   public_deps: Public dependencies.
+template("pw_cc_enum_source_set") {
+  assert(defined(invoker.enum_headers),
+         "pw_cc_enum_source_set requires enum_headers")
+  assert(defined(invoker.include_dirs),
+         "pw_cc_enum_source_set requires include_dirs")
   _include_dirs = invoker.include_dirs
   assert(_include_dirs == [ _include_dirs[0] ],
          "include_dirs must have exactly one path")
 
   assert(
       _include_dirs[0] != ".",
-      "pw_cc_enum does not allow '.' as include_dirs. " +
+      "pw_cc_enum_source_set does not allow '.' as include_dirs. " +
           "Since GN doesn't isolate headers, it is too easy for sources to " +
           "accidentally include original headers instead of generated ones.")
 
   _out_dir = "${target_gen_dir}/${target_name}"
   _out_files = []
-  foreach(_hdr, invoker.public) {
+  foreach(_hdr, invoker.enum_headers) {
     _out_files += [ "$_out_dir/include/" + rebase_path(_hdr, _include_dirs[0]) ]
   }
 
@@ -49,9 +54,15 @@ template("pw_cc_enum") {
   pw_source_set(_base_target) {
     forward_variables_from(invoker, [ "testonly" ])
     sources = [ _base_cc_file ]
+    _deps = []
     if (defined(invoker.deps)) {
-      deps = invoker.deps
+      _deps += invoker.deps
     }
+    if (defined(invoker.public_deps)) {
+      _deps += invoker.public_deps
+    }
+    deps = _deps
+    include_dirs = _include_dirs
     public_deps = [
       "$dir_pw_enum:_generate_internal_do_not_use",
       "$dir_pw_tokenizer",
@@ -64,9 +75,9 @@ template("pw_cc_enum") {
     forward_variables_from(invoker, [ "testonly" ])
     module = "pw_enum.generate_gn"
     python_deps = [ "$dir_pw_enum/py" ]
-    inputs = invoker.public
+    inputs = invoker.enum_headers
     outputs = _out_files
-    args = rebase_path(invoker.public, root_build_dir) + [ "--outputs" ] +
+    args = rebase_path(invoker.enum_headers, root_build_dir) + [ "--outputs" ] +
            rebase_path(_out_files, root_build_dir) +
            [
              "--base-cc",
@@ -89,22 +100,47 @@ template("pw_cc_enum") {
     visibility = [ ":*" ]
   }
 
+  config("${target_name}.original_includes") {
+    include_dirs = _include_dirs
+    visibility = [ ":*" ]
+  }
+
   pw_source_set(target_name) {
     forward_variables_from(invoker,
+                           "*",
                            [
-                             "testonly",
-                             "visibility",
+                             "public",
+                             "include_dirs",
+                             "deps",
+                             "public_deps",
+                             "enum_headers",
+                             "public_configs",
                            ])
+
     public = _out_files
+    if (defined(invoker.public)) {
+      public += invoker.public
+    }
+
     public_deps = [
       "$dir_pw_enum:_generate_internal_do_not_use",
       "$dir_pw_tokenizer",
     ]
-    if (defined(invoker.deps)) {
-      public_deps += invoker.deps
+    if (defined(invoker.public_deps)) {
+      public_deps += invoker.public_deps
     }
-    deps = [ ":$_generate_target" ]
 
-    public_configs = [ ":${target_name}.public_includes" ]
+    deps = [ ":$_generate_target" ]
+    if (defined(invoker.deps)) {
+      deps += invoker.deps
+    }
+
+    public_configs = [
+      ":${target_name}.public_includes",
+      ":${target_name}.original_includes",
+    ]
+    if (defined(invoker.public_configs)) {
+      public_configs += invoker.public_configs
+    }
   }
 }

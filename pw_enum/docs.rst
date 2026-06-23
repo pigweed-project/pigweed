@@ -23,9 +23,9 @@ Automatic tokenized and stringified enums
 ``pw_enum`` works on enums declared in standard C++ header files. To use
 ``pw_enum``:
 
-1. Declare one or more enums in a header files.
-2. Include the header file in a ``pw_cc_enum`` target instead of a standard
-   ``cc_library``.
+1. Declare one or more enums in a header file.
+2. Include the header file in a versioned enum target (e.g. ``pw_cc_enum_source_set``
+   for GN, ``pw_cc_enum_library`` for Bazel, ``pw_add_enum_library`` for CMake).
 3. Include :cs:`pw_enum/generate.h` in the header file.
 4. Register the enum using the :cc:`PW_ENUM(MyEnum, ...) <PW_ENUM>` macro at
    global scope. List the fully qualified enum name, followed by all of its
@@ -146,7 +146,7 @@ Build integration
 
    .. tab-item:: Bazel
 
-      Use the ``pw_cc_enum`` rule from :cs:`//pw_enum:pw_cc_enum.bzl`.
+      Use the ``pw_cc_enum_library`` rule from :cs:`//pw_enum:pw_cc_enum_library.bzl`.
 
       .. literalinclude:: BUILD.bazel
          :language: python
@@ -155,8 +155,8 @@ Build integration
 
    .. tab-item:: GN
 
-      Use the ``pw_cc_enum`` template from :cs:`"$dir_pw_enum/pw_cc_enum.gni"
-      <//pw_enum:pw_cc_enum.gni>`.
+      Use the ``pw_cc_enum_source_set`` template from :cs:`"$dir_pw_enum/pw_cc_enum_source_set.gni"
+      <//pw_enum:pw_cc_enum_source_set.gni>`.
 
       .. literalinclude:: BUILD.gn
          :start-after: [pw_enum-basic-gn]
@@ -164,8 +164,8 @@ Build integration
 
    .. tab-item:: CMake
 
-      Use the ``pw_cc_enum`` function from :cs:`pw_enum/pw_cc_enum.cmake
-      <//pw_enum:pw_cc_enum.cmake>`.
+      Use the ``pw_add_enum_library`` function from :cs:`pw_enum/pw_cc_enum_library.cmake
+      <//pw_enum:pw_cc_enum_library.cmake>`.
 
       .. literalinclude:: CMakeLists.txt
          :language: cmake
@@ -181,7 +181,7 @@ customization by searching for a matching function via Argument-Dependent Lookup
 (ADL). For more information, see `Designing Extension Points With FTADLE
 <https://abseil.io/tips/218>`_.
 
-If you don't use ``pw_cc_enum``, you can manually use :cc:`PW_TOKENIZE_ENUM`
+If you don't use the build-time generation targets, you can manually use :cc:`PW_TOKENIZE_ENUM`
 in :cs:`pw_tokenizer/enum.h <pw_tokenizer/public/pw_tokenizer/enum.h>` to
 tokenize the enum and implement ``PwEnumToString``.
 
@@ -312,7 +312,7 @@ surrounded by unique markers. A :cs:`Python script
 <pw_enum/py/pw_enum/parse.py>` searches a preprocessed source file for the
 markers and extracts the enum metadata.
 
-The macro also serves to require that users list the file in a ``pw_cc_enum``
+The macro also serves to require that users list the file in a versioned enum
 target (see `Build system integration`_), which is necessary for it to be
 processed. If the file is not processed by ``pw_enum`` machinery, the macro
 expands to ``static_assert(false)``, causing the build to fail with an
@@ -337,7 +337,7 @@ version.
 
 Build-time generation
 =====================
-After parsing, the ``pw_cc_enum`` target runs a Python script
+After parsing, the versioned enum target runs a Python script
 (:cs:`pw_enum/py/pw_enum/generate.py`) that generates a header.
 
 1. **Enum generation**: The script generates a "shadowed" version of the header
@@ -345,7 +345,7 @@ After parsing, the ``pw_cc_enum`` target runs a Python script
    plus a footer with tokenization metadata. It also replaces the
    ``PW_ENUM(...)`` calls with ``_PW_ENUM_GENERATED(...)``. ``PW_ENUM(...)``
    expands to ``static_assert(false)`` to require users to build headers with
-   ``pw_cc_enum``.
+   versioned enum targets.
 2. **Versioning**: A unique version hash is calculated for each enum based on
    its fully qualified name and the names and values of all its enumerators.
    This hash is used to construct a unique tokenization domain (e.g.,
@@ -357,20 +357,20 @@ After parsing, the ``pw_cc_enum`` target runs a Python script
 
 Build system integration
 ========================
-The ``pw_cc_enum`` build rule automates the process of parsing C++ headers and
+The versioned enum build rules automate the process of parsing C++ headers and
 generating versioned enum metadata. It invokes the ``pw_enum`` generator with
 the correct compilation flags and ensures the generated headers are prioritized
 during compilation.
 
-* **Bazel** (:cs:`pw_cc_enum.bzl <//pw_enum:pw_cc_enum.bzl>`) creates an
+* **Bazel** (:cs:`pw_cc_enum_library.bzl <//pw_enum:pw_cc_enum_library.bzl>`) creates an
   internal library target to collect the compilation flags (includes, defines)
   required to parse the header correctly and passes them to the Python script.
-* **CMake** (:cs:`pw_cc_enum.cmake <//pw_enum:pw_cc_enum.cmake>`) creates an
+* **CMake** (:cs:`pw_cc_enum_library.cmake <//pw_enum:pw_cc_enum_library.cmake>`) creates an
   internal interface library to collect includes and defines from dependencies,
   and uses ``file(GENERATE)`` to produce a flags file for the generator. It
   uses ``-iquote`` to ensure that the build system prioritizes the generated
   shadowed header over the original source header.
-* **GN** (:cs:`pw_cc_enum.gni <//pw_enum:pw_cc_enum.gni>`) compiles a
+* **GN** (:cs:`pw_cc_enum_source_set.gni <//pw_enum:pw_cc_enum_source_set.gni>`) compiles a
   placeholder C++ file with the enum's dependencies to generate a target Ninja
   file. The generator script parses the target Ninja file and the toolchain's
   Ninja file to extract the compiler and its compilation flags (defines,

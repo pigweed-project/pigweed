@@ -145,13 +145,23 @@ _pw_cc_enum_generator = rule(
     fragments = ["cpp"],
 )
 
-def pw_cc_enum(name, hdrs, strip_include_prefix, deps = [], visibility = None, **kwargs):
-    """Generates a C++ library with versioned enums.
+def pw_cc_enum_library(
+        name,
+        enum_headers,
+        hdrs = [],
+        srcs = [],
+        deps = [],
+        strip_include_prefix = None,
+        visibility = None,
+        **kwargs):
+    """Defines a C++ library that automatically tokenizes versioned enums.
 
     Args:
       name: The name of the cc_library target.
-      hdrs: Standard .h files containing enum definitions.
-      deps: Dependencies (other pw_cc_enum or cc_library targets).
+      enum_headers: Standard .h files containing enum definitions to tokenize (required).
+      hdrs: Public headers of the library.
+      srcs: Source files of the library.
+      deps: Dependencies.
       strip_include_prefix: Prefix to strip from the include path of generated headers.
       visibility: Visibility of the target.
       **kwargs: Additional arguments passed to the underlying rule.
@@ -169,7 +179,7 @@ def pw_cc_enum(name, hdrs, strip_include_prefix, deps = [], visibility = None, *
     cc_library(
         name = name + ".base_lib",
         srcs = [":" + name + ".base_cc_gen"],
-        hdrs = hdrs,
+        hdrs = enum_headers + hdrs,
         deps = [
             "//pw_enum:_generate_internal_do_not_use",
             "//pw_log:args",
@@ -184,16 +194,18 @@ def pw_cc_enum(name, hdrs, strip_include_prefix, deps = [], visibility = None, *
         name = name + ".generate",
         internal_lib = ":" + name + ".base_lib",
         base_cc = ":" + name + ".base_cc_gen",
-        hdrs = hdrs,
+        hdrs = enum_headers,
         deps = deps + ["//pw_enum:_generate_internal_do_not_use"],
         strip_include_prefix = strip_include_prefix,
         visibility = ["//visibility:private"],
         testonly = testonly,
         tags = ["no-clang-tidy-headers"],
     )
+
     cc_library(
         name = name,
-        hdrs = [":" + name + ".generate"],
+        srcs = srcs,
+        hdrs = [":" + name + ".generate"] + hdrs,
         strip_include_prefix = strip_include_prefix,
         deps = [
             "//pw_enum:_generate_internal_do_not_use",
