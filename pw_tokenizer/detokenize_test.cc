@@ -14,6 +14,7 @@
 
 #include "pw_tokenizer/detokenize.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 

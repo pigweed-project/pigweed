@@ -14,6 +14,7 @@
 
 #include "pw_tokenizer/tokenize.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
