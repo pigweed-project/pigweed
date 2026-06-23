@@ -103,6 +103,10 @@ Included Scanners
 =================
 The following scanners are included in ``pw_fortifier``:
 
+*  ``BazelMavenScanner``: Scans Maven dependencies declared in ``MODULE.bazel``
+   files. It resolves artifacts to their group, name, and version, and queries
+   the Maven Central registry (or other configured repositories) for release
+   history and timestamps to determine freshness.
 *  ``CargoScanner``: Scans Rust Cargo dependencies declared in ``Cargo.toml``
    files. It extracts the package names and versions, resolves them against a
    corresponding ``Cargo.lock`` file to determine the exact versions in use,
