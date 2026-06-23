@@ -22,6 +22,7 @@ from datetime import date
 from pw_fortifier.cargo_scanner import CargoScanner
 from pw_fortifier.go_mod_scanner import GoModScanner
 from pw_fortifier.npm_scanner import NpmScanner
+from pw_fortifier.pip_scanner import PipScanner
 from pw_fortifier.package_scanner import (
     PackageScannerRegistry,
     TIER0_ON_DEVICE,
@@ -57,6 +58,7 @@ def main() -> None:
     npm_scanner = NpmScanner()
     npm_scanner.add_on_device_module('pw_web')
     registry.register(npm_scanner)
+    registry.register(PipScanner())
 
     out_file = sys.stdout
     if args.output:

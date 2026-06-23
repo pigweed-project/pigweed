@@ -31,6 +31,7 @@ pw_python_package("py") {
     "pw_fortifier/go_mod_scanner.py",
     "pw_fortifier/npm_scanner.py",
     "pw_fortifier/package_scanner.py",
+    "pw_fortifier/pip_scanner.py",
   ]
   tests = [
     "cargo_scanner_test.py",
@@ -38,6 +39,7 @@ pw_python_package("py") {
     "freshness_scan_test.py",
     "go_mod_scanner_test.py",
     "npm_scanner_test.py",
+    "pip_scanner_test.py",
     "package_scanner_test.py",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"

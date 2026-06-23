@@ -28,9 +28,11 @@ pw_py_library(
         "pw_fortifier/go_mod_scanner.py",
         "pw_fortifier/npm_scanner.py",
         "pw_fortifier/package_scanner.py",
+        "pw_fortifier/pip_scanner.py",
     ],
     imports = ["."],
     deps = [
+        "@pigweed_python_packages//packaging",
         "@pigweed_python_packages//requests",
     ],
 )
@@ -85,5 +87,12 @@ pw_py_test(
     name = "npm_scanner_test",
     size = "small",
     srcs = ["npm_scanner_test.py"],
+    deps = [":pw_fortifier"],
+)
+
+pw_py_test(
+    name = "pip_scanner_test",
+    size = "small",
+    srcs = ["pip_scanner_test.py"],
     deps = [":pw_fortifier"],
 )

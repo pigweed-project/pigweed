@@ -115,6 +115,10 @@ The following scanners are included in ``pw_fortifier``:
    corresponding ``package-lock.json`` file to determine the exact versions
    in use, and queries the npm registry (using ``npm view``) to check for newer
    releases.
+*  ``PipScanner``: Scans Python Pip dependencies declared in requirements files
+   under ``pw_env_setup/py/pw_env_setup/virtualenv_setup/``. It extracts
+   package names and versions, and queries the PyPI JSON API to check for newer
+   releases. It resolves package ownership by searching ``setup.cfg`` files.
 
 Extending the Scanner
 =====================
