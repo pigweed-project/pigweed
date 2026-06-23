@@ -103,6 +103,9 @@ Included Scanners
 =================
 The following scanners are included in ``pw_fortifier``:
 
+*  ``BazelCipdScanner``: Scans CIPD repository dependencies declared in
+   ``MODULE.bazel`` files. It queries the CIPD registry API (using the ``cipd``
+   tool) to resolve package versions, release history, and timestamps.
 *  ``BazelDepScanner``: Scans Bazel module dependencies declared in
    ``MODULE.bazel`` files. It queries the Bazel Central Registry (BCR) API and
    the upstream registry Git repository to determine dependency release history

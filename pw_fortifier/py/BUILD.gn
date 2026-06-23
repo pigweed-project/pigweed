@@ -25,11 +25,13 @@ pw_python_package("py") {
   }
   sources = [
     "pw_fortifier/__init__.py",
+    "pw_fortifier/bazel_cipd_scanner.py",
     "pw_fortifier/bazel_dep_scanner.py",
     "pw_fortifier/bazel_maven_scanner.py",
     "pw_fortifier/bazel_repo_scanner.py",
     "pw_fortifier/bazel_scanner.py",
     "pw_fortifier/cargo_scanner.py",
+    "pw_fortifier/cipd_scanner.py",
     "pw_fortifier/copybara_scanner.py",
     "pw_fortifier/find_core_owners.py",
     "pw_fortifier/freshness_scan.py",
@@ -40,9 +42,11 @@ pw_python_package("py") {
     "pw_fortifier/pip_scanner.py",
   ]
   tests = [
+    "bazel_cipd_scanner_test.py",
     "bazel_dep_scanner_test.py",
     "bazel_maven_scanner_test.py",
     "cargo_scanner_test.py",
+    "cipd_scanner_test.py",
     "copybara_scanner_test.py",
     "find_core_owners_test.py",
     "freshness_scan_test.py",
