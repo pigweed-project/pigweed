@@ -48,7 +48,9 @@ platform(
         "//pw_log/rust:pw_log_backend": "//targets/pw_rp2350:rust_log_basic_backend",
         "//pw_log:backend": "//pw_log_basic",
         "//pw_log:backend_impl": "//pw_log_basic:impl",
+        "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend": "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend_freertos",
         "//pw_sys_io:backend": "//pw_sys_io_rp2040",
+        "//pw_time/rust:pw_time_backend": "//pw_time/rust:pw_time_backend_freertos",
         "//pw_toolchain:cortex-m_toolchain_kind": "clang",
         "//targets/pw_rp2350:platform_deps": ":boot",
         "@freertos//:freertos_config": ":freertos_config",
@@ -144,4 +146,14 @@ rp2350_binary(
 flash_rp2350(
     name = "flash_loop_example",
     rp2350_binary = ":loop_example_binary",
+)
+
+rp2350_binary(
+    name = "system_clock_example_binary",
+    binary = "//targets/pw_rp2350:system_clock_example",
+)
+
+flash_rp2350(
+    name = "flash_system_clock_example",
+    rp2350_binary = ":system_clock_example_binary",
 )

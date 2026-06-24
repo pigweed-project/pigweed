@@ -28,6 +28,19 @@ pw_rust_binary(
     ],
 )
 
+pw_rust_binary(
+    name = "system_clock_example",
+    srcs = ["system_clock_example.rs"],
+    edition = "2021",
+    deps = [
+        ":platform_deps",
+        "//pw_boot/rust:pw_boot",
+        "//pw_log/rust:pw_log",
+        "//pw_sync/rust/pw_sync_spinlock",
+        "//pw_time/rust:pw_time",
+    ],
+)
+
 label_flag(
     name = "platform_deps",
     build_setting_default = "//pw_build:unspecified_backend",
