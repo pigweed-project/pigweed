@@ -111,3 +111,33 @@ namespace this_is_also_a_test {
 PW_TOKENIZE_ENUM(::this_is_a_test::NamespaceThing, kHotel, kIndia, kJuliett);
 
 }  // namespace this_is_also_a_test
+
+enum class TestEnumForDomain { kOne };
+
+template <>
+constexpr uint32_t pw::tokenizer::PwEnumDomainToken<TestEnumForDomain>() {
+  return 88888u;
+}
+
+namespace this_is_a_test {
+namespace {
+
+enum class UnspecializedEnum { kOne };
+
+[[maybe_unused]] void EnumDomainTokenUnspecialized() {
+#if PW_NC_TEST(EnumDomainTokenUnspecialized)
+  PW_NC_EXPECT("PwEnumDomainToken must be specialized for this type.");
+
+  constexpr uint32_t token =
+      pw::tokenizer::EnumDomainToken<UnspecializedEnum>();
+#endif  // PW_NC_TEST
+}
+
+TEST(EnumDomainToken, Specialized) {
+  constexpr uint32_t token =
+      pw::tokenizer::EnumDomainToken<TestEnumForDomain>();
+  EXPECT_EQ(token, 88888u);
+}
+
+}  // namespace
+}  // namespace this_is_a_test

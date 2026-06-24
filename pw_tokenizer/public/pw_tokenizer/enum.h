@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
+
 #include "pw_preprocessor/apply.h"
 #include "pw_tokenizer/internal/enum.h"
 #include "pw_tokenizer/tokenize.h"
@@ -38,6 +41,22 @@ template <typename T>
 [[deprecated("Use pw::EnumToString from pw_enum/to_string.h instead")]]
 constexpr const char* EnumToString(T value) {
   return PwEnumToString(value);
+}
+
+// Primary template for PwEnumDomainToken, specialized by generated code.
+template <typename T>
+constexpr uint32_t PwEnumDomainToken() {
+  static_assert(sizeof(T) == 0,
+                "PwEnumDomainToken must be specialized for this type. Ensure "
+                "the necessary PW_ENUM macro is used.");
+  return 0;
+}
+
+/// Returns the tokenization domain token of a given enum type.
+template <typename T>
+constexpr uint32_t EnumDomainToken() {
+  static_assert(std::is_enum_v<T>, "Must be an enum");
+  return PwEnumDomainToken<T>();
 }
 
 /// @}

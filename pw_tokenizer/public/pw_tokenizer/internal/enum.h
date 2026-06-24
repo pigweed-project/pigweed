@@ -13,6 +13,11 @@
 // the License.
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
+
+#include "pw_preprocessor/compiler.h"
+#include "pw_tokenizer/hash.h"
 #include "pw_tokenizer/tokenize.h"
 
 namespace pw::tokenizer {
@@ -105,6 +110,15 @@ constexpr bool ValidEnumerator(T) {
            _PW_SEMICOLON,                                                   \
            (fully_qualified_name, domain_name),                             \
            __VA_ARGS__);                                                    \
+  PW_TOKENIZER_DEFINE_TOKEN(                                                \
+      ::pw::tokenizer::Hash(domain_name), "enum_domain", domain_name);      \
+  namespace pw::tokenizer {                                                 \
+  template <>                                                               \
+  constexpr uint32_t PwEnumDomainToken<fully_qualified_name>() {            \
+    constexpr uint32_t kToken = ::pw::tokenizer::Hash(domain_name);         \
+    return kToken;                                                          \
+  }                                                                         \
+  }                                                                         \
   namespace pw {                                                            \
   template <>                                                               \
   constexpr const char* EnumToString(fully_qualified_name _pw_enum_value) { \
@@ -127,3 +141,12 @@ template <typename T>
 constexpr const char* EnumToString(T value);
 
 }  // namespace pw
+
+// Forward declaration of pw::tokenizer::PwEnumDomainToken to allow
+// specialization by the _PW_TOKENIZE_ENUM_DOMAIN macro.
+namespace pw::tokenizer {
+
+template <typename T>
+constexpr uint32_t PwEnumDomainToken();
+
+}  // namespace pw::tokenizer
