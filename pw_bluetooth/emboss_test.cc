@@ -576,5 +576,52 @@ TEST(EmbossTest, WriteSniffOffloadParametersZeroFields) {
   EXPECT_TRUE(writer.IsComplete());
 }
 
+TEST(EmbossTest, ReadWriteMaxSlotsChange) {
+  std::array<uint8_t, emboss::MaxSlotsChangeEventView::SizeInBytes()> buffer{};
+  auto writer = emboss::MakeMaxSlotsChangeEventView(&buffer);
+
+  writer.header().event_code().Write(emboss::EventCode::MAX_SLOTS_CHANGE);
+  writer.header().parameter_total_size().Write(
+      emboss::MaxSlotsChangeEventView::SizeInBytes() -
+      emboss::EventHeaderWriter::SizeInBytes());
+  writer.connection_handle().Write(0x0123);
+  writer.lmp_max_slots().Write(5);
+
+  EXPECT_TRUE(writer.IsComplete());
+
+  auto reader = emboss::MakeMaxSlotsChangeEventView(&buffer);
+  EXPECT_TRUE(reader.Ok());
+  EXPECT_EQ(reader.header().event_code().Read(),
+            emboss::EventCode::MAX_SLOTS_CHANGE);
+  EXPECT_EQ(reader.connection_handle().Read(), 0x0123);
+  EXPECT_EQ(reader.lmp_max_slots().Read(), 5);
+}
+
+TEST(EmbossTest, ReadWriteConnectionPacketTypeChanged) {
+  std::array<uint8_t,
+             emboss::ConnectionPacketTypeChangedEventView::SizeInBytes()>
+      buffer{};
+  auto writer = emboss::MakeConnectionPacketTypeChangedEventView(&buffer);
+
+  writer.header().event_code().Write(
+      emboss::EventCode::CONNECTION_PACKET_TYPE_CHANGED);
+  writer.header().parameter_total_size().Write(
+      emboss::ConnectionPacketTypeChangedEventView::SizeInBytes() -
+      emboss::EventHeaderWriter::SizeInBytes());
+  writer.status().Write(emboss::StatusCode::SUCCESS);
+  writer.connection_handle().Write(0x0123);
+  writer.packet_type().BackingStorage().WriteUInt(0xcc18);
+
+  EXPECT_TRUE(writer.IsComplete());
+
+  auto reader = emboss::MakeConnectionPacketTypeChangedEventView(&buffer);
+  EXPECT_TRUE(reader.Ok());
+  EXPECT_EQ(reader.header().event_code().Read(),
+            emboss::EventCode::CONNECTION_PACKET_TYPE_CHANGED);
+  EXPECT_EQ(reader.status().Read(), emboss::StatusCode::SUCCESS);
+  EXPECT_EQ(reader.connection_handle().Read(), 0x0123);
+  EXPECT_EQ(reader.packet_type().BackingStorage().ReadUInt(), 0xcc18);
+}
+
 }  // namespace
 }  // namespace pw::bluetooth

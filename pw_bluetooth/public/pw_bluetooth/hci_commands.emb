@@ -100,23 +100,6 @@ bits ScoPacketType:
   $next [+1]  Flag  not_3_ev5
 
 
-bits PacketType:
-  -- Bitmask values for supported Packet Types
-  -- Used for HCI_Create_Connection and HCI_Change_Connection_Packet_Type
-  -- All other bits reserved for future use.
-  1  [+1]  Flag  disable_2_dh1
-  2  [+1]  Flag  disable_3_dh1
-  3  [+1]  Flag  enable_dm1     # Note: always on in >= v1.2
-  4  [+1]  Flag  enable_dh1
-  8  [+1]  Flag  disable_2_dh3
-  9  [+1]  Flag  disable_3_dh3
-  10 [+1]  Flag  enable_dm3
-  11 [+1]  Flag  enable_dh3
-  12 [+1]  Flag  disable_2_dh5
-  13 [+1]  Flag  disable_3_dh5
-  14 [+1]  Flag  enable_dm5
-  15 [+1]  Flag  enable_dh5
-
 
 enum OobDataPresent:
   -- Whether there is out-of-band data present, and what type.
@@ -539,7 +522,7 @@ struct CreateConnectionCommand:
   $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                  bd_addr
     -- BD_ADDR of the device to be connected
 
-  $next [+2]                          PacketType                  packet_type
+  $next [+2]                          hci.PacketType              packet_type
     -- Mask of allowable packet types.
 
   $next [+1]                          hci.PageScanRepetitionMode  page_scan_repetition_mode
