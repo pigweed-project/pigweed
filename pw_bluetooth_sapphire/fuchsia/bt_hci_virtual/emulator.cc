@@ -122,13 +122,12 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
   // Initialize |fake_device_|
   auto init_complete_cb = [](pw::Status status) {
     if (!status.ok()) {
-      FDF_LOG(WARNING,
-              "FakeController failed to initialize: %s",
-              pw_StatusString(status));
+      fdf::warn("FakeController failed to initialize: {}",
+                pw_StatusString(status));
     }
   };
   auto error_cb = [this](pw::Status status) {
-    FDF_LOG(WARNING, "FakeController error: %s", pw_StatusString(status));
+    fdf::warn("FakeController error: {}", pw_StatusString(status));
     UnpublishHci();
   };
   fake_device_.Initialize(init_complete_cb, error_cb);
@@ -144,9 +143,7 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
   zx::result connector = emulator_devfs_connector_.Bind(
       fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to bind devfs connecter to dispatcher: %u",
-            connector.status_value());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
     return connector.error_value();
   }
 
@@ -178,7 +175,7 @@ void EmulatorDevice::Shutdown() {
 void EmulatorDevice::Publish(PublishRequest& request,
                              PublishCompleter::Sync& completer) {
   if (hci_node_controller_.is_valid()) {
-    FDF_LOG(INFO, "bt-hci-device is already published");
+    fdf::info("bt-hci-device is already published");
     completer.Reply(fit::error(fhbt::EmulatorError::kHciAlreadyPublished));
     return;
   }
@@ -188,10 +185,10 @@ void EmulatorDevice::Publish(PublishRequest& request,
 
   zx_status_t status = AddHciDeviceChildNode();
   if (status != ZX_OK) {
-    FDF_LOG(WARNING, "Failed to publish bt-hci-device node");
+    fdf::warn("Failed to publish bt-hci-device node");
     completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
   } else {
-    FDF_LOG(INFO, "Successfully published bt-hci-device node");
+    fdf::info("Successfully published bt-hci-device node");
     completer.Reply(fit::success());
   }
 }
@@ -245,8 +242,7 @@ void EmulatorDevice::WatchLegacyAdvertisingStates(
 void EmulatorDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fhbt::Emulator> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(
-      ERROR,
+  fdf::error(
       "Unknown method in Emulator request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
@@ -273,9 +269,7 @@ void EmulatorDevice::OpenHciTransport(
 
   auto endpoints = fidl::CreateEndpoints<fhbt::HciTransport>();
   if (endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to create endpoints: %s",
-            zx_status_get_string(endpoints.error_value()));
+    fdf::error("Failed to create endpoints: {}", endpoints);
     completer.ReplyError(endpoints.error_value());
     return;
   }
@@ -300,8 +294,7 @@ void EmulatorDevice::GetCrashParameters(
 void EmulatorDevice::handle_unknown_method(
     fidl::UnknownMethodMetadata<fhbt::Vendor> metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(
-      ERROR,
+  fdf::error(
       "Unknown method in Vendor request, closing with ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
@@ -331,9 +324,8 @@ void EmulatorDevice::Send(SendRequest& request,
       return;
     }
     default: {
-      FDF_LOG(ERROR,
-              "Received unknown packet type %lu",
-              static_cast<uint64_t>(request.Which()));
+      fdf::error("Received unknown packet type {}",
+                 static_cast<uint64_t>(request.Which()));
       return;
     }
   }
@@ -351,9 +343,9 @@ void EmulatorDevice::handle_unknown_method(
     ::fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::HciTransport>
         metadata,
     ::fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR,
-          "Unknown method in HciTransport request, closing with "
-          "ZX_ERR_NOT_SUPPORTED");
+  fdf::error(
+      "Unknown method in HciTransport request, closing with "
+      "ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -379,9 +371,7 @@ zx_status_t EmulatorDevice::AddHciDeviceChildNode() {
   zx::result connector = vendor_devfs_connector_.Bind(
       fdf::Dispatcher::GetCurrent()->async_dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to bind devfs connecter to dispatcher: %u",
-            connector.status_value());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
     return connector.error_value();
   }
 
@@ -401,9 +391,8 @@ zx_status_t EmulatorDevice::AddHciDeviceChildNode() {
   auto controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create node controller endpoints failed: %s",
-            zx_status_get_string(controller_endpoints.error_value()));
+    fdf::error("Create node controller endpoints failed: {}",
+               controller_endpoints);
     return controller_endpoints.error_value();
   }
 
@@ -413,9 +402,7 @@ zx_status_t EmulatorDevice::AddHciDeviceChildNode() {
   auto child_node_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
   if (child_node_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create child node endpoints failed: %s",
-            zx_status_get_string(child_node_endpoints.error_value()));
+    fdf::error("Create child node endpoints failed: {}", child_node_endpoints);
     return child_node_endpoints.error_value();
   }
 
@@ -426,16 +413,14 @@ zx_status_t EmulatorDevice::AddHciDeviceChildNode() {
       std::move(controller_endpoints->server),
       std::move(child_node_endpoints->server));
   if (!child_result.ok()) {
-    FDF_LOG(ERROR,
-            "Failed to add bt-hci-device node, FIDL error: %s",
-            child_result.status_string());
+    fdf::error("Failed to add bt-hci-device node, FIDL error: {}",
+               child_result.status_string());
     return child_result.status();
   }
 
   if (child_result->is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to add bt-hci-device node: %u",
-            static_cast<uint32_t>(child_result->error_value()));
+    fdf::error("Failed to add bt-hci-device node: {}",
+               static_cast<uint32_t>(child_result->error_value()));
     return ZX_ERR_INTERNAL;
   }
 
@@ -544,13 +529,13 @@ void EmulatorDevice::OnPeerConnectionStateChanged(
     bt::hci_spec::ConnectionHandle handle,
     bool connected,
     bool canceled) {
-  FDF_LOG(TRACE,
-          "Peer connection state changed: %s (handle: %#.4x) (connected: %s) "
-          "(canceled: %s):\n",
-          address.ToString().c_str(),
-          handle,
-          (connected ? "true" : "false"),
-          (canceled ? "true" : "false"));
+  fdf::trace(
+      "Peer connection state changed: {} (handle: {:#06x}) (connected: {}) "
+      "(canceled: {}):",
+      address.ToString(),
+      handle,
+      connected,
+      canceled);
 
   auto iter = peers_.find(address);
   if (iter != peers_.end()) {
@@ -563,15 +548,14 @@ void EmulatorDevice::UnpublishHci() {
   // component
   auto status = hci_node_controller_->Remove();
   if (!status.ok()) {
-    FDF_LOG(ERROR,
-            "Could not remove bt-hci-device child node: %s",
-            status.status_string());
+    fdf::error("Could not remove bt-hci-device child node: {}",
+               status.status_string());
   }
 }
 
 void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    FDF_LOG(ERROR, "No HciTransport bindings");
+    fdf::error("No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |cmd_channel_| is not set)
@@ -585,16 +569,15 @@ void EmulatorDevice::SendEventToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          FDF_LOG(ERROR,
-                  "Failed to send OnReceive event to bt-host: %s",
-                  status.error_value().status_string());
+          fdf::error("Failed to send OnReceive event to bt-host: {}",
+                     status.error_value().status_string());
         }
       });
 }
 
 void EmulatorDevice::SendAclPacketToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    FDF_LOG(ERROR, "No HciTransport bindings");
+    fdf::error("No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |acl_channel_| is not set)
@@ -608,16 +591,15 @@ void EmulatorDevice::SendAclPacketToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          FDF_LOG(ERROR,
-                  "Failed to send OnReceive event to bt-host: %s",
-                  status.error_value().status_string());
+          fdf::error("Failed to send OnReceive event to bt-host: {}",
+                     status.error_value().status_string());
         }
       });
 }
 
 void EmulatorDevice::SendIsoPacketToHost(pw::span<const std::byte> buffer) {
   if (hci_transport_bindings_.size() == 0) {
-    FDF_LOG(ERROR, "No HciTransport bindings");
+    fdf::error("No HciTransport bindings");
     return;
   }
   // Using HciTransport protocol (i.e. |iso_channel_| is not set)
@@ -631,9 +613,8 @@ void EmulatorDevice::SendIsoPacketToHost(pw::span<const std::byte> buffer) {
         fit::result<::fidl::OneWayError> status =
             fidl::SendEvent(binding)->OnReceive(event);
         if (!status.is_ok()) {
-          FDF_LOG(ERROR,
-                  "Failed to send OnReceive event to bt-host: %s",
-                  status.error_value().status_string());
+          fdf::error("Failed to send OnReceive event to bt-host: {}",
+                     status.error_value().status_string());
         }
       });
 }

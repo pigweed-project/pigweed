@@ -216,7 +216,7 @@ class LoopbackTest : public ::testing::Test,
     }
 
     if (signal->observed & ZX_CHANNEL_PEER_CLOSED) {
-      FDF_LOG(INFO, "Loopback channel peer closed");
+      fdf::info("Loopback channel peer closed");
       return;
     }
 

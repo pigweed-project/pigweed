@@ -69,6 +69,7 @@ fuchsia_cc_library(
         "@fuchsia_sdk//pkg/async-loop-cpp",
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_devfs_cpp",
+        "@fuchsia_sdk//pkg/driver_logging_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
     ],
 )

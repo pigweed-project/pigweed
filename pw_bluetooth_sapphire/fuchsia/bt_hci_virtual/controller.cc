@@ -15,6 +15,7 @@
 #include "controller.h"
 
 #include <lib/driver/component/cpp/driver_export2.h>
+#include <lib/driver/logging/cpp/logger.h>
 #include <pw_assert/check.h>
 
 #include <memory>
@@ -31,9 +32,7 @@ zx::result<> VirtualController::Start(fdf::DriverContext context) {
   pw::log_fuchsia::InitializeLogging(dispatcher());
   zx::result connector = devfs_connector_.Bind(dispatcher());
   if (connector.is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to bind devfs connecter to dispatcher: %u",
-            connector.status_value());
+    fdf::error("Failed to bind devfs connecter to dispatcher: {}", connector);
     return connector.take_error();
   }
 
@@ -62,11 +61,11 @@ void VirtualController::CreateEmulator(
   emulator_device_ = std::make_unique<EmulatorDevice>();
 
   auto add_child_cb = [this](auto args) {
-    FDF_LOG(INFO, "EmulatorDevice successfully initialized");
+    fdf::info("EmulatorDevice successfully initialized");
     AddEmulatorChildNode(args, emulator_device_.get());
   };
   auto shutdown_cb = [this]() {
-    FDF_LOG(INFO, "Releasing EmulatorDevice");
+    fdf::info("Releasing EmulatorDevice");
     emulator_device_.reset();
   };
 
@@ -74,7 +73,7 @@ void VirtualController::CreateEmulator(
       std::string_view(name), std::move(add_child_cb), std::move(shutdown_cb));
 
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to bind: %s\n", zx_status_get_string(status));
+    fdf::error("Failed to bind: {}", zx_status_get_string(status));
     emulator_device_->Shutdown();
     auto _ = emulator_node_controller_->Remove();
     completer.ReplyError(status);
@@ -98,11 +97,11 @@ void VirtualController::CreateLoopbackDevice(
       std::string_view(name),
       [this](auto args) {
         // Add LoopbackDevice as a child node of VirtualController
-        FDF_LOG(INFO, "LoopbackDevice successfully initialized");
+        fdf::info("LoopbackDevice successfully initialized");
         AddLoopbackChildNode(args);
       });
   if (status != ZX_OK) {
-    FDF_LOG(ERROR, "Failed to bind: %s\n", zx_status_get_string(status));
+    fdf::error("Failed to bind: {}", zx_status_get_string(status));
     auto _ = loopback_node_controller_->Remove();
     loopback_device_.reset();
     return;
@@ -113,9 +112,9 @@ void VirtualController::handle_unknown_method(
     fidl::UnknownMethodMetadata<fuchsia_hardware_bluetooth::VirtualController>
         metadata,
     fidl::UnknownMethodCompleter::Sync& completer) {
-  FDF_LOG(ERROR,
-          "Unknown method in VirtualController request, closing with "
-          "ZX_ERR_NOT_SUPPORTED");
+  fdf::error(
+      "Unknown method in VirtualController request, closing with "
+      "ZX_ERR_NOT_SUPPORTED");
   completer.Close(ZX_ERR_NOT_SUPPORTED);
 }
 
@@ -131,9 +130,8 @@ zx_status_t VirtualController::AddVirtualControllerChildNode(
   auto controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create node controller endpoints failed: %s",
-            controller_endpoints.status_string());
+    fdf::error("Create node controller endpoints failed: {}",
+               controller_endpoints);
     return controller_endpoints.error_value();
   }
 
@@ -143,9 +141,7 @@ zx_status_t VirtualController::AddVirtualControllerChildNode(
   auto child_node_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
   if (child_node_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create child node endpoints failed: %s",
-            child_node_endpoints.status_string());
+    fdf::error("Create child node endpoints failed: {}", child_node_endpoints);
     return child_node_endpoints.error_value();
   }
 
@@ -155,15 +151,13 @@ zx_status_t VirtualController::AddVirtualControllerChildNode(
                              std::move(controller_endpoints->server),
                              std::move(child_node_endpoints->server));
   if (!child_result.ok()) {
-    FDF_LOG(ERROR,
-            "Failed to add bt_hci_virtual child node, FIDL error: %s",
-            child_result.status_string());
+    fdf::error("Failed to add bt_hci_virtual child node, FIDL error: {}",
+               child_result.status_string());
     return child_result.status();
   }
   if (child_result->is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to add bt_hci_virtual child node: %u",
-            static_cast<uint32_t>(child_result->error_value()));
+    fdf::error("Failed to add bt_hci_virtual child node: {}",
+               static_cast<uint32_t>(child_result->error_value()));
     return ZX_ERR_INTERNAL;
   }
 
@@ -181,9 +175,8 @@ zx_status_t VirtualController::AddLoopbackChildNode(
   auto controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create node controller endpoints failed: %s",
-            controller_endpoints.status_string());
+    fdf::error("Create node controller endpoints failed: {}",
+               controller_endpoints);
     return controller_endpoints.error_value();
   }
 
@@ -193,9 +186,7 @@ zx_status_t VirtualController::AddLoopbackChildNode(
   auto child_node_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
   if (child_node_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create child node endpoints failed: %s",
-            child_node_endpoints.status_string());
+    fdf::error("Create child node endpoints failed: {}", child_node_endpoints);
     return child_node_endpoints.error_value();
   }
 
@@ -205,16 +196,14 @@ zx_status_t VirtualController::AddLoopbackChildNode(
                              std::move(controller_endpoints->server),
                              std::move(child_node_endpoints->server));
   if (!child_result.ok()) {
-    FDF_LOG(ERROR,
-            "Failed to add loopback device node, FIDL error: %s",
-            child_result.status_string());
+    fdf::error("Failed to add loopback device node, FIDL error: {}",
+               child_result.status_string());
     return child_result.status();
   }
 
   if (child_result->is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to add loopback device node: %u",
-            static_cast<uint32_t>(child_result->error_value()));
+    fdf::error("Failed to add loopback device node: {}",
+               static_cast<uint32_t>(child_result->error_value()));
     return ZX_ERR_INTERNAL;
   }
 
@@ -236,9 +225,8 @@ zx_status_t VirtualController::AddEmulatorChildNode(
   auto controller_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::NodeController>();
   if (controller_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create node controller endpoints failed: %s",
-            controller_endpoints.status_string());
+    fdf::error("Create node controller endpoints failed: {}",
+               controller_endpoints);
     return controller_endpoints.error_value();
   }
 
@@ -248,9 +236,7 @@ zx_status_t VirtualController::AddEmulatorChildNode(
   auto child_node_endpoints =
       fidl::CreateEndpoints<fuchsia_driver_framework::Node>();
   if (child_node_endpoints.is_error()) {
-    FDF_LOG(ERROR,
-            "Create child node endpoints failed: %s",
-            child_node_endpoints.status_string());
+    fdf::error("Create child node endpoints failed: {}", child_node_endpoints);
     return child_node_endpoints.error_value();
   }
 
@@ -261,16 +247,14 @@ zx_status_t VirtualController::AddEmulatorChildNode(
                              std::move(child_node_endpoints->server));
 
   if (!child_result.ok()) {
-    FDF_LOG(ERROR,
-            "Failed to add emulator device node, FIDL error: %s",
-            child_result.status_string());
+    fdf::error("Failed to add emulator device node, FIDL error: {}",
+               child_result.status_string());
     return child_result.status();
   }
 
   if (child_result->is_error()) {
-    FDF_LOG(ERROR,
-            "Failed to add emulator device node: %u",
-            static_cast<uint32_t>(child_result->error_value()));
+    fdf::error("Failed to add emulator device node: {}",
+               static_cast<uint32_t>(child_result->error_value()));
     return ZX_ERR_INTERNAL;
   }
 
