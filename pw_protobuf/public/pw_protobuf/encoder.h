@@ -130,7 +130,7 @@ class StreamEncoder {
         nested_field_number_(0),
         memory_writer_(scratch_buffer),
         counting_stream_(nullptr),
-        writer_(writer) {}
+        writer_(&writer) {}
 
   StreamEncoder(stream::CountingNullStream& counting_stream)
       : status_(OkStatus()),
@@ -139,7 +139,7 @@ class StreamEncoder {
         nested_field_number_(0),
         memory_writer_({}),
         counting_stream_(&counting_stream),
-        writer_(counting_stream.as_seekable_writer()) {}
+        writer_(&counting_stream.as_writer()) {}
 
   // Precondition: Encoder has no active child encoder.
   //
@@ -174,7 +174,7 @@ class StreamEncoder {
   // Precondition: Encoder has no active child encoder.
   size_t ConservativeWriteLimit() const {
     PW_ASSERT(!nested_encoder_open());
-    return writer_.ConservativeWriteLimit();
+    return writer_->ConservativeWriteLimit();
   }
 
   enum class EmptyEncoderBehavior { kWriteFieldNumber, kWriteNothing };
@@ -685,23 +685,15 @@ class StreamEncoder {
   //     acts like a parent encoder with an active child encoder.
   constexpr StreamEncoder(StreamEncoder&& other)
       : status_(other.status_),
-        write_when_empty_(true),
+        write_when_empty_(other.write_when_empty_),
         parent_(other.parent_),
         nested_field_number_(other.nested_field_number_),
         memory_writer_(std::move(other.memory_writer_)),
-        nested_counting_stream_(std::move(other.nested_counting_stream_)),
-        counting_stream_(other.counting_stream_ ==
-                                 &other.nested_counting_stream_
-                             ? &nested_counting_stream_
-                             : other.counting_stream_),
-        writer_(other.counting_mode()
-                    ? (other.counting_stream_ == &other.nested_counting_stream_
-                           ? nested_counting_stream_.as_seekable_writer()
-                           : other.counting_stream_->as_seekable_writer())
-                    : (&other.writer_ == &other.memory_writer_
-                           ? memory_writer_
-                           : other.writer_)) {
-    PW_ASSERT(nested_field_number_ == 0);
+        counting_stream_(other.counting_stream_),
+        counting_start_offset_(other.counting_start_offset_),
+        writer_(other.writer_ == &other.memory_writer_ ? &memory_writer_
+                                                       : other.writer_) {
+    PW_ASSERT(nested_field_number_ == 0u);
     // Make the nested encoder look like it has an open child to block writes
     // for the remainder of the object's life.
     other.nested_field_number_ = kFirstReservedNumber;
@@ -736,7 +728,7 @@ class StreamEncoder {
         nested_field_number_(0),
         memory_writer_(scratch_buffer),
         counting_stream_(nullptr),
-        writer_(memory_writer_) {
+        writer_(&memory_writer_) {
     // If this encoder was spawned from a failed encoder, it should also start
     // in a failed state.
     if (&parent != this) {
@@ -756,9 +748,9 @@ class StreamEncoder {
         parent_(&parent),
         nested_field_number_(0),
         memory_writer_({}),
-        nested_counting_stream_(),
-        counting_stream_(&nested_counting_stream_),
-        writer_(nested_counting_stream_.as_seekable_writer()) {
+        counting_stream_(parent.counting_stream_),
+        counting_start_offset_(parent.counting_stream_->bytes_written()),
+        writer_(parent.writer_) {
     if (&parent != this) {
       status_.Update(parent.status_);
     }
@@ -770,8 +762,9 @@ class StreamEncoder {
   bool nested_encoder_open() const { return nested_field_number_ != 0; }
 
   size_t nested_bytes_written() const {
-    return counting_mode() ? counting_stream_->bytes_written()
-                           : memory_writer_.bytes_written();
+    return counting_mode()
+               ? (counting_stream_->bytes_written() - counting_start_offset_)
+               : memory_writer_.bytes_written();
   }
 
   // CloseNestedMessage() is called on the parent encoder as part of the nested
@@ -805,7 +798,7 @@ class StreamEncoder {
   // conservative write limit indicates the Writer has sufficient buffer space.
   Status WriteVarint(uint64_t value) {
     PW_TRY(status_);
-    status_.Update(::pw::protobuf::WriteVarint(value, writer_));
+    status_.Update(::pw::protobuf::WriteVarint(value, *writer_));
     return status_;
   }
 
@@ -949,15 +942,15 @@ class StreamEncoder {
   // scratch_buffer.
   stream::MemoryWriter memory_writer_;
 
-  // Used only when constructed as a nested encoder in counting mode.
-  stream::CountingNullStream nested_counting_stream_;
-
   // Set if constructed with a CountingNullStream instead of buffer for counting
   // number of bytes to encode.
   stream::CountingNullStream* counting_stream_;
 
+  // Used only when constructed as a nested encoder in counting mode.
+  size_t counting_start_offset_ = 0;
+
   // All proto encode operations are directly written to this writer.
-  stream::Writer& writer_;
+  stream::Writer* writer_;
 };
 
 // A protobuf encoder that writes directly to a provided buffer.

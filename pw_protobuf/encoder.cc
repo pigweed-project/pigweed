@@ -87,19 +87,19 @@ Status StreamEncoder::WriteNestedMessage(
     status_.Update(field_size.status());
     PW_TRY(status_);
 
-    if (field_size.value() > writer_.ConservativeWriteLimit()) {
+    if (field_size.value() > writer_->ConservativeWriteLimit()) {
       status_ = Status::ResourceExhausted();
       return status_;
     }
 
     // With the field size known, we can write the header.
     status_ = WriteLengthDelimitedKeyAndLengthPrefix(
-        field_number, num_bytes, writer_);
+        field_number, num_bytes, *writer_);
     PW_TRY(status_);
 
     // Ensure the caller cannot write more bytes in the second pass than they
     // did in the first.
-    stream::LimitedStreamWriter write_stream(writer_, num_bytes);
+    stream::LimitedStreamWriter write_stream(*writer_, num_bytes);
     StreamEncoder write_encoder(write_stream, scratch);
 
     // Second pass: Actually write the fields to the stream.
@@ -123,7 +123,7 @@ ByteSpan StreamEncoder::GetNestedScratchBuffer(uint32_t field_number) {
       varint::EncodedSize(FieldKey(field_number, WireType::kDelimited));
   size_t reserved_size = key_size + config::kMaxVarintSize;
   size_t max_size = std::min(memory_writer_.ConservativeWriteLimit(),
-                             writer_.ConservativeWriteLimit());
+                             writer_->ConservativeWriteLimit());
   // Cap based on max varint size.
   max_size = std::min(varint::MaxValueInBytes(config::kMaxVarintSize),
                       static_cast<uint64_t>(max_size));
@@ -218,7 +218,6 @@ void StreamEncoder::CloseNestedMessage(StreamEncoder& nested) {
     WriteVarint(FieldKey(temp_field_number, WireType::kDelimited))
         .IgnoreError();
     WriteVarint(nested_bytes).IgnoreError();
-    counting_stream_->Advance(nested_bytes);
     return;
   }
 
@@ -239,9 +238,9 @@ Status StreamEncoder::WriteLengthDelimitedField(uint32_t field_number,
                                                 ConstByteSpan data) {
   PW_TRY(UpdateStatusForWrite(field_number, WireType::kDelimited, data.size()));
   status_.Update(WriteLengthDelimitedKeyAndLengthPrefix(
-      field_number, data.size(), writer_));
+      field_number, data.size(), *writer_));
   PW_TRY(status_);
-  if (Status status = writer_.Write(data); !status.ok()) {
+  if (Status status = writer_->Write(data); !status.ok()) {
     status_ = status;
   }
   return status_;
@@ -256,10 +255,10 @@ Status StreamEncoder::WriteLengthDelimitedFieldFromCallback(
   }
 
   PW_TRY(UpdateStatusForWrite(field_number, WireType::kDelimited, num_bytes));
-  status_.Update(
-      WriteLengthDelimitedKeyAndLengthPrefix(field_number, num_bytes, writer_));
+  status_.Update(WriteLengthDelimitedKeyAndLengthPrefix(
+      field_number, num_bytes, *writer_));
 
-  stream::LimitedStreamWriter write_stream(writer_, num_bytes);
+  stream::LimitedStreamWriter write_stream(*writer_, num_bytes);
   status_.Update(write_func(write_stream));
 
   if (write_stream.bytes_written() != num_bytes) {
@@ -277,11 +276,11 @@ Status StreamEncoder::WriteLengthDelimitedFieldFromStream(
   PW_CHECK_UINT_GT(
       stream_pipe_buffer.size(), 0, "Transfer buffer cannot be 0 size");
   PW_TRY(UpdateStatusForWrite(field_number, WireType::kDelimited, num_bytes));
-  status_.Update(
-      WriteLengthDelimitedKeyAndLengthPrefix(field_number, num_bytes, writer_));
+  status_.Update(WriteLengthDelimitedKeyAndLengthPrefix(
+      field_number, num_bytes, *writer_));
   PW_TRY(status_);
 
-  // Stream data from `bytes_reader` to `writer_`.
+  // Stream data from `bytes_reader` to `*writer_`.
   // TODO(pwbug/468): move the following logic to pw_stream/copy.h at a later
   // time.
   for (size_t bytes_written = 0; bytes_written < num_bytes;) {
@@ -292,7 +291,7 @@ Status StreamEncoder::WriteLengthDelimitedFieldFromStream(
     status_.Update(read_result.status());
     PW_TRY(status_);
 
-    status_.Update(writer_.Write(read_result.value()));
+    status_.Update(writer_->Write(read_result.value()));
     PW_TRY(status_);
 
     bytes_written += read_result.value().size();
@@ -309,7 +308,7 @@ Status StreamEncoder::WriteFixed(uint32_t field_number, ConstByteSpan data) {
 
   WriteVarint(FieldKey(field_number, type))
       .IgnoreError();  // TODO: b/242598609 - Handle Status properly
-  if (Status status = writer_.Write(data); !status.ok()) {
+  if (Status status = writer_->Write(data); !status.ok()) {
     status_ = status;
   }
   return status_;
@@ -343,7 +342,7 @@ Status StreamEncoder::WritePackedFixed(uint32_t field_number,
     } else {
       std::reverse_copy(val_start, val_start + element_size, std::begin(data));
     }
-    status_.Update(writer_.Write(span(data).first(elem_size)));
+    status_.Update(writer_->Write(span(data).first(elem_size)));
     PW_TRY(status_);
   }
   return status_;
@@ -364,7 +363,7 @@ Status StreamEncoder::UpdateStatusForWrite(uint32_t field_number,
   PW_TRY(status_);
 
   if (!counting_mode() &&
-      field_size.value() > writer_.ConservativeWriteLimit()) {
+      field_size.value() > writer_->ConservativeWriteLimit()) {
     status_ = Status::ResourceExhausted();
   }
 
