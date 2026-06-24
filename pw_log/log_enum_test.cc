@@ -37,6 +37,28 @@ PW_TOKENIZE_ENUM_CUSTOM(::this_is_a_test::Thing2,
                         (kEcho, "ECHO"),
                         (kFoxtrot, "FOXTROT"));
 
+enum class ScopedThing { kItem1, kItem2 };
+
+PW_TOKENIZE_ENUM(::this_is_a_test::ScopedThing, kItem1, kItem2);
+
+}  // namespace
+}  // namespace this_is_a_test
+
+template <>
+[[maybe_unused]] constexpr uint32_t
+pw::tokenizer::PwEnumDomainToken<::this_is_a_test::ScopedThing>() {
+  return 99999u;
+}
+
+template <>
+[[maybe_unused]] constexpr const char*
+pw::PwEnumDomainName<::this_is_a_test::ScopedThing>() {
+  return "ScopedDomain";
+}
+
+namespace this_is_a_test {
+namespace {
+
 // pw_log backends that use pw_tokenizer and want to support nested tokenization
 // define this file under their public_overrides/ directory to activate the
 // PW_LOG_TOKEN aliases. If this file does not exist in the log backend,
@@ -77,6 +99,28 @@ PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_TokenizingBackend, {
                        nested_token);
 });
 
+PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersionedFmt_TokenizingBackend, {
+  constexpr const char* nested_token = PW_LOG_ENUM_VERSIONED_FMT();
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT(), nested_token);
+});
+
+PW_CONSTEXPR_TEST(
+    TokenizedArgs, LogEnumVersionedCustomDomain_TokenizingBackend, {
+      struct Captured {
+        uint32_t domain;
+        uint32_t value;
+      };
+      auto capture = [](uint32_t domain, uint32_t value) {
+        return Captured{domain, value};
+      };
+      constexpr Captured result =
+          capture(PW_LOG_ENUM_VERSIONED(::this_is_a_test::ScopedThing::kItem1));
+      PW_TEST_EXPECT_EQ(99999u, result.domain);
+      PW_TEST_EXPECT_EQ(
+          static_cast<uint32_t>(::this_is_a_test::ScopedThing::kItem1),
+          result.value);
+    });
+
 #else
 
 PW_CONSTEXPR_TEST(TokenizedArgs, EmptyString_NonTokenizingBackend, {
@@ -115,6 +159,43 @@ PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_NonTokenizingBackend, {
   constexpr char nested_token[] = PW_LOG_NESTED_TOKEN_FMT(kAlpha);
   PW_TEST_EXPECT_STREQ("%s::%s", nested_token);
 });
+
+PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersionedFmt_NonTokenizingBackend, {
+  constexpr const char* nested_token = PW_LOG_ENUM_VERSIONED_FMT();
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT(), nested_token);
+});
+
+PW_CONSTEXPR_TEST(TokenizedArgs,
+                  LogEnumVersionedDefaultDomain_NonTokenizingBackend,
+                  {
+                    struct Captured {
+                      const char* domain;
+                      const char* value;
+                    };
+                    auto capture = [](const char* domain, const char* value) {
+                      return Captured{domain, value};
+                    };
+                    constexpr Captured result = capture(
+                        PW_LOG_ENUM_VERSIONED(::this_is_a_test::Thing::kAlpha));
+                    PW_TEST_EXPECT_STREQ("Enum", result.domain);
+                    PW_TEST_EXPECT_STREQ("kAlpha", result.value);
+                  });
+
+PW_CONSTEXPR_TEST(TokenizedArgs,
+                  LogEnumVersionedCustomDomain_NonTokenizingBackend,
+                  {
+                    struct Captured {
+                      const char* domain;
+                      const char* value;
+                    };
+                    auto capture = [](const char* domain, const char* value) {
+                      return Captured{domain, value};
+                    };
+                    constexpr Captured result = capture(PW_LOG_ENUM_VERSIONED(
+                        ::this_is_a_test::ScopedThing::kItem1));
+                    PW_TEST_EXPECT_STREQ("ScopedDomain", result.domain);
+                    PW_TEST_EXPECT_STREQ("kItem1", result.value);
+                  });
 
 #endif  //__has_include("log_backend/log_backend_uses_pw_tokenizer.h")
 

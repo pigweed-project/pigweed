@@ -138,6 +138,30 @@ Example
    :start-after: [pw_enum-examples-basic-cc-log]
    :end-before: [pw_enum-examples-basic-cc-log]
 
+Logging versioned enums
+=======================
+If you need to log versioned enums using nested tokenization (so that the enum's
+unique domain and its value are logged together to prevent collisions and support
+reliable detokenization), you can use the versioned logging macro:
+
+* **Versioned argument macro**: Include :cs:`pw_log/tokenized_args.h` and use
+  :cc:`PW_LOG_ENUM_VERSIONED(value)` as the argument to the log statement,
+  paired with the format specifier :cc:`PW_LOG_ENUM_VERSIONED_FMT()`.
+
+When using a tokenizing logging backend, the format macro evaluates to a nested
+token format specifier (e.g. ``"${$#%08" PRIx32 "}#%08" PRIx32``), and
+:cc:`PW_LOG_ENUM_VERSIONED` expands to two arguments: the 32-bit versioned
+domain token and the 32-bit enum value token. On non-tokenizing backends, it
+yields the string format specifier ``%s::%s`` and resolves to the enum's domain name
+string followed by its stringified value.
+
+Example
+-------
+.. literalinclude:: examples/basic_enum_test.cc
+   :language: cpp
+   :start-after: [pw_enum-examples-versioned-cc-log]
+   :end-before: [pw_enum-examples-versioned-cc-log]
+
 Build integration
 =================
 ``pw_enum`` provides build integration for Bazel, GN, and CMake.
@@ -184,6 +208,27 @@ customization by searching for a matching function via Argument-Dependent Lookup
 If you don't use the build-time generation targets, you can manually use :cc:`PW_TOKENIZE_ENUM`
 in :cs:`pw_tokenizer/enum.h <pw_tokenizer/public/pw_tokenizer/enum.h>` to
 tokenize the enum and implement ``PwEnumToString``.
+
+-----------------
+Enum domain names
+-----------------
+:cc:`pw::PwEnumDomainName` returns a fallback string domain name of a given
+enum type, used by non-tokenizing logging backends to prefix versioned enum
+logs.
+
+By default, this function returns ``"Enum"``. If an enum uses a custom
+tokenization domain and you want non-tokenizing logging backends to prefix the
+enum values with that custom domain name instead of ``"Enum"``, you can provide
+a custom template specialization for the enum type:
+
+.. code-block:: cpp
+
+   #include "pw_enum/to_string.h"
+
+   template <>
+   constexpr const char* pw::PwEnumDomainName<my::CustomEnum>() {
+     return "CustomDomain";
+   }
 
 ------------------
 Enum domain tokens

@@ -32,6 +32,28 @@ constexpr const char* EnumToString(T value) {
   return PwEnumToString(value);
 }
 
+/// Returns the domain name of the given enum type.
+///
+/// This serves as a fallback name (defaulting to `"Enum"`) for non-tokenizing
+/// logging backends to prefix the enum's string representation.
+///
+/// By default, this function returns `"Enum"`. If an enum uses a custom
+/// tokenization domain and you want non-tokenizing logging backends to prefix
+/// the enum value with that custom domain name instead of `"Enum"`, you can
+/// provide a custom template specialization:
+///
+/// @code
+/// template <>
+/// constexpr const char* pw::PwEnumDomainName<MyEnum>() {
+///   return "CustomDomain";
+/// }
+/// @endcode
+template <typename T>
+constexpr const char* PwEnumDomainName() {
+  static_assert(std::is_enum_v<T>, "Must be an enum");
+  return "Enum";
+}
+
 }  // namespace pw
 
 /// @}

@@ -38,6 +38,11 @@ TEST(BasicEnumTest, RunCode) {
   PW_LOG_INFO("State " MY_NESTED_PKG_OTHER_ENUM ": received packet",
               PW_LOG_ENUM(state));
   // DOCSTAG: [pw_enum-examples-basic-cc-log]
+
+  // DOCSTAG: [pw_enum-examples-versioned-cc-log]
+  PW_LOG_INFO("State " PW_LOG_ENUM_VERSIONED_FMT() ": received packet",
+              PW_LOG_ENUM_VERSIONED(state));
+  // DOCSTAG: [pw_enum-examples-versioned-cc-log]
 }
 
 }  // namespace
