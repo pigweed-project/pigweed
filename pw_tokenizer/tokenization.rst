@@ -311,6 +311,33 @@ string for the enum value.
    :start-after: [pw_tokenizer-examples-enum-custom]
    :end-before: [pw_tokenizer-examples-enum-custom]
 
+Versioned enum tokenization
+---------------------------
+When using tokenized logging or transmitting tokenized data, it is often necessary
+to include both the enum's type identifier (its tokenization domain) and the
+specific enum value. This ensures that detokenizers can uniquely resolve the enum
+value, even if different enum types in the codebase share the same underlying
+numeric values.
+
+To support this, ``pw_tokenizer`` provides a pair of macros that work together to
+encode both the domain and the value:
+
+* :cc:`PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT`: A format specifier macro that
+  aliases the nested token format (e.g. ``PW_NESTED_TOKEN_FMT()``).
+* :cc:`PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE`: An argument macro that takes an
+  enum value and expands to a comma-separated pair of arguments: the 32-bit domain
+  token followed by the 32-bit enum value token.
+
+Example:
+
+.. code-block:: cpp
+
+   #include "pw_tokenizer/enum.h"
+
+   // Log or print the enum value along with its domain token information.
+   printf("Status: " PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(),
+          PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE(MyEnum::kSuccess));
+
 Tokenize a message with arguments in a custom macro
 ===================================================
 Projects can leverage the tokenization machinery in whichever way best suits

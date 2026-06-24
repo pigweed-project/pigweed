@@ -18,6 +18,7 @@
 
 #include "pw_preprocessor/apply.h"
 #include "pw_tokenizer/internal/enum.h"
+#include "pw_tokenizer/nested_tokenization.h"
 #include "pw_tokenizer/tokenize.h"
 
 namespace pw::tokenizer {
@@ -64,6 +65,24 @@ constexpr uint32_t EnumDomainToken() {
 }  // namespace pw::tokenizer
 
 /// @submodule{pw_tokenizer,tokenize}
+
+/// @brief Expands to an enum's domain and its token for use in a printf-style
+/// log statement.
+///
+/// This macro expands to *two* arguments: the domain token and the enum value
+/// token. It is intended to be used within a tokenized formatting context,
+/// typically with macros like `PW_NESTED_TOKEN_FMT` or other functions
+/// that accept multiple token arguments.
+///
+/// @param enumerator The enum value to tokenize.
+#define PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE(enumerator)                    \
+  ::pw::tokenizer::EnumDomainToken<std::decay_t<decltype(enumerator)>>(), \
+      ::pw::tokenizer::EnumToToken(enumerator)
+
+/// @brief Format specifier for PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE.
+///
+/// Aliases PW_NESTED_TOKEN_FMT.
+#define PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT PW_NESTED_TOKEN_FMT
 
 /// Tokenizes the given values within an enumerator. All values of the
 /// enumerator must be present to compile and have the enumerator be tokenized

@@ -112,6 +112,48 @@ PW_TOKENIZE_ENUM(::this_is_a_test::NamespaceThing, kHotel, kIndia, kJuliett);
 
 }  // namespace this_is_also_a_test
 
+template <>
+constexpr uint32_t
+pw::tokenizer::PwEnumDomainToken<::this_is_a_test::ScopedThing>() {
+  return 99999u;
+}
+
+namespace this_is_a_test {
+namespace {
+
+struct VersionedEnumArgs {
+  uint32_t domain;
+  uint32_t value;
+};
+
+constexpr VersionedEnumArgs GetVersionedEnumArgs(uint32_t domain,
+                                                 uint32_t value) {
+  return {domain, value};
+}
+
+[[maybe_unused]] void VersionedUnspecialized() {
+#if PW_NC_TEST(VersionedUnspecialized)
+  PW_NC_EXPECT("PwEnumDomainToken must be specialized for this type.");
+
+  constexpr auto args =
+      GetVersionedEnumArgs(PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE(kBravo));
+#endif  // PW_NC_TEST
+}
+
+TEST(TokenizeEnums, VersionedSpecialized) {
+  constexpr auto args = GetVersionedEnumArgs(
+      PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE(ScopedThing::kLima));
+  EXPECT_EQ(args.domain, 99999u);
+  EXPECT_EQ(args.value, static_cast<uint32_t>(ScopedThing::kLima));
+}
+
+TEST(TokenizeEnums, VersionedFormatSpecifier) {
+  EXPECT_STREQ(PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(), PW_NESTED_TOKEN_FMT());
+}
+
+}  // namespace
+}  // namespace this_is_a_test
+
 enum class TestEnumForDomain { kOne };
 
 template <>
