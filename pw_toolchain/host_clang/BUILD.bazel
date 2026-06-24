@@ -379,6 +379,7 @@ cc_toolchain(
     }) + [
         ":link_with_lld",
         ":cgo_link_flags",
+        # Included regardless of dbg_feature being set.
         "//pw_toolchain/cc/args:debugging",
         "//pw_toolchain/cc/args:reduced_size",
         "//pw_toolchain/cc/args:no_canonical_prefixes",
@@ -441,6 +442,9 @@ cc_toolchain(
         ":verbose_compiler_output",
         "//pw_toolchain/cc/args:conversion_warnings_feature",
         "//pw_toolchain/cc/args:ctad_warnings_feature",
+        "//pw_toolchain/cc/args:dbg_feature",
+        "//pw_toolchain/cc/args:fastbuild_feature",
+        "//pw_toolchain/cc/args:opt_feature",
         "//pw_toolchain/cc/capability:known_toolchain_types",
     ],
     # TODO: https://pwbug.dev/219091175 - Remove this select (always set this to

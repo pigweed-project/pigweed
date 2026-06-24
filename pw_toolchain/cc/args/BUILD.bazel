@@ -308,6 +308,24 @@ cc_args(
 )
 
 cc_feature(
+    name = "opt_feature",
+    args = [":o2"],
+    overrides = "@rules_cc//cc/toolchains/features:opt",
+)
+
+cc_feature(
+    name = "dbg_feature",
+    args = [":debugging"],
+    overrides = "@rules_cc//cc/toolchains/features:dbg",
+)
+
+cc_feature(
+    name = "fastbuild_feature",
+    args = [],
+    overrides = "@rules_cc//cc/toolchains/features:fastbuild",
+)
+
+cc_feature(
     name = "c++17_feature",
     args = [":c++17"],
     feature_name = "c++17",
