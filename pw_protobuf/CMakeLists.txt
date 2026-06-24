@@ -28,6 +28,7 @@ pw_add_library(pw_protobuf.config INTERFACE
 
 pw_add_library(pw_protobuf STATIC
   HEADERS
+    public/pw_protobuf/buffer_encoder.h
     public/pw_protobuf/decoder.h
     public/pw_protobuf/encoder.h
     public/pw_protobuf/find.h
@@ -77,6 +78,16 @@ pw_add_library(pw_protobuf.bytes_utils INTERFACE
     pw_bytes
     pw_result
     pw_status
+)
+
+pw_add_test(pw_protobuf.buffer_encoder_test
+  SOURCES
+    buffer_encoder_test.cc
+  PRIVATE_DEPS
+    pw_protobuf
+  GROUPS
+    modules
+    pw_protobuf
 )
 
 pw_add_test(pw_protobuf.decoder_test

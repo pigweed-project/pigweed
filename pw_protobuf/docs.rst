@@ -610,9 +610,15 @@ check the same when decoding.
 
 Encoding
 --------
-The two fundamental classes are ``MemoryEncoder`` which directly encodes a proto
-to an in-memory buffer, and ``StreamEncoder`` that operates on
-``pw::stream::Writer`` objects to serialize proto data.
+The three fundamental classes are:
+
+*   ``MemoryEncoder``: Directly encodes a proto to an in-memory buffer (uses
+    copying for nested messages).
+*   ``StreamEncoder``: Operates on ``pw::stream::Writer`` objects to serialize
+    proto data (uses copying/buffering for nested messages).
+*   ``BufferEncoder``: Directly encodes a proto to an in-memory buffer using
+    in-place size patching. It does not perform any copying for nested messages,
+    making it faster, especially for nested structures.
 
 ``StreamEncoder`` allows you encode a proto to something like ``pw::sys_io``
 without needing to build the complete message in memory
@@ -1510,6 +1516,68 @@ buffer used to handle nested submessages.
      PW_LOG_INFO("Failed to encode proto; %s", encoder.status().str());
    }
 
+BufferEncoder
+=============
+``BufferEncoder`` encodes directly to a destination buffer. Unlike ``MemoryEncoder``,
+it does not copy nested submessages, but instead reserves space for their length
+prefixes and patches them in-place when the submessage is finalized.
+
+``BufferEncoder`` also provides an **unchecked** variant for all write methods. These
+methods do not perform bounds checks on every write, providing maximum performance
+when the buffer size is guaranteed to be sufficient.
+
+.. code-block:: c++
+
+   #include "my_protos/my_proto.pwpb.h"
+   #include "pw_bytes/span.h"
+   #include "pw_protobuf/buffer_encoder.h"
+
+   pw::Status EncodeResponse(pw::ByteSpan response_buffer) {
+     MyProto::BufferEncoder encoder(response_buffer);
+
+     // Checked writes: each write checks for available space.
+     encoder.WriteMagicNumber(0x1a1a2b2b).IgnoreError();
+     encoder.WriteFavoriteFood("cookies").IgnoreError();
+
+     return encoder.status();
+   }
+
+Unchecked Writes
+----------------
+If you can guarantee that the destination buffer is large enough, you can use
+the unchecked variant to avoid the overhead of bounds checks on every write.
+
+To use unchecked writes:
+
+1. Call ``EnsureSpace(size)`` with the maximum expected size of the message.
+2. If it returns ``true``, use ``UncheckedWrite*`` methods.
+
+.. code-block:: c++
+
+   pw::Status EncodeResponseFast(pw::ByteSpan response_buffer) {
+     MyProto::BufferEncoder encoder(response_buffer);
+
+     // Check space once upfront. kMaxEncodedSizeBytes can be used if available.
+     if (encoder.EnsureSpace(MyProto::kMaxEncodedSizeBytes)) {
+       encoder.UncheckedWriteMagicNumber(0x1a1a2b2b);
+       encoder.UncheckedWriteFavoriteFood("cookies");
+     }
+
+     return encoder.status();
+   }
+
+.. warning::
+   Unchecked writes do not perform bounds checks and will cause buffer overflows
+   (and subsequent undefined behavior or memory corruption) if the buffer is
+   insufficient.
+
+   You must ensure the buffer has enough space by calling ``EnsureSpace()`` with
+   a verified maximum size before performing any unchecked writes. If
+   ``kMaxEncodedSizeBytes`` is not available (e.g., due to unbound
+   variable-length fields), you must carefully estimate and verify the maximum
+   size manually.
+
+
 Callbacks
 =========
 When using the ``Write()`` method with a ``struct Message``, certain fields may
@@ -1543,7 +1611,7 @@ The examples in this section use the following protobuf definition:
      Animal pet = 1;
    }
 
-There are two methods for encoding nested submessages:
+There are three methods for encoding nested submessages:
 
 1. :ref:`pw_protobuf-encoding-nested_submessages-nested_encoder` -- This is
    the original method of writing submessages. It performs encoding in a
@@ -1552,6 +1620,11 @@ There are two methods for encoding nested submessages:
 2. :ref:`pw_protobuf-encoding-nested_submessages-multipass_encoder` -- This
    method performs encoding in two passes to avoid the need for a scratch
    buffer.
+
+3. :ref:`pw_protobuf-encoding-nested_submessages-buffer_encoder` -- This
+   method is used with ``BufferEncoder`` to encode submessages in a single
+   pass directly to the destination buffer, avoiding scratch buffers and
+   copies.
 
 
 .. _pw_protobuf-encoding-nested_submessages-nested_encoder:
@@ -1724,6 +1797,42 @@ The two-pass encoder works as follows to avoid the need for a scratch buffer:
 
    Failure to do so may silently corrupt the output data and/or produce an
    error result.
+
+.. _pw_protobuf-encoding-nested_submessages-buffer_encoder:
+
+BufferEncoder nested serialization
+----------------------------------
+When using ``BufferEncoder``, nested submessages are written by obtaining a nested
+encoder using ``UncheckedGet*Encoder()`` methods.
+
+Unlike `Nested encoder`_, this does not require a scratch buffer, and does not
+perform any copying of the submessage data. It reserves space for the length
+prefix in the destination buffer, writes the submessage fields directly, and
+patches the length prefix on destruction of the nested encoder.
+
+.. code-block:: c++
+
+   Owner::BufferEncoder owner(response_buffer);
+
+   {
+     // Obtaining the nested encoder is always unchecked.
+     // Ensure space for the whole message (including submessages) upfront if using
+     // unchecked writes.
+     Animal::BufferEncoder pet = owner.UncheckedGetPetEncoder();
+
+     pet.WriteName("Rufus");  // Checked write
+     pet.WriteAge(8);         // Checked write
+     // Submessage is closed and length is patched when `pet` goes out of scope.
+   }
+
+.. warning::
+   Just like with the standard nested encoder, the parent encoder cannot be used
+   while a nested encoder is active. Destruct the nested encoder before resuming
+   use of the parent.
+
+   Because obtaining a nested encoder is always unchecked (via ``UncheckedGet*Encoder``),
+   you must ensure there is enough space in the buffer before obtaining a nested
+   encoder, or use ``EnsureSpace`` upfront to guarantee space for the entire message.
 
 Scalar Fields
 =============

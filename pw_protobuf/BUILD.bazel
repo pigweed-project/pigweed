@@ -60,6 +60,7 @@ cc_library(
         "stream_decoder.cc",
     ],
     hdrs = [
+        "public/pw_protobuf/buffer_encoder.h",
         "public/pw_protobuf/decoder.h",
         "public/pw_protobuf/encoder.h",
         "public/pw_protobuf/find.h",
@@ -127,6 +128,12 @@ pw_cc_test(
     deps = [":pw_protobuf"],
 )
 
+pw_cc_test(
+    name = "buffer_encoder_test",
+    srcs = ["buffer_encoder_test.cc"],
+    deps = [":pw_protobuf"],
+)
+
 pw_cc_fuzz_test(
     name = "encoder_fuzz_test",
     srcs = [
@@ -188,6 +195,7 @@ pw_cc_perf_test(
     name = "encoder_perf_test",
     srcs = ["encoder_perf_test.cc"],
     deps = [
+        ":codegen_test_proto_pwpb",
         ":pw_protobuf",
         "//pw_unit_test",
     ],

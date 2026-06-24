@@ -87,6 +87,7 @@ class ClassType(enum.Enum):
     STREAMING_ENCODER = 2
     # MEMORY_DECODER = 3
     STREAMING_DECODER = 4
+    BUFFER_ENCODER = 5
 
     @staticmethod
     def types_in_definition_order() -> Iterable[ClassType]:
@@ -96,6 +97,7 @@ class ClassType(enum.Enum):
         return (
             ClassType.STREAMING_ENCODER,
             ClassType.MEMORY_ENCODER,
+            ClassType.BUFFER_ENCODER,
             ClassType.STREAMING_DECODER,
         )
 
@@ -105,6 +107,7 @@ class ClassType(enum.Enum):
             ClassType.STREAMING_ENCODER: 'StreamEncoder',
             ClassType.MEMORY_ENCODER: 'MemoryEncoder',
             ClassType.STREAMING_DECODER: 'StreamDecoder',
+            ClassType.BUFFER_ENCODER: 'BufferEncoderView',
         }[self]
 
     def codegen_class_name(self) -> str:
@@ -113,6 +116,7 @@ class ClassType(enum.Enum):
             ClassType.STREAMING_ENCODER: 'StreamEncoder',
             ClassType.MEMORY_ENCODER: 'MemoryEncoder',
             ClassType.STREAMING_DECODER: 'StreamDecoder',
+            ClassType.BUFFER_ENCODER: 'BufferEncoder',
         }[self]
 
     def is_encoder(self) -> bool:
@@ -121,6 +125,7 @@ class ClassType(enum.Enum):
             ClassType.STREAMING_ENCODER: True,
             ClassType.MEMORY_ENCODER: True,
             ClassType.STREAMING_DECODER: False,
+            ClassType.BUFFER_ENCODER: True,
         }[self]
 
     def is_decoder(self) -> bool:
@@ -167,6 +172,10 @@ class ProtoMember(abc.ABC):
         self._field: ProtoMessageField = field
         self._scope: ProtoNode = scope
         self._root: ProtoNode = root
+
+    @property
+    def field(self) -> ProtoMessageField:
+        return self._field
 
     @abc.abstractmethod
     def name(self) -> str:
@@ -227,9 +236,11 @@ class ProtoMethod(ProtoMember):
         scope: ProtoNode,
         root: ProtoNode,
         base_class: str,
+        class_type: ClassType | None = None,
     ):
         super().__init__(codegen_options, field, scope, root)
         self._base_class: str = base_class
+        self._class_type: ClassType | None = class_type
 
     def template_id(self) -> str | None:  # pylint: disable=no-self-use
         """A full template identifier, or None if not a template."""
@@ -283,12 +294,31 @@ class ProtoMethod(ProtoMember):
         return ', '.join([f'{type} {name}' for type, name in self.params()])
 
     def _encoder_type(self, from_root: bool = False) -> str:
-        return '{}::StreamEncoder'.format(
-            self._relative_type_namespace(from_root)
+        class_name = 'StreamEncoder'
+        if self._class_type == ClassType.BUFFER_ENCODER:
+            class_name = 'BufferEncoder'
+        return '{}::{}'.format(
+            self._relative_type_namespace(from_root), class_name
         )
 
 
-class WriteMethod(ProtoMethod):
+class WriteMethodBase(ProtoMethod):
+    """Base class for all write methods (checked and unchecked)."""
+
+    def in_class_definition(self) -> bool:
+        return True
+
+    def _encoder_fn(self) -> str:
+        """The encoder function to call.
+
+        Defined in subclasses.
+
+        e.g. 'WriteUint32', 'WriteBytes', etc.
+        """
+        raise NotImplementedError()
+
+
+class WriteMethod(WriteMethodBase):
     """Base class representing an encoder write method.
 
     Write methods have following format (for the proto field foo):
@@ -314,18 +344,6 @@ class WriteMethod(ProtoMethod):
 
     def params(self) -> list[tuple[str, str]]:
         """Method parameters, defined in subclasses."""
-        raise NotImplementedError()
-
-    def in_class_definition(self) -> bool:
-        return True
-
-    def _encoder_fn(self) -> str:
-        """The encoder function to call.
-
-        Defined in subclasses.
-
-        e.g. 'WriteUint32', 'WriteBytes', etc.
-        """
         raise NotImplementedError()
 
 
@@ -745,10 +763,73 @@ class SubMessageEncoderMethod(ProtoMethod):
         return []
 
     def body(self) -> list[str]:
+        if self._class_type == ClassType.BUFFER_ENCODER:
+            reserved_size = 2
+            return [
+                (
+                    f'static_assert({self._relative_type_namespace()}::'
+                    'kMaxEncodedSizeBytesWithoutValues <= '
+                    f'::pw::varint::MaxValueInBytes({reserved_size}), '
+                    f'"Submessage max size exceeds the reserved '
+                    f'{reserved_size}-byte length prefix");'
+                ),
+                (
+                    f'if (EnsureSpace(::pw::protobuf::TagSizeBytes('
+                    f'{self.field_cast()}) + {reserved_size})) {{'
+                ),
+                (
+                    f'  UncheckedWriteTag({self.field_cast()}, '
+                    '::pw::protobuf::WireType::kDelimited);'
+                ),
+                (
+                    '  size_t len_offset = '
+                    f'UncheckedReserveLength({reserved_size});'
+                ),
+                f'  return {self._encoder_type()}(*this, len_offset);',
+                '}',
+                f'return {self._encoder_type()}(*this, 0);',
+            ]
+
         line = 'return {}({}::GetNestedEncoder({}));'.format(
             self._encoder_type(), self._base_class, self.field_cast()
         )
         return [line]
+
+    # Submessage methods are not defined within the class itself because the
+    # submessage class may not yet have been defined.
+    def in_class_definition(self) -> bool:
+        return False
+
+
+class UncheckedSubMessageEncoderMethod(ProtoMethod):
+    """Method which returns a sub-message encoder without bounds checks."""
+
+    def name(self) -> str:
+        return 'UncheckedGet{}Encoder'.format(self._field.name())
+
+    def return_type(self, from_root: bool = False) -> str:
+        return self._encoder_type(from_root)
+
+    def params(self) -> list[tuple[str, str]]:
+        return []
+
+    def body(self) -> list[str]:
+        reserved_size = 2
+        return [
+            (
+                f'static_assert({self._relative_type_namespace()}::'
+                'kMaxEncodedSizeBytesWithoutValues <= '
+                f'::pw::varint::MaxValueInBytes({reserved_size}), '
+                f'"Submessage max size exceeds the reserved '
+                f'{reserved_size}-byte length prefix");'
+            ),
+            (
+                f'UncheckedWriteTag({self.field_cast()}, '
+                '::pw::protobuf::WireType::kDelimited);'
+            ),
+            f'size_t len_offset = UncheckedReserveLength({reserved_size});',
+            f'return {self._encoder_type()}(*this, len_offset);',
+        ]
 
     # Submessage methods are not defined within the class itself because the
     # submessage class may not yet have been defined.
@@ -2544,7 +2625,7 @@ class EnumWriteMethod(WriteMethod):
         return True
 
     def _encoder_fn(self) -> str:
-        raise NotImplementedError()
+        return 'WriteEnum'
 
 
 class PackedEnumWriteMethod(PackedWriteMethod):
@@ -2570,7 +2651,7 @@ class PackedEnumWriteMethod(PackedWriteMethod):
         return True
 
     def _encoder_fn(self) -> str:
-        raise NotImplementedError()
+        return 'WritePackedEnum'
 
 
 class PackedEnumWriteVectorMethod(PackedEnumWriteMethod):
@@ -2585,6 +2666,9 @@ class PackedEnumWriteVectorMethod(PackedEnumWriteMethod):
                 'values',
             )
         ]
+
+    def _encoder_fn(self) -> str:
+        return 'WriteRepeatedEnum'
 
 
 class EnumReadMethod(ReadMethod):
@@ -2705,6 +2789,36 @@ class EnumProperty(MessageProperty):
         return f'static_cast<{self.type_name()}>(0)'
 
 
+class UncheckedWriteMethod(WriteMethodBase):
+    """Base class representing an encoder unchecked write method."""
+
+    def name(self) -> str:
+        return 'UncheckedWrite{}'.format(self._field.name())
+
+    def return_type(self, from_root: bool = False) -> str:
+        return 'void'
+
+    def body(self) -> list[str]:
+        params = ', '.join([pair[1] for pair in self.params()])
+        line = '{}::Unchecked{}({}, {});'.format(
+            self._base_class,
+            self._encoder_fn(),
+            self.field_cast(),
+            params,
+        )
+        return [line]
+
+
+def make_unchecked(checked_class):
+    class UncheckedClass(UncheckedWriteMethod, checked_class):
+        pass
+
+    UncheckedClass.__name__ = checked_class.__name__.replace(
+        'WriteMethod', 'UncheckedWriteMethod'
+    )
+    return UncheckedClass
+
+
 # Mapping of protobuf field types to their method definitions.
 PROTO_FIELD_WRITE_METHODS: dict[int, list] = {
     descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE: [
@@ -2790,6 +2904,24 @@ PROTO_FIELD_WRITE_METHODS: dict[int, list] = {
         PackedEnumWriteVectorMethod,
     ],
 }
+
+PROTO_FIELD_BUFFER_WRITE_METHODS: dict[int, list] = {}
+for proto_field_type, write_methods in PROTO_FIELD_WRITE_METHODS.items():
+    buffer_methods = []
+    for m in write_methods:
+        if m.__name__ in (
+            'BytesCallbackWriteMethod',
+            'WriteNestedMessageMethod',
+        ):
+            continue
+        if m.__name__ == 'SubMessageEncoderMethod':
+            buffer_methods.append(m)
+            buffer_methods.append(UncheckedSubMessageEncoderMethod)
+            continue
+
+        buffer_methods.append(m)
+        buffer_methods.append(make_unchecked(m))
+    PROTO_FIELD_BUFFER_WRITE_METHODS[proto_field_type] = buffer_methods
 
 PROTO_FIELD_READ_METHODS: dict[int, list] = {
     descriptor_pb2.FieldDescriptorProto.TYPE_DOUBLE: [
@@ -2993,6 +3125,9 @@ def proto_message_field_props(
 
 
 def proto_field_methods(class_type: ClassType, field_type: int) -> list:
+    if class_type == ClassType.BUFFER_ENCODER:
+        return PROTO_FIELD_BUFFER_WRITE_METHODS[field_type]
+
     return (
         PROTO_FIELD_WRITE_METHODS[field_type]
         if class_type.is_encoder()
@@ -3023,14 +3158,51 @@ def generate_class_for_message(
     output.write_line(' public:')
 
     with output.indent():
-        # Inherit the constructors from the base class.
-        output.write_line(f'using {base_class}::{base_class_name};')
+        if class_type == ClassType.BUFFER_ENCODER:
+            output.write_line(
+                'static constexpr size_t kNoPatchOffset = '
+                'static_cast<size_t>(-1);'
+            )
+            output.write_line()
+            output.write_line(f'{class_name}(::pw::ByteSpan buffer)')
+            output.write_line(
+                '    : ::pw::protobuf::BufferEncoderView('
+                'buffer, offset_impl_, status_impl_),'
+            )
+            output.write_line(
+                '      offset_impl_(0), status_impl_(::pw::OkStatus()), '
+                'len_offset_(kNoPatchOffset) {}'
+            )
+            output.write_line()
+            output.write_line(
+                f'{class_name}(::pw::protobuf::BufferEncoderView view, '
+                'size_t len_offset)'
+            )
+            output.write_line(
+                '    : ::pw::protobuf::BufferEncoderView(view), '
+                'len_offset_(len_offset) {}'
+            )
+            output.write_line()
+            output.write_line(f'~{class_name}() {{')
+            with output.indent():
+                output.write_line('if (len_offset_ != kNoPatchOffset) {')
+                with output.indent():
+                    output.write_line('PatchLength(len_offset_);')
+                output.write_line('}')
+            output.write_line('}')
+            output.write_line()
+            output.write_line(
+                '::pw::protobuf::BufferEncoderView view() { return *this; }'
+            )
+        else:
+            # Inherit the constructors from the base class.
+            output.write_line(f'using {base_class}::{base_class_name};')
 
-        # Declare a move constructor that takes a base class.
-        output.write_line(
-            f'constexpr {class_name}({base_class}&& parent) '
-            f': {base_class}(std::move(parent)) {{}}'
-        )
+            # Declare a move constructor that takes a base class.
+            output.write_line(
+                f'constexpr {class_name}({base_class}&& parent) '
+                f': {base_class}(std::move(parent)) {{}}'
+            )
 
         # Allow MemoryEncoder& to be converted to StreamEncoder&.
         if class_type == ClassType.MEMORY_ENCODER:
@@ -3070,7 +3242,7 @@ def generate_class_for_message(
                     'kMessageFields);'
                 )
             output.write_line('}')
-        elif class_type.is_encoder():
+        elif class_type.is_encoder() and class_type != ClassType.BUFFER_ENCODER:
             output.write_line()
             output.write_line('::pw::Status Write(const Message& message) {')
             with output.indent():
@@ -3084,7 +3256,12 @@ def generate_class_for_message(
         for field in message.fields():
             for method_class in proto_field_methods(class_type, field.type()):
                 method = method_class(
-                    codegen_options, field, message, root, base_class
+                    codegen_options,
+                    field,
+                    message,
+                    root,
+                    base_class,
+                    class_type,
                 )
                 if not method.should_appear():
                     continue
@@ -3110,6 +3287,16 @@ def generate_class_for_message(
                         output.write_line(line)
                 output.write_line('}')
 
+        if class_type == ClassType.BUFFER_ENCODER:
+            output.write_line()
+            output.write_line(' private:')
+            with output.indent():
+                output.write_line('size_t offset_impl_ = 0;')
+                output.write_line(
+                    '::pw::Status status_impl_ = ::pw::OkStatus();'
+                )
+                output.write_line('size_t len_offset_;')
+
     output.write_line('};')
 
 
@@ -3134,6 +3321,7 @@ def define_not_in_class_methods(
                 message,
                 root,
                 base_class,
+                class_type,
             )
             if not method.should_appear() or method.in_class_definition():
                 continue
@@ -3337,6 +3525,7 @@ def forward_declare(
     output.write_line()
     output.write_line('class StreamEncoder;')
     output.write_line('class MemoryEncoder;')
+    output.write_line('class BufferEncoder;')
 
     # Declare the message's decoder classes.
     output.write_line()
@@ -3518,6 +3707,11 @@ def generate_sizes_for_message(
         all_property_sizes.append(variable_size)
         if static_size is not None:
             statically_known_property_sizes.append(static_size)
+            output.write_line(
+                f'inline constexpr size_t '
+                f'k{prop.field.name()}MaxEncodedSizeBytes '
+                f'= {static_size};'
+            )
 
         if prop.include_in_scratch_size():
             scratch_sizes.append(variable_size)
@@ -3569,11 +3763,11 @@ def generate_find_functions_for_message(
 
     for field in message.fields():
         try:
-            methods = PROTO_FIELD_FIND_METHODS[field.type()]
+            find_methods = PROTO_FIELD_FIND_METHODS[field.type()]
         except KeyError:
             continue
 
-        for cls in methods:
+        for cls in find_methods:
             method = cls(codegen_options, field, message, root, '')
             method_signature = (
                 f'inline {method.return_type()} '
@@ -3693,6 +3887,7 @@ def generate_code_for_package(
     output.write_line('#include "pw_containers/vector.h"')
     output.write_line('#include "pw_preprocessor/compiler.h"')
     output.write_line('#include "pw_protobuf/encoder.h"')
+    output.write_line('#include "pw_protobuf/buffer_encoder.h"')
     output.write_line('#include "pw_protobuf/find.h"')
     output.write_line('#include "pw_protobuf/internal/codegen.h"')
     output.write_line('#include "pw_protobuf/serialized_size.h"')

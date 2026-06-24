@@ -66,6 +66,7 @@ pw_source_set("pw_protobuf") {
     dir_pw_varint,
   ]
   public = [
+    "public/pw_protobuf/buffer_encoder.h",
     "public/pw_protobuf/decoder.h",
     "public/pw_protobuf/encoder.h",
     "public/pw_protobuf/find.h",
@@ -106,6 +107,7 @@ pw_test_group("tests") {
     ":codegen_message_test",
     ":decoder_test",
     ":encoder_test",
+    ":buffer_encoder_test",
     ":find_test",
     ":map_utils_test",
     ":message_test",
@@ -134,6 +136,11 @@ pw_fuzz_test("decoder_test") {
 pw_test("encoder_test") {
   deps = [ ":pw_protobuf" ]
   sources = [ "encoder_test.cc" ]
+}
+
+pw_test("buffer_encoder_test") {
+  deps = [ ":pw_protobuf" ]
+  sources = [ "buffer_encoder_test.cc" ]
 }
 
 pw_test("find_test") {
@@ -198,7 +205,10 @@ group("perf_tests") {
 }
 
 pw_perf_test("encoder_perf_test") {
-  deps = [ ":pw_protobuf" ]
+  deps = [
+    ":codegen_test_protos.pwpb",
+    ":pw_protobuf",
+  ]
   sources = [ "encoder_perf_test.cc" ]
 }
 
