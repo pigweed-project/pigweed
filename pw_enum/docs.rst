@@ -185,6 +185,24 @@ If you don't use the build-time generation targets, you can manually use :cc:`PW
 in :cs:`pw_tokenizer/enum.h <pw_tokenizer/public/pw_tokenizer/enum.h>` to
 tokenize the enum and implement ``PwEnumToString``.
 
+------------------
+Enum domain tokens
+------------------
+``pw::tokenizer::EnumDomainToken`` returns the 32-bit tokenization domain token of a
+given enum type. It relies on the primary template ``pw::tokenizer::PwEnumDomainToken<T>()``.
+
+To get the domain token for an enum:
+
+.. code-block:: cpp
+
+   #include "pw_tokenizer/enum.h"
+
+   constexpr uint32_t domain = pw::tokenizer::EnumDomainToken<MyEnum>();
+
+If the enum is versioned using ``pw_cc_enum_source_set``, this returns its unique versioned
+domain token (hash). If the enum has not been tokenized or specialized, attempting to get
+its domain token will result in a compile-time error.
+
 ----------------------
 Cross language support
 ----------------------

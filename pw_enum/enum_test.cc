@@ -22,6 +22,7 @@
 #include "pw_enum_private/enum_with_deps.h"
 #include "pw_enum_private/standalone_enum.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_tokenizer/hash.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 
@@ -77,6 +78,9 @@ PW_CONSTEXPR_TEST(PwEnumTest, StandaloneEnum, {
                     static_cast<::pw::enum_test::Standalone>(1));
   PW_TEST_EXPECT_EQ(::pw::enum_test::Standalone::kTwo,
                     static_cast<::pw::enum_test::Standalone>(2));
+  PW_TEST_EXPECT_EQ(
+      ::pw::tokenizer::EnumDomainToken<::pw::enum_test::Standalone>(),
+      ::pw::tokenizer::Hash(PW_ENUM_TEST_STANDALONE_DOMAIN));
 });
 
 PW_CONSTEXPR_TEST(PwEnumTest, WithDepsEnum, {
