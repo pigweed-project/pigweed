@@ -789,9 +789,9 @@ class [[nodiscard]] Generator final {
         return gen_ == nullptr || !gen_->ok() || gen_->handle_.done();
       }
 
-      PollOptional<T> Pend(Context& cx) {
+      Poll<value_type> Pend(Context& cx) {
         if (gen_ == nullptr)
-          return PollOptional<T>(std::nullopt);
+          return Poll<value_type>(std::nullopt);
         return gen_->Pend(cx);
       }
     };
