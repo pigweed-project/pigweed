@@ -78,7 +78,10 @@ class AdapterImpl final : public Adapter {
       gatt::GATT::WeakPtr gatt,
       Config config,
       std::unique_ptr<l2cap::ChannelManager> l2cap,
-      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider);
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+      std::optional<
+          std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+          wake_alarm_provider);
   ~AdapterImpl() override;
 
   AdapterId identifier() const override { return identifier_; }
@@ -97,6 +100,12 @@ class AdapterImpl final : public Adapter {
   }
 
   const AdapterState& state() const override { return state_; }
+
+  std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+  wake_alarm_provider() override {
+    return wake_alarm_provider_;
+  }
 
   class LowEnergyImpl final : public LowEnergy {
    public:
@@ -601,6 +610,10 @@ class AdapterImpl final : public Adapter {
 
   pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
 
+  std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+      wake_alarm_provider_;
+
   hci::Transport::WeakPtr hci_;
 
   // Callback invoked to notify clients when the underlying transport is
@@ -683,9 +696,13 @@ AdapterImpl::AdapterImpl(
     gatt::GATT::WeakPtr gatt,
     Config config,
     std::unique_ptr<l2cap::ChannelManager> l2cap,
-    pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider)
+    pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+    std::optional<
+        std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+        wake_alarm_provider)
     : identifier_(Random<AdapterId>()),
       wake_lease_provider_(wake_lease_provider),
+      wake_alarm_provider_(wake_alarm_provider),
       hci_(std::move(hci)),
       init_state_(State::kNotInitialized),
       peer_cache_(pw_dispatcher),
@@ -2005,9 +2022,17 @@ std::unique_ptr<Adapter> Adapter::Create(
     gatt::GATT::WeakPtr gatt,
     Config config,
     pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+    std::optional<
+        std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+        wake_alarm_provider,
     std::unique_ptr<l2cap::ChannelManager> l2cap) {
-  return std::make_unique<AdapterImpl>(
-      pw_dispatcher, hci, gatt, config, std::move(l2cap), wake_lease_provider);
+  return std::make_unique<AdapterImpl>(pw_dispatcher,
+                                       hci,
+                                       gatt,
+                                       config,
+                                       std::move(l2cap),
+                                       wake_lease_provider,
+                                       wake_alarm_provider);
 }
 
 }  // namespace bt::gap

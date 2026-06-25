@@ -134,6 +134,23 @@ fuchsia_cc_library(
 )
 
 fuchsia_cc_library(
+    name = "wake_alarm_provider",
+    srcs = [
+        "wake_alarm_provider.cc",
+    ],
+    hdrs = [
+        "public/pw_bluetooth_sapphire/fuchsia/host/fidl/wake_alarm_provider.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_bluetooth_sapphire:lease",
+        "//pw_bluetooth_sapphire:wake_alarm",
+        "//pw_bluetooth_sapphire/host/common",
+        "@fuchsia_sdk//fidl/fuchsia.time.alarms:fuchsia.time.alarms_cpp",
+    ],
+)
+
+fuchsia_cc_library(
     name = "adapter_test_fixture",
     testonly = True,
     srcs = [
@@ -220,6 +237,7 @@ fuchsia_cc_test(
         "low_energy_peripheral_server_test.cc",
         "periodic_advertising_sync_server_test.cc",
         "profile_server_test.cc",
+        "wake_alarm_provider_test.cc",
     ],
     death_unittest = True,
     visibility = ["//visibility:public"],
@@ -229,6 +247,7 @@ fuchsia_cc_test(
         ":fake_adapter_test_fixture",
         ":fake_gatt_test_fixture",
         ":fidl",
+        ":wake_alarm_provider",
         "//pw_bluetooth_sapphire/host/gap:testing",
         "//pw_bluetooth_sapphire/host/gatt:testing",
         "//pw_bluetooth_sapphire/host/iso:testing",

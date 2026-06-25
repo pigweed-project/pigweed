@@ -68,6 +68,7 @@ cc_library(
         "//pw_bluetooth_sapphire/fuchsia/host/controllers",
         "//pw_bluetooth_sapphire/fuchsia/host/fidl",
         "//pw_bluetooth_sapphire/fuchsia/host/fidl:activity_governor_lease_provider",
+        "//pw_bluetooth_sapphire/fuchsia/host/fidl:wake_alarm_provider",
         "//pw_bluetooth_sapphire/fuchsia/lib/fidl",
         "//pw_bluetooth_sapphire/host:stack",
         "//pw_bluetooth_sapphire/host/common",

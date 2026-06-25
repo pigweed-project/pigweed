@@ -31,6 +31,13 @@ class FakeAdapter final : public Adapter {
 
   AdapterState& mutable_state() { return state_; }
 
+  void set_wake_alarm_provider(
+      std::optional<
+          std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+          provider) {
+    wake_alarm_provider_ = provider;
+  }
+
   // Adapter overrides:
 
   AdapterId identifier() const override { return AdapterId(0); }
@@ -49,6 +56,12 @@ class FakeAdapter final : public Adapter {
   }
 
   const AdapterState& state() const override { return state_; }
+
+  std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+  wake_alarm_provider() override {
+    return wake_alarm_provider_;
+  }
 
   class FakeLowEnergy final : public LowEnergy {
    public:
@@ -407,6 +420,10 @@ class FakeAdapter final : public Adapter {
   std::string local_name_;
   DeviceClass device_class_;
   LESecurityMode le_security_mode_;
+
+  std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+      wake_alarm_provider_;
 
   pw::async::HeapDispatcher heap_dispatcher_;
   PeerCache peer_cache_;

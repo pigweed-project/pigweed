@@ -138,6 +138,8 @@ cc_library(
         ":definitions",
         ":peer",
         "//pw_async:heap_dispatcher",
+        "//pw_bluetooth_sapphire:lease",
+        "//pw_bluetooth_sapphire:wake_alarm",
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/gatt",
         "//pw_bluetooth_sapphire/host/hci",

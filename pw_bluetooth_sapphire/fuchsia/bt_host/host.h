@@ -21,6 +21,7 @@
 #include "fidl/fuchsia.bluetooth.host/cpp/fidl.h"
 #include "fidl/fuchsia.hardware.bluetooth/cpp/fidl.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/activity_governor_lease_provider.h"
+#include "pw_bluetooth_sapphire/fuchsia/host/fidl/wake_alarm_provider.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/adapter.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt.h"
 #include "pw_bluetooth_sapphire/null_lease_provider.h"
@@ -36,7 +37,8 @@ class BtHostComponent {
   static std::unique_ptr<BtHostComponent> Create(
       async_dispatcher_t* dispatcher,
       const std::string& device_path,
-      std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor);
+      std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor,
+      std::unique_ptr<FuchsiaWakeAlarmProvider> wake_alarm_provider);
 
   // Does not override RNG
   static std::unique_ptr<BtHostComponent> CreateForTesting(
@@ -97,15 +99,22 @@ class BtHostComponent {
       async_dispatcher_t* dispatcher,
       const std::string& device_path,
       bool initialize_rng,
-      std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor);
+      std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor,
+      std::unique_ptr<FuchsiaWakeAlarmProvider> wake_alarm_provider);
 
   pw::bluetooth_sapphire::LeaseProvider& lease_provider();
+
+  std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+  wake_alarm_provider();
 
   pw::async_fuchsia::FuchsiaDispatcher pw_dispatcher_;
 
   std::variant<pw::bluetooth_sapphire::NullLeaseProvider,
                std::unique_ptr<bthost::ActivityGovernorLeaseProvider>>
       lease_provider_;
+
+  std::unique_ptr<bthost::FuchsiaWakeAlarmProvider> wake_alarm_provider_;
 
   // Path of bt-hci device the component supports
   std::string device_path_;

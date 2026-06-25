@@ -114,6 +114,18 @@ pw_source_set("lease") {
   ]
 }
 
+pw_source_set("wake_alarm") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_bluetooth_sapphire/wake_alarm.h" ]
+  public_deps = [
+    ":lease",
+    "$dir_pw_chrono:system_clock",
+    dir_pw_function,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+}
+
 pw_source_set("null_lease_provider") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_bluetooth_sapphire/null_lease_provider.h" ]

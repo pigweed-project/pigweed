@@ -33,8 +33,10 @@ BtHostComponent::BtHostComponent(
     async_dispatcher_t* dispatcher,
     const std::string& device_path,
     bool initialize_rng,
-    std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor)
+    std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor,
+    std::unique_ptr<FuchsiaWakeAlarmProvider> wake_alarm_provider)
     : pw_dispatcher_(dispatcher),
+      wake_alarm_provider_(std::move(wake_alarm_provider)),
       device_path_(device_path),
       initialize_rng_(initialize_rng),
       inspector_(inspect::ComponentInspector(dispatcher, {})) {
@@ -60,12 +62,14 @@ BtHostComponent::~BtHostComponent() {
 std::unique_ptr<BtHostComponent> BtHostComponent::Create(
     async_dispatcher_t* dispatcher,
     const std::string& device_path,
-    std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor) {
+    std::unique_ptr<ActivityGovernorLeaseProvider> activity_governor,
+    std::unique_ptr<FuchsiaWakeAlarmProvider> wake_alarm_provider) {
   std::unique_ptr<BtHostComponent> host(
       new BtHostComponent(dispatcher,
                           device_path,
                           /*initialize_rng=*/true,
-                          std::move(activity_governor)));
+                          std::move(activity_governor),
+                          std::move(wake_alarm_provider)));
   return host;
 }
 
@@ -76,7 +80,8 @@ std::unique_ptr<BtHostComponent> BtHostComponent::CreateForTesting(
       new BtHostComponent(dispatcher,
                           device_path,
                           /*initialize_rng=*/false,
-                          /*activity_governor=*/nullptr));
+                          /*activity_governor=*/nullptr,
+                          /*wake_alarm_provider=*/nullptr));
   return host;
 }
 
@@ -120,7 +125,8 @@ bool BtHostComponent::Initialize(
                               hci_->GetWeakPtr(),
                               gatt_->GetWeakPtr(),
                               adapter_config,
-                              lease_provider());
+                              lease_provider(),
+                              wake_alarm_provider());
   if (!gap_) {
     bt_log(WARN, "bt-host", "GAP could not be created");
     return false;
@@ -202,7 +208,7 @@ void BtHostComponent::BindToHostInterface(
 pw::bluetooth_sapphire::LeaseProvider& BtHostComponent::lease_provider() {
   pw::bluetooth_sapphire::LeaseProvider* lease_provider = nullptr;
   std::visit(
-      [&](auto&& p) {
+      [&](auto& p) {
         using T = std::decay_t<decltype(p)>;
         if constexpr (std::is_same_v<
                           T,
@@ -219,6 +225,15 @@ pw::bluetooth_sapphire::LeaseProvider& BtHostComponent::lease_provider() {
       },
       lease_provider_);
   return *lease_provider;
+}
+
+std::optional<std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+BtHostComponent::wake_alarm_provider() {
+  if (wake_alarm_provider_) {
+    return std::ref(*wake_alarm_provider_);
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace bthost

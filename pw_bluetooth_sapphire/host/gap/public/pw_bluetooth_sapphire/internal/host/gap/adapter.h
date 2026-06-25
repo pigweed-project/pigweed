@@ -40,6 +40,8 @@
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sdp/server.h"
 #include "pw_bluetooth_sapphire/internal/host/sdp/service_discoverer.h"
+#include "pw_bluetooth_sapphire/lease.h"
+#include "pw_bluetooth_sapphire/wake_alarm.h"
 
 namespace bt {
 
@@ -118,6 +120,9 @@ class Adapter {
       gatt::GATT::WeakPtr gatt,
       Config config,
       pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+      std::optional<
+          std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+          wake_alarm_provider,
       std::unique_ptr<l2cap::ChannelManager> l2cap = nullptr);
   virtual ~Adapter() = default;
 
@@ -154,6 +159,10 @@ class Adapter {
 
   // Returns the global adapter setting parameters.
   virtual const AdapterState& state() const = 0;
+
+  virtual std::optional<
+      std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
+  wake_alarm_provider() = 0;
 
   // Interface to the LE features of the adapter.
   class LowEnergy {

@@ -17,12 +17,10 @@
 #include <memory>
 
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_discovery_manager.h"
-#include "pw_bluetooth_sapphire/internal/host/gap/low_energy_address_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_advertising_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_discovery_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/fake_layer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_l2cap.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
@@ -77,6 +75,7 @@ class AdapterTest : public TestingBase {
                                gatt_->GetWeakPtr(),
                                config,
                                lease_provider_,
+                               std::nullopt,
                                std::move(l2cap));
   }
 
@@ -1591,6 +1590,7 @@ TEST_F(AdapterConstructorTest, GattCallbacks) {
                                  gatt_->GetWeakPtr(),
                                  config,
                                  lease_provider(),
+                                 std::nullopt,
                                  std::move(l2cap_));
 
   EXPECT_EQ(set_persist_cb_count, 1);
@@ -1635,6 +1635,20 @@ TEST_F(AdapterConstructorTest, GattCallbacks) {
   auto persisted_data_4 =
       gatt_->CallRetrieveServiceChangedCCCCallback(le_peer_id);
   EXPECT_EQ(persisted_data_4, std::nullopt);
+}
+
+TEST_F(AdapterConstructorTest, NulloptWakeAlarmProvider) {
+  Adapter::Config config = {
+      .legacy_pairing_enabled = false,
+  };
+  auto adapter = Adapter::Create(dispatcher(),
+                                 transport()->GetWeakPtr(),
+                                 gatt_->GetWeakPtr(),
+                                 config,
+                                 lease_provider(),
+                                 std::nullopt,
+                                 std::move(l2cap_));
+  EXPECT_FALSE(adapter->wake_alarm_provider().has_value());
 }
 
 TEST_F(AdapterTest, BufferSizesRecordedInState) {

@@ -36,6 +36,10 @@
             availability: "optional",
         },
         {
+            protocol: "fuchsia.time.alarms.WakeAlarms",
+            availability: "optional",
+        },
+        {
             config: "fuchsia.power.SuspendEnabled",
             key: "enable_suspend",
             type: "bool",

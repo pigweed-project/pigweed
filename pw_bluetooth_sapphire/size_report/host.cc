@@ -55,7 +55,8 @@ int main() {
                                transport->GetWeakPtr(),
                                gatt->GetWeakPtr(),
                                config,
-                               lease_provider);
+                               lease_provider,
+                               std::nullopt);
   auto gap_init_cb = []([[maybe_unused]] bool success) {};
   auto transport_closed_cb = []() {};
   adapter->Initialize(std::move(gap_init_cb), std::move(transport_closed_cb));

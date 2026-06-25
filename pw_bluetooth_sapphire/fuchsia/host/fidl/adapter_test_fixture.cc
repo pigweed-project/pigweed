@@ -41,6 +41,7 @@ void AdapterTestFixture::SetUp(
                                       gatt_->GetWeakPtr(),
                                       config,
                                       lease_provider_,
+                                      std::nullopt,
                                       std::move(l2cap));
 
   test_device()->set_settings(settings);

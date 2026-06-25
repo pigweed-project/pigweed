@@ -127,6 +127,21 @@ cc_library(
 )
 
 cc_library(
+    name = "wake_alarm",
+    hdrs = [
+        "public/pw_bluetooth_sapphire/wake_alarm.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":lease",
+        "//pw_chrono:system_clock",
+        "//pw_function",
+        "//pw_result",
+        "//pw_status",
+    ],
+)
+
+cc_library(
     name = "null_lease_provider",
     hdrs = [
         "public/pw_bluetooth_sapphire/null_lease_provider.h",

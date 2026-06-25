@@ -24,10 +24,12 @@
 #include "fidl/fuchsia.hardware.bluetooth/cpp/fidl.h"
 #include "fidl/fuchsia.power.system/cpp/fidl.h"
 #include "fidl/fuchsia.scheduler/cpp/fidl.h"
+#include "fidl/fuchsia.time.alarms/cpp/fidl.h"
 #include "host.h"
 #include "lib/component/incoming/cpp/protocol.h"
 #include "pw_bluetooth_sapphire/fuchsia/bt_host/bt_host_config.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/activity_governor_lease_provider.h"
+#include "pw_bluetooth_sapphire/fuchsia/host/fidl/wake_alarm_provider.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_log/log.h"
 #include "util.h"
@@ -199,9 +201,30 @@ int main() {
     }
   }
 
+  std::unique_ptr<bthost::FuchsiaWakeAlarmProvider> wake_alarm_provider;
+  if (config.enable_suspend()) {
+    zx::result client_end_res =
+        component::Connect<fuchsia_time_alarms::WakeAlarms>();
+    if (!client_end_res.is_ok()) {
+      bt_log(ERROR,
+             "bt-host",
+             "Couldn't connect to WakeAlarms: %s",
+             client_end_res.status_string());
+      return 1;
+    }
+    wake_alarm_provider = bthost::FuchsiaWakeAlarmProvider::Create(
+        std::move(client_end_res.value()), *lease_provider, loop.dispatcher());
+    if (!wake_alarm_provider) {
+      bt_log(ERROR, "bt-host", "Couldn't create FuchsiaWakeAlarmProvider");
+      return 1;
+    }
+  }
+
   std::unique_ptr<bthost::BtHostComponent> host =
-      bthost::BtHostComponent::Create(
-          loop.dispatcher(), config.device_path(), std::move(lease_provider));
+      bthost::BtHostComponent::Create(loop.dispatcher(),
+                                      config.device_path(),
+                                      std::move(lease_provider),
+                                      std::move(wake_alarm_provider));
 
   LifecycleHandler lifecycle_handler(&loop, host->GetWeakPtr());
 
