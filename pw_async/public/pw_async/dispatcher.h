@@ -18,6 +18,8 @@
 /// (Deprecated) Async library
 namespace pw::async {
 
+inline constexpr bool kAtomicRepostingSupported = true;
+
 /// @module{pw_async}
 
 class Task;
@@ -49,29 +51,31 @@ class Dispatcher : public chrono::VirtualSystemClock {
  public:
   ~Dispatcher() override = default;
 
-  /// Post caller-owned |task| to be run on the dispatch loop.
+  /// Post |task| to be run as soon as possible.
   ///
   /// Posted tasks execute in the order they are posted. This ensures that
   /// tasks can re-post themselves and yield in order to allow other tasks the
   /// opportunity to execute.
   ///
   /// A given |task| must only be posted to a single `Dispatcher`.
-  virtual void Post(Task& task) { PostAt(task, now()); }
-
-  /// Post caller owned |task| to be run after |delay|.
   ///
-  /// If |task| was already posted to run at an earlier time (before |delay|
-  /// would expire), |task| must be run at the earlier time, and |task|
-  /// *may* also be run at the later time.
+  /// If the task is already posted and due to run immediately, this call is a
+  /// no-op and the task's position in the queue is preserved. If the task is
+  /// already posted but for a future time, it is moved to run immediately.
+  virtual void Post(Task& task) = 0;
+
+  /// Post caller-owned |task| to be run after |delay|.
+  ///
+  /// If |task| is already posted to this `Dispatcher`, it is canceled and
+  /// re-posted to execute at the new time (now + |delay|).
   virtual void PostAfter(Task& task, chrono::SystemClock::duration delay) {
     PostAt(task, now() + delay);
   }
 
-  /// Post caller owned |task| to be run at |time|.
+  /// Post caller-owned |task| to be run at |time|.
   ///
-  /// If |task| was already posted to run before |time|,
-  /// |task| must be run at the earlier time, and |task| *may* also be run at
-  /// the later time.
+  /// If |task| is already posted to this `Dispatcher`, it is canceled and
+  /// re-posted to execute at the new |time|.
   virtual void PostAt(Task& task, chrono::SystemClock::time_point time) = 0;
 
   /// Prevent a `Post`ed task from starting.

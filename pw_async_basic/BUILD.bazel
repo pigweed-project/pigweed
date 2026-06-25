@@ -62,6 +62,7 @@ cc_library(
     strip_include_prefix = "public_overrides",
     deps = [
         ":fake_dispatcher_private",
+        "//pw_assert:check",
         "//pw_async:fake_dispatcher.facade",
         "//pw_async:task",
         "//pw_log",
@@ -95,6 +96,7 @@ cc_library(
     hdrs = ["public/pw_async_basic/dispatcher.h"],
     strip_include_prefix = "public",
     deps = [
+        "//pw_assert:check",
         "//pw_async:dispatcher",
         "//pw_async:task",
         "//pw_chrono:system_clock",

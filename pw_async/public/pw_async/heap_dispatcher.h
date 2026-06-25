@@ -30,10 +30,12 @@ class HeapDispatcher final : public FunctionDispatcher {
   Dispatcher& inner() const { return dispatcher_; }
 
   // FunctionDispatcher overrides:
+  using FunctionDispatcher::Post;
   Status PostAt(TaskFunction&& task_func,
                 chrono::SystemClock::time_point time) override;
 
   // Dispatcher overrides:
+  inline void Post(Task& task) override { return dispatcher_.Post(task); }
   inline void PostAt(Task& task,
                      chrono::SystemClock::time_point time) override {
     return dispatcher_.PostAt(task, time);

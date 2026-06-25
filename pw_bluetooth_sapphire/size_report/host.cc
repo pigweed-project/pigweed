@@ -28,6 +28,7 @@ class BloatRandomGenerator final : public pw::random::RandomGenerator {
 
 class BloatDispatcher final : public pw::async::Dispatcher {
  public:
+  void Post([[maybe_unused]] pw::async::Task& task) override {}
   void PostAt(
       [[maybe_unused]] pw::async::Task& task,
       [[maybe_unused]] pw::chrono::SystemClock::time_point time) override {}

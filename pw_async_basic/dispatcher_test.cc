@@ -27,6 +27,8 @@
 
 using namespace std::chrono_literals;
 
+static_assert(pw::async::kAtomicRepostingSupported);
+
 namespace pw::async {
 namespace {
 
@@ -344,4 +346,121 @@ TEST(DispatcherBasic, TaskExecutedByRunFor) {
 }
 
 }  // namespace
+TEST(DispatcherBasic, PostFutureTaskUpgradesToImmediate) {
+  BasicDispatcher dispatcher;
+  Thread work_thread(thread::stl::Options(), dispatcher);
+
+  TestPrimitives tp;
+  Task task([&tp](Context&, Status status) {
+    PW_TEST_ASSERT_OK(status);
+    ++tp.count;
+    tp.notification.release();
+  });
+
+  // Post with a long delay
+  dispatcher.PostAfter(task, std::chrono::hours(1));
+
+  // Post immediately (should upgrade the task to now)
+  dispatcher.Post(task);
+
+  // Wait for it to run
+  tp.notification.acquire();
+
+  dispatcher.RequestStop();
+  work_thread.join();
+
+  EXPECT_EQ(tp.count, 1);
+}
+
+TEST(DispatcherBasic, PostImmediateTaskPreservesPosition) {
+  BasicDispatcher dispatcher;
+  Thread work_thread(thread::stl::Options(), dispatcher);
+
+  TestPrimitives tp;
+  Task task1([&tp](Context&, Status status) {
+    PW_TEST_ASSERT_OK(status);
+    EXPECT_EQ(tp.count, 0);
+    ++tp.count;
+  });
+  Task task2([&tp](Context&, Status status) {
+    PW_TEST_ASSERT_OK(status);
+    EXPECT_EQ(tp.count, 1);
+    ++tp.count;
+    tp.notification.release();
+  });
+
+  // Post task1 then task2
+  dispatcher.Post(task1);
+  dispatcher.Post(task2);
+
+  // Re-post task1. It should still run before task2 because it's already
+  // immediate.
+  dispatcher.Post(task1);
+
+  tp.notification.acquire();
+  dispatcher.RequestStop();
+  work_thread.join();
+
+  EXPECT_EQ(tp.count, 2);
+}
+
+TEST(DispatcherBasic, PostAtMovesTaskToFuture) {
+  BasicDispatcher dispatcher;
+  Thread work_thread(thread::stl::Options(), dispatcher);
+
+  TestPrimitives tp;
+  Task task([&tp](Context&, Status status) {
+    PW_TEST_ASSERT_OK(status);
+    ++tp.count;
+    tp.notification.release();
+  });
+
+  // Post immediately
+  dispatcher.Post(task);
+
+  // Move to future
+  dispatcher.PostAfter(task, std::chrono::hours(1));
+
+  // Since it's now in the future, it won't run immediately.
+  // We can't easily wait for it not to run, but we can check it hasn't run yet.
+  // For this test, we'll just cancel it and verify it was cancelled.
+
+  EXPECT_TRUE(dispatcher.Cancel(task));
+
+  dispatcher.RequestStop();
+  work_thread.join();
+  EXPECT_EQ(tp.count, 0);  // Should not have run
+}
+
+TEST(DispatcherBasic, PostImmediateToDifferentDispatcherShouldCrash) {
+  BasicDispatcher dispatcher1;
+  BasicDispatcher dispatcher2;
+
+  Task task([](Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.Post(task),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
+}
+
+TEST(DispatcherBasic, PostAtToDifferentDispatcherShouldCrash) {
+  BasicDispatcher dispatcher1;
+  BasicDispatcher dispatcher2;
+
+  Task task([](Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.PostAt(task, dispatcher2.now() + std::chrono::hours(1)),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
+}
 }  // namespace pw::async

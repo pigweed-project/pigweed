@@ -16,6 +16,7 @@
 #include <mutex>
 #include <utility>
 
+#include "pw_assert/check.h"
 #include "pw_chrono/system_clock.h"
 
 using namespace std::chrono_literals;
@@ -87,6 +88,7 @@ void BasicDispatcher::MaybeSleepUntil(
 }
 
 void BasicDispatcher::ExecuteTask(backend::NativeTask& task, Status status) {
+  task.dispatcher_ = nullptr;
   Context ctx{this, &task.task_};
   task(ctx, status);
   // task object might be freed already (e.g. HeapDispatcher).
@@ -123,19 +125,49 @@ void BasicDispatcher::DrainTaskQueue() {
   }
 }
 
+void BasicDispatcher::Post(Task& task) {
+  std::lock_guard lock(lock_);
+  if (!task.native_type().unlisted()) {
+    PW_CHECK(task.native_type().dispatcher_ == this,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+    if (task.native_type().due_time() <= now()) {
+      // Do nothing for already-due tasks, to retain their queue position.
+      return;
+    }
+  }
+  PostTaskLocked(task.native_type(), now());
+}
+
 void BasicDispatcher::PostAt(Task& task, chrono::SystemClock::time_point time) {
-  PostTaskInternal(task.native_type(), time);
+  std::lock_guard lock(lock_);
+  if (!task.native_type().unlisted()) {
+    PW_CHECK(task.native_type().dispatcher_ == this,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+  }
+  PostTaskLocked(task.native_type(), time);
 }
 
 bool BasicDispatcher::Cancel(Task& task) {
   std::lock_guard lock(lock_);
-  return task_queue_.remove(task.native_type());
+  bool removed = task_queue_.remove(task.native_type());
+  if (removed) {
+    task.native_type().dispatcher_ = nullptr;
+  }
+  return removed;
 }
 
-void BasicDispatcher::PostTaskInternal(
-    backend::NativeTask& task, chrono::SystemClock::time_point time_due) {
-  lock_.lock();
+void BasicDispatcher::PostTaskLocked(backend::NativeTask& task,
+                                     chrono::SystemClock::time_point time_due) {
   task.due_time_ = time_due;
+  if (!task.unlisted()) {
+    PW_CHECK(task.dispatcher_ == this,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+    task_queue_.remove(task);
+  }
+  task.dispatcher_ = this;
   // Insert the new task in the queue after all tasks with the same or earlier
   // deadline to ensure FIFO execution order.
   auto it_front = task_queue_.begin();
@@ -145,7 +177,6 @@ void BasicDispatcher::PostTaskInternal(
     ++it_behind;
   }
   task_queue_.insert_after(it_behind, task);
-  lock_.unlock();
   timed_notification_.release();
 }
 

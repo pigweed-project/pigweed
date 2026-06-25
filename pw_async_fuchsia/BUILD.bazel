@@ -84,6 +84,7 @@ cc_library(
     ],
     deps = [
         ":task",
+        "//pw_assert:check",
         "//pw_async:dispatcher",
         "@fuchsia_sdk//pkg/async-cpp",
     ],
@@ -107,6 +108,7 @@ fuchsia_cc_test(
         "dispatcher_test.cc",
         "fake_dispatcher_fixture_test.cc",
     ],
+    death_unittest = True,
     deps = [
         ":dispatcher",
         "//pw_async:fake_dispatcher_fixture",

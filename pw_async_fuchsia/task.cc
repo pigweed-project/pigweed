@@ -43,6 +43,7 @@ void NativeTask::Handler(async_dispatcher_t* /*dispatcher*/,
                          async_task_t* task,
                          zx_status_t status) {
   auto self = static_cast<NativeTask*>(task);
+  self->is_posted_.store(false);
   Context c{.dispatcher = self->dispatcher_, .task = &self->task_};
   (*self)(c, status == ZX_OK ? OkStatus() : Status::Cancelled());
 }

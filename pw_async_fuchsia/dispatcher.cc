@@ -16,6 +16,7 @@
 
 #include <lib/async/cpp/time.h>
 
+#include "pw_assert/check.h"
 #include "pw_async_fuchsia/util.h"
 
 namespace pw::async_fuchsia {
@@ -24,16 +25,43 @@ chrono::SystemClock::time_point FuchsiaDispatcher::now() {
   return ZxTimeToTimepoint(zx::time{async_now(dispatcher_)});
 }
 
+void FuchsiaDispatcher::Post(async::Task& task) {
+  async::backend::NativeTask& native_task = task.native_type();
+  if (native_task.is_posted()) {
+    PW_CHECK(native_task.dispatcher_ == this,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+    if (native_task.due_time() <= now()) {
+      // If the task is posted and due run, don't cancel and re-post, which
+      // would push it to the back of the queue.
+      return;
+    }
+  }
+  PostAt(task, now());
+}
+
 void FuchsiaDispatcher::PostAt(async::Task& task,
                                chrono::SystemClock::time_point time) {
   async::backend::NativeTask& native_task = task.native_type();
+  if (native_task.is_posted()) {
+    PW_CHECK(native_task.dispatcher_ == this,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+    Cancel(task);
+  }
   native_task.set_due_time(time);
   native_task.dispatcher_ = this;
-  async_post_task(dispatcher_, &native_task);
+  native_task.set_posted(true);
+  zx_status_t status = async_post_task(dispatcher_, &native_task);
+  ZX_ASSERT(status == ZX_OK);
 }
 
 bool FuchsiaDispatcher::Cancel(async::Task& task) {
-  return async_cancel_task(dispatcher_, &task.native_type()) == ZX_OK;
+  if (async_cancel_task(dispatcher_, &task.native_type()) == ZX_OK) {
+    task.native_type().set_posted(false);
+    return true;
+  }
+  return false;
 }
 
 }  // namespace pw::async_fuchsia

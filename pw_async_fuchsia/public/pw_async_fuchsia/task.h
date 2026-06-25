@@ -15,6 +15,8 @@
 
 #include <lib/async/task.h>
 
+#include <atomic>
+
 #include "pw_async/task_function.h"
 #include "pw_chrono/system_clock.h"
 
@@ -51,6 +53,9 @@ class NativeTask final : public async_task_t {
 
   void set_due_time(chrono::SystemClock::time_point due_time);
 
+  bool is_posted() const { return is_posted_.load(); }
+  void set_posted(bool posted) { is_posted_.store(posted); }
+
   static void Handler(async_dispatcher_t* /*dispatcher*/,
                       async_task_t* task,
                       zx_status_t status);
@@ -62,6 +67,7 @@ class NativeTask final : public async_task_t {
   // the Context may be set in a type-safe manner inside `Handler` when invoked
   // by the async-loop.
   Dispatcher* dispatcher_ = nullptr;
+  std::atomic<bool> is_posted_{false};
 };
 
 using NativeTaskHandle = NativeTask&;

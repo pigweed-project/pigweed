@@ -14,6 +14,7 @@
 
 #include "pw_async/fake_dispatcher.h"
 
+#include "pw_assert/check.h"
 #include "pw_async/task.h"
 #include "pw_log/log.h"
 
@@ -67,6 +68,7 @@ bool NativeFakeDispatcher::ExecuteDueTasks() {
     ::pw::async::backend::NativeTask& task = task_queue_.front();
     task_queue_.pop_front();
 
+    task.dispatcher_ = nullptr;
     Context ctx{&dispatcher_, &task.task_};
     task(ctx, OkStatus());
 
@@ -86,6 +88,7 @@ bool NativeFakeDispatcher::DrainTaskQueue() {
     ::pw::async::backend::NativeTask& task = task_queue_.front();
     task_queue_.pop_front();
 
+    task.dispatcher_ = nullptr;
     PW_LOG_DEBUG("running cancelled task");
     Context ctx{&dispatcher_, &task.task_};
     task(ctx, Status::Cancelled());
@@ -95,7 +98,17 @@ bool NativeFakeDispatcher::DrainTaskQueue() {
   return task_ran;
 }
 
-void NativeFakeDispatcher::Post(Task& task) { PostAt(task, now()); }
+void NativeFakeDispatcher::Post(Task& task) {
+  if (!task.native_type().unlisted()) {
+    PW_CHECK(task.native_type().dispatcher_ == &dispatcher_,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
+    if (task.native_type().due_time() <= now()) {
+      return;
+    }
+  }
+  PostAt(task, now());
+}
 
 void NativeFakeDispatcher::PostAfter(Task& task,
                                      chrono::SystemClock::duration delay) {
@@ -109,22 +122,26 @@ void NativeFakeDispatcher::PostAt(Task& task,
 }
 
 bool NativeFakeDispatcher::Cancel(Task& task) {
-  return task_queue_.remove(task.native_type());
+  bool removed = task_queue_.remove(task.native_type());
+  if (removed) {
+    task.native_type().dispatcher_ = nullptr;
+  }
+  return removed;
 }
 
 void NativeFakeDispatcher::PostTaskInternal(
     ::pw::async::backend::NativeTask& task,
     chrono::SystemClock::time_point time_due) {
   if (!task.unlisted()) {
-    if (task.due_time() <= time_due) {
-      // No need to repost a task that was already queued to run.
-      return;
-    }
+    PW_CHECK(task.dispatcher_ == &dispatcher_,
+             "Attempted to post a task that is already posted to a different "
+             "Dispatcher.");
     // The task needs its time updated, so we have to move it to
     // a different part of the list.
     task.unlist();
   }
   task.set_due_time(time_due);
+  task.dispatcher_ = &dispatcher_;
   auto it_front = task_queue_.begin();
   auto it_behind = task_queue_.before_begin();
   while (it_front != task_queue_.end() && time_due >= it_front->due_time()) {

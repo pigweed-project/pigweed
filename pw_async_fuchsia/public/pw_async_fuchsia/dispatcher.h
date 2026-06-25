@@ -59,6 +59,7 @@ class FuchsiaDispatcher final : public async::Dispatcher {
 
   chrono::SystemClock::time_point now() override;
 
+  void Post(async::Task& task) override;
   void PostAt(async::Task& task, chrono::SystemClock::time_point time) override;
 
   bool Cancel(async::Task& task) override;

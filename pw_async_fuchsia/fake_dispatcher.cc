@@ -27,7 +27,18 @@ chrono::SystemClock::time_point NativeFakeDispatcher::now() {
   return fake_loop_.Now();
 }
 
-void NativeFakeDispatcher::Post(Task& task) { PostAt(task, now()); }
+void NativeFakeDispatcher::Post(Task& task) {
+  ::pw::async::backend::NativeTask& native_task = task.native_type();
+  if (native_task.is_posted()) {
+    if (native_task.due_time() <= now()) {
+      // If the task is posted and due run, don't cancel and re-post, which
+      // would push it to the back of the queue.
+      return;
+    }
+    Cancel(task);
+  }
+  PostAt(task, now());
+}
 
 void NativeFakeDispatcher::PostAfter(Task& task,
                                      chrono::SystemClock::duration delay) {
@@ -46,12 +57,17 @@ void NativeFakeDispatcher::PostAt(Task& task,
   ::pw::async::backend::NativeTask& native_task = task.native_type();
   native_task.set_due_time(time);
   native_task.dispatcher_ = &dispatcher_;
+  native_task.set_posted(true);
   fake_loop_.PostTask(&native_task);
 }
 
 bool NativeFakeDispatcher::Cancel(Task& task) {
-  return fake_loop_.Runnable() &&
-         fake_loop_.CancelTask(&task.native_type()) == ZX_OK;
+  if (fake_loop_.Runnable() &&
+      fake_loop_.CancelTask(&task.native_type()) == ZX_OK) {
+    task.native_type().set_posted(false);
+    return true;
+  }
+  return false;
 }
 
 bool NativeFakeDispatcher::RunUntilIdle() {

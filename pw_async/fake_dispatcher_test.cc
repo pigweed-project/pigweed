@@ -184,6 +184,8 @@ TEST(FakeDispatcher, PostAfterWithLaterTimeRunsSooner) {
   dispatcher.PostAfter(task, chrono::SystemClock::for_at_least(50ms));
   dispatcher.PostAfter(task, chrono::SystemClock::for_at_least(100ms));
   dispatcher.RunFor(chrono::SystemClock::for_at_least(60ms));
+  EXPECT_EQ(counter.counts, CallCounts{});
+  dispatcher.RunFor(chrono::SystemClock::for_at_least(50ms));
   EXPECT_EQ(counter.counts, CallCounts{.ok = 1});
 }
 
@@ -194,6 +196,8 @@ TEST(FakeDispatcher, PostThenPostAfterRunsImmediately) {
   dispatcher.Post(task);
   dispatcher.PostAfter(task, chrono::SystemClock::for_at_least(50ms));
   dispatcher.RunUntilIdle();
+  EXPECT_EQ(counter.counts, CallCounts{});
+  dispatcher.RunFor(chrono::SystemClock::for_at_least(50ms));
   EXPECT_EQ(counter.counts, CallCounts{.ok = 1});
 }
 
@@ -346,6 +350,38 @@ TEST(DispatcherBasic, TasksCancelledByRunFor) {
   dispatcher.RequestStop();
   dispatcher.RunFor(chrono::SystemClock::for_at_least(5s));
   ASSERT_EQ(counter.counts, CallCounts{.cancelled = 3});
+}
+
+TEST(FakeDispatcher, PostImmediateToDifferentDispatcherShouldCrash) {
+  FakeDispatcher dispatcher1;
+  FakeDispatcher dispatcher2;
+
+  Task task([](Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.Post(task),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
+}
+
+TEST(FakeDispatcher, PostAtToDifferentDispatcherShouldCrash) {
+  FakeDispatcher dispatcher1;
+  FakeDispatcher dispatcher2;
+
+  Task task([](Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.PostAt(task, dispatcher2.now() + 1h),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
 }
 
 }  // namespace

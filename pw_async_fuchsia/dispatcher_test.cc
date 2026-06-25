@@ -19,6 +19,8 @@
 #include "pw_async_fuchsia/util.h"
 #include "pw_unit_test/framework.h"
 
+static_assert(pw::async::kAtomicRepostingSupported);
+
 #define ASSERT_CANCELLED(status) ASSERT_EQ(Status::Cancelled(), status)
 
 using namespace std::chrono_literals;
@@ -154,6 +156,42 @@ TEST_F(DispatcherFuchsiaTest, ChainedTasks) {
 
   RunLoopUntilIdle();
   EXPECT_EQ(c, 3);
+}
+
+TEST_F(DispatcherFuchsiaTest, PostImmediateToDifferentDispatcherShouldCrash) {
+  FuchsiaDispatcher dispatcher1(dispatcher());
+
+  ::async::TestLoop loop2;
+  FuchsiaDispatcher dispatcher2(loop2.dispatcher());
+
+  async::Task task([](async::Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.Post(task),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
+}
+
+TEST_F(DispatcherFuchsiaTest, PostAtToDifferentDispatcherShouldCrash) {
+  FuchsiaDispatcher dispatcher1(dispatcher());
+
+  ::async::TestLoop loop2;
+  FuchsiaDispatcher dispatcher2(loop2.dispatcher());
+
+  async::Task task([](async::Context&, Status) {});
+
+  dispatcher1.Post(task);
+
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher2.PostAt(task, dispatcher2.now() + 1h),
+      "Attempted to post a task that is already posted to a different "
+      "Dispatcher.");
+
+  dispatcher1.Cancel(task);
 }
 
 }  // namespace pw::async_fuchsia

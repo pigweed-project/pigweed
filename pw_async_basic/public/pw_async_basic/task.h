@@ -19,6 +19,7 @@
 #include "pw_containers/intrusive_list.h"
 
 namespace pw::async {
+class Dispatcher;
 class BasicDispatcher;
 namespace test::backend {
 class NativeFakeDispatcher;
@@ -52,6 +53,7 @@ class NativeTask final : public IntrusiveList<NativeTask>::Item {
   // padding would be added here, which is just enough for a pointer.
   Task& task_;
   pw::chrono::SystemClock::time_point due_time_;
+  Dispatcher* dispatcher_ = nullptr;
 };
 
 using NativeTaskHandle = NativeTask&;

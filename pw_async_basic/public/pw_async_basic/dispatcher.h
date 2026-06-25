@@ -55,6 +55,7 @@ class BasicDispatcher : public Dispatcher, public thread::ThreadCore {
   void Run() override PW_LOCKS_EXCLUDED(lock_);
 
   // Dispatcher overrides:
+  void Post(Task& task) override;
   void PostAt(Task& task, chrono::SystemClock::time_point time) override;
   bool Cancel(Task& task) override PW_LOCKS_EXCLUDED(lock_);
 
@@ -74,9 +75,9 @@ class BasicDispatcher : public Dispatcher, public thread::ThreadCore {
  private:
   // Insert |task| into task_queue_ maintaining its min-heap property, keyed by
   // |time_due|.
-  void PostTaskInternal(backend::NativeTask& task,
-                        chrono::SystemClock::time_point time_due)
-      PW_LOCKS_EXCLUDED(lock_);
+  void PostTaskLocked(backend::NativeTask& task,
+                      chrono::SystemClock::time_point time_due)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   // If no tasks are due, sleep until a notification is received or the next
   // task comes due; whichever occurs first.
