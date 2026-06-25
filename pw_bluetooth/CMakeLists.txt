@@ -230,6 +230,11 @@ emboss_cc_library(pw_bluetooth.emboss_rfcomm_frames
     public/pw_bluetooth/rfcomm_frames.emb
 )
 
+emboss_cc_library(pw_bluetooth.emboss_avctp_avrcp
+  SOURCES
+    public/pw_bluetooth/avctp_avrcp.emb
+)
+
 emboss_cc_library(pw_bluetooth.emboss_att
   SOURCES
     public/pw_bluetooth/att.emb
@@ -312,6 +317,7 @@ pw_add_library(pw_bluetooth.hci_util STATIC
 pw_target_link_targets(pw_bluetooth
   INTERFACE
     pw_bluetooth.emboss_att
+    pw_bluetooth.emboss_avctp_avrcp
     pw_bluetooth.emboss_hci_android
     pw_bluetooth.emboss_hci_commands
     pw_bluetooth.emboss_hci_common
@@ -330,6 +336,7 @@ pw_add_test(pw_bluetooth.emboss_test
     # All emboss targets are listed (even if they don't have explicit tests) to
     # ensure they are compiled.
     pw_bluetooth.emboss_att
+    pw_bluetooth.emboss_avctp_avrcp
     pw_bluetooth.emboss_hci_group
     pw_bluetooth.emboss_hci_test
     pw_bluetooth.emboss_l2cap_frames

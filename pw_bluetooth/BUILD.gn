@@ -208,6 +208,11 @@ if (dir_pw_third_party_emboss != "") {
     ]
   }
 
+  emboss_cc_library("emboss_avctp_avrcp") {
+    public_configs = [ ":emboss_include_path" ]
+    source = "public/pw_bluetooth/avctp_avrcp.emb"
+  }
+
   emboss_cc_library("emboss_hci_android") {
     public_configs = [ ":emboss_include_path" ]
     source = "public/pw_bluetooth/hci_android.emb"
@@ -285,6 +290,8 @@ if (dir_pw_third_party_emboss != "") {
   }
 } else {
   group("emboss_att") {
+  }
+  group("emboss_avctp_avrcp") {
   }
   group("emboss_hci_android") {
   }
@@ -366,6 +373,7 @@ pw_test("emboss_test") {
     # All emboss targets are listed (even if they don't have explicit tests) to
     # ensure they are compiled.
     ":emboss_att",
+    ":emboss_avctp_avrcp",
     ":emboss_hci_group",
     ":emboss_hci_test",
     ":emboss_l2cap_frames",

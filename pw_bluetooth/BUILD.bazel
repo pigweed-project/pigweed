@@ -501,6 +501,20 @@ cc_library(
     deps = [":_emboss_snoop"],
 )
 
+emboss_cc_library(
+    name = "_emboss_avctp_avrcp",
+    srcs = ["public/pw_bluetooth/avctp_avrcp.emb"],
+    enable_enum_traits = False,
+    import_dirs = ["public"],
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "emboss_avctp_avrcp",
+    includes = ["public"],
+    deps = [":_emboss_avctp_avrcp"],
+)
+
 pw_cc_test(
     name = "emboss_test",
     srcs = ["emboss_test.cc"],
@@ -513,6 +527,7 @@ pw_cc_test(
         ":emboss_hci_test",
         ":emboss_l2cap_frames",
         ":emboss_rfcomm_frames",
+        ":emboss_avctp_avrcp",
         "//third_party/fuchsia:stdcompat",
     ],
 )

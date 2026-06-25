@@ -1,0 +1,96 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# This file contains Emboss packet definitions for the Bluetooth Audio/Video
+# Control Transport Protocol (AVCTP) and Audio/Video Remote Control Profile
+# (AVRCP) protocols.
+#
+# References:
+# - AVCTP: Audio/Video Control Transport Protocol Specification, Version 1.4
+# - AVRCP: Audio/Video Remote Control Profile Specification, Version 1.6.2
+# - AV/C: AV/C Digital Interface Command Set General Specification, Version 4.2
+#
+# NOTE: The definitions below are incomplete. They get added as needed.
+
+[$default byte_order: "BigEndian"]
+[(cpp) namespace: "pw::bluetooth::emboss"]
+
+enum AvctpPacketType:
+  [maximum_bits: 2]
+  SINGLE_PACKET = 0
+  START_PACKET  = 1
+  CONTINUE      = 2
+  END_PACKET    = 3
+
+bits AvctpHeader:
+  0     [+1]  Flag             ipid
+  1     [+1]  Flag             cr
+  2     [+2]  AvctpPacketType  packet_type
+  4     [+4]  UInt             transaction_label
+
+bits AvcSubunitAddress:
+  0     [+3]  UInt        subunit_id
+  3     [+5]  UInt        subunit_type
+
+enum AvcCtype:
+  [maximum_bits: 4]
+  CONTROL     = 0x00
+  STATUS      = 0x01
+  SPEC_INQ    = 0x02
+  NOTIFY      = 0x03
+  GENERAL_INQ = 0x04
+
+enum AvcResponseCode:
+  [maximum_bits: 4]
+  NOT_IMPLEMENTED = 0x08
+  ACCEPTED        = 0x09
+  REJECTED        = 0x0A
+  IN_TRANSITION   = 0x0B
+  IMPLEMENTED     = 0x0C
+  CHANGED         = 0x0D
+  INTERIM         = 0x0F
+
+struct AvcHeader:
+  0     [+1]  bits:
+    # Bits 0-3 represent a union that is interpreted as ctype in commands and
+    # response in responses.
+    0     [+4]  AvcCtype         ctype
+    0     [+4]  AvcResponseCode  response
+    4     [+4]  UInt             reserved
+  1     [+1]  AvcSubunitAddress  subunit_address
+  2     [+1]  UInt               opcode
+
+struct AvrcpVendorDependentHeader:
+  0     [+3]  UInt        company_id
+  3     [+1]  UInt        pdu_id
+
+struct AvrcpVolumeControlPacket:
+  0     [+1]  AvctpHeader                 avctp_header
+  1     [+2]  UInt                        profile_id
+  3     [+3]  AvcHeader                   avc_header
+  6     [+4]  AvrcpVendorDependentHeader  avrcp_header
+  10    [+1]  UInt                        packet_type
+  11    [+2]  UInt                        parameter_length
+
+  if avrcp_header.pdu_id == 0x31:
+    13    [+1]  UInt                        event_id
+
+  if avrcp_header.pdu_id == 0x31 && parameter_length == 5:
+    14    [+4]  UInt                        playback_interval
+
+  if avrcp_header.pdu_id == 0x31 && parameter_length == 2:
+    14    [+1]  UInt                        changed_volume
+
+  if avrcp_header.pdu_id == 0x50:
+    13    [+1]  UInt                        absolute_volume

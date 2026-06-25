@@ -31,6 +31,7 @@
 #include "pw_bluetooth/hci_android.emb.h"    // IWYU pragma: keep
 #include "pw_bluetooth/l2cap_frames.emb.h"  // IWYU pragma: keep
 #include "pw_bluetooth/rfcomm_frames.emb.h"  // IWYU pragma: keep
+#include "pw_bluetooth/avctp_avrcp.emb.h"    // IWYU pragma: keep
 // clang-format on
 
 namespace pw::bluetooth {
@@ -80,7 +81,7 @@ static void InitializeIsoPacket(const emboss::IsoDataFramePacketWriter& view,
 // doesn't get changed incorrectly and that emboss' size calculation matches
 // ours.
 TEST(EmbossTest, CheckIsoPacketSize) {
-  std::array<uint8_t, 2048> buffer;
+  std::array<uint8_t, 2048> buffer{};
   const size_t kSduFragmentSize = 100;
   auto view = emboss::MakeIsoDataFramePacketView(&buffer);
 
@@ -621,6 +622,215 @@ TEST(EmbossTest, ReadWriteConnectionPacketTypeChanged) {
   EXPECT_EQ(reader.status().Read(), emboss::StatusCode::SUCCESS);
   EXPECT_EQ(reader.connection_handle().Read(), 0x0123);
   EXPECT_EQ(reader.packet_type().BackingStorage().ReadUInt(), 0xcc18);
+}
+
+TEST(EmbossTest, AvrcpVolumeControlPacket) {
+  // 1. SetAbsoluteVolume Command
+  std::array<uint8_t, 14> volume_cmd = {
+      0x00,  // Transaction Label (0) | Packet Type (0, Single) | C/R (0,
+             // Command)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x00,  // AV/C Header: ctype (0, CONTROL)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x50,  // PDU ID (0x50, SetAbsoluteVolume)
+      0x00,  // Packet Type (AVRCP fragmentation, usually 0)
+      0x00,  // Parameter Length (MSB)
+      0x01,  // Parameter Length (LSB)
+      0x00   // Volume (0%)
+  };
+
+  auto view1 = emboss::MakeAvrcpVolumeControlPacketView(&volume_cmd);
+  ASSERT_TRUE(view1.Ok());
+  EXPECT_TRUE(view1.IsComplete());
+  EXPECT_EQ(view1.avctp_header().packet_type().Read(),
+            emboss::AvctpPacketType::SINGLE_PACKET);
+  EXPECT_FALSE(view1.avctp_header().cr().Read());
+  EXPECT_FALSE(view1.avctp_header().ipid().Read());
+  EXPECT_EQ(view1.avctp_header().transaction_label().Read(), 0u);
+  EXPECT_EQ(view1.profile_id().Read(), 0x110E);
+  EXPECT_EQ(view1.avc_header().ctype().Read(), emboss::AvcCtype::CONTROL);
+  EXPECT_EQ(view1.avc_header().subunit_address().subunit_type().Read(), 9);
+  EXPECT_EQ(view1.avc_header().subunit_address().subunit_id().Read(), 0);
+  EXPECT_EQ(view1.avc_header().opcode().Read(), 0x00);
+  EXPECT_EQ(view1.avrcp_header().company_id().Read(), 0x001958u);
+  EXPECT_EQ(view1.avrcp_header().pdu_id().Read(), 0x50);
+  EXPECT_EQ(view1.packet_type().Read(), 0);
+  EXPECT_EQ(view1.parameter_length().Read(), 1);
+  ASSERT_TRUE(view1.absolute_volume().Ok());
+  EXPECT_EQ(view1.absolute_volume().Read(), 0);
+  EXPECT_FALSE(view1.event_id().Ok());
+  EXPECT_FALSE(view1.changed_volume().Ok());
+
+  // 2. SetAbsoluteVolume Response (ACCEPTED)
+  std::array<uint8_t, 14> volume_resp = {
+      0x22,  // Transaction Label (2) | Packet Type (0, Single) | C/R (1,
+             // Response)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x09,  // AV/C Header: response (0x09, ACCEPTED)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x50,  // PDU ID (0x50, SetAbsoluteVolume)
+      0x00,  // Packet Type
+      0x00,  // Parameter Length (MSB)
+      0x01,  // Parameter Length (LSB)
+      0x3f   // Volume (50%)
+  };
+
+  auto view_resp = emboss::MakeAvrcpVolumeControlPacketView(&volume_resp);
+  ASSERT_TRUE(view_resp.Ok());
+  EXPECT_TRUE(view_resp.IsComplete());
+  EXPECT_EQ(view_resp.avctp_header().packet_type().Read(),
+            emboss::AvctpPacketType::SINGLE_PACKET);
+  EXPECT_TRUE(view_resp.avctp_header().cr().Read());
+  EXPECT_FALSE(view_resp.avctp_header().ipid().Read());
+  EXPECT_EQ(view_resp.avctp_header().transaction_label().Read(), 2u);
+  EXPECT_EQ(view_resp.profile_id().Read(), 0x110E);
+  EXPECT_EQ(view_resp.avc_header().response().Read(),
+            emboss::AvcResponseCode::ACCEPTED);
+  EXPECT_EQ(view_resp.avrcp_header().pdu_id().Read(), 0x50);
+  EXPECT_EQ(view_resp.parameter_length().Read(), 1);
+  ASSERT_TRUE(view_resp.absolute_volume().Ok());
+  EXPECT_EQ(view_resp.absolute_volume().Read(), 0x3f);
+  EXPECT_FALSE(view_resp.event_id().Ok());
+
+  // 3. RegisterNotification Command
+  std::array<uint8_t, 18> volume_notify_cmd = {
+      0x30,  // Transaction Label (3) | Packet Type (0, Single) | C/R (0,
+             // Command)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x00,  // AV/C Header: ctype (0, CONTROL)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x31,  // PDU ID (0x31, RegisterNotification)
+      0x00,  // Packet Type
+      0x00,  // Parameter Length (MSB)
+      0x05,  // Parameter Length (LSB)
+      0x0d,  // Event ID (0x0d, VolumeChanged)
+      0x00,  // Playback Interval (byte 1)
+      0x00,  // Playback Interval (byte 2)
+      0x00,  // Playback Interval (byte 3)
+      0x00,  // Playback Interval (byte 4)
+  };
+
+  auto view2 = emboss::MakeAvrcpVolumeControlPacketView(&volume_notify_cmd);
+  ASSERT_TRUE(view2.Ok());
+  EXPECT_TRUE(view2.IsComplete());
+  EXPECT_EQ(view2.avctp_header().packet_type().Read(),
+            emboss::AvctpPacketType::SINGLE_PACKET);
+  EXPECT_FALSE(view2.avctp_header().cr().Read());
+  EXPECT_EQ(view2.avctp_header().transaction_label().Read(), 3u);
+  EXPECT_EQ(view2.profile_id().Read(), 0x110E);
+  EXPECT_EQ(view2.avc_header().opcode().Read(), 0x00);
+  EXPECT_EQ(view2.avrcp_header().company_id().Read(), 0x001958u);
+  EXPECT_EQ(view2.avrcp_header().pdu_id().Read(), 0x31);
+  EXPECT_EQ(view2.packet_type().Read(), 0);
+  EXPECT_EQ(view2.parameter_length().Read(), 5);
+  ASSERT_TRUE(view2.event_id().Ok());
+  EXPECT_EQ(view2.event_id().Read(), 0x0D);
+  ASSERT_TRUE(view2.playback_interval().Ok());
+  EXPECT_EQ(view2.playback_interval().Read(), 0u);
+  EXPECT_FALSE(view2.changed_volume().Ok());
+  EXPECT_FALSE(view2.absolute_volume().Ok());
+
+  // 4. RegisterNotification Interim Response
+  std::array<uint8_t, 15> volume_notify_interim_resp = {
+      0x32,  // Transaction Label (3) | Packet Type (0, Single) | C/R (1,
+             // Response)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x0f,  // AV/C Header: response (0x0f, INTERIM)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x31,  // PDU ID (0x31, RegisterNotification)
+      0x00,  // Packet Type
+      0x00,  // Parameter Length (MSB)
+      0x02,  // Parameter Length (LSB)
+      0x0d,  // Event ID (0x0d, VolumeChanged)
+      0x40,  // Volume (0x40, 50%)
+  };
+
+  auto view_interim =
+      emboss::MakeAvrcpVolumeControlPacketView(&volume_notify_interim_resp);
+  ASSERT_TRUE(view_interim.Ok());
+  EXPECT_TRUE(view_interim.IsComplete());
+  EXPECT_EQ(view_interim.avctp_header().packet_type().Read(),
+            emboss::AvctpPacketType::SINGLE_PACKET);
+  EXPECT_TRUE(view_interim.avctp_header().cr().Read());
+  EXPECT_EQ(view_interim.avctp_header().transaction_label().Read(), 3u);
+  EXPECT_EQ(view_interim.profile_id().Read(), 0x110E);
+  EXPECT_EQ(view_interim.avc_header().response().Read(),
+            emboss::AvcResponseCode::INTERIM);
+  EXPECT_EQ(view_interim.avrcp_header().pdu_id().Read(), 0x31);
+  EXPECT_EQ(view_interim.packet_type().Read(), 0);
+  EXPECT_EQ(view_interim.parameter_length().Read(), 2);
+  ASSERT_TRUE(view_interim.event_id().Ok());
+  EXPECT_EQ(view_interim.event_id().Read(), 0x0D);
+  ASSERT_TRUE(view_interim.changed_volume().Ok());
+  EXPECT_EQ(view_interim.changed_volume().Read(), 0x40);
+  EXPECT_FALSE(view_interim.playback_interval().Ok());
+
+  // 5. RegisterNotification Changed Response
+  std::array<uint8_t, 15> volume_notify_changed_resp = {
+      0x32,  // Transaction Label (3) | Packet Type (0, Single) | C/R (1,
+             // Response)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x0d,  // AV/C Header: response (0x0d, CHANGED)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x31,  // PDU ID (0x31, RegisterNotification)
+      0x00,  // Packet Type
+      0x00,  // Parameter Length (MSB)
+      0x02,  // Parameter Length (LSB)
+      0x0d,  // Event ID (0x0d, VolumeChanged)
+      0x48,  // Volume (0x48, 56.5%)
+  };
+
+  auto view_changed =
+      emboss::MakeAvrcpVolumeControlPacketView(&volume_notify_changed_resp);
+  ASSERT_TRUE(view_changed.Ok());
+  EXPECT_TRUE(view_changed.IsComplete());
+  EXPECT_EQ(view_changed.avctp_header().packet_type().Read(),
+            emboss::AvctpPacketType::SINGLE_PACKET);
+  EXPECT_TRUE(view_changed.avctp_header().cr().Read());
+  EXPECT_FALSE(view_changed.avctp_header().ipid().Read());
+  EXPECT_EQ(view_changed.profile_id().Read(), 0x110E);
+  EXPECT_EQ(view_changed.avc_header().response().Read(),
+            emboss::AvcResponseCode::CHANGED);
+  EXPECT_EQ(view_changed.avrcp_header().pdu_id().Read(), 0x31);
+  EXPECT_EQ(view_changed.packet_type().Read(), 0);
+  EXPECT_EQ(view_changed.parameter_length().Read(), 2);
+  ASSERT_TRUE(view_changed.event_id().Ok());
+  EXPECT_EQ(view_changed.event_id().Read(), 0x0D);
+  ASSERT_TRUE(view_changed.changed_volume().Ok());
+  EXPECT_EQ(view_changed.changed_volume().Read(), 0x48);
+  EXPECT_FALSE(view_changed.playback_interval().Ok());
+  EXPECT_FALSE(view_changed.absolute_volume().Ok());
+
+  // 6. Insufficient buffer size test
+  std::array<uint8_t, 10> small_buffer = {
+      0x00, 0x11, 0x0E, 0x00, 0x48, 0x00, 0x00, 0x19, 0x58, 0x31};
+  auto view4 = emboss::MakeAvrcpVolumeControlPacketView(&small_buffer);
+  EXPECT_FALSE(view4.Ok());
 }
 
 }  // namespace
