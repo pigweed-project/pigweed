@@ -621,6 +621,7 @@ pw_cc_test(
         ":buddy_allocator",
         ":fuzzing",
         ":testing",
+        "//pw_bytes:alignment",
     ],
 )
 

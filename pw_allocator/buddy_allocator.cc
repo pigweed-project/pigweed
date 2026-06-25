@@ -133,7 +133,7 @@ void* GenericBuddyAllocator::DoAllocate(Layout layout) {
 
     // No compatible free blocks available, allocate one from the next bucket
     // and split it.
-    void* ptr = Allocate(layout.Extend(outer_size));
+    void* ptr = Allocate(layout.Extend(outer_size - 1));
     if (ptr == nullptr) {
       break;
     }
@@ -167,7 +167,8 @@ void GenericBuddyAllocator::DoDeallocate(void* ptr) {
     // Determine the expected address of this free block's buddy by determining
     // if it would be first or second in a merged block of the next larger size.
     std::byte* item = block->UsableSpace();
-    size_t offset = static_cast<size_t>(item - region_.data());
+    size_t offset = static_cast<size_t>(reinterpret_cast<std::byte*>(block) -
+                                        region_.data());
     if (offset % (block->OuterSize() * 2) == 0) {
       item += outer_size;
     } else {
@@ -214,12 +215,12 @@ Result<Layout> GenericBuddyAllocator::DoGetInfo(InfoType info_type,
   if (ptr < region_.data()) {
     return Status::OutOfRange();
   }
-  size_t offset = cpp20::bit_cast<uintptr_t>(ptr) -
-                  cpp20::bit_cast<uintptr_t>(region_.data());
-  if (region_.size() <= offset || offset % min_outer_size_ != 0) {
+  const auto* block = BuddyBlock::FromUsableSpace(ptr);
+  size_t block_offset = cpp20::bit_cast<uintptr_t>(block) -
+                        cpp20::bit_cast<uintptr_t>(region_.data());
+  if (region_.size() <= block_offset || block_offset % min_outer_size_ != 0) {
     return Status::OutOfRange();
   }
-  const auto* block = BuddyBlock::FromUsableSpace(ptr);
   Layout layout(block->InnerSize(), min_outer_size_);
 
   switch (info_type) {

@@ -617,6 +617,7 @@ pw_add_test(pw_allocator.buddy_allocator_test
     pw_allocator.buddy_allocator
     pw_allocator.fuzzing
     pw_allocator.testing
+    pw_bytes.alignment
   GROUPS
     modules
     pw_allocator

@@ -576,6 +576,7 @@ pw_test("buddy_allocator_test") {
     ":buddy_allocator",
     ":fuzzing",
     ":testing",
+    "$dir_pw_bytes:alignment",
   ]
   sources = [ "buddy_allocator_test.cc" ]
 }
