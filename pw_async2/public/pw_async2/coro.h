@@ -33,9 +33,13 @@ namespace internal {
 
 }  // namespace internal
 
-// Forward-declare `Coro` so that it can be referenced by the promise type APIs.
+// Forward-declare coroutine types so that they can be referenced by the
+// promise type APIs.
 template <typename T>
 class Coro;
+
+template <typename T>
+class Generator;
 
 enum class ReturnValuePolicy : bool;
 
@@ -252,7 +256,11 @@ class CoroPromiseBase {
     if (pending_awaitable_ == nullptr) {
       return CoroPollState::kReady;
     }
-    return pending_awaitable_func_(pending_awaitable_, cx);
+    CoroPollState state = pending_awaitable_func_(pending_awaitable_, cx);
+    if (state == CoroPollState::kReady) {
+      pending_awaitable_ = nullptr;
+    }
+    return state;
   }
 
   Deallocator& deallocator() const { return dealloc_; }
@@ -383,6 +391,65 @@ class CoroPromise<void> final
 
   // Mark the output as ready.
   void return_void() { this->output().emplace(); }
+};
+
+template <typename T>
+class GeneratorPromise final : public CoroPromiseBase {
+ public:
+  using value_type = T;
+
+  template <typename... Args>
+  GeneratorPromise(CoroContext cx, const Args&...)
+      : CoroPromiseBase(cx), allocation_failed_(false) {}
+
+  template <typename MethodReceiver, typename... Args>
+  GeneratorPromise(const MethodReceiver&, CoroContext cx, const Args&...)
+      : CoroPromiseBase(cx), allocation_failed_(false) {}
+
+  Generator<T> get_return_object();
+
+  static Generator<T> get_return_object_on_allocation_failure();
+
+  std::suspend_always yield_value(T value) {
+    current_value_ = std::move(value);
+    return {};
+  }
+
+  void return_void() { current_value_.reset(); }
+
+  bool has_value() const { return current_value_.has_value(); }
+
+  std::optional<T> take_value() {
+    std::optional<T> val = std::move(current_value_);
+    current_value_.reset();
+    return val;
+  }
+
+  Context& cx() { return *context_; }
+
+  void SetContext(Context& cx) { context_ = &cx; }
+
+  void MarkNestedCoroutineAllocationFailure() { allocation_failed_ = true; }
+
+  bool allocation_failed() const { return allocation_failed_; }
+
+  template <typename CoroOrFuture>
+    requires(!std::is_reference_v<CoroOrFuture>)
+  Awaitable<CoroOrFuture, GeneratorPromise> await_transform(
+      CoroOrFuture&& coro_or_future) {
+    return std::forward<CoroOrFuture>(coro_or_future);
+  }
+
+  template <typename CoroOrFuture>
+  Awaitable<CoroOrFuture*, GeneratorPromise> await_transform(
+      CoroOrFuture& coro_or_future) {
+    return &coro_or_future;
+  }
+
+ private:
+  std::optional<T> current_value_;
+  Context* context_ = nullptr;
+  bool allocation_failed_;
 };
 
 // The object created by invoking `co_await` in a `Coro<T>` function.
@@ -650,6 +717,92 @@ template <typename Promise>
 Coro(internal::OwningCoroutineHandle<Promise>&&)
     -> Coro<typename Promise::value_type>;
 
+/// An asynchronous generator that yields values of type `T`.
+///
+/// Generators are coroutines that use `co_yield` to produce a stream of values.
+/// They implement a `Next()` method that returns a future, allowing them to be
+/// consumed in a `while` loop with `co_await`.
+template <typename T>
+class [[nodiscard]] Generator final {
+ public:
+  using promise_type = internal::GeneratorPromise<T>;
+  using handle_type = internal::OwningCoroutineHandle<promise_type>;
+
+  static Generator Empty() { return Generator(handle_type{nullptr}); }
+
+  Generator(handle_type&& handle) : handle_(std::move(handle)) {}
+  ~Generator() = default;
+
+  Generator(const Generator&) = delete;
+  Generator& operator=(const Generator&) = delete;
+
+  Generator(Generator&& other) noexcept = default;
+  Generator& operator=(Generator&& other) noexcept = default;
+
+  bool ok() const { return handle_.IsValid(); }
+
+  PollOptional<T> Pend(Context& cx) {
+    if (!ok()) {
+      return PollOptional<T>(std::nullopt);
+    }
+
+    if (handle_.promise().allocation_failed()) {
+      handle_.Release();
+      return PollOptional<T>(std::nullopt);
+    }
+
+    handle_.promise().SetContext(cx);
+
+    switch (handle_.promise().AdvanceAwaitable(cx)) {
+      case internal::CoroPollState::kPending:
+        return Pending();
+      case internal::CoroPollState::kAborted:
+        handle_.Release();
+        return PollOptional<T>(std::nullopt);
+      case internal::CoroPollState::kReady:
+        handle_.resume();
+        break;
+    }
+
+    if (handle_.done()) {
+      handle_.Release();
+      return PollOptional<T>(std::nullopt);
+    }
+
+    if (handle_.promise().has_value()) {
+      return Ready(handle_.promise().take_value());
+    }
+
+    return Pending();
+  }
+
+  auto Next() {
+    struct NextFuture {
+      using value_type = std::optional<T>;
+      Generator* gen_ = nullptr;
+
+      NextFuture() = default;
+      NextFuture(Generator& gen) : gen_(&gen) {}
+
+      bool is_pendable() const { return gen_ != nullptr && gen_->ok(); }
+      bool is_complete() const {
+        return gen_ == nullptr || !gen_->ok() || gen_->handle_.done();
+      }
+
+      PollOptional<T> Pend(Context& cx) {
+        if (gen_ == nullptr)
+          return PollOptional<T>(std::nullopt);
+        return gen_->Pend(cx);
+      }
+    };
+    static_assert(Future<NextFuture>);
+    return NextFuture{*this};
+  }
+
+ private:
+  handle_type handle_;
+};
+
 /// @endsubmodule
 
 // Implement the remaining internal pieces that require a definition of
@@ -667,6 +820,18 @@ template <typename T, typename Derived>
 Coro<T>
 TypedCoroPromise<T, Derived>::get_return_object_on_allocation_failure() {
   return Coro<T>(internal::OwningCoroutineHandle<Derived>(nullptr));
+}
+
+template <typename T>
+Generator<T> GeneratorPromise<T>::get_return_object() {
+  return Generator<T>(internal::OwningCoroutineHandle<GeneratorPromise<T>>(
+      std::coroutine_handle<GeneratorPromise<T>>::from_promise(*this)));
+}
+
+template <typename T>
+Generator<T> GeneratorPromise<T>::get_return_object_on_allocation_failure() {
+  return Generator<T>(
+      internal::OwningCoroutineHandle<GeneratorPromise<T>>(nullptr));
 }
 
 // Checks that the first argument is a by-value CoroContext.

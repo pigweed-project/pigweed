@@ -467,6 +467,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       ":coro",
       ":pw_async2",
       ":testing",
+      ":value_future",
       "$dir_pw_allocator:null_allocator",
       "$dir_pw_allocator:testing",
       "$dir_pw_containers:test_helpers",

@@ -20,6 +20,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/value_future.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_status/status.h"
@@ -37,6 +38,8 @@ using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
 using ::pw::async2::CoroTask;
 using ::pw::async2::DispatcherForTest;
+using ::pw::async2::Generator;
+using ::pw::async2::OptionalValueProvider;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Waker;
@@ -308,6 +311,64 @@ TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
   dispatcher.RunToCompletion();
 
   EXPECT_EQ(task.value(), 123);
+}
+
+Generator<int> CountToFive(CoroContext cx) {
+  for (int i = 1; i <= 5; ++i) {
+    co_yield i;
+  }
+}
+
+Coro<int> SumGenerator(CoroContext cx, Generator<int>& gen) {
+  int sum = 0;
+  while (auto val = co_await gen.Next()) {
+    sum += *val;
+  }
+  co_return sum;
+}
+
+TEST_F(CoroTest, GeneratorYieldsValues) {
+  Generator<int> gen = CountToFive(alloc_);
+  CoroTask task(SumGenerator(alloc_, gen));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), 15);
+}
+
+Generator<int> AwaitAndYieldGenerator(CoroContext cx,
+                                      OptionalValueProvider<int>& provider) {
+  while (true) {
+    std::optional<int> val = co_await provider.Get();
+    if (!val.has_value()) {
+      co_return;
+    }
+    co_yield *val * 2;
+  }
+}
+
+TEST_F(CoroTest, GeneratorAwaitsAndYields) {
+  OptionalValueProvider<int> provider;
+  Generator<int> gen = AwaitAndYieldGenerator(alloc_, provider);
+  CoroTask task(SumGenerator(alloc_, gen));
+
+  DispatcherForTest dispatcher;
+  dispatcher.Post(task);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider.Resolve(5);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider.Resolve(10);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider.Cancel();
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), 30);
 }
 
 }  // namespace

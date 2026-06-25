@@ -596,6 +596,7 @@ pw_cc_test(
         ":coro",
         ":pw_async2",
         ":testing",
+        ":value_future",
         "//pw_allocator:null_allocator",
         "//pw_allocator:testing",
         "//pw_containers:test_helpers",
