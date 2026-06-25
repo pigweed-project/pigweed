@@ -116,5 +116,77 @@ TEST(HpackTest, HpackParseRequestHeadersNotFound) {
   EXPECT_EQ(result.status().code(), PW_STATUS_NOT_FOUND);
 }
 
+TEST(HpackTest, HpackParseRequestHeadersInvalidIndexedHeaderField) {
+  // Index 62 (=0b0011'1110) (invalid, > 61)
+  // RFC 7541 §6.1.
+  //   0   1   2   3   4   5   6   7
+  // +---+---+---+---+---+---+---+---+
+  // | 1 |        Index (7 bits)     |
+  // +---+---------------------------+
+  const auto kInput = bytes::Array<0b1011'1110>();
+  auto result = HpackParseRequestHeaders(kInput);
+  EXPECT_EQ(result.status(), Status::InvalidArgument());
+}
+
+TEST(HpackTest, HpackParseRequestHeadersInvalidLiteralHeaderFieldIncremental) {
+  // Index 62 (=0b0011'1110) (invalid, > 61) with incremental indexing
+  // RFC 7541 §6.2.1.
+  //   0   1   2   3   4   5   6   7
+  // +---+---+---+---+---+---+---+---+
+  // | 0 | 1 |      Index (6+)       |
+  // +---+---+-----------------------+
+  // | H |     Value Length (7+)     |
+  // +---+---------------------------+
+  // | Value String (Length octets)  |
+  // +-------------------------------+
+  const auto kInput = bytes::Array<0b0111'1110>();
+  auto result = HpackParseRequestHeaders(kInput);
+  EXPECT_EQ(result.status(), Status::InvalidArgument());
+}
+
+TEST(HpackTest,
+     HpackParseRequestHeadersInvalidLiteralHeaderFieldWithoutIndexing) {
+  // Index 62 (=15+47=0b0000'1111+0b0010'1111) (invalid, > 61) without indexing
+  // RFC 7541 §6.2.2.
+  //   0   1   2   3   4   5   6   7
+  // +---+---+---+---+---+---+---+---+
+  // | 0 | 0 | 0 | 0 |  Index (4+)   |
+  // +---+---+-----------------------+
+  // | H |     Value Length (7+)     |
+  // +---+---------------------------+
+  // | Value String (Length octets)  |
+  // +-------------------------------+
+  // RFC 7541 §5.1. for the integer representation.
+  const auto kInput = bytes::Array<0b0000'1111, 0b0010'1111>();
+  auto result = HpackParseRequestHeaders(kInput);
+  EXPECT_EQ(result.status(), Status::InvalidArgument());
+}
+
+TEST(HpackTest, HpackParseRequestHeadersDynamicTableSizeUpdateZero) {
+  // Dynamic table size update to 0 (valid, ignored)
+  // RFC 7541 §6.3.
+  //   0   1   2   3   4   5   6   7
+  // +---+---+---+---+---+---+---+---+
+  // | 0 | 0 | 1 |   Max size (5+)   |
+  // +---+---------------------------+
+  const auto kInput = bytes::Array<0b0010'0000>();
+  auto result = HpackParseRequestHeaders(kInput);
+  // Returns NotFound because it successfully parsed the update but found no
+  // :path header.
+  EXPECT_EQ(result.status(), Status::NotFound());
+}
+
+TEST(HpackTest, HpackParseRequestHeadersDynamicTableSizeUpdateNonZero) {
+  // Dynamic table size update to 1 (invalid, > 0)
+  // RFC 7541 §6.3.
+  //   0   1   2   3   4   5   6   7
+  // +---+---+---+---+---+---+---+---+
+  // | 0 | 0 | 1 |   Max size (5+)   |
+  // +---+---------------------------+
+  const auto kInput = bytes::Array<0b0010'0001>();
+  auto result = HpackParseRequestHeaders(kInput);
+  EXPECT_EQ(result.status(), Status::InvalidArgument());
+}
+
 }  // namespace
 }  // namespace pw::grpc

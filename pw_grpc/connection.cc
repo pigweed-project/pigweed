@@ -1058,7 +1058,17 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
     payload = payload.subspan(5);
   }
 
-  PW_TRY_ASSIGN(auto method_name, HpackParseRequestHeaders(payload));
+  auto parse_result = HpackParseRequestHeaders(payload);
+  if (!parse_result.ok()) {
+    if (parse_result.status().IsInvalidArgument() ||
+        parse_result.status().IsOutOfRange()) {
+      SendGoAway(Http2Error::COMPRESSION_ERROR);
+    } else {
+      SendGoAway(Http2Error::PROTOCOL_ERROR);
+    }
+    return parse_result.status();
+  }
+  auto method_name = std::move(parse_result).value();
   {
     auto state = connection_.LockState();
     if (!state->CreateStream(frame.stream_id, initial_send_window_).ok()) {

@@ -128,6 +128,11 @@ Result<InlineString<kHpackMaxStringSize>> HpackParseRequestHeaders(
     // RFC 7541 §6.1
     if ((first & 0b1000'0000) != 0) {
       PW_TRY_ASSIGN(uint32_t index, HpackIntegerDecode(input, 7));
+      // There are only 61 entries in the static table and we don't support
+      // dynamic entries.
+      if (index > 61) {
+        return Status::InvalidArgument();
+      }
       // RFC 7541 Appendix A: these are the only static table entries for :path.
       if (index == 4) {
         return "/";
@@ -140,8 +145,15 @@ Result<InlineString<kHpackMaxStringSize>> HpackParseRequestHeaders(
 
     // RFC 7541 §6.3: dynamic table size update
     if ((first & 0b1110'0000) == 0b0010'0000) {
-      // Ignore: we don't use the dynamic table.
-      PW_TRY(HpackIntegerDecode(input, 5));
+      PW_TRY_ASSIGN(uint32_t size, HpackIntegerDecode(input, 5));
+      // "The new maximum size MUST be lower than or equal to the limit
+      // determined by the protocol using HPACK."
+      //
+      // Since we set SETTINGS_HEADER_TABLE_SIZE to zero, this should never
+      // be set to a non-zero value.
+      if (size > 0) {
+        return Status::InvalidArgument();
+      }
       continue;
     }
 
@@ -153,6 +165,11 @@ Result<InlineString<kHpackMaxStringSize>> HpackParseRequestHeaders(
       PW_CHECK((first & 0b1111'0000) == 0b0000'0000 ||
                (first & 0b1111'0000) == 0b0001'0000);
       PW_TRY_ASSIGN(index, HpackIntegerDecode(input, 4));
+    }
+    // There are only 61 entries in the static table and we don't support
+    // dynamic entries.
+    if (index > 61) {
+      return Status::InvalidArgument();
     }
 
     // Check if the name is ":path".
