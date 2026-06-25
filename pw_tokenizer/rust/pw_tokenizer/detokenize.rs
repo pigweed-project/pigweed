@@ -291,6 +291,7 @@ impl MatchResult {
 pub struct Detokenizer {
     // domain -> token -> entries
     database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>,
+    prefix: char,
 }
 
 /// An entry in the token database.
@@ -347,6 +348,11 @@ fn format_placeholder(spec: &str, message: &str) -> String {
 impl Detokenizer {
     /// Constructs a detokenizer from a CSV database.
     pub fn from_csv(csv: &str) -> Result<Self> {
+        Self::from_csv_with_prefix(csv, '$')
+    }
+
+    /// Constructs a detokenizer from a CSV database with a custom prefix for nested tokenized messages.
+    pub fn from_csv_with_prefix(csv: &str, prefix: char) -> Result<Self> {
         let mut database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>> = HashMap::new();
 
         let parsed_csv = csv::parse_csv(csv);
@@ -394,7 +400,13 @@ impl Detokenizer {
             }
         }
 
-        Ok(Self { database })
+        Ok(Self { database, prefix })
+    }
+
+    /// Returns the prefix character configured for this detokenizer.
+    #[must_use]
+    pub fn prefix(&self) -> char {
+        self.prefix
     }
 
     /// Looks up database entries for a given token and domain.
@@ -690,7 +702,7 @@ impl<'a> NestedMessageDetokenizer<'a> {
     }
 
     fn detokenize_char(&mut self, next_char: char) {
-        if next_char == '$' {
+        if next_char == self.detokenizer.prefix {
             self.handle_end_of_message();
 
             self.message_start = self.output.len();
@@ -1204,6 +1216,20 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let result = detok.detokenize_text("$eFY0Eg==");
         assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_custom_prefix() {
+        let csv = "00000001,,,This is a ~#00000002\n\
+                   00000002,,,nested argument!\n";
+        let detok = Detokenizer::from_csv_with_prefix(csv, '~').unwrap();
+        assert_eq!(detok.prefix(), '~');
+        let result = detok.detokenize_text("~#00000001");
+        assert_eq!(result, "This is a nested argument!");
+
+        // The default prefix '$' should not work when a custom prefix is configured
+        let result_default = detok.detokenize_text("$#00000001");
+        assert_eq!(result_default, "$#00000001");
     }
 
     #[test]
