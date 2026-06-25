@@ -57,6 +57,7 @@ pw_proto_library(pw_snapshot.snapshot_proto
     pw_metric.metric_service_proto
     pw_snapshot.metadata_proto
     pw_thread.protos
+    pw_tokenizer.proto
 )
 
 pw_add_test(pw_snapshot.cpp_compile_test
@@ -65,6 +66,7 @@ pw_add_test(pw_snapshot.cpp_compile_test
   PRIVATE_DEPS
     pw_protobuf
     pw_snapshot.snapshot_proto.pwpb
+    pw_tokenizer
   GROUPS
     modules
     pw_snapshot

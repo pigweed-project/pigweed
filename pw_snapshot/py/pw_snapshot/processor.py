@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import BinaryIO, TextIO, Callable, Sequence
 
 import pw_tokenizer
+from pw_tokenizer.proto import decode_optionally_tokenized
 import pw_cpu_exception_cortex_m
 import pw_cpu_exception_risc_v
 import pw_build_info.build_id
@@ -180,7 +181,8 @@ def process_snapshot(
     if snapshot.memory_regions:
         output.append("Memory Regions:")
         for region in snapshot.memory_regions:
-            name = f" ({region.name})" if region.name else ""
+            region_name = decode_optionally_tokenized(detokenizer, region.name)
+            name = f" ({region_name})" if region_name else ""
             output.append(
                 f"  {region.address:08x}{name} ({len(region.data)} bytes)"
             )

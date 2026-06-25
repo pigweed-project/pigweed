@@ -23,10 +23,11 @@ import "pw_cpu_exception_cortex_m_protos/cpu_state.proto";
 import "pw_log/proto/log.proto";
 import "pw_metric_proto/metric_service.proto";
 import "pw_thread_protos/thread.proto";
+import "pw_tokenizer_proto/options.proto";
 import "pw_snapshot_metadata_proto/snapshot_metadata.proto";
 
 message MemoryRegion {
-  string name = 1;
+  bytes name = 1 [(pw.tokenizer.format) = TOKENIZATION_OPTIONAL];
   uint64 address = 2;
   bytes data = 3;
 }

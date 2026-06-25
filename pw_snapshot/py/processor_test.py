@@ -100,6 +100,7 @@ _SPI0_TOKEN = _make_token("spi0")
 _TEMPERATURE_TOKEN = _make_token("temperature")
 _UART0_TOKEN = _make_token("uart0")
 _VOLTAGE_TOKEN = _make_token("voltage")
+_RAM_TOKEN = _make_token("t-ram")
 
 
 _TEST_LOGS = [
@@ -225,7 +226,7 @@ class ProcessorTest(unittest.TestCase):
         snapshot = snapshot_pb2.Snapshot(
             memory_regions=[
                 snapshot_pb2.MemoryRegion(
-                    name="main_ram",
+                    name=b"main_ram",
                     address=0x20000000,
                     data=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                 ),
@@ -250,7 +251,7 @@ class ProcessorTest(unittest.TestCase):
         snapshot = snapshot_pb2.Snapshot(
             memory_regions=[
                 snapshot_pb2.MemoryRegion(
-                    name="main_ram",
+                    name=b"main_ram",
                     address=0x20000000,
                     data=b"\x01\x02\x03\x04\x05\x06\x07\x08",
                 ),
@@ -270,6 +271,29 @@ class ProcessorTest(unittest.TestCase):
 
         output = process_snapshot(
             snapshot.SerializeToString(), memory_region_processor=mock_processor
+        )
+        self.assertEqual(output, expected_output)
+
+    def test_process_snapshot_with_tokenized_memory_regions(self):
+        snapshot = snapshot_pb2.Snapshot(
+            memory_regions=[
+                snapshot_pb2.MemoryRegion(
+                    name=_RAM_TOKEN.to_bytes(length=4, byteorder="little"),
+                    address=0x30000000,
+                    data=b"\x01\x02",
+                ),
+            ]
+        )
+        expected_output = _SNAPSHOT_HEADER + textwrap.dedent(
+            """
+            Memory Regions:
+              30000000 (t-ram) (2 bytes)
+            """
+        )
+
+        detokenizer = detokenize.Detokenizer(_TOKEN_DB)
+        output = process_snapshot(
+            snapshot.SerializeToString(), detokenizer=detokenizer
         )
         self.assertEqual(output, expected_output)
 

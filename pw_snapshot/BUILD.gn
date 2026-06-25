@@ -68,6 +68,7 @@ pw_proto_library("snapshot_proto") {
     "$dir_pw_log:protos",
     "$dir_pw_metric:metric_service_proto",
     "$dir_pw_thread:protos",
+    "$dir_pw_tokenizer:proto",
   ]
 }
 
@@ -84,6 +85,7 @@ pw_test("cpp_compile_test") {
   deps = [
     ":snapshot_proto.pwpb",
     dir_pw_protobuf,
+    dir_pw_tokenizer,
   ]
 }
 

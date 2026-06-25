@@ -50,7 +50,7 @@ write a few fields in a snapshot, you can do so with minimal memory overhead.
      {
        pw::snapshot::MemoryRegion::StreamEncoder memory_encoder =
            snapshot_encoder.GetMemoryRegionsEncoder();
-       memory_encoder.WriteName("main_ram");
+       memory_encoder.WriteName(pw::as_bytes(pw::span("main_ram")));
        memory_encoder.WriteAddress(0x20000000);
        memory_encoder.WriteData(crash_info.ram_dump);
      }

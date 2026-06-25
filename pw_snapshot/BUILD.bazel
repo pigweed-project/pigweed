@@ -77,6 +77,7 @@ proto_library(
         "//pw_log:log_proto",
         "//pw_metric:metric_proto",
         "//pw_thread:thread_proto",
+        "//pw_tokenizer:tokenizer_proto",
     ],
 )
 
@@ -101,7 +102,10 @@ pw_cc_test(
         "cpp_compile_test.cc",
     ],
     features = ["-conversion_warnings"],
-    deps = [":snapshot_proto_pwpb"],
+    deps = [
+        ":snapshot_proto_pwpb",
+        "//pw_tokenizer",
+    ],
 )
 
 pw_cc_test(

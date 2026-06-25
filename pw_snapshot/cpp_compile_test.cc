@@ -15,6 +15,7 @@
 #include "pw_protobuf/encoder.h"
 #include "pw_snapshot_protos/snapshot.pwpb.h"
 #include "pw_span/span.h"
+#include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::snapshot {
@@ -43,10 +44,21 @@ TEST(Status, CompileTest) {
   {
     pwpb::MemoryRegion::StreamEncoder memory_region_encoder =
         snapshot_encoder.GetMemoryRegionsEncoder();
-    ASSERT_EQ(OkStatus(), memory_region_encoder.WriteName("main_ram"));
+    ASSERT_EQ(OkStatus(),
+              memory_region_encoder.WriteName(as_bytes(span("main_ram"))));
     ASSERT_EQ(OkStatus(), memory_region_encoder.WriteAddress(0x20000000));
     ASSERT_EQ(OkStatus(),
               memory_region_encoder.WriteData(as_bytes(span("\x01\x02\x03"))));
+  }
+  {
+    pwpb::MemoryRegion::StreamEncoder memory_region_encoder =
+        snapshot_encoder.GetMemoryRegionsEncoder();
+    constexpr uint32_t kToken = PW_TOKENIZE_STRING("t-ram");
+    ASSERT_EQ(OkStatus(),
+              memory_region_encoder.WriteName(as_bytes(span(&kToken, 1))));
+    ASSERT_EQ(OkStatus(), memory_region_encoder.WriteAddress(0x30000000));
+    ASSERT_EQ(OkStatus(),
+              memory_region_encoder.WriteData(as_bytes(span("\x01\x02"))));
   }
   ASSERT_TRUE(snapshot_encoder.status().ok());
 }
