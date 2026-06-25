@@ -88,7 +88,6 @@ void BasicDispatcher::MaybeSleepUntil(
 }
 
 void BasicDispatcher::ExecuteTask(backend::NativeTask& task, Status status) {
-  task.dispatcher_ = nullptr;
   Context ctx{this, &task.task_};
   task(ctx, status);
   // task object might be freed already (e.g. HeapDispatcher).
@@ -99,6 +98,7 @@ void BasicDispatcher::ExecuteDueTasks() {
          !stop_requested_) {
     backend::NativeTask& task = task_queue_.front();
     task_queue_.pop_front();
+    task.dispatcher_ = nullptr;
 
     lock_.unlock();
     ExecuteTask(task, OkStatus());
@@ -118,6 +118,7 @@ void BasicDispatcher::DrainTaskQueue() {
   while (!task_queue_.empty()) {
     backend::NativeTask& task = task_queue_.front();
     task_queue_.pop_front();
+    task.dispatcher_ = nullptr;
 
     lock_.unlock();
     ExecuteTask(task, Status::Cancelled());

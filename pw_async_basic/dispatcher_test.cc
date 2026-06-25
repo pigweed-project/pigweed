@@ -463,4 +463,44 @@ TEST(DispatcherBasic, PostAtToDifferentDispatcherShouldCrash) {
 
   dispatcher1.Cancel(task);
 }
+
+class RaceReproducerDispatcher : public BasicDispatcher {
+ public:
+  sync::ThreadNotification task_popped;
+  sync::ThreadNotification task_reposted;
+  std::atomic<bool> intercepted{false};
+
+ private:
+  void ExecuteTask(backend::NativeTask& task, Status status) override {
+    if (!intercepted.exchange(true)) {
+      task_popped.release();
+      task_reposted.acquire();
+    }
+    BasicDispatcher::ExecuteTask(task, status);
+  }
+};
+
+// Ensure that reposting a task while it is executing doesn't result in a race
+// condition where the task's dispatcher pointer is overwritten to nullptr,
+// causing subsequent posts to crash.
+TEST(DispatcherBasic, RepostRaceCondition) {
+  RaceReproducerDispatcher dispatcher;
+  Thread work_thread(thread::stl::Options(), dispatcher);
+
+  sync::ThreadNotification task_run;
+  Task task([&task_run](Context&, Status) { task_run.release(); });
+
+  dispatcher.Post(task);
+  dispatcher.task_popped.acquire();
+  dispatcher.PostAfter(task, 1h);
+  dispatcher.task_reposted.release();
+  task_run.acquire();
+
+  dispatcher.Post(task);
+
+  EXPECT_TRUE(dispatcher.Cancel(task));
+  dispatcher.RequestStop();
+  work_thread.join();
+}
+
 }  // namespace pw::async
