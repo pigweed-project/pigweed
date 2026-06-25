@@ -110,35 +110,53 @@ printed in the command output. For example:
 ``bazel-out/aarch64-fastbuild-e2b/bin/pw_bluetooth_sapphire/fuchsia/bt_host/bt-host.far``.
 Note that ``bazel-out`` is symlinked from the root Pigweed directory.
 
-Use the prebuilt in fuchsia.git
-===============================
-fuchsia.git developers can copy/link the ``bt-host.far`` file to
-``//prebuilt/connectivity/bluetooth/bt-host/<arch>/`` and rename it to
-``bt-host`` to replace the prebuilt that Fuchsia uses.
+Deploy to a Fuchsia checkout
+============================
+fuchsia.git developers can use the ``pw bluetooth bt-host-deploy`` command to
+automatically build and deploy the ``bt-host`` package and its debug symbols to
+a local Fuchsia checkout.
 
-Note that copying the ``far`` file to fuchsia.git does not copy the debug symbols which
-means that crashes won't be symbolicated. If you need debug symbols you can run the
-following command in the Pigweed repository to register the symbols.
+.. code-block:: console
 
-.. tab-set::
+   pw bluetooth bt-host-deploy [--local-fuchsia-sdk] [fuchsia_checkout]
 
-      .. tab-item:: arm64
+If the ``fuchsia_checkout`` path is omitted, the command will use the
+persistently configured path. This command builds and deploys the
+``bt-host`` package and its debug symbols for both ``arm64`` and ``x64``.
 
-         .. code-block:: console
+Use the ``--local-fuchsia-sdk`` flag to build the local Fuchsia SDK (by running
+``fx build //sdk:final_fuchsia_sdk``) and use it for the build. This is
+necessary if you have made changes to the Fuchsia SDK itself (e.g., modifying
+FIDL definitions in a local ``fuchsia.git`` checkout).
 
-            $ bazelisk run --config=fuchsia //pw_bluetooth_sapphire/fuchsia/bt_host:pkg.arm64.debug_symbols
+You can set the checkout path once using:
 
-      .. tab-item:: x64
+.. code-block:: console
 
-          .. code-block:: console
+   pw bluetooth set-fuchsia-checkout /path/to/fuchsia/checkout
 
-             $ bazelisk run --config=fuchsia //pw_bluetooth_sapphire/fuchsia/bt_host:pkg.x64.debug_symbols
+This command builds the package and its debug symbols, then copies the package
+to the correct prebuilt location in the Fuchsia checkout (e.g.,
+``//prebuilt/connectivity/bluetooth/bt-host/<arch>/bt-host``) and sets the
+necessary permissions.
 
 Using a local Fuchsia SDK
 =========================
 If you are making changes to the Fuchsia SDK itself (e.g., modifying FIDL
-definitions in a local ``fuchsia.git`` checkout), you can point Pigweed to use
-your local SDK instead of the prebuilt one from CIPD.
+definitions in a local ``fuchsia.git`` checkout), you should use the
+``pw bluetooth bt-host-deploy`` command described in the previous section with
+the ``--local-fuchsia-sdk`` flag.
+
+This command automatically handles building the local SDK (by running
+``fx build //sdk:final_fuchsia_sdk``), setting the complex Bazel flags required
+to override the SDK repository, and setting the Fuchsia API level to ``HEAD`` to
+ensure experimental features (like those marked ``@available(added=NEXT)``) are
+included.
+
+Manual local SDK build (Advanced)
+---------------------------------
+If you need to build manually with a local SDK without deploying, follow these
+steps:
 
 1. **Build the SDK in your Fuchsia checkout:**
 
@@ -148,43 +166,21 @@ your local SDK instead of the prebuilt one from CIPD.
 
 2. **Find the canonical name of the SDK repository:**
 
-   Because Pigweed uses Bzlmod, the repository name ``fuchsia_sdk`` might be
-   mangled internally. To find the exact name you need to override, run:
-
    .. code-block:: console
 
       bazelisk mod dump_repo_mapping "" | grep fuchsia_sdk | python -m json.tool | jq .fuchsia_sdk
 
-   This will return a mapping like ``fuchsia_sdk -> @@+_repo_rules5+fuchsia_sdk``.
-   The canonical name is everything after the ``@@`` (e.g.,
-   ``+_repo_rules5+fuchsia_sdk``).
+3. **Override the SDK repository and set the API level:**
 
-3. **Override the SDK repository in Pigweed:**
-
-   Use the ``--override_repository`` flag with the canonical name and an
-   **absolute path** (Bazel does not expand ``~``):
+   Use the ``--override_repository`` flag with the canonical name found in
+   step 2 and an **absolute path**:
 
    .. code-block:: console
 
       bazelisk build --config=fuchsia \
-        --override_repository=+_repo_rules5+fuchsia_sdk=/home/user/code/fuchsia/out/default/obj/sdk/final_fuchsia_sdk \
+        --@fuchsia_sdk//flags:fuchsia_api_level=HEAD \
+        --override_repository=<CANONICAL_NAME>=/home/user/code/fuchsia/out/default/obj/sdk/final_fuchsia_sdk \
         //pw_bluetooth_sapphire/fuchsia/bt_host:pkg.x64
-
-4. **(Optional) Persistent configuration:**
-
-   To avoid passing the flag every time, you can add it to a ``user.bazelrc``
-   file in your Pigweed root:
-
-   .. code-block:: none
-
-      # user.bazelrc
-      build --override_repository=+_repo_rules5+fuchsia_sdk=/home/user/code/fuchsia/out/default/obj/sdk/final_fuchsia_sdk
-
-   .. note::
-      If you encounter version mismatches with the rules themselves, you may
-      also need to override ``rules_fuchsia`` using its canonical name (found
-      via the same ``dump_repo_mapping`` process) and pointing it to
-      ``/path/to/fuchsia/scripts/sdk/bazel``.
 
 --------------------
 Working with devices

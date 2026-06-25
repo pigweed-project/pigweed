@@ -28,6 +28,10 @@ pw_source_set("config") {
   public_deps = [ pw_bluetooth_sapphire_CONFIG ]
 }
 
+group("py") {
+  public_deps = [ "py" ]
+}
+
 group("host") {
   public_deps = [ "host" ]
   public_configs = [ ":public_include_path" ]

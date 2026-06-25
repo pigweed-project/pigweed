@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 import sys
 import textwrap
+import traceback
 from typing import (
     Any,
     Iterable,
@@ -256,34 +257,44 @@ def main(
     proto_libraries: Iterable[TextIO],
 ) -> int:
     """Generates a setup.py and other files for a Python package."""
-    proto_infos = list(_load_metadata(label, proto_libraries))
     try:
-        pkg_data = _collect_all_files(generated_root, files, proto_infos)
-    except ValueError as error:
-        msg = '\n'.join(textwrap.wrap(str(error), 78))
+        proto_infos = list(_load_metadata(label, proto_libraries))
+        try:
+            pkg_data = _collect_all_files(generated_root, files, proto_infos)
+        except ValueError as error:
+            msg = '\n'.join(textwrap.wrap(str(error), 78))
+            print(
+                f'ERROR: Failed to generate Python package {label}:\n\n'
+                f'{textwrap.indent(msg, "  ")}\n',
+                file=sys.stderr,
+            )
+            sys.stderr.flush()
+            return 1
+
+        with setup_json:
+            setup_keywords = json.load(setup_json)
+            setup_keywords.setdefault('options', {})
+
+        setup_keywords['options'].setdefault('install_requires', [])
+
+        if module_as_package:
+            _import_module_in_package_init(files)
+
+        # Create the pyproject.toml and setup.cfg files for this package.
+        generated_root.joinpath('pyproject.toml').write_text(PYPROJECT_FILE)
+        _generate_setup_cfg(
+            pkg_data,
+            setup_keywords,
+            config_file_path=generated_root.joinpath('setup.cfg'),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
         print(
-            f'ERROR: Failed to generate Python package {label}:\n\n'
-            f'{textwrap.indent(msg, "  ")}\n',
+            f'ERROR: Unexpected failure generating Python package {label}:',
             file=sys.stderr,
         )
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
         return 1
-
-    with setup_json:
-        setup_keywords = json.load(setup_json)
-        setup_keywords.setdefault('options', {})
-
-    setup_keywords['options'].setdefault('install_requires', [])
-
-    if module_as_package:
-        _import_module_in_package_init(files)
-
-    # Create the pyproject.toml and setup.cfg files for this package.
-    generated_root.joinpath('pyproject.toml').write_text(PYPROJECT_FILE)
-    _generate_setup_cfg(
-        pkg_data,
-        setup_keywords,
-        config_file_path=generated_root.joinpath('setup.cfg'),
-    )
 
     return 0
 

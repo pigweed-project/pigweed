@@ -36,6 +36,10 @@ pw_source_set("config") {
   public_deps = [ pw_bluetooth_CONFIG ]
 }
 
+group("py") {
+  public_deps = [ "py" ]
+}
+
 config("public_include_path") {
   include_dirs = [ "public" ]
   visibility = [ ":*" ]

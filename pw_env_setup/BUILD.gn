@@ -25,6 +25,8 @@ pw_python_group("core_pigweed_python_packages") {
     "$dir_pw_allocator/py",
     "$dir_pw_arduino_build/py",
     "$dir_pw_bloat/py",
+    "$dir_pw_bluetooth/py",
+    "$dir_pw_bluetooth_sapphire/py",
     "$dir_pw_build/py",
     "$dir_pw_build/py:workflows",
     "$dir_pw_build_info/py",

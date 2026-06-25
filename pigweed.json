@@ -91,6 +91,10 @@
           "module": "pw_env_setup_zephyr.zephyr",
           "function": "main"
         },
+        "bluetooth": {
+          "module": "pw_bluetooth.cli",
+          "function": "main"
+        },
         "twister-runner": {
           "module": "pw_build.zephyr_twister_runner",
           "function": "main"

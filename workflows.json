@@ -610,6 +610,13 @@
   ],
   "tools": [
     {
+      "name": "bluetooth",
+      "description": "Bluetooth CLI utilities",
+      "use_config": "bazel_default",
+      "target": "//pw_bluetooth/py:bluetooth",
+      "type": "GENERAL"
+    },
+    {
       "name": "change",
       "description": "Work with Gerrit changes and Git commits.",
       "use_config": "bazel_default",
