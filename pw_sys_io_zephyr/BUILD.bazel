@@ -35,6 +35,7 @@ zephyr_cc_library(
     deps = [
         "//pw_sys_io:default_putget_bytes",
         "//pw_sys_io:pw_sys_io.facade",
+        "@zephyr_version//:version",
     ],
 )
 

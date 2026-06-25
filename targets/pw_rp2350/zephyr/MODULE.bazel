@@ -1,0 +1,146 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+module(
+    name = "pw_rp2350_zephyr",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_platform", version = "0.1.0")
+bazel_dep(name = "rules_python", version = "1.8.5")
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "zephyr-bazel", version = "0.0.1")
+bazel_dep(name = "pigweed")
+local_path_override(
+    module_name = "pigweed",
+    path = "../../..",
+)
+
+git_override(
+    module_name = "zephyr-bazel",
+    commit = "d8e28a346c14cb6dceb79f22cf43644962c25683",
+    remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
+)
+
+# Register local host toolchain first so host tools compile with system compiler
+register_toolchains("@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux")
+
+# Register zephyr-bazel toolchains
+register_toolchains(
+    "@zephyr-bazel//toolchain:all",
+)
+
+# Setup Zephyr patch and checkout
+zephyr_patch = use_extension("@zephyr-bazel//:setup.bzl", "zephyr_patch_file")
+zephyr_patch.checkout(
+    commit = "684c9e8f32e4373a21098559f748f06915f950c9",
+)
+use_repo(zephyr_patch, "zephyr", "zephyr_version")
+
+# Inject required external modules for Cortex-M and Pico 2
+inject_repo(zephyr_patch, "cmsis_6")
+
+inject_repo(zephyr_patch, "hal_rpi_pico")
+
+new_git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
+
+new_git_repository(
+    name = "cmsis_6",
+    build_file = "@zephyr-bazel//modules:cmsis_6.BUILD",
+    commit = "30a859f44ef8ab4dc8f84b03ed586fd16ccf9d74",
+    remote = "https://github.com/zephyrproject-rtos/CMSIS_6.git",
+)
+
+new_git_repository(
+    name = "hal_rpi_pico",
+    build_file = "@zephyr-bazel//modules:hal_rpi_pico.BUILD",
+    commit = "562b41e10a1d8b1a761b253b107c5c6a84cf4535",
+    patch_cmds = [
+        "find . -mindepth 2 -name 'BUILD.bazel' -delete",
+        "find . -mindepth 2 -name 'BUILD' -delete",
+    ],
+    remote = "https://github.com/zephyrproject-rtos/hal_rpi_pico.git",
+)
+
+# Configure Python toolchain
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    configure_coverage_tool = True,
+    is_default = True,
+    python_version = "3.11",
+)
+use_repo(python, "pythons_hub")
+
+# Import pip dependencies
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+use_repo(pip, "zephyr_bazel_pip_deps")
+
+# Configure Zephyr setup environment
+zephyr_setup = use_extension("@zephyr-bazel//:setup.bzl", "zephyr_setup")
+zephyr_setup.env(
+    apps_dirs = ["//:MODULE.bazel"],
+    boards_dirs = [
+        "@zephyr//boards",
+        "//:MODULE.bazel",
+    ],
+    manual_boards = [
+        "raspberrypi/rpi_pico2/rp2350a_m33",
+        "pw_rp2350/rp2350a_m33",
+    ],
+    modules = [
+        "@hal_rpi_pico//:zephyr/module.yml",
+        "@pigweed//zephyr:module.yml",
+    ],
+)
+use_repo(
+    zephyr_setup,
+    "zephyr_index",
+    "zephyr_kconfig",
+    "zephyr_state",
+)
+
+pw_zephyr_config = use_extension("@pigweed//zephyr/config:pw_zephyr_config.bzl", "pw_zephyr_config")
+
+override_repo(
+    pw_zephyr_config,
+    kconfig = "zephyr_kconfig",
+    zephyr = "zephyr",
+    zephyr_version = "zephyr_version",
+)
+
+bazel_dep(name = "rules_rust", version = "0.70.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(versions = [])
+
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 1,
+    patches = [
+        # Once rules_rust 0.71.0 is released, we can remove this patch.
+        "//bazel_patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
+    ],
+)
+
+pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+pw_rust.toolchain(
+    cipd_tag = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d5550e110daee562b88bee247b75d66c",
+    rust_analyzer_cipd_tag = "git_revision:e79b8223f7e0f000d75e7bf9a8f5b590ff7eb7f8",
+)
+use_repo(pw_rust, "pw_rust_toolchains")
+
+register_toolchains("@pw_rust_toolchains//:all")

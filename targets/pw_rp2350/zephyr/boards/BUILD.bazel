@@ -1,0 +1,67 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@zephyr//:defs.bzl", "dts_cc_library", "dts_library")
+load("@zephyr//:flags.bzl", "flags_from_dict")
+
+package(default_visibility = ["//visibility:public"])
+
+constraint_value(
+    name = "raspberrypi_pw_rp2350",
+    constraint_setting = "@zephyr//boards:board_name",
+)
+
+dts_library(
+    name = "devicetree_lib",
+    includes = [
+        "@zephyr//dts:dts_includes",
+        "@zephyr//include:include_includes",
+    ],
+    overlay = "pw_rp2350_rp2350a_m33.dts",
+    references = [
+        "@zephyr//boards/raspberrypi/rpi_pico2:rpi_pico2.dtsi",
+        "@zephyr//boards/raspberrypi/rpi_pico2:rpi_pico2-pinctrl.dtsi",
+        "@zephyr//boards/raspberrypi/common:rpi_pico-led.dtsi",
+        "@zephyr//boards/raspberrypi/common:rpi_pico-pinctrl-common.dtsi",
+        "@zephyr//dts/arm/raspberrypi/rpi_pico",
+        "@zephyr//dts/vendor/raspberrypi/rpi_pico",
+        "@zephyr//dts/common",
+        "@zephyr//include:dt_bindings",
+    ],
+)
+
+dts_cc_library(
+    name = "devicetree_generated",
+    bindings = ["@zephyr//dts:bindings"],
+    dts_lib = ":devicetree_lib",
+    target_compatible_with = [":raspberrypi_pw_rp2350"],
+)
+
+platform(
+    name = "rp2350a_m33",
+    constraint_values = [
+        ":raspberrypi_pw_rp2350",
+        "@platforms//cpu:armv8-m",
+        "@zephyr//constraints/arm:cortex-m33",
+        "@pigweed//pw_build/constraints/rust:no_std",
+    ],
+    flags = flags_from_dict({
+        "@zephyr//:board_deps": "@zephyr//boards/raspberrypi/rpi_pico2:hal_soc_library",
+        "@zephyr//:board_runner_config": "@zephyr//boards/raspberrypi/rpi_pico2:rp2350a_m33_runner",
+        "@zephyr//:dts_cc_library": "//boards:devicetree_generated",
+        "@zephyr//:hal_soc_headers_library": "@zephyr//boards/raspberrypi/rpi_pico2:hal_soc_headers_library",
+        "@zephyr//:soc": "@zephyr//soc/raspberrypi/rpi_pico/rp2350:rp2350",
+    }),
+    parents = ["@zephyr//platforms:cortex_m"],
+)

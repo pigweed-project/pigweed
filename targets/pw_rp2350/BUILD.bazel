@@ -12,10 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_binary.bzl", "pw_rust_binary")
 
-package(default_visibility = ["//targets/pw_rp2350:__subpackages__"])
+package(default_visibility = ["//visibility:public"])
 
 pw_rust_binary(
     name = "loop_example",
@@ -51,4 +53,12 @@ rust_library(
     srcs = ["rust_log_basic_backend.rs"],
     crate_name = "pw_log_backend",
     edition = "2021",
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "target_docs.rst",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
 )

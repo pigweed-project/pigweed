@@ -37,6 +37,7 @@ sphinx_docs_library(
         "//targets/lm3s6965evb_qemu:docs",
         "//targets/mimxrt595_evk:docs",
         "//targets/mimxrt595_evk_freertos:docs",
+        "//targets/pw_rp2350:docs",
         "//targets/rp2040:docs",
         "//targets/stm32f429i_disc1:docs",
         "//targets/stm32f429i_disc1_stm32cube:docs",

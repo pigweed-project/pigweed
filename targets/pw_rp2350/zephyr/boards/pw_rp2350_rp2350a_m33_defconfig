@@ -1,4 +1,4 @@
-# Copyright 2024 The Pigweed Authors
+# Copyright 2026 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -12,18 +12,13 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-.cipd
-.presubmit
-.environment
-.vscode
-environment
-node_modules
-out
-bazel-bin
-bazel-out
-bazel-pigweed
-bazel-testlogs
-outbazel
-pw_web/node_modules
-pw_kernel/examples/adventure
-targets/pw_rp2350/zephyr
+CONFIG_BUILD_OUTPUT_HEX=y
+CONFIG_BUILD_OUTPUT_UF2=y
+CONFIG_CLOCK_CONTROL=y
+CONFIG_CONSOLE=y
+CONFIG_GPIO=y
+CONFIG_RESET=y
+CONFIG_SERIAL=y
+CONFIG_UART_CONSOLE=y
+CONFIG_UART_INTERRUPT_DRIVEN=y
+CONFIG_USE_DT_CODE_PARTITION=y
