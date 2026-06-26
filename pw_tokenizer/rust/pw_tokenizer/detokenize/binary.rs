@@ -14,15 +14,13 @@
 
 #![cfg(feature = "std")]
 
-use std::collections::HashMap;
-
 use nom::bytes::complete::{tag, take_till};
 use nom::multi::count;
 use nom::number::complete::{le_u16, le_u32, le_u8};
 use nom::IResult;
 use pw_status::Result;
 
-use super::TokenizedStringEntry;
+use super::Database;
 
 #[derive(Debug)]
 struct BinaryEntry {
@@ -103,9 +101,7 @@ fn date_remove_string(entry: &BinaryEntry) -> String {
 }
 
 /// Parses a binary token database.
-pub fn parse_binary_database(
-    input: &[u8],
-) -> Result<HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>> {
+pub fn parse_binary_database(input: &[u8]) -> Result<Database> {
     let (input, entry_count) =
         parse_header(input).map_err(|_| pw_status::Error::InvalidArgument)?;
     let (input, raw_entries) =
@@ -113,16 +109,10 @@ pub fn parse_binary_database(
     let (_input, strings) = count(parse_null_terminated_string, entry_count)(input)
         .map_err(|_| pw_status::Error::InvalidArgument)?;
 
-    let mut database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>> = HashMap::new();
+    let mut database = Database::new();
 
     for (entry, s) in raw_entries.into_iter().zip(strings) {
-        super::add_entry(
-            &mut database,
-            "",
-            entry.token,
-            s.to_string(),
-            date_remove_string(&entry),
-        );
+        database.add_entry("", entry.token, s.to_string(), date_remove_string(&entry));
     }
 
     Ok(database)

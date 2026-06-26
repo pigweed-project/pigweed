@@ -15,7 +15,6 @@
 #![cfg(feature = "std")]
 
 use core::cmp;
-use std::collections::HashMap;
 
 use pw_format::{
     Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Primitive,
@@ -25,6 +24,9 @@ use pw_varint::VarintDecode;
 
 mod binary;
 mod csv;
+mod database;
+
+pub use database::{Database, TokenizedStringEntry};
 
 const DEFAULT_DOMAIN: &str = "";
 
@@ -291,17 +293,8 @@ impl MatchResult {
 /// table of tokens to give `O(1)` token lookups.
 pub struct Detokenizer {
     // domain -> token -> entries
-    database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>,
+    database: Database,
     prefix: char,
-}
-
-/// An entry in the token database.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TokenizedStringEntry {
-    /// The format string of this entry.
-    pub format_string: String,
-    /// The date when this entry was removed, or empty if it is still active.
-    pub date_removed: String,
 }
 
 /// Errors that can occur when decoding or formatting tokenized arguments.
@@ -378,12 +371,7 @@ impl Detokenizer {
     /// Looks up database entries for a given token and domain.
     #[must_use]
     pub fn database_lookup(&self, token: u32, domain: &str) -> &[TokenizedStringEntry] {
-        let canonical_domain = canonicalize_domain(domain);
-        self.database
-            .get(&canonical_domain)
-            .and_then(|domain_map| domain_map.get(&token))
-            .map(|entries| entries.as_slice())
-            .unwrap_or(&[])
+        self.database.lookup(token, domain)
     }
 
     /// Decodes and detokenizes the binary encoded message. Returns a
@@ -638,33 +626,6 @@ fn is_valid_domain_char(c: char) -> bool {
 
 fn canonicalize_domain(domain: &str) -> String {
     domain.chars().filter(|c| !c.is_whitespace()).collect()
-}
-
-fn add_entry(
-    database: &mut HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>,
-    domain: &str,
-    token: u32,
-    format_string: String,
-    date_removed: String,
-) {
-    let entries = database
-        .entry(domain.to_string())
-        .or_default()
-        .entry(token)
-        .or_default();
-
-    for entry in entries.iter_mut() {
-        if entry.format_string == format_string {
-            if date_removed > entry.date_removed {
-                entry.date_removed = date_removed;
-            }
-            return;
-        }
-    }
-    entries.push(TokenizedStringEntry {
-        format_string,
-        date_removed,
-    });
 }
 
 struct NestedMessageDetokenizer<'a> {
@@ -999,9 +960,9 @@ mod tests {
     fn test_from_csv() {
         let csv = "12345678,,,\"Hello World\"";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        assert!(detok.database.contains_key(""));
-        let domain_map = detok.database.get("").unwrap();
-        assert!(domain_map.contains_key(&0x12345678));
+        let entries = detok.database_lookup(0x12345678, "");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].format_string, "Hello World");
     }
 
     #[test]
@@ -1020,20 +981,16 @@ mod tests {
 
         let detok = Detokenizer::from_binary(test_data).unwrap();
         assert_eq!(detok.prefix(), '$');
-        assert_eq!(detok.database.len(), 1);
 
-        let domain_map = detok.database.get("").unwrap();
-        assert_eq!(domain_map.len(), 3);
-
-        let entry1 = &domain_map.get(&1).unwrap()[0];
+        let entry1 = &detok.database_lookup(1, "")[0];
         assert_eq!(entry1.format_string, "hi!");
         assert_eq!(entry1.date_removed, "");
 
-        let entry2 = &domain_map.get(&2).unwrap()[0];
+        let entry2 = &detok.database_lookup(2, "")[0];
         assert_eq!(entry2.format_string, "goodbye");
         assert_eq!(entry2.date_removed, "2026-06-12");
 
-        let entry3 = &domain_map.get(&255).unwrap()[0];
+        let entry3 = &detok.database_lookup(255, "")[0];
         assert_eq!(entry3.format_string, ":)");
         assert_eq!(entry3.date_removed, "");
     }
@@ -1070,10 +1027,9 @@ mod tests {
                    2,,domain2,\n\
                    3,,domain3,World!\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        assert_eq!(detok.database.len(), 3);
-        assert!(detok.database.contains_key("domain1"));
-        assert!(detok.database.contains_key("domain2"));
-        assert!(detok.database.contains_key("domain3"));
+        assert_eq!(detok.database_lookup(1, "domain1").len(), 1);
+        assert_eq!(detok.database_lookup(2, "domain2").len(), 1);
+        assert_eq!(detok.database_lookup(3, "domain3").len(), 1);
     }
 
     #[test]
@@ -1083,8 +1039,7 @@ mod tests {
                    1,,,Hello World!\n\
                    3,,,Goodbye!\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        let domain_map = detok.database.get("").unwrap();
-        let entries = domain_map.get(&1).unwrap();
+        let entries = detok.database_lookup(1, "");
         assert_eq!(entries.len(), 1);
     }
 
@@ -1096,8 +1051,7 @@ mod tests {
                    1,2002-01-01,,Hello World!\n\
                    3,,,Goodbye!\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        let domain_map = detok.database.get("").unwrap();
-        let entries = domain_map.get(&1).unwrap();
+        let entries = detok.database_lookup(1, "");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].date_removed, "2002-01-01");
     }
@@ -1108,7 +1062,9 @@ mod tests {
                    2,,domain2,\n\
                    3,,domain3,World!\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        assert_eq!(detok.database.len(), 3);
+        assert_eq!(detok.database_lookup(1, "domain1").len(), 1);
+        assert_eq!(detok.database_lookup(2, "domain2").len(), 1);
+        assert_eq!(detok.database_lookup(3, "domain3").len(), 1);
     }
 
     #[test]
@@ -1129,8 +1085,8 @@ mod tests {
         let csv = "1,, domain1 ,Hello\n\
                    2,,  domain2  ,\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        assert!(detok.database.contains_key("domain1"));
-        assert!(detok.database.contains_key("domain2"));
+        assert_eq!(detok.database_lookup(1, "domain1").len(), 1);
+        assert_eq!(detok.database_lookup(2, "domain2").len(), 1);
     }
 
     #[test]
@@ -1330,9 +1286,9 @@ mod tests {
                    2,, \n\
                    3,,D3,Goodbye!\n";
         let detok = Detokenizer::from_csv(csv).unwrap();
-        assert_eq!(detok.database.len(), 2);
-        assert!(detok.database.contains_key("D1"));
-        assert!(detok.database.contains_key("D3"));
+        assert_eq!(detok.database_lookup(1, "D1").len(), 1);
+        assert_eq!(detok.database_lookup(3, "D3").len(), 1);
+        assert_eq!(detok.database_lookup(2, "").len(), 0);
     }
 
     #[test]

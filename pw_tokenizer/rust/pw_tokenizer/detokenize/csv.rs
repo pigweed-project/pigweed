@@ -14,11 +14,9 @@
 
 #![cfg(feature = "std")]
 
-use std::collections::HashMap;
-
 use pw_status::Result;
 
-use super::TokenizedStringEntry;
+use super::Database;
 
 /// Parses a CSV string into a vector of rows, where each row is a vector of strings.
 ///
@@ -116,10 +114,8 @@ fn skip_to_newline(chars: &mut core::iter::Peekable<core::str::Chars>) {
     }
 }
 
-pub fn parse_csv_database(
-    csv: &str,
-) -> Result<HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>> {
-    let mut database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>> = HashMap::new();
+pub fn parse_csv_database(csv: &str) -> Result<Database> {
+    let mut database = Database::new();
 
     let parsed_csv = parse_csv(csv);
 
@@ -142,8 +138,7 @@ pub fn parse_csv_database(
             return Err(pw_status::Error::InvalidArgument);
         }
 
-        super::add_entry(
-            &mut database,
+        database.add_entry(
             &domain,
             token,
             format_string.to_string(),
