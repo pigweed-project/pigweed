@@ -12,15 +12,13 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#![cfg(feature = "std")]
-
 use nom::bytes::complete::{tag, take_till};
 use nom::multi::count;
 use nom::number::complete::{le_u16, le_u32, le_u8};
 use nom::IResult;
 use pw_status::Result;
 
-use super::Database;
+use crate::detokenize::database::Database;
 
 #[derive(Debug)]
 struct BinaryEntry {

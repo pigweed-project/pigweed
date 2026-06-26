@@ -12,8 +12,6 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#![cfg(feature = "std")]
-
 use std::collections::HashMap;
 
 /// An entry in the token database.
@@ -68,7 +66,7 @@ impl Database {
     /// Looks up database entries for a given token and domain.
     #[must_use]
     pub fn lookup(&self, token: u32, domain: &str) -> &[TokenizedStringEntry] {
-        let canonical_domain = super::canonicalize_domain(domain);
+        let canonical_domain = crate::detokenize::detokenizer::canonicalize_domain(domain);
         self.0
             .get(&canonical_domain)
             .and_then(|domain_map| domain_map.get(&token))

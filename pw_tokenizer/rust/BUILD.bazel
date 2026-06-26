@@ -91,6 +91,7 @@ rust_library(
         "pw_tokenizer/detokenize/binary.rs",
         "pw_tokenizer/detokenize/csv.rs",
         "pw_tokenizer/detokenize/database.rs",
+        "pw_tokenizer/detokenize/detokenizer.rs",
         "pw_tokenizer/internal.rs",
         "pw_tokenizer/lib.rs",
     ],

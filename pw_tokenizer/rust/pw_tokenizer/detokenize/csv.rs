@@ -12,11 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#![cfg(feature = "std")]
-
 use pw_status::Result;
 
-use super::Database;
+use crate::detokenize::database::Database;
 
 /// Parses a CSV string into a vector of rows, where each row is a vector of strings.
 ///
@@ -126,7 +124,7 @@ pub fn parse_csv_database(csv: &str) -> Result<Database> {
 
         let token_str = row[0].trim();
         let date_str = row[1].trim();
-        let domain = super::canonicalize_domain(&row[2]);
+        let domain = crate::detokenize::detokenizer::canonicalize_domain(&row[2]);
         let format_string = &row[3];
 
         let token = match u32::from_str_radix(token_str, 16) {
@@ -134,7 +132,7 @@ pub fn parse_csv_database(csv: &str) -> Result<Database> {
             Err(_) => return Err(pw_status::Error::InvalidArgument),
         };
 
-        if !super::is_valid_date(date_str) {
+        if !crate::detokenize::detokenizer::is_valid_date(date_str) {
             return Err(pw_status::Error::InvalidArgument);
         }
 
