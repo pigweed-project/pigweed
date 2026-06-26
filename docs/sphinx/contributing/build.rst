@@ -369,3 +369,47 @@ Manually run an invididual test
 Run tests on-device
 -------------------
 See :ref:`target-stm32f429i-disc1-test`.
+
+.. _docs-contributing-build-cmake:
+
+-----
+CMake
+-----
+
+.. _docs-contributing-build-cmake-bootstrap:
+
+Bootstrap or activate
+=====================
+Always :ref:`bootstrap or activate <docs-contributing-build-gn-bootstrap>`
+before attempting to run the upstream Pigweed CMake build.
+
+.. _docs-contributing-build-cmake-build:
+
+Build
+=====
+.. code-block:: console
+
+   pw build -r default_cmake
+
+This will install any required packages, generate CMake build files, and
+invoke Ninja.
+
+.. code-block:: text
+
+   19:36:58 INF [1/1] Starting ==> Recipe: default_cmake Targets: pw_run_tests.modules pw_apps pw_run_tests.pw_bluetooth Logfile: /out/build_default_cmake.txt
+   19:36:58 INF [1/1] Run ==> pw --no-banner package install emboss
+   19:36:59 INF [1/1] Run ==> pw --no-banner package install nanopb
+   19:37:00 INF [1/1] Run ==> pw --no-banner package install boringssl
+   19:37:10 INF [1/1] Run ==> cmake --fresh --debug-output -DCMAKE_MESSAGE_LOG_LEVEL=WARNING -S . -B ./out/cmake -G Ninja -DCMAKE_TOOLCHAIN_FILE=./pw_toolchain/host_clang/toolchain.cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 -Ddir_pw_third_party_nanopb=./environment/packages/nanopb -Dpw_third_party_nanopb_ADD_SUBDIRECTORY=ON -Ddir_pw_third_party_emboss=./environment/packages/emboss -Ddir_pw_third_party_boringssl=./environment/packages/boringssl -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+   19:37:10 INF [1/1] Run ==> ninja -C out/cmake pw_apps pw_run_tests.modules pw_run_tests.pw_bluetooth
+
+.. _docs-contributing-build-cmake-watch:
+
+Watch
+=====
+:ref:`module-pw_watch` works with ``pw build`` as well. You can run the
+following to automatically rebuild when files change.
+
+.. code-block:: console
+
+   pw build -r default_cmake --watch

@@ -18,7 +18,7 @@ of tools is needed for non-trivial production embedded projects. For example:
 - A known Python version with known modules installed for scripting
 - A Go compiler for the Go-based command line tools
 
-...and so on
+…and so on.
 
 In the server space, container solutions like Docker or Podman solve this;
 however, in our experience container solutions are a mixed bag for embedded
@@ -32,6 +32,11 @@ environment. The tooling is installed into your workspace, and makes no
 changes to your system. This tooling is designed to be reused by any
 project.
 
+.. _module-pw_env_setup-bootstrap:
+
+----------------------------
+Bootstrapping and activating
+----------------------------
 .. _CIPD: https://github.com/luci/luci-go/tree/HEAD/cipd
 
 Users interact with  ``pw_env_setup`` with two commands: ``. bootstrap.sh`` and

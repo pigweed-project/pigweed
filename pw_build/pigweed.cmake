@@ -275,6 +275,11 @@ endfunction()
 
 # pw_add_library_generic: Creates a CMake library target.
 #
+# This is the base helper used to instantiate CMake libraries.
+# It should only be used when adding a dependency on a custom library
+# from your own project. When adding a dependency on an upstream
+# Pigweed module you should use pw_add_library instead.
+#
 # Required Args:
 #
 #   <name> - The name of the library target to be created.
@@ -636,6 +641,11 @@ function(pw_add_facade NAME TYPE)
 endfunction(pw_add_facade)
 
 # pw_add_facade_generic: Creates a CMake facade library target.
+#
+# This is the base helper used to instantiate a facade library.
+# It should only be used when adding a dependency on a custom
+# facade library from your own project. When adding a dependency
+# on an upstream Pigweed facade you should use pw_add_facade instead.
 #
 # Facades are declared as two libraries to avoid circular dependencies.
 # Libraries that use the facade depend on the <name> of this target. The

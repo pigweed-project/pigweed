@@ -113,6 +113,7 @@
   "python_build": "./build/gn/python.html",
   "pw_allocator/api": "../api/cc/group__pw__allocator.html",
   "pw_bluetooth_sapphire/reference": "../api/cc/group__pw__bluetooth__sapphire.html",
+  "pw_build/cmake": "../build/cmake/api.html",
   "pw_bytes/api": "../api/cc/group__pw__bytes.html",
   "pw_channel/reference": "../api/cc/group__pw__channel.html",
   "pw_clock_tree/api": "../api/cc/group__pw__clock__tree.html",

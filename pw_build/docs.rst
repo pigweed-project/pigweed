@@ -35,7 +35,7 @@ and prescribe build configuration variants supported by your project.
 
       Python API for orchestrating multi-step builds.
 
-.. grid:: 1
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`code-square` Bazel
       :link: module-pw_build-bazel
@@ -44,8 +44,6 @@ and prescribe build configuration variants supported by your project.
 
       Build integrations for Pigweed's primary build system.
 
-.. grid:: 2
-
    .. grid-item-card:: :octicon:`code-square` GN / Ninja
       :link: module-pw_build-gn
       :link-type: ref
@@ -53,19 +51,11 @@ and prescribe build configuration variants supported by your project.
 
       Build integrations for Pigweed's original build system.
 
-   .. grid-item-card:: :octicon:`code-square` CMake
-      :link: module-pw_build-cmake
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Build integrations for projects reliant on CMake.
-
 .. toctree::
    :hidden:
    :maxdepth: 1
 
    gn
-   cmake
    bazel
    project_builder
    python_api

@@ -126,6 +126,10 @@ endfunction()
 
 # pw_add_test_generic: Declares a single unit test suite.
 #
+# If you want your test suite to follow upstream Pigweed naming
+# conventions and toolchain settings you should use pw_add_test
+# instead.
+#
 #   {NAME} depends on ${NAME}.run if pw_unit_test_AUTOMATIC_RUNNER is set, else
 #          it depends on ${NAME}.bin
 #   {NAME}.lib contains the provided test sources as a library target, which can
