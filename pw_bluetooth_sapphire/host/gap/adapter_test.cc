@@ -21,6 +21,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_discovery_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/fake_layer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_common.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_l2cap.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test.h"
