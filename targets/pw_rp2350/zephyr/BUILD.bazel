@@ -15,6 +15,19 @@
 load("@pigweed//targets/rp2040:flash.bzl", "flash_rp2350")
 load(":transition.bzl", "rp2350_zephyr_binary")
 
+# TODO: https://pwbug.dev/528015032 - macos is not currently supported
+# host_cpu is a legacy flag, but it is a value that is stable through transitions,
+# so can be used with target_compatible_with to gate on host platform.
+config_setting(
+    name = "host_macos_x86_64",
+    values = {"host_cpu": "darwin"},
+)
+
+config_setting(
+    name = "host_macos_arm64",
+    values = {"host_cpu": "darwin_arm64"},
+)
+
 rp2350_zephyr_binary(
     name = "loop_example_binary",
     binary = "@pigweed//targets/pw_rp2350:loop_example",

@@ -19,6 +19,12 @@ package(default_visibility = ["//visibility:public"])
 
 zephyr_app(
     name = "app",
+    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
+    target_compatible_with = select({
+        "//:host_macos_arm64": ["@platforms//:incompatible"],
+        "//:host_macos_x86_64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 rust_library(
@@ -34,6 +40,12 @@ rust_library(
 zephyr_cc_library(
     name = "boot_cc",
     srcs = ["boot.cc"],
+    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
+    target_compatible_with = select({
+        "//:host_macos_arm64": ["@platforms//:incompatible"],
+        "//:host_macos_x86_64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":app_bin.elf_linker_final",
         "@pigweed//pw_log",

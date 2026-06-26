@@ -78,4 +78,10 @@ def rp2350_zephyr_binary(name = "", binary = "", testonly = False):
         target = ":" + elf_target_name,
         testonly = testonly,
         platform = "//boards:rp2350a_m33",
+        # TODO: https://pwbug.dev/528015032 - macos is not currently supported
+        target_compatible_with = select({
+            "//:host_macos_arm64": ["@platforms//:incompatible"],
+            "//:host_macos_x86_64": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
     )

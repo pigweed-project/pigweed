@@ -39,13 +39,25 @@ dts_library(
         "@zephyr//dts/common",
         "@zephyr//include:dt_bindings",
     ],
+    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
+    target_compatible_with = select({
+        "//:host_macos_arm64": ["@platforms//:incompatible"],
+        "//:host_macos_x86_64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 dts_cc_library(
     name = "devicetree_generated",
     bindings = ["@zephyr//dts:bindings"],
     dts_lib = ":devicetree_lib",
-    target_compatible_with = [":raspberrypi_pw_rp2350"],
+    # TODO: https://pwbug.dev/528015032 - macos is not currently supported
+    target_compatible_with = select({
+        "//:host_macos_arm64": ["@platforms//:incompatible"],
+        "//:host_macos_x86_64": ["@platforms//:incompatible"],
+        ":raspberrypi_pw_rp2350": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 platform(

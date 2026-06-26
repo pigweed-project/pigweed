@@ -175,6 +175,59 @@
       ]
     },
     {
+      "name": "pw_rp2350_freertos",
+      "build_config": {
+        "name": "pw_rp2350_freertos_config",
+        "description": "Pigweed RP2350 Target Board (FreeRTOS)",
+        "build_type": "bazel",
+        "args": [
+          "--config=pw_rp2350_freertos"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//targets/pw_rp2350/freertos/..."
+      ]
+    },
+    {
+      "name": "pw_rp2350_pigweed",
+      "build_config": {
+        "name": "pw_rp2350_pigweed_config",
+        "description": "Pigweed RP2350 Target Board (pw_kernel)",
+        "build_type": "bazel",
+        "args": [
+          "--config=pw_rp2350_pigweed"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//targets/pw_rp2350/pigweed/..."
+      ]
+    },
+    {
+      "name": "pw_rp2350_zephyr",
+      "build_config": {
+        "name": "pw_rp2350_zephyr_config",
+        "description": "Pigweed RP2350 Target Board (Zephyr)",
+        "build_type": "bazel",
+        "args": [],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "project_working_subdir": "targets/pw_rp2350/zephyr",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
       "name": "lm3s6965evb",
       "build_config": {
         "name": "lm3s6965evb_config",
@@ -738,7 +791,10 @@
       "builds": [
         "lm3s6965evb",
         "build_rp2040_tests",
-        "build_rp2350_tests"
+        "build_rp2350_tests",
+        "pw_rp2350_freertos",
+        "pw_rp2350_pigweed",
+        "pw_rp2350_zephyr"
       ]
     },
     {

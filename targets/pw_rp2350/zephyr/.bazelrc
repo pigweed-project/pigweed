@@ -36,3 +36,19 @@ build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_log:backend_impl=@pigweed//pw_log_basic:impl
 build --@pigweed//pw_sync:interrupt_spin_lock_backend=@pigweed//pw_sync_baremetal:interrupt_spin_lock
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_zephyr:backend
+
+# Remote execution config definitions
+# ===================================
+# Use the remote cache. This will only work for users who have permission to access it.
+common:remote_cache --bes_backend="buildeventservice.googleapis.com"
+common:remote_cache --bes_instance_name=pigweed-rbe-open
+common:remote_cache --bes_results_url="https://source.cloud.google.com/results/invocations/"
+common:remote_cache --bes_timeout=600s
+common:remote_cache --experimental_remote_cache_eviction_retries=5
+common:remote_cache --google_default_credentials=true
+# Required to use buildeventservice on Bazel 8+.
+# TODO: b/345556899 -- Remove this flag when no longer required.
+common:remote_cache --legacy_important_outputs
+common:remote_cache --remote_cache=grpcs://remotebuildexecution.googleapis.com
+common:remote_cache --remote_instance_name=projects/pigweed-rbe-open/instances/default-instance
+common:remote_cache --remote_upload_local_results=false
