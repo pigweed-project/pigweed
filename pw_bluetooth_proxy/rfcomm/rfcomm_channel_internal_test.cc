@@ -41,14 +41,21 @@ class MockChannelProxy : public ChannelProxy {
     return written_payloads_;
   }
 
-  void set_next_write_status(Status status) { next_write_status_ = status; }
+  void set_next_write_status(Status status, bool return_buffer = true) {
+    next_write_status_ = status;
+    return_buffer_on_failure_ = return_buffer;
+  }
 
  private:
   StatusWithMultiBuf DoWrite(multibuf::MultiBuf&& payload) override {
     if (!next_write_status_.ok()) {
       Status status_to_return = next_write_status_;
       next_write_status_ = OkStatus();  // Reset for next call
-      return {status_to_return, std::move(payload)};
+      if (return_buffer_on_failure_) {
+        return {status_to_return, std::move(payload)};
+      } else {
+        return {status_to_return, std::nullopt};
+      }
     }
     pw::Vector<uint8_t, kMaxTestPacketSize> data;
     data.resize(payload.size());
@@ -67,6 +74,7 @@ class MockChannelProxy : public ChannelProxy {
     return OkStatus();
   }
   Status next_write_status_ = OkStatus();
+  bool return_buffer_on_failure_ = true;
   pw::Vector<pw::Vector<uint8_t, kMaxTestPacketSize>, kMaxTestPacketCount>
       written_payloads_;
 };
@@ -721,6 +729,85 @@ TEST_F(RfcommChannelTest, TxCreditsOverflow) {
   auto mbuf = multibuf_allocator_.AllocateContiguous(payload.size());
   ASSERT_TRUE(mbuf.has_value());
   EXPECT_EQ(channel_.Write(std::move(*mbuf)).status, Status::Unavailable());
+}
+
+TEST_F(RfcommChannelTest, SendCreditsFailsIfAlreadyPending) {
+  // Make the write fail and return the buffer, so it stays pending.
+  l2cap_channel_for_test_.set_next_write_status(Status::Unavailable());
+
+  // This will queue the credit packet and try to send it, which fails.
+  EXPECT_EQ(channel_.SendAdditionalRxCredits(5), OkStatus());
+
+  // A subsequent attempt to send credits should fail because one is already
+  // pending.
+  EXPECT_EQ(channel_.SendAdditionalRxCredits(5), Status::FailedPrecondition());
+}
+
+TEST_F(RfcommChannelTest, PendingCreditsRestoredOnWriteFailure) {
+  // Make the write fail but return the buffer.
+  l2cap_channel_for_test_.set_next_write_status(Status::Unavailable());
+
+  // Queue the credit packet.
+  EXPECT_EQ(channel_.SendAdditionalRxCredits(5), OkStatus());
+
+  // Verify nothing was actually written yet.
+  EXPECT_TRUE(l2cap_channel_for_test_.written_payloads().empty());
+
+  // Trigger a successful write of a data packet.
+  // This should trigger TryToSendPacket, which should first send the pending
+  // credit packet, and then the data packet.
+  const pw::Vector<uint8_t, 3> payload = {1, 2, 3};
+  auto mbuf_result = multibuf_allocator_.AllocateContiguous(payload.size());
+  ASSERT_TRUE(mbuf_result.has_value());
+  multibuf::MultiBuf& mbuf = mbuf_result.value();
+  ASSERT_EQ(mbuf.CopyFrom(as_bytes(span(payload))).status(), pw::OkStatus());
+  EXPECT_EQ(channel_.Write(std::move(mbuf)).status, OkStatus());
+
+  // Verify both packets were written.
+  ASSERT_EQ(l2cap_channel_for_test_.written_payloads().size(), 2u);
+
+  // First packet should be the credit packet (UIH with P/F bit).
+  const auto& credit_payload = l2cap_channel_for_test_.written_payloads()[0];
+  auto credit_frame_view =
+      emboss::MakeRfcommFrameView(credit_payload.data(), credit_payload.size());
+  ASSERT_TRUE(credit_frame_view.Ok());
+  EXPECT_EQ(credit_frame_view.control().Read(),
+            emboss::RfcommFrameType::
+                UNNUMBERED_INFORMATION_WITH_HEADER_CHECK_AND_POLL_FINAL);
+  EXPECT_EQ(credit_frame_view.credits().Read(), 5);
+
+  // Second packet should be the data packet.
+  const auto& data_payload = l2cap_channel_for_test_.written_payloads()[1];
+  auto data_frame_view =
+      emboss::MakeRfcommFrameView(data_payload.data(), data_payload.size());
+  ASSERT_TRUE(data_frame_view.Ok());
+  EXPECT_EQ(data_frame_view.control().Read(),
+            emboss::RfcommFrameType::UNNUMBERED_INFORMATION_WITH_HEADER_CHECK);
+}
+
+TEST_F(RfcommChannelTest, PendingCreditsLostIfBufferNotReturnedOnWriteFailure) {
+  // Make the write fail and NOT return the buffer.
+  l2cap_channel_for_test_.set_next_write_status(Status::Unavailable(),
+                                                /*return_buffer=*/false);
+
+  // Queue the credit packet. It will fail to write and the buffer will be lost.
+  EXPECT_EQ(channel_.SendAdditionalRxCredits(5), OkStatus());
+
+  // Verify nothing was written.
+  EXPECT_TRUE(l2cap_channel_for_test_.written_payloads().empty());
+
+  // Since the buffer was lost, pending_credit_tx_ should be reset.
+  // A subsequent call should succeed to queue (and not return
+  // FailedPrecondition). We let this one succeed.
+  EXPECT_EQ(channel_.SendAdditionalRxCredits(5), OkStatus());
+
+  // Verify it was written now.
+  ASSERT_EQ(l2cap_channel_for_test_.written_payloads().size(), 1u);
+  const auto& credit_payload = l2cap_channel_for_test_.written_payloads()[0];
+  auto credit_frame_view =
+      emboss::MakeRfcommFrameView(credit_payload.data(), credit_payload.size());
+  ASSERT_TRUE(credit_frame_view.Ok());
+  EXPECT_EQ(credit_frame_view.credits().Read(), 5);
 }
 
 }  // namespace pw::bluetooth::proxy::rfcomm::internal

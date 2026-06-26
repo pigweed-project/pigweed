@@ -152,16 +152,28 @@ void RfcommChannelInternal::TryToSendPacket()
   // Prioritize sending credits over data.
   if (pending_credit_tx_.has_value()) {
     auto credit_pdu_span = pending_credit_tx_->ContiguousSpan().value();
-    auto credits_sent =
-        static_cast<uint16_t>(credit_pdu_span[credit_pdu_span.size() - 2]);
-    StatusWithMultiBuf write_status =
-        l2cap_channel_proxy_.Write(std::move(pending_credit_tx_.value()));
-    if (!write_status.status.ok()) {
+    if (!credit_pdu_span.empty()) {
+      auto credits_sent =
+          static_cast<uint16_t>(credit_pdu_span[credit_pdu_span.size() - 2]);
+      StatusWithMultiBuf write_status =
+          l2cap_channel_proxy_.Write(std::move(pending_credit_tx_.value()));
+      if (!write_status.status.ok()) {
+        if (write_status.buf.has_value() && !write_status.buf->empty()) {
+          pending_credit_tx_ = std::move(write_status.buf);
+        } else {
+          PW_LOG_WARN("Pending tx credit packet lost after write failure");
+          pending_credit_tx_.reset();
+        }
+        return;
+      }
+      pending_credit_tx_.reset();
+      std::lock_guard lock(rx_mutex_);
+      rx_credits_ += credits_sent;
+    } else {
+      PW_LOG_WARN("Invalid pending_credit_tx_ payload (size 0)");
+      pending_credit_tx_.reset();
       return;
     }
-    pending_credit_tx_.reset();
-    std::lock_guard lock(rx_mutex_);
-    rx_credits_ += credits_sent;
   }
 
   const size_t max_frame_size = tx_config_.max_frame_size;
@@ -291,6 +303,11 @@ Status RfcommChannelInternal::SendAdditionalRxCredits(uint8_t credits) {
 
 // Sends credits (UIH frame with P-bit set) to the controller.
 Status RfcommChannelInternal::SendCredits(uint8_t credits) {
+  std::lock_guard lock(tx_mutex_);
+  if (pending_credit_tx_.has_value()) {
+    PW_LOG_WARN("Earlier rx credit send pending. Skipping");
+    return Status::FailedPrecondition();
+  }
   // RFCOMM frame with 1-byte length field and 1-byte credit.
   auto frame_size =
       static_cast<size_t>(emboss::RfcommDataFrameOverhead::WITH_LONG_HEADER);
@@ -325,7 +342,6 @@ Status RfcommChannelInternal::SendCredits(uint8_t credits) {
       span(buffer.data(),
            static_cast<size_t>(emboss::RfcommHeaderLength::WITHOUT_LENGTH)))));
 
-  std::lock_guard lock(tx_mutex_);
   pending_credit_tx_ = std::move(new_buffer);
   TryToSendPacket();
   return OkStatus();
