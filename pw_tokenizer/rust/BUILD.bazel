@@ -88,6 +88,7 @@ rust_library(
     name = "pw_tokenizer",
     srcs = [
         "pw_tokenizer/detokenize.rs",
+        "pw_tokenizer/detokenize/binary.rs",
         "pw_tokenizer/detokenize/csv.rs",
         "pw_tokenizer/internal.rs",
         "pw_tokenizer/lib.rs",
@@ -110,6 +111,7 @@ rust_library(
     ] + select({
         "//pw_build/constraints/rust:std": [
             "//pw_format/rust:pw_format",  # Added for rustdoc linking support.
+            "@rust_crates//:nom",
         ],
         "//conditions:default": [],
     }),

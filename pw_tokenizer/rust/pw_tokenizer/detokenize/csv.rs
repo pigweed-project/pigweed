@@ -14,6 +14,12 @@
 
 #![cfg(feature = "std")]
 
+use std::collections::HashMap;
+
+use pw_status::Result;
+
+use super::TokenizedStringEntry;
+
 /// Parses a CSV string into a vector of rows, where each row is a vector of strings.
 ///
 /// This parser handles quotes (including newlines inside quotes), empty lines,
@@ -108,6 +114,44 @@ fn skip_to_newline(chars: &mut core::iter::Peekable<core::str::Chars>) {
             break;
         }
     }
+}
+
+pub fn parse_csv_database(
+    csv: &str,
+) -> Result<HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>> {
+    let mut database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>> = HashMap::new();
+
+    let parsed_csv = parse_csv(csv);
+
+    for row in parsed_csv {
+        if row.len() != 4 {
+            continue;
+        }
+
+        let token_str = row[0].trim();
+        let date_str = row[1].trim();
+        let domain = super::canonicalize_domain(&row[2]);
+        let format_string = &row[3];
+
+        let token = match u32::from_str_radix(token_str, 16) {
+            Ok(t) => t,
+            Err(_) => return Err(pw_status::Error::InvalidArgument),
+        };
+
+        if !super::is_valid_date(date_str) {
+            return Err(pw_status::Error::InvalidArgument);
+        }
+
+        super::add_entry(
+            &mut database,
+            &domain,
+            token,
+            format_string.to_string(),
+            date_str.to_string(),
+        );
+    }
+
+    Ok(database)
 }
 
 #[cfg(test)]

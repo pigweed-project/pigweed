@@ -23,6 +23,7 @@ use pw_format::{
 use pw_status::Result;
 use pw_varint::VarintDecode;
 
+mod binary;
 mod csv;
 
 const DEFAULT_DOMAIN: &str = "";
@@ -353,53 +354,18 @@ impl Detokenizer {
 
     /// Constructs a detokenizer from a CSV database with a custom prefix for nested tokenized messages.
     pub fn from_csv_with_prefix(csv: &str, prefix: char) -> Result<Self> {
-        let mut database: HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>> = HashMap::new();
+        let database = csv::parse_csv_database(csv)?;
+        Ok(Self { database, prefix })
+    }
 
-        let parsed_csv = csv::parse_csv(csv);
+    /// Constructs a detokenizer from a binary token database.
+    pub fn from_binary(binary: &[u8]) -> Result<Self> {
+        Self::from_binary_with_prefix(binary, '$')
+    }
 
-        for row in parsed_csv {
-            if row.len() != 4 {
-                continue;
-            }
-
-            let token_str = row[0].trim();
-            let date_str = row[1].trim();
-            let domain = canonicalize_domain(&row[2]);
-            let format_string = &row[3];
-
-            let token = match u32::from_str_radix(token_str, 16) {
-                Ok(t) => t,
-                Err(_) => return Err(pw_status::Error::InvalidArgument),
-            };
-
-            if !is_valid_date(date_str) {
-                return Err(pw_status::Error::InvalidArgument);
-            }
-
-            let entries = database
-                .entry(domain)
-                .or_default()
-                .entry(token)
-                .or_default();
-
-            let mut found = false;
-            for entry in entries.iter_mut() {
-                if entry.format_string == *format_string {
-                    found = true;
-                    if date_str > &entry.date_removed {
-                        entry.date_removed = date_str.to_string();
-                    }
-                    break;
-                }
-            }
-            if !found {
-                entries.push(TokenizedStringEntry {
-                    format_string: format_string.to_string(),
-                    date_removed: date_str.to_string(),
-                });
-            }
-        }
-
+    /// Constructs a detokenizer from a binary token database with a custom prefix for nested tokenized messages.
+    pub fn from_binary_with_prefix(binary: &[u8], prefix: char) -> Result<Self> {
+        let database = binary::parse_binary_database(binary)?;
         Ok(Self { database, prefix })
     }
 
@@ -672,6 +638,33 @@ fn is_valid_domain_char(c: char) -> bool {
 
 fn canonicalize_domain(domain: &str) -> String {
     domain.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
+fn add_entry(
+    database: &mut HashMap<String, HashMap<u32, Vec<TokenizedStringEntry>>>,
+    domain: &str,
+    token: u32,
+    format_string: String,
+    date_removed: String,
+) {
+    let entries = database
+        .entry(domain.to_string())
+        .or_default()
+        .entry(token)
+        .or_default();
+
+    for entry in entries.iter_mut() {
+        if entry.format_string == format_string {
+            if date_removed > entry.date_removed {
+                entry.date_removed = date_removed;
+            }
+            return;
+        }
+    }
+    entries.push(TokenizedStringEntry {
+        format_string,
+        date_removed,
+    });
 }
 
 struct NestedMessageDetokenizer<'a> {
@@ -1009,6 +1002,66 @@ mod tests {
         assert!(detok.database.contains_key(""));
         let domain_map = detok.database.get("").unwrap();
         assert!(domain_map.contains_key(&0x12345678));
+    }
+
+    #[test]
+    fn test_from_binary() {
+        let test_data: &[u8] = &[
+            b'T', b'O', b'K', b'E', b'N', b'S', 0, 0, // Magic & version
+            3, 0, 0, 0, // Entry count = 3
+            0, 0, 0, 0, // Reserved
+            1, 0, 0, 0, 0, 0, 0, 0, // Entry 1: token = 1, date = 0 (unset)
+            2, 0, 0, 0, 0x0c, 0x06, 0xea, 0x07, // Entry 2: token = 2, date = 2026-06-12
+            255, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, // Entry 3: token = 255, date = never
+            b'h', b'i', b'!', 0, // String 1: "hi!"
+            b'g', b'o', b'o', b'd', b'b', b'y', b'e', 0, // String 2: "goodbye"
+            b':', b')', 0, // String 3: ":)"
+        ];
+
+        let detok = Detokenizer::from_binary(test_data).unwrap();
+        assert_eq!(detok.prefix(), '$');
+        assert_eq!(detok.database.len(), 1);
+
+        let domain_map = detok.database.get("").unwrap();
+        assert_eq!(domain_map.len(), 3);
+
+        let entry1 = &domain_map.get(&1).unwrap()[0];
+        assert_eq!(entry1.format_string, "hi!");
+        assert_eq!(entry1.date_removed, "");
+
+        let entry2 = &domain_map.get(&2).unwrap()[0];
+        assert_eq!(entry2.format_string, "goodbye");
+        assert_eq!(entry2.date_removed, "2026-06-12");
+
+        let entry3 = &domain_map.get(&255).unwrap()[0];
+        assert_eq!(entry3.format_string, ":)");
+        assert_eq!(entry3.date_removed, "");
+    }
+
+    #[test]
+    fn test_from_binary_invalid() {
+        // Too short
+        assert!(Detokenizer::from_binary(b"TOKENS\0\0\0\0").is_err());
+
+        // Bad magic
+        assert!(Detokenizer::from_binary(b"TOKENs\0\0\x00\x00\x00\x00\0\0\0\0").is_err());
+
+        // Bad version
+        assert!(Detokenizer::from_binary(b"TOKENS\0\x01\x00\x00\x00\x00\0\0\0\0").is_err());
+
+        // Bad entry count (no string table)
+        let data: &[u8] = &[
+            b'T', b'O', b'K', b'E', b'N', b'S', 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+            0,
+        ];
+        assert!(Detokenizer::from_binary(data).is_err());
+
+        // Missing null terminator in string table
+        let data: &[u8] = &[
+            b'T', b'O', b'K', b'E', b'N', b'S', 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
+            0, b'h', b'i',
+        ];
+        assert!(Detokenizer::from_binary(data).is_err());
     }
 
     #[test]
