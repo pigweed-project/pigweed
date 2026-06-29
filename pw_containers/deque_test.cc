@@ -684,4 +684,115 @@ static_assert(!std::is_move_assignable_v<pw::Deque<MoveOnly>>);
 static_assert(std::is_move_assignable_v<pw::FixedDeque<MoveOnly>>);
 static_assert(std::is_move_assignable_v<pw::FixedDeque<MoveOnly, 1>>);
 
+template <typename T>
+class TestDeque : public pw::Deque<T> {
+ public:
+  using Base = pw::Deque<T>;
+  using Base::Base;
+  using Base::try_insert_shift_right;
+};
+
+TEST(Deque, TryInsertShiftRight_Value) {
+  pw::containers::StorageFor<int, 6> storage;
+  TestDeque<int> deque(storage);
+
+  deque.push_back(1);
+  deque.push_back(2);
+  deque.push_back(3);
+
+  auto it = deque.try_insert_shift_right(deque.begin() + 1, 2, 99);
+  ASSERT_TRUE(it.has_value());
+  EXPECT_EQ(*it, deque.begin() + 1);
+  EXPECT_EQ(deque.size(), 5u);
+  EXPECT_EQ(deque[0], 1);
+  EXPECT_EQ(deque[1], 99);
+  EXPECT_EQ(deque[2], 99);
+  EXPECT_EQ(deque[3], 2);
+  EXPECT_EQ(deque[4], 3);
+}
+
+TEST(Deque, TryInsertShiftRight_Iterator) {
+  pw::containers::StorageFor<int, 6> storage;
+  TestDeque<int> deque(storage);
+
+  deque.push_back(1);
+  deque.push_back(2);
+  deque.push_back(3);
+
+  std::array<int, 2> to_insert = {99, 98};
+
+  auto it = deque.try_insert_shift_right(
+      deque.begin() + 1, to_insert.begin(), to_insert.end());
+  ASSERT_TRUE(it.has_value());
+  EXPECT_EQ(*it, deque.begin() + 1);
+  EXPECT_EQ(deque.size(), 5u);
+  EXPECT_EQ(deque[0], 1);
+  EXPECT_EQ(deque[1], 99);
+  EXPECT_EQ(deque[2], 98);
+  EXPECT_EQ(deque[3], 2);
+  EXPECT_EQ(deque[4], 3);
+}
+
+TEST(Deque, TryInsertShiftRight_Wrapped) {
+  pw::containers::StorageFor<int, 6> storage;
+  TestDeque<int> deque(storage);
+
+  deque.push_back(99);
+  deque.push_back(99);
+  deque.push_back(3);
+  deque.push_back(4);
+  deque.pop_front();
+  deque.pop_front();
+  deque.push_back(5);
+  deque.push_back(6);
+  deque.push_back(7);
+
+  ASSERT_EQ(deque.size(), 5u);
+  EXPECT_EQ(deque[0], 3);
+  EXPECT_EQ(deque[1], 4);
+  EXPECT_EQ(deque[2], 5);
+  EXPECT_EQ(deque[3], 6);
+  EXPECT_EQ(deque[4], 7);
+
+  auto it = deque.try_insert_shift_right(deque.begin() + 2, 1, 99);
+  ASSERT_TRUE(it.has_value());
+  EXPECT_EQ(deque.size(), 6u);
+  EXPECT_EQ(deque[0], 3);
+  EXPECT_EQ(deque[1], 4);
+  EXPECT_EQ(deque[2], 99);
+  EXPECT_EQ(deque[3], 5);
+  EXPECT_EQ(deque[4], 6);
+  EXPECT_EQ(deque[5], 7);
+}
+
+TEST(Deque, TryInsertShiftRight_WrappedIterator) {
+  pw::containers::StorageFor<int, 6> storage;
+  TestDeque<int> deque(storage);
+
+  deque.push_back(99);
+  deque.push_back(99);
+  deque.push_back(3);
+  deque.push_back(4);
+  deque.pop_front();
+  deque.pop_front();
+  deque.push_back(5);
+  deque.push_back(6);
+  deque.push_back(7);
+
+  ASSERT_EQ(deque.size(), 5u);
+
+  std::array<int, 1> to_insert = {99};
+
+  auto it = deque.try_insert_shift_right(
+      deque.begin() + 2, to_insert.begin(), to_insert.end());
+  ASSERT_TRUE(it.has_value());
+  EXPECT_EQ(deque.size(), 6u);
+  EXPECT_EQ(deque[0], 3);
+  EXPECT_EQ(deque[1], 4);
+  EXPECT_EQ(deque[2], 99);
+  EXPECT_EQ(deque[3], 5);
+  EXPECT_EQ(deque[4], 6);
+  EXPECT_EQ(deque[5], 7);
+}
+
 }  // namespace

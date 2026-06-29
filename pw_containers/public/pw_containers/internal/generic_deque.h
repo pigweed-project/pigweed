@@ -625,6 +625,45 @@ class GenericDeque : public GenericDequeBase<SizeType> {
       const_iterator pos, ForwardIt first, ForwardIt last);
 
  private:
+  void FillAt(size_type absolute_index,
+              size_type count,
+              const value_type& value) {
+    // Optimize insertion using at most two contiguous destination ranges.
+    // For trivially copyable types, this can allow the compiler to use
+    // optimized fill rather than copying item-by-item.
+    //
+    // The static_cast is necessary to avoid integral promotion issues when
+    // SizeType is smaller than int.
+    const size_type first_segment_count =
+        std::min(count, static_cast<size_type>(capacity() - absolute_index));
+    const size_type second_segment_count = count - first_segment_count;
+
+    std::uninitialized_fill_n(
+        data() + absolute_index, first_segment_count, value);
+    if (second_segment_count > 0) {
+      std::uninitialized_fill_n(data(), second_segment_count, value);
+    }
+  }
+
+  template <typename ForwardIt>
+  void MoveAt(size_type absolute_index, size_type count, ForwardIt first) {
+    // Optimize insertion using at most two contiguous destination ranges.
+    // For trivially copyable types, this can allow the compiler to use memcpy()
+    // rather than copying item-by-item.
+    //
+    // The static_cast is necessary to avoid integral promotion issues when
+    // SizeType is smaller than int.
+    const size_type first_segment_count =
+        std::min(count, static_cast<size_type>(capacity() - absolute_index));
+    const size_type second_segment_count = count - first_segment_count;
+
+    auto [mid, _] = std::uninitialized_move_n(
+        first, first_segment_count, data() + absolute_index);
+    if (second_segment_count > 0) {
+      std::uninitialized_move_n(mid, second_segment_count, data());
+    }
+  }
+
   constexpr Derived& derived() { return static_cast<Derived&>(*this); }
   constexpr const Derived& derived() const {
     return static_cast<const Derived&>(*this);
@@ -920,15 +959,15 @@ template <typename Derived, typename ValueType, typename SizeType>
 std::optional<typename GenericDeque<Derived, ValueType, SizeType>::iterator>
 GenericDeque<Derived, ValueType, SizeType>::try_insert(
     const_iterator pos, size_type count, const value_type& value) {
+  const iterator it(derived(), pos.pos_);
   if (count == 0) {
-    return iterator(derived(), pos.pos_);
+    return it;
   }
   if (!ShiftForInsert(pos.pos_, count)) {
     return std::nullopt;
   }
 
-  iterator it(derived(), pos.pos_);
-  std::uninitialized_fill_n(it, count, value);
+  FillAt(Base::AbsoluteIndex(pos.pos_), count, value);
   return it;
 }
 
@@ -978,7 +1017,8 @@ GenericDeque<Derived, ValueType, SizeType>::try_insert(const_iterator pos,
   if (!ShiftForInsert(pos.pos_, count)) {
     return std::nullopt;
   }
-  std::uninitialized_move(first, last, it);
+
+  MoveAt(Base::AbsoluteIndex(pos.pos_), count, first);
   return it;
 }
 
@@ -1000,16 +1040,16 @@ template <typename Derived, typename ValueType, typename SizeType>
 std::optional<typename GenericDeque<Derived, ValueType, SizeType>::iterator>
 GenericDeque<Derived, ValueType, SizeType>::try_insert_shift_right(
     const_iterator pos, size_type count, const value_type& value) {
+  const iterator it(derived(), pos.pos_);
   if (count == 0) {
-    return iterator(derived(), pos.pos_);
+    return it;
   }
   if (!CheckCapacityAdd(count)) {
     return std::nullopt;
   }
 
   ShiftRight(pos.pos_, count);
-  iterator it(derived(), pos.pos_);
-  std::uninitialized_fill_n(it, count, value);
+  FillAt(Base::AbsoluteIndex(pos.pos_), count, value);
   return it;
 }
 
@@ -1033,7 +1073,7 @@ GenericDeque<Derived, ValueType, SizeType>::try_insert_shift_right(
     return std::nullopt;
   }
   ShiftRight(pos.pos_, count);
-  std::uninitialized_move(first, last, it);
+  MoveAt(Base::AbsoluteIndex(pos.pos_), count, first);
   return it;
 }
 
