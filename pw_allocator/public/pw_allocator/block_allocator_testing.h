@@ -134,6 +134,7 @@ class BlockAllocatorTest : public ::testing::Test {
   void ResizeSmallSmaller();
   void ResizeSmallLarger();
   void ResizeSmallLargerFailure();
+  void ResizeGhostBlock();
   void IterateOverBlocks();
   void GetMaxAllocatableWhenAllFree();
   void GetMaxAllocatableWhenLargeFreeBlocksAvailable();
@@ -465,6 +466,25 @@ void BlockAllocatorTest<BlockAllocatorType,
   // Memory after ptr is already allocated, so `Resize` should fail.
   size_t new_size = kSmallInnerSize * 2 + BlockType::kBlockOverhead;
   EXPECT_FALSE(allocator.Resize(Fetch(0), new_size));
+}
+
+template <typename BlockAllocatorType, size_t kCapacity>
+void BlockAllocatorTest<BlockAllocatorType, kCapacity>::ResizeGhostBlock() {
+  pw::Allocator& allocator = GetGenericAllocator({
+      {kSmallOuterSize, Preallocation::kUsed},
+      {kSmallOuterSize, Preallocation::kFree},
+      {Preallocation::kSizeRemaining, Preallocation::kUsed},
+  });
+
+  size_t failed_new_size = kSmallInnerSize * 2 + BlockType::kBlockOverhead + 1;
+  EXPECT_FALSE(allocator.Resize(Fetch(0), failed_new_size));
+
+  void* ptr = allocator.Allocate(Layout(kSmallInnerSize, 1));
+  EXPECT_NE(ptr, nullptr);
+
+  if (ptr != nullptr) {
+    Store(1, ptr);
+  }
 }
 
 template <typename BlockAllocatorType, size_t kCapacity>

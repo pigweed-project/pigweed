@@ -419,6 +419,9 @@ bool BlockAllocator<BlockType>::DoResize(void* ptr, size_t new_size) {
 
   size_t old_size = block->OuterSize();
   if (!block->Resize(new_size).ok()) {
+    if (auto* next = block->Next(); next != nullptr && next->IsFree()) {
+      RecycleBlock(*next);
+    }
     return false;
   }
   allocated_ -= old_size;

@@ -114,6 +114,8 @@ TEST_F(BestFitAllocatorTest, ResizeSmallLargerFailure) {
   ResizeSmallLargerFailure();
 }
 
+TEST_F(BestFitAllocatorTest, ResizeGhostBlock) { ResizeGhostBlock(); }
+
 TEST_F(BestFitAllocatorTest, GetMaxAllocatableWhenAllFree) {
   GetMaxAllocatableWhenAllFree();
 }
