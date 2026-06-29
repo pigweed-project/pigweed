@@ -36,7 +36,7 @@ class BundledUpdateService
   BundledUpdateService(UpdateBundleAccessor& bundle,
                        BundledUpdateBackend& backend,
                        work_queue::WorkQueue& work_queue)
-      : unsafe_status_{.state = BundledUpdateState::Enum::kInactive},
+      : unsafe_status_{.state = pwpb::BundledUpdateState::Enum::kInactive},
         status_(unsafe_status_, status_mutex_),
         backend_(backend),
         bundle_(bundle),
@@ -44,33 +44,33 @@ class BundledUpdateService
         work_queue_(work_queue),
         work_enqueued_(false) {}
   PW_MODIFY_DIAGNOSTICS_POP();
-  Status GetStatus(const pw::protobuf::Empty::Message& request,
-                   BundledUpdateStatus::Message& response);
+  Status GetStatus(const pw::protobuf::pwpb::Empty::Message& request,
+                   pwpb::BundledUpdateStatus::Message& response);
 
   // Sync
-  Status Start(const StartRequest::Message& request,
-               BundledUpdateStatus::Message& response);
+  Status Start(const pwpb::StartRequest::Message& request,
+               pwpb::BundledUpdateStatus::Message& response);
 
   // Sync
-  Status SetTransferred(const pw::protobuf::Empty::Message& request,
-                        BundledUpdateStatus::Message& response);
+  Status SetTransferred(const pw::protobuf::pwpb::Empty::Message& request,
+                        pwpb::BundledUpdateStatus::Message& response);
 
   // Async
-  Status Verify(const pw::protobuf::Empty::Message& request,
-                BundledUpdateStatus::Message& response);
+  Status Verify(const pw::protobuf::pwpb::Empty::Message& request,
+                pwpb::BundledUpdateStatus::Message& response);
 
   // Async
-  Status Apply(const pw::protobuf::Empty::Message& request,
-               BundledUpdateStatus::Message& response);
+  Status Apply(const pw::protobuf::pwpb::Empty::Message& request,
+               pwpb::BundledUpdateStatus::Message& response);
 
   // Currently sync, should be async.
   // TODO(elipsitz): Make this async to support aborting verify/apply.
-  Status Abort(const pw::protobuf::Empty::Message& request,
-               BundledUpdateStatus::Message& response);
+  Status Abort(const pw::protobuf::pwpb::Empty::Message& request,
+               pwpb::BundledUpdateStatus::Message& response);
 
   // Sync
-  Status Reset(const pw::protobuf::Empty::Message& request,
-               BundledUpdateStatus::Message& response);
+  Status Reset(const pw::protobuf::pwpb::Empty::Message& request,
+               pwpb::BundledUpdateStatus::Message& response);
 
   // Notify the service that the bundle transfer has completed. The service has
   // no way to know when the bundle transfer completes, so users must invoke
@@ -91,8 +91,9 @@ class BundledUpdateService
   sync::Mutex mutex_;
   // Nested lock for safe status updates and queries.
   sync::Mutex status_mutex_ PW_ACQUIRED_AFTER(mutex_);
-  BundledUpdateStatus::Message unsafe_status_ PW_GUARDED_BY(status_mutex_);
-  sync::Borrowable<BundledUpdateStatus::Message, sync::Mutex> status_;
+  pwpb::BundledUpdateStatus::Message unsafe_status_
+      PW_GUARDED_BY(status_mutex_);
+  sync::Borrowable<pwpb::BundledUpdateStatus::Message, sync::Mutex> status_;
   BundledUpdateBackend& backend_ PW_GUARDED_BY(mutex_);
   UpdateBundleAccessor& bundle_ PW_GUARDED_BY(mutex_);
   bool bundle_open_ PW_GUARDED_BY(mutex_);
@@ -101,11 +102,12 @@ class BundledUpdateService
 
   void DoVerify() PW_LOCKS_EXCLUDED(status_mutex_);
   void DoApply() PW_LOCKS_EXCLUDED(status_mutex_);
-  void Finish(BundledUpdateResult::Enum result)
+  void Finish(pwpb::BundledUpdateResult::Enum result)
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) PW_LOCKS_EXCLUDED(status_mutex_);
   bool IsFinished() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_)
       PW_LOCKS_EXCLUDED(status_mutex_) {
-    return status_.acquire()->state == BundledUpdateState::Enum::kFinished;
+    return status_.acquire()->state ==
+           pwpb::BundledUpdateState::Enum::kFinished;
   }
 };
 

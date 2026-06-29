@@ -20,7 +20,6 @@
 #include "pw_protobuf/map_utils.h"
 #include "pw_protobuf/message.h"
 #include "pw_software_update/blob_store_openable_reader.h"
-#include "pw_software_update/bundled_update_backend.h"
 #include "pw_software_update/manifest_accessor.h"
 #include "pw_software_update/openable_reader.h"
 

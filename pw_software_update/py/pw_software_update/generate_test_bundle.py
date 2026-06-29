@@ -626,14 +626,23 @@ def main() -> int:
                     f"kTestBundlePersonalizedOutFile{idx}",
                 )
             )
-    subprocess.run(
-        [
-            "clang-format",
-            "-i",
-            args.output_header,
-        ],
-        check=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "clang-format",
+                "-i",
+                args.output_header,
+            ],
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        print(
+            (
+                "WARNING: clang-format failed or not found. Output header left "
+                "unformatted."
+            ),
+            file=sys.stderr,
+        )
     return 0
 
 

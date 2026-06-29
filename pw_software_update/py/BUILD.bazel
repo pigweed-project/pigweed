@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -38,6 +38,15 @@ pw_py_library(
         "//pw_software_update:update_bundle_py_pb2",
         "@pigweed_python_packages//cryptography",
         "@pigweed_python_packages//google_cloud_storage",
+    ],
+)
+
+pw_py_binary(
+    name = "generate_test_bundle",
+    srcs = ["pw_software_update/generate_test_bundle.py"],
+    deps = [
+        ":pw_software_update",
+        "@pigweed_python_packages//cryptography",
     ],
 )
 

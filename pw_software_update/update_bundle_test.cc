@@ -60,7 +60,7 @@ class TestBundledUpdateBackend final : public BundledUpdateBackend {
   }
 
   Result<uint32_t> EnableBundleTransferHandler(std::string_view) override {
-    return 0;
+    return 0u;
   }
 
   void DisableBundleTransferHandler() override {}

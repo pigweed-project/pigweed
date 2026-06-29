@@ -80,7 +80,7 @@ cc_library(
     hdrs = ["public_overrides/mbedtls/pw_crypto/sha256_backend.h"],
     strip_include_prefix = "public_overrides/mbedtls",
     tags = ["noclangtidy"],
-    visibility = ["//visibility:private"],
+    visibility = ["//:__subpackages__"],
 )
 
 pw_cc_test(
@@ -233,7 +233,7 @@ cc_library(
     hdrs = ["public_overrides/mbedtls/pw_crypto/aes_backend.h"],
     strip_include_prefix = "public_overrides/mbedtls",
     tags = ["noclangtidy"],
-    visibility = ["//visibility:private"],
+    visibility = ["//:__subpackages__"],
 )
 
 pw_cc_test(

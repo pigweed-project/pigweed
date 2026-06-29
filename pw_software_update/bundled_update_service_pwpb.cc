@@ -37,7 +37,7 @@
 namespace pw::software_update {
 namespace {
 using BorrowedStatus =
-    sync::BorrowedPointer<BundledUpdateStatus::Message, sync::Mutex>;
+    sync::BorrowedPointer<pwpb::BundledUpdateStatus::Message, sync::Mutex>;
 
 // TODO(keir): Convert all the CHECKs in the RPC service to gracefully report
 // errors.
@@ -58,19 +58,21 @@ using BorrowedStatus =
   } while (false)
 }  // namespace
 
-Status BundledUpdateService::GetStatus(const pw::protobuf::Empty::Message&,
-                                       BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::GetStatus(
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
   response = *status_.acquire();
   return OkStatus();
 }
 
-Status BundledUpdateService::Start(const StartRequest::Message& request,
-                                   BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::Start(
+    const pwpb::StartRequest::Message& request,
+    pwpb::BundledUpdateStatus::Message& response) {
   std::lock_guard lock(mutex_);
   // Check preconditions.
-  const BundledUpdateState::Enum state = status_.acquire()->state;
-  if (state != BundledUpdateState::Enum::kInactive) {
-    SET_ERROR(BundledUpdateResult::Enum::kUnknownError,
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
+  if (state != pwpb::BundledUpdateState::Enum::kInactive) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kUnknownError,
               "Start() can only be called from INACTIVE state. "
               "Current state: %d. Abort() then Reset() must be called first",
               static_cast<int>(state));
@@ -90,7 +92,7 @@ Status BundledUpdateService::Start(const StartRequest::Message& request,
 
   // Notify the backend of pending transfer.
   if (const Status status = backend_.BeforeUpdateStart(); !status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kUnknownError,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kUnknownError,
               "Backend error on BeforeUpdateStart()");
     response = *status_.acquire();
     return status;
@@ -100,7 +102,7 @@ Status BundledUpdateService::Start(const StartRequest::Message& request,
   Result<uint32_t> possible_transfer_id =
       backend_.EnableBundleTransferHandler(request.bundle_filename);
   if (!possible_transfer_id.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kTransferFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kTransferFailed,
               "Couldn't enable bundle transfer");
     response = *status_.acquire();
     return possible_transfer_id.status();
@@ -113,21 +115,21 @@ Status BundledUpdateService::Start(const StartRequest::Message& request,
     if (!request.bundle_filename.empty()) {
       borrowed_status->bundle_filename = request.bundle_filename;
     }
-    borrowed_status->state = BundledUpdateState::Enum::kTransferring;
+    borrowed_status->state = pwpb::BundledUpdateState::Enum::kTransferring;
     response = *borrowed_status;
   }
   return OkStatus();
 }
 
 Status BundledUpdateService::SetTransferred(
-    const pw::protobuf::Empty::Message&,
-    BundledUpdateStatus::Message& response) {
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
-  if (state != BundledUpdateState::Enum::kTransferring &&
-      state != BundledUpdateState::Enum::kInactive) {
+  if (state != pwpb::BundledUpdateState::Enum::kTransferring &&
+      state != pwpb::BundledUpdateState::Enum::kInactive) {
     std::lock_guard lock(mutex_);
-    SET_ERROR(BundledUpdateResult::Enum::kUnknownError,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kUnknownError,
               "SetTransferred() can only be called from TRANSFERRING or "
               "INACTIVE state. State: %d",
               static_cast<int>(state));
@@ -144,25 +146,25 @@ Status BundledUpdateService::SetTransferred(
 // TODO(elipsitz): Check for "ABORTING" state and bail if it's set.
 void BundledUpdateService::DoVerify() {
   std::lock_guard guard(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
-  if (state == BundledUpdateState::Enum::kVerified) {
+  if (state == pwpb::BundledUpdateState::Enum::kVerified) {
     return;  // Already done!
   }
 
   // Ensure we're in the right state.
-  if (state != BundledUpdateState::Enum::kTransferred) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+  if (state != pwpb::BundledUpdateState::Enum::kTransferred) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "DoVerify() must be called from TRANSFERRED state. State: %d",
               static_cast<int>(state));
     return;
   }
 
-  status_.acquire()->state = BundledUpdateState::Enum::kVerifying;
+  status_.acquire()->state = pwpb::BundledUpdateState::Enum::kVerifying;
 
   // Notify backend about pending verify.
   if (const Status status = backend_.BeforeBundleVerify(); !status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Backend::BeforeBundleVerify() failed");
     return;
   }
@@ -170,7 +172,7 @@ void BundledUpdateService::DoVerify() {
   // Do the actual verify.
   Status status = bundle_.OpenAndVerify();
   if (!status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Bundle::OpenAndVerify() failed");
     return;
   }
@@ -178,7 +180,7 @@ void BundledUpdateService::DoVerify() {
 
   // Have the backend verify the user_manifest if present.
   if (!backend_.VerifyManifest(bundle_.GetManifest()).ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Backend::VerifyUserManifest() failed");
     return;
   }
@@ -186,29 +188,30 @@ void BundledUpdateService::DoVerify() {
   // Notify backend we're done verifying.
   status = backend_.AfterBundleVerified();
   if (!status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Backend::AfterBundleVerified() failed");
     return;
   }
-  status_.acquire()->state = BundledUpdateState::Enum::kVerified;
+  status_.acquire()->state = pwpb::BundledUpdateState::Enum::kVerified;
 }
 
-Status BundledUpdateService::Verify(const pw::protobuf::Empty::Message&,
-                                    BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::Verify(
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
   std::lock_guard lock(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
   // Already done? Bail.
-  if (state == BundledUpdateState::Enum::kVerified) {
+  if (state == pwpb::BundledUpdateState::Enum::kVerified) {
     PW_LOG_DEBUG("Skipping verify since already verified");
     return OkStatus();
   }
 
   // TODO(elipsitz): Remove the transferring permitted state here ASAP.
   // Ensure we're in the right state.
-  if ((state != BundledUpdateState::Enum::kTransferring) &&
-      (state != BundledUpdateState::Enum::kTransferred)) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+  if ((state != pwpb::BundledUpdateState::Enum::kTransferring) &&
+      (state != pwpb::BundledUpdateState::Enum::kTransferred)) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Verify() must be called from TRANSFERRED state. State: %d",
               static_cast<int>(state));
     response = *status_.acquire();
@@ -236,7 +239,7 @@ Status BundledUpdateService::Verify(const pw::protobuf::Empty::Message&,
     }
   });
   if (!status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kVerifyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kVerifyFailed,
               "Unable to equeue apply to work queue");
     response = *status_.acquire();
     return status;
@@ -247,22 +250,23 @@ Status BundledUpdateService::Verify(const pw::protobuf::Empty::Message&,
   return OkStatus();
 }
 
-Status BundledUpdateService::Apply(const pw::protobuf::Empty::Message&,
-                                   BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::Apply(
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
   std::lock_guard lock(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
   // We do not wait to go into a finished error state if we're already
   // applying, instead just let them know that yes we are working on it --
   // hold on.
-  if (state == BundledUpdateState::Enum::kApplying) {
+  if (state == pwpb::BundledUpdateState::Enum::kApplying) {
     PW_LOG_DEBUG("Apply is already active");
     return OkStatus();
   }
 
-  if ((state != BundledUpdateState::Enum::kTransferred) &&
-      (state != BundledUpdateState::Enum::kVerified)) {
-    SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+  if ((state != pwpb::BundledUpdateState::Enum::kTransferred) &&
+      (state != pwpb::BundledUpdateState::Enum::kVerified)) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
               "Apply() must be called from TRANSFERRED or VERIFIED state. "
               "State: %d",
               static_cast<int>(state));
@@ -291,7 +295,7 @@ Status BundledUpdateService::Apply(const pw::protobuf::Empty::Message&,
     }
   });
   if (!status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
               "Unable to equeue apply to work queue");
     response = *status_.acquire();
     return status;
@@ -303,20 +307,20 @@ Status BundledUpdateService::Apply(const pw::protobuf::Empty::Message&,
 
 void BundledUpdateService::DoApply() {
   std::lock_guard guard(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
   PW_LOG_DEBUG("Attempting to apply the update");
-  if (state != BundledUpdateState::Enum::kVerified) {
-    SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+  if (state != pwpb::BundledUpdateState::Enum::kVerified) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
               "Apply() must be called from VERIFIED state. State: %d",
               static_cast<int>(state));
     return;
   }
 
-  status_.acquire()->state = BundledUpdateState::Enum::kApplying;
+  status_.acquire()->state = pwpb::BundledUpdateState::Enum::kApplying;
 
   if (const Status status = backend_.BeforeApply(); !status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
               "BeforeApply() returned unsuccessful result: %d",
               static_cast<int>(status.code()));
     return;
@@ -336,8 +340,8 @@ void BundledUpdateService::DoApply() {
   size_t target_file_bytes_applied = 0;
   for (pw::protobuf::Message file_name : target_files) {
     std::array<std::byte, MAX_TARGET_NAME_LENGTH> buf = {};
-    protobuf::String name = file_name.AsString(static_cast<uint32_t>(
-        pw::software_update::TargetFile::Fields::kFileName));
+    protobuf::String name = file_name.AsString(
+        static_cast<uint32_t>(pwpb::TargetFile::Fields::kFileName));
     PW_CHECK_OK(name.status());
     const Result<ByteSpan> read_result = name.GetBytesReader().Read(buf);
     PW_CHECK_OK(read_result.status());
@@ -358,7 +362,7 @@ void BundledUpdateService::DoApply() {
       continue;
     }
     if (!file_reader.ok()) {
-      SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+      SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
                 "Could not open contents of file %s from bundle; "
                 "aborting update apply phase",
                 MakeString<MAX_TARGET_NAME_LENGTH>(file_name_view).c_str());
@@ -369,7 +373,7 @@ void BundledUpdateService::DoApply() {
     if (const Status status = backend_.ApplyTargetFile(
             file_name_view, file_reader, bundle_offset);
         !status.ok()) {
-      SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+      SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
                 "Failed to apply target file: %d",
                 static_cast<int>(status.code()));
       return;
@@ -404,52 +408,55 @@ void BundledUpdateService::DoApply() {
   //
   // Finalize the apply.
   if (const Status status = backend_.ApplyReboot(); !status.ok()) {
-    SET_ERROR(BundledUpdateResult::Enum::kApplyFailed,
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kApplyFailed,
               "Failed to do the apply reboot: %d",
               static_cast<int>(status.code()));
     return;
   }
 
   // TODO(davidrogers): Move this to MaybeFinishApply() once available.
-  Finish(BundledUpdateResult::Enum::kSuccess);
+  Finish(pwpb::BundledUpdateResult::Enum::kSuccess);
 }
 
-Status BundledUpdateService::Abort(const pw::protobuf::Empty::Message&,
-                                   BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::Abort(
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
   std::lock_guard lock(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
-  if (state == BundledUpdateState::Enum::kApplying) {
+  if (state == pwpb::BundledUpdateState::Enum::kApplying) {
     return Status::FailedPrecondition();
   }
 
-  if (state == BundledUpdateState::Enum::kInactive ||
-      state == BundledUpdateState::Enum::kFinished) {
-    SET_ERROR(BundledUpdateResult::Enum::kUnknownError,
+  if (state == pwpb::BundledUpdateState::Enum::kInactive ||
+      state == pwpb::BundledUpdateState::Enum::kFinished) {
+    SET_ERROR(pwpb::BundledUpdateResult::Enum::kUnknownError,
               "Tried to abort when already INACTIVE or FINISHED");
     return Status::FailedPrecondition();
   }
   // TODO(elipsitz): Switch abort to async; this state change isn't externally
   // visible.
-  status_.acquire()->state = BundledUpdateState::Enum::kAborting;
+  status_.acquire()->state = pwpb::BundledUpdateState::Enum::kAborting;
 
-  SET_ERROR(BundledUpdateResult::Enum::kAborted, "Update abort requested");
+  SET_ERROR(pwpb::BundledUpdateResult::Enum::kAborted,
+            "Update abort requested");
   response = *status_.acquire();
   return OkStatus();
 }
 
-Status BundledUpdateService::Reset(const pw::protobuf::Empty::Message&,
-                                   BundledUpdateStatus::Message& response) {
+Status BundledUpdateService::Reset(
+    const pw::protobuf::pwpb::Empty::Message&,
+    pwpb::BundledUpdateStatus::Message& response) {
   std::lock_guard lock(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
-  if (state == BundledUpdateState::Enum::kInactive) {
+  if (state == pwpb::BundledUpdateState::Enum::kInactive) {
     return OkStatus();  // Already done.
   }
 
-  if (state != BundledUpdateState::Enum::kFinished) {
+  if (state != pwpb::BundledUpdateState::Enum::kFinished) {
     SET_ERROR(
-        BundledUpdateResult::Enum::kUnknownError,
+        pwpb::BundledUpdateResult::Enum::kUnknownError,
         "Reset() must be called from FINISHED or INACTIVE state. State: %d",
         static_cast<int>(state));
     response = *status_.acquire();
@@ -459,7 +466,7 @@ Status BundledUpdateService::Reset(const pw::protobuf::Empty::Message&,
   {
     BorrowedStatus status = status_.acquire();
     *status = {};  // Force-init all fields to zero.
-    status->state = BundledUpdateState::Enum::kInactive;
+    status->state = pwpb::BundledUpdateState::Enum::kInactive;
   }
 
   // Reset the bundle.
@@ -476,9 +483,9 @@ Status BundledUpdateService::Reset(const pw::protobuf::Empty::Message&,
 
 void BundledUpdateService::NotifyTransferSucceeded() {
   std::lock_guard lock(mutex_);
-  const BundledUpdateState::Enum state = status_.acquire()->state;
+  const pwpb::BundledUpdateState::Enum state = status_.acquire()->state;
 
-  if (state != BundledUpdateState::Enum::kTransferring) {
+  if (state != pwpb::BundledUpdateState::Enum::kTransferring) {
     // This can happen if the update gets Abort()'d during the transfer and
     // the transfer completes successfully.
     PW_LOG_WARN(
@@ -495,11 +502,11 @@ void BundledUpdateService::NotifyTransferSucceeded() {
     PW_LOG_WARN("No ongoing transfer found, forcefully set TRANSFERRED.");
   }
 
-  status_.acquire()->state = BundledUpdateState::Enum::kTransferred;
+  status_.acquire()->state = pwpb::BundledUpdateState::Enum::kTransferred;
 }
 
-void BundledUpdateService::Finish(BundledUpdateResult::Enum result) {
-  if (result == BundledUpdateResult::Enum::kSuccess) {
+void BundledUpdateService::Finish(pwpb::BundledUpdateResult::Enum result) {
+  if (result == pwpb::BundledUpdateResult::Enum::kSuccess) {
     BorrowedStatus borrowed_status = status_.acquire();
     borrowed_status->current_state_progress_hundreth_percent.reset();
   } else {
@@ -523,7 +530,7 @@ void BundledUpdateService::Finish(BundledUpdateResult::Enum result) {
   }
   {
     BorrowedStatus borrowed_status = status_.acquire();
-    borrowed_status->state = BundledUpdateState::Enum::kFinished;
+    borrowed_status->state = pwpb::BundledUpdateState::Enum::kFinished;
     borrowed_status->result = result;
   }
 }

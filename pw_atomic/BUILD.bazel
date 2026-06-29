@@ -23,10 +23,11 @@ licenses(["notice"])
 cc_library(
     name = "atomic_cortex_m",
     srcs = ["atomic_cortex_m.c"],
-    target_compatible_with = [
-        "//pw_build/constraints/arm:cortex-m0",
-        "//pw_build/constraints/arm:cortex-m0plus",
-    ],
+    target_compatible_with = select({
+        "//pw_build/constraints/arm:cortex-m0": [],
+        "//pw_build/constraints/arm:cortex-m0plus": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = ["//pw_preprocessor"],
 )
 

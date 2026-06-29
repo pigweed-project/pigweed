@@ -18,7 +18,7 @@ load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("//pw_protobuf_compiler:pw_proto_library.bzl", "pwpb_proto_library")
+load("//pw_protobuf_compiler:pw_proto_library.bzl", "nanopb_proto_library", "nanopb_rpc_proto_library", "pw_proto_filegroup", "pwpb_proto_library", "pwpb_rpc_proto_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -65,16 +65,45 @@ java_lite_proto_library(
     deps = [":update_bundle_proto"],
 )
 
+pw_proto_filegroup(
+    name = "bundled_update_filegroup",
+    srcs = ["bundled_update.proto"],
+    options_files = [
+        "bundled_update.options",
+        "bundled_update.pwpb_options",
+    ],
+)
+
 proto_library(
     name = "bundled_update_proto",
-    srcs = [
-        "bundled_update.proto",
-    ],
+    srcs = [":bundled_update_filegroup"],
     deps = [
         "//pw_protobuf:common_proto",
         "//pw_tokenizer:tokenizer_proto",
         "@com_google_protobuf//:any_proto",
     ],
+)
+
+pwpb_proto_library(
+    name = "bundled_update_proto_pwpb",
+    deps = [":bundled_update_proto"],
+)
+
+pwpb_rpc_proto_library(
+    name = "bundled_update_proto_pwpb_rpc",
+    pwpb_proto_library_deps = [":bundled_update_proto_pwpb"],
+    deps = [":bundled_update_proto"],
+)
+
+nanopb_proto_library(
+    name = "bundled_update_proto_nanopb",
+    deps = [":bundled_update_proto"],
+)
+
+nanopb_rpc_proto_library(
+    name = "bundled_update_proto_nanopb_rpc",
+    nanopb_proto_library_deps = [":bundled_update_proto_nanopb"],
+    deps = [":bundled_update_proto"],
 )
 
 py_proto_library(
@@ -133,7 +162,6 @@ cc_library(
         "public/pw_software_update/update_bundle_accessor.h",
     ],
     strip_include_prefix = "public",
-    tags = ["manual"],  # TODO: b/236321905 - Depends on pw_crypto.
     deps = [
         ":blob_store_openable_reader",
         ":config_override",
@@ -145,9 +173,12 @@ cc_library(
         "//pw_kvs",
         "//pw_log",
         "//pw_protobuf",
+        "//pw_result",
         "//pw_status",
         "//pw_stream",
+        "//pw_stream:interval_reader",
         "//pw_string",
+        "//pw_string:builder",
     ],
 )
 
@@ -163,16 +194,16 @@ cc_library(
     srcs = ["bundled_update_service.cc"],
     hdrs = ["public/pw_software_update/bundled_update_service.h"],
     strip_include_prefix = "public",
-    tags = ["manual"],
     deps = [
-        # ":bundled_update_proto_cc.nanopb_rpc",
-        # ":bundled_update_proto_cc.pwpb",
+        ":bundled_update_proto_nanopb",
+        ":bundled_update_proto_nanopb_rpc",
         ":update_bundle",
-        # ":update_bundle_proto_cc.nanopb_rpc",
-        # ":update_bundle_proto_cc.pwpb",
+        ":update_bundle_proto_pwpb",
         "//pw_log",
         "//pw_result",
         "//pw_status",
+        "//pw_string:builder",
+        "//pw_string:util",
         "//pw_sync:borrow",
         "//pw_sync:lock_annotations",
         "//pw_sync:mutex",
@@ -188,16 +219,15 @@ cc_library(
     srcs = ["bundled_update_service_pwpb.cc"],
     hdrs = ["public/pw_software_update/bundled_update_service_pwpb.h"],
     strip_include_prefix = "public",
-    tags = ["manual"],
     deps = [
-        # ":bundled_update_proto_cc.pwpb",
-        # ":bundled_update_proto_cc.pwpb_rpc",
+        ":bundled_update_proto_pwpb",
+        ":bundled_update_proto_pwpb_rpc",
         ":update_bundle",
-        # ":update_bundle_proto_cc.pwpb",
-        # ":update_bundle_proto_cc.pwpb_rpc",
+        ":update_bundle_proto_pwpb",
         "//pw_log",
         "//pw_result",
         "//pw_status",
+        "//pw_string:builder",
         "//pw_string:util",
         "//pw_sync:borrow",
         "//pw_sync:lock_annotations",
@@ -207,41 +237,39 @@ cc_library(
     ],
 )
 
-# TODO: b/258222107 - pw_python_action doesn't exist yet.
-# pw_python_action(
-#     name = "generate_test_bundle",
-#     outputs = ["$target_gen_dir/generate_test_bundle/test_bundles.h"],
-#     script = "py/pw_software_update/generate_test_bundle.py",
-#     deps = [
-#         ":bundled_update_py_pb2",
-#         "py",
-#     ],
-#     args = [ "$target_gen_dir/generate_test_bundle/test_bundles.h" ],
-# )
+genrule(
+    name = "generate_test_bundle",
+    outs = ["test_bundles.h"],
+    cmd = "$(execpath //pw_software_update/py:generate_test_bundle) $@",
+    tools = ["//pw_software_update/py:generate_test_bundle"],
+)
 
 pw_cc_test(
     name = "update_bundle_test",
-    srcs = ["update_bundle_test.cc"],
-    tags = ["manual"],
+    srcs = [
+        "update_bundle_test.cc",
+        ":generate_test_bundle",
+    ],
     deps = [
-        # This dependency is needed, but doesn't exist yet.
-        # "generate_test_bundle",
+        ":blob_store_openable_reader",
         ":update_bundle",
+        "//pw_blob_store",
+        "//pw_bytes",
+        "//pw_kvs:fake_flash",
         "//pw_kvs:fake_flash_test_key_value_store",
+        "//pw_stream",
     ],
 )
 
 pw_cc_test(
     name = "bundled_update_service_test",
     srcs = ["bundled_update_service_test.cc"],
-    tags = ["manual"],  # bundled_update_service doesn't work yet.
     deps = [":bundled_update_service"],
 )
 
 pw_cc_test(
     name = "bundled_update_service_pwpb_test",
     srcs = ["bundled_update_service_pwpb_test.cc"],
-    tags = ["manual"],  # bundled_update_service_pwpb doesn't work yet.
     deps = [":bundled_update_service_pwpb"],
 )
 

@@ -22,7 +22,11 @@ import unittest
 from unittest.mock import patch
 
 from pw_fortifier.freshness_scan import main
-from pw_fortifier.package_scanner import PackageVersion, FreshnessScanResult
+from pw_fortifier.package_scanner import (
+    PackageVersion,
+    FreshnessScanResult,
+    PackageScannerRegistry,
+)
 
 
 class TestFreshnessScan(unittest.TestCase):
@@ -53,9 +57,9 @@ class TestFreshnessScan(unittest.TestCase):
 
         with (
             patch('sys.argv', ['freshness_scan']),
-            patch(
-                'pw_fortifier.package_scanner.'
-                'PackageScannerRegistry.scan_all',
+            patch.object(
+                PackageScannerRegistry,
+                'scan_all',
                 return_value=iter([res_fresh, res_stale]),
             ),
             patch('sys.stdout', new_callable=io.StringIO) as mock_stdout,
@@ -103,9 +107,9 @@ class TestFreshnessScan(unittest.TestCase):
             out_path = os.path.join(tmpdir, 'output.csv')
             with (
                 patch('sys.argv', ['freshness_scan', '--output', out_path]),
-                patch(
-                    'pw_fortifier.package_scanner.'
-                    'PackageScannerRegistry.scan_all',
+                patch.object(
+                    PackageScannerRegistry,
+                    'scan_all',
                     return_value=iter([res_fresh]),
                 ),
             ):

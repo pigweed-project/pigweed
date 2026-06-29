@@ -53,7 +53,7 @@ using BundledUpdateStatus = pw_software_update_BundledUpdateStatus;
         size_t note_size = sizeof(borrowed_status->note.bytes);               \
         PW_TOKENIZE_TO_BUFFER(                                                \
             borrowed_status->note.bytes, &(note_size), message, __VA_ARGS__); \
-        borrowed_status->note.size = note_size;                               \
+        borrowed_status->note.size = static_cast<pb_size_t>(note_size);       \
         borrowed_status->has_note = true;                                     \
       }                                                                       \
     }                                                                         \
@@ -349,8 +349,8 @@ void BundledUpdateService::DoApply() {
   size_t target_file_bytes_applied = 0;
   for (pw::protobuf::Message file_name : target_files) {
     std::array<std::byte, MAX_TARGET_NAME_LENGTH> buf = {};
-    protobuf::String name = file_name.AsString(static_cast<uint32_t>(
-        pw::software_update::TargetFile::Fields::kFileName));
+    protobuf::String name = file_name.AsString(
+        static_cast<uint32_t>(pwpb::TargetFile::Fields::kFileName));
     PW_CHECK_OK(name.status());
     const Result<ByteSpan> read_result = name.GetBytesReader().Read(buf);
     PW_CHECK_OK(read_result.status());
@@ -358,7 +358,7 @@ void BundledUpdateService::DoApply() {
     const std::string_view file_name_view(
         reinterpret_cast<const char*>(file_name_span.data()),
         file_name_span.size_bytes());
-    if (file_name_view.compare(kUserManifestTargetFileName) == 0) {
+    if (file_name_view == kUserManifestTargetFileName) {
       continue;  // user_manifest is not applied by the backend.
     }
     // Try to get an IntervalReader for the current file.
@@ -388,9 +388,9 @@ void BundledUpdateService::DoApply() {
       return;
     }
     target_file_bytes_applied += file_reader.interval_size();
-    const uint32_t progress_hundreth_percent =
+    const uint32_t progress_hundreth_percent = static_cast<uint32_t>(
         (static_cast<uint64_t>(target_file_bytes_applied) * 100 * 100) /
-        target_file_bytes_to_apply;
+        target_file_bytes_to_apply);
     PW_LOG_DEBUG("Apply progress: %zu/%zu Bytes (%ld%%)",
                  target_file_bytes_applied,
                  target_file_bytes_to_apply,
