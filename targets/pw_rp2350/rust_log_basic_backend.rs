@@ -61,16 +61,18 @@ pub mod __private {
         file: *const u8,
         line: i32,
         msg: *const u8,
-        len: usize,
+        len: u32,
     ) {
+        // len is at most 128 bytes so will not overflow.
+        #[allow(clippy::cast_possible_wrap)]
         pw_Log(
-            level as i32,
+            i32::from(level),
             0,
             module,
             file,
             line,
-            c"".as_ptr() as *const u8,
-            c"%.*s".as_ptr() as *const u8,
+            c"".as_ptr().cast::<u8>(),
+            c"%.*s".as_ptr().cast::<u8>(),
             len as core::ffi::c_int,
             msg,
         );
@@ -94,7 +96,7 @@ macro_rules! pw_log_backend {
                     core::concat!(core::file!(), "\0").as_ptr(),
                     core::line!() as i32,
                     buf.data.as_ptr(),
-                    buf.len,
+                    buf.len as u32,
                 );
             }
         }
@@ -114,7 +116,7 @@ macro_rules! pw_logf_backend {
                     core::concat!(core::file!(), "\0").as_ptr(),
                     core::line!() as i32,
                     buf.data.as_ptr(),
-                    buf.len,
+                    buf.len as u32,
                 );
             }
         }

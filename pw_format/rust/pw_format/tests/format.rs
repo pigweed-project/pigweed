@@ -26,12 +26,14 @@ fn call_snprintf_int(format: &str, arg: i32) -> String {
     let c_format = CString::new(format).unwrap();
     unsafe {
         let n = snprintf(
-            buf.as_mut_ptr() as *mut c_char,
+            buf.as_mut_ptr().cast::<c_char>(),
             buf.len(),
             c_format.as_ptr(),
             arg,
         );
-        String::from_utf8(buf[..n as usize].to_vec()).unwrap()
+        assert!(n >= 0, "snprintf returned a negative value");
+        let n = usize::try_from(n).unwrap();
+        String::from_utf8(buf[..n].to_vec()).unwrap()
     }
 }
 
@@ -40,12 +42,14 @@ fn call_snprintf_uint(format: &str, arg: u32) -> String {
     let c_format = CString::new(format).unwrap();
     unsafe {
         let n = snprintf(
-            buf.as_mut_ptr() as *mut c_char,
+            buf.as_mut_ptr().cast::<c_char>(),
             buf.len(),
             c_format.as_ptr(),
             arg,
         );
-        String::from_utf8(buf[..n as usize].to_vec()).unwrap()
+        assert!(n >= 0, "snprintf returned a negative value");
+        let n = usize::try_from(n).unwrap();
+        String::from_utf8(buf[..n].to_vec()).unwrap()
     }
 }
 
@@ -54,12 +58,14 @@ fn call_snprintf_float(format: &str, arg: f64) -> String {
     let c_format = CString::new(format).unwrap();
     unsafe {
         let n = snprintf(
-            buf.as_mut_ptr() as *mut c_char,
+            buf.as_mut_ptr().cast::<c_char>(),
             buf.len(),
             c_format.as_ptr(),
             arg,
         );
-        String::from_utf8(buf[..n as usize].to_vec()).unwrap()
+        assert!(n >= 0, "snprintf returned a negative value");
+        let n = usize::try_from(n).unwrap();
+        String::from_utf8(buf[..n].to_vec()).unwrap()
     }
 }
 
@@ -69,12 +75,14 @@ fn call_snprintf_str(format: &str, arg: &str) -> String {
     let c_arg = CString::new(arg).unwrap();
     unsafe {
         let n = snprintf(
-            buf.as_mut_ptr() as *mut c_char,
+            buf.as_mut_ptr().cast::<c_char>(),
             buf.len(),
             c_format.as_ptr(),
             c_arg.as_ptr(),
         );
-        String::from_utf8(buf[..n as usize].to_vec()).unwrap()
+        assert!(n >= 0, "snprintf returned a negative value");
+        let n = usize::try_from(n).unwrap();
+        String::from_utf8(buf[..n].to_vec()).unwrap()
     }
 }
 
@@ -83,12 +91,14 @@ fn call_snprintf_char(format: &str, arg: c_char) -> String {
     let c_format = CString::new(format).unwrap();
     unsafe {
         let n = snprintf(
-            buf.as_mut_ptr() as *mut c_char,
+            buf.as_mut_ptr().cast::<c_char>(),
             buf.len(),
             c_format.as_ptr(),
-            arg as c_int,
+            c_int::from(arg),
         );
-        String::from_utf8(buf[..n as usize].to_vec()).unwrap()
+        assert!(n >= 0, "snprintf returned a negative value");
+        let n = usize::try_from(n).unwrap();
+        String::from_utf8(buf[..n].to_vec()).unwrap()
     }
 }
 
@@ -97,7 +107,7 @@ fn test_int_simple() {
     let printf_format_str = "%d";
     let core_fmt_format_str = "{}";
     let arg = 42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = format!("{}", arg);
@@ -121,7 +131,7 @@ fn test_int_negative() {
     let printf_format_str = "%d";
     let core_fmt_format_str = "{}";
     let arg = -42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = format!("{}", arg);
@@ -145,7 +155,7 @@ fn test_int_width() {
     let printf_format_str = "%5d";
     let core_fmt_format_str = "{:5}";
     let arg = 42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = format!("{:5}", arg);
@@ -169,7 +179,7 @@ fn test_int_zero_pad() {
     let printf_format_str = "%05d";
     let core_fmt_format_str = "{:05}";
     let arg = 42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = format!("{:05}", arg);
@@ -197,7 +207,7 @@ fn test_int_left_justify() {
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
 
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
@@ -217,7 +227,7 @@ fn test_int_left_justify() {
 fn test_int_precision() {
     let printf_format_str = "%.5d";
     let arg = 42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = "00042";
@@ -236,7 +246,7 @@ fn test_int_plus_sign() {
     let printf_format_str = "%+5d";
     let core_fmt_format_str = "{:+5}";
     let arg = 42;
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let c_result = call_snprintf_int(printf_format_str, arg);
     let rust_result = format!("{:+5}", arg);
@@ -262,7 +272,7 @@ fn test_int_space_sign() {
 
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
 
-    let args = [Arg::Int(arg as i64)];
+    let args = [Arg::Int(i64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
@@ -282,7 +292,7 @@ fn test_uint_simple() {
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
 
-    let args = [Arg::Uint(arg as u64)];
+    let args = [Arg::Uint(u64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
@@ -303,7 +313,7 @@ fn test_uint_hex() {
     let printf_format_str = "%x";
     let core_fmt_format_str = "{:x}";
     let arg = 255;
-    let args = [Arg::Uint(arg as u64)];
+    let args = [Arg::Uint(u64::from(arg))];
 
     let c_result = call_snprintf_uint(printf_format_str, arg);
     let rust_result = format!("{:x}", arg);
@@ -331,7 +341,7 @@ fn test_uint_upper_hex() {
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
 
-    let args = [Arg::Uint(arg as u64)];
+    let args = [Arg::Uint(u64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
@@ -356,7 +366,7 @@ fn test_uint_octal() {
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
 
-    let args = [Arg::Uint(arg as u64)];
+    let args = [Arg::Uint(u64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);
@@ -381,7 +391,7 @@ fn test_uint_alternate_hex() {
     let parsed_printf = FormatString::parse_printf(printf_format_str).unwrap();
     let parsed_core = FormatString::parse_core_fmt(core_fmt_format_str).unwrap();
 
-    let args = [Arg::Uint(arg as u64)];
+    let args = [Arg::Uint(u64::from(arg))];
 
     let rust_printf = parsed_printf.format(&args, FormatStyle::Printf);
     let rust_core = parsed_printf.format(&args, FormatStyle::CoreFmt);

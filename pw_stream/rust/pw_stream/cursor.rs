@@ -179,7 +179,7 @@ macro_rules! cursor_read_type_impl {
             //
             // Safety:  We are both bounds checking and size constraining the
             // slice in the above lines of code.
-            let sub_array: &[u8; NUM_BYTES] = unsafe { &*(sub_slice.as_ptr() as *const [u8; NUM_BYTES]) };
+            let sub_array: &[u8; NUM_BYTES] = unsafe { &*sub_slice.as_ptr().cast::<[u8; NUM_BYTES]>() };
             let value = $ty::[<from_ $endian _bytes>](*sub_array);
 
             self.pos += NUM_BYTES;

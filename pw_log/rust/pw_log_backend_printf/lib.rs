@@ -123,6 +123,15 @@ pub mod __private {
             #[allow(clippy::let_unit_value)]
             let _ = Self::PushArg::<Head>::CHECK;
             let arg = *arg;
+
+            // On a platform with a 32bit usize it is possible but
+            // extremely unlikely to have a string that is longer than
+            // i32::MAX. In that case this debug_assert will catch it.
+            debug_assert!(
+                arg.len() <= i32::MAX as usize,
+                "arg length exceeds i32::MAX"
+            );
+            #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
             head.append(arg.len() as c_int).append(arg.as_ptr().cast())
         }
     }
@@ -158,6 +167,7 @@ mod tests {
         let args = ();
         let args = <&str as Arguments<&str>>::push_arg(args, &(string as &str));
         let args = <u32 as Arguments<u32>>::push_arg(args, &2u32);
-        assert_eq!(args, (string.len() as c_int, string.as_ptr().cast(), 2u32));
+        let expected_len = c_int::try_from(string.len()).unwrap();
+        assert_eq!(args, (expected_len, string.as_ptr().cast(), 2u32));
     }
 }

@@ -71,13 +71,14 @@ macro_rules! unsigned_varint_impl {
         impl VarintDecode for $t {
             fn varint_decode(data: &[u8]) -> Result<(usize, Self)> {
                 let (data, val) = decode_u64(data)?;
-                Ok((data, val as Self))
+                let val = val.try_into().map_err(|_| Error::OutOfRange)?;
+                Ok((data, val))
             }
         }
 
         impl VarintEncode for $t {
             fn varint_encode(self, data: &mut [u8]) -> Result<usize> {
-                encode_u64(data, self as u64)
+                encode_u64(data, u64::from(self))
             }
         }
     };
@@ -88,13 +89,16 @@ macro_rules! signed_varint_impl {
         impl VarintDecode for $t {
             fn varint_decode(data: &[u8]) -> Result<(usize, Self)> {
                 let (data, val) = decode_u64(data)?;
-                Ok((data, zig_zag_decode(val) as Self))
+                let val = zig_zag_decode(val)
+                    .try_into()
+                    .map_err(|_| Error::OutOfRange)?;
+                Ok((data, val))
             }
         }
 
         impl VarintEncode for $t {
             fn varint_encode(self, data: &mut [u8]) -> Result<usize> {
-                encode_u64(data, zig_zag_encode(self as i64))
+                encode_u64(data, zig_zag_encode(i64::from(self)))
             }
         }
     };
@@ -113,7 +117,7 @@ signed_varint_impl!(i64);
 fn decode_u64(data: &[u8]) -> Result<(usize, u64)> {
     let mut value: u64 = 0;
     for (i, d) in data.iter().enumerate() {
-        value |= (*d as u64 & 0x7f) << (i * 7);
+        value |= (u64::from(*d) & 0x7f) << (i * 7);
 
         if (*d & 0x80) == 0 {
             return Ok((i + 1, value));
@@ -149,12 +153,16 @@ fn encode_u64(data: &mut [u8], value: u64) -> Result<usize> {
 // See the following for a description of ZigZag encoding:
 //   https://protobuf.dev/programming-guides/encoding/#signed-ints
 fn zig_zag_encode(value: i64) -> u64 {
-    ((value as u64) << 1) ^ ((value >> (i64::BITS - 1)) as u64)
+    // TODO: https://pwbug.dev/524779003 - Investigate lossy casts
+    (value.cast_unsigned() << 1) ^ (value >> (i64::BITS - 1)).cast_unsigned()
 }
 
 fn zig_zag_decode(value: u64) -> i64 {
     let value = Wrapping(value);
-    ((value >> 1) ^ (!(value & Wrapping(1)) + Wrapping(1))).0 as i64
+    // TODO: https://pwbug.dev/524779003 - Investigate lossy casts
+    ((value >> 1) ^ (!(value & Wrapping(1)) + Wrapping(1)))
+        .0
+        .cast_signed()
 }
 
 #[cfg(test)]

@@ -273,7 +273,8 @@ pub fn encode(input: &[u8], output: &mut [u8]) -> Result<usize> {
         remaining_bytes = remaining_bytes.saturating_add_signed(-3);
     }
 
-    output.stream_position().map(|len| len as usize)
+    let len = output.stream_position()?;
+    usize::try_from(len).map_err(|_| Error::OutOfRange)
 }
 
 /// Encode `input` as base64 into `output_buffer` and interprets it as a

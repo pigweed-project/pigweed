@@ -155,7 +155,9 @@ pub(crate) mod test_utils {
     use super::{Seek, SeekFrom};
 
     pub(crate) fn test_rewind_resets_position_to_zero<const LEN: u64, T: Seek>(mut seeker: T) {
-        seeker.seek(SeekFrom::Current(LEN as i64 / 2)).unwrap();
+        seeker
+            .seek(SeekFrom::Current((LEN / 2).cast_signed()))
+            .unwrap();
         assert_eq!(seeker.stream_position().unwrap(), LEN / 2);
         seeker.rewind().unwrap();
         assert_eq!(seeker.stream_position().unwrap(), 0);
@@ -165,7 +167,9 @@ pub(crate) mod test_utils {
         assert_eq!(seeker.stream_position().unwrap(), 0);
         seeker.seek(SeekFrom::Current(1)).unwrap();
         assert_eq!(seeker.stream_position().unwrap(), 1);
-        seeker.seek(SeekFrom::Current(LEN as i64 / 2 - 1)).unwrap();
+        seeker
+            .seek(SeekFrom::Current((LEN / 2).cast_signed() - 1))
+            .unwrap();
         assert_eq!(seeker.stream_position().unwrap(), LEN / 2);
         seeker.seek(SeekFrom::Current(0)).unwrap();
         assert_eq!(seeker.stream_position().unwrap(), LEN / 2);

@@ -26,36 +26,39 @@ test:k_common --platform_suffix=test
 # Enable clippy lints
 build:k_lint --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
 build:k_lint --output_groups=+clippy_checks
+# LINT.IfChange
 build:k_lint --@rules_rust//rust/settings:clippy_flags="\
+-Dclippy::alloc_instead_of_core,\
+-Dclippy::as_underscore,\
+-Dclippy::assertions_on_result_states,\
 -Dclippy::cast_lossless,\
 -Dclippy::cast_possible_truncation,\
 -Dclippy::cast_possible_wrap,\
 -Dclippy::cast_precision_loss,\
 -Dclippy::cast_sign_loss,\
 -Dclippy::char_lit_as_u8,\
--Dclippy::fn_to_numeric_cast,\
--Dclippy::fn_to_numeric_cast_with_truncation,\
--Dclippy::ptr_as_ptr,-Dclippy::unnecessary_cast,\
--Dinvalid_reference_casting,\
--Dclippy::alloc_instead_of_core,\
--Dclippy::as_underscore,\
--Dclippy::assertions_on_result_states,\
 -Dclippy::correctness,\
 -Dclippy::dbg_macro,\
 -Dclippy::decimal_literal_representation,\
 -Dclippy::double_must_use,\
+-Dclippy::fn_to_numeric_cast,\
+-Dclippy::fn_to_numeric_cast_with_truncation,\
 -Dclippy::missing_safety_doc,\
 -Dclippy::must_use_candidate,\
 -Dclippy::must_use_unit,\
 -Dclippy::obfuscated_if_else,\
 -Dclippy::perf,\
+-Dclippy::ptr_as_ptr,\
 -Dclippy::return_self_not_must_use,\
 -Dclippy::std_instead_of_core,\
 -Dclippy::style,\
 -Dclippy::suspicious,\
 -Dclippy::unimplemented,\
+-Dclippy::unnecessary_cast,\
 -Dclippy::unnested_or_patterns,\
+-Dinvalid_reference_casting,\
 -Aclippy::new_without_default"
+# LINT.ThenChange(//.bazelrc)
 
 # TODO: Deny the following lints:
 # - clippy::use_debug

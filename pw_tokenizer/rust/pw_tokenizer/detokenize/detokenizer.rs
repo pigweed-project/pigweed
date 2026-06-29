@@ -545,19 +545,38 @@ fn decode_int_arg(input: &[u8]) -> (&[u8], DecodeResult) {
 
 fn decode_uint_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    (remaining, res.map(|val| Arg::Uint(val as u64)))
+    let Ok(val) = res else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    let Ok(val) = u64::try_from(val) else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    (remaining, Ok(Arg::Uint(val)))
 }
 
 fn decode_char_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    let char_res =
-        res.and_then(|val| char::from_u32(val as u32).ok_or(TokenizerError::DecodeError));
-    (remaining, char_res.map(Arg::Char))
+    let Ok(val) = res else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    let Ok(val) = u32::try_from(val) else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    let Some(char_res) = char::from_u32(val) else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    (remaining, Ok(Arg::Char(char_res)))
 }
 
 fn decode_ptr_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    (remaining, res.map(|val| Arg::Ptr(val as usize)))
+    let Ok(val) = res else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    let Ok(val) = usize::try_from(val) else {
+        return (remaining, Err(TokenizerError::DecodeError));
+    };
+    (remaining, Ok(Arg::Ptr(val)))
 }
 
 fn decode_float_arg(input: &[u8]) -> (&[u8], DecodeResult) {
@@ -571,7 +590,7 @@ fn decode_float_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     match float_data.try_into() {
         Ok(bytes) => {
             let val = f32::from_le_bytes(bytes);
-            (rest, Ok(Arg::Float(val as f64)))
+            (rest, Ok(Arg::Float(f64::from(val))))
         }
         Err(_) => (rest, Err(TokenizerError::DecodeError)),
     }

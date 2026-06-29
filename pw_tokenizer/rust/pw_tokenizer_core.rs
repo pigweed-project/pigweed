@@ -42,6 +42,8 @@ impl Hasher {
     /// `data_len` is used to seed  the hash while `hash_len` controls how many
     /// bytes are hashed.
     #[must_use]
+    // TODO: https://pwbug.dev/524779003 - How does the C++ version hash a 4GB token on a 64bit target?
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn new(data_len: usize, hash_len: usize) -> Self {
         {
             Self {

@@ -303,10 +303,11 @@ mod tests {
     #[test]
     fn appended_args_yields_correct_tuple() {
         let string = "test";
+        let expected_len = c_int::try_from(string.len()).unwrap();
         let args =
             ().append(0u32)
                 .append(-1i32)
-                .append(string.len() as c_int)
+                .append(expected_len)
                 .append(string.as_ptr().cast::<*const c_uchar>());
 
         assert_eq!(
@@ -314,7 +315,7 @@ mod tests {
             (
                 0u32,
                 -1i32,
-                string.len() as c_int,
+                expected_len,
                 string.as_ptr().cast::<*const c_uchar>()
             )
         );

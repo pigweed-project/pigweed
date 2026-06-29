@@ -41,19 +41,19 @@ impl From<char> for Argument<'_> {
 
 impl From<u8> for Argument<'_> {
     fn from(val: u8) -> Self {
-        Self::Varint(val as i64)
+        Self::Varint(i64::from(val))
     }
 }
 
 impl From<i32> for Argument<'_> {
     fn from(val: i32) -> Self {
-        Self::Varint(val as i64)
+        Self::Varint(i64::from(val))
     }
 }
 
 impl From<u32> for Argument<'_> {
     fn from(val: u32) -> Self {
-        Self::Varint(val as i64)
+        Self::Varint(i64::from(val))
     }
 }
 
@@ -66,12 +66,16 @@ impl From<i64> for Argument<'_> {
 }
 
 impl From<u64> for Argument<'_> {
+    // TODO: https://pwbug.dev/524779003 - Investigate lossy casts
+    #[allow(clippy::cast_possible_wrap)]
     fn from(val: u64) -> Self {
         Self::Varint(val as i64)
     }
 }
 
 impl From<usize> for Argument<'_> {
+    // TODO: https://pwbug.dev/524779003 - Investigate lossy casts
+    #[allow(clippy::cast_possible_wrap)]
     fn from(val: usize) -> Self {
         Self::Varint(val as i64)
     }
@@ -112,6 +116,8 @@ pub fn encode_string<W: MessageWriter>(writer: &mut W, value: &str) -> Result<()
     let len = min(max_len, string_bytes.len());
 
     // First byte of an encoded string is it's length.
+    // TODO: https://pwbug.dev/524779003 - Investigate lossy casts
+    #[allow(clippy::cast_possible_truncation)]
     let mut header = len as u8;
 
     // The high bit of the first byte is used to indicate if the string was
@@ -211,7 +217,7 @@ mod test {
         };
         encode_string(&mut writer, value).unwrap();
 
-        let len = writer.cursor.stream_position().unwrap() as usize;
+        let len = writer.cursor.stream_position().unwrap().try_into().unwrap();
         let buffer = writer.cursor.into_inner();
 
         assert_eq!(len, expected.len());
