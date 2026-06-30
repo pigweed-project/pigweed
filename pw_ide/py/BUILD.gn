@@ -68,6 +68,8 @@ group("bazel_only") {
     "lock_test.py",
     "pw_ide/lock.py",
     "pw_ide/merger.py",
+    "pw_ide/rust.py",
+    "rust_test.py",
     "pw_ide/verify_db.py",
   ]
 }

@@ -31,6 +31,7 @@ pw_py_library(
         "pw_ide/lock.py",
         "pw_ide/merger.py",
         "pw_ide/python.py",
+        "pw_ide/rust.py",
         "pw_ide/settings.py",
         "pw_ide/symlinks.py",
         "pw_ide/verify_db.py",
@@ -159,6 +160,15 @@ pw_py_test(
 pw_py_test(
     name = "merger_test",
     srcs = ["merger_test.py"],
+    deps = [
+        ":pw_ide",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "rust_test",
+    srcs = ["rust_test.py"],
     deps = [
         ":pw_ide",
         "@pigweed_python_packages//pyfakefs",

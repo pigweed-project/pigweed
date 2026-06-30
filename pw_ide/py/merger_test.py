@@ -1707,6 +1707,167 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         # Verify unlink was NOT called
         self.assertFalse(mock_unlink.called)
 
+    def test_resolve_platform_from_config(self):
+        """Test resolving platform from Bazel config name."""
+
+        def run_bazel_side_effect(args, **_kwargs):
+            if args[0] == 'cquery':
+                return mock.Mock(stdout='//pw_status:pw_status (0f7dbb9)\n')
+            if args[0] == 'config' and args[1] == '0f7dbb9':
+                return mock.Mock(
+                    stdout='  platforms: [//pw_kernel/target/host:host]\n'
+                )
+            raise AssertionError(f'Unhandled Bazel request: {args}')
+
+        self.mock_run_bazel.side_effect = run_bazel_side_effect
+        # pylint: disable=protected-access
+        platform = merger._resolve_platform_from_config('k_host')
+        self.assertEqual(platform, '//pw_kernel/target/host:host')
+
+    def test_pure_rust_generation(self):
+        """Test that pure Rust platforms skip C++ processing.
+
+        It should run only the rules_rust generator.
+        """
+        # Setup files
+        self.fs.create_dir(self.workspace_root / '.compile_commands')
+        platform_dir = (
+            self.workspace_root
+            / '.compile_commands'
+            / '____pw_kernel__target__host__host'
+        )
+
+        # When rules_rust:gen_rust_project is run, mock it creating
+        # rust-project.json at workspace root
+        def run_bazel_side_effect(args, **_kwargs):
+            if args[:2] == [
+                'run',
+                '@rules_rust//tools/rust_analyzer:gen_rust_project',
+            ]:
+                # Simulate generating rust-project.json
+                self.fs.create_file(
+                    self.workspace_root / 'rust-project.json',
+                    contents='{"crates": []}',
+                )
+                return mock.Mock(stdout='')
+            raise AssertionError(f'Unhandled Bazel request: {args}')
+
+        self.mock_run_bazel.side_effect = run_bazel_side_effect
+
+        # pylint: disable=protected-access
+        merger._process_platform(
+            platform='____pw_kernel__target__host__host',
+            fragments=[],
+            workspace_root=self.workspace_root,
+            output_dir=self.workspace_root / '.compile_commands',
+            bazel_paths=(
+                self.output_path,
+                self.output_base,
+                self.execution_root,
+            ),
+            rust_info={
+                'targets': ['//pw_kernel/...'],
+                'config': 'k_host',
+            },
+        )
+
+        # Verify rust-project.json was moved to platform directory
+        self.assertTrue((platform_dir / 'rust-project.json').exists())
+        self.assertTrue(
+            (self.workspace_root / 'rust-project.json').is_symlink()
+        )
+        self.assertEqual(
+            (self.workspace_root / 'rust-project.json').resolve(),
+            (platform_dir / 'rust-project.json').resolve(),
+        )
+
+        # Verify ide_config.json was created with override command
+        ide_config_path = platform_dir / 'ide_config.json'
+        self.assertTrue(ide_config_path.exists())
+        with open(ide_config_path, 'r') as f:
+            config = json.load(f)
+        self.assertIn('rust_analyzer_check_override_command', config)
+        self.assertIn(
+            '--config=k_host', config['rust_analyzer_check_override_command']
+        )
+
+    def test_groups_with_config(self):
+        """Test using compile command groups JSON with config.
+
+        It should resolve the config to platform and handle correctly.
+        """
+        groups_json = {
+            "compile_commands_patterns": [
+                {
+                    "config": "k_host",
+                    "rust_target_patterns": ["//pw_kernel/..."],
+                }
+            ]
+        }
+        groups_file = self.workspace_root / 'groups.json'
+        self.fs.create_file(groups_file, contents=json.dumps(groups_json))
+
+        original_side_effect = self.mock_run_bazel.side_effect
+
+        # Mock resolve_platform and run_bazel
+        def run_bazel_side_effect(args, **kwargs):
+            if args[0] == 'cquery':
+                return mock.Mock(stdout='//pw_status:pw_status (0f7dbb9)\n')
+            if args[0] == 'config' and args[1] == '0f7dbb9':
+                return mock.Mock(
+                    stdout='  platforms: [//pw_kernel/target/host:host]\n'
+                )
+            if args[:2] == [
+                'run',
+                '@rules_rust//tools/rust_analyzer:gen_rust_project',
+            ]:
+                self.fs.create_file(
+                    self.workspace_root / 'rust-project.json',
+                    contents='{"crates": []}',
+                )
+                return mock.Mock(stdout='')
+            return original_side_effect(args, **kwargs)
+
+        self.mock_run_bazel.side_effect = run_bazel_side_effect
+
+        # Unpatch _collect_fragments to let it parse groups file
+        self.mock_collect_fragments_patcher.stop()
+
+        # Add the groups file argument to sys.argv/main arguments
+        with mock.patch(
+            'sys.argv',
+            ['merger.py', '--compile-command-groups', str(groups_file)],
+        ):
+            self.assertEqual(merger.main(), 0)
+
+        # Verify it resolved //pw_kernel/target/host:host to sanitized folder
+        platform_dir = (
+            self.workspace_root
+            / '.compile_commands'
+            / '____pw_kernel__target__host__host'
+        )
+        self.assertTrue((platform_dir / 'rust-project.json').exists())
+        self.assertTrue((platform_dir / 'ide_config.json').exists())
+        self.assertTrue(
+            (self.workspace_root / 'rust-project.json').is_symlink()
+        )
+        self.assertEqual(
+            (self.workspace_root / 'rust-project.json').resolve(),
+            (platform_dir / 'rust-project.json').resolve(),
+        )
+
+    def test_resolve_platform_from_config_fallback(self):
+        """Test fallback return when platform resolution fails."""
+        self.mock_run_bazel.side_effect = subprocess.CalledProcessError(
+            2, 'bazel'
+        )
+        # pylint: disable=protected-access
+        platform_host = merger._resolve_platform_from_config('k_host')
+        self.assertEqual(platform_host, '@bazel_tools//tools:host_platform')
+
+        platform_other = merger._resolve_platform_from_config('k_other')
+        self.assertEqual(platform_other, '')
+
 
 class TestRunBazelStreaming(unittest.TestCase):
     """Tests for _run_bazel streaming behavior."""

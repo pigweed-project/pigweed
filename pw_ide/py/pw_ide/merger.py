@@ -37,6 +37,7 @@ from typing import Any, NamedTuple
 from pw_cli import color, plural
 
 from pw_ide.lock import LockFile, LockAlreadyHeldError
+from pw_ide import rust
 
 _LOG = logging.getLogger(__name__)
 
@@ -368,6 +369,65 @@ def _build_and_collect_fragments(
         yield config_str, fragment, None
 
 
+def _generate_group_fragments(
+    group: dict[str, Any],
+    i: int,
+    total_groups: int,
+    verbose: bool,
+    execution_root: Path,
+) -> tuple[str | None, set[Path], str | None, str | None]:
+    """Generates and returns platform, fragments, config, and display name.
+
+    Processes a group of targets to generate compile database fragments.
+    """
+    platform = group.get("platform")
+    config = group.get("config")
+    if not platform and config:
+        platform = _resolve_platform_from_config(config)
+
+    targets = group.get("target_patterns")
+    display_name = group.get("display_name")
+
+    if not platform or (not targets and not group.get("rust_target_patterns")):
+        _LOG.warning("Skipping invalid compile command group: %s", group)
+        return None, set(), None, None
+
+    group_fragments = set()
+    if targets:
+        # Workaround for Bazel 7+ canonical label format in target patterns
+        targets = [
+            t.replace("-@@//", "-//").replace("@@//", "//") for t in targets
+        ]
+
+        bazel_args = group.get("bazel_args", [])
+
+        _LOG.info(
+            "⏳ Generating compile commands for group %d/%d (%s)...",
+            i + 1,
+            total_groups,
+            platform,
+        )
+        build_args = [
+            "build",
+            "--noshow_progress",
+            "--noshow_loading_progress",
+        ]
+        if config:
+            build_args.append(f"--config={config}")
+        else:
+            build_args.extend(["--platforms", platform])
+
+        build_args.extend(bazel_args)
+        build_args.extend(["--"])
+        build_args.extend(targets)
+
+        group_fragments = _run_bazel_build_for_fragments(
+            build_args, verbose, execution_root
+        )
+
+    return platform, group_fragments, config, display_name
+
+
 def _build_and_collect_fragments_from_groups(
     groups_file: Path,
     verbose: bool,
@@ -395,36 +455,11 @@ def _build_and_collect_fragments_from_groups(
     fragment_display_name_map: dict[Path, str] = {}
 
     for i, group in enumerate(compile_commands_patterns):
-        platform = group.get("platform")
-        targets = group.get("target_patterns")
-        display_name = group.get("display_name")
-
-        if not platform or not targets:
-            _LOG.warning("Skipping invalid compile command group: %s", group)
+        platform, group_fragments, _, display_name = _generate_group_fragments(
+            group, i, total_groups, verbose, execution_root
+        )
+        if not platform:
             continue
-
-        # Workaround for Bazel 7+ canonical label format in target patterns
-        targets = [
-            t.replace("-@@//", "-//").replace("@@//", "//") for t in targets
-        ]
-
-        _LOG.info(
-            "⏳ Generating compile commands for group %d/%d (%s)...",
-            i + 1,
-            total_groups,
-            platform,
-        )
-        build_args = [
-            "build",
-            "--noshow_progress",
-            "--noshow_loading_progress",
-            "--platforms",
-            platform,
-            "--",
-        ] + targets
-        group_fragments = _run_bazel_build_for_fragments(
-            build_args, verbose, execution_root
-        )
 
         sanitized_platform = platform.replace("/", "__").replace(":", "__")
 
@@ -771,7 +806,19 @@ def _find_fragments(
         )
     )
 
-    if not all_fragments:
+    has_rust_targets = False
+    if args.compile_command_groups:
+        with open(args.compile_command_groups, "r") as f:
+            try:
+                patterns = json.load(f)
+                for group in patterns.get("compile_commands_patterns", []):
+                    if group.get("rust_target_patterns"):
+                        has_rust_targets = True
+                        break
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+
+    if not all_fragments and not has_rust_targets:
         _LOG.error("Could not find any generated fragments.")
         sys.exit(1)
 
@@ -786,53 +833,95 @@ def _find_fragments(
     return fragments_by_platform, display_names_by_platform
 
 
-def _process_platform(
-    platform: str,
-    fragments: list[Path],
+def _resolve_platform_from_config(config: str) -> str:
+    # Use BUILD_TARGET if available, otherwise fallback to //pw_status
+    # which is safe.
+    target_label = os.environ.get("BUILD_TARGET", "//pw_status")
+    _LOG.info(
+        "Resolving platform for config %s using target %s...",
+        config,
+        target_label,
+    )
+
+    # Step 1: Run cquery to get configuration hash
+    cquery_cmd = [
+        "cquery",
+        f"--config={config}",
+        target_label,
+    ]
+    try:
+        cquery_proc = _run_bazel(
+            cquery_cmd,
+            cwd=os.environ["BUILD_WORKING_DIRECTORY"],
+            capture_output=True,
+        )
+        output = cquery_proc.stdout
+        # Parse config hash in parentheses, e.g. //pw_status (0f7dbb9)
+        match = re.search(r"\(([0-9a-fA-F]+)\)", output)
+        if not match:
+            raise ValueError(
+                f"Could not find configuration hash in output: {output}"
+            )
+        config_hash = match.group(1)
+
+        # Step 2: Run bazel config <hash> to get the platforms option
+        config_cmd = ["config", config_hash, f"--config={config}"]
+        config_proc = _run_bazel(
+            config_cmd,
+            cwd=os.environ["BUILD_WORKING_DIRECTORY"],
+            capture_output=True,
+        )
+        config_output = config_proc.stdout
+
+        # Search for "  platforms: [//something]" or "  platforms: [@something]"
+        platform_match = re.search(
+            r"^\s*platforms:\s*\[([^\]]+)\]", config_output, re.MULTILINE
+        )
+        if not platform_match:
+            # Fallback to check if it's the default host config
+            if "host" in config.lower():
+                return "@bazel_tools//tools:host_platform"
+            raise ValueError(
+                f"Could not find platforms in config options: {config_output}"
+            )
+
+        platform = platform_match.group(1).strip()
+        _LOG.info("Resolved platform: %s", platform)
+        return platform
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        _LOG.error("Failed to resolve platform from config %s: %s", config, e)
+        # If it fails, fallback to host platform rather than crashing
+        # if config is host.
+        if "host" in config.lower():
+            return "@bazel_tools//tools:host_platform"
+        return ""
+
+
+def _sanitize_bazel_label(label: str) -> str:
+    if label.startswith("@@//"):
+        return label[2:]  # Remove the "@@", leaving "//"
+    if label.startswith("@@"):
+        return "@" + label[2:]  # Replace "@@" with "@"
+    return label
+
+
+def _process_cpp_compilation_database(
     workspace_root: Path,
-    output_dir: Path,
+    platform_dir: Path,
+    relative_to: Path,
+    symlink_prefix: str,
     bazel_paths: tuple[Path, Path, Path],
-    symlink_prefix: str = "",
-    display_name: str | None = None,
+    all_commands: list[dict[str, Any]],
+    target_infos: list[dict[str, Any]],
+    all_vrmaps: dict[str, str],
 ) -> None:
-    """Processes a single platform, merging fragments and writing output files.
-
-    Args:
-        platform: The platform name (e.g., 'macos').
-        fragments: List of fragment paths for this platform.
-        workspace_root: Path to the workspace root.
-        output_dir: Path to the output directory.
-        bazel_paths: Tuple of (bazel_output_path, output_base_path,
-                     execution_root_path).
-        symlink_prefix: Prefix to use for symlinked directories like bazel-out
-                        and external.
-
-    Raises:
-        SystemExit: If loading commands fails.
-    """
+    """Processes and writes the C++ compilation database for a platform."""
     (
         bazel_output_path,
         output_base_path,
         execution_root_path,
     ) = bazel_paths
 
-    _LOG.debug("Processing platform: %s...", platform)
-    if fragments:
-        result = _load_commands_for_platform(fragments, platform)
-        if result is None:
-            sys.exit(1)
-        all_commands, target_infos, all_vrmaps = result
-    else:
-        all_commands = []
-        target_infos = []
-        all_vrmaps = {}
-
-    relative_to = workspace_root.resolve()
-
-    platform_dir = output_dir / platform
-    platform_dir.mkdir(exist_ok=True)
-    if display_name:
-        (platform_dir / "display_name.txt").write_text(display_name)
     merged_json_path = platform_dir / "compile_commands.json"
 
     final_target_infos: dict[str, Any] = {}
@@ -891,7 +980,81 @@ def _process_platform(
     with open(merged_json_path, "w") as f:
         f.write(content)
 
-    # Target info was processed early to support global flag borrowing
+
+def _process_rust_project(
+    platform: str,
+    workspace_root: Path,
+    platform_dir: Path,
+    rust_targets: list[str],
+    rust_config: str | None = None,
+) -> None:
+    rust.process_rust_project(
+        platform=platform,
+        workspace_root=workspace_root,
+        platform_dir=platform_dir,
+        rust_targets=rust_targets,
+        run_bazel_fn=_run_bazel,
+        rust_config=rust_config,
+    )
+
+
+def _process_platform(
+    platform: str,
+    fragments: list[Path],
+    workspace_root: Path,
+    output_dir: Path,
+    bazel_paths: tuple[Path, Path, Path],
+    symlink_prefix: str = "",
+    display_name: str | None = None,
+    rust_info: dict[str, Any] | None = None,
+) -> None:
+    """Processes a single platform, merging fragments and writing output files.
+
+    Args:
+        platform: The platform name (e.g., 'macos').
+        fragments: List of fragment paths for this platform.
+        workspace_root: Path to the workspace root.
+        output_dir: Path to the output directory.
+        bazel_paths: Tuple of (bazel_output_path, output_base_path,
+                     execution_root_path).
+        symlink_prefix: Prefix to use for symlinked directories like bazel-out
+                        and external.
+
+    Raises:
+        SystemExit: If loading commands fails.
+    """
+    _LOG.debug("Processing platform: %s...", platform)
+    platform_dir = output_dir / platform
+    platform_dir.mkdir(exist_ok=True)
+    if display_name:
+        (platform_dir / "display_name.txt").write_text(display_name)
+
+    if fragments:
+        result = _load_commands_for_platform(fragments, platform)
+        if result is None:
+            sys.exit(1)
+        all_commands, target_infos, all_vrmaps = result
+
+        relative_to = workspace_root.resolve()
+        _process_cpp_compilation_database(
+            workspace_root=workspace_root,
+            platform_dir=platform_dir,
+            relative_to=relative_to,
+            symlink_prefix=symlink_prefix,
+            bazel_paths=bazel_paths,
+            all_commands=all_commands,
+            target_infos=target_infos,
+            all_vrmaps=all_vrmaps,
+        )
+
+    if rust_info:
+        _process_rust_project(
+            platform=platform,
+            workspace_root=workspace_root,
+            platform_dir=platform_dir,
+            rust_targets=rust_info["targets"],
+            rust_config=rust_info.get("config"),
+        )
 
     (output_dir / "pw_lastGenerationTime.txt").write_text(str(int(time.time())))
 
@@ -1026,6 +1189,64 @@ def _enrich_with_global_flags(
                 files_with_commands.add(hdr)
 
 
+def _parse_compile_commands_groups(
+    compile_command_groups_path: Path,
+) -> tuple[
+    dict[str, list[str]],
+    dict[str, str],
+    dict[str, str],
+]:
+    """Parses rust targets, configs, bazel_args, and display names.
+
+    Extracts them from the compile command groups JSON.
+    """
+    rust_targets_by_platform = {}
+    rust_configs_by_platform = {}
+    rust_display_names = {}
+
+    with open(compile_command_groups_path, "r") as f:
+        try:
+            patterns = json.load(f)
+            for group in patterns.get("compile_commands_patterns", []):
+                platform = group.get("platform")
+                config = group.get("config")
+                if not platform and config:
+                    platform = _resolve_platform_from_config(config)
+
+                if platform:
+                    sanitized = platform.replace("/", "__").replace(":", "__")
+
+                rust_targets = group.get("rust_target_patterns", [])
+                if rust_targets:
+                    rust_targets = [
+                        _sanitize_bazel_label(t) for t in rust_targets
+                    ]
+                    if platform:
+                        sanitized = platform.replace("/", "__").replace(
+                            ":", "__"
+                        )
+                        rust_targets_by_platform[sanitized] = rust_targets
+                        rust_configs_by_platform[sanitized] = (
+                            config if config else ""
+                        )
+                        display_name = group.get("display_name", "")
+                        if display_name:
+                            rust_display_names[sanitized] = display_name
+                    else:
+                        _LOG.error(
+                            "Platform could not be determined for group: %s",
+                            group,
+                        )
+        except (OSError, ValueError, json.JSONDecodeError) as e:
+            _LOG.error("Failed to parse targets from groups: %s", e)
+
+    return (
+        rust_targets_by_platform,
+        rust_configs_by_platform,
+        rust_display_names,
+    )
+
+
 def main() -> int:
     """Script entry point."""
     args = _parse_args()
@@ -1053,17 +1274,34 @@ def main() -> int:
 
     try:
         with LockFile(lockfile_path):
+            rust_targets_by_platform: dict[str, list[str]] = {}
+            rust_configs_by_platform: dict[str, str] = {}
+            rust_display_names: dict[str, str] = {}
+            if args.compile_command_groups:
+                (
+                    rust_targets_by_platform,
+                    rust_configs_by_platform,
+                    rust_display_names,
+                ) = _parse_compile_commands_groups(args.compile_command_groups)
+
             fragments_by_platform, display_names_by_platform = _find_fragments(
                 execution_root_path, args
             )
 
-            _LOG.debug(
-                "Found fragments for %s.",
-                plural.plural(fragments_by_platform, "platform"),
+            # Merge rust display names
+            for platform_key, name in rust_display_names.items():
+                if platform_key not in display_names_by_platform:
+                    display_names_by_platform[platform_key] = name
+
+            # Union of all platforms found (C++ and Rust)
+            all_platforms = set(fragments_by_platform.keys()).union(
+                rust_targets_by_platform.keys()
             )
 
-            # Union of all platforms found
-            all_platforms = set(fragments_by_platform.keys())
+            _LOG.debug(
+                "Found targets for %s.",
+                plural.plural(all_platforms, "platform"),
+            )
 
             # Make the generator a list so it can be reused.
             existing_databases = list(
@@ -1081,6 +1319,14 @@ def main() -> int:
                 return 0
 
             for platform in all_platforms:
+                rust_info = None
+                rust_targets = rust_targets_by_platform.get(platform)
+                if rust_targets:
+                    rust_info = {
+                        "targets": rust_targets,
+                        "config": rust_configs_by_platform.get(platform),
+                    }
+
                 _process_platform(
                     platform,
                     fragments_by_platform.get(platform, []),
@@ -1089,6 +1335,7 @@ def main() -> int:
                     (bazel_output_path, output_base_path, execution_root_path),
                     args.symlink_prefix,
                     display_name=display_names_by_platform.get(platform),
+                    rust_info=rust_info,
                 )
 
             (output_dir / "pw_lastGenerationTime.txt").write_text(

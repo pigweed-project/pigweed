@@ -101,6 +101,42 @@ copy_file(
 )
 
 pw_compile_commands_generator(
+    name = "update_host_kernel_compile_commands",
+    config = "k_host",
+    display_name = "Host Kernel",
+    rust_target_patterns = [
+        "//pw_kernel/...",
+    ],
+)
+
+pw_compile_commands_generator(
+    name = "update_rp2350_kernel_compile_commands",
+    config = "k_rp2350",
+    display_name = "RP2350 Kernel",
+    rust_target_patterns = [
+        "//pw_kernel/...",
+    ],
+)
+
+pw_compile_commands_generator(
+    name = "update_qemu_mps2_an505_kernel_compile_commands",
+    config = "k_qemu_mps2_an505",
+    display_name = "QEMU MPS2 AN505 Kernel",
+    rust_target_patterns = [
+        "//pw_kernel/...",
+    ],
+)
+
+pw_compile_commands_generator(
+    name = "update_qemu_virt_riscv32_kernel_compile_commands",
+    config = "k_qemu_virt_riscv32",
+    display_name = "QEMU Virt RISCV32 Kernel",
+    rust_target_patterns = [
+        "//pw_kernel/...",
+    ],
+)
+
+pw_compile_commands_generator(
     name = "update_host_compile_commands",
     display_name = "Host",
     platform = "@bazel_tools//tools:host_platform",
