@@ -30,31 +30,6 @@ responses.
 Refer to the ``test_pw_rpc_server.cc`` file for detailed usage example of how to
 integrate into a ``pw_rpc`` network.
 
-----------------
-Protocol Support
-----------------
-``pw_grpc`` is a lightweight gRPC over HTTP2 implementation designed for
-embedded systems. To minimize memory and code size, it supports only a
-subset of the HTTP2 and HPACK specifications. Violating these limitations
-typically results in a connection termination via an HTTP2 ``GOAWAY``
-frame with a specific error code:
-
-* **HPACK Dynamic Table**: The HPACK dynamic table is not supported. The maximum
-  dynamic table size is set to 0. Any attempt by the client to update the
-  dynamic table size to a non-zero value will result in a connection error
-  (``GOAWAY`` with ``COMPRESSION_ERROR``).
-* **HPACK Static Table**: Only the standard 61 entries of the static table are
-  supported. Referencing an index greater than 61 will result in a connection
-  error (``GOAWAY`` with ``COMPRESSION_ERROR``).
-* **Header Parsing**: The request header parser only extracts the ``:path``
-  header (which is required to route the request to the correct ``pw_rpc``
-  service). Other headers are processed to advance the parser but are otherwise
-  ignored. If the ``:path`` header is missing, the connection is terminated
-  (``GOAWAY`` with ``PROTOCOL_ERROR``).
-* **Malformed Headers**: Any malformed HPACK encoding (e.g., truncated integers
-  or strings) will result in a connection error (``GOAWAY`` with
-  ``COMPRESSION_ERROR``).
-
 ----------------------------
 Thread Safety and Allocators
 ----------------------------
