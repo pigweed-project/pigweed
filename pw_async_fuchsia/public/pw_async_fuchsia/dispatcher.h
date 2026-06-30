@@ -51,7 +51,7 @@ inline void Post(pw::async::Dispatcher* dispatcher,
   PostAt(dispatcher, std::move(task), dispatcher->now());
 }
 
-class FuchsiaDispatcher final : public async::Dispatcher {
+class FuchsiaDispatcher final : public pw::async::Dispatcher {
  public:
   explicit FuchsiaDispatcher(async_dispatcher_t* dispatcher)
       : dispatcher_(dispatcher) {}
@@ -59,10 +59,11 @@ class FuchsiaDispatcher final : public async::Dispatcher {
 
   chrono::SystemClock::time_point now() override;
 
-  void Post(async::Task& task) override;
-  void PostAt(async::Task& task, chrono::SystemClock::time_point time) override;
+  void Post(pw::async::Task& task) override;
+  void PostAt(pw::async::Task& task,
+              chrono::SystemClock::time_point time) override;
 
-  bool Cancel(async::Task& task) override;
+  bool Cancel(pw::async::Task& task) override;
 
   async_dispatcher_t* native() const { return dispatcher_; }
 
