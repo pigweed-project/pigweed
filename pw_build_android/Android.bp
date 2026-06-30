@@ -61,6 +61,18 @@ cc_defaults {
     ],
 }
 
+// Other Common Android backends which cannot be lumped into
+// pw_android_common_backends without introducing circular dependencies.
+cc_defaults {
+    name: "pw_android_common_pw_async_backend",
+    static_libs: [
+        "pw_async_basic_stl",
+    ],
+    export_static_lib_headers: [
+        "pw_async_basic_stl",
+    ],
+}
+
 cc_defaults {
     name: "pw_android_common_target_support_no_windows",
     defaults: [

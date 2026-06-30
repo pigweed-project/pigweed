@@ -91,6 +91,22 @@ This table lists the backends selected by this rule:
    * - :ref:`module-pw_thread`
      - :ref:`module-pw_thread_stl`
 
+Unfortunately, some backends cannot be included in
+``pw_android_common_backends`` without introducing circular dependencies
+involving backends that transitively depend on ``pw_android_common_backends``.
+These backends are broken out as separate ``cc_defaults`` rules:
+
+.. list-table:: Other pre-selected backends
+   :align: left
+   :header-rows: 1
+
+   * - Target
+     - Facade
+     - Selected Backend
+   * - ``pw_android_common_pw_async_backend``
+     - :ref:`module-pw_async`
+     - :ref:`module-pw_async_basic`
+
 .. _module-pw_build_android-module-libraries:
 
 ----------------
