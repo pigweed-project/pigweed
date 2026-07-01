@@ -452,7 +452,7 @@ class CommandChannel final {
   void OnEvent(std::unique_ptr<EventPacket> event);
 
   // Called when a command times out. Notifies upper layers of the error.
-  void OnCommandTimeout(TransactionId transaction_id);
+  void OnCommandTimeout(TransactionId transaction_id, hci_spec::OpCode opcode);
 
   const pw::chrono::SystemClock::duration command_timeout() const {
     return command_timeout_;

@@ -111,9 +111,9 @@ void CommandChannel::TransactionData::StartTimer() {
   // Transactions should only ever be started once.
   PW_DCHECK(!timeout_task_.is_pending());
   timeout_task_.set_function(
-      [chan = channel_, tid = id()](auto, pw::Status status) {
+      [chan = channel_, tid = id(), op = opcode()](auto, pw::Status status) {
         if (status.ok()) {
-          chan->OnCommandTimeout(tid);
+          chan->OnCommandTimeout(tid, op);
         }
       });
   timeout_task_.PostAfter(channel_->command_timeout());
@@ -865,12 +865,16 @@ void CommandChannel::OnEvent(std::unique_ptr<EventPacket> event) {
   }
 }
 
-void CommandChannel::OnCommandTimeout(TransactionId transaction_id) {
+void CommandChannel::OnCommandTimeout(TransactionId transaction_id,
+                                      hci_spec::OpCode opcode) {
   if (!active_) {
     return;
   }
-  bt_log(
-      ERROR, "hci", "command %zu timed out, notifying error", transaction_id);
+  bt_log(ERROR,
+         "hci",
+         "command %zu (opcode %#.4x) timed out, notifying error",
+         transaction_id,
+         opcode);
   active_ = false;
   if (channel_timeout_cb_) {
     fit::closure cb = std::move(channel_timeout_cb_);
