@@ -21,31 +21,6 @@ namespace pw::clock_tree {
 
 /// @module{pw_clock_tree_mcuxpresso}
 
-/// Class implementing an FRO clock source.
-class [[deprecated("Use ClockMcuxpressoFroSource instead")]]
-ClockMcuxpressoFro final : public ClockSource<ElementNonBlockingCannotFail> {
- public:
-  /// Constructor specifying the FRO divider output to manage.
-  constexpr ClockMcuxpressoFro(clock_fro_output_en_t fro_output)
-      : fro_output_(fro_output) {}
-
- private:
-  /// Enable this FRO divider.
-  Status DoEnable() final {
-    CLOCK_EnableFroClk(CLKCTL0->FRODIVOEN | fro_output_);
-    return OkStatus();
-  }
-
-  /// Disable this FRO divider.
-  Status DoDisable() final {
-    CLOCK_EnableFroClk(CLKCTL0->FRODIVOEN & ~fro_output_);
-    return OkStatus();
-  }
-
-  /// FRO divider.
-  const uint32_t fro_output_;
-};
-
 /// Class implementing the FRO clock source.
 class ClockMcuxpressoFroSource final
     : public ClockSource<ElementNonBlockingCannotFail> {

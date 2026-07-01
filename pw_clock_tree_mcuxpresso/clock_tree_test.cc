@@ -28,10 +28,11 @@ class ClockMcuxpressoTest : public ::testing::Test {
 };
 
 TEST_F(ClockMcuxpressoTest, Fro) {
-  ClockMcuxpressoFro fro(kCLOCK_FroDiv1OutEn);
-  fro.Acquire();
+  ClockMcuxpressoFroSource fro;
+  ClockMcuxpressoFroDivider fro_div1(fro, kCLOCK_FroDiv1OutEn);
+  fro_div1.Acquire();
   EXPECT_EQ(sdk_state.fro_enabled_mask, kCLOCK_FroDiv1OutEn);
-  fro.Release();
+  fro_div1.Release();
   EXPECT_EQ(sdk_state.fro_enabled_mask, 0u);
 }
 

@@ -20,8 +20,12 @@
 
 // DOCSTAG: [pw_clock_tree_mcuxpresso-examples-ClockTreeElementDefs-Flexcomm0]
 
-// Define FRO_DIV_4 clock source
-PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFro fro_div4(kCLOCK_FroDiv4OutEn);
+// Define the FRO clock source
+PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFroSource fro;
+
+// Define FRO_DIV_4 clock divider
+PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFroDivider fro_div4(
+    fro, kCLOCK_FroDiv4OutEn);
 
 // Define FRG0 configuration
 constexpr clock_frg_clk_config_t kFrg0Config = {
@@ -46,8 +50,9 @@ PW_CONSTINIT pw::clock_tree::ClockMcuxpressoClockIpNonBlocking flexcomm_0(
 
 // DOCSTAG: [pw_clock_tree_mcuxpresso-examples-ClockTreeElementDefs-fro_div8]
 
-// Define FRO_DIV8 clock source
-PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFro fro_div8(kCLOCK_FroDiv8OutEn);
+// Define FRO_DIV8 clock divider
+PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFroDivider fro_div8(
+    fro, kCLOCK_FroDiv8OutEn);
 
 // DOCSTAG: [pw_clock_tree_mcuxpresso-examples-ClockTreeElementDefs-fro_div8]
 
@@ -105,7 +110,8 @@ PW_CONSTINIT pw::clock_tree::ClockMcuxpressoClockIpBlocking ctimer_0(
 // DOCSTAG: [pw_clock_tree_mcuxpresso-examples-ClockTreeElementDefs-Ctimer1]
 
 // Define FRO_DIV_1 clock source
-PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFro fro_div1(kCLOCK_FroDiv1OutEn);
+PW_CONSTINIT pw::clock_tree::ClockMcuxpressoFroDivider fro_div1(
+    fro, kCLOCK_FroDiv1OutEn);
 
 // Define synchronized clock selector for CTIMER1
 // Initial source is fro_div1.
