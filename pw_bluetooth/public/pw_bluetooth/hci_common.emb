@@ -138,6 +138,9 @@ enum OpCode:
   LINK_KEY_REQUEST_NEGATIVE_REPLY                              = 0x040C
     -- Link Key Request Negative Reply Command (v1.1) (BR/EDR)
 
+  CHANGE_CONNECTION_PACKET_TYPE                                = 0x040F
+    -- Change Connection Packet Type Command (v1.1) (BR/EDR)
+
   AUTHENTICATION_REQUESTED                                     = 0x0411
     -- Authentication Requested Command (v1.1) (BR/EDR)
 

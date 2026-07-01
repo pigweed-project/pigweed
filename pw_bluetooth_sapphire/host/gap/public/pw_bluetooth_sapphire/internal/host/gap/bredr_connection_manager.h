@@ -186,6 +186,12 @@ class BrEdrConnectionManager final {
 
   BrEdrSecurityMode security_mode() { return *security_mode_; }
 
+  // Enable or disable automatically changing connection packet types to enable
+  // all supported types upon connection establishment.
+  void set_packet_type_optimization_enabled(bool enabled) {
+    packet_type_optimization_enabled_ = enabled;
+  }
+
   // If `reason` is DisconnectReason::kApiRequest, then incoming connections
   // from `peer_id` are rejected for kLocalDisconnectCooldownDuration
   static constexpr pw::chrono::SystemClock::duration
@@ -277,6 +283,8 @@ class BrEdrConnectionManager final {
   hci::CommandChannel::EventCallbackResult OnConnectionRequest(
       const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnConnectionComplete(
+      const hci::EventPacket& event);
+  hci::CommandChannel::EventCallbackResult OnConnectionPacketTypeChanged(
       const hci::EventPacket& event);
   hci::CommandChannel::EventCallbackResult OnIoCapabilityRequest(
       const hci::EventPacket& event);
@@ -467,6 +475,10 @@ class BrEdrConnectionManager final {
   inspect::Node inspect_node_;
 
   pw::async::Dispatcher& dispatcher_;
+
+  // When true, automatically sends HCI_Change_Connection_Packet_Type to new
+  // connections to enable all supported packet types.
+  bool packet_type_optimization_enabled_ = true;
 
   // Keep this as the last member to make sure that all weak pointers are
   // invalidated before other members get destroyed.

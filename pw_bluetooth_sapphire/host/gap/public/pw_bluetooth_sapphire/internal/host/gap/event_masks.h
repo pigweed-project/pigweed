@@ -31,6 +31,7 @@ constexpr uint64_t BuildEventMask() {
   // Enable events that are needed for basic functionality. (alphabetic)
   ENABLE_EVT(kAuthenticationCompleteEvent);
   ENABLE_EVT(kConnectionCompleteEvent);
+  ENABLE_EVT(kConnectionPacketTypeChangedEvent);
   ENABLE_EVT(kConnectionRequestEvent);
   ENABLE_EVT(kDataBufferOverflowEvent);
   ENABLE_EVT(kDisconnectionCompleteEvent);

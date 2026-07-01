@@ -31,21 +31,6 @@ enum class RequestState : uint8_t {
   kSuccess,
 };
 
-// Bitmask enabling all packets types. By enabling as many as we can, we expect
-// the controller to only use the ones it supports
-inline constexpr hci_spec::PacketTypeType kEnableAllPacketTypes =
-    static_cast<hci_spec::PacketTypeType>(
-        hci_spec::PacketTypeBits::kEnableDM1) |
-    static_cast<hci_spec::PacketTypeType>(
-        hci_spec::PacketTypeBits::kEnableDH1) |
-    static_cast<hci_spec::PacketTypeType>(
-        hci_spec::PacketTypeBits::kEnableDM3) |
-    static_cast<hci_spec::PacketTypeType>(
-        hci_spec::PacketTypeBits::kEnableDH3) |
-    static_cast<hci_spec::PacketTypeType>(
-        hci_spec::PacketTypeBits::kEnableDM5) |
-    static_cast<hci_spec::PacketTypeType>(hci_spec::PacketTypeBits::kEnableDH5);
-
 // This class represents a pending request by the BrEdr connector to initiate an
 // outgoing connection. It tracks the state of that request and is responsible
 // for running a call back when the connection status updates

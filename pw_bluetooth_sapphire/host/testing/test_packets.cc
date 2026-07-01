@@ -164,13 +164,13 @@ DynamicByteBuffer CreateConnectionPacket(DeviceAddress address) {
       addr[3],
       addr[4],
       addr[5],
-      LowerBits(hci::kEnableAllPacketTypes),  // Packet_Type
-      UpperBits(hci::kEnableAllPacketTypes),  // Packet_Type
-      0x02,                                   // Page_Scan_Repetition_Mode (R2)
-      0x00,                                   // Reserved
-      0x00,                                   // Clock_Offset
-      0x00,                                   // Clock_Offset
-      0x00                                    // Allow_Role_Switch (Not allowed)
+      LowerBits(hci_spec::kEnableAllPacketTypes),  // Packet_Type
+      UpperBits(hci_spec::kEnableAllPacketTypes),  // Packet_Type
+      0x02,  // Page_Scan_Repetition_Mode (R2)
+      0x00,  // Reserved
+      0x00,  // Clock_Offset
+      0x00,  // Clock_Offset
+      0x00   // Allow_Role_Switch (Not allowed)
       ));
 }
 
@@ -2106,6 +2106,35 @@ DynamicByteBuffer WriteScanEnable(uint8_t scan_enable) {
       0x01,        // parameter_total_size (1 byte)
       scan_enable  // Scan_Enable
       ));
+}
+
+DynamicByteBuffer ChangeConnectionPacketTypePacket(
+    hci_spec::ConnectionHandle handle, uint16_t packet_type) {
+  return DynamicByteBuffer(StaticByteBuffer(
+      LowerBits(static_cast<uint16_t>(
+          pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE)),
+      UpperBits(static_cast<uint16_t>(
+          pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE)),
+      0x04,  // parameter_total_size (4 bytes)
+      LowerBits(handle),
+      UpperBits(handle),
+      LowerBits(packet_type),
+      UpperBits(packet_type)));
+}
+
+DynamicByteBuffer ConnectionPacketTypeChangedEventPacket(
+    pw::bluetooth::emboss::StatusCode status,
+    hci_spec::ConnectionHandle handle,
+    uint16_t packet_type) {
+  return DynamicByteBuffer(StaticByteBuffer(
+      static_cast<uint8_t>(
+          pw::bluetooth::emboss::EventCode::CONNECTION_PACKET_TYPE_CHANGED),
+      0x05,  // parameter_total_size (5 bytes)
+      static_cast<uint8_t>(status),
+      LowerBits(handle),
+      UpperBits(handle),
+      LowerBits(packet_type),
+      UpperBits(packet_type)));
 }
 
 }  // namespace bt::testing

@@ -431,4 +431,12 @@ DynamicByteBuffer WritePinTypePacket(uint8_t pin_type);
 
 DynamicByteBuffer WriteScanEnable(uint8_t scan_enable);
 
+DynamicByteBuffer ChangeConnectionPacketTypePacket(
+    hci_spec::ConnectionHandle handle, uint16_t packet_type);
+
+DynamicByteBuffer ConnectionPacketTypeChangedEventPacket(
+    pw::bluetooth::emboss::StatusCode status,
+    hci_spec::ConnectionHandle handle,
+    uint16_t packet_type);
+
 }  // namespace bt::testing

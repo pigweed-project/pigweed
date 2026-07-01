@@ -597,6 +597,7 @@ class BrEdrConnectionManagerTest : public TestingBase,
         fit::bind_member<&sm::testing::TestSecurityManagerFactory::CreateBrEdr>(
             &security_manager_factory_),
         dispatcher());
+    connection_manager_->set_packet_type_optimization_enabled(false);
 
     RunUntilIdle();
 
@@ -976,6 +977,7 @@ class BrEdrConnectionManagerLegacyPairingTest
         fit::bind_member<&sm::testing::TestSecurityManagerFactory::CreateBrEdr>(
             security_manager_factory()),
         dispatcher());
+    connection_manager_->set_packet_type_optimization_enabled(false);
 
     RunUntilIdle();
 
@@ -1606,6 +1608,96 @@ TEST_F(BrEdrConnectionManagerTest, IncomingConnectionSuccess) {
 
   // When we deallocate the connection manager during teardown, we should
   // disconnect.
+  QueueDisconnection(kConnectionHandle);
+}
+
+// Test: When packet type optimization is enabled, establishing a connection
+// should trigger the HCI_Change_Connection_Packet_Type command to enable all
+// supported types.
+TEST_F(BrEdrConnectionManagerTest, ChangePacketTypeOnConnectionEstablishment) {
+  connmgr()->set_packet_type_optimization_enabled(true);
+
+  QueueSuccessfulAccept(kTestDevAddr, kConnectionHandle);
+  QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
+
+  // Expect the Change Connection Packet Type command.
+  const auto expected_cmd = testing::ChangeConnectionPacketTypePacket(
+      kConnectionHandle, hci_spec::kEnableAllPacketTypes);
+
+  // Respond with Command Status (Success) and then the Connection Packet Type
+  // Changed event.
+  const auto status_rsp = testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      1);
+  const auto event_rsp = testing::ConnectionPacketTypeChangedEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kConnectionHandle,
+      hci_spec::kEnableAllPacketTypes);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), expected_cmd, &status_rsp, &event_rsp);
+
+  // Trigger incoming connection.
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  RunUntilIdle();
+
+  auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  EXPECT_EQ(peer->identifier(), connmgr()->GetPeerId(kConnectionHandle));
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// Test: When packet type optimization is disabled, establishing a connection
+// should NOT trigger the HCI_Change_Connection_Packet_Type command.
+TEST_F(BrEdrConnectionManagerTest, NoChangePacketTypeIfDisabled) {
+  connmgr()->set_packet_type_optimization_enabled(false);
+
+  QueueSuccessfulIncomingConn();
+
+  // Trigger incoming connection.
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+
+  // Run until idle. If the command was sent, the test would fail because it's
+  // not expected.
+  RunUntilIdle();
+
+  auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  EXPECT_EQ(peer->identifier(), connmgr()->GetPeerId(kConnectionHandle));
+
+  QueueDisconnection(kConnectionHandle);
+}
+
+// Test: When packet type optimization is enabled, establishing an outgoing
+// connection should NOT trigger the HCI_Change_Connection_Packet_Type command,
+// as we already enable all packet types in the Create Connection command.
+TEST_F(BrEdrConnectionManagerTest, NoChangePacketTypeForOutgoingConnection) {
+  connmgr()->set_packet_type_optimization_enabled(true);
+
+  auto* peer = peer_cache()->NewPeer(kTestDevAddr, true);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulCreateConnection(peer, kConnectionHandle);
+  QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
+
+  // We do NOT expect ChangeConnectionPacketTypePacket.
+  // If it is sent, the MockController will fail the test because it's
+  // unexpected.
+
+  bool callback_called = false;
+  auto status_cb = [&callback_called](hci::Result<> status, auto* conn) {
+    EXPECT_EQ(fit::ok(), status);
+    EXPECT_TRUE(conn);
+    callback_called = true;
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer->identifier(), std::move(status_cb)));
+
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
   QueueDisconnection(kConnectionHandle);
 }
 

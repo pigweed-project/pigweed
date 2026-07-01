@@ -639,9 +639,20 @@ struct PinCodeRequestNegativeReplyCommand:
   $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr         bd_addr
     -- BD_ADDR of the peer device that the host is responding to
 
-# 7.1.14 Change Connection Packet Type command
-# HCI_Change_Connection_Packet_Type
-# TODO: b/265052417 - Definition needs to be added
+struct ChangeConnectionPacketTypeCommand:
+  -- 7.1.14 Change Connection Packet Type command (v1.1) (BR/EDR)
+  -- HCI_Change_Connection_Packet_Type
+  --
+  -- NOTE on ReturnParams: No Command Complete event will be sent by the
+  -- Controller to indicate that this command has been completed. Instead, the
+  -- Connection Packet Type Changed event will indicate that this command has
+  -- been completed.
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+  0     [+hdr_size]  hci.CommandHeader  header
+  $next [+2]         UInt               connection_handle
+    -- Connection_Handle (only the lower 12-bits are meaningful).
+    --   Range: 0x0000 to 0x0EFF
+  $next [+2]         hci.PacketType     packet_type
 
 
 struct AuthenticationRequestedCommand:

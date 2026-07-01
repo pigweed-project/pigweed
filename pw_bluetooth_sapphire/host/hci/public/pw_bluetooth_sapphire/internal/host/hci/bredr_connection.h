@@ -31,6 +31,10 @@ class BrEdrConnection : public AclConnection, public WeakSelf<BrEdrConnection> {
                   const Transport::WeakPtr& hci,
                   pw::async::Dispatcher& dispatcher);
 
+  // Sends a HCI_Change_Connection_Packet_Type command to the controller to
+  // enable all supported packet types for this connection.
+  void EnsureAllPacketTypesEnabled();
+
   bool StartEncryption() override;
 
   // Assigns a link key with its corresponding HCI type to this BR/EDR

@@ -31,7 +31,8 @@ CommandPacket CreateConnectionPacket(
           hci_spec::kCreateConnection);
   auto params = request.view_t();
   params.bd_addr().CopyFrom(address.value().view());
-  params.packet_type().BackingStorage().WriteUInt(kEnableAllPacketTypes);
+  params.packet_type().BackingStorage().WriteUInt(
+      hci_spec::kEnableAllPacketTypes);
 
   // The Page Scan Repetition Mode of the remote device as retrieved by Inquiry.
   // If we do not have one for the device, opt for R2 so we will send for at

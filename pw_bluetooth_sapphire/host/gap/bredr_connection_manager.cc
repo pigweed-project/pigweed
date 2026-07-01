@@ -250,6 +250,11 @@ BrEdrConnectionManager::BrEdrConnectionManager(
   AddEventHandler(
       hci_spec::kPinCodeRequestEventCode,
       fit::bind_member<&BrEdrConnectionManager::OnPinCodeRequest>(this));
+  AddEventHandler(
+      static_cast<hci_spec::EventCode>(
+          pw::bluetooth::emboss::EventCode::CONNECTION_PACKET_TYPE_CHANGED),
+      fit::bind_member<&BrEdrConnectionManager::OnConnectionPacketTypeChanged>(
+          this));
 
   // Set the timeout for outbound connections explicitly to the spec default.
   WritePageTimeout(
@@ -1007,6 +1012,16 @@ void BrEdrConnectionManager::CompleteConnectionSetup(
   }
 
   conn_state.OnInterrogationComplete();
+
+  if (packet_type_optimization_enabled_ &&
+      conn_state.link().role() ==
+          pw::bluetooth::emboss::ConnectionRole::PERIPHERAL) {
+    bt_log(INFO,
+           "gap-bredr",
+           "optimizing packet types for new incoming connection %#.04x",
+           handle);
+    conn_state.link().EnsureAllPacketTypesEnabled();
+  }
 }
 
 hci::CommandChannel::EventCallbackResult
@@ -1031,6 +1046,36 @@ BrEdrConnectionManager::OnAuthenticationComplete(
   }
 
   iter->second.pairing_state_manager().OnAuthenticationComplete(status);
+  return hci::CommandChannel::EventCallbackResult::kContinue;
+}
+
+hci::CommandChannel::EventCallbackResult
+BrEdrConnectionManager::OnConnectionPacketTypeChanged(
+    const hci::EventPacket& event) {
+  PW_DCHECK(
+      event.event_code() ==
+      static_cast<hci_spec::EventCode>(
+          pw::bluetooth::emboss::EventCode::CONNECTION_PACKET_TYPE_CHANGED));
+  auto params = event.unchecked_view<
+      pw::bluetooth::emboss::ConnectionPacketTypeChangedEventView>();
+  if (!params.Ok()) {
+    bt_log(ERROR,
+           "gap-bredr",
+           "ignoring malformed Connection Packet Type Changed event");
+    return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
+  hci_spec::ConnectionHandle handle = params.connection_handle().Read();
+  pw::bluetooth::emboss::StatusCode status = params.status().Read();
+  uint16_t packet_type = params.packet_type().BackingStorage().ReadUInt();
+
+  bt_log(INFO,
+         "gap-bredr",
+         "connection packet type changed (status: %s, handle: %#.04x, "
+         "packet_type: %#.04x)",
+         bt_str(ToResult(status)),
+         handle,
+         packet_type);
+
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
 

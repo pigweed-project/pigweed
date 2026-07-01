@@ -16,6 +16,8 @@
 
 #include <pw_assert/check.h>
 
+#include "pw_bluetooth/hci_commands.emb.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/transport.h"
 
 namespace bt::hci {
@@ -32,6 +34,44 @@ BrEdrConnection::BrEdrConnection(hci_spec::ConnectionHandle handle,
   PW_CHECK(peer_address.type() == DeviceAddress::Type::kBREDR);
   PW_CHECK(hci.is_alive());
   PW_CHECK(hci->acl_data_channel());
+}
+
+void BrEdrConnection::EnsureAllPacketTypesEnabled() {
+  auto cmd = CommandPacket::New<
+      pw::bluetooth::emboss::ChangeConnectionPacketTypeCommandWriter>(
+      static_cast<hci_spec::OpCode>(
+          pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE));
+  auto params = cmd.view_t();
+  params.connection_handle().Write(handle());
+  params.packet_type().BackingStorage().WriteUInt(
+      hci_spec::kEnableAllPacketTypes);
+
+  auto self = GetWeakPtr();
+  auto event_cb = [self, handle = handle()](auto, const EventPacket& event) {
+    if (!self.is_alive()) {
+      return;
+    }
+    Result<> result = event.ToResult();
+    if (bt_is_error(
+            result,
+            ERROR,
+            "hci-bredr",
+            "failed to send Change Connection Packet Type command for %#.04x",
+            handle)) {
+      // Log error
+    }
+  };
+
+  auto cmd_result = hci()->command_channel()->SendCommand(
+      std::move(cmd), std::move(event_cb), hci_spec::kCommandStatusEventCode);
+  if (!cmd_result.ok()) {
+    bt_log(
+        WARN,
+        "hci-bredr",
+        "failed to send Change Connection Packet Type command for %#.04x: %s",
+        handle(),
+        cmd_result.status().str());
+  }
 }
 
 bool BrEdrConnection::StartEncryption() {

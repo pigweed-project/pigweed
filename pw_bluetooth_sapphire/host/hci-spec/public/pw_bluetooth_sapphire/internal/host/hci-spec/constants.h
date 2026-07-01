@@ -886,6 +886,16 @@ enum class PacketTypeBits : uint16_t {
 
 using PacketTypeType = uint16_t;
 
+// Bitmask enabling all packets types. By enabling as many as we can, we expect
+// the controller to only use the ones it supports
+inline constexpr PacketTypeType kEnableAllPacketTypes =
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDM1) |
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDH1) |
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDM3) |
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDH3) |
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDM5) |
+    static_cast<PacketTypeType>(PacketTypeBits::kEnableDH5);
+
 enum class RoleSwitchBits : uint8_t {
   kDisallowRoleSwitch = 0x0,
   kAllowRoleSwitch = 0x1
