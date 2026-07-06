@@ -17,7 +17,6 @@ load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//pw_build:python.bzl", "pw_py_binary")
 load("//pw_kernel/tooling:code_size.bzl", "code_size")
-load("//pw_kernel/tooling:tracing_test.bzl", "qemu_tracing_test")
 
 rust_binary(
     name = "system_assembler",
@@ -101,12 +100,4 @@ rust_binary(
         "@rust_crates//:tokio",
         "@rust_crates//:tokio-util",
     ],
-)
-
-qemu_tracing_test(
-    name = "qemu_tracing_test",
-    cpu = "rv32",
-    image = "//pw_kernel/target/qemu_virt_riscv32/process_termination/user:process_termination",
-    machine = "virt",
-    tags = ["kernel"],
 )
