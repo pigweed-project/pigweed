@@ -64,5 +64,6 @@ zngur = "0.10.0"
 zngur-lib = "0.10.0"
 psm = "0.1.30"
 zerocopy = { version = "0.8.48", features = ["derive"] }
+prost-reflect = { version = "0.16.4", features = ["text-format"] }
 
 [features]

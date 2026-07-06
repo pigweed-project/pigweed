@@ -311,6 +311,18 @@ alias(
 )
 
 alias(
+    name = "prost-reflect",
+    target_compatible_with = select({
+        "@pigweed//pw_build/constraints/rust:std": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    actual = select({
+        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:prost-reflect",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "prost-types",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:std": [],
