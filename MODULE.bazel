@@ -38,7 +38,7 @@ bazel_dep(name = "grpc-java", version = "1.69.0")
 bazel_dep(name = "nanopb", version = "0.4.9.1.bcr.3")
 bazel_dep(name = "mbedtls", version = "3.6.5")
 bazel_dep(name = "pico-sdk", version = "2.2.2-develop.bcr.20260420-79b38e95")
-bazel_dep(name = "picotool", version = "2.2.1-develop.bcr.20260407-d1a8d35")
+bazel_dep(name = "picotool", version = "2.2.1-develop.bcr.20260623-7ac0c2a")
 bazel_dep(name = "platforms", version = "1.0.0")
 
 # LINT.IfChange(protobuf)
