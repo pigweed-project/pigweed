@@ -78,7 +78,7 @@ Initiator::Feature GetFeaturesFromFd(int fd) {
   Initiator::Feature features = Initiator::Feature::kStandard;
   unsigned long functionality = 0;
   int ioctl_ret = ioctl(fd, I2C_FUNCS, &functionality);
-  PW_DCHECK_INT_NE(ioctl_ret, 0);
+  PW_DCHECK_INT_EQ(ioctl_ret, 0);
   if (ioctl_ret != 0) {
     PW_LOG_WARN("Unable to check i2c features");
     return features;
