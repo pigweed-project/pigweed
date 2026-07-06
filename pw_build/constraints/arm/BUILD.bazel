@@ -99,6 +99,11 @@ constraint_value(
 )
 
 constraint_value(
+    name = "cortex-m52",
+    constraint_setting = ":mcpu",
+)
+
+constraint_value(
     name = "cortex-m55",
     constraint_setting = ":mcpu",
 )

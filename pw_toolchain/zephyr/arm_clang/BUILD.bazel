@@ -144,6 +144,18 @@ cc_args(
 )
 
 cc_args(
+    name = "cortex-m52",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:assembly_actions",
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-mcpu=cortex-m52",
+    ],
+)
+
+cc_args(
     name = "cortex-m55",
     actions = [
         "@rules_cc//cc/toolchains/actions:assembly_actions",
@@ -186,6 +198,10 @@ cc_toolchain(
         ],
         # TODO: https://pwbug.dev/380001331 - Add support for other cortex MCUs
         "//pw_build/constraints/arm:cortex-m4": [":cortex-m4"],
+        "//pw_build/constraints/arm:cortex-m52": [
+            ":cortex-m52",
+            ":armv8.1m.main-none-eabi",
+        ],
         "//pw_build/constraints/arm:cortex-m55": [
             ":cortex-m55",
             ":armv8.1m.main-none-eabi",
@@ -223,6 +239,7 @@ cc_toolchain(
         "//pw_build/constraints/arm:cortex-m33": [],
         # TODO: https://pwbug.dev/380001331 - Add support for other cortex MCUs
         "//pw_build/constraints/arm:cortex-m4": [],
+        "//pw_build/constraints/arm:cortex-m52": [],
         "//pw_build/constraints/arm:cortex-m55": [],
         "//pw_build/constraints/arm:cortex-m7": [],
         "//pw_build/constraints/arm:cortex-m85": [],
@@ -255,6 +272,15 @@ toolchain(
     name = "toolchain_cortex-m33",
     target_compatible_with = [
         "//pw_build/constraints/arm:cortex-m33",
+    ],
+    toolchain = ":arm_cortex-m",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
+    name = "toolchain_cortex-m52",
+    target_compatible_with = [
+        "//pw_build/constraints/arm:cortex-m52",
     ],
     toolchain = ":arm_cortex-m",
     toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
