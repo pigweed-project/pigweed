@@ -423,10 +423,10 @@ fn test_str_simple() {
     let c_result = call_snprintf_str(printf_format_str, arg);
 
     assert_eq!(rust_printf, c_result);
-    assert_eq!(rust_core, format!("{}", arg));
+    assert_eq!(rust_core, arg.to_string());
 
     let rust_core_parsed = parsed_core.format(&args, FormatStyle::CoreFmt);
-    assert_eq!(rust_core_parsed, format!("{}", arg));
+    assert_eq!(rust_core_parsed, arg.to_string());
 
     let rust_core_printf = parsed_core.format(&args, FormatStyle::Printf);
     assert_eq!(rust_core_printf, c_result);

@@ -16,6 +16,7 @@
 
 #include <linux/spi/spidev.h>
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
