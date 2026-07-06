@@ -1072,9 +1072,9 @@ void SniffOffloadManager::ConnectionFsm::SendExitSniffMode() {
 }
 
 bool SniffOffloadManager::ConnectionFsm::ShouldExitSniff(Direction direction) {
-  return should_control() && (direction == Direction::kHostToController)
-             ? (parameters_->allow_exit_sniff_on_tx)
-             : (parameters_->allow_exit_sniff_on_rx);
+  return should_control() && ((direction == Direction::kHostToController)
+                                  ? (parameters_->allow_exit_sniff_on_tx)
+                                  : (parameters_->allow_exit_sniff_on_rx));
 }
 
 async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(

@@ -784,6 +784,40 @@ TEST_F(SniffOffloadManagerTest, AutosniffDisable) {
   EXPECT_TRUE(NoErrors());
 }
 
+TEST_F(SniffOffloadManagerTest,
+       AclActivityInSniffModeWhenDisabledDoesNotCrash) {
+  EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x123));
+  EXPECT_TRUE(NoErrors());
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(false)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+  EXPECT_TRUE(NoErrors());
+
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kRx);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+
+  SimulateAclActivity(0x123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(packets_to_controller().empty());
+  EXPECT_TRUE(NoErrors());
+}
+
 TEST_F(SniffOffloadManagerTest, SuppressModeChange) {
   EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
   EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true, true, true)),
