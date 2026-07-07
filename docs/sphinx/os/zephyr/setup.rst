@@ -12,9 +12,6 @@ Starter repository
 You can also check out the `zephyr_pigweed`_ repository for an example of a
 Zephyr starter project that has been set up to use Pigweed.
 
-To configure individual Pigweed modules and backend features, see
-:ref:`docs-os-zephyr-kconfig`.
-
 -------
 Testing
 -------

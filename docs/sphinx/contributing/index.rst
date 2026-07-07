@@ -311,6 +311,6 @@ process you are welcome to send us feedback using the
    ../infra/index
    ../embedded_cpp_guide
    ../style_guide
-   ../code_of_conduct
+   Code of conduct <pw://code_of_conduct.html>
    docs/index
    ../testing/index

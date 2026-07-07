@@ -364,8 +364,8 @@ def get_parser(
             action='extend',
             default=[],
             help=(
-                'Run a build recipe. Include an asterix to match more than one '
-                "name. For example: --recipe 'gn_*'"
+                'Run a build recipe. Include an asterisk to match more than '
+                'one name. For example: ``--recipe "gn_*"``'
             ),
             type=build_recipe_argparse_type,
         )
@@ -393,8 +393,8 @@ def get_parser(
             action='extend',
             default=[],
             help=(
-                'Run presubmit step. Include an asterix to match more than one '
-                "step name. For example: --step '*_format'"
+                'Run presubmit step. Include an asterisk to match more than '
+                'one step name. For example: ``--step "*_format"``'
             ),
             type=presubmit_step_argparse_type,
         )

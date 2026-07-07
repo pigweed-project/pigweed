@@ -78,7 +78,7 @@ CMake
 .. grid:: 1
 
    .. grid-item-card:: :octicon:`code-square` CMake integration
-      :link: docs-cmake-integration
+      :link: cmake-integration
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 

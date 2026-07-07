@@ -20,4 +20,4 @@ layers.
    :maxdepth: 1
    :hidden:
 
-   Sync <../../../pw_sync_baremetal/docs>
+   Sync <pw://pw_sync_baremental/docs.html>

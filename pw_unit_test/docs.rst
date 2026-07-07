@@ -1079,7 +1079,7 @@ See also :ref:`module-pw_unit_test-helpers`.
       add_subdirectory(path/to/pigweed pigweed)
       set(pw_unit_test_ENABLE_PW_ADD_TEST ON)
 
-   See also: :ref:`module-pw_build-existing-cmake-project`.
+   See also: :ref:`cmake-integration` and :ref:`cmake-api`.
 
 Targets
 -------

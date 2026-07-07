@@ -111,4 +111,4 @@ code generation in C++.
    libraries
    protocol
    design
-   HDLC example <../pw_hdlc/rpc_example/docs>
+   HDLC example <pw://pw_hdlc/rpc_example/docs.html>

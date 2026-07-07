@@ -118,4 +118,4 @@ Then run a binary like this!
    api
    config
    design
-   SEED-0108 <../seed/0108>
+   SEED-0108 <pw://seed/0108.html>

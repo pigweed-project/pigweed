@@ -26,6 +26,6 @@ layers.
    :maxdepth: 1
    :hidden:
 
-   Chrono <../../../pw_chrono_stl/docs>
-   Sync <../../../pw_sync_stl/docs>
-   Thread <../../../pw_thread_stl/docs>
+   Chrono <pw://pw_chrono_stl/docs.html>
+   Sync <pw://pw_sync_stl/docs.html>
+   Thread <pw://pw_thread_stl/docs.html>

@@ -124,7 +124,7 @@ Pigweed is modular: you can use as much or as little of it as you need.
       runtime analysis.
 
    .. grid-item-card:: :octicon:`code-square` CMake
-      :link: docs-cmake-integration
+      :link: cmake-integration
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
@@ -145,10 +145,10 @@ Pigweed is modular: you can use as much or as little of it as you need.
 
    self
    First-time setup <first_time_setup>
-   Install Bazel <../build/bazel/install>
-   Bazel quickstart <../build/bazel/quickstart>
-   Bazel integration <../build/bazel/integration/index>
-   CMake integration <../build/cmake/integration/index>
+   Install Bazel <pw://build/bazel/install.html>
+   Bazel quickstart <pw://build/bazel/quickstart.html>
+   Bazel integration <pw://build/bazel/integration/index.html>
+   CMake integration <pw://build/cmake/integration/index.html>
    Static and runtime analysis <analysis>
    GitHub Actions <github_actions>
    Zephyr quickstart <zephyr>

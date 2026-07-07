@@ -6,9 +6,9 @@ Bare metal
 Pigweed has support for running on target hardware directly without an
 operating system or scheduler (bare metal).
 
-----------------------
+-----------------------
 Bare metal boot & setup
-----------------------
+-----------------------
 Running bare metal requires target-specific boot configurations and startup
 logic to initialize the CPU and memory.  The following modules provide helper
 libraries for baremetal boot:

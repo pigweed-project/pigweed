@@ -31,7 +31,7 @@ per build directory.
    (via the ``pw build`` command) to orchestrate and run builds across multiple
    directories in parallel.
 
-The :ref:`cmake-api-pw_add_module_facade` function declares a cache variable
+The :ref:`cmake-api-pw_add_facade` function declares a cache variable
 named ``<module_name>_BACKEND`` for each facade. Cache variables can be awkward
 to work with, since their values only change when they're assigned, but then
 persist across CMake invocations. These variables should be set in one of the
@@ -147,10 +147,10 @@ option:
 Individual libraries may enable or disable sandboxing by setting the ``SANDBOX``
 option to ``ON`` or ``OFF``:
 
-.. literalinclude:: CMakeLists.txt
+.. literalinclude:: ../../../pw_build/CMakeLists.txt
    :language: cmake
-   :start-after: pw_build-cmake-sandbox-example
-   :end-before: pw_build-cmake-sandbox-example
+   :start-after: # DOCSTAG[pw_build-cmake-sandbox-example]
+   :end-before: # DOCSTAG[pw_build-cmake-sandbox-example]
 
 Sandboxed libraries can only see files they list as sources or headers during
 compilation. Files declared in sandboxed libraries cannot be seen by other

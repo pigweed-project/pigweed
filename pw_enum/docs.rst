@@ -145,8 +145,8 @@ unique domain and its value are logged together to prevent collisions and suppor
 reliable detokenization), you can use the versioned logging macro:
 
 * **Versioned argument macro**: Include :cs:`pw_log/tokenized_args.h` and use
-  :cc:`PW_LOG_ENUM_VERSIONED(value)` as the argument to the log statement,
-  paired with the format specifier :cc:`PW_LOG_ENUM_VERSIONED_FMT()`.
+  :cc:`PW_LOG_ENUM_VERSIONED` as the argument to the log statement,
+  paired with the format specifier :cc:`PW_LOG_ENUM_VERSIONED_FMT`.
 
 When using a tokenizing logging backend, the format macro evaluates to a nested
 token format specifier (e.g. ``"${$#%08" PRIx32 "}#%08" PRIx32``), and

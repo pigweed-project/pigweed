@@ -464,8 +464,10 @@ sphinx_docs(
     allow_persistent_workers = False,
     config = "conf.py",
     extra_opts = [
-        "--silent",
-        # "--fail-on-warning",
+        # Do not use `--silent` option because `--fail-on-warning`
+        # does not seem to work as expected with `--silent`.
+        "--quiet",
+        "--fail-on-warning",
         "--jobs",
         "16",
     ],

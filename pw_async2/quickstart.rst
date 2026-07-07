@@ -122,7 +122,7 @@ dispatcher APIs that you'll always need.
          add_executable(quickstart quickstart.cc)
          target_link_libraries(quickstart PRIVATE pw_async2)
 
-      See :ref:`docs-build-cmake` for help with integrating Pigweed into an
+      See :ref:`cmake-integration` for help with integrating Pigweed into an
       existing CMake project.
 
 .. _module-pw_async2-quickstart-dispatcher:

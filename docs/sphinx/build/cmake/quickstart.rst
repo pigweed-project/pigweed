@@ -205,4 +205,4 @@ Next steps
 * Talk to us in the ``#cmake-build`` channel of our :ref:`Discord
   <docs-community>`.
 
-* Learn more about Pigweed's :ref:`CMake support <docs-build-cmake>`.
+* Learn more about Pigweed's :ref:`CMake support <cmake>`.
