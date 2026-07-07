@@ -29,11 +29,11 @@ config_setting(
 )
 
 rp2350_zephyr_binary(
-    name = "loop_example_binary",
-    binary = "@pigweed//targets/pw_rp2350:loop_example",
+    name = "sleep_example_binary",
+    binary = "@pigweed//targets/pw_rp2350:sleep_example",
 )
 
 flash_rp2350(
-    name = "flash_loop_example",
-    rp2350_binary = ":loop_example_binary",
+    name = "flash_sleep_example",
+    rp2350_binary = ":sleep_example_binary",
 )

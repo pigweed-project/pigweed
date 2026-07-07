@@ -12,12 +12,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_log/log.h"
+#include <cstdint>
+#include <type_traits>
 
-extern "C" void pw_boot_rust_entry(void*);
+#include "FreeRTOS.h"
+#include "task.h"
 
-int main() {
-  PW_LOG_INFO("Pigweed RP2350 Target Board booting Zephyr");
-  pw_boot_rust_entry(nullptr);
-  return 0;
-}
+// taskYIELD() is a macro and cannot be called directly from Rust.
+// This helper function exposes it as a linkable C function.
+extern "C" void pw_thread_freertos_Yield() { taskYIELD(); }
+
+static_assert(std::is_same<TickType_t, uint32_t>::value,
+              "FreeRTOS TickType_t must be uint32_t");

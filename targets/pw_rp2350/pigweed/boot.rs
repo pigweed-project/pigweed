@@ -15,7 +15,6 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
-use kernel::Arch as _;
 use rp235x_hal as hal;
 use target_common::{declare_target, TargetInterface};
 
@@ -77,12 +76,3 @@ impl TargetInterface for Target {
 }
 
 declare_target!(Target);
-
-// Implement the FreeRTOS delay function used in entry.rs under pw_kernel.
-// Remove once we have the OSAL
-#[unsafe(no_mangle)]
-pub extern "C" fn vTaskDelay(x_ticks_to_delay: u32) {
-    let now = Arch.now();
-    let duration = kernel::Duration::from_millis(x_ticks_to_delay as i64);
-    let _ = kernel::sleep_until(Arch, now + duration);
-}

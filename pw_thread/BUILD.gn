@@ -366,3 +366,18 @@ pw_proto_library("protos") {
   ]
   deps = [ "$dir_pw_tokenizer:proto" ]
 }
+
+# This target is declared in GN solely to satisfy the presubmit check that
+# requires all C/C++ source files in the repository to be declared in GN.
+# The Rust crate `pw_time` and this helper are built using Bazel.
+pw_source_set("pw_thread_backend_freertos_helper") {
+  sources = [ "rust/pw_thread_backend_freertos_helper.cc" ]
+  deps = [ "$pw_external_freertos" ]
+}
+
+# This target is declared in GN solely to satisfy the presubmit check that
+# requires all C/C++ source files in the repository to be declared in GN.
+# The Rust crate `pw_time` and this helper are built using Bazel.
+pw_source_set("pw_thread_backend_zephyr_helper") {
+  sources = [ "rust/pw_thread_backend_zephyr_helper.cc" ]
+}

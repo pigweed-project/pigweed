@@ -41,6 +41,7 @@ platform(
             "//pw_log:backend": "//pw_log_basic",
             "//pw_log:backend_impl": "//pw_log_basic:impl",
             "//pw_sync:interrupt_spin_lock_backend": "//pw_sync_baremetal:interrupt_spin_lock",
+            "//pw_thread/rust:pw_thread_backend": "@pigweed//pw_thread/rust:pw_thread_backend_pigweed",
             "//pw_time/rust:pw_time_backend": "@pigweed//pw_time/rust:pw_time_backend_pigweed",
             "//targets/pw_rp2350:platform_deps": ":boot",
             "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
@@ -49,14 +50,6 @@ platform(
             "@pico-sdk//bazel/config:PICO_TOOLCHAIN": "clang",
         },
     ),
-)
-
-system_image(
-    name = "loop_example_image",
-    kernel = "//targets/pw_rp2350:loop_example",
-    platform = ":pw_rp2350",
-    system_config = "system.json5",
-    userspace = False,
 )
 
 target_linker_script(
@@ -107,7 +100,15 @@ rust_library(
     ],
 )
 
+system_image(
+    name = "sleep_example_image",
+    kernel = "//targets/pw_rp2350:sleep_example",
+    platform = ":pw_rp2350",
+    system_config = "system.json5",
+    userspace = False,
+)
+
 flash_rp2350(
-    name = "flash_loop_example",
-    rp2350_binary = ":loop_example_image",
+    name = "flash_sleep_example",
+    rp2350_binary = ":sleep_example_image",
 )

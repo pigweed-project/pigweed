@@ -11,13 +11,21 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+#![no_std]
 
-#include "pw_log/log.h"
+use pw_time::{Clock, Duration, Instant, SystemClock};
+use target_arch::Arch;
 
-extern "C" void pw_boot_rust_entry(void*);
+pub fn sleep(sleep_duration: Duration<SystemClock>) {
+    let wakeup_time = SystemClock::now() + sleep_duration;
+    sleep_until(wakeup_time);
+}
 
-int main() {
-  PW_LOG_INFO("Pigweed RP2350 Target Board booting Zephyr");
-  pw_boot_rust_entry(nullptr);
-  return 0;
+pub fn sleep_until(wakeup_time: Instant<SystemClock>) {
+    let deadline = kernel::Instant::from_ticks(wakeup_time.ticks());
+    let _ = kernel::sleep_until(Arch, deadline);
+}
+
+pub fn yield_now() {
+    kernel::yield_timeslice(Arch);
 }

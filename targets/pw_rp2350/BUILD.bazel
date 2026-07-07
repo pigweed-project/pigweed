@@ -20,17 +20,6 @@ load("//pw_build:pw_rust_binary.bzl", "pw_rust_binary")
 package(default_visibility = ["//visibility:public"])
 
 pw_rust_binary(
-    name = "loop_example",
-    srcs = ["loop_example.rs"],
-    edition = "2021",
-    deps = [
-        ":platform_deps",
-        "//pw_boot/rust:pw_boot",
-        "//pw_log/rust:pw_log",
-    ],
-)
-
-pw_rust_binary(
     name = "system_clock_example",
     srcs = ["system_clock_example.rs"],
     edition = "2021",
@@ -39,6 +28,19 @@ pw_rust_binary(
         "//pw_boot/rust:pw_boot",
         "//pw_log/rust:pw_log",
         "//pw_sync/rust/pw_sync_spinlock",
+        "//pw_time/rust:pw_time",
+    ],
+)
+
+pw_rust_binary(
+    name = "sleep_example",
+    srcs = ["sleep_example.rs"],
+    edition = "2021",
+    deps = [
+        ":platform_deps",
+        "//pw_boot/rust:pw_boot",
+        "//pw_log/rust:pw_log",
+        "//pw_thread/rust:pw_thread",
         "//pw_time/rust:pw_time",
     ],
 )

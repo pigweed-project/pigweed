@@ -16,22 +16,24 @@
 
 use boot as _;
 use pw_boot::entry;
+use pw_thread::{sleep, sleep_until};
+use pw_time::{Clock, Duration, SystemClock};
 
 #[entry]
 fn entry() -> ! {
-    pw_log::info!("Rust loop example");
+    pw_log::info!("Rust sleep example");
 
-    let mut count: usize = 0;
+    let mut cycles = 0;
     loop {
-        pw_log::info!("Loop: {}", count as i32);
-        count += 1;
-        // Convert to spinning on SystemClock::now() once pw_time lands.
-        unsafe {
-            vTaskDelay(1000);
-        }
-    }
-}
+        cycles += 1;
+        pw_log::info!("Loop (sleep): {}", cycles);
 
-extern "C" {
-    fn vTaskDelay(x_ticks_to_delay: u32);
+        // Sleep for 500 ms using sleep()
+        sleep(Duration::from_millis(500));
+
+        // Sleep until 500 ms from now using sleep_until()
+        let now = SystemClock::now();
+        pw_log::info!("Loop (sleep_until): {}", cycles);
+        sleep_until(now + Duration::from_millis(500));
+    }
 }

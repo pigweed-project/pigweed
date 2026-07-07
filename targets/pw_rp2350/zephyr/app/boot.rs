@@ -18,3 +18,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     pw_log::error!("Panic!");
     loop {}
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn pw_assert_HandleFailure() -> ! {
+    loop {}
+}
