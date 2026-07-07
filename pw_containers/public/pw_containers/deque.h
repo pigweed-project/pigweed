@@ -26,6 +26,7 @@
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
 #include "pw_containers/internal/generic_deque.h"
+#include "pw_containers/internal/pod_deque_internal.h"
 #include "pw_containers/storage.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_span/span.h"
@@ -111,46 +112,7 @@ class Deque : public containers::internal::
 
   static constexpr bool kFixedCapacity = true;  // uses a fixed buffer
 
-  // Span that is known to be aligned as T.
-  class Aligned {
-   public:
-    // Construct from an UNALIGNED span. Adjusts alignment if necessary.
-    static constexpr Aligned Align(span<std::byte> unaligned_buffer) {
-      Aligned buffer(unaligned_buffer.data(), unaligned_buffer.size());
-
-      if constexpr (alignof(value_type) > alignof(std::byte)) {
-        void* data_void = buffer.data_;
-        buffer.data_ = static_cast<std::byte*>(std::align(
-            alignof(value_type), sizeof(value_type), data_void, buffer.size_));
-        if (buffer.data_ == nullptr) {
-          buffer.size_ = 0;  // cannot fit any items
-        }
-      }
-
-      return buffer;
-    }
-
-    // Asserts that a buffer is aligned at least as T.
-    static constexpr Aligned Assert(std::byte* data, size_t size) {
-      void* buffer_start = data;
-      // Avoid "%" in the PW_ASSERT condition being misinterpreted as a format
-      // specifier: https://pigweed.dev/pw_assert/#in-conditions
-      uintptr_t misalignment =
-          reinterpret_cast<uintptr_t>(buffer_start) % alignof(T);
-      PW_ASSERT(misalignment == 0);
-      return Aligned(data, size);
-    }
-
-    constexpr Aligned(std::byte* aligned_data, size_t size_bytes)
-        : data_(aligned_data), size_(size_bytes) {}
-
-    constexpr std::byte* data() const { return data_; }
-    constexpr size_t capacity() const { return size_ / sizeof(value_type); }
-
-   private:
-    std::byte* data_;
-    size_t size_;
-  };
+  using Aligned = containers::internal::Aligned<value_type>;
 
   explicit constexpr Deque(Aligned buffer) noexcept
       : Base(static_cast<size_type>(buffer.capacity())),
@@ -201,15 +163,24 @@ class Deque : public containers::internal::
 ///     but requires slightly less memory.
 template <typename T,
           size_t kInlineCapacity = containers::kExternalStorage,
-          typename S = typename Deque<T>::size_type>
-class FixedDeque final : private containers::StorageBaseFor<T, kInlineCapacity>,
-                         public Deque<T, S> {
+          typename S = std::conditional_t<
+              containers::internal::kPodType<T>,
+              typename containers::internal::PodDeque<T>::size_type,
+              typename Deque<T>::size_type>>
+class FixedDeque final
+    : private containers::StorageBaseFor<T, kInlineCapacity>,
+      public std::conditional_t<containers::internal::kPodType<T>,
+                                containers::internal::PodDeque<T, S>,
+                                Deque<T, S>> {
  public:
+  using Base = std::conditional_t<containers::internal::kPodType<T>,
+                                  containers::internal::PodDeque<T, S>,
+                                  Deque<T, S>>;
   /// Constructs an empty `FixedDeque` with internal, statically allocated
   /// storage.
   constexpr FixedDeque()
       : containers::StorageBaseFor<T, kInlineCapacity>{},
-        Deque<T, S>(this->storage()) {}
+        Base(this->storage()) {}
 
   FixedDeque(const FixedDeque&) = delete;
   FixedDeque& operator=(const FixedDeque&) = delete;

@@ -95,11 +95,14 @@ pw_add_library(pw_containers._deque_common INTERFACE
   HEADERS
     public/pw_containers/internal/deque_iterator.h
     public/pw_containers/internal/generic_deque.h
+    public/pw_containers/internal/pod_deque_internal.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_assert
+    pw_bytes
     pw_containers._common
+    pw_numeric.checked_arithmetic
     pw_span
     pw_third_party.fuchsia.stdcompat
 )
@@ -152,6 +155,17 @@ pw_add_library(pw_containers.inline_deque INTERFACE
     pw_containers._raw_storage
     pw_toolchain.constexpr_tag
 )
+
+pw_add_library(pw_containers.pod_deque INTERFACE
+  HEADERS
+    public/pw_containers/pod_deque.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_assert
+    pw_containers._deque_common
+)
+
 
 pw_add_library(pw_containers._queue_common INTERFACE
   HEADERS
@@ -658,6 +672,19 @@ pw_add_test(pw_containers.fixed_deque_static_common_test
     modules
     pw_containers
 )
+
+pw_add_test(pw_containers.fixed_deque_pod_test
+  SOURCES
+    fixed_deque_pod_test.cc
+  PRIVATE_DEPS
+    pw_containers.deque
+    pw_containers.pod_deque
+    pw_containers._test_helpers
+  GROUPS
+    modules
+    pw_containers
+)
+
 
 pw_add_test(pw_containers.queue_test
   SOURCES

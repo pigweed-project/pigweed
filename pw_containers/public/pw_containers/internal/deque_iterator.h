@@ -29,6 +29,9 @@ namespace containers::internal {
 template <typename Derived, typename ValueType, typename SizeType>
 class GenericDeque;
 
+template <typename ValueType, typename SizeType>
+class PodDeque;
+
 // DequeIterator meets the named requirements for LegacyRandomAccessIterator.
 template <typename Container>
 class DequeIterator {
@@ -134,6 +137,9 @@ class DequeIterator {
 
   template <typename Derived, typename ValueType, typename SizeType>
   friend class GenericDeque;
+
+  template <typename ValueType, typename SizeType>
+  friend class PodDeque;
 
   // Allow non-const iterators to construct const_iterators in conversions.
   friend class DequeIterator<std::remove_const_t<Container>>;

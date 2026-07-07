@@ -36,6 +36,44 @@ Equivalent ``std::queue``-like classes are also provided:
 - :cc:`pw::DynamicQueue`
 - :cc:`pw::InlineQueue`
 
+---------------------------------------
+POD deque specialization for FixedDeque
+---------------------------------------
+When the element type of a :cc:`pw::FixedDeque` is a POD (Plain Old Data) type
+-- specifically, a type that is both trivially copyable and trivially
+destructible (e.g., primitives like ``uint32_t`` or simple structs) --
+``pw_containers`` automatically uses an optimized, type-erased specialization.
+
+Because the underlying byte-manipulation implementation is shared across
+different POD element types rather than re-instantiated per template parameter,
+additional instantiations of ``FixedDeque`` with POD types incur significantly
+less code size overhead.
+
+Code size savings
+=================
+* **Additional POD instantiations**: Additional instances of ``FixedDeque`` with
+  POD element types save **~59.6%** in flash memory compared to the initial
+  instance cost, whereas non-POD types only save ~20% across additional
+  instantiations.
+
+  .. math::
+
+     \text{Savings} = \frac{\text{FlashSize}_{\text{Initial}} -
+     \text{FlashSize}_{\text{Additional}}}{\text{FlashSize}_{\text{Initial}}}
+
+* **Primitive POD types**: For simple primitive types like ``uint32_t`` or
+  ``uint64_t``, static ``FixedDeque`` instantiations save ~25% flash memory on
+  additional instances.
+
+.. note::
+
+   In size reporting comparisons between POD and non-POD ``FixedDeque``
+   instances, initial flash numbers for POD types may appear slightly higher
+   than expected compared to other deques. This is because the benchmark uses
+   a data structure slightly more complex than a primitive to minimize code
+   size disparity from non-trivial constructors/destructors, bringing their
+   initial flash size numbers closer for a fair comparison.
+
 .. _module-pw_containers-inlinevarlenentryqueue:
 
 --------------------------

@@ -202,12 +202,15 @@ cc_library(
     hdrs = [
         "public/pw_containers/internal/deque_iterator.h",
         "public/pw_containers/internal/generic_deque.h",
+        "public/pw_containers/internal/pod_deque_internal.h",
     ],
     strip_include_prefix = "public",
     visibility = ["//visibility:private"],
     deps = [
         ":common",
         "//pw_assert:assert",
+        "//pw_bytes",
+        "//pw_containers:storage",
         "//pw_numeric:checked_arithmetic",
         "//pw_span",
         "//third_party/fuchsia:stdcompat",
@@ -272,6 +275,16 @@ cc_library(
         ":raw_storage",
         "//pw_assert:assert",
         "//pw_toolchain:constexpr_tag",
+    ],
+)
+
+cc_library(
+    name = "pod_deque",
+    hdrs = ["public/pw_containers/pod_deque.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":deque_common",
+        "//pw_assert:assert",
     ],
 )
 
@@ -636,6 +649,16 @@ pw_cc_test(
     srcs = ["fixed_deque_static_common_test.cc"],
     deps = [
         ":deque",
+        ":test_helpers",
+    ],
+)
+
+pw_cc_test(
+    name = "fixed_deque_pod_test",
+    srcs = ["fixed_deque_pod_test.cc"],
+    deps = [
+        ":deque",
+        ":pod_deque",
         ":test_helpers",
     ],
 )
@@ -1302,6 +1325,34 @@ pw_size_diff(
     target = "//pw_containers/size_report:std_deque_alternate_type",
 )
 
+pw_size_diff(
+    name = "pod_deque_base_pod_size_diff",
+    base = "//pw_containers/size_report:base",
+    label = "FixedDeque w/ POD",
+    target = "//pw_containers/size_report:pod_deque_base_pod",
+)
+
+pw_size_diff(
+    name = "pod_deque_base_nonpod_size_diff",
+    base = "//pw_containers/size_report:base",
+    label = "FixedDeque w/ non-POD",
+    target = "//pw_containers/size_report:pod_deque_base_nonpod",
+)
+
+pw_size_diff(
+    name = "pod_deque_alternate_podtype_size_diff",
+    base = "//pw_containers/size_report:pod_deque_base_pod",
+    label = "Additional FixedDeque with different POD item type",
+    target = "//pw_containers/size_report:pod_deque_alternate_podtype",
+)
+
+pw_size_diff(
+    name = "pod_deque_alternate_nonpodtype_size_diff",
+    base = "//pw_containers/size_report:pod_deque_base_nonpod",
+    label = "Additional FixedDeque with different non-POD item type",
+    target = "//pw_containers/size_report:pod_deque_alternate_nonpodtype",
+)
+
 pw_size_table(
     name = "queues_size_report",
     reports = [
@@ -1319,6 +1370,10 @@ pw_size_table(
         ":inline_queue_base_size_diff",
         ":inline_queue_alternate_type_size_diff",
         ":inline_deque_and_queue_size_diff",
+        ":pod_deque_base_pod_size_diff",
+        ":pod_deque_alternate_podtype_size_diff",
+        ":pod_deque_base_nonpod_size_diff",
+        ":pod_deque_alternate_nonpodtype_size_diff",
     ],
 )
 

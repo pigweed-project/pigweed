@@ -22,7 +22,11 @@ namespace {
 template <typename T, int&... kExplicitGuard, typename Iterator>
 int MeasureStatic(Iterator first, Iterator last, uint32_t mask) {
   auto& fixed_deque = GetContainer<FixedDeque<T, kNumItems>>();
-  return MeasureDeque<Deque<T>>(fixed_deque, first, last, mask);
+  if constexpr (containers::internal::kPodType<T>) {
+    return MeasureDeque(fixed_deque, first, last, mask);
+  } else {
+    return MeasureDeque<Deque<T>>(fixed_deque, first, last, mask);
+  }
 }
 
 template <typename T, int&... kExplicitGuard, typename Iterator>

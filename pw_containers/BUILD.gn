@@ -103,12 +103,15 @@ pw_source_set("deque_common") {
   public = [
     "public/pw_containers/internal/deque_iterator.h",
     "public/pw_containers/internal/generic_deque.h",
+    "public/pw_containers/internal/pod_deque_internal.h",
   ]
   public_configs = [ ":public_include_path" ]
   visibility = [ ":*" ]
   public_deps = [
     ":common",
+    ":storage",
     "$dir_pigweed/third_party/fuchsia:stdcompat",
+    "$dir_pw_bytes",
     "$dir_pw_numeric:checked_arithmetic",
     dir_pw_assert,
     dir_pw_span,
@@ -158,6 +161,15 @@ pw_source_set("inline_deque") {
     dir_pw_assert,
   ]
   public = [ "public/pw_containers/inline_deque.h" ]
+}
+
+pw_source_set("pod_deque") {
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":deque_common",
+    "$dir_pw_toolchain:constexpr_tag",
+  ]
+  public = [ "public/pw_containers/pod_deque.h" ]
 }
 
 pw_source_set("queue_common") {
@@ -502,6 +514,7 @@ pw_test_group("tests") {
     ":ptr_iterator_test",
     ":optional_tuple_test",
     ":optional_test",
+    ":fixed_deque_pod_test",
   ]
   group_deps = [ "examples" ]
 }
@@ -640,6 +653,15 @@ pw_test("fixed_deque_static_common_test") {
   sources = [ "fixed_deque_static_common_test.cc" ]
   deps = [
     ":deque",
+    ":test_helpers",
+  ]
+}
+
+pw_test("fixed_deque_pod_test") {
+  sources = [ "fixed_deque_pod_test.cc" ]
+  deps = [
+    ":deque",
+    ":pod_deque",
     ":test_helpers",
   ]
 }

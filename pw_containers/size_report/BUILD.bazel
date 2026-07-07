@@ -271,6 +271,56 @@ pw_cc_size_binary(
 )
 
 pw_cc_size_binary(
+    name = "pod_deque_base_pod",
+    srcs = ["pod_deque.cc"],
+    defines = ["PW_CONTAINERS_SIZE_REPORT_POD_TYPE"],
+    deps = [
+        ":deque",
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_containers:deque",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "pod_deque_alternate_podtype",
+    srcs = ["pod_deque.cc"],
+    defines = [
+        "PW_CONTAINERS_SIZE_REPORT_POD_TYPE",
+        "PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE",
+    ],
+    deps = [
+        ":deque",
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_containers:deque",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "pod_deque_base_nonpod",
+    srcs = ["pod_deque.cc"],
+    deps = [
+        ":deque",
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_containers:deque",
+    ],
+)
+
+pw_cc_size_binary(
+    name = "pod_deque_alternate_nonpodtype",
+    srcs = ["pod_deque.cc"],
+    defines = ["PW_CONTAINERS_SIZE_REPORT_ALTERNATE_VALUE"],
+    deps = [
+        ":deque",
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_containers:deque",
+    ],
+)
+
+pw_cc_size_binary(
     name = "inline_deque_base",
     srcs = ["inline_deque.cc"],
     deps = [
