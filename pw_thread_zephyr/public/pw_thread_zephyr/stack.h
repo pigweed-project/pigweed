@@ -15,6 +15,8 @@
 
 #include <zephyr/kernel/thread_stack.h>
 
+#include <algorithm>
+
 namespace pw::thread::zephyr {
 
 /// Smallest stack size supported by Zephyr threads.
