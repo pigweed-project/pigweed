@@ -234,7 +234,7 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
     let image_path = rlocation!(r, &args.image).unwrap_or_else(|| {
         panic!(
             "Could not find system image in runfiles ({})",
-            args.image.display()
+            &args.image.display()
         )
     });
     assert!(image_path.exists(), "image does not exist");
