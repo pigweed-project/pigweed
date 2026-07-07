@@ -15,6 +15,7 @@
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_doc_test", "rust_library", "rust_test")
+load("@zephyr//:cc.bzl", "zephyr_cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -96,6 +97,48 @@ cc_library(
     target_compatible_with = ["//pw_build/constraints/rtos:freertos"],
     deps = [
         "@freertos",
+    ],
+)
+
+rust_library(
+    name = "pw_time_backend_pigweed",
+    srcs = [
+        "pw_time_backend_pigweed.rs",
+    ],
+    aliases = {
+        "//pw_kernel/target:target_arch": "target_arch",
+    },
+    crate_name = "pw_time_backend",
+    edition = "2021",
+    target_compatible_with = ["//pw_build/constraints/rtos:pigweed"],
+    deps = [
+        ":pw_time_core",
+        "//pw_kernel/config:kernel_config",
+        "//pw_kernel/kernel",
+        "//pw_kernel/target:target_arch",
+    ],
+)
+
+rust_library(
+    name = "pw_time_backend_zephyr",
+    srcs = [
+        "pw_time_backend_zephyr.rs",
+    ],
+    crate_name = "pw_time_backend",
+    edition = "2021",
+    target_compatible_with = ["//pw_build/constraints/rtos:zephyr"],
+    deps = [
+        ":pw_time_backend_zephyr_helper",
+        ":pw_time_core",
+    ],
+)
+
+zephyr_cc_library(
+    name = "pw_time_backend_zephyr_helper",
+    srcs = ["pw_time_backend_zephyr_helper.cc"],
+    target_compatible_with = ["//pw_build/constraints/rtos:zephyr"],
+    deps = [
+        "@zephyr//:board_deps",
     ],
 )
 

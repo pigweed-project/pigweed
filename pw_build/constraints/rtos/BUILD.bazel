@@ -37,6 +37,11 @@ constraint_value(
 )
 
 constraint_value(
+    name = "pigweed",
+    constraint_setting = ":rtos",
+)
+
+constraint_value(
     name = "threadx",
     constraint_setting = ":rtos",
 )

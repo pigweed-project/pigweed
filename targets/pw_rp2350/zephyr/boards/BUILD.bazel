@@ -66,6 +66,7 @@ platform(
         ":raspberrypi_pw_rp2350",
         "@platforms//cpu:armv8-m",
         "@zephyr//constraints/arm:cortex-m33",
+        "@pigweed//pw_build/constraints/rtos:zephyr",
         "@pigweed//pw_build/constraints/rust:no_std",
     ],
     flags = flags_from_dict({

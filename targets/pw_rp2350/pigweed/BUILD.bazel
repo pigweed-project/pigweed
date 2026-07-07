@@ -24,6 +24,7 @@ platform(
     constraint_values = [
         "//pw_build/constraints/arm:cortex-m33",
         "//pw_build/constraints/rust:no_std",
+        "//pw_build/constraints/rtos:pigweed",
         "@pico-sdk//bazel/constraint:rp2350",
         "@platforms//cpu:armv8-m",
         "@platforms//os:none",
@@ -40,6 +41,7 @@ platform(
             "//pw_log:backend": "//pw_log_basic",
             "//pw_log:backend_impl": "//pw_log_basic:impl",
             "//pw_sync:interrupt_spin_lock_backend": "//pw_sync_baremetal:interrupt_spin_lock",
+            "//pw_time/rust:pw_time_backend": "@pigweed//pw_time/rust:pw_time_backend_pigweed",
             "//targets/pw_rp2350:platform_deps": ":boot",
             "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
             "@pico-sdk//bazel/config:PICO_STDIO_UART": True,

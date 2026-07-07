@@ -36,6 +36,7 @@ build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_log:backend_impl=@pigweed//pw_log_basic:impl
 build --@pigweed//pw_sync:interrupt_spin_lock_backend=@pigweed//pw_sync_baremetal:interrupt_spin_lock
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_zephyr:backend
+build --@pigweed//pw_time/rust:pw_time_backend=@pigweed//pw_time/rust:pw_time_backend_zephyr
 
 # Remote execution config definitions
 # ===================================

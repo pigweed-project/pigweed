@@ -12,7 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_build/constraints/arm:lists.bzl", "ALL_CORTEX_M_CPUS")
+load("//pw_build/constraints/riscv:lists.bzl", "ALL_RISCV_CPUS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -54,4 +57,18 @@ constraint_setting(
 constraint_value(
     name = "none",
     constraint_setting = ":target",
+)
+
+label_flag(
+    name = "target_arch",
+    build_setting_default = ":default_target_arch",
+)
+
+alias(
+    name = "default_target_arch",
+    actual = selects.with_or({
+        ALL_CORTEX_M_CPUS: "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        ALL_RISCV_CPUS: "//pw_kernel/arch/riscv:arch_riscv",
+        "//conditions:default": "@platforms//:incompatible",
+    }),
 )
