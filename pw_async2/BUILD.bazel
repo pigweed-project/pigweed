@@ -202,7 +202,7 @@ cc_library(
 )
 
 cc_library(
-    name = "testing_internal",
+    name = "channel_testing_internal",
     testonly = True,
     hdrs = [
         "public/pw_async2/internal/channel_test_util.h",
@@ -214,6 +214,16 @@ cc_library(
         ":pw_async2",
         "//pw_containers:vector",
     ],
+)
+
+cc_library(
+    name = "coro_testing_internal",
+    testonly = True,
+    hdrs = [
+        "public/pw_async2/internal/coro_test_util.h",
+    ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
 )
 
 cc_library(
@@ -552,7 +562,10 @@ cc_library(
         "public/pw_async2/fallible_coro_task.h",
     ],
     implementation_deps = [
+        "//pw_allocator:bump_allocator",
         "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_bytes:alignment",
         "//pw_log",
     ],
     strip_include_prefix = "public",
@@ -594,6 +607,7 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":coro",
+        ":coro_testing_internal",
         ":pw_async2",
         ":testing",
         ":value_future",
@@ -619,6 +633,7 @@ pw_cc_test(
     srcs = ["coro_task_test.cc"],
     deps = [
         ":coro",
+        ":coro_testing_internal",
         ":pw_async2",
         ":testing",
         "//pw_allocator:testing",
@@ -631,6 +646,7 @@ pw_cc_test(
     srcs = ["fallible_coro_task_test.cc"],
     deps = [
         ":coro",
+        ":coro_testing_internal",
         ":pw_async2",
         ":testing",
         ":value_future",
@@ -817,9 +833,9 @@ pw_cc_test(
     ],
     deps = [
         ":channel",
+        ":channel_testing_internal",
         ":pw_async2",
         ":testing",
-        ":testing_internal",
         "//pw_allocator:testing",
         "//pw_containers:vector",
         "//pw_function",
@@ -833,9 +849,9 @@ pw_cc_test(
     ],
     deps = [
         ":channel",
+        ":channel_testing_internal",
         ":pw_async2",
         ":testing",
-        ":testing_internal",
         "//pw_containers:vector",
         "//pw_function",
         "//pw_thread:test_thread_context",

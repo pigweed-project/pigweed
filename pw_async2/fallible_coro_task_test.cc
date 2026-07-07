@@ -18,6 +18,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/internal/coro_test_util.h"
 #include "pw_async2/value_future.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_status/status.h"
@@ -36,6 +37,7 @@ using ::pw::async2::DispatcherForTest;
 using ::pw::async2::FallibleCoroTask;
 using ::pw::async2::ReturnValuePolicy;
 using ::pw::async2::ValueProvider;
+using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
 
 Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
@@ -47,7 +49,7 @@ Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
 
 class FallibleCoroTaskTest : public ::testing::Test {
  protected:
-  AllocatorForTest<256> alloc_;
+  AllocatorForTest<1024> alloc_;
 };
 
 TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
@@ -65,7 +67,9 @@ TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST_F(FallibleCoroTaskTest, AllocationFailureProducesInvalidCoro) {
-  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
+  EXPECT_FALSE(EnsureNotStackAllocated(
+                   ImmediatelyReturnsFive(CoroContext(GetNullAllocator())))
+                   .ok());
   bool error_handler_ran = false;
   int output = 0;
   FallibleCoroTask task(

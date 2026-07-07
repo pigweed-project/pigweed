@@ -85,6 +85,8 @@ class BumpAllocator : public AbstractAllocator {
   /// Sets the memory region to be used by the allocator.
   void Init(ByteSpan region);
 
+  constexpr size_t remaining() const { return remaining_.size(); }
+
   /// Constructs an "owned" object of type `T` from the given `args`
   ///
   /// Owned objects will have their destructors invoked when the allocator goes

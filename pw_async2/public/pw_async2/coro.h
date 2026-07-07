@@ -16,6 +16,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <new>
 #include <type_traits>
 #include <utility>
 
@@ -133,16 +134,12 @@ class OwningCoroutineHandle final {
   // `false`.
   void resume() { promise_handle_.resume(); }
 
-  // Invokes `destroy()` on the underlying promise and deallocates its
-  // associated storage.
+  // Invokes `destroy()` on the underlying promise.
   void Release() {
     // DOCSTAG: [pw_async2-coro-release]
-    void* address = promise_handle_.address();
-    if (address != nullptr) {
-      Deallocator& dealloc = promise_handle_.promise().deallocator();
+    if (promise_handle_.address() != nullptr) {
       promise_handle_.destroy();
       promise_handle_ = nullptr;
-      dealloc.Deallocate(address);
     }
     // DOCSTAG: [pw_async2-coro-release]
   }
@@ -178,6 +175,9 @@ using CoroPoll = ::pw::containers::internal::Optional<T, CoroPollState::kReady>;
 ///
 /// To understand this type, reference C++20 coroutine API documentation.
 class CoroPromiseBase {
+  static constexpr std::align_val_t kDefaultAlign =
+      static_cast<std::align_val_t>(alignof(std::max_align_t));
+
  public:
   // Do not begin executing the `Coro<T>` until `resume()` has been invoked
   // for the first time.
@@ -205,7 +205,7 @@ class CoroPromiseBase {
   static void* operator new(std::size_t size,
                             CoroContext coro_cx,
                             const Args&...) noexcept {
-    return SharedNew(coro_cx, size, alignof(std::max_align_t));
+    return SharedNew(coro_cx, size, kDefaultAlign);
   }
 
   // Allocate the space for both this `CoroPromise<T>` and the coroutine state.
@@ -216,7 +216,7 @@ class CoroPromiseBase {
                             std::align_val_t align,
                             CoroContext coro_cx,
                             const Args&...) noexcept {
-    return SharedNew(coro_cx, size, static_cast<size_t>(align));
+    return SharedNew(coro_cx, size, align);
   }
 
   // Method-receiver form.
@@ -227,7 +227,7 @@ class CoroPromiseBase {
                             const MethodReceiver&,
                             CoroContext coro_cx,
                             const Args&...) noexcept {
-    return SharedNew(coro_cx, size, alignof(std::max_align_t));
+    return SharedNew(coro_cx, size, kDefaultAlign);
   }
 
   // Method-receiver form.
@@ -239,24 +239,26 @@ class CoroPromiseBase {
                             const MethodReceiver&,
                             CoroContext coro_cx,
                             const Args&...) noexcept {
-    return SharedNew(coro_cx, size, static_cast<size_t>(align));
+    return SharedNew(coro_cx, size, align);
   }
 
   // Deallocate the space for both this `CoroPromise<T>` and the coroutine
   // state.
-  //
-  // In reality, we do nothing here!!!
-  //
-  // Coroutines do not support `destroying_delete`, so we can't access
-  // `dealloc_` here, and therefore have no way to deallocate.
-  // Instead, deallocation is handled by `OwningCoroutineHandle<T>::Release`.
-  static void operator delete(void*) {}
+  static void operator delete(void* ptr, std::size_t size) noexcept {
+    SharedDelete(ptr, size, kDefaultAlign);
+  }
+
+  static void operator delete(void* ptr,
+                              std::size_t size,
+                              std::align_val_t align) noexcept {
+    SharedDelete(ptr, size, align);
+  }
 
   CoroPollState AdvanceAwaitable(Context& cx) {
     if (pending_awaitable_ == nullptr) {
       return CoroPollState::kReady;
     }
-    CoroPollState state = pending_awaitable_func_(pending_awaitable_, cx);
+    const CoroPollState state = pending_awaitable_func_(pending_awaitable_, cx);
     if (state == CoroPollState::kReady) {
       pending_awaitable_ = nullptr;
     }
@@ -280,7 +282,11 @@ class CoroPromiseBase {
  private:
   static void* SharedNew(CoroContext coro_cx,
                          std::size_t size,
-                         std::size_t align) noexcept;
+                         std::align_val_t align) noexcept;
+
+  static void SharedDelete(void* ptr,
+                           std::size_t size,
+                           std::align_val_t align) noexcept;
 
   Deallocator& dealloc_;
 

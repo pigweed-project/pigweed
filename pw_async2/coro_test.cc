@@ -20,6 +20,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/internal/coro_test_util.h"
 #include "pw_async2/value_future.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
@@ -43,6 +44,7 @@ using ::pw::async2::OptionalValueProvider;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Waker;
+using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
 
 Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
@@ -71,32 +73,60 @@ class CoroTest : public ::testing::Test {
 
 TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
   int output = 0;
-  CoroTask task = StoresFiveThenReturns(alloc_, output);
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
-  dispatcher.RunToCompletion();
-  EXPECT_EQ(task.Wait(), OkStatus());
-  EXPECT_EQ(output, 5);
+  {
+    CoroTask task = StoresFiveThenReturns(alloc_, output);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
+    EXPECT_EQ(task.Wait(), OkStatus());
+    EXPECT_EQ(output, 5);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+bool CreateWithoutRunningImmediatelyReturnsFive(pw::Allocator& alloc) {
+  return EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc)))
+      .ok();
+}
+
+bool CreateWithoutRunningStoresFiveThenReturns(pw::Allocator& alloc) {
+  int output = 0;
+  return EnsureNotStackAllocated(
+             StoresFiveThenReturns(CoroContext(alloc), output))
+      .ok();
 }
 
 TEST(Coro, AllocationFailureProducesInvalidCoro) {
-  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
-  EXPECT_FALSE(ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).ok());
-  int x = 0;
-  EXPECT_FALSE(StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).ok());
-  EXPECT_FALSE(StoresFiveThenReturns(CoroContext(GetNullAllocator()), x).ok());
+  EXPECT_FALSE(CreateWithoutRunningImmediatelyReturnsFive(GetNullAllocator()));
+  EXPECT_FALSE(CreateWithoutRunningImmediatelyReturnsFive(GetNullAllocator()));
+
+  EXPECT_FALSE(CreateWithoutRunningStoresFiveThenReturns(GetNullAllocator()));
+  EXPECT_FALSE(CreateWithoutRunningStoresFiveThenReturns(GetNullAllocator()));
+}
+
+TEST_F(CoroTest, NoAllocationFailureProducesValidCoro) {
+  EXPECT_TRUE(CreateWithoutRunningImmediatelyReturnsFive(alloc_));
+  EXPECT_TRUE(CreateWithoutRunningImmediatelyReturnsFive(alloc_));
+
+  EXPECT_TRUE(CreateWithoutRunningStoresFiveThenReturns(alloc_));
+  EXPECT_TRUE(CreateWithoutRunningStoresFiveThenReturns(alloc_));
+
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
   ObjectWithCoroMethod obj(4);
   int out = 22;
-  CoroTask task = obj.CoroMethodStoresField(alloc_, out);
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
-  dispatcher.RunToCompletion();
+  {
+    CoroTask task = obj.CoroMethodStoresField(alloc_, out);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), OkStatus());
-  EXPECT_EQ(out, 4);
+    EXPECT_EQ(task.Wait(), OkStatus());
+    EXPECT_EQ(out, 4);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 struct FakeFuture {
@@ -141,35 +171,38 @@ TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
   FakeFuture a;
   FakeFuture b;
   int output = 0;
-  CoroTask task = AddTwoThenStore(alloc_, a, b, output);
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+  {
+    CoroTask task = AddTwoThenStore(alloc_, a, b, output);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
 
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(a.poll_count, 1);
-  EXPECT_EQ(b.poll_count, 0);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(a.poll_count, 1);
+    EXPECT_EQ(b.poll_count, 0);
 
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(a.poll_count, 1);
-  EXPECT_EQ(b.poll_count, 0);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(a.poll_count, 1);
+    EXPECT_EQ(b.poll_count, 0);
 
-  int a_value = 4;
-  a.return_value = a_value;
-  a.last_waker.Wake();
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(a.poll_count, 2);
-  EXPECT_EQ(b.poll_count, 1);
+    int a_value = 4;
+    a.return_value = a_value;
+    a.last_waker.Wake();
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(a.poll_count, 2);
+    EXPECT_EQ(b.poll_count, 1);
 
-  int b_value = 5;
-  b.return_value = b_value;
-  b.last_waker.Wake();
-  dispatcher.RunToCompletion();
+    int b_value = 5;
+    b.return_value = b_value;
+    b.last_waker.Wake();
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), OkStatus());
+    EXPECT_EQ(task.Wait(), OkStatus());
 
-  EXPECT_EQ(a.poll_count, 2);
-  EXPECT_EQ(b.poll_count, 2);
-  EXPECT_EQ(output, a_value + b_value);
+    EXPECT_EQ(a.poll_count, 2);
+    EXPECT_EQ(b.poll_count, 2);
+    EXPECT_EQ(output, a_value + b_value);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Coro<Counter> MultiplyByThree(CoroContext, Counter value) {
@@ -185,23 +218,29 @@ Coro<Counter> ReturnsAValue(CoroContext cx, int add) {
 }
 
 TEST_F(CoroTest, ReturnsInt) {
-  CoroTask task(NumberNine(alloc_));
+  {
+    CoroTask task(NumberNine(alloc_));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
-  dispatcher.RunToCompletion();
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), 9);
+    EXPECT_EQ(task.Wait(), 9);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 TEST_F(CoroTest, Memory) {
-  CoroTask task(ReturnsAValue(alloc_, 5));
+  {
+    CoroTask task(ReturnsAValue(alloc_, 5));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
-  dispatcher.RunToCompletion();
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait().value, 9 + 5);
+    EXPECT_EQ(task.Wait().value, 9 + 5);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Coro<void> WaitUntilFive(CoroContext, FakeFuture& fut) {
@@ -215,38 +254,44 @@ Coro<Status> AwaitVoidCoroWrapper(CoroContext cx, FakeFuture& fut) {
 
 TEST_F(CoroTest, AwaitVoidCoro) {
   FakeFuture fut;
-  CoroContext cx(alloc_);
-  CoroTask task(WaitUntilFive(cx, fut));
+  {
+    CoroContext cx(alloc_);
+    CoroTask task(WaitUntilFive(cx, fut));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
 
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(fut.poll_count, 1);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(fut.poll_count, 1);
 
-  fut.return_value = 5;
-  fut.last_waker.Wake();
-  dispatcher.RunToCompletion();
+    fut.return_value = 5;
+    fut.last_waker.Wake();
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(fut.poll_count, 2);
+    EXPECT_EQ(fut.poll_count, 2);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 TEST_F(CoroTest, AwaitVoidCoroInsideAnotherCoroutine) {
   FakeFuture fut;
-  CoroTask task(AwaitVoidCoroWrapper(alloc_, fut));
+  {
+    CoroTask task(AwaitVoidCoroWrapper(alloc_, fut));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
 
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
-  EXPECT_EQ(fut.poll_count, 1);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(fut.poll_count, 1);
 
-  fut.return_value = 5;
-  fut.last_waker.Wake();
-  dispatcher.RunToCompletion();
+    fut.return_value = 5;
+    fut.last_waker.Wake();
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), OkStatus());
-  EXPECT_EQ(fut.poll_count, 2);
+    EXPECT_EQ(task.Wait(), OkStatus());
+    EXPECT_EQ(fut.poll_count, 2);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 #if PW_NC_TEST(CoroContextReference)
@@ -303,14 +348,17 @@ Coro<int> ThisShouldBeACompilationErrorDoNotDoThis(SomeClass&, CoroContext) {
 
 TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
   SomeClass some_class;
-  CoroTask task(ThisShouldBeACompilationErrorDoNotDoThis(some_class, alloc_));
+  {
+    CoroTask task(ThisShouldBeACompilationErrorDoNotDoThis(some_class, alloc_));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
 
-  dispatcher.RunToCompletion();
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.value(), 123);
+    EXPECT_EQ(task.value(), 123);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Generator<int> CountToFive(CoroContext cx) {
@@ -328,14 +376,17 @@ Coro<int> SumGenerator(CoroContext cx, Generator<int>& gen) {
 }
 
 TEST_F(CoroTest, GeneratorYieldsValues) {
-  Generator<int> gen = CountToFive(alloc_);
-  CoroTask task(SumGenerator(alloc_, gen));
+  {
+    Generator<int> gen = CountToFive(alloc_);
+    CoroTask task(SumGenerator(alloc_, gen));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
-  dispatcher.RunToCompletion();
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), 15);
+    EXPECT_EQ(task.Wait(), 15);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Generator<int> AwaitAndYieldGenerator(CoroContext cx,
@@ -351,24 +402,27 @@ Generator<int> AwaitAndYieldGenerator(CoroContext cx,
 
 TEST_F(CoroTest, GeneratorAwaitsAndYields) {
   OptionalValueProvider<int> provider;
-  Generator<int> gen = AwaitAndYieldGenerator(alloc_, provider);
-  CoroTask task(SumGenerator(alloc_, gen));
+  {
+    Generator<int> gen = AwaitAndYieldGenerator(alloc_, provider);
+    CoroTask task(SumGenerator(alloc_, gen));
 
-  DispatcherForTest dispatcher;
-  dispatcher.Post(task);
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
 
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
 
-  provider.Resolve(5);
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
+    provider.Resolve(5);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
 
-  provider.Resolve(10);
-  EXPECT_TRUE(dispatcher.RunUntilStalled());
+    provider.Resolve(10);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
 
-  provider.Cancel();
-  dispatcher.RunToCompletion();
+    provider.Cancel();
+    dispatcher.RunToCompletion();
 
-  EXPECT_EQ(task.Wait(), 30);
+    EXPECT_EQ(task.Wait(), 30);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 }  // namespace

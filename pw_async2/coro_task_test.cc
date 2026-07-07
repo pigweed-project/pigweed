@@ -19,10 +19,13 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/internal/coro_test_util.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
+
+using ::pw::async2::test::EnsureNotStackAllocated;
 
 using namespace pw::async2;
 
@@ -77,10 +80,18 @@ TEST_F(CoroTaskTest, RunOnceInt) {
   EXPECT_EQ(task.value().value(), 42);
 }
 
-TEST_F(CoroTaskTest, AllocationFailure) {
+TEST_F(CoroTaskTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
-  Coro c = DoubleIt(coro_cx_, 100);
-  EXPECT_FALSE(c.ok());
+  CoroTask task = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+  EXPECT_FALSE(task.ok());
+}
+
+TEST_F(CoroTaskTest, ValidTaskIfAllocationSucceeds) {
+  {
+    CoroTask task = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+    EXPECT_TRUE(task.ok());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Coro<void> ReturnVoid(CoroContext) { co_return; }

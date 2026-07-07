@@ -172,7 +172,7 @@ pw_source_set("testing") {
   testonly = pw_unit_test_TESTONLY
 }
 
-pw_source_set("testing_internal") {
+pw_source_set("channel_testing_internal") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_async2/internal/channel_test_util.h" ]
   public_deps = [
@@ -180,6 +180,13 @@ pw_source_set("testing_internal") {
     ":pw_async2",
     "$dir_pw_containers:vector",
   ]
+  testonly = pw_unit_test_TESTONLY
+  visibility = [ ":*" ]
+}
+
+pw_source_set("coro_testing_internal") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_async2/internal/coro_test_util.h" ]
   testonly = pw_unit_test_TESTONLY
   visibility = [ ":*" ]
 }
@@ -450,7 +457,10 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       dir_pw_function,
     ]
     deps = [
+      "$dir_pw_allocator:bump_allocator",
       "$dir_pw_assert:check",
+      "$dir_pw_bytes:alignment",
+      dir_pw_bytes,
       dir_pw_log,
     ]
     sources = [
@@ -465,6 +475,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
     deps = [
       ":coro",
+      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       ":value_future",
@@ -482,6 +493,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     sources = [ "fallible_coro_task_test.cc" ]
     deps = [
       ":coro",
+      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       ":value_future",
@@ -497,6 +509,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     sources = [ "coro_task_test.cc" ]
     deps = [
       ":coro",
+      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       "$dir_pw_allocator:testing",
@@ -660,9 +673,9 @@ pw_test("channel_test") {
   sources = [ "channel_test.cc" ]
   deps = [
     ":channel",
+    ":channel_testing_internal",
     ":pw_async2",
     ":testing",
-    ":testing_internal",
     "$dir_pw_allocator:testing",
     "$dir_pw_containers:vector",
     dir_pw_function,
@@ -674,9 +687,9 @@ pw_test("channel_thread_test") {
   sources = [ "channel_thread_test.cc" ]
   deps = [
     ":channel",
+    ":channel_testing_internal",
     ":pw_async2",
     ":testing",
-    ":testing_internal",
     "$dir_pw_containers:vector",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
