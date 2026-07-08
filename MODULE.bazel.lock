@@ -205,6 +205,8 @@
     "https://bcr.bazel.build/modules/jsoncpp/1.9.6/source.json": "a04756d367a2126c3541682864ecec52f92cdee80a35735a3cb249ce015ca000",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/source.json": "caaffb3ac2b59b8aac456917a4ecf3167d40478ee79f15ab7a877ec9273937c9",
+    "https://bcr.bazel.build/modules/llvm-project/17.0.3.bcr.4/MODULE.bazel": "96cc2499b42e0469d11ffbaee705e4686fa61ad173333edbbb9eee66035b925c",
+    "https://bcr.bazel.build/modules/llvm-project/17.0.3.bcr.4/source.json": "a14902ee5e559776a848af509324bfde916c059ebfe9e672d8d1a6158506e7bb",
     "https://bcr.bazel.build/modules/lz4/1.9.4/MODULE.bazel": "e3d307b1d354d70f6c809167eafecf5d622c3f27e3971ab7273410f429c7f83a",
     "https://bcr.bazel.build/modules/lz4/1.9.4/source.json": "233f0bdfc21f254e3dda14683ddc487ca68c6a3a83b7d5db904c503f85bd089b",
     "https://bcr.bazel.build/modules/mbedtls/3.6.0/MODULE.bazel": "8e380e4698107c5f8766264d4df92e36766248447858db28187151d884995a09",
@@ -470,6 +472,8 @@
     "https://bcr.bazel.build/modules/rules_rust/0.68.1/MODULE.bazel": "8d3332ef4079673385eb81f8bd68b012decc04ac00c9d5a01a40eff90301732c",
     "https://bcr.bazel.build/modules/rules_rust/0.70.0/MODULE.bazel": "5b1407b11c305bc2522e204e7f170faf8399e836e49b6afef9074dfe532e6c3f",
     "https://bcr.bazel.build/modules/rules_rust/0.70.0/source.json": "24ae6d23425359db1c3148aa22c389970fce9a06102b2b3a329a2800f9569de2",
+    "https://bcr.bazel.build/modules/rules_rust_bindgen/0.70.0/MODULE.bazel": "3d1f5c3e7316e6dddd5c1c19569ab521c90a7373cde11649d7215535912d0d94",
+    "https://bcr.bazel.build/modules/rules_rust_bindgen/0.70.0/source.json": "d95a0c2f9d5f263bbad075ef2a2d2b38655dcc166a8ab9dab60fdcdea56acad5",
     "https://bcr.bazel.build/modules/rules_rust_prost/0.68.1/MODULE.bazel": "b74007ee6f527a1853d1bffb6af31d6b5782d431fb575c3e704b87d41dd823dd",
     "https://bcr.bazel.build/modules/rules_rust_prost/0.68.1/source.json": "c44d9718572ddd62a14d7cadf1f83cb37a18581dbf23c531c4437297a0f40bbc",
     "https://bcr.bazel.build/modules/rules_shell/0.2.0/MODULE.bazel": "fda8a652ab3c7d8fee214de05e7a9916d8b28082234e8d2c0094505c5268ed3c",
@@ -595,8 +599,8 @@
     },
     "//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
-        "bzlTransitiveDigest": "v18j2IkEr8EoDIw+4Kz/em+LxIvnj/ExM99f8cG/0Xg=",
-        "usagesDigest": "v9/imn8bUuzEzQdWMMYGUvh436QBtcQ1QrYBZ3/+CgQ=",
+        "bzlTransitiveDigest": "94ZKYPORZ5BLIAuC3eR8CwSKiBg0AN3PDQGE66iGpCk=",
+        "usagesDigest": "5echb11K6rHPh7ZKjAZvtVMvZwZEz93fQ+3IYbahCOA=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -625,6 +629,14 @@
               "tag": "git_revision:a77548188dbecc332bdc292b01a5077ec770cd98"
             }
           },
+          "rust_bindgen_linux_aarch64": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/rust:rust_bindgen.BUILD",
+              "path": "fuchsia/third_party/rust_bindgen/linux-arm64",
+              "tag": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
+            }
+          },
           "rust_toolchain_host_linux_x86_64": {
             "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
             "attributes": {
@@ -647,6 +659,14 @@
               "build_file": "@@//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-amd64",
               "tag": "git_revision:a77548188dbecc332bdc292b01a5077ec770cd98"
+            }
+          },
+          "rust_bindgen_linux_x86_64": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/rust:rust_bindgen.BUILD",
+              "path": "fuchsia/third_party/rust_bindgen/linux-amd64",
+              "tag": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
             }
           },
           "rust_toolchain_host_macos_aarch64": {
@@ -673,6 +693,14 @@
               "tag": "git_revision:a77548188dbecc332bdc292b01a5077ec770cd98"
             }
           },
+          "rust_bindgen_macos_aarch64": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/rust:rust_bindgen.BUILD",
+              "path": "fuchsia/third_party/rust_bindgen/mac-arm64",
+              "tag": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
+            }
+          },
           "rust_toolchain_host_macos_x86_64": {
             "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
             "attributes": {
@@ -695,6 +723,14 @@
               "build_file": "@@//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-amd64",
               "tag": "git_revision:a77548188dbecc332bdc292b01a5077ec770cd98"
+            }
+          },
+          "rust_bindgen_macos_x86_64": {
+            "repoRuleId": "@@//pw_env_setup/bazel/cipd_setup:cipd_rules.bzl%cipd_repository",
+            "attributes": {
+              "build_file": "@@//pw_toolchain/rust:rust_bindgen.BUILD",
+              "path": "fuchsia/third_party/rust_bindgen/mac-amd64",
+              "tag": "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
             }
           },
           "rust_toolchain_target_thumbv6m-none-eabi_armv6-m": {

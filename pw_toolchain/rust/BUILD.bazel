@@ -13,6 +13,7 @@
 # the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_setting")
+load("@rules_rust_bindgen//:defs.bzl", "rust_bindgen_toolchain")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -57,4 +58,49 @@ config_setting(
 config_setting(
     name = "stdlibs_core_alloc_std",
     flag_values = {":stdlibs_flavor": "core_alloc_std"},
+)
+
+rust_bindgen_toolchain(
+    name = "prebuilt_bindgen_toolchain_linux_aarch64_impl",
+    bindgen = "@rust_bindgen_linux_aarch64//:bindgen_bin",
+)
+
+toolchain(
+    name = "prebuilt_bindgen_toolchain_linux_aarch64",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+    toolchain = ":prebuilt_bindgen_toolchain_linux_aarch64_impl",
+    toolchain_type = "@rules_rust_bindgen//:toolchain_type",
+)
+
+rust_bindgen_toolchain(
+    name = "prebuilt_bindgen_toolchain_linux_x86_64_impl",
+    bindgen = "@rust_bindgen_linux_x86_64//:bindgen_bin",
+)
+
+toolchain(
+    name = "prebuilt_bindgen_toolchain_linux_x86_64",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    toolchain = ":prebuilt_bindgen_toolchain_linux_x86_64_impl",
+    toolchain_type = "@rules_rust_bindgen//:toolchain_type",
+)
+
+rust_bindgen_toolchain(
+    name = "prebuilt_bindgen_toolchain_macos_aarch64_impl",
+    bindgen = "@rust_bindgen_macos_aarch64//:bindgen_bin",
+)
+
+toolchain(
+    name = "prebuilt_bindgen_toolchain_macos_aarch64",
+    exec_compatible_with = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+    toolchain = ":prebuilt_bindgen_toolchain_macos_aarch64_impl",
+    toolchain_type = "@rules_rust_bindgen//:toolchain_type",
 )

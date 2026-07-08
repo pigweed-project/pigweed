@@ -97,6 +97,7 @@ def _tags_to_channels(tags):
 def _pw_rust_impl(ctx):
     rust_toolchain_cipd_tag = _find_cipd_tag(ctx, "cipd_tag")
     rust_analyzer_cipd_tag = _find_cipd_tag(ctx, "rust_analyzer_cipd_tag")
+    rust_bindgen_cipd_tag = _find_cipd_tag(ctx, "rust_bindgen_cipd_tag")
 
     hosts = None
     extra_targets = None
@@ -169,6 +170,13 @@ def _pw_rust_impl(ctx):
             tag = rust_analyzer_cipd_tag,
         )
 
+        cipd_repository(
+            name = "rust_bindgen_{}_{}".format(host["os"], host["cpu"]),
+            build_file = "//pw_toolchain/rust:rust_bindgen.BUILD",
+            path = "fuchsia/third_party/rust_bindgen/{}-{}".format(cipd_os, host["cipd_arch"]),
+            tag = rust_bindgen_cipd_tag,
+        )
+
     for target in extra_targets:
         build_std = target.get("build_std", False)
         if not build_std:
@@ -193,6 +201,9 @@ _RUST_TOOLCHAIN_TAG = tag_class(
         ),
         rust_analyzer_cipd_tag = attr.string(
             doc = "The CIPD tag to use when fetching the Rust analyzer toolchain.",
+        ),
+        rust_bindgen_cipd_tag = attr.string(
+            doc = "The CIPD tag to use when fetching the Rust bindgen toolchain.",
         ),
     ),
 )

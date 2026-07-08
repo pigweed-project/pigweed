@@ -60,6 +60,7 @@ bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_probe_rs", version = "0.0.6")
 bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_bindgen", version = "0.70.0")
 bazel_dep(name = "rules_rust_prost", version = "0.68.1")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
@@ -232,14 +233,30 @@ RUST_VERSION = "git_revisions:d32e620a107b5b3dccd9ddb53fa124956a92b589,a3f244e2d
 # ROLL: By https://cr-buildbucket.appspot.com/build/8677809863722677841.
 RUST_ANALYZER_VERSION = "git_revision:a77548188dbecc332bdc292b01a5077ec770cd98"
 
+RUST_BINDGEN_VERSION = "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
+
 pw_rust.toolchain(
     cipd_tag = RUST_VERSION,
     rust_analyzer_cipd_tag = RUST_ANALYZER_VERSION,
+    rust_bindgen_cipd_tag = RUST_BINDGEN_VERSION,
 )
-use_repo(pw_rust, "pw_rust_toolchains")
+use_repo(
+    pw_rust,
+    "pw_rust_toolchains",
+    "rust_bindgen_linux_aarch64",
+    "rust_bindgen_linux_x86_64",
+    "rust_bindgen_macos_aarch64",
+)
 
 register_toolchains(
     "@pw_rust_toolchains//:all",
+    dev_dependency = True,
+)
+
+register_toolchains(
+    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_linux_aarch64",
+    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_linux_x86_64",
+    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_macos_aarch64",
     dev_dependency = True,
 )
 
