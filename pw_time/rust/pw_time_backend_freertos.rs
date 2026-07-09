@@ -13,36 +13,29 @@
 // the License.
 #![no_std]
 
+use freertos_sys::TickType_t;
 use pw_sync_spinlock::InterruptSpinLock;
 use pw_time_core::{Clock, Instant};
 
 #[derive(Debug)]
 pub struct SystemClock;
 
-extern "C" {
-    // TickType_t type enforced to be a u32 by static assertion in
-    // pw_time_backend_freertos_helper.cc.
-    fn xTaskGetTickCount() -> u32;
-    fn xTaskGetTickCountFromISR() -> u32;
-    fn xPortIsInsideInterrupt() -> i32;
-}
-
 #[inline(always)]
-fn get_tick_count() -> u32 {
+fn get_tick_count() -> TickType_t {
     // SAFETY: The correct `xTaskGetTickCount*` function is called depending on
     // the current CPU context as queried by `xPortIsInsideInterrupt()`.
     unsafe {
-        if xPortIsInsideInterrupt() != 0 {
-            xTaskGetTickCountFromISR()
+        if freertos_sys::xPortIsInsideInterrupt() != 0 {
+            freertos_sys::xTaskGetTickCountFromISR()
         } else {
-            xTaskGetTickCount()
+            freertos_sys::xTaskGetTickCount()
         }
     }
 }
 
 struct TickState {
     overflow_tick_count: u64,
-    native_tick_count: u32,
+    native_tick_count: TickType_t,
 }
 
 static TICK_STATE: InterruptSpinLock<TickState> = InterruptSpinLock::new(TickState {
@@ -51,10 +44,7 @@ static TICK_STATE: InterruptSpinLock<TickState> = InterruptSpinLock::new(TickSta
 });
 
 impl Clock for SystemClock {
-    // TODO: https://pwbug.dev/524327314 - Pull this value from FreeRTOSConfig.h.
-    // Tick rate is enforced by to be matching FreeRTOSConfig.h by static assertion
-    // in pw_time_backend_freertos_helper.cc.
-    const TICKS_PER_SEC: u64 = 1000;
+    const TICKS_PER_SEC: u64 = freertos_sys::configTICK_RATE_HZ as u64;
 
     fn now() -> Instant<Self> {
         let mut tick_state = TICK_STATE.lock();
@@ -65,7 +55,7 @@ impl Clock for SystemClock {
         if tick_count < tick_state.native_tick_count {
             tick_state.overflow_tick_count = tick_state
                 .overflow_tick_count
-                .checked_add(u64::from(u32::MAX) + 1)
+                .checked_add(u64::from(TickType_t::MAX) + 1)
                 .expect("clock tick count overflow");
         }
         tick_state.native_tick_count = tick_count;

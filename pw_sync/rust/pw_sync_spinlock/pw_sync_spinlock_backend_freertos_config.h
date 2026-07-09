@@ -12,15 +12,12 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include <cstdint>
-#include <type_traits>
+#pragma once
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include <stdbool.h>
 
-// taskYIELD() is a macro and cannot be called directly from Rust.
-// This helper function exposes it as a linkable C function.
-extern "C" void pw_thread_freertos_Yield() { taskYIELD(); }
+#include "pw_sync_freertos/config.h"
 
-static_assert(std::is_same<TickType_t, uint32_t>::value,
-              "FreeRTOS TickType_t must be uint32_t");
+// Define a constant for bindgen to capture the configuration macro.
+static const bool kInterruptSpinLockUsesSchedulerLock =
+    PW_SYNC_FREERTOS_INTERRUPT_SPIN_LOCK_USES_SCHEDULER_LOCK;

@@ -15,19 +15,9 @@
 
 use core::cell::Cell;
 
-extern "C" {
-    fn pw_sync_spinlock_freertos_EnterCriticalFromISR() -> u32;
-    fn pw_sync_spinlock_freertos_ExitCriticalFromISR(mask: u32);
-    fn pw_sync_spinlock_freertos_EnterCritical();
-    fn pw_sync_spinlock_freertos_ExitCritical();
-    fn pw_sync_spinlock_freertos_InInterruptContext() -> bool;
-    fn pw_sync_spinlock_freertos_SuspendAll();
-    fn pw_sync_spinlock_freertos_ResumeAll();
-    fn pw_sync_spinlock_freertos_GetSchedulerState() -> i32;
-    fn pw_sync_spinlock_freertos_UseSchedulerLock() -> bool;
-}
-
-const SCHEDULER_NOT_STARTED: i32 = 0;
+const SCHEDULER_NOT_STARTED: freertos_sys::BaseType_t = 0;
+const USE_SCHEDULER_LOCK: bool =
+    pw_sync_spinlock_backend_freertos_config::kInterruptSpinLockUsesSchedulerLock;
 
 /// FreeRTOS-specific implementation of the [`RawInterruptSpinLock`][pw_sync_spinlock_core::RawInterruptSpinLock] trait.
 pub struct RawInterruptSpinLock {
@@ -50,14 +40,14 @@ impl<'a> Drop for RawInterruptSpinLockGuard<'a> {
     fn drop(&mut self) {
         self.lock.locked.set(false);
         unsafe {
-            if pw_sync_spinlock_freertos_InInterruptContext() {
-                pw_sync_spinlock_freertos_ExitCriticalFromISR(self.saved_interrupt_mask);
+            if freertos_sys::xPortIsInsideInterrupt() != 0 {
+                freertos_sys::taskEXIT_CRITICAL_FROM_ISR(self.saved_interrupt_mask);
             } else {
-                pw_sync_spinlock_freertos_ExitCritical();
-                if pw_sync_spinlock_freertos_UseSchedulerLock()
-                    && pw_sync_spinlock_freertos_GetSchedulerState() != SCHEDULER_NOT_STARTED
+                freertos_sys::taskEXIT_CRITICAL();
+                if USE_SCHEDULER_LOCK
+                    && freertos_sys::xTaskGetSchedulerState() != SCHEDULER_NOT_STARTED
                 {
-                    pw_sync_spinlock_freertos_ResumeAll();
+                    freertos_sys::xTaskResumeAll();
                 }
             }
         }
@@ -87,11 +77,11 @@ impl pw_sync_spinlock_core::RawInterruptSpinLock for RawInterruptSpinLock {
     #[inline]
     fn lock(&self) -> Self::Guard<'_> {
         let mask = unsafe {
-            if pw_sync_spinlock_freertos_InInterruptContext() {
-                pw_sync_spinlock_freertos_EnterCriticalFromISR()
+            if freertos_sys::xPortIsInsideInterrupt() != 0 {
+                freertos_sys::taskENTER_CRITICAL_FROM_ISR()
             } else {
-                if pw_sync_spinlock_freertos_UseSchedulerLock()
-                    && pw_sync_spinlock_freertos_GetSchedulerState() != SCHEDULER_NOT_STARTED
+                if USE_SCHEDULER_LOCK
+                    && freertos_sys::xTaskGetSchedulerState() != SCHEDULER_NOT_STARTED
                 {
                     // Suspending the scheduler ensures that kernel API calls that occur
                     // within the critical section will not preempt the current task
@@ -102,9 +92,9 @@ impl pw_sync_spinlock_core::RawInterruptSpinLock for RawInterruptSpinLock {
                     // be nested.
                     // Note: vTaskSuspendAll()/xTaskResumeAll() are not safe to call before the
                     // scheduler has been started.
-                    pw_sync_spinlock_freertos_SuspendAll();
+                    freertos_sys::vTaskSuspendAll();
                 }
-                pw_sync_spinlock_freertos_EnterCritical();
+                freertos_sys::taskENTER_CRITICAL();
                 0
             }
         };

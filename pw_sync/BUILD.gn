@@ -484,13 +484,9 @@ pw_test("no_lock_test") {
 
 # This target is declared in GN solely to satisfy the presubmit check that
 # requires all C/C++ source files in the repository to be declared in GN.
-# The Rust crate `pw_sync_spinlock` and this helper are built using Bazel.
-pw_source_set("pw_sync_spinlock_backend_freertos_helper") {
-  sources =
-      [ "rust/pw_sync_spinlock/pw_sync_spinlock_backend_freertos_helper.cc" ]
-  public_deps = [
-    "$dir_pw_interrupt:context",
-    "$dir_pw_sync_freertos:config",
-  ]
-  deps = [ "$pw_external_freertos" ]
+# The Rust crate `pw_sync_spinlock` and this config are built using Bazel.
+pw_source_set("pw_sync_spinlock_backend_freertos_config") {
+  public =
+      [ "rust/pw_sync_spinlock/pw_sync_spinlock_backend_freertos_config.h" ]
+  public_deps = [ "$dir_pw_sync_freertos:config" ]
 }

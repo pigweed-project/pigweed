@@ -15,39 +15,29 @@
 
 use pw_time::{Clock, Duration, Instant, SystemClock};
 
-extern "C" {
-    fn vTaskDelay(ticks: u32);
-    fn xPortIsInsideInterrupt() -> i32;
-    fn pw_thread_freertos_Yield();
-}
-
 pub fn sleep(sleep_duration: Duration<SystemClock>) {
     pw_assert::assert!(
-        unsafe { xPortIsInsideInterrupt() } == 0,
+        unsafe { freertos_sys::xPortIsInsideInterrupt() } == 0,
         "sleep cannot be called from an interrupt context"
     );
 
-    // FreeRTOS max timeout is portMAX_DELAY / 3. TickType_t is uint32_t unless
-    // USE_16_BIT_TICKS is 1, in which case it'll be uint16_t.
-    // TODO: https://pwbug.dev/524327314 - use bindgen to handle both cases.
-    // portMAX_DELAY is u32::MAX. u32::MAX / 3 = 1,431,655,765.
-    const MAX_TIMEOUT_MINUS_ONE: u64 = (u32::MAX / 3 - 1) as u64;
+    const MAX_TIMEOUT_MINUS_ONE: u64 = (freertos_sys::TickType_t::MAX / 3 - 1) as u64;
     let mut ticks = sleep_duration.ticks() as u64;
     while ticks > MAX_TIMEOUT_MINUS_ONE {
         unsafe {
-            vTaskDelay(MAX_TIMEOUT_MINUS_ONE as u32);
+            freertos_sys::vTaskDelay(MAX_TIMEOUT_MINUS_ONE as freertos_sys::TickType_t);
         }
         ticks -= MAX_TIMEOUT_MINUS_ONE;
     }
 
     unsafe {
-        vTaskDelay((ticks + 1) as u32);
+        freertos_sys::vTaskDelay((ticks + 1) as freertos_sys::TickType_t);
     }
 }
 
 pub fn sleep_until(wakeup_time: Instant<SystemClock>) {
     pw_assert::assert!(
-        unsafe { xPortIsInsideInterrupt() } == 0,
+        unsafe { freertos_sys::xPortIsInsideInterrupt() } == 0,
         "sleep_until cannot be called from an interrupt context"
     );
 
@@ -60,10 +50,10 @@ pub fn sleep_until(wakeup_time: Instant<SystemClock>) {
 
 pub fn yield_now() {
     pw_assert::assert!(
-        unsafe { xPortIsInsideInterrupt() } == 0,
+        unsafe { freertos_sys::xPortIsInsideInterrupt() } == 0,
         "yield_now cannot be called from an interrupt context"
     );
     unsafe {
-        pw_thread_freertos_Yield();
+        freertos_sys::taskYIELD();
     }
 }
