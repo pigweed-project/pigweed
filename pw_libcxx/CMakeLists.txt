@@ -14,10 +14,16 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
-pw_add_library(pw_libcxx.libcxx_hooks STATIC
+# This must be an OBJECT library so that overridden weak standard library
+# symbols (like std::__libcpp_verbose_abort) are always pulled in during link.
+pw_add_library(pw_libcxx.libcxx_hooks OBJECT
   SOURCES
     __cxa_deleted_virtual.cc
     __cxa_pure_virtual.cc
     operator_delete.cc
     operator_new.cc
+    verbose_abort.cc
+  PRIVATE_DEPS
+    pw_assert.check
+    pw_string
 )
