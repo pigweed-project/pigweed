@@ -101,7 +101,9 @@ PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_TokenizingBackend, {
 
 PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersionedFmt_TokenizingBackend, {
   constexpr const char* nested_token = PW_LOG_ENUM_VERSIONED_FMT();
-  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT(), nested_token);
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("enum_domain"), nested_token);
+  constexpr const char* custom_token = PW_LOG_ENUM_VERSIONED_FMT("my_domain");
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("my_domain"), custom_token);
 });
 
 PW_CONSTEXPR_TEST(
@@ -162,7 +164,9 @@ PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_NonTokenizingBackend, {
 
 PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersionedFmt_NonTokenizingBackend, {
   constexpr const char* nested_token = PW_LOG_ENUM_VERSIONED_FMT();
-  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT(), nested_token);
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("enum_domain"), nested_token);
+  constexpr const char* custom_token = PW_LOG_ENUM_VERSIONED_FMT("my_domain");
+  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("my_domain"), custom_token);
 });
 
 PW_CONSTEXPR_TEST(TokenizedArgs,

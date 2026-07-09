@@ -81,8 +81,12 @@ constexpr uint32_t EnumDomainToken() {
 
 /// @brief Format specifier for PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE.
 ///
-/// Aliases PW_NESTED_TOKEN_FMT.
-#define PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT PW_NESTED_TOKEN_FMT
+/// Aliases PW_NESTED_TOKEN_FMT and defaults to "enum_domain" when called
+/// without arguments. A custom domain may be specified as an argument.
+#define PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(...) \
+  PW_DELEGATE_BY_ARG_COUNT(_PW_TOKENIZER_ENUM_FMT_, __VA_ARGS__)
+#define _PW_TOKENIZER_ENUM_FMT_0() _PW_NESTED_TOKEN_FMT_1("enum_domain")
+#define _PW_TOKENIZER_ENUM_FMT_1(domain) _PW_NESTED_TOKEN_FMT_1(domain)
 
 /// Tokenizes the given values within an enumerator. All values of the
 /// enumerator must be present to compile and have the enumerator be tokenized

@@ -148,7 +148,10 @@ TEST(TokenizeEnums, VersionedSpecialized) {
 }
 
 TEST(TokenizeEnums, VersionedFormatSpecifier) {
-  EXPECT_STREQ(PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(), PW_NESTED_TOKEN_FMT());
+  EXPECT_STREQ(PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(),
+               PW_NESTED_TOKEN_FMT("enum_domain"));
+  EXPECT_STREQ(PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT("custom_domain"),
+               PW_NESTED_TOKEN_FMT("custom_domain"));
 }
 
 }  // namespace
