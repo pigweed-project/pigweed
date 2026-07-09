@@ -86,7 +86,8 @@ impl<K: Kernel, T> Mutex<K, T> {
         let mut state = self.state.lock();
         pw_assert::ne!(
             state.holder_thread_id as usize,
-            state.sched().current_thread_id() as usize
+            state.sched().current_thread_id() as usize,
+            "Mutex attempted to be locked by holding thread"
         );
 
         #[allow(clippy::needless_else)]
@@ -128,10 +129,6 @@ impl<K: Kernel, T> Mutex<K, T> {
     // TODO - konkers: Investigate combining with lock().
     pub fn lock_until(&self, deadline: Instant<K::Clock>) -> Result<MutexGuard<'_, K, T>> {
         let mut state = self.state.lock();
-        pw_assert::ne!(
-            state.holder_thread_id as usize,
-            state.sched().current_thread_id() as usize
-        );
 
         #[allow(clippy::needless_else)]
         if let Some(val) = state.count.checked_add(1) {

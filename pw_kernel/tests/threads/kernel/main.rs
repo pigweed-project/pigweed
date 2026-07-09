@@ -88,6 +88,14 @@ fn test_thread_entry_b<K: Kernel>(kernel: K, args: &ThreadAArgs<K>) {
 }
 
 fn thread_a<K: Kernel>(kernel: K, test_counter: &Mutex<K, u64>) {
+    // Verify that lock_until can be called from the same thread when already locked,
+    // provided the deadline has already passed (instant/expired timeout).
+    {
+        let _guard = test_counter.lock();
+        let res = test_counter.lock_until(kernel.now());
+        pw_assert::assert!(res.is_err());
+    }
+
     for _ in 0..3 {
         let mut counter = test_counter.lock();
         let _ = kernel::sleep_until(kernel, kernel.now() + Duration::from_secs(1));
