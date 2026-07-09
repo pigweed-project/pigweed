@@ -35,7 +35,7 @@ TEST(BasicEnumTest, RunCode) {
 
   constexpr auto state = my::nested::pkg::OtherEnum::kSecond;
   // DOCSTAG: [pw_enum-examples-basic-cc-log]
-  PW_LOG_INFO("State " MY_NESTED_PKG_OTHER_ENUM ": received packet",
+  PW_LOG_INFO("State " MY_NESTED_PKG_OTHER_ENUM_FMT ": received packet",
               PW_LOG_ENUM(state));
   // DOCSTAG: [pw_enum-examples-basic-cc-log]
 

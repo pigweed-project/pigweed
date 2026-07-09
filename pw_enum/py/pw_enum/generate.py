@@ -46,7 +46,10 @@ def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
         macro_prefix += "_"
     macro = macro_prefix + camel_to_upper_snake(enum_desc.name)
     yield f'#define {macro}_DOMAIN "{enum_desc.cc_versioned_name}"'
-    yield f'#define {macro} PW_LOG_TOKEN_FMT("{enum_desc.cc_versioned_name}")'
+    yield (
+        f'#define {macro}_FMT '
+        f'PW_LOG_TOKEN_FMT("{enum_desc.cc_versioned_name}")'
+    )
 
 
 def _group_enum_values(enum_desc: EnumDescriptor) -> list[tuple[str, str]]:

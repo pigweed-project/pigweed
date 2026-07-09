@@ -42,7 +42,7 @@ class TestEnumGeneration(unittest.TestCase):
             )
         ]
         footer = "\n".join(generate_footer(enums)) + "\n"
-        self.assertIn("#define MY_NS_MY_ENUM PW_LOG_TOKEN_FMT", footer)
+        self.assertIn("#define MY_NS_MY_ENUM_FMT PW_LOG_TOKEN_FMT", footer)
         self.assertIn(
             '#define MY_NS_MY_ENUM_DOMAIN "::my::ns::_pw_enum_', footer
         )
@@ -146,7 +146,7 @@ class TestEnumGeneration(unittest.TestCase):
             )
         ]
         footer = "\n".join(generate_footer(enums)) + "\n"
-        self.assertIn("#define MY_ENUM PW_LOG_TOKEN_FMT", footer)
+        self.assertIn("#define MY_ENUM_FMT PW_LOG_TOKEN_FMT", footer)
         self.assertIn("_PW_TOKENIZE_ENUM_DOMAIN(::MyEnum,", footer)
 
     def test_empty_enum_skipped(self) -> None:

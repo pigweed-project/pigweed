@@ -22,7 +22,8 @@ namespace my::nested::pkg {
 
 const char* HandleEnum(MyEnum value) {
   // Log the enum as a string or token, depending on the logging backend.
-  PW_LOG_INFO("The enum value is: " MY_NESTED_PKG_MY_ENUM, PW_LOG_ENUM(value));
+  PW_LOG_INFO("The enum value is: " MY_NESTED_PKG_MY_ENUM_FMT,
+              PW_LOG_ENUM(value));
 
   switch (value) {
     case MyEnum::kAlpha:

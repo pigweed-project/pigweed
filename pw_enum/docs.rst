@@ -109,7 +109,7 @@ infrastructure.
 
 * **Versioned format macro**: ``pw_enum`` generates a macro to use in the format
   string for the enum. The macro is named for the namespace and enum name
-  (e.g. ``MY_NESTED_PKG_MY_ENUM``). The macro evaluates to a string literal
+  (e.g. ``MY_NESTED_PKG_MY_ENUM_FMT``). The macro evaluates to a string literal
   that can be concatenated into a format string.
 
   The macro is versioned based on the enum's contents. The version changes
