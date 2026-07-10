@@ -23,7 +23,7 @@
 //!
 //! # Proc Macros
 //!
-//! The [`macros`] module provides infrastructure for implementing proc macros
+//! The `macros` module provides infrastructure for implementing proc macros
 //! that take format strings as arguments.
 //!
 //! # Example
@@ -71,6 +71,7 @@
 //! ```
 #![deny(missing_docs)]
 
+#[cfg(feature = "proc_macro")]
 pub mod macros;
 
 mod core_fmt;

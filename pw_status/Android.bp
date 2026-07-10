@@ -26,3 +26,11 @@ cc_library_static {
         "status.cc",
     ],
 }
+
+rust_library {
+    name: "libpw_status",
+    crate_name: "pw_status",
+    srcs: ["rust/pw_status.rs"],
+    vendor_available: true,
+    host_supported: true,
+}

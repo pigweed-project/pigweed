@@ -109,3 +109,17 @@ cc_library {
         "pw_stream"
     ],
 }
+
+rust_library {
+    name: "libpw_stream",
+    crate_name: "pw_stream",
+    srcs: ["rust/pw_stream/lib.rs"],
+    cfgs: ["feature=\"std\""],
+    rustlibs: [
+        "libpw_status",
+        "libpw_varint",
+    ],
+    proc_macros: ["libpaste"],
+    vendor_available: true,
+    host_supported: true,
+}

@@ -48,3 +48,13 @@ cc_library_static {
         "varint.cc",
     ],
 }
+
+rust_library {
+    name: "libpw_varint",
+    crate_name: "pw_varint",
+    srcs: ["rust/pw_varint.rs"],
+    cfgs: ["feature=\"std\""],
+    rustlibs: ["libpw_status"],
+    vendor_available: true,
+    host_supported: true,
+}

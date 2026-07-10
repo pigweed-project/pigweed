@@ -14,6 +14,7 @@
 
 use std::collections::HashSet;
 
+#[cfg(feature = "proc_macro")]
 use quote::{quote, ToTokens};
 
 use crate::{core_fmt, printf};
@@ -84,6 +85,7 @@ pub enum Style {
 }
 
 /// Implemented for testing through the pw_format_test_macros crate.
+#[cfg(feature = "proc_macro")]
 impl ToTokens for Style {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let new_tokens = match self {

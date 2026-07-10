@@ -234,3 +234,31 @@ rust_protobuf {
     proto_flags: ["-I external/protobuf/src"],
     vendor_available: true,
 }
+
+rust_library {
+    name: "libpw_tokenizer_core",
+    crate_name: "pw_tokenizer_core",
+    srcs: ["rust/pw_tokenizer_core.rs"],
+    vendor_available: true,
+    host_supported: true,
+}
+
+rust_library {
+    name: "libpw_tokenizer",
+    crate_name: "pw_tokenizer",
+    srcs: ["rust/pw_tokenizer/lib.rs"],
+    cfgs: ["feature=\"std\""],
+    rustlibs: [
+        "libnom",
+        "libpw_base64",
+        "libpw_bytes",
+        "libpw_format",
+        "libpw_format_core",
+        "libpw_status",
+        "libpw_stream",
+        "libpw_tokenizer_core",
+        "libpw_varint",
+    ],
+    vendor_available: true,
+    host_supported: true,
+}

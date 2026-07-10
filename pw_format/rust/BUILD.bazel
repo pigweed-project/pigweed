@@ -41,6 +41,7 @@ rust_library(
         "pw_format/tests/mod.rs",
         "pw_format/tests/printf.rs",
     ],
+    crate_features = ["proc_macro"],
     edition = "2021",
     visibility = ["//visibility:public"],
     deps = [

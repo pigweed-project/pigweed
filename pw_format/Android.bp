@@ -1,4 +1,4 @@
-// Copyright 2023 The Pigweed Authors
+// Copyright 2026 The Pigweed Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not
 // use this file except in compliance with the License. You may obtain a copy of
@@ -16,37 +16,22 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-cc_library_static {
-    name: "pw_base64",
-    defaults: [
-        "pw_android_common_backends",
-        "pw_android_common_target_support",
-    ],
-    export_include_dirs: ["public"],
-    header_libs: [
-        "pw_assert",
-        "pw_log",
-    ],
-    srcs: [
-        "base64.cc",
-    ],
-    static_libs: [
-        "pw_preprocessor",
-        "pw_span",
-        "pw_string",
-    ],
-    export_static_lib_headers: [
-        "pw_span",
-        "pw_string",
-    ],
+rust_library {
+    name: "libpw_format_core",
+    crate_name: "pw_format_core",
+    srcs: ["rust/pw_format_core.rs"],
+    vendor_available: true,
+    host_supported: true,
 }
 
 rust_library {
-    name: "libpw_base64",
-    crate_name: "pw_base64",
-    srcs: ["rust/pw_base64/lib.rs"],
-    cfgs: ["feature=\"std\""],
-    rustlibs: ["libpw_status", "libpw_stream"],
+    name: "libpw_format",
+    crate_name: "pw_format",
+    srcs: ["rust/pw_format/lib.rs"],
+    rustlibs: [
+        "libnom",
+        "libpw_status",
+    ],
     vendor_available: true,
     host_supported: true,
 }

@@ -49,3 +49,12 @@ cc_library_static {
         "pw_status",
     ],
 }
+
+rust_library {
+    name: "libpw_bytes",
+    crate_name: "pw_bytes",
+    srcs: ["rust/pw_bytes.rs"],
+    cfgs: ["feature=\"std\""],
+    vendor_available: true,
+    host_supported: true,
+}

@@ -95,9 +95,9 @@ rust_library(
         "pw_tokenizer/internal.rs",
         "pw_tokenizer/lib.rs",
     ],
-    crate_features = select({
+    crate_features = ["proc_macro"] + select({
         "//pw_build/constraints/rust:std": ["std"],
-        "//conditions:default": [""],
+        "//conditions:default": [],
     }),
     edition = "2021",
     proc_macro_deps = [":pw_tokenizer_macro"],
@@ -122,9 +122,9 @@ rust_library(
 rust_test(
     name = "pw_tokenizer_test",
     crate = ":pw_tokenizer",
-    crate_features = select({
+    crate_features = ["proc_macro"] + select({
         "//pw_build/constraints/rust:std": ["std"],
-        "//conditions:default": [""],
+        "//conditions:default": [],
     }),
     edition = "2021",
     # TODO: b/343726867 - support on-device rust tests

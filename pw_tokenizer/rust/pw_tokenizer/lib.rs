@@ -79,6 +79,7 @@ pub mod __private {
     pub use pw_status::Result;
     pub use pw_stream::{Cursor, Seek, WriteInteger, WriteVarint};
     pub use pw_tokenizer_core::hash_string;
+    #[cfg(feature = "proc_macro")]
     pub use pw_tokenizer_macro::{
         _token, _tokenize_core_fmt_to_buffer, _tokenize_core_fmt_to_writer,
         _tokenize_printf_to_buffer, _tokenize_printf_to_writer,
@@ -132,7 +133,7 @@ macro_rules! token {
 /// Returns a [`pw_status::Result<usize>`] the number of bytes written to the buffer.
 ///
 /// `tokenize_to_buffer!` supports concatenation of format strings as described
-/// in [`pw_format::macros::FormatAndArgs`].
+/// in `pw_format::macros::FormatAndArgs`.
 ///
 /// # Errors
 /// - [`pw_status::Error::OutOfRange`] - Buffer is not large enough to fit
@@ -177,7 +178,7 @@ macro_rules! tokenize_core_fmt_to_buffer {
 /// Returns a [`pw_status::Result<usize>`] the number of bytes written to the buffer.
 ///
 /// `tokenize_to_buffer!` supports concatenation of format strings as described
-/// in [`pw_format::macros::FormatAndArgs`].
+/// in `pw_format::macros::FormatAndArgs`.
 ///
 /// # Errors
 /// - [`pw_status::Error::OutOfRange`] - Buffer is not large enough to fit
@@ -241,7 +242,7 @@ macro_rules! tokenize_to_buffer {
 /// Returns a [`pw_status::Result<()>`].
 ///
 /// `tokenize_core_fmt_to_writer!` supports concatenation of format strings as
-///  described in [`pw_format::macros::FormatAndArgs`].
+///  described in `pw_format::macros::FormatAndArgs`.
 ///
 /// # Errors
 /// - [`pw_status::Error::OutOfRange`] - [`MessageWriter`] does not have enough
@@ -331,7 +332,7 @@ macro_rules! tokenize_core_fmt_to_writer {
 /// Returns a [`pw_status::Result<()>`].
 ///
 /// `tokenize_core_fmt_to_writer!` supports concatenation of format strings as
-///  described in [`pw_format::macros::FormatAndArgs`].
+///  described in `pw_format::macros::FormatAndArgs`.
 ///
 /// # Errors
 /// - [`pw_status::Error::OutOfRange`] - [`MessageWriter`] does not have enough
