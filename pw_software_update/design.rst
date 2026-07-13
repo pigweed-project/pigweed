@@ -22,7 +22,7 @@ around TUF.
 
 .. mermaid::
 
-   flowchart LR
+   flowchart TB
           A[/Source/] --> |Build| B[/Target files/]
           B --> |Assemble & Sign| C[(Update bundle)]
           C --> |Publish| D[(Available updates)]
@@ -56,7 +56,7 @@ only supports the "root" and "targets" roles, as represented by
 
 .. mermaid::
 
-   flowchart LR
+   flowchart TB
           A[Verified boot] --> |Embed & Verify| B[/Root key/]
           B --> |Delegate & Rotate| C[/Targets key/]
           C --> |Sign| D[/Target files/]

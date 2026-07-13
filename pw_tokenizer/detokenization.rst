@@ -212,32 +212,39 @@ treating it like plain text.
 The following diagram describes the decoding process for optionally tokenized
 fields in detail.
 
+.. raw:: html
+
+   <style>
+     #decodeprocess > svg { height: 1000px; }
+   </style>
+
 .. mermaid::
+   :name: decodeprocess
 
-  flowchart TD
-     start([Received bytes]) --> binary
+   flowchart TD
+      start([Received bytes]) --> binary
 
-     binary[Decode as<br>binary tokenized] --> binary_ok
-     binary_ok{Detokenizes<br>successfully?} -->|no| utf8
-     binary_ok -->|yes| done_binary([Display decoded binary])
+      binary[Decode as<br>binary tokenized] --> binary_ok
+      binary_ok{Detokenizes<br>successfully?} -->|no| utf8
+      binary_ok -->|yes| done_binary([Display decoded binary])
 
-     utf8[Decode as UTF-8] --> utf8_ok
-     utf8_ok{Valid UTF-8?} -->|no| base64_encode
-     utf8_ok -->|yes| base64
+      utf8[Decode as UTF-8] --> utf8_ok
+      utf8_ok{Valid UTF-8?} -->|no| base64_encode
+      utf8_ok -->|yes| base64
 
-     base64_encode[Encode as<br>tokenized Base64] --> display
-     display([Display encoded Base64])
+      base64_encode[Encode as<br>tokenized Base64] --> display
+      display([Display encoded Base64])
 
-     base64[Decode as<br>Base64 tokenized] --> base64_ok
+      base64[Decode as<br>Base64 tokenized] --> base64_ok
 
-     base64_ok{Fully<br>or partially<br>detokenized?} -->|no| is_plain_text
-     base64_ok -->|yes| base64_results
+      base64_ok{Fully<br>or partially<br>detokenized?} -->|no| is_plain_text
+      base64_ok -->|yes| base64_results
 
-     is_plain_text{Text is<br>printable?} -->|no| base64_encode
-     is_plain_text-->|yes| plain_text
+      is_plain_text{Text is<br>printable?} -->|no| base64_encode
+      is_plain_text-->|yes| plain_text
 
-     base64_results([Display decoded Base64])
-     plain_text([Display text])
+      base64_results([Display decoded Base64])
+      plain_text([Display text])
 
 Potential decoding problems
 ---------------------------

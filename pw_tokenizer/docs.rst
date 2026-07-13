@@ -74,26 +74,40 @@ Here's an example of how ``pw_tokenizer`` enables you to store
 and send the same logging information using significantly less
 resources:
 
-.. mermaid::
+.. raw:: html
 
-   flowchart TD
+   <style>
+     #example > svg { height: 750px; }
+   </style>
+
+.. mermaid::
+   :name: example
+
+   %%{init: {
+     'flowchart': {
+       'subGraphTitleMargin': {'bottom': 15}
+     }
+   }}%%
+
+   flowchart LR
 
      subgraph after["After: Tokenized Logs (37 bytes saved!)"]
-       after_log["LOG(#quot;Battery Voltage: %d mV#quot;, voltage)"] -- 4 bytes stored on-device as... -->
-       after_encoding["d9 28 47 8e"] -- 6 bytes sent over the wire as... -->
-       after_transmission["d9 28 47 8e aa 3e"] -- Displayed in logs as... -->
+       direction TB
+       after_log["LOG(#quot;Battery Voltage: %d mV#quot;, voltage)"] -- 4 bytes stored on-device as… -->
+       after_encoding["d9 28 47 8e"] -- 6 bytes sent over the wire as… -->
+       after_transmission["d9 28 47 8e aa 3e"] -- Displayed in logs as… -->
        after_display["#quot;Battery Voltage: 3989 mV#quot;"]
      end
 
      subgraph before["Before: No Tokenization"]
-       before_log["LOG(#quot;Battery Voltage: %d mV#quot;, voltage)"] -- 41 bytes stored on-device as... -->
-       before_encoding["#quot;Battery Voltage: %d mV#quot;"] -- 43 bytes sent over the wire as... -->
-       before_transmission["#quot;Battery Voltage: 3989 mV#quot;"] -- Displayed in logs as... -->
+       direction TB
+       before_log["LOG(#quot;Battery Voltage: %d mV#quot;, voltage)"] -- 41 bytes stored on-device as… -->
+       before_encoding["#quot;Battery Voltage: %d mV#quot;"] -- 43 bytes sent over the wire as… -->
+       before_transmission["#quot;Battery Voltage: 3989 mV#quot;"] -- Displayed in logs as… -->
        before_display["#quot;Battery Voltage: 3989 mV#quot;"]
      end
 
-     style after stroke:#00c852,stroke-width:3px
-     style before stroke:#ff5252,stroke-width:3px
+     before ~~~ after
 
 A quick overview of how the tokenized version works:
 

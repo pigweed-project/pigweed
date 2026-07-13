@@ -253,16 +253,14 @@ if 'GOOGLE_ANALYTICS_ID' in os.environ:
 # https://sphinx-sitemap.readthedocs.io/en/latest/advanced-configuration.html
 sitemap_url_scheme = '{link}'
 
-mermaid_init_js = '''
-mermaid.initialize({
-  // Mermaid is manually started in //docs/sphinx/_static/js/pigweed.js.
-  startOnLoad: false,
-  // sequenceDiagram Note text alignment
-  noteAlign: "left",
-  // Set mermaid theme to the current furo theme
-  theme: localStorage.getItem("theme") == "dark" ? "dark" : "default"
-});
-'''
+# Mermaid style API is very hard to use and full of footguns. The `neutral`
+# theme is the only readable default option on both light and dark themes.
+mermaid_light_theme = 'neutral'
+mermaid_dark_theme = 'neutral'
+# Manually start Mermaid in //docs/sphinx/_static/js/pigweed.js to ensure
+# that Mermaid does not interfere with the logic that scrolls the current
+# page into view in "Section Navigation".
+mermaid_init_config = {'startOnLoad': False}
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'Pigweeddoc'

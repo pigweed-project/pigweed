@@ -68,7 +68,14 @@ At a high level:
   function starts executing commands. This function allows specifying the number
   of parallel workers (the number of recipes which are executed in parallel).
 
+.. raw:: html
+
+   <style>
+     #arch > svg { height: 350px; }
+   </style>
+
 .. mermaid::
+   :name: arch
 
    flowchart TB
        subgraph BuildRecipeA ["<strong>BuildRecipe</strong>: ninja"]

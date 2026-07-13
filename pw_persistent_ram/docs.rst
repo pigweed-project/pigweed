@@ -25,7 +25,14 @@ stored in persistent RAM. The following diagram illustrates a common pattern
 for managing persistent RAM, particularly in scenarios involving crash data
 capture and retrieval:
 
+.. raw:: html
+
+   <style>
+     #lifecycle > svg { height: 1000px; }
+   </style>
+
 .. mermaid::
+   :name: lifecycle
 
    graph TD
        DB[Device Boot]
