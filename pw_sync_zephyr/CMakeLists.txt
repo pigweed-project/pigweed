@@ -28,6 +28,7 @@ pw_add_library(pw_sync_zephyr.mutex_backend INTERFACE
     public
     public_overrides
   PUBLIC_DEPS
+    pw_assert
     pw_interrupt.context
     pw_sync.mutex.facade
 )
