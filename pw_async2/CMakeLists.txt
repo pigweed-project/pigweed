@@ -396,9 +396,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       coro.cc
       coro_task.cc
     PRIVATE_DEPS
-      pw_allocator.bump_allocator
       pw_assert.check
-      pw_bytes
       pw_bytes.alignment
       pw_log
     PUBLIC_DEPS

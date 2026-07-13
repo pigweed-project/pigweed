@@ -562,9 +562,7 @@ cc_library(
         "public/pw_async2/fallible_coro_task.h",
     ],
     implementation_deps = [
-        "//pw_allocator:bump_allocator",
         "//pw_assert:check",
-        "//pw_bytes",
         "//pw_bytes:alignment",
         "//pw_log",
     ],

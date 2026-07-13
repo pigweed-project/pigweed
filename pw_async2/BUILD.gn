@@ -457,10 +457,8 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       dir_pw_function,
     ]
     deps = [
-      "$dir_pw_allocator:bump_allocator",
       "$dir_pw_assert:check",
       "$dir_pw_bytes:alignment",
-      dir_pw_bytes,
       dir_pw_log,
     ]
     sources = [
