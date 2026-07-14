@@ -343,7 +343,6 @@ cc_library(
         "public_overrides",
     ],
     tags = ["noclangtidy"],
-    target_compatible_with = incompatible_with_mcu(),
     deps = [
         ":binary_semaphore",
         ":thread_notification.facade",
@@ -361,7 +360,6 @@ cc_library(
         "public_overrides",
     ],
     tags = ["noclangtidy"],
-    target_compatible_with = incompatible_with_mcu(),
     deps = [
         ":binary_semaphore_thread_notification_backend",
         ":timed_thread_notification.facade",
