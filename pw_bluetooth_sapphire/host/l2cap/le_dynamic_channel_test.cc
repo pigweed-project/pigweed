@@ -581,5 +581,93 @@ TEST_F(LeDynamicChannelTest, OpenInboundBadChannel) {
   EXPECT_FALSE(channel);
 }
 
+TEST_F(LeDynamicChannelTest, OpenInboundUnacceptableParameters) {
+  static constexpr auto kMode =
+      CreditBasedFlowControlMode::kLeCreditBasedFlowControl;
+  static constexpr Psm kPsm = 0x0015;
+  static constexpr ChannelParameters kChannelParams{
+      .mode = kMode,
+      .max_rx_sdu_size = std::nullopt,
+      .flush_timeout = std::nullopt,
+  };
+
+  struct {
+    uint16_t mtu;
+    uint16_t mps;
+  } kInvalidParams[] = {
+      {0, 50},       // MTU too small
+      {22, 50},      // MTU too small
+      {100, 0},      // MPS too small
+      {100, 22},     // MPS too small
+      {100, 65534},  // MPS too large
+  };
+
+  ASSERT_TRUE(RegisterService(kPsm, kChannelParams));
+
+  std::optional<const DynamicChannel*> channel;
+  SetNextInboundChannel(&channel);
+
+  for (const auto& params : kInvalidParams) {
+    LECreditBasedConnectionRequestPayload req_payload{
+        .le_psm = kPsm,
+        .src_cid = DynamicCid(),
+        .mtu = params.mtu,
+        .mps = params.mps,
+        .initial_credits = 0x0032,
+    };
+    LECreditBasedConnectionResponsePayload rsp_payload{
+        .dst_cid = kInvalidChannelId,
+        .mtu = 0,
+        .mps = 0,
+        .initial_credits = 0,
+        .result = LECreditBasedConnectionResult::kUnacceptableParameters,
+    };
+
+    EXPECT_TRUE(DoOpenInbound(req_payload, rsp_payload));
+    EXPECT_FALSE(channel);
+  }
+}
+
+TEST_F(LeDynamicChannelTest, OpenOutboundUnacceptableParameters) {
+  static constexpr auto kMode =
+      CreditBasedFlowControlMode::kLeCreditBasedFlowControl;
+  static constexpr ChannelParameters kChannelParams{
+      .mode = kMode,
+      .max_rx_sdu_size = std::nullopt,
+      .flush_timeout = std::nullopt,
+  };
+
+  struct {
+    uint16_t mtu;
+    uint16_t mps;
+  } kInvalidParams[] = {
+      {0, 50},       // MTU too small
+      {22, 50},      // MTU too small
+      {100, 0},      // MPS too small
+      {100, 22},     // MPS too small
+      {100, 65534},  // MPS too large
+  };
+
+  for (const auto& params : kInvalidParams) {
+    LECreditBasedConnectionRequestPayload req_payload{
+        .le_psm = 0x0015,
+        .src_cid = DynamicCid(),
+        .mtu = kDefaultMTU,
+        .mps = kMaxInboundPduPayloadSize,
+        .initial_credits = 0,
+    };
+    LECreditBasedConnectionResponsePayload rsp_payload{
+        .dst_cid = DynamicCid(),
+        .mtu = params.mtu,
+        .mps = params.mps,
+        .initial_credits = 0x0050,
+        .result = LECreditBasedConnectionResult::kSuccess,
+    };
+
+    auto chan = DoOpenOutbound(req_payload, rsp_payload, kChannelParams);
+    EXPECT_FALSE(chan);
+  }
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

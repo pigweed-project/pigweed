@@ -106,12 +106,17 @@ struct FrameCheckSequence {
 inline constexpr FrameCheckSequence kInitialFcsValue = {0};
 
 // The L2CAP MTU defines the maximum SDU size and is asymmetric. The following are the minimum and
-// default MTU sizes that a L2CAP implementation must support (see Core Spec v5.0, Vol 3, Part A,
-// Section 5.1).
+// default MTU sizes that a L2CAP implementation must support (see Core Spec v6.3, Vol 3, Part A,
+// 5.1).
 inline constexpr uint16_t kDefaultMTU = 672;
 inline constexpr uint16_t kMinACLMTU = 48;
 inline constexpr uint16_t kMinLEMTU = 23;
 inline constexpr uint16_t kMaxMTU = 0xFFFF;
+
+// The L2CAP MPS defines the maximum PDU payload size. The following are the minimum and maximum
+// MPS sizes for LE Credit Based Flow Control modes (see Core Spec v6.3, Vol 3, Part A, 4.22).
+inline constexpr uint16_t kMinLEMPS = 23;
+inline constexpr uint16_t kMaxLEMPS = 65533;
 
 // The maximum length of a L2CAP B-frame information payload.
 inline constexpr uint16_t kMaxBasicFramePayloadSize = 65535;

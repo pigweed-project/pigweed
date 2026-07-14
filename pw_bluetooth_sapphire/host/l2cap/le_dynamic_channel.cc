@@ -112,6 +112,21 @@ void LeDynamicChannelRegistry::OnRxLeCreditBasedConnectionRequest(
     return;
   }
 
+  if (maximum_transmission_unit < kMinLEMTU ||
+      maximum_payload_size < kMinLEMPS || maximum_payload_size > kMaxLEMPS) {
+    bt_log(DEBUG,
+           "l2cap-le",
+           "Unacceptable parameters (MTU: %u, MPS: %u); rejecting connection "
+           "for PSM %#.4x from channel %#.4x",
+           maximum_transmission_unit,
+           maximum_payload_size,
+           psm,
+           remote_cid);
+    responder->Send(
+        0, 0, 0, 0, LECreditBasedConnectionResult::kUnacceptableParameters);
+    return;
+  }
+
   ChannelId local_cid = FindAvailableChannelId();
   if (local_cid == kInvalidChannelId) {
     bt_log(DEBUG,
@@ -392,6 +407,17 @@ void LeDynamicChannel::OnRxLeCreditConnRsp(
            "Channel %#.4x: Remote channel ID %#.4x is not unique",
            local_cid(),
            rsp.destination_cid());
+    return;
+  }
+
+  if (rsp.mtu() < kMinLEMTU || rsp.mps() < kMinLEMPS || rsp.mps() > kMaxLEMPS) {
+    bt_log(ERROR,
+           "l2cap-le",
+           "Channel %#.4x: Peer returned unacceptable parameters (MTU: %u, "
+           "MPS: %u)",
+           local_cid(),
+           rsp.mtu(),
+           rsp.mps());
     return;
   }
 
