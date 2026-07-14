@@ -19,9 +19,22 @@ load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 package(default_visibility = ["//visibility:public"])
 
 zephyr_cc_library(
+    name = "config",
+    hdrs = ["public/pw_sys_io_zephyr/config.h"],
+    strip_include_prefix = "public",
+    deps = [":config_override"],
+)
+
+label_flag(
+    name = "config_override",
+    build_setting_default = "//pw_build:default_module_config",
+)
+
+zephyr_cc_library(
     name = "pw_sys_io_zephyr",
     srcs = ["//pw_sys_io_zephyr:sys_io.cc"],
     deps = [
+        ":config",
         "//pw_sys_io:default_putget_bytes",
         "//pw_sys_io:pw_sys_io.facade",
         "@zephyr//modules/cmsis_6",
@@ -33,6 +46,7 @@ zephyr_cc_library(
     name = "backend",
     srcs = ["sys_io.cc"],
     deps = [
+        ":config",
         "//pw_sys_io:default_putget_bytes",
         "//pw_sys_io:pw_sys_io.facade",
         "@zephyr_version//:version",

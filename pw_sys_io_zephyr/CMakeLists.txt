@@ -18,12 +18,24 @@ if(NOT CONFIG_ZEPHYR_PIGWEED_MODULE AND NOT CONFIG_PIGWEED_SYS_IO)
   return()
 endif()
 
+pw_add_module_config(pw_sys_io_zephyr_CONFIG)
+
+pw_add_library(pw_sys_io_zephyr.config INTERFACE
+  HEADERS
+    public/pw_sys_io_zephyr/config.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${pw_sys_io_zephyr_CONFIG}
+)
+
 pw_add_library(pw_sys_io_zephyr STATIC
   SOURCES
     sys_io.cc
   PUBLIC_DEPS
     pw_sys_io.facade
     pw_sys_io.default_putget_bytes
+    pw_sys_io_zephyr.config
     zephyr_interface
 )
 

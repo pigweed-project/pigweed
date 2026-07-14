@@ -19,10 +19,12 @@
 #include <zephyr/kernel.h>
 #include <zephyr/usb/usb_device.h>
 
+#include "pw_sys_io_zephyr/config.h"
+
 static int sys_io_init(void) {
   int err = 0;
 
-  if (IS_ENABLED(CONFIG_PIGWEED_SYS_IO_USB)) {
+  if (pw::sys_io::zephyr::config::kUseUsb) {
     err = usb_enable(nullptr);
     if (err) {
       return err;
@@ -34,7 +36,7 @@ static int sys_io_init(void) {
   return err;
 }
 
-SYS_INIT(sys_io_init, APPLICATION, CONFIG_PIGWEED_SYS_IO_INIT_PRIORITY);
+SYS_INIT(sys_io_init, APPLICATION, PW_SYS_IO_ZEPHYR_CONFIG_INIT_PRIORITY);
 
 namespace pw::sys_io {
 
