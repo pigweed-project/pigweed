@@ -226,7 +226,7 @@ rows from one or more reports into a final RST output, list them within a
 
 .. code-block:: bazel
 
-   load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+   load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 
    sphinx_docs_library(
       name = "docs",

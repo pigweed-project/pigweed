@@ -18,7 +18,7 @@ load(
     "fuchsia_cc_test",
     "fuchsia_unittest_package",
 )
-load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 

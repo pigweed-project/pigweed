@@ -94,7 +94,7 @@ Add reStructuredText files to Sphinx
 
    .. code-block:: py
 
-      load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+      load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
       load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
       sphinx_docs_library(

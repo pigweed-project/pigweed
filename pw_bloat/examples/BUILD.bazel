@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_bloat:pw_cc_size_binary.bzl", "pw_cc_size_binary")
 load("//pw_bloat:pw_size_diff.bzl", "pw_size_diff")
 load("//pw_bloat:pw_size_table.bzl", "pw_size_table")

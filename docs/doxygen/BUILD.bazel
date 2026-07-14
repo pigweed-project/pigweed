@@ -14,7 +14,7 @@
 
 load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
 load("@doxygen//:doxygen.bzl", "doxygen")
-load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])

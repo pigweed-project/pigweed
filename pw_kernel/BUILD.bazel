@@ -13,7 +13,7 @@
 # the License.
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
 

@@ -13,7 +13,7 @@
 # the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "host_backend_alias", "incompatible_with_mcu")
 load("//pw_build:pw_facade.bzl", "pw_facade")
 load("//pw_perf_test:pw_cc_perf_test.bzl", "pw_cc_perf_test")
