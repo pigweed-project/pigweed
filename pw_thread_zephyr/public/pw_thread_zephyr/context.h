@@ -23,6 +23,7 @@
 #include "pw_function/function.h"
 #include "pw_span/span.h"
 #include "pw_string/util.h"
+#include "pw_thread_zephyr/config.h"
 #include "pw_thread_zephyr/stack.h"
 
 namespace pw::thread {
@@ -36,7 +37,7 @@ namespace zephyr {
 // results in an array of characters which is this length + 1 bytes in every
 // pw::Thread's context.
 inline constexpr size_t kMaximumNameLength =
-    CONFIG_PIGWEED_THREAD_MAX_THREAD_NAME_LEN;
+    ::pw::thread::zephyr::config::kMaximumNameLength;
 
 // Forward declare Options since we'll need a reference to them.
 class Options;

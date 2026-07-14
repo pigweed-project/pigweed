@@ -29,6 +29,18 @@ sphinx_docs_library(
 )
 
 zephyr_cc_library(
+    name = "config",
+    hdrs = ["public/pw_thread_zephyr/config.h"],
+    strip_include_prefix = "public",
+    deps = [":config_override"],
+)
+
+label_flag(
+    name = "config_override",
+    build_setting_default = "//pw_build:default_module_config",
+)
+
+zephyr_cc_library(
     name = "id",
     hdrs = [
         "id_public_overrides/pw_thread_backend/id_inline.h",
@@ -84,6 +96,7 @@ zephyr_cc_library(
         "thread_public_overrides",
     ],
     deps = [
+        ":config",
         ":thread_creation",
         "//pw_assert:assert",
         "//pw_assert:check",
@@ -106,6 +119,7 @@ zephyr_cc_library(
         "thread_public_overrides/pw_thread_backend/stack.h",
     ],
     strip_include_prefix = "thread_public_overrides",
+    deps = [":config"],
 )
 
 zephyr_cc_library(

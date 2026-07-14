@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+#include "pw_thread_zephyr/config.h"
+
 namespace pw::thread::zephyr {
 
 using PriorityType = int;
@@ -23,13 +25,14 @@ using PriorityType = int;
 
 /// The lowest priority of a thread
 inline constexpr int kLowestPriority =
-    CONFIG_PIGWEED_THREAD_NUM_PREEMPT_PRIORITIES - 1;
+    ::pw::thread::zephyr::config::kNumPreemptPriorities - 1;
 
 /// The highest priority of a preemptive thread
 inline constexpr int kHighestPriority = 0;
 
 /// The default thread priority
-inline constexpr int kDefaultPriority = CONFIG_PIGWEED_THREAD_DEFAULT_PRIORITY;
+inline constexpr int kDefaultPriority =
+    ::pw::thread::zephyr::config::kDefaultPriority;
 
 static_assert(kDefaultPriority <= kLowestPriority);
 static_assert(kDefaultPriority >= kHighestPriority);

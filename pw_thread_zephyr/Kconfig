@@ -44,11 +44,6 @@ config PIGWEED_THREAD_DEFAULT_PRIORITY
   int "Default thread priority"
   default MAIN_THREAD_PRIORITY
 
-config PIGWEED_THREAD_NUM_COOP_PRIORITIES
-  int "Number of cooperative thread priorities"
-  default NUM_COOP_PRIORITIES
-  range 0 NUM_COOP_PRIORITIES
-
 config PIGWEED_THREAD_NUM_PREEMPT_PRIORITIES
   int "Number of preemptible thread priorities"
   default NUM_PREEMPT_PRIORITIES

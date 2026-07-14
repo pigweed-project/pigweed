@@ -17,6 +17,17 @@ if(NOT CONFIG_ZEPHYR_PIGWEED_MODULE)
   return()
 endif()
 
+pw_add_module_config(pw_thread_zephyr_CONFIG)
+
+pw_add_library(pw_thread_zephyr.config INTERFACE
+  HEADERS
+    public/pw_thread_zephyr/config.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${pw_thread_zephyr_CONFIG}
+)
+
 # This target provides the backend for pw::Thread::id & pw::this_thread::get_id.
 pw_add_library(pw_thread_zephyr.id INTERFACE
   HEADERS
@@ -31,6 +42,7 @@ pw_add_library(pw_thread_zephyr.id INTERFACE
     pw_assert
     pw_interrupt.context
     pw_thread.thread.facade
+    pw_thread_zephyr.config
 )
 pw_zephyrize_libraries_ifdef(
   CONFIG_PIGWEED_THREAD
@@ -47,6 +59,7 @@ pw_add_library(pw_thread_zephyr.sleep STATIC
   PUBLIC_DEPS
     pw_chrono.system_clock
     pw_thread.sleep.facade
+    pw_thread_zephyr.config
   PRIVATE_DEPS
     pw_assert.check
     pw_thread.thread
@@ -77,6 +90,7 @@ pw_add_library(pw_thread_zephyr.thread STATIC
     pw_span
     pw_string
     pw_thread.thread.facade
+    pw_thread_zephyr.config
   SOURCES
     thread.cc
 )
@@ -96,6 +110,7 @@ pw_add_library(pw_thread_zephyr.yield INTERFACE
   PUBLIC_DEPS
     pw_assert
     pw_thread.yield.facade
+    pw_thread_zephyr.config
 )
 pw_zephyrize_libraries_ifdef(
     CONFIG_PIGWEED_THREAD_YIELD
@@ -109,6 +124,8 @@ pw_add_library(pw_thread_zephyr.thread_creation INTERFACE
   PUBLIC_INCLUDES
     public
     thread_public_overrides
+  PUBLIC_DEPS
+    pw_thread_zephyr.config
 )
 
 pw_add_library(pw_thread_zephyr.thread_iteration STATIC
@@ -118,6 +135,7 @@ pw_add_library(pw_thread_zephyr.thread_iteration STATIC
   PUBLIC_DEPS
     pw_thread.thread_info
     pw_thread.thread_iteration.facade
+    pw_thread_zephyr.config
   SOURCES
     pw_thread_zephyr_private/thread_iteration.h
     thread_iteration.cc

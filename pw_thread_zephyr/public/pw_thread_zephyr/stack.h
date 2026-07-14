@@ -17,15 +17,17 @@
 
 #include <algorithm>
 
+#include "pw_thread_zephyr/config.h"
+
 namespace pw::thread::zephyr {
 
 /// Smallest stack size supported by Zephyr threads.
 inline constexpr size_t kMinimumStackSizeBytes =
-    CONFIG_PIGWEED_THREAD_MINIMUM_STACK_SIZE;
+    ::pw::thread::zephyr::config::kMinimumStackSizeBytes;
 
 /// Default stack size for Zephyr threads
 inline constexpr size_t kDefaultStackSizeBytes =
-    CONFIG_PIGWEED_THREAD_DEFAULT_STACK_SIZE;
+    ::pw::thread::zephyr::config::kDefaultStackSizeBytes;
 
 template <size_t kStackSizeBytes>
 class Stack {
