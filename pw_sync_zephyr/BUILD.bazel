@@ -31,12 +31,19 @@ sphinx_docs_library(
 zephyr_cc_library(
     name = "binary_semaphore",
     srcs = ["binary_semaphore.cc"],
-    implementation_deps = ["//pw_assert:check"],
+    hdrs = [
+        "public/pw_sync_zephyr/binary_semaphore_inline.h",
+        "public/pw_sync_zephyr/binary_semaphore_native.h",
+        "public_overrides/pw_sync_backend/binary_semaphore_inline.h",
+        "public_overrides/pw_sync_backend/binary_semaphore_native.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
         "//pw_assert:assert",
-        "//pw_chrono_zephyr:system_clock",
+        "//pw_chrono:system_clock",
         "//pw_interrupt:context",
         "//pw_sync:binary_semaphore.facade",
     ],
@@ -45,12 +52,20 @@ zephyr_cc_library(
 zephyr_cc_library(
     name = "counting_semaphore",
     srcs = ["counting_semaphore.cc"],
+    hdrs = [
+        "public/pw_sync_zephyr/counting_semaphore_inline.h",
+        "public/pw_sync_zephyr/counting_semaphore_native.h",
+        "public_overrides/pw_sync_backend/counting_semaphore_inline.h",
+        "public_overrides/pw_sync_backend/counting_semaphore_native.h",
+    ],
     implementation_deps = ["//pw_assert:check"],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
         "//pw_assert:assert",
-        "//pw_chrono_zephyr:system_clock",
+        "//pw_chrono:system_clock",
         "//pw_interrupt:context",
         "//pw_sync:counting_semaphore.facade",
     ],
@@ -58,90 +73,95 @@ zephyr_cc_library(
 
 zephyr_cc_library(
     name = "interrupt_spin_lock",
-    implementation_deps = ["//pw_assert:check"],
+    hdrs = [
+        "public/pw_sync_zephyr/interrupt_spin_lock_inline.h",
+        "public/pw_sync_zephyr/interrupt_spin_lock_native.h",
+        "public_overrides/pw_sync_backend/interrupt_spin_lock_inline.h",
+        "public_overrides/pw_sync_backend/interrupt_spin_lock_native.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
-        "//pw_interrupt:context",
+        "//pw_assert:assert",
         "//pw_sync:interrupt_spin_lock.facade",
     ],
 )
 
 zephyr_cc_library(
     name = "mutex",
-    implementation_deps = ["//pw_assert:assert"],
+    hdrs = [
+        "public/pw_sync_zephyr/mutex_inline.h",
+        "public/pw_sync_zephyr/mutex_native.h",
+        "public_overrides/pw_sync_backend/mutex_inline.h",
+        "public_overrides/pw_sync_backend/mutex_native.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
+        "//pw_assert:assert",
         "//pw_interrupt:context",
         "//pw_sync:mutex.facade",
     ],
 )
 
 zephyr_cc_library(
+    name = "thread_notification",
+    hdrs = [
+        "public/pw_sync_zephyr/thread_notification_inline.h",
+        "public/pw_sync_zephyr/thread_notification_native.h",
+        "public_overrides/thread_notification/pw_sync_backend/thread_notification_inline.h",
+        "public_overrides/thread_notification/pw_sync_backend/thread_notification_native.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides/thread_notification",
+    ],
+    deps = [
+        ":binary_semaphore",
+        "//pw_assert:assert",
+        "//pw_interrupt:context",
+        "//pw_sync:thread_notification.facade",
+    ],
+)
+
+zephyr_cc_library(
     name = "timed_mutex",
     srcs = ["timed_mutex.cc"],
+    hdrs = [
+        "public/pw_sync_zephyr/timed_mutex_inline.h",
+        "public_overrides/pw_sync_backend/timed_mutex_inline.h",
+    ],
     implementation_deps = ["//pw_assert:check"],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
-        "//pw_chrono_zephyr:system_clock",
+        ":mutex",
+        "//pw_assert:assert",
+        "//pw_chrono:system_clock",
         "//pw_interrupt:context",
-        "//pw_sync:mutex",
         "//pw_sync:timed_mutex.facade",
     ],
 )
 
 zephyr_cc_library(
     name = "timed_thread_notification",
-    implementation_deps = ["//pw_assert:check"],
-    deps = [
-        ":public_includes",
-        ":public_overrides_timed_thread_notification",
-        "//pw_chrono_zephyr:system_clock",
-        "//pw_interrupt:context",
-        "//pw_sync:timed_thread_notification.facade",
-    ],
-)
-
-zephyr_cc_library(
-    name = "public_includes",
     hdrs = [
-        "public/pw_sync_zephyr/binary_semaphore_inline.h",
-        "public/pw_sync_zephyr/binary_semaphore_native.h",
-        "public/pw_sync_zephyr/counting_semaphore_inline.h",
-        "public/pw_sync_zephyr/counting_semaphore_native.h",
-        "public/pw_sync_zephyr/interrupt_spin_lock_inline.h",
-        "public/pw_sync_zephyr/interrupt_spin_lock_native.h",
-        "public/pw_sync_zephyr/mutex_inline.h",
-        "public/pw_sync_zephyr/mutex_native.h",
-        "public/pw_sync_zephyr/timed_mutex_inline.h",
         "public/pw_sync_zephyr/timed_thread_notification_inline.h",
-    ],
-    strip_include_prefix = "public",
-    deps = ["//pw_assert:assert"],
-)
-
-zephyr_cc_library(
-    name = "public_overrides_includes",
-    hdrs = [
-        "public_overrides/pw_sync_backend/binary_semaphore_inline.h",
-        "public_overrides/pw_sync_backend/binary_semaphore_native.h",
-        "public_overrides/pw_sync_backend/counting_semaphore_inline.h",
-        "public_overrides/pw_sync_backend/counting_semaphore_native.h",
-        "public_overrides/pw_sync_backend/interrupt_spin_lock_inline.h",
-        "public_overrides/pw_sync_backend/interrupt_spin_lock_native.h",
-        "public_overrides/pw_sync_backend/mutex_inline.h",
-        "public_overrides/pw_sync_backend/mutex_native.h",
-        "public_overrides/pw_sync_backend/timed_mutex_inline.h",
-    ],
-    strip_include_prefix = "public_overrides",
-)
-
-zephyr_cc_library(
-    name = "public_overrides_timed_thread_notification",
-    hdrs = [
         "public_overrides/timed_thread_notification/pw_sync_backend/timed_thread_notification_inline.h",
     ],
-    strip_include_prefix = "public_overrides/timed_thread_notification",
+    includes = [
+        "public",
+        "public_overrides/timed_thread_notification",
+    ],
+    deps = [
+        ":binary_semaphore",
+        "//pw_chrono:system_clock",
+        "//pw_sync:timed_thread_notification.facade",
+    ],
 )
