@@ -33,19 +33,13 @@ zephyr_cc_library(
     hdrs = [
         "id_public_overrides/pw_thread_backend/id_inline.h",
         "id_public_overrides/pw_thread_backend/id_native.h",
-    ],
-    strip_include_prefix = "id_public_overrides",
-    deps = [":id_private"],
-)
-
-zephyr_cc_library(
-    name = "id_private",
-    hdrs = [
         "public/pw_thread_zephyr/id_inline.h",
         "public/pw_thread_zephyr/id_native.h",
     ],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:private"],
+    includes = [
+        "id_public_overrides",
+        "public",
+    ],
     deps = [
         "//pw_assert:assert",
         "//pw_interrupt:context",
@@ -55,18 +49,16 @@ zephyr_cc_library(
 
 zephyr_cc_library(
     name = "sleep",
-    hdrs = ["sleep_public_overrides/pw_thread_backend/sleep_inline.h"],
-    strip_include_prefix = "sleep_public_overrides",
-    deps = [":sleep_private"],
-)
-
-zephyr_cc_library(
-    name = "sleep_private",
     srcs = ["sleep.cc"],
-    hdrs = ["public/pw_thread_zephyr/sleep_inline.h"],
+    hdrs = [
+        "public/pw_thread_zephyr/sleep_inline.h",
+        "sleep_public_overrides/pw_thread_backend/sleep_inline.h",
+    ],
     implementation_deps = ["//pw_assert:check"],
-    strip_include_prefix = "public",
-    visibility = ["//visibility:private"],
+    includes = [
+        "public",
+        "sleep_public_overrides",
+    ],
     deps = [
         "//pw_chrono:system_clock",
         "//pw_thread:sleep.facade",
@@ -77,28 +69,6 @@ zephyr_cc_library(
 zephyr_cc_library(
     name = "thread",
     srcs = ["thread.cc"],
-    implementation_deps = ["//pw_assert:check"],
-    deps = [
-        ":public_includes",
-        ":public_overrides_includes",
-        "//pw_assert:assert",
-        "//pw_function",
-        "//pw_span",
-        "//pw_string",
-        "//pw_thread:thread.facade",
-    ],
-)
-
-zephyr_cc_library(
-    name = "thread_creation",
-    deps = [
-        ":public_includes",
-        ":public_overrides_includes",
-    ],
-)
-
-zephyr_cc_library(
-    name = "public_includes",
     hdrs = [
         "public/pw_thread_zephyr/context.h",
         "public/pw_thread_zephyr/options.h",
@@ -106,20 +76,65 @@ zephyr_cc_library(
         "public/pw_thread_zephyr/stack.h",
         "public/pw_thread_zephyr/thread_inline.h",
         "public/pw_thread_zephyr/thread_native.h",
+        "thread_public_overrides/pw_thread_backend/thread_inline.h",
+        "thread_public_overrides/pw_thread_backend/thread_native.h",
     ],
-    strip_include_prefix = "public",
-    deps = ["//pw_assert:check"],
+    includes = [
+        "public",
+        "thread_public_overrides",
+    ],
+    deps = [
+        ":thread_creation",
+        "//pw_assert:assert",
+        "//pw_assert:check",
+        "//pw_function",
+        "//pw_preprocessor",
+        "//pw_span",
+        "//pw_string",
+        "//pw_string:util",
+        "//pw_thread:options",
+        "//pw_thread:thread.facade",
+    ],
 )
 
 zephyr_cc_library(
-    name = "public_overrides_includes",
+    name = "thread_creation",
     hdrs = [
         "thread_public_overrides/pw_thread_backend/context.h",
         "thread_public_overrides/pw_thread_backend/options.h",
         "thread_public_overrides/pw_thread_backend/priority.h",
         "thread_public_overrides/pw_thread_backend/stack.h",
-        "thread_public_overrides/pw_thread_backend/thread_inline.h",
-        "thread_public_overrides/pw_thread_backend/thread_native.h",
     ],
     strip_include_prefix = "thread_public_overrides",
+)
+
+zephyr_cc_library(
+    name = "thread_iteration",
+    srcs = [
+        "pw_thread_zephyr_private/thread_iteration.h",
+        "thread_iteration.cc",
+    ],
+    deps = [
+        "//pw_bytes",
+        "//pw_span",
+        "//pw_status",
+        "//pw_thread:thread_info",
+        "//pw_thread:thread_iteration.facade",
+    ],
+)
+
+zephyr_cc_library(
+    name = "yield",
+    hdrs = [
+        "public/pw_thread_zephyr/yield_inline.h",
+        "yield_public_overrides/pw_thread_backend/yield_inline.h",
+    ],
+    includes = [
+        "public",
+        "yield_public_overrides",
+    ],
+    deps = [
+        "//pw_assert:assert",
+        "//pw_thread:yield.facade",
+    ],
 )
