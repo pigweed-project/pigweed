@@ -5255,5 +5255,54 @@ TEST_F(LowEnergyConnectionManagerTest, TransferPeriodicAdvertisingSync) {
             conn_handle->handle());
 }
 
+TEST_F(LowEnergyConnectionManagerTest, GenericAccessClientServiceDestroyed) {
+  // Create FakeClient
+  auto client = std::make_unique<gatt::testing::FakeClient>(dispatcher());
+
+  // Create RemoteService
+  gatt::ServiceData service_data(
+      gatt::ServiceKind::PRIMARY, 1, 9, kGenericAccessService);
+  auto remote_svc =
+      std::make_unique<gatt::RemoteService>(service_data, client->GetWeakPtr());
+
+  // Create GenericAccessClient
+  internal::GenericAccessClient client_gap(
+      peer_cache()->NewPeer(kAddress0, true)->identifier(),
+      remote_svc->GetWeakPtr());
+
+  // Destroy RemoteService to invalidate the WeakPtr
+  remote_svc.reset();
+
+  // 1. Test ReadDeviceName
+  bool read_name_called = false;
+  client_gap.ReadDeviceName([&](auto result) {
+    read_name_called = true;
+    ASSERT_TRUE(result.is_error());
+    EXPECT_TRUE(result.error_value().is(HostError::kFailed));
+  });
+  RunUntilIdle();
+  EXPECT_TRUE(read_name_called);
+
+  // 2. Test ReadAppearance
+  bool read_appearance_called = false;
+  client_gap.ReadAppearance([&](auto result) {
+    read_appearance_called = true;
+    ASSERT_TRUE(result.is_error());
+    EXPECT_TRUE(result.error_value().is(HostError::kFailed));
+  });
+  RunUntilIdle();
+  EXPECT_TRUE(read_appearance_called);
+
+  // 3. Test ReadPeripheralPreferredConnectionParameters
+  bool read_params_called = false;
+  client_gap.ReadPeripheralPreferredConnectionParameters([&](auto result) {
+    read_params_called = true;
+    ASSERT_TRUE(result.is_error());
+    EXPECT_TRUE(result.error_value().is(HostError::kFailed));
+  });
+  RunUntilIdle();
+  EXPECT_TRUE(read_params_called);
+}
+
 }  // namespace
 }  // namespace bt::gap

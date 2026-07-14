@@ -29,6 +29,11 @@ GenericAccessClient::GenericAccessClient(PeerId peer_id,
 }
 
 void GenericAccessClient::ReadDeviceName(DeviceNameCallback callback) {
+  if (!service_.is_alive()) {
+    callback(ToResult(HostError::kFailed).take_error());
+    return;
+  }
+
   service_->DiscoverCharacteristics(
       [self = GetWeakPtr(), cb = std::move(callback)](
           att::Result<> result, const gatt::CharacteristicMap& chars) mutable {
@@ -57,6 +62,11 @@ void GenericAccessClient::ReadDeviceName(DeviceNameCallback callback) {
                  "(peer: %s)",
                  bt_str(self->peer_id_));
           cb(ToResult(HostError::kNotFound).take_error());
+          return;
+        }
+
+        if (!self->service_.is_alive()) {
+          cb(ToResult(HostError::kFailed).take_error());
           return;
         }
 
@@ -93,6 +103,11 @@ void GenericAccessClient::ReadDeviceName(DeviceNameCallback callback) {
 }
 
 void GenericAccessClient::ReadAppearance(AppearanceCallback callback) {
+  if (!service_.is_alive()) {
+    callback(ToResult(HostError::kFailed).take_error());
+    return;
+  }
+
   service_->DiscoverCharacteristics([self = GetWeakPtr(),
                                      cb = std::move(callback)](
                                         att::Result<> result,
@@ -123,6 +138,11 @@ void GenericAccessClient::ReadAppearance(AppearanceCallback callback) {
              "(peer: %s)",
              bt_str(self->peer_id_));
       cb(ToResult(HostError::kNotFound).take_error());
+      return;
+    }
+
+    if (!self->service_.is_alive()) {
+      cb(ToResult(HostError::kFailed).take_error());
       return;
     }
 
@@ -165,6 +185,11 @@ void GenericAccessClient::ReadAppearance(AppearanceCallback callback) {
 
 void GenericAccessClient::ReadPeripheralPreferredConnectionParameters(
     ConnectionParametersCallback callback) {
+  if (!service_.is_alive()) {
+    callback(ToResult(HostError::kFailed).take_error());
+    return;
+  }
+
   service_->DiscoverCharacteristics([self = GetWeakPtr(),
                                      cb = std::move(callback)](
                                         att::Result<> result,
@@ -196,6 +221,11 @@ void GenericAccessClient::ReadPeripheralPreferredConnectionParameters(
              "(peer: %s)",
              bt_str(self->peer_id_));
       cb(ToResult(HostError::kNotFound).take_error());
+      return;
+    }
+
+    if (!self->service_.is_alive()) {
+      cb(ToResult(HostError::kFailed).take_error());
       return;
     }
 
