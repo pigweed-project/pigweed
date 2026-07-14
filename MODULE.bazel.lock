@@ -489,6 +489,8 @@
     "https://bcr.bazel.build/modules/rules_uv/0.21.0/source.json": "6850f013aafc826c49f03cc0087d4a74d1e190ea82d2b7f0d1b2fe864c5f00f8",
     "https://bcr.bazel.build/modules/snappy/1.2.0/MODULE.bazel": "cc7a727b46089c7fdae0ede21b1fd65bdb14d01823da118ef5c48044f40b6b27",
     "https://bcr.bazel.build/modules/snappy/1.2.0/source.json": "17f5527e15d30a9d9eebf79ed73b280b56cac44f8c8fea696666d99943f84c33",
+    "https://bcr.bazel.build/modules/sphinxdocs/2.2.0/MODULE.bazel": "e046c573919d72605d62c352a08d9223a10aafef3a7cb70d0fe253ebdd97019e",
+    "https://bcr.bazel.build/modules/sphinxdocs/2.2.0/source.json": "b1da19a3d14a1dd8aa6a9ccaedc42bbe0313c8160a77ba5cca336cca1315298d",
     "https://bcr.bazel.build/modules/stardoc/0.5.0/MODULE.bazel": "f9f1f46ba8d9c3362648eea571c6f9100680efc44913618811b58cc9c02cd678",
     "https://bcr.bazel.build/modules/stardoc/0.5.1/MODULE.bazel": "1a05d92974d0c122f5ccf09291442580317cdd859f07a8655f1db9a60374f9f8",
     "https://bcr.bazel.build/modules/stardoc/0.5.3/MODULE.bazel": "c7f6948dae6999bf0db32c1858ae345f112cacf98f174c7a8bb707e41b974f1c",

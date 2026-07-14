@@ -66,6 +66,7 @@ bazel_dep(name = "rules_shell", version = "0.6.1")
 
 bazel_dep(name = "rules_doxygen", version = "2.4.2", dev_dependency = True)
 bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
+bazel_dep(name = "sphinxdocs", version = "2.2.0", dev_dependency = True)
 
 # Bazel 9 compatibility
 # =====================
