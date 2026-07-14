@@ -36,52 +36,42 @@ label_flag(
 
 zephyr_cc_library(
     name = "system_clock",
+    hdrs = [
+        "public/pw_chrono_zephyr/system_clock_config.h",
+        "public/pw_chrono_zephyr/system_clock_constants.h",
+        "public/pw_chrono_zephyr/system_clock_inline.h",
+        "public_overrides/pw_chrono_backend/system_clock_config.h",
+        "public_overrides/pw_chrono_backend/system_clock_inline.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":config_override",
-        ":public_includes",
-        ":public_overrides_includes",
         "//pw_chrono:epoch",
         "//pw_chrono:system_clock.facade",
-        "//pw_interrupt:context",
-        "//pw_polyfill",
-        "//pw_sync:interrupt_spin_lock",
     ],
 )
 
 zephyr_cc_library(
     name = "system_timer",
     srcs = ["system_timer.cc"],
-    implementation_deps = ["//pw_assert:check"],
+    hdrs = [
+        "public/pw_chrono_zephyr/system_timer_inline.h",
+        "public/pw_chrono_zephyr/system_timer_native.h",
+        "public_overrides/pw_chrono_backend/system_timer_inline.h",
+        "public_overrides/pw_chrono_backend/system_timer_native.h",
+    ],
+    includes = [
+        "public",
+        "public_overrides",
+    ],
     deps = [
-        ":public_includes",
-        ":public_overrides_includes",
+        ":system_clock",
         "//pw_chrono:system_clock",
         "//pw_chrono:system_timer.facade",
         "//pw_function",
     ],
-)
-
-zephyr_cc_library(
-    name = "public_includes",
-    hdrs = [
-        "public/pw_chrono_zephyr/system_clock_config.h",
-        "public/pw_chrono_zephyr/system_clock_constants.h",
-        "public/pw_chrono_zephyr/system_clock_inline.h",
-        "public/pw_chrono_zephyr/system_timer_inline.h",
-        "public/pw_chrono_zephyr/system_timer_native.h",
-    ],
-    strip_include_prefix = "public",
-)
-
-zephyr_cc_library(
-    name = "public_overrides_includes",
-    hdrs = [
-        "public_overrides/pw_chrono_backend/system_clock_config.h",
-        "public_overrides/pw_chrono_backend/system_clock_inline.h",
-        "public_overrides/pw_chrono_backend/system_timer_inline.h",
-        "public_overrides/pw_chrono_backend/system_timer_native.h",
-    ],
-    strip_include_prefix = "public_overrides",
 )
 
 zephyr_cc_test(
