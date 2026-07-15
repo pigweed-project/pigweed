@@ -140,7 +140,7 @@ void LowEnergyScanner::UnsetPacketFilters(uint16_t scan_id) {
 }
 
 void LowEnergyScanner::NotifyCachedPeers(uint16_t scan_id) {
-  for (const LowEnergyScanResult& result : cached_scan_results_) {
+  for (const auto& result : cached_scan_results_) {
     AdvertisingData::ParseResult ad = AdvertisingData::FromBytes(result.data());
     bool connectable = result.connectable();
     int8_t rssi = result.rssi();
@@ -158,7 +158,10 @@ void LowEnergyScanner::NotifyPeerFound(const LowEnergyScanResult& result) {
          bt_str(result.address()),
          result.connectable());
 
-  cached_scan_results_.push_back(result);
+  if (cached_scan_results_.size() >= kMaxCachedResults) {
+    cached_scan_results_.pop_back();
+  }
+  cached_scan_results_.push_front(result);
 
   AdvertisingData::ParseResult ad = AdvertisingData::FromBytes(result.data());
   std::unordered_set<uint16_t> scan_ids =

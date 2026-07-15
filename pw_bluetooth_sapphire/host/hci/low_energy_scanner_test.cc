@@ -932,6 +932,60 @@ TYPED_TEST(LowEnergyScannerTest, DISABLED_NewFilterWhileOffloadingEnabled) {
   ASSERT_EQ(0u, results.size());
 }
 
+TYPED_TEST(LowEnergyScannerTest, CachedScanResultsBounded) {
+  EXPECT_TRUE(this->StartScan(true));
+  this->RunUntilIdle();
+
+  // Send kMaxCachedResults + 1 advertising reports from distinct addresses.
+  for (size_t i = 0; i < LowEnergyScanner::kMaxCachedResults + 1; ++i) {
+    uint8_t b0 = static_cast<uint8_t>(i & 0xFF);
+    uint8_t b1 = static_cast<uint8_t>((i >> 8) & 0xFF);
+    DeviceAddress addr(DeviceAddress::Type::kLEPublic, {b0, b1, 0, 0, 0, 1});
+
+    auto fake_peer =
+        std::make_unique<FakePeer>(addr,
+                                   this->dispatcher(),
+                                   /*connectable=*/true,
+                                   /*scannable=*/true,
+                                   /*send_advertising_report=*/false);
+    fake_peer->set_advertising_data(kPlainAdvDataBytes);
+    fake_peer->set_scan_response(kPlainScanRspBytes);
+    this->test_device()->AddPeer(std::move(fake_peer));
+
+    FakePeer* peer = this->test_device()->FindPeer(addr);
+    this->test_device()->SendAdvertisingReport(*peer);
+    this->test_device()->SendScanResponseReport(*peer);
+  }
+  this->RunUntilIdle();
+
+  size_t cached_count = 0;
+  std::unordered_set<DeviceAddress> cached_addresses;
+  this->set_peer_found_callback(
+      [&](const std::unordered_set<uint16_t>& /*scan_ids*/,
+          const LowEnergyScanResult& result) {
+        cached_count++;
+        cached_addresses.insert(result.address());
+      });
+
+  // Set a filter that matches everything (empty filter list).
+  // SetUp() already called SetPacketFilters(0, {}).
+  this->scanner()->NotifyCachedPeers(0);
+
+  this->RunUntilIdle();
+  EXPECT_EQ(LowEnergyScanner::kMaxCachedResults, cached_count);
+
+  // Verify that the first peer (i=0) was evicted.
+  DeviceAddress first_addr(DeviceAddress::Type::kLEPublic, {0, 0, 0, 0, 0, 1});
+  EXPECT_EQ(0u, cached_addresses.count(first_addr));
+
+  // Verify that the last peer (i = kMaxCachedResults) was kept.
+  size_t last_i = LowEnergyScanner::kMaxCachedResults;
+  uint8_t b0 = static_cast<uint8_t>(last_i & 0xFF);
+  uint8_t b1 = static_cast<uint8_t>((last_i >> 8) & 0xFF);
+  DeviceAddress last_addr(DeviceAddress::Type::kLEPublic, {b0, b1, 0, 0, 0, 1});
+  EXPECT_EQ(1u, cached_addresses.count(last_addr));
+}
+
 TEST(LowEnergyScanResultTest, AssignmentOperator) {
   constexpr int8_t kRSSI = -18;
   constexpr uint8_t kAdvertisingSid = 0x0d;

@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <deque>
+
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/defaults.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
@@ -109,6 +111,9 @@ class LowEnergyScanner : public LocalAddressClient {
   // Value that can be passed to StartScan() to scan indefinitely.
   static constexpr pw::chrono::SystemClock::duration kPeriodInfinite =
       pw::chrono::SystemClock::duration::zero();
+
+  // Maximum number of scan results that will be cached.
+  static constexpr size_t kMaxCachedResults = 64;
 
   enum class State {
     // No scan is currently being performed.
@@ -391,7 +396,7 @@ class LowEnergyScanner : public LocalAddressClient {
   // in the middle of a scan period and duplicate filtering is enabled. We
   // maintain this cache to immediately notify new sessions of the currently
   // cached results for this period.
-  std::vector<LowEnergyScanResult> cached_scan_results_;
+  std::deque<LowEnergyScanResult> cached_scan_results_;
 
   // Scannable advertising events for which a Scan Response PDU has not been
   // received. This is accumulated during a discovery procedure and always
