@@ -303,6 +303,8 @@ class FakeController final : public ControllerTestDoubleBase,
   // a Command Complete event specifying the given HCI status code.
   void SetDefaultResponseStatus(hci_spec::OpCode opcode,
                                 pw::bluetooth::emboss::StatusCode status);
+  void SetDefaultResponseStatus(pw::bluetooth::emboss::OpCode opcode,
+                                pw::bluetooth::emboss::StatusCode status);
   void ClearDefaultResponseStatus(hci_spec::OpCode opcode);
 
   void SetDefaultAndroidResponseStatus(

@@ -33,10 +33,6 @@
 namespace bt::hci_spec::vendor::android {
 
 // ============================================================================
-// LE Get Vendor Capabilities Command
-inline constexpr OpCode kLEGetVendorCapabilities = VendorOpCode(0x153);
-
-// ============================================================================
 // A2DP Offload Commands
 
 // The kA2dpOffloadCommand opcode is shared across all a2dp offloading HCI

@@ -216,6 +216,13 @@ void FakeController::SetDefaultResponseStatus(hci_spec::OpCode opcode,
   default_status_map_[opcode] = status;
 }
 
+void FakeController::SetDefaultResponseStatus(pwemb::OpCode opcode,
+                                              pwemb::StatusCode status) {
+  PW_DCHECK(status != pwemb::StatusCode::SUCCESS);
+  hci_spec::OpCode hci_opcode = static_cast<hci_spec::OpCode>(opcode);
+  default_status_map_[hci_opcode] = status;
+}
+
 void FakeController::ClearDefaultResponseStatus(hci_spec::OpCode opcode) {
   default_status_map_.erase(opcode);
 }
@@ -6266,34 +6273,41 @@ void FakeController::OnAndroidLEBatchScanCommand(
 
 void FakeController::OnVendorCommand(
     const PacketView<hci_spec::CommandHeader>& command_packet) {
-  auto opcode = pw::bytes::ConvertOrderFrom(cpp20::endian::little,
-                                            command_packet.header().opcode);
+  auto value = pw::bytes::ConvertOrderFrom(cpp20::endian::little,
+                                           command_packet.header().opcode);
+  pwemb::OpCode opcode = static_cast<pwemb::OpCode>(value);
 
-  switch (opcode) {
-    case android_hci::kLEGetVendorCapabilities:
-      OnAndroidLEGetVendorCapabilities();
-      break;
+  switch (value) {
     case android_hci::kA2dpOffloadCommand:
       OnAndroidA2dpOffloadCommand(command_packet);
-      break;
+      return;
     case android_hci::kLEMultiAdvt:
       OnAndroidLEMultiAdvt(command_packet);
-      break;
+      return;
     case android_hci::kLEApcf:
       OnAndroidLEApcfCommand(command_packet);
-      break;
+      return;
     case android_hci::kLEBatchScan:
       OnAndroidLEBatchScanCommand(command_packet);
+      return;
+  }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wswitch"
+#pragma clang diagnostic ignored "-Wswitch-enum"
+  switch (opcode) {
+    case pwemb::OpCode::ANDROID_LE_GET_VENDOR_CAPABILITIES:
+      OnAndroidLEGetVendorCapabilities();
       break;
     default:
       bt_log(WARN,
              "fake-hci",
              "received unhandled vendor command with opcode: %#.4x",
-             opcode);
-      RespondWithCommandComplete(static_cast<pwemb::OpCode>(opcode),
-                                 pwemb::StatusCode::UNKNOWN_COMMAND);
+             value);
+      RespondWithCommandComplete(opcode, pwemb::StatusCode::UNKNOWN_COMMAND);
       break;
   }
+#pragma clang diagnostic pop
 }
 
 void FakeController::OnACLDataPacketReceived(

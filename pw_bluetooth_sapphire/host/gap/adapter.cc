@@ -1135,7 +1135,7 @@ void AdapterImpl::InitializeStep1() {
     init_seq_runner_->QueueCommand(
         hci::CommandPacket::New<
             android_emb::LEGetVendorCapabilitiesCommandView>(
-            android_hci::kLEGetVendorCapabilities),
+            pw::bluetooth::emboss::OpCode::ANDROID_LE_GET_VENDOR_CAPABILITIES),
         [this](const hci::EventPacket& event) {
           if (HCI_IS_ERROR(
                   event,

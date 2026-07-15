@@ -230,7 +230,7 @@ TEST_F(AdapterTest,
   test_device()->set_settings(settings);
 
   test_device()->SetDefaultResponseStatus(
-      android_hci::kLEGetVendorCapabilities,
+      pw::bluetooth::emboss::OpCode::ANDROID_LE_GET_VENDOR_CAPABILITIES,
       pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
   InitializeAdapter(std::move(init_cb));
   EXPECT_FALSE(success);
