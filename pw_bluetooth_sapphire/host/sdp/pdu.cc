@@ -49,7 +49,7 @@ constexpr size_t kMaxSupportedAttributeListBytes = 655360;
 // Sets |out| to point to it if present and valid.
 bool ValidContinuationState(const ByteBuffer& buf, BufferView* out) {
   PW_DCHECK(out);
-  if (buf.size() == 0) {
+  if (buf.empty()) {
     return false;
   }
   uint8_t len = buf[0];
@@ -291,7 +291,7 @@ ServiceSearchRequest::ServiceSearchRequest(const ByteBuffer& params)
 }
 
 bool ServiceSearchRequest::valid() const {
-  return max_service_record_count_ > 0 && service_search_pattern_.size() > 0 &&
+  return max_service_record_count_ > 0 && !service_search_pattern_.empty() &&
          service_search_pattern_.size() <= kMaxServiceSearchSize;
 }
 
@@ -355,6 +355,7 @@ fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
     bt_log(TRACE, "sdp", "Can't parse into a complete response");
     return ToResult(HostError::kNotReady);
   }
+
   if (buf.size() < (2 * sizeof(uint16_t))) {
     bt_log(TRACE, "sdp", "Packet too small to parse");
     return ToResult(HostError::kPacketMalformed);
@@ -382,6 +383,7 @@ fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
            buf.size());
     return ToResult(HostError::kPacketMalformed);
   }
+
   BufferView cont_state_view;
   if (!ValidContinuationState(buf.view(read_size + expected_record_bytes),
                               &cont_state_view)) {
@@ -404,13 +406,15 @@ fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
     service_record_handle_list_.emplace_back(
         pw::bytes::ConvertOrderFrom(cpp20::endian::big, view.To<uint32_t>()));
   }
-  if (cont_state_view.size() == 0) {
+
+  if (cont_state_view.empty()) {
     continuation_state_ = nullptr;
   } else {
     continuation_state_ = NewBuffer(cont_state_view.size());
     continuation_state_->Write(cont_state_view);
     return ToResult(HostError::kInProgress);
   }
+
   return fit::ok();
 }
 
@@ -427,7 +431,7 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
   if (cont_state.size() == sizeof(uint16_t)) {
     start_idx = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
                                             cont_state.To<uint16_t>());
-  } else if (cont_state.size() != 0) {
+  } else if (!cont_state.empty()) {
     // We don't generate continuation state of any other length.
     return nullptr;
   }
@@ -442,7 +446,7 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
     response_record_count = req_max;
   }
 
-  if (cont_state.size() > 0 && response_record_count <= start_idx) {
+  if (!cont_state.empty() && response_record_count <= start_idx) {
     // Invalid continuation state, out of range.
     return nullptr;
   }
@@ -548,7 +552,7 @@ ServiceAttributeRequest::ServiceAttributeRequest(const ByteBuffer& params) {
 
   size_t elem_size = ReadAttributeIDList(
       params.view(read_size), &attribute_ranges_, kMaxAttributeRangesInRequest);
-  if (attribute_ranges_.size() == 0) {
+  if (attribute_ranges_.empty()) {
     max_attribute_byte_count_ = 0;
     return;
   }
@@ -563,7 +567,7 @@ ServiceAttributeRequest::ServiceAttributeRequest(const ByteBuffer& params) {
 
 bool ServiceAttributeRequest::valid() const {
   return (max_attribute_byte_count_ >= kMinMaximumAttributeByteCount) &&
-         (attribute_ranges_.size() > 0) &&
+         (!attribute_ranges_.empty()) &&
          (attribute_ranges_.size() <= kMaxAttributeRangesInRequest);
 }
 
@@ -639,7 +643,7 @@ const BufferView ServiceAttributeResponse::ContinuationState() const {
 bool ServiceAttributeResponse::complete() const { return !continuation_state_; }
 
 fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
-  if (complete() && attributes_.size() != 0) {
+  if (complete() && !attributes_.empty()) {
     // This response was previously complete and non-empty
     bt_log(TRACE, "sdp", "Can't parse into a complete response");
     // partial_response_ is already empty
@@ -666,7 +670,7 @@ fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
     return ToResult(HostError::kPacketMalformed);
   }
 
-  if (cont_state_view.size() == 0) {
+  if (cont_state_view.empty()) {
     continuation_state_ = nullptr;
   } else {
     continuation_state_ = NewBuffer(cont_state_view.size());
@@ -685,7 +689,7 @@ fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
   }
 
   auto attribute_list_bytes = buf.view(read_size, attribute_list_byte_count);
-  if (partial_response_ || ContinuationState().size()) {
+  if (partial_response_ || !ContinuationState().empty()) {
     // Append to the incomplete buffer.
     size_t new_partial_size = attribute_list_byte_count;
     if (partial_response_) {
@@ -765,7 +769,7 @@ MutableByteBufferPtr ServiceAttributeResponse::GetPDU(
   if (cont_state.size() == sizeof(uint32_t)) {
     bytes_skipped = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
                                                 cont_state.To<uint32_t>());
-  } else if (cont_state.size() != 0) {
+  } else if (!cont_state.empty()) {
     // We don't generate continuation states of any other length.
     return nullptr;
   }
@@ -914,7 +918,7 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
 
   size_t elem_size = ReadAttributeIDList(
       params.view(read_size), &attribute_ranges_, kMaxAttributeRangesInRequest);
-  if (attribute_ranges_.size() == 0) {
+  if (attribute_ranges_.empty()) {
     max_attribute_byte_count_ = 0;
     return;
   }
@@ -937,9 +941,9 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
 
 bool ServiceSearchAttributeRequest::valid() const {
   return (max_attribute_byte_count_ >= kMinMaximumAttributeByteCount) &&
-         (service_search_pattern_.size() > 0) &&
+         (!service_search_pattern_.empty()) &&
          (service_search_pattern_.size() <= kMaxServiceSearchSize) &&
-         (attribute_ranges_.size() > 0) &&
+         (!attribute_ranges_.empty()) &&
          (attribute_ranges_.size() <= kMaxAttributeRangesInRequest);
 }
 
@@ -1023,7 +1027,7 @@ bool ServiceSearchAttributeResponse::complete() const {
 
 fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
     const ByteBuffer& buf) {
-  if (complete() && attribute_lists_.size() != 0) {
+  if (complete() && !attribute_lists_.empty()) {
     // This response was previously complete and non-empty
     bt_log(TRACE, "sdp", "can't parse into a complete response");
     PW_DCHECK(!partial_response_);
@@ -1053,7 +1057,7 @@ fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
     return ToResult(HostError::kPacketMalformed);
   }
 
-  if (cont_state_view.size() == 0) {
+  if (cont_state_view.empty()) {
     continuation_state_ = nullptr;
   } else {
     continuation_state_ = NewBuffer(cont_state_view.size());
@@ -1061,7 +1065,7 @@ fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
   }
 
   auto attribute_lists_bytes = buf.view(read_size, attribute_lists_byte_count);
-  if (partial_response_ || ContinuationState().size()) {
+  if (partial_response_ || !ContinuationState().empty()) {
     // Append to the incomplete buffer.
     size_t new_partial_size = attribute_lists_byte_count;
     if (partial_response_) {
@@ -1176,7 +1180,7 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
   if (cont_state.size() == sizeof(uint32_t)) {
     bytes_skipped = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
                                                 cont_state.To<uint32_t>());
-  } else if (cont_state.size() != 0) {
+  } else if (!cont_state.empty()) {
     // We don't generate continuation states of any other length.
     return nullptr;
   }
