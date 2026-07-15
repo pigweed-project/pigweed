@@ -72,6 +72,7 @@ class FakeIsoGroup : public IsoGroup {
   const std::vector<CigCisParams>& last_cis_params() const {
     return last_cis_params_;
   }
+  std::vector<CigCisParams>& last_cis_params() { return last_cis_params_; }
   const std::vector<CreateCisData>& last_create_cises_data() const {
     return last_create_cises_data_;
   }

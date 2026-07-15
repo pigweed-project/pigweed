@@ -99,39 +99,61 @@ void FakeAdapter::FakeLowEnergy::NotifyScanResult(const Peer& peer) {
   }
 }
 
-void FakeAdapter::FakeLowEnergy::Connect(
-    PeerId peer_id,
-    ConnectionResultCallback callback,
-    LowEnergyConnectionOptions connection_options) {
+std::unique_ptr<LowEnergyConnectionHandle>
+FakeAdapter::FakeLowEnergy::CreateHandle(PeerId peer_id,
+                                         LowEnergyConnectionOptions options) {
   auto accept_cis_cb = [](iso::CigCisIdentifier, iso::CisEstablishedCallback) {
     return iso::AcceptCisStatus::kSuccess;
   };
-  auto bondable_cb = [connection_options]() {
-    return connection_options.bondable_mode;
-  };
+  auto bondable_cb = [options]() { return options.bondable_mode; };
   auto security_cb = []() { return sm::SecurityProperties(); };
   auto role_cb = []() {
     return pw::bluetooth::emboss::ConnectionRole::CENTRAL;
   };
   auto release_cb = [this](LowEnergyConnectionHandle* handle) {
-    // NOTE: This assumes there is only 1 connection handle in tests.
-    PW_CHECK(connections_.erase(handle->peer_identifier()));
+    auto iter = connections_.find(handle->peer_identifier());
+    if (iter != connections_.end()) {
+      if (iter->second.handles.erase(handle) > 0 &&
+          iter->second.handles.empty()) {
+        connections_.erase(iter);
+      }
+    }
   };
   auto transfer_sync_fn =
       [](auto, auto, auto, pw::Callback<void(hci::Result<>)> cb) {
         cb(fit::error(Error(HostError::kNotSupported)));
       };
-  auto handle =
-      std::make_unique<LowEnergyConnectionHandle>(peer_id,
-                                                  /*handle=*/1,
-                                                  std::move(release_cb),
-                                                  std::move(accept_cis_cb),
-                                                  std::move(bondable_cb),
-                                                  std::move(security_cb),
-                                                  std::move(role_cb),
-                                                  std::move(transfer_sync_fn));
-  connections_[peer_id] = Connection{peer_id, connection_options, handle.get()};
+  return std::make_unique<LowEnergyConnectionHandle>(
+      peer_id,
+      /*handle=*/1,
+      std::move(release_cb),
+      std::move(accept_cis_cb),
+      std::move(bondable_cb),
+      std::move(security_cb),
+      std::move(role_cb),
+      std::move(transfer_sync_fn));
+}
+
+void FakeAdapter::FakeLowEnergy::Connect(
+    PeerId peer_id,
+    ConnectionResultCallback callback,
+    LowEnergyConnectionOptions connection_options) {
+  auto handle = CreateHandle(peer_id, connection_options);
+  Connection conn{peer_id, connection_options, {}};
+  conn.handles.insert(handle.get());
+  connections_[peer_id] = std::move(conn);
   callback(fit::ok(std::move(handle)));
+}
+
+std::unique_ptr<LowEnergyConnectionHandle>
+FakeAdapter::FakeLowEnergy::AddConnectionRef(PeerId peer_id) {
+  auto conn_iter = connections_.find(peer_id);
+  if (conn_iter == connections_.end()) {
+    return nullptr;
+  }
+  auto handle = CreateHandle(peer_id, conn_iter->second.options);
+  conn_iter->second.handles.insert(handle.get());
+  return handle;
 }
 
 bool FakeAdapter::FakeLowEnergy::Disconnect(PeerId peer_id) {
@@ -139,7 +161,9 @@ bool FakeAdapter::FakeLowEnergy::Disconnect(PeerId peer_id) {
   if (conn_iter == connections_.end()) {
     return false;
   }
-  conn_iter->second.handle->MarkClosed();
+  for (auto* handle : conn_iter->second.handles) {
+    handle->MarkClosed();
+  }
   connections_.erase(conn_iter);
   return true;
 }

@@ -27,6 +27,7 @@ fuchsia_cc_library(
     hdrs = [
         "public/pw_bluetooth_sapphire/fuchsia/host/fidl/adapter_test_fixture.h",
         "public/pw_bluetooth_sapphire/fuchsia/host/fidl/channel_server.h",
+        "public/pw_bluetooth_sapphire/fuchsia/host/fidl/connected_isochronous_group_server.h",
         "public/pw_bluetooth_sapphire/fuchsia/host/fidl/fake_adapter_test_fixture.h",
         "public/pw_bluetooth_sapphire/fuchsia/host/fidl/fake_gatt_fixture.h",
         "public/pw_bluetooth_sapphire/fuchsia/host/fidl/fake_hci_transport_server.h",
@@ -58,6 +59,7 @@ fuchsia_cc_library(
     name = "fidl",
     srcs = [
         "channel_server.cc",
+        "connected_isochronous_group_server.cc",
         "gatt2_client_server.cc",
         "gatt2_remote_service_server.cc",
         "gatt2_server_server.cc",
@@ -86,6 +88,7 @@ fuchsia_cc_library(
         "@fuchsia_sdk//fidl/fuchsia.bluetooth.host:fuchsia.bluetooth.host_hlcpp",
         "@fuchsia_sdk//fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_cpp",
         "@fuchsia_sdk//fidl/fuchsia.bluetooth.le:fuchsia.bluetooth.le_hlcpp",
+        "@fuchsia_sdk//pkg/async-cpp",
         "@fuchsia_sdk//pkg/fit-promise",
         "@fuchsia_sdk//pkg/zx",
         "@pigweed//pw_intrusive_ptr",
@@ -224,6 +227,7 @@ fuchsia_cc_test(
     srcs = [
         "activity_governor_lease_provider_test.cc",
         "channel_server_test.cc",
+        "connected_isochronous_group_server_test.cc",
         "gatt2_client_server_test.cc",
         "gatt2_remote_service_server_test.cc",
         "gatt2_server_server_test.cc",

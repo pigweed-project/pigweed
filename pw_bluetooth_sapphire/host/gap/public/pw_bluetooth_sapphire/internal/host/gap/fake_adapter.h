@@ -13,6 +13,8 @@
 // the License.
 
 #pragma once
+#include <unordered_set>
+
 #include "pw_bluetooth_sapphire/internal/host/common/device_address.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/adapter.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/gap.h"
@@ -78,7 +80,7 @@ class FakeAdapter final : public Adapter {
     struct Connection {
       PeerId peer_id;
       LowEnergyConnectionOptions options;
-      LowEnergyConnectionHandle* handle;
+      std::unordered_set<LowEnergyConnectionHandle*> handles;
     };
 
     struct PeriodicAdvertisementSync {
@@ -190,18 +192,28 @@ class FakeAdapter final : public Adapter {
       return fake_address_delegate_.current_address();
     }
 
-    void DoCreateCig(iso::CigParams /*cig_params*/,
-                     std::vector<iso::CigCisParams> /*cis_params*/,
+    void DoCreateCig(iso::CigParams cig_params,
+                     std::vector<iso::CigCisParams> cis_params,
                      iso::IsoGroupManager::CreateCigCompleteCallback callback,
                      iso::IsoGroup::OnClosedCallback /*on_closed_callback*/,
                      std::vector<PeerId> /*expected_peers*/) override {
+      if (create_cig_cb_) {
+        create_cig_cb_(
+            std::move(cig_params), std::move(cis_params), std::move(callback));
+        return;
+      }
       callback(pw::unexpected(HostError::kNotSupported));
     }
 
-    std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(
-        PeerId /*peer_id*/) override {
-      return nullptr;
+    void set_create_cig_callback(
+        fit::function<void(iso::CigParams,
+                           std::vector<iso::CigCisParams>,
+                           iso::IsoGroupManager::CreateCigCompleteCallback)>
+            cb) {
+      create_cig_cb_ = std::move(cb);
     }
+    std::unique_ptr<LowEnergyConnectionHandle> AddConnectionRef(
+        PeerId peer_id) override;
 
     void register_address_changed_callback(fit::closure callback) override {
       fake_address_delegate_.register_address_changed_callback(
@@ -219,6 +231,8 @@ class FakeAdapter final : public Adapter {
         pw::chrono::SystemClock::duration) override {}
 
    private:
+    std::unique_ptr<LowEnergyConnectionHandle> CreateHandle(
+        PeerId peer_id, LowEnergyConnectionOptions options);
     uint16_t next_scan_id_ = 0;
     FakeAdapter* adapter_;
     hci::SyncId next_sync_id_ = hci::SyncId(1);
@@ -237,6 +251,10 @@ class FakeAdapter final : public Adapter {
     std::unordered_map<hci::SyncId, PeriodicAdvertisementSync>
         periodic_advertisement_syncs_;
     std::optional<bt::hci::Error> sync_to_periodic_advertisement_error_;
+    fit::function<void(iso::CigParams,
+                       std::vector<iso::CigCisParams>,
+                       iso::IsoGroupManager::CreateCigCompleteCallback)>
+        create_cig_cb_;
   };
 
   LowEnergy* le() const override { return fake_le_.get(); }
