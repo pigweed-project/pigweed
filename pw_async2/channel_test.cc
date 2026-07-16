@@ -14,6 +14,8 @@
 
 #include "pw_async2/channel.h"
 
+#include <optional>
+
 #include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
@@ -1311,6 +1313,58 @@ TEST(ChannelHandles, MpmcMoveToChannelHandle) {
   ChannelHandle<int> handle = std::move(mpmc_handle);
   EXPECT_FALSE(mpmc_handle.is_open());  // NOLINT(bugprone-use-after-move)
   EXPECT_TRUE(handle.is_open());
+}
+
+TEST(ChannelStorage, Lifecycle) {
+  {
+    ChannelStorage<int, 8> storage;
+    EXPECT_FALSE(storage.active());
+
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    EXPECT_TRUE(storage.active());
+
+    // Releasing the handle keeps storage active while sender and receiver
+    // exist.
+    handle.Release();
+    EXPECT_TRUE(storage.active());
+
+    // Dropping the sender while the receiver is alive keeps storage active.
+    sender = Sender<int>();
+    EXPECT_TRUE(storage.active());
+
+    // Dropping the final receiver reduces reference count to zero and
+    // deactivates storage.
+    receiver = Receiver<int>();
+    EXPECT_FALSE(storage.active());
+  }
+
+  {
+    ChannelStorage<int, 8> storage;
+    EXPECT_FALSE(storage.active());
+
+    MpmcChannelHandle<int> handle = CreateMpmcChannel(storage);
+    EXPECT_TRUE(storage.active());
+
+    std::optional<Sender<int>> sender = handle.CreateSender();
+    std::optional<Receiver<int>> receiver1 = handle.CreateReceiver();
+    std::optional<Receiver<int>> receiver2 = handle.CreateReceiver();
+    EXPECT_TRUE(storage.active());
+
+    // Destroying sender reduces ref count but handle + receiver keep storage
+    // active.
+    sender.reset();
+    EXPECT_TRUE(storage.active());
+
+    // Releasing the handle leaves only the receiver keeping storage active.
+    handle.Release();
+    EXPECT_TRUE(storage.active());
+
+    // The storage is only deactivated when both receivers are dropped.
+    receiver1.reset();
+    EXPECT_TRUE(storage.active());
+    receiver2.reset();
+    EXPECT_FALSE(storage.active());
+  }
 }
 
 }  // namespace

@@ -170,12 +170,12 @@ class PW_LOCKABLE("pw::async2::internal::BaseChannel") BaseChannel {
       chrono::SystemClock::duration::max();
 
   // Acquires the channel's lock.
-  void lock() PW_EXCLUSIVE_LOCK_FUNCTION() { lock_.lock(); }
+  void lock() const PW_EXCLUSIVE_LOCK_FUNCTION() { lock_.lock(); }
 
   // Releases the channel's lock.
-  void unlock() PW_UNLOCK_FUNCTION() { lock_.unlock(); }
+  void unlock() const PW_UNLOCK_FUNCTION() { lock_.unlock(); }
 
-  [[nodiscard]] bool is_open() PW_LOCKS_EXCLUDED(*this) {
+  [[nodiscard]] bool is_open() const PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
     return is_open_locked();
   }
@@ -922,7 +922,7 @@ class ChannelStorage final
   /// Returns true if this channel storage is in use.
   /// If `false`, the storage can either be reused or safely destroyed.
   [[nodiscard]] bool active() const PW_LOCKS_EXCLUDED(*this) {
-    std::lock_guard lock(*this);
+    std::lock_guard lock(static_cast<const internal::Channel<T>&>(*this));
     return this->active_locked();
   }
 
