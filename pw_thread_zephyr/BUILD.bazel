@@ -113,12 +113,12 @@ zephyr_cc_library(
 zephyr_cc_library(
     name = "thread_creation",
     hdrs = [
-        "thread_public_overrides/pw_thread_backend/context.h",
-        "thread_public_overrides/pw_thread_backend/options.h",
-        "thread_public_overrides/pw_thread_backend/priority.h",
-        "thread_public_overrides/pw_thread_backend/stack.h",
+        "thread_creation_public_overrides/pw_thread_backend/context.h",
+        "thread_creation_public_overrides/pw_thread_backend/options.h",
+        "thread_creation_public_overrides/pw_thread_backend/priority.h",
+        "thread_creation_public_overrides/pw_thread_backend/stack.h",
     ],
-    strip_include_prefix = "thread_public_overrides",
+    strip_include_prefix = "thread_creation_public_overrides",
     deps = [":config"],
 )
 

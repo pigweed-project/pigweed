@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include "pw_thread/attrs.h"
 #include "pw_thread_backend/context.h"
 #include "pw_thread_zephyr/options.h"
 
@@ -22,7 +23,20 @@ using NativeOptions = ::pw::thread::zephyr::Options;
 
 constexpr NativeOptions GetNativeOptions(NativeContext& context,
                                          const ThreadAttrs& attributes) {
-  return ::pw::thread::zephyr::GetOptions(context, attributes);
+  NativeOptions options =
+      NativeOptions(context).set_priority(attributes.priority().native());
+
+  if (attributes.has_external_stack()) {
+    options.set_stack(span(attributes.native_stack_pointer(),
+                           attributes.native_stack_size()));
+  } else {
+    options.set_stack(context.stack());
+  }
+
+  if (attributes.name()[0] != '\0') {
+    options.set_name(attributes.name());
+  }
+  return options;
 }
 
 }  // namespace pw::thread::backend

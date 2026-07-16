@@ -14,7 +14,6 @@
 #pragma once
 
 #include "pw_assert/assert.h"
-#include "pw_thread/attrs.h"
 #include "pw_thread/options.h"
 #include "pw_thread_zephyr/context.h"
 #include "pw_thread_zephyr/priority.h"
@@ -123,30 +122,5 @@ class Options : public thread::Options {
   const char* name_ = kDefaultName;
   span<z_thread_stack_element> stack_ = span<z_thread_stack_element>();
 };
-
-/// Convert a context and attributes to Options
-///
-/// Note that if both the context and attributes provide a stack, the
-/// attributes' stack will be used.
-///
-/// @arg context The context on which the thread will be created
-/// @arg attributes The desired attributes of the thread
-/// @return Options representing the desired thread
-constexpr Options GetOptions(Context& context, const ThreadAttrs& attributes) {
-  Options options =
-      Options(context).set_priority(attributes.priority().native());
-
-  if (attributes.has_external_stack()) {
-    options.set_stack(span(attributes.native_stack_pointer(),
-                           attributes.native_stack_size()));
-  } else {
-    options.set_stack(context.stack());
-  }
-
-  if (attributes.name()[0] != '\0') {
-    options.set_name(attributes.name());
-  }
-  return options;
-}
 
 }  // namespace pw::thread::zephyr

@@ -77,6 +77,7 @@ pw_add_library(pw_thread_zephyr.thread STATIC
   HEADERS
     public/pw_thread_zephyr/context.h
     public/pw_thread_zephyr/options.h
+    public/pw_thread_zephyr/stack.h
     public/pw_thread_zephyr/thread_inline.h
     public/pw_thread_zephyr/thread_native.h
     thread_public_overrides/pw_thread_backend/thread_inline.h
@@ -119,11 +120,13 @@ pw_zephyrize_libraries_ifdef(
 
 pw_add_library(pw_thread_zephyr.thread_creation INTERFACE
   HEADERS
-    public/pw_thread_zephyr/stack.h
-    thread_public_overrides/pw_thread_backend/stack.h
+    thread_creation_public_overrides/pw_thread_backend/context.h
+    thread_creation_public_overrides/pw_thread_backend/options.h
+    thread_creation_public_overrides/pw_thread_backend/priority.h
+    thread_creation_public_overrides/pw_thread_backend/stack.h
   PUBLIC_INCLUDES
     public
-    thread_public_overrides
+    thread_creation_public_overrides
   PUBLIC_DEPS
     pw_thread_zephyr.config
 )
