@@ -1223,6 +1223,151 @@ TEST_F(ReserveLeAclCreditsTest, ProxyCreditsZeroWhenNotInitialized) {
   EXPECT_TRUE(proxy.HasSendLeAclCapability());
 }
 
+TEST_F(ReserveLeAclCreditsTest, DuplicateReadBufferSizeIgnored) {
+  std::array<
+      uint8_t,
+      emboss::LEReadBufferSizeV1CommandCompleteEventWriter::SizeInBytes()>
+      hci_arr{};
+  H4PacketWithHci h4_packet1{emboss::H4PacketType::UNKNOWN, hci_arr};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto view1,
+      CreateAndPopulateToHostEventWriter<
+          emboss::LEReadBufferSizeV1CommandCompleteEventWriter>(
+          h4_packet1, emboss::EventCode::COMMAND_COMPLETE));
+  view1.command_complete().command_opcode().Write(
+      emboss::OpCode::LE_READ_BUFFER_SIZE_V1);
+  view1.total_num_le_acl_data_packets().Write(10);
+
+  struct {
+    uint8_t sends_called = 0;
+    uint16_t last_received_credits = 0;
+  } capture;
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&capture](H4PacketWithHci&& received_packet) {
+        capture.sends_called++;
+        PW_TEST_ASSERT_OK_AND_ASSIGN(
+            auto event_view,
+            MakeEmbossView<
+                emboss::LEReadBufferSizeV1CommandCompleteEventWriter>(
+                received_packet.GetHciSpan()));
+        capture.last_received_credits =
+            event_view.total_num_le_acl_data_packets().Read();
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Send first LEReadBufferSizeV1 event.
+  proxy.HandleH4HciFromController(std::move(h4_packet1));
+
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 2);
+  EXPECT_EQ(capture.sends_called, 1);
+  EXPECT_EQ(capture.last_received_credits,
+            8);  // 10 - 2 reserved = 8 passed to host
+
+  // Send second duplicate LEReadBufferSizeV1 event.
+  std::array<
+      uint8_t,
+      emboss::LEReadBufferSizeV1CommandCompleteEventWriter::SizeInBytes()>
+      hci_arr2{};
+  H4PacketWithHci h4_packet2{emboss::H4PacketType::UNKNOWN, hci_arr2};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto view2,
+      CreateAndPopulateToHostEventWriter<
+          emboss::LEReadBufferSizeV1CommandCompleteEventWriter>(
+          h4_packet2, emboss::EventCode::COMMAND_COMPLETE));
+  view2.command_complete().command_opcode().Write(
+      emboss::OpCode::LE_READ_BUFFER_SIZE_V1);
+  view2.total_num_le_acl_data_packets().Write(10);
+
+  proxy.HandleH4HciFromController(std::move(h4_packet2));
+
+  // Verify that it didn't crash, proxy credit stayed at 2, and host got the
+  // same share.
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 2);
+  EXPECT_EQ(capture.sends_called, 2);
+  EXPECT_EQ(capture.last_received_credits, 8);  // Still 8
+}
+
+TEST_F(ReserveLeAclCreditsTest, DuplicateBrEdrReadBufferSizeIgnored) {
+  std::array<uint8_t,
+             emboss::ReadBufferSizeCommandCompleteEventWriter::SizeInBytes()>
+      hci_arr{};
+  H4PacketWithHci h4_packet1{emboss::H4PacketType::UNKNOWN, hci_arr};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto view1,
+      CreateAndPopulateToHostEventWriter<
+          emboss::ReadBufferSizeCommandCompleteEventWriter>(
+          h4_packet1, emboss::EventCode::COMMAND_COMPLETE));
+  view1.command_complete().command_opcode().Write(
+      emboss::OpCode::READ_BUFFER_SIZE);
+  view1.total_num_acl_data_packets().Write(10);
+  view1.acl_data_packet_length().Write(20);
+  view1.synchronous_data_packet_length().Write(0xFF);
+
+  struct {
+    uint8_t sends_called = 0;
+    uint16_t last_received_credits = 0;
+  } capture;
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&capture](H4PacketWithHci&& received_packet) {
+        capture.sends_called++;
+        PW_TEST_ASSERT_OK_AND_ASSIGN(
+            auto event_view,
+            MakeEmbossView<emboss::ReadBufferSizeCommandCompleteEventWriter>(
+                received_packet.GetHciSpan()));
+        capture.last_received_credits =
+            event_view.total_num_acl_data_packets().Read();
+      });
+
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/2,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Send first ReadBufferSize event.
+  proxy.HandleH4HciFromController(std::move(h4_packet1));
+
+  EXPECT_EQ(proxy.GetNumFreeBrEdrAclPackets(), 2);
+  EXPECT_EQ(capture.sends_called, 1);
+  EXPECT_EQ(capture.last_received_credits, 8);  // 10 - 2 reserved = 8
+
+  // Send second duplicate ReadBufferSize event.
+  std::array<uint8_t,
+             emboss::ReadBufferSizeCommandCompleteEventWriter::SizeInBytes()>
+      hci_arr2{};
+  H4PacketWithHci h4_packet2{emboss::H4PacketType::UNKNOWN, hci_arr2};
+  PW_TEST_ASSERT_OK_AND_ASSIGN(
+      auto view2,
+      CreateAndPopulateToHostEventWriter<
+          emboss::ReadBufferSizeCommandCompleteEventWriter>(
+          h4_packet2, emboss::EventCode::COMMAND_COMPLETE));
+  view2.command_complete().command_opcode().Write(
+      emboss::OpCode::READ_BUFFER_SIZE);
+  view2.total_num_acl_data_packets().Write(10);
+  view2.acl_data_packet_length().Write(20);
+  view2.synchronous_data_packet_length().Write(0xFF);
+
+  proxy.HandleH4HciFromController(std::move(h4_packet2));
+
+  // Verify no crash, proxy credits still 2, host credits still 8.
+  EXPECT_EQ(proxy.GetNumFreeBrEdrAclPackets(), 2);
+  EXPECT_EQ(capture.sends_called, 2);
+  EXPECT_EQ(capture.last_received_credits, 8);
+}
+
 // ########## NumberOfCompletedPacketsTest
 
 class NumberOfCompletedPacketsTest : public ProxyHostTest {};

@@ -237,9 +237,19 @@ void AclDataChannel::Credits::Reset() {
 }
 
 uint16_t AclDataChannel::Credits::Reserve(uint16_t controller_max) {
-  PW_CHECK(!Initialized(),
-           "AclDataChannel is already initialized. Proxy should have been "
-           "reset before this.");
+  if (Initialized()) {
+    uint16_t proxy_max = 0;
+    if (auto* static_credits = std::get_if<Static>(&data_)) {
+      proxy_max = static_credits->proxy_max;
+    }
+    PW_LOG_WARN(
+        "AclDataChannel already initialized (proxy_max=%u); "
+        "ignoring duplicate buffer-size event",
+        proxy_max);
+    // Return the previously-computed host share so the rewritten event sent on
+    // to the host stays consistent.
+    return controller_max > proxy_max ? controller_max - proxy_max : 0;
+  }
 
   controller_max_packets_ = controller_max;
 
