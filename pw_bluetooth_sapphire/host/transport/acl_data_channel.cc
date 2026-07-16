@@ -15,6 +15,8 @@
 #include "pw_bluetooth_sapphire/internal/host/transport/acl_data_channel.h"
 
 #include <pw_assert/check.h>
+#include <pw_bluetooth/hci_commands.emb.h>
+#include <pw_bluetooth/hci_data.emb.h>
 #include <pw_bytes/endian.h>
 
 #include <iterator>
@@ -647,25 +649,63 @@ void AclDataChannelImpl::OnRxPacket(pw::span<const std::byte> buffer) {
     return;
   }
 
-  const size_t payload_size = buffer.size() - sizeof(hci_spec::ACLDataHeader);
-
-  ACLDataPacketPtr packet =
-      ACLDataPacket::New(static_cast<uint16_t>(payload_size));
-  packet->mutable_view()->mutable_data().Write(
-      reinterpret_cast<const uint8_t*>(buffer.data()), buffer.size());
-  packet->InitializeFromBuffer();
-
-  if (packet->view().header().data_total_length != payload_size) {
-    // TODO(fxbug.dev/42179582): Handle these types of errors by signaling
-    // Transport.
-    bt_log(ERROR,
-           "hci",
-           "malformed packet - payload size from header (%hu) does not match"
-           " received payload size: %zu",
-           packet->view().header().data_total_length,
-           payload_size);
+  auto view = pw::bluetooth::emboss::MakeAclDataFrameHeaderView(buffer.data(),
+                                                                buffer.size());
+  if (!view.Ok()) {
+    bt_log(ERROR, "hci", "Failed to parse ACL data header");
     return;
   }
+
+  const uint16_t data_total_length = view.data_total_length().Read();
+
+  if (data_total_length > hci_spec::kMaxACLPayloadSize) {
+    hci_spec::ConnectionHandle handle = view.handle().Read();
+
+    bt_log(ERROR,
+           "hci",
+           "ACL packet payload too large (%hu bytes > %zu), dropping and "
+           "disconnecting peer",
+           data_total_length,
+           hci_spec::kMaxACLPayloadSize);
+
+    auto status_cb = [](auto, const EventPacket& event) {
+      PW_DCHECK(event.event_code() == hci_spec::kCommandStatusEventCode);
+      HCI_IS_ERROR(event, TRACE, "hci", "ignoring disconnection failure");
+    };
+
+    auto disconn =
+        CommandPacket::New<pw::bluetooth::emboss::DisconnectCommandWriter>(
+            hci_spec::kDisconnect);
+    auto params = disconn.view_t();
+    params.connection_handle().Write(handle);
+    params.reason().Write(
+        pw::bluetooth::emboss::StatusCode::
+            REMOTE_DEVICE_TERMINATED_CONNECTION_LOW_RESOURCES);
+
+    transport_->command_channel()
+        ->SendCommand(std::move(disconn),
+                      std::move(status_cb),
+                      hci_spec::kCommandStatusEventCode)
+        .IgnoreError();
+    return;
+  }
+
+  if (buffer.size() < sizeof(hci_spec::ACLDataHeader) + data_total_length) {
+    bt_log(ERROR,
+           "hci",
+           "malformed packet - buffer size (%zu) too small for payload length "
+           "(%hu)",
+           buffer.size(),
+           data_total_length);
+    return;
+  }
+
+  ACLDataPacketPtr packet = ACLDataPacket::New(data_total_length);
+  const size_t packet_size =
+      sizeof(hci_spec::ACLDataHeader) + data_total_length;
+  packet->mutable_view()->mutable_data().Write(
+      reinterpret_cast<const uint8_t*>(buffer.data()), packet_size);
+  packet->InitializeFromBuffer();
 
   last_packet_times_[packet->connection_handle()] = dispatcher_.now();
 

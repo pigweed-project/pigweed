@@ -1412,9 +1412,15 @@ struct WriteSynchronousFlowControlEnableCommand:
 # TODO: b/265052417 - Definition needs to be added
 
 
-# 7.3.39 Host Buffer Size command
-# HCI_Host_Buffer_Size
-# TODO: b/265052417 - Definition needs to be added
+struct HostBufferSizeCommand:
+  -- 7.3.39 Host Buffer Size command (v1.1)
+  -- HCI_Host_Buffer_Size
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+  0     [+hdr_size]  hci.CommandHeader  header
+  $next [+2]         UInt               host_acl_data_packet_length
+  $next [+1]         UInt               host_synchronous_data_packet_length
+  $next [+2]         UInt               host_total_num_acl_data_packets
+  $next [+2]         UInt               host_total_num_synchronous_data_packets
 
 
 # 7.3.40 Host Number Of Completed Packets command

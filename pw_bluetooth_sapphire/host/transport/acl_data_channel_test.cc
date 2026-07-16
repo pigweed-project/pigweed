@@ -378,6 +378,77 @@ TEST_F(AclDataChannelTest, GetLastPacketTime) {
       acl_data_channel()->GetLastPacketTime(kConnectionHandle0).has_value());
 }
 
+TEST_F(AclDataChannelTest, ReceiveOversizedAclPacketDropsAndDisconnects) {
+  InitializeACLDataChannel(DataBufferInfo(kMaxMtu, kBufferMaxNumPackets),
+                           DataBufferInfo(kMaxMtu, kBufferMaxNumPackets));
+
+  const size_t kPayloadSize = 1025;
+  const size_t kTotalSize = kPayloadSize + sizeof(hci_spec::ACLDataHeader);
+
+  DynamicByteBuffer packet(kTotalSize);
+  packet.Write(StaticByteBuffer(0x00,
+                                0x00,  // handle 0
+                                0x01,
+                                0x04  // length 0x0401 = 1025
+                                ));
+  packet.mutable_view(sizeof(hci_spec::ACLDataHeader)).Fill(0);
+
+  // Expect the HCI Disconnect command.
+  const StaticByteBuffer kDisconnectCommand(
+      0x06,
+      0x04,  // opcode: HCI_Disconnect
+      0x03,  // parameter total size
+      0x00,
+      0x00,  // handle: 0
+      pw::bluetooth::emboss::StatusCode::
+          REMOTE_DEVICE_TERMINATED_CONNECTION_LOW_RESOURCES);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand);
+
+  test_device()->SendACLDataChannelPacket(packet);
+  RunUntilIdle();
+}
+
+TEST_F(AclDataChannelTest, ReceiveAclPacketWithTrailingPaddingAccepted) {
+  InitializeACLDataChannel(DataBufferInfo(kMaxMtu, kBufferMaxNumPackets),
+                           DataBufferInfo(kMaxMtu, kBufferMaxNumPackets));
+
+  const size_t kPayloadSize = 10;
+  const size_t kPaddingSize = 5;
+  const size_t kTotalSize =
+      sizeof(hci_spec::ACLDataHeader) + kPayloadSize + kPaddingSize;
+
+  DynamicByteBuffer packet(kTotalSize);
+  packet.Write(StaticByteBuffer(0x00,
+                                0x00,  // handle 0
+                                0x0A,
+                                0x00  // length 10
+                                ));
+  packet.mutable_view(sizeof(hci_spec::ACLDataHeader)).Fill(0xAA);
+  packet.mutable_view(sizeof(hci_spec::ACLDataHeader) + kPayloadSize)
+      .Fill(0xBB);
+
+  int rx_count = 0;
+  ACLDataPacketPtr received_packet;
+  acl_data_channel()->SetDataRxHandler([&](ACLDataPacketPtr p) {
+    rx_count++;
+    received_packet = std::move(p);
+  });
+
+  test_device()->SendACLDataChannelPacket(packet);
+  RunUntilIdle();
+
+  EXPECT_EQ(rx_count, 1);
+  ASSERT_TRUE(received_packet);
+  EXPECT_EQ(received_packet->view().header().data_total_length, kPayloadSize);
+
+  auto payload = received_packet->view().payload_data();
+  EXPECT_EQ(payload.size(), kPayloadSize);
+  for (size_t i = 0; i < kPayloadSize; i++) {
+    EXPECT_EQ(payload[i], 0xAA);
+  }
+}
+
 TEST_F(AclDataChannelOnlyBREDRBufferAvailable,
        NumberOfCompletedPacketsExceedsPendingPackets) {
   FakeAclConnection connection_0(

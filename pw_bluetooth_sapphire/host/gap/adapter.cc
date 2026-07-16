@@ -50,6 +50,7 @@
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/security_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/control_packets.h"
+#include "pw_bluetooth_sapphire/internal/host/transport/slab_allocators.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/transport.h"
 #include "pw_bluetooth_sapphire/lease.h"
 
@@ -1237,6 +1238,35 @@ void AdapterImpl::InitializeStep2() {
             state_.sco_buffer_info =
                 hci::DataBufferInfo(sco_mtu, sco_max_count);
           }
+        });
+  }
+
+  // TODO: https://pwbug.dev/515019273 - Enable host flow control.
+
+  // HCI_Host_Buffer_Size
+  if (state_.SupportedCommands().host_buffer_size().Read()) {
+    auto host_buffer_size_cmd = hci::CommandPacket::New<
+        pw::bluetooth::emboss::HostBufferSizeCommandWriter>(
+        hci_spec::kHostBufferSize);
+    auto host_buffer_size_params = host_buffer_size_cmd.view_t();
+    // TODO: https://fxbug.dev/512544322 - Investigate whether or not we should
+    // support larger packets.
+    host_buffer_size_params.host_acl_data_packet_length().Write(
+        hci_spec::kMaxACLPayloadSize);
+    host_buffer_size_params.host_synchronous_data_packet_length().Write(1024);
+    // The host can only handle as many large packets as fit in the slab
+    // allocator. Using a larger value would be unsafe as the controller could
+    // overwhelm the slab if it sends all large packets.
+    static_assert(bt::hci::allocators::kNumLargeACLDataPackets <= 0xFFFF,
+                  "kNumLargeACLDataPackets must fit in a uint16_t");
+    host_buffer_size_params.host_total_num_acl_data_packets().Write(
+        static_cast<uint16_t>(bt::hci::allocators::kNumLargeACLDataPackets));
+    host_buffer_size_params.host_total_num_synchronous_data_packets().Write(
+        1024);
+
+    init_seq_runner_->QueueCommand(
+        std::move(host_buffer_size_cmd), [](const hci::EventPacket& event) {
+          HCI_IS_ERROR(event, WARN, "gap", "Host Buffer Size command failed");
         });
   }
 

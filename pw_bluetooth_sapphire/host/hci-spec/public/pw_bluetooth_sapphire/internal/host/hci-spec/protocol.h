@@ -360,6 +360,10 @@ inline constexpr OpCode kReadTransmitPowerLevel =
 inline constexpr OpCode kWriteSynchronousFlowControlEnable =
     ControllerAndBasebandOpCode(0x002F);
 
+// ===============================================================
+// Host Buffer Size Command (v1.1)
+inline constexpr OpCode kHostBufferSize = ControllerAndBasebandOpCode(0x0033);
+
 // ===================================
 // Read Inquiry Scan Type (v1.2) (BR/EDR)
 inline constexpr OpCode kReadInquiryScanType =
