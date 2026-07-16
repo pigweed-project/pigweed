@@ -29,9 +29,7 @@ constexpr NativeOptions GetNativeOptions(NativeContext& context,
   if (attributes.has_external_stack()) {
     options.set_stack(span(attributes.native_stack_pointer(),
                            attributes.native_stack_size()));
-  } else {
-    options.set_stack(context.stack());
-  }
+  }  // Else the context should provide the stack via ContextWithStack.
 
   if (attributes.name()[0] != '\0') {
     options.set_name(attributes.name());

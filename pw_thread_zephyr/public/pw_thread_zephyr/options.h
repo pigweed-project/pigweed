@@ -33,7 +33,6 @@ class Context;
 ///     pw::thread::zephyr::Options(static_example_thread_context)
 ///         .set_priority(kFooPriority)
 ///         .set_name("example_thread")
-///         .set_stack(static_example_thread_context.stack()),
 ///     example_thread_function, example_arg);
 ///
 /// TODO(aeremin): Add support for time slice configuration
@@ -83,6 +82,10 @@ class Options : public thread::Options {
   }
 
   /// Sets the stack to use for the thread
+  ///
+  /// It is optional to set_stack if a ContextWithStack was provided.
+  ///
+  /// The option's set_stack overrides a ContextWithStack's stack.
   ///
   /// @arg stack The stack span to use
   /// @return Reference to this object

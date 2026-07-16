@@ -49,9 +49,7 @@ class Options;
 //   1) Context which just contains the Thread Control Block (k_thread) and
 //      additional context pw::Thread requires.
 //
-//   2) StaticContextWithStack which contains the stack.
-//
-// Only StaticContextWithStack can be instantiated directly.
+//   2) ContextWithStack which contains the stack.
 class Context {
  public:
   /// Create a default native context

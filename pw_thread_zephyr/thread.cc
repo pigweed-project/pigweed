@@ -58,11 +58,17 @@ void NativeContext::CreateThread(Function<void()>&& thread_fn,
   fn_ = std::move(thread_fn);
   string::Assign(name_, options.name()).IgnoreError();
 
-  // Verify we have a valid stack
-  PW_CHECK_NOTNULL(options.stack().data());
+  // Verify we have a valid stack.
+  span<z_thread_stack_element> thread_stack;
+  if (!options.stack().empty()) {
+    thread_stack = options.stack();  // Default to the option's stack.
+  } else {
+    thread_stack = stack();  // Fall back to the ContextWithStack's stack.
+  }
+  PW_CHECK(!thread_stack.empty());
   const k_tid_t task_handle = k_thread_create(&thread_info_,
-                                              options.stack().data(),
-                                              options.stack().size(),
+                                              thread_stack.data(),
+                                              thread_stack.size(),
                                               NativeContext::ThreadEntryPoint,
                                               this,
                                               nullptr,
