@@ -1903,6 +1903,66 @@ TEST_F(NumberOfCompletedPacketsTest, HandlesUnusualEvents) {
   EXPECT_EQ(capture.sends_called, 1);
 }
 
+TEST_F(NumberOfCompletedPacketsTest, HandlesTruncatedEvent) {
+  struct {
+    int sends_called = 0;
+    bool packet_forwarded = false;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&capture](H4PacketWithHci&& packet) {
+        capture.sends_called++;
+        // The first call is the LEReadBufferSize response.
+        // The second call should be our malformed packet.
+        if (capture.sends_called == 2) {
+          capture.packet_forwarded = true;
+          EXPECT_EQ(packet.GetH4Type(), emboss::H4PacketType::EVENT);
+          EXPECT_EQ(packet.GetHciSpan().size(), 4ul);
+          PW_TEST_ASSERT_OK_AND_ASSIGN(
+              auto event_header,
+              MakeEmbossView<emboss::EventHeaderView>(
+                  packet.GetHciSpan().subspan(
+                      0, emboss::EventHeader::IntrinsicSizeInBytes())));
+          EXPECT_EQ(event_header.event_code().Read(),
+                    emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS);
+          EXPECT_EQ(packet.GetHciSpan()[2], 5);  // num_handles
+        }
+      });
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/10,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  EXPECT_EQ(capture.sends_called, 1);
+
+  // Construct a truncated NUMBER_OF_COMPLETED_PACKETS event.
+  // Event Code: 0x13 (NUMBER_OF_COMPLETED_PACKETS)
+  // Param Length: 2
+  // Num Handles: 5 (Claims to have 5 handles, but buffer is too small)
+  std::array<uint8_t, 4> malformed_packet = {
+      0x13,  // Event Code
+      0x02,  // Param Length
+      0x05,  // Num Handles (claims 5)
+      0xAA   // Garbage payload
+  };
+
+  H4PacketWithHci h4_packet{emboss::H4PacketType::EVENT, malformed_packet};
+
+  proxy.HandleH4HciFromController(std::move(h4_packet));
+  RunDispatcher();
+
+  // Verify that the packet was forwarded to the host.
+  EXPECT_TRUE(capture.packet_forwarded);
+  EXPECT_EQ(capture.sends_called, 2);
+  // Verify credits were NOT modified (should still be 10).
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 10);
+}
+
 TEST_F(NumberOfCompletedPacketsTest, MultipleChannelsDifferentTransports) {
   static constexpr size_t kPayloadSize = 3;
   const uint16_t kLeConnectionHandle = 0x123;

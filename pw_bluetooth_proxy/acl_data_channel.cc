@@ -396,10 +396,10 @@ bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
   Result<emboss::NumberOfCompletedPacketsEventWriter> nocp_event =
       MakeEmbossWriter<emboss::NumberOfCompletedPacketsEventWriter>(
           h4_packet.GetHciSpan());
-  if (!nocp_event.ok()) {
+  if (!nocp_event.ok() || !nocp_event->Ok()) {
     PW_LOG_ERROR(
-        "Buffer is too small for NUMBER_OF_COMPLETED_PACKETS event. So "
-        "will not process.");
+        "Buffer is too small or invalid for NUMBER_OF_COMPLETED_PACKETS event. "
+        "So will not process.");
     return true;
   }
 
