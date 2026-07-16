@@ -3553,6 +3553,64 @@ class RemoteServiceManagerServiceChangedTest : public RemoteServiceManagerTest {
   const att::Handle gatt_svc_end_handle_ = 4;
 };
 
+// Tests that destroying RemoteServiceManager from within a RemoteService
+// removal handler during Service Changed processing is handled safely without
+// causing a use-after-free.
+TEST_F(RemoteServiceManagerServiceChangedTest,
+       RemovedHandlerDestroysManagerDoesntCauseUAF) {
+  const att::Handle kService1StartHandle(5);
+  const att::Handle kService1EndHandle(5);
+  const att::Handle kService2StartHandle(6);
+  const att::Handle kService2EndHandle(6);
+  ServiceData service1(ServiceKind::PRIMARY,
+                       kService1StartHandle,
+                       kService1EndHandle,
+                       kTestServiceUuid1);
+  ServiceData service2(ServiceKind::PRIMARY,
+                       kService2StartHandle,
+                       kService2EndHandle,
+                       kTestServiceUuid2);
+
+  fake_client()->set_services({gatt_service(), service1, service2});
+  auto service_changed_range_buffer =
+      StaticByteBuffer(LowerBits(kService1StartHandle),
+                       UpperBits(kService1StartHandle),
+                       LowerBits(kService2EndHandle),
+                       UpperBits(kService2EndHandle));
+  fake_client()->SendNotification(
+      /*indicate=*/true,
+      service_changed_characteristic().value_handle,
+      service_changed_range_buffer,
+      /*maybe_truncated=*/false);
+  RunUntilIdle();
+  ASSERT_EQ(1u, svc_watcher_data().size());
+  ASSERT_EQ(2u, svc_watcher_data()[0].added.size());
+
+  bool destroyed = false;
+  auto remove_handler = [this, &destroyed]() {
+    if (!destroyed) {
+      destroyed = true;
+      DestroyServiceManager();
+    }
+  };
+  svc_watcher_data()[0].added[0]->AddRemovedHandler(remove_handler);
+  svc_watcher_data()[0].added[1]->AddRemovedHandler(remove_handler);
+
+  // Clear the fixture's CCC-write expectation so that RemoteCharacteristic's
+  // CCC-disable write during teardown does not produce a spurious failure.
+  fake_client()->set_write_request_callback({});
+
+  fake_client()->set_services({gatt_service()});
+  fake_client()->SendNotification(
+      /*indicate=*/true,
+      service_changed_characteristic().value_handle,
+      service_changed_range_buffer,
+      /*maybe_truncated=*/false);
+  RunUntilIdle();
+
+  EXPECT_TRUE(destroyed);
+}
+
 TEST_F(RemoteServiceManagerServiceChangedTest,
        ServiceChangedNotificationWrongSizeBuffer) {
   const att::Handle kSvc1StartHandle(5);

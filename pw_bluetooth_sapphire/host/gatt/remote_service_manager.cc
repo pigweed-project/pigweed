@@ -646,6 +646,10 @@ void RemoteServiceManager::MaybeHandleNextServiceChangedNotification(
           self->current_service_change_.value());
     }
 
+    if (!self.is_alive()) {
+      return;
+    }
+
     self->current_service_change_.reset();
     self->MaybeHandleNextServiceChangedNotification();
   };
@@ -675,11 +679,16 @@ void RemoteServiceManager::ProcessServiceChangedDiscoveryResults(
          removed_iters.size(),
          modified_iters_and_data.size());
 
+  auto self = weak_self_.GetWeakPtr();
+
   std::vector<att::Handle> removed_service_handles;
   for (ServiceMap::iterator& service_iter : removed_iters) {
     removed_service_handles.push_back(service_iter->first);
     service_iter->second->set_service_changed(true);
     services_.erase(service_iter);
+    if (!self.is_alive()) {
+      return;
+    }
   }
 
   ServiceList modified_services;
@@ -706,6 +715,9 @@ void RemoteServiceManager::ProcessServiceChangedDiscoveryResults(
     // cancel ongoing procedures and ensure clients handle service change.
     service_iter->second->set_service_changed(true);
     service_iter->second.reset();
+    if (!self.is_alive()) {
+      return;
+    }
 
     auto new_service = std::make_unique<RemoteService>(new_service_data,
                                                        client_->GetWeakPtr());
