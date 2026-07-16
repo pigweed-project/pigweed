@@ -4830,6 +4830,120 @@ TEST_F(InitiatorPairingTest, BrEdrCtkdHappenedAfterSecurityManagerCreation) {
   EXPECT_EQ(security_callback_count(), 1);
 }
 
+// Tests for SecurityRequestPhase behavior when the central LL-encrypts with the
+// bonded LTK.
+
+// Tests that after a bonded central encrypts the link in response to our
+// Security Request, the SMP timer is stopped and does not fire a timeout later.
+TEST_F(ResponderPairingTest,
+       SecurityRequestPhaseTimerStoppedAfterBondedLtkEncryption) {
+  const SecurityProperties kProps(SecurityLevel::kEncrypted,
+                                  kMaxEncryptionKeySize,
+                                  /*secure_connections=*/true);
+  const LTK kLtk(kProps, hci_spec::LinkKey({1, 2, 3}, 0, 0));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kLtk;
+  bond_data.local_ltk = kLtk;
+  peer().MutLe().SetBondData(bond_data);
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayOnly, BondableMode::Bondable);
+  ASSERT_TRUE(fake_link()->ltk());
+  EXPECT_EQ(kLtk.key(), fake_link()->ltk());
+
+  // Request encryption to send an SMP Security Request and arm the timer.
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+
+  // Bonded central responds by starting LL encryption with the stored LTK
+  // (spec-default behavior, V5.x Vol 3 Part H 2.4.6) instead of sending a
+  // Pairing Request. Controller delivers HCI_Encryption_Change(SUCCESS, ON).
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+
+  ASSERT_EQ(1, security_callback_count());
+  ASSERT_EQ(fit::ok(), security_status());
+  ASSERT_EQ(SecurityLevel::kEncrypted, pairing()->security().level());
+  ASSERT_FALSE(fake_chan()->link_error());
+  ASSERT_EQ(0, pairing_complete_count());
+
+  // Verify that the SMP timer was stopped and the stale SecurityRequestPhase
+  // does not fire OnPairingTimeout after kPairingTimeout.
+  RunFor(kPairingTimeout + std::chrono::seconds(1));
+
+  // Verify that a spurious timeout does not disconnect the link or wipe the
+  // LTK.
+  EXPECT_FALSE(fake_chan()->link_error());
+  EXPECT_EQ(0, pairing_complete_count());
+  EXPECT_EQ(kLtk.key(), fake_link()->ltk());
+}
+
+// Tests that if a higher-level security request is queued during
+// SecurityRequestPhase, it is processed after the first request completes.
+TEST_F(ResponderPairingTest,
+       SecurityRequestPhaseProcessesQueuedHigherLevelRequest) {
+  const SecurityProperties kProps(SecurityLevel::kEncrypted,
+                                  kMaxEncryptionKeySize,
+                                  /*secure_connections=*/true);
+  const LTK kLtk(kProps, hci_spec::LinkKey({1, 2, 3}, 0, 0));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kLtk;
+  bond_data.local_ltk = kLtk;
+  peer().MutLe().SetBondData(bond_data);
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayOnly, BondableMode::Bondable);
+
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+
+  // Central LL-encrypts with the bonded (kEncrypted) LTK. The insufficiency
+  // gate checks pending_security_request() == kEncrypted, so it passes.
+  // NotifySecurityCallbacks then leaves the kAuthenticated entry in
+  // the queue and re-enters UpgradeSecurityInternal().
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(true));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(fit::ok(), security_status());
+
+  // The second request (kAuthenticated) is now starting, sending a new Security
+  // Request.
+  EXPECT_EQ(2, security_request_count());
+}
+
+// Tests that receiving a second encryption change event after the request
+// queue is drained is handled safely without crashing.
+TEST_F(ResponderPairingTest, SecurityRequestPhaseHandlesSecondEncryptionEvent) {
+  const SecurityProperties kProps(SecurityLevel::kEncrypted,
+                                  kMaxEncryptionKeySize,
+                                  /*secure_connections=*/true);
+  const LTK kLtk(kProps, hci_spec::LinkKey({1, 2, 3}, 0, 0));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kLtk;
+  bond_data.local_ltk = kLtk;
+  peer().MutLe().SetBondData(bond_data);
+  NewSecurityManager(
+      Role::kResponder, IOCapability::kDisplayOnly, BondableMode::Bondable);
+
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_request_count());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+  ASSERT_EQ(1, security_callback_count());
+  ASSERT_EQ(fit::ok(), security_status());
+
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(true));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, security_callback_count());
+}
 }  // namespace
 }  // namespace bt::sm
 // inclusive-language: enable

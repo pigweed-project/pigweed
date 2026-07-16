@@ -865,6 +865,12 @@ void SecurityManagerImpl::OnEncryptionChange(hci::Result<bool> enabled_result) {
     if (security_request_phase) {
       PW_CHECK(role() == Role::kResponder);
       PW_CHECK(!request_queue_.empty());
+      // The central satisfied our Security Request by LL-encrypting with the
+      // bonded LTK. Clear the SecurityRequestPhase and stop the SMP timer so
+      // that NotifySecurityCallbacks can re-enter UpgradeSecurityInternal for
+      // any higher-level queued request and so that the 30 s timer does not
+      // spuriously tear down the now-encrypted link.
+      ResetState();
     }
     if (starting_encryption_phase) {
       ResetState();
