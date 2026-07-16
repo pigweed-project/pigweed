@@ -355,6 +355,70 @@ TEST_F(RecombinerTest, CanClaimExtraHeader) {
   PW_CHECK(mbuf.ClaimPrefix(kExtraHeaderSize));
   EXPECT_EQ(mbuf.size(), kExpectedData.size() + kExtraHeaderSize);
 }
+TEST_F(RecombinerTest, RecombineLargePduExceeds65535) {
+  std::vector<std::byte> large_buffer(75000);
+  pw::multibuf::SimpleAllocator large_allocator{
+      /*data_area=*/large_buffer,
+      /*metadata_alloc=*/allocator::GetLibCAllocator()};
+
+  ProxyHost proxy_{[]([[maybe_unused]] H4PacketWithHci&& packet) {},
+                   []([[maybe_unused]] H4PacketWithH4&& packet) {},
+                   0,
+                   0,
+                   GetProxyHostAllocator()};
+  StartDispatcherOnCurrentThread(proxy_);
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy_, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  BasicL2capChannel channel = BuildBasicL2capChannel(
+      proxy_,
+      {.rx_multibuf_allocator = &large_allocator, .handle = kConnectionHandle});
+
+  internal::Mutex mutex;
+  std::optional<LockedL2capChannel> locked_channel{LockedL2capChannel{
+      *channel.InternalForTesting(), std::unique_lock(mutex)}};
+
+  Direction kDirection = Direction::kFromController;
+  Recombiner recombiner{kDirection};
+
+  constexpr size_t kLargeSize = 70000;
+  PW_TEST_EXPECT_OK(
+      recombiner.StartRecombination(*locked_channel, kLargeSize, 0u));
+
+  EXPECT_TRUE(recombiner.IsActive());
+  EXPECT_FALSE(recombiner.IsComplete());
+
+  std::vector<uint8_t> chunk1(65000, 0xAA);
+  PW_TEST_EXPECT_OK(recombiner.RecombineFragment(locked_channel, chunk1));
+
+  std::vector<uint8_t> chunk2(2000, 0xBB);
+  PW_TEST_EXPECT_OK(recombiner.RecombineFragment(locked_channel, chunk2));
+
+  std::vector<uint8_t> chunk3(3000, 0xCC);
+  PW_TEST_EXPECT_OK(recombiner.RecombineFragment(locked_channel, chunk3));
+
+  EXPECT_TRUE(recombiner.IsComplete());
+  EXPECT_FALSE(recombiner.IsActive());
+
+  multibuf::MultiBuf mbuf = Recombiner::TakeBuf(locked_channel, kDirection);
+  ASSERT_FALSE(mbuf.empty());
+  EXPECT_EQ(mbuf.size(), kLargeSize);
+
+  // Verify data
+  std::vector<uint8_t> actual_data(kLargeSize);
+  auto bytes_copied = mbuf.CopyTo(pw::as_writable_bytes(pw::span(actual_data)));
+  EXPECT_EQ(bytes_copied.size(), kLargeSize);
+
+  for (size_t i = 0; i < 65000; ++i) {
+    ASSERT_EQ(actual_data[i], 0xAA) << "At index " << i;
+  }
+  for (size_t i = 65000; i < 67000; ++i) {
+    ASSERT_EQ(actual_data[i], 0xBB) << "At index " << i;
+  }
+  for (size_t i = 67000; i < 70000; ++i) {
+    ASSERT_EQ(actual_data[i], 0xCC) << "At index " << i;
+  }
+}
 
 }  // namespace
 }  // namespace pw::bluetooth::proxy

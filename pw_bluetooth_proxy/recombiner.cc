@@ -71,7 +71,7 @@ pw::Status Recombiner::RecombineFragment(
     PW_CHECK_INT_EQ(channel->channel().local_cid(), local_cid_);
 
     PW_TRY(channel->channel().CopyToRecombinationBuf(
-        direction_, as_bytes(data), static_cast<uint16_t>(write_offset())));
+        direction_, as_bytes(data), write_offset()));
   }
 
   recombined_size_ += data.size();

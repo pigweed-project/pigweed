@@ -356,7 +356,7 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   // Precondition: `HasCombinationBuf()`.
   pw::Status CopyToRecombinationBuf(Direction direction,
                                     ConstByteSpan data,
-                                    uint16_t write_offset) {
+                                    size_t write_offset) {
     PW_ASSERT(HasRecombinationBuf(direction));
     auto& bufopt_ref = GetRecombinationBufOptRef(direction);
     auto bytes_copied = bufopt_ref->CopyFrom(data, write_offset);
