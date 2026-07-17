@@ -48,6 +48,18 @@ class CreditBasedFlowControlTxEngineTest : public ::testing::Test {
     engine().NotifySduQueued();
   }
 
+  void ResetEngine(uint16_t mtu, uint16_t mps) {
+    engine_ = std::make_unique<Engine>(
+        kTestChannelId,
+        mtu,
+        channel_,
+        CreditBasedFlowControlMode::kLeCreditBasedFlowControl,
+        mps,
+        kInitialCredits);
+  }
+
+  void ResetEngine(uint16_t mps) { ResetEngine(kTestMtu, mps); }
+
  private:
   std::unique_ptr<Engine> engine_ = std::make_unique<Engine>(
       kTestChannelId,
@@ -413,6 +425,38 @@ TEST_F(CreditBasedFlowControlTxEngineTest, AddCreditsOverCap) {
   EXPECT_EQ(engine().credits(), 65535u);
   EXPECT_FALSE(engine().AddCredits(65535));
   EXPECT_EQ(engine().credits(), 65535u);
+}
+
+// Tests that configuring the engine with an invalid Maximum PDU Payload Size
+// (MPS) of 0 safely clamps the MPS to the specification minimum of 23 bytes
+// (per Bluetooth Core Specification v5.0, Vol 3, Part A, Section 4.1 / Section
+// 10.1). This prevents division by zero or infinite segmentation loops during
+// SDU processing and ensures that outgoing SDUs are segmented and transmitted
+// correctly using the clamped minimum MPS.
+TEST_F(CreditBasedFlowControlTxEngineTest, ZeroMpsClampedToMinimum) {
+  ResetEngine(/*mps=*/0);
+
+  ProcessSdu(std::make_unique<DynamicByteBuffer>(StaticByteBuffer<1>{'X'}));
+
+  // It should segment successfully using the clamped MPS = 23.
+  // 1-byte payload + 2-byte SDU length = 3 bytes PDU.
+  ASSERT_EQ(sent_frames().size(), 1u);
+  ASSERT_TRUE(sent_frames()[0]);
+  EXPECT_EQ(sent_frames()[0]->size(), 3u);
+}
+
+// Tests that configuring the engine with exactly the specification minimum
+// Maximum PDU Payload Size (MPS) and minimum MTU of 23 bytes (per Bluetooth
+// Core Specification v5.0, Vol 3, Part A, Section 4.1) works cleanly without
+// triggering assertion failures and segments outgoing SDUs correctly.
+TEST_F(CreditBasedFlowControlTxEngineTest, MinimumLeMtuAndMpsAllowed) {
+  ResetEngine(/*mtu=*/kMinLEMTU, /*mps=*/kMinLEMPS);
+
+  ProcessSdu(std::make_unique<DynamicByteBuffer>(StaticByteBuffer<1>{'X'}));
+
+  ASSERT_EQ(sent_frames().size(), 1u);
+  ASSERT_TRUE(sent_frames()[0]);
+  EXPECT_EQ(sent_frames()[0]->size(), 3u);
 }
 
 }  // namespace

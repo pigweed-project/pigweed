@@ -29,8 +29,6 @@ namespace emboss = pw::bluetooth::emboss;
 constexpr auto kLeCreditBasedFlowControlMode =
     CreditBasedFlowControlMode::kLeCreditBasedFlowControl;
 
-constexpr size_t kMinimumLeMtu = 23;
-constexpr size_t kMinimumLeMps = 23;
 constexpr auto kSduHeaderSize = emboss::KFrameSduHeader::IntrinsicSizeInBytes();
 
 constexpr uint32_t kMaxCredits = 65535;
@@ -59,13 +57,17 @@ CreditBasedFlowControlTxEngine::CreditBasedFlowControlTxEngine(
            EnumValue(mode));
 
   PW_DCHECK(
-      mode != kLeCreditBasedFlowControlMode || max_tx_sdu_size > kMinimumLeMtu,
+      mode != kLeCreditBasedFlowControlMode || max_tx_sdu_size >= kMinLEMTU,
       "Invalid MTU for LE mode: %d",
       max_tx_sdu_size);
-  PW_DCHECK(mode != kLeCreditBasedFlowControlMode ||
-                max_tx_pdu_payload_size > kMinimumLeMps,
-            "Invalid MPS for LE mode: %d",
-            max_tx_pdu_payload_size);
+  if (max_tx_pdu_payload_size_ < kMinLEMPS) {
+    bt_log(DEBUG,
+           "l2cap",
+           "Peer supplied invalid MPS %u; clamping to %u",
+           max_tx_pdu_payload_size_,
+           kMinLEMPS);
+    max_tx_pdu_payload_size_ = kMinLEMPS;
+  }
 }
 
 CreditBasedFlowControlTxEngine::~CreditBasedFlowControlTxEngine() = default;
