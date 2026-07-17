@@ -825,5 +825,183 @@ TEST_F(ClientTest, DestroyClientInDisconnectedResultCallback) {
   EXPECT_EQ(1u, cb_count);
 }
 
+// Tests that receiving a malformed SDP response cancels the current transaction
+// and correctly unblocks subsequent queued searches.
+TEST_F(ClientTest, MalformedResponseDoesNotWedgeQueuedSearches) {
+  auto client = Client::Create(fake_chan()->GetWeakPtr(), dispatcher());
+  ASSERT_TRUE(fake_chan()->activated());
+
+  // Count how many PDUs the client sends on the L2CAP channel, and capture
+  // the TID of each so we can echo it back.
+  size_t sent_packets = 0;
+  uint16_t last_transaction_id = 0;
+  fake_chan()->SetSendCallback(
+      [&](auto packet) {
+        ASSERT_LE(5u, packet->size());
+        ASSERT_EQ(kServiceSearchAttributeRequest, (*packet)[0]);
+        last_transaction_id =
+            static_cast<uint16_t>(((*packet)[1] << 8) | (*packet)[2]);
+        sent_packets++;
+      },
+      dispatcher());
+
+  size_t first_callback_count = 0;
+  std::optional<HostError> first_callback_error;
+  auto first_callback =
+      [&](fit::result<Error<>,
+                      std::reference_wrapper<
+                          const std::map<AttributeId, DataElement>>> result) {
+        first_callback_count++;
+        if (result.is_error()) {
+          first_callback_error = result.error_value().host_error();
+        }
+        return true;
+      };
+
+  size_t second_callback_count = 0;
+  std::optional<HostError> second_callback_error;
+  auto second_callback =
+      [&](fit::result<Error<>,
+                      std::reference_wrapper<
+                          const std::map<AttributeId, DataElement>>> result) {
+        second_callback_count++;
+        if (result.is_error()) {
+          second_callback_error = result.error_value().host_error();
+        }
+        return true;
+      };
+
+  // Queue two searches synchronously to mirror ServiceDiscoverer looping over
+  // all registered searches in StartServiceDiscovery.
+  client->ServiceSearchAttributes(
+      {profile::kAudioSink}, {kServiceClassIdList}, std::move(first_callback));
+  client->ServiceSearchAttributes({profile::kAudioSource},
+                                  {kServiceClassIdList},
+                                  std::move(second_callback));
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, sent_packets);
+  ASSERT_EQ(0u, first_callback_count);
+  ASSERT_EQ(0u, second_callback_count);
+
+  // Send a malformed ServiceSearchAttributeResponse (payload < 4 bytes) so that
+  // Parse() returns kPacketMalformed and cancels whichever transaction was sent
+  // first.
+  fake_chan()->Receive(StaticByteBuffer(0x07,
+                                        UpperBits(last_transaction_id),
+                                        LowerBits(last_transaction_id),
+                                        0x00,
+                                        0x03,
+                                        0x05,
+                                        0x06,
+                                        0x07));
+  RunUntilIdle();
+
+  // Exactly one transaction should have received kPacketMalformed.
+  ASSERT_EQ(1u, first_callback_count + second_callback_count);
+  if (first_callback_count == 1u) {
+    ASSERT_TRUE(first_callback_error.has_value());
+    EXPECT_EQ(HostError::kPacketMalformed, *first_callback_error);
+  } else {
+    ASSERT_TRUE(second_callback_error.has_value());
+    EXPECT_EQ(HostError::kPacketMalformed, *second_callback_error);
+  }
+
+  // Verify that the second queued transaction is sent after the first is
+  // cancelled, and that its timeout timer fires after 10 seconds of silence.
+  EXPECT_EQ(2u, sent_packets);
+
+  RunFor(std::chrono::seconds(60));
+
+  EXPECT_EQ(2u, sent_packets);
+  EXPECT_EQ(1u, first_callback_count);
+  EXPECT_EQ(1u, second_callback_count);
+
+  RunFor(std::chrono::hours(1));
+  EXPECT_EQ(1u, first_callback_count);
+  EXPECT_EQ(1u, second_callback_count);
+
+  client.reset();
+  EXPECT_EQ(1u, first_callback_count);
+  EXPECT_EQ(1u, second_callback_count);
+}
+
+// Tests that when an SDP transaction times out, subsequent queued searches are
+// unblocked and sent.
+TEST_F(ClientTest, TimeoutDoesNotWedgeQueuedSearches) {
+  auto client = Client::Create(fake_chan()->GetWeakPtr(), dispatcher());
+  ASSERT_TRUE(fake_chan()->activated());
+
+  size_t sent_packets = 0;
+  fake_chan()->SetSendCallback(
+      [&](auto packet) {
+        ASSERT_LE(5u, packet->size());
+        ASSERT_EQ(kServiceSearchAttributeRequest, (*packet)[0]);
+        sent_packets++;
+      },
+      dispatcher());
+
+  size_t first_callback_count = 0;
+  std::optional<HostError> first_callback_error;
+  auto first_callback =
+      [&](fit::result<Error<>,
+                      std::reference_wrapper<
+                          const std::map<AttributeId, DataElement>>> result) {
+        first_callback_count++;
+        if (result.is_error()) {
+          first_callback_error = result.error_value().host_error();
+        }
+        return true;
+      };
+
+  size_t second_callback_count = 0;
+  std::optional<HostError> second_callback_error;
+  auto second_callback =
+      [&](fit::result<Error<>,
+                      std::reference_wrapper<
+                          const std::map<AttributeId, DataElement>>> result) {
+        second_callback_count++;
+        if (result.is_error()) {
+          second_callback_error = result.error_value().host_error();
+        }
+        return true;
+      };
+
+  client->ServiceSearchAttributes(
+      {profile::kAudioSink}, {kServiceClassIdList}, std::move(first_callback));
+  client->ServiceSearchAttributes({profile::kAudioSource},
+                                  {kServiceClassIdList},
+                                  std::move(second_callback));
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, sent_packets);
+
+  // Advance time past the 10-second transaction timeout to cancel whichever
+  // request was sent first.
+  RunFor(std::chrono::seconds(11));
+
+  ASSERT_EQ(1u, first_callback_count + second_callback_count);
+  if (first_callback_count == 1u) {
+    ASSERT_TRUE(first_callback_error.has_value());
+    EXPECT_EQ(HostError::kTimedOut, *first_callback_error);
+  } else {
+    ASSERT_TRUE(second_callback_error.has_value());
+    EXPECT_EQ(HostError::kTimedOut, *second_callback_error);
+  }
+
+  // Verify that the second queued request is sent after the timeout and
+  // eventually times out itself.
+  EXPECT_EQ(2u, sent_packets);
+
+  RunFor(std::chrono::hours(1));
+  EXPECT_EQ(2u, sent_packets);
+  EXPECT_EQ(1u, first_callback_count);
+  EXPECT_EQ(1u, second_callback_count);
+
+  client.reset();
+  EXPECT_EQ(1u, first_callback_count);
+  EXPECT_EQ(1u, second_callback_count);
+}
+
 }  // namespace
 }  // namespace bt::sdp

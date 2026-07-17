@@ -118,6 +118,7 @@ Impl::Impl(l2cap::Channel::WeakPtr channel, pw::async::Dispatcher& dispatcher)
 Impl::~Impl() { CancelAll(HostError::kCanceled); }
 
 void Impl::CancelAll(HostError reason) {
+  pending_timeout_.reset();
   // Avoid using |this| in case callbacks destroy this object.
   auto pending = std::move(pending_);
   pending_.clear();
@@ -234,6 +235,7 @@ void Impl::Cancel(TransactionId id, HostError reason) {
   if (!node) {
     return;
   }
+  pending_timeout_.reset();
 
   auto self = weak_self_.GetWeakPtr();
   node.mapped().callback(ToResult(reason).take_error());
