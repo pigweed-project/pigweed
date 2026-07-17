@@ -25,14 +25,6 @@ from pw_console.pigweed_code_style import PigweedCodeStyle
 from pw_console.pigweed_code_style import PigweedCodeLightStyle
 
 
-# Determine whether the docs are being built with Bazel or GN.
-is_bazel_build = True
-try:
-    from python.runfiles import runfiles  # type: ignore
-except ImportError:
-    is_bazel_build = False
-
-
 # The suffix of source filenames.
 source_suffix = ['.rst']
 
@@ -76,48 +68,32 @@ pygments_monkeypatch_style('pigweed_code_light_style', PigweedCodeLightStyle)
 
 # //docs/sphinx/_extensions must be added to the system path so that Sphinx
 # knows where to find the Sphinx extensions that have been custom-built
-# for pigweed.dev. The path resolution changes depending on whether we're
-# building pigweed.dev with GN or Bazel.
-if is_bazel_build:
-    sys.path.append(str(Path('_extensions').resolve()))
-else:  # GN build
-    pw_root = os.environ['PW_ROOT']
-    sys.path.append(f'{pw_root}/docs/_extensions')
+# for pigweed.dev.
+sys.path.append(str(Path('_extensions').resolve()))
 
 extensions = [
-    "bug",  # Custom extension to normalize Pigweed bug links.
-    "toctree",
-    "cs",
-    "module_metadata",
-    "modules_index",
-    "pigweed_live",
-    "pw_docgen.sphinx.google_analytics",  # Enables optional Google Analytics
-    "seed_metadata",
-    "sitemap",  # Custom extension to handle pigweed.dev sitemap nuances.
-    "sphinx.ext.autodoc",  # Automatic documentation for Python code
-    "sphinx.ext.napoleon",  # Parses Google-style docstrings
-    "sphinxarg.ext",  # Automatic documentation of Python argparse
-    "sphinxcontrib.doxylink",
-    "sphinxcontrib.mermaid",
-    "sphinx_design",
-    "sphinx_copybutton",  # Copy-to-clipboard button on code blocks
-    "sphinx_reredirects",
+    'bug',  # Custom extension to normalize Pigweed bug links.
+    'toctree',
+    'cs',
+    'module_metadata',
+    'modules_index',
+    'pigweed_live',
+    'pw_docgen.sphinx.google_analytics',  # Enables optional Google Analytics
+    'seed_metadata',
+    'sitemap',  # Custom extension to handle pigweed.dev sitemap nuances.
+    'sphinx.ext.autodoc',  # Automatic documentation for Python code
+    'sphinx.ext.napoleon',  # Parses Google-style docstrings
+    'sphinxarg.ext',  # Automatic documentation of Python argparse
+    'sphinxcontrib.doxylink',
+    'sphinxcontrib.mermaid',
+    'sphinx_design',
+    'sphinx_copybutton',  # Copy-to-clipboard button on code blocks
+    'sphinx_reredirects',
 ]
 
 # When a user clicks the copy-to-clipboard button the `$ ` prompt should not be
 # copied: https://sphinx-copybutton.readthedocs.io/en/latest/use.html
-copybutton_prompt_text = "$ "
-
-_DIAG_HTML_IMAGE_FORMAT = 'SVG'
-blockdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-nwdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-seqdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-actdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-rackdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-packetdiag_html_image_format = _DIAG_HTML_IMAGE_FORMAT
-
-# Tell m2r to parse links to .md files and add them to the build.
-m2r_parse_relative_links = True
+copybutton_prompt_text = '$ '
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
@@ -155,37 +131,36 @@ html_static_path = ['_static']
 # These paths are either relative to html_static_path
 # or fully qualified paths (eg. https://...)
 html_css_files = [
-    "css/pigweed.css",
+    'css/pigweed.css',
     # We could potentially merge the Google Fonts stylesheets into a single network
     # request but we already preconnect with the service in //docs/sphinx/layout/layout.html
     # so the performance impact of keeping these as 3 separate calls should be
     # negligible.
-    "https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap",
-    "https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap",
-    "https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap",
+    'https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap',
+    'https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap',
+    'https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap',
     # FontAwesome for mermaid and sphinx-design
-    "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css",
+    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
 ]
 
 html_js_files = [
     # Do not list pigweed.js here. This will cause it to get loaded in <head>.
     # To improve load performance we modified //docs/sphinx/layout/layout.html
     # to load pigweed.js at the end of <body> instead.
-    # "js/pigweed.js",
+    # 'js/pigweed.js',
 ]
 
 html_extra_path = [
     # Note: In this repo the file lives at //docs/sphinx/blog/rss.xml but during the
     # Sphinx build it's copied to the root of the website, https://pigweed.dev/rss.xml
     'blog/rss.xml',
-]
-if is_bazel_build:
     # In the Bazel build, the fully built rustdoc site is present in the Sphinx
     # site's sources directory. Specifying the rustdoc directory here instructs
     # Sphinx to copy over the entire directory to its output.
-    html_extra_path.append('rustdoc')
+    'rustdoc',
     # Also copy over the Doxygen-generated HTML subsite.
-    html_extra_path.append('doxygen')
+    'doxygen',
+]
 
 html_theme_options = {
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/header-links.html#navigation-bar-dropdown-links
@@ -230,8 +205,6 @@ if 'LUCI_IS_TRY' in os.environ and os.environ['LUCI_IS_TRY'] == '1':
         'at <a href="https://pigweed.dev">pigweed.dev</a>.'
     )
 
-# sphinx-sitemap needs this:
-# https://sphinx-sitemap.readthedocs.io/en/latest/getting-started.html#usage
 html_baseurl = 'https://pigweed.dev/'
 
 # The lefthand "Section Navigation" section is empty for these docs. Hide it.
@@ -250,9 +223,6 @@ html_context = {
 if 'GOOGLE_ANALYTICS_ID' in os.environ:
     google_analytics_id = os.environ['GOOGLE_ANALYTICS_ID']
 
-# https://sphinx-sitemap.readthedocs.io/en/latest/advanced-configuration.html
-sitemap_url_scheme = '{link}'
-
 # Mermaid style API is very hard to use and full of footguns. The `neutral`
 # theme is the only readable default option on both light and dark themes.
 mermaid_light_theme = 'neutral'
@@ -262,66 +232,40 @@ mermaid_dark_theme = 'neutral'
 # page into view in "Section Navigation".
 mermaid_init_config = {'startOnLoad': False}
 
-# Output file base name for HTML help builder.
-htmlhelp_basename = 'Pigweeddoc'
-
 # Client-side redirects. See //docs/sphinx/contributing/docs/website.rst.
 #
 # TODO: https://pwbug.dev/430133030 - Tidy up the redirects.
-with open('./redirects.json', 'r') as f:
-    redirects_data = json.load(f)
-redirects = redirects_data
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [('index', 'pigweed', 'Pigweed', ['Google'], 1)]
-
-# Grouping the document tree into Texinfo files. List of tuples
-# (source start file, target name, title, author,
-#  dir menu entry, description, category)
-texinfo_documents = [
-    (
-        'index',
-        'Pigweed',
-        'Pigweed',
-        'Google',
-        'Pigweed',
-        'Firmware framework',
-        'Miscellaneous',
-    ),
-]
+redirects = json.loads(Path('redirects.json').read_text(encoding='utf-8'))
 
 templates_path = ['layout']
 exclude_patterns = ['docs/templates/**']
 
-doxygen_xml_path = (
-    './_doxygen/xml/' if is_bazel_build else './../../../doxygen/xml/'
-)
+doxygen_xml_path = './_doxygen/xml/'
 # The location of the generated Doxygen tagfile. Note that this must
 # match the final location of the generated Doxygen HTML from the
 # perspective of the Sphinx build system. The organization of the
 # source files (as Sphinx sees it) can be viewed by running this:
 # bazelisk build //docs:sources
-tagfile_path = os.path.abspath("doxygen/api/cc/index.tag")
+tagfile_path = os.path.abspath('doxygen/api/cc/index.tag')
 # The relative path that Doxylink should use when creating links.
-doxygen_site_path = "./api/cc"
+doxygen_site_path = './api/cc'
 doxylink = {
-    "cc": (tagfile_path, doxygen_site_path),
+    'cc': (tagfile_path, doxygen_site_path),
 }
 
 # Treat these as valid attributes in function signatures.
 cpp_id_attributes = [
-    "PW_EXTERN_C_START",
-    "PW_NO_LOCK_SAFETY_ANALYSIS",
+    'PW_EXTERN_C_START',
+    'PW_NO_LOCK_SAFETY_ANALYSIS',
 ]
 # This allows directives like this to work:
 # .. cpp:function:: inline bool try_lock_for(
 #     chrono::SystemClock::duration timeout) PW_EXCLUSIVE_TRYLOCK_FUNCTION(true)
 cpp_paren_attributes = [
-    "PW_EXCLUSIVE_TRYLOCK_FUNCTION",
-    "PW_EXCLUSIVE_LOCK_FUNCTION",
-    "PW_UNLOCK_FUNCTION",
-    "PW_NO_SANITIZE",
+    'PW_EXCLUSIVE_TRYLOCK_FUNCTION',
+    'PW_EXCLUSIVE_LOCK_FUNCTION',
+    'PW_UNLOCK_FUNCTION',
+    'PW_NO_SANITIZE',
 ]
 # inclusive-language: disable
 # Info on cpp_id_attributes and cpp_paren_attributes
@@ -338,7 +282,7 @@ maximum_signature_line_length = 130
 
 
 def do_not_skip_init(app, what, name, obj, would_skip, options):
-    if name == "__init__":
+    if name == '__init__':
         return False  # never skip __init__ functions
     return would_skip
 
@@ -350,6 +294,5 @@ def env_get_outdated(app, env, added, changed, removed):
 
 
 def setup(app):
-    app.add_css_file('css/pigweed.css')
     app.connect('env-get-outdated', env_get_outdated)
-    app.connect("autodoc-skip-member", do_not_skip_init)
+    app.connect('autodoc-skip-member', do_not_skip_init)
