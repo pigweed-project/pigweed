@@ -2093,6 +2093,23 @@ TEST_F(InitiatorPairingTest, PairingFailedInPhase2) {
   EXPECT_EQ(ToResult(ErrorCode::kConfirmValueFailed), security_status());
 }
 
+// Tests that pairing failure does not set a zero LTK on the link.
+TEST_F(InitiatorPairingTest, PairingFailedDoesNotSetZeroLtk) {
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  ReceivePairingFeatures();
+  RunUntilIdle();
+
+  ReceivePairingFailed(ErrorCode::kConfirmValueFailed);
+  RunUntilIdle();
+
+  UInt128 zero_key;
+  zero_key.fill(0);
+
+  bool has_zero_ltk = fake_link()->ltk().has_value() &&
+                      (fake_link()->ltk()->value() == zero_key);
+  EXPECT_FALSE(has_zero_ltk) << "LTK was set to zero on pairing failure!";
+}
+
 // Encryption with STK fails.
 TEST_F(InitiatorPairingTest, EncryptionWithSTKFails) {
   UInt128 stk;

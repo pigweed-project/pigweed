@@ -1299,7 +1299,7 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
 
   if (SecurityUpgradeInProgress() && !bredr_link_.is_alive()) {
     PW_CHECK(low_energy_link_.is_alive());
-    low_energy_link_->set_ltk(hci_spec::LinkKey());
+    low_energy_link_->reset_ltk();
   }
 
   if (bredr_cross_transport_key_derivation_callback_) {

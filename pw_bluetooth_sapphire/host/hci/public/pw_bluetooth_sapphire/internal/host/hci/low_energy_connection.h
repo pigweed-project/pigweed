@@ -54,6 +54,7 @@ class LowEnergyConnection : public AclConnection,
   // Returns a string representation of this connection.
   std::string ToString() const override;
 
+  using AclConnection::reset_ltk;
   using AclConnection::set_ltk;
 
  private:

@@ -77,6 +77,7 @@ class AclConnection : public Connection {
                 pw::async::Dispatcher& dispatcher);
 
   void set_ltk(const hci_spec::LinkKey& link_key) { ltk_ = link_key; }
+  void reset_ltk() { ltk_.reset(); }
 
   // Notifies subclasses of a change in encryption status.
   virtual void HandleEncryptionStatus(Result<bool /*enabled*/> result,
