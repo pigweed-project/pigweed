@@ -155,6 +155,11 @@ void RemoteCharacteristic::DiscoverDescriptors(
                          att::Result<> read_result,
                          const ByteBuffer& data,
                          bool /*maybe_truncated*/) {
+        if (!self.is_alive()) {
+          cb(ToResult(HostError::kFailed));
+          return;
+        }
+
         if (read_result.is_error()) {
           cb(read_result);
           return;

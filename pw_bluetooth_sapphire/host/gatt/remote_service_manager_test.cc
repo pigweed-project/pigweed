@@ -1174,6 +1174,60 @@ TEST_F(RemoteServiceManagerTest,
   EXPECT_EQ(ToResult(HostError::kPacketMalformed), status);
 }
 
+// Test that if descriptor discovery fails for a sibling characteristic,
+// clearing characteristics_ while an ExtendedProperties ReadRequest is pending,
+// we do not crash when the read response callback attempts to access the
+// deleted characteristic.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSiblingErrorDeferredExtPropReadDoesNotCrash) {
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+
+  // ExtendedProperties is set on fake_char1. This will trigger a
+  // ReadRequest for its descriptor.
+  CharacteristicData fake_char1(
+      Property::kExtendedProperties, std::nullopt, 2, 3, kTestUuid3);
+  DescriptorData fake_desc1(4, types::kCharacteristicExtProperties);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  DescriptorData fake_desc2(7, kTestUuid4);
+  SetCharacteristicsAndDescriptors({fake_char1, fake_char2},
+                                   {fake_desc1, fake_desc2});
+
+  // The second request will fail, deleting both characteristics.
+  fake_client()->set_descriptor_discovery_status(
+      ToResult(att::ErrorCode::kUnlikelyError), 2);
+
+  std::optional<Client::ReadCallback> deferred_read_cb;
+  att::Handle read_handle = 0;
+  fake_client()->set_read_request_callback(
+      [&](att::Handle handle, Client::ReadCallback callback) {
+        read_handle = handle;
+        deferred_read_cb = std::move(callback);
+      });
+
+  att::Result<> discover_status = fit::ok();
+  bool discover_done = false;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> status, const auto& chrcs) {
+        discover_status = status;
+        discover_done = true;
+        EXPECT_TRUE(chrcs.empty());
+      });
+
+  RunUntilIdle();
+
+  ASSERT_TRUE(deferred_read_cb.has_value());
+  EXPECT_EQ(4, read_handle);
+  ASSERT_TRUE(discover_done);
+  EXPECT_TRUE(discover_status.is_error());
+  EXPECT_FALSE(service->IsDiscovered());
+
+  // Deliver the deferred read response to the destroyed characteristic
+  // callback and expect it not to crash.
+  StaticByteBuffer ext_prop_value(0x01, 0x00);
+  (*deferred_read_cb)(fit::ok(), ext_prop_value, /*maybe_truncated=*/false);
+}
+
 constexpr CharacteristicHandle kDefaultCharacteristic(3);
 constexpr CharacteristicHandle kSecondCharacteristic(6);
 constexpr CharacteristicHandle kInvalidCharacteristic(1);
