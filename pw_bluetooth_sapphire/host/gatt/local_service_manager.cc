@@ -438,8 +438,9 @@ class LocalServiceManager::ServiceData final {
                                                  auto result_cb) {
       // Descriptors cannot be written using the "write without response"
       // procedure.
-      if (!result_cb)
+      if (!result_cb) {
         return;
+      }
 
       if (!self.is_alive()) {
         result_cb(fit::error(att::ErrorCode::kUnlikelyError));
@@ -491,6 +492,12 @@ class LocalServiceManager::ServiceData final {
                              uint16_t offset,
                              const auto& value,
                              auto result_cb) {
+      // Descriptors cannot be written using the "write without response"
+      // procedure.
+      if (!result_cb) {
+        return;
+      }
+
       if (!self.is_alive()) {
         result_cb(fit::error(att::ErrorCode::kUnlikelyError));
         return;

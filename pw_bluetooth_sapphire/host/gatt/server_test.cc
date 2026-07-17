@@ -1692,6 +1692,52 @@ TEST_F(ServerTest, WriteCommandSuccess) {
   fake_chan()->Receive(kCmd);
 }
 
+// Tests that sending an ATT Write Command (no response) to a CCC descriptor
+// handle does not crash and does not modify the CCC configuration.
+TEST_F(ServerTest, WriteCommandToCccDoesNotCrash) {
+  constexpr UUID kTestServiceType(uint16_t{0x1801});
+  constexpr IdType kTestCharacteristicId = 0;
+  constexpr UUID kTestCharacteristicType(uint16_t{0x2A05});
+
+  IdType service_id = RegisterSvcWithSingleChrc(
+      kTestServiceType, kTestCharacteristicId, kTestCharacteristicType);
+  ASSERT_NE(0u, service_id);
+
+  att::Handle ccc_handle = att::kInvalidHandle;
+  for (const auto& grouping : db()->groupings()) {
+    for (const auto& attr : grouping.attributes()) {
+      if (attr.type() == types::kClientCharacteristicConfig) {
+        ccc_handle = attr.handle();
+        break;
+      }
+    }
+    if (ccc_handle != att::kInvalidHandle) {
+      break;
+    }
+  }
+  ASSERT_NE(ccc_handle, att::kInvalidHandle);
+
+  StaticByteBuffer kWriteCommand(0x52,
+                                 static_cast<uint8_t>(ccc_handle & 0xFF),
+                                 static_cast<uint8_t>((ccc_handle >> 8) & 0xFF),
+                                 0x02,
+                                 0x00);
+
+  fake_chan()->Receive(kWriteCommand);
+  RunUntilIdle();
+
+  // Verify that the CCC configuration for the peer remains unmodified (0x0000).
+  StaticByteBuffer kReadRequest(0x0A,
+                                static_cast<uint8_t>(ccc_handle & 0xFF),
+                                static_cast<uint8_t>((ccc_handle >> 8) & 0xFF));
+
+  StaticByteBuffer kExpectedReadResponse(0x0B, 0x00, 0x00);
+
+  EXPECT_PACKET_OUT(kExpectedReadResponse);
+  fake_chan()->Receive(kReadRequest);
+  RunUntilIdle();
+}
+
 TEST_F(ServerTest, ReadRequestInvalidPDU) {
   // Just opcode
   // clang-format off

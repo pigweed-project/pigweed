@@ -1324,5 +1324,31 @@ TEST_F(LocalClientCharacteristicConfigurationTest, DisconnectCleanup) {
   EXPECT_EQ(kTestPeerId, last_peer_id);
 }
 
+TEST_F(LocalClientCharacteristicConfigurationTest, WriteCccWithoutResponse) {
+  auto kUpdateReqs = AllowedNoSecurity();
+  constexpr uint8_t kProps = Property::kNotify;
+  BuildService(kProps, kUpdateReqs);
+
+  auto* attr = mgr.database()->FindAttribute(kCCCHandle);
+  ASSERT_TRUE(attr);
+  EXPECT_EQ(types::kClientCharacteristicConfig, attr->type());
+
+  // Write to CCC with a null callback (simulating Write Command).
+  uint16_t value = pw::bytes::ConvertOrderTo(cpp20::endian::little, kEnableNot);
+
+  // This should not crash!
+  EXPECT_TRUE(attr->WriteAsync(
+      kTestPeerId, 0u, BufferView(&value, sizeof(value)), nullptr));
+
+  uint16_t ccc_value;
+  fit::result<att::ErrorCode> status = fit::ok();
+  EXPECT_TRUE(ReadCcc(attr, kTestPeerId, &status, &ccc_value));
+  EXPECT_EQ(fit::ok(), status);
+
+  // Since we added the check to return early if !result_cb, the value should
+  // remain unchanged.
+  EXPECT_EQ(0x0000, ccc_value);
+  EXPECT_EQ(0, ccc_callback_count);
+}
 }  // namespace
 }  // namespace bt::gatt
