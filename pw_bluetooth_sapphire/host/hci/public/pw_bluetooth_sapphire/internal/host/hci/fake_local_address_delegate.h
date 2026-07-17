@@ -49,6 +49,9 @@ class FakeLocalAddressDelegate : public LocalAddressDelegate {
   // If set to true EnsureLocalAddress runs its callback asynchronously.
   void set_async(bool value) { async_ = value; }
 
+  void set_stalled(bool value) { stalled_ = value; }
+  bool stalled() const { return stalled_; }
+
   void set_identity_address(const DeviceAddress& value) {
     identity_address_ = value;
   }
@@ -58,7 +61,7 @@ class FakeLocalAddressDelegate : public LocalAddressDelegate {
   fit::closure address_changed_callback_;
 
   bool async_ = false;
-
+  bool stalled_ = false;
   bool privacy_enabled_ = false;
 
   // The random device address assigned to the controller if privacy is enabled.

@@ -405,7 +405,7 @@ void LowEnergyConnector::OnConnectionCompleteEvent(const EventPacket& event) {
            "connection complete event ignored: invalid peer address type "
            "(type: 0x%02x)",
            static_cast<uint8_t>(params.peer_address_type().Read()));
-    if (pending_request_) {
+    if (pending_request_ && pending_request_->initiating) {
       OnCreateConnectionComplete(ToResult(HostError::kPacketMalformed),
                                  nullptr);
     }
@@ -416,8 +416,12 @@ void LowEnergyConnector::OnConnectionCompleteEvent(const EventPacket& event) {
   DeviceAddress peer_address = DeviceAddress(*address_type, address_bytes);
 
   // First check if this event is related to the currently pending request.
+  // Only treat it as a match if we have actually sent the create-connection
+  // command to the controller (initiating == true); otherwise local_address is
+  // still default-constructed and the controller could not legitimately be
+  // responding to a request we never sent.
   const bool matches_pending_request =
-      pending_request_ &&
+      pending_request_ && pending_request_->initiating &&
       (pending_request_->peer_address.value() == peer_address.value());
 
   if (Result<> result = event.ToResult(); result.is_error()) {

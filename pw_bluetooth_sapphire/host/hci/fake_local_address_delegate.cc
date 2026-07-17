@@ -39,6 +39,10 @@ void FakeLocalAddressDelegate::EnsureLocalAddress(
     std::optional<DeviceAddress::Type> address_type, AddressCallback callback) {
   PW_DCHECK(callback);
 
+  if (stalled_) {
+    return;
+  }
+
   if (!privacy_enabled_ && address_type.has_value() &&
       address_type.value() == DeviceAddress::Type::kLERandom) {
     bt_log(WARN,

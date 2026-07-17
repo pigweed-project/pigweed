@@ -821,5 +821,53 @@ TEST_P(LowEnergyConnectorTest, ExtendedCreateConnectionUsesSameParameters) {
   ASSERT_EQ(le_2m.max_ce_length, le_coded.max_ce_length);
 }
 
+// Tests that an incoming connection complete event received while an outbound
+// connection request is still in the address-resolution phase does not
+// prematurely complete or match the outbound request.
+TEST_P(LowEnergyConnectorTest,
+       ConnectionCompleteDuringEnsureLocalAddressWindow) {
+  // Stall local address resolution to keep the request in the
+  // address-resolution phase.
+  fake_address_delegate()->set_stalled(true);
+
+  bool status_callback_called = false;
+  bool ok = connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      [&status_callback_called](Result<>,
+                                std::unique_ptr<LowEnergyConnection>) {
+        status_callback_called = true;
+      },
+      kPwConnectTimeout);
+  ASSERT_TRUE(ok);
+  ASSERT_TRUE(fake_address_delegate()->stalled());
+
+  RunUntilIdle();
+
+  // Verify that the connector is still in the address-resolution phase.
+  ASSERT_TRUE(connector()->request_pending());
+  ASSERT_FALSE(status_callback_called);
+  ASSERT_TRUE(connector()->AllowsRandomAddressChange());
+
+  EventPacket event =
+      CreateConnectionCompleteSubevent(/*handle=*/0x0001, kTestAddress);
+  test_device()->SendCommandChannelPacket(event.data());
+
+  RunUntilIdle();
+
+  // An incoming connection event should not match the pending outbound request
+  // while it is still in the address-resolution phase.
+  EXPECT_TRUE(connector()->request_pending());
+  EXPECT_FALSE(status_callback_called);
+  ASSERT_EQ(1u, in_connections().size());
+  EXPECT_EQ(0x0001u, in_connections()[0]->handle());
+
+  connector()->Cancel();
+  EXPECT_TRUE(status_callback_called);
+}
+
 }  // namespace
 }  // namespace bt::hci
