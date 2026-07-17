@@ -4076,6 +4076,80 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_FALSE(IsNotConnected(peer_b));
 }
 
+// Tests that re-entering Connect() from a connection failure callback does not
+// cause undefined behavior or iterator invalidation when erasing from
+// connection_requests_.
+TEST_F(BrEdrConnectionManagerTest,
+       ReentrantConnectFromFailureCallbackInsertsAcrossHeldIterator) {
+  auto* peer_a = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+
+  // Fallback candidates the product tries when peer_a fails. Several inserts
+  // to push the (initially 1-entry) connection_requests_ map past
+  // max_load_factor → rehash → standards-level invalidation of req_iter.
+  constexpr int kNumFallback = 8;
+  std::vector<Peer*> fallback;
+  std::vector<DeviceAddress> fallback_addr;
+  for (int i = 0; i < kNumFallback; ++i) {
+    fallback_addr.push_back(
+        DeviceAddress(DeviceAddress::Type::kBREDR,
+                      {static_cast<uint8_t>(0x10 + i), 0, 0, 0, 0, 0}));
+    fallback.push_back(
+        peer_cache()->NewPeer(fallback_addr.back(), /*connectable=*/true));
+  }
+
+  // Attacker (RF-proximate peer / H4 UART injector) makes the controller emit
+  // HCI_Connection_Complete{status=CONNECTION_FAILED_TO_BE_ESTABLISHED}.
+  // Non-PAGE_TIMEOUT so ShouldRetry() is false.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kCreateConnection,
+                        &kCreateConnectionRsp,
+                        &kConnectionCompleteError);
+
+  // The first reentrant Connect(fallback[0]) inside cb_a triggers
+  // TryCreateNextConnection (pending_request_ was just reset). On
+  // libc++ the most-recently-inserted node iterates first, so fallback[0] is
+  // chosen. We ack with status SUCCESS but never send Connection_Complete, so
+  // pending_request_ stays set and the remaining fallback[1..N] inserts do not
+  // emit further HCI commands.
+  const DynamicByteBuffer create_b0 =
+      testing::CreateConnectionPacket(fallback_addr[0]);
+  EXPECT_CMD_PACKET_OUT(test_device(), create_b0, &kCreateConnectionRsp);
+
+  int cb_a_runs = 0;
+  int reentrant_ok = 0;
+  std::vector<hci::Result<>> fallback_status(fallback.size(), fit::ok());
+
+  auto cb_a = [&](auto cb_status, auto cb_conn_ref) {
+    ++cb_a_runs;
+    EXPECT_TRUE(cb_status.is_error());
+    EXPECT_FALSE(cb_conn_ref);
+    for (size_t i = 0; i < fallback.size(); ++i) {
+      bool ok = connmgr()->Connect(
+          fallback[i]->identifier(),
+          [&fallback_status, i](auto s, auto) { fallback_status[i] = s; });
+      if (ok) {
+        ++reentrant_ok;
+      }
+    }
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer_a->identifier(), cb_a));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, cb_a_runs);
+  EXPECT_EQ(kNumFallback, reentrant_ok);
+  EXPECT_TRUE(IsNotConnected(peer_a));
+  for (auto* p : fallback) {
+    EXPECT_TRUE(IsInitializing(p));
+  }
+
+  // Destructor cancels the still-pending Create_Connection for fallback[0].
+  const DynamicByteBuffer cancel_b0 =
+      testing::CreateConnectionCancelPacket(fallback_addr[0]);
+  EXPECT_CMD_PACKET_OUT(test_device(), cancel_b0, &kCreateConnectionCancelRsp);
+  (void)fallback_status;
+}
+
 TEST_F(BrEdrConnectionManagerTest, DisconnectPendingConnections) {
   auto* peer_a = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
   auto* peer_b = peer_cache()->NewPeer(kTestDevAddr2, /*connectable=*/true);

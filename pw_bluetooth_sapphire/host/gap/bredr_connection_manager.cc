@@ -1303,6 +1303,7 @@ void BrEdrConnectionManager::CompleteRequest(
       TryCreateNextConnection();
       return;
     }
+
     if (completes_outgoing_request && connection_requests_.size() == 1 &&
         request.ShouldRetry(status.error_value())) {
       bt_log(INFO,
@@ -1322,19 +1323,22 @@ void BrEdrConnectionManager::CompleteRequest(
       TryCreateNextConnection();
       return;
     }
+
     if (completes_outgoing_request) {
       inspect_properties_.outgoing_.failed_connections_.Add(1);
     } else if (has_incoming_request) {
       inspect_properties_.incoming_.failed_connections_.Add(1);
     }
-    request.NotifyCallbacks(status, [] { return nullptr; });
-    connection_requests_.erase(req_iter);
+
+    auto node = connection_requests_.extract(req_iter);
+    node.mapped().NotifyCallbacks(status, [] { return nullptr; });
   } else {
     if (completes_outgoing_request) {
       inspect_properties_.outgoing_.successful_connections_.Add(1);
     } else if (has_incoming_request) {
       inspect_properties_.incoming_.successful_connections_.Add(1);
     }
+
     // Callbacks will be notified when interrogation completes
     InitializeConnection(address, handle, role);
   }
