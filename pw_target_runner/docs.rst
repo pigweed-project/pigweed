@@ -72,29 +72,76 @@ STM32F429I Discovery board with a specified serial number.
      args: "0667FF494849887767196023"
    }
 
+.. note::
+   Additional, per-client-request arguments for the runner application may be
+   specified using client options, see :ref:`pw_target_runner-sending_requests`
+   below.
 
 Running the server
 ^^^^^^^^^^^^^^^^^^
 To start the standalone server, run the ``pw_target_runner_server`` program and
 point it to your config file.
 
-.. code-block:: text
+.. code-block:: console
 
    $ pw_target_runner_server -config server_config.txt -port 8080
 
+.. _pw_target_runner-sending_requests:
 
 Sending requests
 ^^^^^^^^^^^^^^^^
 To request the server to run an executable, run the ``pw_target_runner_client``,
 specifying the path to the executable through a ``-binary`` option.
 
-.. code-block:: text
+.. code-block:: console
 
    $ pw_target_runner_client -host localhost -port 8080 -binary /path/to/my/test.elf
 
 This command blocks until the executable has finished running. Multiple
 requests can be scheduled in parallel; the server will distribute them among its
 available workers.
+
+Per request arguments
+.....................
+Per request arguments can be passed from the client to the runner using the
+``-runner_arg`` option.
+
+.. code-block:: console
+
+   $ pw_target_runner_client -host localhost -port 8080 \
+   > -binary /path/to/my/test.elf -runner_arg "--norpc"
+
+Arguments specified via ``-runner_arg`` will be passed as part of the runner
+invocation on the server. So with the following runner config:
+
+.. code-block:: text
+
+   runner {
+     command: "stm32f429i_disc1_unit_test_runner"
+     args: "--openocd-config"
+     args: "targets/stm32f429i_disc1/py/stm32f429i_disc1_utils/openocd_stm32f4xx.cfg"
+     args: "--serial"
+     args: "066DFF575051717867013127"
+   }
+
+The ``-runner_arg "--norpc"`` option would generate the following runner call:
+
+.. code-block:: console
+
+   $ stm32f429i_disc1_unit_test_runner --openocd-config \
+   > targets/stm32f429i_disc1/py/stm32f429i_disc1_utils/openocd_stm32f4xx.cfg \
+   > --serial 066DFF575051717867013127 --norpc
+
+This argument would only be used for the current client request, it does not
+persist across requests.
+
+Multiple arguments should use the ``-runner_arg`` for each additional argument.
+
+.. code-block:: console
+
+   $ pw_target_runner_client -host localhost -port 8080 \
+   > -binary /path/to/my/test.elf -runner_arg "--openocd-config" \
+   > -runner_arg "my_config.cfg"
 
 Library APIs
 ------------

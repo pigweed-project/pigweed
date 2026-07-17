@@ -54,14 +54,14 @@ func NewClient(host string, port int) (*Client, error) {
 }
 
 // RunBinary sends a RunBinary RPC to the target runner service.
-func (c *Client) RunBinary(path string) error {
+func (c *Client) RunBinary(path string, runner_args []string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
 	client := pb.NewTargetRunnerClient(c.conn)
-	req := &pb.RunBinaryRequest{Binary: &pb.RunBinaryRequest_TestBinary{TestBinary: data}}
+	req := &pb.RunBinaryRequest{Binary: &pb.RunBinaryRequest_TestBinary{TestBinary: data}, RunnerArguments: runner_args}
 
 	res, err := client.RunBinary(context.Background(), req)
 	if err != nil {
@@ -87,6 +87,11 @@ func main() {
 	hostPtr := flag.String("host", "localhost", "Server host")
 	portPtr := flag.Int("port", 8080, "Server port")
 	pathPtr := flag.String("binary", "", "Path to executable file")
+	var runnerArgs []string
+	flag.Func("runner_arg", "Argument passed to the runner", func(flagValue string) error {
+		runnerArgs = append(runnerArgs, flagValue)
+		return nil
+	})
 	serverSuggestionPtr := flag.String("server_suggestion", "", "Suggested command to display if no server is available.")
 
 	flag.Parse()
@@ -100,7 +105,7 @@ func main() {
 		log.Fatalf("Failed to create gRPC client: %v", err)
 	}
 
-	if err := cli.RunBinary(*pathPtr); err != nil {
+	if err := cli.RunBinary(*pathPtr, runnerArgs); err != nil {
 		log.Println("Failed to run executable on target:")
 		log.Println("")
 

@@ -78,7 +78,7 @@ func (s *Server) RegisterWorker(worker DeviceRunner) {
 // RunBinary runs an executable through a worker in the server, returning
 // the worker's response. The function blocks until the executable has been
 // processed.
-func (s *Server) RunBinary(path string) (*RunResponse, error) {
+func (s *Server) RunBinary(path string, runner_args []string) (*RunResponse, error) {
 	if !s.active {
 		return nil, errServerNotRunning
 	}
@@ -88,6 +88,7 @@ func (s *Server) RunBinary(path string) (*RunResponse, error) {
 
 	s.workerPool.QueueExecutable(&RunRequest{
 		Path:            path,
+		Args:            runner_args,
 		ResponseChannel: resChan,
 	})
 
@@ -164,7 +165,7 @@ func (s *pwTargetRunnerService) RunBinary(
 		return nil, status.Error(codes.InvalidArgument, "No test path or binary provided")
 	}
 
-	runRes, err := s.server.RunBinary(path)
+	runRes, err := s.server.RunBinary(path, desc.RunnerArguments)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Internal server error: %v", err)
 	}

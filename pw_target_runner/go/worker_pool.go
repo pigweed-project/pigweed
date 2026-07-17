@@ -31,6 +31,8 @@ type RunRequest struct {
 	// Filesystem path to the executable.
 	Path string
 
+	Args []string
+
 	// Channel to which the response is sent back.
 	ResponseChannel chan<- *RunResponse
 

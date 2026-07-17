@@ -41,6 +41,8 @@ message RunBinaryRequest {
     // The executable test file to run.
     bytes test_binary = 2;
   }
+  // Arguments to provide to the runner
+  repeated string runner_arguments = 3;
 }
 
 message RunBinaryResponse {

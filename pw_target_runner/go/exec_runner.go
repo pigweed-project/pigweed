@@ -59,6 +59,7 @@ func (r *ExecDeviceRunner) HandleRunRequest(req *RunRequest) *RunResponse {
 
 	// Copy runner command args, appending the binary path to the end.
 	args := append([]string(nil), r.command[1:]...)
+	args = append(args, req.Args...)
 	args = append(args, req.Path)
 
 	cmd := exec.Command(r.command[0], args...)

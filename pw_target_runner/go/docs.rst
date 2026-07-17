@@ -46,7 +46,7 @@ print out the path of the tests they are scheduled to run.
    }
 
    func (w *MyWorker) HandleRunRequest(req *server.UnitTestRunRequest) *server.UnitTestRunResponse {
-   	log.Printf("Worker %d running unit test %s\n", w.id, req.Path)
+   	log.Printf("Worker %d running unit test %s with args: %s\n", w.id, req.Path, strings.Join(req.Args, " "))
    	return &server.UnitTestRunResponse{
    		Output: []byte("Success!"),
    		Status: pb.TestStatus_SUCCESS,
