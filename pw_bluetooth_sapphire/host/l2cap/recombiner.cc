@@ -61,6 +61,21 @@ Recombiner::Result Recombiner::ConsumeFragment(hci::ACLDataPacketPtr fragment) {
     return result;
   }
 
+  // Reject zero-progress continuations and cap the per-PDU fragment count so a
+  // malicious controller / remote peer cannot grow PDU::fragments_ without
+  // bound (or to ~65535 nodes via 1-byte fragments) while pinning wake_lease.
+  if (fragment->view().payload_size() == 0u ||
+      recombination_->pdu.fragment_count() >= PDU::kMaxFragmentsPerPdu) {
+    bt_log(WARN,
+           "l2cap",
+           "dropping recombination: zero-byte or excess fragment "
+           "(count: %zu, handle: %.4x)",
+           recombination_->pdu.fragment_count(),
+           handle_);
+    ClearRecombination();
+    return {.pdu = {}, .frames_dropped = true};
+  }
+
   recombination_->accumulated_length += fragment->view().payload_size();
   recombination_->pdu.AppendFragment(std::move(fragment));
   BeginTrace();

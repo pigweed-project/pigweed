@@ -380,5 +380,47 @@ TEST_F(RecombinerTest, RecombinationSucceedsForFrameWithMaxSize) {
   EXPECT_TRUE(completed);
 }
 
+// Tests that receiving a zero-byte continuing fragment causes the ongoing
+// recombination to be dropped and releases the wake lease.
+TEST_F(RecombinerTest, ZeroByteContinuingFragmentDropsRecombination) {
+  auto result = recombiner().ConsumeFragment(FirstFragment("", {10}));
+  EXPECT_FALSE(result.frames_dropped);
+  EXPECT_FALSE(result.pdu);
+  EXPECT_EQ(lease_provider().lease_count(), 1u);
+
+  result = recombiner().ConsumeFragment(ContinuingFragment(""));
+  EXPECT_TRUE(result.frames_dropped);
+  EXPECT_FALSE(result.pdu);
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
+}
+
+// Tests that exceeding the maximum permitted fragment count (1024) during
+// recombination causes the PDU to be dropped and releases the wake lease.
+TEST_F(RecombinerTest, ExcessFragmentsDropsRecombination) {
+  // Set expected size large enough to hold all fragments without triggering a
+  // size limit.
+  auto result = recombiner().ConsumeFragment(
+      FirstFragment("", {PDU::kMaxFragmentsPerPdu + 1}));
+  EXPECT_FALSE(result.frames_dropped);
+  EXPECT_FALSE(result.pdu);
+  EXPECT_EQ(lease_provider().lease_count(), 1u);
+
+  // Send 1023 continuing fragments of size 1. Total fragment count will become
+  // 1024: 1 (first) + 1023 (continuing) = 1024 fragments.
+  for (size_t i = 0; i < PDU::kMaxFragmentsPerPdu - 1; ++i) {
+    result = recombiner().ConsumeFragment(ContinuingFragment("a"));
+    EXPECT_FALSE(result.frames_dropped);
+    EXPECT_FALSE(result.pdu);
+    EXPECT_EQ(lease_provider().lease_count(), 1u);
+  }
+
+  // The 1024th continuing fragment should cause the recombination to be
+  // dropped.
+  result = recombiner().ConsumeFragment(ContinuingFragment("a"));
+  EXPECT_TRUE(result.frames_dropped);
+  EXPECT_FALSE(result.pdu);
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
+}
+
 }  // namespace
 }  // namespace bt::l2cap

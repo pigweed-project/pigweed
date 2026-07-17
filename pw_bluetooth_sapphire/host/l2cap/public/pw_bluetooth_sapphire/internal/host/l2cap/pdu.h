@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 #include <pw_bytes/endian.h>
 
+#include <cstddef>
 #include <list>
 
 #include "pw_bluetooth_sapphire/internal/host/common/macros.h"
@@ -38,6 +39,10 @@ namespace bt::l2cap {
 class PDU final {
  public:
   using FragmentList = std::list<hci::ACLDataPacketPtr>;
+
+  // Upper bound on the total number of fragments allowed when assembling a
+  // PDU, preventing unbounded heap consumption during recombination.
+  static constexpr size_t kMaxFragmentsPerPdu = 1024;
 
   PDU() = default;
   ~PDU() = default;
