@@ -2476,7 +2476,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_F(BrEdrDynamicChannelTest,
        ERTChannelDoesNotSendConfigReqBeforeConnRspReceived) {
   auto conn_id =
-      EXPECT_OUTBOUND_REQ(*sig(), kConnectionRequest, kConnReq.view(), {});
+      EXPECT_OUTBOUND_REQ(*sig(), kConnectionRequest, kConnReq.view());
 
   registry()->OpenOutbound(kPsm, kERTMChannelParams, {});
 
@@ -3065,7 +3065,7 @@ TEST_F(
                       kConnReq.view(),
                       {SignalingChannel::Status::kSuccess, kOkConnRsp.view()});
   EXPECT_OUTBOUND_REQ(
-      *sig(), kConfigurationRequest, kOutboundConfigReqWithErtm.view(), {});
+      *sig(), kConfigurationRequest, kOutboundConfigReqWithErtm.view());
 
   registry()->OpenOutbound(kPsm, kERTMChannelParams, {});
 
@@ -4167,6 +4167,53 @@ TEST_F(
       kConfigurationRequest, inbound_config_req, outbound_config_rsp);
   RunUntilIdle();
   EXPECT_EQ(0u, open_cb_count);
+}
+
+// Tests that when closing a BR/EDR dynamic channel, if the peer responds to
+// L2CAP_DISCONNECTION_REQ with a malformed/truncated L2CAP_DISCONNECTION_RSP
+// packet, the command handler invokes its failure callback rather than stalling
+// or ignoring the packet. This ensures that the dynamic channel registry's
+// CloseChannel operation completes reliably without timing out or leaking
+// channel resources.
+TEST_F(BrEdrDynamicChannelTest, ShortDisconRsp_CloseChannelCompletes) {
+  // 1) Normal open of a basic-mode dynamic channel.
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kConnectionRequest,
+                      kConnReq.view(),
+                      {SignalingChannel::Status::kSuccess, kOkConnRsp.view()});
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      kOutboundConfigReq.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  int open_cb_count = 0;
+  registry()->OpenOutbound(kPsm, ChannelParameters{}, [&](auto chan) {
+    ASSERT_TRUE(chan);
+    EXPECT_TRUE(chan->IsOpen());
+    EXPECT_EQ(kLocalCId, chan->local_cid());
+    open_cb_count++;
+  });
+  RETURN_IF_FATAL(RunUntilIdle());
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConfigurationRequest, kInboundConfigReq, kOutboundOkConfigRsp));
+  ASSERT_EQ(1, open_cb_count);
+
+  // 2) Locally close. Peer answers the L2CAP_DISCONNECTION_REQ with a 2-byte
+  //    (short) L2CAP_DISCONNECTION_RSP -- this is the attacker frame.
+  StaticByteBuffer short_discon_rsp(LowerBits(kRemoteCId),
+                                    UpperBits(kRemoteCId));
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kDisconnectionRequest,
+      kDisconReq.view(),
+      {SignalingChannel::Status::kSuccess, short_discon_rsp.view()});
+
+  bool close_cb_called = false;
+  registry()->CloseChannel(kLocalCId, [&] { close_cb_called = true; });
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_TRUE(close_cb_called);
 }
 
 }  // namespace

@@ -45,9 +45,10 @@ namespace bt::l2cap::internal {
 // ResponseHandlerAction::kCompleteOutboundTransaction. Returning
 // kCompleteOutboundTransaction will destroy the *ResponseCallback object.
 //
-// If the underlying SignalingChannel times out waiting for a response, the
-// *ResponseCallback will not be called. Instead, the |request_fail_callback|
-// that CommandHandler was constructed with will be called.
+// If the underlying SignalingChannel times out waiting for a response or a
+// malformed/undecodable response or reject is received, the *ResponseCallback
+// will not be called. Instead, the |request_fail_callback| that CommandHandler
+// was constructed with will be called.
 //
 // Example:
 //   DisconnectionResponseCallback rsp_cb =
@@ -191,8 +192,9 @@ class CommandHandler {
 
   // |sig| must be valid for the lifetime of this object.
   // |command_failed_callback| is called if an outbound request timed out
-  // with RTX or ERTX timers after retransmission (if configured). The call
-  // may come after the lifetime of this object.
+  // with RTX or ERTX timers after retransmission (if configured) or if a
+  // malformed/undecodable response or reject is received. The call may come
+  // after the lifetime of this object.
   explicit CommandHandler(SignalingChannelInterface* sig,
                           fit::closure request_fail_callback = nullptr);
   virtual ~CommandHandler() = default;
@@ -230,8 +232,12 @@ class CommandHandler {
         if (!rsp.ParseReject(rsp_payload)) {
           bt_log(DEBUG,
                  "l2cap",
-                 "cmd: ignoring malformed Command Reject, size %zu",
+                 "cmd: rejecting malformed Command Reject, size %zu; failing "
+                 "request",
                  rsp_payload.size());
+          if (fail_cb) {
+            fail_cb();
+          }
           return ResponseHandlerAction::kCompleteOutboundTransaction;
         }
         return InvokeResponseCallback(&rsp_cb, std::move(rsp));
@@ -240,18 +246,26 @@ class CommandHandler {
       if (rsp_payload.size() < sizeof(typename ResponseT::PayloadT)) {
         bt_log(DEBUG,
                "l2cap",
-               "cmd: ignoring malformed \"%s\", size %zu (expected %zu)",
+               "cmd: rejecting malformed \"%s\", size %zu (expected %zu); "
+               "failing request",
                ResponseT::kName,
                rsp_payload.size(),
                sizeof(typename ResponseT::PayloadT));
+        if (fail_cb) {
+          fail_cb();
+        }
         return ResponseHandlerAction::kCompleteOutboundTransaction;
       }
 
       if (!rsp.Decode(rsp_payload)) {
         bt_log(DEBUG,
                "l2cap",
-               "cmd: ignoring malformed \"%s\", could not decode",
+               "cmd: rejecting malformed \"%s\", could not decode; failing "
+               "request",
                ResponseT::kName);
+        if (fail_cb) {
+          fail_cb();
+        }
         return ResponseHandlerAction::kCompleteOutboundTransaction;
       }
 

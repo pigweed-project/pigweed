@@ -361,6 +361,7 @@ TEST_F(CommandHandlerTest, OutboundReqRspDecodeError) {
       kDisconnectionRequest, payload, std::move(on_rsp_cb)));
   RunUntilIdle();
   EXPECT_FALSE(cb_called);
+  EXPECT_EQ(1u, failed_requests());
 }
 
 TEST_F(CommandHandlerTest, OutboundDisconReqRspTimeOut) {
@@ -459,6 +460,64 @@ TEST_F(CommandHandlerTest, ReceiveCredits) {
   fake_sig()->Receive(kLEFlowControlCredit, payload);
   RunUntilIdle();
   EXPECT_EQ(cb_count, 1);
+}
+
+// Tests that when a peer responds to a disconnection request with a
+// malformed/truncated L2CAP_DISCONNECTION_RSP packet (2 bytes instead of the
+// required 4 payload bytes per Bluetooth Core Specification v5.0, Vol 3, Part
+// A, Section 4.7), the command handler rejects the packet and invokes the
+// request's failure callback rather than leaving the transaction hanging until
+// timeout.
+TEST_F(CommandHandlerTest, ShortDisconnectionResponse_FailCallbackFires) {
+  StaticByteBuffer req(LowerBits(kRemoteCId),
+                       UpperBits(kRemoteCId),
+                       LowerBits(kLocalCId),
+                       UpperBits(kLocalCId));
+
+  // ATTACKER PACKET: 2 of the required 4 payload bytes.
+  StaticByteBuffer short_rsp(LowerBits(kRemoteCId), UpperBits(kRemoteCId));
+
+  EXPECT_OUTBOUND_REQ(*fake_sig(),
+                      kDisconnectionRequest,
+                      req.view(),
+                      {SignalingChannel::Status::kSuccess, short_rsp.view()});
+
+  bool rsp_cb_called = false;
+  EXPECT_TRUE(cmd_handler()->SendDisconnectionRequest(
+      kRemoteCId, kLocalCId, [&](const auto&) { rsp_cb_called = true; }));
+  RunUntilIdle();
+
+  EXPECT_FALSE(rsp_cb_called);
+  EXPECT_EQ(1u, failed_requests());
+}
+
+// Tests that when a peer rejects a command with a malformed
+// L2CAP_COMMAND_REJECT_RSP packet (1 byte instead of at least 2 bytes for the
+// Reason field per Bluetooth Core Specification v5.0, Vol 3, Part A, Section
+// 4.1), the command handler safely handles the decode failure and invokes the
+// request's failure callback rather than calling the response callback or
+// leaving the transaction hanging until timeout.
+TEST_F(CommandHandlerTest, MalformedReject_FailCallbackFires) {
+  StaticByteBuffer req(LowerBits(kRemoteCId),
+                       UpperBits(kRemoteCId),
+                       LowerBits(kLocalCId),
+                       UpperBits(kLocalCId));
+
+  // ATTACKER PACKET: 1-byte Reject payload.
+  StaticByteBuffer short_rej(0x00);
+
+  EXPECT_OUTBOUND_REQ(*fake_sig(),
+                      kDisconnectionRequest,
+                      req.view(),
+                      {SignalingChannel::Status::kReject, short_rej.view()});
+
+  bool rsp_cb_called = false;
+  EXPECT_TRUE(cmd_handler()->SendDisconnectionRequest(
+      kRemoteCId, kLocalCId, [&](const auto&) { rsp_cb_called = true; }));
+  RunUntilIdle();
+
+  EXPECT_FALSE(rsp_cb_called);
+  EXPECT_EQ(1u, failed_requests());
 }
 
 }  // namespace
