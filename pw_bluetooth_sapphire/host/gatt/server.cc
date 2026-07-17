@@ -98,8 +98,13 @@ class AttBasedServer final : public Server {
                   IdType chrc_id,
                   BufferView value,
                   IndicationCallback indicate_callback) override {
-    auto buffer =
-        NewBuffer(sizeof(att::Header) + sizeof(att::Handle) + value.size());
+    constexpr size_t kHeaderSize = sizeof(att::Header) + sizeof(att::Handle);
+    const size_t max_payload_size =
+        std::max<size_t>(att_->mtu(), kHeaderSize) - kHeaderSize;
+    if (value.size() > max_payload_size) {
+      value = value.view(0, max_payload_size);
+    }
+    auto buffer = NewBuffer(kHeaderSize + value.size());
     PW_CHECK(buffer);
 
     LocalServiceManager::ClientCharacteristicConfig config;

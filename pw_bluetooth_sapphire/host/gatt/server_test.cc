@@ -2902,6 +2902,33 @@ TEST_F(ServerTest, SendNotification) {
                        /*indicate_cb=*/nullptr);
 }
 
+TEST_F(ServerTest, SendNotificationTruncatesToAttMtu) {
+  SvcIdAndChrcHandle registered = RegisterSvcWithConfiguredChrc(
+      kTestSvcType, kTestChrcId, kTestChrcType, kCCCNotificationBit);
+
+  att()->set_mtu(att::kLEMinMTU);
+  constexpr size_t kHeaderSize = sizeof(att::Header) + sizeof(att::Handle);
+  constexpr size_t kMaxPayloadSize = att::kLEMinMTU - kHeaderSize;
+
+  // Value exceeds the payload limit by 5 bytes.
+  StaticByteBuffer<kMaxPayloadSize + 5> long_value;
+  long_value.mutable_view(0, kMaxPayloadSize).Fill('A');
+  long_value.mutable_view(kMaxPayloadSize, 5).Fill('B');
+
+  // Expect the notification to be truncated to kMaxPayloadSize.
+  DynamicByteBuffer expected_packet(kHeaderSize + kMaxPayloadSize);
+  expected_packet[0] = att::kNotification;
+  expected_packet[1] = LowerBits(registered.chrc_val_handle);
+  expected_packet[2] = UpperBits(registered.chrc_val_handle);
+  expected_packet.mutable_view(kHeaderSize).Fill('A');
+
+  EXPECT_PACKET_OUT(expected_packet);
+  server()->SendUpdate(registered.svc_id,
+                       kTestChrcId,
+                       long_value.view(),
+                       /*indicate_cb=*/nullptr);
+}
+
 TEST_F(ServerTest, TrySendIndicationNoCccConfig) {
   IdType svc_id =
       RegisterSvcWithSingleChrc(kTestSvcType, kTestChrcId, kTestChrcType);
