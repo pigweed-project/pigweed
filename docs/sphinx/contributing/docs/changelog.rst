@@ -29,8 +29,8 @@ Quickstart
    See :ref:`contrib-changelog-theory` for more context.
 
 #. Review the draft. It probably will not be good enough to publish.
-   Here are some common problems to look out for, as well as example
-   follow-up prompts for fixing each issue.
+   Here are some common problems to look out for, as well as suggestions
+   on how to fix each.
 
    **Too noisy**. The draft is covering too many unimportant details.
 
@@ -53,6 +53,10 @@ Quickstart
       Review the writing style in @docs/sphinx/changelog/2026/03.rst and
       update @docs/agents/changelog/resources/data.toml to emulate this
       writing style.
+
+
+   **Story should be ignored**. Just set the ``score`` for the story to
+   ``0`` in ``data.toml``.
 
    You can also add ``TODO`` comments in ``data.toml`` to address ad hoc
    issues and then prompt the agent to fix the TODOs:

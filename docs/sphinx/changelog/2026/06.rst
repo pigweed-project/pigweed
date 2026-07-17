@@ -1,0 +1,569 @@
+================================
+What's new in Pigweed: June 2026
+================================
+
+.. changelog_highlights_start
+
+Highlights:
+
+* :ref:`changelog-2026-06-token-rust-detokenizer` - The initial support
+  includes loading token databases from CSV and binary formats, configuring
+  custom prefix characters, and detokenizing text. Error formatting behavior
+  matches the C++ version of pw_tokenizer.
+
+* :ref:`changelog-2026-06-log-pw_assert` - The new Rust crate provides
+  crash-safe assert and panic macros for embedded systems where standard
+  library panics might not be suitable, or where specific logging/recovery
+  behavior is needed.
+
+* :ref:`changelog-2026-06-time-pw_time` - The initial Rust
+  crate supports time, instants, and durations.
+
+* :ref:`changelog-2026-06-data-protobuf-buffer-encoder` - The new
+  ``BufferEncoder`` C++ class provides zero-copy in-place message serialization
+  with significant speedups.
+
+* :ref:`changelog-2026-06-async-async2-generators` -
+  pw_async2 now supports C++20 coroutine generators yielding asynchronous
+  value streams via ``co_yield`` and ``Next()``.
+
+.. changelog_highlights_end
+
+---------------
+Arch interfaces
+---------------
+
+.. _changelog-2026-06-arch-rp2350-zephyr-support:
+
+Target platforms for RP2350
+===========================
+.. _hardware testing board: https://pigweed.googlesource.com/pigweed/hardware/testing/
+
+Added Zephyr, FreeRTOS, and pw_kernel support for pw_rp2350, Pigweed's
+`hardware testing board`_. CLs: `1 <https://pwrev.dev/424212>`__,
+`2 <https://pwrev.dev/427274>`__, `3 <https://pwrev.dev/421492>`__
+
+Example of building for the pw_kernel target within upstream Pigweed:
+
+.. code-block:: console
+
+   bazelisk build --platforms=@pigweed//targets/pw_rp2350/pigweed:pw_rp2350 \
+       //targets/pw_rp2350/pigweed:sleep_example_image
+
+.. _changelog-2026-06-arch-rust-boot-entry:
+
+pw_boot entry attribute in Rust
+===============================
+The new ``#[entry]`` attribute validates that the annotated function has the
+required ``fn() -> !`` signature and generates the standardized
+``pw_boot_rust_entry`` symbol expected by Pigweed bootloaders and platform
+targets like pw_rp2350. CLs: `1 <https://pwrev.dev/422192>`__
+
+.. code-block:: rs
+
+   use pw_boot::entry;
+
+   #[entry]
+   fn main() -> ! {
+       pw_log::info!("Booting firmware...");
+       loop {}
+   }
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-06-async-async2-generators:
+
+C++20 coroutine generator support in pw_async2
+==============================================
+Added ``Generator<T>`` and ``GeneratorPromise<T>`` to pw_async2 to support
+C++20 coroutine generators that yield streams of values using ``co_yield``. The
+generator object implements a ``Next()`` method returning a future that resolves
+to an ``std::optional<T>``, allowing asynchronous streams to be consumed in
+``while`` loops with ``co_await``. CLs: `1 <https://pwrev.dev/429376>`__, `2
+<https://pwrev.dev/415139>`__
+
+.. code-block:: c++
+
+   pw::async2::Generator<int> CountToFive(CoroContext cx) {
+     for (int i = 1; i <= 5; ++i) {
+       co_yield i;
+     }
+   }
+
+   pw::async2::Coro<int> SumGenerator(CoroContext cx, Generator<int>& gen) {
+     int sum = 0;
+     while (auto val = co_await gen.Next()) {
+       sum += *val;
+     }
+     co_return sum;
+   }
+
+.. _changelog-2026-06-async-interrupt-spinlock:
+
+New pw_sync_spinlock crate
+==========================
+The new pw_sync_spinlock Rust crate provides an ``InterruptSpinLock`` API for
+protecting shared data across threads and interrupt handlers. While the lock is
+held, local CPU interrupts are disabled on the calling core. The crate includes
+standard library and FreeRTOS backends, with FreeRTOS critical section
+management handled via ``taskENTER_CRITICAL`` and ``vTaskSuspendAll``. CLs: `1
+<https://pwrev.dev/424095>`__
+
+.. code-block:: rs
+
+   use pw_sync_spinlock::InterruptSpinLock;
+
+   static LOCK: InterruptSpinLock<u32> = InterruptSpinLock::new(0);
+
+   fn increment_in_isr() {
+       let mut data = LOCK.lock();
+       *data += 1;
+   }
+
+---------
+Bluetooth
+---------
+
+.. _changelog-2026-06-bluetooth-proxy-event-filtering:
+
+Configurable HCI event filtering in pw_bluetooth_proxy
+======================================================
+Added runtime HCI event and LE Meta subevent filtering APIs to ``ProxyHost`` in
+pw_bluetooth_proxy. Containers can now dynamically block or unblock specific
+controller events from reaching the host using ``SetEventBlocked()`` and
+``SetLeSubeventBlocked()``, query block statuses, and reset all filters via
+``ResetFilters()``. CLs: `1 <https://pwrev.dev/417652>`__, `2
+<https://pwrev.dev/423892>`__
+
+.. code-block:: c++
+
+   proxy_host.SetEventBlocked(emboss::EventCode::LE_META_EVENT, true);
+   proxy_host.SetLeSubeventBlocked(emboss::LeSubEventCode::SUBRATE_CHANGE, true);
+
+---------------------------------
+C++ data structures and utilities
+---------------------------------
+
+.. _changelog-2026-06-cpp-generic-deque-insert-optimization:
+
+GenericDeque speedup
+====================
+Optimized ``GenericDeque::try_insert()`` and ``try_insert_shift_right()`` in
+pw_containers by splitting non-contiguous underlying storage into at most
+two contiguous segments during fill and move operations. For trivially copyable
+types such as ``std::byte`` or integers, the compiler can now optimize
+insertions into ``memcpy()`` or block fills rather than item-by-item copies,
+resulting in up to a 30x speedup on 1000-item insertions. CLs: `1
+<https://pwrev.dev/429412>`__
+
+-------------------------------
+Data encoding and serialization
+-------------------------------
+
+.. _changelog-2026-06-data-protobuf-buffer-encoder:
+
+In-memory protobuf serialization with BufferEncoder
+===================================================
+The new ``BufferEncoder`` and ``BufferEncoderView`` C++ APIs in pw_protobuf
+enable serializing protobuf messages directly to an in-memory buffer without
+scratch buffers or copying nested submessages. It utilizes in-place length
+prefix patching and provides both checked and unchecked write methods (such as
+``EnsureSpace()`` and ``UncheckedWrite*``), achieving an 8x speedup for checked
+writes and an 18x speedup for unchecked writes compared to ``StreamEncoder``.
+CLs: `1 <https://pwrev.dev/416752>`__
+
+.. code-block:: c++
+
+   pw::protobuf::BufferEncoder encoder(response_buffer);
+   auto view = encoder.view();
+   if (view.EnsureSpace(kMaxSizeBytes)) {
+     view.UncheckedWriteUint32(kMagicNumberField, 0x1a1a2b2b);
+     view.UncheckedWriteString(kFavoriteFoodField, "cookies");
+   }
+
+.. _changelog-2026-06-data-protobuf-find-occurrence:
+
+Occurrence support in pw_protobuf Find APIs
+===========================================
+Updated pw_protobuf Find APIs (such as ``FindUint32`` and
+``FindSubmessage``) and pwpb code generation to accept an ``Occurrence``
+parameter (``Occurrence::kFirst`` or ``Occurrence::kLast``). When locating
+scalar non-repeated fields, generated decoders now search for
+``Occurrence::kLast`` by default, complying with Protobuf specification
+semantics where the last occurrence wins when fields are shadowed. CLs: `1
+<https://pwrev.dev/410873>`__
+
+.. code-block:: c++
+
+   // Spec-compliant lookup returning the last occurrence of a field
+   pw::Result<uint32_t> age = pw::protobuf::FindUint32(
+       buffer, Field::kAge, pw::protobuf::Occurrence::kLast);
+
+.. _changelog-2026-06-data-rust-decode:
+
+Base64 decoding in pw_base64 crate
+==================================
+Added Base64 decoding support to the pw_base64 Rust crate. The new
+implementation includes functions for decoding Base64 slices in-place or to
+output buffers, validating Base64 strings, and calculating decoded buffer sizes.
+CLs: `1 <https://pwrev.dev/406282>`__
+
+.. code-block:: rs
+
+   use pw_base64::{decode, max_decoded_size};
+
+   let mut output = [0u8; max_decoded_size(4)];
+   let len = decode(b"Zm9v", &mut output).unwrap();
+
+.. _changelog-2026-06-data-python-io:
+
+Read and write binary integer data from Python I/O streams
+==========================================================
+Added the ``pw_bytes.io`` Python module, introducing ``BinaryReader`` and
+``BinaryWriter`` classes. These utilities simplify reading and writing of binary
+integer data (such as ``u8``, ``u16``, ``u32``, and ``u64`` in little or big
+endian) from and to Python I/O streams. CLs: `1 <https://pwrev.dev/413092>`__
+
+.. code-block:: python
+
+   import io
+   from pw_bytes.io import BinaryReader, BinaryWriter
+
+   stream = io.BytesIO()
+   writer = BinaryWriter(stream, "little")
+   writer.write_u32(0x12345678)
+
+   stream.seek(0)
+   reader = BinaryReader(stream, "little")
+   val = reader.read_u32()
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-06-dev-ide-ui-caching:
+
+C++ compile commands improvements in pw_ide
+===========================================
+Improved the Pigweed VS Code extension compile commands UI by replacing the
+target selector dropdown with an interactive table showing targets, generation
+times, and quick actions. In addition, atomic lockfile management (``pw.lock``)
+was added to the compile commands merger to prevent concurrent compilation
+database regenerations from conflicting. The compilation database Bazel aspect
+in pw_ide (``pw_cc_compile_commands_aspect.bzl``) was also updated to
+collect non-source generated headers (e.g. ``*.pb.h``, ``*.nanopb.h``, etc.) and
+module maps (``.cppmap``) for clangd. Also added a
+``display_name`` attribute to the ``pw_compile_commands_generator`` Bazel rule
+to make it easier to identify target platforms in the VS Code UI. CLs: `1
+<https://pwrev.dev/403398>`__, `2 <https://pwrev.dev/410732>`__, `3
+<https://pwrev.dev/404076>`__
+
+.. code-block:: bazel
+
+   pw_compile_commands_generator(
+       name = "rp2040_compile_commands",
+       display_name = "RP2040",
+       platform = "//targets/rp2040",
+       target_patterns = ["//..."],
+   )
+
+.. _changelog-2026-06-dev-ide-rust-project-generation:
+
+Rust IDE project generation support in pw_ide
+=============================================
+Added Rust IDE integration support to pw_ide, enabling rust-analyzer code
+intelligence (such as autocomplete and navigation) for multi-platform Rust
+targets. pw_ide now automatically generates the required
+``rust-project.json`` and configuration files for multi-platform Bazel projects.
+CLs: `1 <https://pwrev.dev/424613>`__
+
+----
+HALs
+----
+
+.. _changelog-2026-06-hal-i3c-driver:
+
+New I3C driver layer in pw_i2c_mcuxpresso
+=========================================
+The new ``I3cDriver`` abstract interface, along with the
+concrete implementations for interrupt-driven (``I3cInterruptDriver``) and
+DMA-driven (``I3cDmaDriver``) transfers, allows I3C initiators to be
+configured with different transfer mechanisms or custom driver implementations.
+CLs: `1 <https://pwrev.dev/406192>`__
+
+--------------------------------------
+Logging, debugging, and crash handling
+--------------------------------------
+
+.. _changelog-2026-06-log-pw_assert:
+
+New pw_assert crate
+===================
+The new pw_assert crate provides crash-safe assert and panic macros that
+route to a central handler. This is designed for
+embedded systems where standard library panics might not be suitable, or where
+specific logging/recovery behavior is needed. CLs: `1
+<https://pwrev.dev/420732>`__
+
+.. code-block:: rs
+
+   use pw_assert::assert;
+
+   assert!(stack_start as usize % 8 == 0, "Stack start is not aligned");
+
+.. _changelog-2026-06-log-plugin-data-fmt:
+
+Tokenized event labels and data format plugins in pw_trace
+==========================================================
+Added support for custom plugin data format strings in the pw_trace Python
+decoder. Clients can register custom data format handlers using
+``register_plugin_data_format_handler()`` to specialize event decoding. In
+addition, support for the built-in ``@pw_trace_tokenized_token_label`` format
+was added to both the Python and C++ decoders (``TokenizedDecoder``) to resolve
+event labels from 4-byte tokenized data fields. CLs: `1
+<https://pwrev.dev/403512>`__, `2 <https://pwrev.dev/420232>`__
+
+.. code-block:: python
+
+   from pw_trace.trace import register_plugin_data_format_handler
+
+   def custom_handler(event, line):
+       line["args"] = {"custom": event.data.hex()}
+
+   register_plugin_data_format_handler("@my_custom_fmt", custom_handler)
+
+.. _changelog-2026-06-log-format-strings:
+
+Format string support in pw_format crate
+========================================
+Added support for parsing and formatting format strings in the Rust
+pw_format crate. The new implementation supports both ``printf``-style and
+``core::fmt-style`` format string syntax. CLs: `1 <https://pwrev.dev/406372>`__
+
+.. code-block:: rs
+
+   use pw_format::{FormatString, FormatStyle, Arg};
+
+   let format_str = FormatString::parse_printf("Hello %s!").unwrap();
+   let args = [Arg::Str("world".to_string())];
+   let formatted = format_str.format(&args, FormatStyle::Printf);
+   assert_eq!(formatted, "Hello world!");
+
+---
+RPC
+---
+
+.. _changelog-2026-06-rpc-send-packet-bypass:
+
+Unencoded packet sending in pw_rpc and pw_grpc
+==============================================
+Added ``SupportsSendPacket()`` and ``SendPacket()`` C++ APIs to
+``pw::rpc::ChannelOutput`` to allow channel outputs to accept unencoded RPC
+packets directly. This enables transports like gRPC (pw_grpc) to bypass
+unnecessary buffer encoding and decoding overhead when transmitting packets.
+CLs: `1 <https://pwrev.dev/410454>`__
+
+.. code-block:: c++
+
+   class MyChannelOutput : public pw::rpc::ChannelOutput {
+     bool SupportsSendPacket() const override { return true; }
+     pw::Status SendPacket(const Packet& packet) override;
+   };
+
+-----------------
+Timing and clocks
+-----------------
+
+.. _changelog-2026-06-time-pw_time:
+
+New pw_time crate
+=================
+The new pw_time Rust crate supports time, instants, and durations across
+multiple clock domains. CLs: `1 <https://pwrev.dev/421555>`__, `2
+<https://pwrev.dev/424694>`__, `3 <https://pwrev.dev/426834>`__
+
+Example:
+
+.. code-block:: rs
+
+   #![no_std]
+   #![no_main]
+
+   use boot as _;
+   use pw_boot::entry;
+   use pw_sync_spinlock::InterruptSpinLock;
+   use pw_time::{Clock, Duration, SystemClock};
+
+   // Put loop cycle count behind a spinlock to demonstrate them working.
+   static CYCLES: InterruptSpinLock<usize> = InterruptSpinLock::new(0);
+
+   #[entry]
+   fn entry() -> ! {
+       pw_log::info!("Rust system clock example");
+
+       loop {
+           let start = SystemClock::now();
+           {
+               let mut cycles = CYCLES.lock();
+               *cycles += 1;
+               pw_log::info!("Loop: {}", *cycles as usize);
+           }
+
+           while SystemClock::now() - start < Duration::from_millis(1000) {
+               core::hint::spin_loop();
+           }
+       }
+   }
+
+------------
+Tokenization
+------------
+
+.. _changelog-2026-06-token-rust-detokenizer:
+
+Rust detokenization support in pw_tokenizer
+===========================================
+Added initial Rust detokenization support to the ``pw_tokenizer`` crate. The
+Rust ``Detokenizer`` supports loading token databases from both CSV and binary
+formats, configuring custom prefix characters (``from_csv_with_prefix()`` and
+``from_binary_with_prefix()``), and detokenizing text. In addition, error
+formatting behavior matches the C++ version using ``DetokenizeAttempt`` and
+``DecodedFormatString`` to retain original ``printf`` conversion specifiers or
+render inline error descriptors when token arguments fail to decode. CLs: `1
+<https://pwrev.dev/406283>`__, `2 <https://pwrev.dev/417212>`__, `3
+<https://pwrev.dev/426652>`__, `4 <https://pwrev.dev/426853>`__, `5
+<https://pwrev.dev/426854>`__, `6 <https://pwrev.dev/429372>`__
+
+.. code-block:: rs
+
+   let detok = Detokenizer::from_binary_with_prefix(bin_data, '~')?;
+   let result = detok.detokenize_text("~#00000001");
+
+.. _changelog-2026-06-token-asterisk-modifiers:
+
+Asterisk width and precision in C++ and Python detokenizers
+===========================================================
+Updated the C++ and Python detokenizers in pw_tokenizer to support asterisk
+(``*``) width and precision format modifiers (such as ``%*d``, ``%.*s``, and
+``%*.*f``). When detokenizing, the decoders now dynamically decode varint
+arguments for width and precision and handle negative precision values according
+to the C99 ``printf`` standard. CLs: `1 <https://pwrev.dev/415137>`__, `2
+<https://pwrev.dev/414492>`__
+
+.. _changelog-2026-06-token-enum-source-set:
+
+New pw_cc_enum_source_set template in GN and CMake
+==================================================
+Introduced the ``pw_cc_enum_source_set`` GN template and updated CMake enum
+generation functions in pw_enum. The new build templates automatically
+generate internal enum tokenization rules and expose generated headers cleanly
+across public and private dependency boundaries.
+CLs: `1 <https://pwrev.dev/416732>`__
+
+.. code-block:: py
+
+   pw_cc_enum_source_set("my_enums") {
+     enum_headers = [ "public/my_enums.h" ]
+     include_dirs = [ "public" ]
+   }
+
+.. _changelog-2026-06-token-versioned-enum-domain-tokens:
+
+Versioned enum domain tokenization in pw_tokenizer and pw_log
+=============================================================
+Added support for versioned enum domain tokenization and logging across
+pw_tokenizer, pw_enum, and pw_log. The new ``EnumDomainToken<T>()``
+template and ``PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE`` macro resolve both an enum's
+32-bit domain token and its value token at compile time. In addition,
+``PW_LOG_ENUM_VERSIONED`` and ``PwEnumDomainName`` enable logging versioned
+enums reliably across both tokenizing and non-tokenizing logging backends. CLs:
+`1 <https://pwrev.dev/419417>`__, `2 <https://pwrev.dev/419416>`__, `3
+<https://pwrev.dev/419415>`__, `4 <https://pwrev.dev/423352>`__
+
+.. code-block:: c++
+
+   #include "pw_log/tokenized_args.h"
+
+   PW_LOG_INFO("State " PW_LOG_ENUM_VERSIONED_FMT() ": received packet",
+               PW_LOG_ENUM_VERSIONED(state));
+
+------------------------
+Toolchains and compilers
+------------------------
+
+.. _changelog-2026-06-toolchain-elf-builder:
+
+New pw_elf Python package for building ELF files
+================================================
+Added the pw_elf Python package for programmatically building ELF32 and
+ELF64 binary files from scratch. The library introduces ``ElfBuilder`` for
+constructing custom ELF binaries with memory regions and notes, as well as the
+``CoredumpBuilder`` subclass for generating crash coredumps with ARM32 register
+dumps (``PRSTATUS`` notes) and GNU build IDs. CLs: `1
+<https://pwrev.dev/413112>`__, `2 <https://pwrev.dev/413452>`__
+
+.. code-block:: python
+
+   from pw_elf.builder import ElfBuilder, ElfClass, ElfMachine, ElfType
+   from pw_elf.coredump import CoredumpBuilder
+
+   builder = CoredumpBuilder(ElfMachine.ARM, ElfClass.CLASS32, "little")
+   builder.add_thread(thread_id=123, registers=regs)
+
+.. _changelog-2026-06-toolchain-gcc15-freestanding:
+
+Disabled -ffreestanding by default in arm_gcc Bazel builds
+==========================================================
+Disabled ``-ffreestanding`` by default for the ``arm_gcc`` toolchain in
+Pigweed's Bazel builds. With the transition to GCC 15, the updated ``libstdc++``
+enforces stricter compliance checks that fail when freestanding mode is enabled
+by default. Projects requiring freestanding mode can re-enable it in
+``.bazelrc`` via ``common --//pw_toolchain/arm_gcc:freestanding=True``. CLs: `1
+<https://pwrev.dev/425592>`__
+
+.. code-block:: none
+
+   # To re-enable freestanding mode in your project's .bazelrc:
+   common --//pw_toolchain/arm_gcc:freestanding=True
+
+.. _changelog-2026-06-toolchain-bazel-compilation-mode:
+
+Bazel compilation mode support for host_clang toolchain
+=======================================================
+Added ``opt_feature``, ``dbg_feature``, and ``fastbuild_feature`` to the
+``host_clang`` toolchain in pw_toolchain. This enables Bazel's standard
+``--compilation_mode=opt`` (or ``-c opt``) flag to apply ``-O2`` optimizations
+during host builds while preserving default debugging symbols. CLs: `1
+<https://pwrev.dev/410698>`__
+
+.. code-block:: console
+
+   bazelisk build --compilation_mode=opt //...
+
+.. _changelog-2026-06-toolchain-lifetime-attributes:
+
+Lifetime safety attributes in pw_preprocessor
+=============================================
+Added C++ lifetime safety checking attributes to pw_preprocessor:
+
+* ``PW_ATTRIBUTE_VIEW`` for non-owning reference types like spans or string
+  views
+* ``PW_ATTRIBUTE_OWNER`` for container or smart pointer types that own their
+  data
+* ``PW_INTERNAL_ATTRIBUTE_CAPTURED_BY`` for function parameters captured by
+  another entity, such as ``this`` or another parameter
+
+These macros wrap Clang and GSL lifetime attributes to help compilers diagnose
+dangling references and returning addresses of stack memory. CLs: `1
+<https://pwrev.dev/414333>`__
+
+.. code-block:: c++
+
+   struct PW_ATTRIBUTE_VIEW StringView {
+     template <class R>
+     StringView(const R&);
+   };
+
+   struct PW_ATTRIBUTE_OWNER String {};
