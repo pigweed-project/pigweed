@@ -307,7 +307,20 @@ void LegacyPairingState::OnPinCodeRequest(UserPinCodeCallback cb) {
         outgoing_connection_, peer_->MutBrEdr().RegisterPairing(), dispatcher_);
   }
 
-  PW_CHECK(pairing_delegate_.is_alive());
+  if (!pairing_delegate_.is_alive()) {
+    bt_log(WARN,
+           "gap-bredr",
+           "No pairing delegate set for peer id %s; rejecting PIN code request",
+           bt_str(peer_id_));
+    current_pairing_ = nullptr;
+    // We set the state_ to Idle instead of Failed because it is possible that a
+    // PairingDelegate will be set before the next pairing attempt, allowing it
+    // to succeed.
+    state_ = State::kIdle;
+    cb(std::nullopt);
+    SignalStatus(ToResult(HostError::kNotReady), __func__);
+    return;
+  }
 
   // Get our I/O capabilities
   pw::bluetooth::emboss::IoCapability io_capability =

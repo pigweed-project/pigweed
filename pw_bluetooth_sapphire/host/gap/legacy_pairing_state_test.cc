@@ -1248,6 +1248,41 @@ TEST_F(LegacyPairingStateTest, PairingInitiatorCallbackMayDestroyPairingState) {
   EXPECT_TRUE(cb_called);
 }
 
+TEST_F(LegacyPairingStateTest,
+       PinCodeRequestWithoutPairingDelegateRejectsRequest) {
+  TestStatusHandler status_handler;
+
+  // Construct LegacyPairingState with a dead pairing delegate.
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   PairingDelegate::WeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   status_handler.MakeStatusCallback());
+
+  std::optional<uint16_t> pin_code = 1234;
+  bool cb_called = false;
+
+  // An incoming PIN code request when no pairing delegate is registered should
+  // be gracefully rejected.
+  auto pin_code_cb = [&](std::optional<uint16_t> pin) {
+    cb_called = true;
+    pin_code = pin;
+  };
+
+  pairing_state.OnPinCodeRequest(std::move(pin_code_cb));
+
+  EXPECT_TRUE(cb_called);
+  EXPECT_EQ(std::nullopt, pin_code);
+
+  // Pairing status listeners should be notified of pairing failure due to no
+  // delegate.
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kNotReady), *status_handler.status());
+}
+
 TEST_F(LegacyPairingStateTest, TransactionCollision) {
   FakePairingDelegate pairing_delegate(kTestLocalIoCap);
   pairing_delegate.SetDisplayPasskeyCallback(
