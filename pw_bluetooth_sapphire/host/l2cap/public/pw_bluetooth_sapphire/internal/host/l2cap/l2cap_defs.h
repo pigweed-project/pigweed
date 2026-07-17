@@ -142,6 +142,15 @@ static constexpr uint16_t kMaxInboundPduPayloadSize = std::numeric_limits<uint16
                                                       sizeof(internal::EnhancedControlField) -
                                                       sizeof(FrameCheckSequence);
 
+// See Core Spec v6.3, Volume 3, Part A, Sec 8.6.2.1. We can send as large of a PDU as the peer can
+// decode and receive. Like kMaxInboundPduPayloadSize, this value is for the information payload
+// field of an I-Frame, which is bounded by the 16-bit length field together with frame header and
+// footer overhead. We limit our outbound PDU payload size to this value to avoid segmentation of
+// outbound SDUs across multiple I-Frames.
+static constexpr uint16_t kMaxOutboundPduPayloadSize = std::numeric_limits<uint16_t>::max() -
+                                                       sizeof(internal::EnhancedControlField) -
+                                                       sizeof(FrameCheckSequence);
+
 // Channel configuration option type field (Core Spec v5.1, Vol 3, Part A, Section 5):
 enum class OptionType : uint8_t {
   kMTU = 0x01,

@@ -3529,6 +3529,141 @@ TEST_F(BrEdrDynamicChannelTest,
 }
 
 TEST_F(BrEdrDynamicChannelTest,
+       UseMaxPduPayloadSizeWhenPeerRequestsMaxMtuAndMps) {
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kConnectionRequest,
+                      kConnReq.view(),
+                      {SignalingChannel::Status::kSuccess, kOkConnRsp.view()});
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      kOutboundConfigReqWithErtm.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  bool channel_opened = false;
+  auto open_cb = [&](auto channel) {
+    channel_opened = true;
+    ASSERT_TRUE(channel);
+    EXPECT_TRUE(channel->IsOpen());
+    EXPECT_EQ(kLocalCId, channel->local_cid());
+    EXPECT_EQ(kMaxOutboundPduPayloadSize, channel->info().max_tx_sdu_size);
+  };
+
+  registry()->OpenOutbound(kPsm, kERTMChannelParams, std::move(open_cb));
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  sig()->ReceiveResponses(ext_info_transaction_id(),
+                          {{SignalingChannel::Status::kSuccess,
+                            kExtendedFeaturesInfoRspWithERTM.view()}});
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  constexpr uint16_t kPeerMps = 0xFFFF;
+  constexpr uint16_t kPeerMtu = 0xFFFF;
+  const auto inbound_config_req = MakeConfigReqWithMtuAndRfc(
+      kLocalCId,
+      kPeerMtu,
+      RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+      kErtmNFramesInTxWindow,
+      kErtmMaxTransmissions,
+      0,
+      0,
+      kPeerMps);
+  const auto outbound_config_rsp = MakeConfigRspWithMtuAndRfc(
+      kRemoteCId,
+      ConfigurationResult::kSuccess,
+      RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+      kPeerMtu,
+      kErtmNFramesInTxWindow,
+      kErtmMaxTransmissions,
+      2000,
+      12000,
+      kPeerMps);
+
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConfigurationRequest, inbound_config_req, outbound_config_rsp));
+
+  EXPECT_TRUE(channel_opened);
+
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kDisconnectionRequest,
+                      kDisconReq.view(),
+                      {SignalingChannel::Status::kSuccess, kDisconRsp.view()});
+  bool channel_close_cb_called = false;
+  registry()->CloseChannel(kLocalCId, [&] { channel_close_cb_called = true; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(channel_close_cb_called);
+}
+
+TEST_F(BrEdrDynamicChannelTest, UseMpsWhenPeerRequestsMaxMtuAndSmallerMps) {
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kConnectionRequest,
+                      kConnReq.view(),
+                      {SignalingChannel::Status::kSuccess, kOkConnRsp.view()});
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      kOutboundConfigReqWithErtm.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  bool channel_opened = false;
+  constexpr uint16_t kPeerMps = kMaxOutboundPduPayloadSize - 1000;
+  auto open_cb = [&](auto channel) {
+    channel_opened = true;
+    ASSERT_TRUE(channel);
+    EXPECT_TRUE(channel->IsOpen());
+    EXPECT_EQ(kLocalCId, channel->local_cid());
+    EXPECT_EQ(kPeerMps, channel->info().max_tx_sdu_size);
+  };
+
+  registry()->OpenOutbound(kPsm, kERTMChannelParams, std::move(open_cb));
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  sig()->ReceiveResponses(ext_info_transaction_id(),
+                          {{SignalingChannel::Status::kSuccess,
+                            kExtendedFeaturesInfoRspWithERTM.view()}});
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  constexpr uint16_t kPeerMtu = 0xFFFF;
+  const auto inbound_config_req = MakeConfigReqWithMtuAndRfc(
+      kLocalCId,
+      kPeerMtu,
+      RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+      kErtmNFramesInTxWindow,
+      kErtmMaxTransmissions,
+      0,
+      0,
+      kPeerMps);
+  const auto outbound_config_rsp = MakeConfigRspWithMtuAndRfc(
+      kRemoteCId,
+      ConfigurationResult::kSuccess,
+      RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+      kPeerMtu,
+      kErtmNFramesInTxWindow,
+      kErtmMaxTransmissions,
+      2000,
+      12000,
+      kPeerMps);
+
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConfigurationRequest, inbound_config_req, outbound_config_rsp));
+
+  EXPECT_TRUE(channel_opened);
+
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kDisconnectionRequest,
+                      kDisconReq.view(),
+                      {SignalingChannel::Status::kSuccess, kDisconRsp.view()});
+  bool channel_close_cb_called = false;
+  registry()->CloseChannel(kLocalCId, [&] { channel_close_cb_called = true; });
+  RETURN_IF_FATAL(RunUntilIdle());
+  EXPECT_TRUE(channel_close_cb_called);
+}
+
+TEST_F(BrEdrDynamicChannelTest,
        BasicModeChannelReportsChannelInfoWithBasicModeAndSduCapacities) {
   constexpr uint16_t kPreferredMtu = kDefaultMTU + 1;
   const auto kExpectedOutboundConfigReq =

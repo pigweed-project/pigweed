@@ -525,13 +525,15 @@ ChannelInfo BrEdrDynamicChannel::info() const {
       remote_config().retransmission_flow_control_option()->max_transmit();
   const auto max_tx_pdu_payload_size =
       remote_config().retransmission_flow_control_option()->mps();
-  const auto max_tx_sdu_size = std::min(peer_mtu, max_tx_pdu_payload_size);
-  if (max_tx_pdu_payload_size < peer_mtu) {
+  const auto max_tx_sdu_size =
+      std::min({peer_mtu, max_tx_pdu_payload_size, kMaxOutboundPduPayloadSize});
+  if (max_tx_pdu_payload_size < peer_mtu ||
+      kMaxOutboundPduPayloadSize < peer_mtu) {
     bt_log(DEBUG,
            "l2cap-bredr",
-           "Channel %#.4x: reporting MPS of %hu to service to avoid segmenting "
-           "outbound SDUs, "
-           "which would otherwise be %hu according to MTU",
+           "Channel %#.4x: reporting max TX SDU size of %hu to service to "
+           "avoid segmenting outbound SDUs, which would otherwise be %hu "
+           "according to MTU",
            local_cid(),
            max_tx_sdu_size,
            peer_mtu);
