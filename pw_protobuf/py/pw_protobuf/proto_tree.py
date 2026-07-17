@@ -397,6 +397,9 @@ class ProtoMessage(ProtoNode):
             default_factory=list
         )
 
+        def __post_init__(self) -> None:
+            self.name = symbol_name_mapping.fix_cc_identifier(self.name)
+
         def is_synthetic(self) -> bool:
             """Returns whether this is a synthetic oneof field."""
             # protoc expresses proto3 optional fields as a "synthetic" oneof

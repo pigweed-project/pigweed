@@ -227,6 +227,13 @@ message OneOfTest {
     string a_string = 2;
     AMessage a_message = 3;
   }
+
+  // 'namespace' is a C++ keyword
+  oneof namespace {
+    int32 x = 10;
+    int32 y = 11;
+    int32 z = 12;
+  }
 }
 
 message LargeNestedTest {
