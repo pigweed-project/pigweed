@@ -466,9 +466,11 @@ class CommandMultiplexer final {
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, event_interceptors_mutex_);
   void SendToHost(MultiBuf::Instance&& buf)
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_, event_interceptors_mutex_);
-  void SendToControllerOrQueue(
-      MultiBuf::Instance&& buf,
-      UniquePtr<QueuedSentCommandData> sent_command_data = nullptr)
+  Status SendToControllerOrQueue(
+      MultiBuf::Instance& buf,
+      UniquePtr<QueuedSentCommandData>& sent_command_data)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
+  void SendToControllerOrQueue(MultiBuf::Instance&& buf)
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
   uint8_t TryReserveQueueSpace(uint8_t requested)
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);

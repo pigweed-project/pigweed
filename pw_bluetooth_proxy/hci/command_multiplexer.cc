@@ -307,7 +307,10 @@ expected<void, FailureWithBuffer> CommandMultiplexer::SendCommand(
 
   std::lock_guard event_interceptors_lock(event_interceptors_mutex_);
   std::lock_guard lock(mutex_);
-  SendToControllerOrQueue(std::move(command.buffer), std::move(data));
+  Status status = SendToControllerOrQueue(command.buffer, data);
+  if (!status.ok()) {
+    return unexpected(FailureWithBuffer{status, std::move(command.buffer)});
+  }
   return {};
 }
 
@@ -597,15 +600,28 @@ uint8_t CommandMultiplexer::TryReserveQueueSpace(uint8_t requested) {
   return reserved_queue_space();
 }
 
-void CommandMultiplexer::SendToControllerOrQueue(
-    MultiBuf::Instance&& buf,
-    UniquePtr<QueuedSentCommandData> sent_command_data) {
+Status CommandMultiplexer::SendToControllerOrQueue(
+    MultiBuf::Instance& buf,
+    UniquePtr<QueuedSentCommandData>& sent_command_data) {
+  if (!command_queue_.try_reserve(command_queue_.size() + 1)) {
+    PW_LOG_ERROR(
+        "Dropping HCI command: command_queue_ allocation failed (host is "
+        "exceeding flow control or allocator exhausted).");
+    return Status::ResourceExhausted();
+  }
+
   command_queue_.push_back(QueuedCommandState{
       .packet = {std::move(buf)},
       .sent_command_data = std::move(sent_command_data),
   });
 
   ProcessQueue();
+  return OkStatus();
+}
+
+void CommandMultiplexer::SendToControllerOrQueue(MultiBuf::Instance&& buf) {
+  UniquePtr<QueuedSentCommandData> null_data = nullptr;
+  (void)SendToControllerOrQueue(buf, null_data);
 }
 
 void CommandMultiplexer::UpdateCreditsAndProcessQueue(EventCodeValue event_code,

@@ -2099,5 +2099,117 @@ void TestReset(Accessor test) {
 TEST_F(CommandMultiplexerTest, ResetAsync) { TestReset(accessor_async2()); }
 TEST_F(CommandMultiplexerTest, ResetTimer) { TestReset(accessor_timer()); }
 
+// Verify that CommandMultiplexer does not crash when the queue allocator is
+// exhausted by a host flooding commands. Excess commands should be dropped.
+TEST(CommandMultiplexerExhaustionTest,
+     HostFloodDoesNotCrashOnAllocatorExhaustion) {
+  constexpr size_t kMuxAllocatorSize = 1024;
+  constexpr size_t kPacketAllocatorSize = 256 * 1024;
+  constexpr std::array<std::byte, 4> kH4HciReset = {
+      std::byte{0x01},  // H4PacketType::COMMAND
+      std::byte{0x03},  // OpCode LSB (OCF=0x03)
+      std::byte{0x0C},  // OpCode MSB (OGF=0x03)
+      std::byte{0x00},  // Parameter total length
+  };
+
+  pw::allocator::test::AllocatorForTest<kMuxAllocatorSize> mux_allocator;
+  pw::allocator::test::AllocatorForTest<kPacketAllocatorSize> packet_allocator;
+  async2::SimulatedTimeProvider<Clock> time_provider;
+
+  size_t sent_to_controller = 0;
+
+  auto send_to_controller = [&](MultiBuf::Instance&&) { ++sent_to_controller; };
+  auto send_to_host = [](MultiBuf::Instance&&) {};
+
+  CommandMultiplexer mux(mux_allocator,
+                         std::move(send_to_host),
+                         std::move(send_to_controller),
+                         time_provider);
+
+  for (size_t i = 0; i < 100; ++i) {
+    MultiBuf::Instance packet(packet_allocator);
+    ASSERT_TRUE(packet->TryReserveForPushBack());
+    auto payload = packet_allocator.MakeUnique<std::byte[]>(kH4HciReset.size());
+    ASSERT_NE(payload, nullptr);
+    std::memcpy(payload.get(), kH4HciReset.data(), kH4HciReset.size());
+    packet->PushBack(std::move(payload));
+
+    mux.HandleH4FromHost(std::move(packet));
+  }
+
+  EXPECT_EQ(sent_to_controller, 1u);
+}
+
+// Verify that when command_queue_ allocator is exhausted, SendCommand returns
+// unexpected(FailureWithBuffer) containing Status::ResourceExhausted() and the
+// unconsumed command buffer instead of dropping the command or reporting Ok().
+TEST(CommandMultiplexerExhaustionTest,
+     SendCommandReturnsErrorOnQueueExhaustion) {
+  constexpr size_t kMuxAllocatorSize = 1024;
+  constexpr size_t kPacketAllocatorSize = 256 * 1024;
+  constexpr std::array<std::byte, 3> kHciReset = {
+      std::byte{0x03},  // OpCode LSB (OCF=0x03)
+      std::byte{0x0C},  // OpCode MSB (OGF=0x03)
+      std::byte{0x00},  // Parameter total length
+  };
+
+  pw::allocator::test::AllocatorForTest<kMuxAllocatorSize> mux_allocator;
+  pw::allocator::test::AllocatorForTest<kPacketAllocatorSize> packet_allocator;
+  async2::SimulatedTimeProvider<Clock> time_provider;
+
+  size_t sent_to_controller = 0;
+  auto send_to_controller = [&](MultiBuf::Instance&&) { ++sent_to_controller; };
+  auto send_to_host = [](MultiBuf::Instance&&) {};
+
+  CommandMultiplexer mux(mux_allocator,
+                         std::move(send_to_host),
+                         std::move(send_to_controller),
+                         time_provider);
+
+  // First command is sent immediately because command_credits_ starts at 1.
+  MultiBuf::Instance first_cmd(packet_allocator);
+  ASSERT_TRUE(first_cmd->TryReserveForPushBack());
+  auto first_payload =
+      packet_allocator.MakeUnique<std::byte[]>(kHciReset.size());
+  ASSERT_NE(first_payload, nullptr);
+  std::memcpy(first_payload.get(), kHciReset.data(), kHciReset.size());
+  first_cmd->PushBack(std::move(first_payload));
+  auto first_res = mux.SendCommand(
+      {std::move(first_cmd)},
+      [](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+        return {};
+      },
+      emboss::EventCode::COMMAND_COMPLETE);
+  EXPECT_TRUE(first_res.has_value());
+  EXPECT_EQ(sent_to_controller, 1u);
+
+  // Now flood SendCommand until queue allocator is exhausted.
+  bool resource_exhausted_hit = false;
+  for (size_t i = 0; i < 100; ++i) {
+    MultiBuf::Instance cmd(packet_allocator);
+    ASSERT_TRUE(cmd->TryReserveForPushBack());
+    auto payload = packet_allocator.MakeUnique<std::byte[]>(kHciReset.size());
+    ASSERT_NE(payload, nullptr);
+    std::memcpy(payload.get(), kHciReset.data(), kHciReset.size());
+    cmd->PushBack(std::move(payload));
+
+    auto res = mux.SendCommand(
+        {std::move(cmd)},
+        [](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+          return {};
+        },
+        emboss::EventCode::COMMAND_COMPLETE);
+
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error().status(), Status::ResourceExhausted());
+      EXPECT_FALSE(res.error().buffer().empty());
+      resource_exhausted_hit = true;
+      break;
+    }
+  }
+
+  EXPECT_TRUE(resource_exhausted_hit);
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy::hci
