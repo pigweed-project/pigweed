@@ -1743,5 +1743,76 @@ TEST_F(PeerTest, SetInquiryDataWithInvalidRssiIgnored) {
   EXPECT_EQ(peer().rssi(), hci_spec::kRSSIInvalid);
 }
 
+// One 240-byte EIR can carry one TLV: [len=0xEF][type=0x03][119 * uint16].
+constexpr size_t kUuidsPerEir = 119;
+
+class PeerEirServicesTest : public PeerTest {
+ protected:
+  void SetUp() override {
+    SetUpPeer(kAddrBrEdr, /*connectable=*/true);
+    set_update_expiry_cb([this](const Peer&) { update_expiry_count_++; });
+  }
+
+  int update_expiry_count() const { return update_expiry_count_; }
+
+  // Builds a 240-byte EIR whose first (and only) TLV is a
+  // Complete-16-bit-Service-UUIDs list of |kUuidsPerEir| consecutive values
+  // starting at |first_uuid|, wraps it in an HCI Extended Inquiry Result
+  // event, and feeds it through the production SetInquiryData() path.
+  void InjectEirWithUuids(uint16_t first_uuid) {
+    DynamicByteBuffer eir(240);
+    eir.Fill(0);
+    eir[0] = 0xEF;  // length: 1 (type) + 119*2 (data) = 239
+    eir[1] = static_cast<uint8_t>(DataType::kComplete16BitServiceUuids);
+    for (size_t i = 0; i < kUuidsPerEir; ++i) {
+      uint16_t uuid_value = static_cast<uint16_t>(first_uuid + i);
+      eir[2 + 2 * i] = static_cast<uint8_t>(uuid_value & 0xFF);
+      eir[2 + 2 * i + 1] = static_cast<uint8_t>(uuid_value >> 8);
+    }
+
+    StaticPacket<pw::bluetooth::emboss::ExtendedInquiryResultEventWriter> event;
+    event.view().num_responses().Write(1);
+    event.view().bd_addr().CopyFrom(peer().address().value().view());
+    event.view().extended_inquiry_response().BackingStorage().CopyFrom(
+        ::emboss::support::ReadOnlyContiguousBuffer(&eir), eir.size());
+
+    peer().MutBrEdr().SetInquiryData(event.view());
+  }
+
+ private:
+  int update_expiry_count_ = 0;
+};
+
+// Tests that when a single EIR containing more than kMaxPeerEirServices UUIDs is
+// received, the services set size is capped at kMaxPeerEirServices.
+TEST_F(PeerEirServicesTest, SingleEirIsCappedAtMaxServices) {
+  peer().MutBrEdr();
+  ASSERT_EQ(peer().bredr()->services().size(), 0u);
+
+  InjectEirWithUuids(/*first_uuid=*/0x0000);
+
+  EXPECT_EQ(peer().bredr()->services().size(), kMaxPeerEirServices);
+}
+
+// Tests that across repeated EIR receptions with distinct UUIDs from the same
+// peer, the services set size does not grow unboundedly and remains capped at
+// kMaxPeerEirServices.
+TEST_F(PeerEirServicesTest, ServicesSetIsCappedAcrossRepeatedEirReceptions) {
+  peer().MutBrEdr();
+
+  constexpr size_t kRounds = 50;  // 50 EIRs * 119 UUIDs = 5950 entries.
+  for (size_t round = 0; round < kRounds; ++round) {
+    InjectEirWithUuids(static_cast<uint16_t>(round * kUuidsPerEir));
+  }
+
+  const size_t final_size = peer().bredr()->services().size();
+  EXPECT_EQ(final_size, kMaxPeerEirServices)
+      << "Regression: Peer::BrEdrData::services_ grew to " << final_size
+      << " entries across repeated EIR receptions; expected cap at "
+      << kMaxPeerEirServices;
+
+  // Expiry was refreshed on every reception, defeating the 60 s cache timeout.
+  EXPECT_GE(update_expiry_count(), static_cast<int>(kRounds));
+}
 }  // namespace
 }  // namespace bt::gap

@@ -546,12 +546,25 @@ bool Peer::BrEdrData::SetEirData(const ByteBuffer& eir) {
                type == DataType::kComplete16BitServiceUuids) {
       // TODO(fxbug.dev/42082102): Consider adding 32-bit and 128-bit UUIDs to
       // the list
+      // Hoist the InspectableGuard so the full-set string is rebuilt once per
+      // EIR rather than once per UUID, and cap the set size so an
+      // unauthenticated peer cannot exhaust the heap via rotated UUID lists.
+      if (services().size() >= kMaxPeerEirServices) {
+        continue;
+      }
+      auto guard = services_.Mutable();
       ParseUuids(
-          data, UUIDElemSize::k16Bit, [this, &changed](const UUID& uuid) {
-            auto [_, inserted] = services_.Mutable()->insert(uuid);
+          data, UUIDElemSize::k16Bit, [&guard, &changed](const UUID& uuid) {
+            if (guard->size() >= kMaxPeerEirServices) {
+              return false;
+            }
+
+            auto [_, inserted] = guard->insert(uuid);
+
             if (inserted) {
               changed = true;
             }
+
             return true;
           });
     }

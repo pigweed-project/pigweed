@@ -16,6 +16,7 @@
 #include <pw_bluetooth/hci_events.emb.h>
 #include <pw_chrono/system_clock.h>
 
+#include <cstddef>
 #include <cstdint>
 
 #include "pw_bluetooth_sapphire/internal/host/common/identifier.h"
@@ -88,6 +89,10 @@ inline constexpr uint8_t kInquiryLengthDefault = 0x08;
 // values is controller timeslices (N) where Time in ms = N * 0.625ms
 inline constexpr uint16_t kInquiryScanInterval = 0x01E0;  // 300 ms
 inline constexpr uint16_t kInquiryScanWindow = 0x0012;    // 11.25 ms
+
+// Upper bound on the number of BR/EDR services a single remote device
+// legitimately advertises. Used to cap memory usage when processing EIR data.
+inline constexpr size_t kMaxPeerEirServices = 64;
 
 // Constants used in Low Energy (see Core Spec v5.0, Vol 3, Part C, Appendix A).
 
