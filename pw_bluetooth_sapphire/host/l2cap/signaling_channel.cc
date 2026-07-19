@@ -225,10 +225,18 @@ void SignalingChannel::OnRxResponse(const SignalingPacket& packet) {
 
   // Renew the timer as an ERTX timer per Core Spec v5.0, Volume 3, Part A,
   // Sec 6.2.2.
-  // TODO(fxbug.dev/42132982): Limit the number of times the ERTX timer is reset
-  // so that total timeout duration is <= 300 seconds.
+  pw::chrono::SystemClock::duration time_elapsed =
+      pw_dispatcher_.now() - pending_command.enqueue_time;
+  if (time_elapsed >= kPwMaxSignalingChannelExtendedResponseTimeout) {
+    bt_log(WARN, "l2cap", "sig: ERTX timeout limit reached (id %#.2x)", cmd_id);
+    pending_command.response_handler(Status::kTimeOut, BufferView());
+    return;
+  }
+
   pending_command.response_timeout_task.Cancel();
-  pending_command.timer_duration = kPwSignalingChannelExtendedResponseTimeout;
+  pending_command.timer_duration =
+      std::min(kPwSignalingChannelExtendedResponseTimeout,
+               kPwMaxSignalingChannelExtendedResponseTimeout - time_elapsed);
   // Don't retransmit after an ERTX timeout as the peer has already indicated
   // that it received the request and has been given a large amount of time.
   pending_command.response_timeout_task.set_function(

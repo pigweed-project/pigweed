@@ -269,7 +269,8 @@ class SignalingChannel : public SignalingChannelInterface {
           transmit_count(1u),
           timer_duration(0u),
           response_timeout_task(dispatcher),
-          wake_lease(std::move(wake_lease_in)) {}
+          wake_lease(std::move(wake_lease_in)),
+          enqueue_time(dispatcher.now()) {}
     CommandCode response_code;
     ResponseHandler response_handler;
 
@@ -288,6 +289,9 @@ class SignalingChannel : public SignalingChannelInterface {
 
     // Keep the system awake while this command is pending.
     pw::bluetooth_sapphire::Lease wake_lease;
+
+    // The time when the command was enqueued.
+    pw::chrono::SystemClock::time_point enqueue_time;
   };
 
   // Retransmit the request corresponding to |pending_command| and reset the RTX

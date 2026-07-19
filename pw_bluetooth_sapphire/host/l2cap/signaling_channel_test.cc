@@ -954,5 +954,58 @@ TEST_F(SignalingChannelTest, SendMultipleCommandsSimultaneously) {
   EXPECT_EQ(lease_provider().lease_count(), 0u);
 }
 
+// Tests that repeated Extended Response Timeout (ERTX) resets are capped so
+// that the total transaction timeout does not exceed 300 seconds and the wake
+// lease is released.
+TEST_F(SignalingChannelTest,
+       ErtxResetsAreCappedTo300SecondsAndReleaseWakeLease) {
+  ASSERT_EQ(lease_provider().lease_count(), 0u);
+
+  fake_chan()->SetSendCallback([](auto) {}, dispatcher());
+
+  int success_responses = 0;
+  int timeout_responses = 0;
+  ASSERT_TRUE(sig()->SendRequest(
+      kEchoRequest, BufferView(), [&](Status status, const ByteBuffer&) {
+        if (status == Status::kSuccess) {
+          success_responses++;
+          return SignalingChannel::ResponseHandlerAction::
+              kExpectAdditionalResponse;
+        }
+        timeout_responses++;
+        return SignalingChannel::ResponseHandlerAction::
+            kCompleteOutboundTransaction;
+      }));
+
+  RunUntilIdle();
+  // wake_lease acquired in EnqueueResponse() and held by the PendingCommand.
+  ASSERT_GT(lease_provider().lease_count(), 0u);
+
+  // Peer-crafted L2CAP_ECHO_RSP.
+  // CommandId = 0x01 (first id allocated by GetNextCommandId).
+  const StaticByteBuffer kEchoResponsePacket(
+      kEchoResponse,  // code = 0x09
+      0x01,           // id   = 0x01 (read by attacker off the wire)
+      0x00,
+      0x00);  // length = 0
+
+  // Attacker sends one response per <60 s window. Do this for
+  // 50 iterations * 59 s ≈ 49 minutes of simulated time — far past the
+  // 300 s spec cap.
+  constexpr int kIterations = 50;
+  for (int i = 0; i < kIterations; i++) {
+    fake_chan()->Receive(kEchoResponsePacket);
+    RunFor(std::chrono::seconds(59));
+  }
+
+  // We expect the transaction to time out before all iterations complete right
+  // at the 300 s spec cap.
+  EXPECT_LT(success_responses, kIterations);
+  EXPECT_EQ(timeout_responses, 1)
+      << "Regression: ERTX did not time out right at the 300 s spec cap.";
+  EXPECT_EQ(lease_provider().lease_count(), 0u)
+      << "Regression: wake_lease still held after ERTX 300 s cap expired.";
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

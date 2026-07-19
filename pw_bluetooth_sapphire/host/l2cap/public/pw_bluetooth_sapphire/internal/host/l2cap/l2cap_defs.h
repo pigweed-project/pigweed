@@ -59,6 +59,7 @@ static constexpr auto kSignalingChannelExtendedResponseTimeout = std::chrono::se
 static_assert(kSignalingChannelExtendedResponseTimeout >= std::chrono::seconds(60));
 static_assert(kSignalingChannelExtendedResponseTimeout <= std::chrono::seconds(300));
 static constexpr pw::chrono::SystemClock::duration kPwSignalingChannelExtendedResponseTimeout = std::chrono::seconds(60);
+static constexpr pw::chrono::SystemClock::duration kPwMaxSignalingChannelExtendedResponseTimeout = std::chrono::seconds(300);
 
 // L2CAP channel identifier uniquely identifies fixed and connection-oriented
 // channels over a logical link.
