@@ -38,11 +38,6 @@ constexpr size_t kMinAttributeIDListBytes = 5;
 // Spec v5.0, Vol 3, Part B, Sec 4.5.1
 constexpr size_t kMaxServiceSearchSize = 12;
 
-// The maximum amount of Attribute list data we will store when parsing a
-// response to ServiceAttribute or ServiceSearchAttribute responses. 640kb ought
-// to be enough for anybody.
-constexpr size_t kMaxSupportedAttributeListBytes = 655360;
-
 // Validates continuation state in |buf|, which should be the configuration
 // state bytes of a PDU.
 // Returns true if the continuation state is valid here, false otherwise.
@@ -335,11 +330,11 @@ ByteBufferPtr ServiceSearchRequest::GetPDU(TransactionId tid) const {
   return buf;
 }
 
-ServiceSearchResponse::ServiceSearchResponse()
-    : total_service_record_count_(0) {}
-
 bool ServiceSearchResponse::complete() const {
-  return total_service_record_count_ == service_record_handle_list_.size();
+  if (!total_service_record_count_.has_value()) {
+    return service_record_handle_list_.empty();
+  }
+  return *total_service_record_count_ == service_record_handle_list_.size();
 }
 
 const BufferView ServiceSearchResponse::ContinuationState() const {
@@ -350,8 +345,8 @@ const BufferView ServiceSearchResponse::ContinuationState() const {
 }
 
 fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
-  if (complete() && total_service_record_count_ != 0) {
-    // This response was previously complete and non-empty.
+  if (total_service_record_count_.has_value() && complete()) {
+    // This response was previously complete.
     bt_log(TRACE, "sdp", "Can't parse into a complete response");
     return ToResult(HostError::kNotReady);
   }
@@ -364,8 +359,8 @@ fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
   uint16_t total_service_record_count =
       pw::bytes::ConvertOrderFrom(cpp20::endian::big, buf.To<uint16_t>());
   size_t read_size = sizeof(uint16_t);
-  if (total_service_record_count_ != 0 &&
-      total_service_record_count_ != total_service_record_count) {
+  if (total_service_record_count_.has_value() &&
+      *total_service_record_count_ != total_service_record_count) {
     bt_log(TRACE, "sdp", "Continuing packet has different record count");
     return ToResult(HostError::kPacketMalformed);
   }
@@ -388,6 +383,16 @@ fit::result<Error<>> ServiceSearchResponse::Parse(const ByteBuffer& buf) {
   if (!ValidContinuationState(buf.view(read_size + expected_record_bytes),
                               &cont_state_view)) {
     bt_log(TRACE, "sdp", "Failed to find continuation state");
+    return ToResult(HostError::kPacketMalformed);
+  }
+  if (service_record_handle_list_.size() + record_count >
+      *total_service_record_count_) {
+    bt_log(WARN,
+           "sdp",
+           "ServiceSearchResponse exceeds advertised total record count "
+           "(actual: %zu, max: %u)",
+           service_record_handle_list_.size() + record_count,
+           *total_service_record_count_);
     return ToResult(HostError::kPacketMalformed);
   }
   size_t expected_size = read_size + expected_record_bytes +
@@ -436,7 +441,7 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
     return nullptr;
   }
 
-  uint16_t response_record_count = total_service_record_count_;
+  uint16_t response_record_count = total_service_record_count_.value_or(0);
   if (req_max < response_record_count) {
     bt_log(TRACE,
            "sdp",

@@ -16,6 +16,8 @@
 #include <lib/fit/result.h>
 #include <pw_assert/check.h>
 
+#include <optional>
+
 #include "pw_bluetooth_sapphire/internal/host/common/error.h"
 #include "pw_bluetooth_sapphire/internal/host/sdp/sdp.h"
 
@@ -35,6 +37,11 @@ inline constexpr size_t kMinMaximumAttributeByteCount = 0x0007;
 // worst case scenarios. Clients should use larger ranges if they need anywhere
 // near this number of attributes.
 inline constexpr size_t kMaxAttributeRangesInRequest = 520;
+
+// The maximum amount of Attribute list data we will store when parsing a
+// response to ServiceAttribute or ServiceSearchAttribute responses. 640kb ought
+// to be enough for anybody.
+inline constexpr size_t kMaxSupportedAttributeListBytes = 655360;
 
 class Request {
  public:
@@ -193,12 +200,17 @@ class ServiceSearchRequest : public Request {
 // See v5.0, Volume 3, Part B, Sec 4.5.2
 class ServiceSearchResponse : public Response {
  public:
-  ServiceSearchResponse();
+  ServiceSearchResponse() = default;
 
   // Response overrides
   bool complete() const override;
   const BufferView ContinuationState() const override;
+
+  // NOTE: This Parse method is currently only used in unit tests (e.g.
+  // server_test.cc) to verify server response generation. It is not used in
+  // production client code.
   fit::result<Error<>> Parse(const ByteBuffer& buf) override;
+
   MutableByteBufferPtr GetPDU(uint16_t req_max,
                               TransactionId tid,
                               uint16_t max_size,
@@ -220,7 +232,7 @@ class ServiceSearchResponse : public Response {
   // The list of service record handles.
   std::vector<ServiceHandle> service_record_handle_list_;
   // The total number of service records in the full response.
-  uint16_t total_service_record_count_;
+  std::optional<uint16_t> total_service_record_count_;
 
   MutableByteBufferPtr continuation_state_;
 };

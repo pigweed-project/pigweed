@@ -2152,5 +2152,101 @@ TEST(PDUTest, ResponseOutOfRangeContinuation) {
   EXPECT_FALSE(buf);
 }
 
+// The cap the two sibling response parsers enforce.
+constexpr size_t kSiblingAccumulationCapBytes = kMaxSupportedAttributeListBytes;
+
+// Build one attacker-controlled SDP_ServiceSearchResponse parameter block:
+//   uint16_t  TotalServiceRecordCount   (big-endian)
+//   uint16_t  CurrentServiceRecordCount (big-endian)
+//   uint32_t  ServiceRecordHandle[CurrentServiceRecordCount]
+//   uint8_t   ContinuationStateLen
+//   uint8_t   ContinuationState[ContinuationStateLen]
+DynamicByteBuffer MakeMaliciousResponse(uint16_t advertised_total,
+                                        uint16_t handles_this_round,
+                                        bool with_continuation) {
+  const size_t continuation_len = with_continuation ? 1u : 0u;
+  const size_t size = sizeof(uint16_t)    // total
+                      + sizeof(uint16_t)  // current
+                      + sizeof(ServiceHandle) * handles_this_round +
+                      sizeof(uint8_t)      // cont-state len
+                      + continuation_len;  // cont-state body
+  DynamicByteBuffer buffer(size);
+  buffer.Fill(0);
+
+  size_t offset = 0;
+  buffer[offset++] = static_cast<uint8_t>(advertised_total >> 8);
+  buffer[offset++] = static_cast<uint8_t>(advertised_total & 0xFF);
+  buffer[offset++] = static_cast<uint8_t>(handles_this_round >> 8);
+  buffer[offset++] = static_cast<uint8_t>(handles_this_round & 0xFF);
+  // Handle bytes are already zero-filled; skip past them.
+  offset += sizeof(ServiceHandle) * handles_this_round;
+  buffer[offset++] = static_cast<uint8_t>(continuation_len);
+  if (with_continuation) {
+    buffer[offset++] = 0x42;  // arbitrary opaque continuation byte
+  }
+  return buffer;
+}
+
+// Tests that ServiceSearchResponse::Parse() bounds memory accumulation when
+// processing continuation packets from a peer, preventing unbounded memory
+// growth (CWE-770 / OOM). Specifically, this test ensures:
+// 1. The accumulated number of service record handles across continuation
+//    rounds cannot exceed the server-advertised TotalServiceRecordCount (per
+//    Bluetooth Core Specification v5.0, Vol 3, Part B, Section 4.5.2).
+// 2. Because TotalServiceRecordCount is a uint16_t (max 65,535) and each
+//    ServiceHandle is 4 bytes, enforcing handle accumulation <=
+//    TotalServiceRecordCount guarantees that the total memory accumulated in
+//    service_record_handle_list_ across all rounds can never exceed
+//    65,535 * 4 = 262,140 bytes (~256 KiB), inherently capping memory well
+//    below the project-wide SDP attribute list accumulation cap
+//    (kMaxSupportedAttributeListBytes = 640 KiB) enforced by sibling parsers.
+TEST(PDUTest, ServiceSearchResponseBoundedContinuationGrowth) {
+  // Attacker advertises exactly one record but ships ~16 K handles per packet
+  // (fills a max-MTU 65 535-byte L2CAP SDU at 4 B/handle) and always sets a
+  // continuation token so the client keeps asking for more.
+  constexpr uint16_t kAdvertisedTotal = 1;
+  constexpr uint16_t kHandlesPerRound = 16368;  // 0x3FF0
+  // Enough rounds to blow well past the 640 KiB sibling cap while keeping the
+  // test fast (~12 rounds * 64 KiB = ~768 KiB of uint32_t).
+  constexpr size_t kRounds = 12;
+
+  const DynamicByteBuffer attacker_packet =
+      MakeMaliciousResponse(kAdvertisedTotal,
+                            kHandlesPerRound,
+                            /*with_continuation=*/true);
+
+  ServiceSearchResponse response;
+
+  for (size_t round = 0; round < kRounds; ++round) {
+    auto status = response.Parse(attacker_packet);
+    if (status.is_error() &&
+        status.error_value().is(HostError::kPacketMalformed)) {
+      break;
+    }
+    // Parser happily accepts every round and asks the client to continue.
+    const bool in_progress =
+        status.is_error() && status.error_value().is(HostError::kInProgress);
+    ASSERT_TRUE(in_progress)
+        << "round " << round << " unexpectedly rejected (bug fixed?)";
+    // After the first round we have already overshot the advertised total, so
+    // complete() (which tests size == total) is permanently false and the
+    // kNotReady early-out in Parse() can never fire.
+    ASSERT_FALSE(response.complete()) << "round " << round;
+  }
+
+  const size_t handles = response.service_record_handle_list().size();
+  const size_t bytes = handles * sizeof(ServiceHandle);
+
+  EXPECT_LE(handles, static_cast<size_t>(kAdvertisedTotal))
+      << "accumulated " << handles << " handles but server advertised only "
+      << kAdvertisedTotal;
+
+  EXPECT_LE(bytes, kSiblingAccumulationCapBytes)
+      << "accumulated " << bytes
+      << " bytes of handles; total count check should inherently cap memory "
+         "below kMaxSupportedAttributeListBytes ("
+      << kSiblingAccumulationCapBytes << ")";
+}
+
 }  // namespace
 }  // namespace bt::sdp
