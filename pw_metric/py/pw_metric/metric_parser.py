@@ -24,6 +24,10 @@ from pw_metric_proto import metric_service_pb2
 
 _LOG = logging.getLogger(__name__)
 
+# Token masks used by pw_metric.
+_TOKEN_MASK_31 = 0x7FFFFFFF
+_TOKEN_MASK_28 = 0x0FFFFFFF
+
 
 @dataclasses.dataclass(frozen=True)
 class ParsedMetric:
@@ -43,6 +47,22 @@ def parse_metric(
         path_name = f'${path_token:08x}'  # Default to token if not found
         if detokenizer:
             lookup_result = detokenizer.lookup(path_token)
+            if not lookup_result:
+                # Fallback: Try a compatible 28-bit masked lookup for backward
+                # compatibility with old 31-bit token databases.
+                for db_token in detokenizer.database.token_to_entries:
+                    if (db_token & _TOKEN_MASK_28) == (
+                        path_token & _TOKEN_MASK_28
+                    ):
+                        lookup_result = detokenizer.lookup(db_token)
+                        _LOG.warning(
+                            'Metric token 0x%08x not found; fell back '
+                            'to compatible match 0x%08x (%s) using 28-bit mask',
+                            path_token,
+                            db_token,
+                            lookup_result[0].entry.string,
+                        )
+                        break
             if lookup_result:
                 # Manually construct a DetokenizedString and strip quotes.
                 path_name = str(

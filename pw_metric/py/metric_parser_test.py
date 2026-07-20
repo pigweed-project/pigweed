@@ -152,6 +152,35 @@ class TestParseMetrics(TestCase):
             msg='64-bit metrics are not equal.',
         )
 
+    def test_parse_metric_fallback_28_bit(self) -> None:
+        """Tests fallback to 28-bit mask match for old 31-bit database."""
+        # Database has 0x22198280 ("total_created").
+        # Request has 0x02198280 (28-bit masked version).
+        metric = [
+            metric_service_pb2.Metric(
+                token_path=[self.log, 0x02198280],
+                string_path=['N/A'],
+                as_float=3.0,
+            ),
+        ]
+        self.rpcs.pw.metric.proto.MetricService.Get.return_value.responses = [
+            metric_service_pb2.MetricResponse(metrics=metric)
+        ]
+        with self.assertLogs(level='WARNING') as log_capture:
+            metrics = metric_parser.parse_metrics(
+                self.rpcs, self.detokenize, self.rpc_timeout_s
+            )
+        self.assertEqual(
+            {
+                'log': {
+                    'total_created': 3.0,
+                }
+            },
+            metrics,
+        )
+        self.assertEqual(len(log_capture.output), 1)
+        self.assertIn("fell back to compatible match", log_capture.output[0])
+
     def test_three_metric_names(self) -> None:
         """Test creating a dictionary with three paths."""
         # Creating another leaf.
