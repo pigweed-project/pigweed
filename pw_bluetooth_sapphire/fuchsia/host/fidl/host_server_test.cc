@@ -97,17 +97,23 @@ class MockFidlPairingDelegate : public fsys::testing::PairingDelegate_TestBase {
                         fsys::PairingMethod method,
                         uint32_t displayed_passkey,
                         OnPairingRequestCallback callback) override {
-    pairing_request_cb_(
-        std::move(device), method, displayed_passkey, std::move(callback));
+    if (pairing_request_cb_) {
+      pairing_request_cb_(
+          std::move(device), method, displayed_passkey, std::move(callback));
+    }
   }
 
   void OnPairingComplete(fbt::PeerId id, bool success) override {
-    pairing_complete_cb_(id, success);
+    if (pairing_complete_cb_) {
+      pairing_complete_cb_(id, success);
+    }
   }
 
   void OnRemoteKeypress(fbt::PeerId id,
                         fsys::PairingKeypress keypress) override {
-    remote_keypress_cb_(id, keypress);
+    if (remote_keypress_cb_) {
+      remote_keypress_cb_(id, keypress);
+    }
   }
 
   void set_pairing_request_cb(PairingRequestCallback cb) {
