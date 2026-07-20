@@ -31,9 +31,9 @@ Key features of ``pw_metric``:
   convenient in many cases.
 
 - **Simple design** - There are only two core data structures: ``Metric`` and
-  ``Group``, which are both simple to understand and use. The only type of
-  metric supported is ``uint32_t`` and ``float``. This module does not support
-  complicated aggregations like running average or min/max.
+  ``Group``, which are both simple to understand and use. The supported metric
+  types are ``uint32_t``, ``float``, and ``uint64_t``. This module does not
+  support complicated aggregations like running average or min/max.
 
 Example: Instrumenting a single object
 --------------------------------------
@@ -164,36 +164,178 @@ The metrics API consists of just a few components:
 - The global groups and metrics list: ``pw::metric::global_groups`` and
   ``pw::metric::global_metrics``.
 
-Metric
-------
-The ``pw::metric::Metric`` provides:
+Metric architecture
+-------------------
+To support both 32-bit and 64-bit metrics efficiently without virtual table
+overhead or wasting memory, ``pw_metric`` uses a type-discriminated class
+hierarchy:
 
-- A 31-bit tokenized name
-- A 1-bit discriminator for int or float
-- A 32-bit payload (int or float)
-- A 32-bit next pointer (intrusive list)
+.. list-table::
+   :header-rows: 1
 
-The metric object is 12 bytes on 32-bit platforms.
+   * - Class
+     - Description
+     - Size (32-bit platform)
+   * - ``UntypedMetric``
+     - Common base class stored in intrusive lists. Holds the token and type.
+     - 8 bytes
+   * - ``TypedMetric<uint32_t>``
+     - Inherits from ``UntypedMetric``, holds a 32-bit ``uint32_t`` payload.
+     - 12 bytes
+   * - ``TypedMetric<float>``
+     - Inherits from ``UntypedMetric``, holds a 32-bit ``float`` payload.
+     - 12 bytes
+   * - ``TypedMetric<uint64_t>``
+     - Inherits from ``UntypedMetric``, holds a 64-bit ``uint64_t`` payload (optional).
+     - 16 bytes
+   * - ``TypedMetric<int64_t>``
+     - Inherits from ``UntypedMetric``, holds a 64-bit ``int64_t`` payload (optional).
+     - 16 bytes
 
-All of the operations on the pw_metric are atomic, and require the system to
-have a ``std::atomic`` backend implementation defined.
+All mutation operations on metrics are atomic, requiring a ``std::atomic``
+backend.
 
-.. cpp:class:: pw::metric::Metric
+64-bit atomics and toolchain support
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+To support 64-bit metrics (``uint64_t``), the target architecture and toolchain
+must support 64-bit atomic operations.
 
-   .. cpp:function:: Increment(uint32_t amount = 0)
+Some 32-bit ARM Cortex-M targets (specifically Cortex-M0, M0+, M3, and M4) do
+not support 64-bit atomic operations in hardware (Cortex-M0 and M0+ lack
+atomic hardware instructions entirely, while Cortex-M3 and M4 lack double-word
+exclusive instructions like ``LDREXD``/``STREXD``).
+When compiling for these targets, the GNU Arm Embedded Toolchain
+(``arm-none-eabi-gcc``) will generate calls to runtime helper functions (e.g.,
+``__atomic_load_8``, ``__atomic_store_8``, etc.), which are not provided by the
+compiler's default runtime libraries (``libgcc``).
 
-      Increment the metric by the given amount. Results in undefined behaviour if
-      the metric is not of type int.
+Opting-in to 64-bit metrics
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+By default, 64-bit metrics are **disabled on target platforms** to prevent
+compilation and linker failures on architectures without native 64-bit atomic
+instructions. On host platforms (like x86_64 and aarch64), they are enabled
+by default.
 
-   .. cpp:function:: Set(uint32_t value)
+To opt-in to 64-bit metrics on a target platform:
 
-      Set the metric to the given value. Results in undefined behaviour if the
-      metric is not of type int.
+1.  **Define the configuration macro**: Define
+    ``PW_METRIC_CONFIG_ENABLE_64BIT=1`` in your compiler options
+    or configuration header.
+2.  **Link the atomic helper library**: Link the ``cortex_m_64bit_atomics``
+    library provided by Pigweed (see below).
+3.  **Include the 64-bit header**: Include ``pw_metric/metric_64bit.h`` in
+    source files that define or use 64-bit metrics.
 
-   .. cpp:function:: Set(float value)
+Linking the atomic helpers
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+* **GN**: Add ``$dir_pw_atomic:cortex_m_64bit_atomics`` to your
+  target's link dependencies.
+* **Bazel**: Add ``@pigweed//pw_atomic:cortex_m_64bit_atomics`` to your
+  binary target's ``deps``.
+* **CMake**: Link the ``pw_atomic.cortex_m_64bit_atomics`` library to
+  your binary target.
 
-      Set the metric to the given value. Results in undefined behaviour if the
-      metric is not of type float.
+Token and type encoding
+^^^^^^^^^^^^^^^^^^^^^^^
+To minimize memory usage, the metric name (token) and its type are packed
+into a single 32-bit field (``name_and_type_``) in ``UntypedMetric``:
+
+- **Lower 28 bits**: The tokenized name (masked with ``0x0fffffff``).
+- **Upper 4 bits**: The type discriminator (masked with ``0xf0000000``).
+
+This 4-bit discriminator allows up to 16 types, currently supporting:
+- ``kTypeUint32`` (``0x00000000``)
+- ``kTypeFloat`` (``0x10000000``)
+- ``kTypeUint64`` (``0x20000000``) (only when 64-bit is enabled)
+- ``kTypeInt64`` (``0x30000000``) (only when 64-bit is enabled)
+
+The remaining slots are reserved for future types (e.g., ``int32_t``,
+``double``).
+
+Using a 28-bit token still provides a very large token space (over 268 million
+possible values), keeping the probability of a name collision extremely low
+(e.g., less than 0.05% for 500 metrics), with build-time collision detection
+provided by ``pw_tokenizer``.
+
+TypedMetric
+-----------
+The primary way to interact with metrics is through the
+``pw::metric::TypedMetric`` wrappers, which are instantiated by the
+``PW_METRIC`` macros.
+
+.. cpp:class:: template <typename T> pw::metric::TypedMetric
+
+   Type-safe wrapper for metrics. Only the operations valid for the type ``T``
+   are exposed at compile-time.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<uint32_t> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Increment(uint32_t amount = 1)
+
+      Atomically increment the metric by the given amount (saturating to max).
+
+   .. cpp:function:: void Decrement(uint32_t amount = 1)
+
+      Atomically decrement the metric by the given amount (saturating to 0).
+
+   .. cpp:function:: void Set(uint32_t value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: uint32_t value() const
+
+      Return the current value of the metric.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<uint64_t> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Increment(uint64_t amount = 1)
+
+      Atomically increment the metric by the given amount (saturating to max).
+
+   .. cpp:function:: void Decrement(uint64_t amount = 1)
+
+      Atomically decrement the metric by the given amount (saturating to 0).
+
+   .. cpp:function:: void Set(uint64_t value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: uint64_t value() const
+
+      Return the current value of the metric.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<int64_t> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Increment(int64_t amount = 1)
+
+      Atomically increment the metric by the given amount (saturating to max).
+
+   .. cpp:function:: void Decrement(int64_t amount = 1)
+
+      Atomically decrement the metric by the given amount (saturating to min).
+
+   .. cpp:function:: void Set(int64_t value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: int64_t value() const
+
+      Return the current value of the metric.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<float> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Set(float value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: float value() const
+
+      Return the current value of the metric.
+
+   .. note::
+      ``TypedMetric<float>`` does not offer ``Increment()`` or ``Decrement()``
+      operations, as floating-point addition is prone to precision loss when
+      accumulating small values.
 
 .. _module-pw_metric-group:
 
@@ -320,6 +462,25 @@ tokenizing the metric and group names.
       that context, metrics are globally registered without the need to
       centrally register in a single place.
 
+.. cpp:function:: PW_METRIC_TYPED(identifier, name, type, value)
+.. cpp:function:: PW_METRIC_TYPED(group, identifier, name, type, value)
+.. cpp:function:: PW_METRIC_TYPED_STATIC(identifier, name, type, value)
+.. cpp:function:: PW_METRIC_TYPED_STATIC(group, identifier, name, type, value)
+
+   Declare a metric with an explicit type, optionally adding it to a group.
+
+   This macro works identically to ``PW_METRIC``, but requires explicitly
+   specifying the metric type (e.g. ``float``, ``uint32_t``, or ``uint64_t``).
+   This is useful for declaring 64-bit metrics or when you want to make the
+   metric's type explicit.
+
+   Example:
+
+   .. code-block:: cpp
+
+      PW_METRIC_GROUP(my_group, "my_group");
+      PW_METRIC_TYPED(my_group, my_64bit_metric, "my_64bit_metric", uint64_t, 0ULL);
+
 .. cpp:function:: PW_METRIC_GROUP(identifier, name)
 .. cpp:function:: PW_METRIC_GROUP(parent_group, identifier, name)
 .. cpp:function:: PW_METRIC_GROUP_STATIC(identifier, name)
@@ -366,6 +527,23 @@ tokenizing the metric and group names.
       Do not create ``PW_METRIC_GLOBAL`` instances anywhere other than global
       scope. Putting these on an instance (member context) would lead to dangling
       pointers and misery. Metrics are never deleted or unregistered!
+
+.. cpp:function:: PW_METRIC_GLOBAL_TYPED(identifier, name, type, value)
+
+   Declare a ``pw::metric::TypedMetric`` with name name and explicit type, and
+   register it in the global metrics list ``pw::metric::global_metrics``.
+
+   This macro works identically to ``PW_METRIC_GLOBAL``, but requires explicitly
+   specifying the metric type (e.g. ``float``, ``uint32_t``, or ``uint64_t``).
+
+   Example:
+
+   .. code-block:: cpp
+
+      #include "pw_metric/global.h"
+      #include "pw_metric/metric.h"
+
+      PW_METRIC_GLOBAL_TYPED(my_global_64bit, "my_global_64bit", uint64_t, 0ULL);
 
 .. cpp:function:: PW_METRIC_GROUP_GLOBAL(identifier, name)
 
