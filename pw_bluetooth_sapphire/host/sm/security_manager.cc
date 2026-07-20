@@ -1288,8 +1288,9 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
   // TODO(fxbug.dev/42172514): implement "waiting interval" to prevent repeated
   // attempts as described in Vol 3, Part H, 2.3.6.
 
-  PW_CHECK(delegate_.is_alive());
-  delegate_->OnPairingComplete(fit::error(error));
+  if (delegate_.is_alive()) {
+    delegate_->OnPairingComplete(fit::error(error));
+  }
 
   auto requests = std::move(request_queue_);
   while (!requests.empty()) {
