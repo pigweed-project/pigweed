@@ -77,7 +77,7 @@ class ControlBlock final {
   /// @param  allocator   Allocator to use to provide memory.
   /// @param  layout      Layout of an object to allocate and associate with a
   ///                     control block.
-  static ControlBlock* Create(const ControlBlockHandle&,
+  static ControlBlock* Create(const ControlBlockHandle& handle,
                               pw::Allocator* allocator,
                               Layout layout);
 
@@ -95,7 +95,7 @@ class ControlBlock final {
   ///                     upcast allocator.
   /// @param  data        Previously allocated memory.
   /// @param  size        Size of the previously allocated memory, in bytes.
-  static ControlBlock* Create(const ControlBlockHandle&,
+  static ControlBlock* Create(const ControlBlockHandle& handle,
                               Deallocator* deallocator,
                               void* data,
                               size_t size);
