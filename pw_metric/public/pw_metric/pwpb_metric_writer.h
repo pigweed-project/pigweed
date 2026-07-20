@@ -26,6 +26,28 @@
 
 namespace pw::metric {
 
+namespace internal {
+
+union MetricValue {
+  float f;
+  uint32_t u32;
+};
+
+inline MetricValue ReadMetricValue(const UntypedMetric& metric) {
+  MetricValue value{};
+  switch (metric.type()) {
+    case UntypedMetric::kTypeFloat:
+      value.f = static_cast<const TypedMetric<float>&>(metric).value();
+      break;
+    case UntypedMetric::kTypeUint32:
+      value.u32 = static_cast<const TypedMetric<uint32_t>&>(metric).value();
+      break;
+  }
+  return value;
+}
+
+}  // namespace internal
+
 // Writes all metrics from a MetricWalker into a pwpb stream encoder.
 //
 // This utility class implements the pw::metric::MetricWriter
@@ -57,7 +79,8 @@ class PwpbMetricWriter : public MetricWriter {
         field_number_(field_number),
         metric_limit_(metric_limit) {}
 
-  pw::Status Write(const Metric& metric, const Vector<Token>& path) override {
+  pw::Status Write(const UntypedMetric& metric,
+                   const Vector<Token>& path) override {
     if (metric_limit_ == 0) {
       return pw::Status::ResourceExhausted();
     }
@@ -70,16 +93,24 @@ class PwpbMetricWriter : public MetricWriter {
       metric_payload_size +=
           protobuf::SizeOfFieldFixed32(proto::pwpb::Metric::Fields::kTokenPath);
     }
-    if (metric.is_float()) {
-      metric_payload_size +=
-          protobuf::SizeOfFieldFloat(proto::pwpb::Metric::Fields::kAsFloat);
-    } else {
-      metric_payload_size += protobuf::SizeOfFieldUint32(
-          proto::pwpb::Metric::Fields::kAsInt, metric.as_int());
+
+    // Read the atomic metric value once to ensure the same value is used for
+    // both the sizing and writing passes. This prevents a race condition
+    // where the metric's value could change between the two passes.
+    const auto value = internal::ReadMetricValue(metric);
+    switch (metric.type()) {
+      case UntypedMetric::kTypeFloat:
+        metric_payload_size +=
+            protobuf::SizeOfFieldFloat(proto::pwpb::Metric::Fields::kAsFloat);
+        break;
+      case UntypedMetric::kTypeUint32:
+        metric_payload_size += protobuf::SizeOfFieldUint32(
+            proto::pwpb::Metric::Fields::kAsInt, value.u32);
+        break;
     }
 
     // 2) Calculate the total on-wire size this metric will consume in the
-    // parent encoder, including its own tag and length delimiter.
+    // parent delimiter.
     const size_t required_size_for_field = protobuf::SizeOfDelimitedField(
         field_number_, static_cast<uint32_t>(metric_payload_size));
 
@@ -96,10 +127,13 @@ class PwpbMetricWriter : public MetricWriter {
 
     // The pwpb stream encoder latches the first error.
     metric_encoder.WriteTokenPath(path).IgnoreError();
-    if (metric.is_float()) {
-      metric_encoder.WriteAsFloat(metric.as_float()).IgnoreError();
-    } else {
-      metric_encoder.WriteAsInt(metric.as_int()).IgnoreError();
+    switch (metric.type()) {
+      case UntypedMetric::kTypeFloat:
+        metric_encoder.WriteAsFloat(value.f).IgnoreError();
+        break;
+      case UntypedMetric::kTypeUint32:
+        metric_encoder.WriteAsInt(value.u32).IgnoreError();
+        break;
     }
 
     --metric_limit_;
@@ -144,7 +178,8 @@ class PwpbStreamingMetricWriter : public MetricWriter {
         field_number_(field_number),
         metric_limit_(metric_limit) {}
 
-  pw::Status Write(const Metric& metric, const Vector<Token>& path) override {
+  pw::Status Write(const UntypedMetric& metric,
+                   const Vector<Token>& path) override {
     if (metric_limit_ == 0) {
       return pw::Status::ResourceExhausted();
     }
@@ -153,26 +188,26 @@ class PwpbStreamingMetricWriter : public MetricWriter {
     // both the sizing and writing passes of `WriteNestedMessage`. This prevents
     // a race condition where the metric's value could change between the two
     // passes.
-    const bool is_float = metric.is_float();
-    const float float_value = is_float ? metric.as_float() : 0.0f;
-    const uint32_t int_value = is_float ? 0 : metric.as_int();
+    const auto value = internal::ReadMetricValue(metric);
+
     const pw::span<const Token> path_span = path;
 
     // Use the two-pass WriteNestedMessage API to write the metric directly to
     // the stream without an intermediate buffer. The lambda will be called
     // twice: once to measure the size, and a second time to write.
     pw::Status status = parent_encoder_.WriteNestedMessage(
-        field_number_,
-        [path_span, is_float, float_value, int_value](
-            pw::protobuf::StreamEncoder& base_encoder) {
+        field_number_, [&](pw::protobuf::StreamEncoder& base_encoder) {
           auto& metric_encoder = pw::protobuf::StreamEncoderCast<
               pw::metric::proto::pwpb::Metric::StreamEncoder>(base_encoder);
 
           metric_encoder.WriteTokenPath(path_span).IgnoreError();
-          if (is_float) {
-            metric_encoder.WriteAsFloat(float_value).IgnoreError();
-          } else {
-            metric_encoder.WriteAsInt(int_value).IgnoreError();
+          switch (metric.type()) {
+            case UntypedMetric::kTypeFloat:
+              metric_encoder.WriteAsFloat(value.f).IgnoreError();
+              break;
+            case UntypedMetric::kTypeUint32:
+              metric_encoder.WriteAsInt(value.u32).IgnoreError();
+              break;
           }
           return metric_encoder.status();
         });

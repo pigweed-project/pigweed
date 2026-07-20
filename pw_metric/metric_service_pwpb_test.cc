@@ -60,6 +60,7 @@ size_t SumMetricInts(ConstByteSpan serialized_path) {
         uint32_t metric_value;
         PW_TEST_EXPECT_OK(decoder.ReadUint32(&metric_value));
         metrics_sum += metric_value;
+        break;
       }
     }
   }
@@ -148,6 +149,22 @@ TEST(MetricService, OneGroupFiveMetrics) {
   EXPECT_EQ(
       15u,
       GetMetricsSum(ctx.responses()[0]) + GetMetricsSum(ctx.responses()[1]));
+}
+
+TEST(MetricService, MixedMetrics) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC(root, a, "a", 1u);
+  PW_METRIC(root, b, "b", 2.0f);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(2u, CountEncodedMetrics(ctx.responses()[0]));
+  EXPECT_EQ(1u, GetMetricsSum(ctx.responses()[0]));
 }
 
 TEST(MetricService, NestedGroupFiveMetrics) {
@@ -277,9 +294,10 @@ size_t GetEncodedMetricSize(const Metric& metric, const Vector<Token>& path) {
   if (metric.is_float()) {
     metric_payload_size +=
         protobuf::SizeOfFieldFloat(proto::pwpb::Metric::Fields::kAsFloat);
-  } else {
+  } else if (metric.is_uint32()) {
+    const auto& m = static_cast<const TypedMetric<uint32_t>&>(metric);
     metric_payload_size += protobuf::SizeOfFieldUint32(
-        proto::pwpb::Metric::Fields::kAsInt, metric.as_int());
+        proto::pwpb::Metric::Fields::kAsInt, m.value());
   }
 
   // 2) Calculate the size of the *entire* nested Metric message, including

@@ -68,6 +68,29 @@ TEST(MetricService, FlatMetricsNoGroupsOneResponseOnly) {
   EXPECT_EQ(5, context.responses()[0].metrics_count);
 }
 
+TEST(MetricService, MixedMetrics) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC(root, a, "a", 1u);
+  PW_METRIC(root, b, "b", 2.0f);
+
+  GET_METHOD_CONTEXT context(root.metrics(), root.children());
+  context.call({});
+  EXPECT_TRUE(context.done());
+  EXPECT_EQ(OkStatus(), context.status());
+
+  EXPECT_EQ(1u, context.responses().size());
+  EXPECT_EQ(2, context.responses()[0].metrics_count);
+
+  uint32_t metric_sum = 0;
+  for (int i = 0; i < context.responses()[0].metrics_count; ++i) {
+    const auto& m = context.responses()[0].metrics[i];
+    if (m.which_value == pw_metric_proto_Metric_as_int_tag) {
+      metric_sum += m.value.as_int;
+    }
+  }
+  EXPECT_EQ(1u, metric_sum);
+}
+
 TEST(MetricService, NestedGroupsButOnlyOneBatch) {
   // Set up a nested group of metrics that will fit in the default batch (10).
   PW_METRIC_GROUP(root, "/");

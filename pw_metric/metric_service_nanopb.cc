@@ -30,7 +30,7 @@ namespace {
 // Writes a pw::metric::Metric object to a nanopb-generated Metric struct.
 // This is a shared helper used by both the streaming and unary writers.
 template <typename ResponseStruct>
-void WriteMetricToResponse(const Metric& metric,
+void WriteMetricToResponse(const UntypedMetric& metric,
                            const Vector<Token>& path,
                            ResponseStruct& response) {
   // Grab the next available Metric slot to write to in the response.
@@ -44,12 +44,19 @@ void WriteMetricToResponse(const Metric& metric,
   proto_metric.token_path_count = static_cast<pb_size_t>(path.size());
 
   // Copy the metric value.
-  if (metric.is_float()) {
-    proto_metric.value.as_float = metric.as_float();
-    proto_metric.which_value = pw_metric_proto_Metric_as_float_tag;
-  } else {
-    proto_metric.value.as_int = metric.as_int();
-    proto_metric.which_value = pw_metric_proto_Metric_as_int_tag;
+  switch (metric.type()) {
+    case UntypedMetric::kTypeFloat: {
+      const auto& m = static_cast<const TypedMetric<float>&>(metric);
+      proto_metric.value.as_float = m.value();
+      proto_metric.which_value = pw_metric_proto_Metric_as_float_tag;
+      break;
+    }
+    case UntypedMetric::kTypeUint32: {
+      const auto& m = static_cast<const TypedMetric<uint32_t>&>(metric);
+      proto_metric.value.as_int = m.value();
+      proto_metric.which_value = pw_metric_proto_Metric_as_int_tag;
+      break;
+    }
   }
 
   // Move write head to the next slot.
@@ -69,7 +76,8 @@ class NanopbStreamingMetricWriter : public virtual MetricWriter {
   // TODO(keir): Figure out a pw_rpc mechanism to fill a streaming packet based
   // on transport MTU, rather than having this as a static knob. For example,
   // some transports may be able to fit 30 metrics; others, only 5.
-  Status Write(const Metric& metric, const Vector<Token>& path) override {
+  Status Write(const UntypedMetric& metric,
+               const Vector<Token>& path) override {
     // Nanopb doesn't offer an easy way to do bounds checking, so use span's
     // type deduction magic to figure out the max size.
     span<pw_metric_proto_Metric> metrics(response_.metrics);
@@ -110,7 +118,8 @@ class NanopbUnaryMetricWriter : public UnaryMetricWriter {
   // Writes a metric to the next available slot in the response's metrics
   // array. If the array is full, this method returns RESOURCE_EXHAUSTED to
   // signal the walker to stop and paginate.
-  Status Write(const Metric& metric, const Vector<Token>& path) override {
+  Status Write(const UntypedMetric& metric,
+               const Vector<Token>& path) override {
     span<pw_metric_proto_Metric> metrics(response_.metrics);
     if (response_.metrics_count >= metrics.size()) {
       return Status::ResourceExhausted();

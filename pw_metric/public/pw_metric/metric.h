@@ -30,7 +30,12 @@ namespace pw::metric {
 // metric names are supported.
 using tokenizer::Token;
 
-#define _PW_METRIC_TOKEN_MASK 0x7fffffff
+// The token mask is 28 bits (0x0fffffff) to allow 4 bits for type information
+// in the 32-bit name_and_type_ field. While this increases the probability of
+// token collisions compared to a 31-bit mask, 28 bits (268M states) is still
+// extremely large and sufficient to avoid collisions in practice for typical
+// metric sets.
+#define _PW_METRIC_TOKEN_MASK 0x0fffffff
 
 // An individual metric. There are only two supported types: uint32_t and
 // float. More complicated compound metrics can be built on these primitives.
@@ -43,21 +48,29 @@ using tokenizer::Token;
 // parent groups, which would enable (1) safe destruction and (2) safe static
 // initialization, but at the cost of an additional 4 bytes per metric and 4
 // bytes per group..
-class Metric : public MetricList::Item {
+class UntypedMetric : public MetricList::Item {
  public:
   Token name() const { return name_and_type_ & kTokenMask; }
 
   // Disallow copy and assign.
-  Metric(Metric const&) = delete;
-  void operator=(const Metric&) = delete;
+  UntypedMetric(UntypedMetric const&) = delete;
+  void operator=(const UntypedMetric&) = delete;
 
-  bool is_float() const { return (name_and_type_ & kTypeMask) == kTypeFloat; }
-  bool is_int() const { return (name_and_type_ & kTypeMask) == kTypeInt; }
+  enum Type : uint32_t {
+    kTypeUint32 = 0x00000000,
+    kTypeFloat = 0x10000000,
+  };
 
-  float as_float() const;
-  uint32_t as_int() const;
+  Type type() const { return static_cast<Type>(name_and_type_ & kTypeMask); }
 
-  ~Metric();
+  bool is_float() const { return type() == kTypeFloat; }
+  bool is_uint32() const { return type() == kTypeUint32; }
+
+  // Backward compatibility alias.
+  [[deprecated("Use is_uint32() instead")]]
+  bool is_int() const {
+    return is_uint32();
+  }
 
   // Dump a metric or metrics to logs. Level determines the indentation
   // indent_level up to a maximum of 4. Example output:
@@ -69,91 +82,73 @@ class Metric : public MetricList::Item {
   void Dump(int indent_level, bool last) const;
   static void Dump(const MetricList& metrics, int indent_level = 0);
 
+  // Backward compatibility helpers.
+  // TODO: b/527616876 - Remove these deprecated helper methods in a later CL.
+  float as_float() const;
+  uint32_t as_int() const;
+
  protected:
-  constexpr Metric(Token name, float value)
-      : name_and_type_((name & kTokenMask) | kTypeFloat), float_(value) {}
+  constexpr UntypedMetric(Token name, Type type)
+      : name_and_type_((name & kTokenMask) | type) {}
 
-  constexpr Metric(Token name, uint32_t value)
-      : name_and_type_((name & kTokenMask) | kTypeInt), uint_(value) {}
+  UntypedMetric(Token name, Type type, MetricList& metrics);
 
-  Metric(Token name, float value, MetricList& metrics);
-  Metric(Token name, uint32_t value, MetricList& metrics);
+  ~UntypedMetric();
 
-  // Hide mutation methods, and only offer write access through the specialized
-  // TypedMetric below. This makes it impossible to call metric.Increment() on
-  // a float metric at compile time.
-
-  // Saturating add. Results in the max value if the addition would overflow.
-  void Increment(uint32_t amount = 1);
-
-  // Saturating subtract. Results in 0 if the subtraction would overflow.
-  void Decrement(uint32_t amount = 1);
-
-  void SetInt(uint32_t value);
-
-  void SetFloat(float value);
-
- private:
-  friend MetricList;
-
-  // The name of this metric as a token; from PW_TOKENIZE_STRING("my_metric").
-  // Last bit of the token is used to store int or float; 0 == int, 1 == float.
   Token name_and_type_;
 
-  union {
-    std::atomic<float> float_;
-    std::atomic<uint32_t> uint_;
-  };
+  static constexpr uint32_t kTokenMask = _PW_METRIC_TOKEN_MASK;
+  static constexpr uint32_t kTypeMask = 0xf0000000;
+  static_assert((kTokenMask & kTypeMask) == 0,
+                "Token mask and Type mask must not overlap.");
 
-  enum : uint32_t {
-    kTokenMask = _PW_METRIC_TOKEN_MASK,  // 0x7fff'ffff
-    kTypeMask = 0x8000'0000,
-    kTypeFloat = 0x8000'0000,
-    kTypeInt = 0x0,
-  };
+  friend class ResumableMetricWalker;
+  friend class MetricWalker;
 };
 
-// TypedMetric provides a type-safe wrapper the runtime-typed Metric object.
-// Note: Definition omitted to prevent accidental instantiation.
-// TODO(keir): Provide a more precise error message via static assert.
+// TODO: b/527616876 - Remove this backward compatibility alias in a later CL.
+using Metric = UntypedMetric;
+
 template <typename T>
 class TypedMetric;
 
 // A metric for floats. Does not offer an Increment() function, since it is too
 // easy to do unsafe operations like accumulating small values in floats.
 template <>
-class TypedMetric<float> : public Metric {
+class TypedMetric<float> : public UntypedMetric {
  public:
-  constexpr TypedMetric(Token name, float value) : Metric(name, value) {}
+  constexpr TypedMetric(Token name, float value)
+      : UntypedMetric(name, kTypeFloat), value_(value) {}
   TypedMetric(Token name, float value, MetricList& metrics)
-      : Metric(name, value, metrics) {}
+      : UntypedMetric(name, kTypeFloat, metrics), value_(value) {}
 
-  void Set(float value) { SetFloat(value); }  // namespace pw::metric
-  float value() const { return Metric::as_float(); }
+  ~TypedMetric() = default;
+
+  void Set(float value) { value_.store(value, std::memory_order_relaxed); }
+  float value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
-  // Shadow these accessors to hide them on the typed version of Metric.
-  float as_float() const { return 0.0; }
-  uint32_t as_int() const { return 0; }
+  std::atomic<float> value_;
 };
 
 // A metric for uint32_ts. Offers both Set() and Increment().
 template <>
-class TypedMetric<uint32_t> : public Metric {
+class TypedMetric<uint32_t> : public UntypedMetric {
  public:
-  constexpr TypedMetric(Token name, uint32_t value) : Metric(name, value) {}
+  constexpr TypedMetric(Token name, uint32_t value)
+      : UntypedMetric(name, kTypeUint32), value_(value) {}
   TypedMetric(Token name, uint32_t value, MetricList& metrics)
-      : Metric(name, value, metrics) {}
+      : UntypedMetric(name, kTypeUint32, metrics), value_(value) {}
 
-  void Increment(uint32_t amount = 1u) { Metric::Increment(amount); }
-  void Decrement(uint32_t amount = 1u) { Metric::Decrement(amount); }
-  void Set(uint32_t value) { SetInt(value); }
-  uint32_t value() const { return Metric::as_int(); }
+  ~TypedMetric() = default;
+
+  void Increment(uint32_t amount = 1u);
+  void Decrement(uint32_t amount = 1u);
+  void Set(uint32_t value) { value_.store(value, std::memory_order_relaxed); }
+  uint32_t value() const { return value_.load(std::memory_order_relaxed); }
 
  private:
-  // Shadow these accessors to hide them on the typed version of Metric.
-  float as_float() const { return 0.0; }
-  uint32_t as_int() const { return 0; }
+  std::atomic<uint32_t> value_;
 };
 
 // A metric tree; consisting of children groups and leaf metrics.
@@ -172,7 +167,7 @@ class Group : public GroupList::Item {
 
   ~Group();
 
-  void Add(Metric& metric) { metrics_.list().push_front(metric); }
+  void Add(UntypedMetric& metric) { metrics_.list().push_front(metric); }
   void Add(Group& group) { children_.list().push_front(group); }
 
   MetricList& metrics() { return metrics_; }
@@ -266,13 +261,16 @@ class Group : public GroupList::Item {
 #define PW_METRIC_STATIC(...) \
   PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_STATIC_, static, __VA_ARGS__)
 
-// Force conversion to uint32_t for non-float types, no matter what the
-// platform uses as the "u" suffix literal. This enables dispatching to the
-// correct TypedMetric specialization.
 #define _PW_METRIC_FLOAT_OR_UINT32(literal)                       \
   std::conditional_t<std::is_floating_point_v<decltype(literal)>, \
                      float,                                       \
                      uint32_t>
+
+#define PW_METRIC_TYPED(...) \
+  PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_TYPED_, , __VA_ARGS__)
+
+#define PW_METRIC_TYPED_STATIC(...) \
+  PW_DELEGATE_BY_ARG_COUNT(_PW_METRIC_TYPED_STATIC_, static, __VA_ARGS__)
 
 /// Get the token for a given metric name.
 ///
@@ -315,6 +313,41 @@ class Group : public GroupList::Item {
       variable_name##_storage(variable_name##_token, init, group.metrics()); \
   static_def::pw::metric::TypedMetric<_PW_METRIC_FLOAT_OR_UINT32(init)>&     \
       variable_name [[maybe_unused]] = *variable_name##_storage
+
+// Case: PW_METRIC_TYPED(name, type, initial_value)
+#define _PW_METRIC_TYPED_5(static_def, variable_name, metric_name, type, init) \
+  static constexpr uint32_t variable_name##_token =                            \
+      PW_METRIC_TOKEN(metric_name);                                            \
+  static_def::pw::metric::TypedMetric<type> variable_name = {                  \
+      variable_name##_token, init}
+
+// Case: PW_METRIC_TYPED(group, name, type, initial_value)
+#define _PW_METRIC_TYPED_6(                                    \
+    static_def, group, variable_name, metric_name, type, init) \
+  static constexpr uint32_t variable_name##_token =            \
+      PW_METRIC_TOKEN(metric_name);                            \
+  static_def::pw::metric::TypedMetric<type> variable_name = {  \
+      variable_name##_token, init, group.metrics()}
+
+// Case: PW_METRIC_TYPED_STATIC(name, type, initial_value)
+#define _PW_METRIC_TYPED_STATIC_5(                                            \
+    static_def, variable_name, metric_name, type, init)                       \
+  static constexpr uint32_t variable_name##_token =                           \
+      PW_METRIC_TOKEN(metric_name);                                           \
+  static_def::pw::NoDestructor<::pw::metric::TypedMetric<type>>               \
+      variable_name##_storage(variable_name##_token, init);                   \
+  static_def::pw::metric::TypedMetric<type>& variable_name [[maybe_unused]] = \
+      *variable_name##_storage
+
+// Case: PW_METRIC_TYPED_STATIC(group, name, type, initial_value)
+#define _PW_METRIC_TYPED_STATIC_6(                                            \
+    static_def, group, variable_name, metric_name, type, init)                \
+  static constexpr uint32_t variable_name##_token =                           \
+      PW_METRIC_TOKEN(metric_name);                                           \
+  static_def::pw::NoDestructor<::pw::metric::TypedMetric<type>>               \
+      variable_name##_storage(variable_name##_token, init, group.metrics());  \
+  static_def::pw::metric::TypedMetric<type>& variable_name [[maybe_unused]] = \
+      *variable_name##_storage
 
 // Define a metric group. Works like PW_METRIC, and works in the same contexts.
 //

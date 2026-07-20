@@ -53,53 +53,90 @@ const char* Indent(int level) {
 
 }  // namespace
 
-// Enable easier registration when used as a member.
-Metric::Metric(Token name, float value, MetricList& metrics)
-    : Metric(name, value) {
-  metrics.list().push_front(*this);
-}
-Metric::Metric(Token name, uint32_t value, MetricList& metrics)
-    : Metric(name, value) {
+UntypedMetric::UntypedMetric(Token name, Type type, MetricList& metrics)
+    : UntypedMetric(name, type) {
   metrics.list().push_front(*this);
 }
 
-Metric::~Metric() {
+UntypedMetric::~UntypedMetric() {
   if (!unlisted()) {
     unlist();
   }
 }
 
-float Metric::as_float() const {
+void UntypedMetric::Dump(int level, bool last) const {
+  Base64EncodedToken encoded_name(name());
+  const char* indent = Indent(level);
+  const char* comma = last ? "" : ",";
+  switch (type()) {
+    case kTypeFloat: {
+      const auto& m = static_cast<const TypedMetric<float>&>(*this);
+      // Variadic macros promote float to double. Explicitly cast here to
+      // acknowledge this and allow projects to use -Wdouble-promotion.
+      PW_LOG_INFO("%s \"%s\": %f%s",
+                  indent,
+                  encoded_name.value(),
+                  static_cast<double>(m.value()),
+                  comma);
+      break;
+    }
+    case kTypeUint32: {
+      const auto& m = static_cast<const TypedMetric<uint32_t>&>(*this);
+      PW_LOG_INFO("%s \"%s\": %u%s",
+                  indent,
+                  encoded_name.value(),
+                  static_cast<unsigned int>(m.value()),
+                  comma);
+      break;
+    }
+  }
+}
+
+float UntypedMetric::as_float() const {
   PW_DCHECK(is_float());
-  return float_.load(std::memory_order_relaxed);
+  if (is_float()) {
+    return static_cast<const TypedMetric<float>*>(this)->value();
+  }
+  return 0.0f;
 }
 
-uint32_t Metric::as_int() const {
-  PW_DCHECK(is_int());
-  return uint_.load(std::memory_order_relaxed);
+uint32_t UntypedMetric::as_int() const {
+  PW_DCHECK(is_uint32());
+  if (is_uint32()) {
+    return static_cast<const TypedMetric<uint32_t>*>(this)->value();
+  }
+  return 0;
 }
 
-void Metric::Increment(uint32_t amount) {
-  PW_DCHECK(is_int());
+void UntypedMetric::Dump(const MetricList& metrics, int level) {
+  const auto& list = metrics.list();
+  auto iter = list.begin();
+  while (iter != list.end()) {
+    const UntypedMetric& m = *iter++;
+    m.Dump(level, iter == list.end());
+  }
+}
 
-  uint32_t value = uint_.load();
+void TypedMetric<uint32_t>::Increment(uint32_t amount) {
+  PW_DCHECK(is_uint32());
+
+  uint32_t value = value_.load();
   uint32_t updated;
 
-  if (value == std::numeric_limits<uint32_t>::max()) {
-    return;
-  }
-
   do {
+    if (value == std::numeric_limits<uint32_t>::max()) {
+      return;
+    }
     if (!CheckedAdd(value, amount, updated)) {
       updated = std::numeric_limits<uint32_t>::max();
     }
-  } while (!uint_.compare_exchange_weak(value, updated));
+  } while (!value_.compare_exchange_weak(value, updated));
 }
 
-void Metric::Decrement(uint32_t amount) {
-  PW_DCHECK(is_int());
+void TypedMetric<uint32_t>::Decrement(uint32_t amount) {
+  PW_DCHECK(is_uint32());
 
-  uint32_t value = uint_.load();
+  uint32_t value = value_.load();
   uint32_t updated;
 
   do {
@@ -110,47 +147,7 @@ void Metric::Decrement(uint32_t amount) {
     if (!CheckedSub(value, amount, updated)) {
       updated = 0;
     }
-  } while (!uint_.compare_exchange_weak(value, updated));
-}
-
-void Metric::SetInt(uint32_t value) {
-  PW_DCHECK(is_int());
-  uint_.store(value, std::memory_order_relaxed);
-}
-
-void Metric::SetFloat(float value) {
-  PW_DCHECK(is_float());
-  float_.store(value, std::memory_order_relaxed);
-}
-
-void Metric::Dump(int level, bool last) const {
-  Base64EncodedToken encoded_name(name());
-  const char* indent = Indent(level);
-  const char* comma = last ? "" : ",";
-  if (is_float()) {
-    // Variadic macros promote float to double. Explicitly cast here to
-    // acknowledge this and allow projects to use -Wdouble-promotion.
-    PW_LOG_INFO("%s \"%s\": %f%s",
-                indent,
-                encoded_name.value(),
-                static_cast<double>(as_float()),
-                comma);
-  } else {
-    PW_LOG_INFO("%s \"%s\": %u%s",
-                indent,
-                encoded_name.value(),
-                static_cast<unsigned int>(as_int()),
-                comma);
-  }
-}
-
-void Metric::Dump(const MetricList& metrics, int level) {
-  const auto& list = metrics.list();
-  auto iter = list.begin();
-  while (iter != list.end()) {
-    const Metric& m = *iter++;
-    m.Dump(level, iter == list.end());
-  }
+  } while (!value_.compare_exchange_weak(value, updated));
 }
 
 Group::Group(Token name, GroupList& groups) : name_(name) {
@@ -177,7 +174,7 @@ void Group::Dump(int level, bool last) const {
   const char* comma = last ? "" : ",";
   PW_LOG_INFO("%s\"%s\": {", indent, encoded_name.value());
   Group::Dump(children(), level + 1);
-  Metric::Dump(metrics(), level + 1);
+  UntypedMetric::Dump(metrics(), level + 1);
   PW_LOG_INFO("%s}%s", indent, comma);
 }
 

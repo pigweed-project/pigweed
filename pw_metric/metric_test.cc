@@ -23,13 +23,13 @@ namespace pw::metric {
 namespace {
 
 TEST(Metric, FloatFromObject) {
-  // Note leading bit is 1; it is stripped from the name to store the type.
+  // Note leading 4 bits are stripped from the name to store the type.
   Token token = 0xf1223344;
 
   TypedMetric<float> m(token, 1.5f);
-  EXPECT_EQ(m.name(), 0x71223344u);
+  EXPECT_EQ(m.name(), 0x01223344u);
   EXPECT_TRUE(m.is_float());
-  EXPECT_FALSE(m.is_int());
+  EXPECT_FALSE(m.is_uint32());
   EXPECT_EQ(m.value(), 1.5f);
 
   m.Set(55.1f);
@@ -39,12 +39,12 @@ TEST(Metric, FloatFromObject) {
 }
 
 TEST(Metric, IntFromObject) {
-  // Note leading bit is 1; it is stripped from the name to store the type.
+  // Note leading 4 bits are stripped from the name to store the type.
   Token token = 0xf1223344;
 
   TypedMetric<uint32_t> m(token, static_cast<uint32_t>(31337u));
-  EXPECT_EQ(m.name(), 0x71223344u);
-  EXPECT_TRUE(m.is_int());
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_uint32());
   EXPECT_FALSE(m.is_float());
   EXPECT_EQ(m.value(), 31337u);
 
@@ -59,12 +59,12 @@ TEST(Metric, IntFromObject) {
 }
 
 TEST(Metric, IntLimits) {
-  // Note leading bit is 1; it is stripped from the name to store the type.
+  // Note leading 4 bits are stripped from the name to store the type.
   Token token = 0xf1223344;
 
   TypedMetric<uint32_t> m(token, static_cast<uint32_t>(31337u));
-  EXPECT_EQ(m.name(), 0x71223344u);
-  EXPECT_TRUE(m.is_int());
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_uint32());
   EXPECT_FALSE(m.is_float());
   EXPECT_EQ(m.value(), 31337u);
 
@@ -95,7 +95,7 @@ TEST(Metric, IntLimits) {
 
 TEST(Metric, IntFromMacroLocal) {
   PW_METRIC(m, "some_metric", 14u);
-  EXPECT_TRUE(m.is_int());
+  EXPECT_TRUE(m.is_uint32());
   EXPECT_EQ(m.value(), 14u);
 }
 

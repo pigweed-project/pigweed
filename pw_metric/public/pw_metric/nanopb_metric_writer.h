@@ -62,37 +62,38 @@ class NanopbMetricWriter : public MetricWriter {
     metrics_count_ = 0;
   }
 
-  pw::Status Write(const Metric& metric, const Vector<Token>& path) override {
-    // Check application-defined limit first.
+  pw::Status Write(const UntypedMetric& metric,
+                   const Vector<Token>& path) override {
     if (metric_limit_ == 0) {
-      return pw::Status::ResourceExhausted();
+      return Status::ResourceExhausted();
     }
-
-    // Check if the nanopb C struct array is full.
     if (metrics_count_ >= metrics_array_.size()) {
-      return pw::Status::ResourceExhausted();
+      return Status::ResourceExhausted();
     }
 
-    // Get the next available slot in the array.
     pw_metric_proto_Metric& proto_metric = metrics_array_[metrics_count_];
 
-    // Copy the token path.
-    // The MetricWalker's ScopedName checks that the path depth does not
-    // exceed its internal capacity, which is sized to match the proto.
+    // Copy the path.
     PW_DCHECK_INT_LE(path.size(), std::size(proto_metric.token_path));
     proto_metric.token_path_count = static_cast<pb_size_t>(path.size());
     std::copy(path.begin(), path.end(), proto_metric.token_path);
 
     // Copy the metric value.
-    if (metric.is_float()) {
-      proto_metric.value.as_float = metric.as_float();
-      proto_metric.which_value = pw_metric_proto_Metric_as_float_tag;
-    } else {
-      proto_metric.value.as_int = metric.as_int();
-      proto_metric.which_value = pw_metric_proto_Metric_as_int_tag;
+    switch (metric.type()) {
+      case UntypedMetric::kTypeFloat: {
+        const auto& m = static_cast<const TypedMetric<float>&>(metric);
+        proto_metric.value.as_float = m.value();
+        proto_metric.which_value = pw_metric_proto_Metric_as_float_tag;
+        break;
+      }
+      case UntypedMetric::kTypeUint32: {
+        const auto& m = static_cast<const TypedMetric<uint32_t>&>(metric);
+        proto_metric.value.as_int = m.value();
+        proto_metric.which_value = pw_metric_proto_Metric_as_int_tag;
+        break;
+      }
     }
 
-    // Commit the write.
     --metric_limit_;
     ++metrics_count_;
 

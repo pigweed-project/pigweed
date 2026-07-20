@@ -24,6 +24,7 @@
 #include "pw_log/log.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
+#include "pw_metric/pwpb_metric_writer.h"
 #include "pw_metric_proto/metric_service.pwpb.h"
 #include "pw_preprocessor/util.h"
 #include "pw_protobuf/decoder.h"
@@ -43,10 +44,10 @@ constexpr size_t kMaxNumPackedEntries = 3;
 
 namespace {
 
-class PwpbStreamingMetricWriter : public virtual MetricWriter {
+class PwpbServiceStreamingMetricWriter : public virtual MetricWriter {
  public:
-  PwpbStreamingMetricWriter(span<std::byte> response,
-                            rpc::RawServerWriter& response_writer)
+  PwpbServiceStreamingMetricWriter(span<std::byte> response,
+                                   rpc::RawServerWriter& response_writer)
       : response_(response),
         response_writer_(response_writer),
         encoder_(response) {}
@@ -54,7 +55,8 @@ class PwpbStreamingMetricWriter : public virtual MetricWriter {
   // TODO(keir): Figure out a pw_rpc mechanism to fill a streaming packet based
   // on transport MTU, rather than having this as a static knob. For example,
   // some transports may be able to fit 30 metrics; others, only 5.
-  Status Write(const Metric& metric, const Vector<Token>& path) override {
+  Status Write(const UntypedMetric& metric,
+               const Vector<Token>& path) override {
     {  // Scope to control proto_encoder lifetime.
 
       // Grab the next available Metric slot to write to in the response.
@@ -62,10 +64,17 @@ class PwpbStreamingMetricWriter : public virtual MetricWriter {
           encoder_.GetMetricsEncoder();
       PW_TRY(proto_encoder.WriteTokenPath(path));
       // Encode the metric value.
-      if (metric.is_float()) {
-        PW_TRY(proto_encoder.WriteAsFloat(metric.as_float()));
-      } else {
-        PW_TRY(proto_encoder.WriteAsInt(metric.as_int()));
+      switch (metric.type()) {
+        case UntypedMetric::kTypeFloat: {
+          const auto& m = static_cast<const TypedMetric<float>&>(metric);
+          PW_TRY(proto_encoder.WriteAsFloat(m.value()));
+          break;
+        }
+        case UntypedMetric::kTypeUint32: {
+          const auto& m = static_cast<const TypedMetric<uint32_t>&>(metric);
+          PW_TRY(proto_encoder.WriteAsInt(m.value()));
+          break;
+        }
       }
     }
     ++metrics_count_;
@@ -116,23 +125,32 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
   // This method calculates the required size for the metric and returns
   // RESOURCE_EXHAUSTED if the metric will not fit in the remaining buffer
   // space, which drives the server-side pagination.
-  Status Write(const Metric& metric, const Vector<Token>& path) override {
-    // A packed repeated fixed32 field (like token_path) is encoded on the wire
-    // identically to a bytes field. First, calculate the size of the payload.
+  Status Write(const UntypedMetric& metric,
+               const Vector<Token>& path) override {
+    // A packed repeated fixed32 field (like token_path) is encoded on the
+    // wire identically to a bytes field. First, calculate the size of the
+    // payload.
     const size_t token_path_payload_size = path.size() * sizeof(uint32_t);
 
-    // Now, calculate the total size of the token_path field within the Metric
+    // Calculate the total size of the token_path field within the Metric
     // message, including its tag and length prefix.
     size_t metric_payload_size = protobuf::SizeOfDelimitedField(
         proto::pwpb::Metric::Fields::kTokenPath,
         static_cast<uint32_t>(token_path_payload_size));
 
-    if (metric.is_float()) {
-      metric_payload_size +=
-          protobuf::SizeOfFieldFloat(proto::pwpb::Metric::Fields::kAsFloat);
-    } else {
-      metric_payload_size += protobuf::SizeOfFieldUint32(
-          proto::pwpb::Metric::Fields::kAsInt, metric.as_int());
+    // Read the atomic metric value once to ensure the same value is used for
+    // both the sizing and writing passes. This prevents a race condition
+    // where the metric's value could change between the two passes.
+    const auto value = internal::ReadMetricValue(metric);
+    switch (metric.type()) {
+      case UntypedMetric::kTypeFloat:
+        metric_payload_size +=
+            protobuf::SizeOfFieldFloat(proto::pwpb::Metric::Fields::kAsFloat);
+        break;
+      case UntypedMetric::kTypeUint32:
+        metric_payload_size += protobuf::SizeOfFieldUint32(
+            proto::pwpb::Metric::Fields::kAsInt, value.u32);
+        break;
     }
 
     // Calculate the size of the entire Metric message when encoded as a field
@@ -141,8 +159,8 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
         proto::pwpb::WalkResponse::Fields::kMetrics,
         static_cast<uint32_t>(metric_payload_size));
 
-    // Check if the metric AND the final response fields (cursor/done) will fit
-    // in the buffer. If not, return RESOURCE_EXHAUSTED to signal the
+    // Check if the metric AND the final response fields (cursor/done) will
+    // fit in the buffer. If not, return RESOURCE_EXHAUSTED to signal the
     // ResumableMetricWalker to pause and return a cursor.
     if ((encoder_.size() + required_size_for_field + kWalkResponseOverhead) >
         capacity_) {
@@ -154,10 +172,13 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
       proto::pwpb::Metric::StreamEncoder metric_encoder =
           encoder_.GetMetricsEncoder();
       PW_TRY(metric_encoder.WriteTokenPath(path));
-      if (metric.is_float()) {
-        PW_TRY(metric_encoder.WriteAsFloat(metric.as_float()));
-      } else {
-        PW_TRY(metric_encoder.WriteAsInt(metric.as_int()));
+      switch (metric.type()) {
+        case UntypedMetric::kTypeFloat:
+          PW_TRY(metric_encoder.WriteAsFloat(value.f));
+          break;
+        case UntypedMetric::kTypeUint32:
+          PW_TRY(metric_encoder.WriteAsInt(value.u32));
+          break;
       }
       write_status = metric_encoder.status();
     }  // Destructor for metric_encoder commits the write to the parent encoder.
@@ -212,7 +233,7 @@ void MetricService::Get(ConstByteSpan /*request*/,
 
   std::array<std::byte, kEncodeBufferSize> encode_buffer;
 
-  PwpbStreamingMetricWriter writer(encode_buffer, raw_response);
+  PwpbServiceStreamingMetricWriter writer(encode_buffer, raw_response);
   MetricWalker walker(writer);
 
   // This will stream all the metrics in the span of this Get() method call.

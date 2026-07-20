@@ -18,7 +18,7 @@
 
 namespace pw::metric {
 
-class Metric;
+class UntypedMetric;
 class Group;
 class ResumableMetricWalker;
 class MetricWalker;
@@ -103,7 +103,7 @@ class ListWrapper {
 
  private:
   // Allow pw_metric classes to modify and directly access the list.
-  friend Metric;
+  friend UntypedMetric;
   friend Group;
 
   friend ResumableMetricWalker;
@@ -121,7 +121,7 @@ class ListWrapper {
 }  // namespace internal
 
 /// A list of metrics.
-using MetricList = internal::ListWrapper<Metric>;
+using MetricList = internal::ListWrapper<UntypedMetric>;
 
 /// A list of metrics groups.
 using GroupList = internal::ListWrapper<Group>;

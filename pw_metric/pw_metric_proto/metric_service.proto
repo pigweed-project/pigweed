@@ -45,6 +45,8 @@ message Metric {
   // The metric value. This field should be omitted when used as a query.
   oneof value {
     float as_float = 3;
+    // TODO(b/527616876): consider renaming this as_int32. This is deferred to
+    // avoid breaking changes.
     uint32 as_int = 4;
   };
 }
