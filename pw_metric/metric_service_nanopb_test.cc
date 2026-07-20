@@ -68,6 +68,69 @@ TEST(MetricService, FlatMetricsNoGroupsOneResponseOnly) {
   EXPECT_EQ(5, context.responses()[0].metrics_count);
 }
 
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+TEST(MetricService, OneGroupOneUint64Metric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", uint64_t, 3ULL);
+
+  GET_METHOD_CONTEXT context(root.metrics(), root.children());
+  context.call({});
+  EXPECT_TRUE(context.done());
+  EXPECT_EQ(OkStatus(), context.status());
+
+  EXPECT_EQ(1u, context.responses().size());
+  EXPECT_EQ(1, context.responses()[0].metrics_count);
+  EXPECT_EQ(3ULL, context.responses()[0].metrics[0].value.as_uint64);
+  EXPECT_EQ(pw_metric_proto_Metric_as_uint64_tag,
+            context.responses()[0].metrics[0].which_value);
+}
+
+TEST(MetricService, OneGroupOneInt64Metric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", int64_t, -3LL);
+
+  GET_METHOD_CONTEXT context(root.metrics(), root.children());
+  context.call({});
+  EXPECT_TRUE(context.done());
+  EXPECT_EQ(OkStatus(), context.status());
+
+  EXPECT_EQ(1u, context.responses().size());
+  EXPECT_EQ(1, context.responses()[0].metrics_count);
+  EXPECT_EQ(-3LL, context.responses()[0].metrics[0].value.as_int64);
+  EXPECT_EQ(pw_metric_proto_Metric_as_int64_tag,
+            context.responses()[0].metrics[0].which_value);
+}
+
+TEST(MetricService, MixedMetricsWith64Bit) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC(root, a, "a", 1u);
+  PW_METRIC(root, b, "b", 2.0f);
+  PW_METRIC_TYPED(root, c, "c", uint64_t, 3ULL);
+  PW_METRIC_TYPED(root, d, "d", int64_t, -3LL);
+
+  GET_METHOD_CONTEXT context(root.metrics(), root.children());
+  context.call({});
+  EXPECT_TRUE(context.done());
+  EXPECT_EQ(OkStatus(), context.status());
+
+  EXPECT_EQ(1u, context.responses().size());
+  EXPECT_EQ(4, context.responses()[0].metrics_count);
+
+  int64_t metric_sum = 0;
+  for (int i = 0; i < context.responses()[0].metrics_count; ++i) {
+    const auto& m = context.responses()[0].metrics[i];
+    if (m.which_value == pw_metric_proto_Metric_as_int_tag) {
+      metric_sum += m.value.as_int;
+    } else if (m.which_value == pw_metric_proto_Metric_as_uint64_tag) {
+      metric_sum += m.value.as_uint64;
+    } else if (m.which_value == pw_metric_proto_Metric_as_int64_tag) {
+      metric_sum += m.value.as_int64;
+    }
+  }
+  EXPECT_EQ(1LL, metric_sum);
+}
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+
 TEST(MetricService, MixedMetrics) {
   PW_METRIC_GROUP(root, "/");
   PW_METRIC(root, a, "a", 1u);

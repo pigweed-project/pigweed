@@ -19,12 +19,55 @@
 #include <limits>
 
 #include "pw_memory/no_destructor.h"
+#include "pw_metric/config.h"
 #include "pw_metric/list.h"
+#include "pw_numeric/checked_arithmetic.h"
 #include "pw_preprocessor/arguments.h"
 #include "pw_tokenizer/tokenize.h"
 
 /// Lightweight manual instrumentation library
 namespace pw::metric {
+
+namespace internal {
+
+// Atomically increments value by amount with upper-bound saturation.
+// Uses a compare-and-swap loop to ensure atomic saturating arithmetic.
+template <typename T>
+void SaturatedIncrement(std::atomic<T>& atomic_val, T amount) {
+  constexpr T max_val = std::numeric_limits<T>::max();
+  T value = atomic_val.load(std::memory_order_relaxed);
+  T updated;
+  do {
+    if (value == max_val) {
+      return;
+    }
+    if (!CheckedAdd(value, amount, updated)) {
+      updated = max_val;
+    }
+  } while (!atomic_val.compare_exchange_weak(
+      value, updated, std::memory_order_relaxed));
+}
+
+// Atomically decrements value by amount with lower-bound saturation.
+// Uses a compare-and-swap loop to ensure atomic saturating arithmetic.
+template <typename T>
+void SaturatedDecrement(std::atomic<T>& atomic_val, T amount) {
+  constexpr T min_val =
+      std::is_signed_v<T> ? std::numeric_limits<T>::min() : static_cast<T>(0);
+  T value = atomic_val.load(std::memory_order_relaxed);
+  T updated;
+  do {
+    if (value == min_val) {
+      return;
+    }
+    if (!CheckedSub(value, amount, updated)) {
+      updated = min_val;
+    }
+  } while (!atomic_val.compare_exchange_weak(
+      value, updated, std::memory_order_relaxed));
+}
+
+}  // namespace internal
 
 // Currently, this is for tokens, but later may be a char* when non-tokenized
 // metric names are supported.
@@ -37,9 +80,10 @@ using tokenizer::Token;
 // metric sets.
 #define _PW_METRIC_TOKEN_MASK 0x0fffffff
 
-// An individual metric. There are only two supported types: uint32_t and
-// float. More complicated compound metrics can be built on these primitives.
-// See the documentation for a discussion for this design was selected.
+// An individual metric. There are three supported types: uint32_t, float, and
+// optionally uint64_t. More complicated compound metrics can be built on these
+// primitives. See the documentation for a discussion of how this design was
+// selected.
 //
 // Size: 12 bytes / 96 bits - next, name, value.
 //
@@ -59,12 +103,20 @@ class UntypedMetric : public MetricList::Item {
   enum Type : uint32_t {
     kTypeUint32 = 0x00000000,
     kTypeFloat = 0x10000000,
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+    kTypeUint64 = 0x20000000,
+    kTypeInt64 = 0x30000000,
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
   };
 
   Type type() const { return static_cast<Type>(name_and_type_ & kTypeMask); }
 
   bool is_float() const { return type() == kTypeFloat; }
   bool is_uint32() const { return type() == kTypeUint32; }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+  bool is_uint64() const { return type() == kTypeUint64; }
+  bool is_int64() const { return type() == kTypeInt64; }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
 
   // Backward compatibility alias.
   [[deprecated("Use is_uint32() instead")]]
@@ -415,3 +467,49 @@ class Group : public GroupList::Item {
   PW_TOKENIZE_STRING_MASK_EXPR("metrics", _PW_METRIC_TOKEN_MASK, metric_name)
 
 }  // namespace pw::metric
+
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+
+namespace pw::metric {
+
+template <>
+class TypedMetric<uint64_t> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, uint64_t value)
+      : UntypedMetric(name, kTypeUint64), value_(value) {}
+  TypedMetric(Token name, uint64_t value, MetricList& metrics)
+      : UntypedMetric(name, kTypeUint64, metrics), value_(value) {}
+
+  ~TypedMetric() = default;
+
+  void Increment(uint64_t amount = 1u);
+  void Decrement(uint64_t amount = 1u);
+  void Set(uint64_t value) { value_.store(value, std::memory_order_relaxed); }
+  uint64_t value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<uint64_t> value_;
+};
+
+template <>
+class TypedMetric<int64_t> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, int64_t value)
+      : UntypedMetric(name, kTypeInt64), value_(value) {}
+  TypedMetric(Token name, int64_t value, MetricList& metrics)
+      : UntypedMetric(name, kTypeInt64, metrics), value_(value) {}
+
+  ~TypedMetric() = default;
+
+  void Increment(int64_t amount = 1);
+  void Decrement(int64_t amount = 1);
+  void Set(int64_t value) { value_.store(value, std::memory_order_relaxed); }
+  int64_t value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<int64_t> value_;
+};
+
+}  // namespace pw::metric
+
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT

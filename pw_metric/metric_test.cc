@@ -93,6 +93,137 @@ TEST(Metric, IntLimits) {
   EXPECT_EQ(m.value(), std::numeric_limits<uint32_t>::max());
 }
 
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+TEST(Metric, Uint64FromObject) {
+  // Note leading 4 bits are stripped from the name to store the type.
+  Token token = 0xf1223344;
+
+  TypedMetric<uint64_t> m(token, static_cast<uint64_t>(31337ULL));
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_uint64());
+  EXPECT_FALSE(m.is_uint32());
+  EXPECT_FALSE(m.is_float());
+  EXPECT_EQ(m.value(), 31337ULL);
+
+  m.Set(414ULL);
+  EXPECT_EQ(m.value(), 414ULL);
+
+  m.Increment();
+  EXPECT_EQ(m.value(), 415ULL);
+
+  m.Increment(11ULL);
+  EXPECT_EQ(m.value(), 426ULL);
+}
+
+TEST(Metric, Uint64Limits) {
+  Token token = 0xf1223344;
+
+  TypedMetric<uint64_t> m(token, static_cast<uint64_t>(31337ULL));
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_uint64());
+  EXPECT_EQ(m.value(), 31337ULL);
+
+  m.Set(10);
+  EXPECT_EQ(m.value(), 10ULL);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), 3ULL);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), 0ULL);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), 0ULL);
+
+  m.Set(std::numeric_limits<uint64_t>::max() - 10);
+  EXPECT_EQ(m.value(), std::numeric_limits<uint64_t>::max() - 10);
+
+  m.Increment();
+  EXPECT_EQ(m.value(), std::numeric_limits<uint64_t>::max() - 9);
+
+  m.Increment(9);
+  EXPECT_EQ(m.value(), std::numeric_limits<uint64_t>::max());
+
+  m.Increment(2);
+  EXPECT_EQ(m.value(), std::numeric_limits<uint64_t>::max());
+}
+
+TEST(Metric, Uint64FromMacroLocal) {
+  PW_METRIC_TYPED(m, "some_metric", uint64_t, 14ULL);
+  EXPECT_TRUE(m.is_uint64());
+  EXPECT_EQ(m.value(), 14ULL);
+}
+
+TEST(Metric, Int64Basic) {
+  Token token = 0xf1223344;
+
+  TypedMetric<int64_t> m(token, static_cast<int64_t>(31337LL));
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_int64());
+  EXPECT_FALSE(m.is_uint64());
+  EXPECT_FALSE(m.is_uint32());
+  EXPECT_FALSE(m.is_float());
+  EXPECT_EQ(m.value(), 31337LL);
+
+  m.Set(414LL);
+  EXPECT_EQ(m.value(), 414LL);
+
+  m.Increment();
+  EXPECT_EQ(m.value(), 415LL);
+
+  m.Increment(11LL);
+  EXPECT_EQ(m.value(), 426LL);
+}
+
+TEST(Metric, Int64Limits) {
+  Token token = 0xf1223344;
+
+  TypedMetric<int64_t> m(token, static_cast<int64_t>(31337LL));
+  EXPECT_EQ(m.name(), 0x01223344u);
+  EXPECT_TRUE(m.is_int64());
+  EXPECT_EQ(m.value(), 31337LL);
+
+  m.Set(10);
+  EXPECT_EQ(m.value(), 10LL);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), 3LL);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), -4LL);
+
+  m.Set(std::numeric_limits<int64_t>::min() + 10);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::min() + 10);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::min() + 3);
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::min());
+
+  m.Decrement(7);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::min());
+
+  m.Set(std::numeric_limits<int64_t>::max() - 10);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::max() - 10);
+
+  m.Increment();
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::max() - 9);
+
+  m.Increment(9);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::max());
+
+  m.Increment(2);
+  EXPECT_EQ(m.value(), std::numeric_limits<int64_t>::max());
+}
+
+TEST(Metric, Int64FromMacroLocal) {
+  PW_METRIC_TYPED(m, "some_metric", int64_t, 14LL);
+  EXPECT_TRUE(m.is_int64());
+  EXPECT_EQ(m.value(), 14LL);
+}
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+
 TEST(Metric, IntFromMacroLocal) {
   PW_METRIC(m, "some_metric", 14u);
   EXPECT_TRUE(m.is_uint32());

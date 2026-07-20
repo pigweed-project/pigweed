@@ -22,6 +22,7 @@
 #include "pw_assert/check.h"
 #include "pw_containers/vector.h"
 #include "pw_log/log.h"
+#include "pw_metric/config.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
 #include "pw_metric/pwpb_metric_writer.h"
@@ -75,6 +76,18 @@ class PwpbServiceStreamingMetricWriter : public virtual MetricWriter {
           PW_TRY(proto_encoder.WriteAsInt(m.value()));
           break;
         }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+        case UntypedMetric::kTypeUint64: {
+          const auto& m = static_cast<const TypedMetric<uint64_t>&>(metric);
+          PW_TRY(proto_encoder.WriteAsUint64(m.value()));
+          break;
+        }
+        case UntypedMetric::kTypeInt64: {
+          const auto& m = static_cast<const TypedMetric<int64_t>&>(metric);
+          PW_TRY(proto_encoder.WriteAsInt64(m.value()));
+          break;
+        }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
       }
     }
     ++metrics_count_;
@@ -151,6 +164,16 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
         metric_payload_size += protobuf::SizeOfFieldUint32(
             proto::pwpb::Metric::Fields::kAsInt, value.u32);
         break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeUint64:
+        metric_payload_size += protobuf::SizeOfFieldUint64(
+            proto::pwpb::Metric::Fields::kAsUint64, value.u64);
+        break;
+      case UntypedMetric::kTypeInt64:
+        metric_payload_size += protobuf::SizeOfFieldInt64(
+            proto::pwpb::Metric::Fields::kAsInt64, value.i64);
+        break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
     }
 
     // Calculate the size of the entire Metric message when encoded as a field
@@ -179,6 +202,14 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
         case UntypedMetric::kTypeUint32:
           PW_TRY(metric_encoder.WriteAsInt(value.u32));
           break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+        case UntypedMetric::kTypeUint64:
+          PW_TRY(metric_encoder.WriteAsUint64(value.u64));
+          break;
+        case UntypedMetric::kTypeInt64:
+          PW_TRY(metric_encoder.WriteAsInt64(value.i64));
+          break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
       }
       write_status = metric_encoder.status();
     }  // Destructor for metric_encoder commits the write to the parent encoder.

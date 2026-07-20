@@ -58,6 +58,10 @@ def parse_metric(
         value = metric.as_float
     elif value_type == 'as_int':
         value = metric.as_int
+    elif value_type == 'as_uint64':
+        value = metric.as_uint64
+    elif value_type == 'as_int64':
+        value = metric.as_int64
     return ParsedMetric(
         path_names=path_names,
         value=value,

@@ -16,6 +16,7 @@
 
 #include <limits>
 
+#include "pw_metric/config.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
 #include "pw_metric_proto/metric_service.pwpb.h"
@@ -31,6 +32,10 @@ namespace internal {
 union MetricValue {
   float f;
   uint32_t u32;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+  uint64_t u64;
+  int64_t i64;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
 };
 
 inline MetricValue ReadMetricValue(const UntypedMetric& metric) {
@@ -42,6 +47,14 @@ inline MetricValue ReadMetricValue(const UntypedMetric& metric) {
     case UntypedMetric::kTypeUint32:
       value.u32 = static_cast<const TypedMetric<uint32_t>&>(metric).value();
       break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+    case UntypedMetric::kTypeUint64:
+      value.u64 = static_cast<const TypedMetric<uint64_t>&>(metric).value();
+      break;
+    case UntypedMetric::kTypeInt64:
+      value.i64 = static_cast<const TypedMetric<int64_t>&>(metric).value();
+      break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
   }
   return value;
 }
@@ -107,6 +120,16 @@ class PwpbMetricWriter : public MetricWriter {
         metric_payload_size += protobuf::SizeOfFieldUint32(
             proto::pwpb::Metric::Fields::kAsInt, value.u32);
         break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeUint64:
+        metric_payload_size += protobuf::SizeOfFieldUint64(
+            proto::pwpb::Metric::Fields::kAsUint64, value.u64);
+        break;
+      case UntypedMetric::kTypeInt64:
+        metric_payload_size += protobuf::SizeOfFieldInt64(
+            proto::pwpb::Metric::Fields::kAsInt64, value.i64);
+        break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
     }
 
     // 2) Calculate the total on-wire size this metric will consume in the
@@ -134,6 +157,14 @@ class PwpbMetricWriter : public MetricWriter {
       case UntypedMetric::kTypeUint32:
         metric_encoder.WriteAsInt(value.u32).IgnoreError();
         break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeUint64:
+        metric_encoder.WriteAsUint64(value.u64).IgnoreError();
+        break;
+      case UntypedMetric::kTypeInt64:
+        metric_encoder.WriteAsInt64(value.i64).IgnoreError();
+        break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
     }
 
     --metric_limit_;
@@ -208,6 +239,14 @@ class PwpbStreamingMetricWriter : public MetricWriter {
             case UntypedMetric::kTypeUint32:
               metric_encoder.WriteAsInt(value.u32).IgnoreError();
               break;
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+            case UntypedMetric::kTypeUint64:
+              metric_encoder.WriteAsUint64(value.u64).IgnoreError();
+              break;
+            case UntypedMetric::kTypeInt64:
+              metric_encoder.WriteAsInt64(value.i64).IgnoreError();
+              break;
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
           }
           return metric_encoder.status();
         });

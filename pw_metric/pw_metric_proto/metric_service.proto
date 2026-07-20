@@ -48,6 +48,8 @@ message Metric {
     // TODO(b/527616876): consider renaming this as_int32. This is deferred to
     // avoid breaking changes.
     uint32 as_int = 4;
+    uint64 as_uint64 = 5;
+    int64 as_int64 = 6;
   };
 }
 

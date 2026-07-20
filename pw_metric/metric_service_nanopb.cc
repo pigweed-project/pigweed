@@ -20,6 +20,7 @@
 
 #include "pw_assert/check.h"
 #include "pw_containers/vector.h"
+#include "pw_metric/config.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
 #include "pw_span/span.h"
@@ -57,6 +58,20 @@ void WriteMetricToResponse(const UntypedMetric& metric,
       proto_metric.which_value = pw_metric_proto_Metric_as_int_tag;
       break;
     }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+    case UntypedMetric::kTypeUint64: {
+      const auto& m = static_cast<const TypedMetric<uint64_t>&>(metric);
+      proto_metric.value.as_uint64 = m.value();
+      proto_metric.which_value = pw_metric_proto_Metric_as_uint64_tag;
+      break;
+    }
+    case UntypedMetric::kTypeInt64: {
+      const auto& m = static_cast<const TypedMetric<int64_t>&>(metric);
+      proto_metric.value.as_int64 = m.value();
+      proto_metric.which_value = pw_metric_proto_Metric_as_int64_tag;
+      break;
+    }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
   }
 
   // Move write head to the next slot.

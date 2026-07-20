@@ -62,6 +62,20 @@ size_t SumMetricInts(ConstByteSpan serialized_path) {
         metrics_sum += metric_value;
         break;
       }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsUint64): {
+        uint64_t metric_value;
+        PW_TEST_EXPECT_OK(decoder.ReadUint64(&metric_value));
+        metrics_sum += metric_value;
+        break;
+      }
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsInt64): {
+        int64_t metric_value;
+        PW_TEST_EXPECT_OK(decoder.ReadInt64(&metric_value));
+        metrics_sum += static_cast<size_t>(metric_value);
+        break;
+      }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
     }
   }
   return metrics_sum;
@@ -150,6 +164,57 @@ TEST(MetricService, OneGroupFiveMetrics) {
       15u,
       GetMetricsSum(ctx.responses()[0]) + GetMetricsSum(ctx.responses()[1]));
 }
+
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+TEST(MetricService, OneGroupOneUint64Metric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", uint64_t, 3ULL);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(3u, GetMetricsSum(ctx.responses()[0]));
+}
+
+TEST(MetricService, OneGroupOneInt64Metric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", int64_t, 3LL);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(3u, GetMetricsSum(ctx.responses()[0]));
+}
+
+TEST(MetricService, MixedMetricsWith64Bit) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC(root, a, "a", 1u);
+  PW_METRIC(root, b, "b", 2.0f);
+  PW_METRIC_TYPED(root, c, "c", uint64_t, 3ULL);
+  PW_METRIC_TYPED(root, d, "d", int64_t, 4LL);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(2u, ctx.responses().size());
+  EXPECT_EQ(3u, CountEncodedMetrics(ctx.responses()[0]));
+  EXPECT_EQ(1u, CountEncodedMetrics(ctx.responses()[1]));
+  EXPECT_EQ(
+      8u,
+      GetMetricsSum(ctx.responses()[0]) + GetMetricsSum(ctx.responses()[1]));
+}
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
 
 TEST(MetricService, MixedMetrics) {
   PW_METRIC_GROUP(root, "/");
@@ -299,6 +364,13 @@ size_t GetEncodedMetricSize(const Metric& metric, const Vector<Token>& path) {
     metric_payload_size += protobuf::SizeOfFieldUint32(
         proto::pwpb::Metric::Fields::kAsInt, m.value());
   }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+  else if (metric.is_uint64()) {
+    const auto& m = static_cast<const TypedMetric<uint64_t>&>(metric);
+    metric_payload_size += protobuf::SizeOfFieldUint64(
+        proto::pwpb::Metric::Fields::kAsUint64, m.value());
+  }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
 
   // 2) Calculate the size of the *entire* nested Metric message, including
   // its tag and length prefix, as a field in the parent WalkResponse.

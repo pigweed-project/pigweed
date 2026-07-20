@@ -124,6 +124,34 @@ class TestParseMetrics(TestCase):
             msg='Metrics are not equal.',
         )
 
+    def test_parse_64bit_metrics(self) -> None:
+        """Test parsing 64-bit metrics (as_uint64, as_int64)."""
+        metrics_64bit = [
+            metric_service_pb2.Metric(
+                token_path=[self.log, self.total_created],
+                as_uint64=2**64 - 1,
+            ),
+            metric_service_pb2.Metric(
+                token_path=[self.log, self.total_dropped],
+                as_int64=-(2**63),
+            ),
+        ]
+        self.rpcs.pw.metric.proto.MetricService.Get.return_value.responses = [
+            metric_service_pb2.MetricResponse(metrics=metrics_64bit)
+        ]
+        self.assertEqual(
+            {
+                'log': {
+                    'total_created': 2**64 - 1,
+                    'total_dropped': -(2**63),
+                }
+            },
+            metric_parser.parse_metrics(
+                self.rpcs, self.detokenize, self.rpc_timeout_s
+            ),
+            msg='64-bit metrics are not equal.',
+        )
+
     def test_three_metric_names(self) -> None:
         """Test creating a dictionary with three paths."""
         # Creating another leaf.

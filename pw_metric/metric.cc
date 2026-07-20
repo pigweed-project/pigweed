@@ -89,6 +89,26 @@ void UntypedMetric::Dump(int level, bool last) const {
                   comma);
       break;
     }
+#if PW_METRIC_CONFIG_ENABLE_64BIT
+    case kTypeUint64: {
+      const auto& m = static_cast<const TypedMetric<uint64_t>&>(*this);
+      PW_LOG_INFO("%s \"%s\": %llu%s",
+                  indent,
+                  encoded_name.value(),
+                  static_cast<unsigned long long>(m.value()),
+                  comma);
+      break;
+    }
+    case kTypeInt64: {
+      const auto& m = static_cast<const TypedMetric<int64_t>&>(*this);
+      PW_LOG_INFO("%s \"%s\": %lld%s",
+                  indent,
+                  encoded_name.value(),
+                  static_cast<long long>(m.value()),
+                  comma);
+      break;
+    }
+#endif  // PW_METRIC_CONFIG_ENABLE_64BIT
   }
 }
 
@@ -119,35 +139,12 @@ void UntypedMetric::Dump(const MetricList& metrics, int level) {
 
 void TypedMetric<uint32_t>::Increment(uint32_t amount) {
   PW_DCHECK(is_uint32());
-
-  uint32_t value = value_.load();
-  uint32_t updated;
-
-  do {
-    if (value == std::numeric_limits<uint32_t>::max()) {
-      return;
-    }
-    if (!CheckedAdd(value, amount, updated)) {
-      updated = std::numeric_limits<uint32_t>::max();
-    }
-  } while (!value_.compare_exchange_weak(value, updated));
+  internal::SaturatedIncrement(value_, amount);
 }
 
 void TypedMetric<uint32_t>::Decrement(uint32_t amount) {
   PW_DCHECK(is_uint32());
-
-  uint32_t value = value_.load();
-  uint32_t updated;
-
-  do {
-    if (value == 0) {
-      return;
-    }
-
-    if (!CheckedSub(value, amount, updated)) {
-      updated = 0;
-    }
-  } while (!value_.compare_exchange_weak(value, updated));
+  internal::SaturatedDecrement(value_, amount);
 }
 
 Group::Group(Token name, GroupList& groups) : name_(name) {

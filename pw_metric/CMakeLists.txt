@@ -16,6 +16,7 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
 pw_add_library(pw_metric STATIC
   HEADERS
+    public/pw_metric/config.h
     public/pw_metric/metric.h
     public/pw_metric/list.h
   PUBLIC_INCLUDES
@@ -30,6 +31,7 @@ pw_add_library(pw_metric STATIC
     pw_tokenizer
   SOURCES
     metric.cc
+    metric_64bit.cc
   PRIVATE_DEPS
     pw_span
 )

@@ -29,10 +29,14 @@ config("default_config") {
 pw_source_set("pw_metric") {
   public_configs = [ ":default_config" ]
   public = [
+    "public/pw_metric/config.h",
     "public/pw_metric/list.h",
     "public/pw_metric/metric.h",
   ]
-  sources = [ "metric.cc" ]
+  sources = [
+    "metric.cc",
+    "metric_64bit.cc",
+  ]
   public_deps = [
     "$dir_pw_memory:no_destructor",
     "$dir_pw_numeric:checked_arithmetic",
