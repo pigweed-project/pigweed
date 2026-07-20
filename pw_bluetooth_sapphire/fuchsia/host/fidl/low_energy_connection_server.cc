@@ -356,6 +356,7 @@ void LowEnergyConnectionServer::ServeChannel(
            "%s: Channel was destroyed before it could be served.",
            __FUNCTION__);
     request.Close(ZX_ERR_INTERNAL);
+    return;
   }
 
   bt::l2cap::Channel::UniqueId unique_id = channel->unique_id();
