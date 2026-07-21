@@ -96,10 +96,9 @@ class RpcIngressTracker {
 
 // Handler for incoming RPC packets. RpcIngress is not thread-safe and must
 // be accessed from a single thread (typically the RPC RX thread).
-template <typename Decoder>
+template <typename Decoder, size_t kMaxChannelId = 64>
 class RpcIngress : public RpcIngressHandler {
  public:
-  static constexpr size_t kMaxChannelId = 64;
   RpcIngress() = default;
 
   RpcIngress(span<ChannelEgress> channel_egresses,
@@ -160,13 +159,15 @@ class RpcIngress : public RpcIngressHandler {
 template <size_t kMaxPacketSize>
 using HdlcRpcEgress = RpcEgress<HdlcRpcPacketEncoder<kMaxPacketSize>>;
 
-template <size_t kMaxPacketSize>
-using HdlcRpcIngress = RpcIngress<HdlcRpcPacketDecoder<kMaxPacketSize>>;
+template <size_t kMaxPacketSize, size_t kMaxChannelId = 64>
+using HdlcRpcIngress =
+    RpcIngress<HdlcRpcPacketDecoder<kMaxPacketSize>, kMaxChannelId>;
 
 template <size_t kMaxPacketSize>
 using SimpleRpcEgress = RpcEgress<SimpleRpcPacketEncoder<kMaxPacketSize>>;
 
-template <size_t kMaxPacketSize>
-using SimpleRpcIngress = RpcIngress<SimpleRpcPacketDecoder<kMaxPacketSize>>;
+template <size_t kMaxPacketSize, size_t kMaxChannelId = 64>
+using SimpleRpcIngress =
+    RpcIngress<SimpleRpcPacketDecoder<kMaxPacketSize>, kMaxChannelId>;
 
 }  // namespace pw::rpc
