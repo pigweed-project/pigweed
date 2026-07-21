@@ -116,7 +116,8 @@ Status GenericL2capChannelImpl::SendAdditionalRxCredits(
 
 void GenericL2capChannelImpl::Stop() {
   if (this_thread::get_id() == dispatcher_thread_id_) {
-    return channel_->Stop();
+    channel_->Stop();
+    return;
   }
   Request request;
   request.type = Request::Type::kStop;

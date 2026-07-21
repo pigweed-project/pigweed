@@ -19,6 +19,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
+#include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy_private/test_utils.h"
 #include "pw_containers/flat_map.h"
@@ -93,6 +94,65 @@ TEST_F(L2capCocTest, CanDeleteChannelInEventCallback) {
   channel->Close();
   EXPECT_FALSE(channel.has_value());
 }
+
+// Verify that StopAndSendEvent() does not crash if called after a concurrent
+// Close(). This test models the thread interleaving of the following race:
+//   T1 (controller-RX thread):
+//     - Borrows the L2capChannel and verifies it is kRunning.
+//     - Releases locks to process packet in rx_engine.
+//   T2 (client thread):
+//     - Calls Close(), setting state to kClosed.
+//   T1 (resumes):
+//     - rx_engine returns error, calls StopAndSendEvent() -> Stop().
+//     - Stop() should safely return instead of asserting state != kClosed.
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+TEST_F(L2capCocTest, StopAndSendEventAfterConcurrentCloseDoesNotCrash) {
+  pw::Function<void(H4PacketWithHci&&)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4&&)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  constexpr uint16_t kHandle = 123;
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+
+  pw::Vector<L2capChannelEvent, 4> events;
+  L2capCoc coc = BuildCoc(
+      proxy,
+      CocParameters{
+          .handle = kHandle,
+          .receive_fn = [](multibuf::MultiBuf&&) {},
+          .event_fn =
+              [&events](L2capChannelEvent event) { events.push_back(event); },
+      });
+
+  L2capChannel* internal_channel = coc.InternalForTesting();
+  ASSERT_NE(internal_channel, nullptr);
+
+  // T1 starts: borrow channel and verify it is running.
+  internal::BorrowedL2capChannel t1_borrowed = internal_channel->Borrow();
+  ASSERT_EQ(t1_borrowed->state(), L2capChannel::State::kRunning);
+
+  // T2 interleaves: client closes channel.
+  coc.Close();
+  EXPECT_EQ(events.size(), 1u);
+  EXPECT_EQ(events[0], L2capChannelEvent::kChannelClosedByOther);
+
+  // T1 resumes: rx path dispatches event, which calls StopAndSendEvent().
+  // Since the channel is already closed, StopAndSendEvent() should not dispatch
+  // any further error events to the client.
+  t1_borrowed->StopAndSendEvent(L2capChannelEvent::kRxInvalid);
+  EXPECT_EQ(events.size(), 1u);
+}
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 
 // ########## L2capCocWriteTest
 

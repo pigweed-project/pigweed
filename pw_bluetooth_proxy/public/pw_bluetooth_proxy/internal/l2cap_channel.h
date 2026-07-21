@@ -137,8 +137,9 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   // Helper since these operations should typically be coupled.
   void StopAndSendEvent(L2capChannelEvent event) {
-    Stop();
-    impl_.SendEvent(event);
+    if (Stop()) {
+      impl_.SendEvent(event);
+    }
   }
 
   // Enter `State::kStopped`. This means
@@ -148,7 +149,9 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   //   - Rx packets will be dropped & trigger `kRxWhileStopped` events.
   //   - Container is responsible for closing L2CAP connection & destructing
   //     the channel object to free its resources.
-  void Stop();
+  // Returns false if the channel was already in `State::kClosed`, and true
+  // otherwise (transitioning to or already in `State::kStopped`).
+  bool Stop();
 
   // Enter `State::kClosed` and disconnects the client. This has all the same
   // effects as stopping the channel and sends `event` unless the client has

@@ -66,7 +66,7 @@ L2capChannel::~L2capChannel() {
   impl_.Close();
 }
 
-void L2capChannel::Stop() {
+bool L2capChannel::Stop() {
   std::lock_guard rx_lock(rx_mutex_);
   std::lock_guard lock(impl_.mutex_);
   PW_LOG_INFO(
@@ -78,7 +78,14 @@ void L2capChannel::Stop() {
       remote_cid(),
       cpp23::to_underlying(state_));
 
-  PW_CHECK(state_ != State::kNew && state_ != State::kClosed);
+  PW_CHECK(state_ != State::kNew);
+  if (state_ == State::kClosed) {
+    // A concurrent Close() (e.g. client teardown racing with an
+    // attacker-driven StopAndSendEvent on the rx path) may have already
+    // closed the channel. Mirror Close()'s idempotency instead of crashing.
+    return false;
+  }
+
   state_ = State::kStopped;
   impl_.ClearQueue();
   std::visit(
@@ -89,6 +96,7 @@ void L2capChannel::Stop() {
         }
       },
       rx_engine_);
+  return true;
 }
 
 void L2capChannel::Close(L2capChannelEvent event) {
