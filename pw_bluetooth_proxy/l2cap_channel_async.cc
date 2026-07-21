@@ -57,7 +57,7 @@ Status L2capChannelImpl::Init() {
 Status L2capChannelImpl::Connect(
     async2::SpscChannelHandle<Request>& request_handle,
     async2::Sender<Request>& request_sender) {
-  auto req_result = async2::CreateSpscChannel<Request>(allocator(), 1);
+  auto req_result = async2::CreateSpscChannel<Request>(allocator(), 10);
   if (!req_result.has_value()) {
     return Status::ResourceExhausted();
   }

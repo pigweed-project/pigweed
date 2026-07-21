@@ -221,7 +221,7 @@ class BasicModeChannelProxyTest : public ProxyHostTest {
   Vector<L2capChannelEvent>& events() { return events_; }
 
  private:
-  allocator::test::AllocatorForTest<4000> allocator_;
+  allocator::test::AllocatorForTest<8192> allocator_;
   int sent_to_controller_count_ = 0;
   Vector<H4PacketWithH4, 5> sent_to_controller_packets_;
   int sent_to_host_count_ = 0;

@@ -115,6 +115,9 @@ set(RFCOMM_TEST_PRIVATE_DEPS
   pw_bluetooth.emboss_util
   pw_checksum
   pw_multibuf.simple_allocator
+  pw_thread.sleep
+  pw_thread.test_thread_context
+  pw_thread.thread
   pw_unit_test
 )
 
@@ -127,6 +130,7 @@ pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_sync
   PRIVATE_DEPS
     ${RFCOMM_TEST_PRIVATE_DEPS}
     pw_bluetooth_proxy.rfcomm._sync
+    pw_bluetooth_proxy._test_utils_sync
   SOURCES
     ${RFCOMM_TEST_SOURCES}
   GROUPS
@@ -137,6 +141,7 @@ pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_async
   PRIVATE_DEPS
     ${RFCOMM_TEST_PRIVATE_DEPS}
     pw_bluetooth_proxy.rfcomm._async
+    pw_bluetooth_proxy._test_utils_async
   SOURCES
     ${RFCOMM_TEST_SOURCES}
   GROUPS

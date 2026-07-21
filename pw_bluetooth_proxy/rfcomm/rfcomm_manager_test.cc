@@ -19,10 +19,15 @@
 #include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_channel_manager_interface.h"
+#include "pw_bluetooth_proxy/proxy_host.h"
+#include "pw_bluetooth_proxy_private/test_utils.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_multibuf/simple_allocator.h"
+#include "pw_thread/sleep.h"
+#include "pw_thread/test_thread_context.h"
+#include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::bluetooth::proxy::rfcomm {
@@ -760,5 +765,82 @@ TEST_F(RfcommManagerTest, SendAdditionalRxCreditsNotFound) {
                                              kAdditionalCredits),
             Status::NotFound());
 }
+
+#if PW_BLUETOOTH_PROXY_ASYNC != 0
+
+using RfcommProxyHostTest = ProxyHostTest;
+
+TEST_F(RfcommProxyHostTest, RfcommDeadlockAtPduWhileTx) {
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  constexpr ConnectionHandle kConnectionHandle1 =
+      static_cast<ConnectionHandle>(1);
+  constexpr uint8_t kChannelNumber1 = 2;
+  constexpr RfcommChannelConfig kDefaultConfig = {
+      .cid = 1, .max_frame_size = 100, .initial_credits = 10};
+
+  std::array<std::byte, 2048> buffer{};
+  multibuf::SimpleAllocator multibuf_allocator(
+      /*data_area=*/buffer,
+      /*metadata_alloc=*/allocator::GetLibCAllocator());
+
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/1,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendReadBufferResponseFromController(proxy, 1, 251));
+  PW_TEST_ASSERT_OK(
+      SendLeConnectionCompleteEvent(proxy, 1, emboss::StatusCode::SUCCESS));
+
+  pw::allocator::test::AllocatorForTest<4096> test_allocator;
+  RfcommManager rfcomm_mgr(proxy, test_allocator);
+
+  auto channel_result =
+      rfcomm_mgr.AcquireRfcommChannel(multibuf_allocator,
+                                      kConnectionHandle1,
+                                      kChannelNumber1,
+                                      RfcommDirection::kResponder,
+                                      true,
+                                      kDefaultConfig,
+                                      kDefaultConfig,
+                                      nullptr,
+                                      nullptr);
+  PW_TEST_ASSERT_OK(channel_result.status());
+
+  struct ClientCapture {
+    multibuf::SimpleAllocator& multibuf_allocator;
+    RfcommManager& rfcomm_mgr;
+  } capture{multibuf_allocator, rfcomm_mgr};
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread client_thread(context.options(), [&capture]() {
+    for (int i = 0; i < 10; ++i) {
+      auto mbuf = capture.multibuf_allocator.AllocateContiguous(20);
+      if (mbuf.has_value()) {
+        std::ignore = capture.rfcomm_mgr.Write(kConnectionHandle1,
+                                               kChannelNumber1,
+                                               RfcommDirection::kResponder,
+                                               std::move(*mbuf));
+      }
+    }
+  });
+
+  pw::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  const pw::Vector<uint8_t, 5> kPdu = {0x11, 0xEF, 0x03, 0x01, 0xbf};
+  SendL2capBFrame(proxy, 1, span(kPdu), kPdu.size(), 1);
+
+  client_thread.join();
+  RunDispatcher();
+}
+
+#endif  // PW_BLUETOOTH_PROXY_ASYNC != 0
 
 }  // namespace pw::bluetooth::proxy::rfcomm

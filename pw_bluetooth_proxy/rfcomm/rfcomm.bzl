@@ -83,6 +83,9 @@ def pw_bluetooth_proxy_rfcomm_test(name, versioned_deps, **kwargs):
         deps = [
             "//pw_allocator:testing",
             "//pw_allocator:libc_allocator",
+            "//pw_thread:sleep",
+            "//pw_thread:test_thread_context",
+            "//pw_thread:thread",
         ] + versioned_deps,
         # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
         **kwargs

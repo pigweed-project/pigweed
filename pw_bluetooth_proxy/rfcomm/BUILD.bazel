@@ -45,10 +45,16 @@ pw_bluetooth_proxy_rfcomm_library(
 
 pw_bluetooth_proxy_rfcomm_test(
     name = "rfcomm_sync_test",
-    versioned_deps = [":rfcomm_sync"],
+    versioned_deps = [
+        ":rfcomm_sync",
+        "//pw_bluetooth_proxy:test_utils_sync",
+    ],
 )
 
 pw_bluetooth_proxy_rfcomm_test(
     name = "rfcomm_async_test",
-    versioned_deps = [":rfcomm_async"],
+    versioned_deps = [
+        ":rfcomm_async",
+        "//pw_bluetooth_proxy:test_utils_async",
+    ],
 )

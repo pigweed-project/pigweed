@@ -103,6 +103,9 @@ _rfcomm_test_deps = [
   "$dir_pw_allocator:libc_allocator",
   "$dir_pw_allocator:testing",
   "$dir_pw_multibuf:simple_allocator",
+  "$dir_pw_thread:sleep",
+  "$dir_pw_thread:test_thread_context",
+  "$dir_pw_thread:thread",
 ]
 
 # LINT.ThenChange(rfcomm.bzl, CMakeLists.txt)
@@ -114,7 +117,10 @@ pw_test("rfcomm_test_sync") {
 
   # LINT.IfChange
   sources = _rfcomm_test_sources
-  deps = _rfcomm_test_deps + [ ":rfcomm_sync" ]
+  deps = _rfcomm_test_deps + [
+           ":rfcomm_sync",
+           "$dir_pw_bluetooth_proxy:test_utils_sync",
+         ]
 
   # LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
 }
@@ -124,7 +130,10 @@ pw_test("rfcomm_test_async") {
       dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
       pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   sources = _rfcomm_test_sources
-  deps = _rfcomm_test_deps + [ ":rfcomm_async" ]
+  deps = _rfcomm_test_deps + [
+           ":rfcomm_async",
+           "$dir_pw_bluetooth_proxy:test_utils_async",
+         ]
 }
 
 pw_test_group("tests") {

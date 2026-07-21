@@ -20,6 +20,7 @@
 #include "pw_bluetooth_proxy/internal/generic_l2cap_channel_async.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager_async.h"
+#include "pw_log/log.h"
 
 namespace pw::bluetooth::proxy::internal {
 
@@ -95,7 +96,15 @@ Status GenericL2capChannelImpl::IsWriteAvailable() {
   } else {
     Request request;
     request.type = Request::Type::kNotifyOnDequeue;
-    PW_TRY(Send(std::move(request)));
+    // TrySend (instead of blocking send here prevents a deadlock between the Rx
+    // and Tx when there is an incoming PDU while write when payload_sender_ is
+    // full. Though this may result in dropped kWriteAvailable event. To
+    // mitigate this, the storage capacity of the request_sender_ is increased.
+    auto status = request_sender_.TrySend(std::move(request));
+    if (!status.ok()) {
+      PW_LOG_WARN("Could not send kNotifyOnDequeue to channel: %s",
+                  status.str());
+    }
   }
   return Status::Unavailable();
 }
