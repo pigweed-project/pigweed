@@ -64,6 +64,11 @@ using ClientConfigCallback = fit::function<void(IdType service_id,
                                                 bool notify,
                                                 bool indicate)>;
 
+// Called when the peer device with the given |peer_id| disconnects so
+// services can clean up volatile per-peer state.
+using ClientDisconnectCallback =
+    fit::function<void(IdType service_id, PeerId peer_id)>;
+
 // Called with the ID and range of attributes handles spanned (inclusive) by a
 // service that was added or removed.
 using ServiceChangedCallback =
@@ -84,6 +89,9 @@ class LocalServiceManager final : public WeakSelf<LocalServiceManager> {
   // local attribute database. Once successfully registered, the service will be
   // available for discovery and other ATT protocol requests.
   //
+  // |disconnect_callback| will be called when a remote client that has
+  // subscribed to notifications or indications disconnects from the link.
+  //
   // This method returns an opaque identifier on successful registration, which
   // can be used by the caller to refer to the service in the future.
   //
@@ -91,10 +99,12 @@ class LocalServiceManager final : public WeakSelf<LocalServiceManager> {
   // database has run out of handles or if the hierarchy contains
   // characteristics or descriptors with repeated IDs. Objects under |service|
   // must have unique identifiers to aid in value request handling.
-  IdType RegisterService(ServicePtr service,
-                         ReadHandler read_handler,
-                         WriteHandler write_handler,
-                         ClientConfigCallback ccc_callback);
+  IdType RegisterService(
+      ServicePtr service,
+      ReadHandler read_handler,
+      WriteHandler write_handler,
+      ClientConfigCallback ccc_callback,
+      ClientDisconnectCallback disconnect_callback = NopDisconnectCallback);
 
   // Unregisters the GATT service hierarchy identified by |service_id|. Returns
   // false if |service_id| is unrecognized.

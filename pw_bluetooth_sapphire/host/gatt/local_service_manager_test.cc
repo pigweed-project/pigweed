@@ -17,8 +17,11 @@
 #include <pw_assert/check.h>
 #include <pw_bytes/endian.h>
 
+#include <unordered_set>
+
 #include "pw_bluetooth_sapphire/internal/host/att/att.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt_defs.h"
+#include "pw_bluetooth_sapphire/internal/host/gatt/generic_attribute_service.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
 #include "pw_unit_test/framework.h"
 
@@ -1009,6 +1012,94 @@ TEST(LocalServiceManagerTest, ServiceChanged) {
   EXPECT_EQ(4, callback_count);
 }
 
+// Simulates the attacker's ATT_WRITE_REQ to the Service Changed CCC handle.
+// This is the *exact* write handler the production gatt::Server dispatches to
+// for an over-the-air CCC write.
+void AttackerWriteCCC(LocalServiceManager& mgr, PeerId peer_id) {
+  constexpr uint16_t kEnableInd = 0x0002;  // ATT CCC: indications enabled
+
+  // Dynamically locate the Service Changed CCC attribute.
+  // (In the default grouping layout where GenericAttributeService is registered
+  // first, this is handle 0x0004: 0x0001 service decl, 0x0002 chrc decl,
+  // 0x0003 chrc value, 0x0004 CCC descriptor).
+  auto iter = mgr.database()->GetIterator(
+      att::kHandleMin, att::kHandleMax, &types::kClientCharacteristicConfig);
+  const att::Attribute* attr = iter.get();
+  ASSERT_TRUE(attr);
+  ASSERT_EQ(attr->type(), types::kClientCharacteristicConfig);
+  // Confirm the threat-model precondition: write requires no security.
+  ASSERT_TRUE(attr->write_reqs().allowed());
+  ASSERT_FALSE(attr->write_reqs().encryption_required());
+  ASSERT_FALSE(attr->write_reqs().authentication_required());
+  ASSERT_FALSE(attr->write_reqs().authorization_required());
+
+  fit::result<att::ErrorCode> status =
+      fit::error(att::ErrorCode::kUnlikelyError);
+  uint16_t value = pw::bytes::ConvertOrderTo(cpp20::endian::little, kEnableInd);
+  bool dispatched =
+      attr->WriteAsync(peer_id,
+                       /*offset=*/0u,
+                       BufferView(&value, sizeof(value)),
+                       [&](fit::result<att::ErrorCode> s) { status = s; });
+  ASSERT_TRUE(dispatched);
+  ASSERT_EQ(status, fit::ok());
+}
+
+// Registers a throwaway local service to force OnServiceChanged to walk
+// subscribed_peers_.
+IdType RegisterTestService(LocalServiceManager& mgr) {
+  constexpr UUID kSvcType(uint32_t{0xdeadbeef});
+  constexpr UUID kChrcType(uint32_t{0xfeedface});
+  const att::AccessRequirements kRead(/*encryption=*/true,
+                                      /*authentication=*/true,
+                                      /*authorization=*/true);
+  const att::AccessRequirements kNone;
+  auto service = std::make_unique<Service>(/*primary=*/false, kSvcType);
+  service->AddCharacteristic(std::make_unique<Characteristic>(
+      /*id=*/0,
+      kChrcType,
+      Property::kRead,
+      /*ext_props=*/0,
+      kRead,
+      kNone,
+      kNone));
+  return mgr.RegisterService(
+      std::move(service), NopReadHandler, NopWriteHandler, NopCCCallback);
+}
+
+// Verify that disconnecting a client removes it from the subscribed peers set,
+// preventing memory leaks from repeated connect/disconnect cycles.
+TEST(LocalServiceManagerTest, DisconnectShrinksSubscribedPeers) {
+  LocalServiceManager mgr;
+
+  size_t indication_calls = 0;
+  std::unordered_set<PeerId> indicated_peers;
+  auto send_indication = [&](IdType, IdType, PeerId peer_id, BufferView) {
+    indication_calls++;
+    indicated_peers.insert(peer_id);
+  };
+
+  GenericAttributeService gatt_service(mgr.GetWeakPtr(),
+                                       std::move(send_indication));
+  gatt_service.SetPersistServiceChangedCCCCallback(
+      [](PeerId, ServiceChangedCCCPersistedData) {});
+
+  constexpr size_t kCycles = 500;
+  for (size_t i = 1; i <= kCycles; ++i) {
+    PeerId peer{i};
+    AttackerWriteCCC(mgr, peer);
+    mgr.DisconnectClient(peer);
+  }
+
+  IdType service_id = RegisterTestService(mgr);
+  ASSERT_NE(kInvalidId, service_id);
+
+  EXPECT_EQ(0u, indication_calls);
+  EXPECT_EQ(0u, indicated_peers.size());
+
+  mgr.UnregisterService(service_id);
+}
+
 // TODO(armansito): Some functional groupings of tests above (such as
 // ReadCharacteristic, WriteCharacteristic, etc) should each use a common test
 // harness to reduce code duplication.
@@ -1031,8 +1122,10 @@ class LocalClientCharacteristicConfigurationTest : public ::testing::Test {
   const uint16_t kEnableInd = 0x0002;
 
   int ccc_callback_count = 0;
+  int disconnect_callback_count = 0;
   IdType last_service_id = 0u;
   PeerId last_peer_id = PeerId(kInvalidId);
+  PeerId last_disconnected_peer_id = PeerId(kInvalidId);
   bool last_notify = false;
   bool last_indicate = false;
 
@@ -1053,10 +1146,18 @@ class LocalClientCharacteristicConfigurationTest : public ::testing::Test {
       last_notify = notify;
       last_indicate = indicate;
     };
+    auto disconnect_callback = [this](IdType cb_svc_id, PeerId peer_id) {
+      disconnect_callback_count++;
+      EXPECT_EQ(last_service_id, cb_svc_id);
+      last_disconnected_peer_id = peer_id;
+    };
 
     const size_t last_service_count = mgr.database()->groupings().size();
-    last_service_id = mgr.RegisterService(
-        std::move(service), NopReadHandler, NopWriteHandler, ccc_callback);
+    last_service_id = mgr.RegisterService(std::move(service),
+                                          NopReadHandler,
+                                          NopWriteHandler,
+                                          ccc_callback,
+                                          std::move(disconnect_callback));
     EXPECT_NE(0u, last_service_id);
     EXPECT_EQ(last_service_count + 1u, mgr.database()->groupings().size());
   }
@@ -1278,8 +1379,9 @@ TEST_F(LocalClientCharacteristicConfigurationTest, EnableIndicate) {
   EXPECT_EQ(1, ccc_callback_count);
 }
 
+// Tests that disconnecting a client cleans up its CCC state and notifies the
+// CCC callback if notifications or indications were enabled.
 TEST_F(LocalClientCharacteristicConfigurationTest, DisconnectCleanup) {
-  // No security.
   auto kUpdateReqs = AllowedNoSecurity();
   constexpr uint8_t kProps = Property::kNotify;
   BuildService(kProps, kUpdateReqs);
@@ -1297,7 +1399,6 @@ TEST_F(LocalClientCharacteristicConfigurationTest, DisconnectCleanup) {
   EXPECT_TRUE(WriteCcc(attr, kTestPeerId, kEnableNot, &status));
   EXPECT_EQ(fit::ok(), status);
 
-  // The callback should have been notified.
   EXPECT_EQ(1, ccc_callback_count);
   EXPECT_EQ(kTestPeerId, last_peer_id);
   EXPECT_TRUE(last_notify);
@@ -1311,19 +1412,18 @@ TEST_F(LocalClientCharacteristicConfigurationTest, DisconnectCleanup) {
   EXPECT_EQ(fit::ok(), status);
   EXPECT_EQ(0x0000, ccc_value);
 
-  // The callback should not have been called on client disconnect.
+  // ccc_callback is not called on client disconnect, only disconnect_callback.
   EXPECT_EQ(1, ccc_callback_count);
-  EXPECT_EQ(kTestPeerId, last_peer_id);
-  EXPECT_TRUE(last_notify);
-  EXPECT_FALSE(last_indicate);
+  EXPECT_EQ(1, disconnect_callback_count);
+  EXPECT_EQ(kTestPeerId, last_disconnected_peer_id);
 
   mgr.DisconnectClient(kTestPeerId2);
 
-  // The callback should not be called on client disconnect.
+  // disconnect_callback should be called when any client disconnects.
   EXPECT_EQ(1, ccc_callback_count);
-  EXPECT_EQ(kTestPeerId, last_peer_id);
+  EXPECT_EQ(2, disconnect_callback_count);
+  EXPECT_EQ(kTestPeerId2, last_disconnected_peer_id);
 }
-
 TEST_F(LocalClientCharacteristicConfigurationTest, WriteCccWithoutResponse) {
   auto kUpdateReqs = AllowedNoSecurity();
   constexpr uint8_t kProps = Property::kNotify;

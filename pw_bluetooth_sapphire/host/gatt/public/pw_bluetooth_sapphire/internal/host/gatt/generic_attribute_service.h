@@ -70,6 +70,7 @@ class GenericAttributeService final {
 
   // Send indications to subscribed clients when a service has changed.
   void OnServiceChanged(IdType service_id, att::Handle start, att::Handle end);
+  void OnDisconnect(PeerId peer_id);
 
   // Data store against which to register and unregister this service. It must
   // outlive this instance.

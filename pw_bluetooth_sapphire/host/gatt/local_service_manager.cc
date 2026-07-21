@@ -162,15 +162,19 @@ class LocalServiceManager::ServiceData final {
               Service* service,
               ReadHandler&& read_handler,
               WriteHandler&& write_handler,
-              ClientConfigCallback&& ccc_callback)
+              ClientConfigCallback&& ccc_callback,
+              ClientDisconnectCallback&& disconnect_callback)
       : id_(id),
         read_handler_(std::forward<ReadHandler>(read_handler)),
         write_handler_(std::forward<WriteHandler>(write_handler)),
         ccc_callback_(std::forward<ClientConfigCallback>(ccc_callback)),
+        disconnect_callback_(
+            std::forward<ClientDisconnectCallback>(disconnect_callback)),
         weak_self_(this) {
     PW_DCHECK(read_handler_);
     PW_DCHECK(write_handler_);
     PW_DCHECK(ccc_callback_);
+    PW_DCHECK(disconnect_callback_);
     PW_DCHECK(grouping);
 
     start_handle_ = grouping->start_handle();
@@ -210,10 +214,14 @@ class LocalServiceManager::ServiceData final {
     return true;
   }
 
-  // Clean up our knoweledge of the diconnecting peer.
+  // Clean up our knowledge of the disconnecting peer.
   void DisconnectClient(PeerId peer_id) {
     for (auto& id_config_pair : chrc_configs_) {
       id_config_pair.second.Erase(peer_id);
+    }
+
+    if (disconnect_callback_) {
+      disconnect_callback_(id_, peer_id);
     }
   }
 
@@ -522,6 +530,7 @@ class LocalServiceManager::ServiceData final {
   ReadHandler read_handler_;
   WriteHandler write_handler_;
   ClientConfigCallback ccc_callback_;
+  ClientDisconnectCallback disconnect_callback_;
 
   // Characteristic configuration states.
   // TODO(armansito): Add a mechanism to persist client configuration for bonded
@@ -542,14 +551,17 @@ LocalServiceManager::LocalServiceManager()
 
 LocalServiceManager::~LocalServiceManager() = default;
 
-IdType LocalServiceManager::RegisterService(ServicePtr service,
-                                            ReadHandler read_handler,
-                                            WriteHandler write_handler,
-                                            ClientConfigCallback ccc_callback) {
+IdType LocalServiceManager::RegisterService(
+    ServicePtr service,
+    ReadHandler read_handler,
+    WriteHandler write_handler,
+    ClientConfigCallback ccc_callback,
+    ClientDisconnectCallback disconnect_callback) {
   PW_DCHECK(service);
   PW_DCHECK(read_handler);
   PW_DCHECK(write_handler);
   PW_DCHECK(ccc_callback);
+  PW_DCHECK(disconnect_callback);
 
   if (services_.find(next_service_id_) != services_.end()) {
     bt_log(TRACE, "gatt", "server: Ran out of service IDs");
@@ -579,12 +591,14 @@ IdType LocalServiceManager::RegisterService(ServicePtr service,
   }
 
   // Creating a ServiceData will populate the attribute grouping.
-  auto service_data = std::make_unique<ServiceData>(next_service_id_,
-                                                    grouping,
-                                                    service.get(),
-                                                    std::move(read_handler),
-                                                    std::move(write_handler),
-                                                    std::move(ccc_callback));
+  auto service_data =
+      std::make_unique<ServiceData>(next_service_id_,
+                                    grouping,
+                                    service.get(),
+                                    std::move(read_handler),
+                                    std::move(write_handler),
+                                    std::move(ccc_callback),
+                                    std::move(disconnect_callback));
   PW_DCHECK(grouping->complete());
   grouping->set_active(true);
 

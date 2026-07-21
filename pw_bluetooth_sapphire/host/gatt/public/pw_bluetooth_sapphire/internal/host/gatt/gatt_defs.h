@@ -216,6 +216,7 @@ inline void NopReadHandler(PeerId, IdType, IdType, uint16_t, ReadResponder) {}
 inline void NopWriteHandler(
     PeerId, IdType, IdType, uint16_t, const ByteBuffer&, WriteResponder) {}
 inline void NopCCCallback(IdType, IdType, PeerId, bool, bool) {}
+inline void NopDisconnectCallback(IdType, PeerId) {}
 inline void NopSendIndication(IdType, IdType, PeerId, BufferView) {}
 
 // Characteristic Declaration attribute value (Core Spec v5.2, Vol 3,

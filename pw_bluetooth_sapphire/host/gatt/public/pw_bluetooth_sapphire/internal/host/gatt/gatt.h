@@ -99,7 +99,9 @@ class GATT : public WeakSelf<GATT> {
   // |write_handler|.
   //
   // The provided handlers will be called to handle remote initiated
-  // transactions targeting the service.
+  // transactions targeting the service. |disconnect_callback| will be called
+  // when a remote client that has subscribed to notifications or indications
+  // disconnects from the link.
   //
   // This method returns an opaque identifier on successful registration,
   // which can be used by the caller to refer to the service in the future. This
@@ -109,11 +111,26 @@ class GATT : public WeakSelf<GATT> {
   // database has run out of handles or if the hierarchy contains
   // characteristics or descriptors with repeated IDs.
   using ServiceIdCallback = fit::function<void(IdType)>;
-  virtual void RegisterService(ServicePtr service,
-                               ServiceIdCallback callback,
-                               ReadHandler read_handler,
-                               WriteHandler write_handler,
-                               ClientConfigCallback ccc_callback) = 0;
+  virtual void RegisterService(
+      ServicePtr service,
+      ServiceIdCallback callback,
+      ReadHandler read_handler,
+      WriteHandler write_handler,
+      ClientConfigCallback ccc_callback,
+      ClientDisconnectCallback disconnect_callback) = 0;
+
+  void RegisterService(ServicePtr service,
+                       ServiceIdCallback callback,
+                       ReadHandler read_handler,
+                       WriteHandler write_handler,
+                       ClientConfigCallback ccc_callback) {
+    RegisterService(std::move(service),
+                    std::move(callback),
+                    std::move(read_handler),
+                    std::move(write_handler),
+                    std::move(ccc_callback),
+                    NopDisconnectCallback);
+  }
 
   // Unregisters the GATT service hierarchy identified by |service_id|. Has no
   // effect if |service_id| is not a registered id.

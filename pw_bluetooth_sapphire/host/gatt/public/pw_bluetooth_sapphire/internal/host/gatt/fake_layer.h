@@ -35,6 +35,7 @@ class FakeLayer final : public GATT {
     ReadHandler read_handler;
     WriteHandler write_handler;
     ClientConfigCallback ccc_callback;
+    ClientDisconnectCallback disconnect_callback;
     std::vector<Update> updates;
   };
 
@@ -115,7 +116,8 @@ class FakeLayer final : public GATT {
                        ServiceIdCallback callback,
                        ReadHandler read_handler,
                        WriteHandler write_handler,
-                       ClientConfigCallback ccc_callback) override;
+                       ClientConfigCallback ccc_callback,
+                       ClientDisconnectCallback disconnect_callback) override;
   void UnregisterService(IdType service_id) override;
   void SendUpdate(IdType service_id,
                   IdType chrc_id,

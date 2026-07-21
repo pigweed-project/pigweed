@@ -131,11 +131,14 @@ class Impl final : public GATT {
                        ServiceIdCallback callback,
                        ReadHandler read_handler,
                        WriteHandler write_handler,
-                       ClientConfigCallback ccc_callback) override {
-    IdType id = local_services_->RegisterService(std::move(service),
-                                                 std::move(read_handler),
-                                                 std::move(write_handler),
-                                                 std::move(ccc_callback));
+                       ClientConfigCallback ccc_callback,
+                       ClientDisconnectCallback disconnect_callback) override {
+    IdType id =
+        local_services_->RegisterService(std::move(service),
+                                         std::move(read_handler),
+                                         std::move(write_handler),
+                                         std::move(ccc_callback),
+                                         std::move(disconnect_callback));
     callback(id);
   }
 

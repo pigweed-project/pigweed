@@ -94,7 +94,15 @@ void FakeLayer::AddConnection(PeerId peer_id,
   peers_.try_emplace(peer_id, pw_dispatcher_);
 }
 
-void FakeLayer::RemoveConnection(PeerId peer_id) { peers_.erase(peer_id); }
+void FakeLayer::RemoveConnection(PeerId peer_id) {
+  for (auto& [id, svc] : local_services_) {
+    if (svc.disconnect_callback) {
+      svc.disconnect_callback(id, peer_id);
+    }
+  }
+
+  peers_.erase(peer_id);
+}
 
 GATT::PeerMtuListenerId FakeLayer::RegisterPeerMtuListener(PeerMtuListener) {
   PW_CRASH("implement fake behavior if needed");
@@ -108,7 +116,8 @@ void FakeLayer::RegisterService(ServicePtr service,
                                 ServiceIdCallback callback,
                                 ReadHandler read_handler,
                                 WriteHandler write_handler,
-                                ClientConfigCallback ccc_callback) {
+                                ClientConfigCallback ccc_callback,
+                                ClientDisconnectCallback disconnect_callback) {
   if (register_service_fails_) {
     callback(kInvalidId);
     return;
@@ -120,6 +129,7 @@ void FakeLayer::RegisterService(ServicePtr service,
                                            std::move(read_handler),
                                            std::move(write_handler),
                                            std::move(ccc_callback),
+                                           std::move(disconnect_callback),
                                            {}});
   callback(id);
 }

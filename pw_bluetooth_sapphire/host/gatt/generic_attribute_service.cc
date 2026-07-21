@@ -98,11 +98,15 @@ void GenericAttributeService::Register() {
         responder(fit::ok(), StaticByteBuffer(0x00));
       };
 
+  ClientDisconnectCallback disconnect_callback =
+      [this](IdType, PeerId peer_id) { OnDisconnect(peer_id); };
+
   service_id_ =
       local_service_manager_->RegisterService(std::move(service),
                                               std::move(read_handler),
                                               NopWriteHandler,
-                                              std::move(ccc_callback));
+                                              std::move(ccc_callback),
+                                              std::move(disconnect_callback));
   PW_DCHECK(service_id_ != kInvalidId);
 
   local_service_manager_->set_service_changed_callback(
@@ -124,6 +128,10 @@ void GenericAttributeService::SetServiceChangedIndicationSubscription(
            "service: Service Changed disabled for peer %s",
            bt_str(peer_id));
   }
+}
+
+void GenericAttributeService::OnDisconnect(PeerId peer_id) {
+  subscribed_peers_.erase(peer_id);
 }
 
 void GenericAttributeService::OnServiceChanged(IdType service_id,
