@@ -64,8 +64,7 @@ impl TimerInterface for Timer {
 
         let ticks_per_monotonic: Duration<Clock> =
             pw_time_core::Duration::from_millis((1000 / KernelConfig::SCHEDULER_TICK_HZ).into());
-        // safe to cast to u64 as ticks_per_monotonic will never be negative here,
-        let next = now.checked_add(ticks_per_monotonic.ticks().cast_unsigned());
+        let next = now.checked_add(ticks_per_monotonic.ticks());
         if let Some(val) = next {
             write_mtimecmp(val);
         } else {

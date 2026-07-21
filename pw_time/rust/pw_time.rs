@@ -48,7 +48,7 @@
 //! #### Representation
 //!
 //! `pw_time` uses 64 bit internal types to represent [`Instant`]s (unsigned)
-//! and [`Duration`]s (signed).  The scale of this internal value is defined
+//! and [`Duration`]s (unsigned).  The scale of this internal value is defined
 //! by the [`Clock::TICKS_PER_SEC`].  Future work may move from this scalar
 //! scale to a ratio based one similar to C++'s `std::chrono` types.
 //!

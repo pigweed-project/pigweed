@@ -19,7 +19,7 @@ extern crate std;
 use pw_time::{Clock, Duration, Instant, SystemClock};
 
 pub fn sleep(sleep_duration: Duration<SystemClock>) {
-    let nanos = sleep_duration.ticks().cast_unsigned();
+    let nanos = sleep_duration.ticks();
     std::thread::sleep(core::time::Duration::from_nanos(nanos));
 }
 

@@ -74,7 +74,7 @@ impl<Clock: crate::Clock> Instant<Clock> {
     /// Returns the `Instant` resulting from adding `Duration`, or `None` if overflow occurred.
     #[must_use]
     pub const fn checked_add_duration(self, duration: Duration<Clock>) -> Option<Self> {
-        if let Some(ticks) = self.ticks.checked_add_signed(duration.ticks) {
+        if let Some(ticks) = self.ticks.checked_add(duration.ticks) {
             Some(Self {
                 ticks,
                 _phantom: PhantomData,
@@ -87,7 +87,7 @@ impl<Clock: crate::Clock> Instant<Clock> {
     /// Returns the `Instant` resulting from subtracting `Duration`, or `None` if underflow occurred.
     #[must_use]
     pub const fn checked_sub_duration(self, duration: Duration<Clock>) -> Option<Self> {
-        if let Some(ticks) = self.ticks.checked_add_signed(-duration.ticks) {
+        if let Some(ticks) = self.ticks.checked_sub(duration.ticks) {
             Some(Self {
                 ticks,
                 _phantom: PhantomData,
@@ -136,10 +136,10 @@ impl<Clock: crate::Clock> Sub<Instant<Clock>> for Instant<Clock> {
     type Output = Duration<Clock>;
 
     fn sub(self, rhs: Instant<Clock>) -> Self::Output {
+        // Saturate to Duration::MIN (0 ticks) on underflow, matching std::time::Instant.
+        let ticks = self.ticks.saturating_sub(rhs.ticks);
         Self::Output {
-            // Use a wrapping_sub then conversion to i64 to avoid losing
-            // resolution for large values of ticks.
-            ticks: self.ticks.wrapping_sub(rhs.ticks).cast_signed(),
+            ticks,
             _phantom: PhantomData,
         }
     }
@@ -169,67 +169,67 @@ impl<Clock: crate::Clock> Sub<Duration<Clock>> for Instant<Clock> {
     }
 }
 
-/// A span of time represented by a signed tick count.
+/// A span of time represented by an unsigned tick count.
 ///
 /// A `Duration` is generic over a [`Clock`], preventing arithmetic operations
 /// between durations of different clocks at compile-time.
 #[derive(Debug)]
 pub struct Duration<Clock: crate::Clock> {
-    ticks: i64,
+    ticks: u64,
     _phantom: PhantomData<Clock>,
 }
 
 impl<Clock: crate::Clock> Duration<Clock> {
     /// The maximum possible value for a `Duration`.
     pub const MAX: Self = Self {
-        ticks: i64::MAX,
+        ticks: u64::MAX,
         _phantom: PhantomData,
     };
 
     /// The minimum possible value for a `Duration`.
     pub const MIN: Self = Self {
-        ticks: i64::MIN,
+        ticks: u64::MIN,
         _phantom: PhantomData,
     };
 
     /// Returns the raw tick count of this `Duration`.
     #[must_use]
-    pub const fn ticks(self) -> i64 {
+    pub const fn ticks(self) -> u64 {
         self.ticks
     }
 
     /// Creates a `Duration` from a number of seconds.
     #[must_use]
-    pub const fn from_secs(secs: i64) -> Self {
+    pub const fn from_secs(secs: u64) -> Self {
         Self {
-            ticks: secs * (Clock::TICKS_PER_SEC.cast_signed()),
+            ticks: secs * Clock::TICKS_PER_SEC,
             _phantom: PhantomData,
         }
     }
 
     /// Creates a `Duration` from a number of milliseconds.
     #[must_use]
-    pub const fn from_millis(millis: i64) -> Self {
+    pub const fn from_millis(millis: u64) -> Self {
         Self {
-            ticks: millis * (Clock::TICKS_PER_SEC.cast_signed()) / 1000,
+            ticks: millis * Clock::TICKS_PER_SEC / 1000,
             _phantom: PhantomData,
         }
     }
 
     /// Creates a `Duration` from a number of microseconds.
     #[must_use]
-    pub const fn from_micros(micros: i64) -> Self {
+    pub const fn from_micros(micros: u64) -> Self {
         Self {
-            ticks: micros * (Clock::TICKS_PER_SEC.cast_signed()) / 1_000_000,
+            ticks: micros * Clock::TICKS_PER_SEC / 1_000_000,
             _phantom: PhantomData,
         }
     }
 
     /// Creates a `Duration` from a number of nanoseconds.
     #[must_use]
-    pub const fn from_nanos(nanos: i64) -> Self {
+    pub const fn from_nanos(nanos: u64) -> Self {
         Self {
-            ticks: nanos * (Clock::TICKS_PER_SEC.cast_signed()) / 1_000_000_000,
+            ticks: nanos * Clock::TICKS_PER_SEC / 1_000_000_000,
             _phantom: PhantomData,
         }
     }
@@ -369,11 +369,6 @@ mod tests {
         );
 
         assert_eq!(Duration::<TestClock>::MAX.checked_add(one_ms), None);
-
-        assert_eq!(
-            Duration::<TestClock>::MIN.checked_add(Duration::from_millis(-1)),
-            None
-        );
     }
 
     #[test]
@@ -386,20 +381,9 @@ mod tests {
             Some(Duration::<TestClock>::from_millis(9))
         );
 
-        assert_eq!(
-            one_ms.checked_sub(ten_ms),
-            Some(Duration::<TestClock>::from_millis(-9))
-        );
+        assert_eq!(one_ms.checked_sub(ten_ms), None);
 
-        assert_eq!(
-            Duration::<TestClock>::MAX.checked_sub(Duration::from_millis(-1)),
-            None
-        );
-
-        assert_eq!(
-            Duration::<TestClock>::MIN.checked_sub(Duration::from_millis(1)),
-            None
-        );
+        assert_eq!(Duration::<TestClock>::MIN.checked_sub(one_ms), None);
     }
 
     #[test]
@@ -408,7 +392,7 @@ mod tests {
         let one_ms = Instant::from_ticks(<TestClock as Clock>::TICKS_PER_SEC / 1000);
 
         assert_eq!(ten_ms - one_ms, Duration::<TestClock>::from_millis(9));
-        assert_eq!(one_ms - ten_ms, Duration::<TestClock>::from_millis(-9));
+        assert_eq!(one_ms - ten_ms, Duration::<TestClock>::from_millis(0));
     }
 
     #[test]
@@ -417,11 +401,8 @@ mod tests {
             Instant::<TestClock>::from_ticks(11 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
         let instant_ten_ms =
             Instant::<TestClock>::from_ticks(10 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
-        let instant_nine_ms =
-            Instant::<TestClock>::from_ticks(9 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
 
         let duration_one_ms = Duration::<TestClock>::from_millis(1);
-        let duration_minus_one_ms = Duration::<TestClock>::from_millis(-1);
 
         assert_eq!(
             instant_ten_ms.checked_add_duration(duration_one_ms),
@@ -429,46 +410,23 @@ mod tests {
         );
 
         assert_eq!(
-            instant_ten_ms.checked_add_duration(duration_minus_one_ms),
-            Some(instant_nine_ms)
-        );
-
-        assert_eq!(
             Instant::<TestClock>::MAX.checked_add_duration(duration_one_ms),
-            None
-        );
-
-        assert_eq!(
-            Instant::<TestClock>::MIN.checked_add_duration(duration_minus_one_ms),
             None
         );
     }
 
     #[test]
     fn instant_checked_duration_subtraction_returns_correct_values() {
-        let instant_eleven_ms =
-            Instant::<TestClock>::from_ticks(11 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
         let instant_ten_ms =
             Instant::<TestClock>::from_ticks(10 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
         let instant_nine_ms =
             Instant::<TestClock>::from_ticks(9 * <TestClock as Clock>::TICKS_PER_SEC / 1000);
 
         let duration_one_ms = Duration::<TestClock>::from_millis(1);
-        let duration_minus_one_ms = Duration::<TestClock>::from_millis(-1);
 
         assert_eq!(
             instant_ten_ms.checked_sub_duration(duration_one_ms),
             Some(instant_nine_ms)
-        );
-
-        assert_eq!(
-            instant_ten_ms.checked_sub_duration(duration_minus_one_ms),
-            Some(instant_eleven_ms)
-        );
-
-        assert_eq!(
-            Instant::<TestClock>::MAX.checked_sub_duration(duration_minus_one_ms),
-            None
         );
 
         assert_eq!(

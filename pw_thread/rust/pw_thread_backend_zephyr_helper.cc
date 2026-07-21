@@ -24,7 +24,7 @@
 
 extern "C" void pw_thread_zephyr_Yield() { k_yield(); }
 
-extern "C" int32_t pw_thread_zephyr_Sleep(int64_t ticks) {
+extern "C" int32_t pw_thread_zephyr_Sleep(uint64_t ticks) {
 #ifdef CONFIG_TIMEOUT_64BIT
   // Note that unlike many other RTOSes, for a duration timeout in ticks, the
   // core kernel wait routine, z_add_timeout, for relative timeouts will always
@@ -42,7 +42,7 @@ extern "C" int32_t pw_thread_zephyr_Sleep(int64_t ticks) {
   // we'd like to be fairly certain that the requested duration of remaining
   // wait can be accurately represented if we were to reasonably return.
   int32_t remaining = 0;
-  constexpr int64_t kLongTimeout = std::numeric_limits<int32_t>::max();
+  constexpr uint64_t kLongTimeout = std::numeric_limits<int32_t>::max();
   while (ticks > kLongTimeout) {
     remaining = k_sleep(K_TICKS(kLongTimeout));
     if (remaining != 0) {
@@ -60,7 +60,7 @@ extern "C" int32_t pw_thread_zephyr_Sleep(int64_t ticks) {
 #endif
 }
 
-extern "C" int32_t pw_thread_zephyr_SleepUntil(int64_t ticks) {
+extern "C" int32_t pw_thread_zephyr_SleepUntil(uint64_t ticks) {
 #ifdef CONFIG_TIMEOUT_64BIT
   // With 64-bit timeouts we can wait on a time_point, so do this directly when
   // Zephyr has been configured this way. We will sleep until the time since the
@@ -75,6 +75,10 @@ extern "C" int32_t pw_thread_zephyr_SleepUntil(int64_t ticks) {
   // fall back to sleep for the duration until the upcoming time point. Note
   // that the "at least" wait is not needed as zephyr already will add this for
   // duration waits internally.
-  return pw_thread_zephyr_Sleep(ticks - k_uptime_ticks());
+  const uint64_t now = static_cast<uint64_t>(k_uptime_ticks());
+  // Saturate to 0 if the requested time point has already passed to avoid
+  // unsigned integer underflow and match rust std lib behavior.
+  const uint64_t wait_ticks = ticks > now ? ticks - now : 0;
+  return pw_thread_zephyr_Sleep(wait_ticks);
 #endif
 }

@@ -17,8 +17,8 @@ use pw_time::{Clock, Duration, Instant, SystemClock};
 
 extern "C" {
     fn pw_thread_zephyr_Yield();
-    fn pw_thread_zephyr_Sleep(ticks: i64) -> i32;
-    fn pw_thread_zephyr_SleepUntil(ticks: i64) -> i32;
+    fn pw_thread_zephyr_Sleep(ticks: u64) -> i32;
+    fn pw_thread_zephyr_SleepUntil(ticks: u64) -> i32;
     fn k_is_in_isr() -> bool;
 }
 
@@ -46,7 +46,7 @@ pub fn sleep_until(wakeup_time: Instant<SystemClock>) {
     if wakeup_time <= now {
         return;
     }
-    let ticks = wakeup_time.ticks() as i64;
+    let ticks = wakeup_time.ticks();
     let remaining = unsafe { pw_thread_zephyr_SleepUntil(ticks) };
     pw_assert::assert!(
         remaining == 0,
