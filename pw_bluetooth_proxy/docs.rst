@@ -117,6 +117,10 @@ Module configuration options include:
   internal multibuf allocator, which is used by the ChannelProxy and RFCOMM
   APIs. Configure this value to be large enough to allocate multiple RFCOMM
   packets if you are using RFCOMM.
+- :cc:`PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES`: Whether
+  :cc:`pw::bluetooth::proxy::ProxyHost` emits incremental state update
+  callbacks on dynamic credit mutations (defaults to 1). Disabling reduces
+  power consumption for high-throughput streams.
 
 Clock Facade
 ============

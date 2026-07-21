@@ -125,6 +125,7 @@ def pw_bluetooth_proxy_library(name, **kwargs):
         # LINT.IfChange
         deps = [
             ":config",
+            ":snapshot",
             "//pw_allocator",
             "//pw_allocator:best_fit",
             "//pw_allocator:synchronized_allocator",

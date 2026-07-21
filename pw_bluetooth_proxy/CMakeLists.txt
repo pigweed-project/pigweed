@@ -44,6 +44,18 @@ pw_add_library(pw_bluetooth_proxy.config INTERFACE
     ${pw_bluetooth_proxy_CONFIG}
 )
 
+pw_add_library(pw_bluetooth_proxy.snapshot INTERFACE
+# LINT.IfChange
+  HEADERS
+    public/pw_bluetooth_proxy/snapshot.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_bluetooth_proxy.config
+    pw_function
+# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
+)
+
 pw_add_library(pw_bluetooth_proxy.system_clock_backend INTERFACE
   HEADERS
     public_overrides/system_clock_backend/pw_bluetooth_proxy_backend/clock.h
@@ -127,6 +139,7 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
   pw_bluetooth.emboss_hci_h4
   pw_bluetooth.emboss_l2cap_frames
   pw_bluetooth_proxy.config
+  pw_bluetooth_proxy.snapshot
   pw_bytes
   pw_containers.dynamic_map
   pw_containers.dynamic_queue

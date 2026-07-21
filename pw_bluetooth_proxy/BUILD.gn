@@ -52,6 +52,18 @@ pw_source_set("config") {
   public_deps = [ pw_bluetooth_proxy_CONFIG ]
 }
 
+pw_source_set("snapshot") {
+  # LINT.IfChange
+  public = [ "public/pw_bluetooth_proxy/snapshot.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":config",
+    "$dir_pw_function",
+  ]
+
+  # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+}
+
 config("sync") {
   defines = [ "PW_BLUETOOTH_PROXY_ASYNC=0" ]
 }
@@ -136,6 +148,7 @@ _pw_bluetooth_proxy_public = [
 
 _pw_bluetooth_proxy_public_deps = [
   ":config",
+  ":snapshot",
   "$dir_pw_allocator:best_fit",
   "$dir_pw_allocator:synchronized_allocator",
   "$dir_pw_async2:basic_dispatcher",

@@ -35,4 +35,10 @@
 #define PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE 1024
 #endif  // PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE
 
+#ifndef PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+/// Whether ProxyHost emits incremental state update callbacks on dynamic credit
+/// mutations. Disabling reduces power consumption for high-throughput streams.
+#define PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES 1
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
 /// @endmodule

@@ -60,6 +60,18 @@ cc_library(
 
 # Libraries
 
+cc_library(
+    # LINT.IfChange
+    name = "snapshot",
+    hdrs = ["public/pw_bluetooth_proxy/snapshot.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":config",
+        "//pw_function",
+    ],
+    # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+)
+
 # LINT.IfChange
 
 cc_library(
