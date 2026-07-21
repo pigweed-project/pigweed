@@ -499,14 +499,20 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     const UInt128& link_key,
     hci_spec::LinkKeyType key_type,
     bool local_secure_connections_supported) {
-  // TODO(fxbug.dev/42111880): We assume the controller is never in pairing
-  // debug mode because it's a security hazard to pair and bond using Debug
-  // Combination link keys.
-  PW_CHECK(key_type != hci_spec::LinkKeyType::kDebugCombination,
+  // Reject pairing if the controller is in pairing debug mode because it's a
+  // security hazard to pair and bond using Debug Combination link keys.
+  if (key_type == hci_spec::LinkKeyType::kDebugCombination) {
+    bt_log(WARN,
+           "gap-bredr",
            "Pairing on link %#.4x (id: %s) resulted in insecure Debug "
            "Combination link key",
            handle(),
            bt_str(peer_id()));
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kInsufficientSecurity),
+                 "OnLinkKeyNotification used Debug Combination key");
+    return;
+  }
 
   // When not pairing, only connection link key changes are allowed.
   if (!is_pairing() && key_type == hci_spec::LinkKeyType::kChangedCombination) {

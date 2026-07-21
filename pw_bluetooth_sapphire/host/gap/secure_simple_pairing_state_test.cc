@@ -3847,5 +3847,42 @@ TEST_F(PairingStateTest,
             *status_handler.status());
   le_pairing_token.reset();
 }
+
+TEST_F(PairingStateTest, DebugCombinationLinkKeyFailsPairing) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Advance state machine.
+  pairing_state.OnIoCapabilityResponse(IoCapability::DISPLAY_YES_NO);
+  ASSERT_FALSE(pairing_state.initiator());
+  static_cast<void>(pairing_state.OnIoCapabilityRequest());
+  pairing_state.OnUserConfirmationRequest(kTestPasskey,
+                                          NoOpUserConfirmationCallback);
+  pairing_state.OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                      hci_spec::LinkKeyType::kDebugCombination);
+
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.handle());
+  EXPECT_EQ(kTestHandle, *status_handler.handle());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kInsufficientSecurity),
+            *status_handler.status());
+}
 }  // namespace
 }  // namespace bt::gap
