@@ -61,7 +61,6 @@ constexpr bool IsValidLEFixedChannel(ChannelId id) {
 constexpr bool IsValidBREDRFixedChannel(ChannelId id) {
   switch (id) {
     case kSignalingChannelId:
-    case kConnectionlessChannelId:
     case kSMPChannelId:
       return true;
     default:
@@ -360,6 +359,16 @@ void LogicalLink::HandleRxPacket(hci::ACLDataPacketPtr packet) {
   }
 
   if (pp_iter != pending_pdus_.end()) {
+    if (pp_iter->second.size() >= kMaxPendingPdusPerChannel) {
+      bt_log(WARN,
+             "l2cap",
+             "Pending PDU limit exceeded for channel %#.4x on link %#.4x; "
+             "signaling error",
+             channel_id,
+             handle_);
+      SignalError();
+      return;
+    }
     result.pdu->set_trace_id(TRACE_NONCE());
     TRACE_FLOW_BEGIN("bluetooth",
                      "LogicalLink::HandleRxPacket queued",
@@ -744,48 +753,40 @@ void LogicalLink::SendFixedChannelsSupportedInformationRequest() {
 
 void LogicalLink::OnRxFixedChannelsSupportedInfoRsp(
     const BrEdrCommandHandler::InformationResponse& rsp) {
+  fixed_channels_supported_ = 0;
+
   if (rsp.status() == BrEdrCommandHandler::Status::kReject) {
     bt_log(
         TRACE,
         "l2cap",
         "Fixed Channels Supported Information Request rejected (reason %#.4hx)",
         static_cast<unsigned short>(rsp.reject_reason()));
-    return;
-  }
-
-  if (rsp.result() == InformationResult::kNotSupported) {
+  } else if (rsp.result() == InformationResult::kNotSupported) {
     bt_log(TRACE,
            "l2cap",
            "Received Fixed Channels Supported Information Response (result: "
            "Not Supported)");
-    return;
-  }
-
-  if (rsp.result() != InformationResult::kSuccess) {
+  } else if (rsp.result() != InformationResult::kSuccess) {
     bt_log(TRACE,
            "l2cap",
            "Received Fixed Channels Supported Information Response (result: "
            "%.4hx)",
            static_cast<uint16_t>(rsp.result()));
-    return;
-  }
-
-  if (rsp.type() != InformationType::kFixedChannelsSupported) {
+  } else if (rsp.type() != InformationType::kFixedChannelsSupported) {
     bt_log(TRACE,
            "l2cap",
            "Incorrect Fixed Channels Supported Information Response type "
            "(type: %#.4hx)",
            static_cast<unsigned short>(rsp.type()));
-    return;
+  } else {
+    bt_log(TRACE,
+           "l2cap",
+           "Received Fixed Channels Supported Information Response (mask: "
+           "%#016" PRIx64 ")",
+           rsp.fixed_channels());
+    fixed_channels_supported_ = rsp.fixed_channels();
   }
 
-  bt_log(TRACE,
-         "l2cap",
-         "Received Fixed Channels Supported Information Response (mask: "
-         "%#016" PRIx64 ")",
-         rsp.fixed_channels());
-
-  fixed_channels_supported_ = rsp.fixed_channels();
   auto callbacks = std::move(fixed_channels_supported_callbacks_);
   fixed_channels_supported_callbacks_.clear();
   for (auto& [_, cb] : callbacks) {

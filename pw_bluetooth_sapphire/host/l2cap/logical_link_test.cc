@@ -140,19 +140,18 @@ TEST_F(LogicalLinkTest, DropsBroadcastPackets) {
                         l2cap::testing::AclFixedChannelsSupportedInfoReq(
                             cmd_ids.fixed_channels_supported_id, kConnHandle));
 
-  Channel::WeakPtr connectionless_chan =
-      link()->OpenFixedChannel(kConnectionlessChannelId);
-  ASSERT_TRUE(connectionless_chan.is_alive());
+  Channel::WeakPtr smp_chan = link()->OpenFixedChannel(kSMPChannelId);
+  ASSERT_TRUE(smp_chan.is_alive());
 
   size_t rx_count = 0;
-  bool activated = connectionless_chan->Activate(
-      [&](ByteBufferPtr) { rx_count++; }, []() {});
+  bool activated =
+      smp_chan->Activate([&](ByteBufferPtr) { rx_count++; }, []() {});
   ASSERT_TRUE(activated);
 
   StaticByteBuffer group_frame(0x0A,
                                0x00,  // Length (PSM + info = 10)
-                               0x02,
-                               0x00,  // Connectionless data channel
+                               0x07,
+                               0x00,  // SMP data channel
                                0xF0,
                                0x0F,  // PSM
                                'S',
@@ -358,8 +357,7 @@ TEST_F(LogicalLinkTest, OpenFixedChannelsAsync) {
       l2cap::testing::AclFixedChannelsSupportedInfoRsp(
           cmd_ids.fixed_channels_supported_id,
           kConnHandle,
-          kFixedChannelsSupportedBitSM |
-              kFixedChannelsSupportedBitConnectionless);
+          kFixedChannelsSupportedBitSM);
   EXPECT_ACL_PACKET_OUT(test_device(),
                         l2cap::testing::AclFixedChannelsSupportedInfoReq(
                             cmd_ids.fixed_channels_supported_id, kConnHandle),
@@ -370,19 +368,10 @@ TEST_F(LogicalLinkTest, OpenFixedChannelsAsync) {
       kSMPChannelId,
       [&sm_channel](Channel::WeakPtr chan) { sm_channel = std::move(chan); });
   EXPECT_FALSE(sm_channel.has_value());
-  std::optional<Channel::WeakPtr> connectionless_channel;
-  link()->OpenFixedChannelAsync(
-      kConnectionlessChannelId,
-      [&connectionless_channel](Channel::WeakPtr chan) {
-        connectionless_channel = std::move(chan);
-      });
-  EXPECT_FALSE(connectionless_channel.has_value());
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
   ASSERT_TRUE(sm_channel.has_value());
   ASSERT_TRUE(sm_channel.value().is_alive());
-  ASSERT_TRUE(connectionless_channel.has_value());
-  ASSERT_TRUE(connectionless_channel.value().is_alive());
 }
 
 TEST_F(LogicalLinkTest, OpenFixedChannelAsyncFailureNotSupported) {
@@ -747,6 +736,162 @@ TEST_F(LogicalLinkTest, AutosniffModeChangeUndersizedEvent) {
   // This packet should be dropped without causing a crash.
   test_device()->SendCommandChannelPacket(undersized_event);
   RunUntilIdle();
+}
+
+TEST_F(LogicalLinkTest, ConnectionlessChannelNotSupported) {
+  ResetAndCreateNewLogicalLink();
+  transport()->acl_data_channel()->SetDataRxHandler(
+      fit::bind_member<&LogicalLink::HandleRxPacket>(link()));
+
+  // Setup standard ACL connection handshake expectations to avoid unexpected
+  // drops
+  QueueAclConnectionRetVal cmd_ids;
+  cmd_ids.extended_features_id = 1;
+  cmd_ids.fixed_channels_supported_id = 2;
+
+  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
+      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclExtFeaturesInfoReq(
+                            cmd_ids.extended_features_id, kConnHandle),
+                        &kExtFeaturesRsp);
+  // We don't immediately respond to FixedChannelsSupportedInfoReq to leave
+  // channels unopened
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
+                            cmd_ids.fixed_channels_supported_id, kConnHandle));
+
+  RunUntilIdle();
+
+  EXPECT_EQ(0u, link()->pending_pdus_size_for_testing());
+
+  // Send a packet to Connectionless channel (0x0002)
+  StaticByteBuffer payload('h', 'e', 'l', 'l', 'o');
+  test_device()->SendACLDataChannelPacket(l2cap::testing::AclBFrame(
+      kConnHandle, kConnectionlessChannelId, payload));
+  RunUntilIdle();
+
+  // Since CID 0x0002 is not in the allowlist, it should be dropped immediately.
+  EXPECT_EQ(0u,
+            link()->pending_pdus_size_for_testing(kConnectionlessChannelId));
+
+  // Send another packet
+  test_device()->SendACLDataChannelPacket(l2cap::testing::AclBFrame(
+      kConnHandle, kConnectionlessChannelId, payload));
+  RunUntilIdle();
+
+  EXPECT_EQ(0u,
+            link()->pending_pdus_size_for_testing(kConnectionlessChannelId));
+}
+
+TEST_F(LogicalLinkTest, SMPChannelStallLeak) {
+  ResetAndCreateNewLogicalLink();
+  transport()->acl_data_channel()->SetDataRxHandler(
+      fit::bind_member<&LogicalLink::HandleRxPacket>(link()));
+
+  QueueAclConnectionRetVal cmd_ids;
+  cmd_ids.extended_features_id = 1;
+  cmd_ids.fixed_channels_supported_id = 2;
+
+  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
+      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclExtFeaturesInfoReq(
+                            cmd_ids.extended_features_id, kConnHandle),
+                        &kExtFeaturesRsp);
+
+  // Respond with Not Supported to trigger inquiry failure
+  const auto kNotSupportedRsp =
+      l2cap::testing::AclNotSupportedInformationResponse(
+          cmd_ids.fixed_channels_supported_id, kConnHandle);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
+                            cmd_ids.fixed_channels_supported_id, kConnHandle),
+                        &kNotSupportedRsp);
+
+  // Trigger opening of SMP channel. It will send the request and get Not
+  // Supported.
+  std::optional<Channel::WeakPtr> smp_chan;
+  link()->OpenFixedChannelAsync(kSMPChannelId,
+                                [&](auto chan) { smp_chan = std::move(chan); });
+
+  RunUntilIdle();
+
+  // Callback should be resolved with empty pointer due to failure drain.
+  ASSERT_TRUE(smp_chan.has_value());
+  EXPECT_FALSE(smp_chan.value().is_alive());
+  EXPECT_EQ(0u, link()->pending_pdus_size_for_testing(kSMPChannelId));
+
+  // Send packets to SMP channel (0x0007) up to the cap of
+  // kMaxPendingPdusPerChannel
+  StaticByteBuffer payload('s', 'm', 'p');
+  for (size_t i = 0; i < LogicalLink::kMaxPendingPdusPerChannel; ++i) {
+    test_device()->SendACLDataChannelPacket(
+        l2cap::testing::AclBFrame(kConnHandle, kSMPChannelId, payload));
+  }
+  RunUntilIdle();
+
+  // Pending queue should contain kMaxPendingPdusPerChannel packets
+  EXPECT_EQ(LogicalLink::kMaxPendingPdusPerChannel,
+            link()->pending_pdus_size_for_testing(kSMPChannelId));
+}
+
+TEST_F(LogicalLinkTest, SMPChannelStallTriggersSignalError) {
+  ResetAndCreateNewLogicalLink();
+  transport()->acl_data_channel()->SetDataRxHandler(
+      fit::bind_member<&LogicalLink::HandleRxPacket>(link()));
+
+  QueueAclConnectionRetVal cmd_ids;
+  cmd_ids.extended_features_id = 1;
+  cmd_ids.fixed_channels_supported_id = 2;
+
+  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
+      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclExtFeaturesInfoReq(
+                            cmd_ids.extended_features_id, kConnHandle),
+                        &kExtFeaturesRsp);
+
+  // Respond with Not Supported to trigger inquiry failure
+  const auto kNotSupportedRsp =
+      l2cap::testing::AclNotSupportedInformationResponse(
+          cmd_ids.fixed_channels_supported_id, kConnHandle);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
+                            cmd_ids.fixed_channels_supported_id, kConnHandle),
+                        &kNotSupportedRsp);
+
+  bool error_called = false;
+  link()->set_error_callback([this, &error_called]() {
+    error_called = true;
+    link()->Close();
+    DeleteLink();
+  });
+
+  // Trigger opening of SMP channel. It will send the request and get Not
+  // Supported.
+  std::optional<Channel::WeakPtr> smp_chan;
+  link()->OpenFixedChannelAsync(kSMPChannelId,
+                                [&](auto chan) { smp_chan = std::move(chan); });
+
+  RunUntilIdle();
+
+  // Callback should be resolved with empty pointer due to failure drain.
+  ASSERT_TRUE(smp_chan.has_value());
+  EXPECT_FALSE(smp_chan.value().is_alive());
+  EXPECT_EQ(0u, link()->pending_pdus_size_for_testing(kSMPChannelId));
+
+  // Send packets to SMP channel (0x0007) exceeding the cap of
+  // kMaxPendingPdusPerChannel
+  StaticByteBuffer payload('s', 'm', 'p');
+  for (size_t i = 0; i < LogicalLink::kMaxPendingPdusPerChannel + 1; ++i) {
+    test_device()->SendACLDataChannelPacket(
+        l2cap::testing::AclBFrame(kConnHandle, kSMPChannelId, payload));
+  }
+  RunUntilIdle();
+
+  EXPECT_TRUE(error_called);
+  EXPECT_EQ(nullptr, link());
 }
 
 }  // namespace

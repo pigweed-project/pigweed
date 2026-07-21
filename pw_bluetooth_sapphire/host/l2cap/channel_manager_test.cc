@@ -1258,18 +1258,21 @@ TEST_F(ChannelManagerMockAclChannelTest, ReceiveDataBeforeRegisteringLink) {
   EXPECT_EQ(kPacketCount, packet_count);
 }
 
-// Receive data after registering the link but before creating a fixed channel.
+// Receive data after registering the link but before activating a fixed
+// channel.
 TEST_F(ChannelManagerRealAclChannelTest,
-       ReceiveDataBeforeCreatingFixedChannel) {
+       ReceiveDataBeforeActivatingFixedChannel) {
   constexpr size_t kPacketCount = 10;
 
-  // Register an ACL connection because LE connections create fixed channels
-  // immediately.
-  QueueAclConnection(kTestHandle1,
-                     pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  std::optional<ChannelManager::BrEdrFixedChannels> fixed_channels;
+  QueueAclConnection(
+      kTestHandle1,
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+      [&](auto channels) { fixed_channels = std::move(channels); });
   RunUntilIdle();
-
-  StaticByteBuffer<255> buffer;
+  ASSERT_TRUE(fixed_channels.has_value());
+  auto chan = std::move(fixed_channels->smp);
+  ASSERT_TRUE(chan.is_alive());
 
   size_t packet_count = 0;
   auto rx_cb = [&packet_count](ByteBufferPtr) { packet_count++; };
@@ -1283,14 +1286,13 @@ TEST_F(ChannelManagerRealAclChannelTest,
         // L2CAP B-frame (empty)
         0x00,
         0x00,
-        LowerBits(kConnectionlessChannelId),
-        UpperBits(kConnectionlessChannelId)));
+        LowerBits(kSMPChannelId),
+        UpperBits(kSMPChannelId)));
   }
   // Run the loop so all packets are received.
   RunUntilIdle();
 
-  auto chan = ActivateNewFixedChannel(
-      kConnectionlessChannelId, kTestHandle1, DoNothing, std::move(rx_cb));
+  chan->Activate(std::move(rx_cb), DoNothing);
 
   RunUntilIdle();
   EXPECT_EQ(kPacketCount, packet_count);
@@ -3156,19 +3158,24 @@ TEST_F(ChannelManagerMockAclChannelTest, ConnParamUpdateRequestRejected) {
 
 TEST_F(ChannelManagerRealAclChannelTest,
        DestroyingChannelManagerReleasesLogicalLinkAndClosesChannels) {
-  QueueAclConnection(kTestHandle1);
+  std::optional<ChannelManager::BrEdrFixedChannels> fixed_channels;
+  QueueAclConnection(
+      kTestHandle1,
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+      [&](auto channels) { fixed_channels = std::move(channels); });
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
 
   auto link = chanmgr()->LogicalLinkForTesting(kTestHandle1);
   ASSERT_TRUE(link.is_alive());
+  ASSERT_TRUE(fixed_channels.has_value());
+  auto chan = std::move(fixed_channels->smp);
+  ASSERT_TRUE(chan.is_alive());
 
   bool closed = false;
   auto closed_cb = [&] { closed = true; };
 
-  auto chan = ActivateNewFixedChannel(
-      kConnectionlessChannelId, kTestHandle1, closed_cb);
-  ASSERT_TRUE(chan.is_alive());
+  chan->Activate(NopRxCallback, closed_cb);
   ASSERT_FALSE(closed);
 
   TearDown();  // Destroys channel manager

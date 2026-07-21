@@ -60,6 +60,10 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
       fit::function<std::optional<ChannelManager::ServiceInfo>(
           hci_spec::ConnectionHandle handle, Psm psm)>;
 
+  // Maximum pending PDUs allowed to be buffered per channel before signaling an
+  // error.
+  static constexpr size_t kMaxPendingPdusPerChannel = 64;
+
   // Constructs a new LogicalLink and initializes the signaling fixed channel.
   // |max_payload_size| shall be the maximum "host to controller" data packet
   // payload size for the link |type|, per Core Spec v5.0 Vol 2, Part E,
@@ -208,6 +212,12 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // Duration to wait without events before switching into sniff mode.
   static constexpr pw::chrono::SystemClock::duration kAutosniffTimeout =
       std::chrono::seconds(1);
+
+  size_t pending_pdus_size_for_testing() const { return pending_pdus_.size(); }
+  size_t pending_pdus_size_for_testing(ChannelId id) const {
+    auto iter = pending_pdus_.find(id);
+    return iter == pending_pdus_.end() ? 0 : iter->second.size();
+  }
 
  private:
   friend class ChannelImpl;
