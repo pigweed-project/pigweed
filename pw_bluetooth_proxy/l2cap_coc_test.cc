@@ -23,6 +23,7 @@
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy_private/test_utils.h"
 #include "pw_containers/flat_map.h"
+#include "pw_containers/vector.h"
 #include "pw_multibuf/from_span.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_sync/mutex.h"
@@ -34,6 +35,14 @@ namespace pw::bluetooth::proxy {
 namespace {
 
 constexpr uint16_t kConnectionHandle = 123;
+
+// Size of sdu_length field in first K-frames.
+constexpr uint8_t kSduLengthFieldSize = 2;
+
+// Size of a K-Frame over Acl packet with no payload.
+constexpr uint8_t kFirstKFrameOverAclMinSize =
+    emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+    emboss::FirstKFrame::MinSizeInBytes();
 
 // ########## L2capCocTest
 
@@ -154,16 +163,145 @@ TEST_F(L2capCocTest, StopAndSendEventAfterConcurrentCloseDoesNotCrash) {
 }
 #endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 
+// Verify that stopped channels (`State::kStopped`) are properly cleaned up when
+// an ACL connection is disconnected (`HandleAclDisconnectionComplete`), so that
+// when the controller reuses the connection handle, inbound traffic on the
+// colliding (handle, local_cid) is not routed to a stale orphan channel.
+TEST_F(L2capCocTest, StoppedChannelIsCleanedUpOnAclDisconnection) {
+  constexpr uint16_t kHandle = 0x123;
+  constexpr uint16_t kLocalCid = 0x0040;
+  constexpr uint16_t kRemoteCid = 0x0060;
+  constexpr uint16_t kRxMtu = 5;
+
+  // Count ACL_DATA frames forwarded to the host. After the orphan channel is
+  // (correctly) reaped on disconnect, traffic on a CID with no registered
+  // channel must be passed through to the host.
+  int host_acl_forwards = 0;
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&host_acl_forwards](H4PacketWithHci&& packet) {
+        if (packet.GetH4Type() == emboss::H4PacketType::ACL_DATA) {
+          ++host_acl_forwards;
+        }
+      });
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+
+  auto* allocator = GetProxyHostAllocator();
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/0,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              allocator);
+  StartDispatcherOnCurrentThread(proxy);
+
+  // ---- First ACL connection ----
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+  RunDispatcher();
+
+  // On-device client acquires a CoC channel on (kHandle, kLocalCid).
+  // The client does NOT synchronously destroy its handle on kRxInvalid; it
+  // merely records events (modelling a deferred-destruction integration).
+  pw::Vector<L2capChannelEvent, 4> events;
+  L2capCoc old_channel = BuildCoc(
+      proxy,
+      CocParameters{
+          .handle = kHandle,
+          .local_cid = kLocalCid,
+          .remote_cid = kRemoteCid,
+          .rx_mtu = kRxMtu,
+          .receive_fn =
+              [](multibuf::MultiBuf&&) {
+                FAIL() << "old_channel receive_fn must not run";
+              },
+          .event_fn =
+              [&events](L2capChannelEvent event) { events.push_back(event); }});
+
+  // ---- Attacker step 1: malformed K-frame (sdu_length > rx_mtu) ----
+  // Drives CreditBasedFlowControlRxEngine to return kRxInvalid, which calls
+  // L2capChannel::StopAndSendEvent → state_ = kStopped.
+  {
+    constexpr uint16_t kPayloadSize = kRxMtu + 1;
+    std::array<uint8_t, kFirstKFrameOverAclMinSize + kPayloadSize> hci_array{};
+    H4PacketWithHci h4_packet{emboss::H4PacketType::ACL_DATA, hci_array};
+
+    Result<emboss::AclDataFrameWriter> acl_writer =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_array);
+    acl_writer->header().handle().Write(kHandle);
+    acl_writer->data_total_length().Write(
+        emboss::FirstKFrame::MinSizeInBytes() + kPayloadSize);
+    emboss::FirstKFrameWriter k_frame_writer = emboss::MakeFirstKFrameView(
+        acl_writer->payload().BackingStorage().data(),
+        acl_writer->data_total_length().Read());
+    k_frame_writer.pdu_length().Write(kSduLengthFieldSize + kPayloadSize);
+    k_frame_writer.channel_id().Write(kLocalCid);
+    k_frame_writer.sdu_length().Write(kPayloadSize);  // > rx_mtu
+
+    proxy.HandleH4HciFromController(std::move(h4_packet));
+    RunDispatcher();
+  }
+  ASSERT_EQ(events.size(), 1u);
+  ASSERT_EQ(events[0], L2capChannelEvent::kRxInvalid);
+
+  // ---- Step 2: disconnect the ACL link ----
+  // HandleAclDisconnectionComplete unconditionally reaps all channels on the
+  // link, including the kStopped channel.
+  PW_TEST_ASSERT_OK(SendDisconnectionCompleteEvent(proxy, kHandle));
+  RunDispatcher();
+
+  const size_t events_after_disconnect = events.size();
+
+  // ---- Controller reuses handle kHandle for a new ACL connection ----
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+  RunDispatcher();
+
+  // ---- New peer sends a PDU on local CID kLocalCid ----
+  // No on-device client has registered a channel on the *new* link, so the
+  // proxy must forward this frame to the host rather than routing it to a stale
+  // channel from the previous connection.
+  host_acl_forwards = 0;
+  {
+    constexpr uint16_t kPayloadSize = 3;
+    std::array<uint8_t, kFirstKFrameOverAclMinSize + kPayloadSize> hci_array{};
+    H4PacketWithHci h4_packet{emboss::H4PacketType::ACL_DATA, hci_array};
+
+    Result<emboss::AclDataFrameWriter> acl_writer =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(hci_array);
+    acl_writer->header().handle().Write(kHandle);
+    acl_writer->data_total_length().Write(
+        emboss::FirstKFrame::MinSizeInBytes() + kPayloadSize);
+    emboss::FirstKFrameWriter k_frame_writer = emboss::MakeFirstKFrameView(
+        acl_writer->payload().BackingStorage().data(),
+        acl_writer->data_total_length().Read());
+    k_frame_writer.pdu_length().Write(kSduLengthFieldSize + kPayloadSize);
+    k_frame_writer.channel_id().Write(kLocalCid);
+    k_frame_writer.sdu_length().Write(kPayloadSize);
+
+    proxy.HandleH4HciFromController(std::move(h4_packet));
+    RunDispatcher();
+  }
+
+  // PDU on the new link with no registered channel is forwarded to the host.
+  EXPECT_EQ(host_acl_forwards, 1);
+
+  // The client from the previous connection receives no further events after
+  // disconnect.
+  EXPECT_EQ(events.size(), events_after_disconnect);
+
+  // The on-device client can register a channel on (kHandle, kLocalCid) for the
+  // new link without encountering an AlreadyExists conflict.
+  pw::Result<L2capCoc> new_channel =
+      BuildCocWithResult(proxy,
+                         CocParameters{.handle = kHandle,
+                                       .local_cid = kLocalCid,
+                                       .remote_cid = kRemoteCid + 1});
+  EXPECT_EQ(new_channel.status(), OkStatus());
+}
+
 // ########## L2capCocWriteTest
 
 class L2capCocWriteTest : public ProxyHostTest {};
-
-// Size of sdu_length field in first K-frames.
-constexpr uint8_t kSduLengthFieldSize = 2;
-// Size of a K-Frame over Acl packet with no payload.
-constexpr uint8_t kFirstKFrameOverAclMinSize =
-    emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
-    emboss::FirstKFrame::MinSizeInBytes();
 
 TEST_F(L2capCocWriteTest, BasicWrite) {
   struct {

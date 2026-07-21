@@ -458,8 +458,7 @@ void L2capChannelManager::HandleAclDisconnectionComplete(
     auto channel_it = channels_by_local_cid_.lower_bound(key);
     while (channel_it != channels_by_local_cid_.end()) {
       L2capChannel& channel = (channel_it++)->second;
-      if (channel.connection_handle() == connection_handle &&
-          channel.state() == L2capChannel::State::kRunning) {
+      if (channel.connection_handle() == connection_handle) {
         auto node = DeregisterChannelLocked(channel);
         node->mapped().Close();
         stale_.insert(std::move(node));
