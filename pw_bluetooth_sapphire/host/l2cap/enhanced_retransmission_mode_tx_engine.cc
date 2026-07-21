@@ -83,9 +83,20 @@ Engine::EnhancedRetransmissionModeTxEngine(
 }
 
 void Engine::NotifySduQueued() {
-  std::optional<ByteBufferPtr> sdu = channel().GetNextQueuedSdu();
-  PW_CHECK(sdu);
-  ProcessSdu(std::move(*sdu));
+  // Bound |pending_pdus_| to avoid unbounded heap growth when the peer stalls
+  // us (RNR or MaxTransmit=0). Leaving the SDU in the channel queue lets
+  // ChannelImpl::Send()'s |max_tx_queued| cap apply back-pressure to the
+  // upper layer. 2x the tx window gives ample buffering above what can be
+  // in-flight.
+  const size_t kMaxPendingPdus =
+      2u * static_cast<size_t>(n_frames_in_tx_window_);
+  while (pending_pdus_.size() < kMaxPendingPdus) {
+    std::optional<ByteBufferPtr> sdu = channel().GetNextQueuedSdu();
+    if (!sdu) {
+      break;
+    }
+    ProcessSdu(std::move(*sdu));
+  }
 }
 
 bool Engine::AddCredits(uint16_t) {
@@ -207,6 +218,7 @@ void Engine::UpdateAckSeq(uint8_t new_seq, bool is_poll_response) {
     }
   }
 
+  NotifySduQueued();
   MaybeSendQueuedData();
 
   // TODO(quiche): Restart the receiver_ready_poll_task_, if there's any

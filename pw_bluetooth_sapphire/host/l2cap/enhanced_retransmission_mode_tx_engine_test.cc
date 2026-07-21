@@ -17,6 +17,7 @@
 #include <pw_async/fake_dispatcher_fixture.h>
 
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
+#include "pw_bluetooth_sapphire/internal/host/l2cap/channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_tx_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/frame_headers.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/gtest_helpers.h"
@@ -2415,6 +2416,139 @@ TEST_F(
   // Even though this is a different frame than the first retransmission in this
   // test, the latter's SrejActioned state suppresses this retransmission.
   EXPECT_EQ(0u, n_info_frames);
+}
+// Verify that the queue does not grow unbounded when the peer signals it is
+// busy (RNR). SDUs should be queued up to the cap and then rejected/dropped.
+TEST_F(EnhancedRetransmissionModeTxEngineTest, RnrStallBoundsPendingPdus) {
+  size_t pdus_sent = 0;
+  channel().HandleSendFrame([&](ByteBufferPtr) { ++pdus_sent; });
+
+  bool failure_called = false;
+  TxEngine engine(
+      kTestChannelId,
+      kDefaultMTU,
+      /*max_transmissions=*/1,
+      kDefaultTxWindow,
+      channel(),
+      /*connection_failure_callback=*/
+      [&] { failure_called = true; },
+      dispatcher());
+
+  engine.SetRemoteBusy();
+  engine.UpdateAckSeq(/*new_seq=*/0, /*is_poll_response=*/false);
+
+  constexpr size_t kMaxPendingPdus = 2 * kDefaultTxWindow;
+  constexpr size_t kCount = static_cast<size_t>(kDefaultTxMaxQueuedCount) * 10;
+  for (size_t i = 0; i < kCount; ++i) {
+    channel().QueueSdu(
+        std::make_unique<DynamicByteBuffer>(StaticByteBuffer(0x42)));
+    engine.NotifySduQueued();
+    size_t expected_queue_size =
+        (i < kMaxPendingPdus) ? 0 : (i - kMaxPendingPdus + 1);
+    ASSERT_EQ(expected_queue_size, channel().queue_size())
+        << "Unexpected queue size at SDU #" << i;
+  }
+
+  RunFor(std::chrono::hours(24));
+
+  EXPECT_EQ(0u, pdus_sent);
+  EXPECT_FALSE(engine.IsQueueEmpty());
+  EXPECT_FALSE(failure_called);
+  EXPECT_EQ(kCount - kMaxPendingPdus, channel().queue_size());
+}
+
+// Verify that if max transmissions is set to 0, the monitor task does not
+// loop forever and cause unbounded queue growth.
+TEST_F(EnhancedRetransmissionModeTxEngineTest,
+       MaxTransmitZeroBoundsPendingPdus) {
+  size_t pdus_sent = 0;
+  channel().HandleSendFrame([&](ByteBufferPtr) { ++pdus_sent; });
+
+  bool failure_called = false;
+  TxEngine engine(
+      kTestChannelId,
+      kDefaultMTU,
+      /*max_transmissions=*/0,
+      /*n_frames_in_tx_window=*/1,
+      channel(),
+      [&] { failure_called = true; },
+      dispatcher());
+
+  channel().QueueSdu(
+      std::make_unique<DynamicByteBuffer>(StaticByteBuffer(0x01)));
+  engine.NotifySduQueued();
+  ASSERT_EQ(1u, pdus_sent);
+  pdus_sent = 0;
+
+  RunFor(std::chrono::seconds(3));
+  ASSERT_GE(pdus_sent, 1u);
+
+  constexpr size_t kCount = 2000;
+  for (size_t i = 0; i < kCount; ++i) {
+    channel().QueueSdu(
+        std::make_unique<DynamicByteBuffer>(StaticByteBuffer(0x02)));
+    engine.NotifySduQueued();
+    size_t expected_queue_size = (i == 0) ? 0 : i;
+    ASSERT_EQ(expected_queue_size, channel().queue_size())
+        << "Unexpected queue size at SDU #" << i;
+  }
+
+  RunFor(std::chrono::hours(24));
+
+  EXPECT_FALSE(engine.IsQueueEmpty());
+  EXPECT_FALSE(failure_called);
+  EXPECT_EQ(kCount - 1, channel().queue_size());
+}
+
+// Verify that when SDUs are buffered in ChannelImpl due to pending_pdus_ being
+// at capacity (such as during RNR stall), clearing RNR or receiving ACKs
+// automatically pulls and transmits waiting SDUs from the channel queue.
+TEST_F(EnhancedRetransmissionModeTxEngineTest,
+       ClearRemoteBusyAndAckSeqDequeueWaitingSdus) {
+  size_t pdus_sent = 0;
+  channel().HandleSendFrame([&](ByteBufferPtr) { ++pdus_sent; });
+
+  bool failure_called = false;
+  TxEngine engine(
+      kTestChannelId,
+      kDefaultMTU,
+      /*max_transmissions=*/1,
+      /*n_frames_in_tx_window=*/2,
+      channel(),
+      /*connection_failure_callback=*/
+      [&] { failure_called = true; },
+      dispatcher());
+
+  engine.SetRemoteBusy();
+  engine.UpdateAckSeq(/*new_seq=*/0, /*is_poll_response=*/false);
+
+  // Queue SDUs beyond kMaxPendingPdus (2 * 2 = 4).
+  for (size_t i = 0; i < 6; ++i) {
+    channel().QueueSdu(
+        std::make_unique<DynamicByteBuffer>(StaticByteBuffer(0x42)));
+    engine.NotifySduQueued();
+  }
+  // Because remote is busy, no PDUs sent, but 4 are in pending_pdus_ and 2 left
+  // waiting in channel queue.
+  EXPECT_EQ(0u, pdus_sent);
+  EXPECT_EQ(2u, channel().queue_size());
+
+  // When remote busy is cleared and UpdateAckSeq is processed (as RxEngine does
+  // upon receiving supervisory frames), pending_pdus_ should be sent up to tx
+  // window (2).
+  engine.ClearRemoteBusy();
+  engine.UpdateAckSeq(/*new_seq=*/0, /*is_poll_response=*/false);
+  EXPECT_EQ(2u, pdus_sent);
+  // Still 2 SDUs waiting in channel().queue_size() because pending_pdus_ is at
+  // max capacity (4).
+  EXPECT_EQ(2u, channel().queue_size());
+
+  // Acknowledging the 2 sent frames frees space in pending_pdus_, which should
+  // automatically pull and transmit the 2 waiting SDUs from the channel queue.
+  engine.UpdateAckSeq(/*new_seq=*/2, /*is_poll_response=*/false);
+  EXPECT_EQ(4u, pdus_sent);
+  EXPECT_EQ(0u, channel().queue_size());
+  EXPECT_FALSE(failure_called);
 }
 
 }  // namespace

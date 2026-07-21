@@ -4976,5 +4976,78 @@ TEST_F(ChannelManagerMockAclChannelTest,
   EXPECT_EQ(lease_provider().lease_count(), 0u);
 }
 
+// Verify that the ChannelImpl::Send() cap is not bypassed when the peer sends
+// an RNR S-frame.
+TEST_F(FakeDispatcherChannelManagerMockControllerTest,
+       RnrSFrameDoesNotBypassChannelImplSendCap) {
+  constexpr hci_spec::ConnectionHandle kTestHandle = 0x0001;
+  constexpr ChannelId kTestLocalId = 0x0040;
+  constexpr ChannelId kTestRemoteId = 0x9042;
+  constexpr size_t kAclSetupPktCnt = 2;
+  constexpr size_t kChanSetupPktCnt = 3;
+
+  l2cap::ChannelParameters chan_params;
+  chan_params.mode =
+      l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission;
+  chan_params.max_rx_sdu_size = l2cap::kMinACLMTU;
+
+  QueueAclConnection(kTestHandle);
+  RunUntilIdle();
+  ASSERT_TRUE(test_device()->AllExpectedDataPacketsSent());
+
+  Channel::WeakPtr channel;
+  QueueOutboundL2capConnection(
+      kTestHandle,
+      l2cap::kAVDTP,
+      kTestLocalId,
+      kTestRemoteId,
+      [&](Channel::WeakPtr ch) { channel = std::move(ch); },
+      chan_params,
+      chan_params);
+  RunUntilIdle();
+  ASSERT_TRUE(test_device()->AllExpectedDataPacketsSent());
+  ASSERT_TRUE(channel.is_alive());
+  ASSERT_EQ(l2cap::RetransmissionAndFlowControlMode::kEnhancedRetransmission,
+            channel->mode());
+
+  auto channel_closed = std::make_shared<bool>(false);
+  ASSERT_TRUE(channel->Activate(
+      /*rx_callback=*/[](ByteBufferPtr) {},
+      /*closed_callback=*/[channel_closed] { *channel_closed = true; }));
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::NumberOfCompletedPacketsPacket(
+          kTestHandle, kAclSetupPktCnt + kChanSetupPktCnt));
+  RunUntilIdle();
+
+  test_device()->SendACLDataChannelPacket(
+      l2cap::testing::AclSFrameReceiverNotReady(kTestHandle,
+                                                kTestLocalId,
+                                                /*receive_seq_num=*/0,
+                                                /*is_poll_request=*/false,
+                                                /*is_poll_response=*/false));
+  RunUntilIdle();
+
+  constexpr uint16_t kCap = 8;
+  channel->set_max_tx_queued(kCap);
+  ASSERT_EQ(kCap, channel->max_tx_queued());
+
+  constexpr size_t kSends = 20000;
+  size_t accepted = 0;
+  for (size_t i = 0; i < kSends; ++i) {
+    if (channel->Send(
+            std::make_unique<DynamicByteBuffer>(StaticByteBuffer(0xAB)))) {
+      ++accepted;
+    }
+  }
+  RunUntilIdle();
+
+  EXPECT_FALSE(*channel_closed);
+  EXPECT_TRUE(channel.is_alive());
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+  EXPECT_LE(
+      accepted,
+      2u * l2cap::kErtmMaxUnackedInboundFrames + channel->max_tx_queued() + 1u);
+}
 }  // namespace
 }  // namespace bt::l2cap
