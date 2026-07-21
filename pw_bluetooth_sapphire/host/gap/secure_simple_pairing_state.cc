@@ -973,13 +973,10 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
     hci::Result<> status) {
   std::vector<fit::closure> callbacks_to_signal;
 
-  if (!is_pairing()) {
-    PW_CHECK(request_queue_.empty());
-    return callbacks_to_signal;
-  }
-
-  if (status.is_error()) {
-    // On pairing failure, signal all requests.
+  if (!is_pairing() || status.is_error()) {
+    // On pairing failure, or if request_queue_ is non-empty while not pairing
+    // (e.g. from kInitiatorWaitLEPairingComplete when an unexpected event
+    // occurred), signal and clear all queued requests.
     for (auto& request : request_queue_) {
       callbacks_to_signal.emplace_back(
           [handle = handle(),

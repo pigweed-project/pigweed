@@ -3806,5 +3806,46 @@ TEST_F(PairingStateTest,
   ASSERT_EQ(1, connection()->start_encryption_count());
 }
 
+// Verify that receiving an unexpected event (like HCI_Authentication_Complete)
+// while in kInitiatorWaitLEPairingComplete (waiting for an LE pairing to finish
+// before starting BR/EDR pairing) does not crash the host and instead signals
+// the queued pairing requests with an error.
+TEST_F(PairingStateTest,
+       UnexpectedEventWhileWaitingForLEPairingSignalsQueuedRequests) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      /*auth_cb=*/[] {},
+      NoOpStatusCallback,
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Register an LE pairing to force the state machine to wait.
+  std::optional<Peer::PairingToken> le_pairing_token =
+      peer()->MutLe().RegisterPairing();
+  ASSERT_TRUE(peer()->le() && peer()->le()->is_pairing());
+
+  // Initiate BR/EDR pairing so that it is queued while LE pairing is active.
+  TestStatusHandler status_handler;
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                status_handler.MakeStatusCallback());
+  RunUntilIdle();
+
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status().has_value());
+  EXPECT_EQ(kTestHandle, *status_handler.handle());
+  EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE),
+            *status_handler.status());
+  le_pairing_token.reset();
+}
 }  // namespace
 }  // namespace bt::gap
