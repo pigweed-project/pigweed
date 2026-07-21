@@ -22,9 +22,11 @@ out/pw_strict_host_clang_debug/obj/pw_trace_tokenized/bin/trace_tokenized_exampl
 """  # pylint: disable=line-too-long
 # pylint: enable=line-too-long
 
+from collections.abc import Iterable
 from enum import IntEnum
 import argparse
 import logging
+import pathlib
 import struct
 import sys
 from pw_tokenizer import database, tokens
@@ -33,7 +35,12 @@ from pw_trace import trace
 _LOG = logging.getLogger('pw_trace_tokenizer')
 
 
-def varint_decode(encoded):
+def varint_decode(encoded: bytes) -> tuple[int, int]:
+    """Decodes a varint from a byte string.
+
+    Returns:
+        A tuple: (result_int, bytes_consumed).
+    """
     # Taken from pw_tokenizer.decode._decode_signed_integer
     count = 0
     result = 0
@@ -46,8 +53,8 @@ def varint_decode(encoded):
 
         shift += 7
         if shift >= 64:
-            break  # Error
-    return None
+            raise ValueError(f"Invalid shift: {shift}")
+    raise EOFError("Unexpected end of data")
 
 
 # Token string: "event_type|flag|module|group|label|<optional DATA_FMT>"
@@ -60,7 +67,7 @@ class TokenIdx(IntEnum):
     DATA_FMT = 5  # optional
 
 
-def get_trace_type(type_str):
+def get_trace_type(type_str: str) -> trace.TraceType:
     if type_str == "PW_TRACE_EVENT_TYPE_INSTANT":
         return trace.TraceType.INSTANTANEOUS
     if type_str == "PW_TRACE_EVENT_TYPE_INSTANT_GROUP":
@@ -82,18 +89,31 @@ def get_trace_type(type_str):
     return trace.TraceType.INVALID
 
 
-def has_trace_id(token_string):
+def has_trace_id(token_string: str) -> bool:
     token_values = token_string.split("|")
     return trace.event_has_trace_id(token_values[TokenIdx.EVENT_TYPE])
 
 
-def has_data(token_string):
+def has_data(token_string: str) -> bool:
     token_values = token_string.split("|")
     return len(token_values) > TokenIdx.DATA_FMT
 
 
-def create_trace_event(token_string, timestamp_us, trace_id, data):
+def create_trace_event(
+    token_string: str,
+    timestamp_us: float,
+    trace_id: int,
+    data: bytes,
+) -> trace.TraceEvent:
     token_values = token_string.split("|")
+    flag_str = token_values[TokenIdx.FLAG]
+    try:
+        flags = int(flag_str)
+    except ValueError:
+        _LOG.error(
+            "Invalid flag '%s' in trace token '%s'", flag_str, token_string
+        )
+        flags = 0
     return trace.TraceEvent(
         event_type=get_trace_type(token_values[TokenIdx.EVENT_TYPE]),
         module=token_values[TokenIdx.MODULE],
@@ -101,7 +121,7 @@ def create_trace_event(token_string, timestamp_us, trace_id, data):
         timestamp_us=timestamp_us,
         group=token_values[TokenIdx.GROUP],
         trace_id=trace_id,
-        flags=token_values[TokenIdx.FLAG],
+        flags=flags,
         has_data=has_data(token_string),
         data_fmt=(
             token_values[TokenIdx.DATA_FMT] if has_data(token_string) else ""
@@ -110,7 +130,12 @@ def create_trace_event(token_string, timestamp_us, trace_id, data):
     )
 
 
-def parse_trace_event(buffer, db, last_time, ticks_per_second):
+def parse_trace_event(
+    buffer: bytes,
+    db: tokens.Database,
+    last_time: float,
+    ticks_per_second: int,
+) -> trace.TraceEvent | None:
     """Parse a single trace event from bytes"""
     us_per_tick = 1000000 / ticks_per_second
     idx = 0
@@ -131,13 +156,13 @@ def parse_trace_event(buffer, db, last_time, ticks_per_second):
     idx += time_bytes
 
     # Trace ID
-    trace_id = None
+    trace_id = 0
     if has_trace_id(token_string) and idx < len(buffer):
         trace_id, trace_id_bytes = varint_decode(buffer[idx:])
         idx += trace_id_bytes
 
     # Data
-    data = None
+    data = b""
     if has_data(token_string) and idx < len(buffer):
         data = buffer[idx:]
 
@@ -146,8 +171,11 @@ def parse_trace_event(buffer, db, last_time, ticks_per_second):
 
 
 def get_trace_events(
-    databases, raw_trace_data, ticks_per_second, time_offset: int
-):
+    databases: Iterable[tokens.Database],
+    raw_trace_data: bytes,
+    ticks_per_second: int,
+    time_offset: float,
+) -> list[trace.TraceEvent]:
     """Handles the decoding traces."""
 
     db = tokens.Database.merged(*databases)
@@ -175,14 +203,9 @@ def get_trace_events(
     return events
 
 
-def get_trace_data_from_file(input_file_name):
-    """Handles the decoding traces."""
-    with open(input_file_name, "rb") as input_file:
-        return input_file.read()
-    return None
-
-
-def save_trace_file(trace_lines, file_name):
+def save_trace_file(
+    trace_lines: Iterable[str], file_name: str | pathlib.Path
+) -> None:
     """Handles generating the trace file."""
     with open(file_name, 'w') as output_file:
         output_file.write("[")
@@ -192,16 +215,21 @@ def save_trace_file(trace_lines, file_name):
 
 
 def get_trace_events_from_file(
-    databases, input_file_name, ticks_per_second, time_offset: int
-):
+    databases: Iterable[tokens.Database],
+    input_file_name: str | pathlib.Path,
+    ticks_per_second: int,
+    time_offset: float,
+) -> list[trace.TraceEvent]:
     """Get trace events from a file."""
-    raw_trace_data = get_trace_data_from_file(input_file_name)
+    with open(input_file_name, "rb") as input_file:
+        raw_trace_data = input_file.read()
+
     return get_trace_events(
         databases, raw_trace_data, ticks_per_second, time_offset
     )
 
 
-def _parse_args():
+def _parse_args() -> argparse.Namespace:
     """Parse and return command line arguments."""
 
     parser = argparse.ArgumentParser(
@@ -245,7 +273,7 @@ def _parse_args():
     return parser.parse_args()
 
 
-def _main(args):
+def _main(args: argparse.Namespace) -> None:
     events = get_trace_events_from_file(
         args.databases, args.input_file, args.ticks_per_second, args.time_offset
     )

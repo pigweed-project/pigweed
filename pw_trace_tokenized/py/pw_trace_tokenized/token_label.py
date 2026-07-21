@@ -24,11 +24,11 @@ from pw_tokenizer import tokens
 from pw_trace import trace
 
 
-def register_handler(db: tokens.Database):
+def register_handler(db: tokens.Database) -> None:
     """Registers a handler for @pw_trace_tokenized_token_label."""
     plugin_format = "@pw_trace_tokenized_token_label"
 
-    def handler(event: trace.TraceEvent, line: dict[str, Any]):
+    def handler(event: trace.TraceEvent, line: dict[str, Any]) -> None:
         if len(event.data) != 4:
             raise ValueError(
                 f"Mismatched data format {event.data_fmt}: expected 4 bytes, "
