@@ -581,22 +581,24 @@ void EncodeDecode_C(T value) {
   U result(0);
   size_t decoded = 0;
   if constexpr (sizeof(T) <= sizeof(uint32_t)) {
-    encoded = pw_varint_CallEncode32(value, buffer, sizeof(buffer));
+    encoded = pw_varint_CallEncode32(
+        static_cast<uint32_t>(value), buffer, sizeof(buffer));
     decoded = pw_varint_CallDecode32(buffer, sizeof(buffer), &result);
   } else {
-    encoded = pw_varint_CallEncode64(value, buffer, sizeof(buffer));
+    encoded = pw_varint_CallEncode64(
+        static_cast<uint64_t>(value), buffer, sizeof(buffer));
     decoded = pw_varint_CallDecode64(buffer, sizeof(buffer), &result);
   }
   EXPECT_EQ(encoded, decoded);
-  ASSERT_EQ(value, result);
+  ASSERT_EQ(value, static_cast<T>(result));
 }
 
 void EncodeDecodeSigned32_C(int32_t value) {
-  EncodeDecode<int32_t, int64_t>(value);
+  EncodeDecode_C<int32_t, uint32_t>(value);
 }
 
 void EncodeDecodeUnsigned32_C(uint32_t value) {
-  EncodeDecode<uint32_t, uint64_t>(value);
+  EncodeDecode_C<uint32_t, uint32_t>(value);
 }
 
 TEST(Varint, EncodeDecodeSigned32Incremental_C) {

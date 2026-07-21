@@ -70,6 +70,18 @@ constexpr char kMax = 16;
   FUZZ_TEST_FOR_INTEGRAL(Suite, Target, Domain, __VA_ARGS__); \
   FUZZ_TEST_FOR_FLOATING_POINT(Suite, Target, Domain, __VA_ARGS__)
 
+/// Generates target functions and fuzz tests for signed integral types.
+#define FUZZ_TEST_FOR_SIGNED_INTEGRAL(Suite, Target, Domain, ...)              \
+  FUZZ_TEST_FOR_TYPE(Suite, Target##_SChar, Domain, signed char, __VA_ARGS__); \
+  FUZZ_TEST_FOR_TYPE(Suite, Target##_Short, Domain, short, __VA_ARGS__);       \
+  FUZZ_TEST_FOR_TYPE(Suite, Target##_Int, Domain, int, __VA_ARGS__);           \
+  FUZZ_TEST_FOR_TYPE(Suite, Target##_Long, Domain, long, __VA_ARGS__)
+
+/// Generates target functions and fuzz tests for all signed arithmetic types.
+#define FUZZ_TEST_FOR_SIGNED_ARITHMETIC(Suite, Target, Domain, ...)  \
+  FUZZ_TEST_FOR_SIGNED_INTEGRAL(Suite, Target, Domain, __VA_ARGS__); \
+  FUZZ_TEST_FOR_FLOATING_POINT(Suite, Target, Domain, __VA_ARGS__)
+
 // Test struct that can be produced by FuzzTest.
 struct StructForTesting {
   int a;
@@ -149,13 +161,13 @@ template <typename Arithmetic>
 void TakeNegative(Arithmetic x) {
   EXPECT_LT(x, Arithmetic(0));
 }
-FUZZ_TEST_FOR_ARITHMETIC(DomainTest, TakeNegative, Positive);
+FUZZ_TEST_FOR_SIGNED_ARITHMETIC(DomainTest, TakeNegative, Negative);
 
 template <typename Arithmetic>
 void TakeNonPositive(Arithmetic x) {
   EXPECT_LE(x, Arithmetic(0));
 }
-FUZZ_TEST_FOR_ARITHMETIC(DomainTest, TakeNonPositive, NonNegative);
+FUZZ_TEST_FOR_SIGNED_ARITHMETIC(DomainTest, TakeNonPositive, NonPositive);
 
 template <typename FloatingPoint>
 void TakeFinite(FloatingPoint f) {

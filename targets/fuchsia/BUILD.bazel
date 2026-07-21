@@ -44,6 +44,9 @@ platform(
         "--copt=-DOPENSSL_NO_ASM",
         "--copt=-DOPENSSL_NO_SOCK",
         "--copt=-DNDEBUG",
+        # TODO: https://fxbug.dev/534361287 - This can be removed after the
+        # Fuchsia SDK is updated.
+        "--copt=-Wno-unused-template",
     ],
     parents = ["@bazel_tools//tools:host_platform"],
 )

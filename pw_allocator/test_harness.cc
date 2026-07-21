@@ -30,7 +30,7 @@ namespace {
 // Helper to allow static_assert'ing in constexpr-if branches, e.g. that a
 // visitor for a std::variant are exhaustive.
 template <typename T>
-constexpr bool not_reached(T&) {
+[[maybe_unused]] constexpr bool not_reached(T&) {
   return false;
 }
 

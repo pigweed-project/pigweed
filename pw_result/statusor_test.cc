@@ -1528,7 +1528,7 @@ struct CustomType
 
 struct ConvertibleToAnyResult {
   template <typename T>
-  operator pw::Result<T>() const {  // NOLINT
+  [[maybe_unused]] operator pw::Result<T>() const {  // NOLINT
     return pw::Status::InvalidArgument();
   }
 };

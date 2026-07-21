@@ -66,7 +66,8 @@ enum Options {
 };
 
 template <typename T>
-std::set<T> difference(const std::set<T> lhs, const std::set<T> rhs) {
+[[maybe_unused]] std::set<T> difference(const std::set<T> lhs,
+                                        const std::set<T> rhs) {
   std::set<T> diff;
   std::set_difference(lhs.begin(),
                       lhs.end(),

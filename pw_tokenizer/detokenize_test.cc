@@ -31,13 +31,6 @@ using namespace std::literals::string_view_literals;
 // Use a shorter name for the error string macro.
 #define ERR PW_TOKENIZER_ARG_DECODING_ERROR
 
-using Case = std::pair<std::string_view, std::string_view>;
-
-template <typename... Args>
-auto TestCases(Args... args) {
-  return std::array<Case, sizeof...(Args)>{args...};
-}
-
 // Binary format token database with 8 entries.
 constexpr char kTestDatabase[] =
     "TOKENS\0\0"

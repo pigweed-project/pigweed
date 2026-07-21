@@ -104,7 +104,7 @@ using EnableIfConvertible =
 /// Generates a static_assert with a helpful message if any condition is not
 /// met.
 template <typename From, typename To>
-static constexpr void AssertIsConvertibleIgnoreConst() {
+[[maybe_unused]] static constexpr void AssertIsConvertibleIgnoreConst() {
   if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
     static_assert(IsBasicMultiBuf<To>::value,
                   "Only conversion to other MultiBuf types are supported.");
@@ -121,7 +121,7 @@ static constexpr void AssertIsConvertibleIgnoreConst() {
 /// Compare with `AssertIsAssignable`, which checks whether a MultiBuf can be
 /// stored in a variable of a different type.
 template <typename From, typename To>
-static constexpr void AssertIsConvertible() {
+[[maybe_unused]] static constexpr void AssertIsConvertible() {
   if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
     AssertIsConvertibleIgnoreConst<From, To>();
     static_assert(!From::is_const() || To::is_const(),
@@ -137,7 +137,7 @@ static constexpr void AssertIsConvertible() {
 /// Thus, a `FlatMultiBuf::Instance` may be moved into a `MultiBuf::Instance`,
 /// but a `MultiBuf::Instance` may NOT be moved into a `FlatMultiBuf::Instance`.
 template <typename From, typename To>
-static constexpr void AssertIsAssignable() {
+[[maybe_unused]] static constexpr void AssertIsAssignable() {
   if constexpr (!std::is_same_v<To, GenericMultiBuf>) {
     static_assert(IsBasicMultiBuf<To>::value,
                   "Only assignment to other MultiBuf types are supported.");

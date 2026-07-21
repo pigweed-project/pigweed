@@ -38,12 +38,6 @@ template <typename T>
 T Deserialize(T value) {
   return pw::bytes::ConvertOrderFrom(cpp20::endian::little, value);
 }
-template <typename T>
-T DeserializeEnum(T value) {
-  return static_cast<T>(pw::bytes::ConvertOrderFrom(
-      cpp20::endian::little, static_cast<std::underlying_type_t<T>>(value)));
-}
-
 }  // namespace
 
 bool LowEnergyCommandHandler::ConnectionParameterUpdateResponse::Decode(

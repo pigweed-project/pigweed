@@ -111,7 +111,7 @@ using EnableIfConversionIsValid =
 // Performs the same checks as EnableIfConversionIsValid, but generates a
 // static_assert with a helpful message if any condition is not met.
 template <typename Self, typename Sibling>
-static constexpr void CheckThatConversionIsValid() {
+[[maybe_unused]] static constexpr void CheckThatConversionIsValid() {
   if constexpr (!std::is_same_v<Sibling, AnyChannel>) {
     static_assert(IsChannel<Sibling>::value,
                   "Only conversions to other Channel types are supported");
@@ -140,7 +140,7 @@ constexpr bool PropertiesAreInOrderWithoutDuplicates() {
 }
 
 template <Property... kProperties>
-static constexpr bool PropertiesAreValid() {
+[[maybe_unused]] static constexpr bool PropertiesAreValid() {
   static_assert(((kProperties != kSeekable) && ...),
                 "Seekable channels are not yet implemented; see b/323624921");
 
@@ -157,7 +157,7 @@ static constexpr bool PropertiesAreValid() {
 }
 
 template <Property... kProperties>
-static constexpr bool PacketChannelPropertiesAreValid() {
+[[maybe_unused]] static constexpr bool PacketChannelPropertiesAreValid() {
   static_assert(
       ((kProperties != kReliable) && ...),
       "PacketChannel only supports the kReadable and kWritable properties");
@@ -189,7 +189,7 @@ using EnableIfConvertible =
 // Performs the same checks as EnableIfConvertible, but generates a
 // static_assert with a helpful message if any condition is not met.
 template <typename SelfType, typename SiblingType>
-static constexpr void CheckPacketChannelConversion() {
+[[maybe_unused]] static constexpr void CheckPacketChannelConversion() {
   using Self = std::remove_cv_t<SelfType>;
   using Sibling = std::remove_cv_t<SiblingType>;
   if constexpr (!std::is_same_v<Sibling,

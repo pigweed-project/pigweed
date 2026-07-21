@@ -139,8 +139,8 @@ class EncodedPacket {
 };
 
 template <typename Proto, typename Encoder>
-static Result<EncodedPacket> EncodeToPayloadBuffer(Proto& payload,
-                                                   const Encoder& encoder)
+[[maybe_unused]] static Result<EncodedPacket> EncodeToPayloadBuffer(
+    Proto& payload, const Encoder& encoder)
     PW_EXCLUSIVE_LOCKS_REQUIRED(rpc_lock()) {
   EncodingBuffer encoding_buffer;
 

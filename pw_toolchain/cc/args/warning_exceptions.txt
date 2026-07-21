@@ -137,3 +137,18 @@ src:*/fuzztest/internal/meta.h
 [shorten-64-to-32]
 // TODO: https://pwbug.dev/519755582 - Update fuzztest so we can remove these.
 src:*/fuzztest/fuzzing_bit_gen.h
+
+[unused-template]
+# TODO: https://pwbug.dev/434779927 - Can be removed after abseil is updated.
+src:*/absl/log/internal/log_format.cc
+src:*/absl/strings/internal/cord_rep_btree.cc
+src:*/absl/time/internal/cctz/src/time_zone_libc.cc
+
+# TODO: https://fxbug.dev/534361287 - Update Fuchsia SDK so we can remove these.
+src:*/lib/fidl/cpp/unified_messaging.h
+src:*/lib/fit/include/lib/fit/internal/result.h
+src:*/lib/stdcompat/include/lib/stdcompat/internal/type_traits.h
+src:*/lib/stdcompat/include/lib/stdcompat/type_traits.h
+
+# TODO: https://pwbug.dev/535724234 - Update chre so we can remove these.
+src:*/chre/util/include/chre/util/heap_impl.h
