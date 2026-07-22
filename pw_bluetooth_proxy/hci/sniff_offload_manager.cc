@@ -872,7 +872,9 @@ Status SniffOffloadManager::AppendBuffer(MultiBuf& buf, ConstByteSpan span) {
 }
 
 void SniffOffloadManager::ConnectionFsm::Start() {
-  manager_.dispatcher_.Post(timeout_task_);
+  if (!timeout_task_.IsRegistered()) {
+    manager_.dispatcher_.Post(timeout_task_);
+  }
 }
 
 void SniffOffloadManager::ConnectionFsm::Stop() { timeout_task_.Deregister(); }
@@ -888,6 +890,20 @@ void SniffOffloadManager::ConnectionFsm::OnInput(Input&& input) {
 void SniffOffloadManager::ConnectionFsm::HandleInput(EnableInput&& input) {
   [[maybe_unused]] auto _ = std::move(input);
   enabled_ = true;
+
+  switch (connection_state()) {
+    case ConnectionState::kControlStarted:
+      Start();
+      ResetTimer();
+      SendSniffSubrating();
+      break;
+    case ConnectionState::kPushActive:
+      SendExitSniffMode();
+      Stop();
+      break;
+    case ConnectionState::kPendingParameters:
+      break;
+  }
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(DisableInput&& input) {
@@ -900,6 +916,13 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
   auto previous_connection_state = connection_state();
   parameters_ = std::move(input);
   PW_CHECK(connection_state() != ConnectionState::kPendingParameters);
+
+  if (!enabled_) {
+    // Host sent WriteSniffOffloadParameters without a prior Enable (or after a
+    // Disable). Tolerate the out-of-order command rather than asserting in
+    // SendSniffSubrating().
+    return;
+  }
 
   if (connection_state() == ConnectionState::kPushActive) {
     SendExitSniffMode();

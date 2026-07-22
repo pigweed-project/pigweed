@@ -963,6 +963,55 @@ TEST_F(SniffOffloadManagerTest, TransitionFromPushActiveToControlStarted) {
   EXPECT_TRUE(NoErrors());
 }
 
+// Verify that if normal parameters are received while disabled after a
+// connection was in Push Active mode (which deregistered timeout_task_),
+// subsequently enabling offload restarts the inactivity timeout timer and
+// triggers Sniff Mode after timeout.
+TEST_F(SniffOffloadManagerTest,
+       TransitionFromPushActiveToControlStartedWhileDisabled) {
+  EXPECT_EQ(Simulate(ConnectionComplete(kConnectionHandle)),
+            kPassthroughResume);
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Send parameters with sniff_max_interval = 0 to enter Push Active mode and
+  // Stop() the timer.
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(kConnectionHandle,
+                                                 {.sniff_max_interval = 0})),
+            kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_TRUE(CheckSniffExitSent(kConnectionHandle));
+
+  // Disable sniff offload manager.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(false)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+
+  // Send normal parameters while disabled (returns early without calling
+  // Start()).
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(kConnectionHandle)),
+            kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_FALSE(CheckSniffSubratingSent(kConnectionHandle));
+
+  // Enable sniff offload manager again. Should call Start(), ResetTimer(), and
+  // send Sniff Subrating.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+  EXPECT_TRUE(CheckSniffSubratingSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+
+  // Inactivity timer should be running, so advancing time should enter Sniff
+  // Mode.
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+}
+
 TEST_F(SniffOffloadManagerTest, ErrorCannotAllocateConnection) {
   WithTestAllocator([](auto& allocator) { allocator.Exhaust(); });
   EXPECT_EQ(Simulate(ConnectionComplete(0x123)), kPassthroughResume);
@@ -1415,6 +1464,34 @@ TEST_F(SniffOffloadManagerTest, Reset) {
 
   AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
   EXPECT_TRUE(CheckSniffModeSent(0x456));
+  EXPECT_TRUE(NoErrors());
+}
+
+// Verify that sending ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS without a prior
+// ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE does not crash the proxy (which would
+// otherwise happen if SendSniffSubrating() is called when not enabled), does
+// not emit SNIFF_SUBRATING while disabled, and starts offload properly when
+// subsequently enabled.
+TEST_F(SniffOffloadManagerTest, ParametersWithoutEnableDoesNotCrash) {
+  EXPECT_EQ(Simulate(ConnectionComplete(kConnectionHandle)),
+            kPassthroughResume);
+  EXPECT_TRUE(NoErrors());
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(kConnectionHandle)),
+            kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS));
+  EXPECT_FALSE(CheckSniffSubratingSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_ENABLE));
+  EXPECT_TRUE(CheckSniffSubratingSent(kConnectionHandle));
+  EXPECT_TRUE(NoErrors());
+
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(kConnectionHandle));
   EXPECT_TRUE(NoErrors());
 }
 
