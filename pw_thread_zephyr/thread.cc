@@ -16,15 +16,12 @@
 #include <zephyr/kernel.h>
 #include <zephyr/spinlock.h>
 
-#include "public/pw_thread_zephyr/context.h"
-#include "public/pw_thread_zephyr/options.h"
 #include "pw_assert/check.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_thread_zephyr/context.h"
 #include "pw_thread_zephyr/options.h"
 
-using pw::thread::backend::NativeContext;
-using pw::thread::backend::NativeOptions;
+using pw::thread::zephyr::Context;
 
 namespace pw::thread {
 namespace {
@@ -33,8 +30,8 @@ k_spinlock global_thread_done_lock;
 
 }  // namespace
 
-void NativeContext::ThreadEntryPoint(void* void_context_ptr, void*, void*) {
-  NativeContext& context = *static_cast<NativeContext*>(void_context_ptr);
+void Context::ThreadEntryPoint(void* void_context_ptr, void*, void*) {
+  Context& context = *static_cast<Context*>(void_context_ptr);
 
   // Invoke the user's thread function. This may never return.
   context.fn_();
@@ -50,8 +47,8 @@ void NativeContext::ThreadEntryPoint(void* void_context_ptr, void*, void*) {
   k_spin_unlock(&global_thread_done_lock, key);
 }
 
-void NativeContext::CreateThread(Function<void()>&& thread_fn,
-                                 const NativeOptions& options) {
+void Context::CreateThread(Function<void()>&& thread_fn,
+                           const zephyr::Options& options) {
   PW_CHECK(!fn_);
   detached_ = false;
   thread_done_ = false;
@@ -69,7 +66,7 @@ void NativeContext::CreateThread(Function<void()>&& thread_fn,
   const k_tid_t task_handle = k_thread_create(&thread_info_,
                                               thread_stack.data(),
                                               thread_stack.size(),
-                                              NativeContext::ThreadEntryPoint,
+                                              Context::ThreadEntryPoint,
                                               this,
                                               nullptr,
                                               nullptr,
@@ -94,7 +91,7 @@ void NativeContext::CreateThread(Function<void()>&& thread_fn,
   }
 }
 
-NativeContext* NativeOptions::CreateThread(Function<void()>&& thread_fn) {
+Context* zephyr::Options::CreateThread(Function<void()>&& thread_fn) {
   PW_CHECK_NOTNULL(context_);
 
   context_->CreateThread(std::move(thread_fn), *this);
@@ -105,7 +102,7 @@ Thread::Thread(const thread::Options& facade_options, Function<void()>&& entry)
     : native_type_(nullptr) {
   // Cast the generic facade options to the backend specific option of which
   // only one type can exist at compile time.
-  auto options = static_cast<const NativeOptions&>(facade_options);
+  auto options = static_cast<const zephyr::Options&>(facade_options);
   native_type_ = options.CreateThread(std::move(entry));
 }
 

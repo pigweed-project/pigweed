@@ -43,15 +43,21 @@ label_flag(
 zephyr_cc_library(
     name = "id",
     hdrs = [
-        "public/pw_thread_zephyr/id_inline.h",
-        "public/pw_thread_zephyr/id_native.h",
         "public_overrides/id/pw_thread_backend/id_inline.h",
         "public_overrides/id/pw_thread_backend/id_native.h",
     ],
-    includes = [
-        "public",
-        "public_overrides/id",
+    strip_include_prefix = "public_overrides/id",
+    deps = [":id_private"],
+)
+
+zephyr_cc_library(
+    name = "id_private",
+    hdrs = [
+        "public/pw_thread_zephyr/id_inline.h",
+        "public/pw_thread_zephyr/id_native.h",
     ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         "//pw_assert:assert",
         "//pw_interrupt:context",
@@ -63,14 +69,20 @@ zephyr_cc_library(
     name = "sleep",
     srcs = ["sleep.cc"],
     hdrs = [
-        "public/pw_thread_zephyr/sleep_inline.h",
         "public_overrides/sleep/pw_thread_backend/sleep_inline.h",
     ],
     implementation_deps = ["//pw_assert:check"],
-    includes = [
-        "public",
-        "public_overrides/sleep",
+    strip_include_prefix = "public_overrides/sleep",
+    deps = [":sleep_private"],
+)
+
+zephyr_cc_library(
+    name = "sleep_private",
+    hdrs = [
+        "public/pw_thread_zephyr/sleep_inline.h",
     ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         "//pw_chrono:system_clock",
         "//pw_thread:sleep.facade",
@@ -82,19 +94,25 @@ zephyr_cc_library(
     name = "thread",
     srcs = ["thread.cc"],
     hdrs = [
+        "public_overrides/thread/pw_thread_backend/thread_inline.h",
+        "public_overrides/thread/pw_thread_backend/thread_native.h",
+    ],
+    strip_include_prefix = "public_overrides/thread",
+    deps = [":thread_private"],
+)
+
+zephyr_cc_library(
+    name = "thread_private",
+    hdrs = [
         "public/pw_thread_zephyr/context.h",
         "public/pw_thread_zephyr/options.h",
         "public/pw_thread_zephyr/priority.h",
         "public/pw_thread_zephyr/stack.h",
         "public/pw_thread_zephyr/thread_inline.h",
         "public/pw_thread_zephyr/thread_native.h",
-        "public_overrides/thread/pw_thread_backend/thread_inline.h",
-        "public_overrides/thread/pw_thread_backend/thread_native.h",
     ],
-    includes = [
-        "public",
-        "public_overrides/thread",
-    ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         ":config",
         ":thread_creation",
@@ -140,13 +158,19 @@ zephyr_cc_library(
 zephyr_cc_library(
     name = "yield",
     hdrs = [
-        "public/pw_thread_zephyr/yield_inline.h",
         "public_overrides/yield/pw_thread_backend/yield_inline.h",
     ],
-    includes = [
-        "public",
-        "public_overrides/yield",
+    strip_include_prefix = "public_overrides/yield",
+    deps = [":yield_private"],
+)
+
+zephyr_cc_library(
+    name = "yield_private",
+    hdrs = [
+        "public/pw_thread_zephyr/yield_inline.h",
     ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         "//pw_assert:assert",
         "//pw_thread:yield.facade",
