@@ -106,6 +106,13 @@ WITH_ARGS_SUCCESSFUL_CASES_BINARY = (
     TestCaseBytes(b'\x80\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
     TestCaseBytes(b'\x81\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
     TestCaseBytes(b'\x82\x00\x0d\xf0\xc0\x9a\x0c', '100000!'),
+    TestCaseBytes(
+        b'\x83\x00\x0d\xf0\x01\xe7\x07\xfe\x03\xfe\xff\x07',
+        '-1 -500 255 65535',
+    ),
+    TestCaseBytes(
+        b'\x2e\xd2\x8b\x6a\x04\xff\xbf\xff\xff\x0f', 'TI2: CCI=0x80001000'
+    ),
     TestCaseBytes(b'\xbb\xbb\xbb\xbb\xfe\x03', '255!'),
     TestCaseBytes(b'\xaa\xaa\xaa\xaa\xfc\x01', '~!'),
     TestCaseBytes(b'\xcc\xcc\xcc\xcc\xfe\xff\x07', '65535!'),
@@ -194,7 +201,7 @@ TEST_DATABASE = (
 
 DATA_WITH_ARGUMENTS = (
     b'TOKENS\0\0'
-    b'\x26\0\0\0'
+    b'\x28\0\0\0'
     b'\0\0\x00\x00'
     b'\x00\x00\x00\x00----'  # 01
     b'\x0e\x0f\x00\x01----'  # 02
@@ -233,7 +240,9 @@ DATA_WITH_ARGUMENTS = (
     b'\x80\x00\x0d\xf0----'  # 35
     b'\x81\x00\x0d\xf0----'  # 36
     b'\x82\x00\x0d\xf0----'  # 37
-    b'\xff\xff\xff\xff----'  # 38
+    b'\x83\x00\x0d\xf0----'  # 38
+    b'\x2e\xd2\x8b\x6a----'  # 39
+    b'\xff\xff\xff\xff----'  # 40
     b'\0'  # 01
     b'Now there are %d of %s!\0'  # 02
     b'Use the %s, %s.\0'  # 03
@@ -271,7 +280,9 @@ DATA_WITH_ARGUMENTS = (
     b'%ju!\0'  # 35
     b'%zu!\0'  # 36
     b'%tu!\0'  # 37
-    b'%llu!\0'  # 38
+    b'%hhd %hd %hhu %hu\0'  # 38
+    b'TI%d: CCI=0x%x\0'  # 39
+    b'%llu!\0'  # 40
 )
 
 DATA_WITH_COLLISIONS = (

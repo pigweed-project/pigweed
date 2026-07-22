@@ -15,7 +15,7 @@
 use core::cmp;
 
 use pw_format::{
-    Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Primitive,
+    Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Length, Primitive,
 };
 use pw_status::Result;
 use pw_varint::VarintDecode;
@@ -458,10 +458,10 @@ impl Detokenizer {
 
             for conversion in conversions {
                 let (next_remaining, decode_res) = match conversion.primitive {
-                    Primitive::Integer => decode_int_arg(remaining),
-                    Primitive::Unsigned => decode_uint_arg(remaining),
+                    Primitive::Integer => decode_int_arg(remaining, conversion),
+                    Primitive::Unsigned => decode_uint_arg(remaining, conversion),
                     Primitive::Character => decode_char_arg(remaining),
-                    Primitive::Pointer => decode_ptr_arg(remaining),
+                    Primitive::Pointer => decode_ptr_arg(remaining, conversion),
                     Primitive::Float => decode_float_arg(remaining),
                     Primitive::String => decode_str_arg(remaining),
                     _ => (remaining, Err(TokenizerError::DecodeError)),
@@ -538,20 +538,49 @@ fn decode_varint_arg(input: &[u8]) -> (&[u8], core::result::Result<i64, Tokenize
     }
 }
 
-fn decode_int_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+fn decode_int_arg<'a>(input: &'a [u8], conversion: &ConversionSpec) -> (&'a [u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    (remaining, res.map(Arg::Int))
+    let decoded_arg = res.and_then(|val| {
+        let val = match conversion.length {
+            Some(Length::Char) => i8::try_from(val).map(i64::from),
+            Some(Length::Short) => i16::try_from(val).map(i64::from),
+            Some(
+                Length::Long
+                | Length::LongLong
+                | Length::IntMax
+                | Length::Size
+                | Length::PointerDiff,
+            ) => Ok(val),
+            _ => i32::try_from(val).map(i64::from),
+        }
+        .map_err(|_| TokenizerError::DecodeError)?;
+        Ok(Arg::Int(val))
+    });
+    (remaining, decoded_arg)
 }
 
-fn decode_uint_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+fn decode_uint_arg<'a>(input: &'a [u8], conversion: &ConversionSpec) -> (&'a [u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    let Ok(val) = res else {
-        return (remaining, Err(TokenizerError::DecodeError));
-    };
-    let Ok(val) = u64::try_from(val) else {
-        return (remaining, Err(TokenizerError::DecodeError));
-    };
-    (remaining, Ok(Arg::Uint(val)))
+    let decoded_arg = res.map(|val| {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        // All tokenized integers are varint zigzag encoded, which sign-extends
+        // negative values into i64. Here we truncate them to the specifier width
+        // when converting to unsigned integers to strip off the sign extension.
+        let val = match conversion.length {
+            Some(Length::Char) => u64::from(val as u8),
+            Some(Length::Short) => u64::from(val as u16),
+            Some(
+                Length::Long
+                | Length::LongLong
+                | Length::IntMax
+                | Length::Size
+                | Length::PointerDiff,
+            ) => val as u64,
+            _ => u64::from(val as u32),
+        };
+        Arg::Uint(val)
+    });
+    (remaining, decoded_arg)
 }
 
 fn decode_char_arg(input: &[u8]) -> (&[u8], DecodeResult) {
@@ -568,15 +597,17 @@ fn decode_char_arg(input: &[u8]) -> (&[u8], DecodeResult) {
     (remaining, Ok(Arg::Char(char_res)))
 }
 
-fn decode_ptr_arg(input: &[u8]) -> (&[u8], DecodeResult) {
+fn decode_ptr_arg<'a>(input: &'a [u8], conversion: &ConversionSpec) -> (&'a [u8], DecodeResult) {
     let (remaining, res) = decode_varint_arg(input);
-    let Ok(val) = res else {
-        return (remaining, Err(TokenizerError::DecodeError));
-    };
-    let Ok(val) = usize::try_from(val) else {
-        return (remaining, Err(TokenizerError::DecodeError));
-    };
-    (remaining, Ok(Arg::Ptr(val)))
+    let decoded_arg = res.map(|val| {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let val = match conversion.length {
+            Some(Length::LongLong | Length::IntMax | Length::Size) => (val as u64) as usize,
+            _ => (val as u32) as usize,
+        };
+        Arg::Ptr(val)
+    });
+    (remaining, decoded_arg)
 }
 
 fn decode_float_arg(input: &[u8]) -> (&[u8], DecodeResult) {
@@ -1429,5 +1460,33 @@ mod tests {
             result5.best_string_with_errors(),
             "0x1<[%d ERROR]><[%d SKIPPED]>"
         );
+    }
+
+    #[test]
+    fn test_detokenize_length_specifiers_and_pointers() {
+        let csv = "00000001,,,%hhd %hd %hhu %hu %u %p\n";
+        let detok = Detokenizer::from_csv(csv).unwrap();
+
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.extend_from_slice(&[
+            0x01, 0xe7, 0x07, 0xfe, 0x03, 0xfe, 0xff, 0x07, 0xff, 0xbf, 0xff, 0xff, 0x0f, 0xdf,
+            0xfc, 0xf0, 0xfe, 0x0f,
+        ]);
+
+        let result = detok.detokenize(&encoded);
+        assert_eq!(
+            result.best_string(),
+            "-1 -500 255 65535 2147487744 0x8011e0d0"
+        );
+    }
+
+    #[test]
+    fn test_decode_int_arg_overflow() {
+        // %hhd with value 500 exceeds i8 range
+        let csv = "00000001,,,%hhd\n";
+        let data = &[0x01, 0x00, 0x00, 0x00, 0xe8, 0x07];
+        let detok = Detokenizer::from_csv(csv).unwrap();
+        let result = detok.detokenize(data);
+        assert_eq!(result.best_string_with_errors(), "<[%hhd ERROR]>");
     }
 }
