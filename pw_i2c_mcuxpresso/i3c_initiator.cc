@@ -96,6 +96,8 @@ Status I3cMcuxpressoInitiator::InitiateTransferUntil(
   // Acquire the clock_tree_element. Make sure it's released on any function
   // exits through a scoped guard.
   PW_CHECK_OK(clock_tree_element_.Acquire());
+  pw::ScopeGuard guard([this] { clock_tree_element_.Release().IgnoreError(); });
+
   return driver_.InitiateTransferUntil(deadline, transfer);
 }
 
