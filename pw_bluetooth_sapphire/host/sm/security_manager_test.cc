@@ -3279,6 +3279,7 @@ TEST_F(ResponderPairingTest, SuccessfulPairAfterResetInProgressPairing) {
   EXPECT_EQ(1, pairing_complete_count());
 
   // Verify that the next pairing request is properly handled
+  RunFor(std::chrono::seconds(1));
   ReceivePairingRequest();
   RunUntilIdle();
   // At this point, we expect to have completed Phase 1, and pairing should
@@ -4961,6 +4962,79 @@ TEST_F(ResponderPairingTest, SecurityRequestPhaseHandlesSecondEncryptionEvent) {
 
   EXPECT_EQ(1, security_callback_count());
 }
+
+TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
+  // Model the upstream FIDL/UI to avoid crashes if it tries to call it
+  set_confirm_delegate([&](ConfirmCallback) {
+    // Just accept or ignore.
+  });
+
+  // --- Attempt 1 ---
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_response_count());
+
+  // Fail it
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  ASSERT_EQ(1, pairing_complete_count());
+  // Backoff should now be 1s.
+
+  // --- Attempt 2 (Too early) ---
+  // Try again after 500ms.
+  RunFor(std::chrono::milliseconds(500));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  // Should NOT be accepted (response count still 1).
+  EXPECT_EQ(1, pairing_response_count());
+
+  // --- Attempt 2 (After backoff) ---
+  // Advance past 1s (total 1.1s from failure).
+  RunFor(std::chrono::milliseconds(600));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  // Should be accepted.
+  EXPECT_EQ(2, pairing_response_count());
+
+  // Fail it again
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  // Backoff should now be 2s.
+
+  // --- Attempt 3 (Too early) ---
+  // Try again after 1.5s (which is less than 2s).
+  RunFor(std::chrono::milliseconds(1500));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_response_count());  // Still 2
+
+  // --- Attempt 3 (After backoff) ---
+  // Advance past 2s (another 600ms, total 2.1s from failure).
+  RunFor(std::chrono::milliseconds(600));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_response_count());  // Now 3
+
+  // Fail it again
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  // Backoff should now be 4s.
+
+  // --- Attempt 4 (Too early) ---
+  // Try again after 3s.
+  RunFor(std::chrono::seconds(3));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_response_count());  // Still 3
+
+  // --- Attempt 4 (After backoff) ---
+  // Advance past 4s (another 1.1s, total 4.1s).
+  RunFor(std::chrono::milliseconds(1100));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(4, pairing_response_count());  // Now 4
+}
+
 }  // namespace
 }  // namespace bt::sm
 // inclusive-language: enable
