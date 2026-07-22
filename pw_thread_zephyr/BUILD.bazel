@@ -43,14 +43,14 @@ label_flag(
 zephyr_cc_library(
     name = "id",
     hdrs = [
-        "id_public_overrides/pw_thread_backend/id_inline.h",
-        "id_public_overrides/pw_thread_backend/id_native.h",
         "public/pw_thread_zephyr/id_inline.h",
         "public/pw_thread_zephyr/id_native.h",
+        "public_overrides/id/pw_thread_backend/id_inline.h",
+        "public_overrides/id/pw_thread_backend/id_native.h",
     ],
     includes = [
-        "id_public_overrides",
         "public",
+        "public_overrides/id",
     ],
     deps = [
         "//pw_assert:assert",
@@ -64,12 +64,12 @@ zephyr_cc_library(
     srcs = ["sleep.cc"],
     hdrs = [
         "public/pw_thread_zephyr/sleep_inline.h",
-        "sleep_public_overrides/pw_thread_backend/sleep_inline.h",
+        "public_overrides/sleep/pw_thread_backend/sleep_inline.h",
     ],
     implementation_deps = ["//pw_assert:check"],
     includes = [
         "public",
-        "sleep_public_overrides",
+        "public_overrides/sleep",
     ],
     deps = [
         "//pw_chrono:system_clock",
@@ -88,12 +88,12 @@ zephyr_cc_library(
         "public/pw_thread_zephyr/stack.h",
         "public/pw_thread_zephyr/thread_inline.h",
         "public/pw_thread_zephyr/thread_native.h",
-        "thread_public_overrides/pw_thread_backend/thread_inline.h",
-        "thread_public_overrides/pw_thread_backend/thread_native.h",
+        "public_overrides/thread/pw_thread_backend/thread_inline.h",
+        "public_overrides/thread/pw_thread_backend/thread_native.h",
     ],
     includes = [
         "public",
-        "thread_public_overrides",
+        "public_overrides/thread",
     ],
     deps = [
         ":config",
@@ -113,12 +113,12 @@ zephyr_cc_library(
 zephyr_cc_library(
     name = "thread_creation",
     hdrs = [
-        "thread_creation_public_overrides/pw_thread_backend/context.h",
-        "thread_creation_public_overrides/pw_thread_backend/options.h",
-        "thread_creation_public_overrides/pw_thread_backend/priority.h",
-        "thread_creation_public_overrides/pw_thread_backend/stack.h",
+        "public_overrides/thread_creation/pw_thread_backend/context.h",
+        "public_overrides/thread_creation/pw_thread_backend/options.h",
+        "public_overrides/thread_creation/pw_thread_backend/priority.h",
+        "public_overrides/thread_creation/pw_thread_backend/stack.h",
     ],
-    strip_include_prefix = "thread_creation_public_overrides",
+    strip_include_prefix = "public_overrides/thread_creation",
     deps = [":config"],
 )
 
@@ -141,11 +141,11 @@ zephyr_cc_library(
     name = "yield",
     hdrs = [
         "public/pw_thread_zephyr/yield_inline.h",
-        "yield_public_overrides/pw_thread_backend/yield_inline.h",
+        "public_overrides/yield/pw_thread_backend/yield_inline.h",
     ],
     includes = [
         "public",
-        "yield_public_overrides",
+        "public_overrides/yield",
     ],
     deps = [
         "//pw_assert:assert",

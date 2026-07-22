@@ -33,11 +33,11 @@ pw_add_library(pw_thread_zephyr.id INTERFACE
   HEADERS
     public/pw_thread_zephyr/id_inline.h
     public/pw_thread_zephyr/id_native.h
-    id_public_overrides/pw_thread_backend/id_inline.h
-    id_public_overrides/pw_thread_backend/id_native.h
+    public_overrides/id/pw_thread_backend/id_inline.h
+    public_overrides/id/pw_thread_backend/id_native.h
   PUBLIC_INCLUDES
     public
-    id_public_overrides
+    public_overrides/id
   PUBLIC_DEPS
     pw_assert
     pw_interrupt.context
@@ -52,10 +52,10 @@ pw_zephyrize_libraries_ifdef(
 pw_add_library(pw_thread_zephyr.sleep STATIC
   HEADERS
     public/pw_thread_zephyr/sleep_inline.h
-    sleep_public_overrides/pw_thread_backend/sleep_inline.h
+    public_overrides/sleep/pw_thread_backend/sleep_inline.h
   PUBLIC_INCLUDES
     public
-    sleep_public_overrides
+    public_overrides/sleep
   PUBLIC_DEPS
     pw_chrono.system_clock
     pw_thread.sleep.facade
@@ -80,11 +80,11 @@ pw_add_library(pw_thread_zephyr.thread STATIC
     public/pw_thread_zephyr/stack.h
     public/pw_thread_zephyr/thread_inline.h
     public/pw_thread_zephyr/thread_native.h
-    thread_public_overrides/pw_thread_backend/thread_inline.h
-    thread_public_overrides/pw_thread_backend/thread_native.h
+    public_overrides/thread/pw_thread_backend/thread_inline.h
+    public_overrides/thread/pw_thread_backend/thread_native.h
   PUBLIC_INCLUDES
     public
-    thread_public_overrides
+    public_overrides/thread
   PUBLIC_DEPS
     pw_assert
     pw_function
@@ -104,10 +104,10 @@ pw_zephyrize_libraries_ifdef(
 pw_add_library(pw_thread_zephyr.yield INTERFACE
   HEADERS
     public/pw_thread_zephyr/yield_inline.h
-    yield_public_overrides/pw_thread_backend/yield_inline.h
+    public_overrides/yield/pw_thread_backend/yield_inline.h
   PUBLIC_INCLUDES
     public
-    yield_public_overrides
+    public_overrides/yield
   PUBLIC_DEPS
     pw_assert
     pw_thread.yield.facade
@@ -120,13 +120,13 @@ pw_zephyrize_libraries_ifdef(
 
 pw_add_library(pw_thread_zephyr.thread_creation INTERFACE
   HEADERS
-    thread_creation_public_overrides/pw_thread_backend/context.h
-    thread_creation_public_overrides/pw_thread_backend/options.h
-    thread_creation_public_overrides/pw_thread_backend/priority.h
-    thread_creation_public_overrides/pw_thread_backend/stack.h
+    public_overrides/thread_creation/pw_thread_backend/context.h
+    public_overrides/thread_creation/pw_thread_backend/options.h
+    public_overrides/thread_creation/pw_thread_backend/priority.h
+    public_overrides/thread_creation/pw_thread_backend/stack.h
   PUBLIC_INCLUDES
     public
-    thread_creation_public_overrides
+    public_overrides/thread_creation
   PUBLIC_DEPS
     pw_thread_zephyr.config
 )
@@ -134,7 +134,7 @@ pw_add_library(pw_thread_zephyr.thread_creation INTERFACE
 pw_add_library(pw_thread_zephyr.thread_iteration STATIC
   PUBLIC_INCLUDES
     public
-    thread_public_overrides
+    public_overrides/thread
   PUBLIC_DEPS
     pw_thread.thread_info
     pw_thread.thread_iteration.facade
