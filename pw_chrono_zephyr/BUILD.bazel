@@ -40,12 +40,12 @@ zephyr_cc_library(
         "public/pw_chrono_zephyr/system_clock_config.h",
         "public/pw_chrono_zephyr/system_clock_constants.h",
         "public/pw_chrono_zephyr/system_clock_inline.h",
-        "public_overrides/pw_chrono_backend/system_clock_config.h",
-        "public_overrides/pw_chrono_backend/system_clock_inline.h",
+        "public_overrides/system_clock/pw_chrono_backend/system_clock_config.h",
+        "public_overrides/system_clock/pw_chrono_backend/system_clock_inline.h",
     ],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/system_clock",
     ],
     deps = [
         "//pw_chrono:epoch",
@@ -59,12 +59,12 @@ zephyr_cc_library(
     hdrs = [
         "public/pw_chrono_zephyr/system_timer_inline.h",
         "public/pw_chrono_zephyr/system_timer_native.h",
-        "public_overrides/pw_chrono_backend/system_timer_inline.h",
-        "public_overrides/pw_chrono_backend/system_timer_native.h",
+        "public_overrides/system_timer/pw_chrono_backend/system_timer_inline.h",
+        "public_overrides/system_timer/pw_chrono_backend/system_timer_native.h",
     ],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/system_timer",
     ],
     deps = [
         ":system_clock",

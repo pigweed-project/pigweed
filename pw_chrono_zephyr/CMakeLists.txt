@@ -23,11 +23,11 @@ pw_add_library(pw_chrono_zephyr.system_clock INTERFACE
     public/pw_chrono_zephyr/system_clock_constants.h
     public/pw_chrono_zephyr/system_clock_config.h
     public/pw_chrono_zephyr/system_clock_inline.h
-    public_overrides/pw_chrono_backend/system_clock_config.h
-    public_overrides/pw_chrono_backend/system_clock_inline.h
+    public_overrides/system_clock/pw_chrono_backend/system_clock_config.h
+    public_overrides/system_clock/pw_chrono_backend/system_clock_inline.h
   PUBLIC_INCLUDES
     public
-    public_overrides
+    public_overrides/system_clock
   PUBLIC_DEPS
     pw_function
     pw_chrono.epoch
@@ -43,13 +43,13 @@ pw_add_library(pw_chrono_zephyr.system_timer STATIC
     public/pw_chrono_zephyr/system_clock_constants.h
     public/pw_chrono_zephyr/system_timer_inline.h
     public/pw_chrono_zephyr/system_timer_native.h
-    public_overrides/pw_chrono_backend/system_timer_inline.h
-    public_overrides/pw_chrono_backend/system_timer_native.h
+    public_overrides/system_timer/pw_chrono_backend/system_timer_inline.h
+    public_overrides/system_timer/pw_chrono_backend/system_timer_native.h
   SOURCES
     system_timer.cc
   PUBLIC_INCLUDES
     public
-    public_overrides
+    public_overrides/system_timer
   PUBLIC_DEPS
     pw_chrono.system_timer.facade
     zephyr_interface
