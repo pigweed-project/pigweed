@@ -1557,5 +1557,50 @@ TEST_F(
                         testing::DisconnectPacket(kScoConnectionHandle));
 }
 
+TEST_F(ScoConnectionManagerTest, UnsolicitedConnectionCompleteErrorIgnored) {
+  auto conn_complete = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR);
+
+  test_device()->SendCommandChannelPacket(conn_complete);
+  RunUntilIdle();
+}
+
+TEST_F(ScoConnectionManagerTest,
+       RejectedUnsolicitedScoRequestThenCompleteIgnored) {
+  // Step 1: remote peer's LMP_eSCO_link_req -> controller emits
+  // HCI_Connection_Request(link_type=eSCO).
+  auto conn_req = testing::ConnectionRequestPacket(
+      kPeerAddress, hci_spec::LinkType::kExtendedSCO);
+  test_device()->SendCommandChannelPacket(conn_req);
+
+  // Step 2: host has no in_progress_request_ -> sends
+  // HCI_Reject_Synchronous_Connection_Request(0x0F).
+  auto reject_status = testing::CommandStatusPacket(
+      hci_spec::kRejectSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::RejectSynchronousConnectionRequest(
+          kPeerAddress,
+          pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR),
+      &reject_status);
+  RunUntilIdle();
+
+  // Per BT Core Spec §7.1.28 the controller now emits
+  // HCI_Synchronous_Connection_Complete carrying the rejection status.
+  auto conn_complete = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR);
+
+  test_device()->SendCommandChannelPacket(conn_complete);
+  // Should not abort.
+  RunUntilIdle();
+}
+
 }  // namespace
 }  // namespace bt::sco

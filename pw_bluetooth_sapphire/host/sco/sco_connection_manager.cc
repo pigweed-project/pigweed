@@ -162,13 +162,24 @@ ScoConnectionManager::OnSynchronousConnectionComplete(
   }
 
   auto status = event.ToResult();
-  if (bt_is_error(status,
-                  INFO,
-                  "gap-sco",
-                  "SCO connection failed to be established; trying next "
-                  "parameters if available (peer: %s)",
-                  bt_str(peer_id_))) {
-    // A request must be in progress for this event to be generated.
+  if (status.is_error()) {
+    // The controller emits this event with an error status after the host
+    // rejects an unsolicited (e)SCO request, in which case there is no
+    // in-progress request to complete.
+    if (!in_progress_request_) {
+      bt_log(DEBUG,
+             "gap-sco",
+             "Ignoring SCO connection complete error with no request in "
+             "progress (peer: %s)",
+             bt_str(peer_id_));
+      return hci::CommandChannel::EventCallbackResult::kContinue;
+    }
+    bt_log(INFO,
+           "gap-sco",
+           "SCO connection failed to be established; trying next "
+           "parameters if available (peer: %s, status: %s)",
+           bt_str(peer_id_),
+           bt_str(status));
     CompleteRequestOrTryNextParameters(fit::error(HostError::kFailed));
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
