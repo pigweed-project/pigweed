@@ -34,12 +34,12 @@ zephyr_cc_library(
     hdrs = [
         "public/pw_sync_zephyr/binary_semaphore_inline.h",
         "public/pw_sync_zephyr/binary_semaphore_native.h",
-        "public_overrides/pw_sync_backend/binary_semaphore_inline.h",
-        "public_overrides/pw_sync_backend/binary_semaphore_native.h",
+        "public_overrides/binary_semaphore/pw_sync_backend/binary_semaphore_inline.h",
+        "public_overrides/binary_semaphore/pw_sync_backend/binary_semaphore_native.h",
     ],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/binary_semaphore",
     ],
     deps = [
         "//pw_assert:assert",
@@ -55,13 +55,13 @@ zephyr_cc_library(
     hdrs = [
         "public/pw_sync_zephyr/counting_semaphore_inline.h",
         "public/pw_sync_zephyr/counting_semaphore_native.h",
-        "public_overrides/pw_sync_backend/counting_semaphore_inline.h",
-        "public_overrides/pw_sync_backend/counting_semaphore_native.h",
+        "public_overrides/counting_semaphore/pw_sync_backend/counting_semaphore_inline.h",
+        "public_overrides/counting_semaphore/pw_sync_backend/counting_semaphore_native.h",
     ],
     implementation_deps = ["//pw_assert:check"],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/counting_semaphore",
     ],
     deps = [
         "//pw_assert:assert",
@@ -76,12 +76,12 @@ zephyr_cc_library(
     hdrs = [
         "public/pw_sync_zephyr/interrupt_spin_lock_inline.h",
         "public/pw_sync_zephyr/interrupt_spin_lock_native.h",
-        "public_overrides/pw_sync_backend/interrupt_spin_lock_inline.h",
-        "public_overrides/pw_sync_backend/interrupt_spin_lock_native.h",
+        "public_overrides/interrupt_spin_lock/pw_sync_backend/interrupt_spin_lock_inline.h",
+        "public_overrides/interrupt_spin_lock/pw_sync_backend/interrupt_spin_lock_native.h",
     ],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/interrupt_spin_lock",
     ],
     deps = [
         "//pw_assert:assert",
@@ -94,12 +94,12 @@ zephyr_cc_library(
     hdrs = [
         "public/pw_sync_zephyr/mutex_inline.h",
         "public/pw_sync_zephyr/mutex_native.h",
-        "public_overrides/pw_sync_backend/mutex_inline.h",
-        "public_overrides/pw_sync_backend/mutex_native.h",
+        "public_overrides/mutex/pw_sync_backend/mutex_inline.h",
+        "public_overrides/mutex/pw_sync_backend/mutex_native.h",
     ],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/mutex",
     ],
     deps = [
         "//pw_assert:assert",
@@ -133,12 +133,12 @@ zephyr_cc_library(
     srcs = ["timed_mutex.cc"],
     hdrs = [
         "public/pw_sync_zephyr/timed_mutex_inline.h",
-        "public_overrides/pw_sync_backend/timed_mutex_inline.h",
+        "public_overrides/timed_mutex/pw_sync_backend/timed_mutex_inline.h",
     ],
     implementation_deps = ["//pw_assert:check"],
     includes = [
         "public",
-        "public_overrides",
+        "public_overrides/timed_mutex",
     ],
     deps = [
         ":mutex",
