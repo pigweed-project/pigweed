@@ -1043,6 +1043,13 @@ class ResponderPairingTest : public SecurityManagerTest {
                         KeyDistGenField local_keys = 0,
                         uint8_t max_key_size = kMaxEncryptionKeySize,
                         BondableMode bondable_mode = BondableMode::Bondable) {
+    int initial_request_count = pairing_request_count();
+    int initial_response_count = pairing_response_count();
+    int initial_confirm_count = pairing_confirm_count();
+    int initial_random_count = pairing_random_count();
+    int initial_failed_count = pairing_failed_count();
+    int initial_callback_count = security_callback_count();
+
     PairingRequestParams pairing_params;
     pairing_params.io_capability = IOCapability::kNoInputNoOutput;
     AuthReqField bondable = (bondable_mode == BondableMode::Bondable)
@@ -1061,27 +1068,27 @@ class ResponderPairingTest : public SecurityManagerTest {
     // Run the loop until the harness caches the feature exchange PDUs (preq &
     // pres) so that we can generate a valid confirm value.
     RunUntilIdle();
-    EXPECT_EQ(0, pairing_request_count());
-    EXPECT_EQ(1, pairing_response_count());
+    EXPECT_EQ(initial_request_count, pairing_request_count());
+    EXPECT_EQ(initial_response_count + 1, pairing_response_count());
 
     // The initiator should start the confirm/random exchange to generate the
     // Phase 2 keys.
-    EXPECT_EQ(0, pairing_confirm_count());
-    EXPECT_EQ(0, pairing_random_count());
+    EXPECT_EQ(initial_confirm_count, pairing_confirm_count());
+    EXPECT_EQ(initial_random_count, pairing_random_count());
 
     UInt128 mconfirm, mrand;
     GenerateMatchingLegacyConfirmAndRandom(&mconfirm, &mrand);
     ReceivePairingConfirm(mconfirm);
     RunUntilIdle();
-    EXPECT_EQ(1, pairing_confirm_count());
-    EXPECT_EQ(0, pairing_random_count());
+    EXPECT_EQ(initial_confirm_count + 1, pairing_confirm_count());
+    EXPECT_EQ(initial_random_count, pairing_random_count());
 
     ReceivePairingRandom(mrand);
     RunUntilIdle();
-    EXPECT_EQ(1, pairing_confirm_count());
-    EXPECT_EQ(1, pairing_random_count());
-    EXPECT_EQ(0, pairing_failed_count());
-    EXPECT_EQ(0, security_callback_count());
+    EXPECT_EQ(initial_confirm_count + 1, pairing_confirm_count());
+    EXPECT_EQ(initial_random_count + 1, pairing_random_count());
+    EXPECT_EQ(initial_failed_count, pairing_failed_count());
+    EXPECT_EQ(initial_callback_count, security_callback_count());
 
     PW_DCHECK(out_stk);
 
@@ -1098,6 +1105,7 @@ class ResponderPairingTest : public SecurityManagerTest {
       KeyDistGenField local_keys = 0,
       uint8_t max_key_size = kMaxEncryptionKeySize,
       BondableMode bondable_mode = BondableMode::Bondable) {
+    int initial_new_sec_props_count = new_sec_props_count();
     if (secure_connections) {
       FastForwardToScLtk(
           out_encryption_key, level, remote_keys, local_keys, bondable_mode);
@@ -1118,7 +1126,7 @@ class ResponderPairingTest : public SecurityManagerTest {
     // Pretend that the initiator succeeded in encrypting the connection.
     fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
     RunUntilIdle();
-    EXPECT_EQ(1, new_sec_props_count());
+    EXPECT_EQ(initial_new_sec_props_count + 1, new_sec_props_count());
     EXPECT_EQ(level, new_sec_props().level());
   }
 
@@ -1127,6 +1135,14 @@ class ResponderPairingTest : public SecurityManagerTest {
                           KeyDistGenField peer_keys = 0,
                           KeyDistGenField local_keys = 0,
                           BondableMode bondable = BondableMode::Bondable) {
+    int initial_response_count = pairing_response_count();
+    int initial_public_key_count = pairing_public_key_count();
+    int initial_confirm_count = pairing_confirm_count();
+    int initial_random_count = pairing_random_count();
+    int initial_dhkey_check_count = pairing_dhkey_check_count();
+    int initial_failed_count = pairing_failed_count();
+    int initial_complete_count = pairing_complete_count();
+
     PairingRequestParams preq;
     preq.io_capability = IOCapability::kDisplayYesNo;
     preq.oob_data_flag = OOBDataFlag::kNotPresent;
@@ -1141,18 +1157,18 @@ class ResponderPairingTest : public SecurityManagerTest {
     ReceivePairingFeatures(preq, /*peer_initiator=*/true);
     EXPECT_TRUE(peer().MutLe().is_pairing());
     RunUntilIdle();
-    ASSERT_EQ(1, pairing_response_count());
+    ASSERT_EQ(initial_response_count + 1, pairing_response_count());
 
     LocalEcdhKey peer_key = *LocalEcdhKey::Create();
     ReceivePairingPublicKey(peer_key.GetSerializedPublicKey());
     RunUntilIdle();
     ASSERT_TRUE(public_ecdh_key().has_value());
-    ASSERT_EQ(1, pairing_public_key_count());
+    ASSERT_EQ(initial_public_key_count + 1, pairing_public_key_count());
 
     // We are in Just Works or Numeric Comparison based on IOCapabilities/MITM
     // preferences, so we expect the confirm value immediately after the public
     // key.
-    ASSERT_EQ(1, pairing_confirm_count());
+    ASSERT_EQ(initial_confirm_count + 1, pairing_confirm_count());
     std::optional<uint32_t> display_val;
     if (mitm_flag != 0) {
       set_display_delegate([&](uint32_t compare_value,
@@ -1167,7 +1183,7 @@ class ResponderPairingTest : public SecurityManagerTest {
     auto peer_rand = Random<PairingRandomValue>();
     ReceivePairingRandom(peer_rand);
     RunUntilIdle();
-    ASSERT_EQ(1, pairing_random_count());
+    ASSERT_EQ(initial_random_count + 1, pairing_random_count());
     ASSERT_EQ(GenerateScConfirmValue(
                   peer_key, pairing_random(), Role::kResponder, false),
               pairing_confirm());
@@ -1212,10 +1228,10 @@ class ResponderPairingTest : public SecurityManagerTest {
                                       kPeerAddr);
     ReceivePairingDHKeyCheck(dhkey_check_a);
     RunUntilIdle();
-    EXPECT_EQ(1, pairing_dhkey_check_count());
+    EXPECT_EQ(initial_dhkey_check_count + 1, pairing_dhkey_check_count());
     ASSERT_EQ(dhkey_check_b, pairing_dhkey_check());
-    EXPECT_EQ(0, pairing_failed_count());
-    EXPECT_EQ(0, pairing_complete_count());
+    EXPECT_EQ(initial_failed_count, pairing_failed_count());
+    EXPECT_EQ(initial_complete_count, pairing_complete_count());
     EXPECT_TRUE(peer().MutLe().is_pairing());
 
     ASSERT_TRUE(out_ltk);
@@ -1535,6 +1551,7 @@ TEST_F(InitiatorPairingTest, PairingRestartedWhileWaitingForTK) {
   // pairing.
   set_confirm_delegate(nullptr);
 
+  RunFor(std::chrono::seconds(1));
   UpgradeSecurity(SecurityLevel::kEncrypted);
   ReceivePairingFeatures();
   RunUntilIdle();
@@ -1897,6 +1914,7 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredConfirmRequestCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which
   // was `Abort`ed
+  RunFor(std::chrono::seconds(1));
   UpgradeSecurity(SecurityLevel::kEncrypted);
   RunUntilIdle();
 
@@ -1942,6 +1960,7 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredDisplayRequestCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which
   // was `Abort`ed
+  RunFor(std::chrono::seconds(1));
   UpgradeSecurity(SecurityLevel::kAuthenticated);
   RunUntilIdle();
 
@@ -1984,6 +2003,7 @@ TEST_F(InitiatorPairingTest, IgnoresExpiredPasskeyEntryInputCallback) {
 
   // Start a separate pairing from the one captured in `first_pairing_cb`, which
   // was `Abort`ed
+  RunFor(std::chrono::seconds(1));
   UpgradeSecurity(SecurityLevel::kAuthenticated);
   RunUntilIdle();
 
@@ -4962,7 +4982,55 @@ TEST_F(ResponderPairingTest, SecurityRequestPhaseHandlesSecondEncryptionEvent) {
 
   EXPECT_EQ(1, security_callback_count());
 }
+// Tests that repeated pairing failures enforce an exponentially doubling
+// backoff timer that rejects incoming Pairing Requests while active.
+TEST_F(ResponderPairingTest,
+       RepeatedAttemptsBackoffEnforcedAndDoubledSecureConnections) {
+  // Model the upstream FIDL/UI to avoid crashes if it tries to call it.
+  set_confirm_delegate([&](ConfirmCallback) {});
 
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_response_count());
+  EXPECT_EQ(0, pairing_failed_count());
+
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+
+  // Verify that an immediate retry is rejected while backoff is active.
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
+
+  // Advance time past the 1-second backoff to allow a retry, then fail to
+  // trigger a doubled 2-second backoff.
+  RunFor(std::chrono::seconds(1));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
+
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_complete_count());
+
+  // Verify that a retry after only 1 second is rejected during the 2-second
+  // backoff.
+  RunFor(std::chrono::seconds(1));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_response_count());
+  EXPECT_EQ(2, pairing_failed_count());
+
+  // Advance time past the remaining 1 second of backoff to allow another retry.
+  RunFor(std::chrono::seconds(1));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_response_count());
+  EXPECT_EQ(2, pairing_failed_count());
+}
 TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
   // Model the upstream FIDL/UI to avoid crashes if it tries to call it
   set_confirm_delegate([&](ConfirmCallback) {
@@ -4987,6 +5055,7 @@ TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
   RunUntilIdle();
   // Should NOT be accepted (response count still 1).
   EXPECT_EQ(1, pairing_response_count());
+  EXPECT_EQ(1, pairing_failed_count());
 
   // --- Attempt 2 (After backoff) ---
   // Advance past 1s (total 1.1s from failure).
@@ -5007,6 +5076,7 @@ TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
   ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
   RunUntilIdle();
   EXPECT_EQ(2, pairing_response_count());  // Still 2
+  EXPECT_EQ(2, pairing_failed_count());
 
   // --- Attempt 3 (After backoff) ---
   // Advance past 2s (another 600ms, total 2.1s from failure).
@@ -5026,6 +5096,7 @@ TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
   ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
   RunUntilIdle();
   EXPECT_EQ(3, pairing_response_count());  // Still 3
+  EXPECT_EQ(3, pairing_failed_count());
 
   // --- Attempt 4 (After backoff) ---
   // Advance past 4s (another 1.1s, total 4.1s).
@@ -5033,6 +5104,178 @@ TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffExponential) {
   ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kBondingFlag);
   RunUntilIdle();
   EXPECT_EQ(4, pairing_response_count());  // Now 4
+}
+
+// Verifies that when a pairing procedure successfully completes, any repeated
+// attempts backoff interval and backoff timer expiry established by prior
+// pairing failures are reset. If a subsequent pairing failure occurs after a
+// successful pairing, the backoff interval starts over from the minimum
+// timeout.
+TEST_F(ResponderPairingTest, RepeatedAttemptsBackoffResetOnSuccessfulPairing) {
+  // Trigger an initial pairing failure so that a backoff interval and expiry
+  // are active.
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_response_count());
+  EXPECT_EQ(0, pairing_failed_count());
+
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+
+  // Advance past the initial backoff so the pairing request can proceed and
+  // complete successfully.
+  RunFor(std::chrono::seconds(1));
+  UInt128 ltk_bytes;
+  FastForwardToPhase3(
+      &ltk_bytes, /*secure_connections=*/true, SecurityLevel::kEncrypted);
+  EXPECT_EQ(2, pairing_complete_count());
+  EXPECT_EQ(fit::ok(), pairing_complete_status());
+
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_response_count());
+
+  // Fail the new pairing attempt to verify that the backoff interval started
+  // over at kRepeatedAttemptsMinTimeout (1s) rather than continuing exponential
+  // growth.
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+
+  RunFor(std::chrono::milliseconds(500));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(3, pairing_response_count());
+
+  RunFor(std::chrono::milliseconds(600));
+  ReceivePairingRequest(IOCapability::kNoInputNoOutput, AuthReq::kSC);
+  RunUntilIdle();
+  EXPECT_EQ(4, pairing_response_count());
+}
+
+// Verifies that when repeated attempts backoff is active, incoming Security
+// Request commands received by the initiator (Central) are rejected immediately
+// with ErrorCode::kRepeatedAttempts.
+TEST_F(InitiatorPairingTest, RepeatedAttemptsBackoffEnforcedOnSecurityRequest) {
+  // Model the upstream FIDL/UI to avoid crashes if it tries to call it.
+  set_confirm_delegate([&](ConfirmCallback) {});
+
+  // Trigger an initial pairing attempt and fail it to start the backoff timer.
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(0, pairing_failed_count());
+
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+
+  // While backoff is active, an incoming Security Request should be rejected
+  // immediately without starting pairing.
+  ReceiveSecurityRequest(AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(1, pairing_failed_count());
+
+  // Once the backoff period elapses, an incoming Security Request should be
+  // allowed to start pairing.
+  RunFor(std::chrono::seconds(1));
+  ReceiveSecurityRequest(AuthReq::kBondingFlag);
+  EXPECT_EQ(2, pairing_request_count());
+  EXPECT_EQ(1, pairing_failed_count());
+}
+
+// Verifies that when an initiator receives a Pairing Failed command with
+// ErrorCode::kRepeatedAttempts from the responder, it also enters/updates its
+// repeated attempts backoff timer per Core Spec Vol 3, Part H, 2.3.6.
+TEST_F(InitiatorPairingTest,
+       InitiatorBackoffUpdatedOnReceivingRepeatedAttempts) {
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+
+  // Receive Pairing Failed with kRepeatedAttempts from the responder.
+  ReceivePairingFailed(ErrorCode::kRepeatedAttempts);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(ToResult(ErrorCode::kRepeatedAttempts), pairing_complete_status());
+
+  // While backoff is now active on our Initiator state machine, an incoming
+  // Security Request should be rejected immediately with kRepeatedAttempts.
+  ReceiveSecurityRequest(AuthReq::kBondingFlag);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(1, pairing_failed_count());
+  EXPECT_EQ(ErrorCode::kRepeatedAttempts, received_error_code());
+
+  // After the backoff interval elapses, a subsequent Security Request should
+  // proceed to start pairing.
+  RunFor(std::chrono::seconds(1));
+  ReceiveSecurityRequest(AuthReq::kBondingFlag);
+  EXPECT_EQ(2, pairing_request_count());
+}
+
+// Verifies that repeated attempts backoff is enforced when initiating a new
+// pairing procedure via UpgradeSecurity per Core Spec Vol 3, Part H, 2.3.6.
+TEST_F(InitiatorPairingTest, InitiatorBackoffEnforcedOnUpgradeSecurity) {
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(0, security_callback_count());
+
+  // Fail pairing to trigger backoff interval.
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(1, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+
+  // Attempting to initiate a new security upgrade while backoff is active
+  // should fail immediately with kRepeatedAttempts without sending a PDU.
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(2, security_callback_count());
+  EXPECT_EQ(ToResult(ErrorCode::kRepeatedAttempts), security_status());
+
+  // Once the backoff waiting interval elapses, initiating a new security
+  // upgrade should succeed in transmitting a Pairing Request.
+  RunFor(std::chrono::seconds(1));
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+}
+
+// Verifies that calling Reset(io_capability) explicitly clears any active
+// repeated attempts backoff penalty and resets the waiting interval so that
+// subsequent pairing attempts with new I/O capabilities are not obstructed.
+TEST_F(InitiatorPairingTest, ResetClearsRepeatedAttemptsBackoff) {
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+
+  // Trigger repeated pairing failures to build up backoff penalty.
+  ReceivePairingFailed(ErrorCode::kUnspecifiedReason);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_complete_count());
+  EXPECT_EQ(ToResult(ErrorCode::kUnspecifiedReason), security_status());
+
+  // Confirm backoff is active by attempting an upgrade and verifying rejection.
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(ToResult(ErrorCode::kRepeatedAttempts), security_status());
+
+  // Calling Reset() should clear the repeated attempts backoff penalty.
+  pairing()->Reset(IOCapability::kDisplayYesNo);
+  RunUntilIdle();
+
+  // Initiating a new upgrade immediately (without advancing time) should now
+  // succeed and transmit a Pairing Request with the new I/O capability.
+  UpgradeSecurity(SecurityLevel::kEncrypted);
+  RunUntilIdle();
+  EXPECT_EQ(2, pairing_request_count());
+  const auto& params = local_pairing_cmd().view(1).To<PairingRequestParams>();
+  EXPECT_EQ(IOCapability::kDisplayYesNo, params.io_capability);
 }
 
 }  // namespace

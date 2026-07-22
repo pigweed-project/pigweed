@@ -52,9 +52,9 @@ namespace {
 
 using PairingToken = gap::Peer::PairingToken;
 
-constexpr pw::chrono::SystemClock::duration kMinBackoff =
+constexpr pw::chrono::SystemClock::duration kRepeatedAttemptsMinTimeout =
     std::chrono::seconds(1);
-constexpr pw::chrono::SystemClock::duration kMaxBackoff =
+constexpr pw::chrono::SystemClock::duration kRepeatedAttemptsMaxTimeout =
     std::chrono::minutes(10);
 
 SecurityProperties FeaturesToProperties(const PairingFeatures& features) {
@@ -228,6 +228,13 @@ class SecurityManagerImpl final : public SecurityManager,
 
   std::optional<sm::LTK> GetExistingLtkFromPeerCache();
 
+  // Updates repeated attempts backoff state following a pairing failure.
+  void UpdateRepeatedAttemptsBackoff();
+
+  // Resets repeated attempts backoff state following a successful pairing or
+  // administrative reset.
+  void ResetRepeatedAttemptsBackoff();
+
   // The role of the local device in pairing.
   // LE roles are fixed for the lifetime of a connection, but BR/EDR roles can
   // be changed after a connection is established, so we cannot cache it during
@@ -308,7 +315,7 @@ class SecurityManagerImpl final : public SecurityManager,
   // Repeated attempts backoff state (Core Spec Vol 3, Part H, §2.3.6).
   // Tracks the next waiting interval and when the current backoff expires.
   pw::chrono::SystemClock::duration next_pairing_waiting_interval_ =
-      kMinBackoff;
+      kRepeatedAttemptsMinTimeout;
   pw::chrono::SystemClock::time_point pairing_backoff_expiry_ =
       pw::chrono::SystemClock::time_point();
 
@@ -398,6 +405,18 @@ SecurityManagerImpl::SecurityManagerImpl(
 }
 
 void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
+  // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: a waiting interval shall pass
+  // before responding to a Security Request initiated by a remote device
+  // claiming the same identity as the failed device.
+  if (pw_dispatcher_.now() < pairing_backoff_expiry_) {
+    bt_log(WARN,
+           "sm",
+           "rejecting security request due to repeated attempts backoff");
+    sm_chan_->SendMessageNoTimerReset(kPairingFailed,
+                                      ErrorCode::kRepeatedAttempts);
+    return;
+  }
+
   if (bredr_link_.is_alive()) {
     sm_chan_->SendMessageNoTimerReset(kPairingFailed,
                                       ErrorCode::kCommandNotSupported);
@@ -510,9 +529,9 @@ void SecurityManagerImpl::UpgradeSecurity(SecurityLevel level,
 
 void SecurityManagerImpl::OnPairingRequest(
     const PairingRequestParams& req_params) {
-  // Core Spec Vol 3, Part H, §2.3.6: "a waiting interval shall pass before the
-  // verifier [...] will respond to a Pairing Request command [...] initiated by
-  // a device claiming the same identity as the failed device."
+  // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: "a waiting interval shall pass
+  // before the verifier [...] will respond to a Pairing Request command [...]
+  // initiated by a device claiming the same identity as the failed device."
   if (pw_dispatcher_.now() < pairing_backoff_expiry_) {
     bt_log(WARN,
            "sm",
@@ -678,6 +697,18 @@ void SecurityManagerImpl::UpgradeSecurityInternal() {
 fit::result<ErrorCode> SecurityManagerImpl::RequestSecurityUpgrade(
     SecurityLevel level) {
   PW_CHECK(!bredr_link_.is_alive());
+
+  // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: a waiting interval shall pass
+  // before responding to a Security Request initiated by a remote device
+  // claiming the same identity as the failed device.
+  if (pw_dispatcher_.now() < pairing_backoff_expiry_) {
+    bt_log(WARN,
+           "sm",
+           "rejecting outgoing security upgrade request due to repeated "
+           "attempts backoff");
+    return fit::error(ErrorCode::kRepeatedAttempts);
+  }
+
   if (level >= SecurityLevel::kAuthenticated &&
       low_energy_io_cap_ == IOCapability::kNoInputNoOutput) {
     bt_log(WARN,
@@ -942,9 +973,11 @@ void SecurityManagerImpl::OnLowEnergyPairingComplete(PairingData pairing_data) {
   PW_CHECK(delegate_.is_alive());
   PW_CHECK(features_.has_value());
   bt_log(DEBUG, "sm", "LE pairing complete");
-  // Core Spec Vol 3, Part H, §2.3.6: "The waiting interval shall be reset to
-  // its initial value if a pairing attempt succeeds."
-  next_pairing_waiting_interval_ = kMinBackoff;
+
+  // Core Spec Volume 3, Part H, Section 2.3.6: The waiting interval shall be
+  // reset to its initial value if a pairing attempt succeeds.
+  ResetRepeatedAttemptsBackoff();
+
   delegate_->OnPairingComplete(fit::ok());
   // In Secure Connections, the LTK will be generated in Phase 2, not exchanged
   // in Phase 3, so we want to ensure that it is still put in the pairing_data.
@@ -1056,9 +1089,10 @@ void SecurityManagerImpl::OnBrEdrPairingComplete(PairingData pairing_data) {
   PW_CHECK(delegate_.is_alive());
 
   bt_log(INFO, "sm", "BR/EDR cross-transport key derivation complete");
-  // Core Spec Vol 3, Part H, §2.3.6: "The waiting interval shall be reset to
-  // its initial value if a pairing attempt succeeds."
-  next_pairing_waiting_interval_ = kMinBackoff;
+
+  // Core Spec Volume 3, Part H, Section 2.3.6: The waiting interval shall be
+  // reset to its initial value if a pairing attempt succeeds.
+  ResetRepeatedAttemptsBackoff();
   delegate_->OnPairingComplete(fit::ok());
 
   std::optional<UInt128> ct_key_value = util::BrEdrLinkKeyToLeLtk(
@@ -1156,6 +1190,7 @@ void SecurityManagerImpl::InitiateBrEdrCrossTransportKeyDerivation(
 void SecurityManagerImpl::Reset(IOCapability io_capability) {
   Abort(ErrorCode::kUnspecifiedReason);
   low_energy_io_cap_ = io_capability;
+  ResetRepeatedAttemptsBackoff();
   ResetState();
 }
 
@@ -1310,20 +1345,18 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
         return s;
       },
       current_phase_);
+
   bt_log(ERROR,
          "sm",
-         "LE pairing failed: %s. Current pairing phase: %s",
+         "SM pairing failed: %s. Current pairing phase: %s. Backing off for "
+         "%" PRId64 " s",
          bt_str(error),
-         phase_status.c_str());
-  StopTimer();
+         phase_status.c_str(),
+         int64_t{std::chrono::duration_cast<std::chrono::seconds>(
+                     next_pairing_waiting_interval_)
+                     .count()});
 
-  // Core Spec Vol 3, Part H, §2.3.6: "For each subsequent failure, the waiting
-  // interval shall be increased exponentially [...] twice as long as the
-  // waiting interval prior to the previous attempt [...] limited to a maximum."
-  pairing_backoff_expiry_ =
-      pw_dispatcher_.now() + next_pairing_waiting_interval_;
-  next_pairing_waiting_interval_ =
-      std::min(next_pairing_waiting_interval_ * 2, kMaxBackoff);
+  UpdateRepeatedAttemptsBackoff();
 
   if (delegate_.is_alive()) {
     delegate_->OnPairingComplete(fit::error(error));
@@ -1345,9 +1378,10 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
         ToResult(HostError::kFailed));
   }
 
-  ResetState();
   // Reset state before potentially disconnecting link to avoid causing pairing
   // phase to fail twice.
+  ResetState();
+
   if (error.is(HostError::kTimedOut)) {
     // Per v5.2 Vol. 3 Part H 3.4, after a pairing timeout "No further SMP
     // commands shall be sent over the L2CAP Security Manager Channel. A new
@@ -1356,6 +1390,22 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
     bt_log(WARN, "sm", "pairing timed out! disconnecting link");
     sm_chan_->SignalLinkError();
   }
+}
+
+void SecurityManagerImpl::UpdateRepeatedAttemptsBackoff() {
+  // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: For each subsequent failure,
+  // the waiting interval shall be increased exponentially [...] twice as long
+  // as the waiting interval prior to the previous attempt [...] limited to a
+  // maximum.
+  pairing_backoff_expiry_ =
+      pw_dispatcher_.now() + next_pairing_waiting_interval_;
+  next_pairing_waiting_interval_ =
+      std::min(next_pairing_waiting_interval_ * 2, kRepeatedAttemptsMaxTimeout);
+}
+
+void SecurityManagerImpl::ResetRepeatedAttemptsBackoff() {
+  next_pairing_waiting_interval_ = kRepeatedAttemptsMinTimeout;
+  pairing_backoff_expiry_ = pw::chrono::SystemClock::time_point();
 }
 
 void SecurityManagerImpl::StartNewTimer() {
