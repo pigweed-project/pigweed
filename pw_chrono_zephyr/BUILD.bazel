@@ -37,16 +37,22 @@ label_flag(
 zephyr_cc_library(
     name = "system_clock",
     hdrs = [
-        "public/pw_chrono_zephyr/system_clock_config.h",
-        "public/pw_chrono_zephyr/system_clock_constants.h",
-        "public/pw_chrono_zephyr/system_clock_inline.h",
         "public_overrides/system_clock/pw_chrono_backend/system_clock_config.h",
         "public_overrides/system_clock/pw_chrono_backend/system_clock_inline.h",
     ],
-    includes = [
-        "public",
-        "public_overrides/system_clock",
+    strip_include_prefix = "public_overrides/system_clock",
+    deps = [":system_clock_private"],
+)
+
+zephyr_cc_library(
+    name = "system_clock_private",
+    hdrs = [
+        "public/pw_chrono_zephyr/system_clock_config.h",
+        "public/pw_chrono_zephyr/system_clock_constants.h",
+        "public/pw_chrono_zephyr/system_clock_inline.h",
     ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         "//pw_chrono:epoch",
         "//pw_chrono:system_clock.facade",
@@ -57,15 +63,21 @@ zephyr_cc_library(
     name = "system_timer",
     srcs = ["system_timer.cc"],
     hdrs = [
-        "public/pw_chrono_zephyr/system_timer_inline.h",
-        "public/pw_chrono_zephyr/system_timer_native.h",
         "public_overrides/system_timer/pw_chrono_backend/system_timer_inline.h",
         "public_overrides/system_timer/pw_chrono_backend/system_timer_native.h",
     ],
-    includes = [
-        "public",
-        "public_overrides/system_timer",
+    strip_include_prefix = "public_overrides/system_timer",
+    deps = [":system_timer_private"],
+)
+
+zephyr_cc_library(
+    name = "system_timer_private",
+    hdrs = [
+        "public/pw_chrono_zephyr/system_timer_inline.h",
+        "public/pw_chrono_zephyr/system_timer_native.h",
     ],
+    strip_include_prefix = "public",
+    visibility = ["//visibility:private"],
     deps = [
         ":system_clock",
         "//pw_chrono:system_clock",
