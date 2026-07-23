@@ -112,11 +112,14 @@ def process_snapshot(
         symbolizer = symbolizer_matcher(snapshot)
     elif elf_matcher is not None:
         symbolizer = LlvmSymbolizer(
-            elf_matcher(snapshot), llvm_symbolizer_binary=llvm_symbolizer_binary
+            elf_matcher(snapshot),
+            llvm_symbolizer_binary=llvm_symbolizer_binary,
+            cpu_arch=metadata.MetadataProcessor(snapshot.metadata).cpu_arch(),
         )
     else:
         symbolizer = LlvmSymbolizer(
-            llvm_symbolizer_binary=llvm_symbolizer_binary
+            llvm_symbolizer_binary=llvm_symbolizer_binary,
+            cpu_arch=metadata.MetadataProcessor(snapshot.metadata).cpu_arch(),
         )
 
     captured_metadata = metadata.process_snapshot(
@@ -276,7 +279,10 @@ def _snapshot_symbolizer_matcher(
             'Error: No matching ELF found for GNU build ID %s.',
             snapshot.metadata.software_build_uuid.hex(),
         )
-    return LlvmSymbolizer(matching_elf)
+    return LlvmSymbolizer(
+        matching_elf,
+        cpu_arch=metadata.MetadataProcessor(snapshot.metadata).cpu_arch(),
+    )
 
 
 def _load_and_dump_snapshots(

@@ -20,6 +20,7 @@ from io import StringIO
 
 from pw_log import log_decoder
 from pw_snapshot import processor
+from pw_snapshot_metadata import metadata
 from pw_snapshot_protos import snapshot_pb2
 from pw_symbolizer import Symbolizer, LlvmSymbolizer
 from pw_tokenizer import detokenize, elf_reader
@@ -80,6 +81,7 @@ def _snapshot_symbolizer_matcher(
     # pylint: disable=unused-argument
     snapshot: snapshot_pb2.Snapshot,
 ) -> Symbolizer:
+    cpu_arch = metadata.MetadataProcessor(snapshot.metadata).cpu_arch()
     if isinstance(detokenizer, detokenize.AutoUpdatingDetokenizer):
         if len(detokenizer.paths) > 1:
             _LOG.info(
@@ -91,13 +93,13 @@ def _snapshot_symbolizer_matcher(
             path = database_path.path
             if elf_reader.compatible_file(path):
                 _LOG.debug('Using %s for symbolization', path)
-                return LlvmSymbolizer(path)
+                return LlvmSymbolizer(path, cpu_arch=cpu_arch)
 
     _LOG.warning(
         'No elf token database specified.  Crash report will not '
         'have any symbols.'
     )
-    return LlvmSymbolizer()
+    return LlvmSymbolizer(cpu_arch=cpu_arch)
 
 
 @dataclasses.dataclass
