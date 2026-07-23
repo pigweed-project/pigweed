@@ -491,7 +491,7 @@ class Awaitable final {
   //
   // In the process, this method attempts to complete the inner `await_type`
   // before suspending this coroutine.
-  bool await_suspend(const std::coroutine_handle<PromiseType>& promise)
+  bool await_suspend(std::coroutine_handle<PromiseType> promise)
     requires Future<await_type>
   {
     Context& cx = promise.promise().cx();
