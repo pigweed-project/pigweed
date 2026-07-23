@@ -378,6 +378,10 @@ class BrEdrDynamicChannel final : public DynamicChannel {
   // Timer set after receiving a kNoResources connection response.
   SmartTask conn_rsp_no_resources_timer_{dispatcher_};
 
+  // Timer set during the configuration phase to prevent indefinite parking of
+  // half-open channels.
+  SmartTask config_timer_{dispatcher_};
+
   // Counter for number of basic mode configuration requests
   uint8_t num_basic_config_requests_ = 0;
 

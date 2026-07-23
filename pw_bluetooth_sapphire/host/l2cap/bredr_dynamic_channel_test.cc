@@ -16,6 +16,7 @@
 
 #include <pw_async/fake_dispatcher_fixture.h>
 
+#include <list>
 #include <vector>
 
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
@@ -1932,6 +1933,229 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionOk) {
 
   registry()->CloseChannel(kLocalCId, [] {});
   EXPECT_EQ(0, close_cb_count);
+}
+
+TEST_F(BrEdrDynamicChannelTest, InboundConnectionPeerDropsConfigReqTimeout) {
+  // --- Connection 1 ---
+  // We expect the host to send a Configuration Request for Connection 1.
+  // We respond to it with Success.
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      kOutboundConfigReq.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  int open_cb_count = 0;
+  auto service_request_cb =
+      [&open_cb_count](
+          Psm psm) -> std::optional<DynamicChannelRegistry::ServiceInfo> {
+    EXPECT_EQ(kPsm, psm);
+    DynamicChannelCallback open_cb = [&open_cb_count](auto) {
+      open_cb_count++;
+    };
+    return DynamicChannelRegistry::ServiceInfo(kChannelParams,
+                                               std::move(open_cb));
+  };
+  set_service_request_cb(std::move(service_request_cb));
+
+  // Receive Connection Request and send Connection Response (Success)
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConnectionRequest, kInboundConnReq, kInboundOkConnRsp));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // Connection 1 is now half-open (host config accepted, waiting for peer
+  // config).
+
+  // We expect the host to send a Disconnection Request when Connection 1 times
+  // out.
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kDisconnectionRequest,
+                      kDisconReq.view(),
+                      {SignalingChannel::Status::kSuccess, kDisconRsp.view()});
+
+  // Advance time past the configuration timeout (30 seconds).
+  // This should trigger cleanup of Connection 1.
+  RunFor(std::chrono::seconds(30));
+
+  // --- Connection 2 ---
+  // Now we simulate a second inbound connection from a different remote CID.
+  // If Connection 1 was cleaned up, the host should reuse kLocalCId (0x0040).
+  // If Connection 1 was NOT cleaned up (vulnerability), the host will use
+  // kLocalCId2 (0x0041).
+
+  constexpr ChannelId kRemoteCId2 = kRemoteCId + 1;
+  const auto inbound_conn_req2 = MakeConnectionRequest(kRemoteCId2, kPsm);
+  const auto inbound_ok_conn_rsp2 =
+      MakeConnectionResponse(kRemoteCId2, kLocalCId);
+  const auto outbound_config_req2 = MakeConfigReqWithMtu(kRemoteCId2);
+
+  // We expect host to send config request for connection 2, assuming it reused
+  // kLocalCId.
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      outbound_config_req2.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  // If the vulnerability is present, the host will use kLocalCId2 (0x0041) in
+  // ConnRsp, so this ReceiveExpect will FAIL because it expects kLocalCId
+  // (0x0040).
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConnectionRequest, inbound_conn_req2, inbound_ok_conn_rsp2));
+
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_EQ(0, open_cb_count);
+}
+
+TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
+  constexpr size_t kMaxPending = 16;  // Should match kMaxPendingChannels
+
+  std::vector<ChannelId> remote_cids;
+  for (size_t i = 0; i < kMaxPending; ++i) {
+    remote_cids.push_back(kRemoteCId + i);
+  }
+
+  // We need to keep the expectation buffers alive for the duration of the test.
+  std::list<DynamicByteBuffer> outbound_config_reqs;
+  std::list<DynamicByteBuffer> inbound_empty_config_rsps;
+
+  // Set up expectations for the first 16 connections' outbound config requests.
+  for (size_t i = 0; i < kMaxPending; ++i) {
+    ChannelId local_id = kLocalCId + i;
+    ChannelId remote_id = remote_cids[i];
+
+    outbound_config_reqs.push_back(
+        DynamicByteBuffer(MakeConfigReqWithMtu(remote_id)));
+    inbound_empty_config_rsps.push_back(
+        DynamicByteBuffer(MakeEmptyConfigRsp(local_id)));
+
+    EXPECT_OUTBOUND_REQ(*sig(),
+                        kConfigurationRequest,
+                        outbound_config_reqs.back().view(),
+                        {SignalingChannel::Status::kSuccess,
+                         inbound_empty_config_rsps.back().view()});
+  }
+
+  int open_cb_count = 0;
+  auto service_request_cb =
+      [&open_cb_count](
+          Psm psm) -> std::optional<DynamicChannelRegistry::ServiceInfo> {
+    EXPECT_EQ(kPsm, psm);
+    DynamicChannelCallback open_cb = [&open_cb_count](auto) {
+      open_cb_count++;
+    };
+    return DynamicChannelRegistry::ServiceInfo(kChannelParams,
+                                               std::move(open_cb));
+  };
+  set_service_request_cb(std::move(service_request_cb));
+
+  // Simulate 16 connections, establishing them as half-open.
+  for (size_t i = 0; i < kMaxPending; ++i) {
+    SCOPED_TRACE(::testing::Message() << "Simulating connection i = " << i);
+    ChannelId local_id = kLocalCId + i;
+    ChannelId remote_id = remote_cids[i];
+
+    const auto inbound_conn_req = MakeConnectionRequest(remote_id, kPsm);
+    const auto inbound_ok_conn_rsp =
+        MakeConnectionResponse(remote_id, local_id);
+
+    RETURN_IF_FATAL(sig()->ReceiveExpect(
+        kConnectionRequest, inbound_conn_req, inbound_ok_conn_rsp));
+    RETURN_IF_FATAL(RunUntilIdle());
+  }
+
+  // Simulate the 17th connection request. It should be rejected immediately.
+  constexpr ChannelId kRemoteCId17 = kRemoteCId + kMaxPending;
+  const auto inbound_conn_req17 = MakeConnectionRequest(kRemoteCId17, kPsm);
+  const auto inbound_reject_conn_rsp17 =
+      MakeConnectionResponseWithResultNoResources(kRemoteCId17,
+                                                  kInvalidChannelId);
+
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConnectionRequest, inbound_conn_req17, inbound_reject_conn_rsp17));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // Set up expectations for all 16 Disconnection Requests when they time out.
+  auto MakeDisconReq = [](ChannelId remote_id, ChannelId local_id) {
+    return StaticByteBuffer(LowerBits(remote_id),
+                            UpperBits(remote_id),
+                            LowerBits(local_id),
+                            UpperBits(local_id));
+  };
+
+  std::list<DynamicByteBuffer> discon_reqs;
+  std::list<DynamicByteBuffer> discon_rsps;
+
+  for (size_t i = 0; i < kMaxPending; ++i) {
+    ChannelId local_id = kLocalCId + i;
+    ChannelId remote_id = remote_cids[i];
+
+    discon_reqs.push_back(
+        DynamicByteBuffer(MakeDisconReq(remote_id, local_id)));
+    discon_rsps.push_back(
+        DynamicByteBuffer(MakeDisconReq(remote_id, local_id)));
+
+    EXPECT_OUTBOUND_REQ(
+        *sig(),
+        kDisconnectionRequest,
+        discon_reqs.back().view(),
+        {SignalingChannel::Status::kSuccess, discon_rsps.back().view()});
+  }
+
+  // Advance time past the configuration timeout (30 seconds) to trigger cleanup
+  // of all 16.
+  RunFor(std::chrono::seconds(30));
+
+  // Now simulate another inbound connection. It should succeed and reuse
+  // kLocalCId (0x0040).
+  const auto inbound_ok_conn_rsp18 =
+      MakeConnectionResponse(kRemoteCId17, kLocalCId);
+  const auto outbound_config_req18 = MakeConfigReqWithMtu(kRemoteCId17);
+
+  EXPECT_OUTBOUND_REQ(
+      *sig(),
+      kConfigurationRequest,
+      outbound_config_req18.view(),
+      {SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()});
+
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConnectionRequest, inbound_conn_req17, inbound_ok_conn_rsp18));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  EXPECT_EQ(0, open_cb_count);
+}
+
+TEST_F(BrEdrDynamicChannelTest, InboundConnectionErtmWaitFeaturesTimeout) {
+  // Set up a service that prefers ERTM.
+  ChannelParameters ertm_params;
+  ertm_params.mode = RetransmissionAndFlowControlMode::kEnhancedRetransmission;
+
+  auto service_request_cb =
+      [&ertm_params](
+          Psm psm) -> std::optional<DynamicChannelRegistry::ServiceInfo> {
+    EXPECT_EQ(kPsm, psm);
+    return DynamicChannelRegistry::ServiceInfo(ertm_params, [](auto) {});
+  };
+  set_service_request_cb(std::move(service_request_cb));
+
+  // Receive Connection Request.
+  // Host should NOT send Configuration Request yet because it is waiting for
+  // extended features (peer_supports_ertm_ is nullopt).
+  // We expect only the Connection Response.
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConnectionRequest, kInboundConnReq, kInboundOkConnRsp));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // We expect the host to send a Disconnection Request when the channel times
+  // out waiting for configuration (which includes waiting for features).
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kDisconnectionRequest,
+                      kDisconReq.view(),
+                      {SignalingChannel::Status::kSuccess, kDisconRsp.view()});
+
+  // Advance time past the configuration timeout (30 seconds).
+  RunFor(std::chrono::seconds(30));
 }
 
 TEST_F(BrEdrDynamicChannelTest,

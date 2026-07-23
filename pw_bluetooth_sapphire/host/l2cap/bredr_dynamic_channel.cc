@@ -42,6 +42,11 @@ constexpr uint16_t kBrEdrDynamicChannelCount =
 constexpr pw::chrono::SystemClock::duration
     kNoResourcesResponseTimeoutDuration = std::chrono::seconds(2);
 
+constexpr pw::chrono::SystemClock::duration kConfigurationTimeout =
+    std::chrono::seconds(30);
+
+constexpr size_t kMaxPendingChannels = 16;
+
 const uint8_t kMaxNumBasicConfigRequests = 2;
 }  // namespace
 
@@ -128,6 +133,27 @@ void BrEdrDynamicChannelRegistry::OnRxConnReq(
     return;
   }
 
+  size_t pending_count = 0;
+  ForEach([&pending_count](DynamicChannel* chan) {
+    if (!chan->opened()) {
+      pending_count++;
+    }
+  });
+
+  if (pending_count >= kMaxPendingChannels) {
+    bt_log(WARN,
+           "l2cap-bredr",
+           "Too many pending channels (%zu >= %zu); rejecting connection for "
+           "PSM %#.4x from channel %#.4x",
+           pending_count,
+           kMaxPendingChannels,
+           psm,
+           remote_cid);
+    responder->Send(kInvalidChannelId,
+                    ConnectionResult::kNoResources,
+                    ConnectionStatus::kNoInfoAvailable);
+    return;
+  }
   ChannelId local_cid = FindAvailableChannelId();
   if (local_cid == kInvalidChannelId) {
     bt_log(DEBUG,
@@ -845,6 +871,8 @@ void BrEdrDynamicChannel::CompleteInboundConnection(
          local_cid());
   state_ |= kConnResponded;
 
+  config_timer_.PostAfter(kConfigurationTimeout);
+
   UpdateLocalConfigForErtm();
   if (!IsWaitingForPeerErtmSupport()) {
     std::ignore = TrySendLocalConfig();
@@ -870,11 +898,24 @@ BrEdrDynamicChannel::BrEdrDynamicChannel(
   PW_DCHECK(signaling_channel_);
   PW_DCHECK(local_cid != kInvalidChannelId);
 
+  config_timer_.set_function(
+      [self = weak_self_.GetWeakPtr()](pw::async::Context& /*ctx*/,
+                                       pw::Status status) {
+        if (self.is_alive() && status.ok()) {
+          bt_log(WARN,
+                 "l2cap-bredr",
+                 "Channel %#.4x: Configuration timed out",
+                 self->local_cid());
+          self->PassOpenError();
+        }
+      });
+
   UpdateLocalConfigForErtm();
 }
 
 void BrEdrDynamicChannel::PassOpenResult() {
   if (open_result_cb_) {
+    config_timer_.Cancel();
     // Guard against use-after-free if this object's owner destroys it while
     // running |open_result_cb_|.
     auto cb = std::move(open_result_cb_);
@@ -1415,6 +1456,8 @@ BrEdrDynamicChannel::ResponseHandlerAction BrEdrDynamicChannel::OnRxConnRsp(
          "Channel %#.4x: Got remote channel ID %#.4x",
          local_cid(),
          rsp.remote_cid());
+
+  config_timer_.PostAfter(kConfigurationTimeout);
 
   UpdateLocalConfigForErtm();
   if (!IsWaitingForPeerErtmSupport()) {
