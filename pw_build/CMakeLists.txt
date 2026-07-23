@@ -94,6 +94,11 @@ pw_add_library_generic(pw_build.strict_warnings INTERFACE
     "-Wno-error=cpp"  # preprocessor #warning statement
     "-Wno-error=deprecated-declarations"  # [[deprecated]] attribute
 
+    # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of unused
+    # templates produces warnings in both Pigweed an downstream code. While
+    # the Pigweed fixes are easy, the downstream fixes will take a while.
+    "-Wno-unused-template"
+
     $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
 )
 
@@ -101,7 +106,7 @@ if(NOT ZEPHYR_PIGWEED_MODULE_DIR)
   # Only include these flags if we're not building with Zephyr.
   set(extra_strict_warnings_cond "-Wredundant-decls")
 endif()
-# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:strict_warnings,//pw_toolchain/cc/args/BUILD.gn:strict_warnings)
+# LINT.ThenChange(//pw_toolchain/cc/args/BUILD.bazel:strict_warnings,//pw_build/BUILD.gn:strict_warnings)
 
 # LINT.IfChange(extra_strict_warnings)
 pw_add_library_generic(pw_build.extra_strict_warnings INTERFACE

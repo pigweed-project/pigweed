@@ -63,6 +63,12 @@ cc_args(
         "-Werror",
         "-Wno-error=cpp",  # preprocessor #warning statement
         "-Wno-error=deprecated-declarations",  # [[deprecated]] attribute
+
+        # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of
+        # unused templates produces warnings in both Pigweed an downstream
+        # code. While the Pigweed fixes are easy, the downstream fixes will
+        # take a while.
+        "-Wno-unused-template",
     ],
 )
 # LINT.ThenChange(//pw_build/BUILD.gn:strict_warnings,//pw_build/CMakeLists.txt:strict_warnings)
