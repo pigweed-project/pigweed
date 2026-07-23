@@ -213,6 +213,19 @@ class PeriodicAdvertisingSynchronizer final {
     uint8_t adv_sid;
     Delegate* delegate;
     std::vector<uint8_t> partial_report_buffer;
+    // Assume a valid report until we notice bad data
+    bool report_is_valid = true;
+
+    void MarkReportInvalid() {
+      report_is_valid = false;
+      partial_report_buffer.clear();
+      partial_report_buffer.shrink_to_fit();
+    }
+
+    void ResetReport() {
+      report_is_valid = true;
+      partial_report_buffer.clear();
+    }
   };
 
   void OnSyncEstablished(const EventPacket& event);

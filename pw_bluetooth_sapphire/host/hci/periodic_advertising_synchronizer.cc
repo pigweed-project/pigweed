@@ -19,6 +19,7 @@
 #include <algorithm>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/control_packets.h"
@@ -834,27 +835,47 @@ void PeriodicAdvertisingSynchronizer::OnPeriodicAdvertisingReport(
            "hci",
            "truncated advertising report for handle: %d",
            parsed_event->sync_handle);
-    sync.partial_report_buffer.clear();
+    sync.ResetReport();
     return;
   }
+  size_t report_size =
+      sync.partial_report_buffer.size() + parsed_event->data.size();
+  if (report_size > hci_spec::kMaxLEExtendedAdvertisingDataLength) {
+    bt_log(WARN,
+           "hci",
+           "accumulated periodic advertising report size (%zu) exceeds limit "
+           "(%zu) on sync handle: %d; dropping report",
+           report_size,
+           hci_spec::kMaxLEExtendedAdvertisingDataLength,
+           parsed_event->sync_handle);
 
-  sync.partial_report_buffer.insert(sync.partial_report_buffer.end(),
-                                    parsed_event->data.begin(),
-                                    parsed_event->data.end());
+    // Clear and deallocate the buffer to free memory
+    sync.MarkReportInvalid();
+  }
 
+  if (sync.report_is_valid) {
+    sync.partial_report_buffer.insert(sync.partial_report_buffer.end(),
+                                      parsed_event->data.begin(),
+                                      parsed_event->data.end());
+
+    if (parsed_event->data_status ==
+        pw::bluetooth::emboss::LEPeriodicAdvertisingDataStatus::INCOMPLETE) {
+      return;
+    }
+
+    PeriodicAdvertisingReport report;
+    report.rssi = parsed_event->rssi;
+    report.event_counter = parsed_event->event_counter;
+    report.data = DynamicByteBuffer(BufferView(
+        sync.partial_report_buffer.data(), sync.partial_report_buffer.size()));
+    sync.delegate->OnAdvertisingReport(sync.id, std::move(report));
+  }
+
+  // Reset the report if this is the last chunk.
   if (parsed_event->data_status ==
-      pw::bluetooth::emboss::LEPeriodicAdvertisingDataStatus::INCOMPLETE) {
-    return;
+      pw::bluetooth::emboss::LEPeriodicAdvertisingDataStatus::COMPLETE) {
+    sync.ResetReport();
   }
-
-  PeriodicAdvertisingReport report;
-  report.rssi = parsed_event->rssi;
-  report.event_counter = parsed_event->event_counter;
-  report.data = DynamicByteBuffer(BufferView(
-      sync.partial_report_buffer.data(), sync.partial_report_buffer.size()));
-  sync.partial_report_buffer.clear();
-
-  sync.delegate->OnAdvertisingReport(sync.id, std::move(report));
 }
 
 void PeriodicAdvertisingSynchronizer::OnBigInfoReport(

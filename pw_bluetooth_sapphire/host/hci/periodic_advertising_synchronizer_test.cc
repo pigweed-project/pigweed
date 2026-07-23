@@ -603,6 +603,44 @@ TEST_F(PeriodicAdvertisingSynchronizerTest, FragmentedAdvertisingReport) {
   ExpectTerminateSync(test_device(), kSyncHandle);
 }
 
+TEST_F(PeriodicAdvertisingSynchronizerTest, ReassemblyExceedingSpecLimitFails) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+  constexpr hci_spec::ConnectionHandle kSyncHandle = 0x01;
+
+  auto sync = CreateSyncAndExpectSuccess(delegate, addr, kAdvSid, kSyncHandle);
+  ASSERT_TRUE(sync.has_value());
+
+  // Send fragments exceeding 1650 bytes.
+  // 10 fragments of 200 bytes = 2000 bytes.
+  const size_t kFragments = 10;
+
+  for (size_t i = 0; i < kFragments; ++i) {
+    auto advertising_report_event =
+        bt::testing::LEPeriodicAdvertisingReportEventPacketV1(
+            kSyncHandle,
+            pw::bluetooth::emboss::LEPeriodicAdvertisingDataStatus::INCOMPLETE,
+            DynamicByteBuffer(200));
+    test_device()->SendCommandChannelPacket(advertising_report_event);
+    RunUntilIdle();
+  }
+
+  // Send final fragment to complete it.
+  auto advertising_report_event2 =
+      bt::testing::LEPeriodicAdvertisingReportEventPacketV1(
+          kSyncHandle,
+          pw::bluetooth::emboss::LEPeriodicAdvertisingDataStatus::COMPLETE,
+          DynamicByteBuffer({4, 5, 6}));
+  test_device()->SendCommandChannelPacket(advertising_report_event2);
+  RunUntilIdle();
+
+  // We expect it drop the report because it exceeded the limit.
+  EXPECT_EQ(delegate.report_count(), 0);
+
+  ExpectTerminateSync(test_device(), kSyncHandle);
+}
+
 TEST_F(PeriodicAdvertisingSynchronizerTest,
        IncompleteTruncatedAdvertisingReport) {
   TestDelegate delegate;
