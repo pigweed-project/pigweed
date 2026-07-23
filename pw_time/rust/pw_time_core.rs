@@ -234,6 +234,30 @@ impl<Clock: crate::Clock> Duration<Clock> {
         }
     }
 
+    /// Returns the total number of whole seconds contained by this `Duration`.
+    #[must_use]
+    pub fn as_secs(self) -> u64 {
+        self.ticks / Clock::TICKS_PER_SEC
+    }
+
+    /// Returns the total number of milliseconds contained by this `Duration`.
+    #[must_use]
+    pub fn as_millis(self) -> u128 {
+        u128::from(self.ticks) * 1000 / u128::from(Clock::TICKS_PER_SEC)
+    }
+
+    /// Returns the total number of microseconds contained by this `Duration`.
+    #[must_use]
+    pub fn as_micros(self) -> u128 {
+        u128::from(self.ticks) * 1_000_000 / u128::from(Clock::TICKS_PER_SEC)
+    }
+
+    /// Returns the total number of nanoseconds contained by this `Duration`.
+    #[must_use]
+    pub fn as_nanos(self) -> u128 {
+        u128::from(self.ticks) * 1_000_000_000 / u128::from(Clock::TICKS_PER_SEC)
+    }
+
     /// Adds another `Duration`, returning `None` if overflow occurred.
     #[must_use]
     pub const fn checked_add(self, rhs: Duration<Clock>) -> Option<Self> {
@@ -351,6 +375,15 @@ mod tests {
         assert_eq!(Duration::<TestClock>::from_nanos(1234).ticks(), 0);
 
         assert_eq!(Duration::<HighResTestClock>::from_nanos(1234).ticks(), 1234);
+    }
+
+    #[test]
+    fn duration_accessors_return_correct_values() {
+        let dur = Duration::<TestClock>::from_secs(123);
+        assert_eq!(dur.as_secs(), 123u64);
+        assert_eq!(dur.as_millis(), 123_000u128);
+        assert_eq!(dur.as_micros(), 123_000_000u128);
+        assert_eq!(dur.as_nanos(), 123_000_000_000u128);
     }
 
     #[test]
