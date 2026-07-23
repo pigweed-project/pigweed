@@ -54,6 +54,27 @@ class TestSymbolFormatting(unittest.TestCase):
             sym.to_string(max_filename_len=15),
         )
 
+    def test_64bit_blank_symbol(self):
+        """Tests hex_width auto-detection and explicit overrides for Symbol."""
+        sym_64 = pw_symbolizer.Symbol(
+            address=0x00007FFF80001000, name='', file='', line=0
+        )
+        # Test auto-detection (64-bit -> 16 hex digits)
+        self.assertEqual('0x00007FFF80001000 (??:?)', sym_64.to_string())
+        self.assertEqual('0x00007FFF80001000 (??:?)', str(sym_64))
+
+        # Test custom hex_width override
+        self.assertEqual(
+            '0x7FFF80001000 (??:?)', sym_64.to_string(hex_width=12)
+        )
+
+        # Test 32-bit auto-detection and explicit hex_width
+        sym_32 = pw_symbolizer.Symbol(address=0x0000A400)
+        self.assertEqual('0x0000A400 (??:?)', sym_32.to_string())
+        self.assertEqual(
+            '0x00000000A400 (??:?)', sym_32.to_string(hex_width=12)
+        )
+
 
 class TestFakeSymbolizer(unittest.TestCase):
     """Tests the FakeSymbolizer class."""

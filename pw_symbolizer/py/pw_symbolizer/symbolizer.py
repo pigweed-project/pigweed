@@ -30,9 +30,13 @@ class Symbol:
     file: str = ''
     line: int = 0
 
-    def to_string(self, max_filename_len: int = 0) -> str:
+    def to_string(
+        self, max_filename_len: int = 0, hex_width: int | None = None
+    ) -> str:
         if not self.name:
-            name = f'0x{self.address:08X}'
+            if hex_width is None:
+                hex_width = 16 if self.address > 0xFFFFFFFF else 8
+            name = f'0x{self.address:0{hex_width}X}'
         else:
             name = self.name
 
