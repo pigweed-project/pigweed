@@ -14,23 +14,23 @@
 
 #include "pw_metric/metric_service_pwpb.h"
 
-#include <cinttypes>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <new>
 #include <optional>
 
-#include "pw_assert/check.h"
 #include "pw_containers/vector.h"
 #include "pw_log/log.h"
 #include "pw_metric/config.h"
+#include "pw_metric/list.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
 #include "pw_metric/pwpb_metric_writer.h"
 #include "pw_metric_proto/metric_service.pwpb.h"
-#include "pw_preprocessor/util.h"
-#include "pw_protobuf/decoder.h"
-#include "pw_protobuf/encoder.h"
 #include "pw_protobuf/serialized_size.h"
+#include "pw_result/result.h"
 #include "pw_rpc/raw/server_reader_writer.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"

@@ -14,13 +14,15 @@
 
 #include "pw_metric/metric.h"
 
+#include <algorithm>
 #include <array>
-#include <atomic>
-#include <limits>
+#include <cstddef>
+#include <cstdint>
 
 #include "pw_assert/check.h"
 #include "pw_log/log.h"
-#include "pw_numeric/checked_arithmetic.h"
+#include "pw_metric/config.h"
+#include "pw_metric/list.h"
 #include "pw_span/span.h"
 #include "pw_tokenizer/base64.h"
 

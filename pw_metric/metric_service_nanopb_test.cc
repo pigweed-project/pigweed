@@ -14,16 +14,18 @@
 
 #include "pw_metric/metric_service_nanopb.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
 
-#include "pw_log/log.h"
+#include "pw_metric/config.h"
+#include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
 #include "pw_metric/nanopb_metric_writer.h"
-#include "pw_metric_proto/metric_service.rpc.pb.h"
+#include "pw_metric_proto/metric_service.pb.h"
 #include "pw_rpc/nanopb/test_method_context.h"
-#include "pw_rpc/test_helpers.h"
-#include "pw_span/span.h"
+#include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::metric {

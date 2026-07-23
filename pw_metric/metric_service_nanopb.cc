@@ -15,15 +15,19 @@
 #include "pw_metric/metric_service_nanopb.h"
 
 #include <algorithm>
-#include <cstring>
+#include <cstdint>
 #include <optional>
 
 #include "pw_assert/check.h"
 #include "pw_containers/vector.h"
 #include "pw_metric/config.h"
+#include "pw_metric/list.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
+#include "pw_metric_proto/metric_service.pb.h"
+#include "pw_result/result.h"
 #include "pw_span/span.h"
+#include "pw_status/status.h"
 
 namespace pw::metric {
 namespace {

@@ -14,23 +14,27 @@
 
 #include "pw_metric/metric_service_pwpb.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "pw_bytes/span.h"
-#include "pw_function/function.h"
+#include "pw_containers/vector.h"
+#include "pw_metric/config.h"
 #include "pw_metric/list.h"
+#include "pw_metric/metric.h"
 #include "pw_metric/pwpb_metric_writer.h"
 #include "pw_metric_proto/metric_service.pwpb.h"
 #include "pw_protobuf/decoder.h"
-#include "pw_protobuf/encoder.h"
 #include "pw_protobuf/serialized_size.h"
-#include "pw_rpc/pwpb/test_method_context.h"
 #include "pw_rpc/raw/test_method_context.h"
-#include "pw_rpc/test_helpers.h"
 #include "pw_span/span.h"
 #include "pw_stream/memory_stream.h"
+#include "pw_stream/stream.h"
 #include "pw_unit_test/framework.h"
 #include "pw_unit_test/status_macros.h"
 

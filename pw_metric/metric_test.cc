@@ -14,9 +14,11 @@
 
 #include "pw_metric/metric.h"
 
+#include <cstdint>
 #include <limits>
 
-#include "pw_log/log.h"
+#include "pw_metric/config.h"
+#include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::metric {

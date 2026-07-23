@@ -14,8 +14,8 @@
 
 #include "pw_metric/global.h"
 
-#include "pw_log/log.h"
 #include "pw_metric/metric.h"
+#include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw {
