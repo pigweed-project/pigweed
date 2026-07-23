@@ -429,10 +429,8 @@ void ChannelImpl::AttachInspect(inspect::Node& parent, std::string name) {
       kInspectRemoteIdPropertyName,
       bt_lib_cpp_string::StringPrintf("%#.4x", remote_id()));
 
-  if (dropped_packets) {
-    inspect_.dropped_packets = inspect_.node.CreateUint(
-        kInspectDroppedPacketsPropertyName, dropped_packets);
-  }
+  inspect_.dropped_packets = inspect_.node.CreateUint(
+      kInspectDroppedPacketsPropertyName, dropped_packets_);
 }
 
 void ChannelImpl::StartA2dpOffload(
@@ -501,14 +499,26 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
     //   able to release the wake lease.
     if (AreQueuesEmpty()) {
       wake_lease_.reset();
-    } else if (!wake_lease_) {
-      TryAcquireWakeLease();
     }
     return;
   }
 
   // Buffer the packets if the channel hasn't been activated.
   if (!active_) {
+    if (pending_rx_sdus_.size() >= kMaxPendingRxSdus) {
+      dropped_packets_ += 1;
+      if (dropped_packets_ % 100 == 1) {
+        bt_log(DEBUG,
+               "l2cap",
+               "pending rx queue full (%zu) on channel %#.4x (handle: %#.4x), "
+               "dropping SDU",
+               pending_rx_sdus_.size(),
+               id(),
+               link_.is_alive() ? link_->handle() : 0);
+      }
+      inspect_.dropped_packets.Set(dropped_packets_);
+      return;
+    }
     pending_rx_sdus_.emplace(std::move(sdu));
     // Tracing: we assume pending_rx_sdus_ is only filled once and use the
     // length of queue for trace ids.
@@ -516,9 +526,20 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
                      "ChannelImpl::HandleRxPdu queued",
                      pending_rx_sdus_.size());
 
-    if (!wake_lease_) {
+    // While waiting for a channel to be activated, acquire a wake lease so the
+    // system does not suspend while higher layers process channel activation
+    // and drain the queued SDUs.
+    //
+    // We restrict this to dynamic channels (id() >= kFirstDynamicChannelId)
+    // because fixed channels (such as SMP) are pre-allocated upon logical link
+    // establishment and might never be activated (e.g. during legacy pairing
+    // fallback). If we acquired a wake lease for unactivated fixed channels
+    // when packets arrive, pending_rx_sdus_ would never be drained, pinning
+    // the wake lease indefinitely.
+    if (!wake_lease_ && id() >= kFirstDynamicChannelId) {
       TryAcquireWakeLease();
     }
+
     return;
   }
 
@@ -574,7 +595,8 @@ void ChannelImpl::SendFrame(ByteBufferPtr pdu) {
 
   // Ensure that |pending_tx_pdus_| does not exceed its maximum queue size
   if (pending_tx_pdus_.size() > max_tx_queued()) {
-    if (dropped_packets % 100 == 0) {
+    dropped_packets_ += 1;
+    if (dropped_packets_ % 100 == 1) {
       bt_log(DEBUG,
              "l2cap",
              "Queued packets (%zu) exceeds maximum (%u). "
@@ -582,10 +604,8 @@ void ChannelImpl::SendFrame(ByteBufferPtr pdu) {
              pending_tx_pdus_.size(),
              max_tx_queued(),
              link_->handle());
-
-      inspect_.dropped_packets.Set(dropped_packets);
     }
-    dropped_packets += 1;
+    inspect_.dropped_packets.Set(dropped_packets_);
 
     pending_tx_pdus_.pop();  // Remove the oldest (aka first) element
   }

@@ -3705,15 +3705,17 @@ TEST_F(ChannelManagerMockAclChannelTest, InspectHierarchy) {
   auto suppress1 = link->SuppressAutosniff("test1");
   auto suppress2 = link->SuppressAutosniff("test2");
 
-  auto signaling_chan_matcher = NodeMatches(AllOf(
-      NameMatches("channel_0x2"),
-      PropertyList(UnorderedElementsAre(StringIs("local_id", "0x0001"),
-                                        StringIs("remote_id", "0x0001")))));
+  auto signaling_chan_matcher = NodeMatches(
+      AllOf(NameMatches("channel_0x2"),
+            PropertyList(UnorderedElementsAre(StringIs("local_id", "0x0001"),
+                                              StringIs("remote_id", "0x0001"),
+                                              UintIs("dropped_packets", 0)))));
   auto dyn_chan_matcher = NodeMatches(
       AllOf(NameMatches("channel_0x3"),
             PropertyList(UnorderedElementsAre(StringIs("local_id", "0x0040"),
                                               StringIs("remote_id", "0x9042"),
-                                              StringIs("psm", "SDP")))));
+                                              StringIs("psm", "SDP"),
+                                              UintIs("dropped_packets", 0)))));
   auto channels_matcher = AllOf(NodeMatches(NameMatches("channels")),
                                 ChildrenMatch(UnorderedElementsAre(
                                     signaling_chan_matcher, dyn_chan_matcher)));
@@ -4975,8 +4977,10 @@ TEST_F(ChannelManagerMockAclChannelTest,
 
   ReceiveAclDataPacket(
       testing::AclBFrame(kTestHandle1, channel->id(), segment_0));
-  // First segment should be queued.
-  EXPECT_GE(lease_provider().lease_count(), 1u);
+  // First segment is buffered in rx_engine_, but we do not acquire a wake lease
+  // while waiting for subsequent segments over the air to avoid a pinned wake
+  // lease DoS if transmission stops.
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
 
   ReceiveAclDataPacket(
       testing::AclBFrame(kTestHandle1, channel->id(), segment_1));
@@ -5055,6 +5059,149 @@ TEST_F(FakeDispatcherChannelManagerMockControllerTest,
   EXPECT_LE(
       accepted,
       2u * l2cap::kErtmMaxUnackedInboundFrames + channel->max_tx_queued() + 1u);
+}
+
+class NeverActivatedSmpChannelTest : public TestingBase {
+ public:
+  void SetUp() override {
+    TestingBase::SetUp();
+
+    acl_data_channel_.set_bredr_buffer_info(hci::DataBufferInfo(
+        hci_spec::kMaxACLPayloadSize, /*max_num_packets=*/1));
+    acl_data_channel_.set_le_buffer_info(hci::DataBufferInfo(
+        hci_spec::kMaxACLPayloadSize, /*max_num_packets=*/1));
+    // Swallow outbound packets (the host's INFORMATION_REQs etc.); we only
+    // care about the rx path here.
+    acl_data_channel_.set_send_packets_cb(
+        [](std::list<hci::ACLDataPacketPtr>) { return true; });
+
+    channel_manager_ = ChannelManager::Create(&acl_data_channel_,
+                                              transport()->command_channel(),
+                                              /*random_channel_ids=*/false,
+                                              dispatcher(),
+                                              lease_provider());
+  }
+
+  void TearDown() override {
+    channel_manager_ = nullptr;
+    TestingBase::TearDown();
+  }
+
+  ChannelManager* channel_manager() { return channel_manager_.get(); }
+
+  void ReceiveAclDataPacket(const ByteBuffer& packet) {
+    const size_t payload_size = packet.size() - sizeof(hci_spec::ACLDataHeader);
+    hci::ACLDataPacketPtr acl =
+        hci::ACLDataPacket::New(static_cast<uint16_t>(payload_size));
+    auto mutable_data = acl->mutable_view()->mutable_data();
+    packet.Copy(&mutable_data);
+    acl_data_channel_.ReceivePacket(std::move(acl));
+  }
+
+ private:
+  hci::testing::MockAclDataChannel acl_data_channel_;
+  std::unique_ptr<ChannelManager> channel_manager_;
+};
+
+// Builds an L2CAP B-frame addressed to the BR/EDR SMP fixed channel (CID
+// 0x0007).
+DynamicByteBuffer SmpBFrame() {
+  constexpr hci_spec::ConnectionHandle kTestHandle = 0x0001;
+  return DynamicByteBuffer(StaticByteBuffer(
+      // ACL data header (handle: 0x0001, PB=first-flushable, length: 8)
+      LowerBits(kTestHandle),
+      UpperBits(kTestHandle),
+      0x08,
+      0x00,
+      // L2CAP B-frame header (length: 4, channel-id: 0x0007)
+      0x04,
+      0x00,
+      LowerBits(kSMPChannelId),
+      UpperBits(kSMPChannelId),
+      // payload
+      0xDE,
+      0xAD,
+      0xBE,
+      0xEF));
+}
+
+// Tests that when a fixed channel is created but never activated, incoming
+// packets do not grow pending_rx_sdus_ unboundedly or permanently pin a wake
+// lease.
+TEST_F(NeverActivatedSmpChannelTest, BoundedPendingRxSdusAndNoPinnedWakeLease) {
+  constexpr hci_spec::ConnectionHandle kTestHandle = 0x0001;
+  constexpr size_t kFloodCount = 5000;
+  constexpr size_t kReasonableQueueCap = 64;
+
+  Channel::WeakPtr smp_witness;
+
+  CommandId extended_features_id = 1;
+  CommandId fixed_channels_id = 2;
+
+  channel_manager()->AddACLConnection(
+      kTestHandle,
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+      /*link_error_callback=*/[] {},
+      /*security_callback=*/
+      [](hci_spec::ConnectionHandle, sm::SecurityLevel, sm::ResultFunction<>) {
+      },
+      /*fixed_channels_callback=*/
+      [&smp_witness](BrEdrFixedChannels channels) {
+        // Save a witness so the test can later inspect the channel; the
+        // production GAP code keeps no such reference.
+        smp_witness = channels.smp;
+        // Model BrEdrConnection::SetSecurityManagerChannel() with a
+        // legacy-pairing peer: log-and-return without calling Activate().
+      });
+  RunUntilIdle();
+
+  // Send L2CAP_INFORMATION_RSP with the SMP bit set so that the SMP fixed
+  // channel is created.
+  ReceiveAclDataPacket(testing::AclExtFeaturesInfoRsp(
+      extended_features_id, kTestHandle, /*features=*/0));
+  ReceiveAclDataPacket(testing::AclFixedChannelsSupportedInfoRsp(
+      fixed_channels_id,
+      kTestHandle,
+      kFixedChannelsSupportedBitSignaling | kFixedChannelsSupportedBitSM));
+  RunUntilIdle();
+
+  ASSERT_TRUE(smp_witness.is_alive());
+
+  // After connection setup the lease count may briefly be nonzero from the
+  // signalling-channel traffic; settle and take a baseline.
+  RunUntilIdle();
+  const uint16_t baseline_leases = lease_provider().lease_count();
+
+  for (size_t i = 0; i < kFloodCount; ++i) {
+    ReceiveAclDataPacket(SmpBFrame());
+  }
+  RunUntilIdle();
+
+  // Fixed channels should not acquire a wake lease for unactivated RX SDUs.
+  const uint16_t leases_after_flood = lease_provider().lease_count();
+  EXPECT_LE(leases_after_flood, baseline_leases)
+      << "Regression: wake_lease_ held across " << kFloodCount
+      << " attacker frames on a never-Activate()d SMP fixed channel "
+         "(persistent power-management pin)";
+
+  ASSERT_TRUE(smp_witness.is_alive());
+
+  size_t drained = 0;
+  bool ok = smp_witness->Activate(
+      /*rx_callback=*/[&drained](ByteBufferPtr) { ++drained; },
+      /*closed_callback=*/[] {});
+  ASSERT_TRUE(ok);
+  RunUntilIdle();
+
+  // Verify that pre-activation buffering is capped.
+  EXPECT_LE(drained, kReasonableQueueCap)
+      << "Regression: pending_rx_sdus_ buffered " << drained << " of "
+      << kFloodCount
+      << " attacker SDUs with NO cap (unbounded heap growth on a "
+         "never-Activate()d fixed channel)";
+
+  // Verify that any lease is released once the queue is drained.
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
 }
 }  // namespace
 }  // namespace bt::l2cap

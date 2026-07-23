@@ -346,6 +346,8 @@ class ChannelImpl : public Channel, public TxEngine::TxChannel {
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
  private:
+  static constexpr size_t kMaxPendingRxSdus = 64;
+
   ChannelImpl(pw::async::Dispatcher& dispatcher,
               ChannelId id,
               ChannelId remote_id,
@@ -415,7 +417,7 @@ class ChannelImpl : public Channel, public TxEngine::TxChannel {
   // Fragmenter and Recombiner are always accessed on the L2CAP thread.
   const Fragmenter fragmenter_;
 
-  uint8_t dropped_packets = 0;
+  uint64_t dropped_packets_ = 0;
 
   pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
   std::optional<pw::bluetooth_sapphire::Lease> wake_lease_;
