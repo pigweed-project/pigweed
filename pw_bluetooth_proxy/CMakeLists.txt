@@ -250,9 +250,58 @@ pw_add_library(pw_bluetooth_proxy._async STATIC
 target_compile_definitions(pw_bluetooth_proxy._async PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
 )
+
+# Test utils (required by tests in bluetooth_proxy, gatt, and rfcomm)
+set(PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS
+  pw_allocator.libc_allocator
+  pw_allocator.null_allocator
+  pw_allocator.testing
+  pw_assert.check
+  pw_async2.notified_dispatcher
+  pw_bluetooth.emboss_util
+  pw_thread.test_thread_context
+  pw_thread.thread
+)
+
+set(PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS
+  test_utils.cc
+  test_utils_async.cc
+  test_utils_sync.cc
+)
+
+pw_add_library(pw_bluetooth_proxy._test_utils_sync STATIC
+  HEADERS
+    private/pw_bluetooth_proxy_private/test_utils.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
+    pw_bluetooth_proxy._sync
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy._test_utils_sync PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=0
+)
+
+pw_add_library(pw_bluetooth_proxy._test_utils_async STATIC
+  HEADERS
+    private/pw_bluetooth_proxy_private/test_utils.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
+    pw_bluetooth_proxy._async
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy._test_utils_async PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=1
+)
+
 # LINT.ThenChange(bt-proxy.bzl, BUILD.gn)
 
-# GATT depends on the above targets, so add_subdirectory() must be called last.
+# Subdirectories (gatt, rfcomm) depend on above targets
 add_subdirectory(gatt)
 add_subdirectory(rfcomm)
 
@@ -314,53 +363,6 @@ pw_add_test(pw_bluetooth_proxy.pw_bluetooth_proxy_async_test
     ${PW_BLUETOOTH_PROXY_TEST_SOURCES}
   GROUPS
     modules
-)
-
-set(PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS
-  pw_allocator.libc_allocator
-  pw_allocator.null_allocator
-  pw_allocator.testing
-  pw_assert.check
-  pw_async2.notified_dispatcher
-  pw_bluetooth.emboss_util
-  pw_thread.test_thread_context
-  pw_thread.thread
-)
-
-set(PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS
-  test_utils.cc
-  test_utils_async.cc
-  test_utils_sync.cc
-)
-
-pw_add_library(pw_bluetooth_proxy._test_utils_sync STATIC
-  HEADERS
-    private/pw_bluetooth_proxy_private/test_utils.h
-  PUBLIC_INCLUDES
-    private
-  PUBLIC_DEPS
-    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
-    pw_bluetooth_proxy._sync
-  SOURCES
-    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
-)
-target_compile_definitions(pw_bluetooth_proxy._test_utils_sync PUBLIC
-  PW_BLUETOOTH_PROXY_ASYNC=0
-)
-
-pw_add_library(pw_bluetooth_proxy._test_utils_async STATIC
-  HEADERS
-    private/pw_bluetooth_proxy_private/test_utils.h
-  PUBLIC_INCLUDES
-    private
-  PUBLIC_DEPS
-    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
-    pw_bluetooth_proxy._async
-  SOURCES
-    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
-)
-target_compile_definitions(pw_bluetooth_proxy._test_utils_async PUBLIC
-  PW_BLUETOOTH_PROXY_ASYNC=1
 )
 
 # LINT.ThenChange(bt-proxy.bzl, BUILD.gn)
