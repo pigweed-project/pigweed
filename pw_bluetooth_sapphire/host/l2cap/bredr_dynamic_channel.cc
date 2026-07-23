@@ -816,8 +816,6 @@ void BrEdrDynamicChannel::OnRxConfigReq(
     remote_config_.set_retransmission_flow_control_option(
         ChannelConfiguration::RetransmissionAndFlowControlOption::
             MakeBasicMode());
-    PassOpenResult();
-    return;
   }
 
   if (IsOpen()) {
@@ -1561,8 +1559,6 @@ BrEdrDynamicChannel::ResponseHandlerAction BrEdrDynamicChannel::OnRxConfigRsp(
     remote_config_.set_retransmission_flow_control_option(
         ChannelConfiguration::RetransmissionAndFlowControlOption::
             MakeBasicMode());
-    PassOpenResult();
-    return ResponseHandlerAction::kCompleteOutboundTransaction;
   }
 
   if (IsOpen()) {

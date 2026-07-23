@@ -2926,6 +2926,58 @@ TEST_F(BrEdrDynamicChannelTest,
   EXPECT_TRUE(channel_close_cb_called);
 }
 
+// Verifies that when negotiation falls back to basic mode, the channel is
+// properly opened and later cleaned up.
+TEST_F(BrEdrDynamicChannelTest, FallbackToBasicModeOpensTheChannel) {
+  EXPECT_OUTBOUND_REQ(*sig(),
+                      kConnectionRequest,
+                      kConnReq.view(),
+                      {SignalingChannel::Status::kSuccess, kOkConnRsp.view()});
+  auto config_req_id = EXPECT_OUTBOUND_REQ(
+      *sig(), kConfigurationRequest, kOutboundConfigReqWithErtm.view());
+
+  int open_cb_count = 0;
+  auto open_cb = [&open_cb_count]([[maybe_unused]] const DynamicChannel* chan) {
+    open_cb_count++;
+  };
+
+  int close_cb_count = 0;
+  set_channel_close_cb(
+      [&close_cb_count](const DynamicChannel*) { close_cb_count++; });
+
+  registry()->OpenOutbound(kPsm, kERTMChannelParams, std::move(open_cb));
+
+  RunUntilIdle();
+
+  sig()->ReceiveResponses(ext_info_transaction_id(),
+                          {{SignalingChannel::Status::kSuccess,
+                            kExtendedFeaturesInfoRspWithERTM.view()}});
+  RunUntilIdle();
+
+  // Peer sends ConfigReq(Basic) BEFORE sending ConfigRsp for Host's request.
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kConfigurationRequest, kInboundConfigReq, kOutboundOkConfigRsp));
+  RunUntilIdle();
+
+  // Peer sends ConfigRsp(Success) for Host's request.
+  // This should trigger the fallback to Basic Mode but omit set_opened().
+  sig()->ReceiveResponses(
+      config_req_id,
+      {{SignalingChannel::Status::kSuccess, kInboundEmptyConfigRsp.view()}});
+  RunUntilIdle();
+
+  EXPECT_EQ(1, open_cb_count);
+
+  // Peer sends Disconnection Request. This should trigger the close callback
+  RETURN_IF_FATAL(sig()->ReceiveExpect(
+      kDisconnectionRequest, kInboundDisconReq, kInboundDisconRsp));
+  RunUntilIdle();
+
+  // We expect the close callback to be called.
+  // This will fail on vulnerable code.
+  EXPECT_EQ(1, close_cb_count);
+}
+
 // The local device should configure basic mode if peer does not indicate
 // support for ERTM when it is preferred. PTS: L2CAP/CMC/BV-10-C
 TEST_F(BrEdrDynamicChannelTest,
