@@ -112,9 +112,9 @@ TEST_P(StartA2dpOffloadTest, StartA2dpOffloadSuccess) {
   const android_emb::A2dpCodecType codec = GetParam();
   A2dpOffloadManager::Configuration config = BuildConfiguration(codec);
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -150,7 +150,7 @@ TEST_F(A2dpOffloadTest, StartA2dpOffloadInvalidConfiguration) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
   const auto command_complete = CommandCompletePacket(
-      android_hci::kA2dpOffloadCommand,
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
       pw::bluetooth::emboss::StatusCode::INVALID_HCI_COMMAND_PARAMETERS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
@@ -179,9 +179,9 @@ TEST_F(A2dpOffloadTest, StartA2dpOffloadInvalidConfiguration) {
 TEST_F(A2dpOffloadTest, StartAndStopA2dpOffloadSuccess) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -223,9 +223,9 @@ TEST_F(A2dpOffloadTest, StartAndStopA2dpOffloadSuccess) {
 TEST_F(A2dpOffloadTest, StartA2dpOffloadAlreadyStarted) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -268,9 +268,9 @@ TEST_F(A2dpOffloadTest, StartA2dpOffloadAlreadyStarted) {
 TEST_F(A2dpOffloadTest, StartA2dpOffloadStillStarting) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -309,9 +309,9 @@ TEST_F(A2dpOffloadTest, StartA2dpOffloadStillStarting) {
 TEST_F(A2dpOffloadTest, StartA2dpOffloadStillStopping) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -368,9 +368,9 @@ TEST_F(A2dpOffloadTest, StartA2dpOffloadStillStopping) {
 TEST_F(A2dpOffloadTest, StopA2dpOffloadStillStarting) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -410,9 +410,9 @@ TEST_F(A2dpOffloadTest, StopA2dpOffloadStillStarting) {
 TEST_F(A2dpOffloadTest, StopA2dpOffloadStillStopping) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -474,9 +474,9 @@ TEST_F(A2dpOffloadTest, StopA2dpOffloadAlreadyStopped) {
 TEST_F(A2dpOffloadTest, A2dpOffloadOnlyOneChannel) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -520,9 +520,9 @@ TEST_F(A2dpOffloadTest, A2dpOffloadOnlyOneChannel) {
 TEST_F(A2dpOffloadTest, DifferentChannelCannotStopA2dpOffloading) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),
@@ -590,9 +590,9 @@ TEST_F(A2dpOffloadTest, SniffSuppressionCallbackPerLink) {
 
   // Start offload on Link 1
   A2dpOffloadManager::Configuration config = BuildConfiguration();
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(
       test_device(),
       StartA2dpOffloadRequest(config, kTestHandle1, kRemoteId, kMaxMTU),

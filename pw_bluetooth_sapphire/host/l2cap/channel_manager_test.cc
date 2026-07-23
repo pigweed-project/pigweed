@@ -4022,9 +4022,9 @@ TEST_F(ChannelManagerMockAclChannelTest, StartAndStopA2dpOffloadSuccess) {
   A2dpOffloadManager::Configuration config = BuildConfiguration();
   Channel::WeakPtr channel = SetUpOutboundChannel();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(test_device(),
                         StartA2dpOffloadRequest(config,
                                                 channel->link_handle(),
@@ -4086,9 +4086,9 @@ TEST_F(ChannelManagerMockAclChannelTest,
   A2dpOffloadManager::Configuration config = BuildConfiguration();
   Channel::WeakPtr channel = SetUpOutboundChannel();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(test_device(),
                         StartA2dpOffloadRequest(config,
                                                 channel->link_handle(),
@@ -4129,9 +4129,9 @@ TEST_F(ChannelManagerMockAclChannelTest,
   A2dpOffloadManager::Configuration config = BuildConfiguration();
   Channel::WeakPtr channel = SetUpOutboundChannel();
 
-  const auto command_complete =
-      CommandCompletePacket(android_hci::kA2dpOffloadCommand,
-                            pw::bluetooth::emboss::StatusCode::SUCCESS);
+  const auto command_complete = CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
   EXPECT_CMD_PACKET_OUT(test_device(),
                         StartA2dpOffloadRequest(config,
                                                 channel->link_handle(),

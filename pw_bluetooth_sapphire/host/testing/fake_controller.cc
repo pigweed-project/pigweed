@@ -4157,22 +4157,26 @@ void FakeController::OnAndroidA2dpOffloadCommand(
     const PacketView<hci_spec::CommandHeader>& command_packet) {
   const auto& payload = command_packet.payload_data();
 
-  uint8_t subopcode = payload.To<uint8_t>();
+  uint8_t value = payload.To<uint8_t>();
+  auto subopcode = static_cast<android_emb::A2dpOffloadSubOpcode>(value);
   switch (subopcode) {
-    case android_hci::kStartA2dpOffloadCommandSubopcode: {
+    case android_emb::A2dpOffloadSubOpcode::START_LEGACY: {
       auto view = android_emb::MakeStartA2dpOffloadCommandView(
           command_packet.data().data(), command_packet.size());
       OnAndroidStartA2dpOffload(view);
       break;
     }
-    case android_hci::kStopA2dpOffloadCommandSubopcode:
+    case android_emb::A2dpOffloadSubOpcode::STOP_LEGACY: {
       OnAndroidStopA2dpOffload();
       break;
+    }
+    case android_emb::A2dpOffloadSubOpcode::START:
+    case android_emb::A2dpOffloadSubOpcode::STOP:
     default:
       bt_log(WARN,
              "fake-hci",
              "unhandled android A2DP offload command, subopcode: %#.4x",
-             subopcode);
+             value);
       RespondWithCommandComplete(pwemb::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
                                  pwemb::StatusCode::UNKNOWN_COMMAND);
       break;
@@ -6278,9 +6282,6 @@ void FakeController::OnVendorCommand(
   pwemb::OpCode opcode = static_cast<pwemb::OpCode>(value);
 
   switch (value) {
-    case android_hci::kA2dpOffloadCommand:
-      OnAndroidA2dpOffloadCommand(command_packet);
-      return;
     case android_hci::kLEMultiAdvt:
       OnAndroidLEMultiAdvt(command_packet);
       return;
@@ -6298,6 +6299,9 @@ void FakeController::OnVendorCommand(
   switch (opcode) {
     case pwemb::OpCode::ANDROID_LE_GET_VENDOR_CAPABILITIES:
       OnAndroidLEGetVendorCapabilities();
+      break;
+    case pwemb::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD:
+      OnAndroidA2dpOffloadCommand(command_packet);
       break;
     default:
       bt_log(WARN,

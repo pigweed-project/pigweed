@@ -32,15 +32,6 @@
 
 namespace bt::hci_spec::vendor::android {
 
-// ============================================================================
-// A2DP Offload Commands
-
-// The kA2dpOffloadCommand opcode is shared across all a2dp offloading HCI
-// commands. To differentiate between the multiple commands, a subopcode field
-// is included in the command payload.
-inline constexpr OpCode kA2dpOffloadCommand = VendorOpCode(0x15D);
-inline constexpr uint8_t kStartA2dpOffloadCommandSubopcode = 0x01;
-inline constexpr uint8_t kStopA2dpOffloadCommandSubopcode = 0x02;
 inline constexpr uint32_t kLdacVendorId = 0x0000012D;
 inline constexpr uint16_t kLdacCodecId = 0x00AA;
 

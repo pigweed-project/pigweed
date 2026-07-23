@@ -23,14 +23,12 @@
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/bredr_connection_request.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
 #include "pw_string/string_builder.h"
 
 namespace bt::testing {
 
-namespace android_hci = bt::hci_spec::vendor::android;
 namespace android_emb = pw::bluetooth::vendor::android_hci;
 
 // Generates a blob of data that is unique to the size and starting value
@@ -1785,11 +1783,12 @@ DynamicByteBuffer StartA2dpOffloadRequest(
       android_emb::StartA2dpOffloadCommand::MaxSizeInBytes();
   auto packet =
       hci::CommandPacket::New<android_emb::StartA2dpOffloadCommandWriter>(
-          android_hci::kA2dpOffloadCommand, kPacketSize);
+          pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+          kPacketSize);
   auto view = packet.view_t();
 
   view.vendor_command().sub_opcode().Write(
-      android_hci::kStartA2dpOffloadCommandSubopcode);
+      static_cast<uint8_t>(android_emb::A2dpOffloadSubOpcode::START_LEGACY));
   view.codec_type().Write(config.codec);
   view.max_latency().Write(config.max_latency);
   view.scms_t_enable().CopyFrom(
@@ -1829,11 +1828,13 @@ DynamicByteBuffer StartA2dpOffloadRequest(
 }
 
 DynamicByteBuffer StopA2dpOffloadRequest() {
-  return DynamicByteBuffer(
-      StaticByteBuffer(LowerBits(android_hci::kA2dpOffloadCommand),
-                       UpperBits(android_hci::kA2dpOffloadCommand),
-                       0x01,  // parameter_total_size (1 byte)
-                       android_hci::kStopA2dpOffloadCommandSubopcode));
+  auto packet =
+      hci::CommandPacket::New<android_emb::StopA2dpOffloadCommandWriter>(
+          pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD);
+  auto view = packet.view_t();
+  view.vendor_command().sub_opcode().Write(
+      static_cast<uint8_t>(android_emb::A2dpOffloadSubOpcode::STOP_LEGACY));
+  return packet.release();
 }
 
 DynamicByteBuffer SynchronousConnectionCompletePacket(

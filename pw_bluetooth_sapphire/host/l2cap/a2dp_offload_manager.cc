@@ -22,15 +22,11 @@
 #include <utility>
 
 #include "pw_bluetooth_sapphire/internal/host/common/host_error.h"
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
-#include "pw_bluetooth_sapphire/internal/host/l2cap/channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/control_packets.h"
 
 namespace bt::l2cap {
-namespace android_hci = bt::hci_spec::vendor::android;
 namespace android_emb = pw::bluetooth::vendor::android_hci;
 
 void A2dpOffloadManager::StartA2dpOffload(
@@ -82,11 +78,12 @@ void A2dpOffloadManager::StartA2dpOffload(
       android_emb::StartA2dpOffloadCommand::MaxSizeInBytes();
   auto packet =
       hci::CommandPacket::New<android_emb::StartA2dpOffloadCommandWriter>(
-          android_hci::kA2dpOffloadCommand, kPacketSize);
+          pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD,
+          kPacketSize);
   auto view = packet.view_t();
 
   view.vendor_command().sub_opcode().Write(
-      android_hci::kStartA2dpOffloadCommandSubopcode);
+      static_cast<uint8_t>(android_emb::A2dpOffloadSubOpcode::START_LEGACY));
   view.codec_type().Write(config.codec);
   view.max_latency().Write(config.max_latency);
   view.scms_t_enable().CopyFrom(
@@ -221,11 +218,11 @@ void A2dpOffloadManager::RequestStopA2dpOffload(
 
   auto packet =
       hci::CommandPacket::New<android_emb::StopA2dpOffloadCommandWriter>(
-          android_hci::kA2dpOffloadCommand);
+          pw::bluetooth::emboss::OpCode::ANDROID_A2DP_HARDWARE_OFFLOAD);
   auto packet_view = packet.view_t();
 
   packet_view.vendor_command().sub_opcode().Write(
-      android_hci::kStopA2dpOffloadCommandSubopcode);
+      static_cast<uint8_t>(android_emb::A2dpOffloadSubOpcode::STOP_LEGACY));
 
   cmd_channel_
       ->SendCommand(
