@@ -15,9 +15,12 @@
 
 #ifdef __cplusplus
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+
+#include "pw_bytes/endian.h"
 
 #else
 
@@ -384,6 +387,13 @@ namespace pw::tokenizer {
 
 using Token = ::pw_tokenizer_Token;
 inline constexpr const char* kDefaultDomain = PW_TOKENIZER_DEFAULT_DOMAIN;
+
+/// Converts a token to an array of bytes suitable for copying into a
+/// TOKENIZATION_OPTIONAL proto field.
+constexpr std::array<std::byte, 4> TokenBytes(Token token) {
+  // Tokens in 'bytes' fields are always encoded in little-endian order.
+  return bytes::CopyInOrder(endian::little, token);
+}
 
 namespace internal {
 

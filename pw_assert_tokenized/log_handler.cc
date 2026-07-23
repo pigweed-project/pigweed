@@ -85,8 +85,8 @@ extern "C" void pw_assert_tokenized_HandleCheckFailure(
                                   static_cast<uintptr_t>(PW_LOG_FLAGS),
                                   static_cast<uintptr_t>(line_number))
           .value());
-  std::array<std::byte, sizeof(tokenized_message)> token_buffer =
-      pw::bytes::CopyInOrder(pw::endian::little, tokenized_message);
+
+  auto token_buffer = pw::tokenizer::TokenBytes(tokenized_message);
 
   pw_log_tokenized_HandleLog(
       payload,

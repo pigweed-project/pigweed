@@ -60,6 +60,7 @@ cc_library(
     tags = ["noclangtidy"],
     deps = [
         ":config_override",
+        "//pw_bytes",  # endian
         "//pw_bytes:bit",
         "//pw_containers:to_array",
         "//pw_polyfill",

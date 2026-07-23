@@ -127,6 +127,7 @@ cc_library_static {
         "pw_log",
     ],
     static_libs: [
+        "pw_bytes",
         "pw_log_tokenized",
         "pw_polyfill",
         "pw_preprocessor",
@@ -134,6 +135,7 @@ cc_library_static {
         "pw_varint",
     ],
     export_static_lib_headers: [
+        "pw_bytes",
         "pw_log_tokenized",
         "pw_polyfill",
         "pw_preprocessor",

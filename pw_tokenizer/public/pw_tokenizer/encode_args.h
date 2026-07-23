@@ -112,7 +112,9 @@ class EncodedMessage {
   EncodedMessage(pw_tokenizer_Token token,
                  pw_tokenizer_ArgTypes types,
                  va_list args) {
-    std::memcpy(data_, &token, sizeof(token));
+    auto token_bytes = TokenBytes(token);
+    static_assert(token_bytes.size() == sizeof(pw_tokenizer_Token));
+    std::memcpy(data_, token_bytes.data(), token_bytes.size());
     size_ =
         sizeof(token) +
         EncodeArgs(types, args, span<std::byte>(data_).subspan(sizeof(token)));
