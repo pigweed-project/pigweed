@@ -107,10 +107,15 @@ class DataElement {
   // Make a deep copy of this element.
   DataElement Clone() const { return DataElement(*this); }
 
+  constexpr static size_t kDefaultRecursionDepth = 32;
+
   // Reads a DataElement from |buffer|, replacing any data that was in |elem|.
   // Returns the amount of space occupied on |buffer| by the data element, or
   // zero if no element could be read.
-  static size_t Read(DataElement* elem, const ByteBuffer& buffer);
+  // |max_depth| limits the recursion depth when reading nested sequences.
+  static size_t Read(DataElement* elem,
+                     const ByteBuffer& buffer,
+                     size_t max_depth = kDefaultRecursionDepth);
 
   // The type of this element.
   Type type() const { return type_; }

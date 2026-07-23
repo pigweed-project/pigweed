@@ -90,7 +90,8 @@ size_t ReadAttributeIDList(const ByteBuffer& buf,
                            std::list<AttributeRange>* attribute_ranges,
                            size_t max_elements) {
   DataElement attribute_list_elem;
-  size_t elem_size = DataElement::Read(&attribute_list_elem, buf);
+  // Only one sequence level here.
+  size_t elem_size = DataElement::Read(&attribute_list_elem, buf, 1);
   if ((elem_size == 0) ||
       (attribute_list_elem.type() != DataElement::Type::kSequence)) {
     bt_log(TRACE, "sdp", "failed to parse attribute ranges, or not a sequence");
@@ -242,7 +243,8 @@ ServiceSearchRequest::ServiceSearchRequest()
 ServiceSearchRequest::ServiceSearchRequest(const ByteBuffer& params)
     : ServiceSearchRequest() {
   DataElement search_pattern;
-  size_t read_size = DataElement::Read(&search_pattern, params);
+  // This can only include a sequence which has UUIDs in it.
+  size_t read_size = DataElement::Read(&search_pattern, params, 1);
   if ((read_size == 0) ||
       (search_pattern.type() != DataElement::Type::kSequence)) {
     bt_log(TRACE, "sdp", "Failed to read search pattern");
@@ -875,7 +877,8 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest()
 ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
     const ByteBuffer& params) {
   DataElement search_pattern;
-  size_t read_size = DataElement::Read(&search_pattern, params);
+  // This only includes UUIDs in one sequence.
+  size_t read_size = DataElement::Read(&search_pattern, params, 1);
   if ((read_size == 0) ||
       (search_pattern.type() != DataElement::Type::kSequence)) {
     bt_log(TRACE, "sdp", "failed to read search pattern");

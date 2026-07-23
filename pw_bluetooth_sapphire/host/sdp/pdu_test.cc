@@ -212,6 +212,23 @@ TEST(PDUTest, ServiceSearchRequestParse) {
 
   ServiceSearchRequest req4(kInvalidMaxSizeZero);
   EXPECT_FALSE(req4.valid());
+
+  const StaticByteBuffer kInvalidNestedSequence(
+      // ServiceSearchPattern
+      0x35,
+      0x05,  // Sequence uint8 5 bytes
+      0x35,
+      0x03,  // Sequence uint8 3 bytes
+      0x19,
+      0x01,
+      0x00,  // UUID: Protocol: L2CAP
+      0x00,
+      0x10,  // MaximumServiceRecordCount: 16
+      0x00   // Continuation State: none
+  );
+
+  ServiceSearchRequest req_nested(kInvalidNestedSequence);
+  EXPECT_FALSE(req_nested.valid());
 }
 
 TEST(PDUTest, ServiceSearchRequestGetPDU) {
@@ -875,6 +892,27 @@ TEST(PDUTest, ServiceAttributeRequestParse) {
 
   ServiceAttributeRequest req_noitems(kInvalidNoItems);
   EXPECT_FALSE(req_noitems.valid());
+
+  const auto kInvalidNestedAttributeList =
+      StaticByteBuffer(0x00,
+                       0x00,
+                       0x00,
+                       0x00,  // ServiceRecordHandle: 0
+                       0xFF,
+                       0xFF,  // Maximum attribute byte count: max
+                       // Attribute ID List (Nested)
+                       0x35,
+                       0x05,  // Sequence uint8 5 bytes
+                       0x35,
+                       0x03,  // Sequence uint8 3 bytes
+                       0x09,
+                       0x00,
+                       0x01,  // Attribute ID: 1
+                       0x00   // No continuation state
+      );
+
+  ServiceAttributeRequest req_nested(kInvalidNestedAttributeList);
+  EXPECT_FALSE(req_nested.valid());
 }
 
 TEST(PDUTest, ServiceAttributeRequestGetPDU) {
@@ -1419,6 +1457,50 @@ TEST(PDUTest, ServiceSearchAttributeRequestParse) {
 
   ServiceSearchAttributeRequest req_toomany(kInvalidTooManyItems);
   EXPECT_FALSE(req_toomany.valid());
+
+  const auto kInvalidNestedSearchPattern =
+      StaticByteBuffer(0x35,
+                       0x05,  // Sequence uint8 5 bytes
+                       0x35,
+                       0x03,  // Sequence uint8 3 bytes
+                       0x19,
+                       0x01,
+                       0x00,  // UUID: Protocol: L2CAP
+                       0xF0,
+                       0x0F,  // Maximum attribute byte count (61455)
+                       // Attribute ID List
+                       0x35,
+                       0x03,  // Sequence uint8 3 bytes
+                       0x09,
+                       0x00,
+                       0x02,  // uint16_t (2)
+                       0x00   // No continuation state
+      );
+
+  ServiceSearchAttributeRequest req_nested(kInvalidNestedSearchPattern);
+  EXPECT_FALSE(req_nested.valid());
+
+  const auto kInvalidNestedAttributeList =
+      StaticByteBuffer(0x35,
+                       0x03,  // Sequence uint8 3 bytes
+                       0x19,
+                       0x01,
+                       0x00,  // UUID: Protocol: L2CAP
+                       0xF0,
+                       0x0F,  // Maximum attribute byte count (61455)
+                       // Attribute ID List (Nested)
+                       0x35,
+                       0x05,  // Sequence uint8 5 bytes
+                       0x35,
+                       0x03,  // Sequence uint8 3 bytes
+                       0x09,
+                       0x00,
+                       0x01,  // Attribute ID: 1
+                       0x00   // No continuation state
+      );
+
+  ServiceSearchAttributeRequest req_nested_attr(kInvalidNestedAttributeList);
+  EXPECT_FALSE(req_nested_attr.valid());
 }
 
 TEST(PDUTest, ServiceSearchAttributeRequestGetPDU) {

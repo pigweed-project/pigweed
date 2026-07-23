@@ -396,7 +396,9 @@ void DataElement::SetVariableSize(size_t length) {
   }
 }
 
-size_t DataElement::Read(DataElement* elem, const ByteBuffer& buffer) {
+size_t DataElement::Read(DataElement* elem,
+                         const ByteBuffer& buffer,
+                         size_t max_depth) {
   if (buffer.size() == 0) {
     return 0;
   }
@@ -542,7 +544,11 @@ size_t DataElement::Read(DataElement* elem, const ByteBuffer& buffer) {
       std::vector<DataElement> seq;
       while (remaining > 0) {
         DataElement next;
-        size_t used = Read(&next, sequence_buf.view(data_bytes - remaining));
+        if (max_depth == 0) {
+          return 0;
+        }
+        size_t used = Read(
+            &next, sequence_buf.view(data_bytes - remaining), max_depth - 1);
         if (used == 0 || used > remaining) {
           return 0;
         }

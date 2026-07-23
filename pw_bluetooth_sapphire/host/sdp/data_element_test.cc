@@ -384,6 +384,29 @@ TEST(DataElementTest, ReadNestedSequence) {
   EXPECT_EQ(DataElement::Type::kUuid, inner_it->type());
 }
 
+TEST(DataElementTest, ReadDeeplyNestedSequenceFails) {
+  std::vector<uint8_t> bytes = {0x00};  // Innermost Null
+  for (int i = 0; i < 1000; ++i) {
+    size_t len = bytes.size();
+    if (len <= 0xFF) {
+      bytes.insert(bytes.begin(), static_cast<uint8_t>(len));
+      bytes.insert(bytes.begin(), 0x35);
+    } else {
+      bytes.insert(bytes.begin(), static_cast<uint8_t>(len & 0xFF));
+      bytes.insert(bytes.begin(), static_cast<uint8_t>((len >> 8) & 0xFF));
+      bytes.insert(bytes.begin(), 0x36);
+    }
+  }
+
+  DynamicByteBuffer buf(bytes.size());
+  buf.Write(bytes.data(), bytes.size());
+
+  DataElement elem;
+  size_t read_bytes = DataElement::Read(&elem, buf);
+
+  EXPECT_EQ(0u, read_bytes);
+}
+
 TEST(DataElementTest, ToString) {
   EXPECT_EQ("Null", DataElement().ToString());
   EXPECT_EQ("Boolean(true)", DataElement(true).ToString());
