@@ -464,7 +464,7 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
   constexpr uint16_t min_size =
       sizeof(Header) + (2 * sizeof(uint16_t)) + sizeof(uint8_t);
 
-  if (max_size < min_size) {
+  if (max_size < min_size + sizeof(uint16_t)) {
     // Can't generate a PDU, it's too small to hold even no records.
     return nullptr;
   }
