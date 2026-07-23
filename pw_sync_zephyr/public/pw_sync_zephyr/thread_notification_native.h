@@ -13,7 +13,7 @@
 // the License.
 #pragma once
 
-#include <pw_sync/binary_semaphore.h>
+#include "pw_sync/binary_semaphore.h"
 
 namespace pw::sync::backend {
 
