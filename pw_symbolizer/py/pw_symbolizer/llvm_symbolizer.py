@@ -40,9 +40,22 @@ class LlvmSymbolizer(symbolizer.Symbolizer):
     def __init__(
         self,
         binary: Path | None = None,
-        force_legacy=False,
+        force_legacy: bool = False,
         llvm_symbolizer_binary: Path | None = None,
-    ):
+        cpu_arch: symbolizer.CpuArchitecture | str | None = None,
+    ) -> None:
+        """Initializes an LlvmSymbolizer instance.
+
+        Args:
+            binary: Path to the ELF binary to symbolize.
+            force_legacy: Force legacy (non-JSON) llvm-symbolizer output.
+            llvm_symbolizer_binary: Optional path to llvm-symbolizer binary.
+            cpu_arch: Target CPU architecture for return address adjustment.
+
+        Raises:
+            FileNotFoundError: If llvm-symbolizer binary is not found.
+        """
+        self.cpu_arch = symbolizer.CpuArchitecture.from_value(cpu_arch)
         # Lets destructor return cleanly if the binary is not found.
         self._symbolizer = None
         if llvm_symbolizer_binary:
