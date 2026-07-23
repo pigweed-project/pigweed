@@ -249,6 +249,13 @@ void Impl::Cancel(TransactionId id, HostError reason) {
 void Impl::OnRxFrame(ByteBufferPtr data) {
   TRACE_DURATION("bluetooth", "sdp::Client::Impl::OnRxFrame");
   // Each SDU in SDP is one request or one response. Core 5.0 Vol 3 Part B, 4.2
+  if (data->size() < sizeof(Header)) {
+    bt_log(INFO,
+           "sdp",
+           "PDU too short (%zu bytes) - incomplete header; dropping",
+           data->size());
+    return;
+  }
   PacketView<sdp::Header> packet(data.get());
   size_t pkt_params_len = data->size() - sizeof(Header);
   uint16_t params_len = pw::bytes::ConvertOrderFrom(

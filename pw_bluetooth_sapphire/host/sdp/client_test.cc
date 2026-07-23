@@ -689,6 +689,50 @@ TEST_F(ClientTest, InvalidResponse) {
   EXPECT_EQ(1u, cb_count);
 }
 
+TEST_F(ClientTest, ShortSduResponse) {
+  size_t cb_count = 0;
+  auto client = Client::Create(fake_chan()->GetWeakPtr(), dispatcher());
+  auto result_cb =
+      [&](fit::result<
+          Error<>,
+          std::reference_wrapper<const std::map<AttributeId, DataElement>>>
+              attrs_result) {
+        cb_count++;
+        EXPECT_EQ(Error(HostError::kCanceled), attrs_result);
+        return true;
+      };
+
+  uint16_t request_tid = 0;
+  bool request_sent = false;
+
+  fake_chan()->SetSendCallback(
+      [&](auto packet) {
+        ASSERT_GE(packet->size(), 3u);
+        request_tid = (static_cast<uint16_t>((*packet)[1]) << 8) | (*packet)[2];
+        request_sent = true;
+      },
+      dispatcher());
+
+  client->ServiceSearchAttributes(
+      {profile::kAudioSink},
+      {kServiceClassIdList, kProtocolDescriptorList},
+      result_cb);
+
+  RunUntilIdle();
+  EXPECT_TRUE(request_sent);
+  EXPECT_EQ(0u, cb_count);
+
+  // Send a packet that is shorter than the SDP header (5 bytes)
+  // to fail the request.
+  fake_chan()->Receive(StaticByteBuffer(
+      0x07, UpperBits(request_tid), LowerBits(request_tid), 0x00));
+
+  RunUntilIdle();
+
+  // The packet should be dropped
+  EXPECT_EQ(0u, cb_count);
+}
+
 // Time out (or possibly dropped packets that were malformed)
 TEST_F(ClientTest, Timeout) {
   constexpr uint32_t kTimeoutMs = 10000;
