@@ -28,6 +28,14 @@ pub enum Buffer {
     Vector(Slice<Slice<u8>>),
 }
 
+// SAFETY: Buffer's slice contains pointers which are not Send.  However the
+// kernel has access to the globally fixed address space so these pointers will
+// remain valid.   Additionally, the syscall interface contract is that userspace
+// must not access these underlying pointers and they remain valid for the lifetime
+// of the syscall (or async operation).  If userspace violates this contract,
+// it only affects the soundness of userspace, not the kernel.
+unsafe impl Send for Buffer {}
+
 impl Buffer {
     fn new(address: usize, length: isize) -> Result<Self> {
         let Some(address) = NonNull::<u8>::new(core::ptr::with_exposed_provenance_mut(address))

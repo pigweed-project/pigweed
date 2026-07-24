@@ -13,6 +13,7 @@
 // the License.
 
 use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 
 use pw_status::Result;
@@ -33,43 +34,15 @@ struct MutexState {
     holder_thread_id: usize,
 }
 
-pub struct Mutex<K: Kernel, T> {
+pub struct RawMutex<K: Kernel> {
     // An future optimization can be made by keeping an atomic count outside of
     // the spinlock.  However, not all architectures support atomics so a pure
     // SchedLock based approach will always be needed.
     state: WaitQueueLock<K, MutexState>,
-
-    inner: UnsafeCell<T>,
-}
-unsafe impl<K: Kernel, T> Sync for Mutex<K, T> {}
-unsafe impl<K: Kernel, T> Send for Mutex<K, T> {}
-
-pub struct MutexGuard<'lock, K: Kernel, T> {
-    lock: &'lock Mutex<K, T>,
 }
 
-impl<K: Kernel, T> Deref for MutexGuard<'_, K, T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.lock.inner.get() }
-    }
-}
-
-impl<K: Kernel, T> DerefMut for MutexGuard<'_, K, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.lock.inner.get() }
-    }
-}
-
-impl<K: Kernel, T> Drop for MutexGuard<'_, K, T> {
-    fn drop(&mut self) {
-        self.lock.unlock();
-    }
-}
-
-impl<K: Kernel, T> Mutex<K, T> {
-    pub const fn new(kernel: K, initial_value: T) -> Self {
+impl<K: Kernel> RawMutex<K> {
+    pub const fn new(kernel: K) -> Self {
         Self {
             state: WaitQueueLock::new(
                 kernel,
@@ -78,11 +51,10 @@ impl<K: Kernel, T> Mutex<K, T> {
                     holder_thread_id: Thread::<K>::null_id(),
                 },
             ),
-            inner: UnsafeCell::new(initial_value),
         }
     }
 
-    pub fn lock(&self) -> MutexGuard<'_, K, T> {
+    pub fn lock(&self) {
         let mut state = self.state.lock();
         pw_assert::ne!(
             state.holder_thread_id as usize,
@@ -120,14 +92,20 @@ impl<K: Kernel, T> Mutex<K, T> {
         );
 
         state.holder_thread_id = state.sched().current_thread_id();
+    }
 
-        // At this point we have exclusive access to `self.inner`.
-
-        MutexGuard { lock: self }
+    pub fn try_lock(&self) -> bool {
+        let mut state = self.state.lock();
+        if state.count != 0 {
+            return false;
+        }
+        state.count = 1;
+        state.holder_thread_id = state.sched().current_thread_id();
+        true
     }
 
     // TODO - konkers: Investigate combining with lock().
-    pub fn lock_until(&self, deadline: Instant<K::Clock>) -> Result<MutexGuard<'_, K, T>> {
+    pub fn lock_until(&self, deadline: Instant<K::Clock>) -> Result<()> {
         let mut state = self.state.lock();
 
         #[allow(clippy::needless_else)]
@@ -181,12 +159,23 @@ impl<K: Kernel, T> Mutex<K, T> {
 
         state.holder_thread_id = state.sched().current_thread_id();
 
-        // At this point we have exclusive access to `self.inner`.
-
-        Ok(MutexGuard { lock: self })
+        Ok(())
     }
 
-    fn unlock(&self) {
+    /// Unlocks the mutex.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - The mutex is currently locked.
+    /// - The current thread is the holder of the lock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The mutex is not currently locked (`state.count == 0`).
+    /// - The current thread is not the holder of the lock.
+    pub unsafe fn unlock(&self) {
         let mut state = self.state.lock();
 
         pw_assert::assert!(state.count > 0);
@@ -203,5 +192,98 @@ impl<K: Kernel, T> Mutex<K, T> {
         if state.count > 0 {
             let _ = state.wake_one();
         }
+    }
+}
+
+pub struct Mutex<K: Kernel, T> {
+    raw: RawMutex<K>,
+    data: UnsafeCell<T>,
+}
+
+// SAFETY: Sharing a `&Mutex<K, T>` across threads allows another thread to obtain
+// exclusive `&mut T` access via `MutexGuard`, which is safe as long as `T: Send`
+// as the Mutex's contract ensure that only one thread had access (mutable or
+// or otherwise to the enclosed data.
+//
+// For more information see:
+// https://doc.rust-lang.org/std/sync/struct.Mutex.html#impl-Sync-for-Mutex%3CT%3E
+unsafe impl<K: Kernel, T: Send> Sync for Mutex<K, T> {}
+
+// SAFETY: Moving a `Mutex<K, T>` to another thread transfers ownership of `T`,
+// which is safe as long as `T: Send`.
+//
+// For more information see:
+// https://doc.rust-lang.org/std/sync/struct.Mutex.html#impl-Send-for-Mutex%3CT%3E
+unsafe impl<K: Kernel, T: Send> Send for Mutex<K, T> {}
+
+pub struct MutexGuard<'a, K: Kernel, T> {
+    mutex: &'a Mutex<K, T>,
+    // Implicitly mark MutexGuard as !Send and !Sync.  !Sync is re-implemented
+    // below.  This is a workaround for `negative_impls` being unstable.
+    _marker: PhantomData<*const ()>,
+}
+
+impl<K: Kernel, T> Drop for MutexGuard<'_, K, T> {
+    fn drop(&mut self) {
+        // SAFETY: `MutexGuard` is only created when the current thread successfully
+        // acquires the mutex, so it is safe to unlock the underlying `RawMutex`.
+        unsafe {
+            self.mutex.raw.unlock();
+        }
+    }
+}
+
+// SAFETY: Shared reference access (`&MutexGuard`) provides `&T` through `Deref`,
+// which is safe across threads when `T: Sync`.
+unsafe impl<K: Kernel, T: Sync> Sync for MutexGuard<'_, K, T> {}
+
+impl<K: Kernel, T> Deref for MutexGuard<'_, K, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: The mutex is held for the lifetime of `MutexGuard`, guaranteeing
+        // exclusive access to `data`.  Lifetime of underlying data is tied to
+        // the lifetime of the guard.
+        unsafe { &*self.mutex.data.get() }
+    }
+}
+
+impl<K: Kernel, T> DerefMut for MutexGuard<'_, K, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: The mutex is held for the lifetime of `MutexGuard`, guaranteeing
+        // exclusive access to `data`.  Lifetime of underlying data is tied to
+        // the lifetime of the guard.
+        unsafe { &mut *self.mutex.data.get() }
+    }
+}
+
+impl<K: Kernel, T> Mutex<K, T> {
+    pub const fn new(kernel: K, initial_value: T) -> Self {
+        Self {
+            raw: RawMutex::new(kernel),
+            data: UnsafeCell::new(initial_value),
+        }
+    }
+
+    pub fn lock(&self) -> MutexGuard<'_, K, T> {
+        self.raw.lock();
+        MutexGuard {
+            mutex: self,
+            _marker: PhantomData,
+        }
+    }
+
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, K, T>> {
+        self.raw.try_lock().then(|| MutexGuard {
+            mutex: self,
+            _marker: PhantomData,
+        })
+    }
+
+    pub fn lock_until(&self, deadline: Instant<K::Clock>) -> Result<MutexGuard<'_, K, T>> {
+        self.raw.lock_until(deadline).map(|()| MutexGuard {
+            mutex: self,
+            _marker: PhantomData,
+        })
     }
 }
