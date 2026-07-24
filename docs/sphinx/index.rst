@@ -189,5 +189,6 @@ Talk to us
    third_party_support
    showcases/index
    community/index
+   security/index
    Blog <blog/index>
    api/index

@@ -158,6 +158,7 @@ sphinx_docs_library(
         "os/baremetal/backends.rst",
         "os/baremetal/index.rst",
         "overview.rst",
+        "security/index.rst",
         "showcases/index.rst",
         "showcases/sense/analysis.rst",
         "showcases/sense/automate.rst",
