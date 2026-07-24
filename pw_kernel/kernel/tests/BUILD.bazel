@@ -12,8 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
+load("//pw_kernel/arch/arm_cortex_m:defs.bzl", "SUPPORTED_CORTEX_M_CPUS")
 
 rust_library(
     name = "integration_tests",
@@ -23,16 +25,16 @@ rust_library(
         "sync.rs",
         "sync/spinlock.rs",
     ],
-    crate_features = select({
-        "@platforms//cpu:armv8-m": ["arch_arm_cortex_m"],
+    crate_features = selects.with_or({
+        SUPPORTED_CORTEX_M_CPUS: ["arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["arch_riscv"],
         "//conditions:default": [],
     }),
     edition = "2024",
     rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
-    target_compatible_with = select({
-        "@platforms//cpu:armv8-m": [],
+    target_compatible_with = selects.with_or({
+        SUPPORTED_CORTEX_M_CPUS: [],
         "@platforms//cpu:riscv32": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -40,8 +42,8 @@ rust_library(
     deps = [
         "//pw_kernel/kernel",
         "//pw_kernel/lib/magic_values",
-    ] + KERNEL_TEST_DEPS + select({
-        "@platforms//cpu:armv8-m": ["//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m"],
+    ] + KERNEL_TEST_DEPS + selects.with_or({
+        SUPPORTED_CORTEX_M_CPUS: ["//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m"],
         "@platforms//cpu:riscv32": ["//pw_kernel/arch/riscv:arch_riscv"],
         "//conditions:default": [],
     }),

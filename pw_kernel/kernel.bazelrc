@@ -114,6 +114,31 @@ test:k_qemu_virt_riscv32 --run_under="//pw_kernel/tooling:qemu \
   --semihosting \
   --image "
 
+# QEMU Nucleo-F103RB target configuration (mps2-an385)
+# =======================================
+common:k_qemu_nucleo_f103rb --config=k_common
+common:k_qemu_nucleo_f103rb --platforms=//pw_kernel/target/nucleo_f103rb
+common:k_qemu_nucleo_f103rb --//pw_kernel/target/nucleo_f103rb:target_type=qemu
+run:k_qemu_nucleo_f103rb --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m3 \
+  --machine mps2-an385 \
+  --semihosting \
+  --image "
+test:k_qemu_nucleo_f103rb --run_under="//pw_kernel/tooling:qemu \
+  --cpu cortex-m3 \
+  --machine mps2-an385 \
+  --semihosting \
+  --image "
+
+# Nucleo-F103RB hardware target configuration
+# =======================================
+# Uses USART2 console via ST-Link virtual COM port.
+# Flash with: probe-rs download <elf> --chip STM32F103RBTx && probe-rs reset --chip STM32F103RBTx
+common:k_nucleo_f103rb --config=k_common
+common:k_nucleo_f103rb --platforms=//pw_kernel/target/nucleo_f103rb
+common:k_nucleo_f103rb --//pw_kernel/target/nucleo_f103rb:target_type=board
+run:k_nucleo_f103rb --run_under="//pw_kernel/tooling:serial_detokenizer "
+
 # RP2350 target configuration
 # =======================================
 common:k_rp2350 --config=k_common

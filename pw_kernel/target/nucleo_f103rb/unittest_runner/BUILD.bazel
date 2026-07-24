@@ -1,0 +1,69 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_test")
+load("//pw_kernel/target/nucleo_f103rb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+
+filegroup(
+    name = "system_config",
+    srcs = select({
+        "//pw_kernel/target/nucleo_f103rb:board": ["system.json5"],
+        "//pw_kernel/target/nucleo_f103rb:qemu": ["system_qemu.json5"],
+    }),
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//pw_kernel/target/nucleo_f103rb:linker_script_template",
+)
+
+rust_test(
+    name = "unittest_runner",
+    srcs = [
+        "target.rs",
+    ],
+    crate_features = select({
+        "//pw_kernel/target/nucleo_f103rb:board": ["board"],
+        "//pw_kernel/target/nucleo_f103rb:qemu": ["qemu"],
+    }),
+    edition = "2024",
+    tags = [
+        "kernel",
+        # Clippy lints do not work with `use_libtest_harness = False`
+        "no_clippy",
+    ],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    use_libtest_harness = False,
+    deps = [
+        ":linker_script",
+        "//pw_kernel/kernel",
+        "//pw_kernel/kernel/tests:integration_tests",
+        "//pw_kernel/lib/unittest:unittest_core",
+        "//pw_kernel/subsys/console:console_backend",
+        "//pw_kernel/target:target_common",
+        "//pw_kernel/target/nucleo_f103rb:entry",
+        "//pw_log/rust:pw_log",
+    ] + select({
+        "//pw_kernel/target/nucleo_f103rb:board": [
+            "//pw_kernel/target/nucleo_f103rb:clock",
+        ],
+        "//pw_kernel/target/nucleo_f103rb:qemu": [
+            "@rust_crates//:cortex-m-semihosting",
+        ],
+    }),
+)

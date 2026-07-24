@@ -455,6 +455,40 @@
       ]
     },
     {
+      "name": "k_nucleo_f103rb",
+      "build_config": {
+        "name": "k_nucleo_f103rb_config",
+        "description": "Kernel Nucleo F103RB config",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_nucleo_f103rb"
+        ],
+        "env": {},
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
+      "name": "k_qemu_nucleo_f103rb",
+      "build_config": {
+        "name": "k_qemu_nucleo_f103rb_config",
+        "description": "QEMU Nucleo F103RB config",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_qemu_nucleo_f103rb"
+        ],
+        "env": {}
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
       "name": "k_host_lint",
       "build_config": {
         "name": "k_host_lint_config",
@@ -497,8 +531,8 @@
     {
       "name": "k_qemu_virt_riscv32_lint",
       "build_config": {
-        "name": "k_k_qemu_virt_riscv32_lint_config",
-        "description": "Kernel QEMU virt_ristv32 lint config",
+        "name": "k_qemu_virt_riscv32_lint_config",
+        "description": "Kernel QEMU virt_riscv32 lint config",
         "build_type": "bazel",
         "args": [
           "--config=k_lint",
@@ -546,6 +580,46 @@
       "use_config": "k_adventure_lint_config",
       "targets": [
         "//..."
+      ]
+    },
+    {
+      "name": "k_nucleo_f103rb_lint",
+      "build_config": {
+        "name": "k_nucleo_f103rb_lint_config",
+        "description": "Kernel Nucleo F103RB lint config",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_lint",
+          "--config=k_nucleo_f103rb"
+        ],
+        "env": {},
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
+      "name": "k_qemu_nucleo_f103rb_lint",
+      "build_config": {
+        "name": "k_qemu_nucleo_f103rb_lint_config",
+        "description": "Kernel QEMU Nucleo F103RB lint config",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_lint",
+          "--config=k_qemu_nucleo_f103rb"
+        ],
+        "env": {},
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//pw_kernel/..."
       ]
     },
     {
@@ -855,10 +929,14 @@
         "k_adventure",
         "k_adventure_lint",
         "k_rp2350",
+        "k_nucleo_f103rb",
+        "k_qemu_nucleo_f103rb",
         "k_host_lint",
         "k_qemu_mps2_an505_lint",
         "k_qemu_virt_riscv32_lint",
-        "k_rp2350_lint"
+        "k_rp2350_lint",
+        "k_nucleo_f103rb_lint",
+        "k_qemu_nucleo_f103rb_lint"
       ]
     },
     {

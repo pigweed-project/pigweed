@@ -1,0 +1,152 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_build:merge_flags.bzl", "flags_from_dict")
+load("//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load("//pw_kernel/target/nucleo_f103rb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = [":__subpackages__"])
+
+string_flag(
+    name = "target_type",
+    build_setting_default = "board",
+    values = [
+        "board",
+        "qemu",
+    ],
+)
+
+config_setting(
+    name = "board",
+    flag_values = {
+        ":target_type": "board",
+    },
+)
+
+config_setting(
+    name = "qemu",
+    flag_values = {
+        ":target_type": "qemu",
+    },
+)
+
+alias(
+    name = "nucleo_console_backend",
+    actual = select({
+        ":board": ":console",
+        ":qemu": "//pw_kernel/subsys/console:console_backend_semihosting",
+        "//conditions:default": ":console",
+    }),
+)
+
+platform(
+    name = "nucleo_f103rb",
+    constraint_values = [
+        ":target_nucleo_f103rb",
+        "//pw_build/constraints/arm:cortex-m3",
+        "@platforms//cpu:armv7-m",
+        "@platforms//os:none",
+        "//pw_build/constraints/rust:no_std",
+        "//pw_kernel/userspace:no_userspace_support",
+    ],
+    flags = flags_from_dict(
+        KERNEL_DEVICE_COMMON_FLAGS | {
+            "//pw_kernel/config:kernel_config": ":config",
+            "//pw_kernel/kernel:tracing": "false",
+            "//pw_kernel/subsys/console:console_backend": ":nucleo_console_backend",
+        },
+    ),
+)
+
+constraint_value(
+    name = "target_nucleo_f103rb",
+    constraint_setting = "//pw_kernel/target:target",
+)
+
+rust_library(
+    name = "entry",
+    srcs = ["entry.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "//pw_kernel/kernel",
+        "@rust_crates//:cortex-m-rt",
+    ],
+)
+
+rust_library(
+    name = "stm32f1_rcc_regs",
+    srcs = ["stm32f1_rcc_regs.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//pw_kernel/lib/regs",
+    ],
+)
+
+rust_library(
+    name = "clock",
+    srcs = ["clock.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":stm32f1_rcc_regs",
+    ],
+)
+
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_features = select({
+        ":board": ["board"],
+        ":qemu": ["qemu"],
+    }),
+    crate_name = "kernel_config",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//pw_kernel/config:kernel_config_interface",
+        "//pw_kernel/drivers/uart:kernel_uart",
+        "//pw_kernel/drivers/uart/stm32f1_usart:stm32f1_usart_regs",
+    ],
+)
+
+rust_library(
+    name = "console",
+    srcs = ["console.rs"],
+    crate_name = "console_backend",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":config",
+        "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "//pw_kernel/drivers/uart:kernel_uart",
+        "//pw_kernel/drivers/uart/stm32f1_usart:stm32f1_usart_kernel",
+        "//pw_kernel/kernel",
+        "//pw_status/rust:pw_status",
+    ],
+)
+
+filegroup(
+    name = "linker_script_template",
+    srcs = ["target.ld.jinja"],
+)
