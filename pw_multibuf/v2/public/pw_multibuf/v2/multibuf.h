@@ -758,6 +758,17 @@ class BasicMultiBuf {
   /// @param    pos     Location within the MultiBuf of the memory to share.
   SharedPtr<value_type[]> Share(const_iterator pos) const;
 
+  /// Creates a shallow copy of this MultiBuf.
+  ///
+  /// This will attempt to share underlying memory where possible;
+  /// owned chunks will be converted to shared control-block-backed
+  /// memory so both MultiBufs reference the same data.
+  ///
+  /// @returns @Result{copy of this MultiBuf}
+  /// * @RESOURCE_EXHAUSTED:  Failed to allocate memory for the new %MultiBuf's
+  ///   metadata.
+  [[nodiscard]] Result<Instance> ShallowCopy();
+
   /// Writes data from the MultiBuf at the given `offset` to `dst`.
   ///
   /// @param    dst     Span to copy data to. Its length determines the
@@ -1173,6 +1184,17 @@ class GenericMultiBuf final
   /// @param    mb      MultiBuf to be inserted.
   /// @returns          An iterator to the inserted memory.
   iterator Insert(const_iterator pos, GenericMultiBuf&& mb);
+
+  /// Creates a shallow copy of this MultiBuf.
+  ///
+  /// This will attempt to share underlying memory where possible;
+  /// owned chunks in `mb` will be converted to shared control-block-backed
+  /// memory so both MultiBufs reference the same data.
+  ///
+  /// @returns @Result{copy of this MultiBuf}
+  /// * @RESOURCE_EXHAUSTED:  Failed to allocate memory for the new %MultiBuf's
+  ///   metadata.
+  Result<GenericMultiBuf> ShallowCopy();
 
   /// Insert memory before the given iterator.
   ///
@@ -1842,6 +1864,16 @@ template <Property... kProperties>
 SharedPtr<typename BasicMultiBuf<kProperties...>::value_type[]>
 BasicMultiBuf<kProperties...>::Share(const_iterator pos) const {
   return SharedPtr<value_type[]>(generic().Share(pos));
+}
+
+template <Property... kProperties>
+Result<internal::Instance<BasicMultiBuf<kProperties...>>>
+BasicMultiBuf<kProperties...>::ShallowCopy() {
+  auto result = generic().ShallowCopy();
+  if (!result.ok()) {
+    return result.status();
+  }
+  return Instance(std::move(*result));
 }
 
 }  // namespace v2

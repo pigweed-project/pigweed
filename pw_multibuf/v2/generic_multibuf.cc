@@ -219,6 +219,39 @@ SharedPtr<std::byte[]> GenericMultiBuf::Share(const_iterator pos) const {
   return SharedPtr<std::byte[]>(GetData(pos.chunk_), &control_block);
 }
 
+Result<GenericMultiBuf> GenericMultiBuf::ShallowCopy() {
+  GenericMultiBuf out(get_allocator());
+  if (!out.deque_.try_reserve(deque_.size())) {
+    return Status::ResourceExhausted();
+  }
+  out.entries_per_chunk_ = entries_per_chunk_;
+
+  size_type index = 0;
+  for (size_type chunk = 0; chunk < num_chunks(); ++chunk) {
+    // If this object has owned chunks, convert them to shared so the new
+    // MultiBuf can safely reference the same memory.
+    if (IsOwned(chunk)) {
+      if (!TryConvertToShared(chunk)) {
+        return Status::ResourceExhausted();
+      }
+    }
+
+    for (size_type i = index; i < index + entries_per_chunk_; ++i) {
+      out.deque_.push_back(deque_[i]);
+    }
+
+    // If the copied chunk is shared, increment its shared count for the
+    // new owner.
+    if (out.IsShared(chunk)) {
+      out.GetControlBlock(chunk).IncrementShared();
+    }
+
+    index += entries_per_chunk_;
+  }
+
+  return out;
+}
+
 size_t GenericMultiBuf::CopyFrom(ConstByteSpan src, size_t offset) {
   size_t total = 0;
   for (size_type chunk = 0; chunk < num_chunks(); ++chunk) {

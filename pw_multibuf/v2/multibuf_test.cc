@@ -2525,4 +2525,41 @@ TEST_F(MultiBufV2Test, ClearNotifiesObserver) {
   EXPECT_EQ(mb->observer(), nullptr);
 }
 
+TEST_F(MultiBufV2Test, ShallowCopyConvertsOwnedToSharedAndSharesData) {
+  ConstMultiBufInstance mbi(allocator_);
+  auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  std::byte* data = chunk.get();
+  mbi->PushBack(std::move(chunk));
+
+  // Initially the owned chunk should not be shareable.
+  EXPECT_FALSE(mbi->IsShareable(mbi->begin()));
+
+  // ShallowCopy should succeed and convert owned chunks to shared.
+  auto result = mbi->ShallowCopy();
+  ASSERT_EQ(result.status(), pw::OkStatus());
+  ConstMultiBufInstance copy(std::move(*result));
+
+  EXPECT_TRUE(mbi->IsShareable(mbi->begin()));
+  EXPECT_TRUE(copy->IsShareable(copy->begin()));
+
+  auto s1 = mbi->Share(mbi->begin());
+  auto s2 = copy->Share(copy->begin());
+  EXPECT_EQ(s1.get(), s2.get());
+  EXPECT_EQ(s1.get(), data);
+}
+
+TEST_F(MultiBufV2Test, ShallowCopyFailsWhenAllocationExhausted) {
+  ConstMultiBufInstance mbi(allocator_);
+  auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  mbi->PushBack(std::move(chunk));
+
+  // Force allocation failure for control block allocation.
+  allocator_.Exhaust();
+  auto result = mbi->ShallowCopy();
+  EXPECT_EQ(result.status(), pw::Status::ResourceExhausted());
+
+  // Original should be unchanged and still not shareable.
+  EXPECT_FALSE(mbi->IsShareable(mbi->begin()));
+}
+
 }  // namespace
