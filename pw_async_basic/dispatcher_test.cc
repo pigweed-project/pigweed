@@ -374,7 +374,6 @@ TEST(DispatcherBasic, PostFutureTaskUpgradesToImmediate) {
 
 TEST(DispatcherBasic, PostImmediateTaskPreservesPosition) {
   BasicDispatcher dispatcher;
-  Thread work_thread(thread::stl::Options(), dispatcher);
 
   TestPrimitives tp;
   Task task1([&tp](Context&, Status status) {
@@ -397,6 +396,11 @@ TEST(DispatcherBasic, PostImmediateTaskPreservesPosition) {
   // immediate.
   dispatcher.Post(task1);
 
+  // Start the worker thread after posting tasks to ensure task1 is still
+  // pending in the queue when re-posted, avoiding a race condition where
+  // task1 executes before the re-post occurs.
+  Thread work_thread(thread::stl::Options(), dispatcher);
+
   tp.notification.acquire();
   dispatcher.RequestStop();
   work_thread.join();
@@ -406,7 +410,6 @@ TEST(DispatcherBasic, PostImmediateTaskPreservesPosition) {
 
 TEST(DispatcherBasic, PostAtMovesTaskToFuture) {
   BasicDispatcher dispatcher;
-  Thread work_thread(thread::stl::Options(), dispatcher);
 
   TestPrimitives tp;
   Task task([&tp](Context&, Status status) {
@@ -427,6 +430,9 @@ TEST(DispatcherBasic, PostAtMovesTaskToFuture) {
 
   EXPECT_TRUE(dispatcher.Cancel(task));
 
+  // Start the worker thread after setup to ensure the task is still pending
+  // when rescheduled and cancelled.
+  Thread work_thread(thread::stl::Options(), dispatcher);
   dispatcher.RequestStop();
   work_thread.join();
   EXPECT_EQ(tp.count, 0);  // Should not have run
