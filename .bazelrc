@@ -96,7 +96,6 @@ common --experimental_propagate_custom_flag=@@rules_rust+//rust/settings:error_f
 # ==================
 # Enable clippy lints
 build:rust_lint --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
-build:rust_lint --output_groups=+clippy_checks
 
 # LINT.IfChange
 build:rust_lint --@rules_rust//rust/settings:clippy_flags="\
@@ -135,7 +134,7 @@ build:rust_lint --@rules_rust//rust/settings:clippy_flags="\
 # Enforce rustfmt formatting
 build:rust_lint --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
 build:rust_lint --@rules_rust//rust/settings:rustfmt.toml=//:rustfmt.toml
-build:rust_lint --output_groups=+rustfmt_checks
+build:rust_lint --output_groups=clippy_checks,rustfmt_checks
 
 # Java related flags
 # ==================

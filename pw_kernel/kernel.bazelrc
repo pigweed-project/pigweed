@@ -25,7 +25,6 @@ test:k_common --platform_suffix=test
 # ==================
 # Enable clippy lints
 build:k_lint --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
-build:k_lint --output_groups=+clippy_checks
 # LINT.IfChange
 build:k_lint --@rules_rust//rust/settings:clippy_flags="\
 -Dclippy::alloc_instead_of_core,\
@@ -70,7 +69,9 @@ build:k_lint --@rules_rust//rust/settings:clippy_flags="\
 # Enforce rustfmt formatting
 build:k_lint --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
 build:k_lint --@rules_rust//rust/settings:rustfmt.toml=//pw_kernel:rustfmt.toml
-build:k_lint --output_groups=+rustfmt_checks
+
+# Only run clippy and fmt checks instead of the whole build when doing linting.
+build:k_lint --output_groups=clippy_checks,rustfmt_checks
 
 # Host target configuration
 # ===========================
