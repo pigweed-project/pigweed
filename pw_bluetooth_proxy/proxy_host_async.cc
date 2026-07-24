@@ -16,6 +16,8 @@
 
 #if PW_BLUETOOTH_PROXY_ASYNC != 0
 
+#include <mutex>
+
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/internal/proxy_host_async.h"
 #include "pw_bluetooth_proxy/proxy_host.h"
@@ -363,6 +365,9 @@ void ProxyHostImpl::SendH4PacketFromController(
 }
 
 uint16_t ProxyHostImpl::BasicSendAndReceive(BasicRequest&& request) const {
+  // Lock guard is necessary to prevent multiple client threads from racing and
+  // getting each other's response on the shared channel.
+  std::lock_guard lock(basic_send_receive_mutex_);
   if (!basic_request_sender_.BlockingSend(dispatcher(), std::move(request))
            .ok()) {
     return 0;
@@ -414,6 +419,9 @@ uint16_t ProxyHostImpl::DoHandleRequest(BasicRequest&& request) {
 
 Result<ProxyHostImpl::ClientChannel> ProxyHostImpl::ChannelSendAndReceive(
     ChannelRequest&& request) const {
+  // Lock guard is necessary to prevent multiple client threads from racing and
+  // getting each other's response on the shared channel.
+  std::lock_guard lock(channel_send_receive_mutex_);
   PW_TRY(
       channel_request_sender_.BlockingSend(dispatcher(), std::move(request)));
   auto response = channel_response_receiver_.BlockingReceive(dispatcher());

@@ -34,6 +34,7 @@
 #include "pw_function/function.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_status/status.h"
+#include "pw_sync/mutex.h"
 
 namespace pw::bluetooth::proxy {
 
@@ -251,6 +252,12 @@ class ProxyHostImpl {
   async2::ChannelStorage<H4PacketWithHci, 1> controller_packet_storage_;
   mutable async2::Sender<H4PacketWithHci> controller_packet_sender_;
   H4Handler<H4PacketWithHci> controller_packet_task_;
+
+  // Serializes off-dispatcher callers; the SPSC request/response channels
+  // below have no request/response pairing, so concurrent callers must be
+  // mutually excluded around the {BlockingSend; BlockingReceive} pair.
+  mutable sync::Mutex basic_send_receive_mutex_;
+  mutable sync::Mutex channel_send_receive_mutex_;
 
   // Channels to request proxy details.
   async2::ChannelStorage<BasicRequest, 1> basic_request_storage_;

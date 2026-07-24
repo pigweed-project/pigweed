@@ -22,6 +22,7 @@
 #include <span>
 
 #include "pw_allocator/libc_allocator.h"
+#include "pw_allocator/synchronized_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
 #include "pw_bluetooth/emboss_util.h"
@@ -6200,5 +6201,157 @@ TEST_F(AclFragTest, UnhandledRecombinedPduBeforeMaxLeAclLengthKnown) {
   }
 }
 
+#if PW_BLUETOOTH_PROXY_ASYNC != 0
+
+class AsyncConcurrencyTest : public ProxyHostTest {};
+
+// Verifies that concurrent calls to ProxyHostImpl::BasicSendAndReceive from
+// multiple off-dispatcher threads are properly serialized by
+// basic_send_receive_mutex_, preventing cross-delivery of responses on the
+// shared capacity-1 SPSC channels.
+//
+// Two off-dispatcher threads concurrently call:
+//   T1: HasSendLeAclCapability()    -- ground truth: true
+//   T2: HasSendBrEdrAclCapability() -- ground truth: false
+//
+// Without mutex serialization around the send/receive pairs, responses could be
+// cross-delivered, causing T1 to observe false or T2 to observe true.
+TEST_F(AsyncConcurrencyTest,
+       ConcurrentBasicRequestsDoNotCrossDeliverResponses) {
+  allocator::test::AllocatorForTest<8192> test_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> allocator(test_allocator);
+
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      /*le_acl_credits_to_reserve=*/5,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      &allocator);
+
+  // Start the dispatcher on its own thread to ensure subsequent ProxyHost API
+  // calls from this thread and worker threads are off-dispatcher.
+  StartDispatcherOnNewThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 5));
+
+  // Check the ground truth sequentially first to ensure they succeed when not
+  // racing.
+  ASSERT_TRUE(proxy.HasSendLeAclCapability());
+  ASSERT_FALSE(proxy.HasSendBrEdrAclCapability());
+
+  static constexpr int kIterations = 2000;
+
+  struct {
+    ProxyHost* proxy;
+    std::atomic<int> le_wrong_count{0};
+    std::atomic<int> bredr_wrong_count{0};
+    std::atomic<bool> stop{false};
+  } capture;
+  capture.proxy = &proxy;
+
+  thread::test::TestThreadContext context1;
+  thread::test::TestThreadContext context2;
+
+  Thread thread1(context1.options(), [&capture] {
+    for (int i = 0; i < kIterations && !capture.stop.load(); ++i) {
+      if (!capture.proxy->HasSendLeAclCapability()) {
+        capture.le_wrong_count.fetch_add(1);
+        capture.stop.store(true);
+      }
+    }
+  });
+
+  Thread thread2(context2.options(), [&capture] {
+    for (int i = 0; i < kIterations && !capture.stop.load(); ++i) {
+      if (capture.proxy->HasSendBrEdrAclCapability()) {
+        capture.bredr_wrong_count.fetch_add(1);
+        capture.stop.store(true);
+      }
+    }
+  });
+
+  thread1.join();
+  thread2.join();
+
+  // Verify that no responses are cross-delivered between concurrent callers.
+  EXPECT_EQ(capture.le_wrong_count.load(), 0);
+  EXPECT_EQ(capture.bredr_wrong_count.load(), 0);
+
+  JoinDispatcherThread();
+}
+
+// Verifies that concurrent calls to ProxyHostImpl::ChannelSendAndReceive from
+// multiple off-dispatcher threads are properly serialized by
+// channel_send_receive_mutex_, preventing cross-delivery of responses on the
+// shared SPSC channels and avoiding variant access errors when unwrapping
+// ClientChannel responses.
+TEST_F(AsyncConcurrencyTest,
+       ConcurrentChannelRequestsDoNotCrossDeliverResponses) {
+  allocator::test::AllocatorForTest<8192> test_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> allocator(test_allocator);
+
+  ProxyHost proxy(
+      /*send_to_host_fn=*/[](H4PacketWithHci&&) {},
+      /*send_to_controller_fn=*/[](H4PacketWithH4&&) {},
+      /*le_acl_credits_to_reserve=*/5,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      &allocator);
+
+  StartDispatcherOnNewThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 5));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, 0x0111, emboss::StatusCode::SUCCESS));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, 0x0222, emboss::StatusCode::SUCCESS));
+
+  static constexpr int kIterations = 2000;
+
+  using TestClassPtr = decltype(this);
+  struct {
+    TestClassPtr test;
+    ProxyHost* proxy;
+    std::atomic<int> basic_wrong_count{0};
+    std::atomic<int> gatt_wrong_count{0};
+    std::atomic<bool> stop{false};
+  } capture;
+  capture.test = this;
+  capture.proxy = &proxy;
+
+  thread::test::TestThreadContext context1;
+  thread::test::TestThreadContext context2;
+
+  Thread thread1(context1.options(), [&capture] {
+    for (int i = 0; i < kIterations && !capture.stop.load(); ++i) {
+      auto res = capture.test->BuildBasicL2capChannelWithResult(
+          *capture.proxy, BasicL2capParameters{.handle = 0x0111});
+      if (!res.ok()) {
+        capture.basic_wrong_count.fetch_add(1);
+        capture.stop.store(true);
+      }
+    }
+  });
+
+  Thread thread2(context2.options(), [&capture] {
+    for (int i = 0; i < kIterations && !capture.stop.load(); ++i) {
+      auto res = capture.test->BuildGattNotifyChannelWithResult(
+          *capture.proxy, GattNotifyChannelParameters{.handle = 0x0222});
+      if (!res.ok()) {
+        capture.gatt_wrong_count.fetch_add(1);
+        capture.stop.store(true);
+      }
+    }
+  });
+
+  thread1.join();
+  thread2.join();
+
+  EXPECT_EQ(capture.basic_wrong_count.load(), 0);
+  EXPECT_EQ(capture.gatt_wrong_count.load(), 0);
+
+  JoinDispatcherThread();
+}
+
+#endif  // PW_BLUETOOTH_PROXY_ASYNC != 0
 }  // namespace
 }  // namespace pw::bluetooth::proxy
