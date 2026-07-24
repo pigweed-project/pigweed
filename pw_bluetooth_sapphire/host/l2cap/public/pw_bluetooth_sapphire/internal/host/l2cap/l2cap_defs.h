@@ -152,6 +152,9 @@ static constexpr uint16_t kMaxOutboundPduPayloadSize = std::numeric_limits<uint1
                                                        sizeof(internal::EnhancedControlField) -
                                                        sizeof(FrameCheckSequence);
 
+// Number of credits given to the peer for peer-to-local L2CAP LE CoC transmission.
+inline constexpr uint16_t kLocalRxCredits = 64;
+
 // Channel configuration option type field (Core Spec v5.1, Vol 3, Part A, Section 5):
 enum class OptionType : uint8_t {
   kMTU = 0x01,
@@ -546,4 +549,3 @@ struct LEFlowControlCreditParams {
 } __attribute__((packed));
 
 }  // namespace bt::l2cap
-

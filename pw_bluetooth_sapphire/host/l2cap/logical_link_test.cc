@@ -298,14 +298,14 @@ TEST_F(LogicalLinkTest, OpensLeDynamicChannel) {
   transport()->acl_data_channel()->SetDataRxHandler(
       fit::bind_member<&LogicalLink::HandleRxPacket>(link()));
 
-  const auto req =
-      l2cap::testing::AclLeCreditBasedConnectionReq(1,
-                                                    kConnHandle,
-                                                    kPsm,
-                                                    kFirstDynamicChannelId,
-                                                    kDefaultMTU,
-                                                    kMaxInboundPduPayloadSize,
-                                                    /*credits=*/0);
+  const auto req = l2cap::testing::AclLeCreditBasedConnectionReq(
+      1,
+      kConnHandle,
+      kPsm,
+      kFirstDynamicChannelId,
+      kDefaultMTU,
+      kMaxInboundPduPayloadSize,
+      /*credits=*/kLocalRxCredits);
   const auto rsp = l2cap::testing::AclLeCreditBasedConnectionRsp(
       /*id=*/1,
       /*link_handle=*/kConnHandle,

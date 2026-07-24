@@ -282,13 +282,13 @@ TEST_F(LeDynamicChannelTest, OpenOutboundDefaultParametersCloseOutbound) {
       .src_cid = DynamicCid(),
       .mtu = kDefaultMTU,
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = DynamicCid(),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kSuccess,
   };
   static constexpr DisconnectionRequestPayload kDisconnReqPayload{
@@ -309,7 +309,8 @@ TEST_F(LeDynamicChannelTest, OpenOutboundDefaultParametersCloseOutbound) {
       kDefaultMTU,
       kLeConnRspPayload.mtu,
       kLeConnRspPayload.mps,
-      kLeConnRspPayload.initial_credits);
+      kLeConnRspPayload.initial_credits,
+      kLocalRxCredits);
   ChannelInfo actual_info = chan->info();
 
   EXPECT_EQ(expected_info.mode, actual_info.mode);
@@ -341,13 +342,13 @@ TEST_F(LeDynamicChannelTest, OpenOutboundSpecificParametersCloseOutbound) {
       .src_cid = DynamicCid(),
       .mtu = kChannelParams.max_rx_sdu_size.value_or(0),
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = DynamicCid(),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kSuccess,
   };
   static constexpr DisconnectionRequestPayload kDisconnReqPayload{
@@ -368,7 +369,8 @@ TEST_F(LeDynamicChannelTest, OpenOutboundSpecificParametersCloseOutbound) {
       *kChannelParams.max_rx_sdu_size,
       kLeConnRspPayload.mtu,
       kLeConnRspPayload.mps,
-      kLeConnRspPayload.initial_credits);
+      kLeConnRspPayload.initial_credits,
+      kLocalRxCredits);
   ChannelInfo actual_info = chan->info();
 
   EXPECT_EQ(expected_info.mode, actual_info.mode);
@@ -400,13 +402,13 @@ TEST_F(LeDynamicChannelTest, OpenOutboundBadChannel) {
       .src_cid = DynamicCid(),
       .mtu = kDefaultMTU,
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = DynamicCid(-1),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kSuccess,
   };
 
@@ -428,13 +430,13 @@ TEST_F(LeDynamicChannelTest, OpenOutboundRejected) {
       .src_cid = DynamicCid(),
       .mtu = kDefaultMTU,
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = DynamicCid(),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kSuccess,
   };
 
@@ -458,13 +460,13 @@ TEST_F(LeDynamicChannelTest, OpenOutboundPsmNotSupported) {
       .src_cid = DynamicCid(),
       .mtu = kDefaultMTU,
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = DynamicCid(),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kPsmNotSupported,
   };
 
@@ -493,7 +495,7 @@ TEST_F(LeDynamicChannelTest, OpenInboundDefaultParamsCloseInbound) {
       .dst_cid = DynamicCid(),
       .mtu = kDefaultMTU,
       .mps = kMaxInboundPduPayloadSize,
-      .initial_credits = 0x0000,
+      .initial_credits = kLocalRxCredits,
       .result = LECreditBasedConnectionResult::kSuccess,
   };
   static constexpr DisconnectionRequestPayload kDisconnReqPayload{
@@ -517,7 +519,8 @@ TEST_F(LeDynamicChannelTest, OpenInboundDefaultParamsCloseInbound) {
       kLeConnRspPayload.mtu,
       kLeConnReqPayload.mtu,
       kLeConnReqPayload.mps,
-      kLeConnReqPayload.initial_credits);
+      kLeConnReqPayload.initial_credits,
+      kLocalRxCredits);
   ChannelInfo actual_info = (*channel)->info();
 
   EXPECT_EQ(expected_info.mode, actual_info.mode);
@@ -565,7 +568,7 @@ TEST_F(LeDynamicChannelTest, OpenInboundBadChannel) {
       .src_cid = DynamicCid(-1),
       .mtu = 0x0064,
       .mps = 0x0032,
-      .initial_credits = 0x0050,
+      .initial_credits = kLocalRxCredits,
   };
   static constexpr LECreditBasedConnectionResponsePayload kLeConnRspPayload{
       .dst_cid = kInvalidChannelId,
@@ -654,7 +657,7 @@ TEST_F(LeDynamicChannelTest, OpenOutboundUnacceptableParameters) {
         .src_cid = DynamicCid(),
         .mtu = kDefaultMTU,
         .mps = kMaxInboundPduPayloadSize,
-        .initial_credits = 0,
+        .initial_credits = kLocalRxCredits,
     };
     LECreditBasedConnectionResponsePayload rsp_payload{
         .dst_cid = DynamicCid(),

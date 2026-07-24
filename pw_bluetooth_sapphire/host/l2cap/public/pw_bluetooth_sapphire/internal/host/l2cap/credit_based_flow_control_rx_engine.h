@@ -31,9 +31,12 @@ class CreditBasedFlowControlRxEngine final : public RxEngine {
   using FailureCallback = fit::callback<void()>;
   // Callback to invoke when credits should be returned to the transmitting end
   // of the connection.
-  using ReturnCreditsCallback = fit::callback<void(uint16_t credits)>;
+  using ReturnCreditsCallback = fit::function<void(uint16_t credits)>;
 
-  explicit CreditBasedFlowControlRxEngine(FailureCallback failure_callback,
+  explicit CreditBasedFlowControlRxEngine(uint16_t max_mtu,
+                                          uint16_t max_mps,
+                                          uint16_t initial_credits,
+                                          FailureCallback failure_callback,
                                           ReturnCreditsCallback return_credits);
   ~CreditBasedFlowControlRxEngine() override = default;
 
@@ -43,6 +46,10 @@ class CreditBasedFlowControlRxEngine final : public RxEngine {
   bool IsQueueEmpty() override { return next_sdu_ == nullptr; }
 
  private:
+  uint16_t max_mtu_;
+  uint16_t max_mps_;
+  uint16_t peer_credits_;
+
   FailureCallback failure_callback_;
   ReturnCreditsCallback return_credits_callback_;
 

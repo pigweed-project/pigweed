@@ -16,6 +16,8 @@
 
 #include <pw_bluetooth/l2cap_frames.emb.h>
 
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
+
 namespace bt::l2cap::internal {
 
 namespace emboss = pw::bluetooth::emboss;
@@ -23,9 +25,15 @@ constexpr auto kSduHeaderSize =
     pw::bluetooth::emboss::KFrameSduHeader::IntrinsicSizeInBytes();
 
 CreditBasedFlowControlRxEngine::CreditBasedFlowControlRxEngine(
+    uint16_t max_mtu,
+    uint16_t max_mps,
+    uint16_t initial_credits,
     FailureCallback failure_callback,
     ReturnCreditsCallback return_credits_callback)
-    : failure_callback_(std::move(failure_callback)),
+    : max_mtu_(max_mtu),
+      max_mps_(max_mps),
+      peer_credits_(initial_credits),
+      failure_callback_(std::move(failure_callback)),
       return_credits_callback_(std::move(return_credits_callback)) {}
 
 ByteBufferPtr CreditBasedFlowControlRxEngine::ProcessPdu(PDU pdu) {
@@ -34,8 +42,27 @@ ByteBufferPtr CreditBasedFlowControlRxEngine::ProcessPdu(PDU pdu) {
     return nullptr;
   }
 
+  // Peer must have credits to send PDUs.
+  if (peer_credits_ == 0) {
+    bt_log(WARN, "l2cap", "Peer exceeded allowed credits; dropping PDU");
+    OnFailure();
+    return nullptr;
+  }
+  peer_credits_--;
+
   // Every PDU consumes a credit.
   ++current_sdu_credits_;
+
+  // Negotiated MPS limit must be enforced.
+  if (pdu.length() > max_mps_) {
+    bt_log(WARN,
+           "l2cap",
+           "PDU length (%u) exceeds negotiated MPS (%u); dropping PDU",
+           pdu.length(),
+           max_mps_);
+    OnFailure();
+    return nullptr;
+  }
 
   size_t sdu_offset = 0;
   if (!next_sdu_) {
@@ -51,6 +78,17 @@ ByteBufferPtr CreditBasedFlowControlRxEngine::ProcessPdu(PDU pdu) {
     pdu.Copy(&sdu_size_buffer, 0, kSduHeaderSize);
     auto sdu_size =
         emboss::MakeKFrameSduHeaderView(&sdu_size_buffer).sdu_length().Read();
+
+    // SDU size must not exceed negotiated MTU.
+    if (sdu_size > max_mtu_) {
+      bt_log(WARN,
+             "l2cap",
+             "SDU size (%u) exceeds negotiated MTU (%u); dropping PDU",
+             sdu_size,
+             max_mtu_);
+      OnFailure();
+      return nullptr;
+    }
 
     next_sdu_ = std::make_unique<DynamicByteBuffer>(sdu_size);
 
@@ -80,16 +118,20 @@ ByteBufferPtr CreditBasedFlowControlRxEngine::ProcessPdu(PDU pdu) {
 void CreditBasedFlowControlRxEngine::AcknowledgeRead() {
   PW_CHECK(!unacked_read_credits_.empty(),
            "Acknowledgement of non-existing read.");
-  return_credits_callback_(unacked_read_credits_.front());
+  const uint16_t credits_to_return = unacked_read_credits_.front();
+  peer_credits_ += credits_to_return;
   unacked_read_credits_.pop_front();
+  return_credits_callback_(credits_to_return);
 }
 
 void CreditBasedFlowControlRxEngine::OnFailure() {
-  failure_callback_();
   valid_bytes_ = 0;
   next_sdu_ = nullptr;
-  unacked_read_credits_ = {};
   current_sdu_credits_ = 0;
+  if (failure_callback_) {
+    auto cb = std::move(failure_callback_);
+    cb();
+  }
 }
 
 }  // namespace bt::l2cap::internal

@@ -45,6 +45,9 @@ class CreditBasedFlowControlRxEngineTest : public ::testing::Test {
   size_t failure_callback_count_ = 0;
   uint64_t total_credits_returned_ = 0;
   std::unique_ptr<Engine> engine_ = std::make_unique<Engine>(
+      /*max_mtu=*/1000,
+      /*max_mps=*/1000,
+      /*initial_credits=*/10,
       [this] { ++failure_callback_count_; },
       [this](uint16_t credits) { total_credits_returned_ += credits; });
 };
@@ -160,6 +163,115 @@ TEST_F(CreditBasedFlowControlRxEngineTest, FailSduSmallerThanPayloadSegmented) {
 TEST_F(CreditBasedFlowControlRxEngineTest, InitialFrameMissingSduSize) {
   const ByteBufferPtr sdu = ProcessPayload(StaticByteBuffer(0));
   EXPECT_FALSE(sdu);
+  EXPECT_EQ(1u, failure_callback_count());
+}
+
+// FOOOOOOOOOOOOOOOOOOOOOO
+
+TEST(CreditBasedFlowControlRxEngineStandaloneTest,
+     FailureCallbackSynchronouslyDestroysEngine) {
+  std::unique_ptr<CreditBasedFlowControlRxEngine> rx_engine;
+
+  auto failure_cb = [&] { rx_engine.reset(); };
+
+  auto return_credits_cb = [](uint16_t) {};
+
+  rx_engine = std::make_unique<CreditBasedFlowControlRxEngine>(
+      /*max_mtu=*/1000,
+      /*max_mps=*/1000,
+      /*initial_credits=*/10,
+      std::move(failure_cb),
+      std::move(return_credits_cb));
+
+  // Deliver a PDU that triggers FailureCallback (e.g. length < 2)
+  StaticByteBuffer pdu_bytes(0);
+  PDU pdu = Fragmenter(0x0001).BuildFrame(
+      0x0001, pdu_bytes, FrameCheckSequenceOption::kNoFcs);
+
+  rx_engine->ProcessPdu(std::move(pdu));
+}
+
+TEST(CreditBasedFlowControlRxEngineStandaloneTest,
+     AcknowledgeReadSynchronouslyDestroysEngine) {
+  std::unique_ptr<CreditBasedFlowControlRxEngine> rx_engine;
+
+  auto failure_cb = [] {};
+
+  auto return_credits_cb = [&](uint16_t) { rx_engine.reset(); };
+
+  rx_engine = std::make_unique<CreditBasedFlowControlRxEngine>(
+      /*max_mtu=*/1000,
+      /*max_mps=*/1000,
+      /*initial_credits=*/10,
+      std::move(failure_cb),
+      std::move(return_credits_cb));
+
+  // Process a valid complete SDU to queue up unacked read credits.
+  // Small unsegmented SDU: SDU size field = 4, Payload = "test"
+  StaticByteBuffer payload(4, 0, 't', 'e', 's', 't');
+  PDU pdu = Fragmenter(0x0001).BuildFrame(
+      0x0001, payload, FrameCheckSequenceOption::kNoFcs);
+
+  ByteBufferPtr sdu = rx_engine->ProcessPdu(std::move(pdu));
+  ASSERT_TRUE(sdu);
+
+  // Calling AcknowledgeRead invokes return_credits_cb, which synchronously
+  // resets rx_engine.
+  rx_engine->AcknowledgeRead();
+}
+
+TEST_F(CreditBasedFlowControlRxEngineTest, SduExceedingMtuFails) {
+  // Send a PDU indicating an SDU size of 2000 bytes, which exceeds the
+  // negotiated MTU (1000). SDU size field: 2000 (0x07D0) -> 0xD0, 0x07 in
+  // little endian.
+  StaticByteBuffer payload(0xD0,
+                           0x07,  // SDU size field (2000)
+                           't',
+                           'e',
+                           's',
+                           't');
+
+  ProcessPayload(payload);
+
+  // The PDU must be rejected and trigger the failure callback because it
+  // exceeds the MTU.
+  EXPECT_EQ(1u, failure_callback_count());
+}
+
+TEST_F(CreditBasedFlowControlRxEngineTest, PduExceedingMpsFails) {
+  // Negotiated MPS is 1000.
+  // Send a PDU with length 1005 bytes (exceeding MPS).
+  DynamicByteBuffer payload(1005);
+  payload[0] = 0xE8;
+  payload[1] = 0x03;  // SDU size = 1000
+
+  EXPECT_FALSE(ProcessPayload(payload));
+  EXPECT_EQ(1u, failure_callback_count());
+}
+
+TEST_F(CreditBasedFlowControlRxEngineTest, OutOfCreditsFails) {
+  // Initial credits is 10.
+  // Send 10 valid PDUs. They should succeed.
+  const StaticByteBuffer payload(4, 0, 't', 'e', 's', 't');
+
+  for (size_t i = 0; i < 10; ++i) {
+    auto sdu = ProcessPayload(payload);
+    ASSERT_TRUE(sdu);
+    EXPECT_EQ(0u, failure_callback_count());
+  }
+
+  // Send the 11th PDU. This should fail because we have 0 credits remaining.
+  auto sdu = ProcessPayload(payload);
+  EXPECT_FALSE(sdu);
+  EXPECT_EQ(1u, failure_callback_count());
+
+  // Acknowledge the first read to return credits.
+  engine().AcknowledgeRead();
+  EXPECT_EQ(1u, total_credits_returned());
+
+  // The peer should now be able to send packets again.
+  auto sdu2 = ProcessPayload(payload);
+  ASSERT_TRUE(sdu2);
   EXPECT_EQ(1u, failure_callback_count());
 }
 

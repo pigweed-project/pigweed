@@ -209,7 +209,8 @@ LeDynamicChannel::LeDynamicChannel(DynamicChannelRegistry* registry,
       state_(InitialState(remote_cid != kInvalidChannelId)),
       local_config_(
           LeChannelConfig{.mtu = params.max_rx_sdu_size.value_or(kDefaultMTU),
-                          .mps = kMaxInboundPduPayloadSize}),
+                          .mps = kMaxInboundPduPayloadSize,
+                          .initial_credits = kLocalRxCredits}),
       remote_config_(std::nullopt),
       is_outbound_(is_outbound),
       weak_self_(this) {}
@@ -256,12 +257,13 @@ void LeDynamicChannel::Open(fit::closure open_cb) {
 
   LowEnergyCommandHandler cmd_handler(signaling_channel_,
                                       std::move(on_conn_rsp_timeout));
-  if (!cmd_handler.SendLeCreditBasedConnectionRequest(psm(),
-                                                      local_cid(),
-                                                      local_config_.mtu,
-                                                      local_config_.mps,
-                                                      0,
-                                                      on_conn_rsp)) {
+  if (!cmd_handler.SendLeCreditBasedConnectionRequest(
+          psm(),
+          local_cid(),
+          local_config_.mtu,
+          local_config_.mps,
+          local_config_.initial_credits,
+          on_conn_rsp)) {
     bt_log(ERROR,
            "l2cap-le",
            "Channel %#.4x: Failed to send Connection Request",
@@ -359,7 +361,8 @@ ChannelInfo LeDynamicChannel::info() const {
       local_config_.mtu,
       remote_config_->mtu,
       remote_config_->mps,
-      remote_config_->initial_credits);
+      remote_config_->initial_credits,
+      local_config_.initial_credits);
 }
 
 void LeDynamicChannel::OnRxLeCreditConnRsp(

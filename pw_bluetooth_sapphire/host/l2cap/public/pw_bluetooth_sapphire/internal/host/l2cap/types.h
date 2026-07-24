@@ -172,6 +172,7 @@ struct ChannelInfo {
       uint16_t max_tx_sdu_size,
       uint16_t max_tx_pdu_payload_size,
       uint16_t remote_initial_credits,
+      uint16_t local_initial_credits,
       std::optional<Psm> psm = std::nullopt) {
     return ChannelInfo(mode_in,
                        max_rx_sdu_size,
@@ -181,7 +182,8 @@ struct ChannelInfo {
                        max_tx_pdu_payload_size,
                        psm,
                        std::nullopt,
-                       remote_initial_credits);
+                       remote_initial_credits,
+                       local_initial_credits);
   }
 
   ChannelInfo(AnyChannelMode mode_in,
@@ -193,7 +195,8 @@ struct ChannelInfo {
               std::optional<Psm> psm_in = std::nullopt,
               std::optional<pw::chrono::SystemClock::duration>
                   flush_timeout_in = std::nullopt,
-              std::optional<uint16_t> remote_initial_credits_in = std::nullopt)
+              std::optional<uint16_t> remote_initial_credits_in = std::nullopt,
+              std::optional<uint16_t> local_initial_credits_in = std::nullopt)
       : mode(mode_in),
         max_rx_sdu_size(max_rx_sdu_size_in),
         max_tx_sdu_size(max_tx_sdu_size_in),
@@ -202,7 +205,8 @@ struct ChannelInfo {
         max_tx_pdu_payload_size(max_tx_pdu_payload_size_in),
         psm(psm_in),
         flush_timeout(flush_timeout_in),
-        remote_initial_credits(remote_initial_credits_in) {}
+        remote_initial_credits(remote_initial_credits_in),
+        local_initial_credits(local_initial_credits_in) {}
 
   AnyChannelMode mode;
   uint16_t max_rx_sdu_size;
@@ -224,6 +228,7 @@ struct ChannelInfo {
 
   // Only present for credit-based flow-control channels.
   std::optional<uint16_t> remote_initial_credits;
+  std::optional<uint16_t> local_initial_credits;
 };
 
 // Data stored for services registered by higher layers.

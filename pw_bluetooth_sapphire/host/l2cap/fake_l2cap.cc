@@ -218,7 +218,8 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle,
         max_rx_sdu_size,
         l2cap::kDefaultMTU,
         l2cap::kMaxInboundPduPayloadSize,
-        /*remote_initial_credits*/ 0);
+        /*remote_initial_credits=*/0,
+        /*local_initial_credits=*/l2cap::kLocalRxCredits);
   }
 
   auto fake_chan = OpenFakeChannel(

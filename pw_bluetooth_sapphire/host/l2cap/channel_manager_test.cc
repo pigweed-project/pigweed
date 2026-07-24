@@ -4918,14 +4918,14 @@ TEST_F(ChannelManagerMockAclChannelTest,
       .flush_timeout = std::nullopt,
   };
 
-  const auto req =
-      l2cap::testing::AclLeCreditBasedConnectionReq(1,
-                                                    kTestHandle1,
-                                                    kPsm,
-                                                    kFirstDynamicChannelId,
-                                                    kDefaultMTU,
-                                                    kMaxInboundPduPayloadSize,
-                                                    /*credits=*/0);
+  const auto req = l2cap::testing::AclLeCreditBasedConnectionReq(
+      1,
+      kTestHandle1,
+      kPsm,
+      kFirstDynamicChannelId,
+      kDefaultMTU,
+      kMaxInboundPduPayloadSize,
+      /*credits=*/kLocalRxCredits);
   EXPECT_ACL_PACKET_OUT_(req, kHighPriority);
 
   WeakPtr<Channel> channel;
