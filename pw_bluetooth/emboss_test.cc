@@ -644,6 +644,11 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
       0x00   // Volume (0%)
   };
 
+  auto view_vendor = emboss::MakeAvrcpVendorDependentPacketView(&volume_cmd);
+  ASSERT_TRUE(view_vendor.Ok());
+  EXPECT_TRUE(view_vendor.IsComplete());
+  EXPECT_EQ(view_vendor.avrcp_header().pdu_id().Read(), 0x50);
+
   auto view1 = emboss::MakeAvrcpVolumeControlPacketView(&volume_cmd);
   ASSERT_TRUE(view1.Ok());
   EXPECT_TRUE(view1.IsComplete());
@@ -664,7 +669,7 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
   ASSERT_TRUE(view1.absolute_volume().Ok());
   EXPECT_EQ(view1.absolute_volume().Read(), 0);
   EXPECT_FALSE(view1.event_id().Ok());
-  EXPECT_FALSE(view1.changed_volume().Ok());
+  EXPECT_FALSE(view1.volume().Ok());
 
   // 2. SetAbsoluteVolume Response (ACCEPTED)
   std::array<uint8_t, 14> volume_resp = {
@@ -740,9 +745,8 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
   EXPECT_EQ(view2.parameter_length().Read(), 5);
   ASSERT_TRUE(view2.event_id().Ok());
   EXPECT_EQ(view2.event_id().Read(), 0x0D);
-  ASSERT_TRUE(view2.playback_interval().Ok());
-  EXPECT_EQ(view2.playback_interval().Read(), 0u);
-  EXPECT_FALSE(view2.changed_volume().Ok());
+  EXPECT_FALSE(view2.playback_interval().Ok());
+  EXPECT_FALSE(view2.volume().Ok());
   EXPECT_FALSE(view2.absolute_volume().Ok());
 
   // 4. RegisterNotification Interim Response
@@ -781,11 +785,11 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
   EXPECT_EQ(view_interim.parameter_length().Read(), 2);
   ASSERT_TRUE(view_interim.event_id().Ok());
   EXPECT_EQ(view_interim.event_id().Read(), 0x0D);
-  ASSERT_TRUE(view_interim.changed_volume().Ok());
-  EXPECT_EQ(view_interim.changed_volume().Read(), 0x40);
+  ASSERT_TRUE(view_interim.volume().Ok());
+  EXPECT_EQ(view_interim.volume().Read(), 0x40);
   EXPECT_FALSE(view_interim.playback_interval().Ok());
 
-  // 5. RegisterNotification Changed Response
+  // 5. RegisterNotification Changed Response (Volume)
   std::array<uint8_t, 15> volume_notify_changed_resp = {
       0x32,  // Transaction Label (3) | Packet Type (0, Single) | C/R (1,
              // Response)
@@ -821,12 +825,40 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
   EXPECT_EQ(view_changed.parameter_length().Read(), 2);
   ASSERT_TRUE(view_changed.event_id().Ok());
   EXPECT_EQ(view_changed.event_id().Read(), 0x0D);
-  ASSERT_TRUE(view_changed.changed_volume().Ok());
-  EXPECT_EQ(view_changed.changed_volume().Read(), 0x48);
-  EXPECT_FALSE(view_changed.playback_interval().Ok());
-  EXPECT_FALSE(view_changed.absolute_volume().Ok());
+  ASSERT_TRUE(view_changed.volume().Ok());
+  EXPECT_EQ(view_changed.volume().Read(), 0x48);
 
-  // 6. Insufficient buffer size test
+  // 6. RegisterNotification Changed Response (PlaybackStatus)
+  std::array<uint8_t, 15> status_notify_changed_resp = {
+      0x32,  // Transaction Label (3) | Packet Type (0, Single) | C/R (1,
+             // Response)
+      0x11,  // Profile ID (0x110E, AVRCP)
+      0x0E,
+      0x0d,  // AV/C Header: response (0x0d, CHANGED)
+      0x48,  // Subunit type (9, Panel) & Subunit ID (0)
+      0x00,  // Opcode (0x00, Vendor Dependent)
+      0x00,  // Company ID (0x001958, Bluetooth SIG)
+      0x19,
+      0x58,
+      0x31,  // PDU ID (0x31, RegisterNotification)
+      0x00,  // Packet Type
+      0x00,  // Parameter Length (MSB)
+      0x02,  // Parameter Length (LSB)
+      0x01,  // Event ID (0x01, PlaybackStatusChanged)
+      0x01,  // Status (0x01, PLAYING)
+  };
+
+  auto view_status_changed =
+      emboss::MakeAvrcpVolumeControlPacketView(&status_notify_changed_resp);
+  ASSERT_TRUE(view_status_changed.Ok());
+  EXPECT_TRUE(view_status_changed.IsComplete());
+  EXPECT_EQ(view_status_changed.event_id().Read(), 0x01);
+  EXPECT_FALSE(view_status_changed.volume().Ok());
+  ASSERT_TRUE(view_status_changed.playback_status().Ok());
+  EXPECT_EQ(view_status_changed.playback_status().Read(),
+            emboss::AvrcpPlayStatus::PLAYING);
+
+  // 7. Insufficient buffer size test
   std::array<uint8_t, 10> small_buffer = {
       0x00, 0x11, 0x0E, 0x00, 0x48, 0x00, 0x00, 0x19, 0x58, 0x31};
   auto view4 = emboss::MakeAvrcpVolumeControlPacketView(&small_buffer);
