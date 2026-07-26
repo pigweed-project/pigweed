@@ -688,9 +688,9 @@ use_repo(pnpm, "pnpm")
 bazel_dep(name = "fuchsia_infra", dev_dependency = True)
 git_override(
     module_name = "fuchsia_infra",
-    # ROLL: Warning: this entry is automatically updated by
-    # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed/tools.roll/fuchsia-infra-bazel-rules-roller
-    commit = "70f524749fa4048da218479903ffb1e9ca123ae4",
+    # ROLL: Warning: this is automatically updated by
+    # ROLL: https://cr-buildbucket.appspot.com/build/8675251823933831217
+    commit = "07bb99a86961d200a29c35f051139ddbbdce6024",
     remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
 )
 
