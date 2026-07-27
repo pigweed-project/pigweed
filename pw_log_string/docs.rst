@@ -6,7 +6,7 @@ pw_log_string
 .. pigweed-module::
    :name: pw_log_string
 
-``pw_log_string`` is a partial backend for ``pw_log``. This backend fowards the
+``pw_log_string`` is a partial backend for ``pw_log``. This backend forwards the
 ``PW_LOG_*`` macros to the ``pw_log_string:handler`` facade which is backed by
 a C API. ``pw_log_string:handler`` does not implement the full C API, leaving
 projects to provide their own implementation of

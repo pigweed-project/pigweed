@@ -36,10 +36,10 @@ another module's facade.
 
 * :ref:`module-pw_log` is a module that exposes a facade. The macros listed in
   :ref:`module-pw_log-macros` represent the API of the module.
-* The ``#include "pw_log/log_backend.h"`` line in
+* The ``#include "pw_log_backend/log_backend.h"`` line in
   :cs:`pw_log/public/pw_log/log.h` represents the facade contract of ``pw_log``.
 * :ref:`module-pw_log_string` is a backend module, It implements the
-  ``pw_log/log_backend.h`` facade contract in
+  ``pw_log_backend/log_backend.h`` facade contract in
   :cs:`pw_log_string/public_overrides/pw_log_backend/log_backend.h`.
 * In the build system there is a variable of some sort that specifies the
   backend. In Bazel there's a `label
