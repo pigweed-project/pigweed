@@ -360,6 +360,23 @@ class BaseFutureList {
 
   bool empty() const { return list_.empty(); }
 
+  size_t size() const;
+
+  using iterator = IntrusiveForwardList<FutureCore>::iterator;
+  using const_iterator = IntrusiveForwardList<FutureCore>::const_iterator;
+
+  iterator begin() { return list_.begin(); }
+  iterator end() { return list_.end(); }
+  const_iterator begin() const { return list_.begin(); }
+  const_iterator end() const { return list_.end(); }
+
+  iterator before_begin() { return list_.before_begin(); }
+  const_iterator before_begin() const { return list_.before_begin(); }
+
+  iterator erase_after(iterator pos) { return list_.erase_after(pos); }
+
+  FutureCore& front() { return list_.front(); }
+
   void Push(FutureCore& future) { containers::PushBackSlow(list_, future); }
 
   void PushRequireEmpty(FutureCore& future);
@@ -430,6 +447,8 @@ class CustomFutureList : public BaseFutureList {
   bool PushIfEmpty(reference future) {
     return PushIfEmpty(kGetFutureCore(future));
   }
+
+  reference front() { return *kGetFutureImpl(&BaseFutureList::front()); }
 
   pointer PopIfAvailable() {
     return kGetFutureImpl(BaseFutureList::PopIfAvailable());

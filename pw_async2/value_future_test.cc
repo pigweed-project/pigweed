@@ -178,8 +178,6 @@ TEST(ValueProvider, ResolveInPlace) {
   EXPECT_EQ(result->second, 3);
 }
 
-}  // namespace
-
 TEST(ValueProvider, Move) {
   DispatcherForTest dispatcher;
   ValueProvider<int> provider;
@@ -693,3 +691,123 @@ TEST(OptionalBroadcastValueProvider, MoveAssignmentCancelsExisting) {
   ASSERT_TRUE(result_src2.has_value());
   EXPECT_EQ(*result_src2, 123);
 }
+
+class DerivedTestFuture : public ValueFuture<pw::Status> {
+ public:
+  DerivedTestFuture(ValueFuture<pw::Status>&& base, int requested_value)
+      : ValueFuture<pw::Status>(std::move(base)),
+        requested_value_(requested_value) {}
+  int requested_value() const { return requested_value_; }
+
+ private:
+  int requested_value_;
+};
+
+TEST(DerivedValueProvider, ResolveIf) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueProvider<DerivedTestFuture> provider;
+
+  constexpr int kRequestedValue = 5;
+
+  DerivedTestFuture future = provider.Get(kRequestedValue);
+  pw::Status result = pw::Status::Unknown();
+
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result, future, cx);
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result, pw::Status::Unknown());
+
+  int current_value = 1;
+  auto resolve_if_value_matches =
+      [&current_value](DerivedTestFuture& f) -> std::optional<pw::Status> {
+    if (f.requested_value() == current_value) {
+      return pw::OkStatus();
+    }
+    return std::nullopt;
+  };
+
+  for (; current_value < kRequestedValue; ++current_value) {
+    bool resolved = provider.ResolveIf(resolve_if_value_matches);
+    EXPECT_FALSE(resolved);
+    EXPECT_TRUE(dispatcher.RunUntilStalled());
+    EXPECT_EQ(result, pw::Status::Unknown());
+  }
+
+  bool resolved = provider.ResolveIf(resolve_if_value_matches);
+  EXPECT_TRUE(resolved);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result, pw::OkStatus());
+}
+
+class DerivedVoidFuture : public ValueFuture<void> {
+ public:
+  DerivedVoidFuture(ValueFuture<void>&& base, bool condition)
+      : ValueFuture<void>(std::move(base)), condition_(condition) {}
+  bool condition() const { return condition_; }
+
+ private:
+  bool condition_;
+};
+
+TEST(DerivedValueProvider, ResolveIfVoid) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueProvider<DerivedVoidFuture> provider;
+
+  DerivedVoidFuture future = provider.Get(true);
+  bool completed = false;
+
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(future, cx);
+    completed = true;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_FALSE(completed);
+
+  bool resolved =
+      provider.ResolveIf([](DerivedVoidFuture& f) { return !f.condition(); });
+  EXPECT_FALSE(resolved);
+  EXPECT_FALSE(completed);
+
+  resolved =
+      provider.ResolveIf([](DerivedVoidFuture& f) { return f.condition(); });
+  EXPECT_TRUE(resolved);
+  dispatcher.RunToCompletion();
+  EXPECT_TRUE(completed);
+}
+
+TEST(DerivedValueProvider, TryGet) {
+  pw::async2::DerivedValueProvider<DerivedTestFuture> provider;
+
+  std::optional<DerivedTestFuture> future1 = provider.TryGet(42);
+  EXPECT_TRUE(future1.has_value());
+  EXPECT_EQ(future1->requested_value(), 42);
+
+  // Second TryGet while a future is pending should return std::nullopt.
+  std::optional<DerivedTestFuture> future2 = provider.TryGet(100);
+  EXPECT_FALSE(future2.has_value());
+
+  // Resolving the pending future allows TryGet to succeed again.
+  bool resolved =
+      provider.ResolveIf([](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 42) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+  EXPECT_TRUE(resolved);
+
+  std::optional<DerivedTestFuture> future3 = provider.TryGet(100);
+  EXPECT_TRUE(future3.has_value());
+  EXPECT_EQ(future3->requested_value(), 100);
+
+  provider.Resolve(pw::OkStatus());
+}
+
+}  // namespace

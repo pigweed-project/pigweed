@@ -346,6 +346,75 @@ In practice, you would return a :cc:`VoidFuture <pw::async2::VoidFuture>` (alias
 for ``ValueFuture<void>``) from ``WaitForPress`` instead of writing a custom
 ``ButtonFuture``.
 
+Derived value futures
+=====================
+Sometimes a provider needs to inspect the specific constraints of a request
+before deciding to fulfill it (e.g., an allocator checking if the requested
+size is available). With a standard :cc:`ValueProvider <pw::async2::ValueProvider>`,
+the provider only knows that a request exists, but cannot attach additional
+information to it or safely inspect that information.
+
+To support this, Pigweed allows you to derive from :cc:`ValueFuture<T>
+<pw::async2::ValueFuture>` to add custom fields, and use
+:cc:`DerivedValueProvider<DerivedFuture> <pw::async2::DerivedValueProvider>`
+to manage them.
+
+Creating a derived future
+-------------------------
+To create a derived future, inherit from :cc:`ValueFuture<T>
+<pw::async2::ValueFuture>` and provide a constructor that accepts the base
+future by move (``ValueFuture<T>&&``) along with any custom arguments.
+
+.. code-block:: c++
+
+   class BufferFuture : public pw::async2::ValueFuture<pw::Result<pw::ByteSpan>> {
+    public:
+     BufferFuture(pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>&& base,
+                  size_t requested_size)
+         : pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>(std::move(base)),
+           requested_size_(requested_size) {}
+     size_t requested_size() const { return requested_size_; }
+
+    private:
+     size_t requested_size_;
+   };
+
+Atomic inspection and resolution with ResolveIf
+-----------------------------------------------
+The core feature of :cc:`DerivedValueProvider
+<pw::async2::DerivedValueProvider>` is the ``ResolveIf`` method.
+It allows the provider to inspect the pending future and conditionally resolve
+it atomically, preventing race conditions where a future might be cancelled
+between inspection and resolution.
+
+``ResolveIf`` takes a callback function that receives a reference to your
+derived future type. The behavior depends on whether the future produces a value:
+
+- **Value-returning futures**: The callback returns a ``std::optional<T>``.
+  If it returns a value, the future is popped and resolved with that value.
+  If it returns ``std::nullopt``, the future remains pending in the list.
+- **Void futures**: The callback returns a ``bool``. If it returns ``true``,
+  the future is popped and resolved.
+
+.. code-block:: c++
+
+   pw::async2::DerivedValueProvider<BufferFuture> provider;
+
+   // Attempt to resolve the request.
+   bool resolved = provider.ResolveIf(
+       [](BufferFuture& future) -> std::optional<pw::Result<pw::ByteSpan>> {
+         // Inspect the request parameters to decide if it can be fulfilled.
+         if (future.requested_size() <= available_memory) {
+           return Allocate(future.requested_size());
+         }
+         return std::nullopt;
+       });
+
+.. warning::
+   Since ``ResolveIf`` holds a shared async2 lock while executing the callback,
+   the callback code should be **fast and non-blocking**. Avoid slow operations
+   inside the callback if possible as they could stall running tasks.
+
 .. _module-pw_async2-futures-combinators:
 
 -----------

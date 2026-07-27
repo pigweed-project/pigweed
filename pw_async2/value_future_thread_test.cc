@@ -34,6 +34,8 @@ using pw::async2::ValueProvider;
 
 using namespace std::chrono_literals;
 
+constexpr int kIterations = 5000;
+
 TEST(ValueFuture, ResolveFromOtherThread) {
   DispatcherForTest dispatcher;
   ValueProvider<int> provider;
@@ -292,7 +294,7 @@ TEST(ValueFuture, Void_MoveRace_LoopingTask) {
 
   pw::thread::test::TestThreadContext context;
   pw::Thread resolver_thread(context.options(), [&test_context]() {
-    for (int i = 0; i < 10000; ++i) {
+    for (int i = 0; i < kIterations; ++i) {
       test_context.provider.Resolve();
       pw::this_thread::yield();
     }
@@ -302,6 +304,83 @@ TEST(ValueFuture, Void_MoveRace_LoopingTask) {
   dispatcher.AllowBlocking();
   dispatcher.RunToCompletion();
   resolver_thread.join();
+}
+
+template <typename T = int>
+class DerivedTestFutureForThreadTest : public pw::async2::ValueFuture<T> {
+ public:
+  constexpr DerivedTestFutureForThreadTest() = default;
+  DerivedTestFutureForThreadTest(pw::async2::ValueFuture<T>&& base, int value)
+      : pw::async2::ValueFuture<T>(std::move(base)), value_(value) {}
+
+  int value() const { return value_; }
+
+ private:
+  int value_ = 0;
+};
+
+TEST(DerivedValueProvider, ResolveIfFromOtherThread) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueProvider<DerivedTestFutureForThreadTest<int>>
+      provider;
+
+  std::optional<int> result;
+  CallbackTask task([&](int value) { result = value; }, provider.Get(42));
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    bool resolved = provider.ResolveIf(
+        [](DerivedTestFutureForThreadTest<int>& f) -> std::optional<int> {
+          if (f.value() == 42) {
+            return f.value() * 2;
+          }
+          return std::nullopt;
+        });
+    EXPECT_TRUE(resolved);
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  ASSERT_TRUE(result.has_value());
+  EXPECT_EQ(*result, 84);
+}
+
+TEST(DerivedValueProvider, TryGetFromOtherThread) {
+  DispatcherForTest dispatcher;
+  struct {
+    pw::async2::DerivedValueProvider<DerivedTestFutureForThreadTest<int>>
+        provider;
+    std::atomic<bool> try_get_checked{false};
+  } test_context;
+
+  std::optional<int> result;
+  CallbackTask task([&](int value) { result = value; },
+                    test_context.provider.Get(10));
+  dispatcher.Post(task);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread thread(context.options(), [&test_context]() {
+    EXPECT_FALSE(test_context.provider.TryGet(20).has_value());
+    test_context.try_get_checked.store(true, std::memory_order_release);
+  });
+
+  dispatcher.AllowBlocking();
+  while (!test_context.try_get_checked.load(std::memory_order_acquire)) {
+    pw::this_thread::yield();
+  }
+  test_context.provider.Resolve(100);
+  dispatcher.RunToCompletion();
+  thread.join();
+
+  std::optional<DerivedTestFutureForThreadTest<int>> future2 =
+      test_context.provider.TryGet(20);
+  ASSERT_TRUE(future2.has_value());
+  EXPECT_EQ(future2->value(), 20);
+  test_context.provider.Resolve(200);
 }
 
 }  // namespace

@@ -14,6 +14,8 @@
 
 #include "pw_async2/future.h"
 
+#include <iterator>
+
 #include "pw_assert/check.h"
 
 namespace pw::async2 {
@@ -37,6 +39,10 @@ FutureCore& FutureCore::operator=(FutureCore&& other) noexcept {
 
   this->replace(other);
   return *this;
+}
+
+size_t BaseFutureList::size() const {
+  return static_cast<size_t>(std::distance(list_.begin(), list_.end()));
 }
 
 void BaseFutureList::PushRequireEmpty(FutureCore& future) {

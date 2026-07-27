@@ -36,6 +36,9 @@ bool PendValueFutureCore(FutureCore& core, Context& cx)
 }  // namespace internal
 
 template <typename T>
+class ValueFuture;
+
+template <typename T>
 class ValueProvider;
 template <typename T>
 class BroadcastValueProvider;
@@ -108,6 +111,8 @@ class ValueFuture {
  private:
   friend class ValueProvider<T>;
   friend class BroadcastValueProvider<T>;
+  template <typename DerivedFuture>
+  friend class DerivedValueProvider;
 
   template <typename... Args>
   explicit ValueFuture(std::in_place_t, Args&&... args)
@@ -182,6 +187,8 @@ class ValueFuture<void> {
  private:
   friend class ValueProvider<void>;
   friend class BroadcastValueProvider<void>;
+  template <typename DerivedFuture>
+  friend class DerivedValueProvider;
 
   explicit ValueFuture(FutureState::ReadyForCompletion)
       : core_(FutureState::kReadyForCompletion) {}
@@ -360,9 +367,102 @@ class ValueProvider {
     list_.ResolveOneIfAvailable();
   }
 
- private:
+ protected:
   FutureList<&ValueFuture<T>::core_> list_
       PW_GUARDED_BY(internal::ValueProviderLock());
+};
+
+/// A generic provider that vends user-defined derived futures.
+///
+/// `DerivedValueProvider` allows attaching custom parameters to requests by
+/// using a class derived from `ValueFuture`. This enables the provider to
+/// inspect the parameters (e.g., requested size) and conditionally fulfill
+/// requests via `ResolveIf`.
+///
+/// @tparam DerivedFuture The user-defined future type. It must inherit from
+///                       `ValueFuture<T>` and provide a constructor that
+///                       accepts `ValueFuture<T>&&` as its first argument.
+template <typename DerivedFuture>
+class DerivedValueProvider final
+    : private ValueProvider<typename DerivedFuture::value_type> {
+  using T = typename DerivedFuture::value_type;
+
+  static_assert(std::is_base_of_v<ValueFuture<T>, DerivedFuture>,
+                "DerivedFuture must derive from ValueFuture");
+
+ public:
+  constexpr DerivedValueProvider() = default;
+
+  using ValueProvider<T>::has_future;
+  using ValueProvider<T>::Resolve;
+
+  /// Vends a derived future.
+  template <typename... Args>
+  DerivedFuture Get(Args&&... args) {
+    DerivedFuture future(ValueFuture<T>(FutureState::kPending),
+                         std::forward<Args>(args)...);
+    {
+      std::lock_guard lock(internal::ValueProviderLock());
+      this->list_.PushRequireEmpty(future.core_);
+    }
+    return future;
+  }
+
+  /// Vends a derived future if none is currently pending.
+  template <typename... Args>
+  std::optional<DerivedFuture> TryGet(Args&&... args) {
+    DerivedFuture future(ValueFuture<T>(FutureState::kPending),
+                         std::forward<Args>(args)...);
+    {
+      std::lock_guard lock(internal::ValueProviderLock());
+      if (!this->list_.PushIfEmpty(future.core_)) {
+        return std::nullopt;
+      }
+    }
+    return future;
+  }
+
+  /// Atomically inspects the derived future and resolves it if the callback
+  /// returns a value indicating fulfillment.
+  ///
+  /// The callback receives a reference to the `DerivedFuture` and should
+  /// return a value indicating whether the request can be fulfilled:
+  ///
+  /// - For non-void futures (producing `T`), the callback should return
+  ///   `std::optional<T>`. Returning `std::nullopt` leaves the future pending.
+  /// - For void futures, the callback should return `bool`. Returning `false`
+  ///   leaves the future pending.
+  ///
+  /// @param callback A callable (lambda, function pointer, etc.) invoked with
+  ///                 a reference to the `DerivedFuture`.
+  /// @returns `true` if the future was resolved, `false` otherwise.
+  template <typename F>
+  bool ResolveIf(F&& callback) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    if (this->list_.empty()) {
+      return false;
+    }
+
+    DerivedFuture& derived_future =
+        static_cast<DerivedFuture&>(this->list_.front());
+
+    if constexpr (std::is_void_v<T>) {
+      if (callback(derived_future)) {
+        this->list_.Pop();
+        derived_future.core_.WakeAndMarkReady();
+        return true;
+      }
+    } else {
+      auto value_to_resolve = callback(derived_future);
+      if (value_to_resolve.has_value()) {
+        this->list_.Pop();
+        derived_future.ResolveLocked(std::move(*value_to_resolve));
+        return true;
+      }
+    }
+
+    return false;
+  }
 };
 
 /// A `ValueProvider` that may or may not produce a value.
