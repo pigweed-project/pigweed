@@ -349,7 +349,7 @@ class IntrusiveForwardList {
   // Check that T is an Item in a function, since the class T will not be fully
   // defined when the IntrusiveList<T> class is instantiated.
   static constexpr void CheckItemType() {
-    using IntrusiveItemType =
+    using IntrusiveItemType [[maybe_unused]] =
         typename containers::internal::IntrusiveItem<ItemBase, T>::Type;
     static_assert(
         std::is_base_of<IntrusiveItemType, T>(),
