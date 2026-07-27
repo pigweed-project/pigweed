@@ -810,4 +810,301 @@ TEST(DerivedValueProvider, TryGet) {
   provider.Resolve(pw::OkStatus());
 }
 
+TEST(ValueListProvider, BasicFifo) {
+  DispatcherForTest dispatcher;
+  pw::async2::ValueListProvider<int> provider;
+
+  EXPECT_TRUE(provider.empty());
+  EXPECT_EQ(provider.size(), 0u);
+
+  ValueFuture<int> future1 = provider.Get();
+  ValueFuture<int> future2 = provider.Get();
+
+  EXPECT_FALSE(provider.empty());
+  EXPECT_EQ(provider.size(), 2u);
+
+  int result1 = 0;
+  FuncTask task1([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future1, cx);
+    result1 = value;
+    return Ready();
+  });
+  dispatcher.Post(task1);
+
+  int result2 = 0;
+  FuncTask task2([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future2, cx);
+    result2 = value;
+    return Ready();
+  });
+  dispatcher.Post(task2);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result1, 0);
+  EXPECT_EQ(result2, 0);
+
+  // Resolve first.
+  provider.ResolveFirst(11);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result1, 11);
+  EXPECT_EQ(result2, 0);
+  EXPECT_EQ(provider.size(), 1u);
+
+  // Resolve second.
+  provider.ResolveFirst(22);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result1, 11);
+  EXPECT_EQ(result2, 22);
+  EXPECT_TRUE(provider.empty());
+  EXPECT_EQ(provider.size(), 0u);
+}
+
+TEST(ValueListProvider, ResolveFirstMatching) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+
+  DerivedTestFuture future1 = provider.Get(100);
+  DerivedTestFuture future2 = provider.Get(10);
+
+  pw::Status result1 = pw::Status::Unknown();
+  FuncTask task1([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result1, future1, cx);
+    return Ready();
+  });
+  dispatcher.Post(task1);
+
+  pw::Status result2 = pw::Status::Unknown();
+  FuncTask task2([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result2, future2, cx);
+    return Ready();
+  });
+  dispatcher.Post(task2);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // Resolve future2 (matching 10) out of order.
+  bool resolved = provider.ResolveFirstMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 10) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_TRUE(resolved);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result1, pw::Status::Unknown());
+  EXPECT_EQ(result2, pw::OkStatus());
+  EXPECT_EQ(provider.size(), 1u);
+
+  // Now resolve the remaining future1 (matching 100).
+  resolved = provider.ResolveFirstMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 100) {
+          return pw::Status::ResourceExhausted();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_TRUE(resolved);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result1, pw::Status::ResourceExhausted());
+  EXPECT_TRUE(provider.empty());
+}
+
+TEST(ValueListProvider, ResolveAllMatching) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+
+  DerivedTestFuture future1 = provider.Get(30);
+  DerivedTestFuture future2 = provider.Get(40);
+  DerivedTestFuture future3 = provider.Get(15);
+
+  pw::Status result1 = pw::Status::Unknown();
+  FuncTask task1([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result1, future1, cx);
+    return Ready();
+  });
+  dispatcher.Post(task1);
+
+  pw::Status result2 = pw::Status::Unknown();
+  FuncTask task2([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result2, future2, cx);
+    return Ready();
+  });
+  dispatcher.Post(task2);
+
+  pw::Status result3 = pw::Status::Unknown();
+  FuncTask task3([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result3, future3, cx);
+    return Ready();
+  });
+  dispatcher.Post(task3);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // Stateful resource simulation: 50 available.
+  int available_bytes = 50;
+  size_t resolved_count = provider.ResolveAllMatching(
+      [&](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() <= available_bytes) {
+          available_bytes -= f.requested_value();
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_EQ(resolved_count, 2u);
+  EXPECT_EQ(available_bytes, 5);  // 50 - 30 (future1) - 15 (future3)
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result1, pw::OkStatus());
+  EXPECT_EQ(result2, pw::Status::Unknown());
+  EXPECT_EQ(result3, pw::OkStatus());
+  EXPECT_EQ(provider.size(), 1u);
+
+  // Clean up the remaining future.
+  provider.ResolveFirst(pw::Status::Aborted());
+  dispatcher.RunToCompletion();
+}
+
+TEST(ValueListProvider, ResolveAll) {
+  DispatcherForTest dispatcher;
+  pw::async2::ValueListProvider<int> provider;
+
+  ValueFuture<int> future1 = provider.Get();
+  ValueFuture<int> future2 = provider.Get();
+  ValueFuture<int> future3 = provider.Get();
+
+  int result1 = 0;
+  FuncTask task1([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future1, cx);
+    result1 = value;
+    return Ready();
+  });
+  dispatcher.Post(task1);
+
+  int result2 = 0;
+  FuncTask task2([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future2, cx);
+    result2 = value;
+    return Ready();
+  });
+  dispatcher.Post(task2);
+
+  int result3 = 0;
+  FuncTask task3([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future3, cx);
+    result3 = value;
+    return Ready();
+  });
+  dispatcher.Post(task3);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  provider.ResolveAll([](ValueFuture<int>&) { return 99; });
+
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result1, 99);
+  EXPECT_EQ(result2, 99);
+  EXPECT_EQ(result3, 99);
+  EXPECT_TRUE(provider.empty());
+}
+
+TEST(ValueListProvider, ResolveFirstOnEmptyList) {
+  pw::async2::ValueListProvider<int> provider;
+  EXPECT_TRUE(provider.empty());
+  provider.ResolveFirst(42);
+  provider.ResolveFirst();
+}
+
+TEST(ValueListProvider, ResolveFirstMatchingNoMatch) {
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+  DerivedTestFuture future = provider.Get(50);
+
+  bool resolved = provider.ResolveFirstMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 100) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_FALSE(resolved);
+  EXPECT_EQ(provider.size(), 1u);
+  provider.ResolveFirst(pw::OkStatus());
+}
+
+TEST(ValueListProvider, ResolveFirstMatchingMultipleMatches) {
+  DispatcherForTest dispatcher;
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+
+  DerivedTestFuture future1 = provider.Get(10);
+  DerivedTestFuture future2 = provider.Get(10);
+
+  pw::Status result1 = pw::Status::Unknown();
+  FuncTask task1([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result1, future1, cx);
+    return Ready();
+  });
+  dispatcher.Post(task1);
+
+  pw::Status result2 = pw::Status::Unknown();
+  FuncTask task2([&](Context& cx) -> Poll<> {
+    PW_AWAIT(result2, future2, cx);
+    return Ready();
+  });
+  dispatcher.Post(task2);
+
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // Two futures match 10.
+  bool resolved = provider.ResolveFirstMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 10) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_TRUE(resolved);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result1, pw::OkStatus());
+  EXPECT_EQ(result2, pw::Status::Unknown());
+  EXPECT_EQ(provider.size(), 1u);
+
+  provider.ResolveFirst(pw::OkStatus());
+  dispatcher.RunToCompletion();
+}
+
+TEST(ValueListProvider, ResolveAllMatchingNoMatch) {
+  pw::async2::DerivedValueListProvider<DerivedTestFuture> provider;
+  DerivedTestFuture future1 = provider.Get(50);
+  DerivedTestFuture future2 = provider.Get(60);
+
+  size_t count = provider.ResolveAllMatching(
+      [](DerivedTestFuture& f) -> std::optional<pw::Status> {
+        if (f.requested_value() == 100) {
+          return pw::OkStatus();
+        }
+        return std::nullopt;
+      });
+
+  EXPECT_EQ(count, 0u);
+  EXPECT_EQ(provider.size(), 2u);
+
+  provider.ResolveFirst(pw::OkStatus());
+  provider.ResolveFirst(pw::OkStatus());
+}
+
+TEST(ValueListProvider, ResolveAllOnEmptyList) {
+  pw::async2::ValueListProvider<int> provider;
+  bool invoked = false;
+  provider.ResolveAll([&](ValueFuture<int>&) {
+    invoked = true;
+    return 42;
+  });
+  EXPECT_FALSE(invoked);
+}
+
 }  // namespace

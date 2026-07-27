@@ -383,4 +383,75 @@ TEST(DerivedValueProvider, TryGetFromOtherThread) {
   test_context.provider.Resolve(200);
 }
 
+TEST(ValueListProvider, ResolveFirstFromOtherThread) {
+  DispatcherForTest dispatcher;
+  pw::async2::ValueListProvider<int> provider;
+
+  std::optional<int> result1;
+  CallbackTask task1([&](int value) { result1 = value; }, provider.Get());
+  std::optional<int> result2;
+  CallbackTask task2([&](int value) { result2 = value; }, provider.Get());
+
+  dispatcher.Post(task1);
+  dispatcher.Post(task2);
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread resolver_thread(context.options(), [&provider]() {
+    pw::this_thread::sleep_for(1ms);
+    provider.ResolveFirst(111);
+    provider.ResolveFirst(222);
+  });
+
+  dispatcher.AllowBlocking();
+  dispatcher.RunToCompletion();
+  resolver_thread.join();
+
+  ASSERT_TRUE(result1.has_value());
+  EXPECT_EQ(*result1, 111);
+  ASSERT_TRUE(result2.has_value());
+  EXPECT_EQ(*result2, 222);
+}
+
+TEST(ValueListProvider, ConcurrentGetAndResolveFirstMatching) {
+  struct {
+    pw::async2::DerivedValueListProvider<
+        DerivedTestFutureForThreadTest<pw::Status>>
+        provider;
+    std::atomic<bool> running{true};
+  } test_context;
+
+  pw::thread::test::TestThreadContext context1;
+  pw::thread::test::TestThreadContext context2;
+
+  pw::Thread getter_thread(context1.options(), [&test_context]() {
+    while (test_context.running.load(std::memory_order_relaxed)) {
+      auto f = test_context.provider.Get(42);
+      pw::this_thread::yield();
+    }
+  });
+
+  pw::Thread resolver_thread(context2.options(), [&test_context]() {
+    for (int i = 0; i < kIterations; ++i) {
+      test_context.provider.ResolveFirstMatching(
+          [](DerivedTestFutureForThreadTest<pw::Status>& f)
+              -> std::optional<pw::Status> {
+            if (f.value() == 42) {
+              return pw::OkStatus();
+            }
+            return std::nullopt;
+          });
+      pw::this_thread::yield();
+    }
+    test_context.running.store(false, std::memory_order_relaxed);
+  });
+
+  getter_thread.join();
+  resolver_thread.join();
+
+  test_context.provider.ResolveAll(
+      [](DerivedTestFutureForThreadTest<pw::Status>&) {
+        return pw::OkStatus();
+      });
+}
+
 }  // namespace

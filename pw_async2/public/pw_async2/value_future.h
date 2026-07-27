@@ -42,6 +42,12 @@ template <typename T>
 class ValueProvider;
 template <typename T>
 class BroadcastValueProvider;
+template <typename T, typename FutureType = ValueFuture<T>>
+class ValueListProvider;
+
+template <typename DerivedFuture>
+using DerivedValueListProvider =
+    ValueListProvider<typename DerivedFuture::value_type, DerivedFuture>;
 
 /// @submodule{pw_async2,futures}
 
@@ -113,6 +119,8 @@ class ValueFuture {
   friend class BroadcastValueProvider<T>;
   template <typename DerivedFuture>
   friend class DerivedValueProvider;
+  template <typename U, typename FutureType>
+  friend class ValueListProvider;
 
   template <typename... Args>
   explicit ValueFuture(std::in_place_t, Args&&... args)
@@ -189,6 +197,8 @@ class ValueFuture<void> {
   friend class BroadcastValueProvider<void>;
   template <typename DerivedFuture>
   friend class DerivedValueProvider;
+  template <typename U, typename FutureType>
+  friend class ValueListProvider;
 
   explicit ValueFuture(FutureState::ReadyForCompletion)
       : core_(FutureState::kReadyForCompletion) {}
@@ -539,6 +549,183 @@ class OptionalBroadcastValueProvider {
 
  private:
   BroadcastValueProvider<std::optional<T>> provider_;
+};
+
+/// A general purpose, multi-consumer provider that manages a list of pending
+/// futures.
+///
+/// `ValueListProvider` allows multiple distinct tasks (potentially running on
+/// different dispatchers) to register futures in a list. The provider owner
+/// can inspect, conditionally resolve, or bulk-abort pending futures from
+/// anywhere in the list.
+///
+/// @tparam T The type of value provided by the futures.
+/// @tparam FutureType The type of future vended, defaulting to
+/// `ValueFuture<T>`.
+template <typename T, typename FutureType>
+class ValueListProvider {
+ public:
+  constexpr ValueListProvider() = default;
+
+  ValueListProvider(ValueListProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    list_ = std::move(other.list_);
+  }
+
+  ValueListProvider& operator=(ValueListProvider&& other) noexcept
+      PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+    if (this != &other) {
+      std::lock_guard lock(internal::ValueProviderLock());
+      PW_ASSERT(list_.empty());  // ensure any futures were resolved
+      list_ = std::move(other.list_);
+    }
+    return *this;
+  }
+
+  ValueListProvider(const ValueListProvider&) = delete;
+  ValueListProvider& operator=(const ValueListProvider&) = delete;
+
+  ~ValueListProvider() { PW_ASSERT(list_.empty()); }
+
+  /// Vends a future and automatically registers it in the pending list.
+  template <typename... Args>
+  FutureType Get(Args&&... args) {
+    FutureType future(ValueFuture<T>(FutureState::kPending),
+                      std::forward<Args>(args)...);
+    {
+      std::lock_guard lock(internal::ValueProviderLock());
+      list_.Push(future.core_);
+    }
+    return future;
+  }
+
+  /// Returns `true` if the list contains no pending futures.
+  bool empty() const {
+    std::lock_guard lock(internal::ValueProviderLock());
+    return list_.empty();
+  }
+
+  /// Returns the number of pending futures.
+  size_t size() const {
+    std::lock_guard lock(internal::ValueProviderLock());
+    return list_.size();
+  }
+
+  /// Resolves the first (oldest) pending future in the list.
+  template <typename... Args,
+            typename U = T,
+            std::enable_if_t<!std::is_void_v<U>, int> = 0>
+  void ResolveFirst(Args&&... args) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    if (ValueFuture<T>* future = list_.PopIfAvailable(); future != nullptr) {
+      future->ResolveLocked(std::forward<Args>(args)...);
+    }
+  }
+
+  /// Resolves the first (oldest) pending future in the list.
+  template <typename U = T, std::enable_if_t<std::is_void_v<U>, int> = 0>
+  void ResolveFirst() {
+    std::lock_guard lock(internal::ValueProviderLock());
+    list_.ResolveOneIfAvailable();
+  }
+
+  /// Iterates through the list and resolves the FIRST future where the callback
+  /// returns a value (or true for void).
+  ///
+  /// @returns `true` if a future was resolved and removed, `false` otherwise.
+  template <typename F>
+  bool ResolveFirstMatching(F&& callback) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    auto previous = list_.before_begin();
+    auto current = list_.begin();
+    while (current != list_.end()) {
+      ValueFuture<T>* base_future =
+          pw::ContainerOf<&ValueFuture<T>::core_>(&(*current));
+      FutureType& future = static_cast<FutureType&>(*base_future);
+
+      if constexpr (std::is_void_v<T>) {
+        if (callback(future)) {
+          list_.erase_after(previous);
+          future.core_.WakeAndMarkReady();
+          return true;
+        }
+      } else {
+        auto value_to_resolve = callback(future);
+        if (value_to_resolve.has_value()) {
+          list_.erase_after(previous);
+          future.ResolveLocked(std::move(*value_to_resolve));
+          return true;
+        }
+      }
+      previous = current;
+      ++current;
+    }
+    return false;
+  }
+
+  /// Iterates through the list and resolves ALL futures where the callback
+  /// returns a value (or true for void).
+  ///
+  /// @returns The number of futures resolved and removed.
+  template <typename F>
+  size_t ResolveAllMatching(F&& callback) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    size_t count = 0;
+    auto previous = list_.before_begin();
+    auto current = list_.begin();
+    while (current != list_.end()) {
+      ValueFuture<T>* base_future =
+          pw::ContainerOf<&ValueFuture<T>::core_>(&(*current));
+      FutureType& future = static_cast<FutureType&>(*base_future);
+
+      if constexpr (std::is_void_v<T>) {
+        if (callback(future)) {
+          auto next = current;
+          ++next;
+          list_.erase_after(previous);
+          future.core_.WakeAndMarkReady();
+          count++;
+          current = next;
+          continue;
+        }
+      } else {
+        auto value_to_resolve = callback(future);
+        if (value_to_resolve.has_value()) {
+          auto next = current;
+          ++next;
+          list_.erase_after(previous);
+          future.ResolveLocked(std::move(*value_to_resolve));
+          count++;
+          current = next;
+          continue;
+        }
+      }
+      previous = current;
+      ++current;
+    }
+    return count;
+  }
+
+  /// Bulk-resolves all pending futures in the list.
+  template <typename F>
+  void ResolveAll(F&& callback) {
+    std::lock_guard lock(internal::ValueProviderLock());
+    while (!list_.empty()) {
+      ValueFuture<T>& base_future = list_.Pop();
+      FutureType& future = static_cast<FutureType&>(base_future);
+      if constexpr (std::is_void_v<T>) {
+        callback(future);
+        future.core_.WakeAndMarkReady();
+      } else {
+        future.ResolveLocked(callback(future));
+      }
+    }
+  }
+
+ private:
+  FutureList<&ValueFuture<T>::core_> list_
+      PW_GUARDED_BY(internal::ValueProviderLock());
 };
 
 /// @endsubmodule

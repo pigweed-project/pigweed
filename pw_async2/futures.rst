@@ -415,6 +415,136 @@ derived future type. The behavior depends on whether the future produces a value
    the callback code should be **fast and non-blocking**. Avoid slow operations
    inside the callback if possible as they could stall running tasks.
 
+Multi-consumer list providers
+=============================
+A standard :cc:`ValueProvider <pw::async2::ValueProvider>` only allows a single
+pending future at a time. To manage multiple pending futures, you can use
+:cc:`ValueListProvider <pw::async2::ValueListProvider>`.
+
+With :cc:`ValueListProvider <pw::async2::ValueListProvider>`, any number of
+tasks can register futures in a list. The provider owner can then inspect,
+conditionally resolve, or bulk-abort pending futures from anywhere in the
+list.
+
+This is particularly useful for implementing resource reservation systems
+(e.g., memory allocators, connection pools) where out-of-order resolution
+is necessary to completely prevent head-of-line blocking.
+
+Creating a list provider
+------------------------
+Declare a ``ValueListProvider`` with the type of value to provide:
+
+.. code-block:: c++
+
+   pw::async2::ValueListProvider<int> provider;
+
+Tasks can register futures using the ``Get`` method, which returns a
+:cc:`ValueFuture <pw::async2::ValueFuture>` and automatically pushes it to
+the provider's internal list:
+
+.. code-block:: c++
+
+   pw::async2::ValueFuture<int> future = provider.Get();
+
+Querying list state
+-------------------
+You can safely query the number of pending futures using ``size()`` or check
+if the list is empty using ``empty()``.
+
+Atomic out-of-order matching
+----------------------------
+To prevent time-of-check to time-of-use (TOCTOU) race conditions in
+multithreaded environments, ``ValueListProvider`` does not expose list
+iteration. Instead, all matching and resolution must be performed atomically
+using ``ResolveFirstMatching`` and ``ResolveAllMatching``.
+
+These methods traverse the list under a shared async2 lock and invoke a
+callback for each pending future. If the callback returns a value (or ``true``
+for ``void`` futures), the matched future is atomically removed from the list
+and resolved.
+
+- ``ResolveFirstMatching``: Resolves the first future for which the callback
+  returns a value.
+- ``ResolveAllMatching``: Resolves all futures for which the callback returns
+  a value.
+
+For non-void futures (producing ``T``), the callback must return
+``std::optional<T>``. Returning ``std::nullopt`` leaves the future pending.
+For ``void`` futures, the callback must return ``bool``.
+
+See the section below for a concrete example of using these matching methods
+with custom derived futures to achieve out-of-order resource allocation.
+
+Using custom derived futures
+----------------------------
+Just like :cc:`DerivedValueProvider <pw::async2::DerivedValueProvider>`,
+``ValueListProvider`` can be used with user-defined derived futures. You can
+use the ``DerivedValueListProvider`` template alias to simplify
+declarations:
+
+.. code-block:: c++
+
+   class CustomRequestFuture
+       : public pw::async2::ValueFuture<pw::Result<pw::ByteSpan>> {
+    public:
+     CustomRequestFuture(pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>&& base,
+                         size_t requested_size)
+         : pw::async2::ValueFuture(std::move(base)),
+           requested_size_(requested_size) {}
+
+     size_t requested_size() const { return requested_size_; }
+
+    private:
+     size_t requested_size_;
+   };
+
+   // Declare a list provider for the derived future type.
+   pw::async2::DerivedValueListProvider<CustomRequestFuture> request_provider;
+
+Now, you can pass custom parameters when calling ``Get``:
+
+.. code-block:: c++
+
+   CustomRequestFuture future = request_provider.Get(/*requested_size=*/128);
+
+You can then atomically match and resolve using the custom parameters on the
+derived future:
+
+.. code-block:: c++
+
+   bool resolved = request_provider.ResolveFirstMatching(
+       [&](CustomRequestFuture& future)
+           -> std::optional<pw::Result<pw::ByteSpan>> {
+         if (future.requested_size() <= GetAvailableBytes()) {
+           return Allocate(future.requested_size());
+         }
+         return std::nullopt;
+       });
+
+Bulk resolution and cleanup
+---------------------------
+When a resource is shut down or connection is lost, you may want to resolve
+all remaining futures at once. Use the ``ResolveAll`` method to resolve and
+remove all pending futures from the list.
+
+The callback is invoked for every pending future:
+
+- For non-void futures, the callback must return the value (of type ``T``) to
+  resolve the future with.
+- For void futures, the callback acts as a notification.
+
+.. code-block:: c++
+
+   // Abort all pending requests with an error status.
+   request_provider.ResolveAll(
+       [](CustomRequestFuture& future) -> pw::Result<pw::ByteSpan> {
+         return pw::Status::Aborted();
+       });
+
+.. warning::
+   Since all callback-based resolution methods hold the shared async2 lock,
+   your callbacks must be fast and non-blocking.
+
 .. _module-pw_async2-futures-combinators:
 
 -----------
