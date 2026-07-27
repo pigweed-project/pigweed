@@ -28,86 +28,106 @@
 #include "pw_stream/interval_reader.h"
 #include "pw_stream/stream.h"
 
+/******************************************************/
+/* DEPRECATED: All APIs from message.h are deprecated */
+/******************************************************/
+
 namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// The following defines classes that represent various parsed proto integer
-// types or an error code to indicate parsing failure.
+// The following classes represent various parsed proto integer types or an
+// error code indicating parsing failure.
 //
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+// For normal uses, these parser objects should be created from `Message`. See
+// `Message` for detailed usage examples.
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Uint32 : public internal::ProtoIntegerBase<uint32_t> {
  public:
   using ProtoIntegerBase<uint32_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Int32 : public internal::ProtoIntegerBase<int32_t> {
  public:
   using ProtoIntegerBase<int32_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Sint32 : public internal::ProtoIntegerBase<int32_t> {
  public:
   using ProtoIntegerBase<int32_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Fixed32 : public internal::ProtoIntegerBase<uint32_t> {
  public:
   using ProtoIntegerBase<uint32_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Sfixed32 : public internal::ProtoIntegerBase<int32_t> {
  public:
   using ProtoIntegerBase<int32_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Uint64 : public internal::ProtoIntegerBase<uint64_t> {
  public:
   using ProtoIntegerBase<uint64_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Int64 : public internal::ProtoIntegerBase<int64_t> {
  public:
   using ProtoIntegerBase<int64_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Sint64 : public internal::ProtoIntegerBase<int64_t> {
  public:
   using ProtoIntegerBase<int64_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Fixed64 : public internal::ProtoIntegerBase<uint64_t> {
  public:
   using ProtoIntegerBase<uint64_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Sfixed64 : public internal::ProtoIntegerBase<int64_t> {
  public:
   using ProtoIntegerBase<int64_t>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Float : public internal::ProtoIntegerBase<float> {
  public:
   using ProtoIntegerBase<float>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Double : public internal::ProtoIntegerBase<double> {
  public:
   using ProtoIntegerBase<double>::ProtoIntegerBase;
 };
 
+/// @deprecated All APIs from `message.h` are deprecated.
 class Bool : public internal::ProtoIntegerBase<bool> {
  public:
   using ProtoIntegerBase<bool>::ProtoIntegerBase;
 };
 
-// An object that represents a parsed `bytes` field or an error code. The
-// bytes are available via an stream::IntervalReader by GetBytesReader().
-//
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+/// An object that represents a parsed `bytes` field or an error code.
+///
+/// The underlying bytes are accessible via a `stream::IntervalReader` returned
+/// by `GetBytesReader()`.
+///
+/// @note For normal uses, this object should be created from `Message`.
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 class Bytes {
  public:
   Bytes() = default;
@@ -118,24 +138,26 @@ class Bytes {
   bool ok() { return reader_.ok(); }
   Status status() { return reader_.status(); }
 
-  // Check whether the bytes value equals the given `bytes`.
+  /// Checks whether the bytes value exactly equals the given `bytes`.
   Result<bool> Equal(ConstByteSpan bytes);
 
  private:
   stream::IntervalReader reader_;
 };
 
-// An object that represents a parsed `string` field or an error code. The
-// string value is available via an stream::IntervalReader by
-// GetBytesReader().
-//
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+/// An object that represents a parsed `string` field or an error code.
+///
+/// The string value is accessible via a `stream::IntervalReader` returned by
+/// `GetBytesReader()`.
+///
+/// @note For normal uses, this object should be created from `Message`.
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 class String : public Bytes {
  public:
   using Bytes::Bytes;
 
-  // Check whether the string value equals the given `str`
+  /// Checks whether the string value exactly equals the given `str`.
   Result<bool> Equal(std::string_view str);
 };
 
@@ -158,97 +180,84 @@ using StringToBytesMap = StringMapParser<Bytes>;
 using StringToStringMap = StringMapParser<String>;
 using StringToMessageMap = StringMapParser<Message>;
 
-// Message - A helper class for parsing a proto message.
-//
-// Examples:
-//
-// message Nested {
-//   string nested_str = 1;
-//   bytes nested_bytes = 2;
-// }
-//
-// message {
-//   string str = 1;
-//   bytes bytes = 2;
-//   uint32 integer = 3
-//   repeated string rep_str = 4;
-//   map<string, bytes> str_to_bytes = 5;
-//   Nested nested = 6;
-// }
-//
-//   // Given a seekable `reader` that reads the top-level proto message, and
-//   // a <size> that gives the size of the proto message:
-//   Message message(reader, <size>);
-//
-//   // Prase simple basic value fields
-//   String str = message.AsString(1); // string
-//   Bytes bytes = message.AsBytes(2); // bytes
-//   Uint32 integer = messasge_parser.AsUint32(3); // uint32 integer
-//
-//   // Parse repeated field `repeated string rep_str = 4;`
-//   RepeatedStrings rep_str = message.AsRepeatedString(4);
-//   // Iterate through the entries. If proto is malformed when
-//   // iterating, the next element (`str` in this case) will be invalid
-//   // and loop will end in the iteration after.
-//   for (String str : rep_str) {
-//     // Check status
-//     if (!str.ok()) {
-//       // In the case of error, loop will end in the next iteration if
-//       // continues. This is the chance for code to catch the error.
-//       ...
-//     }
-//     ...
-//   }
-//
-//   // Parse map field `map<string, bytes> str_to_bytes = 5;`
-//   StringToBytesMap str_to_bytes = message.AsStringToBytesMap(5);
-//
-//   // Access the entry by a given key value
-//   Bytes bytes_for_key = str_to_bytes["key"];
-//
-//   // Or iterate through map entries
-//   for (StringToBytesMapEntry entry : str_to_bytes) {
-//     if (!entry.ok()) {
-//       // In the case of error, loop will end in the next iteration if
-//       // continues. This is the chance for code to catch the error.
-//       ...
-//     }
-//     String key = entry.Key();
-//     Bytes value = entry.Value();
-//     ...
-//   }
-//
-//   // Parse nested message `Nested nested = 6;`
-//   Message nested = message.AsMessage(6).
-//   String nested_str = nested.AsString(1);
-//   Bytes nested_bytes = nested.AsBytes(2);
-//
-//   // The `AsXXX()` methods above internally traverse all the fields to find
-//   // the one with the give field number. This can be expensive if called
-//   // multiple times. Therefore, whenever possible, it is recommended to use
-//   // the following iteration to iterate and process each field directly.
-//   for (Message::Field field : message) {
-//     if (!field.ok()) {
-//       // In the case of error, loop will end in the next iteration if
-//       // continues. This is the chance for code to catch the error.
-//       ...
-//     }
-//     if (field.field_number() == 1) {
-//       String str = field.As<String>();
-//       ...
-//     } else if (field.field_number() == 2) {
-//       Bytes bytes = field.As<Bytes>();
-//       ...
-//     } else if (field.field_number() == 6) {
-//       Message nested = field.As<Message>();
-//       ...
-//     }
-//   }
-//
-// All parser objects created above internally hold the same reference
-// to `reader`. Therefore it needs to maintain valid lifespan throughout the
-// operations. The parser objects can work independently and without blocking
-// each other. All method calls and for-iterations above are re-enterable.
+/// A helper class for parsing and iterating over fields in a protobuf message.
+///
+/// `Message` provides stream-oriented, re-entrant parsing of protobuf fields
+/// without requiring code generation. All parser objects created from `Message`
+/// hold a reference to the underlying reader and work independently without
+/// blocking each other.
+///
+/// @note All parser objects generated by `Message` internally reference the
+/// same `reader`. Therefore, the reader must maintain a valid lifespan
+/// throughout the operations. All method calls and for-range iterations are
+/// re-entrant and safe to interleave.
+///
+/// @code
+///   // message Nested {
+///   //   string nested_str = 1;
+///   //   bytes nested_bytes = 2;
+///   // }
+///   //
+///   // message MyProto {
+///   //   string str = 1;
+///   //   bytes bytes = 2;
+///   //   uint32 integer = 3;
+///   //   repeated string rep_str = 4;
+///   //   map<string, bytes> str_to_bytes = 5;
+///   //   Nested nested = 6;
+///   // }
+///
+///   // Given a seekable `reader` and a `size` for the proto message:
+///   Message message(reader, size);
+///
+///   // Parse basic value fields
+///   String str = message.AsString(1);
+///   Bytes bytes = message.AsBytes(2);
+///   Uint32 integer = message.AsUint32(3);
+///
+///   // Parse repeated field: repeated string rep_str = 4;
+///   RepeatedStrings rep_str = message.AsRepeatedStrings(4);
+///   for (String element : rep_str) {
+///     if (!element.ok()) {
+///       // Handle error; loop exits on next iteration if continued.
+///     }
+///   }
+///
+///   // Parse map field: map<string, bytes> str_to_bytes = 5;
+///   StringToBytesMap str_to_bytes = message.AsStringToBytesMap(5);
+///   Bytes bytes_for_key = str_to_bytes["key"];
+///   for (StringToBytesMapEntry entry : str_to_bytes) {
+///     if (!entry.ok()) {
+///       // Handle error.
+///     }
+///     String key = entry.Key();
+///     Bytes value = entry.Value();
+///   }
+///
+///   // Parse nested message: Nested nested = 6;
+///   Message nested = message.AsMessage(6);
+///   String nested_str = nested.AsString(1);
+///   Bytes nested_bytes = nested.AsBytes(2);
+///
+///   // The `AsXXX()` methods above internally traverse all fields to find the
+///   // matching tag. This can be expensive if called multiple times. Whenever
+///   // possible, prefer for-range iteration over `Message::Field` to process
+///   // each field in a single pass:
+///   for (Message::Field field : message) {
+///     if (!field.ok()) {
+///       // Handle error.
+///     }
+///     if (field.field_number() == 1) {
+///       String s = field.As<String>();
+///     } else if (field.field_number() == 2) {
+///       Bytes b = field.As<Bytes>();
+///     } else if (field.field_number() == 6) {
+///       Message m = field.As<Message>();
+///     }
+///   }
+/// @endcode
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 class Message {
  public:
   class Field {
@@ -402,16 +411,22 @@ class Message {
   iterator begin();
   iterator end();
 
-  // Parse a field given by `field_number` as the target parser type
-  // `FieldType`.
-  //
-  // Note: This method assumes that the message has only 1 field with the given
-  // <field_number>. It returns the first matching it find. It does not perform
-  // value overridding or string concatenation for multiple fields with the same
-  // <field_number>.
-  //
-  // Since the method needs to traverse all fields, it can be inefficient if
-  // called multiple times exepcially on slow reader.
+  /// Parses a field given by `field_number` as the target parser type
+  /// `FieldType`.
+  ///
+  /// @note This method assumes that the message has only one field with the
+  /// given `field_number` and returns the first match it finds. It does not
+  /// perform value overriding or string concatenation for multiple occurrences
+  /// of the tag.
+  ///
+  /// Since this method traverses fields sequentially, it can be inefficient if
+  /// called multiple times, especially on slow stream readers. Prefer iterating
+  /// over `Message::Field` when processing multiple fields.
+  ///
+  /// @tparam FieldType Target parser type (e.g., `String`, `Bytes`, `Uint32`).
+  /// @param[in] field_number Tag number to locate.
+  ///
+  /// @deprecated All APIs from `message.h` are deprecated.
   template <typename FieldType>
   FieldType As(uint32_t field_number) {
     for (Field field : *this) {
@@ -436,11 +451,13 @@ class Message {
  private:
   stream::IntervalReader reader_;
 
-  // Consume the current field. If the field has already been processed, i.e.
-  // by calling one of the Read..() method, nothing is done. After calling this
-  // method, the reader will be pointing either to the start of the next
-  // field (i.e. the starting offset of the field key), or the end of the
-  // stream. The method is for use by Message for computing field interval.
+  /// Consumes the current field.
+  ///
+  /// If the field has already been processed (e.g., by calling `Read...()`),
+  /// nothing is done. After calling this method, the reader points to either
+  /// the start of the next field (`FieldKey`) or the end of the stream.
+  ///
+  /// @deprecated All APIs from `message.h` are deprecated.
   static Status ConsumeCurrentField(StreamDecoder& decoder) {
     return decoder.field_consumed_ ? OkStatus() : decoder.SkipField();
   }
@@ -486,11 +503,15 @@ Double Message::Field::As<Double>();
 template <>
 Bool Message::Field::As<Bool>();
 
-// A helper for parsing `repeated` field. It implements an iterator interface
-// that only iterates through the fields of a given `field_number`.
-//
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+/// A helper parser for `repeated` fields.
+///
+/// Implements an iterator interface that filters and iterates exclusively
+/// through fields matching the target `field_number`.
+///
+/// @note For normal uses, `RepeatedFieldParser` objects should be created from
+/// `Message::AsRepeated()`.
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 template <typename FieldType>
 class RepeatedFieldParser {
  public:
@@ -562,17 +583,15 @@ class RepeatedFieldParser {
   uint32_t field_number_ = 0;
 };
 
-// A helper for pasring the entry type of map<string, <value>>.
-// An entry for a proto map is essentially a message of a key(k=1) and
-// value(k=2) field, i.e.:
-//
-// message Entry {
-//   string key = 1;
-//   bytes value = 2;
-// }
-//
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+/// A helper parser for single map entries of type `map<string, ValueParser>`.
+///
+/// In the protobuf wire format, a map entry is represented as a submessage with
+/// a string key (`tag = 1`) and value (`tag = 2`).
+///
+/// @note For normal uses, `StringMapEntryParser` objects should be created from
+/// `Message::AsStringMap()`.
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 template <typename ValueParser>
 class StringMapEntryParser {
  public:
@@ -589,12 +608,15 @@ class StringMapEntryParser {
   Message entry_;
 };
 
-// A helper class for parsing a string-keyed map field. i.e. map<string,
-// <value>>. The template argument `ValueParser` indicates the type the value
-// will be parsed as, i.e. String, Bytes, Uint32, Message etc.
-//
-// For normal uses, the class should be created from `class Message`. See
-// comment for `class Message` for usage.
+/// A helper class for parsing a string-keyed map (`map<string, ValueParser>`).
+///
+/// `StringMapParser` allows looking up values by string key or iterating over
+/// `StringMapEntryParser` entries.
+///
+/// @note For normal uses, `StringMapParser` objects should be created from
+/// `Message::AsStringMap()`.
+///
+/// @deprecated All APIs from `message.h` are deprecated.
 template <typename ValueParser>
 class StringMapParser
     : public RepeatedFieldParser<StringMapEntryParser<ValueParser>> {
@@ -621,6 +643,6 @@ class StringMapParser
   }
 };
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf

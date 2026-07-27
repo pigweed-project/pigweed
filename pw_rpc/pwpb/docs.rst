@@ -1,8 +1,8 @@
 .. _module-pw_rpc_pw_protobuf:
 
------------
-pw_protobuf
------------
+--------------------------------------------
+Generate RPCs as pw_protobuf message structs
+--------------------------------------------
 .. caution::
 
    If you're starting a new project, Pigweed recommends Nanopb over

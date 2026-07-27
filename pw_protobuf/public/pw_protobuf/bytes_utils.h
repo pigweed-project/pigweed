@@ -24,29 +24,33 @@ namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// Decodes a proto message bytes field to a uint32_t value. The caller must
-// advance the decoder and check the field number prior to calling this function
-// otherwise there is undefined behavior. E.g.
-//
-//   Decoder decoder(buffer);
-//     protobuf::Decoder decoder(request);
-//   if (!decoder.Next().ok()) {
-//     //  HANDLE ERROR.
-//   }
-//   if (static_cast<MyProtoMessage::Fields>(decoder.FieldNumber()) !=
-//       MyProtoMessage::Fields::kMyFields) {
-//     //  HANDLE ERROR.
-//   }
-//   Result<uint32_t> result = DecodeBytesToUint32(decoder);
-//   if (result.ok()) {
-//     //  DO SOMETHING WITH result.value().
-//   }
-//
-// Returns:
-// OK - Byte entry is successfully read.
-// DATA_LOSS: Invalid protobuf data.
-// INVALID_ARGUMENT - not able to read exactly 4 bytes.
-// FAILED_PRECONDITION - no bytes were read.
+/// Decodes a proto message bytes field to a `uint32_t` value.
+///
+/// @warning The caller must advance the decoder using `Next()` and verify the
+/// field number using `FieldNumber()` prior to calling this function;
+/// otherwise, behavior is undefined.
+///
+/// @code
+///   protobuf::Decoder decoder(request);
+///   if (!decoder.Next().ok()) {
+///     // Handle error.
+///   }
+///   if (static_cast<MyProtoMessage::Fields>(decoder.FieldNumber()) !=
+///       MyProtoMessage::Fields::kMyFields) {
+///     // Handle error.
+///   }
+///   Result<uint32_t> result = DecodeBytesToUint32(decoder);
+///   if (result.ok()) {
+///     // Do something with result.value().
+///   }
+/// @endcode
+///
+/// @param[in,out] decoder The decoder currently positioned at the bytes field.
+///
+/// @returns @Result{the decoded `uint32_t` value}
+/// * @DATA_LOSS: Invalid protobuf data.
+/// * @INVALID_ARGUMENT: Not able to read exactly 4 bytes from the field.
+/// * @FAILED_PRECONDITION: No bytes were read.
 inline Result<uint32_t> DecodeBytesToUint32(Decoder& decoder) {
   ConstByteSpan bytes_read;
   PW_TRY(decoder.ReadBytes(&bytes_read));
@@ -60,6 +64,6 @@ inline Result<uint32_t> DecodeBytesToUint32(Decoder& decoder) {
   return value;
 }
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf

@@ -94,6 +94,8 @@ class RawFinder : public FinderBase<RawFinder, ConstByteSpan> {
 
 /// @submodule{pw_protobuf,find}
 
+/// A stateful finder that scans an in-memory protobuf buffer (`ConstByteSpan`)
+/// for occurrences of a specific field.
 template <typename T, auto kReadFn>
 class Finder : public internal::FinderBase<Finder<T, kReadFn>, T> {
  public:
@@ -112,6 +114,8 @@ class Finder : public internal::FinderBase<Finder<T, kReadFn>, T> {
   uint32_t field_number_;
 };
 
+/// A stateful finder that scans a stream (`stream::Reader`) for occurrences of
+/// a specific field.
 template <typename T, auto kReadFn>
 class StreamFinder : public internal::FinderBase<StreamFinder<T, kReadFn>, T> {
  public:
@@ -135,6 +139,7 @@ class StreamFinder : public internal::FinderBase<StreamFinder<T, kReadFn>, T> {
   uint32_t field_number_;
 };
 
+/// A stateful finder for `enum` fields in an in-memory protobuf buffer.
 template <typename T>
 class EnumFinder : private Finder<uint32_t, &Decoder::ReadUint32> {
  public:
@@ -149,6 +154,7 @@ class EnumFinder : private Finder<uint32_t, &Decoder::ReadUint32> {
   }
 };
 
+/// A stateful finder for `enum` fields in a protobuf stream.
 template <typename T>
 class EnumStreamFinder
     : private StreamFinder<uint32_t, &StreamDecoder::ReadUint32> {
@@ -164,7 +170,7 @@ class EnumStreamFinder
   }
 };
 
-/// @}
+/// @endsubmodule
 
 namespace internal {
 template <typename T, auto kReadFn>
@@ -1663,6 +1669,6 @@ inline Result<ConstByteSpan> FindRaw(ConstByteSpan message, T field) {
   return FindRaw(message, field, Occurrence::kFirst);
 }
 
-/// @}
+/// @endsubmodule
 
 }  // namespace pw::protobuf

@@ -22,9 +22,9 @@ namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// Per the protobuf specification, valid field numbers range between 1 and
-// 2**29 - 1, inclusive. The numbers 19000-19999 are reserved for internal
-// use.
+/// Per the protobuf specification, valid field numbers range between `1` and
+/// `2^29 - 1`, inclusive. The numbers `19000` to `19999` are reserved for
+/// internal use by protobuf implementations.
 inline constexpr static uint32_t kMaxFieldNumber = (1u << 29) - 1;
 inline constexpr static uint32_t kFirstReservedNumber = 19000;
 inline constexpr static uint32_t kLastReservedNumber = 19999;
@@ -50,11 +50,17 @@ enum class WireType {
   kFixed32 = 5,
 };
 
-// Represents a protobuf field key, storing a field number and wire type.
+/// Represents a protobuf field key, storing a field number and wire type
+/// (`WireType`).
 class FieldKey {
  public:
-  // Checks if the given encoded protobuf key is valid. Must be called before
-  // instantiating a FieldKey object with it.
+  /// Checks if the given encoded protobuf key is valid.
+  ///
+  /// Must be called before instantiating a `FieldKey` object from an integer
+  /// key.
+  ///
+  /// @param[in] key The raw encoded key value.
+  /// @returns `true` if the key contains a valid field number and wire type.
   static constexpr bool IsValidKey(uint64_t key) {
     uint64_t field_number = key >> kFieldNumberShift;
     uint32_t wire_type = key & kWireTypeMask;
@@ -62,18 +68,23 @@ class FieldKey {
     return ValidFieldNumber(field_number) && (wire_type <= 2 || wire_type == 5);
   }
 
-  // Creates a field key with the given field number and type.
-  //
-  // Precondition: The field number is valid.
+  /// Creates a field key with the given field number and wire type.
+  ///
+  /// @param[in] field_number The field number for the field.
+  /// @param[in] wire_type The wire type (`WireType`) of the field.
+  ///
+  /// @pre The field number must be valid (`ValidFieldNumber(field_number)`).
   constexpr FieldKey(uint32_t field_number, WireType wire_type)
       : key_(field_number << kFieldNumberShift |
              static_cast<uint32_t>(wire_type)) {
     PW_DASSERT(ValidFieldNumber(field_number));
   }
 
-  // Parses a field key from its encoded representation.
-  //
-  // Precondition: The field number is valid. Call IsValidKey(key) first.
+  /// Parses a field key from its encoded representation.
+  ///
+  /// @param[in] key The raw integer representation of the key.
+  ///
+  /// @pre The key must be valid (`IsValidKey(key)`).
   constexpr FieldKey(uint32_t key) : key_(key) {
     PW_DASSERT(ValidFieldNumber(field_number()));
   }
@@ -97,6 +108,6 @@ class FieldKey {
   return FieldKey(field_number, wire_type);
 }
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf

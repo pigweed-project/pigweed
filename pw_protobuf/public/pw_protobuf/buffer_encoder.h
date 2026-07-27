@@ -26,10 +26,20 @@
 
 namespace pw::protobuf {
 
+/// @module{pw_protobuf}
+
 class BufferEncoder;
 
-/// A lightweight, trivially copyable view of a BufferEncoder's state.
-/// Passed by value to nested encoders to allow direct, zero-copy writes.
+/// A lightweight, trivially copyable view of a `BufferEncoder`'s state
+/// (`buffer`, `offset`, and `status`).
+///
+/// Passed by value to nested encoders (`UncheckedGet*Encoder()`) to allow
+/// direct, zero-copy writes into the shared output buffer without locking or
+/// staging via a scratch buffer.
+///
+/// @warning While a nested `BufferEncoderView` is active, any writes to the
+/// parent encoder will corrupt the protobuf stream. Complete writing the nested
+/// message before continuing with the parent encoder.
 class BufferEncoderView {
  public:
   constexpr BufferEncoderView(ByteSpan buffer, size_t& offset, Status& status)
@@ -744,7 +754,17 @@ class BufferEncoderView {
   Status& status_;
 };
 
-/// The root encoder that owns the buffer, offset, and status.
+/// The root protobuf encoder that owns the buffer, offset, and status, allowing
+/// zero-copy, direct-to-buffer serialization.
+///
+/// Unlike `StreamEncoder` and `MemoryEncoder`, which buffer nested submessages
+/// in a scratch buffer before writing them out, `BufferEncoder` writes directly
+/// into the destination buffer and reserves space (`EnsureSpace`) or patches
+/// length prefixes in place (`UncheckedReserveLength` / `PatchLength`).
+///
+/// @warning When a nested submessage encoder (`BufferEncoderView`) is created,
+/// any use of the parent encoder while the child encoder is open will result in
+/// out-of-order writes and corrupted data.
 class BufferEncoder : public BufferEncoderView {
  public:
   constexpr BufferEncoder(ByteSpan buffer)
@@ -763,5 +783,7 @@ class BufferEncoder : public BufferEncoderView {
   size_t offset_impl_;
   Status status_impl_;
 };
+
+/// @endmodule
 
 }  // namespace pw::protobuf

@@ -22,26 +22,31 @@
 #include "pw_status/status.h"
 #include "pw_varint/varint.h"
 
-// This file defines a low-level event-based protobuf wire format decoder.
-// The decoder processes an encoded message by iterating over its fields. The
-// caller can extract the values of any fields it cares about.
-//
-// The decoder does not provide any in-memory data structures to represent a
-// protobuf message's data. More sophisticated APIs can be built on top of the
-// low-level decoder to provide additional functionality, if desired.
-//
-// Example usage:
-//
-//   Decoder decoder(proto);
-//   while (decoder.Next().ok()) {
-//     switch (decoder.FieldNumber()) {
-//       case 1:
-//         decoder.ReadUint32(&my_uint32);
-//         break;
-//       // ... and other fields.
-//     }
-//   }
-//
+/// A low-level, event-based in-memory protobuf wire format decoder.
+///
+/// The decoder processes an encoded message by iterating over its fields using
+/// `Next()`. The caller can then check `FieldNumber()` and extract the values
+/// of fields using the `Read*()` methods.
+///
+/// Unlike `StreamDecoder`, `Decoder` operates directly on an in-memory buffer
+/// (`span<const std::byte>`). When reading `string` (`ReadString`) or `bytes`
+/// (`ReadBytes`) fields, it returns views pointing directly into the underlying
+/// raw protobuf buffer without copying.
+///
+/// @note The raw protobuf buffer must outlive any string or bytes views
+/// acquired from this decoder.
+///
+/// @code
+///   Decoder decoder(proto);
+///   while (decoder.Next().ok()) {
+///     switch (decoder.FieldNumber()) {
+///       case 1:
+///         decoder.ReadUint32(&my_uint32);
+///         break;
+///       // ... and other fields.
+///     }
+///   }
+/// @endcode
 namespace pw::protobuf {
 
 enum class Occurrence;
@@ -55,114 +60,146 @@ class RawFinder;
 // TODO(frolv): Rename this to MemoryDecoder to match the encoder naming.
 class Decoder {
  public:
+  /// Constructs a `Decoder` operating on an in-memory protobuf buffer.
+  ///
+  /// @param[in] proto Span containing the raw serialized protobuf message.
   constexpr Decoder(span<const std::byte> proto)
       : proto_(proto), previous_field_consumed_(true) {}
 
   Decoder(const Decoder& other) = delete;
   Decoder& operator=(const Decoder& other) = delete;
 
-  // Advances to the next field in the proto.
-  //
-  // If Next() returns OK, there is guaranteed to be a valid protobuf field at
-  // the current cursor position.
-  //
-  // Return values:
-  //
-  //             OK: Advanced to a valid proto field.
-  //   OUT_OF_RANGE: Reached the end of the proto message.
-  //      DATA_LOSS: Invalid protobuf data.
-  //
+  /// Advances to the next field in the proto.
+  ///
+  /// If `Next()` returns `@OK`, there is guaranteed to be a valid protobuf
+  /// field at the current cursor position.
+  ///
+  /// @returns
+  /// * @OK: Advanced to a valid proto field.
+  /// * @OUT_OF_RANGE: Reached the end of the proto message.
+  /// * @DATA_LOSS: Invalid protobuf wire data.
   Status Next();
 
-  // Returns the field number of the field at the current cursor position.
-  //
-  // A return value of 0 indicates that the field number is invalid. An invalid
-  // field number terminates the decode operation; any subsequent calls to
-  // Next() or Read*() will return DATA_LOSS.
-  //
-  // TODO(frolv): This should be refactored to return a Result<uint32_t>.
+  /// Returns the field number of the field at the current cursor position.
+  ///
+  /// A return value of `0` indicates that the field number is invalid. An
+  /// invalid field number terminates the decode operation; any subsequent calls
+  /// to `Next()` or `Read*()` will return `@DATA_LOSS`.
   uint32_t FieldNumber() const;
 
-  // Gets the field key of the field at the current cursor position if valid.
-  //
-  // Note: avoid using this function unless you need to examine the field wire
-  // format properties. Using FieldNumber() is enough for manual decoding in
-  // most cases.
-  //
-  // Returns values:
-  //
-  //             OK: The FieldKey is valid.
-  //      DATA_LOSS: The FieldKey is invalid, the decode operation terminated.
-  //                 Any subsequent calls to Next() or Read*() will return
-  //                 DATA_LOSS.
+  /// Gets the field key of the field at the current cursor position if valid.
+  ///
+  /// @note Avoid using this function unless you need to examine the field wire
+  /// format properties. `FieldNumber()` is sufficient for manual decoding in
+  /// most cases.
+  ///
+  /// @returns @Result{the `FieldKey` of the current field}
+  /// * @DATA_LOSS: The `FieldKey` is invalid and the decode operation
+  /// terminated.
+  ///   Any subsequent calls to `Next()` or `Read*()` will return `@DATA_LOSS`.
   Result<FieldKey> GetFieldKey() const;
 
-  // Reads a proto int32 value from the current cursor.
+  /// Reads a proto `int32` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `int32` value.
   Status ReadInt32(int32_t* out) {
     return ReadUint32(reinterpret_cast<uint32_t*>(out));
   }
 
-  // Reads a proto uint32 value from the current cursor.
+  /// Reads a proto `uint32` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `uint32` value.
   Status ReadUint32(uint32_t* out);
 
-  // Reads a proto int64 value from the current cursor.
+  /// Reads a proto `int64` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `int64` value.
   Status ReadInt64(int64_t* out) {
     return ReadVarint(reinterpret_cast<uint64_t*>(out));
   }
 
-  // Reads a proto uint64 value from the current cursor.
+  /// Reads a proto `uint64` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `uint64` value.
   Status ReadUint64(uint64_t* out) { return ReadVarint(out); }
 
-  // Reads a proto sint32 value from the current cursor.
+  /// Reads a proto `sint32` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `sint32` value.
   Status ReadSint32(int32_t* out);
 
-  // Reads a proto sint64 value from the current cursor.
+  /// Reads a proto `sint64` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `sint64` value.
   Status ReadSint64(int64_t* out);
 
-  // Reads a proto bool value from the current cursor.
+  /// Reads a proto `bool` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `bool` value.
   Status ReadBool(bool* out);
 
-  // Reads a proto fixed32 value from the current cursor.
+  /// Reads a proto `fixed32` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `fixed32` value.
   Status ReadFixed32(uint32_t* out) { return ReadFixed(out); }
 
-  // Reads a proto fixed64 value from the current cursor.
+  /// Reads a proto `fixed64` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `fixed64` value.
   Status ReadFixed64(uint64_t* out) { return ReadFixed(out); }
 
-  // Reads a proto sfixed32 value from the current cursor.
+  /// Reads a proto `sfixed32` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `sfixed32` value.
   Status ReadSfixed32(int32_t* out) {
     return ReadFixed32(reinterpret_cast<uint32_t*>(out));
   }
 
-  // Reads a proto sfixed64 value from the current cursor.
+  /// Reads a proto `sfixed64` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `sfixed64` value.
   Status ReadSfixed64(int64_t* out) {
     return ReadFixed64(reinterpret_cast<uint64_t*>(out));
   }
 
-  // Reads a proto float value from the current cursor.
+  /// Reads a proto `float` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `float` value.
   Status ReadFloat(float* out) {
     static_assert(sizeof(float) == sizeof(uint32_t),
                   "Float and uint32_t must be the same size for protobufs");
     return ReadFixed(out);
   }
 
-  // Reads a proto double value from the current cursor.
+  /// Reads a proto `double` value from the current cursor position.
+  ///
+  /// @param[out] out Pointer to store the read `double` value.
   Status ReadDouble(double* out) {
     static_assert(sizeof(double) == sizeof(uint64_t),
                   "Double and uint64_t must be the same size for protobufs");
     return ReadFixed(out);
   }
 
-  // Reads a proto string value from the current cursor and returns a view of it
-  // in `out`. The raw protobuf data must outlive `out`. If the string field is
-  // invalid, `out` is not modified.
+  /// Reads a proto `string` value from the current cursor position as a view.
+  ///
+  /// @note The raw protobuf data must outlive `out`. If the string field is
+  /// invalid, `out` is not modified.
+  ///
+  /// @param[out] out Pointer to store the `std::string_view` of the string.
   Status ReadString(std::string_view* out);
 
-  // Reads a proto bytes value from the current cursor and returns a view of it
-  // in `out`. The raw protobuf data must outlive the `out` span. If the
-  // bytes field is invalid, `out` is not modified.
+  /// Reads a proto `bytes` value from the current cursor position as a view.
+  ///
+  /// @note The raw protobuf data must outlive `out`. If the bytes field is
+  /// invalid, `out` is not modified.
+  ///
+  /// @param[out] out Pointer to store the byte span view (`span<const
+  /// std::byte>`).
   Status ReadBytes(span<const std::byte>* out) { return ReadDelimited(out); }
 
-  // Resets the decoder to start reading a new proto message.
+  /// Resets the decoder to start reading a new proto message.
+  ///
+  /// @param[in] proto Span containing the new raw serialized protobuf message.
   void Reset(span<const std::byte> proto) {
     proto_ = proto;
     previous_field_consumed_ = true;
@@ -227,48 +264,47 @@ class Decoder {
 
 class DecodeHandler;
 
-// A protobuf decoder that iterates over an encoded protobuf, calling a handler
-// for each field it encounters.
-//
-// Example usage:
-//
-//   class FooProtoHandler : public DecodeHandler {
-//    public:
-//     Status ProcessField(CallbackDecoder& decoder,
-//                         uint32_t field_number) override {
-//       switch (field_number) {
-//         case FooFields::kBar:
-//           if (!decoder.ReadSint32(&bar).ok()) {
-//             bar = 0;
-//           }
-//           break;
-//         case FooFields::kBaz:
-//           if (!decoder.ReadUint32(&baz).ok()) {
-//             baz = 0;
-//           }
-//           break;
-//       }
-//
-//       return OkStatus();
-//     }
-//
-//     int bar;
-//     unsigned int baz;
-//   };
-//
-//   void DecodeFooProto(span<std::byte> raw_proto) {
-//     Decoder decoder;
-//     FooProtoHandler handler;
-//
-//     decoder.set_handler(&handler);
-//     if (!decoder.Decode(raw_proto).ok()) {
-//       LOG_FATAL("Invalid foo message!");
-//     }
-//
-//     LOG_INFO("Read Foo proto message; bar: %d baz: %u",
-//              handler.bar, handler.baz);
-//   }
-//
+/// A protobuf decoder that iterates over an encoded protobuf, calling a handler
+/// for each field it encounters.
+///
+/// @code
+///   class FooProtoHandler : public DecodeHandler {
+///    public:
+///     Status ProcessField(CallbackDecoder& decoder,
+///                         uint32_t field_number) override {
+///       switch (field_number) {
+///         case FooFields::kBar:
+///           if (!decoder.ReadSint32(&bar).ok()) {
+///             bar = 0;
+///           }
+///           break;
+///         case FooFields::kBaz:
+///           if (!decoder.ReadUint32(&baz).ok()) {
+///             baz = 0;
+///           }
+///           break;
+///       }
+///
+///       return OkStatus();
+///     }
+///
+///     int bar;
+///     unsigned int baz;
+///   };
+///
+///   void DecodeFooProto(span<std::byte> raw_proto) {
+///     Decoder decoder;
+///     FooProtoHandler handler;
+///
+///     decoder.set_handler(&handler);
+///     if (!decoder.Decode(raw_proto).ok()) {
+///       LOG_FATAL("Invalid foo message!");
+///     }
+///
+///     LOG_INFO("Read Foo proto message; bar: %d baz: %u",
+///              handler.bar, handler.baz);
+///   }
+/// @endcode
 class CallbackDecoder {
  public:
   constexpr CallbackDecoder()
@@ -277,59 +313,100 @@ class CallbackDecoder {
   CallbackDecoder(const CallbackDecoder& other) = delete;
   CallbackDecoder& operator=(const CallbackDecoder& other) = delete;
 
+  /// Sets the `DecodeHandler` to process encountered fields.
+  ///
+  /// @param[in] handler Pointer to the decode handler instance.
   void set_handler(DecodeHandler* handler) { handler_ = handler; }
 
-  // Decodes the specified protobuf data. The registered handler's ProcessField
-  // function is called on each field found in the data.
+  /// Decodes the specified protobuf data.
+  ///
+  /// The registered handler's `ProcessField` function is called on each field
+  /// found in the data.
+  ///
+  /// @param[in] proto Span containing the serialized protobuf data.
+  /// @returns Status resulting from the decoding operation or handler return.
   Status Decode(span<const std::byte> proto);
 
-  // Reads a proto int32 value from the current cursor.
+  /// Reads a proto `int32` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `int32` value.
   Status ReadInt32(int32_t* out) { return decoder_.ReadInt32(out); }
 
-  // Reads a proto uint32 value from the current cursor.
+  /// Reads a proto `uint32` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `uint32` value.
   Status ReadUint32(uint32_t* out) { return decoder_.ReadUint32(out); }
 
-  // Reads a proto int64 value from the current cursor.
+  /// Reads a proto `int64` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `int64` value.
   Status ReadInt64(int64_t* out) { return decoder_.ReadInt64(out); }
 
-  // Reads a proto uint64 value from the current cursor.
+  /// Reads a proto `uint64` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `uint64` value.
   Status ReadUint64(uint64_t* out) { return decoder_.ReadUint64(out); }
 
-  // Reads a proto sint64 value from the current cursor.
+  /// Reads a proto `sint32` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `sint32` value.
   Status ReadSint32(int32_t* out) { return decoder_.ReadSint32(out); }
 
-  // Reads a proto sint64 value from the current cursor.
+  /// Reads a proto `sint64` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `sint64` value.
   Status ReadSint64(int64_t* out) { return decoder_.ReadSint64(out); }
 
-  // Reads a proto bool value from the current cursor.
+  /// Reads a proto `bool` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `bool` value.
   Status ReadBool(bool* out) { return decoder_.ReadBool(out); }
 
-  // Reads a proto fixed32 value from the current cursor.
+  /// Reads a proto `fixed32` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `fixed32` value.
   Status ReadFixed32(uint32_t* out) { return decoder_.ReadFixed32(out); }
 
-  // Reads a proto fixed64 value from the current cursor.
+  /// Reads a proto `fixed64` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `fixed64` value.
   Status ReadFixed64(uint64_t* out) { return decoder_.ReadFixed64(out); }
 
-  // Reads a proto sfixed32 value from the current cursor.
+  /// Reads a proto `sfixed32` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `sfixed32` value.
   Status ReadSfixed32(int32_t* out) { return decoder_.ReadSfixed32(out); }
 
-  // Reads a proto sfixed64 value from the current cursor.
+  /// Reads a proto `sfixed64` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `sfixed64` value.
   Status ReadSfixed64(int64_t* out) { return decoder_.ReadSfixed64(out); }
 
-  // Reads a proto float value from the current cursor.
+  /// Reads a proto `float` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `float` value.
   Status ReadFloat(float* out) { return decoder_.ReadFloat(out); }
 
-  // Reads a proto double value from the current cursor.
+  /// Reads a proto `double` value from the current cursor.
+  ///
+  /// @param[out] out Pointer to store the read `double` value.
   Status ReadDouble(double* out) { return decoder_.ReadDouble(out); }
 
-  // Reads a proto string value from the current cursor and returns a view of it
-  // in `out`. The raw protobuf data must outlive `out`. If the string field is
-  // invalid, `out` is not modified.
+  /// Reads a proto `string` value from the current cursor as a view.
+  ///
+  /// @note The raw protobuf data must outlive `out`. If the string field is
+  /// invalid, `out` is not modified.
+  ///
+  /// @param[out] out Pointer to store the `std::string_view`.
   Status ReadString(std::string_view* out) { return decoder_.ReadString(out); }
 
-  // Reads a proto bytes value from the current cursor and returns a view of it
-  // in `out`. The raw protobuf data must outlive the `out` span. If the
-  // bytes field is invalid, `out` is not modified.
+  /// Reads a proto `bytes` value from the current cursor as a view.
+  ///
+  /// @note The raw protobuf data must outlive `out`. If the bytes field is
+  /// invalid, `out` is not modified.
+  ///
+  /// @param[out] out Pointer to store the byte span view (`span<const
+  /// std::byte>`).
   Status ReadBytes(span<const std::byte>* out) {
     return decoder_.ReadBytes(out);
   }
@@ -350,23 +427,28 @@ class CallbackDecoder {
   State state_;
 };
 
-// The event-handling interface implemented for a proto callback decoding
-// operation.
+/// The event-handling interface implemented for a proto callback decoding
+/// operation (`CallbackDecoder`).
 class DecodeHandler {
  public:
   virtual ~DecodeHandler() = default;
 
-  // Callback called for each field encountered in the decoded proto message.
-  // Receives a pointer to the decoder object, allowing the handler to call
-  // the appropriate method to extract the field's data.
-  //
-  // If the status returned is not OkStatus(), the decode operation is exited
-  // with the provided status. Returning Status::Cancelled() allows a convenient
-  // way of stopping a decode early (for example, if a desired field is found).
+  /// Callback invoked for each field encountered in the decoded proto message.
+  ///
+  /// Receives a reference to the `CallbackDecoder` object, allowing the handler
+  /// to call the appropriate method to extract the field's data.
+  ///
+  /// @param[in] decoder The callback decoder instance processing the field.
+  /// @param[in] field_number The tag number of the encountered field.
+  ///
+  /// @returns
+  /// * @OK: Field processed successfully, continue decoding.
+  /// * @CANCELLED: Stop decoding early without returning an error.
+  /// * Other statuses: Stop decoding and exit with the returned error status.
   virtual Status ProcessField(CallbackDecoder& decoder,
                               uint32_t field_number) = 0;
 };
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf

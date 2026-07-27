@@ -22,7 +22,7 @@ namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// Field types that directly map to fixed wire types:
+/// Field sizes that directly map to fixed wire types:
 inline constexpr size_t kMaxSizeBytesFixed32 = 4;
 inline constexpr size_t kMaxSizeBytesFixed64 = 8;
 inline constexpr size_t kMaxSizeBytesSfixed32 = 4;
@@ -30,16 +30,17 @@ inline constexpr size_t kMaxSizeBytesSfixed64 = 8;
 inline constexpr size_t kMaxSizeBytesFloat = kMaxSizeBytesFixed32;
 inline constexpr size_t kMaxSizeBytesDouble = kMaxSizeBytesFixed64;
 
-// Field types that map to varint:
+/// Field sizes that map to varints:
 inline constexpr size_t kMaxSizeBytesUint32 = varint::kMaxVarint32SizeBytes;
 inline constexpr size_t kMaxSizeBytesUint64 = varint::kMaxVarint64SizeBytes;
 inline constexpr size_t kMaxSizeBytesSint32 = varint::kMaxVarint32SizeBytes;
 inline constexpr size_t kMaxSizeBytesSint64 = varint::kMaxVarint64SizeBytes;
-// The int32 field type does not use zigzag encoding, ergo negative values
-// can result in the worst case varint size.
+/// The `int32` field type does not use zigzag encoding, so negative values can
+/// result in the worst-case varint size (`kMaxVarint64SizeBytes`).
 inline constexpr size_t kMaxSizeBytesInt32 = varint::kMaxVarint64SizeBytes;
 inline constexpr size_t kMaxSizeBytesInt64 = varint::kMaxVarint64SizeBytes;
-// The bool field type is backed by a varint, but has a limited value range.
+/// The `bool` field type is backed by a varint, but has a limited value range
+/// (`1` byte).
 inline constexpr size_t kMaxSizeBytesBool = 1;
 
 inline constexpr size_t kMaxSizeBytesEnum = kMaxSizeBytesInt32;
@@ -48,37 +49,37 @@ inline constexpr size_t kMaxSizeOfFieldNumber = varint::kMaxVarint32SizeBytes;
 
 inline constexpr size_t kMaxSizeOfLength = varint::kMaxVarint32SizeBytes;
 
-// Calculate the serialized size of a proto tag (field number + wire type).
-//
-// Args:
-//   field_number: The field number for the field.
-//
-// Returns:
-//   The size of the field's encoded tag.
-//
-// Precondition: The field_number must be a ValidFieldNumber.
+/// Calculates the serialized size of a proto tag (field number + wire type).
+///
+/// @param[in] field_number The field number for the field.
+/// @returns The size in bytes of the field's encoded tag.
+///
+/// @pre `field_number` must be a valid field number
+/// (`ValidFieldNumber(field_number)`).
 template <typename T>
 constexpr size_t TagSizeBytes(T field_number) {
   static_assert((std::is_enum<T>() || std::is_integral<T>()) &&
                     sizeof(T) <= sizeof(uint32_t),
                 "Field numbers must be 32-bit enums or integers");
-  // The wiretype does not impact the serialized size, so use kVarint (0), which
-  // will be optimized out by the compiler.
+  // The wire type does not impact the serialized size, so use kVarint (0),
+  // which is optimized out by the compiler.
   return varint::EncodedSize(
       FieldKey(static_cast<uint32_t>(field_number), WireType::kVarint));
 }
 
-// Calculates the size of a varint field (uint32/64, int32/64, sint32/64, enum).
+/// Calculates the size in bytes of a varint field (`uint32`/`64`, `int32`/`64`,
+/// `sint32`/`64`, `enum`).
 template <typename T, typename U>
 constexpr size_t SizeOfVarintField(T field_number, U value) {
   return TagSizeBytes(field_number) +
          varint::EncodedSize(static_cast<uint64_t>(value));
 }
 
-// Calculates the size of a delimited field (string, bytes, nested message,
-// packed repeated), excluding the data itself. This accounts for the field
-// tag and length varint only. The default value for length_bytes assumes
-// the length is kMaxSizeOfLength bytes long.
+/// Calculates the size of a delimited field (`string`, `bytes`, nested message,
+/// packed repeated) excluding the payload data itself.
+///
+/// Accounts for the field tag and length varint only. `length_bytes` defaults
+/// to `kMaxSizeOfLength` (`kMaxVarint32SizeBytes`).
 template <typename T>
 constexpr size_t SizeOfDelimitedFieldWithoutValue(
     T field_number,
@@ -86,29 +87,30 @@ constexpr size_t SizeOfDelimitedFieldWithoutValue(
   return TagSizeBytes(field_number) + varint::EncodedSize(length_bytes);
 }
 
-// Calculates the total size of a delimited field (string, bytes, nested
-// message, packed repeated), including the data itself.
+/// Calculates the total size of a delimited field (`string`, `bytes`, nested
+/// message, packed repeated) including the payload data itself.
 template <typename T>
 constexpr size_t SizeOfDelimitedField(T field_number, uint32_t length_bytes) {
   return SizeOfDelimitedFieldWithoutValue(field_number, length_bytes) +
          length_bytes;
 }
 
-// Calculates the size of a proto field in the wire format. This is the size of
-// a final serialized protobuf entry, including the key (field number + wire
-// type), encoded payload size (for length-delimited types), and data.
-//
-// Args:
-//   field_number: The field number for the field.
-//   type: The wire type of the field
-//   data_size: The size of the payload.
-//
-// Returns:
-//   The size of the field.
-//
-// Precondition: The field_number must be a ValidFieldNumber.
-// Precondition: `data_size_bytes` must be smaller than
-//   std::numeric_limits<uint32_t>::max()
+/// Calculates the size of a proto field in the wire format.
+///
+/// This is the size of a final serialized protobuf entry, including the key
+/// (field number + wire type), encoded payload size (for length-delimited
+/// types), and payload data.
+///
+/// @param[in] field_number The field number for the field.
+/// @param[in] type The wire type (`WireType`) of the field.
+/// @param[in] data_size_bytes The size of the payload data in bytes.
+///
+/// @returns The total encoded size of the field in bytes.
+///
+/// @pre `field_number` must be a valid field number
+/// (`ValidFieldNumber(field_number)`).
+/// @pre `data_size_bytes` must be smaller than or equal to
+/// `std::numeric_limits<uint32_t>::max()`.
 template <typename T>
 constexpr size_t SizeOfField(T field_number,
                              WireType type,
@@ -121,9 +123,9 @@ constexpr size_t SizeOfField(T field_number,
   return TagSizeBytes(field_number) + data_size_bytes;
 }
 
-// Functions for calculating the size of each type of protobuf field. Varint
-// fields (int32, uint64, etc.) accept a value argument that defaults to the
-// largest-to-encode value for the type.
+/// Functions for calculating the worst-case serialized size of each protobuf
+/// field type. Varint fields (`int32`, `uint64`, etc.) accept a value argument
+/// that defaults to the largest-to-encode value for the type.
 template <typename T>
 constexpr size_t SizeOfFieldFloat(T field_number) {
   return TagSizeBytes(field_number) + sizeof(float);

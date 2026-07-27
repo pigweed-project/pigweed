@@ -1634,7 +1634,7 @@ Nested encoder
 Code-generated ``GetFieldEncoder`` methods are provided that return a
 correctly-typed ``StreamEncoder`` or ``MemoryEncoder`` for the message.
 The accessor method is named for the field, while the returned encoder
-is named for the message type. For example:
+is named for the message type. Example:
 
 .. code-block:: c++
 
@@ -1647,16 +1647,13 @@ is named for the message type. For example:
      // submessage is closed when the nested encoder is destroyed.
    }
 
-A lower-level API method returns an untyped encoder, which only provides the
-lower-level API methods. This can be cast to a typed encoder if needed.
-
-.. cpp:function:: pw::protobuf::StreamEncoder pw::protobuf::StreamEncoder::GetNestedEncoder(uint32_t field_number, EmptyEncoderBehavior empty_encoder_behavior = EmptyEncoderBehavior::kWriteFieldNumber)
-
-(The optional ``empty_encoder_behavior`` parameter allows the user to disable
-writing the tag number for the nested encoder, if no data was written to that
-nested decoder.)
+The lower-level :cc:`GetNestedEncoder
+<pw::protobuf::StreamEncoder::GetNestedEncoder>` method returns an untyped
+encoder, which only provides the lower-level API methods. This can be cast to a
+typed encoder if needed.
 
 .. warning::
+
    When a nested submessage is created, any use of the parent encoder that
    created the nested encoder will trigger a crash. To resume using the parent
    encoder, destroy the submessage encoder first.
@@ -1836,30 +1833,33 @@ patches the length prefix on destruction of the nested encoder.
 
 Scalar Fields
 =============
-As shown, scalar fields are written using code generated ``WriteFoo``
-methods that accept the appropriate type and automatically writes the correct
-field number.
+Code-generated methods are provided for scalar fields. Each generated method
+accepts the appropriate type and automatically writes the correct field number.
+Example:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoo(T)
+.. code-block:: c++
+
+   Status MyProto::StreamEncoder::WriteFoo(T)
 
 These can be freely intermixed with the lower-level API that provides a method
 per field type, requiring that the field number be passed in. The code
 generation includes a ``Fields`` enum to provide the field number values.
+Lower-level API methods:
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteUint64(uint32_t field_number, uint64_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteSint64(uint32_t field_number, int64_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteInt64(uint32_t field_number, int64_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteUint32(uint32_t field_number, uint32_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteSint32(uint32_t field_number, int32_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteInt32(uint32_t field_number, int32_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteFixed64(uint32_t field_number, uint64_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteFixed32(uint32_t field_number, uint64_t)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteDouble(uint32_t field_number, double)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteFloat(uint32_t field_number, float)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteBool(uint32_t field_number, bool)
+* :cc:`WriteUint64 <pw::protobuf::StreamEncoder::WriteUint64>`
+* :cc:`WriteSint64 <pw::protobuf::StreamEncoder::WriteSint64>`
+* :cc:`WriteInt64 <pw::protobuf::StreamEncoder::WriteInt64>`
+* :cc:`WriteUint32 <pw::protobuf::StreamEncoder::WriteUint32>`
+* :cc:`WriteSint32 <pw::protobuf::StreamEncoder::WriteSint32>`
+* :cc:`WriteInt32 <pw::protobuf::StreamEncoder::WriteInt32>`
+* :cc:`WriteFixed64 <pw::protobuf::StreamEncoder::WriteFixed64>`
+* :cc:`WriteFixed32 <pw::protobuf::StreamEncoder::WriteFixed32>`
+* :cc:`WriteDouble <pw::protobuf::StreamEncoder::WriteDouble>`
+* :cc:`WriteFloat <pw::protobuf::StreamEncoder::WriteFloat>`
+* :cc:`WriteBool <pw::protobuf::StreamEncoder::WriteBool>`
 
-The following two method calls are equivalent, where the first is using the
-code generated API, and the second implemented by hand.
+The following two method calls are equivalent. The first is using the
+code-generated API, and the second is using the lower-level API.
 
 .. code-block:: c++
 
@@ -1868,48 +1868,53 @@ code generated API, and the second implemented by hand.
 
 Repeated Fields
 ---------------
-For repeated scalar fields, multiple code generated ``WriteFoos`` methods
-are provided.
+For repeated scalar fields, multiple code-generated methods are provided.
+The following example writes a single unpacked value:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoos(T)
+.. code-block:: c++
 
-   This writes a single unpacked value.
+   Status MyProto::StreamEncoder::WriteFoos(T)
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoos(pw::span<const T>)
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoos(const pw::Vector<T>&)
+The following examples write a packed field containing all of the values in the
+provided span or vector:
 
-   These write a packed field containing all of the values in the provided span
-   or vector.
+.. code-block:: c++
 
-These too can be freely intermixed with the lower-level API methods, both to
-write a single value, or to write packed values from either a ``pw::span`` or
-``pw::Vector`` source.
+   Status MyProto::StreamEncoder::WriteFoos(pw::span<const T>)
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedUint64(uint32_t field_number, pw::span<const uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedUint64(uint32_t field_number, const pw::Vector<uint64_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedSint64(uint32_t field_number, pw::span<const int64_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedSint64(uint32_t field_number, const pw::Vector<int64_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedInt64(uint32_t field_number, pw::span<const int64_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedInt64(uint32_t field_number, const pw::Vector<int64_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedUint32(uint32_t field_number, pw::span<const uint32_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedUint32(uint32_t field_number, const pw::Vector<uint32_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedSint32(uint32_t field_number, pw::span<const int32_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedSint32(uint32_t field_number, const pw::Vector<int32_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedInt32(uint32_t field_number, pw::span<const int32_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedInt32(uint32_t field_number, const pw::Vector<int32_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedFixed64(uint32_t field_number, pw::span<const uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedFixed64(uint32_t field_number, const pw::Vector<uint64_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedFixed32(uint32_t field_number, pw::span<const uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedFixed32(uint32_t field_number, const pw::Vector<uint64_t>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedDouble(uint32_t field_number, pw::span<const double>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedDouble(uint32_t field_number, const pw::Vector<double>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedFloat(uint32_t field_number, pw::span<const float>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedFloat(uint32_t field_number, const pw::Vector<float>&)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WritePackedBool(uint32_t field_number, pw::span<const bool>)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteRepeatedBool(uint32_t field_number, const pw::Vector<bool>&)
+.. code-block:: c++
+
+   Status MyProto::StreamEncoder::WriteFoos(const pw::Vector<T>&)
+
+The generated methods can be freely intermixed with the following lower-level
+methods, both to write a single value, or to write packed values from either a
+:cc:`pw::span` or :cc:`pw::Vector` source.
+
+* :cc:`WritePackedUint64 <pw::protobuf::StreamEncoder::WritePackedUint64>`
+* :cc:`WriteRepeatedUint64 <pw::protobuf::StreamEncoder::WriteRepeatedUint64>`
+* :cc:`WritePackedSint64 <pw::protobuf::StreamEncoder::WritePackedSint64>`
+* :cc:`WriteRepeatedSint64 <pw::protobuf::StreamEncoder::WriteRepeatedSint64>`
+* :cc:`WritePackedInt64 <pw::protobuf::StreamEncoder::WritePackedInt64>`
+* :cc:`WriteRepeatedInt64 <pw::protobuf::StreamEncoder::WriteRepeatedInt64>`
+* :cc:`WritePackedUint32 <pw::protobuf::StreamEncoder::WritePackedUint32>`
+* :cc:`WriteRepeatedUint32 <pw::protobuf::StreamEncoder::WriteRepeatedUint32>`
+* :cc:`WritePackedSint32 <pw::protobuf::StreamEncoder::WritePackedSint32>`
+* :cc:`WriteRepeatedSint32 <pw::protobuf::StreamEncoder::WriteRepeatedSint32>`
+* :cc:`WritePackedInt32 <pw::protobuf::StreamEncoder::WritePackedInt32>`
+* :cc:`WriteRepeatedInt32 <pw::protobuf::StreamEncoder::WriteRepeatedInt32>`
+* :cc:`WritePackedFixed64 <pw::protobuf::StreamEncoder::WritePackedFixed64>`
+* :cc:`WriteRepeatedFixed64 <pw::protobuf::StreamEncoder::WriteRepeatedFixed64>`
+* :cc:`WritePackedFixed32 <pw::protobuf::StreamEncoder::WritePackedFixed32>`
+* :cc:`WriteRepeatedFixed32 <pw::protobuf::StreamEncoder::WriteRepeatedFixed32>`
+* :cc:`WritePackedDouble <pw::protobuf::StreamEncoder::WritePackedDouble>`
+* :cc:`WriteRepeatedDouble <pw::protobuf::StreamEncoder::WriteRepeatedDouble>`
+* :cc:`WritePackedFloat <pw::protobuf::StreamEncoder::WritePackedFloat>`
+* :cc:`WriteRepeatedFloat <pw::protobuf::StreamEncoder::WriteRepeatedFloat>`
+* :cc:`WritePackedBool <pw::protobuf::StreamEncoder::WritePackedBool>`
+* :cc:`WriteRepeatedBool <pw::protobuf::StreamEncoder::WriteRepeatedBool>`
 
 The following two method calls are equivalent, where the first is using the
-code generated API, and the second implemented by hand.
+code-generated API, and the second is using the lower-level API:
 
 .. code-block:: c++
 
@@ -1923,15 +1928,17 @@ Enumerations
 ============
 Enumerations are written using code generated ``WriteEnum`` methods that
 accept the code generated enumeration as the appropriate type and automatically
-writes both the correct field number and corresponding value.
+writes both the correct field number and corresponding value. Example:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteEnum(MyProto::Enum)
+.. code-block:: c++
+
+   Status MyProto::StreamEncoder::WriteEnum(MyProto::Enum)
 
 To write enumerations with the lower-level API, you would need to cast both
 the field number and value to the ``uint32_t`` type.
 
-The following two methods are equivalent, where the first is code generated,
-and the second implemented by hand.
+The following two methods are equivalent, where the first is using the
+code-generated API, and the second is using the lower-level API:
 
 .. code-block:: c++
 
@@ -1942,62 +1949,72 @@ and the second implemented by hand.
 Repeated Fields
 ---------------
 For repeated enum fields, multiple code generated ``WriteEnums`` methods
-are provided.
+are provided. Examples:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteEnums(MyProto::Enums)
+.. code-block:: c++
 
-   This writes a single unpacked value.
+   // Writes a single unpacked value.
+   Status MyProto::StreamEncoder::WriteEnums(MyProto::Enums)
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteEnums(pw::span<const MyProto::Enums>)
-.. cpp:function:: Status MyProto::StreamEncoder::WriteEnums(const pw::Vector<MyProto::Enums>&)
+.. code-block:: c++
 
-   These write a packed field containing all of the values in the provided span
-   or vector.
+   // Writes a packed field containing all the values in the provided span.
+   Status MyProto::StreamEncoder::WriteEnums(pw::span<const MyProto::Enums>)
+
+.. code-block:: c++
+
+   // Writes a packed field containing all the values in the provided vector.
+   Status MyProto::StreamEncoder::WriteEnums(const pw::Vector<MyProto::Enums>&)
 
 Their use is as scalar fields.
 
 Strings
 =======
-Strings fields have multiple code generated methods provided.
+Multiple code-generated methods are provided for string fields. Examples:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteName(std::string_view)
-.. cpp:function:: Status MyProto::StreamEncoder::WriteName(const char*, size_t)
+.. code-block:: c++
 
-These can be freely intermixed with the lower-level API methods.
+   Status MyProto::StreamEncoder::WriteName(std::string_view)
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteString(uint32_t field_number, std::string_view)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteString(uint32_t field_number, const char*, size_t)
+.. code-block:: c++
 
-A lower level API method is provided that can write a string from another
-stream.
+   Status MyProto::StreamEncoder::WriteName(const char*, size_t)
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteStringFromStream(uint32_t field_number, stream::Reader& bytes_reader, size_t num_bytes, ByteSpan stream_pipe_buffer)
+These can be freely intermixed with the lower-level API methods:
 
-   The payload for the value is provided through the stream::Reader
-   ``bytes_reader``. The method reads a chunk of the data from the reader using
-   the ``stream_pipe_buffer`` and writes it to the encoder.
+* :cc:`WriteString(uint32_t field_number, std::string_view)
+  <pw::protobuf::StreamEncoder::WriteString(uint32_t field_number, std::string_view)>`
+* :cc:`WriteString(uint32_t field_number, const char*, size_t)
+  <pw::protobuf::StreamEncoder::WriteString(uint32_t field_number, const char*, size_t)>`
+
+:cc:`WriteStringFromStream
+<pw::protobuf::StreamEncoder::WriteStringFromStream>` can write a string from
+another stream. The ``bytes_reader`` arg provides the payload for the value.
+The method reads a chunk of the data from ``bytes_reader`` using the
+``stream_pipe_buffer`` arg and writes it to the encoder.
 
 Bytes
 =====
-Bytes fields have multiple code generated methods provided.
-The ``write_func`` callback version allows direct writes to the underlying
-stream, eliminating the need for a temporary copy buffer.
+Multiple code-generated methods are provided for bytes fields. The
+``write_func`` callback version allows direct writes to the underlying
+stream, eliminating the need for a temporary copy buffer. Examples:
 
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoo(ConstByteSpan)
-.. cpp:function:: Status MyProto::StreamEncoder::WriteFoo(size_t num_bytes, const pw::Function<pw::Status(pw::stream::Writer&)> write_func);
+.. code-block:: c++
 
-These can be freely intermixed with the lower-level API method.
+   Status MyProto::StreamEncoder::WriteFoo(ConstByteSpan)
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteBytes(uint32_t field_number, ConstByteSpan)
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteBytes(size_t num_bytes, const pw::Function<pw::Status(pw::stream::Writer&)> write_func);
+.. code-block:: c++
 
-And with the API method that can write bytes from another stream.
+   Status MyProto::StreamEncoder::WriteFoo(size_t num_bytes, const pw::Function<pw::Status(pw::stream::Writer&)> write_func)
 
-.. cpp:function:: Status pw::protobuf::StreamEncoder::WriteBytesFromStream(uint32_t field_number, stream::Reader& bytes_reader, size_t num_bytes, ByteSpan stream_pipe_buffer)
+These can be freely intermixed with the lower-level API method,
+:cc:`WriteBytes <pw::protobuf::StreamEncoder::WriteBytes>`.
 
-   The payload for the value is provided through the stream::Reader
-   ``bytes_reader``. The method reads a chunk of the data from the reader using
-   the ``stream_pipe_buffer`` and writes it to the encoder.
+:cc:`WriteBytesFromStream
+<pw::protobuf::StreamEncoder::WriteBytesFromStream>` can write bytes from another
+stream. The ``bytes_reader`` arg provides the payload for the value. The method
+reads a chunk of the data from ``bytes_reader`` using the ``stream_pipe_buffer``
+arg and writes it to the encoder.
 
 Error Handling
 ==============
@@ -2043,16 +2060,19 @@ Unknown fields in the wire encoding are skipped.
 
 If finer-grained control is required, the ``StreamDecoder`` class provides an
 iterator-style API for processing a message a field at a time where calling
-``Next()`` advances the decoder to the next proto field.
+:cc:`Next <pw::protobuf::StreamDecoder::Next>` advances the decoder to the next
+proto field.
 
-.. cpp:function:: Status pw::protobuf::StreamDecoder::Next()
+In the code-generated classes the ``Field()`` method returns the current field
+as a typed ``Fields`` enumeration member. Example:
 
-In the code generated classes the ``Field()`` method returns the current field
-as a typed ``Fields`` enumeration member, while the lower-level API provides a
-``FieldNumber()`` method that returns the number of the field.
+.. code-block:: c++
 
-.. cpp:function:: Result<MyProto::Fields> MyProto::StreamDecoder::Field()
-.. cpp:function:: Result<uint32_t> pw::protobuf::StreamDecoder::FieldNumber()
+   Result<MyProto::Fields> MyProto::StreamDecoder::Field()
+
+The lower-level API provides a :cc:`FieldNumber
+<pw::protobuf::StreamDecoder::FieldNumber>` method that returns the number of
+the field.
 
 .. code-block:: c++
 
@@ -2122,7 +2142,7 @@ calling ``Read()`` on a nested decoder.
 
 Nested submessages
 ==================
-Code generated ``GetFieldDecoder`` methods are provided that return a correctly
+Code-generated ``GetFieldDecoder`` methods are provided that return a correctly
 typed ``StreamDecoder`` for the message.
 
 .. code-block:: protobuf
@@ -2132,16 +2152,19 @@ typed ``StreamDecoder`` for the message.
    }
 
 As with encoding, note that the accessor method is named for the field, while
-the returned decoder is named for the message type.
+the returned decoder is named for the message type. Example:
 
-.. cpp:function:: Animal::StreamDecoder Owner::StreamDecoder::GetPetDecoder()
+.. code-block:: c++
 
-A lower-level API method returns an untyped decoder, which only provides the
-lower-level API methods. This can be moved to a typed decoder later.
+   Animal::StreamDecoder Owner::StreamDecoder::GetPetDecoder()
 
-.. cpp:function:: pw::protobuf::StreamDecoder pw::protobuf::StreamDecoder::GetNestedDecoder()
+The lower-level :cc:`GetNestedDecoder
+<pw::protobuf::StreamDecoder::GetNestedDecoder>` method returns an untyped
+decoder, which only provides the lower-level API methods. This can be moved to a
+typed decoder later.
 
 .. warning::
+
    When a nested submessage is being decoded, any use of the parent decoder that
    created the nested decoder will trigger a crash. To resume using the parent
    decoder, destroy the submessage decoder first.
@@ -2167,28 +2190,32 @@ lower-level API methods. This can be moved to a typed decoder later.
 
 Scalar Fields
 =============
-Scalar fields are read using code generated ``ReadFoo`` methods that return the
-appropriate type and assert that the correct field number ie being read.
+Code-generated methods are provided for scalar fields. Each generated method
+returns the appropriate type and asserts that the correct field number is being
+read. Example:
 
-.. cpp:function:: Result<T> MyProto::StreamDecoder::ReadFoo()
+.. code-block:: c++
+
+   Result<T> MyProto::StreamDecoder::ReadFoo()
 
 These can be freely intermixed with the lower-level API that provides a method
 per field type, requiring that the caller first check the field number.
+Lower-level API methods:
 
-.. cpp:function:: Result<uint64_t> pw::protobuf::StreamDecoder::ReadUint64()
-.. cpp:function:: Result<int64_t> pw::protobuf::StreamDecoder::ReadSint64()
-.. cpp:function:: Result<int64_t> pw::protobuf::StreamDecoder::ReadInt64()
-.. cpp:function:: Result<uint32_t> pw::protobuf::StreamDecoder::ReadUint32()
-.. cpp:function:: Result<int32_t> pw::protobuf::StreamDecoder::ReadSint32()
-.. cpp:function:: Result<int32_t> pw::protobuf::StreamDecoder::ReadInt32()
-.. cpp:function:: Result<uint64_t> pw::protobuf::StreamDecoder::ReadFixed64()
-.. cpp:function:: Result<uint64_t> pw::protobuf::StreamDecoder::ReadFixed32()
-.. cpp:function:: Result<double> pw::protobuf::StreamDecoder::ReadDouble()
-.. cpp:function:: Result<float> pw::protobuf::StreamDecoder::ReadFloat()
-.. cpp:function:: Result<bool> pw::protobuf::StreamDecoder::ReadBool()
+* :cc:`ReadUint64 <pw::protobuf::StreamDecoder::ReadUint64>`
+* :cc:`ReadSint64 <pw::protobuf::StreamDecoder::ReadSint64>`
+* :cc:`ReadInt64 <pw::protobuf::StreamDecoder::ReadInt64>`
+* :cc:`ReadUint32 <pw::protobuf::StreamDecoder::ReadUint32>`
+* :cc:`ReadSint32 <pw::protobuf::StreamDecoder::ReadSint32>`
+* :cc:`ReadInt32 <pw::protobuf::StreamDecoder::ReadInt32>`
+* :cc:`ReadFixed64 <pw::protobuf::StreamDecoder::ReadFixed64>`
+* :cc:`ReadFixed32 <pw::protobuf::StreamDecoder::ReadFixed32>`
+* :cc:`ReadDouble <pw::protobuf::StreamDecoder::ReadDouble>`
+* :cc:`ReadFloat <pw::protobuf::StreamDecoder::ReadFloat>`
+* :cc:`ReadBool <pw::protobuf::StreamDecoder::ReadBool>`
 
-The following two code snippets are equivalent, where the first uses the code
-generated API, and the second implemented by hand.
+The following two code snippets are equivalent. The first is using the
+code-generated API, and the second is using the lower-level API:
 
 .. code-block:: c++
 
@@ -2202,55 +2229,58 @@ generated API, and the second implemented by hand.
 
 Repeated Fields
 ---------------
-For repeated scalar fields, multiple code generated ``ReadFoos`` methods
-are provided.
+For repeated scalar fields, multiple code-generated methods are provided.
+The following example reads a single unpacked value:
 
-.. cpp:function:: Result<T> MyProto::StreamDecoder::ReadFoos()
+.. code-block:: c++
 
-   This reads a single unpacked value.
+   Result<T> MyProto::StreamDecoder::ReadFoos()
 
-.. cpp:function:: StatusWithSize MyProto::StreamDecoder::ReadFoos(pw::span<T>)
+The following example reads a packed field containing all of the values into
+the provided span:
 
-   This reads a packed field containing all of the values into the provided span.
+.. code-block:: c++
 
-.. cpp:function:: Status MyProto::StreamDecoder::ReadFoos(pw::Vector<T>&)
+   StatusWithSize MyProto::StreamDecoder::ReadFoos(pw::span<T>)
 
-   Protobuf encoders are permitted to choose either repeating single unpacked
-   values, or a packed field, including splitting repeated fields up into
-   multiple packed fields.
+Protobuf encoders are permitted to choose either repeating single unpacked
+values, or a packed field, including splitting repeated fields up into multiple
+packed fields. The following method supports either format, appending values to
+the provided ``pw::Vector``:
 
-   This method supports either format, appending values to the provided
-   ``pw::Vector``.
+.. code-block:: c++
 
-These too can be freely intermixed with the lower-level API methods, to read a
-single value, a field of packed values into a ``pw::span``, or support both
-formats appending to a ``pw::Vector`` source.
+   Status MyProto::StreamDecoder::ReadFoos(pw::Vector<T>&)
 
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedUint64(pw::span<uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedUint64(pw::Vector<uint64_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedSint64(pw::span<int64_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedSint64(pw::Vector<int64_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedInt64(pw::span<int64_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedInt64(pw::Vector<int64_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedUint32(pw::span<uint32_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedUint32(pw::Vector<uint32_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedSint32(pw::span<int32_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedSint32(pw::Vector<int32_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedInt32(pw::span<int32_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedInt32(pw::Vector<int32_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedFixed64(pw::span<uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedFixed64(pw::Vector<uint64_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedFixed32(pw::span<uint64_t>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedFixed32(pw::Vector<uint64_t>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedDouble(pw::span<double>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedDouble(pw::Vector<double>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedFloat(pw::span<float>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedFloat(pw::Vector<float>&)
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadPackedBool(pw::span<bool>)
-.. cpp:function:: Status pw::protobuf::StreamDecoder::ReadRepeatedBool(pw::Vector<bool>&)
+These too can be freely intermixed with the following lower-level API methods,
+to read a single value, a field of packed values into a :cc:`pw::span`, or
+support both formats appending to a :cc:`pw::Vector` source:
 
-The following two code blocks are equivalent, where the first uses the code
-generated API, and the second is implemented by hand.
+* :cc:`ReadPackedUint64 <pw::protobuf::StreamDecoder::ReadPackedUint64>`
+* :cc:`ReadRepeatedUint64 <pw::protobuf::StreamDecoder::ReadRepeatedUint64>`
+* :cc:`ReadPackedSint64 <pw::protobuf::StreamDecoder::ReadPackedSint64>`
+* :cc:`ReadRepeatedSint64 <pw::protobuf::StreamDecoder::ReadRepeatedSint64>`
+* :cc:`ReadPackedInt64 <pw::protobuf::StreamDecoder::ReadPackedInt64>`
+* :cc:`ReadRepeatedInt64 <pw::protobuf::StreamDecoder::ReadRepeatedInt64>`
+* :cc:`ReadPackedUint32 <pw::protobuf::StreamDecoder::ReadPackedUint32>`
+* :cc:`ReadRepeatedUint32 <pw::protobuf::StreamDecoder::ReadRepeatedUint32>`
+* :cc:`ReadPackedSint32 <pw::protobuf::StreamDecoder::ReadPackedSint32>`
+* :cc:`ReadRepeatedSint32 <pw::protobuf::StreamDecoder::ReadRepeatedSint32>`
+* :cc:`ReadPackedInt32 <pw::protobuf::StreamDecoder::ReadPackedInt32>`
+* :cc:`ReadRepeatedInt32 <pw::protobuf::StreamDecoder::ReadRepeatedInt32>`
+* :cc:`ReadPackedFixed64 <pw::protobuf::StreamDecoder::ReadPackedFixed64>`
+* :cc:`ReadRepeatedFixed64 <pw::protobuf::StreamDecoder::ReadRepeatedFixed64>`
+* :cc:`ReadPackedFixed32 <pw::protobuf::StreamDecoder::ReadPackedFixed32>`
+* :cc:`ReadRepeatedFixed32 <pw::protobuf::StreamDecoder::ReadRepeatedFixed32>`
+* :cc:`ReadPackedDouble <pw::protobuf::StreamDecoder::ReadPackedDouble>`
+* :cc:`ReadRepeatedDouble <pw::protobuf::StreamDecoder::ReadRepeatedDouble>`
+* :cc:`ReadPackedFloat <pw::protobuf::StreamDecoder::ReadPackedFloat>`
+* :cc:`ReadRepeatedFloat <pw::protobuf::StreamDecoder::ReadRepeatedFloat>`
+* :cc:`ReadPackedBool <pw::protobuf::StreamDecoder::ReadPackedBool>`
+* :cc:`ReadRepeatedBool <pw::protobuf::StreamDecoder::ReadRepeatedBool>`
+
+The following two code blocks are equivalent. The first is using the
+code-generated API, and the second is using the lower-level API:
 
 .. code-block:: c++
 
@@ -2270,49 +2300,56 @@ Enumerations
 ============
 ``pw_protobuf`` generates a few functions for working with enumerations.
 Most importantly, enumerations are read using generated ``ReadEnum`` methods
-that return the enumeration as the appropriate generated type.
+that return the enumeration as the appropriate generated type. Example:
 
-.. cpp:function:: Result<MyProto::Enum> MyProto::StreamDecoder::ReadEnum()
+.. code-block:: c++
 
-   Decodes an enum from the stream.
+   // Decodes an enum from the stream.
+   Result<MyProto::Enum> MyProto::StreamDecoder::ReadEnum()
 
-.. cpp:function:: constexpr bool MyProto::IsValidEnum(MyProto::Enum value)
+``IsValidEnum`` validates the value encoded in the wire format against the
+known set of enumerators:
 
-   Validates the value encoded in the wire format against the known set of
-   enumerators.
+.. code-block:: c++
 
-.. cpp:function:: constexpr const char* MyProto::EnumToString(MyProto::Enum value, const char* invalid = "")
+   constexpr bool MyProto::IsValidEnum(MyProto::Enum value)
 
-   Returns the string representation of the enum value, in UPPER_SNAKE_CASE.
-   Returns ``invalid`` (which defaults to an empty string) if the value is not a
-   valid enumerator.
+``EnumToString`` returns the string representation of the enum value, in
+``UPPER_SNAKE_CASE``. Returns ``invalid`` (which defaults to an empty string)
+if the value is not a valid enumerator.
 
-   Examples:
+.. code-block:: c++
 
-   * ``FooToString(Foo::kBarBaz)`` returns ``"BAR_BAZ"``.
+   constexpr const char* MyProto::EnumToString(MyProto::Enum value,
+                                               const char* invalid = "")
 
-   * ``FooToString(static_cast<Foo>(666), "cheese")`` returns ``"cheese"``
-     (assuming 666 is an invalid Foo enumerator).
+Examples:
 
-.. cpp:var:: inline constexpr std::array<Enum, 7> kEnumValues
+* ``FooToString(Foo::kBarBaz)`` returns ``"BAR_BAZ"``.
+* ``FooToString(static_cast<Foo>(666), "cheese")`` returns ``"cheese"``
+  (assuming 666 is an invalid Foo enumerator).
 
-   An array of all enumerator values.
+``kEnumValues`` is an array of all enumerator values:
 
-   Example usage:
+.. code-block:: c++
 
-   .. code-block:: c++
+   inline constexpr std::array<Enum, 7> kEnumValues
 
-      for (const Enum value : MyProto::kEnumValues) {
-      }
+Example usage:
 
-   These can be used with ``EnumToString()`` to produce the enumerator names as
-   strings, with no overhead due to its ``constexpr`` implementation.
+.. code-block:: c++
+
+   for (const Enum value : MyProto::kEnumValues) {
+   }
+
+These can be used with ``EnumToString()`` to produce the enumerator names as
+strings, with no overhead due to its ``constexpr`` implementation.
 
 To read enumerations with the lower-level API, you would need to cast the
-retured value from the ``uint32_t``.
+returned value from ``uint32_t``.
 
-The following two code blocks are equivalent, where the first is using the code
-generated API, and the second implemented by hand.
+The following two code blocks are equivalent. The first is using the
+code-generated API, and the second is using the lower-level API:
 
 .. code-block:: c++
 
@@ -2332,68 +2369,78 @@ generated API, and the second implemented by hand.
 
 Repeated Fields
 ---------------
-For repeated enum fields, multiple code generated ``ReadEnums`` methods
-are provided.
+For repeated enum fields, multiple code-generated ``ReadEnums`` methods
+are provided. Examples:
 
-.. cpp:function:: Result<MyProto::Enums> MyProto::StreamDecoder::ReadEnums()
+.. code-block:: c++
 
-   This reads a single unpacked value.
+   // Reads a single unpacked value.
+   Result<MyProto::Enums> MyProto::StreamDecoder::ReadEnums()
 
-.. cpp:function:: StatusWithSize MyProto::StreamDecoder::ReadEnums(pw::span<MyProto::Enums>)
+.. code-block:: c++
 
-   This reads a packed field containing all of the checked values into the
-   provided span.
+   // Reads a packed field containing all of the checked values into the provided span.
+   StatusWithSize MyProto::StreamDecoder::ReadEnums(pw::span<MyProto::Enums>)
 
-.. cpp:function:: Status MyProto::StreamDecoder::ReadEnums(pw::Vector<MyProto::Enums>&)
+.. code-block:: c++
 
-   This method supports either repeated unpacked or packed formats, appending
-   checked values to the provided ``pw::Vector``.
+   // Supports either repeated unpacked or packed formats, appending checked values
+   // to the provided vector.
+   Status MyProto::StreamDecoder::ReadEnums(pw::Vector<MyProto::Enums>&)
 
 Their use is as scalar fields.
 
 Strings
 =======
-Strings fields provide a code generated method to read the string into the
+String fields provide a code-generated method to read the string into the
 provided span. Since the span is updated with the size of the string, the string
 is not automatically null-terminated. :ref:`module-pw_string` provides utility
-methods to copy string data from spans into other targets.
+methods to copy string data from spans into other targets. Example:
 
-.. cpp:function:: StatusWithSize MyProto::StreamDecoder::ReadName(pw::span<char>)
+.. code-block:: c++
 
-An additional code generated method is provided to return a nested
+   StatusWithSize MyProto::StreamDecoder::ReadName(pw::span<char>)
+
+An additional code-generated method is provided to return a nested
 ``BytesReader`` to access the data as a stream. As with nested submessage
 decoders, any use of the parent decoder that created the bytes reader will
 trigger a crash. To resume using the parent decoder, destroy the bytes reader
-first.
+first. Example:
 
-.. cpp:function:: pw::protobuf::StreamDecoder::BytesReader MyProto::StreamDecoder::GetNameReader()
+.. code-block:: c++
 
-These can be freely intermixed with the lower-level API method:
+   pw::protobuf::StreamDecoder::BytesReader MyProto::StreamDecoder::GetNameReader()
 
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadString(pw::span<char>)
+These can be freely intermixed with the lower-level API method,
+:cc:`ReadString <pw::protobuf::StreamDecoder::ReadString>`.
 
-The lower-level ``GetBytesReader()`` method can also be used to read string data
-as bytes.
+The lower-level :cc:`GetBytesReader
+<pw::protobuf::StreamDecoder::GetBytesReader>` method can also be used to read
+string data as bytes.
 
 Bytes
 =====
-Bytes fields provide the ``WriteData`` code generated method to read the bytes
-into the provided span.
+Bytes fields provide the ``ReadData`` code-generated method to read the bytes
+into the provided span. Example:
 
-.. cpp:function:: StatusWithSize MyProto::StreamDecoder::ReadData(ByteSpan)
+.. code-block:: c++
 
-An additional code generated method is provided to return a nested
+   StatusWithSize MyProto::StreamDecoder::ReadData(ByteSpan)
+
+An additional code-generated method is provided to return a nested
 ``BytesReader`` to access the data as a stream. As with nested submessage
 decoders, any use of the parent decoder that created the bytes reader will
 trigger a crash. To resume using the parent decoder, destroy the bytes reader
-first.
+first. Example:
 
-.. cpp:function:: pw::protobuf::StreamDecoder::BytesReader MyProto::StreamDecoder::GetDataReader()
+.. code-block:: c++
 
-These can be freely intermixed with the lower-level API methods.
+   pw::protobuf::StreamDecoder::BytesReader MyProto::StreamDecoder::GetDataReader()
 
-.. cpp:function:: StatusWithSize pw::protobuf::StreamDecoder::ReadBytes(ByteSpan)
-.. cpp:function:: pw::protobuf::StreamDecoder::BytesReader pw::protobuf::StreamDecoder::GetBytesReader()
+These can be freely intermixed with the lower-level API methods:
+
+* :cc:`ReadBytes <pw::protobuf::StreamDecoder::ReadBytes>`
+* :cc:`GetBytesReader <pw::protobuf::StreamDecoder::GetBytesReader>`
 
 The ``BytesReader`` supports seeking only if the ``StreamDecoder``'s reader
 supports seeking.

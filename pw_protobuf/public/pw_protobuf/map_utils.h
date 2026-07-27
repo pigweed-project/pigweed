@@ -30,26 +30,27 @@ namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// The function writes an entry for the proto map<string, bytes> field type.
-//
-// Args:
-//   field_number - The field number for the map.
-//   key - The string payload for the key value of the entry.
-//   key_size - Number of bytes in the key.
-//   value - The value payload for the entry.
-//   value_size - Number of bytes in the value.
-//   stream_pipe_buffer - A non-zero size buffer for the function to read and
-//     store data from the reader and write to the given writer.
-//   writer - The output writer to write to.
-//
-// Returns:
-// OK - Entry is successfully written.
-// RESOURCE_EXHAUSTED - Entry would exceed write limit.
-// INVALID_ARGUMENT - Field number is invalid.
-//
-// Since all length-delimited fields can be treated as `bytes`,
-// it can be used to write any string to length-delimited field map, i.e.
-// map<string, message>, map<string, bytes> etc.
+/// Writes an entry for the proto `map<string, bytes>` field type.
+///
+/// Since all length-delimited fields can be treated as `bytes`, this function
+/// can be used to write any string-keyed map entry with length-delimited
+/// values, such as `map<string, message>` or `map<string, bytes>`.
+///
+/// @param[in] field_number The field number for the map.
+/// @param[in,out] key Stream reader for the string key payload.
+/// @param[in] key_size Number of bytes in the key.
+/// @param[in,out] value Stream reader for the value payload.
+/// @param[in] value_size Number of bytes in the value.
+/// @param[in] stream_pipe_buffer A non-zero sized buffer used for reading data
+/// from the readers and staging it to the writer.
+/// @param[in,out] writer The output writer to write serialized map entry data
+/// to.
+///
+/// @returns
+/// * @OK: Entry successfully written.
+/// * @RESOURCE_EXHAUSTED: Entry would exceed the writer limit.
+/// * @INVALID_ARGUMENT: Field number is invalid
+/// (`!ValidFieldNumber(field_number)`).
 Status WriteProtoStringToBytesMapEntry(uint32_t field_number,
                                        stream::Reader& key,
                                        size_t key_size,
@@ -58,6 +59,6 @@ Status WriteProtoStringToBytesMapEntry(uint32_t field_number,
                                        ByteSpan stream_pipe_buffer,
                                        stream::Writer& writer);
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf

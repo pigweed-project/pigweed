@@ -43,33 +43,59 @@ namespace pw::protobuf {
 
 /// @module{pw_protobuf}
 
-// Provides a size estimate to help with sizing buffers passed to
-// StreamEncoder and MemoryEncoder objects.
-//
-// Args:
-//   max_message_size: For MemoryEncoder objects, this is the max expected size
-//     of the final proto. For StreamEncoder objects, this should be the max
-//     size of any nested proto submessage that will be built with this encoder
-//     (recursively accumulating the size from the root submessage). If your
-//     proto will encode many large submessages, this value should just be the
-//     size of the largest one.
-//  max_nested_depth: The max number of nested submessage encoders that are
-//     expected to be open simultaneously to encode this proto message.
+/// Provides a size estimate to help with sizing buffers passed to
+/// `StreamEncoder` and `MemoryEncoder` objects.
+///
+/// Writing proto messages with nested submessages requires buffering due to
+/// limitations of the proto format. Every proto submessage must know the size
+/// of the submessage before its final serialization can begin. A streaming
+/// encoder can be passed a scratch buffer to use when constructing nested
+/// messages. All submessage data is buffered to this scratch buffer until the
+/// submessage is finalized. Note that the contents of this scratch buffer is
+/// not necessarily valid proto data, so don't try to use it directly.
+///
+/// @see If you need to avoid scratch buffers or reduce copying of nested
+/// submessages, consider using `BufferEncoder` instead of `StreamEncoder` or
+/// `MemoryEncoder`.
+///
+/// The code generation includes a `kScratchBufferSizeBytes` constant that
+/// represents the size of the largest submessage and all necessary overhead,
+/// excluding the contents of any field values which require a callback.
+/// If a submessage field requires a callback due to a dependency cycle or a
+/// repeated field of unknown length, add the appropriate structure's
+/// `kMaxEncodedSizeBytes` constant to the scratch buffer size to guarantee
+/// enough space.
+///
+/// When calculating buffer sizes yourself, `MaxScratchBufferSize()` can be
+/// useful in estimating how much space to allocate to account for nested
+/// submessage encoding overhead.
+///
+/// @warning If the scratch buffer size is not sufficient, the encoding will
+/// fail with @RESOURCE_EXHAUSTED. Always check the results of `Write` calls
+/// or the encoder status to ensure success, as otherwise the encoded data will
+/// be invalid.
+///
+/// @param[in] max_message_size For `MemoryEncoder` objects, this is the max
+/// expected size of the final proto. For `StreamEncoder` objects, this should
+/// be the max size of any nested proto submessage that will be built with this
+/// encoder (recursively accumulating the size from the root submessage). If
+/// your proto will encode many large submessages, this value should just be the
+/// size of the largest one.
+/// @param[in] max_nested_depth The max number of nested submessage encoders
+/// that are expected to be open simultaneously to encode this proto message.
 constexpr size_t MaxScratchBufferSize(size_t max_message_size,
                                       size_t max_nested_depth) {
   return max_message_size + max_nested_depth * config::kMaxVarintSize;
 }
 
-// Write a varint value to the writer.
-//
-// Args:
-//   value: The value of the varint to write
-//   writer: The writer for writing to output.
-//
-// Returns:
-// OK - varint is written successfully
-//
-// Errors encountered by the `writer` will be returned as it is.
+/// Writes a varint value to the writer.
+///
+/// @param[in] value The value of the varint to write.
+/// @param[in] writer The writer for writing to output.
+///
+/// @returns
+/// * @OK: Varint written successfully.
+/// * Other errors encountered by `writer` are returned as is.
 inline Status WriteVarint(uint64_t value, stream::Writer& writer) {
   std::array<std::byte, varint::kMaxVarint64SizeBytes> varint_encode_buffer;
   const size_t varint_size =
@@ -77,24 +103,24 @@ inline Status WriteVarint(uint64_t value, stream::Writer& writer) {
   return writer.Write(span(varint_encode_buffer).first(varint_size));
 }
 
-// Write the field key and length prefix for a length-delimited field. It is
-// up to the caller to ensure that this will be followed by an exact number
-// of bytes written for the field in order to form a valid proto message.
-//
-// Args:
-//   field_number: The field number for the field.
-//   payload_size: The size of the payload.
-//   writer: The output writer to write to
-//
-//
-// Returns:
-// OK - Field key is written successfully
-//
-// Errors encountered by the `writer` will be returned as it is.
-//
-// Precondition: The field_number must be a ValidFieldNumber.
-// Precondition: `data_size_bytes` must be smaller than
-//   std::numeric_limits<uint32_t>::max()
+/// Writes the field key and length prefix for a length-delimited field.
+///
+/// It is up to the caller to ensure that this will be followed by an exact
+/// number of bytes written for the field in order to form a valid proto
+/// message.
+///
+/// @param[in] field_number The field number for the field.
+/// @param[in] payload_size The size of the payload.
+/// @param[in] writer The output writer to write to.
+///
+/// @returns
+/// * @OK: Field key and length prefix written successfully.
+/// * Other errors encountered by `writer` are returned as is.
+///
+/// @pre `field_number` must be a valid field number
+/// (`ValidFieldNumber(field_number)`).
+/// @pre `payload_size` must be smaller than or equal to
+/// `std::numeric_limits<uint32_t>::max()`.
 inline Status WriteLengthDelimitedKeyAndLengthPrefix(uint32_t field_number,
                                                      size_t payload_size,
                                                      stream::Writer& writer) {
@@ -106,23 +132,42 @@ inline Status WriteLengthDelimitedKeyAndLengthPrefix(uint32_t field_number,
 // coupled.
 class MemoryEncoder;
 
-// A protobuf encoder that encodes serialized proto data to a
-// pw::stream::Writer.
+/// A protobuf encoder that encodes serialized proto data to a
+/// `pw::stream::Writer`.
+///
+/// While individual write calls on a proto encoder return `pw::Status` objects,
+/// the encoder tracks all status returns and latches onto the first error
+/// encountered. This status can be accessed via `StreamEncoder::status()`.
+///
+/// @see If you need to avoid scratch buffers or reduce copying of nested
+/// submessages, consider using `BufferEncoder` rather than `StreamEncoder`.
 class StreamEncoder {
  public:
-  // The StreamEncoder will serialize proto data to the pw::stream::Writer
-  // provided through the constructor. The scratch buffer provided is for
-  // internal use ONLY and should not be considered valid proto data.
-  //
-  // If a StreamEncoder object will be writing nested proto messages, it must
-  // provide a scratch buffer large enough to hold the largest submessage some
-  // additional overhead incurred by the encoder's implementation. It's a good
-  // idea to be generous when sizing this buffer. MaxScratchBufferSize() can be
-  // helpful in providing an estimated size for this buffer. The scratch buffer
-  // must exist for the lifetime of the StreamEncoder object.
-  //
-  // StreamEncoder objects that do not write nested proto messages can
-  // provide a zero-length scratch buffer.
+  /// Constructs a `StreamEncoder` that serializes proto data to the provided
+  /// `writer`.
+  ///
+  /// The scratch buffer provided is for internal use ONLY and should not be
+  /// considered valid proto data. All submessage data is buffered to this
+  /// scratch buffer until the submessage is finalized.
+  ///
+  /// If a `StreamEncoder` object will be writing nested proto messages, it must
+  /// provide a scratch buffer large enough to hold the largest submessage plus
+  /// some additional overhead incurred by the encoder's implementation. It is a
+  /// good idea to be generous when sizing this buffer. `MaxScratchBufferSize()`
+  /// can be helpful in providing an estimated size for this buffer. The scratch
+  /// buffer must exist for the lifetime of the `StreamEncoder` object.
+  ///
+  /// `StreamEncoder` objects that do not write nested proto messages can
+  /// provide a zero-length scratch buffer.
+  ///
+  /// @warning If the scratch buffer size is not sufficient, encoding will fail
+  /// with `@RESOURCE_EXHAUSTED`. Always check the results of `Write` calls or
+  /// the encoder status to ensure success, as otherwise the encoded data will
+  /// be invalid.
+  ///
+  /// @param[in] writer The destination stream writer for serialized data.
+  /// @param[in] scratch_buffer Buffer for staging nested submessages before
+  /// their final sizes are known.
   constexpr StreamEncoder(stream::Writer& writer, ByteSpan scratch_buffer)
       : status_(OkStatus()),
         write_when_empty_(true),
@@ -132,6 +177,11 @@ class StreamEncoder {
         counting_stream_(nullptr),
         writer_(&writer) {}
 
+  /// Constructs a `StreamEncoder` that counts encoded bytes without writing
+  /// data.
+  ///
+  /// @param[in] counting_stream The counting null stream used to measure
+  /// encoded size.
   StreamEncoder(stream::CountingNullStream& counting_stream)
       : status_(OkStatus()),
         write_when_empty_(true),
@@ -141,10 +191,11 @@ class StreamEncoder {
         counting_stream_(&counting_stream),
         writer_(&counting_stream.as_writer()) {}
 
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Postcondition: If this encoder is a nested one, the parent encoder is
-  //     unlocked and proto encoding may resume on the parent.
+  /// Destructs the `StreamEncoder`, closing it if active.
+  ///
+  /// @pre Encoder has no active child encoder.
+  /// @post If this encoder is a nested one, the parent encoder is unlocked and
+  /// proto encoding may resume on the parent.
   ~StreamEncoder() { CloseEncoder(); }
 
   // Disallow copy/assign to avoid confusion about who owns the buffer.
@@ -155,23 +206,22 @@ class StreamEncoder {
   // parent_ pointer to become invalid.
   StreamEncoder& operator=(StreamEncoder&& other) = delete;
 
-  // Closes this encoder, finalizing its output.
-  //
-  // This method is called automatically by `StreamEncoder`'s destructor, but
-  // may be invoked manually in order to close an encoder before the end of its
-  // lexical scope.
-  //
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Postcondition: If this encoder is a nested one, the parent encoder is
-  //     unlocked and proto encoding may resume on the parent. No more writes
-  //     to this encoder may be performed.
+  /// Closes this encoder, finalizing its output.
+  ///
+  /// This method is called automatically by `StreamEncoder`'s destructor, but
+  /// may be invoked manually in order to close an encoder before the end of its
+  /// lexical scope.
+  ///
+  /// @pre Encoder has no active child encoder.
+  /// @post If this encoder is a nested one, the parent encoder is unlocked and
+  /// proto encoding may resume on the parent. No more writes to this encoder
+  /// may be performed.
   void CloseEncoder();
 
-  // Forwards the conservative write limit of the underlying
-  // pw::stream::Writer.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Forwards the conservative write limit of the underlying
+  /// `pw::stream::Writer`.
+  ///
+  /// @pre Encoder has no active child encoder.
   size_t ConservativeWriteLimit() const {
     PW_ASSERT(!nested_encoder_open());
     return writer_->ConservativeWriteLimit();
@@ -179,14 +229,27 @@ class StreamEncoder {
 
   enum class EmptyEncoderBehavior { kWriteFieldNumber, kWriteNothing };
 
-  // Creates a nested encoder with the provided field number. Once this is
-  // called, the parent encoder is locked and not available for use until the
-  // nested encoder is finalized (either explicitly or through destruction).
-  //
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Postcondition: Until the nested child encoder has been destroyed, this
-  //     encoder cannot be used.
+  /// Creates a nested encoder with the provided field number.
+  ///
+  /// Once this is called, the parent encoder is locked and not available for
+  /// use until the nested encoder is finalized (either explicitly or through
+  /// destruction).
+  ///
+  /// The untyped encoder that this method returns can be cast to a typed
+  /// encoder if needed.
+  ///
+  /// @warning When a nested submessage is created, any use of the parent
+  /// encoder that created the nested encoder will trigger a crash. To resume
+  /// using the parent encoder, destroy the submessage encoder first.
+  ///
+  /// @param[in] field_number The field number for the nested message.
+  /// @param[in] empty_encoder_behavior Whether to write the tag number for the
+  /// nested encoder if no data is written to that nested encoder. Defaults to
+  /// `EmptyEncoderBehavior::kWriteFieldNumber`.
+  ///
+  /// @pre Encoder has no active child encoder.
+  /// @post Until the nested child encoder has been destroyed, this encoder
+  /// cannot be used.
   StreamEncoder GetNestedEncoder(uint32_t field_number,
                                  EmptyEncoderBehavior empty_encoder_behavior =
                                      EmptyEncoderBehavior::kWriteFieldNumber) {
@@ -195,66 +258,71 @@ class StreamEncoder {
         empty_encoder_behavior == EmptyEncoderBehavior::kWriteFieldNumber);
   }
 
-  // Invokes a given callback with an encoder to write a nested message field.
-  //
-  // This performs a multi-pass encoding and invokes the callback twice:
-  // Once to compute the total size of the nested message; and again to
-  // actually write the encoded data to the stream (after the nested message
-  // field prefix has been written).
-  //
-  // Args:
-  //   field_number: The field number of the submessage to be written.
-  //   write_message: A callable which is responsible for writing the
-  //     submessage fields using the encoder passed to it.
-  //
-  //     It must have the following signature: Status(StreamEncoder& encoder)
-  //
-  //     It will be invoked twice and MUST perform the exact same set of writes
-  //     on both invocations.
-  //
-  //   empty_encoder_behavior: (Optional) Indicates the action to take when
-  //     nothing is written to the nested message encoder.
-  //
-  // Returns:
-  // OK - The nested message was successfully written.
-  // OUT_OF_RANGE - The callback wrote fewer bytes on the second pass than on
-  //   the first.
-  // RESOURCE_EXHAUSTED - The callback wrote more bytes on the second pass than
-  //   on the first.
-  // Any other error from the underlying stream.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Invokes a given callback with an encoder to write a nested message field.
+  ///
+  /// This performs a multi-pass encoding and invokes the callback twice: once
+  /// to compute the total size of the nested message, and again to actually
+  /// write the encoded data to the stream (after the nested message field
+  /// prefix has been written).
+  ///
+  /// @warning The callable must write the exact same fields, with the exact
+  /// same values, in the same order, on both invocations. If the data being
+  /// written might change during writing, the caller is expected to capture a
+  /// snapshot prior to encoding or implement explicit synchronization. Failure
+  /// to do so may silently corrupt output data or produce an error result.
+  ///
+  /// @param[in] field_number The field number of the submessage to be written.
+  /// @param[in] write_message A callable responsible for writing the submessage
+  /// fields using the encoder passed to it. It must have the signature
+  /// `Status(StreamEncoder& encoder)`. It will be invoked twice and MUST
+  /// perform the exact same set of writes on both invocations.
+  /// @param[in] empty_encoder_behavior Indicates the action to take when
+  /// nothing is written to the nested message encoder. Defaults to
+  /// `EmptyEncoderBehavior::kWriteFieldNumber`.
+  ///
+  /// @returns
+  /// * @OK: The nested message was successfully written.
+  /// * @OUT_OF_RANGE: The callback wrote fewer bytes on the second pass than on
+  ///   the first.
+  /// * @RESOURCE_EXHAUSTED: The callback wrote more bytes on the second pass
+  ///   than on the first.
+  /// * Other statuses encountered from the underlying stream.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteNestedMessage(uint32_t field_number,
                             FunctionRef<Status(StreamEncoder&)> write_message,
                             EmptyEncoderBehavior empty_encoder_behavior =
                                 EmptyEncoderBehavior::kWriteFieldNumber);
 
-  // Returns the current encoder's status.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Returns the current encoder's status.
+  ///
+  /// While individual write calls return status objects, the encoder tracks all
+  /// status returns and latches onto the first error encountered.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status status() const {
     PW_ASSERT(!nested_encoder_open());
     return status_;
   }
 
-  // Writes a proto uint32 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `uint32` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteUint32(uint32_t field_number, uint32_t value) {
     return WriteUint64(field_number, value);
   }
 
-  // Writes a repeated uint32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `uint32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedUint32(uint32_t field_number, span<const uint32_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a repeated enum using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated enum using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   template <typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
   Status WritePackedEnum(uint32_t field_number, span<const T> values) {
     static_assert(sizeof(T) == sizeof(int32_t),
@@ -267,147 +335,147 @@ class StreamEncoder {
         internal::VarintType::kNormal);
   }
 
-  // Writes a repeated uint32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `uint32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedUint32(uint32_t field_number,
                              const pw::Vector<uint32_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a proto uint64 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `uint64` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteUint64(uint32_t field_number, uint64_t value) {
     return WriteVarintField(field_number, value);
   }
 
-  // Writes a repeated uint64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `uint64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedUint64(uint32_t field_number, span<const uint64_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a repeated uint64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `uint64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedUint64(uint32_t field_number,
                              const pw::Vector<uint64_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a proto int32 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `int32` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteInt32(uint32_t field_number, int32_t value) {
     // Signed numbers are sent as 2's complement so this cast is correct.
     return WriteUint64(field_number, static_cast<uint64_t>(value));
   }
 
-  // Writes a repeated int32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `int32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedInt32(uint32_t field_number, span<const int32_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a repeated int32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `int32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedInt32(uint32_t field_number,
                             const pw::Vector<int32_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a proto int64 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `int64` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteInt64(uint32_t field_number, int64_t value) {
     // Signed numbers are sent as 2's complement so this cast is correct.
     return WriteUint64(field_number, static_cast<uint64_t>(value));
   }
 
-  // Writes a repeated int64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `int64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedInt64(uint32_t field_number, span<const int64_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a repeated int64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `int64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedInt64(uint32_t field_number,
                             const pw::Vector<int64_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kNormal);
   }
 
-  // Writes a proto sint32 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `sint32` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteSint32(uint32_t field_number, int32_t value) {
     return WriteUint64(field_number, varint::ZigZagEncode(value));
   }
 
-  // Writes a repeated sint32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sint32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedSint32(uint32_t field_number, span<const int32_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kZigZag);
   }
 
-  // Writes a repeated sint32 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sint32` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedSint32(uint32_t field_number,
                              const pw::Vector<int32_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kZigZag);
   }
 
-  // Writes a proto sint64 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `sint64` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteSint64(uint32_t field_number, int64_t value) {
     return WriteUint64(field_number, varint::ZigZagEncode(value));
   }
 
-  // Writes a repeated sint64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sint64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedSint64(uint32_t field_number, span<const int64_t> values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kZigZag);
   }
 
-  // Writes a repeated sint64 using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sint64` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedSint64(uint32_t field_number,
                              const pw::Vector<int64_t>& values) {
     return WritePackedVarints(
         field_number, values, internal::VarintType::kZigZag);
   }
 
-  // Writes a proto bool key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `bool` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteBool(uint32_t field_number, bool value) {
     return WriteUint32(field_number, static_cast<uint32_t>(value));
   }
 
-  // Writes a repeated bool using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `bool` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedBool(uint32_t field_number, span<const bool> values) {
     static_assert(sizeof(bool) == sizeof(uint8_t),
                   "bool must be same size as uint8_t");
@@ -417,9 +485,9 @@ class StreamEncoder {
         internal::VarintType::kNormal);
   }
 
-  // Writes a repeated bool using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `bool` using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedBool(uint32_t field_number,
                            const pw::Vector<bool>& values) {
     static_assert(sizeof(bool) == sizeof(uint8_t),
@@ -431,26 +499,26 @@ class StreamEncoder {
         internal::VarintType::kNormal);
   }
 
-  // Writes a proto fixed32 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `fixed32` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteFixed32(uint32_t field_number, uint32_t value) {
     std::array<std::byte, sizeof(value)> data =
         bytes::CopyInOrder(endian::little, value);
     return WriteFixed(field_number, data);
   }
 
-  // Writes a repeated fixed32 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `fixed32` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedFixed32(uint32_t field_number,
                             span<const uint32_t> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(uint32_t));
   }
 
-  // Writes a repeated fixed32 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `fixed32` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedFixed32(uint32_t field_number,
                               const pw::Vector<uint32_t>& values) {
     return WritePackedFixed(field_number,
@@ -458,26 +526,26 @@ class StreamEncoder {
                             sizeof(uint32_t));
   }
 
-  // Writes a proto fixed64 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `fixed64` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteFixed64(uint32_t field_number, uint64_t value) {
     std::array<std::byte, sizeof(value)> data =
         bytes::CopyInOrder(endian::little, value);
     return WriteFixed(field_number, data);
   }
 
-  // Writes a repeated fixed64 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `fixed64` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedFixed64(uint32_t field_number,
                             span<const uint64_t> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(uint64_t));
   }
 
-  // Writes a repeated fixed64 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `fixed64` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedFixed64(uint32_t field_number,
                               const pw::Vector<uint64_t>& values) {
     return WritePackedFixed(field_number,
@@ -485,24 +553,24 @@ class StreamEncoder {
                             sizeof(uint64_t));
   }
 
-  // Writes a proto sfixed32 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `sfixed32` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteSfixed32(uint32_t field_number, int32_t value) {
     return WriteFixed32(field_number, static_cast<uint32_t>(value));
   }
 
-  // Writes a repeated sfixed32 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sfixed32` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedSfixed32(uint32_t field_number,
                              span<const int32_t> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(int32_t));
   }
 
-  // Writes a repeated fixed32 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sfixed32` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedSfixed32(uint32_t field_number,
                                const pw::Vector<int32_t>& values) {
     return WritePackedFixed(field_number,
@@ -510,24 +578,24 @@ class StreamEncoder {
                             sizeof(int32_t));
   }
 
-  // Writes a proto sfixed64 key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `sfixed64` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteSfixed64(uint32_t field_number, int64_t value) {
     return WriteFixed64(field_number, static_cast<uint64_t>(value));
   }
 
-  // Writes a repeated sfixed64 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sfixed64` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedSfixed64(uint32_t field_number,
                              span<const int64_t> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(int64_t));
   }
 
-  // Writes a repeated fixed64 field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `sfixed64` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedSfixed64(uint32_t field_number,
                                const pw::Vector<int64_t>& values) {
     return WritePackedFixed(field_number,
@@ -535,9 +603,9 @@ class StreamEncoder {
                             sizeof(int64_t));
   }
 
-  // Writes a proto float key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `float` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteFloat(uint32_t field_number, float value) {
     static_assert(sizeof(float) == sizeof(uint32_t),
                   "Float and uint32_t are not the same size");
@@ -548,16 +616,16 @@ class StreamEncoder {
     return WriteFixed(field_number, data);
   }
 
-  // Writes a repeated float field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `float` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedFloat(uint32_t field_number, span<const float> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(float));
   }
 
-  // Writes a repeated float field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `float` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedFloat(uint32_t field_number,
                             const pw::Vector<float>& values) {
     return WritePackedFixed(field_number,
@@ -565,9 +633,9 @@ class StreamEncoder {
                             sizeof(float));
   }
 
-  // Writes a proto double key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `double` key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteDouble(uint32_t field_number, double value) {
     static_assert(sizeof(double) == sizeof(uint64_t),
                   "Double and uint64_t are not the same size");
@@ -578,16 +646,16 @@ class StreamEncoder {
     return WriteFixed(field_number, data);
   }
 
-  // Writes a repeated double field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `double` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WritePackedDouble(uint32_t field_number, span<const double> values) {
     return WritePackedFixed(field_number, as_bytes(values), sizeof(double));
   }
 
-  // Writes a repeated double field using packed encoding.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a repeated `double` field using packed encoding.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteRepeatedDouble(uint32_t field_number,
                              const pw::Vector<double>& values) {
     return WritePackedFixed(field_number,
@@ -595,11 +663,11 @@ class StreamEncoder {
                             sizeof(double));
   }
 
-  // Writes a proto `bytes` field as a key-value pair. This can also be used to
-  // write a pre-encoded nested submessage directly without using a nested
-  // encoder.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto `bytes` field as a key-value pair. This can also be used to
+  /// write a pre-encoded nested submessage directly without using a nested
+  /// encoder.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteBytes(uint32_t field_number, ConstByteSpan value) {
     return WriteLengthDelimitedField(field_number, value);
   }
@@ -608,7 +676,7 @@ class StreamEncoder {
   /// given callback function. The function must write exactly `num_bytes`
   /// bytes of data to the stream.
   ///
-  /// Precondition: Encoder has no active child encoder.
+  /// @pre Encoder has no active child encoder.
   Status WriteBytes(uint32_t field_number,
                     size_t num_bytes,
                     FunctionRef<Status(stream::Writer&)> write_func) {
@@ -616,22 +684,21 @@ class StreamEncoder {
         field_number, num_bytes, write_func);
   }
 
-  // Writes a proto 'bytes' field from the stream bytes_reader.
-  //
-  // The payload for the value is provided through the stream::Reader
-  // `bytes_reader`. The method reads a chunk of the data from the reader using
-  // the `stream_pipe_buffer` and writes it to the encoder.
-  //
-  // Precondition: The stream_pipe_buffer.byte_size() >= 1
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Returns:
-  // OK - Bytes field is written successfully.
-  // RESOURCE_EXHAUSTED - Exceeds write limits.
-  // OUT_OF_RANGE - `bytes_reader` is exhausted before `num_bytes` of
-  //                bytes is read.
-  //
-  // Other errors encountered by the writer will be returned as it is.
+  /// Writes a proto 'bytes' field from the stream bytes_reader.
+  ///
+  /// The payload for the value is provided through the stream::Reader
+  /// `bytes_reader`. The method reads a chunk of the data from the reader using
+  /// the `stream_pipe_buffer` and writes it to the encoder.
+  ///
+  /// @pre The `stream_pipe_buffer.byte_size() >= 1`
+  /// @pre Encoder has no active child encoder.
+  ///
+  /// @returns
+  /// * @OK - Bytes field is written successfully.
+  /// * @RESOURCE_EXHAUSTED - Exceeds write limits.
+  /// * @OUT_OF_RANGE - `bytes_reader` is exhausted before `num_bytes` of
+  ///   bytes is read.
+  /// * Other errors encountered by the writer will be returned as it is.
   Status WriteBytesFromStream(uint32_t field_number,
                               stream::Reader& bytes_reader,
                               size_t num_bytes,
@@ -640,36 +707,35 @@ class StreamEncoder {
         field_number, bytes_reader, num_bytes, stream_pipe_buffer);
   }
 
-  // Writes a proto string key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto string key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteString(uint32_t field_number, std::string_view value) {
     return WriteBytes(field_number, as_bytes(span<const char>(value)));
   }
 
-  // Writes a proto string key-value pair.
-  //
-  // Precondition: Encoder has no active child encoder.
+  /// Writes a proto string key-value pair.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status WriteString(uint32_t field_number, const char* value, size_t len) {
     return WriteBytes(field_number, as_bytes(span(value, len)));
   }
 
-  // Writes a proto 'string' field from the stream bytes_reader.
-  //
-  // The payload for the value is provided through the stream::Reader
-  // `bytes_reader`. The method reads a chunk of the data from the reader using
-  // the `stream_pipe_buffer` and writes it to the encoder.
-  //
-  // Precondition: The stream_pipe_buffer.byte_size() >= 1
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Returns:
-  // OK - String field is written successfully.
-  // RESOURCE_EXHAUSTED - Exceeds write limits.
-  // OUT_OF_RANGE - `bytes_reader` is exhausted before `num_bytes` of
-  //                bytes is read.
-  //
-  // Other errors encountered by the writer will be returned as it is.
+  /// Writes a proto 'string' field from the stream bytes_reader.
+  ///
+  /// The payload for the value is provided through the stream::Reader
+  /// `bytes_reader`. The method reads a chunk of the data from the reader using
+  /// the `stream_pipe_buffer` and writes it to the encoder.
+  ///
+  /// @pre The `stream_pipe_buffer.byte_size() >= 1`
+  /// @pre Encoder has no active child encoder.
+  ///
+  /// @returns
+  /// * @OK - String field is written successfully.
+  /// * @RESOURCE_EXHAUSTED - Exceeds write limits.
+  /// * @OUT_OF_RANGE - `bytes_reader` is exhausted before `num_bytes` of
+  ///   bytes is read.
+  /// * Other errors encountered by the writer will be returned as it is.
   Status WriteStringFromStream(uint32_t field_number,
                                stream::Reader& bytes_reader,
                                size_t num_bytes,
@@ -897,18 +963,22 @@ class StreamEncoder {
     return WriteLengthDelimitedField(field_number, as_bytes(span(container)));
   }
 
-  // Checks if a write is invalid or will cause the encoder to enter an error
-  // state, and preemptively sets this encoder's status to that error to block
-  // the write. Only the first error encountered is tracked.
-  //
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Returns:
-  //   InvalidArgument: The field number provided was invalid.
-  //   ResourceExhausted: The requested write would have exceeded the
-  //     stream::Writer's conservative write limit.
-  //   Other: If any Write() operations on the stream::Writer caused an error,
-  //     that error will be repeated here.
+  /// Checks if a write is invalid or will cause the encoder to enter an error
+  /// state, and preemptively sets this encoder's status to that error to block
+  /// the write. Only the first error encountered is tracked.
+  ///
+  /// @param[in] field_number The field number being written.
+  /// @param[in] type The wire type of the field.
+  /// @param[in] data_size Size of the payload data in bytes.
+  ///
+  /// @returns
+  /// * @INVALID_ARGUMENT: The field number provided was invalid.
+  /// * @RESOURCE_EXHAUSTED: The requested write would have exceeded the
+  ///   writer's conservative write limit.
+  /// * Other errors encountered by any `Write()` operations on the
+  ///   writer are repeated here.
+  ///
+  /// @pre Encoder has no active child encoder.
   Status UpdateStatusForWrite(uint32_t field_number,
                               WireType type,
                               size_t data_size);
@@ -953,30 +1023,46 @@ class StreamEncoder {
   stream::Writer* writer_;
 };
 
-// A protobuf encoder that writes directly to a provided buffer.
-//
-// Example:
-//
-//   // Writes a proto response to the provided buffer, returning the encode
-//   // status and number of bytes written.
-//   StatusWithSize WriteProtoResponse(ByteSpan response) {
-//     // All proto writes are directly written to the `response` buffer.
-//     MemoryEncoder encoder(response);
-//     encoder.WriteUint32(kMagicNumberField, 0x1a1a2b2b);
-//     encoder.WriteString(kFavoriteFood, "cookies");
-//     return encoder.status_with_size();
-//   }
-//
-// Note: Avoid using a MemoryEncoder reference as an argument for a function.
-// The StreamEncoder is more generic.
+/// A protobuf encoder that writes directly to a provided buffer in memory.
+///
+/// `MemoryEncoder` objects use the final destination buffer directly rather
+/// than relying on a separate scratch buffer. The `kMaxEncodedSizeBytes`
+/// constant generated for messages takes into account the overhead required for
+/// nesting submessages. If you calculate the buffer size yourself, your
+/// destination buffer might need additional space to accommodate length prefix
+/// patching.
+///
+/// @code
+///   // Writes a proto response to the provided buffer, returning the encode
+///   // status and number of bytes written.
+///   StatusWithSize WriteProtoResponse(ByteSpan response) {
+///     // All proto writes are directly written to the `response` buffer.
+///     MemoryEncoder encoder(response);
+///     encoder.WriteUint32(kMagicNumberField, 0x1a1a2b2b);
+///     encoder.WriteString(kFavoriteFood, "cookies");
+///     return encoder.status_with_size();
+///   }
+/// @endcode
+///
+/// @note In a context where you need to provide an encoder reference as a
+/// function argument and you don't know the consumers, you may prefer
+/// `StreamEncoder` over `MemoryEncoder` because it's more generic. However, in
+/// a context where you only operate on buffers, `MemoryEncoder` (and
+/// `BufferEncoder`) have noticeable performance and code size benefits over
+/// `StreamEncoder`.
+///
+/// @see If you need to avoid scratch buffers or reduce copying of nested
+/// submessages, consider using `BufferEncoder` rather than `MemoryEncoder`.
 class MemoryEncoder : public StreamEncoder {
  public:
+  /// Constructs a `MemoryEncoder` targeting the `dest` buffer.
+  ///
+  /// @param[in] dest The destination buffer for serialized protobuf data.
   constexpr MemoryEncoder(ByteSpan dest) : StreamEncoder(*this, dest) {}
 
-  // Precondition: Encoder has no active child encoder.
-  //
-  // Postcondition: If this encoder is a nested one, the parent encoder is
-  //     unlocked and proto encoding may resume on the parent.
+  /// @pre Encoder has no active child encoder.
+  /// @post If this encoder is a nested one, the parent encoder is unlocked and
+  /// proto encoding may resume on the parent.
   ~MemoryEncoder() = default;
 
   // Disallow copy/assign to avoid confusion about who owns the buffer.
@@ -1002,48 +1088,52 @@ class MemoryEncoder : public StreamEncoder {
   MemoryEncoder(MemoryEncoder&& other) = default;
 };
 
-// pw_protobuf guarantees that all generated StreamEncoder classes can be
-// converted among each other. It's also safe to convert any MemoryEncoder to
-// any other StreamEncoder.
-//
-// This guarantee exists to facilitate usage of protobuf overlays. Protobuf
-// overlays are protobuf message definitions that deliberately ensure that
-// fields defined in one message will not conflict with fields defined in other
-// messages.
-//
-// Example:
-//
-//   // The first half of the overlaid message.
-//   message BaseMessage {
-//     uint32 length = 1;
-//     reserved 2;  // Reserved for Overlay
-//   }
-//
-//   // OK: The second half of the overlaid message.
-//   message Overlay {
-//     reserved 1;  // Reserved for BaseMessage
-//     uint32 height = 2;
-//   }
-//
-//   // OK: A message that overlays and bundles both types together.
-//   message Both {
-//     uint32 length = 1;  // Defined independently by BaseMessage
-//     uint32 height = 2;  // Defined independently by Overlay
-//   }
-//
-//   // BAD: Diverges from BaseMessage's definition, and can cause decode
-//   // errors/corruption.
-//   message InvalidOverlay {
-//     fixed32 length = 1;
-//   }
-//
-// While this use case is somewhat uncommon, it's a core supported use case of
-// pw_protobuf.
-//
-// Warning: Using this to convert one stream encoder to another when the
-// messages themselves do not safely overlay will result in corrupt protos.
-// Be careful when doing this as there's no compile-time way to detect whether
-// or not two messages are meant to overlay.
+/// `pw_protobuf` guarantees that all generated `StreamEncoder` classes can be
+/// converted among each other. It is also safe to convert any `MemoryEncoder`
+/// to any other `StreamEncoder`.
+///
+/// This guarantee exists to facilitate usage of protobuf overlays. Protobuf
+/// overlays are protobuf message definitions that deliberately ensure that
+/// fields defined in one message will not conflict with fields defined in other
+/// messages.
+///
+/// @code
+///   // The first half of the overlaid message.
+///   message BaseMessage {
+///     uint32 length = 1;
+///     reserved 2;  // Reserved for Overlay
+///   }
+///
+///   // OK: The second half of the overlaid message.
+///   message Overlay {
+///     reserved 1;  // Reserved for BaseMessage
+///     uint32 height = 2;
+///   }
+///
+///   // OK: A message that overlays and bundles both types together.
+///   message Both {
+///     uint32 length = 1;  // Defined independently by BaseMessage
+///     uint32 height = 2;  // Defined independently by Overlay
+///   }
+///
+///   // BAD: Diverges from BaseMessage's definition, and can cause decode
+///   // errors/corruption.
+///   message InvalidOverlay {
+///     fixed32 length = 1;
+///   }
+/// @endcode
+///
+/// While this use case is somewhat uncommon, it is a core supported use case of
+/// `pw_protobuf`.
+///
+/// @warning Using this to convert one stream encoder to another when the
+/// messages themselves do not safely overlay will result in corrupt protos.
+/// Be careful when doing this as there is no compile-time way to detect whether
+/// or not two messages are meant to overlay.
+///
+/// @param[in] encoder The encoder to cast.
+///
+/// @returns A reference to the casted `StreamEncoder` type.
 template <typename ToStreamEncoder, typename FromStreamEncoder>
 inline ToStreamEncoder& StreamEncoderCast(FromStreamEncoder& encoder) {
   static_assert(std::is_base_of<StreamEncoder, FromStreamEncoder>::value,
@@ -1055,6 +1145,6 @@ inline ToStreamEncoder& StreamEncoderCast(FromStreamEncoder& encoder) {
   return pw::internal::SiblingCast<ToStreamEncoder&, StreamEncoder>(encoder);
 }
 
-/// @}
+/// @endmodule
 
 }  // namespace pw::protobuf
