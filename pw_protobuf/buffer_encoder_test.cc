@@ -329,6 +329,21 @@ TEST(BufferEncoder, PatchLengthOverflowSize2) {
     EXPECT_EQ(encoder.buffer()[len_offset], static_cast<std::byte>(0xFF));
     EXPECT_EQ(encoder.buffer()[len_offset + 1], static_cast<std::byte>(0x7F));
   }
+
+  // 3. Test length > 16383 using size = 3
+  {
+    BufferEncoder encoder(view_buffer);
+    auto view = encoder.view();
+    size_t len_offset = view.UncheckedReserveLength(3);
+
+    for (int i = 0; i < 16384; ++i) {
+      view.EnsureSpace(1);
+      view.UncheckedWriteBytes("\x00", 1);
+    }
+
+    view.PatchLength<3>(len_offset);
+    EXPECT_EQ(encoder.status(), OkStatus());
+  }
 }
 
 TEST(BufferEncoder, NestedMessageEnsureSpaceFailure) {

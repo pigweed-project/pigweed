@@ -693,5 +693,15 @@ TEST(Codegen, EnumNamesArray) {
   EXPECT_TRUE(Contains(kBoolNames, "FILE_NOT_FOUND"));
 }
 
+TEST(Codegen, BufferEncoderSubMessage) {
+  std::byte buffer[128];
+  Pigweed::BufferEncoder encoder(buffer);
+  {
+    auto pigweed_encoder = encoder.GetPigweedEncoder();
+    EXPECT_EQ(pigweed_encoder.WriteStatus(test::pwpb::Bool::kTrue), OkStatus());
+  }
+  EXPECT_EQ(encoder.status(), OkStatus());
+}
+
 }  // namespace
 }  // namespace pw::protobuf

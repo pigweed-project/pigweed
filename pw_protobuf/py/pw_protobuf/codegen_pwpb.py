@@ -764,18 +764,22 @@ class SubMessageEncoderMethod(ProtoMethod):
 
     def body(self) -> list[str]:
         if self._class_type == ClassType.BUFFER_ENCODER:
-            reserved_size = 2
             return [
                 (
-                    f'static_assert({self._relative_type_namespace()}::'
-                    'kMaxEncodedSizeBytesWithoutValues <= '
-                    f'::pw::varint::MaxValueInBytes({reserved_size}), '
-                    f'"Submessage max size exceeds the reserved '
-                    f'{reserved_size}-byte length prefix");'
+                    'constexpr size_t kReservedSize = '
+                    '::pw::varint::EncodedSize('
+                    f'{self._relative_type_namespace()}::'
+                    'kMaxEncodedSizeBytesWithoutValues);'
+                ),
+                (
+                    'static_assert(kReservedSize <= '
+                    '::pw::protobuf::config::kMaxVarintSize, '
+                    '"Submessage max size exceeds configured '
+                    'PW_PROTOBUF_CFG_MAX_VARINT_SIZE");'
                 ),
                 (
                     f'if (EnsureSpace(::pw::protobuf::TagSizeBytes('
-                    f'{self.field_cast()}) + {reserved_size})) {{'
+                    f'{self.field_cast()}) + kReservedSize)) {{'
                 ),
                 (
                     f'  UncheckedWriteTag({self.field_cast()}, '
@@ -783,7 +787,7 @@ class SubMessageEncoderMethod(ProtoMethod):
                 ),
                 (
                     '  size_t len_offset = '
-                    f'UncheckedReserveLength({reserved_size});'
+                    'UncheckedReserveLength(kReservedSize);'
                 ),
                 f'  return {self._encoder_type()}(*this, len_offset);',
                 '}',
@@ -814,20 +818,24 @@ class UncheckedSubMessageEncoderMethod(ProtoMethod):
         return []
 
     def body(self) -> list[str]:
-        reserved_size = 2
         return [
             (
-                f'static_assert({self._relative_type_namespace()}::'
-                'kMaxEncodedSizeBytesWithoutValues <= '
-                f'::pw::varint::MaxValueInBytes({reserved_size}), '
-                f'"Submessage max size exceeds the reserved '
-                f'{reserved_size}-byte length prefix");'
+                'constexpr size_t kReservedSize = '
+                '::pw::varint::EncodedSize('
+                f'{self._relative_type_namespace()}::'
+                'kMaxEncodedSizeBytesWithoutValues);'
+            ),
+            (
+                'static_assert(kReservedSize <= '
+                '::pw::protobuf::config::kMaxVarintSize, '
+                '"Submessage max size exceeds configured '
+                'PW_PROTOBUF_CFG_MAX_VARINT_SIZE");'
             ),
             (
                 f'UncheckedWriteTag({self.field_cast()}, '
                 '::pw::protobuf::WireType::kDelimited);'
             ),
-            f'size_t len_offset = UncheckedReserveLength({reserved_size});',
+            'size_t len_offset = UncheckedReserveLength(kReservedSize);',
             f'return {self._encoder_type()}(*this, len_offset);',
         ]
 
@@ -3187,7 +3195,14 @@ def generate_class_for_message(
             with output.indent():
                 output.write_line('if (len_offset_ != kNoPatchOffset) {')
                 with output.indent():
-                    output.write_line('PatchLength(len_offset_);')
+                    output.write_line(
+                        'constexpr size_t kReservedSize = '
+                        '::pw::varint::EncodedSize('
+                        'kMaxEncodedSizeBytesWithoutValues);'
+                    )
+                    output.write_line(
+                        'PatchLength<kReservedSize>(len_offset_);'
+                    )
                 output.write_line('}')
             output.write_line('}')
             output.write_line()
