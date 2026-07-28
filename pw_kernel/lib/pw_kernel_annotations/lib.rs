@@ -12,15 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#![cfg_attr(not(feature = "std"), no_std)]
-
 pub const STACK_SECTION_NAME: &str = ".pw_kernel.annotations.stack";
 pub const THREAD_SECTION_NAME: &str = ".pw_kernel.annotations.thread";
 pub const PROCESS_SECTION_NAME: &str = ".pw_kernel.annotations.process";
 pub const TRACE_BUFFER_SECTION_NAME: &str = ".pw_kernel.annotations.trace_buffer";
 
-#[cfg(feature = "std")]
 pub mod image_info;
 
-#[cfg(feature = "std")]
 pub use image_info::{ImageInfo, ProcessInfo, StackInfo, ThreadInfo, TraceBufferInfo};

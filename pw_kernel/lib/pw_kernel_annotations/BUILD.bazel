@@ -13,8 +13,7 @@
 # the License.
 
 load("@pigweed//pw_build:compatibility.bzl", "incompatible_with_mcu")
-load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library")
-load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
+load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,22 +23,21 @@ rust_library(
         "image_info.rs",
         "lib.rs",
     ],
-    crate_features = select({
-        "@pigweed//pw_build/constraints/rust:std": [
-            "std",
-        ],
-        "//conditions:default": [],
-    }),
     edition = "2024",
-    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
-    deps = select({
-        "@pigweed//pw_build/constraints/rust:std": [
-            "@rust_crates//:anyhow",
-            "@rust_crates//:object",
-        ],
-        "//conditions:default": [],
-    }) + KERNEL_TEST_DEPS,
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "@rust_crates//:anyhow",
+        "@rust_crates//:object",
+    ],
+)
+
+rust_test(
+    name = "pw_kernel_annotations_test",
+    crate = ":pw_kernel_annotations",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_doc_test(
