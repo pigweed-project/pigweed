@@ -101,12 +101,16 @@ target_compile_definitions(pw_bluetooth_proxy.gatt._async PUBLIC
 
 set(PW_BLUETOOTH_PROXY_GATT_TEST_DEPS
   pw_allocator.libc_allocator
-  pw_allocator.testing
   pw_allocator.synchronized_allocator
+  pw_allocator.testing
+  pw_chrono.system_clock
   pw_containers.vector
   pw_multibuf.simple_allocator
   pw_span.cast
   pw_sync.no_lock
+  pw_sync.timed_thread_notification
+  pw_thread.test_thread_context
+  pw_thread.thread
 )
 
 pw_add_test(pw_bluetooth_proxy.gatt.gatt_sync_test

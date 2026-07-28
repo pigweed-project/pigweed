@@ -16,15 +16,22 @@
 
 #include <pw_bluetooth/l2cap_frames.emb.h>
 
+#include <atomic>
+#include <chrono>
+
 #include "pw_allocator/libc_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_containers/vector.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_multibuf/simple_allocator.h"
 #include "pw_span/cast.h"
 #include "pw_span/span.h"
 #include "pw_sync/no_lock.h"
+#include "pw_sync/timed_thread_notification.h"
+#include "pw_thread/test_thread_context.h"
+#include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::bluetooth::proxy::gatt {
@@ -976,6 +983,161 @@ TEST_F(GattTest, ServerRemoveCharacteristicOffloadedByDifferentServer) {
       Status::NotFound());
   server_1->Close();
 }
+
+#if PW_THREAD_JOINING_ENABLED
+
+class ReentrantClientDelegate final : public Client::Delegate {
+ public:
+  void set_client(Client* client) { client_ = client; }
+
+  std::atomic<bool> entered_callback{false};
+  std::atomic<bool> exited_callback{false};
+
+ private:
+  void DoHandleNotification(ConnectionHandle,
+                            AttributeHandle value_handle,
+                            multibuf::MultiBuf&&) override {
+    entered_callback = true;
+    // Re-entrant call into Gatt: Gatt::CancelInterceptNotification takes
+    // std::lock_guard lock(mutex_) on the same non-recursive pw::sync::Mutex
+    // used by the RX path. This should not deadlock because the RX path invokes
+    // this callback outside of the lock.
+    PW_TEST_EXPECT_OK(client_->CancelInterceptNotification(value_handle));
+    exited_callback = true;
+  }
+
+  void DoHandleError(Error, ConnectionHandle) override {}
+
+  Client* client_ = nullptr;
+};
+
+class ReentrantServerDelegate final : public Server::Delegate {
+ public:
+  void set_server(Server* server) { server_ = server; }
+
+  std::atomic<bool> entered_callback{false};
+  std::atomic<bool> exited_callback{false};
+
+ private:
+  void DoHandleWriteWithoutResponse(ConnectionHandle,
+                                    AttributeHandle value_handle,
+                                    multibuf::MultiBuf&&) override {
+    entered_callback = true;
+    // Re-entrant call into Gatt: Server::RemoveCharacteristic takes
+    // std::lock_guard lock(mutex_) on the same non-recursive pw::sync::Mutex
+    // used by the RX path. This should not deadlock because the RX path invokes
+    // this callback outside of the lock.
+    PW_TEST_EXPECT_OK(
+        server_->RemoveCharacteristic(CharacteristicInfo{value_handle}));
+    exited_callback = true;
+  }
+
+  void DoHandleWriteAvailable(ConnectionHandle) override {}
+  void DoHandleError(Error, ConnectionHandle) override {}
+
+  Server* server_ = nullptr;
+};
+
+// Verify that calling Client::Delegate::DoHandleNotification does not deadlock
+// if the delegate calls back into Client/Gatt APIs (reentrancy).
+// This test simulates the controller->host RX path on a separate thread and
+// uses a watchdog to detect if it gets stuck holding the Gatt mutex.
+TEST_F(GattTest, DoHandleNotificationReentrancyDoesNotDeadlock) {
+  ReentrantClientDelegate delegate;
+
+  Result<Client> client = gatt().CreateClient(kConnectionHandle1, delegate);
+  PW_TEST_ASSERT_OK(client);
+  delegate.set_client(&client.value());
+  PW_TEST_ASSERT_OK(client->InterceptNotification(kAttributeHandle1));
+
+  std::array<std::byte, 4> att_packet = {
+      std::byte{0x1b},  // opcode: ATT_HANDLE_VALUE_NTF
+      std::byte{0x01},  // attribute_handle low
+      std::byte{0x00},  // attribute_handle high
+      std::byte{0x42},  // attribute value (1 byte)
+  };
+
+  // Deliver on a separate thread to model the controller->host RX path.
+  pw::sync::TimedThreadNotification rx_done;
+  pw::thread::test::TestThreadContext thread_context;
+  struct {
+    GattTest& test;
+    span<std::byte> packet;
+    pw::sync::TimedThreadNotification& notification;
+  } rx_ctx{*this, att_packet, rx_done};
+  pw::Thread rx_thread(thread_context.options(), [&rx_ctx] {
+    rx_ctx.test.ReceiveFromController(rx_ctx.packet);
+    rx_ctx.notification.release();
+  });
+
+  // Watchdog: If RX thread doesn't finish in 300s, it likely deadlocked.
+  using namespace std::chrono_literals;
+  if (!rx_done.try_acquire_for(300s)) {
+    EXPECT_TRUE(delegate.entered_callback.load())
+        << "expected RX thread to reach DoHandleNotification";
+    EXPECT_FALSE(delegate.exited_callback.load());
+    ADD_FAILURE() << "Self-deadlock on Gatt::mutex_ in DoHandleNotification "
+                     "re-entrant path";
+    rx_thread.detach();
+    return;
+  }
+
+  rx_thread.join();
+  EXPECT_TRUE(delegate.entered_callback.load());
+  EXPECT_TRUE(delegate.exited_callback.load());
+}
+
+// Verify that calling Server::Delegate::DoHandleWriteWithoutResponse does not
+// deadlock if the delegate calls back into Server/Gatt APIs (reentrancy).
+TEST_F(GattTest, DoHandleWriteWithoutResponseReentrancyDoesNotDeadlock) {
+  ReentrantServerDelegate delegate;
+
+  CharacteristicInfo characteristics[] = {
+      CharacteristicInfo{kAttributeHandle1},
+  };
+  Result<Server> server =
+      gatt().CreateServer(kConnectionHandle1, characteristics, delegate);
+  PW_TEST_ASSERT_OK(server);
+  delegate.set_server(&server.value());
+
+  std::array<std::byte, 4> att_packet = {
+      std::byte{0x52},  // opcode: ATT_WRITE_CMD
+      std::byte{0x01},  // attribute_handle low
+      std::byte{0x00},  // attribute_handle high
+      std::byte{0x42},  // attribute value (1 byte)
+  };
+
+  pw::sync::TimedThreadNotification rx_done;
+  pw::thread::test::TestThreadContext thread_context;
+  struct {
+    GattTest& test;
+    span<std::byte> packet;
+    pw::sync::TimedThreadNotification& notification;
+  } rx_ctx{*this, att_packet, rx_done};
+  pw::Thread rx_thread(thread_context.options(), [&rx_ctx] {
+    rx_ctx.test.ReceiveFromController(rx_ctx.packet);
+    rx_ctx.notification.release();
+  });
+
+  // Watchdog: If RX thread doesn't finish in 300s, it likely deadlocked.
+  using namespace std::chrono_literals;
+  if (!rx_done.try_acquire_for(300s)) {
+    EXPECT_TRUE(delegate.entered_callback.load())
+        << "expected RX thread to reach DoHandleWriteWithoutResponse";
+    EXPECT_FALSE(delegate.exited_callback.load());
+    ADD_FAILURE()
+        << "Self-deadlock on Gatt::mutex_ in DoHandleWriteWithoutResponse "
+           "re-entrant path";
+    rx_thread.detach();
+    return;
+  }
+
+  rx_thread.join();
+  EXPECT_TRUE(delegate.entered_callback.load());
+  EXPECT_TRUE(delegate.exited_callback.load());
+}
+
+#endif  // PW_THREAD_JOINING_ENABLED
 
 }  // namespace
 }  // namespace pw::bluetooth::proxy::gatt

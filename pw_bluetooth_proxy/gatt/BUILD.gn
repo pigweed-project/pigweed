@@ -81,20 +81,28 @@ _pw_bluetooth_proxy_gatt_test_deps = [
   "$dir_pw_allocator:libc_allocator",
   "$dir_pw_allocator:synchronized_allocator",
   "$dir_pw_allocator:testing",
+  "$dir_pw_chrono:system_clock",
   "$dir_pw_containers:vector",
   "$dir_pw_multibuf:simple_allocator",
   "$dir_pw_span:cast",
   "$dir_pw_sync:no_lock",
+  "$dir_pw_sync:timed_thread_notification",
+  "$dir_pw_thread:test_thread_context",
+  "$dir_pw_thread:thread",
 ]
 
 pw_test("gatt_sync_test") {
-  enable_if = dir_pw_third_party_emboss != "" && pw_thread_ID_BACKEND != ""
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = _pw_bluetooth_proxy_gatt_test_deps + [ ":gatt_sync" ]
   sources = [ "gatt_test.cc" ]
 }
 
 pw_test("gatt_async_test") {
-  enable_if = dir_pw_third_party_emboss != "" && pw_thread_ID_BACKEND != ""
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = _pw_bluetooth_proxy_gatt_test_deps + [ ":gatt_async" ]
   sources = [ "gatt_test.cc" ]
 }

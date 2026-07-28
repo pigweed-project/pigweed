@@ -69,6 +69,12 @@ class Client final {
     void HandleError(Error error, ConnectionHandle connection_handle);
 
    private:
+    /// Called when an ATT_HANDLE_VALUE_NTF PDU is received for an intercepted
+    /// attribute handle `value_handle`. Most operational APIs (e.g.
+    /// InterceptNotification, CancelInterceptNotification, etc.) may be called
+    /// safely within this method without deadlock. However, calling Close() or
+    /// unregistering any Client or Server belonging to the same Gatt instance
+    /// from within this callback will result in a deadlock.
     virtual void DoHandleNotification(ConnectionHandle connection_handle,
                                       AttributeHandle value_handle,
                                       multibuf::MultiBuf&& value) = 0;
@@ -151,17 +157,21 @@ class Server {
 
    private:
     /// Called when a Write Without Response (ATT_WRITE_CMD) PDU is received for
-    /// an offloaded characteristic with value handle `value_handle`. It is NOT
-    /// SAFE to call other Server/Gatt/Client APIs from within this method.
-    /// Re-entrant calls will result in deadlock.
+    /// an offloaded characteristic with value handle `value_handle`. Most
+    /// operational APIs (e.g. SendNotification, AddCharacteristic, etc.) may be
+    /// called safely within this method without deadlock. However, calling
+    /// Close() or unregistering any Client or Server belonging to the same Gatt
+    /// instance from within this callback will result in a deadlock.
     virtual void DoHandleWriteWithoutResponse(
         ConnectionHandle connection_handle,
         AttributeHandle value_handle,
         multibuf::MultiBuf&& value) = 0;
 
-    /// Called when queue space for TX packets is available.
-    /// The only API call that is allowed inside of this method is
-    /// Server::SendNotification(). Other API calls will deadlock.
+    /// Called when queue space for TX packets is available. Most operational
+    /// APIs (e.g. SendNotification, AddCharacteristic, etc.) may be called
+    /// safely within this method without deadlock. However, calling Close() or
+    /// unregistering any Client or Server belonging to the same Gatt instance
+    /// from within this callback will result in a deadlock.
     virtual void DoHandleWriteAvailable(ConnectionHandle connection_handle) = 0;
 
     /// Called when a fatal error occurs (e.g. the connection closed or
@@ -308,18 +318,36 @@ class Gatt {
 
   struct QueuedWriteAvailable {
     internal::ServerId server_id;
-    ConnectionHandle connection_handle;
     Server::Delegate* delegate;
+    ConnectionHandle connection_handle;
+  };
+
+  struct PendingNotification {
+    internal::ClientId client_id;
+    Client::Delegate* delegate;
+    ConnectionHandle connection_handle;
+    AttributeHandle att_handle;
+    multibuf::MultiBuf value;
+  };
+
+  struct PendingWriteCommand {
+    internal::ServerId server_id;
+    Server::Delegate* delegate;
+    ConnectionHandle connection_handle;
+    AttributeHandle att_handle;
+    multibuf::MultiBuf value;
   };
 
   using ConnectionMap =
       DynamicMap<std::underlying_type_t<ConnectionHandle>, Connection>;
 
   void UnregisterClient(internal::ClientId client_id,
-                        ConnectionHandle connection_handle);
+                        ConnectionHandle connection_handle)
+      PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
   void UnregisterServer(internal::ServerId server_id,
-                        ConnectionHandle connection_handle);
+                        ConnectionHandle connection_handle)
+      PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
   Status InterceptNotification(internal::ClientId client,
                                ConnectionHandle connection_handle,
@@ -335,7 +363,8 @@ class Gatt {
   bool OnSpanReceivedFromController(ConstByteSpan payload,
                                     ConnectionHandle connection_handle,
                                     uint16_t local_channel_id,
-                                    uint16_t remote_channel_id);
+                                    uint16_t remote_channel_id)
+      PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
   bool OnSpanReceivedFromHost(ConstByteSpan payload,
                               ConnectionHandle connection_handle,
@@ -346,12 +375,12 @@ class Gatt {
                     ConnectionHandle connection_handle);
 
   void OnChannelClosedEvent(ConnectionHandle connection_handle)
-      PW_LOCKS_EXCLUDED(mutex_);
+      PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
   void OnWriteAvailable(ConnectionHandle connection_handle)
-      PW_LOCKS_EXCLUDED(mutex_);
+      PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
-  void ResetConnections() PW_LOCKS_EXCLUDED(mutex_);
+  void ResetConnections() PW_LOCKS_EXCLUDED(delegate_mutex_, mutex_);
 
   StatusWithMultiBuf SendNotification(internal::ServerId server_id,
                                       ConnectionHandle connection_handle,
@@ -363,11 +392,11 @@ class Gatt {
 
   bool OnAttHandleValueNtfFromController(ConstByteSpan payload,
                                          ConnectionMap::iterator conn_iter)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(delegate_mutex_, mutex_);
 
   bool OnAttWriteCmdFromController(ConstByteSpan payload,
                                    ConnectionMap::iterator conn_iter)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(delegate_mutex_, mutex_);
 
   Status AddCharacteristic(internal::ServerId server_id,
                            ConnectionHandle connection_handle,
@@ -377,8 +406,8 @@ class Gatt {
                               ConnectionHandle connection_handle,
                               CharacteristicInfo characteristic);
 
-  sync::Mutex write_available_mutex_;
-  sync::Mutex mutex_ PW_ACQUIRED_AFTER(write_available_mutex_);
+  sync::Mutex delegate_mutex_;
+  sync::Mutex mutex_ PW_ACQUIRED_AFTER(delegate_mutex_);
 
   L2capChannelManagerInterface& l2cap_;
   Allocator& allocator_;
@@ -389,11 +418,15 @@ class Gatt {
 
   uint16_t next_id_ PW_GUARDED_BY(mutex_) = 0;
 
-  // In order to prevent deadlock, Server::Delegate::HandleWriteAvailable
-  // notifications are queued while mutex_ is locked and then sent when only
-  // write_available_mutex_ is locked.
+  // In order to prevent deadlock when delegates call back into Gatt APIs,
+  // delegate callbacks are queued while mutex_ is locked and then invoked
+  // when only delegate_mutex_ is locked.
   DynamicVector<QueuedWriteAvailable> write_available_queue_
-      PW_GUARDED_BY(write_available_mutex_){allocator_};
+      PW_GUARDED_BY(delegate_mutex_){allocator_};
+  DynamicVector<PendingNotification> pending_notifications_
+      PW_GUARDED_BY(delegate_mutex_){allocator_};
+  DynamicVector<PendingWriteCommand> pending_write_commands_
+      PW_GUARDED_BY(delegate_mutex_){allocator_};
 };
 
 }  // namespace pw::bluetooth::proxy::gatt

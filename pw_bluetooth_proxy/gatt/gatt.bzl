@@ -79,10 +79,14 @@ def pw_bluetooth_proxy_gatt_test(name, versioned_deps, **kwargs):
             "//pw_allocator:libc_allocator",
             "//pw_allocator:synchronized_allocator",
             "//pw_allocator:testing",
-            "//pw_multibuf:simple_allocator",
+            "//pw_chrono:system_clock",
             "//pw_containers:vector",
+            "//pw_multibuf:simple_allocator",
             "//pw_span:cast",
             "//pw_sync:no_lock",
+            "//pw_sync:timed_thread_notification",
+            "//pw_thread:test_thread_context",
+            "//pw_thread:thread",
         ] + versioned_deps,
         # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
         **kwargs

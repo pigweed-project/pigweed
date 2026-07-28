@@ -255,6 +255,7 @@ void Gatt::UnregisterClient(internal::ClientId client_id,
                             ConnectionHandle connection_handle) {
   Client::Delegate* delegate = nullptr;
   {
+    std::lock_guard queue_lock(delegate_mutex_);
     std::lock_guard lock(mutex_);
     auto conn_iter = connections_.find(cpp23::to_underlying(connection_handle));
     if (conn_iter == connections_.end()) {
@@ -275,6 +276,16 @@ void Gatt::UnregisterClient(internal::ClientId client_id,
     }
     delegate = client_iter->second;
     conn_iter->second.clients.erase(client_iter);
+
+    // Clean up pending_notifications_.
+    for (auto iter = pending_notifications_.begin();
+         iter != pending_notifications_.end();) {
+      if (iter->client_id == client_id) {
+        iter = pending_notifications_.erase(iter);
+        continue;
+      }
+      ++iter;
+    }
   }
 
   // Call outside of lock to avoid deadlock.
@@ -288,7 +299,7 @@ void Gatt::UnregisterServer(internal::ServerId server_id,
                             ConnectionHandle connection_handle) {
   Server::Delegate* delegate = nullptr;
   {
-    std::lock_guard queue_lock(write_available_mutex_);
+    std::lock_guard queue_lock(delegate_mutex_);
     std::lock_guard lock(mutex_);
     auto conn_iter = connections_.find(cpp23::to_underlying(connection_handle));
     if (conn_iter == connections_.end()) {
@@ -314,11 +325,20 @@ void Gatt::UnregisterServer(internal::ServerId server_id,
     delegate = server_iter->second;
     conn_iter->second.servers.erase(server_iter);
 
-    // Clean up write_available_queue_.
+    // Clean up write_available_queue_ and pending_write_commands_.
     for (auto iter = write_available_queue_.begin();
          iter != write_available_queue_.end();) {
       if (iter->server_id == server_id) {
         iter = write_available_queue_.erase(iter);
+        continue;
+      }
+      ++iter;
+    }
+    for (auto iter = pending_write_commands_.begin();
+         iter != pending_write_commands_.end();) {
+      if (iter->server_id == server_id) {
+        iter = pending_write_commands_.erase(iter);
+        continue;
       }
       ++iter;
     }
@@ -396,29 +416,61 @@ bool Gatt::OnSpanReceivedFromController(ConstByteSpan payload,
                                         ConnectionHandle connection_handle,
                                         uint16_t /*local_channel_id*/,
                                         uint16_t /*remote_channel_id*/) {
-  std::lock_guard lock(mutex_);
-  auto conn_iter = connections_.find(cpp23::to_underlying(connection_handle));
-  if (conn_iter == connections_.end()) {
-    return false;
-  }
-
-  if (payload.size() < sizeof(emboss::AttOpcode)) {
-    return false;
-  }
-
-  const emboss::AttOpcode op_code{static_cast<uint8_t>(payload[0])};
-
-  PW_MODIFY_DIAGNOSTICS_PUSH();
-  PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
-  switch (op_code) {
-    case emboss::AttOpcode::ATT_WRITE_CMD:
-      return OnAttWriteCmdFromController(payload, conn_iter);
-    case emboss::AttOpcode::ATT_HANDLE_VALUE_NTF:
-      return OnAttHandleValueNtfFromController(payload, conn_iter);
-    default:
+  std::lock_guard queue_lock(delegate_mutex_);
+  bool intercepted = false;
+  {
+    std::lock_guard lock(mutex_);
+    auto conn_iter = connections_.find(cpp23::to_underlying(connection_handle));
+    if (conn_iter == connections_.end()) {
       return false;
+    }
+
+    if (payload.size() < sizeof(emboss::AttOpcode)) {
+      return false;
+    }
+
+    const emboss::AttOpcode op_code{static_cast<uint8_t>(payload[0])};
+
+    PW_MODIFY_DIAGNOSTICS_PUSH();
+    PW_MODIFY_DIAGNOSTIC(ignored, "-Wswitch-enum");
+    switch (op_code) {
+      case emboss::AttOpcode::ATT_WRITE_CMD:
+        intercepted = OnAttWriteCmdFromController(payload, conn_iter);
+        break;
+      case emboss::AttOpcode::ATT_HANDLE_VALUE_NTF:
+        intercepted = OnAttHandleValueNtfFromController(payload, conn_iter);
+        break;
+      default:
+        break;
+    }
+    PW_MODIFY_DIAGNOSTICS_POP();
   }
-  PW_MODIFY_DIAGNOSTICS_POP();
+
+  // Invoke client and server delegates outside of mutex_ to avoid deadlock if
+  // the delegate calls back into Client/Gatt/Server APIs.
+  for (auto iter = pending_notifications_.begin();
+       iter != pending_notifications_.end();) {
+    if (iter->connection_handle == connection_handle) {
+      iter->delegate->HandleNotification(
+          connection_handle, iter->att_handle, std::move(iter->value));
+      iter = pending_notifications_.erase(iter);
+      continue;
+    }
+    ++iter;
+  }
+
+  for (auto iter = pending_write_commands_.begin();
+       iter != pending_write_commands_.end();) {
+    if (iter->connection_handle == connection_handle) {
+      iter->delegate->HandleWriteWithoutResponse(
+          connection_handle, iter->att_handle, std::move(iter->value));
+      iter = pending_write_commands_.erase(iter);
+      continue;
+    }
+    ++iter;
+  }
+
+  return intercepted;
 }
 
 bool Gatt::OnSpanReceivedFromHost(ConstByteSpan /*payload*/,
@@ -445,7 +497,7 @@ void Gatt::OnChannelClosedEvent(ConnectionHandle connection_handle) {
   ServerMap closing_servers(allocator_);
 
   {
-    std::lock_guard queue_lock(write_available_mutex_);
+    std::lock_guard queue_lock(delegate_mutex_);
     std::lock_guard lock(mutex_);
 
     auto conn_iter = connections_.find(cpp23::to_underlying(connection_handle));
@@ -459,11 +511,29 @@ void Gatt::OnChannelClosedEvent(ConnectionHandle connection_handle) {
 
     connections_.erase(conn_iter);
 
-    // Clean up write_available_queue_
+    // Clean up write_available_queue_, pending_notifications_, and
+    // pending_write_commands_.
     for (auto iter = write_available_queue_.begin();
          iter != write_available_queue_.end();) {
       if (iter->connection_handle == connection_handle) {
         iter = write_available_queue_.erase(iter);
+        continue;
+      }
+      ++iter;
+    }
+    for (auto iter = pending_notifications_.begin();
+         iter != pending_notifications_.end();) {
+      if (iter->connection_handle == connection_handle) {
+        iter = pending_notifications_.erase(iter);
+        continue;
+      }
+      ++iter;
+    }
+    for (auto iter = pending_write_commands_.begin();
+         iter != pending_write_commands_.end();) {
+      if (iter->connection_handle == connection_handle) {
+        iter = pending_write_commands_.erase(iter);
+        continue;
       }
       ++iter;
     }
@@ -481,7 +551,7 @@ void Gatt::OnChannelClosedEvent(ConnectionHandle connection_handle) {
 }
 
 void Gatt::OnWriteAvailable(ConnectionHandle connection_handle) {
-  std::lock_guard queue_lock(write_available_mutex_);
+  std::lock_guard queue_lock(delegate_mutex_);
   {
     std::lock_guard lock(mutex_);
 
@@ -493,7 +563,7 @@ void Gatt::OnWriteAvailable(ConnectionHandle connection_handle) {
     for (auto& [server_id, delegate] : conn_iter->second.servers) {
       bool inserted =
           write_available_queue_.try_emplace_back(QueuedWriteAvailable{
-              internal::ServerId{server_id}, connection_handle, delegate});
+              internal::ServerId{server_id}, delegate, connection_handle});
       if (!inserted) {
         PW_LOG_WARN(
             "Cannot allocate write_available_queue_ item, unable to notify "
@@ -503,17 +573,16 @@ void Gatt::OnWriteAvailable(ConnectionHandle connection_handle) {
     }
   }
 
-  // Call delegate outside of mutex_ lock so that clients can call
-  // Server::SendNotification() without deadlock.
-  for (uint16_t i = 0; i < write_available_queue_.size();) {
-    if (write_available_queue_[i].connection_handle == connection_handle) {
-      write_available_queue_[i].delegate->HandleWriteAvailable(
-          connection_handle);
-      write_available_queue_[i] = std::move(write_available_queue_.back());
-      write_available_queue_.pop_back();
-    } else {
-      ++i;
+  // Call delegate outside of mutex_ lock to avoid deadlock if the delegate
+  // calls back into Server/Gatt APIs.
+  for (auto iter = write_available_queue_.begin();
+       iter != write_available_queue_.end();) {
+    if (iter->connection_handle == connection_handle) {
+      iter->delegate->HandleWriteAvailable(connection_handle);
+      iter = write_available_queue_.erase(iter);
+      continue;
     }
+    ++iter;
   }
 }
 
@@ -521,10 +590,12 @@ void Gatt::ResetConnections() {
   ConnectionMap closed_connections(allocator_);
 
   {
-    std::lock_guard queue_lock(write_available_mutex_);
+    std::lock_guard queue_lock(delegate_mutex_);
     std::lock_guard lock(mutex_);
     closed_connections.swap(connections_);
     write_available_queue_.clear();
+    pending_notifications_.clear();
+    pending_write_commands_.clear();
   }
 
   // Notify delegates outside of mutex to avoid deadlock.
@@ -657,7 +728,7 @@ bool Gatt::OnAttHandleValueNtfFromController(
         multibuf_allocator_.AllocateContiguous(attribute_size);
     if (!buffer.has_value()) {
       PW_LOG_WARN("Failed to allocate multibuf for attribute value");
-      return true;
+      continue;
     }
 
     pw::span<const uint8_t> backing_storage(
@@ -667,8 +738,17 @@ bool Gatt::OnAttHandleValueNtfFromController(
     PW_CHECK(bytes_copied.ok());
     PW_CHECK_UINT_EQ(bytes_copied.size(), attribute_size);
 
-    client_iter->second->HandleNotification(
-        ConnectionHandle{conn_iter->first}, att_handle, std::move(*buffer));
+    // Queue the notification; the delegate is invoked outside of mutex_ to
+    // avoid deadlock if it calls back into Client/Gatt APIs.
+    if (!pending_notifications_.try_emplace_back(
+            PendingNotification{client_id,
+                                client_iter->second,
+                                ConnectionHandle{conn_iter->first},
+                                att_handle,
+                                std::move(*buffer)})) {
+      PW_LOG_WARN("Failed to queue pending notification");
+      continue;
+    }
   }
 
   return intercepted;
@@ -721,8 +801,17 @@ bool Gatt::OnAttWriteCmdFromController(ConstByteSpan payload,
   PW_CHECK(bytes_copied.ok());
   PW_CHECK_UINT_EQ(bytes_copied.size(), attribute_size);
 
-  server_iter->second->HandleWriteWithoutResponse(
-      ConnectionHandle{conn_iter->first}, att_handle, std::move(*buffer));
+  // Queue the write command; the delegate is invoked outside of mutex_ to
+  // avoid deadlock if it calls back into Server/Gatt APIs.
+  if (!pending_write_commands_.try_emplace_back(
+          PendingWriteCommand{char_iter->second,
+                              server_iter->second,
+                              ConnectionHandle{conn_iter->first},
+                              att_handle,
+                              std::move(*buffer)})) {
+    PW_LOG_WARN("Failed to queue pending write command");
+    return true;
+  }
 
   // The command was intercepted.
   return true;
