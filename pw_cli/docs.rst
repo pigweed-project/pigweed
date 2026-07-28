@@ -337,3 +337,15 @@ Branding the ``pw`` tool is a great start, but more changes are planned:
    :maxdepth: 1
 
    api
+
+
+========
+Security
+========
+See :ref:`module-pw_cli-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

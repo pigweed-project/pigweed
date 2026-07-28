@@ -196,6 +196,7 @@ sphinx_docs_library(
         "bazel.rst",
         "docs.rst",
         "gn.rst",
+        "security.rst",
     ],
     prefix = "pw_toolchain/",
     target_compatible_with = incompatible_with_mcu(),

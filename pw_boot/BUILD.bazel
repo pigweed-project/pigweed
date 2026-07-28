@@ -48,6 +48,7 @@ sphinx_docs_library(
     srcs = [
         "backends.rst",
         "docs.rst",
+        "security.rst",
     ],
     prefix = "pw_boot/",
     target_compatible_with = incompatible_with_mcu(),

@@ -24,6 +24,7 @@ sphinx_docs_library(
         "embedding.rst",
         "internals.rst",
         "plugins.rst",
+        "security.rst",
         "testing.rst",
         "tools.rst",
         "//pw_console/py:docs",

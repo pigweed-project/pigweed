@@ -494,6 +494,7 @@ sphinx_docs_library(
         "python.rst",
         "python_api.rst",
         "python_gn_args.gni",
+        "security.rst",
         "workflows_build_drivers.rst",
         "workflows_launcher.rst",
         "//pw_build/py:docs",

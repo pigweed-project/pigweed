@@ -84,3 +84,16 @@ or `chat <https://discord.gg/M9NSeTA>`_ with us for potential workarounds.
    design
    guides
    cli
+
+
+========
+Security
+========
+See :ref:`module-pw_software_update-security` for the module-specific threat
+model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

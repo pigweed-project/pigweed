@@ -189,3 +189,16 @@ Roadmap
 - Taking ownership of a L2CAP channel
 - Bazel support
 - And more...
+
+
+========
+Security
+========
+See :ref:`module-pw_bluetooth_proxy-security` for the module-specific threat
+model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

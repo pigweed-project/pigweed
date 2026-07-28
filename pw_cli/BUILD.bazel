@@ -22,6 +22,7 @@ sphinx_docs_library(
     srcs = [
         "api.rst",
         "docs.rst",
+        "security.rst",
     ],
     prefix = "pw_cli/",
     target_compatible_with = incompatible_with_mcu(),

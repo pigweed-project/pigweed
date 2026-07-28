@@ -1,0 +1,40 @@
+.. Replace this line with an anchor link ".. _module-pw_{nmodule}-security:"
+
+========================
+pw_{module} threat model
+========================
+This document supplements the
+:ref:`general threat model <docs-security-threat_model>` to provide a threat
+model specific to pw_{module}.
+
+-----------------------
+Environment and context
+-----------------------
+.. Add any special details about this module. If there are none, omit this
+   section.
+
+---------------
+Attack surfaces
+---------------
+.. Add any additional trust boundaries and data flows across them. If there are
+   none, omit this section.
+
+------
+Assets
+------
+.. Add any module-specific objectives an attcker may try to achieve. If there
+   are none, omit this section.
+
+-----
+Scope
+-----
+.. Add any additional cases in which software defects should be considered
+   vulnerabilities when examining this module. If there are none, omit this
+   section.
+
+----------
+Exclusions
+----------
+.. Add any additional cases in which software defects should not be considered
+   vulnerabilities when examining this module. If there are none, omit this
+   section.

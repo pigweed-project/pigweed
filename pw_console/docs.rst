@@ -58,3 +58,15 @@ Guides
 .. _IPython: https://ipython.readthedocs.io/
 .. _prompt_toolkit: https://python-prompt-toolkit.readthedocs.io/
 .. _ptpython: https://github.com/prompt-toolkit/ptpython/
+
+
+========
+Security
+========
+See :ref:`module-pw_console-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

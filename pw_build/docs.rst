@@ -61,3 +61,15 @@ and prescribe build configuration variants supported by your project.
    python_api
    linker_scripts
    workflows_launcher
+
+
+========
+Security
+========
+See :ref:`module-pw_build-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

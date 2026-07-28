@@ -168,3 +168,15 @@ manage memory.
       Understand pw_allocator's code footprint and savings potential
 
 .. _dependency injection: https://en.wikipedia.org/wiki/Dependency_injection
+
+
+========
+Security
+========
+See :ref:`module-pw_allocator-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

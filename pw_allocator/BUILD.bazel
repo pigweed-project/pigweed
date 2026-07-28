@@ -1198,6 +1198,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "guide.rst",
+        "security.rst",
         ":allocator_api_size_report",
         ":block_allocators_size_report",
         ":blocks_size_report",

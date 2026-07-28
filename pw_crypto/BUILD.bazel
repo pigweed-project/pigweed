@@ -403,6 +403,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "security.rst",
         ":pw_crypto_size_report",
     ],
     prefix = "pw_crypto/",

@@ -110,3 +110,15 @@ of relying on the shipped libgcc.
 
    bazel
    gn
+
+
+========
+Security
+========
+See :ref:`module-pw_toolchain-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

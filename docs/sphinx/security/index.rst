@@ -17,6 +17,7 @@ If you have a concern about Pigweed's security, please do not hesitate to
    :maxdepth: 1
 
    Report a vulnerability <../contributing/security>
+   Agentic threat model <threat_model>
 
 .. _docs-security-bulletins:
 

@@ -716,3 +716,15 @@ the compiler cannot assume which calls will or will not be executed,
 API reference
 -------------
 Moved: :cc:`pw_bloat`
+
+
+========
+Security
+========
+See :ref:`module-pw_bloat-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

@@ -849,6 +849,7 @@ sphinx_docs_library(
         "disk_format.rst",
         "docs.rst",
         "guides.rst",
+        "security.rst",
         ":kvs_size",
     ],
     prefix = "pw_kvs/",

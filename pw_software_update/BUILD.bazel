@@ -281,6 +281,7 @@ sphinx_docs_library(
         "docs.rst",
         "get_started.rst",
         "guides.rst",
+        "security.rst",
     ],
     prefix = "pw_software_update/",
     target_compatible_with = incompatible_with_mcu(),

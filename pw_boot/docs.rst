@@ -159,3 +159,15 @@ Dependencies
    :maxdepth: 1
 
    backends
+
+
+========
+Security
+========
+See :ref:`module-pw_boot-security` for the module-specific threat model.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   security

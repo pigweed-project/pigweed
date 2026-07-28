@@ -54,6 +54,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "security.rst",
         "//pw_bloat/examples:docs",
     ],
     prefix = "pw_bloat/",
