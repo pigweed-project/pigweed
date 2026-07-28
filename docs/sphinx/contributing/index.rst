@@ -307,6 +307,7 @@ process you are welcome to send us feedback using the
    Code reviews (Gerrit) <https://pigweed-review.googlesource.com>
    ../code_reviews
    Issue tracker <https://issues.pigweed.dev/issues?q=status:open>
+   Report a vulnerability <security>
    SEEDs <../../seed/0000>
    ../infra/index
    ../embedded_cpp_guide

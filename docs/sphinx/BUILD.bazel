@@ -119,6 +119,7 @@ sphinx_docs_library(
         "contributing/docs/modules.rst",
         "contributing/docs/website.rst",
         "contributing/index.rst",
+        "contributing/security.rst",
         "embedded_cpp_guide.rst",
         "facades.rst",
         "faq.rst",

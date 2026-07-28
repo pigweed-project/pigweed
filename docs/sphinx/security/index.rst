@@ -6,6 +6,18 @@ Security
 Pigweed is committed to delivering reliable, safe, and secure software and tools
 that can be used to build products with the same characteristics.
 
+If you found a vulnerability, learn
+:ref:`how to report it <docs-contributing-security>`.
+
+If you have a concern about Pigweed's security, please do not hesitate to
+:ref:`contact us <docs-contributing-help>`.
+
+.. toctree::
+   :hidden:
+   :maxdepth: 1
+
+   Report a vulnerability <../contributing/security>
+
 .. _docs-security-bulletins:
 
 ------------------
