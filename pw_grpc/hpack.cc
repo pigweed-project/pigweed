@@ -15,6 +15,7 @@
 #include "pw_grpc_private/hpack.h"
 
 #include <array>
+#include <limits>
 
 #include "pw_assert/check.h"
 #include "pw_bytes/byte_builder.h"
@@ -38,11 +39,11 @@ Result<uint32_t> HpackIntegerDecode(ConstByteSpan& input,
   }
 
   const uint8_t n = bits_in_first_byte;
-  uint32_t i = static_cast<uint32_t>(input[0]) & ((1 << n) - 1U);
+  uint64_t i = static_cast<uint64_t>(input[0]) & ((1U << n) - 1U);
   input = input.subspan(1);
 
   if (i < ((1 << n) - 1U)) {
-    return i;
+    return static_cast<uint32_t>(i);
   }
 
   uint32_t m = 0;
@@ -50,14 +51,17 @@ Result<uint32_t> HpackIntegerDecode(ConstByteSpan& input,
     if (input.empty()) {
       return Status::InvalidArgument();
     }
-    uint32_t b = static_cast<uint32_t>(input[0]);
+    uint64_t b = static_cast<uint64_t>(input[0]);
     input = input.subspan(1);
     i += (b & 127) << m;
     m += 7;
     if ((b & 128) == 0) {
-      return i;
+      if (i > std::numeric_limits<uint32_t>::max()) {
+        return Status::InvalidArgument();
+      }
+      return static_cast<uint32_t>(i);
     }
-    if (m >= 31) {
+    if (m >= 35) {
       // Shift overflowed.
       return Status::InvalidArgument();
     }

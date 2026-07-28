@@ -33,6 +33,11 @@ void TestHuffmanDecode(ConstByteSpan input, std::string_view expected) {
   EXPECT_EQ(*result, expected);
 }
 
+void TestIntegerDecodeInvalid(ConstByteSpan input, uint8_t bits) {
+  auto result = HpackIntegerDecode(input, bits);
+  EXPECT_EQ(result.status(), Status::InvalidArgument());
+}
+
 // Integer test cases from RFC 7541 Appendix C.1.
 TEST(HpackTest, HpackIntegerDecodeC11) {
   const auto kInput = bytes::Array<0b11101010>();
@@ -45,6 +50,34 @@ TEST(HpackTest, HpackIntegerDecodeC12) {
 TEST(HpackTest, HpackIntegerDecodeC13) {
   const auto kInput = bytes::Array<0b00101010>();
   TestIntegerDecode(kInput, /*bits_in_first_byte=*/8, /*expected=*/42U);
+}
+
+TEST(HpackTest, HpackIntegerDecodeOverflowWrapTo31) {
+  const auto kInput = bytes::Array<0x1f, 0x80, 0x80, 0x80, 0x80, 0x10>();
+  TestIntegerDecodeInvalid(kInput, /*bits=*/5);
+}
+
+TEST(HpackTest, HpackIntegerDecodeOverflowWrapMax) {
+  const auto kInput = bytes::Array<0x1f, 0xff, 0xff, 0xff, 0xff, 0x7f>();
+  TestIntegerDecodeInvalid(kInput, /*bits=*/5);
+}
+
+TEST(HpackTest, HpackIntegerDecodeUint32MaxValid) {
+  // 31 + 96 + 127*128 + 127*128^2 + 127*128^3 + 15*128^4 = 4294967295
+  // (UINT32_MAX)
+  const auto kInput = bytes::Array<0x1f, 0xe0, 0xff, 0xff, 0xff, 0x0f>();
+  TestIntegerDecode(kInput, /*bits=*/5, /*expected=*/4294967295U);
+}
+
+TEST(HpackTest, HpackIntegerDecodeUint32MaxPlusOne) {
+  // 4294967296 (UINT32_MAX + 1)
+  const auto kInput = bytes::Array<0x1f, 0xff, 0xff, 0xff, 0xff, 0x0f>();
+  TestIntegerDecodeInvalid(kInput, /*bits=*/5);
+}
+
+TEST(HpackTest, HpackIntegerDecodeSixContinuationBytes) {
+  const auto kInput = bytes::Array<0x1f, 0x80, 0x80, 0x80, 0x80, 0x80, 0x01>();
+  TestIntegerDecodeInvalid(kInput, /*bits=*/5);
 }
 
 // Huffman test cases from RFC 7541 Appendix C.4.
