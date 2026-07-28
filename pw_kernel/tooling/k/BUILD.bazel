@@ -20,7 +20,6 @@ package(default_visibility = ["//visibility:public"])
 rust_binary(
     name = "k",
     srcs = [
-        "image_info.rs",
         "main.rs",
         "stacks.rs",
         "trace.rs",
@@ -31,6 +30,7 @@ rust_binary(
     deps = [
         "//pw_kernel/lib/magic_values",
         "//pw_kernel/lib/pw_gdb_protocol",
+        "//pw_kernel/lib/pw_kernel_annotations",
         "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/pw_perfetto_writer",
         "@rust_crates//:anyhow",

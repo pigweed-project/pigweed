@@ -20,12 +20,11 @@ use anyhow::{Context, Result, anyhow};
 use byteorder::{BigEndian, LittleEndian};
 use object::Endianness;
 use pw_gdb_protocol::Client;
+use pw_kernel_annotations::ImageInfo;
 use pw_kernel_tracing::{EventPayload, Record};
 use pw_perfetto_writer::{PerfettoWriter, ThreadState};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
-
-use crate::image_info::ImageInfo;
 
 // TODO: konkers - Move this to a kernel types crate.
 #[derive(Copy, Clone, PartialEq)]

@@ -16,10 +16,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use pw_gdb_protocol::Client;
+use pw_kernel_annotations::ImageInfo;
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
-
-use crate::image_info::ImageInfo;
 
 pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
     let info = ImageInfo::new(path)?;

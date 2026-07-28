@@ -13,7 +13,8 @@
 // the License.
 
 use anyhow::Result;
-mod image_info;
+use pw_kernel_annotations::ImageInfo;
+
 mod stacks;
 mod trace;
 
@@ -56,7 +57,7 @@ enum Commands {
 }
 
 fn print_image_info(path: &Path) -> Result<()> {
-    let info = image_info::ImageInfo::new(path)?;
+    let info = ImageInfo::new(path)?;
     println!("Stacks:");
     println!("  {:<30} {:<12} {:<10}", "Name", "Address", "Size");
     println!("  {:-<30} {:-<12} {:-<10}", "", "", "");

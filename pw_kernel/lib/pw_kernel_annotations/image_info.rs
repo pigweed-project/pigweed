@@ -18,29 +18,38 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 use object::{Endian, File, Object, ObjectSection};
 
+use crate::{
+    PROCESS_SECTION_NAME, STACK_SECTION_NAME, THREAD_SECTION_NAME, TRACE_BUFFER_SECTION_NAME,
+};
+
+#[derive(Debug)]
 pub struct StackInfo {
     pub name: String,
     pub stack_addr: u64,
     pub stack_size: u64,
 }
 
+#[derive(Debug)]
 pub struct ThreadInfo {
     pub name: String,
     pub id: u64,
     pub parent_id: u64,
 }
 
+#[derive(Debug)]
 pub struct ProcessInfo {
     pub name: String,
     pub id: u64,
 }
 
+#[derive(Debug)]
 pub struct TraceBufferInfo {
     pub name: String,
     pub addr: u64,
     pub size: u64,
 }
 
+#[derive(Debug)]
 pub struct ImageInfo {
     pub stacks: Vec<StackInfo>,
     pub threads: Vec<ThreadInfo>,
@@ -79,7 +88,7 @@ impl ImageInfo {
     }
 
     fn extract_stacks(obj_file: &File<'_>) -> Result<Vec<StackInfo>> {
-        Self::extract_entries(obj_file, ".pw_kernel.annotations.stack", 4, |fields| {
+        Self::extract_entries(obj_file, STACK_SECTION_NAME, 4, |fields| {
             let name = Self::read_string(obj_file, fields[0], fields[1])
                 .context("Failed to read stack name")?;
             Ok(StackInfo {
@@ -91,7 +100,7 @@ impl ImageInfo {
     }
 
     fn extract_threads(obj_file: &File<'_>) -> Result<Vec<ThreadInfo>> {
-        Self::extract_entries(obj_file, ".pw_kernel.annotations.thread", 4, |fields| {
+        Self::extract_entries(obj_file, THREAD_SECTION_NAME, 4, |fields| {
             let name = Self::read_string(obj_file, fields[0], fields[1])
                 .context("Failed to read thread name")?;
             Ok(ThreadInfo {
@@ -103,7 +112,7 @@ impl ImageInfo {
     }
 
     fn extract_processes(obj_file: &File<'_>) -> Result<Vec<ProcessInfo>> {
-        Self::extract_entries(obj_file, ".pw_kernel.annotations.process", 3, |fields| {
+        Self::extract_entries(obj_file, PROCESS_SECTION_NAME, 3, |fields| {
             let name = Self::read_string(obj_file, fields[0], fields[1])
                 .context("Failed to read process name")?;
             Ok(ProcessInfo {
@@ -114,20 +123,15 @@ impl ImageInfo {
     }
 
     fn extract_trace_buffers(obj_file: &File<'_>) -> Result<Vec<TraceBufferInfo>> {
-        Self::extract_entries(
-            obj_file,
-            ".pw_kernel.annotations.trace_buffer",
-            4,
-            |fields| {
-                let name = Self::read_string(obj_file, fields[0], fields[1])
-                    .context("Failed to read trace buffer name")?;
-                Ok(TraceBufferInfo {
-                    name,
-                    addr: fields[2],
-                    size: fields[3],
-                })
-            },
-        )
+        Self::extract_entries(obj_file, TRACE_BUFFER_SECTION_NAME, 4, |fields| {
+            let name = Self::read_string(obj_file, fields[0], fields[1])
+                .context("Failed to read trace buffer name")?;
+            Ok(TraceBufferInfo {
+                name,
+                addr: fields[2],
+                size: fields[3],
+            })
+        })
     }
 
     fn extract_entries<T, F>(
