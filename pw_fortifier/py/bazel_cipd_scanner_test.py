@@ -157,12 +157,15 @@ class TestBazelCipdScanner(unittest.TestCase):
                                 {
                                     'key': (
                                         'fuchsia/third_party/'
-                                        'bloaty/linux-amd64'
+                                        '3pp/bloaty/linux-amd64'
                                     ),
                                     'value': 'git_revision:bloaty_123',
                                 },
                                 {
-                                    'key': 'fuchsia/third_party/bloaty/common',
+                                    'key': (
+                                        'fuchsia/third_party/'
+                                        '3pp/bloaty/common'
+                                    ),
                                     'value': 'git_revision:bloaty_common_123',
                                 },
                             ],
@@ -211,10 +214,10 @@ class TestBazelCipdScanner(unittest.TestCase):
             return subprocess.CompletedProcess(
                 args=args, returncode=0, stdout=stdout, stderr=''
             )
-        if args[1] == 'fuchsia/third_party/bloaty':
+        if args[1] == 'fuchsia/third_party/3pp/bloaty':
             stdout = (
-                'fuchsia/third_party/bloaty/linux-amd64\n'
-                'fuchsia/third_party/bloaty/mac-amd64\n'
+                'fuchsia/third_party/3pp/bloaty/linux-amd64\n'
+                'fuchsia/third_party/3pp/bloaty/mac-arm64\n'
             )
             return subprocess.CompletedProcess(
                 args=args, returncode=0, stdout=stdout, stderr=''
@@ -228,7 +231,7 @@ class TestBazelCipdScanner(unittest.TestCase):
             latest_tag = 'git_revision:456'
             mid_tag = 'git_revision:clang_mid_hash'
             current_tag = 'git_revision:123'
-        elif 'bloaty/linux-amd64' in pkg or 'bloaty/mac-amd64' in pkg:
+        elif 'bloaty/linux-amd64' in pkg or 'bloaty/mac-arm64' in pkg:
             latest_tag = 'git_revision:bloaty_456'
             mid_tag = 'git_revision:bloaty_mid_hash'
             current_tag = 'git_revision:bloaty_123'
@@ -269,22 +272,22 @@ class TestBazelCipdScanner(unittest.TestCase):
                     'fuchsia/third_party/clang/mac-amd64': '2026-06-05',
                 },
                 'git_revision:bloaty_123': {
-                    'fuchsia/third_party/bloaty/linux-amd64': '2026-06-06',
-                    'fuchsia/third_party/bloaty/mac-amd64': '2026-06-06',
+                    'fuchsia/third_party/3pp/bloaty/linux-amd64': '2026-06-06',
+                    'fuchsia/third_party/3pp/bloaty/mac-arm64': '2026-06-06',
                 },
                 'git_revision:bloaty_common_123': {
-                    'fuchsia/third_party/bloaty/common': '2026-06-06',
+                    'fuchsia/third_party/3pp/bloaty/common': '2026-06-06',
                 },
                 'git_revision:456': {
                     'fuchsia/third_party/clang/linux-amd64': '2026-06-08',
                     'fuchsia/third_party/clang/mac-amd64': '2026-06-08',
                 },
                 'git_revision:bloaty_456': {
-                    'fuchsia/third_party/bloaty/linux-amd64': '2026-06-08',
-                    'fuchsia/third_party/bloaty/mac-amd64': '2026-06-08',
+                    'fuchsia/third_party/3pp/bloaty/linux-amd64': '2026-06-08',
+                    'fuchsia/third_party/3pp/bloaty/mac-arm64': '2026-06-08',
                 },
                 'git_revision:bloaty_common_456': {
-                    'fuchsia/third_party/bloaty/common': '2026-06-08',
+                    'fuchsia/third_party/3pp/bloaty/common': '2026-06-08',
                 },
             }
             pkg_map = tag_map.get(tag)
@@ -371,7 +374,7 @@ class TestBazelCipdScanner(unittest.TestCase):
         bloaty_linux = next(
             r
             for r in results
-            if r.package == 'fuchsia/third_party/bloaty/linux-amd64'
+            if r.package == 'fuchsia/third_party/3pp/bloaty/linux-amd64'
         )
         self.assertEqual(bloaty_linux.source, 'MODULE.bazel')
         self.assertEqual(bloaty_linux.pkg_type, 'bazel_cipd')
@@ -391,7 +394,7 @@ class TestBazelCipdScanner(unittest.TestCase):
         bloaty_common = next(
             r
             for r in results
-            if r.package == 'fuchsia/third_party/bloaty/common'
+            if r.package == 'fuchsia/third_party/3pp/bloaty/common'
         )
         self.assertEqual(bloaty_common.source, 'MODULE.bazel')
         self.assertEqual(bloaty_common.pkg_type, 'bazel_cipd')

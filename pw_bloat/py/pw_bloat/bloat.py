@@ -71,7 +71,9 @@ def run_bloaty(
 
         r = runfiles.Create()
         assert r is not None
-        bloaty_path = r.Rlocation("bloaty/bloaty", r.CurrentRepository())
+        bloaty_path = r.Rlocation("bloaty/bin/bloaty", r.CurrentRepository())
+        if bloaty_path is None or not os.path.exists(bloaty_path):
+            bloaty_path = r.Rlocation("bloaty/bloaty", r.CurrentRepository())
     except ImportError:
         # Outside of Bazel, use Bloaty from the system path.
         default_bloaty = 'bloaty'

@@ -74,7 +74,7 @@ class TestCipdSetupScanner(unittest.TestCase):
                     'tags': ['git_revision:ninja123'],
                 },
                 {
-                    'path': 'fuchsia/third_party/bloaty/${platform}',
+                    'path': 'fuchsia/third_party/3pp/bloaty/${platform}',
                     'platforms': ['linux-amd64'],
                     'tags': ['git_revision:bloaty123'],
                 },
@@ -226,7 +226,7 @@ class TestCipdSetupScanner(unittest.TestCase):
                 ):
                     stdout = self._make_describe_output(pkg, '2026-06-05', tag)
             elif tag == 'git_revision:bloaty123':
-                if pkg == 'fuchsia/third_party/bloaty/linux-amd64':
+                if pkg == 'fuchsia/third_party/3pp/bloaty/linux-amd64':
                     stdout = self._make_describe_output(pkg, '2026-06-05', tag)
             elif tag == 'git_revision:rust123':
                 if pkg == 'fuchsia/third_party/rust/linux-amd64':
@@ -306,7 +306,7 @@ class TestCipdSetupScanner(unittest.TestCase):
         bloaty_linux = next(
             r
             for r in results
-            if r.package == 'fuchsia/third_party/bloaty/linux-amd64'
+            if r.package == 'fuchsia/third_party/3pp/bloaty/linux-amd64'
         )
         self.assertEqual(bloaty_linux.tier, 2)
         self.assertEqual(bloaty_linux.owner, 'owner-ninja@google.com')

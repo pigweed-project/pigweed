@@ -535,7 +535,7 @@ git_repository(
 cipd_ext.require(
     name = "pigweed.bloaty",
     packages = {
-        "fuchsia/third_party/bloaty/${os=linux,mac}-amd64": "git_revision:c057ba4f43db0506d4ba8c096925b054b02a8bd3",
+        "fuchsia/third_party/3pp/bloaty/${platform}": "version:2@4a601b636e2347322d0371c8bf8ca5eaeaca4bac",
     },
 )
 use_repo(cipd_ext, bloaty = "pigweed.bloaty")

@@ -90,8 +90,8 @@ Example:
 
     cipd_repository(
         name = "bloaty",
-        path = "fuchsia/third_party/bloaty/${os=linux,mac}-${arch=amd64}",
-        tag = "git_revision:c057ba4f43db0506d4ba8c096925b054b02a8bd3",
+        path = "fuchsia/third_party/3pp/bloaty/${os=linux,mac}-${arch=amd64}",
+        tag = "version:2@4a601b636e2347322d0371c8bf8ca5eaeaca4bac",
     )
 """,
 )

@@ -43,25 +43,15 @@
       ]
     },
     {
-      "path": "fuchsia/third_party/bloaty/${platform}",
+      "path": "fuchsia/third_party/3pp/bloaty/${platform}",
       "platforms": [
         "linux-amd64",
-        "mac-amd64"
-      ],
-      "tags": [
-        "git_revision:c057ba4f43db0506d4ba8c096925b054b02a8bd3"
-      ],
-      "version_file": ".versions/bloaty.cipd_version"
-    },
-    {
-      "path": "fuchsia/third_party/bloaty/mac-amd64",
-      "platforms": [
         "mac-arm64"
       ],
       "tags": [
-        "git_revision:c057ba4f43db0506d4ba8c096925b054b02a8bd3"
+        "version:2@4a601b636e2347322d0371c8bf8ca5eaeaca4bac"
       ],
-      "version_file": ".versions/bloaty.cipd_version"
+      "version_file": ".versions/bloaty.version"
     },
     {
       "path": "infra/3pp/tools/protoc/${platform}",
