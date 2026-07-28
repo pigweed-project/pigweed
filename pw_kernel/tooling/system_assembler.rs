@@ -37,6 +37,15 @@ static SKIPPED_APP_SECTIONS: LazyLock<HashSet<&[u8]>> = LazyLock::new(|| {
         .collect()
 });
 
+// These are prefixes for sections that will be collected from all the apps and the kernel into
+// merged system-image sections of the same name. For example, within the combined elf, there can
+// only be one tokenized section that must be called `.pw_tokenizer.entries` as this is what the
+// host-side tooling expects. The annotation sections are designed to be appended, so for each
+// section we encounter in an elf, we just append the bytes to the end of the first section we
+// encounter of that kind. This means that the individual symbols from app elfs are erased since we
+// don't update the SYMTAB with them.
+static MERGED_SECTION_PREFIXES: [&[u8]; 2] = [b".pw_tokenizer.", b".pw_kernel.annotations."];
+
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long, required(true))]
@@ -49,7 +58,7 @@ struct Args {
 
 struct SystemImage<'data> {
     builder: Builder<'data>,
-    tokenized_section: Option<SectionId>,
+    merged_sections: HashMap<String, SectionId>,
 }
 
 impl<'data> SystemImage<'data> {
@@ -59,10 +68,10 @@ impl<'data> SystemImage<'data> {
 
         let mut instance = Self {
             builder,
-            tokenized_section: None,
+            merged_sections: HashMap::new(),
         };
 
-        instance.set_tokenized_section();
+        instance.init_merged_sections()?;
         Ok(instance)
     }
 
@@ -95,12 +104,12 @@ impl<'data> SystemImage<'data> {
     ) -> Result<()> {
         let mut sections_for_fixup = Vec::new();
         for section in &app.sections {
-            let is_tokenizer = Self::is_tokenizer_section(section);
-            let mut add_tokenizer_section = false;
-            if is_tokenizer {
-                add_tokenizer_section = self.update_tokenized_section(section, section_map);
-                // Don't add this section, if a tokenized section already exists
-                if !add_tokenizer_section {
+            let should_merge = Self::should_merge_section(section)?;
+            let mut add_merge_section = false;
+            if should_merge {
+                add_merge_section = self.update_merged_section(section, section_map);
+                // Don't add this section, if a merged section already exists
+                if !add_merge_section {
                     continue;
                 }
             }
@@ -117,9 +126,10 @@ impl<'data> SystemImage<'data> {
             let new_section = self.builder.sections.add();
             section_map.insert(section.id().index(), new_section.id());
 
-            if add_tokenizer_section {
-                self.tokenized_section = Some(new_section.id());
-                // Don't rename tokenizer section if we're adding one.
+            if add_merge_section {
+                self.merged_sections
+                    .insert(section.name.to_string(), new_section.id());
+                // Don't rename merged section if we're adding one.
                 new_section.name = ByteString::from(section.name.to_vec());
             } else {
                 let name = format!("{}.{}", section.name, app_name);
@@ -395,64 +405,59 @@ impl<'data> SystemImage<'data> {
         }
     }
 
-    // Within the combined elf, there can only be one tokenized section
-    // that must be called `.pw_tokenizer.entries` as this is what the
-    // de-tokenization tooling expects.
-    // The tokenization database is designed to be appended, so for
-    // each token section we encounter in an elf, we just append the
-    // bytes to the end of the first token section we encounter.
-    fn set_tokenized_section(&mut self) {
+    fn init_merged_sections(&mut self) -> Result<()> {
         for section in &mut self.builder.sections {
-            let is_tokenizer = Self::is_tokenizer_section(section);
-            if is_tokenizer {
-                // println!("Tokenized section: {:?}", section);
-                self.tokenized_section = Some(section.id());
-                break;
+            if Self::should_merge_section(section)? {
+                self.merged_sections
+                    .insert(section.name.to_string(), section.id());
             }
         }
+        Ok(())
     }
 
-    fn update_tokenized_section(
+    fn update_merged_section(
         &mut self,
         section: &Section,
         section_map: &mut HashMap<usize, SectionId>,
     ) -> bool {
-        let mut add_tokenizer_section = false;
-        match self.tokenized_section {
-            Some(tokenized_section_id) => {
-                // There is already a tokenizer section, so append
-                // this tokenizer database to the existing one.
-                let tokenizer_section = self.builder.sections.get_mut(tokenized_section_id);
-                tokenizer_section.sh_size += section.sh_size;
-                tokenizer_section.data = match &tokenizer_section.data {
-                    SectionData::Data(data) => {
-                        let mut combined_data = data.to_vec();
-                        match &section.data {
-                            SectionData::Data(new_data) => combined_data.extend(&new_data.to_vec()),
-                            _ => unreachable!("Incorrect data type"),
-                        };
-                        SectionData::Data(Bytes::from(combined_data))
-                    }
-                    _ => unreachable!("Incorrect data type"),
-                };
-                section_map.insert(section.id().index(), tokenized_section_id);
-            }
-            None => {
-                // No existing tokenized section in the system image, so use
-                // this one.
-                add_tokenizer_section = true;
-            }
+        if let Some(&target_section_id) = self.merged_sections.get(&section.name.to_string()) {
+            // There is already a section with this name, so append
+            // this section data to the existing one.
+            let target_section = self.builder.sections.get_mut(target_section_id);
+            target_section.sh_size += section.sh_size;
+            target_section.data = match &target_section.data {
+                SectionData::Data(data) => {
+                    let mut combined_data = data.to_vec();
+                    match &section.data {
+                        SectionData::Data(new_data) => combined_data.extend(&new_data.to_vec()),
+                        _ => unreachable!("Incorrect data type"),
+                    };
+                    SectionData::Data(Bytes::from(combined_data))
+                }
+                _ => unreachable!("Incorrect data type"),
+            };
+            section_map.insert(section.id().index(), target_section_id);
+            false
+        } else {
+            // No existing section with this name in the system image, so use
+            // this one.
+            true
         }
-
-        add_tokenizer_section
     }
 
-    fn is_tokenizer_section(section: &Section) -> bool {
-        if section.is_alloc() {
-            return false;
+    fn should_merge_section(section: &Section) -> Result<bool> {
+        let is_match = MERGED_SECTION_PREFIXES
+            .iter()
+            .any(|name| section.name.starts_with(name));
+
+        if is_match && section.is_alloc() {
+            bail!(
+                "Section '{}' matches merge section prefixes but is allocatable (is_alloc=true), check your linker script.",
+                String::from_utf8_lossy(&section.name)
+            );
         }
 
-        section.name.starts_with(b".pw_tokenizer.")
+        Ok(is_match)
     }
 }
 

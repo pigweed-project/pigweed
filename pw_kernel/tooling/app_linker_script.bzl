@@ -26,6 +26,8 @@ def _app_linker_script_impl(ctx):
     args = [
         "--template",
         "app=" + ctx.file.template.path,
+        "--template",
+        "pigweed_linker_sections.ld.jinja=" + ctx.file.pigweed_sections.path,
         "--config",
         ctx.file.system_config.path,
         "--output",
@@ -36,7 +38,7 @@ def _app_linker_script_impl(ctx):
     ]
 
     ctx.actions.run(
-        inputs = ctx.files.system_config + [ctx.file.template],
+        inputs = ctx.files.system_config + [ctx.file.template, ctx.file.pigweed_sections],
         outputs = [output],
         executable = ctx.executable.system_generator,
         mnemonic = "AppLinkerScript",
@@ -63,6 +65,11 @@ _app_linker_script_rule = rule(
         "app_name": attr.string(
             doc = "The name of the app for this linker script.",
             mandatory = True,
+        ),
+        "pigweed_sections": attr.label(
+            doc = "Pigweed linker sections template file.",
+            allow_single_file = True,
+            default = "//pw_kernel/tooling/system_generator/templates:pigweed_linker_sections.ld.jinja",
         ),
         "system_config": attr.label(
             doc = "System config file which defines the system.",
