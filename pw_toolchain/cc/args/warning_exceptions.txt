@@ -68,6 +68,7 @@ src:*/fuzztest/internal/type_support.h
 
 # TODO: https://pwbug.dev/515087379 - Update emboss so we can remove these.
 src:*/pw_bluetooth/att.emb.h
+src:*/pw_bluetooth/avctp_avrcp.emb.h
 src:*/pw_bluetooth/hci_android.emb.h
 src:*/pw_bluetooth/hci_commands.emb.h
 src:*/pw_bluetooth/hci_common.emb.h
