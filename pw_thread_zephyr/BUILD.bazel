@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("@zephyr//:cc.bzl", "zephyr_cc_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
@@ -28,11 +28,14 @@ sphinx_docs_library(
     target_compatible_with = incompatible_with_mcu(),
 )
 
-zephyr_cc_library(
+cc_library(
     name = "config",
     hdrs = ["public/pw_thread_zephyr/config.h"],
     strip_include_prefix = "public",
-    deps = [":config_override"],
+    deps = [
+        ":config_override",
+        "@zephyr",
+    ],
 )
 
 label_flag(
@@ -40,17 +43,20 @@ label_flag(
     build_setting_default = "//pw_build:default_module_config",
 )
 
-zephyr_cc_library(
+cc_library(
     name = "id",
     hdrs = [
         "public_overrides/id/pw_thread_backend/id_inline.h",
         "public_overrides/id/pw_thread_backend/id_native.h",
     ],
     strip_include_prefix = "public_overrides/id",
-    deps = [":id_private"],
+    deps = [
+        ":id_private",
+        "@zephyr",
+    ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "id_private",
     hdrs = [
         "public/pw_thread_zephyr/id_inline.h",
@@ -62,10 +68,11 @@ zephyr_cc_library(
         "//pw_assert:assert",
         "//pw_interrupt:context",
         "//pw_thread:id.facade",
+        "@zephyr",
     ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "sleep",
     srcs = ["sleep.cc"],
     hdrs = [
@@ -73,10 +80,13 @@ zephyr_cc_library(
     ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public_overrides/sleep",
-    deps = [":sleep_private"],
+    deps = [
+        ":sleep_private",
+        "@zephyr",
+    ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "sleep_private",
     hdrs = [
         "public/pw_thread_zephyr/sleep_inline.h",
@@ -87,10 +97,11 @@ zephyr_cc_library(
         "//pw_chrono:system_clock",
         "//pw_thread:sleep.facade",
         "//pw_thread:thread",
+        "@zephyr",
     ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "thread",
     srcs = ["thread.cc"],
     hdrs = [
@@ -98,10 +109,13 @@ zephyr_cc_library(
         "public_overrides/thread/pw_thread_backend/thread_native.h",
     ],
     strip_include_prefix = "public_overrides/thread",
-    deps = [":thread_private"],
+    deps = [
+        ":thread_private",
+        "@zephyr",
+    ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "thread_private",
     hdrs = [
         "public/pw_thread_zephyr/context.h",
@@ -125,10 +139,11 @@ zephyr_cc_library(
         "//pw_string:util",
         "//pw_thread:options",
         "//pw_thread:thread.facade",
+        "@zephyr",
     ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "thread_creation",
     hdrs = [
         "public_overrides/thread_creation/pw_thread_backend/context.h",
@@ -137,10 +152,13 @@ zephyr_cc_library(
         "public_overrides/thread_creation/pw_thread_backend/stack.h",
     ],
     strip_include_prefix = "public_overrides/thread_creation",
-    deps = [":config"],
+    deps = [
+        ":config",
+        "@zephyr",
+    ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "thread_iteration",
     srcs = [
         "pw_thread_zephyr_private/thread_iteration.h",
@@ -152,19 +170,23 @@ zephyr_cc_library(
         "//pw_status",
         "//pw_thread:thread_info",
         "//pw_thread:thread_iteration.facade",
+        "@zephyr",
     ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "yield",
     hdrs = [
         "public_overrides/yield/pw_thread_backend/yield_inline.h",
     ],
     strip_include_prefix = "public_overrides/yield",
-    deps = [":yield_private"],
+    deps = [
+        ":yield_private",
+        "@zephyr",
+    ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "yield_private",
     hdrs = [
         "public/pw_thread_zephyr/yield_inline.h",
@@ -174,5 +196,6 @@ zephyr_cc_library(
     deps = [
         "//pw_assert:assert",
         "//pw_thread:yield.facade",
+        "@zephyr",
     ],
 )

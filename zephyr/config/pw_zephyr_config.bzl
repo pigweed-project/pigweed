@@ -63,6 +63,7 @@ def _pw_zephyr_config_impl(mctx):
         files = default_files | {
             "cc.bzl": Label("//zephyr/config/stubs:stub_cc.bzl"),
             "cc_test.bzl": Label("//zephyr/config/stubs:stub_cc_test.bzl"),
+            "modules/cmsis_6/BUILD.bazel": Label("//zephyr/config/stubs:stub_BUILD"),
         },
     )
     symlinked_repo(name = "zephyr_version", files = default_files)

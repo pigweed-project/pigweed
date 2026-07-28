@@ -12,8 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_library")
-load("@zephyr//:cc.bzl", "zephyr_app", "zephyr_cc_library")
+load("@zephyr//:cc.bzl", "zephyr_app")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -37,7 +38,7 @@ rust_library(
     ],
 )
 
-zephyr_cc_library(
+cc_library(
     name = "boot_cc",
     srcs = ["boot.cc"],
     # TODO: https://pwbug.dev/528015032 - macos is not currently supported
@@ -49,6 +50,7 @@ zephyr_cc_library(
     deps = [
         ":app_bin.elf_linker_final",
         "@pigweed//pw_log",
+        "@zephyr",
         "@zephyr//:board_deps",
         "@zephyr//arch",
         "@zephyr//drivers",

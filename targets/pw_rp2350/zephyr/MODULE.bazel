@@ -32,7 +32,7 @@ local_path_override(
 
 git_override(
     module_name = "zephyr-bazel",
-    commit = "d8e28a346c14cb6dceb79f22cf43644962c25683",
+    commit = "508137f06bb4f05c524e2e493790e2294e13b2e1",
     remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
 )
 

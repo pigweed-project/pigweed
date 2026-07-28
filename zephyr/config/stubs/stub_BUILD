@@ -12,4 +12,26 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "board_deps",
+    target_compatible_with = ["@platforms//:incompatible"],
+)
+
+cc_library(
+    name = "cmsis_6",
+    target_compatible_with = ["@platforms//:incompatible"],
+)
+
+cc_library(
+    name = "version",
+    target_compatible_with = ["@platforms//:incompatible"],
+)
+
+cc_library(
+    name = "zephyr",
+    target_compatible_with = ["@platforms//:incompatible"],
+)

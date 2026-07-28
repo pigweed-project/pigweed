@@ -12,8 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("@zephyr//:cc.bzl", "zephyr_cc_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
@@ -30,11 +30,14 @@ sphinx_docs_library(
     target_compatible_with = incompatible_with_mcu(),
 )
 
-zephyr_cc_library(
+cc_library(
     name = "pw_digital_io_zephyr",
     srcs = ["digital_io.cc"],
     hdrs = ["public/pw_digital_io_zephyr/digital_io.h"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
-    deps = ["//pw_digital_io"],
+    deps = [
+        "//pw_digital_io",
+        "@zephyr",
+    ],
 )
