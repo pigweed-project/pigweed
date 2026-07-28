@@ -41,10 +41,7 @@ cc_library(
         "public_overrides/system_clock/pw_chrono_backend/system_clock_inline.h",
     ],
     strip_include_prefix = "public_overrides/system_clock",
-    deps = [
-        ":system_clock_private",
-        "@zephyr",
-    ],
+    deps = [":system_clock_private"],
 )
 
 cc_library(

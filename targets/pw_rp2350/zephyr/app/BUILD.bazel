@@ -50,7 +50,6 @@ cc_library(
     deps = [
         ":app_bin.elf_linker_final",
         "@pigweed//pw_log",
-        "@zephyr",
         "@zephyr//:board_deps",
         "@zephyr//arch",
         "@zephyr//drivers",

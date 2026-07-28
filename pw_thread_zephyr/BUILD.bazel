@@ -50,10 +50,7 @@ cc_library(
         "public_overrides/id/pw_thread_backend/id_native.h",
     ],
     strip_include_prefix = "public_overrides/id",
-    deps = [
-        ":id_private",
-        "@zephyr",
-    ],
+    deps = [":id_private"],
 )
 
 cc_library(
@@ -152,10 +149,7 @@ cc_library(
         "public_overrides/thread_creation/pw_thread_backend/stack.h",
     ],
     strip_include_prefix = "public_overrides/thread_creation",
-    deps = [
-        ":config",
-        "@zephyr",
-    ],
+    deps = [":config"],
 )
 
 cc_library(
@@ -180,10 +174,7 @@ cc_library(
         "public_overrides/yield/pw_thread_backend/yield_inline.h",
     ],
     strip_include_prefix = "public_overrides/yield",
-    deps = [
-        ":yield_private",
-        "@zephyr",
-    ],
+    deps = [":yield_private"],
 )
 
 cc_library(

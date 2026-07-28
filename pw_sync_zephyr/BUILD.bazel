@@ -98,10 +98,7 @@ cc_library(
         "public_overrides/interrupt_spin_lock/pw_sync_backend/interrupt_spin_lock_native.h",
     ],
     strip_include_prefix = "public_overrides/interrupt_spin_lock",
-    deps = [
-        ":interrupt_spin_lock_private",
-        "@zephyr",
-    ],
+    deps = [":interrupt_spin_lock_private"],
 )
 
 cc_library(
@@ -126,10 +123,7 @@ cc_library(
         "public_overrides/mutex/pw_sync_backend/mutex_native.h",
     ],
     strip_include_prefix = "public_overrides/mutex",
-    deps = [
-        ":mutex_private",
-        "@zephyr",
-    ],
+    deps = [":mutex_private"],
 )
 
 cc_library(
@@ -155,10 +149,7 @@ cc_library(
         "public_overrides/thread_notification/pw_sync_backend/thread_notification_native.h",
     ],
     strip_include_prefix = "public_overrides/thread_notification",
-    deps = [
-        ":thread_notification_private",
-        "@zephyr",
-    ],
+    deps = [":thread_notification_private"],
 )
 
 cc_library(
@@ -214,10 +205,7 @@ cc_library(
         "public_overrides/timed_thread_notification/pw_sync_backend/timed_thread_notification_inline.h",
     ],
     strip_include_prefix = "public_overrides/timed_thread_notification",
-    deps = [
-        ":timed_thread_notification_private",
-        "@zephyr",
-    ],
+    deps = [":timed_thread_notification_private"],
 )
 
 cc_library(
@@ -231,6 +219,5 @@ cc_library(
         ":binary_semaphore",
         "//pw_chrono:system_clock",
         "//pw_sync:timed_thread_notification.facade",
-        "@zephyr",
     ],
 )
