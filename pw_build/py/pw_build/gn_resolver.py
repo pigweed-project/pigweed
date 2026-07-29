@@ -298,23 +298,23 @@ class _ArgAction(enum.Enum):
 
 
 class _Expression:
-    def __init__(self, match: re.Match, ending: int):
-        self._match = match
-        self._ending = ending
+    def __init__(self, start: re.Match, end: re.Match):
+        self._start = start
+        self._end = end
 
     @property
     def string(self):
-        return self._match.string
+        return self._start.string
 
     @property
     def end(self) -> int:
-        return self._ending + len(_ENDING)
+        return self._end.end()
 
     def contents(self) -> str:
-        return self.string[self._match.end() : self._ending]
+        return self.string[self._start.end() : self._end.start()]
 
     def expression(self) -> str:
-        return self.string[self._match.start() : self.end]
+        return self.string[self._start.start() : self._end.end()]
 
 
 _Actions = Iterator[tuple[_ArgAction, str]]
@@ -369,26 +369,26 @@ _FUNCTIONS: dict[str, Callable[[GnPaths, _Expression], _Actions]] = {
     'TARGET_OBJECTS': _target_objects,
 }
 
-_START_EXPRESSION = re.compile(fr'<({"|".join(_FUNCTIONS)})\(')
-_ENDING = ')>'
+_START_RE = re.compile(fr'(<|\\u003[cC])({"|".join(_FUNCTIONS)})\(')
+_END_RE = re.compile(r'\)(>|\\u003[eE])')
 
 
 def _expand_arguments(paths: GnPaths, string: str) -> _Actions:
     pos = 0
 
-    for match in _START_EXPRESSION.finditer(string):
-        if pos != match.start():
-            yield _ArgAction.APPEND, string[pos : match.start()]
+    for start in _START_RE.finditer(string):
+        if pos != start.start():
+            yield _ArgAction.APPEND, string[pos : start.start()]
 
-        ending = string.find(_ENDING, match.end())
-        if ending == -1:
+        end = _END_RE.search(string, pos=start.end())
+        if not end:
             raise ExpressionError(
-                f'Parse error: no terminating "{_ENDING}" '
-                f'was found for "{string[match.start():]}"'
+                f'Parse error: no terminating ")>" '
+                f'was found for "{string[start.start():]}"'
             )
 
-        expression = _Expression(match, ending)
-        yield from _FUNCTIONS[match.group(1)](paths, expression)
+        expression = _Expression(start, end)
+        yield from _FUNCTIONS[start.group(2)](paths, expression)
 
         pos = expression.end
 
