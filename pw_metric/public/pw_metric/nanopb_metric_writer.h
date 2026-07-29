@@ -16,9 +16,11 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 
 #include "pb.h"
+#include "pw_bytes/endian.h"
 #include "pw_containers/vector.h"
 #include "pw_metric/config.h"
 #include "pw_metric/metric.h"
@@ -106,7 +108,34 @@ class NanopbMetricWriter : public MetricWriter {
         proto_metric.which_value = pw_metric_proto_Metric_as_int64_tag;
         break;
       }
+      case UntypedMetric::kTypeDouble: {
+        const auto& m = static_cast<const TypedMetric<double>&>(metric);
+        proto_metric.value.as_double = m.value();
+        proto_metric.which_value = pw_metric_proto_Metric_as_double_tag;
+        break;
+      }
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeBool: {
+        const auto& m = static_cast<const TypedMetric<bool>&>(metric);
+        proto_metric.value.as_bool = m.value();
+        proto_metric.which_value = pw_metric_proto_Metric_as_bool_tag;
+        break;
+      }
+      case UntypedMetric::kTypeInt32: {
+        const auto& m = static_cast<const TypedMetric<int32_t>&>(metric);
+        proto_metric.value.as_int32 = m.value();
+        proto_metric.which_value = pw_metric_proto_Metric_as_int32_tag;
+        break;
+      }
+      case UntypedMetric::kTypeToken: {
+        const auto& m = static_cast<const TypedMetric<TokenValue>&>(metric);
+        uint32_t token = m.value().value;
+        proto_metric.value.as_token.size = sizeof(token);
+        bytes::CopyInOrder(
+            endian::little, token, proto_metric.value.as_token.bytes);
+        proto_metric.which_value = pw_metric_proto_Metric_as_token_tag;
+        break;
+      }
     }
 
     --metric_limit_;

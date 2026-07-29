@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "pw_bytes/endian.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/vector.h"
 #include "pw_metric/config.h"
@@ -79,7 +80,36 @@ size_t SumMetricInts(ConstByteSpan serialized_path) {
         metrics_sum += static_cast<size_t>(metric_value);
         break;
       }
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsDouble): {
+        double metric_value;
+        PW_TEST_EXPECT_OK(decoder.ReadDouble(&metric_value));
+        metrics_sum += static_cast<size_t>(metric_value);
+        break;
+      }
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsBool): {
+        bool metric_value;
+        PW_TEST_EXPECT_OK(decoder.ReadBool(&metric_value));
+        metrics_sum += metric_value ? 1 : 0;
+        break;
+      }
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsInt32): {
+        int32_t metric_value;
+        PW_TEST_EXPECT_OK(decoder.ReadInt32(&metric_value));
+        metrics_sum += static_cast<size_t>(metric_value);
+        break;
+      }
+      case static_cast<uint32_t>(proto::pwpb::Metric::Fields::kAsToken): {
+        ConstByteSpan token_bytes;
+        PW_TEST_EXPECT_OK(decoder.ReadBytes(&token_bytes));
+        uint32_t metric_value = 0;
+        if (!bytes::ReadInOrder(endian::little, token_bytes, metric_value)) {
+          EXPECT_EQ(token_bytes.size(), 4u);
+          return 0;
+        }
+        metrics_sum += metric_value;
+        break;
+      }
     }
   }
   return metrics_sum;
@@ -218,7 +248,63 @@ TEST(MetricService, MixedMetricsWith64Bit) {
       8u,
       GetMetricsSum(ctx.responses()[0]) + GetMetricsSum(ctx.responses()[1]));
 }
+TEST(MetricService, OneGroupOneDoubleMetric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", double, 3.5);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  // Double 3.5 cast to size_t is 3.
+  EXPECT_EQ(3u, GetMetricsSum(ctx.responses()[0]));
+}
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+
+TEST(MetricService, OneGroupOneBoolMetric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", bool, true);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(1u, GetMetricsSum(ctx.responses()[0]));
+}
+
+TEST(MetricService, OneGroupOneInt32Metric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", int32_t, 5);
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(5u, GetMetricsSum(ctx.responses()[0]));
+}
+
+TEST(MetricService, OneGroupOneTokenMetric) {
+  PW_METRIC_GROUP(root, "/");
+  PW_METRIC_TYPED(root, a, "a", TokenValue, TokenValue(42u));
+
+  PW_RAW_TEST_METHOD_CONTEXT(MetricService, Get)
+  ctx{root.metrics(), root.children()};
+  ctx.call({});
+  EXPECT_TRUE(ctx.done());
+  PW_TEST_EXPECT_OK(ctx.status());
+
+  EXPECT_EQ(1u, ctx.responses().size());
+  EXPECT_EQ(42u, GetMetricsSum(ctx.responses()[0]));
+}
 
 TEST(MetricService, MixedMetrics) {
   PW_METRIC_GROUP(root, "/");

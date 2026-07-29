@@ -54,6 +54,8 @@ pw_proto_library(pw_metric.metric_service_proto
   INPUTS
     pw_metric_proto/metric_service.options
     pw_metric_proto/metric_service.pwpb_options
+  DEPS
+    pw_tokenizer.proto
 )
 
 pw_add_library(pw_metric.metric_walker STATIC

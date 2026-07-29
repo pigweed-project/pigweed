@@ -15,6 +15,8 @@ syntax = "proto3";
 
 package pw.metric.proto;
 
+import "pw_tokenizer_proto/options.proto";
+
 // A metric, described by the name (path + name), and the value.
 //
 // This flattened representation, while more complicated than the obvious tree
@@ -50,6 +52,10 @@ message Metric {
     uint32 as_int = 4;
     uint64 as_uint64 = 5;
     int64 as_int64 = 6;
+    bool as_bool = 7;
+    int32 as_int32 = 8;
+    double as_double = 9;
+    bytes as_token = 10 [(pw.tokenizer.format) = TOKENIZATION_OPTIONAL];
   };
 }
 

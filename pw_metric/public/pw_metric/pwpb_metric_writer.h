@@ -14,8 +14,11 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <limits>
 
+#include "pw_bytes/endian.h"
 #include "pw_metric/config.h"
 #include "pw_metric/metric.h"
 #include "pw_metric/metric_walker.h"
@@ -35,7 +38,11 @@ union MetricValue {
 #if PW_METRIC_CONFIG_ENABLE_64BIT
   uint64_t u64;
   int64_t i64;
+  double d;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+  bool b;
+  int32_t i32;
+  uint32_t token;
 };
 
 inline MetricValue ReadMetricValue(const UntypedMetric& metric) {
@@ -54,7 +61,20 @@ inline MetricValue ReadMetricValue(const UntypedMetric& metric) {
     case UntypedMetric::kTypeInt64:
       value.i64 = static_cast<const TypedMetric<int64_t>&>(metric).value();
       break;
+    case UntypedMetric::kTypeDouble:
+      value.d = static_cast<const TypedMetric<double>&>(metric).value();
+      break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+    case UntypedMetric::kTypeBool:
+      value.b = static_cast<const TypedMetric<bool>&>(metric).value();
+      break;
+    case UntypedMetric::kTypeInt32:
+      value.i32 = static_cast<const TypedMetric<int32_t>&>(metric).value();
+      break;
+    case UntypedMetric::kTypeToken:
+      value.token =
+          static_cast<const TypedMetric<TokenValue>&>(metric).value().value;
+      break;
   }
   return value;
 }
@@ -129,7 +149,23 @@ class PwpbMetricWriter : public MetricWriter {
         metric_payload_size += protobuf::SizeOfFieldInt64(
             proto::pwpb::Metric::Fields::kAsInt64, value.i64);
         break;
+      case UntypedMetric::kTypeDouble:
+        metric_payload_size +=
+            protobuf::SizeOfFieldDouble(proto::pwpb::Metric::Fields::kAsDouble);
+        break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeBool:
+        metric_payload_size +=
+            protobuf::SizeOfFieldBool(proto::pwpb::Metric::Fields::kAsBool);
+        break;
+      case UntypedMetric::kTypeInt32:
+        metric_payload_size += protobuf::SizeOfFieldInt32(
+            proto::pwpb::Metric::Fields::kAsInt32, value.i32);
+        break;
+      case UntypedMetric::kTypeToken:
+        metric_payload_size += protobuf::SizeOfFieldBytes(
+            proto::pwpb::Metric::Fields::kAsToken, 4);
+        break;
     }
 
     // 2) Calculate the total on-wire size this metric will consume in the
@@ -164,7 +200,22 @@ class PwpbMetricWriter : public MetricWriter {
       case UntypedMetric::kTypeInt64:
         metric_encoder.WriteAsInt64(value.i64).IgnoreError();
         break;
+      case UntypedMetric::kTypeDouble:
+        metric_encoder.WriteAsDouble(value.d).IgnoreError();
+        break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeBool:
+        metric_encoder.WriteAsBool(value.b).IgnoreError();
+        break;
+      case UntypedMetric::kTypeInt32:
+        metric_encoder.WriteAsInt32(value.i32).IgnoreError();
+        break;
+      case UntypedMetric::kTypeToken: {
+        std::array<std::byte, sizeof(value.token)> token_bytes;
+        bytes::CopyInOrder(endian::little, value.token, token_bytes.data());
+        metric_encoder.WriteAsToken(token_bytes).IgnoreError();
+        break;
+      }
     }
 
     --metric_limit_;
@@ -246,7 +297,23 @@ class PwpbStreamingMetricWriter : public MetricWriter {
             case UntypedMetric::kTypeInt64:
               metric_encoder.WriteAsInt64(value.i64).IgnoreError();
               break;
+            case UntypedMetric::kTypeDouble:
+              metric_encoder.WriteAsDouble(value.d).IgnoreError();
+              break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+            case UntypedMetric::kTypeBool:
+              metric_encoder.WriteAsBool(value.b).IgnoreError();
+              break;
+            case UntypedMetric::kTypeInt32:
+              metric_encoder.WriteAsInt32(value.i32).IgnoreError();
+              break;
+            case UntypedMetric::kTypeToken: {
+              std::array<std::byte, sizeof(value.token)> token_bytes;
+              bytes::CopyInOrder(
+                  endian::little, value.token, token_bytes.data());
+              metric_encoder.WriteAsToken(token_bytes).IgnoreError();
+              break;
+            }
           }
           return metric_encoder.status();
         });

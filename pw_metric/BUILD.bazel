@@ -160,6 +160,9 @@ proto_library(
     name = "metric_proto",
     srcs = [":metric_proto_and_options"],
     strip_import_prefix = "/pw_metric",
+    deps = [
+        "//pw_tokenizer:tokenizer_proto",
+    ],
 )
 
 py_proto_library(

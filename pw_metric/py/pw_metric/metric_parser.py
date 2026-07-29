@@ -17,7 +17,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 import dataclasses
 import logging
-from typing import Any, Iterable, List, Union
+from typing import Any, Iterable, List, Optional, Union
 
 from pw_tokenizer import detokenize
 from pw_metric_proto import metric_service_pb2
@@ -34,7 +34,7 @@ class ParsedMetric:
     """Dataclass to hold a metric's detokenized path and value."""
 
     path_names: List[str]
-    value: Union[float, int]
+    value: Optional[Union[float, int, bool, str]]
 
 
 def parse_metric(
@@ -73,7 +73,7 @@ def parse_metric(
         path_names.append(path_name)
 
     value_type = metric.WhichOneof('value')
-    value: Union[float, int]
+    value: Optional[Union[float, int, bool, str]] = 0
     if value_type == 'as_float':
         value = metric.as_float
     elif value_type == 'as_int':
@@ -82,6 +82,41 @@ def parse_metric(
         value = metric.as_uint64
     elif value_type == 'as_int64':
         value = metric.as_int64
+    elif value_type == 'as_bool':
+        value = metric.as_bool
+    elif value_type == 'as_int32':
+        value = metric.as_int32
+    elif value_type == 'as_double':
+        value = metric.as_double
+    elif value_type == 'as_token':
+        token_bytes = metric.as_token
+        value = None
+
+        if len(token_bytes) == 4:
+            token = int.from_bytes(token_bytes, 'little')
+            if detokenizer:
+                lookup_result = detokenizer.lookup(token)
+                if lookup_result:
+                    value = str(
+                        detokenize.DetokenizedString(
+                            token, lookup_result, b'', False
+                        )
+                    ).strip('"')
+            if value is None:
+                try:
+                    text = token_bytes.decode()
+                    if text.isprintable():
+                        value = text
+                except UnicodeDecodeError:
+                    pass
+            if value is None:
+                value = f'${token:08x}'
+
+        if value is None:
+            try:
+                value = token_bytes.decode()
+            except UnicodeDecodeError:
+                value = token_bytes.hex()
     return ParsedMetric(
         path_names=path_names,
         value=value,

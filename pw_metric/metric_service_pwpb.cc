@@ -87,7 +87,30 @@ class PwpbServiceStreamingMetricWriter : public virtual MetricWriter {
           PW_TRY(proto_encoder.WriteAsInt64(m.value()));
           break;
         }
+        case UntypedMetric::kTypeDouble: {
+          const auto& m = static_cast<const TypedMetric<double>&>(metric);
+          PW_TRY(proto_encoder.WriteAsDouble(m.value()));
+          break;
+        }
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+        case UntypedMetric::kTypeBool: {
+          const auto& m = static_cast<const TypedMetric<bool>&>(metric);
+          PW_TRY(proto_encoder.WriteAsBool(m.value()));
+          break;
+        }
+        case UntypedMetric::kTypeInt32: {
+          const auto& m = static_cast<const TypedMetric<int32_t>&>(metric);
+          PW_TRY(proto_encoder.WriteAsInt32(m.value()));
+          break;
+        }
+        case UntypedMetric::kTypeToken: {
+          const auto& m = static_cast<const TypedMetric<TokenValue>&>(metric);
+          uint32_t token = m.value().value;
+          std::array<std::byte, sizeof(token)> token_bytes;
+          bytes::CopyInOrder(endian::little, token, token_bytes.data());
+          PW_TRY(proto_encoder.WriteAsToken(token_bytes));
+          break;
+        }
       }
     }
     ++metrics_count_;
@@ -173,7 +196,23 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
         metric_payload_size += protobuf::SizeOfFieldInt64(
             proto::pwpb::Metric::Fields::kAsInt64, value.i64);
         break;
+      case UntypedMetric::kTypeDouble:
+        metric_payload_size +=
+            protobuf::SizeOfFieldDouble(proto::pwpb::Metric::Fields::kAsDouble);
+        break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+      case UntypedMetric::kTypeBool:
+        metric_payload_size +=
+            protobuf::SizeOfFieldBool(proto::pwpb::Metric::Fields::kAsBool);
+        break;
+      case UntypedMetric::kTypeInt32:
+        metric_payload_size += protobuf::SizeOfFieldInt32(
+            proto::pwpb::Metric::Fields::kAsInt32, value.i32);
+        break;
+      case UntypedMetric::kTypeToken:
+        metric_payload_size += protobuf::SizeOfFieldBytes(
+            proto::pwpb::Metric::Fields::kAsToken, 4);
+        break;
     }
 
     // Calculate the size of the entire Metric message when encoded as a field
@@ -209,7 +248,22 @@ class PwpbUnaryMetricWriter final : public UnaryMetricWriter {
         case UntypedMetric::kTypeInt64:
           PW_TRY(metric_encoder.WriteAsInt64(value.i64));
           break;
+        case UntypedMetric::kTypeDouble:
+          PW_TRY(metric_encoder.WriteAsDouble(value.d));
+          break;
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+        case UntypedMetric::kTypeBool:
+          PW_TRY(metric_encoder.WriteAsBool(value.b));
+          break;
+        case UntypedMetric::kTypeInt32:
+          PW_TRY(metric_encoder.WriteAsInt32(value.i32));
+          break;
+        case UntypedMetric::kTypeToken: {
+          std::array<std::byte, sizeof(value.token)> token_bytes;
+          bytes::CopyInOrder(endian::little, value.token, token_bytes.data());
+          PW_TRY(metric_encoder.WriteAsToken(token_bytes));
+          break;
+        }
       }
       write_status = metric_encoder.status();
     }  // Destructor for metric_encoder commits the write to the parent encoder.

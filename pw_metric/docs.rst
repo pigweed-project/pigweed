@@ -248,9 +248,10 @@ This 4-bit discriminator allows up to 16 types, currently supporting:
 - ``kTypeFloat`` (``0x10000000``)
 - ``kTypeUint64`` (``0x20000000``) (only when 64-bit is enabled)
 - ``kTypeInt64`` (``0x30000000``) (only when 64-bit is enabled)
-
-The remaining slots are reserved for future types (e.g., ``int32_t``,
-``double``).
+- ``kTypeBool`` (``0x40000000``)
+- ``kTypeInt32`` (``0x50000000``)
+- ``kTypeDouble`` (``0x60000000``) (only when 64-bit is enabled)
+- ``kTypeToken`` (``0x70000000``)
 
 Using a 28-bit token still provides a very large token space (over 268 million
 possible values), keeping the probability of a name collision extremely low
@@ -336,6 +337,63 @@ The primary way to interact with metrics is through the
       ``TypedMetric<float>`` does not offer ``Increment()`` or ``Decrement()``
       operations, as floating-point addition is prone to precision loss when
       accumulating small values.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<bool> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Set(bool value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: bool value() const
+
+      Return the current value of the metric.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<int32_t> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Increment(int32_t amount = 1)
+
+      Atomically increment the metric by the given amount (saturating to max).
+
+   .. cpp:function:: void Decrement(int32_t amount = 1)
+
+      Atomically decrement the metric by the given amount (saturating to min).
+
+   .. cpp:function:: void Set(int32_t value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: int32_t value() const
+
+      Return the current value of the metric.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<double> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Set(double value)
+
+      Atomically set the metric to the given value.
+
+   .. cpp:function:: double value() const
+
+      Return the current value of the metric.
+
+   .. note::
+      ``TypedMetric<double>`` does not offer ``Increment()`` or ``Decrement()``
+      operations for the same reason as ``TypedMetric<float>``.
+
+.. cpp:struct:: pw::metric::TokenValue
+
+   A wrapper type representing a 32-bit tokenized string value. Used to
+   specialize ``TypedMetric<TokenValue>``.
+
+.. cpp:class:: template<> pw::metric::TypedMetric<TokenValue> : public pw::metric::UntypedMetric
+
+   .. cpp:function:: void Set(TokenValue value)
+
+      Atomically set the metric to the given token value.
+
+   .. cpp:function:: TokenValue value() const
+
+      Return the current token value of the metric.
 
 .. _module-pw_metric-group:
 

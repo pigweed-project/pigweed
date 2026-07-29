@@ -12,15 +12,14 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstdint>
+
+#include "pw_metric/config.h"
 #include "pw_metric/metric.h"
 
 #if PW_METRIC_CONFIG_ENABLE_64BIT
 
-#include <atomic>
-#include <limits>
-
 #include "pw_assert/check.h"
-#include "pw_numeric/checked_arithmetic.h"
 
 namespace pw::metric {
 

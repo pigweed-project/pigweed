@@ -14,7 +14,9 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <initializer_list>
 #include <limits>
 
@@ -106,7 +108,11 @@ class UntypedMetric : public MetricList::Item {
 #if PW_METRIC_CONFIG_ENABLE_64BIT
     kTypeUint64 = 0x20000000,
     kTypeInt64 = 0x30000000,
+    kTypeDouble = 0x40000000,
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+    kTypeInt32 = 0x50000000,
+    kTypeBool = 0x60000000,
+    kTypeToken = 0x70000000,
   };
 
   Type type() const { return static_cast<Type>(name_and_type_ & kTypeMask); }
@@ -116,7 +122,11 @@ class UntypedMetric : public MetricList::Item {
 #if PW_METRIC_CONFIG_ENABLE_64BIT
   bool is_uint64() const { return type() == kTypeUint64; }
   bool is_int64() const { return type() == kTypeInt64; }
+  bool is_double() const { return type() == kTypeDouble; }
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT
+  bool is_bool() const { return type() == kTypeBool; }
+  bool is_int32() const { return type() == kTypeInt32; }
+  bool is_token() const { return type() == kTypeToken; }
 
   // Backward compatibility alias.
   [[deprecated("Use is_uint32() instead")]]
@@ -198,6 +208,75 @@ class TypedMetric<uint32_t> : public UntypedMetric {
   void Decrement(uint32_t amount = 1u);
   void Set(uint32_t value) { value_.store(value, std::memory_order_relaxed); }
   uint32_t value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<uint32_t> value_;
+};
+
+/// A wrapper type representing a 32-bit tokenized string value.
+///
+/// `TokenValue` is used to specialize `TypedMetric<TokenValue>`, allowing
+/// a metric to store a tokenized string hash (such as a string tokenized
+/// with `PW_TOKENIZE_STRING`) rather than a raw numerical `uint32_t` integer.
+struct TokenValue {
+  uint32_t value;
+
+  constexpr explicit TokenValue(uint32_t val) : value(val) {}
+  constexpr operator uint32_t() const { return value; }
+};
+
+template <>
+class TypedMetric<bool> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, bool value)
+      : UntypedMetric(name, kTypeBool), value_(value) {}
+  TypedMetric(Token name, bool value, MetricList& metrics)
+      : UntypedMetric(name, kTypeBool, metrics), value_(value) {}
+
+  ~TypedMetric() = default;
+
+  void Set(bool value) { value_.store(value, std::memory_order_relaxed); }
+  bool value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<bool> value_;
+};
+
+template <>
+class TypedMetric<int32_t> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, int32_t value)
+      : UntypedMetric(name, kTypeInt32), value_(value) {}
+  TypedMetric(Token name, int32_t value, MetricList& metrics)
+      : UntypedMetric(name, kTypeInt32, metrics), value_(value) {}
+
+  ~TypedMetric() = default;
+
+  void Increment(int32_t amount = 1);
+  void Decrement(int32_t amount = 1);
+  void Set(int32_t value) { value_.store(value, std::memory_order_relaxed); }
+  int32_t value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<int32_t> value_;
+};
+
+template <>
+class TypedMetric<TokenValue> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, TokenValue value)
+      : UntypedMetric(name, kTypeToken), value_(value.value) {}
+  TypedMetric(Token name, TokenValue value, MetricList& metrics)
+      : UntypedMetric(name, kTypeToken, metrics), value_(value.value) {}
+
+  ~TypedMetric() = default;
+
+  void Set(TokenValue value) {
+    value_.store(value.value, std::memory_order_relaxed);
+  }
+  TokenValue value() const {
+    return TokenValue(value_.load(std::memory_order_relaxed));
+  }
 
  private:
   std::atomic<uint32_t> value_;
@@ -510,6 +589,22 @@ class TypedMetric<int64_t> : public UntypedMetric {
   std::atomic<int64_t> value_;
 };
 
+template <>
+class TypedMetric<double> : public UntypedMetric {
+ public:
+  constexpr TypedMetric(Token name, double value)
+      : UntypedMetric(name, kTypeDouble), value_(value) {}
+  TypedMetric(Token name, double value, MetricList& metrics)
+      : UntypedMetric(name, kTypeDouble, metrics), value_(value) {}
+
+  ~TypedMetric() = default;
+
+  void Set(double value) { value_.store(value, std::memory_order_relaxed); }
+  double value() const { return value_.load(std::memory_order_relaxed); }
+
+ private:
+  std::atomic<double> value_;
+};
 }  // namespace pw::metric
 
 #endif  // PW_METRIC_CONFIG_ENABLE_64BIT

@@ -181,6 +181,68 @@ class TestParseMetrics(TestCase):
         self.assertEqual(len(log_capture.output), 1)
         self.assertIn("fell back to compatible match", log_capture.output[0])
 
+    def test_parse_new_metric_types(self) -> None:
+        """Test parsing new metric types (bool, int32, double, token)."""
+        db = tokens.Database(
+            [
+                tokens.TokenizedStringEntry(0x01148A48, "total_dropped"),
+                tokens.TokenizedStringEntry(0x03796798, "min_queue_remaining"),
+                tokens.TokenizedStringEntry(0x22198280, "total_created"),
+                tokens.TokenizedStringEntry(0x534A42F4, "max_queue_used"),
+                tokens.TokenizedStringEntry(
+                    0x5D087463, "pw::work_queue::WorkQueue"
+                ),
+                tokens.TokenizedStringEntry(0xA7C43965, "log"),
+                tokens.TokenizedStringEntry(0x12345678, "my_token_value"),
+            ]
+        )
+        test_detok = detokenize.Detokenizer(db)
+
+        new_metrics = [
+            metric_service_pb2.Metric(
+                token_path=[self.log, self.total_created],
+                as_bool=True,
+            ),
+            metric_service_pb2.Metric(
+                token_path=[self.log, self.total_dropped],
+                as_int32=-42,
+            ),
+            metric_service_pb2.Metric(
+                token_path=[self.log, self.min_queue_remaining],
+                as_double=3.141592653589793,
+            ),
+            metric_service_pb2.Metric(
+                token_path=[self.log, 0x534A42F4],  # max_queue_used
+                as_token=(0x12345678).to_bytes(
+                    4, 'little'
+                ),  # token value that exists in test_db
+            ),
+            metric_service_pb2.Metric(
+                token_path=[self.log, 0x5D087463],  # pw::work_queue::WorkQueue
+                as_token=(0x99999999).to_bytes(
+                    4, 'little'
+                ),  # token value that does NOT exist
+            ),
+        ]
+        self.rpcs.pw.metric.proto.MetricService.Get.return_value.responses = [
+            metric_service_pb2.MetricResponse(metrics=new_metrics)
+        ]
+        self.assertEqual(
+            {
+                'log': {
+                    'total_created': True,
+                    'total_dropped': -42,
+                    'min_queue_remaining': 3.141592653589793,
+                    'max_queue_used': 'my_token_value',
+                    'pw::work_queue::WorkQueue': '$99999999',
+                }
+            },
+            metric_parser.parse_metrics(
+                self.rpcs, test_detok, self.rpc_timeout_s
+            ),
+            msg='New metric types are not equal.',
+        )
+
     def test_three_metric_names(self) -> None:
         """Test creating a dictionary with three paths."""
         # Creating another leaf.
