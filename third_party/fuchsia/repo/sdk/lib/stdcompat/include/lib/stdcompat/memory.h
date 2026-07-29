@@ -6,6 +6,7 @@
 #define LIB_STDCOMPAT_MEMORY_H_
 
 #include <memory>
+#include <type_traits>
 
 #include "version.h"
 
@@ -18,24 +19,40 @@ using std::to_address;
 
 #else  // Provide to_address polyfill.
 
+namespace internal {
+
+// C++17 compatible trait to detect if T has operator->().
+template <typename T, typename = void>
+struct has_operator_arrow : std::false_type {};
+
+template <typename T>
+struct has_operator_arrow<T, std::void_t<decltype(std::declval<const T&>().operator->())>>
+    : std::true_type {};
+
+}  // namespace internal
+
 template <typename T>
 constexpr T* to_address(T* pointer) noexcept {
   static_assert(!std::is_function<T>::value, "Cannot pass function pointers to std::to_address()");
   return pointer;
 }
 
-// TODO(https://fxbug.dev/42149777): This std::pointer_traits stuff is only to be bug-compatible
-// with the standard library implementations; switch back to auto when the linked bug is resolved.
-template <typename T>
-constexpr typename std::pointer_traits<T>::element_type* to_address(const T& pointer) noexcept {
-  static_assert(
-      std::is_same<decltype(pointer.operator->()),
-                   typename std::pointer_traits<T>::element_type*>::value,
-      "For compatibility with libc++ and libstdc++, operator->() must return "
-      "typename std::pointer_traits<T>::element_type*. 'Chaining' operator->() in "
-      "cpp20::to_address() will not be permitted until https://fxbug.dev/42149777 is resolved.");
+template <typename T, typename = std::enable_if_t<!std::is_pointer_v<T>>>
+constexpr auto to_address(const T& pointer) noexcept {
+  if constexpr (internal::has_operator_arrow<T>::value) {
+    // The strict check to prevent operator chaining (https://fxbug.dev/42149777).
+    // Using std::is_pointer_v makes the polyfill resilient to the metadata
+    // changes in the new LLVM rollout (where pointer_traits::element_type
+    // no longer matches the return type of __wrap_iter::operator->).
+    static_assert(std::is_pointer_v<decltype(pointer.operator->())>,
+                  "For compatibility with libc++ and libstdc++, operator->() must return "
+                  "a raw pointer. 'Chaining' operator->() in cpp20::to_address() will "
+                  "not be permitted until https://fxbug.dev/42149777 is resolved.");
 
-  return to_address(pointer.operator->());
+    return pointer.operator->();
+  } else {
+    return std::addressof(*pointer);
+  }
 }
 
 #endif  // __cpp_lib_to_address >= 201711L && !defined(LIB_STDCOMPAT_USE_POLYFILLS)
