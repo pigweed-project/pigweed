@@ -28,17 +28,13 @@ zerocopy = { version = "0.8.0", default-features = false, features = ["derive"] 
 cortex-m = "0.7.7"
 cortex-m-rt = { version = "0.7.5",  features = ["device"] }
 cortex-m-semihosting = "0.5.0"
-embedded-io = "0.6.1"
+embedded-io = "0.7.1"
 intrusive-collections = { version = "0.9.7", default-features = false }
 panic-halt = "1.0.0"
 paste = "1.0.15"
 riscv = "0.16.1"
 riscv-rt = "0.12.2"
 riscv-semihosting = "0.2.1"
-rp235x-hal = { version = "0.3.0", features = [
-  "binary-info",
-  "critical-section-impl",
-  "rt",
-] }
+rp235x-hal = { version = "0.4.0", features = ["binary-info", "critical-section-impl", "rt"] }
 
 [features]
