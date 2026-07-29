@@ -15,9 +15,12 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
+#include "pw_async/dispatcher.h"
+#include "pw_async/heap_dispatcher.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/dynamic_queue.h"
@@ -77,6 +80,13 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // another thread (implemented by SendQueue) handles all writes. Refer to
 // test_pw_rpc_server.cc for an example implementation of this.
 //
+// If a read_dispatcher and read_allocator are provided, incoming DATA frame
+// payloads are copied using read_allocator and posted to read_dispatcher for
+// processing off the reader thread. This prevents request handling from
+// blocking the reader thread from processing incoming control frames (like
+// WINDOW_UPDATE or RST_STREAM). If read_dispatcher or read_allocator is null,
+// request callbacks are executed synchronously directly on the reader thread.
+//
 // By default, each gRPC message must be entirely contained within a single
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
 // up to the maximum message size per stream. To support fragmented messages,
@@ -113,17 +123,36 @@ class Connection {
     virtual void OnCancel(StreamId id) = 0;
   };
 
+  /// Callback invoked to close or shut down the underlying transport stream /
+  /// socket.
+  ///
+  /// This callback is invoked:
+  /// 1. When a fatal HTTP/2 protocol or connection error occurs asynchronously
+  ///    on the read dispatcher thread (e.g. inside `SendGoAway()`), initiating
+  ///    transport shutdown to unblock any thread currently blocked in
+  ///    `ProcessFrame()`/`reader_.Read()`.
+  /// 2. When `CloseConnection()` is called explicitly during connection
+  ///    teardown.
+  using CloseConnectionCallback = pw::Function<void()>;
+
   template <typename LockType>
-  Connection(stream::Reader& reader,
-             SendQueue& send_queue,
-             RequestCallbacks& callbacks,
-             Allocator* message_assembly_allocator,
-             allocator::SynchronizedAllocator<LockType>& send_allocator)
+  Connection(
+      stream::Reader& reader,
+      SendQueue& send_queue,
+      RequestCallbacks& callbacks,
+      Allocator* message_assembly_allocator,
+      allocator::SynchronizedAllocator<LockType>& send_allocator,
+      CloseConnectionCallback&& close_connection_callback = nullptr,
+      allocator::SynchronizedAllocator<LockType>* read_allocator = nullptr,
+      pw::async::Dispatcher* read_dispatcher = nullptr)
       : Connection(reader,
                    send_queue,
                    callbacks,
                    message_assembly_allocator,
-                   static_cast<Allocator&>(send_allocator)) {}
+                   static_cast<Allocator&>(send_allocator),
+                   std::move(close_connection_callback),
+                   read_allocator,
+                   read_dispatcher) {}
 
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
@@ -134,6 +163,17 @@ class Connection {
   // Reads from stream and processes next frame on connection. Returns OK
   // as long as connection is open. Should be called from a single thread.
   Status ProcessFrame() { return HandleReadError(reader_.ProcessFrame()); }
+
+  // Triggers the registered `CloseConnectionCallback` to close transport stream
+  // resources (e.g. underlying socket, TLS stream, or channel reader).
+  //
+  // Safe to call multiple times; transport closing implementations must be
+  // idempotent.
+  void CloseConnection() {
+    if (close_connection_callback_) {
+      close_connection_callback_();
+    }
+  }
 
   // Sends a response message for an RPC. The `message` will not be accessed
   // after this method returns. Thread safe.
@@ -170,7 +210,10 @@ class Connection {
              SendQueue& send_queue,
              RequestCallbacks& callbacks,
              Allocator* message_assembly_allocator,
-             Allocator& send_allocator);
+             Allocator& send_allocator,
+             CloseConnectionCallback&& close_connection_callback,
+             allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator,
+             pw::async::Dispatcher* read_dispatcher);
 
   // RFC 9113 §6.9.2. Flow control windows are unsigned 31-bit numbers, but
   // because of the following requirement from §6.9.2, we track flow control
@@ -377,6 +420,10 @@ class Connection {
     void CloseStream(Stream* stream);
 
     Status ProcessDataFrame(const internal::FrameHeader&);
+    void ProcessDataFramePosted(const internal::FrameHeader& frame,
+                                ByteSpan payload);
+    Status ProcessDataFramePayload(const internal::FrameHeader& frame,
+                                   ByteSpan payload);
     Status ProcessHeadersFrame(const internal::FrameHeader&);
     Status ProcessRstStreamFrame(const internal::FrameHeader&);
     Status ProcessSettingsFrame(const internal::FrameHeader&, bool send_ack);
@@ -418,10 +465,13 @@ class Connection {
     static_cast<void>(moved_state);
   }
 
+  std::optional<pw::async::HeapDispatcher> read_dispatcher_;
+  allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator_ = nullptr;
   // Shared state that is thread-safe.
   sync::InlineBorrowable<SharedState> shared_state_;
   Reader reader_;
   Writer writer_;
+  CloseConnectionCallback close_connection_callback_;
 };
 
 }  // namespace pw::grpc

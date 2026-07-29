@@ -21,6 +21,7 @@
 #include "pw_allocator/best_fit.h"
 #include "pw_allocator/libc_allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
+#include "pw_async_basic/dispatcher.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_checksum/crc32.h"
@@ -197,18 +198,23 @@ class ConnectionThread : public pw::grpc::Connection,
       pw::grpc::Connection::RequestCallbacks& callbacks,
       ConnectionCloseCallback&& connection_close_callback,
       pw::Allocator* message_assembly_allocator,
-      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator)
+      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
+      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator)
       : pw::grpc::Connection(stream.as_reader(),
                              send_queue_,
                              callbacks,
                              message_assembly_allocator,
-                             send_allocator),
+                             send_allocator,
+                             std::move(connection_close_callback),
+                             /*read_allocator=*/read_allocator,
+                             &read_dispatcher_),
         send_queue_thread_options_(send_thread_options),
-        connection_close_callback_(std::move(connection_close_callback)),
         send_queue_(stream, send_allocator) {}
 
   // Process the connection. Does not return until the connection is closed.
   void Run() override {
+    pw::Thread read_thread(send_queue_thread_options_,
+                           [this]() { read_dispatcher_.Run(); });
     pw::Thread send_thread(send_queue_thread_options_,
                            [this]() { send_queue_.Run(); });
     pw::Status status = ProcessConnectionPreface();
@@ -216,16 +222,16 @@ class ConnectionThread : public pw::grpc::Connection,
       status = ProcessFrame();
     }
 
+    read_dispatcher_.RequestStop();
+    read_thread.join();
     send_queue_.RequestStop();
     send_thread.join();
-    if (connection_close_callback_) {
-      connection_close_callback_();
-    }
+    CloseConnection();
   }
 
  private:
+  pw::async::BasicDispatcher read_dispatcher_;
   const pw::thread::Options& send_queue_thread_options_;
-  ConnectionCloseCallback connection_close_callback_;
   pw::grpc::DefaultSendQueue send_queue_;
 };
 
@@ -284,8 +290,20 @@ int main(int argc, char* argv[]) {
 
     PW_LOG_INFO("Main.Run");
 
+    using ReadBlockAllocator = pw::allocator::BestFitAllocator<>;
     constexpr size_t kMaxSendQueueSize = 4096;
+    constexpr size_t kMaxReadWindowSize = 64 * 1024;
+    constexpr size_t kMaxActiveBlocks = 64;
+    constexpr size_t kReadAllocatorOverhead =
+        kMaxActiveBlocks * ReadBlockAllocator::BlockType::kBlockOverhead;
+    constexpr size_t kMaxReadBufferSize =
+        kMaxReadWindowSize + kReadAllocatorOverhead;
     pw::allocator::LibCAllocator message_assembly_allocator;
+
+    std::array<std::byte, kMaxReadBufferSize> read_allocator_data;
+    ReadBlockAllocator raw_read_allocator(read_allocator_data);
+    pw::allocator::SynchronizedAllocator<pw::sync::Mutex> read_allocator(
+        raw_read_allocator);
 
     std::array<std::byte, kMaxSendQueueSize> send_allocator_data;
     pw::allocator::BestFitAllocator<> raw_send_allocator(send_allocator_data);
@@ -299,7 +317,8 @@ int main(int argc, char* argv[]) {
         handler,
         [&socket]() { socket->Close(); },
         &message_assembly_allocator,
-        send_allocator);
+        send_allocator,
+        &read_allocator);
     rpc_egress.set_connection(conn);
 
     pw::Thread conn_thread(connection_thread_context.options(), conn);

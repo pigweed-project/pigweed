@@ -175,17 +175,27 @@ constexpr std::array<T, N> MakeArrayWithValue(Args&&... args) {
 
 }  // namespace
 
-Connection::Connection(stream::Reader& reader,
-                       SendQueue& send_queue,
-                       RequestCallbacks& callbacks,
-                       Allocator* message_assembly_allocator,
-                       Allocator& send_allocator)
-    : shared_state_(std::in_place,
+Connection::Connection(
+    stream::Reader& reader,
+    SendQueue& send_queue,
+    RequestCallbacks& callbacks,
+    Allocator* message_assembly_allocator,
+    Allocator& send_allocator,
+    CloseConnectionCallback&& close_connection_callback,
+    allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator,
+    pw::async::Dispatcher* read_dispatcher)
+    : read_dispatcher_(
+          read_dispatcher
+              ? std::make_optional<pw::async::HeapDispatcher>(*read_dispatcher)
+              : std::nullopt),
+      read_allocator_(read_allocator),
+      shared_state_(std::in_place,
                     message_assembly_allocator,
                     send_allocator,
                     send_queue),
       reader_(*this, callbacks, reader),
-      writer_(*this) {}
+      writer_(*this),
+      close_connection_callback_(std::move(close_connection_callback)) {}
 
 Connection::SharedState::SharedState(Allocator* message_assembly_allocator,
                                      Allocator& send_allocator,
@@ -778,15 +788,6 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
     auto state = connection_.LockState();
     auto stream = state->LookupStream(frame.stream_id);
 
-    // From RFC 9113 §6.9: "A receiver that receives a flow-controlled frame
-    // MUST always account for its contribution against the connection
-    // flow-control window, unless the receiver treats this as a connection
-    // error. This is necessary even if the frame is in error. The sender
-    // counts the frame toward the flow-control window, but if the receiver
-    // does not, the flow-control window at the sender and receiver can become
-    // different."
-    PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
-
     if (!stream) {
       PW_LOG_DEBUG("Ignoring DATA on closed stream id=%" PRIu32,
                    frame.stream_id);
@@ -795,6 +796,9 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       connection_.UnlockState(std::move(state));
       PW_TRY(ProcessIgnoredFrame(frame));
       // Stream has been fully closed: silently ignore.
+      state = connection_.LockState();
+      // RFC 9113 §6.9: error frames must always count towards flow-control
+      PW_TRY(state->UpdateRecvWindow(nullptr, frame.payload_length));
       return OkStatus();
     }
 
@@ -807,6 +811,8 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       PW_TRY(ProcessIgnoredFrame(frame));
       state = connection_.LockState();
       stream = state->LookupStream(frame.stream_id);
+      // RFC 9113 §6.9: error frames must always count towards flow-control
+      PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
       if (stream) {
         // RFC 9113 §6.1: "If a DATA frame is received whose stream is not in
         // the "open" or "half-closed (local)" state, the recipient MUST respond
@@ -839,9 +845,77 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
     payload = payload.subspan(1, payload.size() - pad_length - 1);
   }
 
+  Allocator* read_alloc = connection_.read_allocator_;
+  const bool async_processing =
+      connection_.read_dispatcher_.has_value() && read_alloc != nullptr;
+
+  if (async_processing) {
+    UniquePtr<std::byte[]> payload_buf;
+    if (!payload.empty()) {
+      payload_buf = read_alloc->MakeUnique<std::byte[]>(payload.size());
+      if (payload_buf == nullptr) {
+        PW_LOG_ERROR("Data frame payload allocation failed");
+        auto state = connection_.LockState();
+        Stream* stream = state->LookupStream(frame.stream_id);
+        // RFC 9113 §6.9: error frames must always count towards flow-control
+        PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
+        if (stream) {
+          PW_TRY(
+              SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+        }
+        return OkStatus();
+      }
+      std::copy(payload.begin(), payload.end(), payload_buf.get());
+    }
+
+    PW_TRY(connection_.read_dispatcher_->Post(
+        [this, frame, buf = std::move(payload_buf)](pw::async::Context&,
+                                                    pw::Status status) mutable {
+          if (!status.ok()) {
+            return;
+          }
+          ByteSpan payload_span = buf != nullptr
+                                      ? pw::ByteSpan(buf.get(), buf.size())
+                                      : pw::ByteSpan();
+          ProcessDataFramePosted(frame, payload_span);
+        }));
+  } else {
+    ProcessDataFramePosted(frame, payload);
+  }
+
+  return OkStatus();
+}
+
+void Connection::Reader::ProcessDataFramePosted(const FrameHeader& frame,
+                                                ByteSpan payload) {
+  if (const auto status = ProcessDataFramePayload(frame, payload);
+      !status.ok()) {
+    PW_LOG_ERROR("ProcessDataFramePosted failed with status: %s", status.str());
+    SendGoAway(Http2Error::INTERNAL_ERROR);
+    auto state = connection_.LockState();
+    state->Close();
+  }
+}
+
+Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
+                                                   ByteSpan payload) {
   auto state = connection_.LockState();
   Stream* stream = state->LookupStream(frame.stream_id);
+
+  PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
+
   if (!stream) {
+    PW_LOG_DEBUG("Ignoring DATA on closed stream id=%" PRIu32, frame.stream_id);
+    return OkStatus();
+  }
+
+  if (stream->half_closed) {
+    PW_LOG_ERROR("Recv DATA on half-closed stream id=%" PRIu32,
+                 frame.stream_id);
+    // RFC 9113 §6.1: "If a DATA frame is received whose stream is not in
+    // the "open" or "half-closed (local)" state, the recipient MUST respond
+    // with a stream error of type STREAM_CLOSED."
+    PW_TRY(SendRstStreamAndClose(state, stream, Http2Error::STREAM_CLOSED));
     return OkStatus();
   }
 
@@ -902,9 +976,12 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
         stream->assembly.message.received = 0;
         continue;
       }
+    } else {
+      message_length = stream->assembly.message.length;
     }
 
-    pw::ByteSpan message;
+    UniquePtr<std::byte[]> msg_buf;
+    ByteSpan message_span;
 
     // Reading message payload.
     if (stream->assembly_buffer != nullptr) {
@@ -921,16 +998,19 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
         continue;
       }
       // Fully received message.
-      message = pw::span(stream->assembly_buffer.get(),
-                         stream->assembly.message.length);
+      msg_buf = std::move(stream->assembly_buffer);
+      stream->assembly_buffer = nullptr;
+      stream->assembly = {};
+      message_span = pw::ByteSpan(msg_buf.get(), message_length);
     } else {
-      message = payload.subspan(0, message_length);
+      message_span = payload.subspan(0, message_length);
       payload = payload.subspan(message_length);
     }
 
     // Release state lock before callback, reacquire after.
     connection_.UnlockState(std::move(state));
-    const auto status = callbacks_.OnMessage(frame.stream_id, message);
+    const auto status = callbacks_.OnMessage(frame.stream_id, message_span);
+
     state = connection_.LockState();
     stream = state->LookupStream(frame.stream_id);
     if (!stream) {
@@ -941,11 +1021,6 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       PW_TRY(SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
       return OkStatus();
     }
-
-    if (stream->assembly_buffer != nullptr) {
-      stream->assembly_buffer = nullptr;
-      stream->assembly = {};
-    }
   }
 
   // grpc requires every request stream to end with an empty DATA frame with
@@ -955,8 +1030,10 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
   // See: https://github.com/grpc/grpc/blob/v1.60.x/doc/PROTOCOL-HTTP2.md.
   if ((frame.flags & FLAGS_END_STREAM) != 0) {
     stream->half_closed = true;
+    const StreamId stream_id = frame.stream_id;
+    // Release state lock before callback, reacquire after.
     connection_.UnlockState(std::move(state));
-    callbacks_.OnHalfClose(frame.stream_id);
+    callbacks_.OnHalfClose(stream_id);
   }
 
   return OkStatus();
@@ -1482,6 +1559,10 @@ void Connection::Reader::SendGoAway(Http2Error code) {
     state->ForAllStreams([this](Stream* stream) { CloseStream(stream); });
     // Ignore errors since we're about to close the connection anyway.
     state->SendBytes(ObjectAsBytes(frame)).IgnoreError();
+  }
+
+  if (connection_.close_connection_callback_) {
+    connection_.close_connection_callback_();
   }
 }
 
