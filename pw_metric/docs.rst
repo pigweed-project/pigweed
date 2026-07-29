@@ -30,7 +30,7 @@ Key features of ``pw_metric``:
   ``pw_metric`` supports automatic aggregation of metrics. This is optional but
   convenient in many cases.
 
-- **Simple design** - There are only two core data structures: ``Metric`` and
+- **Simple design** - There are only two core data structures: ``UntypedMetric`` (and its derived class ``TypedMetric``) and
   ``Group``, which are both simple to understand and use. The supported metric
   types are ``uint32_t``, ``float``, and ``uint64_t``. This module does not
   support complicated aggregations like running average or min/max.
@@ -156,7 +156,7 @@ Metrics API reference
 
 The metrics API consists of just a few components:
 
-- The core data structures ``pw::metric::Metric`` and ``pw::metric::Group``
+- The core data structures ``pw::metric::UntypedMetric`` / ``pw::metric::TypedMetric`` and ``pw::metric::Group``
 - The macros for scoped metrics and groups ``PW_METRIC`` and
   ``PW_METRIC_GROUP``
 - The macros for globally registered metrics and groups
@@ -471,7 +471,7 @@ tokenizing the metric and group names.
      added to the given group.
 
    The macro declares a variable or member named "name" with type
-   ``pw::metric::Metric``, and works in three contexts: global, local, and
+   ``pw::metric::TypedMetric<T>``, and works in three contexts: global, local, and
    member.
 
    If the ``_STATIC`` variant is used, the macro declares a variable with static
@@ -562,7 +562,7 @@ tokenizing the metric and group names.
 
 .. cpp:function:: PW_METRIC_GLOBAL(identifier, name, value)
 
-   Declare a ``pw::metric::Metric`` with name name, and register it in the
+   Declare a ``pw::metric::TypedMetric<T>`` with name name, and register it in the
    global metrics list ``pw::metric::global_metrics``.
 
    Example:
@@ -814,8 +814,8 @@ constructing the metric tree, or do the metric construction in a single thread
 (e.g. a boot/init thread). The same applies for destruction, though we do not
 advise destructing metrics or groups.
 
-Individual metrics have atomic ``Increment()``, ``Set()``, and the value
-accessors ``as_float()`` and ``as_int()`` which don't require separate
+Individual metrics (``TypedMetric`` instances) have atomic ``Increment()``,
+``Set()``, and the value accessor ``value()`` which don't require separate
 synchronization, and can be used from ISRs.
 
 .. attention::
@@ -1057,6 +1057,53 @@ chosen some points on the tradeoff curve:
   cases for both e.g. ``PW_METRIC`` and ``PW_METRIC_GLOBAL``. We'd prefer to
   have a well-tested upstream solution for these use cases rather than have
   customers re-implement one of these.
+
+----------------
+Migration Guide
+----------------
+With the addition of strongly-typed metrics (including 64-bit integers, doubles,
+booleans, and tokens), the legacy ``pw::metric::Metric`` class and untyped value
+accessors ``as_int()`` and ``as_float()`` are deprecated and removed in favor of
+type-safe metric representations.
+
+Migrating legacy ``pw::metric::Metric``
+---------------------------------------
+Existing code using ``pw::metric::Metric`` should migrate to
+``pw::metric::TypedMetric<T>`` or ``pw::metric::UntypedMetric``:
+
+* When defining metrics, prefer ``PW_METRIC`` or ``PW_METRIC_TYPED`` macros,
+  which declare type-safe ``TypedMetric<T>`` instances automatically:
+
+  .. code-block:: cpp
+
+     // Before (legacy):
+     pw::metric::Metric my_metric("my_metric", 42u);
+
+     // After:
+     PW_METRIC(my_metric, "my_metric", 42u);
+     // or explicitly:
+     pw::metric::TypedMetric<uint32_t> my_metric("my_metric", 42u);
+
+* Functions that process metric trees generically should take
+  ``const pw::metric::UntypedMetric&`` instead of ``const pw::metric::Metric&``.
+
+Migrating accessors ``as_int()`` and ``as_float()``
+---------------------------------------------------
+The ``as_int()`` and ``as_float()`` methods on metric objects have been
+replaced with typed accessors:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Legacy Accessor
+     - Replacement Accessor
+     - Description
+   * - ``as_int()``
+     - ``as_int32()`` / ``as_uint32()`` / ``value()``
+     - Use ``value()`` on a ``TypedMetric<uint32_t>``, or type-checked ``as_int32()`` / ``as_uint32()`` on an ``UntypedMetric``.
+   * - ``as_float()``
+     - ``as_float()`` / ``as_double()`` / ``value()``
+     - Use ``value()`` on a ``TypedMetric<float>``, or ``as_double()`` for double precision.
 
 ----------------
 Roadmap & Status

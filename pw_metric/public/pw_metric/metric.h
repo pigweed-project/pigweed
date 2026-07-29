@@ -145,8 +145,14 @@ class UntypedMetric : public MetricList::Item {
   static void Dump(const MetricList& metrics, int indent_level = 0);
 
   // Backward compatibility helpers.
-  // TODO: b/527616876 - Remove these deprecated helper methods in a later CL.
+  [[deprecated(
+      "as_float() is deprecated. Use value() on TypedMetric<float> or "
+      "as_double() instead.")]]
   float as_float() const;
+
+  [[deprecated(
+      "as_int() is deprecated. Use value() on TypedMetric<uint32_t> or "
+      "as_int32() instead.")]]
   uint32_t as_int() const;
 
  protected:
@@ -168,8 +174,10 @@ class UntypedMetric : public MetricList::Item {
   friend class MetricWalker;
 };
 
-// TODO: b/527616876 - Remove this backward compatibility alias in a later CL.
-using Metric = UntypedMetric;
+// Backward compatibility alias.
+using Metric [[deprecated(
+    "pw::metric::Metric is deprecated. Use pw::metric::TypedMetric<uint32_t> "
+    "or pw::metric::TypedMetric<T> directly.")]] = UntypedMetric;
 
 template <typename T>
 class TypedMetric;
