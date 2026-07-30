@@ -79,7 +79,7 @@ impl<W: Write> PerfettoWriter<W> {
         };
 
         if self.trace.packet.is_empty() {
-            packet.previous_packet_dropped = Some(true);
+            packet.previous_packet_dropped = Some(1);
             packet.first_packet_on_sequence = Some(true);
             packet.sequence_flags = Some(
                 trace_packet::SequenceFlags::SeqNeedsIncrementalState as u32
@@ -140,7 +140,7 @@ impl<W: Write> PerfettoWriter<W> {
                 parent_uuid: Some(parent_uuid),
                 thread: Some(ThreadDescriptor {
                     pid: Some(pid),
-                    tid: Some(tid),
+                    tid: Some(tid.into()),
                     thread_name: Some(name.into()),
                     ..Default::default()
                 }),
