@@ -128,6 +128,18 @@ pub enum Packet {
     ///
     /// Format: `?`
     QueryHaltReason,
+    /// A command to read all registers.
+    ///
+    /// Format: `g`
+    ReadRegisters,
+    /// A command to read a specific register.
+    ///
+    /// Format: `p<reg>`
+    ReadRegister { reg: u32 },
+    /// A command to write a specific register.
+    ///
+    /// Format: `P<reg>=<val>`
+    WriteRegister { reg: u32, val: Vec<u8> },
 }
 
 impl Packet {
@@ -146,6 +158,9 @@ impl Packet {
             Packet::RemoveBreakpoint { t_type, addr, kind } => {
                 format!("z{},{:x},{:x}", *t_type as u8, addr, kind)
             }
+            Packet::ReadRegisters => "g".to_string(),
+            Packet::ReadRegister { reg } => format!("p{:x}", reg),
+            Packet::WriteRegister { reg, val } => format!("P{:x}={}", reg, hex::encode(val)),
             Packet::Ok => "OK".to_string(),
             Packet::Error(code) => format!("E{:02x}", code),
             Packet::Empty => "".to_string(),
@@ -195,6 +210,14 @@ impl Packet {
                     nom::error::ErrorKind::Fail,
                 )))
             }
+        } else if input == "g" {
+            Ok(("", Packet::ReadRegisters))
+        } else if input.starts_with('p') {
+            let (rem, reg) = parse_read_register(input)?;
+            Ok((rem, Packet::ReadRegister { reg }))
+        } else if input.starts_with('P') {
+            let (rem, (reg, val)) = parse_write_register(input)?;
+            Ok((rem, Packet::WriteRegister { reg, val }))
         } else if let Ok((rem, reply)) = parse_stop_reply(input) {
             Ok((rem, Packet::StopReply(reply)))
         } else if input.starts_with('m') {
@@ -374,9 +397,63 @@ fn parse_breakpoint(input: &str, prefix: char) -> IResult<&str, (BreakpointType,
     .parse(input)
 }
 
+fn parse_read_register(input: &str) -> IResult<&str, u32> {
+    preceded(
+        char('p'),
+        map_res(hex_digit1, |s| u32::from_str_radix(s, 16)),
+    )
+    .parse(input)
+}
+
+fn parse_write_register(input: &str) -> IResult<&str, (u32, Vec<u8>)> {
+    let (input, reg) = preceded(
+        char('P'),
+        map_res(hex_digit1, |s| u32::from_str_radix(s, 16)),
+    )
+    .parse(input)?;
+
+    let (input, _) = char('=')(input)?;
+    let (input, hex_data) = nom::character::complete::hex_digit0(input)?;
+    let val = hex::decode(hex_data).map_err(|_| {
+        nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
+    })?;
+
+    Ok((input, (reg, val)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_register_packets() {
+        assert_eq!(Packet::ReadRegisters.encode_payload(), "g");
+        assert_eq!(Packet::ReadRegister { reg: 15 }.encode_payload(), "pf");
+        assert_eq!(
+            Packet::WriteRegister {
+                reg: 14,
+                val: vec![0, 0, 0, 0]
+            }
+            .encode_payload(),
+            "Pe=00000000"
+        );
+
+        assert_eq!(
+            Packet::decode_payload("g").unwrap().1,
+            Packet::ReadRegisters
+        );
+        assert_eq!(
+            Packet::decode_payload("pf").unwrap().1,
+            Packet::ReadRegister { reg: 15 }
+        );
+        assert_eq!(
+            Packet::decode_payload("Pe=00000000").unwrap().1,
+            Packet::WriteRegister {
+                reg: 14,
+                val: vec![0, 0, 0, 0]
+            }
+        );
+    }
 
     #[test]
     fn test_encode_read_memory() {

@@ -265,6 +265,67 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         Ok(reply)
     }
 
+    /// Reads all registers from the target.
+    ///
+    /// Sends a `g` packet and returns the register bytes.
+    pub async fn read_registers(&mut self) -> io::Result<Vec<u8>> {
+        self.send_packet(&Packet::ReadRegisters).await?;
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::ReadMemoryResponse(data) => Ok(data),
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unexpected response to read registers: {:?}", response),
+            )),
+        }
+    }
+
+    /// Reads a single register by index from the target.
+    ///
+    /// Sends a `p<reg>` packet and returns the register bytes.
+    pub async fn read_register(&mut self, reg: u32) -> io::Result<Vec<u8>> {
+        self.send_packet(&Packet::ReadRegister { reg }).await?;
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::ReadMemoryResponse(data) => Ok(data),
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unexpected response to read register: {:?}", response),
+            )),
+        }
+    }
+
+    /// Writes a single register by index on the target.
+    ///
+    /// Sends a `P<reg>=<val>` packet and expects `OK`.
+    pub async fn write_register(&mut self, reg: u32, val: &[u8]) -> io::Result<()> {
+        self.send_packet(&Packet::WriteRegister {
+            reg,
+            val: val.to_vec(),
+        })
+        .await?;
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::Ok => Ok(()),
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unexpected response to write register: {:?}", response),
+            )),
+        }
+    }
+
     async fn send_packet(&mut self, packet: &Packet) -> io::Result<()> {
         let frame = packet.encode();
         self.stream.write_all(frame.as_bytes()).await?;
@@ -670,5 +731,52 @@ mod tests {
 
         assert_eq!(stop_reason, StopReply::Signal(2));
         assert_eq!(stream.write_data, b"\x03$?#3f++");
+    }
+
+    #[tokio::test]
+    async fn test_read_registers() {
+        let response_payload = b"01020304";
+        let checksum = Packet::calculate_checksum(response_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+
+        let regs = client.read_registers().await.unwrap();
+        assert_eq!(regs, &[0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(stream.write_data, b"$g#67+");
+    }
+
+    #[tokio::test]
+    async fn test_read_register() {
+        let response_payload = b"e2000010";
+        let checksum = Packet::calculate_checksum(response_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+
+        let reg_val = client.read_register(15).await.unwrap();
+        assert_eq!(reg_val, &[0xe2, 0x00, 0x00, 0x10]);
+        assert_eq!(stream.write_data, b"$pf#d6+");
+    }
+
+    #[tokio::test]
+    async fn test_write_register() {
+        let response = b"+$OK#9a";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+
+        client
+            .write_register(14, &[0x00, 0x00, 0x00, 0x00])
+            .await
+            .unwrap();
+        assert_eq!(stream.write_data, b"$Pe=00000000#72+");
     }
 }
