@@ -50,6 +50,11 @@ enum Commands {
         /// Must contain a whole number of bytes (an even number of digits).
         data: String,
     },
+    /// Interrupt/stop target execution
+    #[command(alias = "control-c")]
+    Interrupt,
+    /// Continue target execution
+    Continue,
 }
 
 /// Strips an optional `0x` or `0X` prefix from a hex string.
@@ -128,6 +133,14 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
                 bytes.len(),
                 address
             );
+        }
+        Commands::Interrupt => {
+            let stop_reply = client.interrupt().await?;
+            println!("Target stopped: {}", stop_reply);
+        }
+        Commands::Continue => {
+            client.continue_execution().await?;
+            println!("Target resumed");
         }
     }
 

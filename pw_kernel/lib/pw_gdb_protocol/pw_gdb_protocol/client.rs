@@ -218,18 +218,51 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         }
     }
 
-    /// Continues target execution and waits for a stop reply.
-    pub async fn continue_execution(&mut self) -> io::Result<StopReply> {
-        self.send_packet(&Packet::Continue).await?;
+    /// Continues target execution.
+    pub async fn continue_execution(&mut self) -> io::Result<()> {
+        self.send_packet(&Packet::Continue).await
+    }
 
+    /// Waits for the target to stop and returns the [`StopReply`].
+    pub async fn wait_for_stop_reply(&mut self) -> io::Result<StopReply> {
         let response = self.receive_packet().await?;
         match response {
             Packet::StopReply(reply) => Ok(reply),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Unexpected response to continue execution",
+                "Unexpected response while waiting for stop reply",
             )),
         }
+    }
+
+    /// Sends a Control-C (0x03) interrupt character to the target to stop execution,
+    /// queries the halt reason (`?`), consumes up to two stop replies, and returns a stop reply.
+    ///
+    /// This method is idempotent and can be safely called whether the target is currently running
+    /// or already stopped.
+    pub async fn interrupt(&mut self) -> io::Result<StopReply> {
+        let packet = Packet::Interrupt;
+        self.stream.write_all(packet.encode().as_bytes()).await?;
+        self.stream.flush().await?;
+
+        self.send_packet(&Packet::QueryHaltReason).await?;
+
+        let response = self.receive_packet().await?;
+        let reply = match response {
+            Packet::StopReply(reply) => reply,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Unexpected response to interrupt",
+                ));
+            }
+        };
+
+        if !self.stream.buffer().is_empty() {
+            let _ = self.receive_packet().await;
+        }
+
+        Ok(reply)
     }
 
     async fn send_packet(&mut self, packet: &Packet) -> io::Result<()> {
@@ -547,8 +580,7 @@ mod tests {
         let mut client = Client::new(&mut stream);
         client.set_max_packet_size(16);
 
-        let result = client.write_memory(0x1000, &data).await;
-        result.unwrap();
+        client.write_memory(0x1000, &data).await.unwrap();
     }
 
     #[tokio::test]
@@ -570,15 +602,73 @@ mod tests {
 
     #[tokio::test]
     async fn test_continue_execution() {
-        let response = b"+$S02#b5";
+        let response = b"+";
         let mut stream = MockStream::new(response.to_vec());
         let mut client = Client::new(&mut stream);
 
-        // Suppose the system under test is paused
-        // we continue, and then it stops due to a SIGINT
-        let stop_reason = client.continue_execution().await.unwrap();
+        client.continue_execution().await.unwrap();
+
+        assert_eq!(stream.write_data, b"$c#63");
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_stop_reply() {
+        let response = b"$S02#b5";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+
+        let stop_reason = client.wait_for_stop_reply().await.unwrap();
 
         assert_eq!(stop_reason, StopReply::Signal(2));
-        assert_eq!(stream.write_data, b"$c#63+");
+        assert_eq!(stream.write_data, b"+"); // ACK sent for stop reply
+    }
+
+    #[tokio::test]
+    async fn test_continue_execution_then_interrupt() {
+        let mut response = vec![b'+']; // ACK for continue 'c'
+        response.push(b'+'); // ACK for HaltReason '?'
+        let stop_reply = b"$S02#b5";
+        response.extend_from_slice(stop_reply);
+
+        let mut stream = MockStream::new(response);
+        let mut client = Client::new(&mut stream);
+
+        client.continue_execution().await.unwrap();
+
+        let stop_reason = client.interrupt().await.unwrap();
+        assert_eq!(stop_reason, StopReply::Signal(2));
+
+        assert_eq!(stream.write_data, b"$c#63\x03$?#3f+");
+    }
+
+    #[tokio::test]
+    async fn test_interrupt_when_stopped() {
+        let mut response = vec![b'+']; // ACK for HaltReason '?'
+        let stop_reply = b"$S02#b5";
+        response.extend_from_slice(stop_reply);
+        let mut stream = MockStream::new(response);
+        let mut client = Client::new(&mut stream);
+
+        let stop_reason = client.interrupt().await.unwrap();
+
+        assert_eq!(stop_reason, StopReply::Signal(2));
+        assert_eq!(stream.write_data, b"\x03$?#3f+");
+    }
+
+    #[tokio::test]
+    async fn test_interrupt_when_running_two_stop_replies() {
+        let stop_reply = b"$S02#b5";
+        let mut response = Vec::new();
+        response.push(b'+'); // ACK for HaltReason '?'
+        response.extend_from_slice(stop_reply); // Stop reply 1 (e.g. for interrupt \x03)
+        response.extend_from_slice(stop_reply); // Stop reply 2 (for HaltReason '?')
+
+        let mut stream = MockStream::new(response);
+        let mut client = Client::new(&mut stream);
+
+        let stop_reason = client.interrupt().await.unwrap();
+
+        assert_eq!(stop_reason, StopReply::Signal(2));
+        assert_eq!(stream.write_data, b"\x03$?#3f++");
     }
 }

@@ -167,7 +167,8 @@ async fn run_until_exit_and_hang(
     );
 
     // Continue target execution
-    let stop_reply = gdb_client.continue_execution().await.unwrap();
+    gdb_client.continue_execution().await.unwrap();
+    let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
     println!("GDB target stopped: {:?}", stop_reply);
 
     assert!(
@@ -272,7 +273,8 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
             .await
             .unwrap();
 
-        let stop_reply = gdb_client.continue_execution().await.unwrap();
+        gdb_client.continue_execution().await.unwrap();
+        let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
         println!("GDB target stopped: {:?}", stop_reply);
 
         assert!(

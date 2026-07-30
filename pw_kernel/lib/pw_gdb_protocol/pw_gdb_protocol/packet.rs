@@ -18,6 +18,9 @@ use nom::combinator::map_res;
 use nom::sequence::{preceded, separated_pair};
 use nom::{IResult, Parser};
 
+/// Sentinel byte used to interrupt target execution (Control-C, 0x03).
+pub const INTERRUPT_BYTE: &str = "\x03";
+
 /// Represents a GDB stop reply.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum StopReply {
@@ -119,6 +122,12 @@ pub enum Packet {
     Empty,
     /// Stop reply packet.
     StopReply(StopReply),
+    /// A command to send Control-C (0x03) interrupt to target execution.
+    Interrupt,
+    /// A command to query the reason execution halted.
+    ///
+    /// Format: `?`
+    QueryHaltReason,
 }
 
 impl Packet {
@@ -141,16 +150,23 @@ impl Packet {
             Packet::Error(code) => format!("E{:02x}", code),
             Packet::Empty => "".to_string(),
             Packet::StopReply(reply) => reply.to_string(),
+            Packet::Interrupt => INTERRUPT_BYTE.to_string(),
+            Packet::QueryHaltReason => "?".to_string(),
         }
     }
 
     /// Encodes the packet with GDB framing (start character, checksum, etc.).
     ///
-    /// Format: `$<payload>#<checksum>`
+    /// Format: `$<payload>#<checksum>` (or raw `\x03` for Interrupt)
     pub fn encode(&self) -> String {
-        let payload = self.encode_payload();
-        let checksum = Self::calculate_checksum(payload.as_bytes());
-        format!("${}#{:02x}", payload, checksum)
+        match self {
+            Packet::Interrupt => INTERRUPT_BYTE.to_string(),
+            _ => {
+                let payload = self.encode_payload();
+                let checksum = Self::calculate_checksum(payload.as_bytes());
+                format!("${}#{:02x}", payload, checksum)
+            }
+        }
     }
 
     /// Calculates the GDB checksum for the given data.
@@ -164,6 +180,10 @@ impl Packet {
     pub fn decode_payload(input: &str) -> IResult<&str, Packet> {
         if input.is_empty() {
             Ok(("", Packet::Empty))
+        } else if input == INTERRUPT_BYTE {
+            Ok(("", Packet::Interrupt))
+        } else if input == "?" {
+            Ok(("", Packet::QueryHaltReason))
         } else if input == "OK" {
             Ok(("", Packet::Ok))
         } else if input.starts_with('E') && input.len() == 3 {
@@ -494,5 +514,31 @@ mod tests {
 
         // max_packet_size = 13 (too small for 11 + 1 + 2 = 14 bytes min)
         Packet::max_write_memory_chunk_size(13, 0x1000, 10).unwrap_err();
+    }
+
+    #[test]
+    fn test_encode_interrupt() {
+        let packet = Packet::Interrupt;
+        assert_eq!(packet.encode(), "\x03");
+    }
+
+    #[test]
+    fn test_decode_interrupt() {
+        let input = "\x03";
+        let (_, packet) = Packet::decode_payload(input).unwrap();
+        assert_eq!(packet, Packet::Interrupt);
+    }
+
+    #[test]
+    fn test_encode_halt_reason() {
+        let packet = Packet::QueryHaltReason;
+        assert_eq!(packet.encode(), "$?#3f");
+    }
+
+    #[test]
+    fn test_decode_halt_reason() {
+        let input = "?";
+        let (_, packet) = Packet::decode_payload(input).unwrap();
+        assert_eq!(packet, Packet::QueryHaltReason);
     }
 }

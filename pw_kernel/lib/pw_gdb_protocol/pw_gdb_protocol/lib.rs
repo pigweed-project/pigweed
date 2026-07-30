@@ -33,12 +33,19 @@
 //! {
 //!     let mut client = Client::new(stream);
 //!
+//!     // Stop target execution
+//!     let stop_reply = client.interrupt().await?;
+//!     println!("Target stopped: {}", stop_reply);
+//!
 //!     // Read memory
 //!     let data = client.read_memory(0x1000, 4).await?;
 //!     println!("Memory: {}", hex::encode(&data));
 //!
 //!     // Write memory
 //!     client.write_memory(0x1000, &[0x12, 0x34, 0x56, 0x78]).await?;
+//!
+//!     // Resume execution
+//!     client.continue_execution().await?;
 //!
 //!     Ok(())
 //! }
