@@ -55,6 +55,8 @@ ALIASES                = "rst=^^\verbatim embed:rst:leading-asterisk^^" \
                          "Result{1}=A \ref pw::Result \"Result\" containing \1 on success or one of the following error codes on failure:" \
                          "maindocs=@details @htmlonly <!-- maindocs --> @endhtmlonly Main docs:" \
                          "endmaindocs=@htmlonly <!-- endmaindocs --> @endhtmlonly" \
+                         "security=@if IGNORE_BLOCK" \
+                         "endsecurity=@endif" \
 
 # https://www.doxygen.nl/manual/config.html#cfg_case_sense_names
 CASE_SENSE_NAMES       = NO

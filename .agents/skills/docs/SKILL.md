@@ -39,6 +39,7 @@ Each of the sections below represents a workflow. Summary:
 * rst: Align with Pigweed's reStructuredText (reST) style guide.
 * changelog: Update the Pigweed changelog.
 * doxygen: Create C/C++ API reference content.
+* security: Annotate a vulernability false positive.
 
 All workflows follow this pattern:
 
@@ -92,3 +93,16 @@ Guards:
 * "search the doxygen docs"
 
 Path: `//docs/agents/doxygen/AGENTS.md`
+
+### security
+
+Triggers:
+
+* "add a security note to MySymbol in my_file.h"
+
+Guards:
+
+* "add a comment to MySymbol"
+* "analyze this security note"
+
+Path: `//docs/agents/security/AGENTS.md`

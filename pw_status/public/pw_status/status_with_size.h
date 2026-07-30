@@ -111,6 +111,18 @@ class _PW_STATUS_NO_DISCARD StatusWithSize {
   }
 
   /// Creates a StatusWithSize with the provided status and size.
+  ///
+  /// @security
+  ///
+  /// StatusWithSize doesn't check that the StatusCode it receives is valid.
+  /// This isn't a vulnerability, because if an attacker can set a StatusCode,
+  /// they can already set it to whatever they want. There is nothing gained by
+  /// setting an invalid value that is later truncated to a valid value when an
+  /// attacker can just set it to a valid value.
+  ///
+  /// See b/512562635 for additional details.
+  ///
+  /// @endsecurity
   explicit constexpr StatusWithSize(Status status, size_t size)
       : StatusWithSize((static_cast<size_t>(status.code()) << kStatusShift) |
                        size) {}

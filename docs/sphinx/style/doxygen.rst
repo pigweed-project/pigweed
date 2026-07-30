@@ -236,10 +236,30 @@ this example gets rendered.
 
 .. _style-doxygen-pw-links:
 
+@security
+=========
+Use ``@security`` and ``@endsecurity`` to annotate code that has been
+:ref:`incorrectly flagged <docs-security-false_positives>` by automated security
+scanning tools.
+
+Use the following pattern:
+
+.. code-block:: cpp
+
+   /// @security
+   ///
+   /// <Explanation of why this code is not vulnerable.>
+   ///
+   /// See b/<bug_number> for additional details.
+   ///
+   /// @endsecurity
+
 Links
 =====
 * For linking from Sphinx to Doxygen, see :ref:`contrib-doxygen-doxylink`.
 * For linking from Doxygen to Sphinx, see :ref:`contrib-doxygen-links`.
+
+.. _style-doxygen-pw-security-note:
 
 .. _Doxygen: https://www.doxygen.nl/index.html
 .. _special comment block: https://www.doxygen.nl/manual/docblocks.html
