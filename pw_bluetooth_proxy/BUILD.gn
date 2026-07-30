@@ -52,18 +52,6 @@ pw_source_set("config") {
   public_deps = [ pw_bluetooth_proxy_CONFIG ]
 }
 
-pw_source_set("snapshot") {
-  # LINT.IfChange
-  public = [ "public/pw_bluetooth_proxy/snapshot.h" ]
-  public_configs = [ ":public_include_path" ]
-  public_deps = [
-    ":config",
-    "$dir_pw_function",
-  ]
-
-  # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
-}
-
 config("sync") {
   defines = [ "PW_BLUETOOTH_PROXY_ASYNC=0" ]
 }
@@ -88,6 +76,8 @@ pw_source_set("system_clock_backend") {
   ]
 }
 
+# LINT.IfChange
+
 pw_facade("clock") {
   backend = pw_bluetooth_proxy_CLOCK_BACKEND
   public = [ "public/pw_bluetooth_proxy/clock.h" ]
@@ -95,6 +85,17 @@ pw_facade("clock") {
   public_deps = [ ":config" ]
   visibility = [ "$dir_pw_bluetooth_proxy/*" ]
 }
+
+pw_source_set("snapshot") {
+  public = [ "public/pw_bluetooth_proxy/snapshot.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":config",
+    "$dir_pw_function",
+  ]
+}
+
+# LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
 

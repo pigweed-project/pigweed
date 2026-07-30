@@ -16,8 +16,33 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
+# LINT.IfChange
+
 cc_library_static {
-    // LINT.IfChange
+    name: "pw_bluetooth_proxy_clock",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    export_include_dirs: [
+        "public",
+        "public_overrides/system_clock_backend",
+    ],
+    static_libs: [
+        "pw_async2",
+    ],
+    header_libs: [
+        "pw_chrono",
+    ],
+    export_static_lib_headers: [
+        "pw_async2",
+    ],
+    export_header_lib_headers: [
+        "pw_chrono",
+    ],
+}
+
+cc_library_static {
     name: "pw_bluetooth_proxy_snapshot",
     defaults: [
         "pw_android_common_backends",
@@ -32,8 +57,9 @@ cc_library_static {
     export_static_lib_headers: [
         "pw_function",
     ],
-    // LINT.ThenChange(BUILD.gn, BUILD.bazel, CMakeLists.txt)
 }
+
+// LINT.ThenChange(BUILD.gn, BUILD.bazel, CMakeLists.txt)
 
 cc_library_static {
     name: "pw_bluetooth_proxy",
@@ -73,11 +99,11 @@ cc_library_static {
     ],
     export_include_dirs: [
         "public",
-        "public_overrides/system_clock_backend",
     ],
     static_libs: [
         "pw_allocator",
         "pw_async2",
+        "pw_bluetooth_proxy_clock",
         "pw_bluetooth_proxy_snapshot",
         "pw_containers",
         "pw_function",
@@ -92,6 +118,7 @@ cc_library_static {
     export_static_lib_headers: [
         "pw_allocator",
         "pw_async2",
+        "pw_bluetooth_proxy_clock",
         "pw_bluetooth_proxy_snapshot",
         "pw_containers",
         "pw_function",
