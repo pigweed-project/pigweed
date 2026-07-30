@@ -16,6 +16,8 @@
 
 #include <stdlib.h>
 
+#include <cstdint>
+
 namespace chre {
 
 template <typename T>
@@ -25,6 +27,10 @@ inline T* memoryAlignedAlloc() {
 
 template <typename T>
 inline T* memoryAlignedAllocArray(size_t count) {
+  if (count > SIZE_MAX / sizeof(T)) {
+    return nullptr;
+  }
+
   return static_cast<T*>(aligned_alloc(alignof(T), sizeof(T) * count));
 }
 
