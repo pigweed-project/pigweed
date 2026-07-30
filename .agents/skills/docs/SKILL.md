@@ -40,6 +40,7 @@ Each of the sections below represents a workflow. Summary:
 * changelog: Update the Pigweed changelog.
 * doxygen: Create C/C++ API reference content.
 * security: Annotate a vulernability false positive.
+* bulletin: Create a security bulletin for a fixed vulnerability.
 
 All workflows follow this pattern:
 
@@ -57,11 +58,13 @@ Triggers:
 * "rest formatting"
 * The user is creating a significant amount of new documentation
   and has asked for help getting it ready to publish.
+* A workflow (such as `bulletin`) explicitly requires formatting of generated
+  RST files
 
 Guards:
 
 * Do not waste time on reST formatting for first draft content that
-  is likely to change a lot.
+  is likely to change a lot, unless required as a completion step by a workflow.
 * When the main goal requires only minor docs updates, do not touch
   reST that's unrelated to the main goal.
 
@@ -106,3 +109,17 @@ Guards:
 * "analyze this security note"
 
 Path: `//docs/agents/security/AGENTS.md`
+
+### bulletin
+
+Triggers:
+
+* "create a security bulletin"
+* "update the security bulletin"
+
+Guards:
+
+* "what CL fixed b/8675309"
+* "search the security bulletins"
+
+Path: `//docs/agents/bulletin/AGENTS.md`
