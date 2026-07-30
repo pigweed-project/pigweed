@@ -543,7 +543,7 @@ use_repo(cipd_ext, bloaty = "pigweed.bloaty")
 cipd_ext.require(
     name = "pigweed.buildifier",
     packages = {
-        "infra/3pp/tools/buildifier/${platform}": "version:3@v8.2.1",
+        "infra/3pp/tools/buildifier/${platform}": "version:3@v8.5.1",
     },
 )
 use_repo(cipd_ext, buildifier = "pigweed.buildifier")
@@ -552,7 +552,7 @@ use_repo(cipd_ext, buildifier = "pigweed.buildifier")
 cipd_ext.require(
     name = "pigweed.gn",
     packages = {
-        "gn/gn/${platform}": "git_revision:97b68a0bb62b7528bc3491c7949d6804223c2b82",
+        "gn/gn/${platform}": "git_revision:4a060c55dcc5380837a8684949b74400e929b85e",
     },
 )
 use_repo(cipd_ext, gn = "pigweed.gn")
@@ -561,7 +561,7 @@ use_repo(cipd_ext, gn = "pigweed.gn")
 cipd_ext.require(
     name = "pigweed.go",
     packages = {
-        "infra/3pp/tools/go/${platform}": "version:3@1.24.12",
+        "infra/3pp/tools/go/${platform}": "version:3@1.26.5",
     },
 )
 use_repo(cipd_ext, go = "pigweed.go")
