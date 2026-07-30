@@ -15,12 +15,9 @@
 load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
 load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
 load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//targets/riscv_qemu:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 package(default_visibility = ["//visibility:public"])
-
-TARGET_COMPATIBLE_WITH = select({
-    "//conditions:default": [],
-})
 
 # Shared standalone QEMU RISC-V Platform
 platform(

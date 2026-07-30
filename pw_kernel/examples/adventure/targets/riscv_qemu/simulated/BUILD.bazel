@@ -17,10 +17,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_python//python:defs.bzl", "py_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-
-TARGET_COMPATIBLE_WITH = select({
-    "//conditions:default": [],
-})
+load("//targets/riscv_qemu:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 filegroup(
     name = "system_config",

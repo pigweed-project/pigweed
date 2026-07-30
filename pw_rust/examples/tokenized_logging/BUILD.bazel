@@ -12,7 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("//pw_build/constraints/arm:lists.bzl", "ALL_CORTEX_M_CPUS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -41,6 +43,10 @@ rust_library(
     ],
     crate_name = "pw_log_backend",
     edition = "2021",
+    target_compatible_with = selects.with_or({
+        ALL_CORTEX_M_CPUS: [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     visibility = ["//visibility:public"],
     deps = [
         "//pw_base64/rust:pw_base64",

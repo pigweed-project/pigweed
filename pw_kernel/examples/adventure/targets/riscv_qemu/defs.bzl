@@ -1,4 +1,4 @@
-# Copyright 2025 The Pigweed Authors
+# Copyright 2026 The Pigweed Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -11,23 +11,10 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+"""Common definitions used by all mps2_an505 targets.
+"""
 
-[advisories]
-ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "Allowed while replacement is identified" },
-]
-unmaintained = "workspace"
-
-[bans]
-skip = [
-]
-
-[licenses]
-allow = [
-    "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
-    "ISC",
-    "MIT",
-    "Unicode-3.0",
-    "Zlib",
-]
+TARGET_COMPATIBLE_WITH = select({
+    "@platforms//os:none": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
