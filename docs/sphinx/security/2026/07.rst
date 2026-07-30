@@ -24,12 +24,12 @@ Vulnerability details
      - b/512562473
      - S
      - pw_protobuf
-     - 538a7476d18cb3019f43fabbf06896543ad35dd4
+     - ed4e552afe0093c8c70218392a07af77ab6668fd
    * - TBD
      - b/512562483
      - DoS
      - pw_transfer
-     - b6e97384dc14e5d88003749d664d104f8ea5f74d
+     - 7c29e52c8b99a8792b7e44f6687930c311f4f78f
 
 --------------------------
 How to interpret the table
