@@ -96,12 +96,10 @@ alias(
     name = "cortex-m",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:cortex-m",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:cortex-m",
     }),
     visibility = ["//visibility:public"],
 )
@@ -110,12 +108,10 @@ alias(
     name = "cortex-m-rt",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:cortex-m-rt",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:cortex-m-rt",
     }),
     visibility = ["//visibility:public"],
 )
@@ -124,12 +120,10 @@ alias(
     name = "cortex-m-semihosting",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:cortex-m-semihosting",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:cortex-m-semihosting",
     }),
     visibility = ["//visibility:public"],
 )
@@ -138,12 +132,10 @@ alias(
     name = "embedded-io",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:embedded-io",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:embedded-io",
     }),
     visibility = ["//visibility:public"],
 )
@@ -188,12 +180,10 @@ alias(
     name = "intrusive-collections",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:intrusive-collections",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:intrusive-collections",
     }),
     visibility = ["//visibility:public"],
 )
@@ -262,12 +252,10 @@ alias(
     name = "panic-halt",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:panic-halt",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:panic-halt",
     }),
     visibility = ["//visibility:public"],
 )
@@ -386,12 +374,10 @@ alias(
     name = "riscv",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:riscv",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:riscv",
     }),
     visibility = ["//visibility:public"],
 )
@@ -400,12 +386,10 @@ alias(
     name = "riscv-rt",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:riscv-rt",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:riscv-rt",
     }),
     visibility = ["//visibility:public"],
 )
@@ -414,12 +398,10 @@ alias(
     name = "riscv-semihosting",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:no_std": [],
-        "@pigweed//pw_build/constraints/rust:std": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:riscv-semihosting",
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:riscv-semihosting",
     }),
     visibility = ["//visibility:public"],
 )
