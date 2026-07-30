@@ -446,18 +446,20 @@ TEST_F(ReadTransfer, HandlerIsClearedAfterTransfer) {
 
 class ReadTransferMaxChunkSize8 : public ReadTransfer {
  protected:
-  ReadTransferMaxChunkSize8() : ReadTransfer(/*max_chunk_size_bytes=*/8) {}
+  ReadTransferMaxChunkSize8() : ReadTransfer(/*max_chunk_size_bytes=*/32) {
+    ctx_.service().set_max_chunk_size_bytes(8);
+  }
 };
 
 TEST_F(ReadTransferMaxChunkSize8, MaxChunkSize_Server) {
   // Client asks for max 16-byte chunks, but service places a limit of 8 bytes.
-  // TODO(frolv): Fix
+
   rpc::test::WaitForPackets(ctx_.output(), 5, [this] {
     ctx_.SendClientStream(
         EncodeChunk(Chunk(ProtocolVersion::kLegacy, Chunk::Type::kStart)
                         .set_session_id(3)
                         .set_window_end_offset(64)
-                        // .set_max_chunk_size_bytes(16)
+                        .set_max_chunk_size_bytes(16)
                         .set_offset(0)));
   });
 

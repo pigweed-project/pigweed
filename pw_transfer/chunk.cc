@@ -214,6 +214,10 @@ Result<Chunk> Chunk::Parse(ConstByteSpan message) {
     chunk.set_window_end_offset(chunk.offset() + pending_bytes);
   }
 
+  if (chunk.IsInitialChunk() && chunk.has_payload()) {
+    return Status::DataLoss();
+  }
+
   if (status.ok() || status.IsOutOfRange()) {
     return chunk;
   }

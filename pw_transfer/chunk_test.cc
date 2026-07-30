@@ -62,5 +62,20 @@ TEST(Chunk, EncodedSizeMatchesBuffer) {
   EXPECT_EQ(chunk.EncodedSize(), result->size_bytes());
 }
 
+TEST(Chunk, Parse_InitialChunkWithPayload_Fails) {
+  Chunk chunk(ProtocolVersion::kVersionTwo, Chunk::Type::kStart);
+  chunk.set_session_id(42).set_resource_id(7).set_window_end_offset(128);
+
+  constexpr auto kData = bytes::Initialized<8>(0x11);
+  chunk.set_payload(kData);
+
+  std::array<std::byte, 64> buffer;
+  auto encode_result = chunk.Encode(buffer);
+  ASSERT_EQ(encode_result.status(), OkStatus());
+
+  auto parse_result = Chunk::Parse(encode_result.value());
+  EXPECT_EQ(parse_result.status(), Status::DataLoss());
+}
+
 }  // namespace
 }  // namespace pw::transfer::internal

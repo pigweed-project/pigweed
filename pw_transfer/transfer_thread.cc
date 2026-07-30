@@ -148,6 +148,9 @@ void TransferThread::StartTransfer(
   next_event_.type = is_client_transfer ? EventType::kNewClientTransfer
                                         : EventType::kNewServerTransfer;
 
+  PW_CHECK(raw_chunk.size() <= chunk_buffer_.size(),
+           "Transfer received a larger chunk than it can handle.");
+
   if (!raw_chunk.empty()) {
     std::memcpy(chunk_buffer_.data(), raw_chunk.data(), raw_chunk.size());
   }
