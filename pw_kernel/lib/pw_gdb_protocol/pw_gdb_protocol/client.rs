@@ -22,6 +22,8 @@ use crate::packet::{BreakpointType, Packet, StopReply};
 pub struct Client<S> {
     stream: BufReader<S>,
     max_packet_size: usize,
+    qemu_physical_memory_mode: bool,
+    has_arm_trustzone: bool,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
@@ -33,12 +35,72 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         Self {
             stream: BufReader::new(stream),
             max_packet_size: 400,
+            qemu_physical_memory_mode: false,
+            has_arm_trustzone: false,
         }
     }
 
     /// Sets the maximum packet size in bytes.
     pub fn set_max_packet_size(&mut self, size: usize) {
         self.max_packet_size = size;
+    }
+
+    /// Returns whether QEMU physical memory mode is currently enabled.
+    pub fn qemu_physical_memory_mode(&self) -> bool {
+        self.qemu_physical_memory_mode
+    }
+
+    /// Returns whether ARM TrustZone memory aliasing support is enabled.
+    pub fn has_arm_trustzone(&self) -> bool {
+        self.has_arm_trustzone
+    }
+
+    /// Sets whether ARM TrustZone memory aliasing support is enabled.
+    pub fn set_has_arm_trustzone(&mut self, has_arm_trustzone: bool) {
+        self.has_arm_trustzone = has_arm_trustzone;
+    }
+
+    /// Rewrites a physical memory address if QEMU physical memory mode is enabled
+    /// and ARM TrustZone address transformation is enabled.
+    ///
+    /// # ARMv8-M / TrustZone Memory Aliasing & Bit 28 (`0x10000000`)
+    /// On ARMv8-M processors (e.g. Cortex-M33 on `mps2-an505`), memory is divided into
+    /// Non-Secure and Secure alias regions. The only difference between a Non-Secure memory
+    /// address and its Secure alias counterpart is Bit 28 (`0x10000000`):
+    /// - SRAM (SSRAM1): Non-Secure `0x28000000–0x29FFFFFF`, Secure Alias `0x38000000–0x39FFFFFF`
+    /// - Code / Flash: Non-Secure `0x00000000–0x0FFFFFFF`, Secure Alias `0x10000000–0x1FFFFFFF`
+    /// - Peripherals: Non-Secure `0x40000000–0x4FFFFFFF`, Secure Alias `0x50000000–0x5FFFFFFF`
+    ///
+    /// # QEMU Physical Memory Mode (`Qqemu.PhyMemMode:1`) Behavior
+    /// In QEMU's system memory map (`address_space_memory`), physical RAM is registered at its
+    /// canonical physical base address (e.g. `0x28000000`), leaving Secure alias regions
+    /// (e.g. `0x38000000`) as unmapped gaps in QEMU's system physical address space.
+    ///
+    /// - In Normal Debug Mode (`Qqemu.PhyMemMode:0`), memory queries route through
+    ///   `cpu_memory_rw_debug()`, which translates Secure Alias `0x38010000` -> `0x28010000` via
+    ///   `arm_cpu_get_phys_page_attrs_debug()`. However, if the CPU is paused in unprivileged
+    ///   user mode (`ARMMMUIdx_MUser`), MPU/SAU security checks reject the unprivileged request and
+    ///   return GDB error `"E14"` (GDB Error 20).
+    /// - In Physical Memory Mode (`Qqemu.PhyMemMode:1`), memory queries bypass CPU MPU/MMU
+    ///   translation and invoke `cpu_physical_memory_read()` directly on `address_space_memory`.
+    ///   Querying unmapped Secure alias addresses like `0x38000000` directly hits unmapped address
+    ///   space in QEMU, returning zeroes (`0x00`).
+    ///
+    /// # Hardware SWD Parity & Address Transformation
+    /// Real hardware debug probes (over SWD via CoreSight MEM-AP) set the Secure bit in control
+    /// registers (`CSW.PROT`) and automatically strip Bit 28 when placing physical address transfers
+    /// on the AHB bus.
+    ///
+    /// When `qemu_physical_memory_mode` and `has_arm_trustzone` are enabled,
+    /// this function strips Bit 28 (`addr & !0x10000000`) from the requested address to map
+    /// Secure alias addresses to canonical physical RAM addresses. Otherwise,
+    /// addresses are returned unchanged.
+    fn rewrite_physical_address(&self, addr: u64) -> u64 {
+        if self.qemu_physical_memory_mode && self.has_arm_trustzone {
+            addr & !0x10000000
+        } else {
+            addr
+        }
     }
 
     /// Reads memory from the target at the specified address and length.
@@ -51,7 +113,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         let max_chunk_size = Packet::max_payload_size(self.max_packet_size)?;
 
         let mut data = Vec::with_capacity(length);
-        let mut current_addr = addr;
+        let mut current_addr = self.rewrite_physical_address(addr);
         let mut remaining_length = length;
 
         while remaining_length > 0 {
@@ -101,7 +163,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             return Ok(());
         }
 
-        let mut current_addr = addr;
+        let mut current_addr = self.rewrite_physical_address(addr);
         let mut remaining_data = data;
 
         while !remaining_data.is_empty() {
@@ -322,6 +384,33 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Unexpected response to write register: {:?}", response),
+            )),
+        }
+    }
+
+    /// Enables or disables physical memory mode in QEMU's GDB server (`Qqemu.PhyMemMode`).
+    ///
+    /// When physical memory mode is enabled (`true`), memory accesses bypass CPU MMU/MPU/PMP
+    /// address translation and access controls.
+    pub async fn set_qemu_physical_memory_mode(&mut self, enable: bool) -> io::Result<()> {
+        self.send_packet(&Packet::QemuPhyMemMode(enable)).await?;
+        let response = self.receive_packet().await?;
+        match response {
+            Packet::Ok => {
+                self.qemu_physical_memory_mode = enable;
+                Ok(())
+            }
+            Packet::Error(code) => Err(io::Error::other(format!(
+                "GDB server returned error code: {}",
+                code
+            ))),
+            Packet::Empty => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "GDB server does not support Qqemu.PhyMemMode",
+            )),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unexpected response to Qqemu.PhyMemMode",
             )),
         }
     }
@@ -778,5 +867,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(stream.write_data, b"$Pe=00000000#72+");
+    }
+
+    #[tokio::test]
+    async fn test_set_qemu_physical_memory_mode() {
+        let response = b"+$OK#9a";
+        let mut stream = MockStream::new(response.to_vec());
+        let mut client = Client::new(&mut stream);
+
+        assert!(!client.qemu_physical_memory_mode());
+        client.set_qemu_physical_memory_mode(true).await.unwrap();
+        assert!(client.qemu_physical_memory_mode());
+        assert_eq!(stream.write_data, b"$Qqemu.PhyMemMode:1#77+");
+    }
+
+    #[tokio::test]
+    async fn test_read_write_memory_qemu_physical_memory_mode() {
+        let response_payload = b"decafbad";
+        let checksum = Packet::calculate_checksum(response_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+        client.set_has_arm_trustzone(true);
+        client.qemu_physical_memory_mode = true;
+
+        // Address 0x10002000 has 0x10000000 bit set. In physical memory mode with TrustZone enabled, it should be stripped to 0x2000.
+        let result = client.read_memory(0x10002000, 4).await.unwrap();
+        assert_eq!(result, &[0xde, 0xca, 0xfb, 0xad]);
+        assert_eq!(stream.write_data, b"$m2000,4#8f+");
+    }
+
+    #[tokio::test]
+    async fn test_read_write_memory_qemu_physical_memory_mode_without_trustzone() {
+        let response_payload = b"decafbad";
+        let checksum = Packet::calculate_checksum(response_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+        client.set_has_arm_trustzone(false);
+        client.qemu_physical_memory_mode = true;
+
+        // Address 0x10002000 has 0x10000000 bit set. Without TrustZone enabled, address should NOT be rewritten.
+        let result = client.read_memory(0x10002000, 4).await.unwrap();
+        assert_eq!(result, &[0xde, 0xca, 0xfb, 0xad]);
+        assert_eq!(
+            stream.write_data,
+            format!(
+                "$m10002000,4#{:02x}+",
+                Packet::calculate_checksum(b"m10002000,4")
+            )
+            .as_bytes()
+        );
     }
 }

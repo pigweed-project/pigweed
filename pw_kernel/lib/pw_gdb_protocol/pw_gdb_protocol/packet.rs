@@ -128,6 +128,10 @@ pub enum Packet {
     ///
     /// Format: `?`
     QueryHaltReason,
+    /// A command to enable or disable QEMU physical memory mode.
+    ///
+    /// Format: `Qqemu.PhyMemMode:1` or `Qqemu.PhyMemMode:0`
+    QemuPhyMemMode(bool),
     /// A command to read all registers.
     ///
     /// Format: `g`
@@ -167,6 +171,9 @@ impl Packet {
             Packet::StopReply(reply) => reply.to_string(),
             Packet::Interrupt => INTERRUPT_BYTE.to_string(),
             Packet::QueryHaltReason => "?".to_string(),
+            Packet::QemuPhyMemMode(enable) => {
+                format!("Qqemu.PhyMemMode:{}", if *enable { 1 } else { 0 })
+            }
         }
     }
 
@@ -204,6 +211,17 @@ impl Packet {
         } else if input.starts_with('E') && input.len() == 3 {
             if let Ok(code) = u8::from_str_radix(&input[1..3], 16) {
                 Ok((&input[3..], Packet::Error(code)))
+            } else {
+                Err(nom::Err::Error(nom::error::Error::new(
+                    input,
+                    nom::error::ErrorKind::Fail,
+                )))
+            }
+        } else if let Some(mode) = input.strip_prefix("Qqemu.PhyMemMode:") {
+            if mode == "1" {
+                Ok(("", Packet::QemuPhyMemMode(true)))
+            } else if mode == "0" {
+                Ok(("", Packet::QemuPhyMemMode(false)))
             } else {
                 Err(nom::Err::Error(nom::error::Error::new(
                     input,
@@ -617,5 +635,20 @@ mod tests {
         let input = "?";
         let (_, packet) = Packet::decode_payload(input).unwrap();
         assert_eq!(packet, Packet::QueryHaltReason);
+    }
+
+    #[test]
+    fn test_qemu_phy_mem_mode() {
+        let packet_enable = Packet::QemuPhyMemMode(true);
+        assert_eq!(packet_enable.encode(), "$Qqemu.PhyMemMode:1#77");
+
+        let packet_disable = Packet::QemuPhyMemMode(false);
+        assert_eq!(packet_disable.encode(), "$Qqemu.PhyMemMode:0#76");
+
+        let (_, decoded) = Packet::decode_payload("Qqemu.PhyMemMode:1").unwrap();
+        assert_eq!(decoded, Packet::QemuPhyMemMode(true));
+
+        let (_, decoded) = Packet::decode_payload("Qqemu.PhyMemMode:0").unwrap();
+        assert_eq!(decoded, Packet::QemuPhyMemMode(false));
     }
 }
