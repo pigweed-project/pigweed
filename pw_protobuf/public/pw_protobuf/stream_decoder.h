@@ -605,6 +605,10 @@ class StreamDecoder {
   /// @returns A `StreamDecoder` for reading the nested submessage.
   StreamDecoder GetNestedDecoder();
 
+  /// Consumes the current protobuf field, advancing the stream to the key of
+  /// the next field (if one exists).
+  Status SkipField();
+
   /// Bounds of a payload interval within a reader.
   struct Bounds {
     size_t low;
@@ -708,7 +712,6 @@ class StreamDecoder {
   void CloseNestedDecoder(StreamDecoder& nested);
 
   Status ReadFieldKey();
-  Status SkipField();
 
   Status ReadVarintField(span<std::byte> out, internal::VarintType decode_type);
 

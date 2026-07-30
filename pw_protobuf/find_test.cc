@@ -380,5 +380,21 @@ TEST(EnumStreamFinder, RepeatedField) {
   EXPECT_EQ(result.status(), Status::NotFound());
 }
 
+TEST(FindStream, AdvancesBeyondFieldOnResourceExhausted) {
+  stream::MemoryReader reader(kEncodedRepeatedProto);
+
+  char buffer[4];
+  // First item in repeated field 6 is "Hello, " (length 7).
+  // User buffer is too small.
+  StatusWithSize sws = FindString(reader, 6, buffer);
+  EXPECT_EQ(sws.status(), Status::ResourceExhausted());
+
+  // Next repeated item is "world". We should successfully read it.
+  InlineString<16> str;
+  sws = FindString(reader, 6, str);
+  EXPECT_EQ(sws.status(), OkStatus());
+  EXPECT_STREQ(str.c_str(), "world");
+}
+
 }  // namespace
 }  // namespace pw::protobuf

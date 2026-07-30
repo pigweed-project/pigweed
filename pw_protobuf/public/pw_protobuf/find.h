@@ -1358,6 +1358,9 @@ inline StatusWithSize FindString(stream::Reader& message_stream,
       return StatusWithSize(status, 0);
     }
     StatusWithSize sws = decoder.ReadString(out);
+    if (sws.status().IsResourceExhausted()) {
+      decoder.SkipField().IgnoreError();
+    }
     return sws.status().IsNotFound() ? StatusWithSize::FailedPrecondition()
                                      : sws;
   }
@@ -1366,6 +1369,9 @@ inline StatusWithSize FindString(stream::Reader& message_stream,
   StatusWithSize last_sws(Status::NotFound(), 0);
   while ((status = internal::AdvanceToField(decoder, field_number)).ok()) {
     last_sws = decoder.ReadString(out);
+    if (last_sws.status().IsResourceExhausted()) {
+      decoder.SkipField().IgnoreError();
+    }
     if (last_sws.status().IsNotFound()) {
       return StatusWithSize::FailedPrecondition();
     }
@@ -1522,6 +1528,9 @@ inline StatusWithSize FindBytes(stream::Reader& message_stream,
       return StatusWithSize(status, 0);
     }
     StatusWithSize sws = decoder.ReadBytes(out);
+    if (sws.status().IsResourceExhausted()) {
+      decoder.SkipField().IgnoreError();
+    }
     return sws.status().IsNotFound() ? StatusWithSize::FailedPrecondition()
                                      : sws;
   }
@@ -1530,6 +1539,9 @@ inline StatusWithSize FindBytes(stream::Reader& message_stream,
   StatusWithSize last_sws(Status::NotFound(), 0);
   while ((status = internal::AdvanceToField(decoder, field_number)).ok()) {
     last_sws = decoder.ReadBytes(out);
+    if (last_sws.status().IsResourceExhausted()) {
+      decoder.SkipField().IgnoreError();
+    }
     if (last_sws.status().IsNotFound()) {
       return StatusWithSize::FailedPrecondition();
     }
