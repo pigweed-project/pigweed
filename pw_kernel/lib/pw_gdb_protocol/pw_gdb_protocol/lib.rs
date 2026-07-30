@@ -35,7 +35,10 @@
 //!
 //!     // Read memory
 //!     let data = client.read_memory(0x1000, 4).await?;
-//!     println!("Memory: {}", hex::encode(data));
+//!     println!("Memory: {}", hex::encode(&data));
+//!
+//!     // Write memory
+//!     client.write_memory(0x1000, &[0x12, 0x34, 0x56, 0x78]).await?;
 //!
 //!     Ok(())
 //! }

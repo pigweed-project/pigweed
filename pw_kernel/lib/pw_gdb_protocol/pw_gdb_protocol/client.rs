@@ -63,11 +63,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             .await?;
 
             let response = self.receive_packet().await?;
-            let Packet::ReadMemoryResponse(chunk_data) = response else {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Invalid response",
-                ));
+            let chunk_data = match response {
+                Packet::ReadMemoryResponse(data) => data,
+                Packet::Error(code) => {
+                    return Err(io::Error::other(format!(
+                        "GDB server returned error code: {}",
+                        code
+                    )));
+                }
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Unexpected response to read memory: {:?}", response),
+                    ));
+                }
             };
 
             if chunk_data.len() != chunk_length {
@@ -82,6 +91,64 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             remaining_length -= chunk_length;
         }
         Ok(data)
+    }
+
+    /// Writes memory to the target at the specified address.
+    ///
+    /// Sends one or more `M` packets and waits for `OK` responses.
+    pub async fn write_memory(&mut self, addr: u64, data: &[u8]) -> io::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
+        let mut current_addr = addr;
+        let mut remaining_data = data;
+
+        while !remaining_data.is_empty() {
+            let chunk_length = Packet::max_write_memory_chunk_size(
+                self.max_packet_size,
+                current_addr,
+                remaining_data.len(),
+            )?;
+
+            let (chunk, rest) = remaining_data.split_at(chunk_length);
+
+            // Send the M packet for the current chunk.
+            self.send_packet(&Packet::WriteMemory {
+                addr: current_addr,
+                data: chunk.to_vec(),
+            })
+            .await?;
+
+            // Wait for GDB server response (OK, Error, or Empty if unsupported).
+            let response = self.receive_packet().await?;
+            match response {
+                Packet::Ok => {}
+                Packet::Error(code) => {
+                    return Err(io::Error::other(format!(
+                        "GDB server returned error code: {}",
+                        code
+                    )));
+                }
+                Packet::Empty => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "GDB server does not support writing memory",
+                    ));
+                }
+                _ => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Unexpected response to write memory",
+                    ));
+                }
+            }
+
+            current_addr += chunk_length as u64;
+            remaining_data = rest;
+        }
+
+        Ok(())
     }
 
     /// Sets a software breakpoint at the specified address.
@@ -387,6 +454,101 @@ mod tests {
         expected.push(b'+');
 
         assert_eq!(stream.write_data, expected);
+    }
+
+    #[tokio::test]
+    async fn test_write_memory() {
+        const TEST_PAYLOAD_BYTES: &[u8] = &[0xde, 0xca, 0xfb, 0xad];
+
+        let mut input = vec![b'+'];
+        let response_payload = b"OK";
+        let checksum = Packet::calculate_checksum(response_payload);
+        input.push(b'$');
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+
+        client
+            .write_memory(0x1000, TEST_PAYLOAD_BYTES)
+            .await
+            .unwrap();
+
+        let expected_sent = b"$M1000,4:decafbad#c2+"; // + is ACK for response
+        assert_eq!(stream.write_data, expected_sent);
+    }
+
+    #[tokio::test]
+    async fn test_write_memory_chunking() {
+        let mut input = Vec::new();
+
+        // Chunk 1 response
+        input.push(b'+'); // ACK for 1st command
+        input.push(b'$');
+        input.extend_from_slice(b"OK");
+        input.push(b'#');
+        let ok_sum = Packet::calculate_checksum(b"OK");
+        input.extend_from_slice(format!("{:02x}", ok_sum).as_bytes());
+
+        // Chunk 2 response
+        input.push(b'+'); // ACK for 2nd command
+        input.push(b'$');
+        input.extend_from_slice(b"OK");
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", ok_sum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+        client.set_max_packet_size(14);
+
+        client.write_memory(0x1000, &[0xaa, 0xbb]).await.unwrap();
+
+        let p1 = Packet::WriteMemory {
+            addr: 0x1000,
+            data: vec![0xaa],
+        };
+        let p2 = Packet::WriteMemory {
+            addr: 0x1001,
+            data: vec![0xbb],
+        };
+
+        let mut expected = Vec::new();
+        expected.extend_from_slice(p1.encode().as_bytes());
+        expected.push(b'+');
+        expected.extend_from_slice(p2.encode().as_bytes());
+        expected.push(b'+');
+
+        assert_eq!(stream.write_data, expected);
+    }
+
+    #[tokio::test]
+    async fn test_write_memory_large_buffer_small_packet_size() {
+        // Total data length is 16 bytes (0x10, requiring 2 hex digits for total length).
+        // Max packet size is set to 16 bytes. Address 0x1000 has 4 hex digits.
+        // Fixed overhead = 7 + 4 = 11 bytes.
+        // With max_packet_size = 16 bytes, each 2-byte chunk packet ($M1000,2:aaaa#xx) takes 16 bytes (1 hex digit for length 2).
+        // Transmitting 16 bytes requires 8 chunks of 2 bytes each.
+
+        let data = [0xaa; 16];
+        let mut input = Vec::new();
+        let ok_sum = Packet::calculate_checksum(b"OK");
+
+        for _ in 0..8 {
+            input.push(b'+');
+            input.push(b'$');
+            input.extend_from_slice(b"OK");
+            input.push(b'#');
+            input.extend_from_slice(format!("{:02x}", ok_sum).as_bytes());
+        }
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+        client.set_max_packet_size(16);
+
+        let result = client.write_memory(0x1000, &data).await;
+        result.unwrap();
     }
 
     #[tokio::test]

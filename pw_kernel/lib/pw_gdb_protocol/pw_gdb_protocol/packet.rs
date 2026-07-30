@@ -87,6 +87,10 @@ pub enum Packet {
     ///
     /// Format: `<hex_data>`
     ReadMemoryResponse(Vec<u8>),
+    /// A command to write memory to the target.
+    ///
+    /// Format: `M<addr>,<length>:<hex_data>`
+    WriteMemory { addr: u64, data: Vec<u8> },
     /// A command to continue target execution.
     ///
     /// Format: `c`
@@ -123,6 +127,9 @@ impl Packet {
         match self {
             Packet::ReadMemory { addr, length } => format!("m{:x},{:x}", addr, length),
             Packet::ReadMemoryResponse(data) => hex::encode(data),
+            Packet::WriteMemory { addr, data } => {
+                format!("M{:x},{:x}:{}", addr, data.len(), hex::encode(data))
+            }
             Packet::Continue => "c".to_string(),
             Packet::InsertBreakpoint { t_type, addr, kind } => {
                 format!("Z{},{:x},{:x}", *t_type as u8, addr, kind)
@@ -173,6 +180,9 @@ impl Packet {
         } else if input.starts_with('m') {
             let (rem, (addr, length)) = parse_read_memory(input)?;
             Ok((rem, Packet::ReadMemory { addr, length }))
+        } else if input.starts_with('M') {
+            let (rem, (addr, data)) = parse_write_memory(input)?;
+            Ok((rem, Packet::WriteMemory { addr, data }))
         } else if input.starts_with('Z') {
             let (rem, (t_type, addr, kind)) = parse_breakpoint(input, 'Z')?;
             Ok((rem, Packet::InsertBreakpoint { t_type, addr, kind }))
@@ -210,6 +220,60 @@ impl Packet {
         }
         Ok((max_packet_size - 4) / 2)
     }
+
+    /// Calculates the maximum data chunk size (in bytes) for a `WriteMemory` (`M`) packet
+    /// to fit within `max_packet_size`.
+    ///
+    /// The framing format for `WriteMemory` is `$M<addr>,<length>:<hex_data>#<checksum>`.
+    ///
+    /// Returns an error if `max_packet_size` is too small to hold even a 1-byte payload.
+    #[allow(clippy::std_instead_of_core)]
+    pub fn max_write_memory_chunk_size(
+        max_packet_size: usize,
+        addr: u64,
+        remaining_len: usize,
+    ) -> std::io::Result<usize> {
+        let addr_hex_len = format!("{:x}", addr).len();
+        // Fixed framing overhead for `$M<addr>,<length>:<hex_data>#<cs>`:
+        // '$' (1) + 'M' (1) + addr_hex_len + ',' (1) + ':' (1) + '#' (1) + cs (2) = 7 + addr_hex_len
+        let fixed_overhead = 7 + addr_hex_len;
+
+        // Packet size must fit fixed overhead + at least 1 len digit + 2 hex bytes for 1 byte of data.
+        if max_packet_size < fixed_overhead + 1 + 2 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Total packet size is too small to hold any data",
+            ));
+        }
+
+        // Estimate initial maximum chunk length based on available payload space. Include 1 extra
+        // byte (`+ 1`) in the subtracted overhead to reserve space for at least 1 length digit,
+        // and divide by 2 (`/ 2`) because each byte of data requires 2 hex characters.
+        let mut chunk_length = core::cmp::min(
+            remaining_len,
+            (max_packet_size.saturating_sub(fixed_overhead + 1)) / 2,
+        );
+
+        // Refine chunk_length ensuring the formatted length digits + hex data fit within max_packet_size.
+        // Multiply chunk_length by 2 (* 2) because each byte of data requires 2 hex characters.
+        while chunk_length > 0 {
+            let actual_len_digits = format!("{:x}", chunk_length).len();
+            let actual_packet_size = fixed_overhead + actual_len_digits + (chunk_length * 2);
+            if actual_packet_size <= max_packet_size {
+                break;
+            }
+            chunk_length -= 1;
+        }
+
+        if chunk_length == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Total packet size is too small to hold any data",
+            ));
+        }
+
+        Ok(chunk_length)
+    }
 }
 
 fn parse_stop_reply(input: &str) -> IResult<&str, StopReply> {
@@ -237,6 +301,33 @@ fn parse_read_memory(input: &str) -> IResult<&str, (u64, u64)> {
         ),
     )
     .parse(input)
+}
+
+fn parse_write_memory(input: &str) -> IResult<&str, (u64, Vec<u8>)> {
+    let (input, (addr, length)) = preceded(
+        char('M'),
+        separated_pair(
+            map_res(hex_digit1, |s| u64::from_str_radix(s, 16)),
+            char(','),
+            map_res(hex_digit1, |s| u64::from_str_radix(s, 16)),
+        ),
+    )
+    .parse(input)?;
+
+    let (input, _) = char(':')(input)?;
+    let (input, hex_data) = nom::character::complete::hex_digit0(input)?;
+    let data = hex::decode(hex_data).map_err(|_| {
+        nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
+    })?;
+
+    if data.len() as u64 != length {
+        return Err(nom::Err::Failure(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Fail,
+        )));
+    }
+
+    Ok((input, (addr, data)))
 }
 
 fn parse_breakpoint(input: &str, prefix: char) -> IResult<&str, (BreakpointType, u64, u64)> {
@@ -291,6 +382,28 @@ mod tests {
 
     const TEST_PAYLOAD: &[u8] = &[0xde, 0xca, 0xfb, 0xad];
     const TEST_PAYLOAD_STR: &str = "decafbad";
+
+    #[test]
+    fn test_encode_write_memory() {
+        let packet = Packet::WriteMemory {
+            addr: 0x1234,
+            data: TEST_PAYLOAD.to_vec(),
+        };
+        assert_eq!(packet.encode_payload(), "M1234,4:decafbad");
+    }
+
+    #[test]
+    fn test_decode_write_memory() {
+        let input = "M1234,4:decafbad";
+        let (_, packet) = Packet::decode_payload(input).unwrap();
+        assert_eq!(
+            packet,
+            Packet::WriteMemory {
+                addr: 0x1234,
+                data: TEST_PAYLOAD.to_vec(),
+            }
+        );
+    }
 
     #[test]
     fn test_encode_read_memory_response() {
@@ -367,5 +480,19 @@ mod tests {
             Packet::decode_payload("T00tnotrun:0;").unwrap(),
             ("tnotrun:0;", Packet::StopReply(StopReply::Signal(0)))
         );
+    }
+
+    #[test]
+    fn test_max_write_memory_chunk_size() {
+        // addr = 0x1000 (4 hex digits). fixed_overhead = 7 + 4 = 11.
+        // max_packet_size = 14:
+        // $M1000,1:aa#xx -> 14 bytes (1 byte chunk, 1 digit len '1')
+        assert_eq!(
+            Packet::max_write_memory_chunk_size(14, 0x1000, 10).unwrap(),
+            1
+        );
+
+        // max_packet_size = 13 (too small for 11 + 1 + 2 = 14 bytes min)
+        Packet::max_write_memory_chunk_size(13, 0x1000, 10).unwrap_err();
     }
 }

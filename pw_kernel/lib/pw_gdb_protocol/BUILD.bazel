@@ -58,3 +58,12 @@ rust_test(
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],
 )
+
+rust_test(
+    name = "cli_test",
+    crate = ":cli",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
+)
