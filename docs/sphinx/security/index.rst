@@ -38,3 +38,5 @@ able to stay up-to-date.
 
 .. toctree::
    :maxdepth: 2
+
+   2026/index
