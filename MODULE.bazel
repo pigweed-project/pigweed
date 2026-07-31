@@ -55,7 +55,7 @@ bazel_dep(name = "rules_jni", version = "0.11.1")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 bazel_dep(name = "rules_libusb", version = "0.1.0-rc2.bcr.1")
 bazel_dep(name = "rules_license", version = "1.0.0")
-bazel_dep(name = "rules_nodejs", version = "6.7.4")
+bazel_dep(name = "rules_nodejs", version = "6.7.5")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_probe_rs", version = "0.0.6")
 bazel_dep(name = "rules_python", version = "1.8.5")
@@ -661,7 +661,7 @@ use_repo(doxygen_extension, "doxygen")
 # ==============================
 
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_dependency = True)
-node.toolchain(node_version = "20.12.1")
+node.toolchain(node_version = "26.5.0")
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
 npm.npm_translate_lock(

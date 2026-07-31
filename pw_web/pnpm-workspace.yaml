@@ -15,3 +15,29 @@
 packages:
   - '.'
   - '../pw_async2/codelab/webui'
+allowBuilds:
+  esbuild: true
+  install-peers: true
+  protoc-gen-js: true
+minimumReleaseAgeExclude:
+  - bl@0.9.5 || 1.2.3
+  - esbuild@0.24.3
+  - tmp@0.2.4 || 0.2.6
+  - elliptic@6.6.2
+  - semver@4.3.2 || 5.7.2
+  - serialize-javascript@7.0.3 || 7.0.5
+  - vite@6.4.2 || 6.4.3
+  - adm-zip@0.6.0
+  - brace-expansion@5.0.8
+overrides:
+  adm-zip@<0.6.0: ^0.6.0
+  bl@<0.9.5: ^0.9.5
+  bl@<1.2.3: ^1.2.3
+  brace-expansion@<=5.0.7: ^5.0.8
+  esbuild@<=0.24.2: ^0.24.3
+  semver@>=1.0.4 <4.3.2: ^4.3.2
+  semver@>=2.0.0-alpha <5.7.2: ^5.7.2
+  serialize-javascript@<=7.0.2: ^7.0.3
+  serialize-javascript@>=5.0.0 <7.0.5: ^7.0.5
+  vite@<=6.4.1: ^6.4.2
+  vite@<=6.4.2: ^6.4.3
