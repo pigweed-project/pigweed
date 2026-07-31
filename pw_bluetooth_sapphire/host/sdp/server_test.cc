@@ -17,6 +17,7 @@
 #include <pw_bytes/endian.h>
 
 #include <cstdint>
+#include <vector>
 
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/fake_channel_test.h"
@@ -1995,6 +1996,441 @@ TEST_F(ServerTest, HandleRequestWithoutChannel) {
       std::unique_ptr<ByteBuffer>(new StaticByteBuffer(kL2capSearch)),
       l2cap::kDefaultMTU);
   EXPECT_TRUE(ContainersEqual(*search_rsp.value(), kL2capSearchResponse));
+}
+
+// Verify that continuation requests hit the cache, and the cache is shared
+// across channels and cleared when services are modified.
+TEST_F(ServerTest, ContinuationCacheLifecycle) {
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(
+      kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad, 48 /* tx_mtu */));
+  RunUntilIdle();
+
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kSerialPort});
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                               protocol::kL2CAP,
+                               DataElement(uint16_t{0x1001}));
+  record.SetAttribute(
+      0xf00d,
+      DataElement(std::string(
+          "A very long string attribute that will exceed the MTU size when "
+          "serialized together with other attributes to force continuation")));
+  RegistrationHandle handle = server()->RegisterService(
+      {std::move(record)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle);
+
+  size_t received = 0;
+  std::vector<uint8_t> continuation_state;
+
+  auto send_cb = [&](auto cb_packet) {
+    received++;
+    PacketView<sdp::Header> packet(cb_packet.get());
+
+    ASSERT_EQ(0x07, packet.header().pdu_id);
+
+    uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                               packet.header().param_length);
+    packet.Resize(len);
+
+    uint16_t attr_list_byte_count =
+        (packet.payload_data()[0] << 8) | packet.payload_data()[1];
+
+    uint8_t continuation_state_length =
+        packet.payload_data()[2 + attr_list_byte_count];
+
+    if (received == 1) {
+      ASSERT_EQ(4u, continuation_state_length);
+      const uint8_t* continuation_src =
+          packet.payload_data().data() + 2 + attr_list_byte_count + 1;
+      continuation_state = std::vector<uint8_t>(
+          continuation_src, continuation_src + continuation_state_length);
+
+      // clang-format off
+      StaticByteBuffer req_start(
+          0x06,                         // ServiceSearchAttributeRequest
+          0x10, 0xC1,                   // TID
+          0x00, 0x00,                   // Parameter length (fill later)
+          0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+          0x00, 0x10,                   // Max attribute byte count
+          0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF); // Attribute ID list (All)
+      // clang-format on
+
+      uint16_t param_size =
+          req_start.size() - sizeof(Header) + 1 + continuation_state_length;
+
+      DynamicByteBuffer req(req_start.size() + 1 + continuation_state_length);
+      req_start.Copy(&req);
+      req.mutable_data()[3] = static_cast<uint8_t>(param_size >> 8);
+      req.mutable_data()[4] = static_cast<uint8_t>(param_size & 0xff);
+      req.Write(&continuation_state_length, sizeof(uint8_t), req_start.size());
+      req.Write(continuation_state.data(),
+                continuation_state.size(),
+                req_start.size() + 1);
+
+      fake_chan()->Receive(req);
+    } else if (received == 2) {
+      EXPECT_GT(attr_list_byte_count, 0u);
+
+      // clang-format off
+      StaticByteBuffer new_req(
+          0x06,                         // ServiceSearchAttributeRequest
+          0x10, 0xC2,                   // Different TID
+          0x00, 0x0F,                   // Parameter length (15)
+          0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+          0x00, 0xFF,                   // Max attribute byte count
+          0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+          0x00                          // No continuation
+      );
+      // clang-format on
+      fake_chan()->Receive(new_req);
+    } else if (received == 3) {
+      EXPECT_GT(attr_list_byte_count, 0u);
+    }
+  };
+
+  fake_chan()->SetSendCallback(send_cb, dispatcher());
+
+  // clang-format off
+  StaticByteBuffer req(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0xC1,                   // TID
+      0x00, 0x0F,                   // Parameter length (15)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0x10,                   // Max attribute byte count
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x00                          // No continuation
+  );
+  // clang-format on
+
+  fake_chan()->Receive(req);
+  RunUntilIdle();
+
+  EXPECT_EQ(3u, received);
+
+  fake_chan()->Close();
+  RunUntilIdle();
+
+  // clang-format off
+  StaticByteBuffer cont_req_direct(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0xC1,                   // TID
+      0x00, 0x13,                   // Parameter length (19)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0x10,                   // Max attribute byte count
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x04,                         // Continuation length
+      continuation_state[0], continuation_state[1],
+      continuation_state[2], continuation_state[3]);
+  // clang-format on
+
+  auto direct_rsp = server()->HandleRequest(
+      std::make_unique<DynamicByteBuffer>(cont_req_direct), l2cap::kDefaultMTU);
+
+  ASSERT_TRUE(direct_rsp.has_value());
+  PacketView<sdp::Header> succ_packet(direct_rsp.value().get());
+  EXPECT_EQ(0x07, succ_packet.header().pdu_id);
+
+  // Modifying service records clears the cached responses.
+  EXPECT_TRUE(server()->UnregisterService(handle));
+  auto err_rsp = server()->HandleRequest(
+      std::make_unique<DynamicByteBuffer>(cont_req_direct), l2cap::kDefaultMTU);
+  ASSERT_TRUE(err_rsp.has_value());
+  PacketView<sdp::Header> err_packet(err_rsp.value().get());
+  EXPECT_EQ(0x01, err_packet.header().pdu_id);
+}
+
+// Verify that a new transaction (empty continuation state) with identical
+// query parameters on an open channel bypasses any stale cached response.
+TEST_F(ServerTest, ContinuationCacheNewTransactionBypassesCache) {
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(
+      kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad, l2cap::kDefaultMTU));
+  RunUntilIdle();
+
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kSerialPort});
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                               protocol::kL2CAP,
+                               DataElement(uint16_t{0x1001}));
+  record.SetAttribute(0xf00d, DataElement(std::string("Initial Value")));
+  RegistrationHandle handle1 = server()->RegisterService(
+      {std::move(record)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle1);
+
+  size_t received = 0;
+  auto send_cb = [&](auto cb_packet) {
+    received++;
+    PacketView<sdp::Header> packet(cb_packet.get());
+    ASSERT_EQ(kServiceSearchAttributeResponse, packet.header().pdu_id);
+
+    uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                               packet.header().param_length);
+    packet.Resize(len);
+
+    ServiceSearchAttributeResponse resp;
+    EXPECT_EQ(fit::ok(), resp.Parse(packet.payload_data()));
+    ASSERT_EQ(1u, resp.num_attribute_lists());
+    auto& attributes = resp.attributes(0);
+    auto attr_it = attributes.find(0xf00d);
+    ASSERT_NE(attributes.end(), attr_it);
+    ASSERT_TRUE(attr_it->second.Get<std::string>());
+
+    if (received == 1) {
+      EXPECT_EQ("Initial Value", *attr_it->second.Get<std::string>());
+    } else if (received == 2) {
+      EXPECT_EQ("Updated Value", *attr_it->second.Get<std::string>());
+    }
+  };
+
+  fake_chan()->SetSendCallback(send_cb, dispatcher());
+
+  // clang-format off
+  StaticByteBuffer req(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0xC1,                   // TID
+      0x00, 0x0F,                   // Parameter length (15)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0xFF,                   // Max attribute byte count
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x00                          // No continuation
+  );
+  // clang-format on
+
+  fake_chan()->Receive(req);
+  RunUntilIdle();
+  EXPECT_EQ(1u, received);
+
+  EXPECT_TRUE(server()->UnregisterService(handle1));
+
+  ServiceRecord record2;
+  record2.SetServiceClassUUIDs({profile::kSerialPort});
+  record2.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                                protocol::kL2CAP,
+                                DataElement(uint16_t{0x1001}));
+  record2.SetAttribute(0xf00d, DataElement(std::string("Updated Value")));
+  RegistrationHandle handle2 = server()->RegisterService(
+      {std::move(record2)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle2);
+
+  // Re-send exact same request without continuation state. It must bypass the
+  // stale cache and serve the updated service attributes.
+  fake_chan()->Receive(req);
+  RunUntilIdle();
+  EXPECT_EQ(2u, received);
+}
+
+// Verify that sending a request with a continuation state when no prior
+// transaction exists on the open channel returns kInvalidContinuationState.
+TEST_F(ServerTest, ContinuationRequestWithoutPriorTransactionReturnsError) {
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(
+      kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad, l2cap::kDefaultMTU));
+  RunUntilIdle();
+
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kSerialPort});
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                               protocol::kL2CAP,
+                               DataElement(uint16_t{0x1001}));
+  RegistrationHandle handle = server()->RegisterService(
+      {std::move(record)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle);
+
+  bool received = false;
+  auto send_cb = [&received](auto cb_packet) {
+    received = true;
+    PacketView<sdp::Header> packet(cb_packet.get());
+    ASSERT_EQ(kErrorResponse, packet.header().pdu_id);
+    uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                               packet.header().param_length);
+    packet.Resize(len);
+    ErrorResponse rsp;
+    EXPECT_EQ(fit::ok(), rsp.Parse(packet.payload_data()));
+    EXPECT_EQ(ErrorCode::kInvalidContinuationState, rsp.error_code());
+  };
+
+  fake_chan()->SetSendCallback(send_cb, dispatcher());
+
+  // clang-format off
+  // Request with a placeholder continuation state of length 2
+  StaticByteBuffer req(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0xC1,                   // TID
+      0x00, 0x11,                   // Parameter length (17)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0xFF,                   // Max attribute byte count
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x02,                         // Continuation state length
+      0x00, 0x05                    // Continuation state data
+  );
+  // clang-format on
+
+  fake_chan()->Receive(req);
+  RunUntilIdle();
+  EXPECT_TRUE(received);
+}
+
+// Verify that altering query parameters mid-transaction on a valid continuation
+// state is rejected with kInvalidContinuationState.
+TEST_F(ServerTest, ContinuationRequestWithModifiedParametersReturnsError) {
+  EXPECT_TRUE(l2cap()->TriggerInboundL2capChannel(
+      kTestHandle1, l2cap::kSDP, kSdpChannel, 0x0bad, 48 /* tx_mtu */));
+  RunUntilIdle();
+
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kSerialPort});
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                               protocol::kL2CAP,
+                               DataElement(uint16_t{0x1001}));
+  record.SetAttribute(
+      0xf00d,
+      DataElement(std::string(
+          "A very long string attribute that will exceed the MTU size when "
+          "serialized together with other attributes to force continuation")));
+  RegistrationHandle handle = server()->RegisterService(
+      {std::move(record)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle);
+
+  size_t received = 0;
+  auto send_cb = [&](auto cb_packet) {
+    received++;
+    PacketView<sdp::Header> packet(cb_packet.get());
+
+    if (received == 1) {
+      ASSERT_EQ(kServiceSearchAttributeResponse, packet.header().pdu_id);
+      uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                                 packet.header().param_length);
+      packet.Resize(len);
+      uint16_t attr_list_byte_count =
+          (packet.payload_data()[0] << 8) | packet.payload_data()[1];
+      uint8_t cont_len = packet.payload_data()[2 + attr_list_byte_count];
+      ASSERT_GT(cont_len, 0u);
+      const uint8_t* cont_src =
+          packet.payload_data().data() + 2 + attr_list_byte_count + 1;
+
+      // clang-format off
+      // Construct continuation request, but modify MaxAttributeByteCount from 0x0010 to 0x0020
+      StaticByteBuffer req_start(
+          0x06,                         // ServiceSearchAttributeRequest
+          0x10, 0xC2,                   // TID
+          0x00, 0x00,                   // Parameter length (fill later)
+          0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+          0x00, 0x20,                   // Max attribute byte count
+          0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF); // Attribute ID list (All)
+      // clang-format on
+      uint16_t param_size = req_start.size() - sizeof(Header) + 1 + cont_len;
+      DynamicByteBuffer req(req_start.size() + 1 + cont_len);
+      req_start.Copy(&req);
+      req.mutable_data()[3] = static_cast<uint8_t>(param_size >> 8);
+      req.mutable_data()[4] = static_cast<uint8_t>(param_size & 0xff);
+      req.Write(&cont_len, sizeof(uint8_t), req_start.size());
+      req.Write(cont_src, cont_len, req_start.size() + 1);
+
+      fake_chan()->Receive(req);
+    } else if (received == 2) {
+      ASSERT_EQ(kErrorResponse, packet.header().pdu_id);
+      uint16_t len = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                                 packet.header().param_length);
+      packet.Resize(len);
+      ErrorResponse rsp;
+      EXPECT_EQ(fit::ok(), rsp.Parse(packet.payload_data()));
+      EXPECT_EQ(ErrorCode::kInvalidContinuationState, rsp.error_code());
+    }
+  };
+
+  fake_chan()->SetSendCallback(send_cb, dispatcher());
+
+  // clang-format off
+  StaticByteBuffer req(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0xC1,                   // TID
+      0x00, 0x0F,                   // Parameter length (15)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0x10,                   // Max attribute byte count
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x00                          // No continuation
+  );
+  // clang-format on
+
+  fake_chan()->Receive(req);
+  RunUntilIdle();
+  EXPECT_EQ(2u, received);
+}
+
+// Verify that the response cache holds up to kMaxCachedResponses entries and
+// evicts the least recently used response when full.
+TEST_F(ServerTest, ContinuationCacheLruEviction) {
+  ServiceRecord record;
+  record.SetServiceClassUUIDs({profile::kSerialPort});
+  record.AddProtocolDescriptor(ServiceRecord::kPrimaryProtocolList,
+                               protocol::kL2CAP,
+                               DataElement(uint16_t{0x1001}));
+  record.SetAttribute(
+      0xf00d,
+      DataElement(std::string(
+          "A very long string attribute that will exceed the MTU size when "
+          "serialized together with other attributes to force continuation")));
+  RegistrationHandle handle = server()->RegisterService(
+      {std::move(record)}, kChannelParams, NopConnectCallback);
+  ASSERT_NE(0u, handle);
+
+  // Send an initial request that generates continuation state.
+  // clang-format off
+  StaticByteBuffer req_start(
+      0x06,                         // ServiceSearchAttributeRequest
+      0x10, 0x01,                   // TID
+      0x00, 0x0F,                   // Parameter length (15)
+      0x35, 0x03, 0x19, 0x01, 0x00, // Search pattern (L2CAP)
+      0x00, 0x10,                   // Max attribute byte count: 16 (0x0010)
+      0x35, 0x05, 0x0A, 0x00, 0x00, 0xFF, 0xFF, // Attribute ID list (All)
+      0x00                          // No continuation
+  );
+  // clang-format on
+
+  auto rsp1 = server()->HandleRequest(
+      std::make_unique<DynamicByteBuffer>(req_start), l2cap::kDefaultMTU);
+  ASSERT_TRUE(rsp1.has_value());
+  PacketView<sdp::Header> packet1(rsp1.value().get());
+  ASSERT_EQ(kServiceSearchAttributeResponse, packet1.header().pdu_id);
+
+  // Extract continuation state from rsp1.
+  uint16_t len1 = pw::bytes::ConvertOrderFrom(cpp20::endian::big,
+                                              packet1.header().param_length);
+  packet1.Resize(len1);
+  uint16_t attr_list_byte_count =
+      (packet1.payload_data()[0] << 8) | packet1.payload_data()[1];
+  uint8_t cont_len = packet1.payload_data()[2 + attr_list_byte_count];
+  ASSERT_GT(cont_len, 0u);
+  std::vector<uint8_t> cont_state(
+      packet1.payload_data().data() + 2 + attr_list_byte_count + 1,
+      packet1.payload_data().data() + 2 + attr_list_byte_count + 1 + cont_len);
+
+  // Now perform kMaxCachedResponses distinct initial requests (by varying max
+  // attribute byte count) to push out the original response from the LRU cache.
+  for (uint16_t i = 0; i < 10; ++i) {
+    DynamicByteBuffer req_i(req_start.size());
+    req_start.Copy(&req_i);
+    // Vary MaxAttributeByteCount so each request has a unique RequestKey.
+    req_i.mutable_data()[10] = static_cast<uint8_t>(0x11 + i);
+    auto rsp_i = server()->HandleRequest(
+        std::make_unique<DynamicByteBuffer>(req_i), l2cap::kDefaultMTU);
+    ASSERT_TRUE(rsp_i.has_value());
+  }
+
+  // Now attempt to use the continuation state from the very first request.
+  // Because it was evicted from the LRU cache, it should fail with
+  // kInvalidContinuationState.
+  uint16_t param_size = req_start.size() - sizeof(Header) + cont_len;
+  DynamicByteBuffer cont_req(req_start.size() + cont_len);
+  req_start.Copy(&cont_req);
+  cont_req.mutable_data()[3] = static_cast<uint8_t>(param_size >> 8);
+  cont_req.mutable_data()[4] = static_cast<uint8_t>(param_size & 0xff);
+  cont_req.Write(&cont_len, sizeof(uint8_t), req_start.size() - 1);
+  cont_req.Write(cont_state.data(), cont_state.size(), req_start.size());
+
+  auto cont_rsp = server()->HandleRequest(
+      std::make_unique<DynamicByteBuffer>(cont_req), l2cap::kDefaultMTU);
+  ASSERT_TRUE(cont_rsp.has_value());
+  PacketView<sdp::Header> err_packet(cont_rsp.value().get());
+  EXPECT_EQ(kErrorResponse, err_packet.header().pdu_id);
 }
 
 #undef SDP_ERROR_RSP

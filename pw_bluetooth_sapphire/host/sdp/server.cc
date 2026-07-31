@@ -576,6 +576,9 @@ RegistrationHandle Server::RegisterService(std::vector<ServiceRecord> records,
   // registered.
   reg_to_service_[reg_handle] = std::move(assigned_handles);
 
+  // Clear cached responses as the registered service records have changed.
+  cached_responses_.clear();
+
   // Update the inspect properties.
   UpdateInspectProperties();
 
@@ -609,6 +612,9 @@ bool Server::UnregisterService(RegistrationHandle handle) {
 
     records_.erase(svc_h);
   }
+
+  // Clear cached responses as the registered service records have changed.
+  cached_responses_.clear();
 
   // Update the inspect properties as the registered PSMs may have changed.
   UpdateInspectProperties();
@@ -718,6 +724,20 @@ void Server::OnChannelClosed(l2cap::Channel::UniqueId channel_id) {
   channels_.erase(channel_id);
 }
 
+std::optional<Server::RequestKey> Server::GetRequestKey(
+    uint8_t pdu_id,
+    const BufferView& payload_data,
+    const BufferView& cont_state) {
+  size_t cont_state_full_len = cont_state.size() + 1;
+  if (payload_data.size() < cont_state_full_len) {
+    return std::nullopt;
+  }
+  size_t param_len = payload_data.size() - cont_state_full_len;
+  std::vector<uint8_t> params(payload_data.data(),
+                              payload_data.data() + param_len);
+  return RequestKey{.pdu_id = pdu_id, .parameters = std::move(params)};
+}
+
 std::optional<ByteBufferPtr> Server::HandleRequest(ByteBufferPtr sdu,
                                                    uint16_t max_tx_sdu_size) {
   PW_DCHECK(sdu);
@@ -745,6 +765,45 @@ std::optional<ByteBufferPtr> Server::HandleRequest(ByteBufferPtr sdu,
     return error_response_builder(ErrorCode::kInvalidSize);
   }
   packet.Resize(param_length);
+  auto generate_attribute_response_pdu =
+      [this, &packet, tid, max_tx_sdu_size, &error_response_builder](
+          const BufferView& cont_state,
+          uint16_t max_attribute_byte_count,
+          auto&& create_response_fn) -> ByteBufferPtr {
+    auto key = GetRequestKey(
+        packet.header().pdu_id, packet.payload_data(), cont_state);
+    if (!key) {
+      return error_response_builder(ErrorCode::kInvalidRequestSyntax);
+    }
+
+    std::optional<std::reference_wrapper<Response>> resp;
+    if (auto cached = cached_responses_.get(*key); cached) {
+      bt_log(TRACE, "sdp", "Cache hit for attribute request");
+      resp = *(cached->get());
+    } else {
+      if (!cont_state.empty()) {
+        bt_log(TRACE,
+               "sdp",
+               "No matching cached transaction for continuation state");
+        return error_response_builder(ErrorCode::kInvalidContinuationState);
+      }
+      auto new_resp = create_response_fn();
+      resp = *new_resp;
+      cached_responses_.put(*key, std::move(new_resp));
+    }
+
+    bool has_continuation = false;
+    auto bytes = resp->get().GetPDU(max_attribute_byte_count,
+                                    tid,
+                                    max_tx_sdu_size,
+                                    cont_state,
+                                    &has_continuation);
+    if (!bytes) {
+      return error_response_builder(ErrorCode::kInvalidContinuationState);
+    }
+    return std::move(bytes);
+  };
+
   switch (packet.header().pdu_id) {
     case kServiceSearchRequest: {
       ServiceSearchRequest request(packet.payload_data());
@@ -778,15 +837,14 @@ std::optional<ByteBufferPtr> Server::HandleRequest(ByteBufferPtr sdu,
                handle);
         return error_response_builder(ErrorCode::kInvalidRecordHandle);
       }
-      auto resp = GetServiceAttributes(handle, request.attribute_ranges());
-      auto bytes = resp.GetPDU(request.max_attribute_byte_count(),
-                               tid,
-                               max_tx_sdu_size,
-                               request.ContinuationState());
-      if (!bytes) {
-        return error_response_builder(ErrorCode::kInvalidContinuationState);
-      }
-      return std::move(bytes);
+
+      return generate_attribute_response_pdu(
+          request.ContinuationState(),
+          request.max_attribute_byte_count(),
+          [this, handle, &request]() {
+            return std::make_unique<ServiceAttributeResponse>(
+                GetServiceAttributes(handle, request.attribute_ranges()));
+          });
     }
     case kServiceSearchAttributeRequest: {
       ServiceSearchAttributeRequest request(packet.payload_data());
@@ -794,16 +852,15 @@ std::optional<ByteBufferPtr> Server::HandleRequest(ByteBufferPtr sdu,
         bt_log(TRACE, "sdp", "ServiceSearchAttributeRequest not valid");
         return error_response_builder(ErrorCode::kInvalidRequestSyntax);
       }
-      auto resp = SearchAllServiceAttributes(request.service_search_pattern(),
-                                             request.attribute_ranges());
-      auto bytes = resp.GetPDU(request.max_attribute_byte_count(),
-                               tid,
-                               max_tx_sdu_size,
-                               request.ContinuationState());
-      if (!bytes) {
-        return error_response_builder(ErrorCode::kInvalidContinuationState);
-      }
-      return std::move(bytes);
+
+      return generate_attribute_response_pdu(
+          request.ContinuationState(),
+          request.max_attribute_byte_count(),
+          [this, &request]() {
+            return std::make_unique<ServiceSearchAttributeResponse>(
+                SearchAllServiceAttributes(request.service_search_pattern(),
+                                           request.attribute_ranges()));
+          });
     }
     case kErrorResponse: {
       bt_log(TRACE, "sdp", "ErrorResponse isn't allowed as a request");

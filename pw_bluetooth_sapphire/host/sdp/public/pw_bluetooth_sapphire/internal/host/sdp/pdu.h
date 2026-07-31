@@ -122,7 +122,15 @@ class Response {
   virtual MutableByteBufferPtr GetPDU(uint16_t req_max,
                                       TransactionId tid,
                                       uint16_t max_size,
-                                      const ByteBuffer& cont_state) const = 0;
+                                      const ByteBuffer& cont_state,
+                                      bool* out_has_continuation_state) = 0;
+
+  MutableByteBufferPtr GetPDU(uint16_t req_max,
+                              TransactionId tid,
+                              uint16_t max_size,
+                              const ByteBuffer& cont_state) {
+    return GetPDU(req_max, tid, max_size, cont_state, nullptr);
+  }
 };
 
 // Error Response PDU, generated when the SDP server can't respond to a PDU
@@ -144,10 +152,12 @@ class ErrorResponse : public Response {
 
   // Note: |max_size| and |cont_state| are ignored.
   // Error Responses do not have a valid continuation.
+  using Response::GetPDU;
   MutableByteBufferPtr GetPDU(uint16_t req_max,
                               TransactionId tid,
                               uint16_t max_size,
-                              const ByteBuffer& cont_state) const override;
+                              const ByteBuffer& cont_state,
+                              bool* out_has_continuation_state) override;
 
   const std::optional<ErrorCode>& error_code() const { return error_code_; }
   void set_error_code(ErrorCode code) { error_code_ = code; }
@@ -210,11 +220,12 @@ class ServiceSearchResponse : public Response {
   // server_test.cc) to verify server response generation. It is not used in
   // production client code.
   fit::result<Error<>> Parse(const ByteBuffer& buf) override;
-
+  using Response::GetPDU;
   MutableByteBufferPtr GetPDU(uint16_t req_max,
                               TransactionId tid,
                               uint16_t max_size,
-                              const ByteBuffer& cont_state) const override;
+                              const ByteBuffer& cont_state,
+                              bool* out_has_continuation_state) override;
 
   // The ServiceRecordHandleList contains as list of service record handles.
   // This should be set to the list of handles that match the request.
@@ -319,13 +330,16 @@ class ServiceAttributeResponse : public Response {
   const BufferView ContinuationState() const override;
   bool complete() const override;
   fit::result<Error<>> Parse(const ByteBuffer& buf) override;
+  using Response::GetPDU;
   MutableByteBufferPtr GetPDU(uint16_t req_max,
                               TransactionId tid,
                               uint16_t max_size,
-                              const ByteBuffer& cont_state) const override;
+                              const ByteBuffer& cont_state,
+                              bool* out_has_continuation_state) override;
 
   void set_attribute(AttributeId id, DataElement value) {
     attributes_.emplace(id, std::move(value));
+    cached_payload_ = nullptr;
   }
   const std::map<AttributeId, DataElement>& attributes() const {
     return attributes_;
@@ -346,6 +360,9 @@ class ServiceAttributeResponse : public Response {
   MutableByteBufferPtr partial_response_;
 
   MutableByteBufferPtr continuation_state_;
+
+  MutableByteBufferPtr GetSerializedPayload() const;
+  ByteBufferPtr cached_payload_;
 };
 
 // Combines the capabilities of ServiceSearchRequest and ServiceAttributeRequest
@@ -420,10 +437,12 @@ class ServiceSearchAttributeResponse : public Response {
   const BufferView ContinuationState() const override;
   bool complete() const override;
   fit::result<Error<>> Parse(const ByteBuffer& buf) override;
+  using Response::GetPDU;
   MutableByteBufferPtr GetPDU(uint16_t req_max,
                               TransactionId tid,
                               uint16_t max_size,
-                              const ByteBuffer& cont_state) const override;
+                              const ByteBuffer& cont_state,
+                              bool* out_has_continuation_state) override;
 
   // Set an attribute to be included in the response.
   // |idx| is used to group attributes and does not need to be contiguous for
@@ -456,6 +475,9 @@ class ServiceSearchAttributeResponse : public Response {
   MutableByteBufferPtr partial_response_;
 
   MutableByteBufferPtr continuation_state_;
+
+  MutableByteBufferPtr GetSerializedPayload() const;
+  ByteBufferPtr cached_payload_;
 };
 
 }  // namespace bt::sdp

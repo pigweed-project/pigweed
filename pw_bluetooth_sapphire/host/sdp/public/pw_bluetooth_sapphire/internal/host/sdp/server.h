@@ -15,9 +15,12 @@
 #pragma once
 #include <lib/fit/function.h>
 
+#include <functional>
+#include <list>
 #include <optional>
 #include <unordered_map>
 
+#include "pw_bluetooth_sapphire/internal/host/common/lru_cache.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
@@ -35,10 +38,16 @@ namespace bt::sdp {
 class Server final {
  public:
   static constexpr const char* kInspectNodeName = "sdp_server";
+
   // A placeholder value for a dynamic PSM.
   // Note: This is not a valid PSM value itself. It is used to request a
   // randomly generated dynamic PSM.
   static constexpr uint16_t kDynamicPsm = 0xffff;
+
+  // The maximum number of recently generated SDP responses to store in the LRU
+  // cache across all connected channels. This mitigates CPU amplification from
+  // repeated queries while curbing unbounded memory usage.
+  static constexpr size_t kMaxCachedResponses = 10;
 
   // A new SDP server, which starts with just a ServiceDiscoveryService record.
   // Registers itself with |l2cap| when created.
@@ -106,6 +115,26 @@ class Server final {
   std::set<l2cap::Psm> AllocatedPsmsForTest() const;
 
  private:
+  struct RequestKey {
+    uint8_t pdu_id;
+    std::vector<uint8_t> parameters;
+
+    bool operator==(const RequestKey& other) const {
+      return pdu_id == other.pdu_id && parameters == other.parameters;
+    }
+    bool operator!=(const RequestKey& other) const { return !(*this == other); }
+  };
+
+  struct RequestKeyHasher {
+    std::size_t operator()(const RequestKey& key) const {
+      std::size_t hash = std::hash<uint8_t>{}(key.pdu_id);
+      for (uint8_t byte : key.parameters) {
+        hash = ((hash << 5) + hash) ^ byte;
+      }
+      return hash;
+    }
+  };
+
   // Returns the next unused Service Handle, or 0 if none are available.
   ServiceHandle GetNextHandle();
 
@@ -164,8 +193,13 @@ class Server final {
   // |conn|. Logs an error if channel not found.
   void Send(l2cap::Channel::UniqueId channel_id, ByteBufferPtr bytes);
 
-  // Used to register callbacks for the channels of services registered.
-  l2cap::ChannelManager* l2cap_;
+  // Constructs a RequestKey by stripping the continuation state and its
+  // preceding length byte from |payload_data|, isolating the immutable request
+  // parameters for a given |pdu_id|. Returns std::nullopt if |payload_data| is
+  // malformed or too small to contain the provided |cont_state|.
+  static std::optional<RequestKey> GetRequestKey(uint8_t pdu_id,
+                                                 const BufferView& payload_data,
+                                                 const BufferView& cont_state);
 
   struct InspectProperties {
     // Inspect hierarchy node representing the sdp server.
@@ -191,11 +225,20 @@ class Server final {
     // The currently registered ServiceRecords.
     std::vector<InspectServiceRecordProperties> svc_record_properties;
   };
+
+  // Used to register callbacks for the channels of services registered.
+  l2cap::ChannelManager* l2cap_;
   InspectProperties inspect_properties_;
 
-  // Map of channels that are opened to the server.  Keyed by the channels
-  // unique id.
+  // Channels currently connected to this server.
   std::unordered_map<l2cap::Channel::UniqueId, l2cap::ScopedChannel> channels_;
+
+  // LRU cache of recently generated responses (up to kMaxCachedResponses),
+  // shared across channels to avoid repeating computation on duplicate
+  // requests.
+  LruCache<RequestKey, std::unique_ptr<Response>, RequestKeyHasher>
+      cached_responses_{kMaxCachedResponses};
+
   // The map of ServiceHandles that are associated with ServiceRecords.
   // This is a 1:1 mapping.
   std::unordered_map<ServiceHandle, ServiceRecord> records_;

@@ -17,6 +17,8 @@
 #include <pw_assert/check.h>
 #include <pw_bytes/endian.h>
 
+#include <algorithm>
+#include <limits>
 #include <memory>
 
 #include "public/pw_bluetooth_sapphire/internal/host/sdp/pdu.h"
@@ -222,7 +224,11 @@ fit::result<Error<>> ErrorResponse::Parse(const ByteBuffer& buf) {
 MutableByteBufferPtr ErrorResponse::GetPDU(uint16_t,
                                            TransactionId tid,
                                            uint16_t,
-                                           const ByteBuffer&) const {
+                                           const ByteBuffer&,
+                                           bool* out_has_continuation_state) {
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = false;
+  }
   if (!complete()) {
     return nullptr;
   }
@@ -430,7 +436,11 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
     uint16_t req_max,
     TransactionId tid,
     uint16_t max_size,
-    const ByteBuffer& cont_state) const {
+    const ByteBuffer& cont_state,
+    bool* out_has_continuation_state) {
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = false;
+  }
   if (!complete()) {
     return nullptr;
   }
@@ -529,6 +539,11 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
     written += sizeof(uint16_t);
   }
   PW_DCHECK(written == sizeof(Header) + size);
+
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = (info_length > 0);
+  }
+
   return buf;
 }
 
@@ -650,6 +665,7 @@ const BufferView ServiceAttributeResponse::ContinuationState() const {
 bool ServiceAttributeResponse::complete() const { return !continuation_state_; }
 
 fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
+  cached_payload_ = nullptr;
   if (complete() && !attributes_.empty()) {
     // This response was previously complete and non-empty
     bt_log(TRACE, "sdp", "Can't parse into a complete response");
@@ -761,12 +777,30 @@ fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
   return fit::ok();
 }
 
+MutableByteBufferPtr ServiceAttributeResponse::GetSerializedPayload() const {
+  std::vector<DataElement> list;
+  list.reserve(2 * attributes_.size());
+  for (const auto& it : attributes_) {
+    list.emplace_back(static_cast<uint16_t>(it.first));
+    list.emplace_back(it.second.Clone());
+  }
+  DataElement list_elem(std::move(list));
+  size_t write_size = list_elem.WriteSize();
+  auto buf = NewBuffer(write_size);
+  list_elem.Write(buf.get());
+  return buf;
+}
+
 // Continuation state: index of # of bytes into the attribute list element
 MutableByteBufferPtr ServiceAttributeResponse::GetPDU(
     uint16_t req_max,
     TransactionId tid,
     uint16_t max_size,
-    const ByteBuffer& cont_state) const {
+    const ByteBuffer& cont_state,
+    bool* out_has_continuation_state) {
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = false;
+  }
   if (!complete()) {
     return nullptr;
   }
@@ -781,16 +815,10 @@ MutableByteBufferPtr ServiceAttributeResponse::GetPDU(
     return nullptr;
   }
 
-  // Returned in pairs of (attribute id, attribute value)
-  std::vector<DataElement> list;
-  list.reserve(2 * attributes_.size());
-  for (const auto& it : attributes_) {
-    list.emplace_back(static_cast<uint16_t>(it.first));
-    list.emplace_back(it.second.Clone());
+  if (!cached_payload_) {
+    cached_payload_ = GetSerializedPayload();
   }
-  DataElement list_elem(std::move(list));
-
-  size_t write_size = list_elem.WriteSize();
+  size_t write_size = cached_payload_->size();
 
   if (bytes_skipped > write_size) {
     bt_log(TRACE,
@@ -818,12 +846,15 @@ MutableByteBufferPtr ServiceAttributeResponse::GetPDU(
   const uint16_t max_attribute_byte_count = max_size - min_size + 2;
   if (attribute_list_byte_count > max_attribute_byte_count) {
     info_length = sizeof(uint32_t);
+    int available_bytes =
+        static_cast<int>(max_attribute_byte_count) - info_length;
+    size_t max_payload = static_cast<size_t>(std::max(0, available_bytes));
     bt_log(TRACE,
            "sdp",
-           "Max size limits attribute size to %hu of %zu",
-           max_attribute_byte_count - info_length,
+           "Max size limits attribute size to %zu of %zu",
+           max_payload,
            attribute_list_byte_count);
-    attribute_list_byte_count = max_attribute_byte_count - info_length;
+    attribute_list_byte_count = max_payload;
   }
 
   if (attribute_list_byte_count > req_max) {
@@ -851,23 +882,28 @@ MutableByteBufferPtr ServiceAttributeResponse::GetPDU(
       written);
   written += sizeof(uint16_t);
 
-  auto attribute_list_bytes = NewBuffer(write_size);
-  list_elem.Write(attribute_list_bytes.get());
-  buf->Write(
-      attribute_list_bytes->view(bytes_skipped, attribute_list_byte_count),
-      written);
+  buf->Write(cached_payload_->view(bytes_skipped, attribute_list_byte_count),
+             written);
   written += attribute_list_byte_count;
 
   // Continuation state
   buf->WriteObj(info_length, written);
   written += sizeof(uint8_t);
   if (info_length > 0) {
-    bytes_skipped += attribute_list_byte_count;
+    PW_DCHECK(bytes_skipped + attribute_list_byte_count <
+              std::numeric_limits<uint32_t>::max());
+    bytes_skipped =
+        static_cast<uint32_t>(bytes_skipped + attribute_list_byte_count);
     buf->WriteObj(pw::bytes::ConvertOrderTo(cpp20::endian::big, bytes_skipped),
                   written);
     written += sizeof(uint32_t);
   }
   PW_DCHECK(written == sizeof(Header) + size);
+
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = (info_length > 0);
+  }
+
   return buf;
 }
 
@@ -917,7 +953,7 @@ ServiceSearchAttributeRequest::ServiceSearchAttributeRequest(
   if (max_attribute_byte_count_ < kMinMaximumAttributeByteCount) {
     bt_log(TRACE,
            "sdp",
-           "max attribute byte count to small (%d)",
+           "max attribute byte count too small (%d)",
            max_attribute_byte_count_);
     max_attribute_byte_count_ = 0;
     return;
@@ -1035,6 +1071,7 @@ bool ServiceSearchAttributeResponse::complete() const {
 
 fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
     const ByteBuffer& buf) {
+  cached_payload_ = nullptr;
   if (complete() && !attribute_lists_.empty()) {
     // This response was previously complete and non-empty
     bt_log(TRACE, "sdp", "can't parse into a complete response");
@@ -1171,6 +1208,33 @@ void ServiceSearchAttributeResponse::SetAttribute(uint32_t idx,
     attribute_lists_.emplace(idx, std::map<AttributeId, DataElement>());
   }
   attribute_lists_[idx].emplace(id, std::move(value));
+  cached_payload_ = nullptr;
+}
+
+MutableByteBufferPtr ServiceSearchAttributeResponse::GetSerializedPayload()
+    const {
+  std::vector<DataElement> lists;
+  lists.reserve(attribute_lists_.size());
+
+  for (const auto& it : attribute_lists_) {
+    // Returned in pairs of (attribute id, attribute value)
+    std::vector<DataElement> list;
+    list.reserve(2 * it.second.size());
+
+    for (const auto& elem_it : it.second) {
+      list.emplace_back(static_cast<uint16_t>(elem_it.first));
+      list.emplace_back(elem_it.second.Clone());
+    }
+
+    lists.emplace_back(std::move(list));
+  }
+
+  DataElement list_elem(std::move(lists));
+  size_t write_size = list_elem.WriteSize();
+  auto buf = NewBuffer(write_size);
+  list_elem.Write(buf.get());
+
+  return buf;
 }
 
 // Continuation state: index of # of bytes into the attribute list element
@@ -1178,7 +1242,11 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
     uint16_t req_max,
     TransactionId tid,
     uint16_t max_size,
-    const ByteBuffer& cont_state) const {
+    const ByteBuffer& cont_state,
+    bool* out_has_continuation_state) {
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = false;
+  }
   if (!complete()) {
     return nullptr;
   }
@@ -1193,23 +1261,10 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
     return nullptr;
   }
 
-  std::vector<DataElement> lists;
-  lists.reserve(attribute_lists_.size());
-  for (const auto& it : attribute_lists_) {
-    // Returned in pairs of (attribute id, attribute value)
-    std::vector<DataElement> list;
-    list.reserve(2 * it.second.size());
-    for (const auto& elem_it : it.second) {
-      list.emplace_back(static_cast<uint16_t>(elem_it.first));
-      list.emplace_back(elem_it.second.Clone());
-    }
-
-    lists.emplace_back(std::move(list));
+  if (!cached_payload_) {
+    cached_payload_ = GetSerializedPayload();
   }
-
-  DataElement list_elem(std::move(lists));
-
-  size_t write_size = list_elem.WriteSize();
+  size_t write_size = cached_payload_->size();
 
   if (bytes_skipped > write_size) {
     bt_log(TRACE,
@@ -1237,12 +1292,15 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
   uint16_t max_attribute_byte_count = max_size - min_size + 2;
   if (attribute_lists_byte_count > max_attribute_byte_count) {
     info_length = sizeof(uint32_t);
+    int available_bytes =
+        static_cast<int>(max_attribute_byte_count) - info_length;
+    size_t max_payload = static_cast<size_t>(std::max(0, available_bytes));
     bt_log(TRACE,
            "sdp",
-           "Max size limits attribute size to %hu of %zu",
-           max_attribute_byte_count - info_length,
+           "Max size limits attribute size to %zu of %zu",
+           max_payload,
            attribute_lists_byte_count);
-    attribute_lists_byte_count = max_attribute_byte_count - info_length;
+    attribute_lists_byte_count = max_payload;
   }
 
   if (attribute_lists_byte_count > req_max) {
@@ -1270,11 +1328,8 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
                 written);
   written += sizeof(uint16_t);
 
-  auto attribute_list_bytes = NewBuffer(write_size);
-  list_elem.Write(attribute_list_bytes.get());
-  buf->Write(
-      attribute_list_bytes->view(bytes_skipped, attribute_lists_byte_count),
-      written);
+  buf->Write(cached_payload_->view(bytes_skipped, attribute_lists_byte_count),
+             written);
   written += attribute_lists_byte_count;
 
   // Continuation state
@@ -1293,6 +1348,11 @@ MutableByteBufferPtr ServiceSearchAttributeResponse::GetPDU(
     written += sizeof(uint32_t);
   }
   PW_DCHECK(written == sizeof(Header) + size);
+
+  if (out_has_continuation_state) {
+    *out_has_continuation_state = (info_length > 0);
+  }
+
   return buf;
 }
 
