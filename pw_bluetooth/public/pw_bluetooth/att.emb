@@ -17,9 +17,6 @@
 # F of the Bluetooth Core Specification. The Emboss compiler is used to generate
 # a C++ header from this file.
 
-import "pw_bluetooth/hci_data.emb" as hci
-import "pw_bluetooth/l2cap_frames.emb" as l2cap
-
 [$default byte_order: "LittleEndian"]
 [(cpp) namespace: "pw::bluetooth::emboss"]
 
@@ -60,6 +57,27 @@ enum AttOpcode:
   ATT_HANDLE_VALUE_CFM           = 0x1E
   ATT_SIGNED_WRITE_CMD           = 0xD2
 
+enum ErrorCode:
+  [maximum_bits: 8]
+  INVALID_HANDLE                   = 0x01
+  READ_NOT_PERMITTED               = 0x02
+  WRITE_NOT_PERMITTED              = 0x03
+  INVALID_PDU                      = 0x04
+  INSUFFICIENT_AUTHENTICATION      = 0x05
+  REQUEST_NOT_SUPPORTED            = 0x06
+  INVALID_OFFSET                   = 0x07
+  INSUFFICIENT_AUTHORIZATION       = 0x08
+  PREPARE_QUEUE_FULL               = 0x09
+  ATTRIBUTE_NOT_FOUND              = 0x0A
+  ATTRIBUTE_NOT_LONG               = 0x0B
+  INSUFFICIENT_ENCRYPTION_KEY_SIZE = 0x0C
+  INVALID_ATTRIBUTE_VALUE_LENGTH   = 0x0D
+  UNLIKELY_ERROR                   = 0x0E
+  INSUFFICIENT_ENCRYPTION          = 0x0F
+  UNSUPPORTED_GROUP_TYPE           = 0x10
+  INSUFFICIENT_RESOURCES           = 0x11
+  VALUE_NOT_ALLOWED                = 0x13
+
 # ===================== Attribute Protocol PDUs =============================
 # Core Spec v5.4 Vol 3, Part F, Section 3.4
 #
@@ -77,18 +95,99 @@ enum AttOpcode:
 
 # ============ 3.4.1 Error handling ============
 
+struct AttHeader:
+  0     [+1]  AttOpcode  attribute_opcode
+
+struct AttErrorRsp:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+1]  AttOpcode  request_opcode_in_error
+  $next [+2]  UInt       attribute_handle
+  $next [+1]  ErrorCode  error_code
 
 # ============= 3.4.2 MTU exchange =============
 
+struct AttExchangeMtuReq:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       client_rx_mtu
+
+struct AttExchangeMtuRsp:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       server_rx_mtu
 
 # =========== 3.4.3 Find information ===========
 
+enum AttUuidFormat:
+  [maximum_bits: 8]
+  BIT16  = 0x01
+  BIT128 = 0x02
+
+struct AttFindInformationReq:
+  [requires: starting_handle <= ending_handle]
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       starting_handle
+    [requires: this > 0]
+  $next [+2]  UInt       ending_handle
+    [requires: this > 0]
+
+struct AttFindInformationRspHeader:
+  0     [+1]  AttOpcode      attribute_opcode
+  $next [+1]  AttUuidFormat  format
+
+struct AttInformationData16:
+  0     [+2]  UInt       attribute_handle
+  $next [+2]  UInt       uuid
+
+struct AttInformationData128:
+  0     [+2]  UInt       attribute_handle
+  $next [+16] UInt:8[]   uuid
+
+struct AttFindByTypeValueReqHeader:
+  [requires: starting_handle <= ending_handle]
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       starting_handle
+    [requires: this > 0]
+  $next [+2]  UInt       ending_handle
+    [requires: this > 0]
+  $next [+2]  UInt       attribute_type
+
+struct AttHandlesInformation:
+  0     [+2]  UInt       attribute_handle
+  $next [+2]  UInt       group_end_handle
 
 # ========== 3.4.4 Reading attributes ==========
 
+struct AttReadByTypeReqHeader:
+  [requires: starting_handle <= ending_handle]
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       starting_handle
+    [requires: this > 0]
+  $next [+2]  UInt       ending_handle
+    [requires: this > 0]
+
+struct AttReadByGroupTypeReqHeader:
+  [requires: starting_handle <= ending_handle]
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       starting_handle
+    [requires: this > 0]
+  $next [+2]  UInt       ending_handle
+    [requires: this > 0]
+
+struct AttReadByGroupTypeRspEntryHeader:
+  0     [+2]  UInt       attribute_handle
+  $next [+2]  UInt       end_group_handle
+
+struct AttReadReq:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       attribute_handle
+    [requires: this > 0]
+
+struct AttReadBlobReq:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       attribute_handle
+    [requires: this > 0]
+  $next [+2]  UInt       value_offset
 
 # ========== 3.4.5 Writing attributes ==========
-
 
 struct AttWriteCmd(attribute_size: UInt:16):
   -- 3.4.5.3 ATT_WRITE_CMD
@@ -100,9 +199,22 @@ struct AttWriteCmd(attribute_size: UInt:16):
 
 # ============ 3.4.6 Queued writes =============
 
+struct AttPrepareWriteHeader:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       attribute_handle
+    [requires: this > 0]
+  $next [+2]  UInt       value_offset
+
+enum AttExecuteWriteFlag:
+  [maximum_bits: 8]
+  CANCEL = 0x00
+  WRITE  = 0x01
+
+struct AttExecuteWriteReq:
+  0     [+1]  AttOpcode            attribute_opcode
+  $next [+1]  AttExecuteWriteFlag  flags
 
 # =========== 3.4.7 Server initiated ===========
-
 
 struct AttHandleValueNtf(attribute_size: UInt:16):
   -- 3.4.7.1 ATT_HANDLE_VALUE_NTF
@@ -112,3 +224,13 @@ struct AttHandleValueNtf(attribute_size: UInt:16):
     [requires: this > 0]
 
   $next [+attribute_size]  UInt:8[attribute_size]  attribute_value
+
+struct AttHandleValueNtfHeader:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       attribute_handle
+    [requires: this > 0]
+
+struct AttHandleValueIndHeader:
+  0     [+1]  AttOpcode  attribute_opcode
+  $next [+2]  UInt       attribute_handle
+    [requires: this > 0]
