@@ -688,8 +688,8 @@ bazel_dep(name = "fuchsia_infra", dev_dependency = True)
 git_override(
     module_name = "fuchsia_infra",
     # ROLL: Warning: this is automatically updated by
-    # ROLL: https://cr-buildbucket.appspot.com/build/8675251823933831217
-    commit = "07bb99a86961d200a29c35f051139ddbbdce6024",
+    # ROLL: https://cr-buildbucket.appspot.com/build/8674617646015328289
+    commit = "d3c671298961c394ac3587702925eead33a975cf",
     remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
 )
 
