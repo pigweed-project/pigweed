@@ -17,7 +17,8 @@ import("$dir_pw_build/python_action.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_toolchain/generate_toolchain.gni")
 
-# Defines a C++ source set that automatically enables versioned enum tokenization.
+# Defines a C++ source set that automatically enables versioned enum
+# tokenization.
 #
 # Args:
 #   enum_headers: List of standard .h files containing enum definitions to tokenize (required).

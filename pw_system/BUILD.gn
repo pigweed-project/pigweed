@@ -378,8 +378,8 @@ pw_facade("target_hooks") {
 }
 
 if (pw_system_TARGET_HOOKS_BACKEND == "") {
-  # Do nothing, prevents errors from trying to parse pw_system_TARGET_HOOKS_BACKEND as a
-  # build target when it's unset.
+  # Do nothing, prevents errors from trying to parse
+  # pw_system_TARGET_HOOKS_BACKEND as a build target when it's unset.
 } else if (get_label_info(pw_system_TARGET_HOOKS_BACKEND,
                           "label_no_toolchain") ==
            get_label_info(":stl_target_hooks", "label_no_toolchain")) {

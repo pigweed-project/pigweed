@@ -90,8 +90,8 @@ if (pw_android_toolchain_NDK_PATH != "") {
     }
   }
 
-  # This list just contains the members of the above scope for convenience to make
-  # it trivial to generate all the toolchains in this file via a
+  # This list just contains the members of the above scope for convenience to
+  # make it trivial to generate all the toolchains in this file via a
   # `pw_generate_android_toolchains` target.
   pw_target_toolchain_android_list = [
     pw_target_toolchain_android.debug,

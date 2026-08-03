@@ -19,10 +19,10 @@ declare_args() {
   dir_pw_third_party_chromium_verifier = ""
 
   # Specify whether the target platform has native POSIX thread implementation.
-  # Our current porting of chromium verifier doesn't require to link in any of the
-  # pthread APIs, but some declarations and type definitions, such as pthread_t,
-  # pthread_mutex_t and pthread_mutex_lock, are still needed for compilation.
-  # If this is set to false, the module will provide a pthread.h header that
-  # defines the needed types.
+  # Our current porting of chromium verifier doesn't require to link in any of
+  # the pthread APIs, but some declarations and type definitions, such as
+  # pthread_t, pthread_mutex_t and pthread_mutex_lock, are still needed for
+  # compilation. If this is set to false, the module will provide a pthread.h
+  # header that defines the needed types.
   pw_third_party_chromium_verifier_HAS_NATIVE_PTHREAD = true
 }

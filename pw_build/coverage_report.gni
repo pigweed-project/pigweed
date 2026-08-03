@@ -166,9 +166,10 @@ template("pw_coverage_report") {
         rebase_path(_depfile_path, root_build_dir),
       ]
 
-      # TODO: b/256651964 - We really want `--failure-mode any` always to guarantee
-      # we don't silently ignore any profraw report. However, there are downstream
-      # projects that currently break when using `--failure-mode any`.
+      # TODO: b/256651964 - We really want `--failure-mode any` always to
+      # guarantee we don't silently ignore any profraw report. However, there
+      # are downstream projects that currently break when using `--failure-mode
+      # any`.
       #
       # See the task for examples of what is currently going wrong.
       #

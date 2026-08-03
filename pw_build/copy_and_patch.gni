@@ -15,9 +15,9 @@
 import("python_action.gni")
 import("target_types.gni")
 
-# Applies a patch to a copy of file.  The source file will not be patched in place,
-# but instead copied before patching.
-# The output of this target will be the patched file.
+# Applies a patch to a copy of file. The source file will not be patched in
+# place, but instead copied before patching. The output of this target will be
+# the patched file.
 #
 # Args:
 #   source: (required) The source file to be patched.

@@ -64,9 +64,10 @@ if (pw_toolchain_USE_LLVM_PREBUILT_LIBRARIES) {
     "-unwindlib=none",
   ]
   cortex_m_common_defines = [
-    # This macro is used by libc++ headers and normally would expand to std::_libcpp_verbose_abort,
-    # but we don't define that since we don't build with libc++ at the moment. For now, we can
-    # have this lower to a trap instruction.
+    # This macro is used by libc++ headers and normally would expand to
+    # std::_libcpp_verbose_abort, but we don't define that since we don't build
+    # with libc++ at the moment. For now, we can have this lower to a trap
+    # instruction.
     "_LIBCPP_VERBOSE_ABORT(...)=__builtin_trap()",
   ]
   config("cortex_m0plus") {

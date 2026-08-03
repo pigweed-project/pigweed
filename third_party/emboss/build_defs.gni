@@ -13,16 +13,18 @@
 # the License.
 
 declare_args() {
-  # An optional relative path from `root_build_dir` to `//`, which can be used by
-  # `emboss_cc_library` to rebase `embossc` source files.
+  # An optional relative path from `root_build_dir` to `//`, which can be used
+  # by `emboss_cc_library` to rebase `embossc` source files.
   #
-  # Normally we don't need to define this manually ourselves and can rely on builtin GN functions to
-  # `rebase_path()` against `root_build_dir`, but that approach is unreliable for
-  # [build environments where `//out` is a symlink pointing to a directory outside of `//`][1],
-  # since [GN always provides `root_build_dir` as an absolute symlink-derefed path][2].
+  # Normally we don't need to define this manually ourselves and can rely on
+  # builtin GN functions to `rebase_path()` against `root_build_dir`, but that
+  # approach is unreliable for [build environments where `//out` is a symlink
+  # pointing to a directory outside of `//`][1], since [GN always provides
+  # `root_build_dir` as an absolute symlink-derefed path][2].
   #
-  # When this is the case, we shouldn't use `root_build_dir` directly and must instead construct a
-  # "lexically local" version of `root_build_dir` which is a subpath of `//`.
+  # When this is the case, we shouldn't use `root_build_dir` directly and must
+  # instead construct a "lexically local" version of `root_build_dir` which is a
+  # subpath of `//`.
   #
   # Here's an example demonstrating this:
   #
@@ -45,11 +47,12 @@ declare_args() {
   # Which evaluates to:
   #     "../../src/foo.emb"
   #
-  # While both of these examples resolve to the same file, `embossc` attempts to place generated
-  # header files as siblings to the source .emb files, making it sensitive to the lexical
-  # representation of the path. `emboss_cc_library` also cancels out the leading `../` segments
-  # invoking `embossc` with an `--output-path` of nested r"(fake/)*" directories to ensure
-  # these generated files are contained within out directory.
+  # While both of these examples resolve to the same file, `embossc` attempts to
+  # place generated header files as siblings to the source .emb files, making it
+  # sensitive to the lexical representation of the path. `emboss_cc_library`
+  # also cancels out the leading `../` segments invoking `embossc` with an
+  # `--output-path` of nested r"(fake/)*" directories to ensure these generated
+  # files are contained within out directory.
   #
   # In the first example, the output path is:
   #   "gen/fake/fake/fake/../../../home/alice/foo_project/src/foo.h"
@@ -62,9 +65,10 @@ declare_args() {
   # Which simplifies to:
   #   "gen/src/foo.h"
   #
-  # By using `pw_emboss_build_dir_to_root` as the logical relative path from `root_build_dir` to
-  # `//`, it's possible to lexically construct a `symlink_safe_build_dir` which behaves like
-  # `root_build_dir` without resolving symlinks.
+  # By using `pw_emboss_build_dir_to_root` as the logical relative path from
+  # `root_build_dir` to `//`, it's possible to lexically construct a
+  # `symlink_safe_build_dir` which behaves like `root_build_dir` without
+  # resolving symlinks.
   #
   # [1]: https://cs.opensource.google/fuchsia/fuchsia/+/main:scripts/cog/cartfs_out_directory.py
   # [2]: https://gn.googlesource.com/gn/+/e7f3202128bdb2429872fdb138626a010b2bff7f/src/gn/setup.cc#759
@@ -101,10 +105,11 @@ template("emboss_cc_library") {
       "$dir_pw_third_party_emboss" != "",
       "\$dir_pw_third_party_emboss must be set to the path of your Emboss installation")
 
-  # This value is used for the source path given to `embossc` by helping us generate predictable
-  # relative paths from the build dir to source files, which can be specified for projects where the
-  # build directory might be a symlink, since `root_build_dir` is always set to a
-  # resolved/symlink-derefed path.
+  # This value is used for the source path given to `embossc` by helping us
+  # generate predictable relative paths from the build dir to source files,
+  # which can be specified for projects where the build directory might be a
+  # symlink, since `root_build_dir` is always set to a resolved/symlink-derefed
+  # path.
   #
   # See the comment block above and https://fxrev.dev/1416994 for additional context.
   if (pw_emboss_build_dir_to_root == "") {
@@ -127,8 +132,8 @@ template("emboss_cc_library") {
 
   # In order for the compiled header path in the embossc script to resolve to
   # $target_gen_dir as we desire, we must provide an --output-path arg that
-  # resolves to $target_gen_dir after rebase_path(invoker.source, root_build_dir)
-  # is appended to it. To achieve this, we specify output-path
+  # resolves to $target_gen_dir after rebase_path(invoker.source,
+  # root_build_dir) is appended to it. To achieve this, we specify output-path
   # to be $root_gen_dir followed by a number of fake directories needed to
   # cancel out these starting updirs.
   compiled_header_path = "$target_gen_dir/" + invoker.source + ".h"
@@ -245,8 +250,8 @@ template("emboss_cc_library") {
     ]
   }
 
-  # Since the emboss_cc_library template is used in non-Pigweed environments, this target is not pw_source_set,
-  # which restricts visibility by default.
+  # Since the emboss_cc_library template is used in non-Pigweed environments,
+  # this target is not pw_source_set, which restricts visibility by default.
   source_set(target_name) {
     forward_variables_from(invoker, "*")
 

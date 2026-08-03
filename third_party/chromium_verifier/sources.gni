@@ -12,7 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 #
-# The file is auto-generated when chromium verifier is installed from pw_package.
+# The file is auto-generated when chromium verifier is installed from
+# pw_package.
 # See //pw_package/py/pw_package/packages/boringssl.py for more detail.
 
 # The list only includes sources that implement core verifier logic.
@@ -57,13 +58,14 @@ chromium_verifier_sources_minimal = [
   "net/der/tag.cc",
 ]
 
-# Chromium verifier has some metric feature that records iteration count.
-# It is only used for test. However, compiling the feature requires to bring in
-# a significant amount of additional sources and also many system dependencies
-# including threading, file system, memory mapping management (sys/mman.h) etc. It's
-# too complicated to accomodate for embedded target. Thus for now, we'll only build
-# it on host for running native unittests, as a criterion for rolling. The following
-# is the list of sources that need to be built for running the test in
+# Chromium verifier has some metric feature that records iteration count. It is
+# only used for test. However, compiling the feature requires to bring in a
+# significant amount of additional sources and also many system dependencies
+# including threading, file system, memory mapping management (sys/mman.h) etc.
+# It's too complicated to accomodate for embedded target. Thus for now, we'll
+# only build it on host for running native unittests, as a criterion for
+# rolling. The following is the list of sources that need to be built for
+# running the test in
 # "net/cert/internal/path_builder_unittest.cc"
 chromium_verifier_sources_extended = [
   "base/at_exit.cc",

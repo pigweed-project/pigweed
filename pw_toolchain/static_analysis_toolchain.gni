@@ -343,18 +343,18 @@ template("pw_static_analysis_toolchain") {
         description = "rustc {{output}}"
         default_output_dir = "{{target_out_dir}}/bin"
         depfile = "{{output}}.d"
-        command = string_join(
-                " ",
-                _rustc_common_flags + [
-                      # Compile executable as rlib for static analysis, to skip
-                      # the link step. Because C/C++ static analysis targets are
-                      # not compiled, linking might fail if Rust depends on FFI
-                      # symbols.
-                      "--crate-type rlib",
+        command =
+            string_join(" ",
+                        _rustc_common_flags + [
+                              # Compile executable as rlib for static analysis,
+                              # to skip the link step. Because C/C++ static
+                              # analysis targets are not compiled, linking might
+                              # fail if Rust depends on FFI symbols.
+                              "--crate-type rlib",
 
-                      # Allow dead_code, because `main` would be unused.
-                      "-A dead_code",
-                    ])
+                              # Allow dead_code, because `main` would be unused.
+                              "-A dead_code",
+                            ])
         outputs = [ _output ]
       }
 
@@ -382,7 +382,8 @@ template("pw_static_analysis_toolchain") {
         if (!defined(invoker_toolchain_args.current_os)) {
           toolchain_os = ""
         } else {
-          # Determine OS of toolchain, which is the builtin argument "current_os".
+          # Determine OS of toolchain, which is the builtin argument
+          # "current_os".
           toolchain_os = invoker_toolchain_args.current_os
         }
 

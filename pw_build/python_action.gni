@@ -266,7 +266,8 @@ template("pw_python_action") {
     _script_args += invoker.args
   }
 
-  # Assume third party PyPI deps should be available in the build_dir virtualenv.
+  # Assume third party PyPI deps should be available in the build_dir
+  # virtualenv.
   _install_venv_3p_deps = true
   if (!_use_build_dir_virtualenv ||
       (defined(invoker._skip_installing_external_python_deps) &&

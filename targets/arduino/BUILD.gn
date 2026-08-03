@@ -28,10 +28,12 @@ if (pw_arduino_build_CORE_PATH != "") {
   if (current_toolchain != default_toolchain) {
     config("arduino_build") {
       # Debug: Print out arduinobuilder.py args
-      # print(string_join(" ", [rebase_path(arduino_builder_script, root_build_dir)] + arduino_show_command_args))
+      # print(string_join(" ", [rebase_path(arduino_builder_script,
+      # root_build_dir)] + arduino_show_command_args))
 
       # Run prebuilds
-      # TODO(tonymd) This only needs to be run once but it's happening multiple times.
+      # TODO(tonymd) This only needs to be run once but it's happening multiple
+      # times.
       exec_script(arduino_builder_script,
                   filter_exclude(arduino_run_command_args,
                                  [ "--save-config" ]) + [ "--run-prebuilds" ],

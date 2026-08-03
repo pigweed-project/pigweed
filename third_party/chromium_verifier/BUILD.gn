@@ -28,8 +28,8 @@ if (dir_pw_third_party_chromium_verifier != "") {
   }
 
   # TODO(pwbug/394): Add build support for chromium verifier.
-  # TODO(pwbug/394): Port related chromium native unittests. Then add instruction
-  # for rolling.
+  # TODO(pwbug/394): Port related chromium native unittests. Then add
+  # instruction for rolling.
 } else {
   group("chromium_verifier") {
   }

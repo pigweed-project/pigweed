@@ -381,10 +381,11 @@ pw_test_group("tests") {
 
   if (defined(pw_toolchain_SCOPE.is_host_toolchain) &&
       pw_toolchain_SCOPE.is_host_toolchain) {
-    # TODO: b/234883746 - KVS tests are not compatible with device builds as they
-    # use features such as std::map and are computationally expensive. Solving
-    # this requires a more complex capabilities-based build and configuration
-    # system which allowing enabling specific tests for targets that support
+    # TODO: b/234883746 - KVS tests are not compatible with device builds as
+    # they use features such as std::map and are computationally expensive.
+    # Solving this requires a more complex capabilities-based build and
+    # configuration system which allowing enabling specific tests for targets
+    # that support
     # them and modifying test parameters for different targets.
 
     tests += [

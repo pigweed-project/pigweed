@@ -77,10 +77,10 @@ _target_config = {
     # least 6K bytes in heap when using pw_malloc:bucket_allocator.
     # The heap size required for tests should be investigated.
     #
-    # TLS realted tests such as $pw_external_boringssl:tests require
-    # much larger heap for dynamic allocation. The current number is an
-    # estimated requirement. The acutal required size will be further investigated
-    # when all TLS tests are in place.
+    # TLS realted tests such as $pw_external_boringssl:tests require much larger
+    # heap for dynamic allocation. The current number is an estimated
+    # requirement. The acutal required size will be further investigated when
+    # all TLS tests are in place.
     "PW_BOOT_HEAP_SIZE=112K",
     "PW_BOOT_MIN_STACK_SIZE=1K",
     "PW_BOOT_RAM_BEGIN=0x20000000",

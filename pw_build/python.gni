@@ -29,8 +29,8 @@ declare_args() {
   # Default pip requirements file for all Pigweed based projects.
   pw_build_PIP_REQUIREMENTS = []
 
-  # DOCSTAG: [python-static-analysis-tools]
-  # Default set of Python static alaysis tools to run for pw_python_package targets.
+  # DOCSTAG: [python-static-analysis-tools] Default set of Python static alaysis
+  # tools to run for pw_python_package targets.
   pw_build_PYTHON_STATIC_ANALYSIS_TOOLS = [
     "pylint",
     "mypy",
@@ -688,11 +688,13 @@ template("pw_python_package") {
       }
     }
 
-    # For packages that are not generated, create targets to run mypy and pylint.
+    # For packages that are not generated, create targets to run mypy and
+    # pylint.
     foreach(_tool, _static_analysis) {
-      # Run lint tools from the setup or target directory so that the tools detect
-      # config files (e.g. pylintrc or mypy.ini) in that directory. Config files
-      # may be explicitly specified with the pylintrc or mypy_ini arguments.
+      # Run lint tools from the setup or target directory so that the tools
+      # detect config files (e.g. pylintrc or mypy.ini) in that directory.
+      # Config files may be explicitly specified with the pylintrc or mypy_ini
+      # arguments.
       target("_pw_python_static_analysis_$_tool", "$target_name.lint.$_tool") {
         sources = _all_py_files
         deps = _test_install_deps
@@ -730,10 +732,11 @@ template("pw_python_package") {
       not_needed([ "_all_py_files" ])
     }
   } else {
-    # Create groups with the public target names ($target_name, $target_name.lint,
-    # $target_name.install, etc.). These are actually wrappers around internal
-    # Python actions instantiated with the default toolchain. This ensures there
-    # is only a single copy of each Python action in the build.
+    # Create groups with the public target names ($target_name,
+    # $target_name.lint, $target_name.install, etc.). These are actually
+    # wrappers around internal Python actions instantiated with the default
+    # toolchain. This ensures there is only a single copy of each Python action
+    # in the build.
     #
     # The $target_name.tests group is created separately below.
     group("$target_name") {
@@ -775,7 +778,8 @@ template("pw_python_package") {
             "run",
             "--branch",
 
-            # Include all source files in the working_directory when calculating coverage.
+            # Include all source files in the working_directory when calculating
+            # coverage.
             "--source=.",
 
             # Test file to run.
@@ -786,7 +790,8 @@ template("pw_python_package") {
           _coverage_data_file = "$target_gen_dir/$target_name.coverage"
           outputs = [ _coverage_data_file ]
 
-          # The coverage tool only allows setting the output with an environment variable.
+          # The coverage tool only allows setting the output with an environment
+          # variable.
           environment =
               [ "COVERAGE_FILE=" +
                 rebase_path(_coverage_data_file, get_path_info(test, "dir")) ]

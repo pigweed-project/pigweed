@@ -13,9 +13,9 @@
 # the License.
 
 declare_args() {
-  # If compiling backends with boringssl, this variable is set to the path to the
-  # boringssl source code. When set, a pw_source_set for the boringssl library is
-  # created at "$pw_external_boringssl".
+  # If compiling backends with boringssl, this variable is set to the path to
+  # the boringssl source code. When set, a pw_source_set for the boringssl
+  # library is created at "$pw_external_boringssl".
   dir_pw_third_party_boringssl = ""
 
   # Create a "$pw_external_boringssl" target that aliases an existing

@@ -14,8 +14,8 @@
 import("//build_overrides/pigweed.gni")
 
 declare_args() {
-  # If compiling a project against an Ambiq Apollo SDK, this variable is set to the path to the
-  # Ambiq Suite SDK directory.
+  # If compiling a project against an Ambiq Apollo SDK, this variable is set to
+  # the path to the Ambiq Suite SDK directory.
   dir_pw_third_party_ambiq_SDK = ""
 
   # The Product specified in as much detail as possible.

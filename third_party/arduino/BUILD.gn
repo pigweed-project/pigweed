@@ -29,8 +29,8 @@ if (pw_arduino_build_CORE_PATH != "") {
             exec_script(arduino_builder_script,
                         arduino_show_command_args + [ "--core-s-files" ],
                         "list lines"),
-            # TODO(tonymd): Conditionally remove this source file unless building for cortex-m0.
-            # Exception for adafruit-samd core
+            # TODO(tonymd): Conditionally remove this source file unless
+            # building for cortex-m0. Exception for adafruit-samd core
             # pulse_asm.S is for: '.cpu cortex-m0plus .fpu softvfp'
             [ "*pulse_asm.S\b" ])
 

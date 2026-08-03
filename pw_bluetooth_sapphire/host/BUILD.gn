@@ -23,9 +23,11 @@ import("$dir_pw_function/function.gni")
 import("$dir_pw_fuzzer/fuzzer.gni")
 import("$dir_pw_unit_test/test.gni")
 
-# LINT.IfChange(copts) Common C++ flags used in bt-host to ensure it builds in
+# Common C++ flags used in bt-host to ensure it builds in
 # Pigweed and downstreams. Note Fuchsia upstream has its own version of copts
 # since this file is not copybara'd.
+
+# LINT.IfChange(copts)
 config("copts") {
   cflags_cc = [
     # TODO: https://fxbug.dev/345799180 - Remove once code doesn't have unused parameters.

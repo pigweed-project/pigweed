@@ -18,8 +18,8 @@ import("$dir_pw_build/target_types.gni")
 
 declare_args() {
   # If compiling tests with Abseil C++, this variable is set to the path to the
-  # Abseil C++ installation. When set, a pw_source_set for the Abseil C++ library
-  # is created at "$pw_external_abseil_cpp".
+  # Abseil C++ installation. When set, a pw_source_set for the Abseil C++
+  # library is created at "$pw_external_abseil_cpp".
   dir_pw_third_party_abseil_cpp = ""
 }
 

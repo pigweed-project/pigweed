@@ -132,7 +132,8 @@ if (dir_pw_third_party_llvm_libc != "") {
       "printf_core/converter.cpp",
     ]
 
-    # If we happen to be using pw_libc for host, let's keep all the normal features.
+    # If we happen to be using pw_libc for host, let's keep all the normal
+    # features.
     if (current_os != host_os) {
       defines = [
         "LIBC_COPT_PRINTF_DISABLE_FLOAT",

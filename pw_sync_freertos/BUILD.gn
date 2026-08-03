@@ -265,8 +265,9 @@ pw_test_group("tests") {
   ]
 }
 
-# You can instantiate this with your own provided "$dir_pw_thread:non_portable_test_thread_options",
-# see ":thread_notification_test_with_static_threads" below as an example.
+# You can instantiate this with your own provided
+# "$dir_pw_thread:non_portable_test_thread_options", see
+# ":thread_notification_test_with_static_threads" below as an example.
 pw_source_set("thread_notification_test") {
   sources = [ "thread_notification_test.cc" ]
   deps = [
@@ -291,8 +292,9 @@ pw_test("thread_notification_test_with_static_threads") {
   ]
 }
 
-# You can instantiate this with your own provided "$dir_pw_thread:non_portable_test_thread_options",
-# see ":timed_thread_notification_test_with_static_threads" below as an example.
+# You can instantiate this with your own provided
+# "$dir_pw_thread:non_portable_test_thread_options", see
+# ":timed_thread_notification_test_with_static_threads" below as an example.
 pw_source_set("timed_thread_notification_test") {
   sources = [ "timed_thread_notification_test.cc" ]
   deps = [

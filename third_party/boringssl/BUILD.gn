@@ -40,7 +40,8 @@ if (pw_third_party_boringssl_ALIAS != "") {
 
   config("internal_config") {
     defines = [
-      # Enable virtual desctructor and compile-time check of pure virtual base class
+      # Enable virtual desctructor and compile-time check of pure virtual base
+      # class
       "BORINGSSL_ALLOW_CXX_RUNTIME",
 
       # Code size optimiaztion
