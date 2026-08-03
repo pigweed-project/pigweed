@@ -891,7 +891,12 @@
     ]
   },
   "pw_thread": {
-    "status": "stable"
+    "status": "stable",
+    "languages": [
+      "C",
+      "C++",
+      "Rust"
+    ]
   },
   "pw_thread_embos": {
     "status": "stable"
