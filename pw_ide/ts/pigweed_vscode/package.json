@@ -334,6 +334,10 @@
     "webpack": "^5.93.0",
     "webpack-cli": "^5.1.4"
   },
+  "overrides": {
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.7"
+  },
   "extensionDependencies": [
     "BazelBuild.vscode-bazel",
     "llvm-vs-code-extensions.vscode-clangd"
