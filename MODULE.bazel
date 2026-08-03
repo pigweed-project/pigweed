@@ -19,18 +19,18 @@ module(
 )
 
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
-bazel_dep(name = "aspect_rules_js", version = "2.3.8")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
-bazel_dep(name = "boringssl", version = "0.20241024.0")
+bazel_dep(name = "boringssl", version = "0.20260730.0")
 
 # TODO: https://github.com/google/emboss/issues/164 - Wire up the emboss repo to
 # LINT.IfChange(emboss)
 bazel_dep(name = "emboss", version = "2025.1003.000719", repo_name = "com_google_emboss")
 
 # LINT.ThenChange(/pw_package/py/pw_package/packages/emboss.py:emboss)
-bazel_dep(name = "freertos", version = "10.5.1.bcr.4")
+bazel_dep(name = "freertos", version = "11.1.0.bcr.3")
 bazel_dep(name = "fuzztest", version = "20260219.0")
-bazel_dep(name = "gazelle", version = "0.48.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "gazelle", version = "0.52.2", repo_name = "bazel_gazelle")
 
 # When this version is bumped, remove the patch referenced below if included
 bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
@@ -39,7 +39,7 @@ bazel_dep(name = "nanopb", version = "0.4.9.1.bcr.3")
 bazel_dep(name = "mbedtls", version = "3.6.5")
 bazel_dep(name = "pico-sdk", version = "2.2.2-develop.bcr.20260420-79b38e95")
 bazel_dep(name = "picotool", version = "2.2.1-develop.bcr.20260623-7ac0c2a")
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 
 # LINT.IfChange(protobuf)
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
@@ -47,12 +47,12 @@ bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf"
 
 bazel_dep(name = "re2", version = "2025-11-05.bcr.1")
 bazel_dep(name = "rules_android", version = "0.7.2")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_fuzzing", version = "0.6.0")
-bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "9.3.0")
+bazel_dep(name = "rules_go", version = "0.62.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_java", version = "9.7.0")
 bazel_dep(name = "rules_jni", version = "0.11.1")
-bazel_dep(name = "rules_jvm_external", version = "6.9")
+bazel_dep(name = "rules_jvm_external", version = "7.1")
 bazel_dep(name = "rules_libusb", version = "0.1.0-rc2.bcr.1")
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "rules_nodejs", version = "6.7.5")
@@ -78,7 +78,7 @@ bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
 # Require rules_foreign_cc to be at least 0.13.0, to resolve a `rule() got
 # unexpected keyword argument 'incompatible_use_toolchain_transition'` error.
 # rules_foreign_cc@0.13.0 removes that keyword argument.
-bazel_dep(name = "rules_foreign_cc", version = "0.13.0")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 
 # Require aspect_rules_esbuild to be at least 0.25.1, to resolve a `rule() got
 # unexpected keyword argument 'incompatible_use_toolchain_transition'` error.
