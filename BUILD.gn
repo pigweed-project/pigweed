@@ -299,8 +299,9 @@ if (pw_arduino_build_CORE_PATH != "") {
   }
 }
 
-# TODO: b/244604080 - Inline string tests are too big to fit in the QEMU firmware
-# except under a size-optimized build. For now, only build size-optimized.
+# TODO: b/244604080 - Inline string tests are too big to fit in the QEMU
+# firmware except under a size-optimized build. For now, only build
+# size-optimized.
 if (pw_BUILD_BROKEN_GROUPS) {
   _build_pigweed_default_at_all_optimization_levels("qemu_gcc") {
     toolchain_prefix =
@@ -325,9 +326,9 @@ if (pw_BUILD_BROKEN_GROUPS) {
   }
 }
 
-# Run clang-tidy on pigweed_default with pw_strict_host_clang_debug toolchain options.
-# Make sure to invoke gn clean out when any relevant .clang-tidy
-# file is updated.
+# Run clang-tidy on pigweed_default with pw_strict_host_clang_debug toolchain
+# options. Make sure to invoke gn clean out when any relevant .clang-tidy file
+# is updated.
 group("static_analysis") {
   # Static analysis is only supported on Linux and macOS using clang-tidy.
   if (host_os != "win") {
@@ -362,7 +363,7 @@ group("docs") {
 
     # Unit test the small Sphinx site.
     "$dir_pw_docgen/py/tests:tests.run($pw_build_PYTHON_TOOLCHAIN)",
-    "//docs/agents/changelog/scripts:scripts",
+    "//docs/agents/changelog/scripts",
   ]
 }
 
@@ -661,8 +662,8 @@ if (current_toolchain != default_toolchain) {
   # Fuzzers not based on a fuzzing engine. Engine-based fuzzers should be
   # included in `pw_module_tests`.
   pw_test_group("pw_custom_fuzzers") {
-    # TODO: b/274437709 - The RPC client_fuzzer encounters build errors on macos.
-    # Limit it to Linux hosts for now.
+    # TODO: b/274437709 - The RPC client_fuzzer encounters build errors on
+    # macos. Limit it to Linux hosts for now.
     if (host_os == "linux") {
       tests = [ "$dir_pw_rpc/fuzz:client_fuzzer" ]
     }
