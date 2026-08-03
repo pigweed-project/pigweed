@@ -16,7 +16,7 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-# LINT.IfChange
+// LINT.IfChange
 
 cc_library_static {
     name: "pw_bluetooth_proxy_clock",
