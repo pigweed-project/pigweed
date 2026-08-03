@@ -987,6 +987,7 @@ def _process_rust_project(
     platform_dir: Path,
     rust_targets: list[str],
     rust_config: str | None = None,
+    bazel_args: list[str] | None = None,
 ) -> None:
     rust.process_rust_project(
         platform=platform,
@@ -995,6 +996,7 @@ def _process_rust_project(
         rust_targets=rust_targets,
         run_bazel_fn=_run_bazel,
         rust_config=rust_config,
+        bazel_args=bazel_args,
     )
 
 
@@ -1054,6 +1056,7 @@ def _process_platform(
             platform_dir=platform_dir,
             rust_targets=rust_info["targets"],
             rust_config=rust_info.get("config"),
+            bazel_args=rust_info.get("bazel_args"),
         )
 
     (output_dir / "pw_lastGenerationTime.txt").write_text(str(int(time.time())))
@@ -1194,6 +1197,7 @@ def _parse_compile_commands_groups(
 ) -> tuple[
     dict[str, list[str]],
     dict[str, str],
+    dict[str, list[str]],
     dict[str, str],
 ]:
     """Parses rust targets, configs, bazel_args, and display names.
@@ -1202,6 +1206,7 @@ def _parse_compile_commands_groups(
     """
     rust_targets_by_platform = {}
     rust_configs_by_platform = {}
+    bazel_args_by_platform = {}
     rust_display_names = {}
 
     with open(compile_command_groups_path, "r") as f:
@@ -1213,8 +1218,10 @@ def _parse_compile_commands_groups(
                 if not platform and config:
                     platform = _resolve_platform_from_config(config)
 
+                bazel_args = group.get("bazel_args", [])
                 if platform:
                     sanitized = platform.replace("/", "__").replace(":", "__")
+                    bazel_args_by_platform[sanitized] = bazel_args
 
                 rust_targets = group.get("rust_target_patterns", [])
                 if rust_targets:
@@ -1243,6 +1250,7 @@ def _parse_compile_commands_groups(
     return (
         rust_targets_by_platform,
         rust_configs_by_platform,
+        bazel_args_by_platform,
         rust_display_names,
     )
 
@@ -1276,11 +1284,13 @@ def main() -> int:
         with LockFile(lockfile_path):
             rust_targets_by_platform: dict[str, list[str]] = {}
             rust_configs_by_platform: dict[str, str] = {}
+            bazel_args_by_platform: dict[str, list[str]] = {}
             rust_display_names: dict[str, str] = {}
             if args.compile_command_groups:
                 (
                     rust_targets_by_platform,
                     rust_configs_by_platform,
+                    bazel_args_by_platform,
                     rust_display_names,
                 ) = _parse_compile_commands_groups(args.compile_command_groups)
 
@@ -1325,6 +1335,7 @@ def main() -> int:
                     rust_info = {
                         "targets": rust_targets,
                         "config": rust_configs_by_platform.get(platform),
+                        "bazel_args": bazel_args_by_platform.get(platform, []),
                     }
 
                 _process_platform(

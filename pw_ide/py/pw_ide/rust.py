@@ -95,6 +95,7 @@ def generate_ide_config(
     platform_dir: Path,
     rust_targets: list[str],
     rust_config: str | None = None,
+    bazel_args: list[str] | None = None,
 ) -> None:
     """Generates ide_config.json containing the check override command.
 
@@ -102,13 +103,17 @@ def generate_ide_config(
         platform_dir: Path to the platform-specific output directory.
         rust_targets: List of Rust targets that are part of this platform.
         rust_config: Optional build configuration for the targets.
+        bazel_args: Optional extra Bazel arguments used for platform builds.
     """
     ide_config_path = platform_dir / "ide_config.json"
 
-    check_args = [
-        "--@rules_rust//:error_format=json",
-        "--experimental_ui_max_stdouterr_bytes=10485760",
-    ]
+    if not bazel_args:
+        check_args = [
+            "--@rules_rust//:error_format=json",
+            "--experimental_ui_max_stdouterr_bytes=10485760",
+        ]
+    else:
+        check_args = bazel_args
 
     rust_override_command = [
         "bazelisk",
@@ -132,6 +137,7 @@ def process_rust_project(
     rust_targets: list[str],
     run_bazel_fn: Callable[..., Any],
     rust_config: str | None = None,
+    bazel_args: list[str] | None = None,
 ) -> None:
     """Generates rust-project.json for a platform.
 
@@ -142,13 +148,16 @@ def process_rust_project(
         rust_targets: List of Rust targets that are part of this platform.
         run_bazel_fn: Function to execute a Bazel command.
         rust_config: Optional build configuration for the targets.
+        bazel_args: Optional extra Bazel arguments used for platform builds.
     """
     _LOG.info("⏳ Generating rust-project.json...")
 
     rust_cmd = [
         "run",
-        "@rules_rust//tools/rust_analyzer:gen_rust_project",
     ]
+    if bazel_args:
+        rust_cmd.extend(bazel_args)
+    rust_cmd.append("@rules_rust//tools/rust_analyzer:gen_rust_project")
     if rust_config:
         rust_cmd.extend(["--", "--config", rust_config])
     else:
@@ -181,4 +190,5 @@ def process_rust_project(
         platform_dir,
         rust_targets,
         rust_config,
+        bazel_args,
     )

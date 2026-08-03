@@ -1791,6 +1791,61 @@ class MergerTest(fake_filesystem_unittest.TestCase):
             '--config=k_host', config['rust_analyzer_check_override_command']
         )
 
+    def test_pure_rust_generation_with_custom_arguments(self):
+        """Test that custom bazel_args are used in override command
+        and generation.
+        """
+        self.fs.create_dir(self.workspace_root / '.compile_commands')
+        platform_dir = (
+            self.workspace_root
+            / '.compile_commands'
+            / '____pw_kernel__target__host__host'
+        )
+
+        def run_bazel_side_effect(args, **_kwargs):
+            self.assertEqual(args[0], 'run')
+            self.assertIn('--config=remote_cache', args)
+            self.assertIn('--my-bazel-flag', args)
+            self.assertIn(
+                '@rules_rust//tools/rust_analyzer:gen_rust_project', args
+            )
+            self.fs.create_file(
+                self.workspace_root / 'rust-project.json',
+                contents='{"crates": []}',
+            )
+            return mock.Mock(stdout='')
+
+        self.mock_run_bazel.side_effect = run_bazel_side_effect
+
+        # pylint: disable=protected-access
+        merger._process_platform(
+            platform='____pw_kernel__target__host__host',
+            fragments=[],
+            workspace_root=self.workspace_root,
+            output_dir=self.workspace_root / '.compile_commands',
+            bazel_paths=(
+                self.output_path,
+                self.output_base,
+                self.execution_root,
+            ),
+            rust_info={
+                'targets': ['//pw_kernel/...'],
+                'config': 'k_host',
+                'bazel_args': ['--config=remote_cache', '--my-bazel-flag'],
+            },
+        )
+
+        ide_config_path = platform_dir / 'ide_config.json'
+        self.assertTrue(ide_config_path.exists())
+        with open(ide_config_path, 'r') as f:
+            config = json.load(f)
+        self.assertIn('rust_analyzer_check_override_command', config)
+        cmd = config['rust_analyzer_check_override_command']
+        self.assertIn('--config=remote_cache', cmd)
+        self.assertIn('--my-bazel-flag', cmd)
+        # Should not contain default --config=k_lint
+        self.assertNotIn('--config=k_lint', cmd)
+
     def test_groups_with_config(self):
         """Test using compile command groups JSON with config.
 
