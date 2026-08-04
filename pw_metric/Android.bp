@@ -61,12 +61,13 @@ filegroup {
         "pw_metric_proto/metric_service.proto",
         "pw_metric_proto/metric_service.pwpb_options",
         ":pw_tokenizer_proto_options_proto",
+        ":libprotobuf-internal-protos",
     ],
 }
 
 genrule {
     name: "pw_metric_raw_rpc_header",
-    defaults: ["pw_rpc_generate_raw_rpc_header_with_prefix"],
+    defaults: ["pw_rpc_generate_raw_rpc_header_with_prefix_and_protobuf"],
     srcs: [
         ":pw_metric_protos",
     ],
@@ -75,7 +76,7 @@ genrule {
 
 genrule {
     name: "pw_metric_pwpb_proto_header",
-    defaults: ["pw_rpc_generate_pwpb_proto_with_prefix"],
+    defaults: ["pw_rpc_generate_pwpb_header_with_prefix_and_protobuf"],
     srcs: [
         ":pw_metric_protos",
     ],
@@ -84,7 +85,7 @@ genrule {
 
 genrule {
     name: "pw_metric_pwpb_rpc_header",
-    defaults: ["pw_rpc_generate_pwpb_rpc_header_with_prefix"],
+    defaults: ["pw_rpc_generate_rpc_pwpb_header_with_prefix_and_protobuf"],
     srcs: [
         ":pw_metric_protos",
     ],
@@ -97,6 +98,12 @@ cc_library_headers {
     name: "pw_metric_service_pwpb",
     defaults: [
         "pw_android_common_target_support",
+    ],
+    header_libs: [
+        "pw_tokenizer_pwpb",
+    ],
+    export_header_lib_headers: [
+        "pw_tokenizer_pwpb",
     ],
     generated_headers: [
         "pw_metric_pwpb_proto_header",

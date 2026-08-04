@@ -61,3 +61,11 @@ cc_library_static {
         "pw_string",
     ],
 }
+
+cc_library_headers {
+    name: "pw_async2_headers",
+    export_include_dirs: ["public"],
+    defaults: [
+        "pw_android_common_target_support",
+    ],
+}

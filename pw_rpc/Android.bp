@@ -693,16 +693,17 @@ genrule_defaults {
 genrule_defaults {
     name: "pw_rpc_generate_raw_rpc_header_with_prefix_and_protobuf",
     cmd: "in_files=($(in)); prefix_dir=$$(dirname $${in_files[0]}); " +
-        "compile_dir=$$(dirname $${prefix_dir}); proto_files=(); " +
+        "compile_dir=$$(dirname $${prefix_dir}); proto_files=(); proto_path_args=(); " +
         "for f in \"$${in_files[@]}\"; do " +
         "if [[ \"$${f##*.}\" == \"proto\" ]]; then " +
+        "proto_path_args+=(\"--proto-path=$$(dirname $$(dirname $${f})) \"); " +
         "proto_files+=(\"$${f}\"); fi; done; " +
         "python3 $(location pw_protobuf_compiler_py) " +
-        "--proto-path=external/pigweed/pw_tokenizer/ " +
         "--proto-path=external/protobuf/src/ " +
         "--plugin-path=$(location pw_rpc_plugin_rawpb_py) " +
         "--out-dir=$(genDir) " +
         "--compile-dir=$${compile_dir} " +
+        "$${proto_path_args[@]}" +
         "--language raw_rpc " +
         "--sources $${proto_files[@]} " +
         "--no-experimental-proto3-optional " +

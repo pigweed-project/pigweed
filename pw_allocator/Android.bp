@@ -30,14 +30,17 @@ cc_library {
     header_libs: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
+        "pw_async2_headers",
     ],
     export_header_lib_headers: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
+        "pw_async2_headers",
     ],
     export_static_lib_headers: [
         "pw_bytes",
         "pw_containers_intrusive_lists",
+        "pw_enum",
         "pw_metric",
         "pw_numeric",
         "pw_preprocessor",
@@ -69,6 +72,7 @@ cc_library {
     static_libs: [
         "pw_bytes",
         "pw_containers_intrusive_lists",
+        "pw_enum",
         "pw_metric",
         "pw_numeric",
         "pw_preprocessor",
