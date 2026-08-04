@@ -41,20 +41,20 @@ using BorrowedStatus =
 
 // TODO(keir): Convert all the CHECKs in the RPC service to gracefully report
 // errors.
-#define SET_ERROR(res, message, ...)                                     \
-  do {                                                                   \
-    PW_LOG_ERROR(message, __VA_ARGS__);                                  \
-    if (!IsFinished()) {                                                 \
-      Finish(res);                                                       \
-      {                                                                  \
-        BorrowedStatus borrowed_status = status_.acquire();              \
-        size_t note_size = borrowed_status->note.max_size();             \
-        borrowed_status->note.resize(note_size);                         \
-        PW_TOKENIZE_TO_BUFFER(                                           \
-            &borrowed_status->note, &(note_size), message, __VA_ARGS__); \
-        borrowed_status->note.resize(note_size);                         \
-      }                                                                  \
-    }                                                                    \
+#define SET_ERROR(res, message, ...)                                           \
+  do {                                                                         \
+    PW_LOG_ERROR(message, __VA_ARGS__);                                        \
+    if (!IsFinished()) {                                                       \
+      Finish(res);                                                             \
+      {                                                                        \
+        BorrowedStatus borrowed_status = status_.acquire();                    \
+        size_t note_size = borrowed_status->note.max_size();                   \
+        borrowed_status->note.resize(note_size);                               \
+        PW_TOKENIZE_TO_BUFFER(                                                 \
+            borrowed_status->note.data(), &(note_size), message, __VA_ARGS__); \
+        borrowed_status->note.resize(note_size);                               \
+      }                                                                        \
+    }                                                                          \
   } while (false)
 }  // namespace
 
