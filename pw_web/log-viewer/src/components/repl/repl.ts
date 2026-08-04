@@ -106,12 +106,14 @@ export class Repl extends LitElement {
           ${this.evalResults.map(
             (result) => html`
               <li>
-                ${!result.stderr &&
-                !result.stdout &&
-                !result.result &&
-                !result.stdin
-                  ? html`<span class="stdout"><i>No output</i></span>`
-                  : ''}
+                ${
+                  !result.stderr &&
+                  !result.stdout &&
+                  !result.result &&
+                  !result.stdin
+                    ? html`<span class="stdout"><i>No output</i></span>`
+                    : ''
+                }
                 <span class="stdin">${result.stdin}</span>
                 <span class="stderr">${result.stderr}</span>
                 <span class="stdout">${result.stdout}</span>

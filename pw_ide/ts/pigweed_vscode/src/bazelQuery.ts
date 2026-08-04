@@ -19,8 +19,7 @@ import * as fs from 'fs';
 import logger from './logging';
 
 let cachedPreconfiguredTargets:
-  | { label: string; displayName?: string }[]
-  | undefined;
+  { label: string; displayName?: string }[] | undefined;
 let cachedBuildBazelMtime: number | undefined;
 
 export function _resetCache() {

@@ -202,9 +202,7 @@ export class LogViewer extends LitElement {
    */
   async loadShoelaceComponents() {
     if (this.useShoelaceFeatures) {
-      await import(
-        '@shoelace-style/shoelace/dist/components/split-panel/split-panel.js'
-      );
+      await import('@shoelace-style/shoelace/dist/components/split-panel/split-panel.js');
     }
   }
 
@@ -391,12 +389,16 @@ export class LogViewer extends LitElement {
     } else {
       const [startChild, endChild] = node.children;
       return html`<sl-split-panel ?vertical=${node.orientation === 'vertical'}>
-        ${startChild
-          ? html`<div slot="start">${this.renderNodes(startChild)}</div>`
-          : ''}
-        ${endChild
-          ? html`<div slot="end">${this.renderNodes(endChild)}</div>`
-          : ''}
+        ${
+          startChild
+            ? html`<div slot="start">${this.renderNodes(startChild)}</div>`
+            : ''
+        }
+        ${
+          endChild
+            ? html`<div slot="end">${this.renderNodes(endChild)}</div>`
+            : ''
+        }
       </sl-split-panel>`;
     }
   }

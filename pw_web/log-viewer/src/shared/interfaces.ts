@@ -54,7 +54,7 @@ export interface LogEntryEvent {
 }
 
 // Union type for all log source event types
-export type LogSourceEvent = LogEntryEvent /* | ... */;
+export type LogSourceEvent = LogEntryEvent; /* | ... */
 
 export interface SourceData {
   id: string;

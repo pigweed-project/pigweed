@@ -229,47 +229,51 @@ export class Root extends LitElement {
         title: 'Select or generate compile commands',
         detail: html`
           <div class="step-detail">
-            ${isPreconfigured
-              ? html`
-                  <table
-                    class="targets-table"
-                    style="width: 100%; border-collapse: collapse; margin-top: 8px;"
-                  >
-                    <thead>
-                      <tr
-                        style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);"
-                      >
-                        <th style="padding: 8px;">Target</th>
-                        <th style="padding: 8px;">Last generated at</th>
-                        <th style="padding: 8px;">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${this.cipdReport.preconfiguredTargets?.map((target) => {
-                        const matchedTarget =
-                          this.cipdReport.availableTargets?.find(
-                            (t) =>
-                              t.displayName === target.displayName ||
-                              t.name === target.label,
-                          );
-                        const lastGeneratedAt = matchedTarget?.lastGeneratedAt;
-                        const formattedTime = lastGeneratedAt
-                          ? format(lastGeneratedAt)
-                          : 'Never';
-                        const fullTime = lastGeneratedAt
-                          ? new Date(lastGeneratedAt).toLocaleString()
-                          : 'Never';
-                        const isTargetGenerating =
-                          this.cipdReport.isGenerating &&
-                          this.cipdReport.activeGeneratingTarget ===
-                            target.label;
+            ${
+              isPreconfigured
+                ? html`
+                    <table
+                      class="targets-table"
+                      style="width: 100%; border-collapse: collapse; margin-top: 8px;"
+                    >
+                      <thead>
+                        <tr
+                          style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);"
+                        >
+                          <th style="padding: 8px;">Target</th>
+                          <th style="padding: 8px;">Last generated at</th>
+                          <th style="padding: 8px;">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${this.cipdReport.preconfiguredTargets?.map(
+                          (target) => {
+                            const matchedTarget =
+                              this.cipdReport.availableTargets?.find(
+                                (t) =>
+                                  t.displayName === target.displayName ||
+                                  t.name === target.label,
+                              );
+                            const lastGeneratedAt =
+                              matchedTarget?.lastGeneratedAt;
+                            const formattedTime = lastGeneratedAt
+                              ? format(lastGeneratedAt)
+                              : 'Never';
+                            const fullTime = lastGeneratedAt
+                              ? new Date(lastGeneratedAt).toLocaleString()
+                              : 'Never';
+                            const isTargetGenerating =
+                              this.cipdReport.isGenerating &&
+                              this.cipdReport.activeGeneratingTarget ===
+                                target.label;
 
-                        const isGenerated = !!matchedTarget;
-                        const isActive =
-                          matchedTarget &&
-                          this.cipdReport.targetSelected === matchedTarget.name;
+                            const isGenerated = !!matchedTarget;
+                            const isActive =
+                              matchedTarget &&
+                              this.cipdReport.targetSelected ===
+                                matchedTarget.name;
 
-                        const rowStyle = `
+                            const rowStyle = `
                             border-bottom: 1px solid var(--vscode-panel-border);
                             cursor: ${isGenerated ? 'pointer' : 'not-allowed'};
                             background-color: ${
@@ -285,81 +289,94 @@ export class Root extends LitElement {
                             ${isActive ? 'font-weight: 600;' : ''}
                           `;
 
-                        const tooltip = isGenerated
-                          ? ''
-                          : "Click 'Generate' to build compile commands for this target before selecting it.";
+                            const tooltip = isGenerated
+                              ? ''
+                              : "Click 'Generate' to build compile commands for this target before selecting it.";
 
-                        return html`
-                          <tr
-                            class="${isGenerated ? '' : 'tooltip-container'}"
-                            style="${rowStyle}"
-                            @click=${() => {
-                              if (isGenerated && matchedTarget) {
-                                vscode.postMessage({
-                                  type: 'selectTarget',
-                                  data: matchedTarget.name,
-                                });
-                              }
-                            }}
-                          >
-                            <td
-                              style="padding: 8px; border-left: 3px solid ${isActive
-                                ? 'var(--vscode-button-background)'
-                                : 'transparent'};"
-                            >
-                              ${target.displayName || target.label}
-                              ${isGenerated
-                                ? ''
-                                : html`
-                                    <span
-                                      class="tooltip-text"
-                                      style="left: 12px; transform: none;"
-                                    >
-                                      Click 'Generate' to build compile commands
-                                      for this target before selecting it.
-                                    </span>
-                                  `}
-                            </td>
-                            <td style="padding: 8px;" title="${fullTime}">
-                              ${formattedTime}
-                            </td>
-                            <td style="padding: 8px;">
-                              <button
-                                class="vscode-button"
-                                style="padding: 2px 8px; font-size: 11px; min-width: auto;"
-                                ?disabled=${this.cipdReport.isGenerating}
-                                @click=${(e: Event) => {
-                                  e.stopPropagation();
-                                  this._runPreconfiguredTarget(target.label);
+                            return html`
+                              <tr
+                                class="${isGenerated ? '' : 'tooltip-container'}"
+                                style="${rowStyle}"
+                                @click=${() => {
+                                  if (isGenerated && matchedTarget) {
+                                    vscode.postMessage({
+                                      type: 'selectTarget',
+                                      data: matchedTarget.name,
+                                    });
+                                  }
                                 }}
                               >
-                                ${isTargetGenerating
-                                  ? 'Generating...'
-                                  : isGenerated
-                                    ? 'Regenerate'
-                                    : 'Generate'}
-                              </button>
-                            </td>
-                          </tr>
-                        `;
-                      })}
-                    </tbody>
-                  </table>
-                `
-              : html`
-                  <p style="margin-top:0;">
-                    No preconfigured targets found. Please configure a
-                    <code>pw_compile_commands_generator</code> target in
-                    <code>BUILD.bazel</code> to enable C++ code intelligence.
-                  </p>
-                  <p>
-                    See the
-                    <a href="https://pigweed.dev/pw_ide/guide/" target="_blank"
-                      >Pigweed IDE Guide</a
-                    >
-                    for more details.
-                  </p>
-                `}
+                                <td
+                                  style="padding: 8px; border-left: 3px solid ${
+                                    isActive
+                                      ? 'var(--vscode-button-background)'
+                                      : 'transparent'
+                                  };"
+                                >
+                                  ${target.displayName || target.label}
+                                  ${
+                                    isGenerated
+                                      ? ''
+                                      : html`
+                                          <span
+                                            class="tooltip-text"
+                                            style="left: 12px; transform: none;"
+                                          >
+                                            Click 'Generate' to build compile
+                                            commands for this target before
+                                            selecting it.
+                                          </span>
+                                        `
+                                  }
+                                </td>
+                                <td style="padding: 8px;" title="${fullTime}">
+                                  ${formattedTime}
+                                </td>
+                                <td style="padding: 8px;">
+                                  <button
+                                    class="vscode-button"
+                                    style="padding: 2px 8px; font-size: 11px; min-width: auto;"
+                                    ?disabled=${this.cipdReport.isGenerating}
+                                    @click=${(e: Event) => {
+                                      e.stopPropagation();
+                                      this._runPreconfiguredTarget(
+                                        target.label,
+                                      );
+                                    }}
+                                  >
+                                    ${
+                                      isTargetGenerating
+                                        ? 'Generating...'
+                                        : isGenerated
+                                          ? 'Regenerate'
+                                          : 'Generate'
+                                    }
+                                  </button>
+                                </td>
+                              </tr>
+                            `;
+                          },
+                        )}
+                      </tbody>
+                    </table>
+                  `
+                : html`
+                    <p style="margin-top:0;">
+                      No preconfigured targets found. Please configure a
+                      <code>pw_compile_commands_generator</code> target in
+                      <code>BUILD.bazel</code> to enable C++ code intelligence.
+                    </p>
+                    <p>
+                      See the
+                      <a
+                        href="https://pigweed.dev/pw_ide/guide/"
+                        target="_blank"
+                        >Pigweed IDE Guide</a
+                      >
+                      for more details.
+                    </p>
+                  `
+            }
           </div>
         `,
       },
@@ -576,21 +593,23 @@ export class Root extends LitElement {
                   html`<div class="row">
                     <div>${ext.name || ext.id}</div>
                     <div>
-                      ${!ext.installed
-                        ? html`
-                            <button
-                              class="vscode-button"
-                              @click="${() => {
-                                vscode.postMessage({
-                                  type: 'openExtension',
-                                  data: ext.id,
-                                });
-                              }}"
-                            >
-                              Install
-                            </button>
-                          `
-                        : html`<i>Installed</i>`}
+                      ${
+                        !ext.installed
+                          ? html`
+                              <button
+                                class="vscode-button"
+                                @click="${() => {
+                                  vscode.postMessage({
+                                    type: 'openExtension',
+                                    data: ext.id,
+                                  });
+                                }}"
+                              >
+                                Install
+                              </button>
+                            `
+                          : html`<i>Installed</i>`
+                      }
                     </div>
                   </div>`,
               )}
@@ -606,21 +625,23 @@ export class Root extends LitElement {
                   html`<div class="row">
                     <div>${ext.name || ext.id}</div>
                     <div>
-                      ${ext.installed
-                        ? html`
-                            <button
-                              class="vscode-button"
-                              @click="${() => {
-                                vscode.postMessage({
-                                  type: 'openExtension',
-                                  data: ext.id,
-                                });
-                              }}"
-                            >
-                              Remove
-                            </button>
-                          `
-                        : html`<i>Not Installed</i>`}
+                      ${
+                        ext.installed
+                          ? html`
+                              <button
+                                class="vscode-button"
+                                @click="${() => {
+                                  vscode.postMessage({
+                                    type: 'openExtension',
+                                    data: ext.id,
+                                  });
+                                }}"
+                              >
+                                Remove
+                              </button>
+                            `
+                          : html`<i>Not Installed</i>`
+                      }
                     </div>
                   </div>`,
               )}

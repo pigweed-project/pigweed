@@ -44,16 +44,11 @@ import type { Logger } from './loggingTypes';
 
 /** Refresh statuses that broadly represent a refresh in progress. */
 export type RefreshStatusInProgress =
-  | 'willRefresh'
-  | 'refreshing'
-  | 'didRefresh';
+  'willRefresh' | 'refreshing' | 'didRefresh';
 
 /** The status of the refresh process. */
 export type RefreshStatus =
-  | 'idle'
-  | RefreshStatusInProgress
-  | 'abort'
-  | 'fault';
+  'idle' | RefreshStatusInProgress | 'abort' | 'fault';
 
 /** Refresh callback functions return this type. */
 export type RefreshCallbackResult = { error: string | null };
@@ -63,8 +58,7 @@ export const OK: RefreshCallbackResult = { error: null };
 
 /** The function signature for refresh callback functions. */
 export type RefreshCallback = () =>
-  | RefreshCallbackResult
-  | Promise<RefreshCallbackResult>;
+  RefreshCallbackResult | Promise<RefreshCallbackResult>;
 
 /**
  * This type definition defines the refresh manager state machine.
