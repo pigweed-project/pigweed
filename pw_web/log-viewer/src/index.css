@@ -30,7 +30,8 @@
   -webkit-text-size-adjust: 100%;
   /* Material component properties */
   --md-icon-font: 'Material Symbols Rounded';
-  --md-icon-font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 200, 'opsz' 58;
+  --md-icon-font-variation-settings:
+    'FILL' 1, 'wght' 400, 'GRAD' 200, 'opsz' 58;
   --md-icon-size: 1.25rem;
   --md-filled-button-label-text-type: 'Roboto Flex', Arial, sans-serif;
   --md-outlined-button-label-text-type: 'Roboto Flex', Arial, sans-serif;
