@@ -60,6 +60,7 @@ filegroup {
     srcs: [
         "pw_metric_proto/metric_service.proto",
         "pw_metric_proto/metric_service.pwpb_options",
+        ":pw_tokenizer_proto_options_proto",
     ],
 }
 
