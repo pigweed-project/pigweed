@@ -48,7 +48,7 @@ platform(
         "//pw_build/constraints/chipset:rp2040",  # TODO: https://pwbug.dev/343487589 - Use Pico SDK constraints.
         "//pw_build/constraints/rtos:freertos",
         "//pw_cpu_exception:enabled",
-        "//pw_interrupt_cortex_m:backend",
+        "//pw_interrupt_cortex_m:compatible",
         "//pw_build/constraints/rust:no_std",
         "@platforms//os:none",
     ],

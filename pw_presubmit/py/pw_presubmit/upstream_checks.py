@@ -582,7 +582,7 @@ INCLUDE_CHECK_EXCEPTIONS = (
     "//pw_fuzzer:fuzztest",
     "//pw_fuzzer:fuzztest_stub",
     "//pw_ide/bazel/compile_commands/test:basic_library_direct_includes",
-    "//pw_interrupt_cortex_m:context",
+    "//pw_interrupt_cortex_m:impl",
     "//pw_log_fuchsia:pw_log_fuchsia",
     "//pw_log_null:headers",
     "//pw_metric:metric_service_pwpb",

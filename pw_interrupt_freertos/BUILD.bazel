@@ -12,26 +12,45 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:compatibility.bzl", "boolean_constraint_value", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+# TODO: https://pwbug.dev/347998044 - Remove this once all downstream projects use :compatible.
 constraint_value(
     name = "backend",
     constraint_setting = "//pw_interrupt:backend_constraint_setting",
 )
 
-cc_library(
+boolean_constraint_value(
+    name = "compatible",
+)
+
+# TODO: https://pwbug.dev/347998044 - This alias will be removed along with the
+# multiplexer.
+alias(
     name = "context",
+    actual = ":impl",
+)
+
+cc_library(
+    name = "impl",
     hdrs = [
         "public_overrides/pw_interrupt_backend/context_inline.h",
     ],
     strip_include_prefix = "public_overrides",
-    target_compatible_with = [":backend"],
+    target_compatible_with = selects.with_or({
+        (
+            ":compatible",
+            ":backend",
+        ): [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":context_implementation",
         "//pw_interrupt:context.facade",

@@ -36,7 +36,7 @@ platform(
     constraint_values = [
         ":freertos_config_cv",
         "//pw_build/constraints/rtos:freertos",
-        "//pw_interrupt_cortex_m:backend",
+        "//pw_interrupt_cortex_m:compatible",
         "//pw_build/constraints/board:mimxrt595_evk",
         "//pw_malloc_freertos:backend",
         "//pw_build/constraints/arm:cortex-m33",
@@ -56,6 +56,7 @@ platform(
         "@pigweed//pw_assert:check_backend": "//pw_assert_basic",
         "@pigweed//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
         "@pigweed//pw_boot:backend": "//pw_boot_cortex_m:armv8m",
+        "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
         "@pigweed//pw_log:backend": "//pw_log_basic",
         "@pigweed//pw_log:backend_impl": "//pw_log_basic:impl",
         "@pigweed//pw_malloc:backend": "//pw_malloc:bucket_allocator",

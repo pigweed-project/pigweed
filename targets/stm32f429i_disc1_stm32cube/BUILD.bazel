@@ -53,7 +53,7 @@ platform(
     constraint_values = [
         ":freertos_config_cv",
         "//pw_build/constraints/rtos:freertos",
-        "//pw_interrupt_cortex_m:backend",
+        "//pw_interrupt_cortex_m:compatible",
         "//pw_malloc:bucket_allocator_backend",
         "@freertos//:port_ARM_CM4F",
         "@freertos//:disable_task_statics",
@@ -67,6 +67,7 @@ platform(
         "@pigweed//pw_assert:check_backend": "//pw_assert_basic",
         "@pigweed//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
         "@pigweed//pw_boot:backend": "//pw_boot_cortex_m",
+        "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
         "@pigweed//pw_log:backend": "//pw_log_tokenized",
         "@pigweed//pw_log:backend_impl": "//pw_log_tokenized:impl",
         "@pigweed//pw_log_tokenized:handler_backend": "//pw_system:log_backend",

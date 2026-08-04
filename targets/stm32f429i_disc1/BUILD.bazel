@@ -28,7 +28,7 @@ licenses(["notice"])
 platform(
     name = "stm32f429i_baremetal",
     constraint_values = [
-        "//pw_interrupt_cortex_m:backend",
+        "//pw_interrupt_cortex_m:compatible",
         "//pw_malloc:bucket_allocator_backend",
         "//pw_sys_io_baremetal_stm32f429:compatible",
         "@platforms//cpu:armv7e-m",
@@ -40,6 +40,7 @@ platform(
         "@pigweed//pw_assert:check_backend": "//pw_assert_basic",
         "@pigweed//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
         "@pigweed//pw_boot:backend": "//pw_boot_cortex_m",
+        "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
         "@pigweed//pw_log:backend": "//pw_log_basic",
         "@pigweed//pw_log:backend_impl": "//pw_log_basic:impl",
         "@pigweed//pw_malloc:backend": "//pw_malloc:bucket_allocator",

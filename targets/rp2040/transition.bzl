@@ -37,7 +37,7 @@ RP2_SYSTEM_FLAGS = FREERTOS_FLAGS | {
     "@pigweed//pw_cpu_exception:support_backend": str(Label("//pw_cpu_exception_cortex_m:support")),
     "@pigweed//pw_crypto:ecdsa_backend": str(Label("//pw_crypto:ecdsa_mbedtls")),
     "@pigweed//pw_crypto:sha256_backend": str(Label("//pw_crypto:sha256_mbedtls")),
-    "@pigweed//pw_interrupt:backend": str(Label("//pw_interrupt_cortex_m:context")),
+    "@pigweed//pw_interrupt:backend": str(Label("//pw_interrupt_cortex_m:impl")),
     "@pigweed//pw_log:backend": str(Label("//pw_log_tokenized")),
     "@pigweed//pw_log:backend_impl": str(Label("//pw_log_tokenized:impl")),
     "@pigweed//pw_log_tokenized:handler_backend": str(Label("//pw_system:log_backend")),

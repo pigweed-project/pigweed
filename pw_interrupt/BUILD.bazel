@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "host_backend_alias", "incompatible_with_mcu")
@@ -60,9 +61,15 @@ host_backend_alias(
 
 alias(
     name = "backend_multiplexer",
-    actual = select({
-        "//pw_interrupt_cortex_m:backend": "//pw_interrupt_cortex_m:context",
-        "//pw_interrupt_freertos:backend": "//pw_interrupt_freertos:context",
+    actual = selects.with_or({
+        (
+            "//pw_interrupt_cortex_m:backend",
+            "//pw_interrupt_cortex_m:compatible",
+        ): "//pw_interrupt_cortex_m:context",
+        (
+            "//pw_interrupt_freertos:backend",
+            "//pw_interrupt_freertos:compatible",
+        ): "//pw_interrupt_freertos:context",
         "//conditions:default": ":unspecified_backend_context",
     }),
     visibility = ["//targets:__pkg__"],
