@@ -8,3 +8,4 @@
    :maxdepth: 1
 
    July 2026 <07>
+   August 2026 <08>

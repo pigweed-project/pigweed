@@ -160,6 +160,7 @@ sphinx_docs_library(
         "os/baremetal/index.rst",
         "overview.rst",
         "security/2026/07.rst",
+        "security/2026/08.rst",
         "security/2026/index.rst",
         "security/false_positives.rst",
         "security/index.rst",

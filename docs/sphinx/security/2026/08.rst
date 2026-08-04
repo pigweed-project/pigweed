@@ -1,0 +1,63 @@
+.. _docs-security-2026-08:
+
+=========================
+Security bulletin 2026-08
+=========================
+
+This bulletin lists the critical and high severity vulnerabilities that were
+fixed for the month of August, 2026.
+
+This bulletin was last updated on August 3rd, 2026.
+
+---------------------
+Vulnerability details
+---------------------
+.. list-table::
+   :header-rows: 1
+
+   * - CVE
+     - Reference
+     - Impact
+     - Modules affected
+     - Fixed by
+   * - TBD
+     - b/542347403
+     - ID
+     - pw_software_update
+     - bc9b3642c53b8cb39a7d61dddc5104eabce33f79
+
+--------------------------
+How to interpret the table
+--------------------------
+* CVEs are assigned after a fix is released, and may be listed as "TBD" in the
+  interim.
+* If the 'Reference' column is "N/A", the bug report cannot be made public at
+  this time.
+* The 'Impact' column uses the following abbreviations:
+
+  .. list-table::
+     :header-rows: 1
+
+     * - Abbreviation
+       - Definition
+     * - CE
+       - Potential code execution, including most memory corruptions that affect
+         control flow.
+     * - S
+       - Spoofing, such as injection of malicious data from what appears to be
+         a valid source
+     * - T
+       - Tampering, such as modifying state or user data in way that affects
+         device behavior
+     * - ID
+       - Information disclosure, including memory corruptions such as
+         out-of-bound reads
+     * - DoS
+       - Denial of service, such as triggering assertions
+     * - N/A
+       - Classification not available
+
+* The 'Fixed by' column provides the revision that consumers should upgrade to
+  or cherry-pick.
+* The 'Modules affected' column lists the primary modules affected. Be aware
+  that other modules may be affected through transitive dependencies.
