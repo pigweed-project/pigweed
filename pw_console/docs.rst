@@ -41,19 +41,6 @@ Contributing
 - Commit messages should include a ``Testing:`` line with the steps that were
   manually run.
 
-------
-Guides
-------
-.. toctree::
-   :maxdepth: 1
-
-   py/pw_console/docs/user_guide
-   embedding
-   plugins
-   testing
-   tools
-   internals
-
 .. _IPython's embed(): https://ipython.readthedocs.io/en/stable/interactive/reference.html#embedding
 .. _IPython: https://ipython.readthedocs.io/
 .. _prompt_toolkit: https://python-prompt-toolkit.readthedocs.io/
@@ -66,7 +53,13 @@ Security
 See :ref:`module-pw_console-security` for the module-specific threat model.
 
 .. toctree::
-   :maxdepth: 1
    :hidden:
+   :maxdepth: 1
 
+   py/pw_console/docs/user_guide
+   embedding
+   plugins
+   testing
+   tools
+   internals
    security

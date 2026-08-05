@@ -332,20 +332,14 @@ Branding the ``pw`` tool is a great start, but more changes are planned:
   ``foo`` in this case.
 - Re-coloring the log headers from the ``pw`` tool.
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   api
-
-
 ========
 Security
 ========
 See :ref:`module-pw_cli-security` for the module-specific threat model.
 
 .. toctree::
-   :maxdepth: 1
    :hidden:
+   :maxdepth: 1
 
+   api
    security

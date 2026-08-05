@@ -154,20 +154,14 @@ Dependencies
 ------------
 - :bdg-ref-primary-line:`module-pw_preprocessor`
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   backends
-
-
 ========
 Security
 ========
 See :ref:`module-pw_boot-security` for the module-specific threat model.
 
 .. toctree::
-   :maxdepth: 1
    :hidden:
+   :maxdepth: 1
 
+   backends
    security

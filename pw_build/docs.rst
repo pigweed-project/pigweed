@@ -51,6 +51,11 @@ and prescribe build configuration variants supported by your project.
 
       Build integrations for Pigweed's original build system.
 
+========
+Security
+========
+See :ref:`module-pw_build-security` for the module-specific threat model.
+
 .. toctree::
    :hidden:
    :maxdepth: 1
@@ -61,15 +66,4 @@ and prescribe build configuration variants supported by your project.
    python_api
    linker_scripts
    workflows_launcher
-
-
-========
-Security
-========
-See :ref:`module-pw_build-security` for the module-specific threat model.
-
-.. toctree::
-   :maxdepth: 1
-   :hidden:
-
    security

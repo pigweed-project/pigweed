@@ -126,15 +126,6 @@ These projects may benefit from using the
 :cc:`pw::Allocator` interface and its implementations to
 manage memory.
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   guide
-   design
-   backends
-   code_size
-
 .. grid:: 2
 
    .. grid-item-card:: :octicon:`rocket` Guides
@@ -176,7 +167,11 @@ Security
 See :ref:`module-pw_allocator-security` for the module-specific threat model.
 
 .. toctree::
-   :maxdepth: 1
    :hidden:
+   :maxdepth: 1
 
+   guide
+   design
+   backends
+   code_size
    security

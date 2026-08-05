@@ -22,14 +22,6 @@ full filesystem is not needed. Key properties include:
   sequentially. This design has a minimal set of invariants, which simplifies
   implementation and improves robustness against unexpected power loss.
 
-.. toctree::
-   :hidden:
-   :maxdepth: 1
-
-   guides
-   disk_format
-   code_size
-
 .. grid:: 2
 
    .. grid-item-card:: :octicon:`rocket` Get started & guides
@@ -69,7 +61,10 @@ Security
 See :ref:`module-pw_kvs-security` for the module-specific threat model.
 
 .. toctree::
-   :maxdepth: 1
    :hidden:
+   :maxdepth: 1
 
+   guides
+   disk_format
+   code_size
    security
