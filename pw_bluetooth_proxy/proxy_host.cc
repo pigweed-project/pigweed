@@ -98,6 +98,16 @@ bool ProxyHost::IsLeSubeventBlocked(
   return blocked_le_subevents_.test(static_cast<uint8_t>(subevent_code));
 }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+Status ProxyHost::RestoreAclFromSnapshot(const AclSnapshot& snapshot) {
+  if (snapshot.snapshot_incomplete) {
+    PW_LOG_ERROR("Cannot restore from incomplete ACL snapshot");
+    return Status::DataLoss();
+  }
+  return Status::Unimplemented();
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
 void ProxyHost::DoReset() {
   // Reset AclDataChannel first, so that send credits are reset to 0 until
   // reinitialized by controller event. This way, new channels can still be

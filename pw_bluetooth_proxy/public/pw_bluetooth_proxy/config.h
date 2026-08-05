@@ -35,10 +35,23 @@
 #define PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE 1024
 #endif  // PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE
 
+#ifndef PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+/// Controls whether offload recovery persistence infrastructure (snapshots,
+/// state restoration, and state update callbacks) is compiled into the proxy.
+/// Defaults to 0 (disabled). Setting to 1 compiles recovery logic and members.
+#define PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY 0
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
 #ifndef PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 /// Whether ProxyHost emits incremental state update callbacks on dynamic credit
 /// mutations. Disabling reduces power consumption for high-throughput streams.
 #define PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES 1
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
+#ifndef PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS
+/// Caps the number of concurrent ACL connections that can be serialized across
+/// the proxy's subsystems.
+#define PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS 10
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS
 
 /// @endmodule

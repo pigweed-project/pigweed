@@ -17,6 +17,7 @@
 #include <bitset>
 
 #include "pw_bluetooth/hci_common.emb.h"
+#include "pw_bluetooth_proxy/acl_snapshot.h"
 #include "pw_bluetooth_proxy/gatt_notify_channel.h"
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 #include "pw_bluetooth_proxy/internal/hci_transport.h"
@@ -131,6 +132,22 @@ class ProxyHost : public L2capChannelManagerInterface {
 
   /// Checks if a specific LE Meta subevent is currently blocked.
   bool IsLeSubeventBlocked(emboss::LeSubEventCode subevent_code) const;
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  // ##### Offload Recovery & Snapshot APIs
+
+  /// Restores ACL state from a previously saved snapshot.
+  ///
+  /// @note This method is not thread-safe and must be called during container
+  /// initialization after construction, prior to processing any HCI/H4 packet
+  /// traffic.
+  ///
+  /// @param[in] snapshot ACL state container to restore from.
+  /// @returns
+  /// * @OK: State restored successfully.
+  /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
+  Status RestoreAclFromSnapshot(const AclSnapshot& snapshot);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   // ##### Container API
   // Containers are expected to call these functions (in addition to ctor).

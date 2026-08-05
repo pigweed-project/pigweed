@@ -67,15 +67,13 @@ pw_add_facade(pw_bluetooth_proxy.clock INTERFACE
     pw_bluetooth_proxy.config
 )
 
-pw_add_library(pw_bluetooth_proxy.snapshot INTERFACE
-
+pw_add_library(pw_bluetooth_proxy.acl_snapshot INTERFACE
   HEADERS
-    public/pw_bluetooth_proxy/snapshot.h
+    public/pw_bluetooth_proxy/acl_snapshot.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_bluetooth_proxy.config
-    pw_function
 )
 
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
@@ -141,8 +139,8 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
   pw_bluetooth.emboss_hci_events
   pw_bluetooth.emboss_hci_h4
   pw_bluetooth.emboss_l2cap_frames
+  pw_bluetooth_proxy.acl_snapshot
   pw_bluetooth_proxy.config
-  pw_bluetooth_proxy.snapshot
   pw_bytes
   pw_containers.dynamic_map
   pw_containers.dynamic_queue
@@ -232,10 +230,27 @@ pw_add_library(pw_bluetooth_proxy._sync STATIC
     ${PW_BLUETOOTH_PROXY_PRIVATE_DEPS}
   SOURCES
     ${PW_BLUETOOTH_PROXY_SOURCES}
-
 )
 target_compile_definitions(pw_bluetooth_proxy._sync PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0
+)
+
+pw_add_library(pw_bluetooth_proxy._sync_recovery STATIC
+  HEADERS
+    ${PW_BLUETOOTH_PROXY_HEADERS}
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_PUBLIC_DEPS}
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_PRIVATE_DEPS}
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_SOURCES}
+)
+target_compile_definitions(pw_bluetooth_proxy._sync_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=0
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1
 )
 
 pw_add_library(pw_bluetooth_proxy._async STATIC
@@ -252,6 +267,24 @@ pw_add_library(pw_bluetooth_proxy._async STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy._async PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0
+)
+
+pw_add_library(pw_bluetooth_proxy._async_recovery STATIC
+  HEADERS
+    ${PW_BLUETOOTH_PROXY_HEADERS}
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_PUBLIC_DEPS}
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_PRIVATE_DEPS}
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_SOURCES}
+)
+target_compile_definitions(pw_bluetooth_proxy._async_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=1
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1
 )
 
 # Test utils (required by tests in bluetooth_proxy, gatt, and rfcomm)
@@ -285,6 +318,23 @@ pw_add_library(pw_bluetooth_proxy._test_utils_sync STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy._test_utils_sync PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0
+)
+
+pw_add_library(pw_bluetooth_proxy._test_utils_sync_recovery STATIC
+  HEADERS
+    private/pw_bluetooth_proxy_private/test_utils.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
+    pw_bluetooth_proxy._sync_recovery
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy._test_utils_sync_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=0
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1
 )
 
 pw_add_library(pw_bluetooth_proxy._test_utils_async STATIC
@@ -300,6 +350,23 @@ pw_add_library(pw_bluetooth_proxy._test_utils_async STATIC
 )
 target_compile_definitions(pw_bluetooth_proxy._test_utils_async PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0
+)
+
+pw_add_library(pw_bluetooth_proxy._test_utils_async_recovery STATIC
+  HEADERS
+    private/pw_bluetooth_proxy_private/test_utils.h
+  PUBLIC_INCLUDES
+    private
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_DEPS}
+    pw_bluetooth_proxy._async_recovery
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_UTILS_PRIVATE_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy._test_utils_async_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=1
+  PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1
 )
 
 # LINT.ThenChange(bt-proxy.bzl, BUILD.gn)
@@ -343,6 +410,7 @@ set(PW_BLUETOOTH_PROXY_TEST_SOURCES
   l2cap_coc_test.cc
   proxy_host_test.cc
   recombiner_test.cc
+  recovery_test.cc
   utils_test.cc
 )
 
@@ -357,11 +425,33 @@ pw_add_test(pw_bluetooth_proxy.pw_bluetooth_proxy_sync_test
     modules
 )
 
+pw_add_test(pw_bluetooth_proxy.pw_bluetooth_proxy_sync_recovery_test
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_PRIVATE_DEPS}
+    pw_bluetooth_proxy._sync_recovery
+    pw_bluetooth_proxy._test_utils_sync_recovery
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_SOURCES}
+  GROUPS
+    modules
+)
+
 pw_add_test(pw_bluetooth_proxy.pw_bluetooth_proxy_async_test
   PRIVATE_DEPS
     ${PW_BLUETOOTH_PROXY_TEST_PRIVATE_DEPS}
     pw_bluetooth_proxy._async
     pw_bluetooth_proxy._test_utils_async
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_TEST_SOURCES}
+  GROUPS
+    modules
+)
+
+pw_add_test(pw_bluetooth_proxy.pw_bluetooth_proxy_async_recovery_test
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_TEST_PRIVATE_DEPS}
+    pw_bluetooth_proxy._async_recovery
+    pw_bluetooth_proxy._test_utils_async_recovery
   SOURCES
     ${PW_BLUETOOTH_PROXY_TEST_SOURCES}
   GROUPS

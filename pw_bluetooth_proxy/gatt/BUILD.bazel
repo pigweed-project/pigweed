@@ -38,9 +38,23 @@ pw_bluetooth_proxy_gatt_library(
 )
 
 pw_bluetooth_proxy_gatt_library(
+    name = "gatt_sync_recovery",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_gatt_library(
     name = "gatt_async",
     testonly = True,
     versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_async"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_gatt_library(
+    name = "gatt_async_recovery",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_async_recovery"],
     visibility = ["//visibility:private"],
 )
 
@@ -50,8 +64,18 @@ pw_bluetooth_proxy_gatt_test(
 )
 
 pw_bluetooth_proxy_gatt_test(
+    name = "gatt_sync_recovery_test",
+    versioned_deps = [":gatt_sync_recovery"],
+)
+
+pw_bluetooth_proxy_gatt_test(
     name = "gatt_async_test",
     versioned_deps = [":gatt_async"],
+)
+
+pw_bluetooth_proxy_gatt_test(
+    name = "gatt_async_recovery_test",
+    versioned_deps = [":gatt_async_recovery"],
 )
 
 pw_cc_test(

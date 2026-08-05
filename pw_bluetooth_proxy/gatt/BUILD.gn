@@ -66,12 +66,34 @@ pw_source_set("gatt_sync") {
   visibility = [ ":*" ]
 }
 
+pw_source_set("gatt_sync_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "public/pw_bluetooth_proxy/gatt/gatt.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = _pw_bluetooth_proxy_gatt_public_deps +
+                [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery" ]
+  deps = _pw_bluetooth_proxy_gatt_deps
+  sources = _pw_bluetooth_proxy_gatt_srcs
+  visibility = [ ":*" ]
+}
+
 pw_source_set("gatt_async") {
   testonly = pw_unit_test_TESTONLY
   public = [ "public/pw_bluetooth_proxy/gatt/gatt.h" ]
   public_configs = [ ":public_include_path" ]
   public_deps = _pw_bluetooth_proxy_gatt_public_deps +
                 [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_async" ]
+  deps = _pw_bluetooth_proxy_gatt_deps
+  sources = _pw_bluetooth_proxy_gatt_srcs
+  visibility = [ ":*" ]
+}
+
+pw_source_set("gatt_async_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "public/pw_bluetooth_proxy/gatt/gatt.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = _pw_bluetooth_proxy_gatt_public_deps +
+                [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_async_recovery" ]
   deps = _pw_bluetooth_proxy_gatt_deps
   sources = _pw_bluetooth_proxy_gatt_srcs
   visibility = [ ":*" ]
@@ -99,11 +121,27 @@ pw_test("gatt_sync_test") {
   sources = [ "gatt_test.cc" ]
 }
 
+pw_test("gatt_sync_recovery_test") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  deps = _pw_bluetooth_proxy_gatt_test_deps + [ ":gatt_sync_recovery" ]
+  sources = [ "gatt_test.cc" ]
+}
+
 pw_test("gatt_async_test") {
   enable_if =
       dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
       pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
   deps = _pw_bluetooth_proxy_gatt_test_deps + [ ":gatt_async" ]
+  sources = [ "gatt_test.cc" ]
+}
+
+pw_test("gatt_async_recovery_test") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  deps = _pw_bluetooth_proxy_gatt_test_deps + [ ":gatt_async_recovery" ]
   sources = [ "gatt_test.cc" ]
 }
 
@@ -127,7 +165,9 @@ pw_test("gatt_integration_test") {
 pw_test_group("tests") {
   tests = [
     ":gatt_sync_test",
+    ":gatt_sync_recovery_test",
     ":gatt_async_test",
+    ":gatt_async_recovery_test",
     ":gatt_integration_test",
   ]
 }

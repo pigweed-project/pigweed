@@ -110,17 +110,25 @@ Module configuration options include:
   both of which provide thread-safe APIs. When this option is zero (the
   default), it will use synchronization primitives to allow for parallel
   execution. When this option is non-zero, it will asynchronously execute tasks
-  using a provided :cc`pw::async2::Dispatcher`. When using this mode of
+  using a provided :cc:`pw::async2::Dispatcher`. When using this mode of
   operation, an allocator and a dispatcher must be provided that outlive the
   :cc:`pw::bluetooth::proxy::ProxyHost`.
 - :cc:`PW_BLUETOOTH_PROXY_MULTIBUF_ALLOCATOR_SIZE`: The size of the temporary
   internal multibuf allocator, which is used by the ChannelProxy and RFCOMM
   APIs. Configure this value to be large enough to allocate multiple RFCOMM
   packets if you are using RFCOMM.
+- :cc:`PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY`: Controls whether offload
+  recovery persistence infrastructure (snapshots, state restoration, and state
+  update callbacks) is compiled into the proxy. Defaults to 0 (disabled) to
+  guarantee zero memory footprint and zero runtime overhead in production
+  binaries. Setting to 1 compiles recovery APIs and members.
 - :cc:`PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES`: Whether
   :cc:`pw::bluetooth::proxy::ProxyHost` emits incremental state update
   callbacks on dynamic credit mutations (defaults to 1). Disabling reduces
   power consumption for high-throughput streams.
+- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS`: Caps the number of
+  concurrent ACL connections that can be serialized across the proxy's
+  subsystems.
 
 Clock Facade
 ============

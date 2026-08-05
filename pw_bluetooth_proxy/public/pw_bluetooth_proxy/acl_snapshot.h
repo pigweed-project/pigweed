@@ -13,28 +13,16 @@
 // the License.
 #pragma once
 
-#include <variant>
-
 #include "pw_bluetooth_proxy/config.h"
-#include "pw_function/function.h"
 
 namespace pw::bluetooth::proxy {
 
-// --- Capacity Boundaries & Constants ---
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
-inline constexpr bool kEnableCreditSnapshotUpdates =
-    PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES != 0;
+struct AclSnapshot {
+  bool snapshot_incomplete = false;
+};
 
-// --- Monolithic Top-Level Container ---
-
-struct ProxySnapshot {};
-
-// --- Real-Time Incremental State Update Event Variant ---
-
-using SubsystemStateUpdate = std::variant<std::monostate>;
-
-// Container notification callback signature
-using SubsystemStateUpdateCallback =
-    pw::Function<void(const SubsystemStateUpdate& update)>;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy

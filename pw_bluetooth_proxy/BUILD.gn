@@ -46,6 +46,14 @@ config("private_include_path") {
   visibility = [ ":*" ]
 }
 
+config("recovery_disabled") {
+  defines = [ "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0" ]
+}
+
+config("recovery_enabled") {
+  defines = [ "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1" ]
+}
+
 pw_source_set("config") {
   public = [ "public/pw_bluetooth_proxy/config.h" ]
   public_configs = [ ":public_include_path" ]
@@ -86,13 +94,10 @@ pw_facade("clock") {
   visibility = [ "$dir_pw_bluetooth_proxy/*" ]
 }
 
-pw_source_set("snapshot") {
-  public = [ "public/pw_bluetooth_proxy/snapshot.h" ]
+pw_source_set("acl_snapshot") {
+  public = [ "public/pw_bluetooth_proxy/acl_snapshot.h" ]
   public_configs = [ ":public_include_path" ]
-  public_deps = [
-    ":config",
-    "$dir_pw_function",
-  ]
+  public_deps = [ ":config" ]
 }
 
 # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
@@ -148,8 +153,8 @@ _pw_bluetooth_proxy_public = [
 # LINT.IfChange
 
 _pw_bluetooth_proxy_public_deps = [
+  ":acl_snapshot",
   ":config",
-  ":snapshot",
   "$dir_pw_allocator:best_fit",
   "$dir_pw_allocator:synchronized_allocator",
   "$dir_pw_async2:basic_dispatcher",
@@ -239,6 +244,21 @@ pw_source_set("pw_bluetooth_proxy_sync") {
   public_configs = [
     ":public_include_path",
     ":sync",
+    ":recovery_disabled",
+  ]
+  public_deps = _pw_bluetooth_proxy_public_deps
+  deps = _pw_bluetooth_proxy_deps
+  sources = _pw_bluetooth_proxy_sources
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
+}
+
+pw_source_set("pw_bluetooth_proxy_sync_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = _pw_bluetooth_proxy_public
+  public_configs = [
+    ":public_include_path",
+    ":sync",
+    ":recovery_enabled",
   ]
   public_deps = _pw_bluetooth_proxy_public_deps
   deps = _pw_bluetooth_proxy_deps
@@ -252,6 +272,21 @@ pw_source_set("pw_bluetooth_proxy_async") {
   public_configs = [
     ":public_include_path",
     ":async",
+    ":recovery_disabled",
+  ]
+  public_deps = _pw_bluetooth_proxy_public_deps
+  deps = _pw_bluetooth_proxy_deps
+  sources = _pw_bluetooth_proxy_sources
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
+}
+
+pw_source_set("pw_bluetooth_proxy_async_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = _pw_bluetooth_proxy_public
+  public_configs = [
+    ":public_include_path",
+    ":async",
+    ":recovery_enabled",
   ]
   public_deps = _pw_bluetooth_proxy_public_deps
   deps = _pw_bluetooth_proxy_deps
@@ -286,6 +321,7 @@ _pw_bluetooth_proxy_test_sources = [
   "l2cap_coc_test.cc",
   "proxy_host_test.cc",
   "recombiner_test.cc",
+  "recovery_test.cc",
   "utils_test.cc",
 ]
 
@@ -300,6 +336,17 @@ pw_test("pw_bluetooth_proxy_sync_test") {
          ]
 }
 
+pw_test("pw_bluetooth_proxy_sync_recovery_test") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  sources = _pw_bluetooth_proxy_test_sources
+  deps = _pw_bluetooth_proxy_test_deps + [
+           ":pw_bluetooth_proxy_sync_recovery",
+           ":test_utils_sync_recovery",
+         ]
+}
+
 pw_test("pw_bluetooth_proxy_async_test") {
   enable_if =
       dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
@@ -308,6 +355,17 @@ pw_test("pw_bluetooth_proxy_async_test") {
   deps = _pw_bluetooth_proxy_test_deps + [
            ":pw_bluetooth_proxy_async",
            ":test_utils_async",
+         ]
+}
+
+pw_test("pw_bluetooth_proxy_async_recovery_test") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  sources = _pw_bluetooth_proxy_test_sources
+  deps = _pw_bluetooth_proxy_test_deps + [
+           ":pw_bluetooth_proxy_async_recovery",
+           ":test_utils_async_recovery",
          ]
 }
 
@@ -331,9 +389,27 @@ _pw_bluetooth_proxy_test_utils_srcs = [
 pw_source_set("test_utils_sync") {
   testonly = pw_unit_test_TESTONLY
   public = [ "private/pw_bluetooth_proxy_private/test_utils.h" ]
-  public_configs = [ ":private_include_path" ]
+  public_configs = [
+    ":private_include_path",
+    ":sync",
+    ":recovery_disabled",
+  ]
   public_deps =
       _pw_bluetooth_proxy_test_utils_deps + [ ":pw_bluetooth_proxy_sync" ]
+  sources = _pw_bluetooth_proxy_test_utils_srcs
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
+}
+
+pw_source_set("test_utils_sync_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_bluetooth_proxy_private/test_utils.h" ]
+  public_configs = [
+    ":private_include_path",
+    ":sync",
+    ":recovery_enabled",
+  ]
+  public_deps = _pw_bluetooth_proxy_test_utils_deps +
+                [ ":pw_bluetooth_proxy_sync_recovery" ]
   sources = _pw_bluetooth_proxy_test_utils_srcs
   visibility = [ "$dir_pw_bluetooth_proxy/*" ]
 }
@@ -341,9 +417,27 @@ pw_source_set("test_utils_sync") {
 pw_source_set("test_utils_async") {
   testonly = pw_unit_test_TESTONLY
   public = [ "private/pw_bluetooth_proxy_private/test_utils.h" ]
-  public_configs = [ ":private_include_path" ]
+  public_configs = [
+    ":private_include_path",
+    ":async",
+    ":recovery_disabled",
+  ]
   public_deps =
       _pw_bluetooth_proxy_test_utils_deps + [ ":pw_bluetooth_proxy_async" ]
+  sources = _pw_bluetooth_proxy_test_utils_srcs
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
+}
+
+pw_source_set("test_utils_async_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = [ "private/pw_bluetooth_proxy_private/test_utils.h" ]
+  public_configs = [
+    ":private_include_path",
+    ":async",
+    ":recovery_enabled",
+  ]
+  public_deps = _pw_bluetooth_proxy_test_utils_deps +
+                [ ":pw_bluetooth_proxy_async_recovery" ]
   sources = _pw_bluetooth_proxy_test_utils_srcs
   visibility = [ "$dir_pw_bluetooth_proxy/*" ]
 }
@@ -353,7 +447,9 @@ pw_source_set("test_utils_async") {
 pw_test_group("tests") {
   tests = [
     ":pw_bluetooth_proxy_sync_test",
+    ":pw_bluetooth_proxy_sync_recovery_test",
     ":pw_bluetooth_proxy_async_test",
+    ":pw_bluetooth_proxy_async_recovery_test",
   ]
 
   group_deps = [

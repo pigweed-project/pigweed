@@ -37,9 +37,23 @@ pw_bluetooth_proxy_rfcomm_library(
 )
 
 pw_bluetooth_proxy_rfcomm_library(
+    name = "rfcomm_sync_recovery",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_rfcomm_library(
     name = "rfcomm_async",
     testonly = True,
     versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_async"],
+    visibility = ["//visibility:private"],
+)
+
+pw_bluetooth_proxy_rfcomm_library(
+    name = "rfcomm_async_recovery",
+    testonly = True,
+    versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_async_recovery"],
     visibility = ["//visibility:private"],
 )
 
@@ -52,9 +66,25 @@ pw_bluetooth_proxy_rfcomm_test(
 )
 
 pw_bluetooth_proxy_rfcomm_test(
+    name = "rfcomm_sync_recovery_test",
+    versioned_deps = [
+        ":rfcomm_sync_recovery",
+        "//pw_bluetooth_proxy:test_utils_sync_recovery",
+    ],
+)
+
+pw_bluetooth_proxy_rfcomm_test(
     name = "rfcomm_async_test",
     versioned_deps = [
         ":rfcomm_async",
         "//pw_bluetooth_proxy:test_utils_async",
+    ],
+)
+
+pw_bluetooth_proxy_rfcomm_test(
+    name = "rfcomm_async_recovery_test",
+    versioned_deps = [
+        ":rfcomm_async_recovery",
+        "//pw_bluetooth_proxy:test_utils_async_recovery",
     ],
 )

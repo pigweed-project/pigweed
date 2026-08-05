@@ -82,6 +82,23 @@ target_compile_definitions(pw_bluetooth_proxy.gatt._sync PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
 )
 
+pw_add_library(pw_bluetooth_proxy.gatt._sync_recovery STATIC
+  HEADERS
+    public/pw_bluetooth_proxy/gatt/gatt.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_PUBLIC_DEPS}
+    pw_bluetooth_proxy._sync_recovery
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_PRIVATE_DEPS}
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_GATT_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy.gatt._sync_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=0
+)
+
 pw_add_library(pw_bluetooth_proxy.gatt._async STATIC
   HEADERS
     public/pw_bluetooth_proxy/gatt/gatt.h
@@ -96,6 +113,23 @@ pw_add_library(pw_bluetooth_proxy.gatt._async STATIC
     ${PW_BLUETOOTH_PROXY_GATT_SRCS}
 )
 target_compile_definitions(pw_bluetooth_proxy.gatt._async PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=1
+)
+
+pw_add_library(pw_bluetooth_proxy.gatt._async_recovery STATIC
+  HEADERS
+    public/pw_bluetooth_proxy/gatt/gatt.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_PUBLIC_DEPS}
+    pw_bluetooth_proxy._async_recovery
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_PRIVATE_DEPS}
+  SOURCES
+    ${PW_BLUETOOTH_PROXY_GATT_SRCS}
+)
+target_compile_definitions(pw_bluetooth_proxy.gatt._async_recovery PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
 )
 
@@ -123,10 +157,30 @@ pw_add_test(pw_bluetooth_proxy.gatt.gatt_sync_test
     modules
 )
 
+pw_add_test(pw_bluetooth_proxy.gatt.gatt_sync_recovery_test
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_TEST_DEPS}
+    pw_bluetooth_proxy.gatt._sync_recovery
+  SOURCES
+    gatt_test.cc
+  GROUPS
+    modules
+)
+
 pw_add_test(pw_bluetooth_proxy.gatt.gatt_async_test
   PRIVATE_DEPS
     ${PW_BLUETOOTH_PROXY_GATT_TEST_DEPS}
     pw_bluetooth_proxy.gatt._async
+  SOURCES
+    gatt_test.cc
+  GROUPS
+    modules
+)
+
+pw_add_test(pw_bluetooth_proxy.gatt.gatt_async_recovery_test
+  PRIVATE_DEPS
+    ${PW_BLUETOOTH_PROXY_GATT_TEST_DEPS}
+    pw_bluetooth_proxy.gatt._async_recovery
   SOURCES
     gatt_test.cc
   GROUPS

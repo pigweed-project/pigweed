@@ -88,6 +88,23 @@ target_compile_definitions(pw_bluetooth_proxy.rfcomm._sync PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=0
 )
 
+pw_add_library(pw_bluetooth_proxy.rfcomm._sync_recovery STATIC
+  HEADERS
+    ${RFCOMM_HEADERS}
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${RFCOMM_PUBLIC_DEPS}
+    pw_bluetooth_proxy._sync_recovery
+  PRIVATE_DEPS
+    ${RFCOMM_PRIVATE_DEPS}
+  SOURCES
+    ${RFCOMM_SOURCES}
+)
+target_compile_definitions(pw_bluetooth_proxy.rfcomm._sync_recovery PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=0
+)
+
 pw_add_library(pw_bluetooth_proxy.rfcomm._async STATIC
   HEADERS
     ${RFCOMM_HEADERS}
@@ -102,6 +119,23 @@ pw_add_library(pw_bluetooth_proxy.rfcomm._async STATIC
     ${RFCOMM_SOURCES}
 )
 target_compile_definitions(pw_bluetooth_proxy.rfcomm._async PUBLIC
+  PW_BLUETOOTH_PROXY_ASYNC=1
+)
+
+pw_add_library(pw_bluetooth_proxy.rfcomm._async_recovery STATIC
+  HEADERS
+    ${RFCOMM_HEADERS}
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${RFCOMM_PUBLIC_DEPS}
+    pw_bluetooth_proxy._async_recovery
+  PRIVATE_DEPS
+    ${RFCOMM_PRIVATE_DEPS}
+  SOURCES
+    ${RFCOMM_SOURCES}
+)
+target_compile_definitions(pw_bluetooth_proxy.rfcomm._async_recovery PUBLIC
   PW_BLUETOOTH_PROXY_ASYNC=1
 )
 
@@ -131,6 +165,28 @@ pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_sync
     ${RFCOMM_TEST_PRIVATE_DEPS}
     pw_bluetooth_proxy.rfcomm._sync
     pw_bluetooth_proxy._test_utils_sync
+  SOURCES
+    ${RFCOMM_TEST_SOURCES}
+  GROUPS
+    modules
+)
+
+pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_async_recovery
+  PRIVATE_DEPS
+    ${RFCOMM_TEST_PRIVATE_DEPS}
+    pw_bluetooth_proxy.rfcomm._async_recovery
+    pw_bluetooth_proxy._test_utils_async_recovery
+  SOURCES
+    ${RFCOMM_TEST_SOURCES}
+  GROUPS
+    modules
+)
+
+pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_sync_recovery
+  PRIVATE_DEPS
+    ${RFCOMM_TEST_PRIVATE_DEPS}
+    pw_bluetooth_proxy.rfcomm._sync_recovery
+    pw_bluetooth_proxy._test_utils_sync_recovery
   SOURCES
     ${RFCOMM_TEST_SOURCES}
   GROUPS

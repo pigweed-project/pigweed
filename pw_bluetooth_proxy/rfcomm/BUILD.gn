@@ -80,11 +80,31 @@ pw_source_set("rfcomm_sync") {
   sources = _rfcomm_sources
 }
 
+pw_source_set("rfcomm_sync_recovery") {
+  public = _rfcomm_public
+  public_configs = [ ":public_include_path" ]
+  public_deps = [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery" ] +
+                _rfcomm_public_deps
+  deps = _rfcomm_deps
+  sources = _rfcomm_sources
+}
+
 pw_source_set("rfcomm_async") {
   public = _rfcomm_public
   public_configs = [ ":public_include_path" ]
   public_deps = [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_async" ] +
                 _rfcomm_public_deps
+  deps = _rfcomm_deps
+  sources = _rfcomm_sources
+  visibility = [ ":*" ]
+}
+
+pw_source_set("rfcomm_async_recovery") {
+  public = _rfcomm_public
+  public_configs = [ ":public_include_path" ]
+  public_deps =
+      [ "$dir_pw_bluetooth_proxy:pw_bluetooth_proxy_async_recovery" ] +
+      _rfcomm_public_deps
   deps = _rfcomm_deps
   sources = _rfcomm_sources
   visibility = [ ":*" ]
@@ -125,6 +145,17 @@ pw_test("rfcomm_test_sync") {
   # LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
 }
 
+pw_test("rfcomm_test_sync_recovery") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  sources = _rfcomm_test_sources
+  deps = _rfcomm_test_deps + [
+           ":rfcomm_sync_recovery",
+           "$dir_pw_bluetooth_proxy:test_utils_sync_recovery",
+         ]
+}
+
 pw_test("rfcomm_test_async") {
   enable_if =
       dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
@@ -136,9 +167,22 @@ pw_test("rfcomm_test_async") {
          ]
 }
 
+pw_test("rfcomm_test_async_recovery") {
+  enable_if =
+      dir_pw_third_party_emboss != "" && pw_thread_THREAD_BACKEND != "" &&
+      pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  sources = _rfcomm_test_sources
+  deps = _rfcomm_test_deps + [
+           ":rfcomm_async_recovery",
+           "$dir_pw_bluetooth_proxy:test_utils_async_recovery",
+         ]
+}
+
 pw_test_group("tests") {
   tests = [
     ":rfcomm_test_sync",
+    ":rfcomm_test_sync_recovery",
     ":rfcomm_test_async",
+    ":rfcomm_test_async_recovery",
   ]
 }

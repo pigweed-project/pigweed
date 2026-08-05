@@ -74,12 +74,11 @@ cc_library(
 )
 
 cc_library(
-    name = "snapshot",
-    hdrs = ["public/pw_bluetooth_proxy/snapshot.h"],
+    name = "acl_snapshot",
+    hdrs = ["public/pw_bluetooth_proxy/acl_snapshot.h"],
     strip_include_prefix = "public",
     deps = [
         ":config",
-        "//pw_function",
     ],
 )
 
@@ -94,14 +93,40 @@ pw_bluetooth_proxy_library(
 pw_bluetooth_proxy_library(
     name = "pw_bluetooth_proxy_sync",
     testonly = True,
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=0"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+)
+
+pw_bluetooth_proxy_library(
+    name = "pw_bluetooth_proxy_sync_recovery",
+    testonly = True,
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
     visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
 pw_bluetooth_proxy_library(
     name = "pw_bluetooth_proxy_async",
     testonly = True,
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=1"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+)
+
+pw_bluetooth_proxy_library(
+    name = "pw_bluetooth_proxy_async_recovery",
+    testonly = True,
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
     visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
@@ -119,21 +144,50 @@ alias(
 
 pw_bluetooth_proxy_test_utils(
     name = "test_utils_sync",
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=0"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
     versioned_deps = [":pw_bluetooth_proxy_sync"],
     visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
 pw_bluetooth_proxy_test_utils(
+    name = "test_utils_sync_recovery",
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    versioned_deps = [":pw_bluetooth_proxy_sync_recovery"],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+)
+
+pw_bluetooth_proxy_test_utils(
     name = "test_utils_async",
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=1"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
     versioned_deps = [":pw_bluetooth_proxy_async"],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+)
+
+pw_bluetooth_proxy_test_utils(
+    name = "test_utils_async_recovery",
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    versioned_deps = [":pw_bluetooth_proxy_async_recovery"],
     visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
 pw_bluetooth_proxy_test(
     name = "pw_bluetooth_proxy_sync_test",
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=0"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
     versioned_deps = [
         ":pw_bluetooth_proxy_sync",
         ":test_utils_sync",
@@ -141,11 +195,38 @@ pw_bluetooth_proxy_test(
 )
 
 pw_bluetooth_proxy_test(
+    name = "pw_bluetooth_proxy_sync_recovery_test",
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=0",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    versioned_deps = [
+        ":pw_bluetooth_proxy_sync_recovery",
+        ":test_utils_sync_recovery",
+    ],
+)
+
+pw_bluetooth_proxy_test(
     name = "pw_bluetooth_proxy_async_test",
-    defines = ["PW_BLUETOOTH_PROXY_ASYNC=1"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=0",
+    ],
     versioned_deps = [
         ":pw_bluetooth_proxy_async",
         ":test_utils_async",
+    ],
+)
+
+pw_bluetooth_proxy_test(
+    name = "pw_bluetooth_proxy_async_recovery_test",
+    defines = [
+        "PW_BLUETOOTH_PROXY_ASYNC=1",
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    versioned_deps = [
+        ":pw_bluetooth_proxy_async_recovery",
+        ":test_utils_async_recovery",
     ],
 )
 
