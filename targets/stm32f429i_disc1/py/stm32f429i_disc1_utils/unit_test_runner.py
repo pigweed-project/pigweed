@@ -17,12 +17,21 @@
 import argparse
 import logging
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
 
 import coloredlogs  # type: ignore
 import serial
+
+from pw_hdlc import rpc
+from pw_log.proto import log_pb2
+from pw_rpc.callback_client.errors import RpcTimeout
+from pw_system import device
+from pw_tokenizer import detokenize
+from pw_unit_test_proto import unit_test_pb2
+
 from stm32f429i_disc1_utils import stm32f429i_detector
 
 # Path used to access non-python resources in this python module.
@@ -86,6 +95,13 @@ def parse_args():
         default=115200,
         help='Target baud rate to use for serial communication'
         ' with target device',
+    )
+    parser.add_argument(
+        '--use-rpc',
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help='Use the RPC interface to trigger tests on-device or gather'
+        'results. If disabled, parse UART logging output.',
     )
     parser.add_argument(
         '--test-timeout',
@@ -160,25 +176,25 @@ def read_serial(port, baud_rate, test_timeout) -> bytes:
     """
 
     serial_data = bytearray()
-    device = serial.Serial(
+    serial_device = serial.Serial(
         baudrate=baud_rate, port=port, timeout=_FLASH_TIMEOUT
     )
-    if not device.is_open:
+    if not serial_device.is_open:
         raise TestingFailure('Failed to open device')
 
     # Flush input buffer and reset the device to begin the test.
-    device.reset_input_buffer()
+    serial_device.reset_input_buffer()
 
     # Block and wait for the first byte.
-    serial_data += device.read()
+    serial_data += serial_device.read()
     if not serial_data:
         raise TestingFailure('Device not producing output')
 
-    device.timeout = test_timeout
+    serial_device.timeout = test_timeout
 
     # Read with a reasonable timeout until we stop getting characters.
     while True:
-        bytes_read = device.readline()
+        bytes_read = serial_device.readline()
         if not bytes_read:
             break
         serial_data += bytes_read
@@ -186,7 +202,7 @@ def read_serial(port, baud_rate, test_timeout) -> bytes:
             # Set to much more aggressive timeout since the last one or two
             # lines should print out immediately. (one line if all fails or all
             # passes, two lines if mixed.)
-            device.timeout = 0.01
+            serial_device.timeout = 0.01
 
     # Remove carriage returns.
     serial_data = serial_data.replace(b'\r', b'')
@@ -237,7 +253,7 @@ def flash_device(binary, openocd_config, stlink_serial):
     _LOG.debug('Successfully flashed firmware to device')
 
 
-def handle_test_results(test_output):
+def handle_log_test_results(test_output):
     """Parses test output to determine whether tests passed or failed."""
 
     if test_output.find(_TESTS_STARTING_STRING) == -1:
@@ -253,31 +269,19 @@ def handle_test_results(test_output):
 
     log_subprocess_output(logging.DEBUG, test_output)
 
-    _LOG.info('Test passed!')
-
 
 def _threaded_test_reader(dest, port, baud_rate, test_timeout):
     """Parses test output to the mutable "dest" passed to this function."""
     dest.append(read_serial(port, baud_rate, test_timeout))
 
 
-def run_device_test(
-    binary, test_timeout, openocd_config, baud, stlink_serial=None, port=None
+def run_logging_test(
+    binary, test_timeout, openocd_config, baud, stlink_serial, port
 ) -> bool:
-    """Flashes, runs, and checks an on-device test binary.
+    """Runs a test expecting results to be returned via UART log strings.
 
-    Returns true on test pass.
+    Returns true if the tests passed, false otherwise.
     """
-
-    if stlink_serial is None and port is None:
-        _LOG.debug('Attempting to automatically detect dev board')
-        boards = stm32f429i_detector.detect_boards()
-        if not boards:
-            error = 'Could not find an attached device'
-            _LOG.error(error)
-            raise DeviceNotFound(error)
-        stlink_serial = boards[0].serial_number
-        port = boards[0].dev_name
 
     _LOG.debug('Launching test binary %s', binary)
     try:
@@ -295,12 +299,87 @@ def run_device_test(
         flash_device(binary, openocd_config, stlink_serial)
         read_thread.join()
         if result:
-            handle_test_results(result[0])
+            handle_log_test_results(result[0])
     except TestingFailure as err:
         _LOG.error(err)
         return False
 
+    _LOG.info('Test passed!')
     return True
+
+
+def run_rpc_test(
+    binary, test_timeout, openocd_config, baud, stlink_serial, port
+) -> bool:
+    """Runs a test by commanding it via RPC and expecting results to also be
+    returned over RPC.
+
+    Returns true if the tests passed, false otherwise.
+    """
+
+    _LOG.debug('Launching test binary %s', binary)
+    _LOG.info('Flashing firmware to device')
+    flash_device(binary, openocd_config, stlink_serial)
+
+    _LOG.info('Connecting to serial port %s at %d baud', port, baud)
+    serial_device = serial.Serial(port, baud, timeout=0.1)
+    reader = rpc.SerialReader(serial_device, 8192)
+
+    elf_path = Path(binary)
+    with device.Device(
+        channel_id=rpc.DEFAULT_CHANNEL_ID,
+        reader=reader,
+        write=serial_device.write,
+        proto_library=[log_pb2, unit_test_pb2],
+        detokenizer=detokenize.Detokenizer(elf_path),
+    ) as dev:
+        try:
+            _LOG.info('Running test on target device')
+            test_results = dev.run_tests(test_timeout)
+            _LOG.info('Test run complete')
+            if not test_results.all_tests_passed():
+                _LOG.error('Some tests failed!')
+                return False
+        except RpcTimeout:
+            _LOG.error('Test timed out after %s seconds.', test_timeout)
+            return False
+
+    _LOG.info('Test passed!')
+    return True
+
+
+def run_device_test(
+    binary,
+    test_timeout,
+    openocd_config,
+    baud,
+    stlink_serial=None,
+    port=None,
+    use_rpc=True,
+) -> bool:
+    """Flashes, runs, and checks an on-device test binary.
+
+    Returns true on test pass.
+    """
+
+    if stlink_serial is None and port is None:
+        _LOG.debug('Attempting to automatically detect dev board')
+        boards = stm32f429i_detector.detect_boards()
+        if not boards:
+            error = 'Could not find an attached device'
+            _LOG.error(error)
+            raise DeviceNotFound(error)
+        stlink_serial = boards[0].serial_number
+        port = boards[0].dev_name
+
+    if not use_rpc:
+        return run_logging_test(
+            binary, test_timeout, openocd_config, baud, stlink_serial, port
+        )
+
+    return run_rpc_test(
+        binary, test_timeout, openocd_config, baud, stlink_serial, port
+    )
 
 
 def main():
@@ -327,6 +406,7 @@ def main():
         args.baud,
         args.stlink_serial,
         args.port,
+        args.use_rpc,
     ):
         sys.exit(0)
     else:

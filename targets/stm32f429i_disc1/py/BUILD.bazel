@@ -12,7 +12,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library")
+load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,7 +33,65 @@ pw_py_library(
     imports = ["."],
     deps = [
         "//pw_cli/py:pw_cli",
+        "//pw_hdlc/py:pw_hdlc",
+        "//pw_log:log_proto_py_pb2",
+        "//pw_log/py:pw_log",
+        "//pw_log_rpc/py:pw_log_rpc",
+        "//pw_system/py:pw_system_lib",
+        "//pw_tokenizer:tokenizer_proto_py_pb2",
+        "//pw_tokenizer/py:pw_tokenizer",
+        "//pw_unit_test:unit_test_py_pb2",
+        "//pw_unit_test/py:pw_unit_test",
         "@pigweed_python_packages//coloredlogs",
         "@pigweed_python_packages//pyserial",
     ],
+)
+
+pw_py_binary(
+    name = "unit_test_runner",
+    srcs = [
+        "stm32f429i_disc1_utils/unit_test_runner.py",
+    ],
+    main = "stm32f429i_disc1_utils/unit_test_runner.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32f429i_disc1_utils",
+    ],
+)
+
+pw_py_binary(
+    name = "unit_test_server",
+    srcs = [
+        "stm32f429i_disc1_utils/unit_test_server.py",
+    ],
+    data = [
+        ":unit_test_runner",
+        "//pw_target_runner/go/cmd:server",
+    ],
+    main = "stm32f429i_disc1_utils/unit_test_server.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32f429i_disc1_utils",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_binary(
+    name = "_unit_test_client",
+    srcs = [
+        "stm32f429i_disc1_utils/unit_test_client.py",
+    ],
+    data = ["//pw_target_runner/go/cmd:client"],
+    main = "stm32f429i_disc1_utils/unit_test_client.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32f429i_disc1_utils",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+platform_data(
+    name = "unit_test_client",
+    platform = "@bazel_tools//tools:host_platform",
+    target = ":_unit_test_client",
 )

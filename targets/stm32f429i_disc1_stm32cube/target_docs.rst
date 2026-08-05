@@ -119,3 +119,10 @@ You are now up and running!
    The :ref:`module-pw_console`
    :bdg-ref-primary-line:`module-pw_console-user_guide` for more info on using
    the pw_console UI.
+
+-------
+Testing
+-------
+Unit tests can be run on-device by following the directions in
+:ref:`target-stm32f429i-disc1-test-bazel`, using
+``--config=stm32f429i_freertos``.

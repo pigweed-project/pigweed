@@ -32,5 +32,13 @@ pw_python_package("py") {
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
-  python_deps = [ "$dir_pw_cli/py" ]
+  python_deps = [
+    "$dir_pw_cli/py",
+    "$dir_pw_hdlc/py",
+    "$dir_pw_log:protos.python",
+    "$dir_pw_system/py",
+    "$dir_pw_tokenizer/py",
+    "$dir_pw_unit_test:unit_test_proto.python",
+    "$dir_pw_unit_test/py",
+  ]
 }

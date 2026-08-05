@@ -27,9 +27,23 @@ from stm32f429i_disc1_utils import stm32f429i_detector
 
 _LOG = logging.getLogger('unit_test_server')
 
-_TEST_RUNNER_COMMAND = 'stm32f429i_disc1_unit_test_runner'
+DEFAULT_PORT = 34173
 
-_TEST_SERVER_COMMAND = 'pw_target_runner_server'
+# If the script is being run through Bazel, our runner and server are provided
+# at well known locations in the runfiles.
+try:
+    from python.runfiles import runfiles  # type: ignore
+
+    r = runfiles.Create()
+    _TEST_RUNNER_COMMAND = r.Rlocation(
+        'pigweed/targets/stm32f429i_disc1/py/unit_test_runner'
+    )
+    _TEST_SERVER_COMMAND = r.Rlocation(
+        'pigweed/pw_target_runner/go/cmd/server_/server'
+    )
+except ImportError:
+    _TEST_RUNNER_COMMAND = 'stm32f429i_disc1_unit_test_runner'
+    _TEST_SERVER_COMMAND = 'pw_target_runner_server'
 
 
 def parse_args():
@@ -39,7 +53,7 @@ def parse_args():
     parser.add_argument(
         '--server-port',
         type=int,
-        default=8080,
+        default=DEFAULT_PORT,
         help='Port to launch the pw_target_runner_server on',
     )
     parser.add_argument(
@@ -120,8 +134,12 @@ def main():
     if args.verbose:
         _LOG.setLevel(logging.DEBUG)
 
-    exit_code = launch_server(args.server_config, args.server_port)
-    sys.exit(exit_code)
+    try:
+        exit_code = launch_server(args.server_config, args.server_port)
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        _LOG.info('Stopping unit test server...')
+        sys.exit(1)
 
 
 if __name__ == '__main__':

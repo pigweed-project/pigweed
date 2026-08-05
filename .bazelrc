@@ -289,9 +289,11 @@ build:pw_rp2350_pigweed --platforms=@pigweed//targets/pw_rp2350/pigweed:pw_rp235
 
 # Config for the stm32f429i_disc1 baremetal platform.
 build:stm32f429i_baremetal --platforms=//targets/stm32f429i_disc1:stm32f429i_baremetal
+test:stm32f429i_baremetal --run_under=//targets/stm32f429i_disc1/py:unit_test_client
 
 # Config for the stm32f429i_disc1_stm32cube freertos platform.
 build:stm32f429i_freertos --platforms=//targets/stm32f429i_disc1_stm32cube:stm32f429i_freertos
+test:stm32f429i_freertos --run_under=//targets/stm32f429i_disc1/py:unit_test_client
 
 # Config for the lm3s6965evb platfor
 build:lm3s6965evb --platforms=//targets/lm3s6965evb_qemu

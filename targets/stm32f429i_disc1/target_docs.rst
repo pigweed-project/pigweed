@@ -4,12 +4,29 @@
 stm32f429i-disc1
 ----------------
 The STMicroelectronics STM32F429I-DISC1 development board is currently Pigweed's
-primary target for on-device testing and development.
+primary target for on-device testing and development in the STM32 family.
 
 Building
 ========
-To build for this Pigweed target, simply build the top-level "stm32f429i" Ninja
-target.
+To build for this Pigweed target use the following commands, based on which
+build system you are using.
+
+Bazel
+-----
+The Bazel invocation can specify which targets to build, including glob targets
+(e.g. ``//...``).
+
+.. code-block:: console
+
+   # FreeRTOS platform
+   $ bazelisk build //path/to/target --config=stm32f429i_freertos
+   # Baremetal platform
+   $ bazelisk build //path/to/target --config=stm32f429i_baremetal
+
+GN / Ninja
+----------
+The GN build will incrementally build all targets which support the stm32f429i
+platform.
 
 .. code-block:: console
 
@@ -19,31 +36,97 @@ target.
 
 Testing
 =======
-When working in upstream Pigweed, building this target will build all Pigweed modules' unit tests.
-These tests can be run on-device in a few different ways.
+When working in upstream Pigweed, this target platform supports building and
+running unit tests on-device. The method is different depending on which build
+system you are using.
 
-Run a unit test
----------------
+.. _target-stm32f429i-disc1-test-bazel:
+
+Bazel
+-----
+Tests can be run using the normal ``bazelisk test`` command, however, in order
+to run any unit tests on-device you must first start the unit test server which
+will handle flashing the hardware and reporting the results back.
+
+.. code-block:: console
+
+   $ bazelisk run //targets/stm32f429i_disc1/py:unit_test_server
+
+.. note::
+
+   This server must be running for all the following commands to work
+   successfully. Typically, this remains running in a separate terminal but can
+   also be run in the background of your current terminal.
+
+Run a single unit test
+^^^^^^^^^^^^^^^^^^^^^^
+Run bazel test commands like normal, but use the relevant stm32f429i config:
+
+.. code-block:: console
+
+   # FreeRTOS platform
+   $ bazelisk test //path/to/test --config=stm32f429i_freertos
+   # Baremetal platform
+   $ bazelisk test //path/to/test --config=stm32f429i_baremetal
+
+Run multiple tests
+^^^^^^^^^^^^^^^^^^
+Multiple tests can be run just the same as a single test:
+
+.. code-block:: console
+
+   # FreeRTOS platform
+   $ bazelisk test //... --config=stm32f429i_freertos
+   # Baremetal platform
+   $ bazelisk test //... --config=stm32f429i_baremetal
+
+Run tests affected by code changes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The ``pw_watch`` tool allows you to watch for file changes and then rebuild or
+retest a set of targets. More details are available :ref:`module-pw_watch`.
+
+To start the watcher use something like:
+
+.. code-block:: console
+
+   $ ./pw watch test //path/to/target --config=stm32f429i_freertos
+   # or glob targets
+   $ ./pw watch test //path/to/module/... --config=stm32f429i_freertos
+
+.. warning::
+
+   Be sure to use ``./pw``, not ``pw``!
+
+GN / Ninja
+----------
+
+Run a single unit test
+^^^^^^^^^^^^^^^^^^^^^^
 If using ``out`` as a build directory, tests will be located in
-``out/stm32f429i_disc1_debug/obj/[module name]/[test_name].elf``. To run these
-on device, the stm32f429i-disc1 target provides a helper script that flashes the
-test to a device and then runs it.
+``out/stm32f429i_disc1_debug/obj/[module name]/[test_name].elf``. To run
+these on device, the stm32f429i-disc1 target provides a helper script
+that flashes the test to a device and then runs it.
 
 .. code-block:: console
 
    # Setup pigweed environment.
    $ source activate.sh
    # Run test.
-   $ stm32f429i_disc1_unit_test_runner /path/to/binary
+   $ stm32f429i_disc1_unit_test_runner /path/to/binary --no-use-rpc
+
+.. note::
+
+   The ``--no-use-rpc`` argument is required because the GN baremetal builds do
+   not currently support triggering unit test runs via RPC.
 
 Run multiple tests
-------------------
+^^^^^^^^^^^^^^^^^^
 Running all tests one-by-one is rather tedious. To make running multiple
-tests easier, use Pigweed's ``pw test`` command and pass it a path to the build
-directory and the name of the test runner. By default, ``pw test`` will run all
-tests, but it can be restricted it to specific ``pw_test_group`` targets using
-the ``--group`` argument. Alternatively, individual test binaries can be
-specified with the ``--test`` option.
+tests easier, use Pigweed's ``pw test`` command and pass it a path to the
+build directory and the name of the test runner. By default, ``pw test``
+will run all tests, but it can be restricted it to specific
+``pw_test_group`` targets using the ``--group`` argument. Alternatively,
+individual test binaries can be specified with the ``--test`` option.
 
 .. code-block:: console
 
@@ -54,18 +137,19 @@ specified with the ``--test`` option.
    > --runner stm32f429i_disc1_unit_test_runner
 
 Run tests affected by code changes
-----------------------------------
-When writing code that will impact multiple modules, it's helpful to only run
-all tests that are affected by a given code change. Thanks to the GN/Ninja
-build, this is possible! This is done by using a ``pw_target_runner_server``
-that Ninja can send the tests to as it rebuilds affected targets.
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+When writing code that will impact multiple modules, it's helpful to only
+run all tests that are affected by a given code change. Thanks to the GN
+Ninja build, this is possible! This is done by using a
+``pw_target_runner_server`` that Ninja can send the tests to as it
+rebuilds affected targets.
 
 Additionally, this method enables distributed testing. If multiple devices are
 connected, the tests will be run across all attached devices to further speed up
 testing.
 
 Step 1: Start test server
-^^^^^^^^^^^^^^^^^^^^^^^^^
+.........................
 To allow Ninja to properly serialize tests to run on an arbitrary number of
 devices, Ninja will send test requests to a server running in the background.
 The first step is to launch this server. By default, the script will attempt
@@ -75,15 +159,15 @@ with ``--server-config``.
 
 .. tip::
 
-  If you unplug or plug in any boards, you'll need to restart the test server
-  for hardware changes to properly be detected.
+   If you unplug or plug in any boards, you'll need to restart the test server
+   for hardware changes to properly be detected.
 
 .. code-block:: console
 
    $ stm32f429i_disc1_test_server
 
 Step 2: Configure GN
-^^^^^^^^^^^^^^^^^^^^
+....................
 By default, this hardware target has incremental testing via
 ``pw_target_runner`` disabled. Enabling the ``pw_use_test_server`` build arg
 tells GN to send requests to a running ``stm32f429i_disc1_test_server``.
@@ -95,7 +179,7 @@ tells GN to send requests to a running ``stm32f429i_disc1_test_server``.
    pw_use_test_server = true
 
 Step 3: Build changes
-^^^^^^^^^^^^^^^^^^^^^
+.....................
 Whenever you run ``ninja -C out stm32f429i``, affected tests will be built and
 run on the attached device(s). Alternatively, you may use ``pw watch`` to set up
 Pigweed to build/test whenever it sees changes to source files.
