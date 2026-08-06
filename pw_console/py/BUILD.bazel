@@ -140,6 +140,21 @@ pw_py_binary(
     ],
 )
 
+pw_py_binary(
+    name = "pw_console_browser_test_mode",
+    srcs = [
+        "pw_console/__main__.py",
+    ],
+    args = [
+        "--browser",
+        "--test-mode",
+    ],
+    main = "pw_console/__main__.py",
+    deps = [
+        ":pw_console",
+    ],
+)
+
 pw_py_test(
     name = "command_runner_test",
     size = "small",

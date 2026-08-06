@@ -19,8 +19,10 @@ import email.utils
 import logging
 import mimetypes
 from pathlib import Path
+import secrets
 import socket
 from threading import Thread
+from urllib.parse import urlsplit
 import webbrowser
 from typing import Any, Callable
 
@@ -43,7 +45,7 @@ def find_available_port(start_port=8080, max_retries=100) -> int:
     for port in range(start_port, start_port + max_retries):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('localhost', port))
+                s.bind(('127.0.0.1', port))
                 return port
             except OSError:
                 pass  # Port is already in use, try the next one
@@ -69,9 +71,10 @@ def pw_console_http_server(
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(runner.setup())
-        site = web.TCPSite(runner, 'localhost', port)
+        host = '127.0.0.1'
+        site = web.TCPSite(runner, host, port)
         loop.run_until_complete(site.start())
-        url = f'http://localhost:{port}'
+        url = f'http://{host}:{port}'
         print(url)
         webbrowser.open(url)
         loop.run_forever()
@@ -97,7 +100,42 @@ class WebHandler:
         if kernel_params:
             self.kernel_params = kernel_params
 
+        # The /ws endpoint can execute arbitrary Python via WebKernel. Require a
+        # per-process secret on every WebSocket handshake so that other origins
+        # cannot connect. The token is injected into the served console.html
+        # below and never logged.
+        self._ws_auth_token = secrets.token_urlsafe(32)
+        if '/console.html' in self.html_files:
+            self.html_files['/console.html'] = self.html_files[
+                '/console.html'
+            ].replace('"/ws"', f'"/ws?token={self._ws_auth_token}"')
+
         self.web_socket_streaming_responder_loop = asyncio.new_event_loop()
+
+    # Hostnames a browser may legitimately present in the Origin header when
+    # loaded from this server (which only ever binds to localhost).
+    _ALLOWED_WS_ORIGIN_HOSTS = frozenset(('localhost', '127.0.0.1', '::1'))
+
+    def _websocket_request_authorized(self, request: web.Request) -> bool:
+        """Authorize a /ws upgrade request.
+
+        Rejects the request unless it (a) presents no Origin header or one
+        whose host is a loopback name, and (b) carries the per-process auth
+        token as a ``token`` query parameter. Browsers always attach an Origin
+        header to WebSocket handshakes and do not allow page scripts to override
+        it, so (a) blocks cross-origin and DNS-rebinding attacks while still
+        admitting non-browser local clients that omit Origin.
+        """
+        origin = request.headers.get('Origin')
+        if origin is not None:
+            try:
+                origin_host = urlsplit(origin).hostname
+            except ValueError:
+                origin_host = None
+            if origin_host not in self._ALLOWED_WS_ORIGIN_HOSTS:
+                return False
+        token = request.query.get('token', '')
+        return secrets.compare_digest(token, self._ws_auth_token)
 
     def _web_socket_streaming_responder_thread_entry(self):
         """Entry point for the web socket logging handlers thread."""
@@ -132,6 +170,9 @@ class WebHandler:
             path = '/console.html'
 
         if path == '/ws':
+            if not self._websocket_request_authorized(request):
+                _LOG.warning('Rejected unauthorized WebSocket handshake on /ws')
+                return web.Response(status=403, text='Forbidden')
             return await self.handle_websocket(request)
 
         if path not in self.html_files:
