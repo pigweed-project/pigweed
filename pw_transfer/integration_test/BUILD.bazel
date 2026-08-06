@@ -28,6 +28,7 @@ pw_cc_binary(
     srcs = ["server.cc"],
     copts = [
         # These warnings come from protobuf codegen.
+        "-Wno-deprecated-attributes",
         "-Wno-nullability-extension",
         "-Wno-gcc-compat",
     ],
@@ -117,6 +118,7 @@ pw_cc_binary(
     srcs = ["client.cc"],
     copts = [
         # These warnings come from protobuf codegen.
+        "-Wno-deprecated-attributes",
         "-Wno-nullability-extension",
         "-Wno-gcc-compat",
     ],

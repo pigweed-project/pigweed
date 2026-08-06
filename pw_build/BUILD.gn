@@ -200,6 +200,10 @@ config("strict_warnings") {
     # the Pigweed fixes are easy, the downstream fixes will take a while.
     "-Wno-unused-template",
   ]
+  if (is_clang) {
+    # TODO: b/540919302 - Unblock LLVM toolchain roll.
+    cflags += [ "-Wno-error=deprecated-attributes" ]
+  }
   cflags_cc = [ "-Wnon-virtual-dtor" ]
 }
 

@@ -38,6 +38,7 @@ cc_args_list(
     name = "common_warnings",
     args = [
         ":strict_warnings",
+        ":clang_strict_warnings",
         ":extra_strict_warnings",
     ],
 )
@@ -70,6 +71,23 @@ cc_args(
         # take a while.
         "-Wno-unused-template",
     ],
+)
+
+# TODO: b/540919302 - Unblock LLVM toolchain roll.
+cc_args(
+    name = "clang_strict_warnings",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+    ],
+    args = [
+        # TODO: b/540919302 - Unblock LLVM toolchain roll.
+        "-Wno-error=deprecated-attributes",
+    ],
+    requires_any_of = [
+        "//pw_toolchain/cc/capability:compiler_is_clang",
+    ],
+    visibility = ["//visibility:private"],
 )
 # LINT.ThenChange(//pw_build/BUILD.gn:strict_warnings,//pw_build/CMakeLists.txt:strict_warnings)
 

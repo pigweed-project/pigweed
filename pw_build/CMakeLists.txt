@@ -93,6 +93,9 @@ pw_add_library_generic(pw_build.strict_warnings INTERFACE
     "-Werror"
     "-Wno-error=cpp"  # preprocessor #warning statement
     "-Wno-error=deprecated-declarations"  # [[deprecated]] attribute
+    # TODO: b/540919302 - Unblock LLVM toolchain roll.
+    $<$<C_COMPILER_ID:Clang>:-Wno-error=deprecated-attributes>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-error=deprecated-attributes>
 
     # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of unused
     # templates produces warnings in both Pigweed an downstream code. While
