@@ -165,6 +165,22 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "composite_future",
+    srcs = ["composite_future.cc"],
+    deps = [
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:simulated_time_provider",
+        "//pw_async2:testing",
+        "//pw_async2:value_future",
+        "//pw_chrono:system_clock",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
 # DOCSTAG: [quickstart]
 pw_cc_test(
     name = "quickstart",
@@ -230,6 +246,7 @@ sphinx_docs_library(
         "basic_coro.cc",
         "basic_manual.cc",
         "channel.cc",
+        "composite_future.cc",
         "coro_blinky_loop.cc",
         "count.cc",
         "custom_future.cc",
@@ -244,5 +261,6 @@ sphinx_docs_library(
 
 exports_files([
     "channel.cc",
+    "composite_future.cc",
     "custom_future.cc",
 ])

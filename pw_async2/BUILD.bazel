@@ -926,6 +926,7 @@ sphinx_docs_library(
         "why.rst",
         "//pw_async2/codelab:docs",
         "//pw_async2/examples:channel.cc",
+        "//pw_async2/examples:composite_future.cc",
         "//pw_async2/examples:custom_future.cc",
         "//pw_async2/examples:docs",
         "//pw_async2/examples:task_helpers.cc",

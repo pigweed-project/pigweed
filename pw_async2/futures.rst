@@ -111,7 +111,8 @@ Composite futures are built on top of other futures, combining their results
 to build advanced asynchronous execution graphs. For example, a ``Join`` future
 waits for multiple other futures to complete, returning all of their results at
 once. Composite futures can be used to express complex logic in a declarative
-way.
+way. For details on defining custom composite futures and async helper
+functions, see :ref:`module-pw_async2-futures-composite`.
 
 Coroutine support
 =================
@@ -409,6 +410,63 @@ produced by a :cc:`ValueProvider <pw::async2::ValueProvider>` or
 In practice, you would return a :cc:`VoidFuture <pw::async2::VoidFuture>` (alias
 for ``ValueFuture<void>``) from ``WaitForPress`` instead of writing a custom
 ``ButtonFuture``.
+
+.. _module-pw_async2-futures-composite:
+
+Implementing a composite future
+===============================
+While leaf futures manage wakers and handle direct interaction with hardware or
+external providers, non-leaf functions in an execution graph often need to
+combine multiple asynchronous operations into higher-level business logic.
+
+A **composite future** exists in the middle of an async execution graph:
+
+* **Top level**: :cc:`Task <pw::async2::Task>` implementations posted directly
+  to the :cc:`Dispatcher <pw::async2::Dispatcher>`. Heavier weight as they hold
+  lists and other dispatcher metadata.
+* **Middle level**: Composite futures and async helper functions that combine
+  several asynchronous steps into a single logical unit.
+* **Leaf level**: Wakeable futures (such as :cc:`TimeFuture <pw::async2::TimeFuture>`
+  or :cc:`ValueFuture <pw::async2::ValueFuture>`) that asynchronously wait on
+  external signals, like hardware interrupts, network operations, or timers.
+
+Unlike leaf futures, a composite future does **not** use :cc:`FutureCore
+<pw::async2::FutureCore>`. It has no wakers and does not exist in an intrusive
+list or provider. Instead, it is owned entirely by its caller as a value object
+on the stack, with no external backreferences. Waker registration is handled
+transitively by the child futures stored inline inside the composite future.
+
+Async helper function pattern
+-----------------------------
+When defining an async helper function that returns a composite future, follow
+these conventions:
+
+* **Use the factory pattern.** The function acts as a factory constructing
+  composite futures and returning them directly by value. There is no provider,
+  no list or waker management. Those occur within the subfutures that perform
+  wakeable operations.
+* **Return Future objects directly.** Per ``pw_async2`` conventions, the
+  function must return a future directly instead of wrapping it in a ``Result``
+  or ``std::optional``. This enables further composability, including allowing
+  callers to ``co_await`` the function.
+* **Handle errors through resolved futures.** The function can run synchronous
+  validation before triggering the first async operation, returning a future
+  that immediately resolves to an error if invalid.
+
+Example: Retry logic with composite futures
+-------------------------------------------
+Below is an example demonstrating a composite future implementation,
+``ReadSensorWithRetryFuture`` with its factory helper function
+``ReadSensorWithRetry``. It combines a sensor read (via :cc:`ValueFuture
+<pw::async2::ValueFuture>`) and a delay (via :cc:`TimeFuture
+<pw::async2::TimeFuture>`) into a single state machine without
+any dynamic allocation, provider registration, or task overhead.
+
+.. literalinclude:: examples/composite_future.cc
+   :language: cpp
+   :linenos:
+   :start-after: // DOCSTAG: [pw_async2-examples-composite-future]
+   :end-before: // DOCSTAG: [pw_async2-examples-composite-future]
 
 Derived value futures
 =====================
