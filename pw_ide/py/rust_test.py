@@ -96,6 +96,51 @@ class RustTest(fake_filesystem_unittest.TestCase):
             (self.workspace_root / 'rust-project.json').is_symlink()
         )
 
+    def test_process_rust_project_includes_output_groups_default(self):
+        """Test process_rust_project appends --output_groups=+default even
+        with k_lint.
+        """
+        executed_cmd = []
+
+        def mock_run_bazel(cmd, **_kwargs):
+            nonlocal executed_cmd
+            executed_cmd = cmd
+            self.fs.create_file(
+                self.workspace_root / 'rust-project.json',
+                contents='{"crates": []}',
+            )
+            return mock.Mock(stdout='')
+
+        with mock.patch.dict(
+            os.environ, {'BUILD_WORKING_DIRECTORY': str(self.workspace_root)}
+        ):
+            rust.process_rust_project(
+                platform='host',
+                workspace_root=self.workspace_root,
+                platform_dir=self.platform_dir,
+                rust_targets=['//pw_kernel/...'],
+                run_bazel_fn=mock_run_bazel,
+                rust_config='k_rp2350',
+                bazel_args=[
+                    '--config=k_lint',
+                    '--@rules_rust//:error_format=json',
+                ],
+            )
+
+        self.assertIn('--config=k_lint', executed_cmd)
+        self.assertIn('--output_groups=+default', executed_cmd)
+        self.assertIn(
+            '@rules_rust//tools/rust_analyzer:gen_rust_project', executed_cmd
+        )
+
+        k_lint_idx = executed_cmd.index('--config=k_lint')
+        og_idx = executed_cmd.index('--output_groups=+default')
+        target_idx = executed_cmd.index(
+            '@rules_rust//tools/rust_analyzer:gen_rust_project'
+        )
+        self.assertLess(k_lint_idx, og_idx)
+        self.assertLess(og_idx, target_idx)
+
 
 if __name__ == '__main__':
     unittest.main()

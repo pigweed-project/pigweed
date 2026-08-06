@@ -1740,10 +1740,10 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         # When rules_rust:gen_rust_project is run, mock it creating
         # rust-project.json at workspace root
         def run_bazel_side_effect(args, **_kwargs):
-            if args[:2] == [
-                'run',
-                '@rules_rust//tools/rust_analyzer:gen_rust_project',
-            ]:
+            if (
+                args[0] == 'run'
+                and '@rules_rust//tools/rust_analyzer:gen_rust_project' in args
+            ):
                 # Simulate generating rust-project.json
                 self.fs.create_file(
                     self.workspace_root / 'rust-project.json',
@@ -1806,6 +1806,7 @@ class MergerTest(fake_filesystem_unittest.TestCase):
             self.assertEqual(args[0], 'run')
             self.assertIn('--config=remote_cache', args)
             self.assertIn('--my-bazel-flag', args)
+            self.assertIn('--output_groups=+default', args)
             self.assertIn(
                 '@rules_rust//tools/rust_analyzer:gen_rust_project', args
             )
@@ -1872,10 +1873,10 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 return mock.Mock(
                     stdout='  platforms: [//pw_kernel/target/host:host]\n'
                 )
-            if args[:2] == [
-                'run',
-                '@rules_rust//tools/rust_analyzer:gen_rust_project',
-            ]:
+            if (
+                args[0] == 'run'
+                and '@rules_rust//tools/rust_analyzer:gen_rust_project' in args
+            ):
                 self.fs.create_file(
                     self.workspace_root / 'rust-project.json',
                     contents='{"crates": []}',

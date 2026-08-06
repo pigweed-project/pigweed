@@ -157,6 +157,10 @@ def process_rust_project(
     ]
     if bazel_args:
         rust_cmd.extend(bazel_args)
+    # Ensure default output group (executable binary) is built even if
+    # bazel_args contains flags like --config=k_lint that restrict
+    # output_groups (e.g. to clippy_checks,rustfmt_checks).
+    rust_cmd.append("--output_groups=+default")
     rust_cmd.append("@rules_rust//tools/rust_analyzer:gen_rust_project")
     if rust_config:
         rust_cmd.extend(["--", "--config", rust_config])
