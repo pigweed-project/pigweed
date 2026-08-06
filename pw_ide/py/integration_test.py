@@ -1231,5 +1231,95 @@ class DynamicConfigClangdTests(unittest.TestCase):
             )
 
 
+class RustCompileCommandsTest(CompileCommandsTestBase):
+    """Tests Rust compilation database / rust-project.json generation."""
+
+    def test_rust_project_generation(self):
+        """Verify that rust-project.json is correctly generated."""
+        # Run the compile commands generator target.
+        update_result = subprocess.run(
+            [
+                'bazel',
+                'run',
+                (
+                    '//pw_ide/bazel/compile_commands/test:'
+                    'test_rust_compile_commands_generator'
+                ),
+                '--',
+                f'--out-dir={self.temp_dir.name}',
+            ],
+            capture_output=True,
+            cwd=self.project_root,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            update_result.returncode,
+            0,
+            f"Failed to run test_rust_compile_commands_generator:\n"
+            f"STDOUT:\n{update_result.stdout}\n"
+            f"STDERR:\n{update_result.stderr}",
+        )
+
+        # The platform defaults to host platform since config = "k_host"
+        # Since this might be a resolved platform key, we rglob for
+        # rust-project.json.
+        rust_projects = list(
+            Path(self.temp_dir.name).rglob('rust-project.json')
+        )
+        self.assertEqual(
+            len(rust_projects),
+            1,
+            (
+                f"Expected exactly 1 rust-project.json under "
+                f"{self.temp_dir.name}, found {rust_projects}"
+            ),
+        )
+
+        rust_project_path = rust_projects[0]
+        self.assertTrue(rust_project_path.exists())
+
+        with open(rust_project_path, 'r') as f:
+            data = json.load(f)
+
+        # Validate that crates are present and we can find our test_rust_library
+        self.assertIn('crates', data)
+        crates = data['crates']
+        self.assertGreater(len(crates), 0)
+
+        # Check if any crate has root_module matching our test fixture's
+        # source file
+        found_test_crate = False
+        for crate in crates:
+            root_module = crate.get('root_module', '')
+            if 'test_rust_lib.rs' in root_module:
+                found_test_crate = True
+                # Verify crate files exist on disk
+                self.assertTrue(
+                    Path(root_module).exists(),
+                    f"Crate root module path {root_module} does not exist!",
+                )
+                break
+
+        self.assertTrue(
+            found_test_crate,
+            (
+                "Could not find test crate for test_rust_lib.rs in "
+                f"rust-project.json:\n{json.dumps(data, indent=2)}"
+            ),
+        )
+
+        # Verify ide_config.json is generated in the same directory
+        ide_config_path = rust_project_path.parent / 'ide_config.json'
+        self.assertTrue(ide_config_path.exists())
+        with open(ide_config_path, 'r') as f:
+            ide_config = json.load(f)
+        self.assertIn('rust_analyzer_check_override_command', ide_config)
+        self.assertIn(
+            '--config=k_host',
+            ide_config['rust_analyzer_check_override_command'],
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

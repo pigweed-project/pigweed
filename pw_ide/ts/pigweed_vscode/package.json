@@ -147,6 +147,14 @@
           "type": "string",
           "description": "The compile commands directory for the selected build target to use for editor code intelligence"
         },
+        "pigweed.rustAnalysisTarget": {
+          "type": "string",
+          "description": "The build target to use for editor Rust code intelligence"
+        },
+        "pigweed.rustAnalysisTargetDir": {
+          "type": "string",
+          "description": "The directory containing rust-project.json for the selected target"
+        },
         "pigweed.bazelCompileCommandsManualBuildCommand": {
           "type": "string",
           "description": "Used when the manual code intelligence mode is enabled for Bazel projects"

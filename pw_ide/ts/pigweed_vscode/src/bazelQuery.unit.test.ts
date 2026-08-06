@@ -85,8 +85,18 @@ suite('getPreconfiguredTargets', () => {
     );
 
     assert.deepStrictEqual(result, [
-      { label: '//:update_compile_commands', displayName: 'All Platforms' },
-      { label: '//:other_target', displayName: undefined },
+      {
+        label: '//:update_compile_commands',
+        displayName: 'All Platforms',
+        hasCpp: true,
+        hasRust: false,
+      },
+      {
+        label: '//:other_target',
+        displayName: undefined,
+        hasCpp: true,
+        hasRust: false,
+      },
     ]);
   });
 
@@ -170,7 +180,12 @@ suite('getPreconfiguredTargets', () => {
         mockBazelBinary,
       );
       assert.deepStrictEqual(result1, [
-        { label: '//:target1', displayName: undefined },
+        {
+          label: '//:target1',
+          displayName: undefined,
+          hasCpp: true,
+          hasRust: false,
+        },
       ]);
 
       // Second call - should NOT call spawn, should return cached result
@@ -193,7 +208,12 @@ suite('getPreconfiguredTargets', () => {
         mockBazelBinary,
       );
       assert.deepStrictEqual(result2, [
-        { label: '//:target1', displayName: undefined },
+        {
+          label: '//:target1',
+          displayName: undefined,
+          hasCpp: true,
+          hasRust: false,
+        },
       ]);
       assert.strictEqual(
         called,
@@ -224,7 +244,12 @@ suite('getPreconfiguredTargets', () => {
         mockBazelBinary,
       );
       assert.deepStrictEqual(result1, [
-        { label: '//:target1', displayName: undefined },
+        {
+          label: '//:target1',
+          displayName: undefined,
+          hasCpp: true,
+          hasRust: false,
+        },
       ]);
 
       // Change mtime
@@ -237,7 +262,12 @@ suite('getPreconfiguredTargets', () => {
         mockBazelBinary,
       );
       assert.deepStrictEqual(result2, [
-        { label: '//:target2', displayName: undefined },
+        {
+          label: '//:target2',
+          displayName: undefined,
+          hasCpp: true,
+          hasRust: false,
+        },
       ]);
     });
   });

@@ -40,17 +40,23 @@ export class Target {
   private _dir: string;
   private _displayName?: string;
   private _lastGeneratedAt?: string;
+  private _hasCpp: boolean;
+  private _hasRust: boolean;
 
   constructor(
     name: string,
     dir?: string,
     displayName?: string,
     lastGeneratedAt?: string,
+    hasCpp = false,
+    hasRust = false,
   ) {
     this._name = name;
     this._dir = dir ?? path.join(CDB_FILE_DIRS[0], name);
     this._displayName = displayName;
     this._lastGeneratedAt = lastGeneratedAt;
+    this._hasCpp = hasCpp;
+    this._hasRust = hasRust;
   }
 
   get name() {
@@ -86,48 +92,84 @@ export class Target {
   get lastGeneratedAt() {
     return this._lastGeneratedAt;
   }
+
+  get hasCpp() {
+    return this._hasCpp;
+  }
+
+  get hasRust() {
+    return this._hasRust;
+  }
 }
 
 export async function availableTargets(): Promise<Target[]> {
   // Get targets from the standard compile commands directories.
   const directoryTargets = (
     await Promise.all(
-      CDB_DIRS().map(
-        async (cwd) =>
-          // For each compile commands dir, get the name of every sub dir in the
-          // that contains a compile commands file.
-          await Promise.all(
-            (await glob(`**/${CDB_FILE_NAME}`, { cwd })).map(
-              async (filePath) => {
-                const name = path.basename(path.dirname(filePath));
-                const dir = path.join(cwd, name);
-                let displayName: string | undefined;
-                try {
-                  const displayNamePath = path.join(dir, 'display_name.txt');
-                  displayName = await fs.promises.readFile(
-                    displayNamePath,
-                    'utf-8',
-                  );
-                  displayName = displayName.trim();
-                } catch (e) {
-                  // ignore
-                }
+      CDB_DIRS().map(async (cwd) => {
+        let subdirs: string[] = [];
+        try {
+          subdirs = await fs.promises.readdir(cwd);
+        } catch (e) {
+          return [];
+        }
 
-                let lastGeneratedAt: string | undefined;
-                try {
-                  const stat = await fs.promises.stat(
-                    path.join(dir, CDB_FILE_NAME),
-                  );
-                  lastGeneratedAt = stat.mtime.toISOString();
-                } catch (e) {
-                  // ignore
-                }
+        const targets = await Promise.all(
+          subdirs.map(async (subdir) => {
+            const dir = path.join(cwd, subdir);
+            const stat = await fs.promises.stat(dir).catch(() => null);
+            if (!stat || !stat.isDirectory()) return null;
 
-                return new Target(name, dir, displayName, lastGeneratedAt);
-              },
-            ),
-          ),
-      ),
+            const hasCpp = fs.existsSync(
+              path.join(dir, 'compile_commands.json'),
+            );
+            const hasRust = fs.existsSync(path.join(dir, 'rust-project.json'));
+            if (!hasCpp && !hasRust) return null;
+
+            let displayName: string | undefined;
+            try {
+              const displayNamePath = path.join(dir, 'display_name.txt');
+              displayName = await fs.promises.readFile(
+                displayNamePath,
+                'utf-8',
+              );
+              displayName = displayName.trim();
+            } catch (e) {
+              // ignore
+            }
+
+            let lastGeneratedAt: string | undefined;
+            try {
+              let newestMtime = 0;
+              const cppStat = await fs.promises
+                .stat(path.join(dir, 'compile_commands.json'))
+                .catch(() => null);
+              const rustStat = await fs.promises
+                .stat(path.join(dir, 'rust-project.json'))
+                .catch(() => null);
+              if (cppStat) newestMtime = Math.max(newestMtime, cppStat.mtimeMs);
+              if (rustStat)
+                newestMtime = Math.max(newestMtime, rustStat.mtimeMs);
+              if (newestMtime > 0) {
+                lastGeneratedAt = new Date(newestMtime).toISOString();
+              }
+            } catch (e) {
+              // ignore
+            }
+
+            return new Target(
+              subdir,
+              dir,
+              displayName,
+              lastGeneratedAt,
+              hasCpp,
+              hasRust,
+            );
+          }),
+        );
+
+        return targets.filter((t): t is Target => t !== null);
+      }),
     )
   )
     .flat()

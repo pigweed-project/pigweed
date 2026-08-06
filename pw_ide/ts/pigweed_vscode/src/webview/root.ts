@@ -15,6 +15,7 @@
 import { html, css, LitElement } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import { format } from 'timeago.js';
+import { filterPreconfiguredTargets } from './targetFilter';
 
 interface vscode {
   postMessage(message: { type: string; data?: any }): void;
@@ -30,6 +31,7 @@ type CipdReport = {
   clangdPath?: string;
   bazelPath?: string;
   targetSelected?: string;
+  rustTargetSelected?: string;
   isCompileCommandsGenerated?: boolean;
   compileCommandsPath?: string;
   lastBuildPlatformCount?: number;
@@ -38,14 +40,28 @@ type CipdReport = {
     name: string;
     displayName?: string;
     lastGeneratedAt?: string;
+    hasCpp?: boolean;
+    hasRust?: boolean;
   }[];
-  preconfiguredTargets?: { label: string; displayName?: string }[];
+  preconfiguredTargets?: {
+    label: string;
+    displayName?: string;
+    hasCpp?: boolean;
+    hasRust?: boolean;
+  }[];
   isGenerating?: boolean;
   activeGeneratingTarget?: string;
   isStale?: boolean;
 };
 
-const vscode = acquireVsCodeApi();
+const vscode =
+  typeof acquireVsCodeApi !== 'undefined'
+    ? acquireVsCodeApi()
+    : {
+        postMessage: () => {
+          /* no-op for tests */
+        },
+      };
 
 @customElement('app-root')
 export class Root extends LitElement {
@@ -63,6 +79,23 @@ export class Root extends LitElement {
     }
     .target-list li {
       margin-bottom: 4px;
+    }
+    .badge {
+      font-size: 9px;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      display: inline-block;
+      text-transform: uppercase;
+    }
+    .badge-cpp {
+      background-color: var(--vscode-statusBarItem-remoteBackground, #007acc);
+      color: var(--vscode-statusBarItem-remoteForeground, #ffffff);
+    }
+    .badge-rust {
+      background-color: var(--vscode-button-secondaryBackground, #5f5f5f);
+      color: var(--vscode-button-secondaryForeground, #ffffff);
     }
   `;
 
@@ -232,133 +265,15 @@ export class Root extends LitElement {
             ${
               isPreconfigured
                 ? html`
-                    <table
-                      class="targets-table"
-                      style="width: 100%; border-collapse: collapse; margin-top: 8px;"
-                    >
-                      <thead>
-                        <tr
-                          style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);"
-                        >
-                          <th style="padding: 8px;">Target</th>
-                          <th style="padding: 8px;">Last generated at</th>
-                          <th style="padding: 8px;">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${this.cipdReport.preconfiguredTargets?.map(
-                          (target) => {
-                            const matchedTarget =
-                              this.cipdReport.availableTargets?.find(
-                                (t) =>
-                                  t.displayName === target.displayName ||
-                                  t.name === target.label,
-                              );
-                            const lastGeneratedAt =
-                              matchedTarget?.lastGeneratedAt;
-                            const formattedTime = lastGeneratedAt
-                              ? format(lastGeneratedAt)
-                              : 'Never';
-                            const fullTime = lastGeneratedAt
-                              ? new Date(lastGeneratedAt).toLocaleString()
-                              : 'Never';
-                            const isTargetGenerating =
-                              this.cipdReport.isGenerating &&
-                              this.cipdReport.activeGeneratingTarget ===
-                                target.label;
+                    <h4 style="margin-top: 12px; margin-bottom: 6px;">
+                      C++ Targets
+                    </h4>
+                    ${this._renderTargetsTable('cpp')}
 
-                            const isGenerated = !!matchedTarget;
-                            const isActive =
-                              matchedTarget &&
-                              this.cipdReport.targetSelected ===
-                                matchedTarget.name;
-
-                            const rowStyle = `
-                            border-bottom: 1px solid var(--vscode-panel-border);
-                            cursor: ${isGenerated ? 'pointer' : 'not-allowed'};
-                            background-color: ${
-                              isActive
-                                ? 'var(--vscode-list-activeSelectionBackground)'
-                                : 'transparent'
-                            };
-                            color: ${
-                              isActive
-                                ? 'var(--vscode-list-activeSelectionForeground)'
-                                : 'inherit'
-                            };
-                            ${isActive ? 'font-weight: 600;' : ''}
-                          `;
-
-                            const tooltip = isGenerated
-                              ? ''
-                              : "Click 'Generate' to build compile commands for this target before selecting it.";
-
-                            return html`
-                              <tr
-                                class="${isGenerated ? '' : 'tooltip-container'}"
-                                style="${rowStyle}"
-                                @click=${() => {
-                                  if (isGenerated && matchedTarget) {
-                                    vscode.postMessage({
-                                      type: 'selectTarget',
-                                      data: matchedTarget.name,
-                                    });
-                                  }
-                                }}
-                              >
-                                <td
-                                  style="padding: 8px; border-left: 3px solid ${
-                                    isActive
-                                      ? 'var(--vscode-button-background)'
-                                      : 'transparent'
-                                  };"
-                                >
-                                  ${target.displayName || target.label}
-                                  ${
-                                    isGenerated
-                                      ? ''
-                                      : html`
-                                          <span
-                                            class="tooltip-text"
-                                            style="left: 12px; transform: none;"
-                                          >
-                                            Click 'Generate' to build compile
-                                            commands for this target before
-                                            selecting it.
-                                          </span>
-                                        `
-                                  }
-                                </td>
-                                <td style="padding: 8px;" title="${fullTime}">
-                                  ${formattedTime}
-                                </td>
-                                <td style="padding: 8px;">
-                                  <button
-                                    class="vscode-button"
-                                    style="padding: 2px 8px; font-size: 11px; min-width: auto;"
-                                    ?disabled=${this.cipdReport.isGenerating}
-                                    @click=${(e: Event) => {
-                                      e.stopPropagation();
-                                      this._runPreconfiguredTarget(
-                                        target.label,
-                                      );
-                                    }}
-                                  >
-                                    ${
-                                      isTargetGenerating
-                                        ? 'Generating...'
-                                        : isGenerated
-                                          ? 'Regenerate'
-                                          : 'Generate'
-                                    }
-                                  </button>
-                                </td>
-                              </tr>
-                            `;
-                          },
-                        )}
-                      </tbody>
-                    </table>
+                    <h4 style="margin-top: 16px; margin-bottom: 6px;">
+                      Rust Targets
+                    </h4>
+                    ${this._renderTargetsTable('rust')}
                   `
                 : html`
                     <p style="margin-top:0;">
@@ -706,6 +621,144 @@ export class Root extends LitElement {
           </div>
         </details>
       </div>
+    `;
+  }
+
+  private _renderTargetsTable(langType: 'cpp' | 'rust') {
+    const isPreconfigured =
+      this.cipdReport.preconfiguredTargets &&
+      this.cipdReport.preconfiguredTargets.length > 0;
+
+    if (!isPreconfigured) return html``;
+
+    const targets = filterPreconfiguredTargets(
+      this.cipdReport.preconfiguredTargets,
+      langType,
+    );
+
+    if (!targets || targets.length === 0) {
+      return html`<p
+        style="margin: 4px 0; opacity: 0.7; font-style: italic; font-size: 12px; padding-left: 8px;"
+      >
+        No preconfigured targets found for
+        ${langType === 'cpp' ? 'C++' : 'Rust'}.
+      </p>`;
+    }
+
+    return html`
+      <table
+        class="targets-table"
+        style="width: 100%; border-collapse: collapse; margin-top: 4px; margin-bottom: 8px;"
+      >
+        <thead>
+          <tr
+            style="text-align: left; border-bottom: 1px solid var(--vscode-panel-border);"
+          >
+            <th style="padding: 6px 8px;">Target</th>
+            <th style="padding: 6px 8px;">Last generated at</th>
+            <th style="padding: 6px 8px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${targets.map((target) => {
+            const matchedTarget = this.cipdReport.availableTargets?.find(
+              (t) =>
+                t.displayName === target.displayName || t.name === target.label,
+            );
+            const lastGeneratedAt = matchedTarget?.lastGeneratedAt;
+            const formattedTime = lastGeneratedAt
+              ? format(lastGeneratedAt)
+              : 'Never';
+            const fullTime = lastGeneratedAt
+              ? new Date(lastGeneratedAt).toLocaleString()
+              : 'Never';
+            const isTargetGenerating =
+              this.cipdReport.isGenerating &&
+              this.cipdReport.activeGeneratingTarget === target.label;
+
+            const isGenerated = !!matchedTarget;
+
+            const isActive =
+              matchedTarget &&
+              (langType === 'cpp'
+                ? this.cipdReport.targetSelected === matchedTarget.name
+                : this.cipdReport.rustTargetSelected === matchedTarget.name);
+
+            const rowStyle = `
+                border-bottom: 1px solid var(--vscode-panel-border);
+                cursor: ${isGenerated ? 'pointer' : 'not-allowed'};
+                background-color: ${
+                  isActive
+                    ? 'var(--vscode-list-activeSelectionBackground)'
+                    : 'transparent'
+                };
+                color: ${
+                  isActive
+                    ? 'var(--vscode-list-activeSelectionForeground)'
+                    : 'inherit'
+                };
+                ${isActive ? 'font-weight: 600;' : ''}
+              `;
+
+            return html`
+              <tr
+                style="${rowStyle}"
+                @click=${() => {
+                  if (isGenerated && matchedTarget) {
+                    vscode.postMessage({
+                      type:
+                        langType === 'cpp'
+                          ? 'selectTarget'
+                          : 'selectRustTarget',
+                      data: matchedTarget.name,
+                    });
+                  }
+                }}
+              >
+                <td
+                  style="padding: 6px 8px; border-left: 3px solid ${
+                    isActive ? 'var(--vscode-button-background)' : 'transparent'
+                  };"
+                >
+                  ${target.displayName || target.label}
+                  ${
+                    langType === 'cpp' && matchedTarget?.hasCpp
+                      ? html`<span class="badge badge-cpp">C++</span>`
+                      : ''
+                  }
+                  ${
+                    langType === 'rust' && matchedTarget?.hasRust
+                      ? html`<span class="badge badge-rust">Rust</span>`
+                      : ''
+                  }
+                </td>
+                <td style="padding: 6px 8px;" title="${fullTime}">
+                  ${formattedTime}
+                </td>
+                <td style="padding: 6px 8px;">
+                  <button
+                    class="vscode-button"
+                    style="padding: 2px 8px; font-size: 11px; min-width: auto;"
+                    ?disabled=${this.cipdReport.isGenerating}
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      this._runPreconfiguredTarget(target.label);
+                    }}
+                  >
+                    ${
+                      isTargetGenerating
+                        ? 'Generating...'
+                        : isGenerated
+                          ? 'Regenerate'
+                          : 'Generate'
+                    }
+                  </button>
+                </td>
+              </tr>
+            `;
+          })}
+        </tbody>
+      </table>
     `;
   }
 

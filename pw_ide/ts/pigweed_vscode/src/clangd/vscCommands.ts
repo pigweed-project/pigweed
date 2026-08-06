@@ -13,6 +13,8 @@
 // the License.
 
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { cpus } from 'os';
 import { ClangdActiveFilesCache } from './activeFilesCache';
 import { clangdPath as bazelClangdPath } from './bazel';
@@ -114,6 +116,93 @@ export async function setTargetWithClangd(
   ]);
   // Restart the clangd server so it picks up the new setting.
   await restartClangd();
+}
+
+export async function setTargetWithRust(
+  target: Target | undefined,
+): Promise<void> {
+  if (!target) return;
+
+  if (!(await availableTargets()).map((t) => t.name).includes(target.name)) {
+    throw new Error(`Target not among available targets: ${target}`);
+  }
+
+  // Update Rust active target settings
+  await settings.rustAnalysisTarget(target.name);
+  await settings.rustAnalysisTargetDir(target.dir);
+
+  const { update: updateRustOverride } = settingFor<string[]>(
+    'check.overrideCommand',
+    'rust-analyzer',
+  );
+
+  const { update: updateLinkedProjects } = settingFor<string[]>(
+    'linkedProjects',
+    'rust-analyzer',
+  );
+
+  // Read ide_config.json for Rust settings if it exists
+  const ideConfigPath = path.join(target.dir, 'ide_config.json');
+  let rustOverride: string[] | undefined;
+  if (fs.existsSync(ideConfigPath)) {
+    try {
+      const content = fs.readFileSync(ideConfigPath, 'utf-8');
+      const config = JSON.parse(content);
+      rustOverride = config.rust_analyzer_check_override_command;
+    } catch (e) {
+      logger.error('Failed to parse ide_config.json: ' + e);
+    }
+  }
+
+  const workspaceRoot = workingDir.get();
+  const rootRustProjectLink = path.join(workspaceRoot, 'rust-project.json');
+  const targetRustProject = path.join(target.dir, 'rust-project.json');
+
+  if (fs.existsSync(targetRustProject)) {
+    try {
+      const stat = fs.lstatSync(rootRustProjectLink);
+      if (stat.isFile() || stat.isSymbolicLink()) {
+        fs.unlinkSync(rootRustProjectLink);
+      }
+    } catch (e) {
+      // ignore
+    }
+    try {
+      fs.symlinkSync(targetRustProject, rootRustProjectLink);
+    } catch (e) {
+      logger.error('Failed to create rust-project.json symlink: ' + e);
+    }
+  } else {
+    try {
+      const stat = fs.lstatSync(rootRustProjectLink);
+      if (stat.isFile() || stat.isSymbolicLink()) {
+        fs.unlinkSync(rootRustProjectLink);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Update VS Code settings for Rust-Analyzer
+  try {
+    await Promise.all([
+      updateRustOverride(rustOverride),
+      updateLinkedProjects(
+        rustOverride
+          ? [`.compile_commands/${target.name}/rust-project.json`]
+          : undefined,
+      ),
+    ]);
+  } catch (e) {
+    logger.error('Failed to update rust-analyzer settings: ' + e);
+  }
+
+  // Reload Rust Analyzer workspace if needed
+  try {
+    await vscode.commands.executeCommand('rust-analyzer.reloadWorkspace');
+  } catch (e) {
+    // ignore if rust-analyzer extension is not installed/active
+  }
 }
 
 /** Show a checkmark next to the item if it's the current setting. */

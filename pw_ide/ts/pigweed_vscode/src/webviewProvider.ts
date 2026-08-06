@@ -16,7 +16,11 @@ import path from 'path';
 import fs from 'fs';
 import * as vscode from 'vscode';
 import { checkExtensionsAndGetStatus } from './extensionManagement';
-import { restartClangd, setTargetWithClangd } from './clangd';
+import {
+  restartClangd,
+  setTargetWithClangd,
+  setTargetWithRust,
+} from './clangd';
 import { initBazelClangdPath } from './clangd/bazel';
 import logging, { output } from './logging';
 import { getSettingsData } from './configParsing';
@@ -348,6 +352,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               target,
               this._activeFilesCache.writeToSettings,
             );
+            await this.sendCipdReport();
+          }
+
+          break;
+        }
+        case 'selectRustTarget': {
+          const targetName = data.data;
+          const targets = await availableTargets();
+          const target = targets.find((t) => t.name === targetName);
+
+          if (target) {
+            await setTargetWithRust(target);
+            await this.sendCipdReport();
           }
 
           break;
@@ -401,6 +418,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         name: t.name,
         displayName: t.displayName,
         lastGeneratedAt: t.lastGeneratedAt,
+        hasCpp: t.hasCpp,
+        hasRust: t.hasRust,
       })),
     };
     logging.info('getCipdReport reported: ' + JSON.stringify(report));

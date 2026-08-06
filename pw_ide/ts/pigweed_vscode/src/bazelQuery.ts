@@ -19,7 +19,8 @@ import * as fs from 'fs';
 import logger from './logging';
 
 let cachedPreconfiguredTargets:
-  { label: string; displayName?: string }[] | undefined;
+  | { label: string; displayName?: string; hasCpp: boolean; hasRust: boolean }[]
+  | undefined;
 let cachedBuildBazelMtime: number | undefined;
 
 export function _resetCache() {
@@ -31,13 +32,15 @@ export function _resetCache() {
  * Checks if the root BUILD.bazel file contains `pw_compile_commands_generator` targets.
  *
  * @param cwd The working directory to run the query in.
- * @returns Promise<{ label: string; displayName?: string }[]> A list of matching targets with display names.
+ * @returns Promise<{ label: string; displayName?: string; hasCpp: boolean; hasRust: boolean }[]> A list of matching targets with display names.
  */
 export async function getPreconfiguredTargets(
   cwd: string,
   spawnFn: typeof spawn = spawn,
   bazelBinary: string | undefined = getReliableBazelExecutable(),
-): Promise<{ label: string; displayName?: string }[]> {
+): Promise<
+  { label: string; displayName?: string; hasCpp: boolean; hasRust: boolean }[]
+> {
   if (!bazelBinary) return [];
 
   const buildBazelPath = path.join(cwd, 'BUILD.bazel');
@@ -88,6 +91,8 @@ export async function getPreconfiguredTargets(
         label: string;
         displayName?: string;
         lineNumber?: number;
+        hasCpp: boolean;
+        hasRust: boolean;
       }[] = [];
 
       const lines = stdout
@@ -108,7 +113,40 @@ export async function getPreconfiguredTargets(
             );
             const displayName = attr?.stringValue;
 
-            targets.push({ label, displayName, lineNumber });
+            const targetPatternsAttr = obj.rule.attribute?.find(
+              (a: any) => a.name === 'target_patterns',
+            );
+            const hasCpp = !!(
+              targetPatternsAttr?.stringListValue &&
+              targetPatternsAttr.stringListValue.length > 0
+            );
+
+            const rustTargetPatternsAttr = obj.rule.attribute?.find(
+              (a: any) => a.name === 'rust_target_patterns',
+            );
+            const hasRust = !!(
+              rustTargetPatternsAttr?.stringListValue &&
+              rustTargetPatternsAttr.stringListValue.length > 0
+            );
+
+            const depsAttr = obj.rule.attribute?.find(
+              (a: any) => a.name === 'deps',
+            );
+            const hasDeps = !!(
+              depsAttr?.stringListValue && depsAttr.stringListValue.length > 0
+            );
+
+            const finalHasCpp =
+              hasCpp || (!hasRust && hasDeps) || (!hasCpp && !hasRust);
+            const finalHasRust = hasRust;
+
+            targets.push({
+              label,
+              displayName,
+              lineNumber,
+              hasCpp: finalHasCpp,
+              hasRust: finalHasRust,
+            });
           }
         } catch (e) {
           // Ignore parse errors for individual lines
@@ -117,10 +155,14 @@ export async function getPreconfiguredTargets(
 
       targets.sort((a, b) => (a.lineNumber || 0) - (b.lineNumber || 0));
 
-      cachedPreconfiguredTargets = targets.map(({ label, displayName }) => ({
-        label,
-        displayName,
-      }));
+      cachedPreconfiguredTargets = targets.map(
+        ({ label, displayName, hasCpp, hasRust }) => ({
+          label,
+          displayName,
+          hasCpp,
+          hasRust,
+        }),
+      );
       resolve(cachedPreconfiguredTargets);
     });
 

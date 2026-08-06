@@ -32,7 +32,12 @@ interface CipdReport {
   compileCommandsPath?: string;
   bazelCompileCommandsManualBuildCommand?: string;
   bazelCompileCommandsLastBuildCommand?: string;
-  preconfiguredTargets?: { label: string; displayName?: string }[];
+  preconfiguredTargets?: {
+    label: string;
+    displayName?: string;
+    hasCpp?: boolean;
+    hasRust?: boolean;
+  }[];
   isGenerating?: boolean;
   isStale?: boolean;
   [key: string]: any;
@@ -59,6 +64,9 @@ export default async function getCipdReport(fsObj = fs) {
   // Check if target is selected
   const target = getTarget();
   report['targetSelected'] = target?.name;
+
+  const rustTarget = settings.rustAnalysisTarget();
+  report['rustTargetSelected'] = rustTarget;
 
   // Check if compile_commands exists
   report['isCompileCommandsGenerated'] = target

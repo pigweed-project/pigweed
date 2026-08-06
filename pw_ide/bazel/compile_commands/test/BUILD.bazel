@@ -17,6 +17,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_ide/bazel/compile_commands:pw_cc_compile_commands_aspect.bzl", "pw_cc_compile_commands_fragments")
 load("//pw_ide/bazel/compile_commands:pw_compile_commands_generator.bzl", "pw_compile_commands_generator")
 load("//pw_protobuf_compiler:pw_proto_library.bzl", "pwpb_proto_library")
@@ -554,4 +555,21 @@ cc_library(
         "//pw_status",
         "//pw_string:string",
     ],
+)
+
+rust_library(
+    name = "test_rust_library",
+    srcs = ["test_rust_lib.rs"],
+    edition = "2021",
+    tags = ["manual"],
+)
+
+pw_compile_commands_generator(
+    name = "test_rust_compile_commands_generator",
+    config = "k_host",
+    rust_target_patterns = [
+        "//pw_ide/bazel/compile_commands/test:test_rust_library",
+    ],
+    tags = ["manual"],
+    visibility = ["//pw_ide/py:__subpackages__"],
 )

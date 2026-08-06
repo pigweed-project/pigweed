@@ -33,6 +33,8 @@ export interface Settings {
   clangdAlternatePath: Setting<string | undefined>;
   codeAnalysisTarget: Setting<string | undefined>;
   codeAnalysisTargetDir: Setting<string | undefined>;
+  rustAnalysisTarget: Setting<string | undefined>;
+  rustAnalysisTargetDir: Setting<string | undefined>;
   bazelCompileCommandsManualBuildCommand: Setting<string | undefined>;
   bazelCompileCommandsLastBuildCommand: Setting<string | undefined>;
   compDbSearchPaths: Setting<CompDbSearchPath[]>;
@@ -204,6 +206,26 @@ function codeAnalysisTargetDir(
   value?: string,
 ): string | undefined | Thenable<void> {
   const { get, update } = stringSettingFor('codeAnalysisTargetDir');
+  if (value === undefined) return get();
+  return update(value);
+}
+
+function rustAnalysisTarget(): string | undefined;
+function rustAnalysisTarget(value: string | undefined): Thenable<void>;
+function rustAnalysisTarget(
+  value?: string,
+): string | undefined | Thenable<void> {
+  const { get, update } = stringSettingFor('rustAnalysisTarget');
+  if (value === undefined) return get();
+  return update(value);
+}
+
+function rustAnalysisTargetDir(): string | undefined;
+function rustAnalysisTargetDir(value: string | undefined): Thenable<void>;
+function rustAnalysisTargetDir(
+  value?: string,
+): string | undefined | Thenable<void> {
+  const { get, update } = stringSettingFor('rustAnalysisTargetDir');
   if (value === undefined) return get();
   return update(value);
 }
@@ -427,6 +449,8 @@ export const settings: Settings = {
   clangdAlternatePath,
   codeAnalysisTarget,
   codeAnalysisTargetDir,
+  rustAnalysisTarget,
+  rustAnalysisTargetDir,
   bazelCompileCommandsManualBuildCommand,
   bazelCompileCommandsLastBuildCommand,
   compDbSearchPaths,
