@@ -408,10 +408,31 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "future_or_value",
+    hdrs = ["public/pw_async2/future_or_value.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":pw_async2",
+        "//pw_assert:assert",
+    ],
+)
+
 pw_cc_test(
     name = "value_future_test",
     srcs = ["value_future_test.cc"],
     deps = [
+        ":pw_async2",
+        ":testing",
+        ":value_future",
+    ],
+)
+
+pw_cc_test(
+    name = "future_or_value_test",
+    srcs = ["future_or_value_test.cc"],
+    deps = [
+        ":future_or_value",
         ":pw_async2",
         ":testing",
         ":value_future",
@@ -936,6 +957,7 @@ filegroup(
         "public/pw_async2/fallible_coro_task.h",
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
+        "public/pw_async2/future_or_value.h",
         "public/pw_async2/future_task.h",
         "public/pw_async2/future_timeout.h",
         "public/pw_async2/internal/config.h",

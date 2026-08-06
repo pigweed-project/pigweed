@@ -186,6 +186,7 @@ pw_cc_test(
         "//pw_allocator:testing",
         "//pw_async2",
         "//pw_async2:coro",
+        "//pw_async2:future_or_value",
         "//pw_async2:future_timeout",
         "//pw_async2:join",
         "//pw_async2:select",

@@ -239,6 +239,70 @@ is triggered. A notification can be triggered from any context (async,
 non-async, ISR). ``Notification`` is implemented using a
 :cc:`BroadcastValueProvider <pw::async2::BroadcastValueProvider>`.
 
+Persisting results across suspensions with ``FutureOrValue``
+============================================================
+In manual polling state machines (e.g. within a :cc:`Task::DoPend
+<pw::async2::Task::DoPend>` implementation), a task often needs to wait for
+multiple independent asynchronous operations to complete. Because futures are
+single-use and cannot be polled again after resolving to :cc:`Ready
+<pw::async2::Ready>`, a task that yields to wait for remaining operations must
+store the results of any operations that completed early across subsequent
+suspension points.
+
+Manually managing separate variables for each future and its resolved value
+requires significant boilerplate. :cc:`FutureOrValue
+<pw::async2::FutureOrValue>` solves this by providing a single in-place
+container that holds either the active pending future or its resolved result:
+
+* While an operation is in progress, ``FutureOrValue`` holds the pending future.
+* When the future resolves to ``Ready``, ``FutureOrValue`` immediately destroys
+  the future (releasing any resources it held) and stores the resulting value in
+  its place.
+* Calling ``Advance(cx)`` advances a pending future, returning ``true`` if the
+  value is available or ``false`` if still pending. If the value has already
+  been resolved, ``Advance(cx)`` returns ``true`` immediately without polling.
+
+.. warning::
+
+   ``FutureOrValue`` is designed **only** to be used as internal private member
+   state inside the final consumer task. To enforce this, it is non-movable.
+
+   * **Do not** use ``FutureOrValue`` when results are consumed immediately
+     upon resolution (store and poll the raw future directly instead).
+   * In C++20 coroutines, use :cc:`Coro <pw::async2::Coro>` or combinators
+     like :cc:`Join <pw::async2::Join>` instead, which automatically preserve
+     state across suspension points without manual wrappers.
+
+States
+------
+An instance of ``FutureOrValue`` is in one of three logical states:
+
+1. **Empty**: The default state, or after the value has been extracted via
+   ``Take()`` or cleared via ``Reset()``. No future is active and no value is
+   stored. ``empty()`` returns ``true``.
+2. **Pending**: A future has been assigned but has not yet resolved.
+   ``has_future()`` returns ``true``.
+3. **Ready**: The future has resolved and the value is stored. ``has_value()``
+   returns ``true``.
+
+Advancing multiple slots with ``PW_FOV_TRY_ADVANCE``
+----------------------------------------------------
+When managing multiple ``FutureOrValue`` members, calling ``Advance`` on each
+individually with early returns can short-circuit, preventing later futures from
+being polled and registering their wakers.
+
+``pw_async2`` provides the :cc:`PW_FOV_TRY_ADVANCE` macro to poll multiple
+``FutureOrValue`` slots in a single statement without short-circuiting. If any
+slot is not yet ready, the macro returns ``Pending()`` from the enclosing
+function after ensuring all provided slots have been advanced.
+
+Example
+-------
+.. literalinclude:: examples/futures.cc
+   :language: cpp
+   :start-after: [pw_async2-examples-futures-future-or-value]
+   :end-before: [pw_async2-examples-futures-future-or-value]
+
 .. _module-pw_async2-futures-implementing:
 
 ---------------------

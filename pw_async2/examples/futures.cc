@@ -20,6 +20,7 @@
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_or_value.h"
 #include "pw_async2/future_timeout.h"
 #include "pw_async2/join.h"
 #include "pw_async2/try.h"
@@ -118,6 +119,37 @@ pw::async2::Coro<pw::Status> JoinExample(pw::async2::CoroContext) {
   co_return pw::OkStatus();
 }
 // DOCSTAG: [pw_async2-examples-futures-join-coro]
+
+// DOCSTAG: [pw_async2-examples-futures-future-or-value]
+class ConcurrentOperationsTask : public pw::async2::Task {
+ private:
+  pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
+    // Start operations if they haven't been started yet.
+    if (op_a_.empty()) {
+      op_a_ = DoWork(1);
+    }
+    if (op_b_.empty()) {
+      op_b_ = DoWork(2);
+    }
+
+    // Advance both slots without short-circuiting.
+    PW_FOV_TRY_ADVANCE(cx, op_a_, op_b_);
+
+    // Both values are now available.
+    pw::Status status_a = op_a_.Take();
+    pw::Status status_b = op_b_.Take();
+
+    if (status_a.ok() && status_b.ok()) {
+      PW_LOG_INFO("Both operations completed successfully");
+    }
+
+    return pw::async2::Ready();
+  }
+
+  pw::async2::FutureOrValue<ValueFuture<pw::Status>> op_a_;
+  pw::async2::FutureOrValue<ValueFuture<pw::Status>> op_b_;
+};
+// DOCSTAG: [pw_async2-examples-futures-future-or-value]
 
 // DOCSTAG: [pw_async2-examples-futures-select-functions]
 #include "pw_async2/select.h"
@@ -275,4 +307,11 @@ TEST(Futures, TimeoutExamples) {
   ValueProvider value_provider;
   IntValueProvider int_value_provider;
   TimeoutExamples(value_provider, int_value_provider);
+}
+
+TEST(Futures, ConcurrentOperationsTask) {
+  pw::async2::DispatcherForTest dispatcher;
+  ConcurrentOperationsTask task;
+  dispatcher.Post(task);
+  EXPECT_FALSE(dispatcher.RunUntilStalled());
 }

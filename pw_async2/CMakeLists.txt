@@ -248,6 +248,16 @@ pw_add_library(pw_async2.value_future STATIC
     pw_sync.interrupt_spin_lock
 )
 
+pw_add_library(pw_async2.future_or_value INTERFACE
+  HEADERS
+    public/pw_async2/future_or_value.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_async2
+    pw_assert.assert
+)
+
 pw_add_test(pw_async2.value_future_test
   SOURCES
     value_future_test.cc
@@ -255,6 +265,16 @@ pw_add_test(pw_async2.value_future_test
     pw_async2
     pw_async2.testing
     pw_async2.value_future
+)
+
+pw_add_test(pw_async2.future_or_value_test
+  SOURCES
+    future_or_value_test.cc
+  PRIVATE_DEPS
+    pw_async2
+    pw_async2.testing
+    pw_async2.value_future
+    pw_async2.future_or_value
 )
 
 pw_add_test(pw_async2.value_future_thread_test

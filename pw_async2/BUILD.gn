@@ -355,6 +355,15 @@ pw_source_set("value_future") {
   ]
 }
 
+pw_source_set("future_or_value") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_async2/future_or_value.h" ]
+  public_deps = [
+    ":pw_async2",
+    "$dir_pw_assert",
+  ]
+}
+
 pw_test("value_future_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
@@ -363,6 +372,17 @@ pw_test("value_future_test") {
     ":value_future",
   ]
   sources = [ "value_future_test.cc" ]
+}
+
+pw_test("future_or_value_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
+  deps = [
+    ":future_or_value",
+    ":pw_async2",
+    ":testing",
+    ":value_future",
+  ]
+  sources = [ "future_or_value_test.cc" ]
 }
 
 pw_test("value_future_thread_test") {
@@ -778,6 +798,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
 pw_test_group("tests") {
   tests = [
     ":allocate_task_test",
+    ":await_test",
     ":box_test",
     ":callback_task_test",
     ":cancellable_task_test",
@@ -786,6 +807,7 @@ pw_test_group("tests") {
     ":dispatcher_thread_test",
     ":dispatcher_stress_test",
     ":future_test",
+    ":future_or_value_test",
     ":join_test",
     ":poll_test",
     ":func_task_test",
@@ -796,7 +818,6 @@ pw_test_group("tests") {
     ":task_test",
     ":transform_test",
     ":value_future_test",
-    ":await_test",
   ]
   if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     tests += [
