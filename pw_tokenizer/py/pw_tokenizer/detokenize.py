@@ -372,6 +372,9 @@ class Detokenizer:
 
         return detokenize
 
+    def _reload_if_changed(self) -> None:
+        """Subclasses may override this to reload database if modified."""
+
     def _detokenize_nested(
         self,
         message: str | bytes,
@@ -382,6 +385,8 @@ class Detokenizer:
         Message data is internally handled as bytes regardless of input message
         type and returns the result as bytes.
         """
+        self._reload_if_changed()
+
         # A unified format across the token types is required for regex
         # consistency.
         message = message.encode() if isinstance(message, str) else message
@@ -568,6 +573,17 @@ class AutoUpdatingDetokenizer(Detokenizer):
             if any(path.updated() for path in self.paths):
                 _LOG.info('Changes detected; reloading token database')
                 self._pool.submit(self._reload_paths)
+
+    def detokenize(
+        self,
+        encoded_message: bytes,
+        domain: str | None = None,
+        recursion: int = DEFAULT_RECURSION,
+    ) -> DetokenizedString:
+        self._reload_if_changed()
+        return super().detokenize(
+            encoded_message, domain=domain, recursion=recursion
+        )
 
     def lookup(self, token: int) -> list[_TokenizedFormatString]:
         self._reload_if_changed()

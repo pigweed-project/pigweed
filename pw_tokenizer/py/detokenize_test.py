@@ -538,6 +538,49 @@ class AutoUpdatingDetokenizerTest(unittest.TestCase):
             finally:
                 os.unlink(file.name)
 
+    def test_update_detokenize_text(self, mock_getmtime) -> None:
+        """Tests that detokenize_text reloads the database when changed."""
+        db = database.load_token_database(
+            io.BytesIO(ELF_WITH_TOKENIZER_SECTIONS)
+        )
+
+        the_time = [100]
+
+        def move_back_time_if_file_exists(path) -> int:
+            if os.path.exists(path):
+                the_time[0] -= 1
+                return the_time[0]
+            raise FileNotFoundError
+
+        mock_getmtime.side_effect = move_back_time_if_file_exists
+
+        with tempfile.NamedTemporaryFile('wb', delete=False) as file:
+            try:
+                file.close()
+
+                pool = ManualPoolExecutor()
+                detok = detokenize.AutoUpdatingDetokenizer(
+                    file.name, min_poll_period_s=0, pool=pool
+                )
+
+                b64_msg = b'$' + base64.b64encode(JELLO_WORLD_TOKEN)
+
+                with open(file.name, 'wb') as fd:
+                    tokens.write_binary(db, fd)
+
+                # Trigger the reload check during detokenize_text
+                self.assertEqual(detok.detokenize_text(b64_msg), b64_msg)
+
+                # Process the reload job
+                pool.process()
+
+                # Subsequent detokenize_text call should use updated database
+                self.assertEqual(
+                    detok.detokenize_text(b64_msg), b'Jello, world!'
+                )
+            finally:
+                os.unlink(file.name)
+
     def test_update_with_directory(self, mock_getmtime) -> None:
         """Tests the update command with a directory format database."""
         db = database.load_token_database(
