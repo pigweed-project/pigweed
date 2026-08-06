@@ -2174,11 +2174,9 @@
     },
     "@@rules_probe_rs+//probe_rs:extensions.bzl%probe_rs": {
       "general": {
-        "bzlTransitiveDigest": "1Ry0N0N4w9FMtZ2xPenmU1X/vLnFB1E61PUHbWX9CkQ=",
+        "bzlTransitiveDigest": "qACxDYMmZFnJ5z3DgFxaM5vcM6BluXK+tGm6QjKzbo0=",
         "usagesDigest": "kecDrUzQ03wOfdR1LXDomLlTjEiT0UqYVX7fdeWic/4=",
-        "recordedFileInputs": {
-          "@@rules_probe_rs+//probe_rs/private/versions.json": "8f05aa6e65ba53141afce67b0ae769d90de06b8b348d0e95d6b8ad6a7e10a134"
-        },
+        "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
