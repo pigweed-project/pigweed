@@ -401,8 +401,11 @@ class ProfileServer : public ServerBase<fuchsia::bluetooth::bredr::Profile> {
   // The index to use when SCO is set to the OFFLOAD data path.
   uint8_t sco_offload_index_;
 
+  // TODO(fxbug.dev/542275364): delete all the socket code once we're
+  // convinced the Connection configuration is stable.
+  //
   // If true, use Channel.socket. If false, use Channel.connection.
-  bool use_sockets_ = true;
+  bool use_sockets_ = false;
 
   // Creates sockets that bridge L2CAP channels to profile processes.
   bt::socket::SocketFactory<bt::l2cap::Channel> l2cap_socket_factory_;

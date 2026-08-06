@@ -1405,10 +1405,12 @@ std::optional<fuchsia::bluetooth::bredr::Channel> ProfileServer::ChannelToFidl(
     audio_offload_controller_server_ = nullptr;
   };
   if (use_sockets_) {
+    bt_log(INFO, "fidl", "ChannelToFidl: Using Socket for channel");
     auto sock = l2cap_socket_factory_.MakeSocketForChannel(
         channel, std::move(closed_cb));
     fidl_chan.set_socket(std::move(sock));
   } else {
+    bt_log(INFO, "fidl", "ChannelToFidl: Using Connection (FIDL) for channel");
     std::optional<fidl::InterfaceHandle<fuchsia::bluetooth::Channel>>
         connection = BindChannelServer(channel, std::move(closed_cb));
     if (!connection) {

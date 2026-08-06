@@ -784,6 +784,7 @@ class ProfileServerTestOffloadedScoConnected
 };
 
 TEST_F(ProfileServerTestConnectedPeer, ConnectL2capChannelParametersUseSocket) {
+  server()->set_use_sockets(true);
   std::unique_ptr<bt::gap::FakePairingDelegate> pairing_delegate =
       std::make_unique<bt::gap::FakePairingDelegate>(
           bt::sm::IOCapability::kDisplayYesNo);
@@ -982,6 +983,7 @@ TEST_F(ProfileServerTestConnectedPeer, ConnectEmptyChannelResponse) {
 TEST_P(
     ProfileServerTestConnectedPeerWithBoolParam,
     AdvertiseChannelParametersReceivedInOnChannelConnectedCallbackUseSocket) {
+  server()->set_use_sockets(true);
   constexpr uint16_t kTxMtu = bt::l2cap::kMinACLMTU;
 
   std::unique_ptr<bt::gap::FakePairingDelegate> pairing_delegate =
@@ -1245,6 +1247,7 @@ TEST_P(PriorityTestWithBoolParam, InboundConnectAndSetPriority) {
 // Verifies that a socket channel relay is correctly set up such that bytes
 // written to the socket are sent to the channel.
 TEST_F(ProfileServerTestConnectedPeer, ConnectReturnsValidSocket) {
+  server()->set_use_sockets(true);
   std::unique_ptr<bt::gap::FakePairingDelegate> pairing_delegate =
       std::make_unique<bt::gap::FakePairingDelegate>(
           bt::sm::IOCapability::kDisplayYesNo);
@@ -1422,6 +1425,7 @@ TEST_F(ProfileServerTestConnectedPeer,
 // written to the socket are sent to the channel.
 TEST_P(ProfileServerTestConnectedPeerWithBoolParam,
        ConnectionReceiverReturnsValidSocket) {
+  server()->set_use_sockets(true);
   std::unique_ptr<bt::gap::FakePairingDelegate> pairing_delegate =
       std::make_unique<bt::gap::FakePairingDelegate>(
           bt::sm::IOCapability::kDisplayYesNo);
