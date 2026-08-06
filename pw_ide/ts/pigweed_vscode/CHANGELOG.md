@@ -1,5 +1,17 @@
 # Change Log
 
+## [1.11.0] - 2026-08-06
+
+### ✨ Features & Improvements
+
+* **Rust Support**: Added Rust `rust-project.json` generation and Rust Analyzer IDE configuration support for Bazel projects.
+* **Target Selection UI**: Redesigned target selection panel with separate tables for C++ and Rust targets, target search, and enhanced target switching workflows.
+* **Bazel Custom Arguments**: Support passing custom `bazel_args` to compile commands generator rules.
+
+### 🐛 Bug Fixes
+
+* Include default output group when running `gen_rust_project` to ensure compatibility with targets using lint configurations.
+
 ## [1.10.4] - 2026-06-08
 
 ### ✨ Features & Improvements
