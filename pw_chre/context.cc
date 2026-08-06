@@ -14,8 +14,17 @@
 
 #include "chre/platform/context.h"
 
+#include "chre/core/event_loop_manager.h"
+#include "chre/platform/assert.h"
+
 namespace chre {
 
 bool inEventLoopThread() { return true; }
+
+EventLoop* getCurrentEventLoop() {
+  EventLoopManager* elm = EventLoopManagerSingleton::get();
+  CHRE_ASSERT(elm != nullptr);
+  return &elm->getEventLoop();
+}
 
 }  // namespace chre

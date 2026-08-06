@@ -128,7 +128,11 @@ pw_source_set("chre_headers") {
 pw_source_set("chre") {
   public_configs = [ ":public_include_path" ]
   sources = [ "chre.cc" ]
-  public_deps = [ ":chre_headers" ]
+  public_deps = [
+    ":chre_backend_headers",
+    ":chre_headers",
+    "$pw_external_chre:chre_headers",
+  ]
   deps = [ "$pw_external_chre" ]
 }
 
