@@ -348,6 +348,26 @@ TEST(ValueProviderVoid, VendsAndResolvesFuture) {
   EXPECT_TRUE(completed);
 }
 
+TEST(OptionalValueProvider, OnlyAllowsOneFutureToExist) {
+  OptionalValueProvider<int> provider;
+  EXPECT_FALSE(provider.has_future());
+
+  {
+    std::optional<OptionalValueFuture<int>> future1 = provider.TryGet();
+    EXPECT_TRUE(provider.has_future());
+    std::optional<OptionalValueFuture<int>> future2 = provider.TryGet();
+    EXPECT_TRUE(future1.has_value());
+    EXPECT_FALSE(future2.has_value());
+  }
+
+  EXPECT_FALSE(provider.has_future());
+
+  // `future1` went out of scope, so we should be allowed to get a new one.
+  OptionalValueFuture<int> future = provider.Get();
+  EXPECT_TRUE(provider.has_future());
+  ASSERT_FALSE(future.is_complete());
+}
+
 TEST(OptionalValueProvider, Resolve) {
   DispatcherForTest dispatcher;
   OptionalValueProvider<int> provider;

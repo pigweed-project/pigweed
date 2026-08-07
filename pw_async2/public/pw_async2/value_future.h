@@ -500,6 +500,13 @@ class OptionalValueProvider {
   /// is called.
   OptionalValueFuture<T> Get() { return provider_.Get(); }
 
+  /// Returns a `ValueFuture` that will be completed when `Resolve` or `Cancel`
+  /// is called.
+  ///
+  /// If a future has already been vended and is still pending, this will
+  /// return `std::nullopt`.
+  std::optional<OptionalValueFuture<T>> TryGet() { return provider_.TryGet(); }
+
   /// Resolves the pending `ValueFuture` by constructing it in-place.
   template <typename... Args>
   void Resolve(Args&&... args) {
@@ -508,6 +515,9 @@ class OptionalValueProvider {
 
   /// Resolves the pending `ValueFuture` with `std::nullopt`.
   void Cancel() { provider_.Resolve(std::nullopt); }
+
+  /// Returns `true` if the provider stores a pending future.
+  bool has_future() const { return provider_.has_future(); }
 
  private:
   ValueProvider<std::optional<T>> provider_;
