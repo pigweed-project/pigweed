@@ -16,6 +16,7 @@ pub const STACK_SECTION_NAME: &str = ".pw_kernel.annotations.stack";
 pub const THREAD_SECTION_NAME: &str = ".pw_kernel.annotations.thread";
 pub const PROCESS_SECTION_NAME: &str = ".pw_kernel.annotations.process";
 pub const TRACE_BUFFER_SECTION_NAME: &str = ".pw_kernel.annotations.trace_buffer";
+pub const TOKENIZER_SECTION_NAME: &str = ".pw_tokenizer.entries";
 
 pub mod image_info;
 

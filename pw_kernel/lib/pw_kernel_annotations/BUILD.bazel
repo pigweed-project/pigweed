@@ -27,6 +27,7 @@ rust_library(
     tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
+        "//pw_tokenizer/rust:pw_tokenizer",
         "@rust_crates//:anyhow",
         "@rust_crates//:object",
     ],

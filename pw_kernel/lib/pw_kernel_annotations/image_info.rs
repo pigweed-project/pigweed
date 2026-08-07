@@ -17,9 +17,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 use object::{Endian, File, Object, ObjectSection};
+use pw_tokenizer::detokenize::Detokenizer;
 
 use crate::{
-    PROCESS_SECTION_NAME, STACK_SECTION_NAME, THREAD_SECTION_NAME, TRACE_BUFFER_SECTION_NAME,
+    PROCESS_SECTION_NAME, STACK_SECTION_NAME, THREAD_SECTION_NAME, TOKENIZER_SECTION_NAME,
+    TRACE_BUFFER_SECTION_NAME,
 };
 
 #[derive(Debug, Clone)]
@@ -55,6 +57,7 @@ pub struct ImageInfo {
     pub threads: Vec<ThreadInfo>,
     pub processes: Vec<ProcessInfo>,
     pub trace_buffers: Vec<TraceBufferInfo>,
+    pub tokenizer_database: Option<Detokenizer>,
     pub endian: object::Endianness,
 }
 
@@ -86,6 +89,7 @@ impl ImageInfo {
         let processes = Self::extract_processes(obj_file)?
             .with_context(|| format!("Failed to find section {PROCESS_SECTION_NAME}"))?;
         let trace_buffers = Self::extract_trace_buffers(obj_file)?.unwrap_or_default();
+        let tokenizer_database = Self::extract_tokenizer_database(obj_file)?;
 
         Ok(ImageInfo {
             stacks,
@@ -93,7 +97,21 @@ impl ImageInfo {
             endian,
             processes,
             trace_buffers,
+            tokenizer_database,
         })
+    }
+
+    /// Extracts the detokenizer database from the `.pw_tokenizer.entries` section.
+    pub fn extract_tokenizer_database(obj_file: &File<'_>) -> Result<Option<Detokenizer>> {
+        let Some(data) = Self::get_section_data(obj_file, TOKENIZER_SECTION_NAME)? else {
+            return Ok(None);
+        };
+        if data.is_empty() {
+            return Ok(None);
+        }
+        let detok = Detokenizer::from_elf_section(data)
+            .map_err(|e| anyhow!("Failed to parse binary tokenizer database: {:?}", e))?;
+        Ok(Some(detok))
     }
 
     fn get_section_data<'a>(obj_file: &File<'a>, section_name: &str) -> Result<Option<&'a [u8]>> {
@@ -312,5 +330,6 @@ mod tests {
         assert!(image_info.stacks.is_empty());
         assert!(image_info.threads.is_empty());
         assert!(image_info.processes.is_empty());
+        assert!(image_info.tokenizer_database.is_none());
     }
 }
