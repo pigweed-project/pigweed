@@ -48,6 +48,12 @@
 #define PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES 1
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
+// Disable credit mutation snapshot updates if snapshot recovery is disabled.
+#if !PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+#undef PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+#define PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES 0
+#endif
+
 #ifndef PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS
 /// Caps the number of concurrent ACL connections that can be serialized across
 /// the proxy's subsystems.

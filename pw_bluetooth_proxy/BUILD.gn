@@ -84,6 +84,12 @@ pw_source_set("system_clock_backend") {
   ]
 }
 
+pw_source_set("logical_transport") {
+  public = [ "public/pw_bluetooth_proxy/internal/logical_transport.h" ]
+  public_configs = [ ":public_include_path" ]
+  visibility = [ "$dir_pw_bluetooth_proxy/*" ]
+}
+
 # LINT.IfChange
 
 pw_facade("clock") {
@@ -97,7 +103,14 @@ pw_facade("clock") {
 pw_source_set("acl_snapshot") {
   public = [ "public/pw_bluetooth_proxy/acl_snapshot.h" ]
   public_configs = [ ":public_include_path" ]
-  public_deps = [ ":config" ]
+  public_deps = [
+    ":config",
+    ":logical_transport",
+    "$dir_pw_containers:vector",
+    "$dir_pw_function",
+    "$dir_pw_status",
+  ]
+  sources = [ "acl_snapshot.cc" ]
 }
 
 # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
@@ -134,7 +147,6 @@ _pw_bluetooth_proxy_public = [
   "public/pw_bluetooth_proxy/internal/l2cap_status_tracker.h",
   "public/pw_bluetooth_proxy/internal/l2cap_logical_link.h",
   "public/pw_bluetooth_proxy/internal/locked_l2cap_channel.h",
-  "public/pw_bluetooth_proxy/internal/logical_transport.h",
   "public/pw_bluetooth_proxy/internal/mutex.h",
   "public/pw_bluetooth_proxy/internal/proxy_host_async.h",
   "public/pw_bluetooth_proxy/internal/proxy_host_sync.h",

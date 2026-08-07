@@ -171,17 +171,6 @@ pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_sync
     modules
 )
 
-pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_async_recovery
-  PRIVATE_DEPS
-    ${RFCOMM_TEST_PRIVATE_DEPS}
-    pw_bluetooth_proxy.rfcomm._async_recovery
-    pw_bluetooth_proxy._test_utils_async_recovery
-  SOURCES
-    ${RFCOMM_TEST_SOURCES}
-  GROUPS
-    modules
-)
-
 pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_sync_recovery
   PRIVATE_DEPS
     ${RFCOMM_TEST_PRIVATE_DEPS}
@@ -198,6 +187,17 @@ pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_async
     ${RFCOMM_TEST_PRIVATE_DEPS}
     pw_bluetooth_proxy.rfcomm._async
     pw_bluetooth_proxy._test_utils_async
+  SOURCES
+    ${RFCOMM_TEST_SOURCES}
+  GROUPS
+    modules
+)
+
+pw_add_test(pw_bluetooth_proxy.rfcomm.rfcomm_test_async_recovery
+  PRIVATE_DEPS
+    ${RFCOMM_TEST_PRIVATE_DEPS}
+    pw_bluetooth_proxy.rfcomm._async_recovery
+    pw_bluetooth_proxy._test_utils_async_recovery
   SOURCES
     ${RFCOMM_TEST_SOURCES}
   GROUPS

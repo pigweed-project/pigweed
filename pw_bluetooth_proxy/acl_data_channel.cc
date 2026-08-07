@@ -61,12 +61,18 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
 
         if (!credits.dynamic_sharing()) {
           connection_ptr->RecordPacket(PacketSource::kHost);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+          NotifyStateUpdate(*connection_ptr);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           packet_to_send_directly = std::move(h4_packet);
         } else {
           transport = connection_ptr->transport();
           if (h4_packet.HasReleaseFn()) {
             if (connection_ptr->queue().try_push(std::move(h4_packet))) {
               credits.IncrementTotalQueuedPackets();
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+              NotifyStateUpdate(*connection_ptr);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
             } else {
               PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
             }
@@ -81,6 +87,9 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
               if (connection_ptr->queue().try_push(
                       std::move(owned_h4_packet_result.value()))) {
                 credits.IncrementTotalQueuedPackets();
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+                NotifyStateUpdate(*connection_ptr);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
               } else {
                 PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
               }
@@ -103,11 +112,13 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
 
 AclDataChannel::AclConnection::AclConnection(AclTransportType transport,
                                              uint16_t connection_handle,
-                                             pw::Allocator& allocator)
+                                             pw::Allocator& allocator,
+                                             uint16_t num_proxy_pending_packets,
+                                             uint16_t num_host_pending_packets)
     : transport_(transport),
       connection_handle_(connection_handle),
-      num_proxy_pending_packets_(0),
-      num_host_pending_packets_(0),
+      num_proxy_pending_packets_(num_proxy_pending_packets),
+      num_host_pending_packets_(num_host_pending_packets),
       queue_(allocator) {
   PW_LOG_INFO(
       "btproxy: AclConnection ctor. transport_: %u, connection_handle_: %#x",
@@ -459,6 +470,12 @@ bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
         // host.
         should_send_to_host = true;
       }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+      if (proxy_reclaimed > 0 || host_reclaimed > 0) {
+        NotifyStateUpdate(*connection_ptr);
+      }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
     }
   }
 
@@ -502,6 +519,9 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
         AclConnection* connection_to_drain = FindConnectionToDrain(transport);
         if (connection_to_drain) {
           packet_to_send = DequeueHostPacket(connection_to_drain, credits);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+          NotifyStateUpdate(*connection_to_drain);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           host_tried_and_empty = false;
           proxy_tried_and_empty = false;
         } else {
@@ -643,6 +663,10 @@ pw::Status AclDataChannel::SendAcl(H4PacketWithH4&& h4_packet,
 
   connection_ptr->RecordPacket(PacketSource::kProxy);
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  NotifyStateUpdate(*connection_ptr);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
   hci_transport_.SendToController(std::move(h4_packet));
   return pw::OkStatus();
 }
@@ -678,6 +702,10 @@ Status AclDataChannel::CreateAclConnection(uint16_t connection_handle,
                    connection_handle);
     }
   }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  NotifyStateUpdate(acl_connections_.back());
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   return OkStatus();
 }
@@ -792,5 +820,133 @@ bool AclDataChannel::HasAclConnection(uint16_t connection_handle) {
   std::lock_guard lock(connection_mutex_);
   return FindAclConnection(connection_handle) != nullptr;
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+void AclDataChannel::RegisterStateUpdateCallback(
+    AclStateUpdateCallback&& callback) {
+  std::lock_guard lock(connection_mutex_);
+  state_update_callback_ = std::move(callback);
+}
+
+Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
+  if (snapshot.snapshot_incomplete) {
+    PW_LOG_ERROR("Cannot recover from incomplete ACL snapshot");
+    return Status::DataLoss();
+  }
+
+  std::lock_guard connection_lock(connection_mutex_);
+  std::lock_guard credit_lock(credit_mutex_);
+
+  acl_connections_.clear();
+  deferred_refunds_.clear();
+
+  le_credits_.RecoverFromSnapshot(snapshot.le_transport);
+  br_edr_credits_.RecoverFromSnapshot(snapshot.br_edr_transport);
+
+  for (const AclConnectionSnapshot& connection_snapshot :
+       snapshot.acl_connections) {
+    if (acl_connections_.full()) {
+      PW_LOG_ERROR("ACL connection capacity overflow during recovery");
+      return Status::ResourceExhausted();
+    }
+
+    acl_connections_.emplace_back(connection_snapshot.transport,
+                                  connection_snapshot.connection_handle,
+                                  allocator_,
+                                  connection_snapshot.num_proxy_pending_packets,
+                                  connection_snapshot.num_host_pending_packets);
+
+    uint16_t max_packets =
+        LookupCredits(connection_snapshot.transport).controller_max_packets();
+    if (max_packets > 0 &&
+        !acl_connections_.back().queue().try_reserve(max_packets)) {
+      PW_LOG_ERROR("Failed to reserve capacity for ACL connection %#x queue.",
+                   connection_snapshot.connection_handle);
+    }
+
+    // Accumulate refunds for packets lost in the proxy queue.
+    if (connection_snapshot.num_queued_host_packets > 0) {
+      if (deferred_refunds_.full()) {
+        PW_LOG_ERROR(
+            "Deferred credit refund capacity overflow during recovery");
+        return Status::ResourceExhausted();
+      }
+
+      deferred_refunds_.push_back(DeferredRefund{
+          .connection_handle = connection_snapshot.connection_handle,
+          .num_packets = connection_snapshot.num_queued_host_packets,
+      });
+    }
+  }
+
+  PW_LOG_INFO("Restored ACL state from snapshot");
+  return OkStatus();
+}
+
+static constexpr size_t NumberOfCompletedPacketsSize(size_t num_connections) {
+  return emboss::NumberOfCompletedPacketsEvent::MinSizeInBytes() +
+         num_connections *
+             emboss::NumberOfCompletedPacketsEventData::IntrinsicSizeInBytes();
+}
+
+void AclDataChannel::InitiateCreditResynchronization() {
+  constexpr size_t kMaxEventSize =
+      NumberOfCompletedPacketsSize(kMaxConnections);
+  std::array<uint8_t, kMaxEventSize> buf;
+  buf.fill(0);
+  H4PacketWithHci nocp_event;
+
+  {
+    std::lock_guard lock(connection_mutex_);
+    if (deferred_refunds_.empty()) {
+      return;
+    }
+
+    size_t event_size = NumberOfCompletedPacketsSize(deferred_refunds_.size());
+    span<uint8_t> event_span(buf.data(), event_size);
+    nocp_event = H4PacketWithHci(emboss::H4PacketType::EVENT, event_span);
+
+    auto view = MakeEmbossWriter<emboss::NumberOfCompletedPacketsEventWriter>(
+        nocp_event.GetHciSpan());
+    PW_CHECK(view.ok());
+
+    view->header().event_code().Write(
+        emboss::EventCode::NUMBER_OF_COMPLETED_PACKETS);
+    view->header().parameter_total_size().Write(
+        nocp_event.GetHciSpan().size() -
+        emboss::EventHeader::IntrinsicSizeInBytes());
+    view->num_handles().Write(deferred_refunds_.size());
+
+    for (size_t i = 0; i < deferred_refunds_.size(); ++i) {
+      const DeferredRefund& refund = deferred_refunds_[i];
+      view->nocp_data()[i].connection_handle().Write(refund.connection_handle);
+      view->nocp_data()[i].num_completed_packets().Write(refund.num_packets);
+      PW_LOG_INFO("Refunding %d completed packets on connection %#x",
+                  refund.num_packets,
+                  refund.connection_handle);
+    }
+
+    deferred_refunds_.clear();
+  }
+
+  hci_transport_.SendToHost(std::move(nocp_event));
+}
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+void AclDataChannel::NotifyStateUpdate(const AclConnection& connection) {
+  if (state_update_callback_) {
+    state_update_callback_(AclStateUpdate{
+        .connection = AclConnectionSnapshot{
+            .connection_handle = connection.connection_handle(),
+            .transport = connection.transport(),
+            .num_proxy_pending_packets = connection.num_proxy_pending_packets(),
+            .num_host_pending_packets = connection.num_host_pending_packets(),
+            .num_queued_host_packets =
+                static_cast<uint16_t>(connection.queue().size()),
+        }});
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy

@@ -20,6 +20,7 @@
 #include "pw_allocator/allocator.h"
 #include "pw_bluetooth/hci_data.emb.h"
 #include "pw_bluetooth/hci_events.emb.h"
+#include "pw_bluetooth_proxy/acl_snapshot.h"
 #include "pw_bluetooth_proxy/direction.h"
 #include "pw_bluetooth_proxy/internal/hci_transport.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
@@ -224,6 +225,27 @@ class AclDataChannel {
   // `connection_handle`.
   bool HasAclConnection(uint16_t connection_handle);
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Registers a callback for receiving incremental ACL state updates.
+  ///
+  /// @note This method is not thread-safe and must be called during
+  /// single-threaded initialization after construction, before packet
+  /// traffic is processed or background tasks are started.
+  void RegisterStateUpdateCallback(AclStateUpdateCallback&& callback)
+      PW_LOCKS_EXCLUDED(connection_mutex_);
+
+  /// Restores ACL connections and transport credits from a snapshot.
+  ///
+  /// @note This method is not thread-safe and must be called during
+  /// single-threaded initialization after construction, before packet
+  /// traffic is processed or background tasks are started.
+  Status RecoverFromSnapshot(const AclSnapshot& snapshot)
+      PW_LOCKS_EXCLUDED(connection_mutex_, credit_mutex_);
+
+  /// Sends the host credit refunds for packets dropped while queued.
+  void InitiateCreditResynchronization() PW_LOCKS_EXCLUDED(connection_mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
  private:
   /// Source of an ACL packet sent to the controller.
   enum class PacketSource : uint8_t {
@@ -238,7 +260,9 @@ class AclDataChannel {
    public:
     AclConnection(AclTransportType transport,
                   uint16_t connection_handle,
-                  pw::Allocator& allocator);
+                  pw::Allocator& allocator,
+                  uint16_t num_proxy_pending_packets = 0,
+                  uint16_t num_host_pending_packets = 0);
 
     AclConnection(const AclConnection&) = delete;
     AclConnection& operator=(const AclConnection&) = delete;
@@ -380,6 +404,17 @@ class AclDataChannel {
       }
     }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    void RecoverFromSnapshot(const AclTransportSnapshot& snapshot) {
+      controller_max_packets_ = snapshot.controller_max_packets;
+      pending_ = snapshot.pending;
+      if (auto* static_credits = std::get_if<Static>(&data_)) {
+        static_credits->proxy_max =
+            std::min(controller_max_packets_, static_credits->to_reserve);
+      }
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
    private:
     std::variant<Static, Dynamic> data_;
     // The number of HCI ACL Data packets that we have sent to the controller
@@ -470,6 +505,27 @@ class AclDataChannel {
   template <class EventT>
   void ProcessSpecificLEReadBufferSizeCommandCompleteEvent(
       EventT read_buffer_event);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  struct DeferredRefund {
+    uint16_t connection_handle;
+    uint16_t num_packets;
+  };
+
+  // Host credit refunds to send after traffic resumes.
+  pw::Vector<DeferredRefund, kMaxConnections> deferred_refunds_
+      PW_GUARDED_BY(connection_mutex_);
+
+  // Registered state update callback for offload recovery persistence.
+  AclStateUpdateCallback state_update_callback_
+      PW_GUARDED_BY(connection_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  // Invokes state update callback if registered.
+  void NotifyStateUpdate(const AclConnection& connection)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy

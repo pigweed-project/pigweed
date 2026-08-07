@@ -136,18 +136,32 @@ class ProxyHost : public L2capChannelManagerInterface {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   // ##### Offload Recovery & Snapshot APIs
 
+  /// Registers a callback for receiving incremental ACL state updates.
+  ///
+  /// @note This method is not thread-safe and must be called during
+  /// single-threaded initialization after construction, before packet
+  /// traffic is processed or background tasks are started.
+  ///
+  /// @param[in] callback Function to invoke on ACL state mutation.
+  void RegisterAclStateUpdateCallback(AclStateUpdateCallback&& callback);
+
   /// Restores ACL state from a previously saved snapshot.
   ///
-  /// @note This method is not thread-safe and must be called during container
-  /// initialization after construction, prior to processing any HCI/H4 packet
-  /// traffic.
+  /// @note This method is not thread-safe and must be called during
+  /// single-threaded initialization after construction, before packet
+  /// traffic is processed or background tasks are started.
   ///
   /// @param[in] snapshot ACL state container to restore from.
   /// @returns
   /// * @OK: State restored successfully.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
-  Status RestoreAclFromSnapshot(const AclSnapshot& snapshot);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// * @RESOURCE_EXHAUSTED: ACL connection capacity or deferred credit refund
+  /// capacity was exceeded.
+  Status RecoverAclFromSnapshot(const AclSnapshot& snapshot);
+
+  /// Sends the host ACL credit refunds for packets dropped while queued.
+  void InitiateAclCreditResynchronization();
+#endif  // Pw_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   // ##### Container API
   // Containers are expected to call these functions (in addition to ctor).

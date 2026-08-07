@@ -54,6 +54,13 @@ pw_add_library(pw_bluetooth_proxy.system_clock_backend INTERFACE
     pw_async2.system_time_provider
 )
 
+pw_add_library(pw_bluetooth_proxy.logical_transport INTERFACE
+  HEADERS
+    public/pw_bluetooth_proxy/internal/logical_transport.h
+  PUBLIC_INCLUDES
+    public
+)
+
 # LINT.IfChange
 
 pw_add_facade(pw_bluetooth_proxy.clock INTERFACE
@@ -67,13 +74,19 @@ pw_add_facade(pw_bluetooth_proxy.clock INTERFACE
     pw_bluetooth_proxy.config
 )
 
-pw_add_library(pw_bluetooth_proxy.acl_snapshot INTERFACE
+pw_add_library(pw_bluetooth_proxy.acl_snapshot STATIC
   HEADERS
     public/pw_bluetooth_proxy/acl_snapshot.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_bluetooth_proxy.config
+    pw_bluetooth_proxy.logical_transport
+    pw_containers.vector
+    pw_function
+    pw_status
+  SOURCES
+    acl_snapshot.cc
 )
 
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
@@ -108,7 +121,6 @@ set(PW_BLUETOOTH_PROXY_HEADERS
   public/pw_bluetooth_proxy/internal/l2cap_status_tracker.h
   public/pw_bluetooth_proxy/internal/l2cap_logical_link.h
   public/pw_bluetooth_proxy/internal/locked_l2cap_channel.h
-  public/pw_bluetooth_proxy/internal/logical_transport.h
   public/pw_bluetooth_proxy/internal/mutex.h
   public/pw_bluetooth_proxy/internal/proxy_host_sync.h
   public/pw_bluetooth_proxy/internal/proxy_host_async.h

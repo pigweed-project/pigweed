@@ -99,12 +99,17 @@ bool ProxyHost::IsLeSubeventBlocked(
 }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-Status ProxyHost::RestoreAclFromSnapshot(const AclSnapshot& snapshot) {
-  if (snapshot.snapshot_incomplete) {
-    PW_LOG_ERROR("Cannot restore from incomplete ACL snapshot");
-    return Status::DataLoss();
-  }
-  return Status::Unimplemented();
+void ProxyHost::RegisterAclStateUpdateCallback(
+    AclStateUpdateCallback&& callback) {
+  acl_data_channel_.RegisterStateUpdateCallback(std::move(callback));
+}
+
+Status ProxyHost::RecoverAclFromSnapshot(const AclSnapshot& snapshot) {
+  return acl_data_channel_.RecoverFromSnapshot(snapshot);
+}
+
+void ProxyHost::InitiateAclCreditResynchronization() {
+  acl_data_channel_.InitiateCreditResynchronization();
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 

@@ -60,6 +60,13 @@ cc_library(
 
 # Libraries
 
+cc_library(
+    name = "logical_transport",
+    hdrs = ["public/pw_bluetooth_proxy/internal/logical_transport.h"],
+    strip_include_prefix = "public",
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
+)
+
 # LINT.IfChange
 
 cc_library(
@@ -75,10 +82,15 @@ cc_library(
 
 cc_library(
     name = "acl_snapshot",
+    srcs = ["acl_snapshot.cc"],
     hdrs = ["public/pw_bluetooth_proxy/acl_snapshot.h"],
     strip_include_prefix = "public",
     deps = [
         ":config",
+        ":logical_transport",
+        "//pw_containers:vector",
+        "//pw_function",
+        "//pw_status",
     ],
 )
 
