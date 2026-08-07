@@ -21,7 +21,7 @@ use pw_status::Result;
 use pw_varint::VarintDecode;
 
 use crate::detokenize::database::{Database, TokenizedStringEntry};
-use crate::detokenize::{binary, csv};
+use crate::detokenize::{binary, csv, elf};
 
 const DEFAULT_DOMAIN: &str = "";
 
@@ -286,6 +286,7 @@ impl MatchResult {
 
 /// Decodes and detokenizes from a token database. This struct builds a hash
 /// table of tokens to give `O(1)` token lookups.
+#[derive(Clone, Debug)]
 pub struct Detokenizer {
     // domain -> token -> entries
     database: Database,
@@ -354,6 +355,17 @@ impl Detokenizer {
     /// Constructs a detokenizer from a binary token database with a custom prefix for nested tokenized messages.
     pub fn from_binary_with_prefix(binary: &[u8], prefix: char) -> Result<Self> {
         let database = binary::parse_binary_database(binary)?;
+        Ok(Self { database, prefix })
+    }
+
+    /// Constructs a detokenizer from an ELF token database section (`.pw_tokenizer.entries`).
+    pub fn from_elf_section(elf_section: &[u8]) -> Result<Self> {
+        Self::from_elf_section_with_prefix(elf_section, '$')
+    }
+
+    /// Constructs a detokenizer from an ELF token database section with a custom prefix for nested tokenized messages.
+    pub fn from_elf_section_with_prefix(elf_section: &[u8], prefix: char) -> Result<Self> {
+        let database = elf::parse_elf_section_database(elf_section)?;
         Ok(Self { database, prefix })
     }
 
@@ -1043,27 +1055,27 @@ mod tests {
     #[test]
     fn test_from_binary_invalid() {
         // Too short
-        assert!(Detokenizer::from_binary(b"TOKENS\0\0\0\0").is_err());
+        Detokenizer::from_binary(b"TOKENS\0\0\0\0").unwrap_err();
 
         // Bad magic
-        assert!(Detokenizer::from_binary(b"TOKENs\0\0\x00\x00\x00\x00\0\0\0\0").is_err());
+        Detokenizer::from_binary(b"TOKENs\0\0\x00\x00\x00\x00\0\0\0\0").unwrap_err();
 
         // Bad version
-        assert!(Detokenizer::from_binary(b"TOKENS\0\x01\x00\x00\x00\x00\0\0\0\0").is_err());
+        Detokenizer::from_binary(b"TOKENS\0\x01\x00\x00\x00\x00\0\0\0\0").unwrap_err();
 
         // Bad entry count (no string table)
         let data: &[u8] = &[
             b'T', b'O', b'K', b'E', b'N', b'S', 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
             0,
         ];
-        assert!(Detokenizer::from_binary(data).is_err());
+        Detokenizer::from_binary(data).unwrap_err();
 
         // Missing null terminator in string table
         let data: &[u8] = &[
             b'T', b'O', b'K', b'E', b'N', b'S', 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0,
             0, b'h', b'i',
         ];
-        assert!(Detokenizer::from_binary(data).is_err());
+        Detokenizer::from_binary(data).unwrap_err();
     }
 
     #[test]
@@ -1299,15 +1311,13 @@ mod tests {
     #[test]
     fn test_from_csv_bad_date() {
         let csv = "1,01-01-2001,,Hello\n";
-        let detok = Detokenizer::from_csv(csv);
-        assert!(detok.is_err());
+        Detokenizer::from_csv(csv).unwrap_err();
     }
 
     #[test]
     fn test_from_csv_bad_token() {
         let csv = "g,,domain1,Hello\n";
-        let detok = Detokenizer::from_csv(csv);
-        assert!(detok.is_err());
+        Detokenizer::from_csv(csv).unwrap_err();
     }
 
     #[test]
@@ -1488,5 +1498,24 @@ mod tests {
         let detok = Detokenizer::from_csv(csv).unwrap();
         let result = detok.detokenize(data);
         assert_eq!(result.best_string_with_errors(), "<[%hhd ERROR]>");
+    }
+
+    #[test]
+    fn test_detokenize_from_elf_section() {
+        let mut binary_data = Vec::new();
+        let domain = b"\0";
+        let string = b"hello %d\0";
+        binary_data.extend_from_slice(&pw_tokenizer_core::TOKENIZER_ENTRY_MAGIC.to_le_bytes());
+        binary_data.extend_from_slice(&0x12345678u32.to_le_bytes());
+        binary_data.extend_from_slice(&u32::try_from(domain.len()).unwrap().to_le_bytes());
+        binary_data.extend_from_slice(&u32::try_from(string.len()).unwrap().to_le_bytes());
+        binary_data.extend_from_slice(domain);
+        binary_data.extend_from_slice(string);
+
+        let detok = Detokenizer::from_elf_section(&binary_data).unwrap();
+        let mut encoded = 0x12345678u32.to_le_bytes().to_vec();
+        encoded.extend_from_slice(&[0x08]); // 4 (zigzag encoded)
+        let result = detok.detokenize(&encoded);
+        assert_eq!(result.best_string(), "hello 4");
     }
 }

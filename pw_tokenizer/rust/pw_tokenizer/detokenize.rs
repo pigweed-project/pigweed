@@ -18,6 +18,7 @@ mod binary;
 mod csv;
 mod database;
 mod detokenizer;
+mod elf;
 
 pub use database::TokenizedStringEntry;
 pub use detokenizer::{

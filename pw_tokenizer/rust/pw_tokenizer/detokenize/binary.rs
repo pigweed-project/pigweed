@@ -115,3 +115,36 @@ pub fn parse_binary_database(input: &[u8]) -> Result<Database> {
 
     Ok(database)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_binary_database_tokens_header() {
+        let mut binary_data = Vec::new();
+        binary_data.extend_from_slice(b"TOKENS\0\0");
+        binary_data.extend_from_slice(&1u32.to_le_bytes()); // entry_count = 1
+        binary_data.extend_from_slice(&0u32.to_le_bytes()); // reserved
+
+        // BinaryEntry: token (4 bytes), day (1 byte), month (1 byte), year (2 bytes)
+        binary_data.extend_from_slice(&0x12345678u32.to_le_bytes());
+        binary_data.push(0xff); // day (never removed)
+        binary_data.push(0xff); // month
+        binary_data.extend_from_slice(&0xffffu16.to_le_bytes()); // year
+
+        // Null-terminated string
+        binary_data.extend_from_slice(b"hello world\0");
+
+        let db = parse_binary_database(&binary_data).unwrap();
+        let entries = db.lookup(0x12345678, "");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].format_string, "hello world");
+    }
+
+    #[test]
+    fn test_parse_binary_database_invalid_header() {
+        let result = parse_binary_database(b"INVALID_HEADER");
+        result.unwrap_err();
+    }
+}
