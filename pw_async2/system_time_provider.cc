@@ -31,11 +31,14 @@ class SystemTimeProvider final : public TimeProvider<SystemClock> {
  private:
   SystemClock::time_point now() final { return SystemClock::now(); }
 
-  void DoInvokeAt(SystemClock::time_point time_point) final {
+  void DoInvokeAt(SystemClock::time_point time_point) final
+      PW_LOCKS_EXCLUDED(internal::time_lock()) {
     timer_.InvokeAt(time_point);
   }
 
-  void DoCancel() final { timer_.Cancel(); }
+  void DoCancel() final PW_LOCKS_EXCLUDED(internal::time_lock()) {
+    timer_.Cancel();
+  }
 
   pw::chrono::SystemTimer timer_;
 };

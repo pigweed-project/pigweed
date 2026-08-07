@@ -103,11 +103,10 @@ class TimeProvider : public chrono::VirtualClock<Clock> {
   /// Schedule `RunExpired` to be invoked at `time_point`.
   /// Newer calls to `DoInvokeAt` supersede previous calls.
   virtual void DoInvokeAt(typename Clock::time_point)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::time_lock()) = 0;
+      PW_LOCKS_EXCLUDED(internal::time_lock()) = 0;
 
   /// Optimistically cancels all pending `DoInvokeAt` requests.
-  virtual void DoCancel()
-      PW_EXCLUSIVE_LOCKS_REQUIRED(internal::time_lock()) = 0;
+  virtual void DoCancel() PW_LOCKS_EXCLUDED(internal::time_lock()) = 0;
 
   // Head of the waiting timers list.
   IntrusiveList<TimeFuture<Clock>> futures_
@@ -134,9 +133,9 @@ class [[nodiscard]] TimeFuture
   }
 
   TimeFuture& operator=(TimeFuture&& other) {
-    std::lock_guard lock(internal::time_lock());
-    UnlistLocked();
+    Unlist();
 
+    std::lock_guard lock(internal::time_lock());
     provider_ = other.provider_;
     expiration_ = other.expiration_;
 
@@ -213,35 +212,33 @@ class [[nodiscard]] TimeFuture
       : waker_(), provider_(&provider), expiration_(expiration) {
     PW_ASSERT(expiration != value_type{});
 
-    std::lock_guard lock(internal::time_lock());
-    EnlistLocked();
-  }
-
-  void EnlistLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(internal::time_lock()) {
-    // Skip enlisting if the expiration of the timer is in the past.
-    // NOTE: this *does not* trigger a waker since `Poll` has not yet been
-    // invoked, so none has been registered.
-    if (provider_->now() >= expiration_) {
-      return;
+    typename Clock::time_point invoke_at_expiration{};
+    bool should_invoke = false;
+    {
+      std::lock_guard lock(internal::time_lock());
+      // Skip enlisting if the expiration of the timer is in the past.
+      // NOTE: this *does not* trigger a waker since `Poll` has not yet been
+      // invoked, so none has been registered.
+      if (provider_->now() < expiration_) {
+        if (provider_->futures_.empty() ||
+            provider_->futures_.front().expiration_ > expiration_) {
+          provider_->futures_.push_front(*this);
+          invoke_at_expiration = expiration_;
+          should_invoke = true;
+        } else {
+          auto current = provider_->futures_.begin();
+          while (std::next(current) != provider_->futures_.end() &&
+                 std::next(current)->expiration_ < expiration_) {
+            current++;
+          }
+          provider_->futures_.insert_after(current, *this);
+        }
+      }
     }
 
-    if (provider_->futures_.empty() ||
-        provider_->futures_.front().expiration_ > expiration_) {
-      provider_->futures_.push_front(*this);
-      provider_->DoInvokeAt(expiration_);
-      return;
+    if (should_invoke) {
+      provider_->DoInvokeAt(invoke_at_expiration);
     }
-    auto current = provider_->futures_.begin();
-    while (std::next(current) != provider_->futures_.end() &&
-           std::next(current)->expiration_ < expiration_) {
-      current++;
-    }
-    provider_->futures_.insert_after(current, *this);
-  }
-
-  void Unlist() PW_LOCKS_EXCLUDED(internal::time_lock()) {
-    std::lock_guard lock(internal::time_lock());
-    UnlistLocked();
   }
 
   // Removes this timer from the `TimeProvider`'s list (if listed).
@@ -249,21 +246,35 @@ class [[nodiscard]] TimeFuture
   // If this timer was previously the `head` element of the `TimeProvider`'s
   // list, the `TimeProvider` will be rescheduled to wake up based on the
   // new `head`'s expiration time.
-  void UnlistLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(internal::time_lock()) {
-    if (this->unlisted()) {
-      return;
-    }
-    if (&provider_->futures_.front() == this) {
-      provider_->futures_.pop_front();
-      if (provider_->futures_.empty()) {
-        provider_->DoCancel();
-      } else {
-        provider_->DoInvokeAt(provider_->futures_.front().expiration_);
+  void Unlist() PW_LOCKS_EXCLUDED(internal::time_lock()) {
+    typename Clock::time_point next_expiration{};
+    bool should_invoke = false;
+    bool should_cancel = false;
+    TimeProvider<Clock>* provider = nullptr;
+    {
+      std::lock_guard lock(internal::time_lock());
+      if (this->unlisted()) {
+        return;
       }
-      return;
+      provider = provider_;
+      if (&provider_->futures_.front() == this) {
+        provider_->futures_.pop_front();
+        if (provider_->futures_.empty()) {
+          should_cancel = true;
+        } else {
+          next_expiration = provider_->futures_.front().expiration_;
+          should_invoke = true;
+        }
+      } else {
+        provider_->futures_.remove(*this);
+      }
     }
 
-    provider_->futures_.remove(*this);
+    if (should_cancel) {
+      provider->DoCancel();
+    } else if (should_invoke) {
+      provider->DoInvokeAt(next_expiration);
+    }
   }
 
   Waker waker_;
@@ -280,14 +291,29 @@ class [[nodiscard]] TimeFuture
 
 template <typename Clock>
 void TimeProvider<Clock>::RunExpired(typename Clock::time_point now) {
-  std::lock_guard lock(internal::time_lock());
-  while (!futures_.empty()) {
-    if (futures_.front().expiration_ > now) {
-      DoInvokeAt(futures_.front().expiration_);
+  while (true) {
+    Waker waker_to_wake;
+    typename Clock::time_point next_expiration{};
+    bool should_invoke = false;
+    {
+      std::lock_guard lock(internal::time_lock());
+      if (futures_.empty()) {
+        return;
+      }
+      if (futures_.front().expiration_ > now) {
+        next_expiration = futures_.front().expiration_;
+        should_invoke = true;
+      } else {
+        waker_to_wake = std::move(futures_.front().waker_);
+        futures_.pop_front();
+      }
+    }
+
+    if (should_invoke) {
+      DoInvokeAt(next_expiration);
       return;
     }
-    futures_.front().waker_.Wake();
-    futures_.pop_front();
+    waker_to_wake.Wake();
   }
 }
 

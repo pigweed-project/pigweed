@@ -100,7 +100,8 @@ class SimulatedTimeProvider final : public TimeProvider<Clock> {
     }
   }
 
-  void DoInvokeAt(typename Clock::time_point wake_time) final {
+  void DoInvokeAt(typename Clock::time_point wake_time) final
+      PW_LOCKS_EXCLUDED(internal::time_lock()) {
     std::lock_guard lock(lock_);
     next_wake_time_ = wake_time;
 
@@ -109,12 +110,11 @@ class SimulatedTimeProvider final : public TimeProvider<Clock> {
     // `AdvanceTime`/`SetTime`.
     //
     // Note: we cannot run the timer here even if it was in the past because
-    // `DoInvokeAt` is called under `TimeProvider`'s lock. Furthermore, we
-    // might be *inside* the current callback due to a nested invocation of
+    // we might be *inside* the current callback due to a nested invocation of
     // `InvokeAfter`/`InvokeAt`.
   }
 
-  void DoCancel() final {
+  void DoCancel() final PW_LOCKS_EXCLUDED(internal::time_lock()) {
     std::lock_guard lock(lock_);
     next_wake_time_ = std::nullopt;
 
