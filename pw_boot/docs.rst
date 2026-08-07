@@ -154,9 +154,9 @@ Dependencies
 ------------
 - :bdg-ref-primary-line:`module-pw_preprocessor`
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_boot-security` for the module-specific threat model.
 
 .. toctree::

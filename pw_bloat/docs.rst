@@ -718,9 +718,9 @@ API reference
 Moved: :cc:`pw_bloat`
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_bloat-security` for the module-specific threat model.
 
 .. toctree::

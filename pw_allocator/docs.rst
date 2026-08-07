@@ -161,9 +161,9 @@ manage memory.
 .. _dependency injection: https://en.wikipedia.org/wiki/Dependency_injection
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_allocator-security` for the module-specific threat model.
 
 .. toctree::

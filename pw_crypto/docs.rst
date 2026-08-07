@@ -527,9 +527,9 @@ API reference
 Moved: :cc:`pw_crypto`
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_crypto-security` for the module-specific threat model.
 
 .. toctree::

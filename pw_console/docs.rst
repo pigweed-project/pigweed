@@ -47,9 +47,9 @@ Contributing
 .. _ptpython: https://github.com/prompt-toolkit/ptpython/
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_console-security` for the module-specific threat model.
 
 .. toctree::

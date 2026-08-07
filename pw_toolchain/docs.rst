@@ -104,9 +104,9 @@ these routines. Setting the ``dir_pw_third_party_builtins`` gn var to your
 compiler-rt/builtins checkout will enable building builtins from source instead
 of relying on the shipped libgcc.
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_toolchain-security` for the module-specific threat model.
 
 .. toctree::

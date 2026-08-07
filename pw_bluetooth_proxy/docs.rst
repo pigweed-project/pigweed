@@ -199,9 +199,9 @@ Roadmap
 - And more...
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_bluetooth_proxy-security` for the module-specific threat
 model.
 

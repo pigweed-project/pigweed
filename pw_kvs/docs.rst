@@ -55,9 +55,9 @@ full filesystem is not needed. Key properties include:
       Understand ``pw_kvs``'s code footprint.
 
 
-========
+--------
 Security
-========
+--------
 See :ref:`module-pw_kvs-security` for the module-specific threat model.
 
 .. toctree::
