@@ -43,6 +43,7 @@ PROTO_CC_EXTENSION = '.pwpb.cc'
 PROTOBUF_NAMESPACE = '::pw::protobuf'
 _INTERNAL_NAMESPACE = '::pw::protobuf::internal'
 _STREAM_ENCODER = f'{PROTOBUF_NAMESPACE}::StreamEncoder'
+MIN_BUFFER_ENCODER_RESERVED_SIZE = 2
 
 
 def _encoder_cast(to_type: str) -> str:
@@ -767,9 +768,11 @@ class SubMessageEncoderMethod(ProtoMethod):
             return [
                 (
                     'constexpr size_t kReservedSize = '
+                    'std::max('
+                    f'size_t{{{MIN_BUFFER_ENCODER_RESERVED_SIZE}}}, '
                     '::pw::varint::EncodedSize('
                     f'{self._relative_type_namespace()}::'
-                    'kMaxEncodedSizeBytesWithoutValues);'
+                    'kMaxEncodedSizeBytesWithoutValues));'
                 ),
                 (
                     'static_assert(kReservedSize <= '
@@ -821,9 +824,11 @@ class UncheckedSubMessageEncoderMethod(ProtoMethod):
         return [
             (
                 'constexpr size_t kReservedSize = '
+                'std::max('
+                f'size_t{{{MIN_BUFFER_ENCODER_RESERVED_SIZE}}}, '
                 '::pw::varint::EncodedSize('
                 f'{self._relative_type_namespace()}::'
-                'kMaxEncodedSizeBytesWithoutValues);'
+                'kMaxEncodedSizeBytesWithoutValues));'
             ),
             (
                 'static_assert(kReservedSize <= '
@@ -3197,8 +3202,10 @@ def generate_class_for_message(
                 with output.indent():
                     output.write_line(
                         'constexpr size_t kReservedSize = '
+                        'std::max('
+                        f'size_t{{{MIN_BUFFER_ENCODER_RESERVED_SIZE}}}, '
                         '::pw::varint::EncodedSize('
-                        'kMaxEncodedSizeBytesWithoutValues);'
+                        'kMaxEncodedSizeBytesWithoutValues));'
                     )
                     output.write_line(
                         'PatchLength<kReservedSize>(len_offset_);'
