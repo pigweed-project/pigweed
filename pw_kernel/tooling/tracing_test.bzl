@@ -13,17 +13,36 @@
 # the License.
 """Rule for running a tracing test for a system image."""
 
+load("@com_google_protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
 load("//pw_kernel/tooling:system_image.bzl", "SystemImageInfo")
 
 def _qemu_tracing_test_impl(ctx):
     runner = ctx.actions.declare_file(ctx.label.name + ".sh")
     elf_file = ctx.attr.image[SystemImageInfo].elf
+    golden_file = ctx.file.golden_file
+
+    # Get the descriptor set for trace_proto
+    proto_info = ctx.attr._trace_proto_definition[ProtoInfo]
+    descriptor_sets = proto_info.transitive_descriptor_sets.to_list()
+
+    # We assume the first one is the one we need (since trace_proto is self-contained)
+    trace_proto_descriptor = descriptor_sets[0]
 
     ws = ctx.workspace_name if ctx.workspace_name else "_main"
     if elf_file.short_path.startswith("../"):
         image_path = elf_file.short_path[3:]
     else:
         image_path = ws + "/" + elf_file.short_path
+
+    if golden_file.short_path.startswith("../"):
+        golden_path = golden_file.short_path[3:]
+    else:
+        golden_path = ws + "/" + golden_file.short_path
+
+    if trace_proto_descriptor.short_path.startswith("../"):
+        trace_proto_descriptor_path = trace_proto_descriptor.short_path[3:]
+    else:
+        trace_proto_descriptor_path = ws + "/" + trace_proto_descriptor.short_path
 
     # Construct the output path at runtime. If TEST_UNDECLARED_OUTPUTS_DIR
     # is set (standard for `bazel test`), we write there so Bazel collects it.
@@ -35,13 +54,22 @@ else
   OUTPUT_FILE="{trace_file}"
 fi
 
-exec "{test_binary}" --cpu "{cpu}" --machine "{machine}" --image "{image}" --output-file "$OUTPUT_FILE" "$@"
+exec "{test_binary}" \
+  --cpu "{cpu}" \
+  --machine "{machine}" \
+  --image "{image}" \
+  --output-file "$OUTPUT_FILE" \
+  --golden-file "{golden_file}" \
+  --trace-proto-descriptor "{trace_proto_descriptor}" \
+  "$@"
 """.format(
         test_binary = ctx.executable._test_binary.short_path,
         cpu = ctx.attr.cpu,
         machine = ctx.attr.machine,
         image = image_path,
         trace_file = ctx.attr.trace_file,
+        golden_file = golden_path,
+        trace_proto_descriptor = trace_proto_descriptor_path,
     )
 
     ctx.actions.write(
@@ -50,7 +78,7 @@ exec "{test_binary}" --cpu "{cpu}" --machine "{machine}" --image "{image}" --out
         is_executable = True,
     )
 
-    runfiles = ctx.runfiles(files = [elf_file]).merge(
+    runfiles = ctx.runfiles(files = [elf_file, golden_file, trace_proto_descriptor]).merge(
         ctx.attr._test_binary[DefaultInfo].default_runfiles,
     )
 
@@ -69,6 +97,11 @@ _qemu_tracing_test = rule(
             doc = "QEMU CPU type.",
             mandatory = True,
         ),
+        "golden_file": attr.label(
+            doc = "The path for the trace file to match the output against.",
+            allow_single_file = True,
+            mandatory = True,
+        ),
         "image": attr.label(
             doc = "The system_image target to test.",
             mandatory = True,
@@ -85,6 +118,10 @@ _qemu_tracing_test = rule(
             default = "@pigweed//pw_kernel/tooling:qemu_tracing_test_runner",
             executable = True,
             cfg = "target",
+        ),
+        "_trace_proto_definition": attr.label(
+            default = "//third_party/perfetto:trace_proto",
+            providers = [ProtoInfo],
         ),
     },
     doc = "Runs the tracing test for a system_image target.",

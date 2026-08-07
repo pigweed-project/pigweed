@@ -94,9 +94,12 @@ rust_binary(
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         "//pw_kernel/lib/pw_gdb_protocol",
+        "//third_party/perfetto:trace_rust_pb2",
         "@rules_rust//tools/runfiles",
         "@rust_crates//:clap",
         "@rust_crates//:object",
+        "@rust_crates//:prost",
+        "@rust_crates//:prost-reflect",
         "@rust_crates//:tokio",
         "@rust_crates//:tokio-util",
     ],

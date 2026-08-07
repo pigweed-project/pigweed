@@ -42,6 +42,7 @@ system_image_test(
 qemu_tracing_test(
     name = "tracing_host_test",
     cpu = "cortex-m33",
+    golden_file = "tracing_host_test.textproto",
     image = ":tracing",
     machine = "mps2-an505",
 )
