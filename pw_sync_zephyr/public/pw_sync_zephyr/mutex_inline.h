@@ -29,7 +29,7 @@ inline Mutex::~Mutex() = default;
 
 inline void Mutex::lock() {
   PW_DASSERT(!interrupt::InInterruptContext());
-  k_mutex_lock(&native_type_, K_FOREVER);
+  PW_DASSERT(k_mutex_lock(&native_type_, K_FOREVER) == 0);
   PW_DASSERT(native_type_.lock_count == 1);
 }
 
