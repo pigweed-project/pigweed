@@ -28,7 +28,7 @@ pub mod sync;
 pub mod syscall;
 pub use target::shutdown;
 mod target;
-mod trace;
+pub mod trace;
 
 use interrupt_controller::InterruptController;
 use kernel_config::{KernelConfig, KernelConfigInterface};
