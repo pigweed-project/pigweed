@@ -27,7 +27,7 @@ pw::Status ReaderExample() {
   PW_TRY_ASSIGN(auto reader, pw::elf::ElfReader::FromStream(stream));
 
   // Read the .example section into a vector.
-  PW_TRY_ASSIGN(std::vector<std::byte> section_data,
+  PW_TRY_ASSIGN([[maybe_unused]] std::vector<std::byte> section_data,
                 reader.ReadSection(".example"));
 
   return pw::OkStatus();
