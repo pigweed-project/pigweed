@@ -180,7 +180,6 @@ cc_library_static {
     export_include_dirs: [
         "public",
         "v2/public",
-        "v2/public_overrides",
     ],
     srcs: [
         "v2/generic_multibuf.cc",

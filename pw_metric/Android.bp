@@ -134,6 +134,10 @@ rust_protobuf {
     protos: ["pw_metric_proto/metric_service.proto"],
     source_stem: "pw_metric_source",
     exported_include_dirs: ["."],
-    proto_flags: ["-I external/protobuf/src"],
+    proto_flags: [
+        "-I external/protobuf/src",
+        "-I external/pigweed/pw_tokenizer",
+    ],
+    rustlibs: ["libpw_tokenizer_proto_rs"],
     vendor_available: true,
 }
