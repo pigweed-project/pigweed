@@ -32,4 +32,8 @@ ZEPHYR_PW_SMOKE_TESTS = {
         "deps": ["//pw_chrono_zephyr:system_timer_test"],
         "timeout": 10,
     },
+    "pw_sync_zephyr_test": {
+        "deps": ["//pw_sync_zephyr:mutex_test"],
+        "timeout": 5,
+    },
 }
