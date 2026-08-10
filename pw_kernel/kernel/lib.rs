@@ -434,4 +434,6 @@ pub mod __private {
 
     pub use foreign_box;
     pub use kernel_config;
+    #[cfg(feature = "tracing")]
+    pub use pw_tokenizer;
 }

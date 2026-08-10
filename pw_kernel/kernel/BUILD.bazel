@@ -111,6 +111,7 @@ rust_library(
         "//pw_log/rust:pw_log",
         "//pw_status/rust:pw_status",
         "//pw_time/rust:pw_time_core",
+        "//pw_tokenizer/rust:pw_tokenizer",
         "@rust_crates//:bitflags",
     ] + select({
         "//pw_kernel/userspace:userspace_build_enabled": [

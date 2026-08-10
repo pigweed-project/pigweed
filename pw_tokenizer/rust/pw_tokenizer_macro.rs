@@ -160,6 +160,7 @@ impl PrintfFormatMacroGenerator for TokenizeToBufferGenerator<'_> {
         } else {
             Ok(quote! {
               {
+                #![allow(clippy::unnecessary_cast)]
                 use __pw_tokenizer_crate::internal::Argument;
                 __pw_tokenizer_crate::internal::tokenize_to_buffer(
                   #buffer,
