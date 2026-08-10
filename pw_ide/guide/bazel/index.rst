@@ -12,6 +12,7 @@ pw_ide for Bazel
 
    quickstart
    usage
+   rust
    configuration
    commands
    troubleshooting
@@ -19,8 +20,10 @@ pw_ide for Bazel
 Pigweed provides rich and robust support for development in `Visual Studio Code <https://code.visualstudio.com/>`_,
 including:
 
-* High-quality C/C++ code intelligence for embedded systems projects using `clangd <https://clangd.llvm.org/>`_
-  integrated directly with your project's Bazel build graph
+* High-quality C/C++ and Rust code intelligence for embedded systems projects
+  using `clangd <https://clangd.llvm.org/>`_ and
+  `rust-analyzer <https://rust-analyzer.github.io/>`_ integrated directly with
+  your project's Bazel build graph
 
 * Bundled core Bazel tools, letting you get started immediately without the need
   to install global system dependencies
@@ -35,10 +38,17 @@ install the extension and get code intelligence.
 
 
 
------------------
-Code intelligence
------------------
-Learn more about using code intelligence in the :ref:`Usage Guide<module-pw_ide-bazel-usage>`.
+-----------------------
+C/C++ code intelligence
+-----------------------
+Learn more about using C/C++ code intelligence in the :ref:`Usage Guide<module-pw_ide-bazel-usage>`.
+
+----------------------
+Rust code intelligence
+----------------------
+Learn more about configuring and using Rust code intelligence with
+`rust-analyzer <https://rust-analyzer.github.io/>`_ in
+:ref:`module-pw_ide-bazel-rust`.
 
 ----------------
 Project settings

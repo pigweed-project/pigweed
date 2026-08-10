@@ -31,6 +31,7 @@ sphinx_docs_library(
         "guide/bazel/configuration.rst",
         "guide/bazel/index.rst",
         "guide/bazel/quickstart.rst",
+        "guide/bazel/rust.rst",
         "guide/bazel/troubleshooting.rst",
         "guide/bazel/usage.rst",
         "guide/bootstrap/editors.rst",

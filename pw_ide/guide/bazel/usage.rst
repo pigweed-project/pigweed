@@ -9,8 +9,9 @@ Code intelligence
 The Pigweed Visual Studio Code extension bridges the build system and ``clangd``
 to provide the smoothest possible C++ embedded development system. For
 background on the tools and approaches Pigweed uses, check out the
-:ref:`design docs<module-pw_ide-contributing-design-cpp>`. This doc is a user guide to the
-way those concepts are applied in Visual Studio Code.
+:ref:`design docs<module-pw_ide-contributing-design-cpp>`. For Rust code
+intelligence, see :ref:`module-pw_ide-bazel-rust`. This doc is a
+user guide to the way those concepts are applied in Visual Studio Code.
 
 ----------------
 Target discovery
@@ -31,8 +32,10 @@ command. See below for build system-specific details.
       your project's build targets defined by ``pw_compile_commands_generator``
       targets in your ``BUILD.bazel`` file.
 
+      .. tip::
 
-
+         For instructions on configuring and using Rust code intelligence with
+         ``rust-analyzer``, see :ref:`module-pw_ide-bazel-rust`.
 
       **Fixed Compile Command Generation**
 
@@ -44,12 +47,14 @@ command. See below for build system-specific details.
       databases.
 
       .. note::
-         Each instance of ``pw_compile_commands_generator`` is intended to
-         represent a unique target platform.
 
-      This method provides wide code intelligence coverage by analyzing all targets
-      specified in the generator target. It ensures that code intelligence is
-      available for all configured platforms without needing to build them first.
+         Each instance of ``pw_compile_commands_generator`` is intended to
+         represent a unique target platform or build configuration.
+
+      This method provides wide code intelligence coverage by analyzing all
+      targets specified in the generator target. It ensures that code
+      intelligence is available for all configured platforms without needing to
+      build them first.
 
       Example configuration:
 
@@ -72,6 +77,7 @@ command. See below for build system-specific details.
 
          pw_compile_commands_generator(
              name = "update_host_compile_commands",
+             display_name = "Host C++",
              platform = "@bazel_tools//tools:host_platform",
              target_patterns = [
                  "//...",
@@ -80,11 +86,36 @@ command. See below for build system-specific details.
 
          pw_compile_commands_generator(
              name = "update_rp2040_compile_commands",
+             display_name = "RP2040",
              platform = "//targets/rp2040",
              target_patterns = [
                  "//...",
              ],
          )
+
+      **Generator Rule Arguments**
+
+      The ``pw_compile_commands_generator`` rule supports the following main
+      arguments:
+
+      * ``target_patterns``: List of Bazel target patterns for C/C++ compilation
+        database generation (used by ``clangd``).
+
+      * ``platform``: The Bazel target platform to evaluate when collecting
+        C/C++ target patterns.
+
+      * ``config``: Optional Bazel build configuration name to use for
+        compilation and platform inference.
+
+      * ``bazel_args``: Optional list of extra Bazel command-line arguments
+        (such as custom flags or build configs) used when building platforms or
+        evaluating target patterns.
+
+      * ``display_name``: Optional human-readable label shown in the Pigweed
+        Visual Studio Code target selection panel.
+
+      * ``symlink_prefix``: Custom symlink prefix if your Bazel workspace uses
+        the ``--symlink_prefix`` flag.
 
       **Custom Symlink Prefixes**
 
@@ -148,8 +179,45 @@ command. See below for build system-specific details.
 -------------------------------------------------
 Selecting a target platform for code intelligence
 -------------------------------------------------
-The currently-selected code intelligence target platform is displayed in the
-Visual Studio Code status bar:
+Pigweed IDE allows you to inspect, generate, and switch C/C++ code
+intelligence targets (used by ``clangd``) directly from the Visual Studio
+Code interface. For Rust targets, see
+:ref:`module-pw_ide-bazel-rust`.
+
+Target selection panel
+======================
+The recommended way to manage compile commands is through the **Pigweed**
+extension panel in Visual Studio Code (accessible from the Activity Bar icon).
+
+Under **Select or generate compile commands**, locate the **C++ Targets**
+table (for Rust targets, see
+:ref:`module-pw_ide-bazel-rust`). Each target row
+displays:
+
+* **Target**: The display name of the target platform (configured via
+  ``display_name`` in your generator target).
+* **Last generated at**: The timestamp when compile commands were last generated
+  for this target (e.g., ``1 month ago`` or ``Never``).
+* **Action**: A button to **Generate** (if never generated) or **Regenerate**
+  the compile commands for that target.
+
+Clicking **Generate** or **Regenerate** triggers generation of the compilation
+database for that target and automatically selects it as the active target for
+code intelligence.
+
+Selecting a C++ target configures ``clangd`` with the generated
+``compile_commands.json`` for that platform. Note that C++ and Rust target
+platforms are selected and managed independently. See
+:ref:`module-pw_ide-bazel-rust` for Rust
+target selection details.
+
+Once compile commands are generated and selected, step **2. Enjoy code
+intelligence** updates to confirm that code intelligence is active.
+
+Status bar and command palette
+==============================
+The currently-selected target platform is also displayed in the Visual
+Studio Code status bar:
 
 .. figure:: https://www.gstatic.com/pigweed/vsc-status-bar-target.png
    :alt: Visual Studio Code screenshot showing the target status bar item

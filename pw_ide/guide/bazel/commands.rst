@@ -67,9 +67,8 @@ the Pigweed extension. This is a good first place to look if things go wrong.
 
 Refresh Compile Commands
 ========================
-
-Manually trigger a refresh of the compilation databases used for C/C++ code
-intelligence. Normally for Bazel builds, the databases are refreshed
+Manually trigger a refresh of the compilation databases used for C/C++ and Rust
+code intelligence. Normally for Bazel builds, the databases are refreshed
 automatically when build files are changed, but if you have
 :ref:`automatic refreshing disabled<module-pw_ide-bazel-configuration-disable-compile-commands-file-watcher>`,
 need to generate compile commands for GN or CMake targets, or need to refresh
@@ -77,7 +76,6 @@ outside of the automatic cycle, this command will refresh manually.
 
 Refresh Compile Commands and Set Code Analysis Target
 =====================================================
-
 This is the same as the :ref:`Refresh Compile Commands<module-pw_ide-bazel-commands-refresh-compile-commands>`,
 except that it also triggers :ref:`Select Code Analysis Target<module-pw_ide-bazel-commands-select-target>`
 after the refresh is complete.
@@ -86,15 +84,16 @@ after the refresh is complete.
 
 Select Code Analysis Target
 ===========================
-
-Select the target platform that ``clangd`` should use for code analysis.
+Select the target platform that ``clangd`` or ``rust-analyzer`` should use for
+code analysis.
 
 .. tip::
 
-   You might notice that the currently-selected code analysis target is
-   stored in the ``pigweed.codeAnalysisTarget`` setting. If you edit this
-   value manually, don't worry! The Pigweed extension will immediately do
-   everything it would have done if you had run this command.
+   You might notice that the currently-selected C/C++ code analysis target is
+   stored in the ``pigweed.codeAnalysisTarget`` setting, and the Rust target is
+   stored in ``pigweed.rustAnalysisTarget``. If you edit these values manually,
+   don't worry! The Pigweed extension will immediately do everything it would
+   have done if you had run this command.
 
 Set Bazel Recommended Settings
 ==============================

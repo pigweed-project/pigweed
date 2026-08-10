@@ -39,8 +39,9 @@ in your settings.
 ----------------------------------------
 Failed to refresh code intelligence data
 ----------------------------------------
-The Pigweed extension failed to refresh the compilation databases or other data
-used to provide code intelligences. Some troubleshooting steps:
+The Pigweed extension failed to refresh the compilation databases
+(``compile_commands.json`` for C/C++ or ``rust-project.json`` for Rust) used to
+provide code intelligence. Some troubleshooting steps:
 
 * Check the output panel (``Pigweed: Open Output Panel``) to find more specific
   information about what went wrong.
@@ -69,9 +70,10 @@ and the refresh process should restart automatically.
 Confirm that the ``refresh_compile_commands`` target is correctly defined
 =========================================================================
 The top-level ``BUILD.bazel`` file contains a call to
-``refresh_compile_commands`` that defines the refresh process target. Any syntax
-or configuration errors in that call will prevent the refresh process from
-running successfully.
+``pw_compile_commands_generator`` that defines the compile commands generator
+target. Any syntax or configuration errors in that call will prevent the refresh
+process from running successfully.
 
-Most importantly, ensure that the ``targets`` or ``target_groups`` attributes
-are defined. Defining both is valid too, but at least one must be present.
+Most importantly, ensure that ``target_patterns``, ``rust_target_patterns``, or
+``deps`` attributes are defined. At least one must be present to generate code
+intelligence data.

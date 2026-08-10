@@ -56,22 +56,33 @@ notification.
    Unwanted recommendations don't need to be uninstalled if you use them in
    other projects. Just disable them for this project.
 
+.. _module-pw_ide-bazel-configuration-code-analysis-target:
+.. _module-pw_ide-bazel-configuration-code-analysis-target-dir:
+.. _module-pw_ide-bazel-configuration-rust-analysis-target:
+.. _module-pw_ide-bazel-configuration-rust-analysis-target-dir:
 .. _module-pw_ide-bazel-configuration-disable-compile-commands-file-watcher:
 .. _module-pw_ide-bazel-configuration-disable-inactive-file-code-intelligence:
 .. _module-pw_ide-bazel-configuration-hide-inactive-file-indicators:
 .. _module-pw_ide-bazel-configuration-project-type:
 .. _module-pw_ide-bazel-configuration-project-root:
 
-----------------
+--------------
 Other Settings
-----------------
-
+--------------
 .. list-table::
    :widths: 40 60
    :header-rows: 1
 
    * - Setting
      - Description
+   * - ``pigweed.codeAnalysisTarget``
+     - The C/C++ build target to use for editor code intelligence (``clangd``).
+   * - ``pigweed.codeAnalysisTargetDir``
+     - The compile commands directory for the selected C/C++ build target.
+   * - ``pigweed.rustAnalysisTarget``
+     - The build target to use for Rust code intelligence (``rust-analyzer``).
+   * - ``pigweed.rustAnalysisTargetDir``
+     - The directory containing ``rust-project.json`` for the selected target.
    * - ``pigweed.disableCompileCommandsFileWatcher``
      - Disables automatic file watcher that refreshes compile commands.
    * - ``pigweed.disableInactiveFileCodeIntelligence``

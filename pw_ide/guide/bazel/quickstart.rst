@@ -20,23 +20,36 @@ Once installed, use the preconfigured targets in your project to get code intell
 
 Preconfigured targets
 =====================
-To get code intelligence, you define target patterns in your build file that specify which targets to generate compilation databases for (e.g., for a shared team configuration or CI).
+To get code intelligence, define target patterns in your build file that specify
+which targets to generate compilation databases for (e.g., for a shared team
+configuration or CI).
 
 1. **Define a generator target**: Add a ``pw_compile_commands_generator`` target
-   to your ``BUILD.bazel`` file.
+   to your ``BUILD.bazel`` file. You can specify C/C++ target patterns for
+   ``clangd`` and Rust target patterns for ``rust-analyzer``.
 
    .. code-block:: bazel
 
-      load("@pigweed//pw_ide/bazel/compile_commands:pw_compile_commands_generator.bzl", "pw_compile_commands_generator")
+      load(
+          "@pigweed//pw_ide/bazel/compile_commands:pw_compile_commands_generator.bzl",
+          "pw_compile_commands_generator",
+      )
 
       pw_compile_commands_generator(
           name = "refresh_compile_commands",
-          target_patterns = ["//..."],
+          target_patterns = [
+              "//...",
+          ],
+          rust_target_patterns = [
+              "//...",
+          ],
       )
 
    .. tip::
-      You can also specify specific platforms or dependencies. See the
-      :ref:`Usage Guide<module-pw_ide-bazel-usage>` for advanced configuration.
+
+      You can also specify specific platforms, build configs, or dependencies.
+      See :ref:`module-pw_ide-bazel-usage` for advanced
+      configuration.
 
 2. **Refresh compile commands**: Run the target you created:
 
@@ -44,19 +57,18 @@ To get code intelligence, you define target patterns in your build file that spe
 
       bazel run //:refresh_compile_commands
 
-3. **Select the target**: Use the **Pigweed: Select Code Analysis Target**
-   command in VS Code (or click the status bar item) to select the generated
-   compilation database.
+3. **Select the target**: Open the **Pigweed** extension panel from the Visual
+   Studio Code Activity Bar. Under **Select or generate compile commands**,
+   click **Generate** next to your configured C++ and Rust target platforms to
+   generate their compilation databases and enable code intelligence.
 
-
-
-You can now select a target platform from the status bar item at the bottom
+You can also select target platforms from the status bar items at the bottom
 of your window or by running the ``Pigweed: Select Code Analysis Target``
 command.
 
-Once you select a target platform, the ``clangd`` extension will be automatically
-configured to use the ``clang`` toolchain in the Bazel environment and the
-compilation database associated with the selected target platform.
+Once you select a target platform, your editor will be automatically configured
+to use the generated compile commands for C/C++ (``clangd``) and Rust
+(``rust-analyzer``).
 
 Other IDEs
 ==========
@@ -67,7 +79,8 @@ workflow.
 1. **Generate compile commands**: Follow the steps in `Preconfigured targets`_
    above to configure and generate your compilation databases.
 
-2. **Configure clangd**: Point your editor's ``clangd`` configuration to the
-   generated ``compile_commands.json`` file. You can find these files in the
-   ``.compile_commands/`` directory in your project root after running the
-   generator target.
+2. **Configure language servers**: Point your editor's ``clangd`` configuration
+   to the generated ``compile_commands.json`` file, and your ``rust-analyzer``
+   configuration to the generated ``rust-project.json`` file. You can find these
+   files in the ``.compile_commands/`` directory in your project root after
+   running the generator target.
