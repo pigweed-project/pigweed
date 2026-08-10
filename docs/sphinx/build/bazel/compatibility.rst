@@ -185,15 +185,18 @@ case, use the canonical CPU ``constraint_value`` from the
 
 .. code-block:: python
 
+   # pw_cpu_exception_cortex_m/BUILD.bazel
    cc_library(
-     name = "pw_interrupt_cortex_m",
-     # Compatible only with Cortex-M processors.
-     target_compatible_with = select({
-       "@platforms//cpu:armv6-m": [],
-       "@platforms//cpu:armv7-m": [],
-       "@platforms//cpu:armv7e-m": [],
-       "@platforms//cpu:armv7e-mf": [],
-       "@platforms//cpu:armv8-m": [],
+       name = "support",
+       # Compatible only with Cortex-M processors.
+       target_compatible_with = select({
+           "@platforms//cpu:armv6-m": [],
+           "@platforms//cpu:armv7-m": [],
+           "@platforms//cpu:armv7e-m": [],
+           "@platforms//cpu:armv7e-mf": [],
+           "@platforms//cpu:armv8-m": [],
+           "//conditions:default": ["@platforms//:incompatible"],
+       }),
    )
 
 SDK-provided constraints

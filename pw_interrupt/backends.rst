@@ -3,7 +3,7 @@
 ========
 Backends
 ========
-.. TODO: b/323607687 - Add backend guidance here
+Pigweed provides several backends for the ``pw_interrupt`` facade:
 
 .. toctree::
    :maxdepth: 1
