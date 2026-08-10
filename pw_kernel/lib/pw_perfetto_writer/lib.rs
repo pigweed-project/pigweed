@@ -129,7 +129,7 @@ impl<W: Write> PerfettoWriter<W> {
         uuid: u64,
         parent_uuid: u64,
         pid: i32,
-        tid: i32,
+        tid: i64,
         name: &str,
     ) {
         self.add_packet(
@@ -140,7 +140,7 @@ impl<W: Write> PerfettoWriter<W> {
                 parent_uuid: Some(parent_uuid),
                 thread: Some(ThreadDescriptor {
                     pid: Some(pid),
-                    tid: Some(tid.into()),
+                    tid: Some(tid),
                     thread_name: Some(name.into()),
                     ..Default::default()
                 }),
@@ -235,12 +235,12 @@ impl<W: Write> PerfettoWriter<W> {
     /// * `timestamp` - The timestamp of the event.
     /// * `tid` - The thread ID.
     /// * `state` - The new state of the thread.
-    pub fn add_thread_state_event(&mut self, timestamp: u64, tid: i32, state: ThreadState) {
+    pub fn add_thread_state_event(&mut self, timestamp: u64, tid: i64, state: ThreadState) {
         self.add_packet(
             timestamp,
             trace_packet::Data::GenericKernelTaskStateEvent(GenericKernelTaskStateEvent {
                 cpu: Some(0),
-                tid: Some(tid.into()),
+                tid: Some(tid),
                 state: Some(state.into()),
                 ..Default::default()
             }),

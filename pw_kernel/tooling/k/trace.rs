@@ -21,7 +21,7 @@ use byteorder::{BigEndian, LittleEndian};
 use object::Endianness;
 use pw_gdb_protocol::Client;
 use pw_kernel_annotations::ImageInfo;
-use pw_kernel_tracing::{EventPayload, Record};
+use pw_kernel_tracing::{EventPayload, EventType, Record};
 use pw_perfetto_writer::{PerfettoWriter, ThreadState};
 use tokio::net::TcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -109,6 +109,8 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
     // opaque `usize` ids that may be larger than perfetto's i32 pid and tids.
     // Perfetto requires pids and tids so fake ones are created.
     //
+    // However, the track uuids for processes and threads are equal to the pw_kernel handle.
+    //
     // Pid 0 is reserved for the kernel.
     // Tids start at 0x1000 to avoid colliding with pid 0.
     let mut process_pids: HashMap<u64, i32> = HashMap::new();
@@ -136,7 +138,7 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
     for (i, thread) in info.threads.iter().enumerate() {
         let pid = process_pids.get(&thread.parent_id).unwrap();
         // Tids start at 0x1000 to avoid colliding with pids.
-        let tid = i32::try_from(i).unwrap() + 0x1000;
+        let tid = i64::try_from(i).unwrap() + 0x1000;
         thread_tids.insert(u32::try_from(thread.id).unwrap(), tid);
         perfetto.add_thread_track(
             first_timestamp,
@@ -147,6 +149,8 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
             &thread.name,
         );
     }
+
+    let mut active_thread_uuid: u64 = 0;
 
     for record in records.iter() {
         let event = record.payload().unwrap();
@@ -167,9 +171,30 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
                     *new_tid,
                     ThreadState::TaskStateRunning,
                 );
+
+                active_thread_uuid = u64::from(event.new_thread_id);
             }
-            EventPayload::Span(_event) => {
-                // TODO: support spans host side
+            EventPayload::Span(event) => {
+                let detokenized_message = info
+                    .tokenizer_database
+                    .as_ref()
+                    .expect("image should have a tokenizer database")
+                    .detokenize(&event.message);
+
+                match record.event_type {
+                    EventType::SpanStart => {
+                        perfetto.add_slice_begin_event(
+                            u64::from(record.time_stamp),
+                            active_thread_uuid,
+                            &detokenized_message.best_string(),
+                        );
+                    }
+                    EventType::SpanEnd => {
+                        perfetto
+                            .add_slice_end_event(u64::from(record.time_stamp), active_thread_uuid);
+                    }
+                    _ => {}
+                }
             }
         }
     }
