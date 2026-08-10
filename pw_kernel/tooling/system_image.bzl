@@ -183,7 +183,12 @@ def _system_image_test_impl(ctx):
     return [
         DefaultInfo(
             executable = executable_symlink,
-            runfiles = ctx.attr.image[DefaultInfo].default_runfiles,
+            runfiles = ctx.runfiles(
+                files = [
+                    ctx.attr.image[SystemImageInfo].elf,
+                    ctx.attr.image[SystemImageInfo].bin,
+                ],
+            ).merge(ctx.attr.image[DefaultInfo].default_runfiles),
         ),
     ]
 
