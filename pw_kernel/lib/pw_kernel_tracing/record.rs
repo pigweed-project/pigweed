@@ -122,6 +122,12 @@ impl Record {
             EventType::ContextSwitch => Some(EventPayload::ContextSwitch(
                 ContextSwitchEvent::read_from_buffer(&self.event_data)?,
             )),
+            EventType::SpanStart => Some(EventPayload::Span(TraceSpanEvent::read_from_buffer(
+                &self.event_data,
+            )?)),
+            EventType::SpanEnd => Some(EventPayload::Span(TraceSpanEvent::read_from_buffer(
+                &self.event_data,
+            )?)),
         }
     }
 }
@@ -131,6 +137,7 @@ impl Record {
 pub enum EventPayload {
     /// A context switch event.
     ContextSwitch(ContextSwitchEvent),
+    Span(TraceSpanEvent),
 }
 
 /// Supported trace event types.
@@ -140,6 +147,8 @@ pub enum EventType {
     // NOTE: The values here must be less than 64 to fit in the 6 bit field in the header.
     /// Context Switch Event
     ContextSwitch = 0,
+    SpanStart = 1,
+    SpanEnd = 2,
 }
 
 impl TryFrom<u8> for EventType {
@@ -148,6 +157,8 @@ impl TryFrom<u8> for EventType {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(EventType::ContextSwitch),
+            1 => Ok(EventType::SpanStart),
+            2 => Ok(EventType::SpanEnd),
             _ => Err(()),
         }
     }
@@ -202,6 +213,61 @@ impl ContextSwitchEvent {
     }
 }
 
+/// Trace span event data
+///
+/// | Bits      | Field            | Description                                                    |
+/// |-----------|------------------|----------------------------------------------------------------|
+/// | \[0:96\] | message          | The message associated with this span, encoded with pw_tokenizer|
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TraceSpanEvent {
+    pub message: [u8; 12],
+}
+
+impl TraceSpanEvent {
+    /// Encodes the event into a `u32` buffer
+    #[must_use]
+    pub const fn encode(&self) -> [u32; 3] {
+        let (first, second, third): ([u8; 4], [u8; 4], [u8; 4]) = match self.message {
+            [a, b, c, d, e, f, g, h, i, j, k, l] => ([a, b, c, d], [e, f, g, h], [i, j, k, l]),
+        };
+
+        // Always keep the buffer in little endian, so it doesn't get reordered by the target
+        // endianness or the host endianness
+        [
+            u32::from_le_bytes(first).to_le(),
+            u32::from_le_bytes(second).to_le(),
+            u32::from_le_bytes(third).to_le(),
+        ]
+    }
+
+    /// Reads a context switch event from a `u32` buffer.
+    ///
+    /// # Arguments
+    /// * `buffer`: A slice of at least 3 `u32` words.
+    #[must_use]
+    pub fn read_from_buffer(buffer: &[u32]) -> Option<Self> {
+        if buffer.len() < 3 {
+            return None;
+        }
+
+        let (first, second, third) = (
+            buffer[0].to_le_bytes(),
+            buffer[1].to_le_bytes(),
+            buffer[2].to_le_bytes(),
+        );
+        let message: [u8; 12] = {
+            let [a, b, c, d] = first;
+            let [e, f, g, h] = second;
+            let [i, j, k, l] = third;
+
+            [a, b, c, d, e, f, g, h, i, j, k, l]
+        };
+
+        Some(Self { message })
+    }
+}
+
 #[cfg(test)]
 #[allow(unused_imports)]
 mod tests {
@@ -209,7 +275,7 @@ mod tests {
     use byteorder::{BigEndian, LittleEndian};
     use unittest::test;
 
-    use super::{ContextSwitchEvent, EventPayload, EventType, Record};
+    use super::{ContextSwitchEvent, EventPayload, EventType, Record, TraceSpanEvent};
 
     #[test]
     fn context_switch_read_from_buffer_reads_correct_values() -> unittest::Result<()> {
@@ -335,10 +401,135 @@ mod tests {
             event_data: encoded_event,
         };
 
-        let EventPayload::ContextSwitch(decoded_event) = record.payload().unwrap();
+        let decoded_event = unittest::unwrap!(match record.payload().unwrap() {
+            EventPayload::ContextSwitch(e) => Ok(e),
+            _ => Err(()),
+        });
         unittest::assert_eq!(decoded_event.old_thread_id, 1);
         unittest::assert_eq!(decoded_event.new_thread_id, 2);
         unittest::assert_eq!(decoded_event.old_thread_state, 3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn record_payload_returns_correct_trace_span_event() -> unittest::Result<()> {
+        let event = TraceSpanEvent {
+            message: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        };
+        let encoded_event = event.encode();
+
+        let record = Record {
+            event_type: EventType::SpanStart,
+            time_stamp: 0,
+            event_data: encoded_event,
+        };
+
+        let decoded_event = unittest::unwrap!(match record.payload().unwrap() {
+            EventPayload::Span(e) => Ok(e),
+            _ => Err(()),
+        });
+        unittest::assert_eq!(
+            decoded_event.message,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn trace_span_read_from_buffer_reads_correct_values() -> unittest::Result<()> {
+        let buffer = [
+            0x04030201, // message[0..3] = [1, 2, 3, 4]
+            0x08070605, // message[4..8] = [5, 6, 7, 8]
+            0x0c0b0a09, // message[9..12] = [9, 10, 11, 12]
+        ];
+
+        let event = TraceSpanEvent::read_from_buffer(&buffer).unwrap();
+
+        unittest::assert_eq!(event.message, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn trace_span_encode_generates_correct_values() -> unittest::Result<()> {
+        let event = TraceSpanEvent {
+            message: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        };
+
+        let buffer = event.encode();
+
+        unittest::assert_eq!(
+            buffer,
+            [
+                0x04030201, // message[0..3] = [1, 2, 3, 4]
+                0x08070605, // message[4..8] = [5, 6, 7, 8]
+                0x0c0b0a09, // message[9..12] = [9, 10, 11, 12]
+            ]
+        );
+
+        Ok(())
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn trace_span_preserves_buffer_order_with_different_endianness_round_trip()
+    -> unittest::Result<()> {
+        let event = TraceSpanEvent {
+            message: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        };
+        let encoded_event = event.encode();
+
+        let record = Record {
+            event_type: EventType::SpanStart,
+            time_stamp: 0,
+            event_data: encoded_event,
+        };
+
+        let buffer = record.encode();
+
+        // Encode and decode the record in big endian
+        let big_endian_record = {
+            let buffer = buffer
+                .into_iter()
+                .flat_map(|x| x.to_be_bytes())
+                .collect::<Vec<u8>>();
+            Record::read_from_buffer::<BigEndian>(&buffer).unwrap()
+        };
+
+        unittest::assert_eq!(big_endian_record.event_type, EventType::SpanStart);
+        unittest::assert_eq!(big_endian_record.time_stamp, 0);
+
+        let decoded_event = unittest::unwrap!(match big_endian_record.payload().unwrap() {
+            EventPayload::Span(e) => Ok(e),
+            _ => Err(()),
+        });
+        unittest::assert_eq!(
+            decoded_event.message,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        );
+
+        // Encode and decode the record in little endian
+        let little_endian_record = {
+            let buffer = buffer
+                .into_iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect::<Vec<u8>>();
+            Record::read_from_buffer::<LittleEndian>(&buffer).unwrap()
+        };
+
+        unittest::assert_eq!(little_endian_record.event_type, EventType::SpanStart);
+        unittest::assert_eq!(little_endian_record.time_stamp, 0);
+
+        let decoded_event = unittest::unwrap!(match little_endian_record.payload().unwrap() {
+            EventPayload::Span(e) => Ok(e),
+            _ => Err(()),
+        });
+        unittest::assert_eq!(
+            decoded_event.message,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        );
 
         Ok(())
     }

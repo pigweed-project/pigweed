@@ -42,6 +42,7 @@ rust_test(
         # As the host unittest_runner intentionally doesn't depend
         # on the kernel, each test must be manually depended on.
         "//pw_kernel/lib/foreign_box",
+        "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/list",
         "//pw_assert/rust:pw_assert",
         "//pw_time/rust:pw_time_core",

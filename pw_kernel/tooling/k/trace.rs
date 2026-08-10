@@ -168,6 +168,9 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
                     ThreadState::TaskStateRunning,
                 );
             }
+            EventPayload::Span(_event) => {
+                // TODO: support spans host side
+            }
         }
     }
 

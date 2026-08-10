@@ -35,5 +35,6 @@ mod test_links {
     use foreign_box as _;
     use list as _;
     use pw_assert as _;
+    use pw_kernel_tracing as _;
     use vectored_buffer as _;
 }
