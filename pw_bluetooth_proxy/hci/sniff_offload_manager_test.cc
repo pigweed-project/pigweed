@@ -1641,7 +1641,7 @@ SniffOffloadManagerTest::WriteSniffOffloadParameters(
   writer.sniff_timeout().Write(parameters.sniff_timeout);
   writer.link_inactivity_timeout().Write(parameters.link_inactivity_timeout);
   writer.max_latency().Write(parameters.subrating_max_latency);
-  writer.min_remote_timeout().Write(parameters.subrating_min_local_timeout);
+  writer.min_remote_timeout().Write(parameters.subrating_min_remote_timeout);
   writer.min_local_timeout().Write(parameters.subrating_min_local_timeout);
   writer.allow_exit_sniff_on_rx().Write(
       vendor::android_hci::SniffOffloadAllowExit{
