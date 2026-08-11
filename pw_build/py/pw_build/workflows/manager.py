@@ -438,6 +438,7 @@ class WorkflowsManager:
         tool = self._fragments_by_name.get(tool_name, None)
         if not isinstance(tool, workflows_pb2.Tool):
             raise TypeError(f'{tool_name} is not a tool.')
+        base_args = list(tool.args)
         if as_analyzer:
             if (
                 tool.type != workflows_pb2.Tool.Type.ANALYZER
@@ -449,7 +450,13 @@ class WorkflowsManager:
                     'is safe to run as an analyzer'
                 )
             forwarded_arguments = [
+                *base_args,
                 *tool.analyzer_friendly_args,
+                *forwarded_arguments,
+            ]
+        else:
+            forwarded_arguments = [
+                *base_args,
                 *forwarded_arguments,
             ]
         return self._create_build_recipes([tool], forwarded_arguments)
@@ -490,13 +497,9 @@ class WorkflowsManager:
         recipes.extend(self._create_build_recipes(builds))
 
         for tool_name in group.analyzers:
-            tool = self._fragments_by_name[tool_name]
-            if not isinstance(tool, workflows_pb2.Tool):
-                raise TypeError(f'{tool_name} is not a tool.')
             recipes.extend(
-                self._create_build_recipes(
-                    [tool],
-                    list(tool.analyzer_friendly_args),
+                self.program_tool(
+                    tool_name, forwarded_arguments=tuple(), as_analyzer=True
                 )
             )
 

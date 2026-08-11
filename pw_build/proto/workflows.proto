@@ -190,6 +190,9 @@ message Tool {
 
   // Unique one-off specs.
   repeated OutputGroupSpec output_spec = 10;
+
+  // Default arguments passed to the target binary when launched.
+  repeated string args = 11;
 }
 
 // A series of builds and analyzers that are launchable as a group to

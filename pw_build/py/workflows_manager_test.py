@@ -110,6 +110,16 @@ class WorkflowsManagerTest(unittest.TestCase):
                     ),
                     target='//my_tool',
                 ),
+                workflows_pb2.Tool(
+                    name='tool_with_args',
+                    args=['--default-arg'],
+                    analyzer_friendly_args=['--analyzer-mode'],
+                    build_config=workflows_pb2.BuildConfig(
+                        name='tool_with_args_config',
+                        build_type='fake_build_type',
+                    ),
+                    target='//my_tool',
+                ),
             ],
             builds=[
                 workflows_pb2.Build(
@@ -307,6 +317,45 @@ class WorkflowsManagerTest(unittest.TestCase):
             mock_create.assert_called_once()
             self.assertEqual(
                 mock_create.call_args[0][1], ['--analyzer-mode', '--user-arg']
+            )
+
+    def test_program_tool_with_args(self):
+        """Test that program_tool forwards default tool args."""
+        manager = WorkflowsManager(
+            self.workflow_suite,
+            self.build_drivers,
+            self.working_dir,
+            self.base_out_dir,
+            self.project_root,
+        )
+        with patch.object(
+            manager, '_create_build_recipes', return_value=[]
+        ) as mock_create:
+            manager.program_tool('tool_with_args', ['--user-arg'])
+            mock_create.assert_called_once()
+            self.assertEqual(
+                mock_create.call_args[0][1], ['--default-arg', '--user-arg']
+            )
+
+    def test_program_tool_as_analyzer_with_args(self):
+        """Test that program_tool forwards default and analyzer args."""
+        manager = WorkflowsManager(
+            self.workflow_suite,
+            self.build_drivers,
+            self.working_dir,
+            self.base_out_dir,
+            self.project_root,
+        )
+        with patch.object(
+            manager, '_create_build_recipes', return_value=[]
+        ) as mock_create:
+            manager.program_tool(
+                'tool_with_args', ['--user-arg'], as_analyzer=True
+            )
+            mock_create.assert_called_once()
+            self.assertEqual(
+                mock_create.call_args[0][1],
+                ['--default-arg', '--analyzer-mode', '--user-arg'],
             )
 
     def test_program_tool_as_analyzer_not_friendly_raises_error(self):
