@@ -439,6 +439,54 @@ fn parse_write_register(input: &str) -> IResult<&str, (u32, Vec<u8>)> {
     Ok((input, (reg, val)))
 }
 
+/// Returns an iterator yielding `(character, repeat_count)` tokens for a GDB RSP payload.
+///
+/// In GDB Remote Serial Protocol (RSP), run-length encoding (RLE) compresses repeated character
+/// runs into `<char>*<repeat_count_char>`, where the repeat count `n` is encoded as
+/// `ASCII(repeat_count_char) - 29`.
+///
+/// For non-RLE sequences or normal characters, the token count is `1`.
+fn rle_tokens(input: &str) -> impl Iterator<Item = (char, usize)> + '_ {
+    let mut bytes = input.as_bytes();
+    core::iter::from_fn(move || {
+        if bytes.is_empty() {
+            return None;
+        }
+        // GDB RSP RLE format: `<char>*<repeat_count_char>` where repeat_count_char >= 29 ('#').
+        if bytes.len() >= 3 && bytes[1] == b'*' && bytes[2] >= 29 {
+            let ch = bytes[0] as char;
+            let count = (bytes[2] - 29) as usize;
+            bytes = &bytes[3..];
+            Some((ch, count))
+        } else {
+            // Normal un-encoded character.
+            let ch = bytes[0] as char;
+            bytes = &bytes[1..];
+            Some((ch, 1))
+        }
+    })
+}
+
+/// Expands any RLE tokens, if present, in the stream from the gdbstub.
+///
+/// In GDB RSP, `<char>*<repeat_count_char>` represents `<char>` repeated `n` times,
+/// where `n = ASCII(repeat_count_char) - 29`.
+///
+/// # Examples
+/// - `"0*!"` expands to `"0000"` because `'!'` is ASCII 33, yielding `33 - 29 = 4` repeats of `'0'`.
+/// - `"0* "` expands to `"000"` because `' '` is ASCII 32, yielding `32 - 29 = 3` repeats of `'0'`.
+pub fn expand_rle_tokens(input: &str) -> String {
+    // Fast path: if there is no '*' character, no expansion is needed.
+    if !input.contains('*') {
+        return input.to_string();
+    }
+
+    // Parse payload into (char, count) tokens and expand each run into repeated characters.
+    rle_tokens(input)
+        .flat_map(|(ch, count)| core::iter::repeat_n(ch, count))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,6 +494,20 @@ mod tests {
     #[test]
     fn test_register_packets() {
         assert_eq!(Packet::ReadRegisters.encode_payload(), "g");
+        assert_eq!(Packet::ReadRegister { reg: 15 }.encode_payload(), "pf");
+        assert_eq!(
+            Packet::WriteRegister {
+                reg: 14,
+                val: vec![0, 0, 0, 0]
+            }
+            .encode_payload(),
+            "Pe=00000000"
+        );
+
+        assert_eq!(
+            Packet::decode_payload("g").unwrap().1,
+            Packet::ReadRegisters
+        );
         assert_eq!(Packet::ReadRegister { reg: 15 }.encode_payload(), "pf");
         assert_eq!(
             Packet::WriteRegister {
@@ -471,6 +533,37 @@ mod tests {
                 val: vec![0, 0, 0, 0]
             }
         );
+    }
+
+    #[test]
+    fn test_expand_rle_tokens() {
+        // "0*!" -> 4 zeros ('!' ASCII 33, 33 - 29 = 4)
+        assert_eq!(expand_rle_tokens("0*!"), "0000");
+
+        // "0* " -> 3 zeros (' ' ASCII 32, 32 - 29 = 3)
+        assert_eq!(expand_rle_tokens("0* "), "000");
+
+        // Mixed content: "m10*!ab" -> "m10000ab"
+        assert_eq!(expand_rle_tokens("m10*!ab"), "m10000ab");
+
+        // Incomplete / trailing '*'
+        assert_eq!(expand_rle_tokens("a*"), "a*");
+    }
+
+    #[test]
+    fn test_decode_payload_rle() {
+        // RLE encoded hex memory response: "0*!" -> "0000" -> 2 bytes [0x00, 0x00]
+        let input = "0*!";
+        let expanded = expand_rle_tokens(input);
+        let (_, packet) = Packet::decode_payload(&expanded).unwrap();
+        assert_eq!(packet, Packet::ReadMemoryResponse(vec![0x00, 0x00]));
+
+        // RLE encoded with trailing remainder
+        let input = "0*!rest";
+        let expanded = expand_rle_tokens(input);
+        let (rem, packet) = Packet::decode_payload(&expanded).unwrap();
+        assert_eq!(packet, Packet::ReadMemoryResponse(vec![0x00, 0x00]));
+        assert_eq!(rem, "rest");
     }
 
     #[test]

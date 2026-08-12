@@ -16,7 +16,7 @@ use std::io;
 
 use futures::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 
-use crate::packet::{BreakpointType, Packet, StopReply};
+use crate::packet::{self, BreakpointType, Packet, StopReply};
 
 /// A client for interacting with a GDB server.
 pub struct Client<S> {
@@ -494,7 +494,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
         let payload_str = String::from_utf8(payload_bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-        let (_, packet) = Packet::decode_payload(&payload_str)
+        let expanded_payload = packet::expand_rle_tokens(&payload_str);
+
+        let (_, packet) = Packet::decode_payload(&expanded_payload)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
 
         Ok(packet)
@@ -580,6 +582,26 @@ mod tests {
         assert_eq!(result, TEST_PAYLOAD_BYTES);
 
         let expected_sent = b"$m1000,4#8e+"; // + is ACK for response
+        assert_eq!(stream.write_data, expected_sent);
+    }
+
+    #[tokio::test]
+    async fn test_read_memory_rle() {
+        // "0*!" (4 zeros in RLE) -> expanded to "0000" -> 2 bytes [0x00, 0x00]
+        let response_payload = b"0*!";
+        let checksum = Packet::calculate_checksum(response_payload);
+        let mut input = vec![b'+', b'$'];
+        input.extend_from_slice(response_payload);
+        input.push(b'#');
+        input.extend_from_slice(format!("{:02x}", checksum).as_bytes());
+
+        let mut stream = MockStream::new(input);
+        let mut client = Client::new(&mut stream);
+
+        let result = client.read_memory(0x1000, 2).await.unwrap();
+        assert_eq!(result, &[0x00, 0x00]);
+
+        let expected_sent = b"$m1000,2#8c+";
         assert_eq!(stream.write_data, expected_sent);
     }
 
