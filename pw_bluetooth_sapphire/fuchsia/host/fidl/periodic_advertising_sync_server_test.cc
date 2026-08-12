@@ -39,7 +39,7 @@ constexpr bt::gap::PeriodicAdvertisingSyncManager::SyncParameters
         .interval = 2,
         .phy = pw::bluetooth::emboss::LEPhy::LE_2M,
         .subevents_count = 3,
-    };
+};
 
 bt::hci_spec::BroadcastIsochronousGroupInfo kBigInfo{
     .num_bis = 0x01,

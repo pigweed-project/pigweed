@@ -51,7 +51,7 @@ constexpr bt::gap::PeriodicAdvertisingSyncManager::SyncParameters
         .interval = 2,
         .phy = pw::bluetooth::emboss::LEPhy::LE_2M,
         .subevents_count = 3,
-    };
+};
 
 const bt::DeviceAddress kTestAddr(bt::DeviceAddress::Type::kLEPublic,
                                   {0x01, 0, 0, 0, 0, 0});

@@ -45,21 +45,20 @@ constexpr std::array<uint8_t, 12> kTxH4Packet = {0x02,  // H4 type (ACL)
                                                  0x2,
                                                  0x3};
 
-constexpr std::array<uint8_t, 12> kRxAclPacket = {
-    // ACL header
-    0x23,
-    0x1,  // connection handle
-    0x07,
-    0x00,  // ACL length
-           // l2cap header
-    0x3,
-    00,  // payload length
-    0x21,
-    0x43,  // local channel id
-           // payload
-    0x1,
-    0x2,
-    0x3};
+constexpr std::array<uint8_t, 12> kRxAclPacket = {// ACL header
+                                                  0x23,
+                                                  0x1,  // connection handle
+                                                  0x07,
+                                                  0x00,  // ACL length
+                                                         // l2cap header
+                                                  0x3,
+                                                  00,  // payload length
+                                                  0x21,
+                                                  0x43,  // local channel id
+                                                         // payload
+                                                  0x1,
+                                                  0x2,
+                                                  0x3};
 
 constexpr uint16_t kMaxAclPacketLength = 27;
 

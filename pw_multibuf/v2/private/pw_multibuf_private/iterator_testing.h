@@ -128,7 +128,7 @@ class IteratorTest : public ::testing::Test {
           {{0, 16}, {0, 16}, {0, 16}, {0, 16}},  // layer 1
           {{2, 12}, {0, 8}, {4, 12}, {0, 16}},   // layer 2
           {{4, 8}, {0, 0}, {8, 8}, {0, 16}},     // layer 3
-      };
+  };
 
   std::byte* data(size_t chunk) {
     return &buffer_[chunk * kBufSize] + kViews[kNumLayers - 1][chunk].first;

@@ -875,7 +875,7 @@ void TestInterceptEvents(Accessor test) {
           // OpCode (Inquiry)
           std::byte(0x01),
           std::byte(0x04),
-      };
+  };
   static constexpr std::array<std::byte, 7> inquiry_command_status_packet_bytes{
       // Packet type (event)
       std::byte(0x04),
@@ -906,7 +906,7 @@ void TestInterceptEvents(Accessor test) {
           // OpCode (Disconnect)
           std::byte(0x06),
           std::byte(0x0C),
-      };
+  };
 
   {
     MultiBuf::Instance buf(test.allocator());
@@ -1609,7 +1609,7 @@ void TestSendCommandThenHostCommandIntermingle(Accessor test) {
           std::byte(0x10),
           // Parameter size
           std::byte(0x00),
-      };
+  };
   static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
       // Packet type (command)
       std::byte(0x01),
@@ -1698,7 +1698,7 @@ void TestHostCommandThenSendCommandIntermingle(Accessor test) {
           std::byte(0x10),
           // Parameter size
           std::byte(0x00),
-      };
+  };
   static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
       // Packet type (command)
       std::byte(0x01),
@@ -1778,7 +1778,7 @@ void TestSendCommandExclusions(Accessor test) {
           std::byte(0x10),
           // Parameter size
           std::byte(0x00),
-      };
+  };
   static constexpr std::array<std::byte, 3> read_bd_addr_packet_bytes{
       // OpCode (Read BD_ADDR)
       std::byte(0x09),
@@ -2033,7 +2033,7 @@ void TestReset(Accessor test) {
           std::byte(0x10),
           // Parameter size
           std::byte(0x00),
-      };
+  };
   static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
       // Packet type (command)
       std::byte(0x01),

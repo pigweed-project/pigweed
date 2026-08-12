@@ -77,12 +77,12 @@ class RateLimiter {
 ///
 /// Note that this will not log until called again, so the summary may include
 /// skipped logs from a prior burst.
-#define PW_LOG_EVERY_N_DURATION(level, min_interval_between_logs, msg, ...) \
-  do {                                                                      \
-    static pw::log::internal::RateLimiter rate_limiter;                     \
-                                                                            \
-    if (auto result = rate_limiter.Poll(min_interval_between_logs);         \
-        result.count == std::numeric_limits<uint16_t>::max()) {             \
+#define PW_LOG_EVERY_N_DURATION(level, min_interval_between_logs, msg, ...)   \
+  do {                                                                        \
+    static pw::log::internal::RateLimiter rate_limiter;                       \
+                                                                              \
+    if (auto result = rate_limiter.Poll(min_interval_between_logs);           \
+        result.count == std::numeric_limits<uint16_t>::max()) {               \
       PW_LOG(level,                                                         \
              PW_LOG_LEVEL,                                                  \
              PW_LOG_MODULE_NAME,                                            \
@@ -90,8 +90,8 @@ class RateLimiter {
              msg " (skipped %d or more, %d/s)",                             \
              ##__VA_ARGS__,                                                 \
              static_cast<unsigned>(result.count),                           \
-             static_cast<unsigned>(result.logs_per_s));                     \
-    } else if (result.count != 0) {                                         \
+             static_cast<unsigned>(result.logs_per_s)); \
+    } else if (result.count != 0) {                                           \
       PW_LOG(level,                                                         \
              PW_LOG_LEVEL,                                                  \
              PW_LOG_MODULE_NAME,                                            \
@@ -99,8 +99,8 @@ class RateLimiter {
              msg " (skipped %d, %d/s)",                                     \
              ##__VA_ARGS__,                                                 \
              static_cast<unsigned>(result.count - 1),                       \
-             static_cast<unsigned>(result.logs_per_s));                     \
-    }                                                                       \
+             static_cast<unsigned>(result.logs_per_s)); \
+    }                                                                         \
   } while (0)
 
 /// @}

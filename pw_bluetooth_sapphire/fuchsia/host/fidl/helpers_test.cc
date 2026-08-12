@@ -2752,7 +2752,7 @@ TEST(HelpersTest, CisEstablishedParametersToFidl) {
           .burst_number = 0x00,
           .flush_timeout = 0x00,
           .max_pdu_size = 0x00,
-      };
+  };
 
   // Unconfigured central => peripheral
   bt::iso::CisEstablishedParameters params4 = params2;

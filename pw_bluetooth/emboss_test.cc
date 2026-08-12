@@ -437,7 +437,7 @@ TEST(EmbossTest, ReadRfcommExtended) {
           0xAB,
           0xCD,
           0xEF,
-      };
+  };
 
   // FCS
   buffer_extended_length_with_credits

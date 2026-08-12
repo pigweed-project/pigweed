@@ -47,23 +47,22 @@ constexpr std::array<uint8_t, 14> kTxH4Packet = {0x02,  // H4 type (ACL)
                                                  0x2,
                                                  0x3};
 
-constexpr std::array<uint8_t, 13> kRxAclPacket = {
-    // ACL header
-    0x23,
-    0x01,  // connection handle
-    0x09,
-    0x00,  // ACL length
-           // l2cap header
-    0x05,
-    0x00,  // payload length
-    0x21,
-    0x43,  // local channel id
-    0x03,
-    0x00,  // SDU length
-           // payload
-    0x01,
-    0x02,
-    0x03};
+constexpr std::array<uint8_t, 13> kRxAclPacket = {// ACL header
+                                                  0x23,
+                                                  0x01,  // connection handle
+                                                  0x09,
+                                                  0x00,  // ACL length
+                                                         // l2cap header
+                                                  0x05,
+                                                  0x00,  // payload length
+                                                  0x21,
+                                                  0x43,  // local channel id
+                                                  0x03,
+                                                  0x00,  // SDU length
+                                                         // payload
+                                                  0x01,
+                                                  0x02,
+                                                  0x03};
 
 class CreditBasedFlowControlChannelProxyTest : public ProxyHostTest {
  public:

@@ -644,7 +644,7 @@ TEST(FilterTest, UpdateFilterWithLargeThreadNamePasses) {
           std::byte('E'),
           std::byte('S'),
           std::byte('S'),
-      };
+  };
 
   const std::array<Filter::Rule, 2> rule{{
       {
@@ -709,7 +709,7 @@ TEST(FilterTest, UpdateFilterWithLargeThreadNameFails) {
             std::byte('E'),
             std::byte('S'),
             std::byte('S'),
-        };
+    };
     // Stream encoder writes to the buffer when it goes out of scope.
     FilterRule::StreamEncoder rule_encoder = encoder.GetRuleEncoder();
     ASSERT_EQ(rule_encoder.WriteThreadEquals(kThreadNameLongerThanAllowed),
