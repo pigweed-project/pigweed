@@ -24,6 +24,7 @@ use crate::Kernel;
 use crate::interrupt_controller::InterruptController;
 use crate::object::{KernelObject, SyscallBuffer};
 const SYSCALL_DEBUG: bool = false;
+const SYSCALL_TRACE: bool = true;
 
 /// An arch-specific collection of syscall arguments
 ///
@@ -88,6 +89,14 @@ fn handle_object_wait<'a, K: Kernel>(
         deadline.ticks() as u64
     );
 
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "object_wait handle={:#010x} signals={:#010x}",
+        handle as u32,
+        signals as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
     let Some(signal_mask) = Signals::from_bits(signals) else {
         log_if::debug_if!(
@@ -101,6 +110,9 @@ fn handle_object_wait<'a, K: Kernel>(
 
     let ret = object.object_wait(kernel, signal_mask, deadline);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: object_wait complete");
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -113,6 +125,16 @@ fn handle_wait_group_add<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>)
     log_if::debug_if!(
         SYSCALL_DEBUG,
         "syscall: handling wait_group_add {:#010x} {:#010x} {:#010x} {:#x}",
+        wait_group_handle as u32,
+        object_handle as u32,
+        signals as u32,
+        user_data as usize
+    );
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "wait_group_add wait_group_handle={:#010x} object_handle={:#010x} signals={:#010x} user_data={:#x}",
         wait_group_handle as u32,
         object_handle as u32,
         signals as u32,
@@ -134,6 +156,9 @@ fn handle_wait_group_add<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>)
     // Safety: `wait_group` is returned from lookup_handle() as a ForeignRc.
     let ret = unsafe { wait_group.wait_group_add(kernel, &*object, signal_mask, user_data) };
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: wait_group_add complete");
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -148,10 +173,21 @@ fn handle_wait_group_remove<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'
         object_handle as u32
     );
 
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "wait_group_remove wait_group_handle={:#010x} object_handle={:#010x}",
+        wait_group_handle as u32,
+        object_handle as u32,
+    );
+
     let wait_group = lookup_handle(kernel, wait_group_handle)?;
     let object = lookup_handle(kernel, object_handle)?;
     let ret = wait_group.wait_group_remove(kernel, &*object);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: wait_group_remove complete");
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -175,6 +211,15 @@ fn handle_channel_transact<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a
         deadline.ticks() as u64,
     );
 
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_transact handle={:#010x} send_data_len={:#x} recv_data_len={:#x}",
+        handle as u32,
+        send_data_len as usize,
+        recv_data_len as usize,
+    );
+
     let object = lookup_handle(kernel, handle)?;
     let send_buffer = SyscallBuffer::new_in_current_process(
         kernel,
@@ -191,6 +236,8 @@ fn handle_channel_transact<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a
 
     let ret = object.channel_transact(kernel, send_buffer, recv_buffer, deadline);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_transact complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret.map(|v| v.cast_into())
 }
 
@@ -204,6 +251,15 @@ fn handle_channel_async_transact<'a, K: Kernel>(
     let send_data_len = args.next_usize()?;
     let recv_data_addr = args.next_usize()?;
     let recv_data_len = args.next_usize()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_async_transact handle={:#010x} send_data_len={:#x} recv_data_len={:#x}",
+        handle as u32,
+        send_data_len as usize,
+        recv_data_len as usize,
+    );
 
     let object = lookup_handle(kernel, handle)?;
     let send_buffer = SyscallBuffer::new_in_current_process(
@@ -221,6 +277,9 @@ fn handle_channel_async_transact<'a, K: Kernel>(
 
     let ret = object.channel_async_transact(kernel, send_buffer, recv_buffer);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_async_transact complete");
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -233,6 +292,14 @@ fn handle_channel_async_transact_complete<'a, K: Kernel>(
         "syscall: handling channel_async_transact_complete"
     );
     let handle = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_async_transact_complete handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
 
     let ret = object.channel_async_transact_complete(kernel);
@@ -240,6 +307,8 @@ fn handle_channel_async_transact_complete<'a, K: Kernel>(
         SYSCALL_DEBUG,
         "syscall: channel_async_transact_complete complete"
     );
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret.map(|v| v.cast_into())
 }
 
@@ -249,10 +318,21 @@ fn handle_channel_async_cancel<'a, K: Kernel>(
 ) -> Result<()> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling channel_async_cancel");
     let handle = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_async_cancel handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
 
     let ret = object.channel_async_cancel(kernel);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_async_cancel complete");
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -262,6 +342,15 @@ fn handle_channel_read<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     let offset = args.next_usize()?;
     let buffer_addr = args.next_usize()?;
     let buffer_len = args.next_usize()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_read handle={:#010x} offset={:#x} buffer_len={:#x}",
+        handle as u32,
+        offset as usize,
+        buffer_len as usize,
+    );
 
     let object = lookup_handle(kernel, handle)?;
     let buffer = SyscallBuffer::new_in_current_process(
@@ -273,6 +362,8 @@ fn handle_channel_read<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
 
     let ret = object.channel_read(kernel, offset, buffer);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_read complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret.map(|v| v.cast_into())
 }
 
@@ -281,6 +372,14 @@ fn handle_channel_respond<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>
     let handle = args.next_u32()?;
     let buffer_addr = args.next_usize()?;
     let buffer_len = args.next_usize()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "channel_respond handle={:#010x} buffer_len={:#x}",
+        handle as u32,
+        buffer_len as usize,
+    );
 
     let object = lookup_handle(kernel, handle)?;
     let buffer = SyscallBuffer::new_in_current_process(
@@ -292,6 +391,8 @@ fn handle_channel_respond<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>
 
     let ret = object.channel_respond(kernel, buffer);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: channel_respond complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -299,6 +400,14 @@ fn handle_interrupt_ack<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) 
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling interrupt_ack");
     let handle = args.next_u32()?;
     let signals = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "interrupt_ack handle={:#010x} signals={:#010x}",
+        handle as u32,
+        signals as u32,
+    );
 
     let Some(signal_mask) = Signals::from_bits(signals) else {
         log_if::debug_if!(
@@ -313,6 +422,8 @@ fn handle_interrupt_ack<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) 
     let object = lookup_handle(kernel, handle)?;
     let ret = object.interrupt_ack(kernel, signal_mask);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: interrupt_ack complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -321,28 +432,73 @@ fn handle_thread_start<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     let handle = args.next_u32()?;
     let initial_pc = args.next_usize()?;
     let initial_sp = args.next_usize()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "thread_start handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
-    object.thread_start(kernel, initial_pc, initial_sp)
+    let ret = object.thread_start(kernel, initial_pc, initial_sp);
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ret
 }
 
 fn handle_task_terminate<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling task_terminate");
     let handle = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "task_terminate handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
-    object.task_terminate(kernel)
+    let ret = object.task_terminate(kernel);
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ret
 }
 
 fn handle_task_join<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<ExitStatus> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling task_join");
     let handle = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "task_join handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
-    object.task_join(kernel)
+    let ret = object.task_join(kernel);
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ret
 }
 
 fn handle_thread_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> ! {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling thread_exit");
     // TODO: b/510812835 - infallible syscalls.
     let exit_code = args.next_u32().unwrap_or(0);
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "thread_exit exit_code={}",
+        exit_code as u32,
+    );
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     crate::scheduler::exit_thread(kernel, syscall_defs::ExitStatus::Success(exit_code));
 }
 
@@ -350,6 +506,14 @@ fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling process_exit");
     // TODO: b/510812835 - infallible syscalls.
     let exit_code = args.next_u32().unwrap_or(0);
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "process_exit exit_code={}",
+        exit_code as u32,
+    );
+
     let mut sched = kernel.get_scheduler().lock(kernel);
     let current_process = sched.current_process_handle().clone();
     sched.process_terminate(
@@ -357,6 +521,8 @@ fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
         &current_process,
         syscall_defs::ExitStatus::Success(exit_code),
     );
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
 
     // Drop the reference to the current process before calling exit_thread.
     // Since exit_thread does not return, the reference would otherwise be leaked,
@@ -373,8 +539,20 @@ fn handle_process_exit<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -
 fn handle_process_start<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling process_start");
     let handle = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "process_start handle={:#010x}",
+        handle as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
-    object.process_start(kernel)
+    let ret = object.process_start(kernel);
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ret
 }
 
 fn handle_set_peer_user_signal<'a, K: Kernel>(
@@ -388,12 +566,23 @@ fn handle_set_peer_user_signal<'a, K: Kernel>(
     let handle = args.next_u32()?;
     let set = args.next_u32()? != 0;
 
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "object_set_peer_user_signal handle={:#010x} set={}",
+        handle as u32,
+        u32::from(set) as u32,
+    );
+
     let object = lookup_handle(kernel, handle)?;
     let ret = object.object_set_peer_user_signal(kernel, set);
     log_if::debug_if!(
         SYSCALL_DEBUG,
         "syscall: object_set_peer_user_signal complete"
     );
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     ret
 }
 
@@ -401,10 +590,14 @@ fn handle_set_peer_user_signal<'a, K: Kernel>(
 fn handle_debug_putc<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling debug_putc");
     let arg = args.next_u32()?;
+
     let c = char::from_u32(arg).ok_or(Error::InvalidArgument)?;
+    crate::trace_span_start_if!(kernel, SYSCALL_TRACE, "debug_putc c={}", c as char);
     let sched = kernel.get_scheduler().lock(kernel);
     info!("{}: {}", sched.current_thread().name as &str, c as char);
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: debug_putc complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     Ok(u64::from(arg))
 }
 
@@ -412,6 +605,15 @@ fn handle_debug_putc<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> 
 fn handle_debug_shutdown<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<u64> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling debug_shutdown");
     let exit_code = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "debug_shutdown exit_code={}",
+        exit_code as u32,
+    );
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     if exit_code != 0 {
         // Allow `kernel` to be unused if `system_dump_on_failure` is not enabled.
         let _ = kernel;
@@ -431,6 +633,14 @@ fn handle_debug_shutdown<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>)
 fn handle_debug_log<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> Result<()> {
     let buffer_addr = args.next_usize()?;
     let buffer_len = args.next_usize()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "debug_log buffer_len={:#x}",
+        buffer_len as usize,
+    );
+
     let buffer = SyscallBuffer::new_in_current_process(
         kernel,
         MemoryRegionType::ReadOnlyData,
@@ -441,24 +651,45 @@ fn handle_debug_log<'a, K: Kernel>(kernel: K, mut args: K::SyscallArgs<'a>) -> R
     for byteslice in buffer.as_slices() {
         console.write_all(byteslice)?;
     }
-    Ok(())
+
+    let ret = Ok(());
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ret
 }
 
 fn handle_debug_trigger_interrupt<'a, K: Kernel>(
-    _kernel: K,
+    kernel: K,
     mut args: K::SyscallArgs<'a>,
 ) -> Result<()> {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: handling debug_trigger_interrupt");
 
     let irq = args.next_u32()?;
+
+    crate::trace_span_start_if!(
+        kernel,
+        SYSCALL_TRACE,
+        "debug_trigger_interrupt irq={}",
+        irq as u32,
+    );
+
     K::InterruptController::trigger_interrupt(irq);
 
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: debug_trigger_interrupt complete");
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
     Ok(())
 }
 
 fn handle_debug_clock_now<'a, K: Kernel>(kernel: K, mut _args: K::SyscallArgs<'a>) -> u64 {
-    kernel.now().ticks()
+    crate::trace_span_start_if!(kernel, SYSCALL_TRACE, "debug_clock_now");
+
+    let ticks = kernel.now().ticks();
+
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
+
+    ticks
 }
 
 /// Handle a system call.
@@ -478,6 +709,8 @@ pub fn handle_syscall<'a, K: Kernel>(
 ) -> SysCallReturnValue {
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: {:#06x}", id as usize);
 
+    crate::trace_span_start_if!(kernel, SYSCALL_TRACE, "syscall_handler",);
+
     // Instead of having a architecture independent match here, an array of
     // extern "C" function pointers could be kept and use the architecture's
     // calling convention to directly call them.
@@ -495,7 +728,8 @@ pub fn handle_syscall<'a, K: Kernel>(
             return SysCallReturnValue::from(-(Error::InvalidArgument as isize) as i64);
         }
     };
-    let res = {
+
+    let res: SysCallReturnValue = {
         match id {
             SysCallId::ObjectWait => handle_object_wait(kernel, args).into(),
             SysCallId::WaitGroupAdd => handle_wait_group_add(kernel, args).into(),
@@ -531,6 +765,7 @@ pub fn handle_syscall<'a, K: Kernel>(
         }
     };
     log_if::debug_if!(SYSCALL_DEBUG, "syscall: {:#06x} returning", id as usize);
+    crate::trace_span_end_if!(kernel, SYSCALL_TRACE);
 
     res
 }
