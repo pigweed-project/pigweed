@@ -1,5 +1,12 @@
 # Change Log
 
+## [1.11.1] - 2026-08-12
+
+### 🐛 Bug Fixes
+
+* Fix Rust target selection and `rust-analyzer.linkedProjects` configuration when activating targets without `ide_config.json`.
+* Fix sidebar target generation checks and matching for sanitized Bazel target labels.
+
 ## [1.11.0] - 2026-08-06
 
 ### ✨ Features & Improvements
