@@ -48,6 +48,7 @@ rust_test(
         "//pw_time/rust:pw_time_core",
         "//pw_kernel/lib/unittest:unittest_core",
         "//pw_kernel/lib/vectored_buffer",
+        "//pw_kernel/lib/pw_kernel_debug_mailbox",
         "//pw_log/rust:pw_log",
     ],
 )

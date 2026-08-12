@@ -77,4 +77,10 @@ SECTIONS
   {
     KEEP(*(.pw_kernel.annotations.trace_buffer.*))
   }
+
+  .pw_kernel.annotations.debug_mailbox 0x0 (INFO) :
+  {
+    KEEP(*(.pw_kernel.annotations.debug_mailbox.*))
+  }
 }
+

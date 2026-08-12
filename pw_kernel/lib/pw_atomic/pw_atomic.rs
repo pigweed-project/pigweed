@@ -149,4 +149,6 @@ mod builtin_impls {
 
     impl_for_numeric!(core::sync::atomic::AtomicUsize, usize);
     impl AtomicUsize for core::sync::atomic::AtomicUsize {}
+
+    impl_for_numeric!(core::sync::atomic::AtomicU32, u32);
 }
