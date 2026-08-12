@@ -27,7 +27,7 @@ packet: [{
   }
   first_packet_on_sequence: true
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   track_descriptor {
     uuid: 2164302856
@@ -38,7 +38,7 @@ packet: [{
     }
   }
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   track_descriptor {
     uuid: 2164302740
@@ -51,7 +51,7 @@ packet: [{
     parent_uuid: 2164302856
   }
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   track_descriptor {
     uuid: 2164302824
@@ -64,7 +64,7 @@ packet: [{
     parent_uuid: 2164302856
   }
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   track_descriptor {
     uuid: 2164260920
@@ -77,7 +77,7 @@ packet: [{
     parent_uuid: 0
   }
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   track_descriptor {
     uuid: 2164261008
@@ -90,7 +90,7 @@ packet: [{
     parent_uuid: 0
   }
 }, {
-  timestamp: 159
+  timestamp: 160
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -98,15 +98,15 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 537
+  timestamp: 257
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
     tid: 4098
-    state: TASK_STATE_RUNNABLE
+    state: TASK_STATE_INTERRUPTIBLE_SLEEP
   }
 }, {
-  timestamp: 537
+  timestamp: 257
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -114,7 +114,7 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 572
+  timestamp: 293
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -122,7 +122,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 581
+  timestamp: 302
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -130,21 +130,21 @@ packet: [{
     name: "debug_log buffer_len=0x2a"
   }
 }, {
-  timestamp: 593
+  timestamp: 313
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 595
+  timestamp: 316
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 606
+  timestamp: 327
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -152,7 +152,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 606
+  timestamp: 327
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -160,21 +160,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 607
+  timestamp: 328
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 607
+  timestamp: 328
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 608
+  timestamp: 329
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -182,7 +182,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 609
+  timestamp: 330
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -190,21 +190,21 @@ packet: [{
     name: "thread_start handle=0x00000001"
   }
 }, {
-  timestamp: 616
+  timestamp: 337
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 617
+  timestamp: 338
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 620
+  timestamp: 341
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -212,7 +212,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 621
+  timestamp: 341
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -220,21 +220,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 621
+  timestamp: 341
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 621
+  timestamp: 341
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 622
+  timestamp: 343
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -242,7 +242,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 624
+  timestamp: 344
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -250,7 +250,7 @@ packet: [{
     name: "object_wait handle=0x00000001 signals=0x00000008"
   }
 }, {
-  timestamp: 636
+  timestamp: 352
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -258,23 +258,7 @@ packet: [{
     state: TASK_STATE_INTERRUPTIBLE_SLEEP
   }
 }, {
-  timestamp: 636
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNING
-  }
-}, {
-  timestamp: 924
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNABLE
-  }
-}, {
-  timestamp: 924
+  timestamp: 352
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -282,7 +266,7 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 928
+  timestamp: 356
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -290,7 +274,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 928
+  timestamp: 356
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -298,21 +282,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 929
+  timestamp: 356
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 929
+  timestamp: 356
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 932
+  timestamp: 359
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -320,7 +304,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 932
+  timestamp: 359
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -328,21 +312,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 933
+  timestamp: 359
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 933
+  timestamp: 359
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 934
+  timestamp: 361
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -350,7 +334,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 936
+  timestamp: 362
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -358,14 +342,14 @@ packet: [{
     name: "thread_exit exit_code=42"
   }
 }, {
-  timestamp: 936
+  timestamp: 363
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 964
+  timestamp: 390
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -373,23 +357,7 @@ packet: [{
     state: TASK_STATE_DEAD
   }
 }, {
-  timestamp: 964
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNING
-  }
-}, {
-  timestamp: 1317
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNABLE
-  }
-}, {
-  timestamp: 1317
+  timestamp: 390
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -397,21 +365,21 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 1326
+  timestamp: 399
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1327
+  timestamp: 400
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1328
+  timestamp: 402
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -419,7 +387,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1329
+  timestamp: 403
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -427,21 +395,21 @@ packet: [{
     name: "task_join handle=0x00000001"
   }
 }, {
-  timestamp: 1356
+  timestamp: 429
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1357
+  timestamp: 430
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1361
+  timestamp: 434
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -449,7 +417,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1361
+  timestamp: 434
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -457,21 +425,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 1361
+  timestamp: 434
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1361
+  timestamp: 434
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1365
+  timestamp: 437
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -479,7 +447,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1365
+  timestamp: 437
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -487,21 +455,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 1365
+  timestamp: 438
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1365
+  timestamp: 438
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1366
+  timestamp: 439
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -509,7 +477,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1366
+  timestamp: 439
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -517,21 +485,21 @@ packet: [{
     name: "thread_start handle=0x00000001"
   }
 }, {
-  timestamp: 1367
+  timestamp: 440
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1367
+  timestamp: 440
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1370
+  timestamp: 443
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -539,7 +507,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1370
+  timestamp: 443
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -547,21 +515,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 1371
+  timestamp: 443
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1371
+  timestamp: 443
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1372
+  timestamp: 444
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -569,7 +537,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1373
+  timestamp: 445
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -577,21 +545,21 @@ packet: [{
     name: "task_terminate handle=0x00000001"
   }
 }, {
-  timestamp: 1379
+  timestamp: 451
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1379
+  timestamp: 451
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1382
+  timestamp: 454
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -599,7 +567,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1382
+  timestamp: 454
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -607,21 +575,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 1382
+  timestamp: 455
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1382
+  timestamp: 455
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 1384
+  timestamp: 456
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -629,7 +597,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1384
+  timestamp: 456
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -637,7 +605,7 @@ packet: [{
     name: "object_wait handle=0x00000001 signals=0x00000008"
   }
 }, {
-  timestamp: 1384
+  timestamp: 457
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -645,23 +613,7 @@ packet: [{
     state: TASK_STATE_INTERRUPTIBLE_SLEEP
   }
 }, {
-  timestamp: 1384
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNING
-  }
-}, {
-  timestamp: 1710
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNABLE
-  }
-}, {
-  timestamp: 1710
+  timestamp: 457
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -669,7 +621,7 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 1714
+  timestamp: 459
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -677,7 +629,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 1714
+  timestamp: 459
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -685,21 +637,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 1715
+  timestamp: 460
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 1715
+  timestamp: 460
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302824
   }
 }, {
-  timestamp: 1719
+  timestamp: 462
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -707,23 +659,7 @@ packet: [{
     state: TASK_STATE_DEAD
   }
 }, {
-  timestamp: 1719
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNING
-  }
-}, {
-  timestamp: 2104
-  trusted_packet_sequence_id: 1
-  generic_kernel_task_state_event {
-    cpu: 0
-    tid: 4098
-    state: TASK_STATE_RUNNABLE
-  }
-}, {
-  timestamp: 2104
+  timestamp: 462
   trusted_packet_sequence_id: 1
   generic_kernel_task_state_event {
     cpu: 0
@@ -731,21 +667,21 @@ packet: [{
     state: TASK_STATE_RUNNING
   }
 }, {
-  timestamp: 2105
+  timestamp: 463
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2106
+  timestamp: 463
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2107
+  timestamp: 464
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -753,7 +689,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 2108
+  timestamp: 464
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -761,21 +697,21 @@ packet: [{
     name: "task_join handle=0x00000001"
   }
 }, {
-  timestamp: 2109
+  timestamp: 465
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2109
+  timestamp: 465
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2113
+  timestamp: 468
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -783,7 +719,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 2113
+  timestamp: 468
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -791,21 +727,21 @@ packet: [{
     name: "debug_log buffer_len=0x1e"
   }
 }, {
-  timestamp: 2114
+  timestamp: 469
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2114
+  timestamp: 469
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2117
+  timestamp: 472
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -813,7 +749,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 2117
+  timestamp: 472
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -821,21 +757,21 @@ packet: [{
     name: "debug_log buffer_len=0x2a"
   }
 }, {
-  timestamp: 2117
+  timestamp: 472
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2117
+  timestamp: 472
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END
     track_uuid: 2164302740
   }
 }, {
-  timestamp: 2119
+  timestamp: 474
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -843,7 +779,7 @@ packet: [{
     name: "syscall_handler"
   }
 }, {
-  timestamp: 2119
+  timestamp: 475
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_BEGIN
@@ -851,7 +787,7 @@ packet: [{
     name: "debug_shutdown exit_code=0"
   }
 }, {
-  timestamp: 2120
+  timestamp: 475
   trusted_packet_sequence_id: 1
   track_event {
     type: TYPE_SLICE_END

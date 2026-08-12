@@ -14,6 +14,7 @@
 #![no_std]
 #![no_main]
 
+use arch_arm_cortex_m::Arch;
 use console_backend as _;
 use entry as _;
 use target_common::{TargetInterface, declare_target};
@@ -29,8 +30,9 @@ impl TargetInterface for Target {
 
     fn main() -> ! {
         codegen::start();
-        #[expect(clippy::empty_loop)]
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 }
 

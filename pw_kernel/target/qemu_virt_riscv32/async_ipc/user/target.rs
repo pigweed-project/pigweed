@@ -14,6 +14,7 @@
 #![no_std]
 #![no_main]
 
+use arch_riscv::Arch;
 use console_backend as _;
 use entry as _;
 use riscv_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
@@ -26,8 +27,9 @@ impl TargetInterface for Target {
 
     fn main() -> ! {
         codegen::start();
-        #[expect(clippy::empty_loop)]
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 
     fn shutdown(code: u32) -> ! {
