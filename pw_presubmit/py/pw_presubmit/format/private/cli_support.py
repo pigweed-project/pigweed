@@ -171,7 +171,8 @@ def add_arguments(
         '-C',
         '--directory',
         type=argument_types.directory,
-        default=None,
+        action='append',
+        default=[],
         help=argparse.SUPPRESS,
     )
     parser.set_defaults(apply_fixes=default_to_fix)

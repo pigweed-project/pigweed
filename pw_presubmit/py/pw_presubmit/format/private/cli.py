@@ -19,7 +19,7 @@ import logging
 import os
 from pathlib import Path
 import sys
-from typing import Collection, Pattern
+from typing import Collection, Pattern, Sequence
 
 from pw_cli import log
 from pw_cli.collect_files import (
@@ -71,7 +71,7 @@ class FormattingSuite:
         exclude: Collection[Pattern] = tuple(),
         apply_fixes: bool = True,
         jobs: int | None = None,
-        directory: Path | None = None,
+        directory: Path | Sequence[Path] | None = None,
     ) -> bool:
         """Formats files in a repository.
 
@@ -82,18 +82,33 @@ class FormattingSuite:
             exclude: Regex patterns to exclude from the set of collected files.
             apply_fixes: Whether or not to apply formatting fixes to files.
             jobs: Number of parallel jobs to use.
-            directory: Change to this directory before doing anything.
+            directory: Directories to format files from.
         """
+        dirs: list[Path] = []
         if directory:
-            os.chdir(directory)
+            if isinstance(directory, (Path, str)):
+                dirs = [Path(directory).resolve()]
+            else:
+                dirs = [Path(d).resolve() for d in directory]
+        else:
+            dirs = [Path.cwd()]
 
-        all_files = collect_files_in_current_repo(
-            paths,
-            _git_runner,
-            modified_since_git_ref=base,
-            exclude_patterns=exclude,
-            action_flavor_text='Formatting',
-        )
+        all_files_list: list[Path] = []
+        old_cwd = Path.cwd()
+        try:
+            for d in dirs:
+                os.chdir(d)
+                repo_files = collect_files_in_current_repo(
+                    paths,
+                    _git_runner,
+                    modified_since_git_ref=base,
+                    exclude_patterns=exclude,
+                    action_flavor_text='Formatting',
+                )
+                all_files_list.extend(repo_files)
+        finally:
+            os.chdir(old_cwd)
+        all_files = sorted(set(all_files_list))
 
         _LOG.info('Checking formatting for %s', plural(all_files, 'file'))
 
@@ -102,7 +117,7 @@ class FormattingSuite:
         ):
             print(line, file=sys.stderr)
 
-        all_files = tuple(cli_support.filter_exclusions(all_files))
+        all_files = list(cli_support.filter_exclusions(all_files))
 
         files_by_formatter = cli_support.map_files_to_formatters(
             all_files, self._formatters
