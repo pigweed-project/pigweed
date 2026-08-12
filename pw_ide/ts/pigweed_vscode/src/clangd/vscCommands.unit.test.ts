@@ -18,7 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { getClangdArgs, setTargetWithRust } from './vscCommands';
 import { Target, CDB_FILE_DIRS, availableTargets } from './paths';
-import { workingDir } from '../settings/vscode';
+import { settings, workingDir } from '../settings/vscode';
 
 test('getClangdArgs returns correct arguments', () => {
   const targetDir = '/path/to/target';
@@ -97,6 +97,42 @@ test('setTargetWithRust configures rust-project.json symlink for valid target', 
 
     const rootRustProject = path.join(tmpDir, 'rust-project.json');
     assert.strictEqual(fs.existsSync(rootRustProject), true);
+    assert.strictEqual(settings.rustAnalysisTarget(), 'my_rust_target');
+  } finally {
+    workingDir.set(origWorkingDir);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('setTargetWithRust configures rust-project.json symlink without ide_config.json', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw_ide_rust_test_'));
+  const origWorkingDir = workingDir.get();
+  workingDir.set(tmpDir);
+
+  try {
+    const cdbDir = path.join(tmpDir, CDB_FILE_DIRS[0]);
+    fs.mkdirSync(cdbDir, { recursive: true });
+
+    const rustTargetDir = path.join(cdbDir, 'my_rust_target_no_config');
+    fs.mkdirSync(rustTargetDir);
+    fs.writeFileSync(
+      path.join(rustTargetDir, 'rust-project.json'),
+      '{"sysroot_src":""}',
+    );
+
+    const target = (await availableTargets()).find(
+      (t) => t.name === 'my_rust_target_no_config',
+    );
+    assert.ok(target);
+
+    await setTargetWithRust(target);
+
+    const rootRustProject = path.join(tmpDir, 'rust-project.json');
+    assert.strictEqual(fs.existsSync(rootRustProject), true);
+    assert.strictEqual(
+      settings.rustAnalysisTarget(),
+      'my_rust_target_no_config',
+    );
   } finally {
     workingDir.set(origWorkingDir);
     fs.rmSync(tmpDir, { recursive: true, force: true });

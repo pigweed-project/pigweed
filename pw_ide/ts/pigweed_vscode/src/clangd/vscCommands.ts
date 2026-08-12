@@ -185,13 +185,9 @@ export async function setTargetWithRust(
 
   // Update VS Code settings for Rust-Analyzer
   try {
-    await Promise.all([
-      updateRustOverride(rustOverride),
-      updateLinkedProjects(
-        rustOverride
-          ? [`.compile_commands/${target.name}/rust-project.json`]
-          : undefined,
-      ),
+    await updateRustOverride(rustOverride);
+    await updateLinkedProjects([
+      `.compile_commands/${target.name}/rust-project.json`,
     ]);
   } catch (e) {
     logger.error('Failed to update rust-analyzer settings: ' + e);

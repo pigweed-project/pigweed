@@ -663,9 +663,21 @@ export class Root extends LitElement {
           ${targets.map((target) => {
             const matchedTarget = this.cipdReport.availableTargets?.find(
               (t) =>
-                t.displayName === target.displayName || t.name === target.label,
+                (t.displayName &&
+                  target.displayName &&
+                  t.displayName === target.displayName) ||
+                t.name === target.label ||
+                t.name ===
+                  target.label.replace(/\//g, '__').replace(/:/g, '__'),
             );
-            const lastGeneratedAt = matchedTarget?.lastGeneratedAt;
+            const isGenerated =
+              !!matchedTarget &&
+              (langType === 'cpp'
+                ? !!matchedTarget.hasCpp
+                : !!matchedTarget.hasRust);
+            const lastGeneratedAt = isGenerated
+              ? matchedTarget?.lastGeneratedAt
+              : undefined;
             const formattedTime = lastGeneratedAt
               ? format(lastGeneratedAt)
               : 'Never';
@@ -676,10 +688,9 @@ export class Root extends LitElement {
               this.cipdReport.isGenerating &&
               this.cipdReport.activeGeneratingTarget === target.label;
 
-            const isGenerated = !!matchedTarget;
-
             const isActive =
               matchedTarget &&
+              isGenerated &&
               (langType === 'cpp'
                 ? this.cipdReport.targetSelected === matchedTarget.name
                 : this.cipdReport.rustTargetSelected === matchedTarget.name);
