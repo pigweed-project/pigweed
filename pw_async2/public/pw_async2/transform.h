@@ -75,7 +75,7 @@ class MapFuture {
 
   Poll<value_type> Pend(Context& cx) {
     PW_TRY_READY_ASSIGN(auto result, inner_.Pend(cx));
-    return Poll<value_type>((*func_)(result));
+    return Poll<value_type>((*func_)(std::move(result)));
   }
 
   bool is_pendable() const { return inner_.is_pendable(); }
@@ -118,7 +118,7 @@ class ThenFuture {
       auto& first = std::get<0>(state_);
       PW_TRY_READY_ASSIGN(auto result, first.Pend(cx));
 
-      state_.template emplace<1>((*func_)(result));
+      state_.template emplace<1>((*func_)(std::move(result)));
     }
 
     if (state_.index() == 1) {

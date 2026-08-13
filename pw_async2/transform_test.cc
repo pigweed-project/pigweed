@@ -32,6 +32,15 @@ using ::pw::async2::ValueProvider;
 using ::pw::async2::experimental::Map;
 using ::pw::async2::experimental::Then;
 
+struct MoveOnly {
+  MoveOnly(int val) : value(val) {}
+  MoveOnly(const MoveOnly&) = delete;
+  MoveOnly& operator=(const MoveOnly&) = delete;
+  MoveOnly(MoveOnly&&) = default;
+  MoveOnly& operator=(MoveOnly&&) = default;
+  int value;
+};
+
 TEST(FuturePipe, Map) {
   DispatcherForTest dispatcher;
   ValueProvider<int> provider;
@@ -46,6 +55,18 @@ TEST(FuturePipe, Map) {
 
   EXPECT_FALSE(future.is_pendable());
   EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, MapMoveOnly) {
+  DispatcherForTest dispatcher;
+  ValueProvider<MoveOnly> provider;
+
+  auto future = provider.Get() | Map([](MoveOnly x) { return x.value * 2; });
+  static_assert(std::is_same_v<decltype(future)::value_type, int>);
+  EXPECT_TRUE(future.is_pendable());
+
+  provider.Resolve(MoveOnly(10));
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready(20));
 }
 
 TEST(FuturePipe, MapChain) {
@@ -89,6 +110,26 @@ TEST(FuturePipe, Then) {
 
   EXPECT_FALSE(future.is_pendable());
   EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, ThenMoveOnly) {
+  DispatcherForTest dispatcher;
+  ValueProvider<MoveOnly> provider;
+  ChannelStorage<int, 1> storage;
+  auto [handle, sender, receiver] = CreateSpscChannel(storage);
+
+  auto future =
+      provider.Get() | Then([s = std::move(sender)](MoveOnly x) mutable {
+        return s.Send(x.value * 10);
+      });
+  static_assert(std::is_same_v<decltype(future)::value_type, bool>);
+
+  provider.Resolve(MoveOnly(5));
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready(true));
+
+  pw::Result<int> received = receiver.TryReceive();
+  EXPECT_TRUE(received.ok());
+  EXPECT_EQ(*received, 50);
 }
 
 }  // namespace
