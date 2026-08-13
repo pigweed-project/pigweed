@@ -17,7 +17,10 @@ pub const THREAD_SECTION_NAME: &str = ".pw_kernel.annotations.thread";
 pub const PROCESS_SECTION_NAME: &str = ".pw_kernel.annotations.process";
 pub const TRACE_BUFFER_SECTION_NAME: &str = ".pw_kernel.annotations.trace_buffer";
 pub const TOKENIZER_SECTION_NAME: &str = ".pw_tokenizer.entries";
+pub const DEBUG_MAILBOX_SECTION_NAME: &str = ".pw_kernel.annotations.debug_mailbox";
 
 pub mod image_info;
 
-pub use image_info::{ImageInfo, ProcessInfo, StackInfo, ThreadInfo, TraceBufferInfo};
+pub use image_info::{
+    DebugMailboxInfo, ImageInfo, ProcessInfo, StackInfo, ThreadInfo, TraceBufferInfo,
+};

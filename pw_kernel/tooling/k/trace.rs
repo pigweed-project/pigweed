@@ -13,7 +13,7 @@
 // the License.
 
 use std::collections::HashMap;
-use std::io::BufWriter;
+use std::io::{BufWriter, ErrorKind};
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
@@ -79,6 +79,19 @@ pub async fn run(path: &Path, gdb_addr: &str) -> Result<()> {
 
     let compat_stream = stream.compat();
     let mut client = Client::new(compat_stream);
+    if info.architecture == object::Architecture::Arm {
+        client.set_has_arm_trustzone(true);
+    }
+
+    // Allow reading kernel memory from userspace under QEMU
+    match client.set_qemu_physical_memory_mode(true).await {
+        Err(e) if e.kind() == ErrorKind::Unsupported => {
+            // Only qemu supports this command, but we might be talking to another type of probe
+            Ok(())
+        }
+        result => result,
+    }
+    .context("Failed to set QEMU physical memory mode")?;
 
     let trace_buffer = &info.trace_buffers[0];
     let memory = client

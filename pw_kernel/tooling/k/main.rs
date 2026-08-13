@@ -102,6 +102,17 @@ fn print_image_info(path: &Path) -> Result<()> {
         );
     }
 
+    println!();
+    println!("Debug Mailboxes:");
+    println!("  {:<30} {:<12} {:<10}", "Name", "Address", "Size");
+    println!("  {:-<30} {:-<12} {:-<10}", "", "", "");
+    for mailbox in info.mailboxes {
+        println!(
+            "  {:<30} 0x{:08x}   0x{:x}",
+            mailbox.name, mailbox.addr, mailbox.size
+        );
+    }
+
     Ok(())
 }
 

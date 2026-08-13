@@ -20,8 +20,8 @@ use object::{Endian, File, Object, ObjectSection};
 use pw_tokenizer::detokenize::Detokenizer;
 
 use crate::{
-    PROCESS_SECTION_NAME, STACK_SECTION_NAME, THREAD_SECTION_NAME, TOKENIZER_SECTION_NAME,
-    TRACE_BUFFER_SECTION_NAME,
+    DEBUG_MAILBOX_SECTION_NAME, PROCESS_SECTION_NAME, STACK_SECTION_NAME, THREAD_SECTION_NAME,
+    TOKENIZER_SECTION_NAME, TRACE_BUFFER_SECTION_NAME,
 };
 
 #[derive(Debug, Clone)]
@@ -52,13 +52,22 @@ pub struct TraceBufferInfo {
 }
 
 #[derive(Debug, Clone)]
+pub struct DebugMailboxInfo {
+    pub name: String,
+    pub addr: u64,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct ImageInfo {
     pub stacks: Vec<StackInfo>,
     pub threads: Vec<ThreadInfo>,
     pub processes: Vec<ProcessInfo>,
     pub trace_buffers: Vec<TraceBufferInfo>,
     pub tokenizer_database: Option<Detokenizer>,
+    pub mailboxes: Vec<DebugMailboxInfo>,
     pub endian: object::Endianness,
+    pub architecture: object::Architecture,
 }
 
 impl ImageInfo {
@@ -82,6 +91,7 @@ impl ImageInfo {
     /// Create `ImageInfo` from an already parsed [`object::File`].
     pub fn from_object(obj_file: &File<'_>) -> Result<Self> {
         let endian = obj_file.endianness();
+        let architecture = obj_file.architecture();
         let stacks = Self::extract_stacks(obj_file)?
             .with_context(|| format!("Failed to find section {STACK_SECTION_NAME}"))?;
         let threads = Self::extract_threads(obj_file)?
@@ -90,14 +100,17 @@ impl ImageInfo {
             .with_context(|| format!("Failed to find section {PROCESS_SECTION_NAME}"))?;
         let trace_buffers = Self::extract_trace_buffers(obj_file)?.unwrap_or_default();
         let tokenizer_database = Self::extract_tokenizer_database(obj_file)?;
+        let mailboxes = Self::extract_mailboxes(obj_file)?.unwrap_or_default();
 
         Ok(ImageInfo {
             stacks,
             threads,
             endian,
+            architecture,
             processes,
             trace_buffers,
             tokenizer_database,
+            mailboxes,
         })
     }
 
@@ -163,6 +176,18 @@ impl ImageInfo {
             let name = Self::read_string(obj_file, fields[0], fields[1])
                 .context("Failed to read trace buffer name")?;
             Ok(TraceBufferInfo {
+                name,
+                addr: fields[2],
+                size: fields[3],
+            })
+        })
+    }
+
+    fn extract_mailboxes(obj_file: &File<'_>) -> Result<Option<Vec<DebugMailboxInfo>>> {
+        Self::extract_entries(obj_file, DEBUG_MAILBOX_SECTION_NAME, 4, |fields| {
+            let name = Self::read_string(obj_file, fields[0], fields[1])
+                .context("Failed to read mailbox name")?;
+            Ok(DebugMailboxInfo {
                 name,
                 addr: fields[2],
                 size: fields[3],
