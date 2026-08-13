@@ -101,6 +101,7 @@ struct AttHeader:
 struct AttErrorRsp:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+1]  AttOpcode  request_opcode_in_error
+  1     [+1]  UInt       request_opcode_in_error_uint
   $next [+2]  UInt       attribute_handle
   $next [+1]  ErrorCode  error_code
 
