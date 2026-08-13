@@ -17,11 +17,16 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use main_codegen::handle;
+use pw_kernel_debug_mailbox::{Mailbox, annotate_kernel_debug_mailbox};
 use pw_status::Result;
 use userspace::{entry, syscall};
 
 // NOTE: Atomic operations will not work on platforms without atomic support.
 static THREAD_DONE: AtomicU32 = AtomicU32::new(0);
+
+#[unsafe(no_mangle)]
+static TEST_MAILBOX: Mailbox<u32, AtomicU32> = Mailbox::new(0);
+annotate_kernel_debug_mailbox!("test_mailbox", TEST_MAILBOX);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn test_thread_entry(_arg: usize) -> ! {
@@ -89,6 +94,16 @@ fn do_test() -> Result<()> {
         return Err(pw_status::Error::Internal);
     }
     test_logger::info!("Thread joined (terminated from outside)");
+
+    test_logger::info!("Waiting for 0xdecafbad in mailbox to exit", message as u32);
+    loop {
+        if let Some(message) = TEST_MAILBOX.try_take()
+            && message == 0xdecafbad
+        {
+            test_logger::info!("Got signal to exit, doing so now.");
+            break;
+        }
+    }
 
     Ok(())
 }

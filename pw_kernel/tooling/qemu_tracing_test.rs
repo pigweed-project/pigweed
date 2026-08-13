@@ -18,11 +18,12 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use clap::Parser;
-use object::{File, Object, ObjectSymbol};
+use futures::io::{AsyncRead, AsyncWrite};
 use prost::Message;
 use prost_reflect::text_format::FormatOptions;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use pw_gdb_protocol::{Client, StopReply};
+use pw_kernel_annotations::{DebugMailboxInfo, ImageInfo};
 use runfiles::{Runfiles, rlocation};
 use tokio::fs;
 use tokio::net::TcpStream;
@@ -88,6 +89,96 @@ async fn connect_gdb_with_retry(port: u16, child: &mut Child) -> tokio::net::Tcp
     panic!("Failed to connect to QEMU gdb socket on port {}", port);
 }
 
+struct Mailbox(DebugMailboxInfo);
+
+impl Mailbox {
+    fn lookup_from_image(image: &ImageInfo, name: &str) -> Self {
+        for mailbox in &image.mailboxes {
+            if mailbox.name == name {
+                return Self(mailbox.clone());
+            }
+        }
+        panic!("Mailbox not found: {}", name);
+    }
+
+    async fn read_field<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        gdb_client: &mut Client<S>,
+        field_num: u64,
+    ) -> u32 {
+        let read_addr = self.0.addr + field_num * 4;
+
+        // Hack to get QEMU to allow us to read protected memory from userspace on arm
+        gdb_client
+            .set_qemu_physical_memory_mode(true)
+            .await
+            .unwrap();
+
+        let value = gdb_client.read_memory(read_addr, 4).await.unwrap();
+
+        gdb_client
+            .set_qemu_physical_memory_mode(false)
+            .await
+            .unwrap();
+
+        u32::from_le_bytes(value[..4].try_into().unwrap())
+    }
+
+    async fn write_field<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        gdb_client: &mut Client<S>,
+        field_num: u64,
+        value: u32,
+    ) {
+        let write_addr = self.0.addr + field_num * 4;
+
+        // Hack to get QEMU to allow us to read protected memory from userspace on arm
+        gdb_client
+            .set_qemu_physical_memory_mode(true)
+            .await
+            .unwrap();
+
+        gdb_client
+            .write_memory(write_addr, &value.to_le_bytes())
+            .await
+            .unwrap();
+    }
+
+    pub async fn wait_until_ready<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        gdb_client: &mut Client<S>,
+    ) {
+        loop {
+            gdb_client.interrupt().await.unwrap();
+
+            let ready = self.read_field(gdb_client, 0).await;
+            if ready != 0 {
+                break;
+            }
+
+            gdb_client.continue_execution().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    pub async fn send<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        gdb_client: &mut Client<S>,
+        value: u32,
+    ) {
+        self.wait_until_ready(gdb_client).await;
+
+        // Write the value
+        self.write_field(gdb_client, 2, value).await;
+
+        // Kick
+        self.write_field(gdb_client, 1, 1).await;
+
+        println!("Kicking mailbox {}!", self.0.name);
+        gdb_client.continue_execution().await.unwrap()
+    }
+}
+
 fn start_qemu(
     qemu_cpu: &str,
     qemu_machine: &str,
@@ -140,61 +231,12 @@ fn start_qemu(
 
 async fn run_until_exit_and_hang(
     gdb_client: &mut Client<Compat<tokio::net::TcpStream>>,
-    image_path: &Path,
-) -> (u64, u64) {
-    let image_data = fs::read(&image_path)
-        .await
-        .expect("Failed to read ELF file");
-    let obj_file = File::parse(&*image_data).expect("Failed to parse ELF file");
-
-    let (shutdown_addr, instruction_width) = {
-        // Since we're acting as the gdb client, we are expected
-        // to lookup the symbol address ourselves
-        let symbol = obj_file
-            .symbol_by_name("pw_kernel_target_shutdown")
-            .expect("could not find symbol");
-        let mut addr = symbol.address();
-
-        // The LSB is set to indicate an ARM thumb instruction,
-        // but we just want the physical address, which is 16-bit aligned
-        if obj_file.architecture() == object::Architecture::Arm {
-            addr &= !1;
-        };
-
-        let instruction_width = match obj_file.architecture() {
-            object::Architecture::Arm => 2, // Thumb
-            _ => 4,                         // assuming our target is 32-bit
-        };
-
-        (addr, instruction_width)
-    };
-
-    println!(
-        "Found pw_kernel_target_shutdown address: {:#010x}",
-        shutdown_addr
-    );
-
-    gdb_client
-        .insert_software_breakpoint(shutdown_addr, instruction_width)
-        .await
-        .unwrap();
-    println!(
-        "GDB set breakpoint at {:#010x} (width={})",
-        shutdown_addr, instruction_width
-    );
-
+    mailbox: &Mailbox,
+) {
     // Continue target execution
     gdb_client.continue_execution().await.unwrap();
-    let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
-    println!("GDB target stopped: {:?}", stop_reply);
 
-    assert!(
-        matches!(stop_reply, StopReply::Signal(5)),
-        "Unexpected stop reply: {:?}",
-        stop_reply
-    );
-
-    (shutdown_addr, instruction_width)
+    mailbox.wait_until_ready(gdb_client).await;
 }
 
 async fn grab_trace(image_path: &Path, k_tool_path: &Path, gdb_port: u16) -> PathBuf {
@@ -330,14 +372,27 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
     let trace_proto_descriptor_path =
         resolve_path(&r, &args.trace_proto_descriptor, "trace proto descriptor");
 
+    let image_info = ImageInfo::new(&image_path).expect("could not parse image info");
+
+    println!("{:?}", image_info.mailboxes);
+    let mailbox = Mailbox::lookup_from_image(&image_info, "test_mailbox");
+
     let (mut qemu, gdb_port) = start_qemu(&args.cpu, &args.machine, &qemu_runner_path, &image_path);
 
     let gdb_sock = connect_gdb_with_retry(gdb_port, &mut qemu).await;
     let compat_stream = gdb_sock.compat();
     let mut gdb_client = Client::new(compat_stream);
+    if image_info.architecture == object::Architecture::Arm {
+        gdb_client.set_has_arm_trustzone(true);
+    }
 
-    let (shutdown_breakpoint_address, instruction_width) =
-        run_until_exit_and_hang(&mut gdb_client, &image_path).await;
+    run_until_exit_and_hang(&mut gdb_client, &mailbox).await;
+
+    if let Err(e) = gdb_client.set_qemu_physical_memory_mode(true).await {
+        println!("Failed to set QEMU physical memory mode: {:?}", e);
+    } else {
+        println!("Successfully enabled QEMU physical memory mode!");
+    }
 
     // Close the active GDB socket temporarily so tooling/k can connect
     drop(gdb_client);
@@ -353,15 +408,17 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
     let gdb_sock = connect_gdb_with_retry(gdb_port, &mut qemu).await;
     let compat_stream = gdb_sock.compat();
     let mut gdb_client = Client::new(compat_stream);
-
-    {
-        println!("Clearing breakpoint.");
+    if image_info.architecture == object::Architecture::Arm {
+        gdb_client.set_has_arm_trustzone(true);
         gdb_client
-            .remove_software_breakpoint(shutdown_breakpoint_address, instruction_width)
+            .set_qemu_physical_memory_mode(true)
             .await
             .unwrap();
+    }
 
+    {
         gdb_client.continue_execution().await.unwrap();
+        mailbox.send(&mut gdb_client, 0xdecafbad).await;
         let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
         println!("GDB target stopped: {:?}", stop_reply);
 

@@ -14,7 +14,7 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//pw_kernel/target/pw_rp2350:defs.bzl", "TARGET_COMPATIBLE_WITH")
-load("//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("//pw_kernel/tooling:system_image.bzl", "system_image")
 load("//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 
@@ -28,13 +28,6 @@ system_image(
     system_config = ":system_config",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
-)
-
-system_image_test(
-    name = "tracing_test",
-    image = ":tracing",
-    tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 
 # TODO(pwbug.dev/526631868): Add an e2e tracing test for this hardware-only target
