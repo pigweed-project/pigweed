@@ -58,6 +58,8 @@ class I3cDriver {
   // Should call the matching I3C_Abort* function and
   // return an error code if deadline is reached before
   // the transfer is complete.
+  //
+  // Should return DataLoss if not all bytes were transferred.
   virtual Status DoInitiateTransferUntil(
       chrono::SystemClock::time_point deadline,
       i3c_master_transfer_t* transfer) = 0;

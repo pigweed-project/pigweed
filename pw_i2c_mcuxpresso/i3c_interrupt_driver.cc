@@ -64,6 +64,12 @@ void I3cInterruptDriver::TransferCompleteCallback(I3C_Type* base,
                                                   status_t status,
                                                   void* driver_ptr) {
   I3cInterruptDriver& driver = *static_cast<I3cInterruptDriver*>(driver_ptr);
+  if (status == kStatus_Success && handle->remainingBytes > 0) {
+    PW_LOG_WARN("Short read (data loss): %d/%d",
+                handle->transfer.dataSize - handle->remainingBytes,
+                handle->transfer.dataSize);
+    status = kStatus_I3C_MsgError;
+  }
   driver.transfer_status_ = status;
   driver.callback_complete_notification_.release();
 }
