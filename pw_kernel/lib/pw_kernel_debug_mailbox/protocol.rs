@@ -18,6 +18,36 @@
 
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
+/// Ready state flag indicating whether the mailbox is ready to accept commands.
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, IntoBytes, Immutable, KnownLayout, TryFromBytes,
+)]
+#[repr(u32)]
+pub enum ReadyFlag {
+    /// Mailbox is uninitialized.
+    #[default]
+    Uninitialized = 0,
+    /// Target is ready to receive a new command.
+    Ready = 1,
+    /// Target is busy processing a command.
+    Busy = 2,
+}
+
+/// Unread state flag indicating whether a pending message exists in the mailbox.
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, IntoBytes, Immutable, KnownLayout, TryFromBytes,
+)]
+#[repr(u32)]
+pub enum UnreadFlag {
+    /// Mailbox is uninitialized.
+    #[default]
+    Uninitialized = 0,
+    /// Message has been read or mailbox has no pending message.
+    Read = 1,
+    /// A new unread message is pending for the target.
+    Unread = 2,
+}
+
 /// Host commands sent via debug mailbox.
 #[derive(
     Copy, Clone, Debug, Default, PartialEq, Eq, IntoBytes, Immutable, KnownLayout, TryFromBytes,

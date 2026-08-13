@@ -70,6 +70,7 @@ use core::ptr;
 use core::sync::atomic::Ordering;
 
 use pw_atomic::{AtomicLoad, AtomicNew, AtomicStore, AtomicZero};
+use pw_kernel_debug_mailbox_protocol::{ReadyFlag, UnreadFlag};
 
 #[doc(hidden)]
 pub mod __private {
@@ -166,10 +167,10 @@ where
     /// and execute a callback in a "critical section"
     pub fn poll(&self, callback: impl FnOnce(T)) {
         // We are no longer accepting new commands while inspecting/processing.
-        self.ready.store(0, Ordering::SeqCst);
+        self.ready.store(ReadyFlag::Busy as u32, Ordering::SeqCst);
 
-        if self.unread.load(Ordering::SeqCst) == 1 {
-            self.unread.store(0, Ordering::SeqCst);
+        if self.unread.load(Ordering::SeqCst) == UnreadFlag::Unread as u32 {
+            self.unread.store(UnreadFlag::Read as u32, Ordering::SeqCst);
 
             // We need to do a volatile read to prevent this access from being cached or elided.
             // SAFETY: the pointer is valid since we hold a reference to self, and T is Copy so it
@@ -180,7 +181,7 @@ where
         }
 
         // We are once again accepting new commands.
-        self.ready.store(1, Ordering::SeqCst);
+        self.ready.store(ReadyFlag::Ready as u32, Ordering::SeqCst);
     }
 }
 
@@ -188,6 +189,7 @@ where
 mod tests {
     use core::sync::atomic::{AtomicU32, Ordering};
 
+    use pw_kernel_debug_mailbox_protocol::{ReadyFlag, UnreadFlag};
     use unittest::test;
 
     use crate::Mailbox;
@@ -224,10 +226,12 @@ mod tests {
         // Before unread flag is set, try_take returns None.
         unittest::assert_eq!(TEST_MAILBOX2.try_take(), None);
 
-        // Simulate debugger setting unread flag to 1.
-        TEST_MAILBOX2.unread.store(1, Ordering::SeqCst);
+        // Simulate debugger setting unread flag to Unread.
+        TEST_MAILBOX2
+            .unread
+            .store(UnreadFlag::Unread as u32, Ordering::SeqCst);
 
-        // After unread flag is set, try_take returns the payload and resets unread to 0.
+        // After unread flag is set, try_take returns the payload and resets unread to Read.
         unittest::assert_eq!(TEST_MAILBOX2.try_take(), Some(0));
 
         // Subsequent call returns None since unread was reset.
@@ -240,20 +244,25 @@ mod tests {
     fn test_mailbox_poll() -> unittest::Result<()> {
         let mut called = false;
         let mut value_received = TestMessage::None;
-        let mut ready_during_callback = 1;
-        let mut unread_during_callback = 1;
+        let mut ready_during_callback = ReadyFlag::Ready as u32;
+        let mut unread_during_callback = UnreadFlag::Unread as u32;
 
         // Before unread flag is set, poll does not invoke callback.
         TEST_MAILBOX.poll(|_| {
             called = true;
         });
         unittest::assert_eq!(called, false);
-        unittest::assert_eq!(TEST_MAILBOX.ready.load(Ordering::SeqCst), 1);
+        unittest::assert_eq!(
+            TEST_MAILBOX.ready.load(Ordering::SeqCst),
+            ReadyFlag::Ready as u32
+        );
 
-        // Simulate debugger setting unread flag to 1.
-        TEST_MAILBOX.unread.store(1, Ordering::SeqCst);
+        // Simulate debugger setting unread flag to Unread.
+        TEST_MAILBOX
+            .unread
+            .store(UnreadFlag::Unread as u32, Ordering::SeqCst);
 
-        // Poll invokes callback with current value, resetting unread to 0 and ready to 0 during callback.
+        // Poll invokes callback with current value, resetting unread to Read and ready to Busy during callback.
         TEST_MAILBOX.poll(|v| {
             called = true;
             value_received = v;
@@ -263,10 +272,16 @@ mod tests {
 
         unittest::assert_eq!(called, true);
         unittest::assert_eq!(value_received, TestMessage::Add);
-        unittest::assert_eq!(ready_during_callback, 0);
-        unittest::assert_eq!(unread_during_callback, 0);
-        unittest::assert_eq!(TEST_MAILBOX.ready.load(Ordering::SeqCst), 1);
-        unittest::assert_eq!(TEST_MAILBOX.unread.load(Ordering::SeqCst), 0);
+        unittest::assert_eq!(ready_during_callback, ReadyFlag::Busy as u32);
+        unittest::assert_eq!(unread_during_callback, UnreadFlag::Read as u32);
+        unittest::assert_eq!(
+            TEST_MAILBOX.ready.load(Ordering::SeqCst),
+            ReadyFlag::Ready as u32
+        );
+        unittest::assert_eq!(
+            TEST_MAILBOX.unread.load(Ordering::SeqCst),
+            UnreadFlag::Read as u32
+        );
 
         // Subsequent poll call does not invoke callback since unread was reset.
         called = false;

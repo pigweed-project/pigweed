@@ -18,12 +18,12 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use clap::Parser;
-use futures::io::{AsyncRead, AsyncWrite};
 use prost::Message;
 use prost_reflect::text_format::FormatOptions;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use pw_gdb_protocol::{Client, StopReply};
-use pw_kernel_annotations::{DebugMailboxInfo, ImageInfo};
+use pw_kernel_annotations::ImageInfo;
+use pw_kernel_debug_mailbox_client::DebugMailboxClient;
 use pw_kernel_debug_mailbox_protocol::HostCommand;
 use runfiles::{Runfiles, rlocation};
 use tokio::fs;
@@ -90,96 +90,6 @@ async fn connect_gdb_with_retry(port: u16, child: &mut Child) -> tokio::net::Tcp
     panic!("Failed to connect to QEMU gdb socket on port {}", port);
 }
 
-struct Mailbox(DebugMailboxInfo);
-
-impl Mailbox {
-    fn lookup_from_image(image: &ImageInfo, name: &str) -> Self {
-        for mailbox in &image.mailboxes {
-            if mailbox.name == name {
-                return Self(mailbox.clone());
-            }
-        }
-        panic!("Mailbox not found: {}", name);
-    }
-
-    async fn read_field<S: AsyncRead + AsyncWrite + Unpin>(
-        &self,
-        gdb_client: &mut Client<S>,
-        field_num: u64,
-    ) -> u32 {
-        let read_addr = self.0.addr + field_num * 4;
-
-        // Hack to get QEMU to allow us to read protected memory from userspace on arm
-        gdb_client
-            .set_qemu_physical_memory_mode(true)
-            .await
-            .unwrap();
-
-        let value = gdb_client.read_memory(read_addr, 4).await.unwrap();
-
-        gdb_client
-            .set_qemu_physical_memory_mode(false)
-            .await
-            .unwrap();
-
-        u32::from_le_bytes(value[..4].try_into().unwrap())
-    }
-
-    async fn write_field<S: AsyncRead + AsyncWrite + Unpin>(
-        &self,
-        gdb_client: &mut Client<S>,
-        field_num: u64,
-        value: u32,
-    ) {
-        let write_addr = self.0.addr + field_num * 4;
-
-        // Hack to get QEMU to allow us to read protected memory from userspace on arm
-        gdb_client
-            .set_qemu_physical_memory_mode(true)
-            .await
-            .unwrap();
-
-        gdb_client
-            .write_memory(write_addr, &value.to_le_bytes())
-            .await
-            .unwrap();
-    }
-
-    pub async fn wait_until_ready<S: AsyncRead + AsyncWrite + Unpin>(
-        &self,
-        gdb_client: &mut Client<S>,
-    ) {
-        loop {
-            gdb_client.interrupt().await.unwrap();
-
-            let ready = self.read_field(gdb_client, 0).await;
-            if ready != 0 {
-                break;
-            }
-
-            gdb_client.continue_execution().await.unwrap();
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    }
-
-    pub async fn send<S: AsyncRead + AsyncWrite + Unpin>(
-        &self,
-        gdb_client: &mut Client<S>,
-        value: u32,
-    ) {
-        self.wait_until_ready(gdb_client).await;
-
-        // Write the value
-        self.write_field(gdb_client, 2, value).await;
-
-        // Kick
-        self.write_field(gdb_client, 1, 1).await;
-
-        println!("Kicking mailbox {}!", self.0.name);
-        gdb_client.continue_execution().await.unwrap()
-    }
-}
-
 fn start_qemu(
     qemu_cpu: &str,
     qemu_machine: &str,
@@ -232,12 +142,12 @@ fn start_qemu(
 
 async fn run_until_exit_and_hang(
     gdb_client: &mut Client<Compat<tokio::net::TcpStream>>,
-    mailbox: &Mailbox,
+    mailbox: &DebugMailboxClient,
 ) {
     // Continue target execution
     gdb_client.continue_execution().await.unwrap();
 
-    mailbox.wait_until_ready(gdb_client).await;
+    mailbox.wait_until_ready(gdb_client).await.unwrap();
 }
 
 async fn grab_trace(image_path: &Path, k_tool_path: &Path, gdb_port: u16) -> PathBuf {
@@ -376,7 +286,7 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
     let image_info = ImageInfo::new(&image_path).expect("could not parse image info");
 
     println!("{:?}", image_info.mailboxes);
-    let mailbox = Mailbox::lookup_from_image(&image_info, "test_mailbox");
+    let mailbox = DebugMailboxClient::lookup(&image_info, "test_mailbox").unwrap();
 
     let (mut qemu, gdb_port) = start_qemu(&args.cpu, &args.machine, &qemu_runner_path, &image_path);
 
@@ -420,8 +330,9 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
     {
         gdb_client.continue_execution().await.unwrap();
         mailbox
-            .send(&mut gdb_client, HostCommand::Exit as u32)
-            .await;
+            .send(&mut gdb_client, HostCommand::Exit)
+            .await
+            .unwrap();
         let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
         println!("GDB target stopped: {:?}", stop_reply);
 
