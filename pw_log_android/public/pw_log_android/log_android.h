@@ -30,24 +30,42 @@
     "Cannot set PW_LOG_TAG because LOG_TAG and PW_LOG_MODULE_NAME are not defined."
 #endif  // defined(LOG_TAG)
 
-constexpr int convert_pigweed_to_android_log_level(int log_level) {
-  switch (log_level) {
+// Converts a PW_LOG_LEVEL_* to an android_LogPriority value.
+static inline int _pw_log_android_convert_level(int pw_log_level) {
+  switch (pw_log_level) {
     case PW_LOG_LEVEL_DEBUG:
-      return android_LogPriority::ANDROID_LOG_DEBUG;
+      return ANDROID_LOG_DEBUG;
     case PW_LOG_LEVEL_INFO:
-      return android_LogPriority::ANDROID_LOG_INFO;
+      return ANDROID_LOG_INFO;
     case PW_LOG_LEVEL_WARN:
-      return android_LogPriority::ANDROID_LOG_WARN;
+      return ANDROID_LOG_WARN;
     case PW_LOG_LEVEL_ERROR:
     case PW_LOG_LEVEL_CRITICAL:
-      return android_LogPriority::ANDROID_LOG_ERROR;
+      return ANDROID_LOG_ERROR;
     case PW_LOG_LEVEL_FATAL:
-      return android_LogPriority::ANDROID_LOG_FATAL;
+      return ANDROID_LOG_FATAL;
     default:
-      return android_LogPriority::ANDROID_LOG_DEBUG;
+      // This should not happen, since we cover all current PW_LOG_LEVEL_*
+      // values above.  Map any unknown levels to WARN to help ensure
+      // visibility, just in case.
+      return ANDROID_LOG_WARN;
   }
 }
 
-#define PW_HANDLE_LOG(level, module, flags, ...) \
-  __android_log_print(                           \
-      convert_pigweed_to_android_log_level(level), PW_LOG_TAG, __VA_ARGS__)
+#define PW_HANDLE_LOG(level, module, flags, ...)                            \
+  do {                                                                      \
+    const int _pw_log_level = (level);                                      \
+    if (_pw_log_level == PW_LOG_LEVEL_FATAL) {                              \
+      /* __android_log_assert() will:                                       \
+       * 1. Write to the main log buffer at ANDROID_LOG_FATAL level.        \
+       * 2. Write to stderr.                                                \
+       * 3. Call abort(). It is marked noreturn.                            \
+       */                                                                   \
+      __android_log_assert(/*cond=*/NULL, /*tag=*/PW_LOG_TAG, __VA_ARGS__); \
+    } else {                                                                \
+      __android_log_print(                                                  \
+          /*prio=*/_pw_log_android_convert_level(_pw_log_level),            \
+          /*tag=*/PW_LOG_TAG,                                               \
+          __VA_ARGS__);                                                     \
+    }                                                                       \
+  } while (0)
