@@ -28,7 +28,7 @@ root of the Pigweed repository:
 
 .. code-block:: console
 
-   bazelisk run //targets/pw_rp2350/freertos:flash_loop_example
+   bazelisk run //targets/pw_rp2350/freertos:flash_sleep_example
 
 Pigweed Kernel
 ==============
@@ -37,7 +37,7 @@ the root of the Pigweed repository:
 
 .. code-block:: console
 
-   bazelisk run //targets/pw_rp2350/pigweed:flash_loop_example
+   bazelisk run //targets/pw_rp2350/pigweed:flash_sleep_example
 
 Zephyr
 ======
@@ -52,4 +52,45 @@ Then run the flash command:
 
 .. code-block:: console
 
-   bazelisk run //:flash_loop_example
+   bazelisk run //:flash_sleep_example
+
+------------------
+Running Unit Tests
+------------------
+Pigweed supports running on-device unit tests using the RPC unit test runner.
+This requires running a test server on the host that communicates with the
+connected board.
+
+FreeRTOS
+========
+1. Start the test server on the host.
+
+   .. code-block:: console
+
+      bazelisk run //targets/pw_rp2350/py:unit_test_server
+
+2. Run the tests using ``bazelisk test`` with the ``pw_rp2350_freertos`` config:
+
+   .. code-block:: console
+
+      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_freertos //targets/pw_rp2350:unit_test_example
+
+Zephyr
+======
+1. Start the test server on the host (from the root of the Pigweed repository):
+
+   .. code-block:: console
+
+      bazelisk run //targets/pw_rp2350/py:unit_test_server
+
+2. Navigate to the Zephyr sub-workspace directory:
+
+   .. code-block:: console
+
+      cd targets/pw_rp2350/zephyr
+
+3. Run the tests:
+
+   .. code-block:: console
+
+      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_zephyr //:unit_test_example

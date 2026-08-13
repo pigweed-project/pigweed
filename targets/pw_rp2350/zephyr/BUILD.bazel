@@ -13,7 +13,7 @@
 # the License.
 
 load("@pigweed//targets/rp2040:flash.bzl", "flash_rp2350")
-load(":transition.bzl", "rp2350_zephyr_binary")
+load(":transition.bzl", "rp2350_zephyr_binary", "rp2350_zephyr_test")
 
 # TODO: https://pwbug.dev/528015032 - macos is not currently supported
 # host_cpu is a legacy flag, but it is a value that is stable through transitions,
@@ -36,4 +36,9 @@ rp2350_zephyr_binary(
 flash_rp2350(
     name = "flash_sleep_example",
     rp2350_binary = ":sleep_example_binary",
+)
+
+rp2350_zephyr_test(
+    name = "unit_test_example",
+    binary = "@pigweed//targets/pw_rp2350:unit_test_example",
 )

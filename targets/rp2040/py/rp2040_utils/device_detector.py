@@ -25,7 +25,7 @@ import sys
 from typing import Iterable, Optional, Sequence
 
 from ctypes.util import find_library as ctypes_find_library
-import serial.tools.list_ports
+import serial.tools.list_ports  # type: ignore[import-untyped]
 import usb  # type: ignore
 from usb.backend import libusb1  # type: ignore
 
@@ -130,12 +130,13 @@ def _custom_find_library(name: str) -> str | None:
         from python.runfiles import runfiles  # type: ignore
 
         r = runfiles.Create()
-        libusb_dir = os.path.dirname(
-            r.Rlocation(
-                f'libusb/libusb-1.0{_LIB_SUFFIX}',
-                r.CurrentRepository(),
-            )
+        assert r is not None
+        r_location = r.Rlocation(
+            f'libusb/libusb-1.0{_LIB_SUFFIX}',
+            r.CurrentRepository(),
         )
+        assert r_location is not None
+        libusb_dir = os.path.dirname(r_location)
         search_paths.append(Path(libusb_dir))
     except ImportError:
         pass
@@ -166,7 +167,8 @@ def _device_port_path(device: usb.core.Device) -> str:
     Example:
         2:2:1
     """
-    return ":".join([str(port) for port in device.port_numbers])
+    ports = device.port_numbers  # type: ignore[attr-defined]
+    return ":".join([str(port) for port in ports])
 
 
 def _libusb_raspberry_pi_devices(
@@ -183,9 +185,9 @@ def _libusb_raspberry_pi_devices(
         devices_to_match.append(_DEBUG_PROBE_DEVICE_ID)
 
     def _custom_match(d: usb.core.Device):
-        if d.idVendor != _RASPBERRY_PI_VENDOR_ID:
+        if d.idVendor != _RASPBERRY_PI_VENDOR_ID:  # type: ignore[attr-defined]
             return False
-        if d.idProduct not in devices_to_match:
+        if d.idProduct not in devices_to_match:  # type: ignore[attr-defined]
             return False
         if bus_filter is not None and d.bus != bus_filter:
             return False
@@ -221,7 +223,8 @@ class PicoBoardInfo:
         for device in _libusb_raspberry_pi_devices(
             bus_filter=self.bus, port_filter=self.port
         ):
-            if device.idProduct not in _ALL_DEVICE_IDS:
+            product_id = device.idProduct  # type: ignore[attr-defined]
+            if product_id not in _ALL_DEVICE_IDS:
                 _LOG.error(
                     'Unknown device type on bus %s port %s', self.bus, self.port
                 )
@@ -350,8 +353,8 @@ def _detect_pico_usb_info(
             port=_device_port_path(device),
             product=device.product,
             manufacturer=device.manufacturer,
-            vendor_id=device.idVendor,
-            product_id=device.idProduct,
+            vendor_id=device.idVendor,  # type: ignore[attr-defined]
+            product_id=device.idProduct,  # type: ignore[attr-defined]
         )
 
         if board_usb_info.in_usb_serial_mode:
@@ -371,16 +374,16 @@ def _detect_pico_usb_info(
             _LOG.debug(
                 '  --> Found Raspberry Pi debug probe: %s', board_usb_info
             )
-            if device.bcdDevice < 0x201:
+            if device.bcdDevice < 0x201:  # type: ignore[attr-defined]
                 _LOG.error(
                     'Reliable flashing and testing not possible due to '
                     'outdated Debug Probe firmware (%d.%d.%d). Update to '
                     'version 2.0.1 or later. See https://www.raspberrypi.com/'
                     'documentation/microcontrollers/debug-probe.html for '
                     'update instructions.',
-                    (device.bcdDevice >> 8 & 0xF),
-                    (device.bcdDevice >> 4 & 0xF),
-                    (device.bcdDevice & 0xF),
+                    (device.bcdDevice >> 8 & 0xF),  # type: ignore[attr-defined]
+                    (device.bcdDevice >> 4 & 0xF),  # type: ignore[attr-defined]
+                    (device.bcdDevice & 0xF),  # type: ignore[attr-defined]
                 )
 
         else:

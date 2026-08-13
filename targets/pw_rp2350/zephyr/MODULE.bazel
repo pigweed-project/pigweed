@@ -32,7 +32,7 @@ local_path_override(
 
 git_override(
     module_name = "zephyr-bazel",
-    commit = "508137f06bb4f05c524e2e493790e2294e13b2e1",
+    commit = "f44b8e3c6f77b1515d7f6ae30501dbc82d7174c0",
     remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
 )
 
@@ -96,10 +96,6 @@ zephyr_setup.env(
     boards_dirs = [
         "@zephyr//boards",
         "//:MODULE.bazel",
-    ],
-    manual_boards = [
-        "raspberrypi/rpi_pico2/rp2350a_m33",
-        "pw_rp2350/rp2350a_m33",
     ],
     modules = [
         "@hal_rpi_pico//:zephyr/module.yml",

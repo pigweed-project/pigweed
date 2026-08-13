@@ -39,12 +39,17 @@ try:
     from python.runfiles import runfiles  # type: ignore
 
     r = runfiles.Create()
-    _TEST_RUNNER_COMMAND = r.Rlocation(
+    assert r is not None
+    resolved_runner = r.Rlocation(
         'pigweed/targets/rp2040/py/rpc_unit_test_runner'
     )
-    _TEST_SERVER_COMMAND = r.Rlocation(
+    assert resolved_runner is not None
+    _TEST_RUNNER_COMMAND = resolved_runner
+    resolved_server = r.Rlocation(
         'pigweed/pw_target_runner/go/cmd/server_/server'
     )
+    assert resolved_server is not None
+    _TEST_SERVER_COMMAND = resolved_server
 except ImportError:
     _TEST_RUNNER_COMMAND = 'rp2040_unit_test_runner'
     _TEST_SERVER_COMMAND = 'pw_target_runner_server'
@@ -94,6 +99,12 @@ def parse_args():
         help='RP2 chip connected to a debug probe (RP2040 or RP2350)',
     )
 
+    parser.add_argument(
+        '--no-rpc-logging',
+        action='store_true',
+        help='Disable RPC logging in runners',
+    )
+
     return parser.parse_args()
 
 
@@ -110,7 +121,10 @@ def generate_runner(command: str, arguments: list[str]) -> str:
 
 
 def generate_server_config(
-    chip: str, include_picos: bool = True, include_debug_probes: bool = True
+    chip: str,
+    include_picos: bool = True,
+    include_debug_probes: bool = True,
+    no_rpc_logging: bool = False,
 ) -> IO[bytes]:
     """Returns a temporary generated file for use as the server config."""
     boards = device_detector.detect_boards(
@@ -159,6 +173,8 @@ def generate_server_config(
             '--chip',
             chip,
         ]
+        if no_rpc_logging:
+            test_runner_args.append('--no-rpc-logging')
         config_file.write(
             generate_runner(_TEST_RUNNER_COMMAND, test_runner_args).encode(
                 'utf-8'
@@ -174,12 +190,13 @@ def launch_server(
     chip: str,
     include_picos: bool,
     include_debug_probes: bool,
+    no_rpc_logging: bool = False,
 ) -> int:
     """Launch a device test server with the provided arguments."""
     if server_config is None:
         # Auto-detect attached boards if no config is provided.
         server_config = generate_server_config(
-            chip, include_picos, include_debug_probes
+            chip, include_picos, include_debug_probes, no_rpc_logging
         )
 
     cmd = [_TEST_SERVER_COMMAND, '-config', server_config.name]
@@ -207,6 +224,7 @@ def main():
         args.chip,
         not args.debug_probe_only,
         not args.pico_only,
+        no_rpc_logging=args.no_rpc_logging,
     )
     sys.exit(exit_code)
 

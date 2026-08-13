@@ -68,6 +68,7 @@ platform(
         "@zephyr//constraints/arm:cortex-m33",
         "@pigweed//pw_build/constraints/rtos:zephyr",
         "@pigweed//pw_build/constraints/rust:no_std",
+        "@pigweed//pw_interrupt_cortex_m:backend",
     ],
     flags = flags_from_dict({
         "@zephyr//:board_deps": "@zephyr//boards/raspberrypi/rpi_pico2:hal_soc_library",

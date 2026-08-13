@@ -12,10 +12,12 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_binary.bzl", "pw_rust_binary")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -63,4 +65,23 @@ sphinx_docs_library(
         "target_docs.rst",
     ],
     target_compatible_with = incompatible_with_mcu(),
+)
+
+pw_cc_test(
+    name = "unit_test_example",
+    srcs = ["unit_test_example.cc"],
+)
+
+cc_library(
+    name = "unit_test_server",
+    testonly = True,
+    srcs = ["unit_test_server.cc"],
+    hdrs = ["unit_test_server.h"],
+    deps = [
+        "//pw_log",
+        "//pw_rpc/system_server",
+        "//pw_thread:options",
+        "//pw_thread:thread",
+        "//pw_unit_test:rpc_service",
+    ],
 )

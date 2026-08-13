@@ -51,6 +51,11 @@ def create_test_runner_parser() -> argparse.ArgumentParser:
         help='Maximum communication delay in seconds before a '
         'test is considered unresponsive and aborted',
     )
+    parser.add_argument(
+        '--no-rpc-logging',
+        action='store_true',
+        help='Disable RPC logging and use raw HDLC logging instead',
+    )
     return parser
 
 
@@ -60,6 +65,7 @@ def run_test_on_board(
     chip: str,
     binary: Path,
     test_timeout_seconds: float,
+    use_rpc_logging: bool = True,
 ) -> bool:
     """Run an RPC unit test on this device.
 
@@ -78,6 +84,7 @@ def run_test_on_board(
         write=serial_device.write,
         proto_library=[log_pb2, unit_test_pb2],
         detokenizer=detokenize.Detokenizer(elf_path),
+        use_rpc_logging=use_rpc_logging,
     ) as dev:
         try:
             test_results = dev.run_tests(test_timeout_seconds)
@@ -99,7 +106,12 @@ def main():
     )
     board = device_from_args(args, interactive=False)
     test_passed = run_test_on_board(
-        board, args.baud, args.chip, args.binary, args.test_timeout
+        board,
+        args.baud,
+        args.chip,
+        args.binary,
+        args.test_timeout,
+        use_rpc_logging=not args.no_rpc_logging,
     )
     sys.exit(0 if test_passed else 1)
 

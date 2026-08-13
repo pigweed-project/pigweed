@@ -36,8 +36,13 @@ try:
     from python.runfiles import runfiles  # type: ignore
 
     r = runfiles.Create()
-    _PROBE_RS_COMMAND = r.Rlocation('probe_rs/probe-rs')
-    _PICOTOOL_COMMAND = r.Rlocation('picotool/picotool')
+    assert r is not None
+    probe_rs = r.Rlocation('probe_rs/probe-rs')
+    assert probe_rs is not None
+    _PROBE_RS_COMMAND = probe_rs
+    picotool = r.Rlocation('picotool/picotool')
+    assert picotool is not None
+    _PICOTOOL_COMMAND = picotool
 except ImportError:
     _PROBE_RS_COMMAND = 'probe-rs'
     _PICOTOOL_COMMAND = 'picotool'

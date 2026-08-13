@@ -13,6 +13,7 @@
 # the License.
 """Utilities for working with tokenized fields in protobufs."""
 
+import re
 from typing import Iterator
 
 from google.protobuf.descriptor import FieldDescriptor
@@ -20,6 +21,22 @@ from google.protobuf.message import Message
 
 from pw_tokenizer_proto import options_pb2
 from pw_tokenizer import detokenize, encode
+
+# Regular expression to match ANSI escape sequences (both 2-character escape
+# codes and Control Sequence Introducer (CSI) sequences).
+#
+# Structure of CSI sequences (see ECMA-48):
+#   \x1b\[      - CSI prefix
+#   [\x30-\x3F]* - Parameter bytes (ASCII 0x30 to 0x3F, '0' to '?')
+#   [\x20-\x2F]* - Intermediate bytes (ASCII 0x20 to 0x2F, space to '/')
+#   [\x40-\x7E]  - Final byte (ASCII 0x40 to 0x7E, '@' to '~')
+#
+# The 2-character escape codes match \x1B followed by a character in the range
+# 0x40 to 0x5F (excluding '[', which is 0x5B and starts a CSI sequence).
+# This is represented by [\x40-\x5A\x5C-\x5F].
+_CSI_ESCAPE = re.compile(
+    r'\x1B(?:[\x40-\x5A\x5C-\x5F]|\[[\x30-\x3F]*[\x20-\x2F]*[\x40-\x7E])'
+)
 
 
 def _tokenized_fields(proto: Message) -> Iterator[FieldDescriptor]:
@@ -68,7 +85,9 @@ def decode_optionally_tokenized(
 
     # Attempt to determine whether this is an unknown token or plain text.
     # Any string with only printable or whitespace characters is plain text.
-    if ''.join(text.split()).isprintable():
+    # Strip ANSI escape sequences before checking printability.
+    cleaned_text = _CSI_ESCAPE.sub('', text)
+    if ''.join(cleaned_text.split()).isprintable():
         return text
 
     # Assume this field is tokenized data that could not be decoded.

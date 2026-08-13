@@ -21,23 +21,31 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 common --per_file_copt=external/.*@-w
 common --host_per_file_copt=external/.*@-w
 
-# Force hard-float ABI globally for target compilation to match Rust compiler
-build --per_file_copt=external/pigweed.*/.*,external/zephyr.*/.*,external/hal_rpi_pico.*/.*,external/cmsis_6.*/.*,app/.*,boards/.*@-mfloat-abi=hard
-build --@rules_rust//:extra_rustc_flags=-Clink-arg=-mfloat-abi=hard
-
 # Configure Pigweed platform deps and rust logging backend
 build --@pigweed//targets/pw_rp2350:platform_deps=//app:boot
 build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_trap:assert_backend
 build --@pigweed//pw_assert:assert_backend_impl=@pigweed//pw_assert_trap:impl
 build --@pigweed//pw_assert:check_backend=@pigweed//pw_assert_trap:check_backend
 build --@pigweed//pw_assert:check_backend_impl=@pigweed//pw_assert_trap:impl
+build --@pigweed//pw_chrono:system_clock_backend=@pigweed//pw_chrono_zephyr:system_clock
 build --@pigweed//pw_log/rust:pw_log_backend=@pigweed//targets/pw_rp2350:rust_log_basic_backend
 build --@pigweed//pw_log:backend=@pigweed//pw_log_basic
 build --@pigweed//pw_log:backend_impl=@pigweed//pw_log_basic:impl
+build --@pigweed//pw_sync:mutex_backend=@pigweed//pw_sync_zephyr:mutex
+build --@pigweed//pw_rpc/system_server:backend=@pigweed//pw_hdlc:hdlc_sys_io_system_server
 build --@pigweed//pw_sync:interrupt_spin_lock_backend=@pigweed//pw_sync_baremetal:interrupt_spin_lock
+build --@pigweed//pw_sync:thread_notification_backend=@pigweed//pw_sync_zephyr:thread_notification
 build --@pigweed//pw_sys_io:backend=@pigweed//pw_sys_io_zephyr:backend
+build --@pigweed//pw_unit_test:main=//unit_test_app:unit_test_boot_cc
+build --@pigweed//pw_thread:id_backend=@pigweed//pw_thread_zephyr:id
+build --@pigweed//pw_thread:sleep_backend=@pigweed//pw_thread_zephyr:sleep
+build --@pigweed//pw_thread:thread_backend=@pigweed//pw_thread_zephyr:thread
 build --@pigweed//pw_thread/rust:pw_thread_backend=@pigweed//pw_thread/rust:pw_thread_backend_zephyr
 build --@pigweed//pw_time/rust:pw_time_backend=@pigweed//pw_time/rust:pw_time_backend_zephyr
+
+# Config to run tests on target
+build:pw_rp2350_zephyr --platforms=//boards:rp2350a_m33
+test:pw_rp2350_zephyr --run_under=@pigweed//targets/rp2040/py:unit_test_client
 
 # Remote execution config definitions
 # ===================================
