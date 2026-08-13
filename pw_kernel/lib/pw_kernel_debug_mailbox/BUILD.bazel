@@ -49,3 +49,23 @@ rust_doc_test(
     tags = ["kernel"],
     target_compatible_with = incompatible_with_mcu(),
 )
+
+rust_library(
+    name = "pw_kernel_debug_mailbox_protocol",
+    srcs = [
+        "protocol.rs",
+    ],
+    edition = "2024",
+    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
+    tags = ["kernel"],
+    deps = [
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_doc_test(
+    name = "pw_kernel_debug_mailbox_protocol_doc_test",
+    crate = ":pw_kernel_debug_mailbox_protocol",
+    tags = ["kernel"],
+    target_compatible_with = incompatible_with_mcu(),
+)

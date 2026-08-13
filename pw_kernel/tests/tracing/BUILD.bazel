@@ -24,6 +24,7 @@ rust_app(
     visibility = ["//visibility:public"],
     deps = [
         "//pw_kernel/lib/pw_kernel_debug_mailbox",
+        "//pw_kernel/lib/pw_kernel_debug_mailbox:pw_kernel_debug_mailbox_protocol",
         "//pw_kernel/lib/unittest:test_logger",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/userspace",

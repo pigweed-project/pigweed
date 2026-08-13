@@ -18,6 +18,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use main_codegen::handle;
 use pw_kernel_debug_mailbox::{Mailbox, annotate_kernel_debug_mailbox};
+use pw_kernel_debug_mailbox_protocol::HostCommand;
 use pw_status::Result;
 use userspace::{entry, syscall};
 
@@ -25,7 +26,7 @@ use userspace::{entry, syscall};
 static THREAD_DONE: AtomicU32 = AtomicU32::new(0);
 
 #[unsafe(no_mangle)]
-static TEST_MAILBOX: Mailbox<u32, AtomicU32> = Mailbox::new(0);
+static TEST_MAILBOX: Mailbox<HostCommand, AtomicU32> = Mailbox::new(HostCommand::None);
 annotate_kernel_debug_mailbox!("test_mailbox", TEST_MAILBOX);
 
 #[unsafe(no_mangle)]
@@ -95,10 +96,10 @@ fn do_test() -> Result<()> {
     }
     test_logger::info!("Thread joined (terminated from outside)");
 
-    test_logger::info!("Waiting for 0xdecafbad in mailbox to exit", message as u32);
+    test_logger::info!("Waiting for HostCommand in mailbox to exit");
     loop {
         if let Some(message) = TEST_MAILBOX.try_take()
-            && message == 0xdecafbad
+            && message == HostCommand::Exit
         {
             test_logger::info!("Got signal to exit, doing so now.");
             break;

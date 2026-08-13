@@ -24,6 +24,7 @@ use prost_reflect::text_format::FormatOptions;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use pw_gdb_protocol::{Client, StopReply};
 use pw_kernel_annotations::{DebugMailboxInfo, ImageInfo};
+use pw_kernel_debug_mailbox_protocol::HostCommand;
 use runfiles::{Runfiles, rlocation};
 use tokio::fs;
 use tokio::net::TcpStream;
@@ -418,7 +419,9 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
 
     {
         gdb_client.continue_execution().await.unwrap();
-        mailbox.send(&mut gdb_client, 0xdecafbad).await;
+        mailbox
+            .send(&mut gdb_client, HostCommand::Exit as u32)
+            .await;
         let stop_reply = gdb_client.wait_for_stop_reply().await.unwrap();
         println!("GDB target stopped: {:?}", stop_reply);
 

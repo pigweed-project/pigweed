@@ -96,6 +96,7 @@ rust_binary(
         "//pw_kernel/lib/pw_gdb_protocol",
         "//pw_kernel/lib/pw_kernel_annotations",
         "//pw_kernel/lib/pw_kernel_debug_mailbox",
+        "//pw_kernel/lib/pw_kernel_debug_mailbox:pw_kernel_debug_mailbox_protocol",
         "//third_party/perfetto:trace_rust_pb2",
         "@rules_rust//tools/runfiles",
         "@rust_crates//:clap",
