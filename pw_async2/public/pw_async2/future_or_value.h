@@ -57,8 +57,9 @@ class FutureOrValue<
 
   FutureOrValue(const FutureOrValue&) = delete;
   FutureOrValue& operator=(const FutureOrValue&) = delete;
-  FutureOrValue(FutureOrValue&&) = delete;
-  FutureOrValue& operator=(FutureOrValue&&) = delete;
+
+  FutureOrValue(FutureOrValue&&) = default;
+  FutureOrValue& operator=(FutureOrValue&&) = default;
 
   ~FutureOrValue() = default;
 
@@ -166,8 +167,9 @@ class FutureOrValue<
 
   FutureOrValue(const FutureOrValue&) = delete;
   FutureOrValue& operator=(const FutureOrValue&) = delete;
-  FutureOrValue(FutureOrValue&&) = delete;
-  FutureOrValue& operator=(FutureOrValue&&) = delete;
+
+  FutureOrValue(FutureOrValue&&) = default;
+  FutureOrValue& operator=(FutureOrValue&&) = default;
 
   ~FutureOrValue() = default;
 

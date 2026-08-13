@@ -19,6 +19,7 @@
 
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/value_future.h"
 #include "pw_unit_test/framework.h"
 
@@ -33,15 +34,14 @@ TEST(FutureOrValueTest, DefaultConstructedIsEmpty) {
 
   static_assert(!std::is_copy_constructible_v<FutureOrValue<ValueFuture<int>>>);
   static_assert(!std::is_copy_assignable_v<FutureOrValue<ValueFuture<int>>>);
-  static_assert(!std::is_move_constructible_v<FutureOrValue<ValueFuture<int>>>);
-  static_assert(!std::is_move_assignable_v<FutureOrValue<ValueFuture<int>>>);
+  static_assert(std::is_move_constructible_v<FutureOrValue<ValueFuture<int>>>);
+  static_assert(std::is_move_assignable_v<FutureOrValue<ValueFuture<int>>>);
 
   static_assert(
       !std::is_copy_constructible_v<FutureOrValue<ValueFuture<void>>>);
   static_assert(!std::is_copy_assignable_v<FutureOrValue<ValueFuture<void>>>);
-  static_assert(
-      !std::is_move_constructible_v<FutureOrValue<ValueFuture<void>>>);
-  static_assert(!std::is_move_assignable_v<FutureOrValue<ValueFuture<void>>>);
+  static_assert(std::is_move_constructible_v<FutureOrValue<ValueFuture<void>>>);
+  static_assert(std::is_move_assignable_v<FutureOrValue<ValueFuture<void>>>);
 
   FutureOrValue<ValueFuture<int>> fov;
   EXPECT_TRUE(fov.empty());
@@ -734,6 +734,82 @@ TEST(FutureOrValueTest, MacroTryAdvanceMixedValueAndVoid) {
   p_void.Resolve();
   dispatcher.RunToCompletion();
   EXPECT_EQ(result, 42);
+}
+
+class JoinTwoFuture {
+ public:
+  using value_type = std::pair<int, int>;
+
+  constexpr JoinTwoFuture() = default;
+
+  JoinTwoFuture(ValueFuture<int>&& first, ValueFuture<int>&& second)
+      : first_(std::move(first)),
+        second_(std::move(second)),
+        state_(FutureState::kPending) {}
+
+  JoinTwoFuture(JoinTwoFuture&&) = default;
+  JoinTwoFuture& operator=(JoinTwoFuture&&) = default;
+
+  [[nodiscard]] bool is_pendable() const { return state_.is_pendable(); }
+  [[nodiscard]] bool is_complete() const { return state_.is_complete(); }
+
+  Poll<std::pair<int, int>> Pend(Context& cx) {
+    PW_ASSERT(is_pendable());
+    PW_FOV_TRY_ADVANCE(cx, first_, second_);
+    state_.MarkComplete();
+    return Ready(std::make_pair(first_.Take(), second_.Take()));
+  }
+
+ private:
+  FutureOrValue<ValueFuture<int>> first_;
+  FutureOrValue<ValueFuture<int>> second_;
+  FutureState state_;
+};
+
+static_assert(Future<JoinTwoFuture>);
+
+JoinTwoFuture JoinTwo(ValueFuture<int> first, ValueFuture<int> second) {
+  return JoinTwoFuture(std::move(first), std::move(second));
+}
+
+TEST(FutureOrValueTest, StoredInCompositeFuture) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> p1;
+  ValueProvider<int> p2;
+
+  JoinTwoFuture default_future;
+  EXPECT_FALSE(default_future.is_pendable());
+  EXPECT_FALSE(default_future.is_complete());
+
+  JoinTwoFuture future = JoinTwo(p1.Get(), p2.Get());
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  // Test moving the composite future containing FutureOrValue.
+  JoinTwoFuture moved_future(std::move(future));
+  EXPECT_TRUE(moved_future.is_pendable());
+  EXPECT_FALSE(moved_future.is_complete());
+
+  JoinTwoFuture assigned_future;
+  assigned_future = std::move(moved_future);
+  EXPECT_TRUE(assigned_future.is_pendable());
+  EXPECT_FALSE(assigned_future.is_complete());
+
+  FutureTask task(std::move(assigned_future));
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // First child future resolves; composite future stays pending and preserves
+  // its value.
+  p1.Resolve(10);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  // Second child future resolves; composite future completes and combines both.
+  p2.Resolve(20);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(task.value().first, 10);
+  EXPECT_EQ(task.value().second, 20);
 }
 
 }  // namespace
