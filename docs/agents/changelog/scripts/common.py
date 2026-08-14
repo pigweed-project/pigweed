@@ -51,7 +51,7 @@ def get_categories_file() -> Path:
 
 def get_resources_dir() -> Path:
     """Gets the resources directory path."""
-    return Path(__file__).resolve().parent.parent / "resources"
+    return get_workspace_root() / "docs" / "agents" / "changelog" / "resources"
 
 
 def load_json(path: Path) -> dict:

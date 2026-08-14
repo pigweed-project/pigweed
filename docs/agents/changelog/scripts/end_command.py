@@ -98,7 +98,6 @@ def _build_highlights_section(
     highlights: list[dict],
     year: str,
     month: str,
-    categories_map: dict,
 ) -> list[str]:
     """Generates the Highlights section of the changelog."""
     rst = []
@@ -108,12 +107,11 @@ def _build_highlights_section(
     rst.append("")
 
     for item in highlights:
-        category_name = categories_map.get(item["category"]) or item["category"]
         sid = _section_id(item["category"], item["story_key"], year, month)
 
         lines = item["highlight"].split('\n')
         if lines:
-            rst.append(f"* {category_name}: :ref:`{sid}` - {lines[0].lstrip()}")
+            rst.append(f"* :ref:`{sid}` - {lines[0].lstrip()}")
             for line in lines[1:]:
                 if line.strip():
                     rst.append(f"  {line.rstrip()}")
@@ -233,9 +231,7 @@ def build_rst_for_month(
     rst.extend(_build_month_header(year, month))
 
     highlights = _get_highlights(data, ignore_list)
-    rst.extend(
-        _build_highlights_section(highlights, year, month, categories_map)
-    )
+    rst.extend(_build_highlights_section(highlights, year, month))
 
     stories = data.get("stories", {})
     for category in sorted(stories.keys(), key=_category_sort_key):

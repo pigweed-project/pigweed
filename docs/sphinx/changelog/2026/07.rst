@@ -1,0 +1,271 @@
+================================
+What's new in Pigweed: July 2026
+================================
+
+.. changelog_highlights_start
+
+Highlights:
+
+* :ref:`changelog-2026-07-async-derived-value-futures` - Attach request
+  metadata to futures and resolve them conditionally.
+
+* :ref:`changelog-2026-07-async-value-list-provider` - Resolve pending futures
+  out-of-order, according to custom resolution logic.
+
+* :ref:`changelog-2026-07-log-additional-metric-types` - New ``TypedMetric``
+  support for 64-bit integers, floats, booleans, and tokenized metrics.
+
+* :ref:`changelog-2026-07-rust-freertos-sys` - Centralized FreeRTOS Rust FFI
+  bindings in a single ``no_std`` crate.
+
+* :ref:`changelog-2026-07-rust-nucleo-f103rb-target` - Upstream pw_kernel
+  support for the STM32 NUCLEO-F103RB board.
+
+.. changelog_highlights_end
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-07-async-derived-value-futures:
+
+ValueFuture subclassing in pw_async2
+====================================
+``pw::async2::ValueFuture`` now supports custom derived future
+implementations, making it easier to attach request metadata to futures and
+resolve them conditionally. CLs: `1 <https://pwrev.dev/415132>`__
+
+.. code-block:: c++
+
+   // Define a custom future sub-classing ValueFuture to attach request metadata:
+   class CustomRequestFuture : public pw::async2::ValueFuture<pw::Status> {
+    public:
+     CustomRequestFuture(pw::async2::ValueFuture<pw::Status>&& base,
+                         uint32_t request_id)
+         : pw::async2::ValueFuture<pw::Status>(std::move(base)),
+           request_id_(request_id) {}
+
+     uint32_t request_id() const { return request_id_; }
+
+    private:
+     uint32_t request_id_;
+   };
+
+   // Use DerivedValueProvider to vend and resolve custom futures:
+   pw::async2::DerivedValueProvider<CustomRequestFuture> provider;
+
+   CustomRequestFuture future = provider.Get(/*request_id=*/42);
+
+   // Conditionally resolve based on custom future metadata:
+   bool resolved =
+       provider.ResolveIf([](CustomRequestFuture& f) -> std::optional<pw::Status> {
+         if (f.request_id() == 42) {
+           return pw::OkStatus();
+         }
+         return std::nullopt;
+       });
+
+.. _changelog-2026-07-async-value-list-provider:
+
+Manage lists of pending futures with ValueListProvider
+======================================================
+The new ``pw::async2::ValueListProvider`` class makes it easier to implement
+custom resolution logic for pending futures. CLs: `1 <https://pwrev.dev/416975>`__
+
+.. code-block:: c++
+
+   // Derived future storing requested memory size:
+   class AllocationFuture : public pw::async2::ValueFuture<pw::ByteSpan> {
+    public:
+     AllocationFuture(pw::async2::ValueFuture<pw::ByteSpan>&& base, size_t bytes)
+         : pw::async2::ValueFuture<pw::ByteSpan>(std::move(base)),
+           requested_bytes_(bytes) {}
+     size_t requested_bytes() const { return requested_bytes_; }
+
+    private:
+     size_t requested_bytes_;
+   };
+
+   pw::async2::DerivedValueListProvider<AllocationFuture> provider;
+
+   // Tasks request different buffer sizes from memory manager:
+   AllocationFuture req1 = provider.Get(1024);  // Needs 1024 B (1st in line)
+   AllocationFuture req2 = provider.Get(64);    // Needs 64 B   (2nd in line)
+
+   size_t available_bytes = 128;  // Currently 128 B free in memory pool
+
+   // Out-of-order allocation: skip req1 (1024 B) and fulfill req2 (64 B):
+   provider.ResolveFirstMatching(
+       [&](AllocationFuture& req) -> std::optional<pw::ByteSpan> {
+         if (req.requested_bytes() <= available_bytes) {
+           available_bytes -= req.requested_bytes();
+           return pw::ByteSpan(buffer, req.requested_bytes());  // Fulfills req2
+         }
+         return std::nullopt;  // Keep req1 pending until RAM is freed
+       });
+
+.. _changelog-2026-07-async-coroutine-allocation-size:
+
+Code size improvements in pw_async2 coroutine allocation
+========================================================
+Recent optimizations in pw_async2 coroutine allocation have reduced coroutine
+code size by 10%. CLs: `1 <https://pwrev.dev/433693>`__
+
+---------------------------------
+C++ data structures and utilities
+---------------------------------
+
+.. _changelog-2026-07-cpp-pod-deque-specialization:
+
+Reduced code size for FixedDeque POD types
+==========================================
+``pw::FixedDeque`` has a new type-erased Plain Old Data specialization,
+resulting in smaller code when working with POD types. CLs: `1 <https://pwrev.dev/407172>`__
+
+.. code-block:: c++
+
+   struct CanFrame {
+     uint32_t id;
+     uint8_t dlc;
+     uint8_t data[8];
+   };
+
+   // Fixed-capacity deque for buffering up to 16 CAN frames:
+   pw::FixedDeque<CanFrame, 16> can_queue;
+
+   // Enqueue incoming CAN frame:
+   can_queue.push_back(CanFrame{0x123, 4, {0x01, 0x02, 0x03, 0x04}});
+
+   // Process frame from front of queue:
+   if (!can_queue.empty()) {
+     CanFrame frame = can_queue.front();
+     can_queue.pop_front();
+   }
+
+----------------------
+System I/O and streams
+----------------------
+
+.. _changelog-2026-07-io-multibuf-shallow-copy:
+
+MultiBuf shallow copy
+=====================
+The new ``pw::multibuf::MultiBuf::ShallowCopy()`` method enables fast zero-copy
+buffer sharing. CLs: `1 <https://pwrev.dev/424592>`__
+
+.. code-block:: c++
+
+   #include "pw_multibuf/multibuf.h"
+   #include "pw_result/result.h"
+
+   // Forward buffer to secondary processing task zero-copy:
+   pw::Status DuplicatePacket(pw::multibuf::MultiBuf& packet) {
+     PW_TRY_ASSIGN(pw::multibuf::MultiBuf copy, packet.ShallowCopy());
+
+     // 'copy' shares underlying buffer data with 'packet' zero-copy
+     return DispatchPacket(std::move(copy));
+   }
+
+--------------------------------------
+Logging, debugging, and crash handling
+--------------------------------------
+
+.. _changelog-2026-07-log-additional-metric-types:
+
+Expanded metric types in pw_metric
+==================================
+pw_metric's ``TypedMetric`` now supports 64-bit integers (``uint64_t``,
+``int64_t``), ``bool``, ``int32_t``, ``double``, and tokenized string metric
+types. CLs: `1 <https://pwrev.dev/441612>`__
+
+.. code-block:: c++
+
+   PW_METRIC_TYPED(my_group, my_64bit_metric, "my_64bit_metric", uint64_t, 0ULL);
+
+----
+Rust
+----
+
+.. _changelog-2026-07-rust-freertos-sys:
+
+FreeRTOS Rust bindings
+======================
+The new ``freertos_sys`` crate centralizes FreeRTOS Rust FFI bindings into a
+single ``no_std`` crate and eliminates redundant C++ helper shims across
+pw_sync, pw_thread, and pw_time. The generated bindings automatically respect
+target-specific configurations, such as
+``//targets/pw_rp2350/freertos/config/FreeRTOSConfig.h``.
+CLs: `1 <https://pwrev.dev/429375>`__
+
+.. _changelog-2026-07-rust-nucleo-f103rb-target:
+
+STM32 Nucleo-64 board support
+=============================
+pw_kernel now supports the NUCLEO-F103RB board, which is based on the
+STM32F103RB MCU. Userspace is not supported because the STM32F103RB lacks an
+MPU. CLs: `1 <https://pwrev.dev/393773>`__
+
+.. _changelog-2026-07-rust-time-and-thread-backends:
+
+New pw_time and pw_thread backends
+==================================
+pw_kernel and Zephyr backends are now provided for the pw_time crate. FreeRTOS,
+pw_kernel, and Zephyr backends are now available for the pw_thread Rust
+crate. CLs: `1 <https://pwrev.dev/429472>`__, `2 <https://pwrev.dev/429692>`__
+
+.. _changelog-2026-07-rust-time-duration-human-accessors:
+
+Human-readable time accessors in pw_time
+========================================
+Added ``as_secs()``, ``as_millis()``, ``as_micros()``, and ``as_nanos()``
+component accessors to ``pw_time::Duration``. CLs: `1 <https://pwrev.dev/440812>`__
+
+.. code-block:: rs
+
+   use pw_time::Duration;
+
+   fn log_elapsed_time<C: pw_time::Clock>(elapsed: Duration<C>) {
+       // Convert tick-based duration into human-readable units:
+       let secs = elapsed.as_secs();
+       let millis = elapsed.as_millis();
+       let micros = elapsed.as_micros();
+   }
+
+.. _changelog-2026-07-rust-android-soong:
+
+Soong rules for Rust crates
+===========================
+Android Soong build definitions are now provided for the pw_status, pw_stream,
+pw_tokenizer, and pw_varint Rust crates. CLs: `1 <https://pwrev.dev/430572>`__
+
+------------
+Tokenization
+------------
+
+.. _changelog-2026-07-token-token-bytes-helper:
+
+pw::tokenizer::TokenBytes helper function
+=========================================
+The new ``TokenBytes`` C++ utility function formats token hashes directly into
+byte arrays. CLs: `1 <https://pwrev.dev/427312>`__
+
+.. code-block:: c++
+
+   #include "pw_tokenizer/tokenize.h"
+
+   // Tokenize a string log or diagnostic message:
+   constexpr uint32_t token = PW_TOKEN_STRING("System boot completed");
+
+   // Convert 32-bit token into a 4-byte little-endian array for wire transfer:
+   constexpr std::array<std::byte, 4> token_bytes =
+       pw::tokenizer::TokenBytes(token);
+
+------------------------
+Toolchains and compilers
+------------------------
+
+.. _changelog-2026-07-toolchain-zephyr-m52:
+
+Cortex-M52 support in Zephyr toolchain
+======================================
+The Bazel Zephyr ARM Clang toolchain now supports Cortex-M52. CLs: `1 <https://pwrev.dev/431972>`__

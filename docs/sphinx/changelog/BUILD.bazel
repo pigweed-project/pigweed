@@ -21,6 +21,7 @@ sphinx_docs_library(
         "2026/04.rst",
         "2026/05.rst",
         "2026/06.rst",
+        "2026/07.rst",
         "index.rst",
     ],
     visibility = ["//visibility:public"],
