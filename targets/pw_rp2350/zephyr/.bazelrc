@@ -21,6 +21,9 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 common --per_file_copt=external/.*@-w
 common --host_per_file_copt=external/.*@-w
 
+# Use Zephyr llvm toolchain
+common --@zephyr-bazel//toolchain:zephyr_toolchain_variant=llvm
+
 # Configure Pigweed platform deps and rust logging backend
 build --@pigweed//targets/pw_rp2350:platform_deps=//app:boot
 build --@pigweed//pw_assert:assert_backend=@pigweed//pw_assert_trap:assert_backend

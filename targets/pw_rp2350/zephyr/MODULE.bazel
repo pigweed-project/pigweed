@@ -18,10 +18,10 @@ module(
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
-bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.5")
-bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "zephyr-bazel", version = "0.0.1")
 bazel_dep(name = "pigweed")
@@ -32,7 +32,7 @@ local_path_override(
 
 git_override(
     module_name = "zephyr-bazel",
-    commit = "f44b8e3c6f77b1515d7f6ae30501dbc82d7174c0",
+    commit = "8214e58f096ea9f7524884d3e9abd63514c81938",
     remote = "https://pigweed.googlesource.com/zephyr/zephyr-bazel.git",
 )
 

@@ -32,7 +32,7 @@ extern "C" int32_t pw_thread_zephyr_Sleep(uint64_t ticks) {
   // while in between a tick. This means that we do not need to add anything
   // here and the kernel will guarantee we wait the proper number of ticks plus
   // some time in the range of [1,2) extra ticks.
-  return k_sleep(K_TICKS(ticks));
+  return k_sleep(K_TICKS(static_cast<k_ticks_t>(ticks)));
 #else
   // We need some value we know won't overflow any internal math in the kernel.
   // We will use half of the uint32_t space as a reasonable midpoint, with
@@ -69,7 +69,7 @@ extern "C" int32_t pw_thread_zephyr_SleepUntil(uint64_t ticks) {
   // after the wakeup time has passed -- so if we were preempted between the
   // yield and here and we passed the deadline -- we'll then sleep for a single
   // tick.
-  return k_sleep(K_TIMEOUT_ABS_TICKS(ticks));
+  return k_sleep(K_TIMEOUT_ABS_TICKS(static_cast<k_ticks_t>(ticks)));
 #else
   // With 32-bit timers, sleeping until a time point is not supported. Instead
   // fall back to sleep for the duration until the upcoming time point. Note

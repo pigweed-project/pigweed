@@ -1231,7 +1231,7 @@
     "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "8ANRjMkuiXHMgW6VBkHehB4PcxmW7HeHkU6VIG1r0d0=",
-        "usagesDigest": "UjqxRyRq1kf+JRPNcKVGW/Gr5v2EVeMyxY8HlvRT7Ns=",
+        "usagesDigest": "kvq2e2oC3UHXuPCLUndY/ywvk/5+uhvkDaWWRMngbQA=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -1249,7 +1249,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/build_external:llvm_clang.BUILD",
               "path": "fuchsia/third_party/clang/${os}-${arch}",
-              "tag": "git_revision:a3f244e2d5550e110daee562b88bee247b75d66c"
+              "tag": "git_revision:e8f9589942ecd93d94de2af2e875964693e55129"
             }
           },
           "zephyr_toolchain": {
@@ -1281,7 +1281,7 @@
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "GJTxCn//5wg3RxXGVSXy0buVOhE/3tFzfxF+FdY1T4c=",
-        "usagesDigest": "/i71ft3aQiGxsHD1HG5cagE4BXucpS0U/efjMoSJzSY=",
+        "usagesDigest": "55tXE02NOZlfabxbxODz/ro3PfVoWiqL8D/5IQS3gjg=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
