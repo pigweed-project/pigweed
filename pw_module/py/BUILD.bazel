@@ -28,8 +28,11 @@ pw_py_library(
         "pw_module/seed.py",
         "pw_module/templates/__init__.py",
         "pw_module/templates/helpers/__init__.py",
+        "pw_module/templates/python/__init__.py",
     ],
-    data = glob([
+    data = [
+        "//:pigweed_json",
+    ] + glob([
         "pw_module/templates/**/*.jinja",
     ]),
     imports = ["."],

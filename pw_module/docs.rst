@@ -60,7 +60,7 @@ Usage
   ``cmake``. Defaults can be configured as described in
   :ref:`module-pw_module-configuration`.
 * ``--languages``: A comma-separated list of languages the module will use.
-  Currently only ``cc`` is supported.
+  Supported languages are ``cc`` and ``py``.
 * ``--owners``: (Upstream only) A comma-separated list of emails of the people
   who will own and maintain the new module. This list must contain at least two
   entries, and at least one user must be a top-level OWNER.

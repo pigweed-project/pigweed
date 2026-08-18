@@ -20,11 +20,12 @@ import unittest
 from unittest.mock import patch
 
 from pw_module.create import (
-    _ConfigErrors,
-    _ModuleConfig,
-    _BUILD_FILES,
-    _GnBuildFile,
     _BuildFile,
+    _BUILD_FILES,
+    _ConfigErrors,
+    _GnBuildFile,
+    _ModuleConfig,
+    _PythonLanguageGenerator,
 )
 
 
@@ -154,6 +155,111 @@ class TestGnModuleCreation(unittest.TestCase):
             self.assertIn('import("$dir_pw_build/target_types.gni")', content)
             self.assertIn('import("$dir_pw_unit_test/test.gni")', content)
             self.assertIn('import("$dir_pw_docgen/docs.gni")', content)
+
+
+class TestPythonModuleCreation(unittest.TestCase):
+    """Tests Python module creation."""
+
+    def test_python_source_files_creation_upstream(self):
+        """Tests that correct source files are created with license headers."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_name = SimpleNamespace(
+                full='pw_foo_py', main='foo_py', prefix='pw'
+            )
+            mock_ctx = SimpleNamespace(
+                name=mock_name,
+                dir=tmp_path,
+                is_upstream=True,
+                build_systems=['bazel', 'gn'],
+            )
+            generator = _PythonLanguageGenerator(mock_ctx)
+
+            with (
+                patch('pw_module.create._prompt_overwrite', return_value=True),
+                patch('pw_module.create._report_write_file'),
+            ):
+                generator.create_source_files()
+
+            self.assertTrue(
+                (tmp_path / 'py' / 'pw_foo_py' / '__init__.py').exists()
+            )
+            self.assertTrue((tmp_path / 'py' / 'pyproject.toml').exists())
+            self.assertTrue((tmp_path / 'py' / 'setup.cfg').exists())
+            self.assertTrue((tmp_path / 'py' / 'foo_py_test.py').exists())
+            self.assertTrue((tmp_path / 'py' / 'BUILD.gn').exists())
+            self.assertTrue((tmp_path / 'py' / 'BUILD.bazel').exists())
+
+            init_content = (
+                tmp_path / 'py' / 'pw_foo_py' / '__init__.py'
+            ).read_text()
+            self.assertIn('Copyright', init_content)
+            self.assertIn('The Pigweed Authors', init_content)
+
+            pyproject_content = (tmp_path / 'py' / 'pyproject.toml').read_text()
+            self.assertIn('[build-system]', pyproject_content)
+
+            setup_content = (tmp_path / 'py' / 'setup.cfg').read_text()
+            self.assertIn('name = pw_foo_py', setup_content)
+
+            test_content = (tmp_path / 'py' / 'foo_py_test.py').read_text()
+            self.assertIn('import unittest', test_content)
+            self.assertIn('class TestStub', test_content)
+
+            bazel_content = (tmp_path / 'py' / 'BUILD.bazel').read_text()
+            self.assertIn('name = "pw_foo_py"', bazel_content)
+            self.assertIn('name = "foo_py_test"', bazel_content)
+
+    def test_python_source_files_creation_downstream(self):
+        """Tests that correct source files are created without headers."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_name = SimpleNamespace(full='foo_py', main='foo_py', prefix='')
+            mock_ctx = SimpleNamespace(
+                name=mock_name,
+                dir=tmp_path,
+                is_upstream=False,
+                build_systems=['bazel'],
+            )
+            generator = _PythonLanguageGenerator(mock_ctx)
+
+            with (
+                patch('pw_module.create._prompt_overwrite', return_value=True),
+                patch('pw_module.create._report_write_file'),
+            ):
+                generator.create_source_files()
+
+            init_content = (
+                tmp_path / 'py' / 'foo_py' / '__init__.py'
+            ).read_text()
+            self.assertNotIn('Copyright', init_content)
+
+            setup_content = (tmp_path / 'py' / 'setup.cfg').read_text()
+            self.assertIn('name = foo_py', setup_content)
+
+    def test_python_source_files_creation_only_bazel(self):
+        """Tests that only Bazel files are created when specified."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            mock_name = SimpleNamespace(
+                full='pw_foo_py', main='foo_py', prefix='pw'
+            )
+            mock_ctx = SimpleNamespace(
+                name=mock_name,
+                dir=tmp_path,
+                is_upstream=True,
+                build_systems=['bazel'],
+            )
+            generator = _PythonLanguageGenerator(mock_ctx)
+
+            with (
+                patch('pw_module.create._prompt_overwrite', return_value=True),
+                patch('pw_module.create._report_write_file'),
+            ):
+                generator.create_source_files()
+
+            self.assertFalse((tmp_path / 'py' / 'BUILD.gn').exists())
+            self.assertTrue((tmp_path / 'py' / 'BUILD.bazel').exists())
 
 
 if __name__ == '__main__':

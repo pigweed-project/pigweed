@@ -25,10 +25,11 @@ from enum import Enum
 import functools
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import sys
-from typing import Any, Collection, Iterable, Type
+from typing import Collection, Iterable, Type
 
 from prompt_toolkit import prompt
 
@@ -425,13 +426,6 @@ class _BuildFile:
         """Writes the contents of the build file to disk."""
 
 
-# TODO(frolv): The dict here should be dict[str, '_GnVal'] (i.e. _GnScope),
-# but mypy does not yet support recursive types:
-# https://github.com/python/mypy/issues/731
-_GnVal = bool | int | str | list[str] | dict[str, Any]
-_GnScope = dict[str, _GnVal]
-
-
 class _GnBuildFile(_BuildFile):
     _DEFAULT_FILENAME = 'BUILD.gn'
 
@@ -565,8 +559,53 @@ _BUILD_FILES: dict[str, Type[_BuildFile]] = {
     'gn': _GnBuildFile,
 }
 
+
+class _PythonLanguageGenerator(_LanguageGenerator):
+    """Generates boilerplate source files for a Python module."""
+
+    def __init__(self, ctx: _ModuleContext) -> None:
+        super().__init__(ctx)
+        self._py_dir = ctx.dir / 'py'
+        self._package_dir = self._py_dir / ctx.name.full
+
+    def create_source_files(self) -> None:
+        self._package_dir.mkdir(parents=True, exist_ok=True)
+
+        init_file = _OutputFile(self._package_dir / '__init__.py')
+        license_str = _PIGWEED_LICENSE if self._ctx.is_upstream else ''
+        init_file.write(f"{license_str}\n\"\"\"{self._ctx.name.full}\"\"\"\n")
+
+        pyproject = _OutputFile(self._py_dir / 'pyproject.toml')
+        pyproject.write_template(
+            'python/pyproject.toml.jinja', module=self._ctx
+        )
+
+        setup_cfg = _OutputFile(self._py_dir / 'setup.cfg')
+        setup_cfg.write_template('python/setup.cfg.jinja', module=self._ctx)
+
+        test_source = _OutputFile(
+            self._py_dir / f'{self._ctx.name.main}_test.py'
+        )
+        test_source.write_template(
+            'python/test.py.jinja',
+            license=license_str,
+            module=self._ctx,
+        )
+
+        if 'gn' in self._ctx.build_systems:
+            gn_file = _OutputFile(self._py_dir / 'BUILD.gn')
+            gn_file.write_template('python/BUILD.gn.jinja', module=self._ctx)
+
+        if 'bazel' in self._ctx.build_systems:
+            bazel_file = _OutputFile(self._py_dir / 'BUILD.bazel')
+            bazel_file.write_template(
+                'python/BUILD.bazel.jinja', module=self._ctx
+            )
+
+
 _LANGUAGE_GENERATORS: dict[str, Type[_LanguageGenerator]] = {
     'cc': _CcLanguageGenerator,
+    'py': _PythonLanguageGenerator,
 }
 
 
@@ -644,6 +683,8 @@ def _add_to_module_metadata(
         for lang in languages:
             if lang == 'cc':
                 language_tags.append('C++')
+            elif lang == 'py':
+                language_tags.append('Python')
 
     # Stop if the module metadata already exists
     if module_name.full in metadata_dict:
@@ -814,6 +855,8 @@ def _project_root() -> Path:
     project_root = _PW_ENV.PW_PROJECT_ROOT
     if project_root:
         return project_root
+    if 'BUILD_WORKSPACE_DIRECTORY' in os.environ:
+        return Path(os.environ['BUILD_WORKSPACE_DIRECTORY'])
     try:
         return git_repo.find_git_repo(
             Path.cwd(), BasicSubprocessRunner()

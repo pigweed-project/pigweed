@@ -37,6 +37,7 @@ JINJA_TEMPLATES = {
     for t in chain(
         files(__package__).iterdir(),
         files(__package__ + '.helpers').iterdir(),
+        files(__package__ + '.python').iterdir(),
     )
     if t.suffix == '.jinja'  # type: ignore
 }

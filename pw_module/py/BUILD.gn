@@ -29,6 +29,7 @@ pw_python_package("py") {
     "pw_module/seed.py",
     "pw_module/templates/__init__.py",
     "pw_module/templates/helpers/__init__.py",
+    "pw_module/templates/python/__init__.py",
   ]
   python_deps = [
     "$dir_pw_build/py",
@@ -46,6 +47,11 @@ pw_python_package("py") {
     "pw_module/templates/header.h.jinja",
     "pw_module/templates/source.cc.jinja",
     "pw_module/templates/test.cc.jinja",
+    "pw_module/templates/python/BUILD.bazel.jinja",
+    "pw_module/templates/python/BUILD.gn.jinja",
+    "pw_module/templates/python/pyproject.toml.jinja",
+    "pw_module/templates/python/setup.cfg.jinja",
+    "pw_module/templates/python/test.py.jinja",
   ]
   tests = [
     "check_test.py",
