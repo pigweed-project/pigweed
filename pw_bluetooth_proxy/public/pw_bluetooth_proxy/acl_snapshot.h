@@ -67,8 +67,7 @@ struct AclStateUpdate {
 ///
 /// @warning **Re-entrancy Safety:** Do not invoke proxy methods from within
 /// this callback; it is called synchronously while holding internal mutexes.
-using AclStateUpdateCallback =
-    InlineFunction<void(const AclStateUpdate& update)>;
+using AclStateUpdateCallback = Function<void(const AclStateUpdate& update)>;
 
 struct AclSnapshot {
   bool snapshot_incomplete = false;
