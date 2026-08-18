@@ -19,8 +19,10 @@ package pw.tokenizer;
 import "google/protobuf/descriptor.proto";
 
 enum Tokenization {
-  // The field may contain plain text or any type of tokenized data (binary or
-  // prefixed Base64).
+  // The field may contain:
+  // * Plain text (UTF-8 encoded, like a 'string' field).
+  // * A $-prefixed Base64 tokenized message.
+  // * A binary-encoded (4-byte, little-endian) tokenized message.
   TOKENIZATION_OPTIONAL = 0;
 }
 
