@@ -49,3 +49,7 @@ common --host_per_file_copt=external/.*,.*\.pb\.cc@-w
 
 # Respect changes to the CIPD cache directory environment variable, if set.
 common --repo_env=CIPD_CACHE_DIR
+
+# Disable third-party telemetry in rulesets (e.g. Aspect Build).
+common --repo_env=DO_NOT_TRACK=1
+
