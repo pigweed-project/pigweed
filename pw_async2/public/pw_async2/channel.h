@@ -264,6 +264,12 @@ class PW_LOCKABLE("pw::async2::internal::BaseChannel") BaseChannel {
     return reservations_;
   }
 
+  // Reopens the channel for reuse.
+  void ReopenLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
+    PW_DASSERT(!active_locked());
+    closed_ = false;
+  }
+
  private:
   void add_object(uint8_t& counter) PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
     if (is_open_locked()) {
@@ -325,32 +331,34 @@ class ChannelDeque {
 
   template <size_t kAlignment, size_t kCapacity>
   explicit ChannelDeque(containers::Storage<kAlignment, kCapacity>& storage)
-      : dequeue_(storage) {}
+      : deque_(storage) {}
 
   // Exposes the minimal deque api needed by a data channel.
-  [[nodiscard]] size_type capacity() const { return dequeue_.capacity(); }
-  [[nodiscard]] size_type size() const { return dequeue_.size(); }
-  [[nodiscard]] bool empty() const { return dequeue_.empty(); }
-  [[nodiscard]] auto deallocator() const { return dequeue_.deallocator(); }
-  [[nodiscard]] T& front() { return dequeue_.front(); }
-  [[nodiscard]] const T& front() const { return dequeue_.front(); }
+  [[nodiscard]] size_type capacity() const { return deque_.capacity(); }
+  [[nodiscard]] size_type size() const { return deque_.size(); }
+  [[nodiscard]] bool empty() const { return deque_.empty(); }
+  [[nodiscard]] auto deallocator() const { return deque_.deallocator(); }
+  [[nodiscard]] T& front() { return deque_.front(); }
+  [[nodiscard]] const T& front() const { return deque_.front(); }
 
-  void pop_front() { dequeue_.pop_front(); }
+  void pop_front() { deque_.pop_front(); }
+
+  void clear() { deque_.clear(); }
 
   template <typename U>
   void push_back(U&& value) {
-    dequeue_.push_back(std::forward<U>(value));
+    deque_.push_back(std::forward<U>(value));
   }
 
   template <typename... Args>
   void emplace_back(Args&&... args) {
-    dequeue_.emplace_back(std::forward<Args>(args)...);
+    deque_.emplace_back(std::forward<Args>(args)...);
   }
 
  private:
-  explicit ChannelDeque(FixedDeque<T>&& other) : dequeue_(std::move(other)) {}
+  explicit ChannelDeque(FixedDeque<T>&& other) : deque_(std::move(other)) {}
 
-  FixedDeque<T> dequeue_;
+  FixedDeque<T> deque_;
 };
 
 template <>
@@ -387,6 +395,8 @@ class ChannelDeque<void> {
     --size_;
   }
 
+  void clear() { size_ = 0; }
+
  private:
   ChannelDeque(Allocator& alloc, uint16_t capacity)
       : deallocator_(&alloc), capacity_(capacity) {}
@@ -401,6 +411,12 @@ class ChannelDeque<void> {
 template <typename T>
 class Channel : public BaseChannel {
  public:
+  // Resets the channel for reuse when no references remain.
+  void ResetLocked() PW_EXCLUSIVE_LOCKS_REQUIRED(*this) {
+    this->ReopenLocked();
+    deque_.clear();
+  }
+
   Sender<T> CreateSender() PW_LOCKS_EXCLUDED(*this) {
     {
       std::lock_guard guard(*this);
@@ -1787,7 +1803,8 @@ std::optional<MpmcChannelHandle<T>> CreateMpmcChannel(Allocator& alloc,
 template <typename T, uint16_t kCapacity>
 MpmcChannelHandle<T> CreateMpmcChannel(ChannelStorage<T, kCapacity>& storage) {
   std::lock_guard lock(static_cast<internal::Channel<T>&>(storage));
-  PW_DASSERT(!storage.active_locked());
+  PW_ASSERT(!storage.active_locked());
+  storage.ResetLocked();
   return MpmcChannelHandle<T>(storage);
 }
 
@@ -1830,7 +1847,8 @@ template <typename T, uint16_t kCapacity>
 std::tuple<MpscChannelHandle<T>, Receiver<T>> CreateMpscChannel(
     ChannelStorage<T, kCapacity>& storage) {
   std::lock_guard lock(static_cast<internal::Channel<T>&>(storage));
-  PW_DASSERT(!storage.active_locked());
+  PW_ASSERT(!storage.active_locked());
+  storage.ResetLocked();
   return std::make_tuple(MpscChannelHandle<T>(storage), Receiver<T>(storage));
 }
 
@@ -1873,7 +1891,8 @@ template <typename T, uint16_t kCapacity>
 std::tuple<SpmcChannelHandle<T>, Sender<T>> CreateSpmcChannel(
     ChannelStorage<T, kCapacity>& storage) {
   std::lock_guard lock(static_cast<internal::Channel<T>&>(storage));
-  PW_DASSERT(!storage.active_locked());
+  PW_ASSERT(!storage.active_locked());
+  storage.ResetLocked();
   return std::make_tuple(SpmcChannelHandle<T>(storage), Sender<T>(storage));
 }
 
@@ -1918,7 +1937,8 @@ template <typename T, uint16_t kCapacity>
 std::tuple<SpscChannelHandle<T>, Sender<T>, Receiver<T>> CreateSpscChannel(
     ChannelStorage<T, kCapacity>& storage) {
   std::lock_guard lock(static_cast<internal::Channel<T>&>(storage));
-  PW_DASSERT(!storage.active_locked());
+  PW_ASSERT(!storage.active_locked());
+  storage.ResetLocked();
   return std::make_tuple(
       SpscChannelHandle<T>(storage), Sender<T>(storage), Receiver<T>(storage));
 }

@@ -27,6 +27,7 @@
 
 namespace {
 
+using pw::OkStatus;
 using pw::Status;
 using pw::async2::ChannelHandle;
 using pw::async2::ChannelStorage;
@@ -1365,6 +1366,135 @@ TEST(ChannelStorage, Lifecycle) {
     receiver2.reset();
     EXPECT_FALSE(storage.active());
   }
+}
+
+class TrackingDestructor {
+ public:
+  TrackingDestructor() = default;
+  TrackingDestructor(int value, int* destroy_count)
+      : value_(value), destroy_count_(destroy_count) {}
+
+  ~TrackingDestructor() {
+    if (destroy_count_ != nullptr) {
+      ++(*destroy_count_);
+    }
+  }
+
+  TrackingDestructor(const TrackingDestructor&) = delete;
+  TrackingDestructor& operator=(const TrackingDestructor&) = delete;
+
+  TrackingDestructor(TrackingDestructor&& other) noexcept
+      : value_(other.value_),
+        destroy_count_(std::exchange(other.destroy_count_, nullptr)) {}
+
+  TrackingDestructor& operator=(TrackingDestructor&& other) noexcept {
+    if (this != &other) {
+      if (destroy_count_ != nullptr) {
+        ++(*destroy_count_);
+      }
+      value_ = other.value_;
+      destroy_count_ = std::exchange(other.destroy_count_, nullptr);
+    }
+    return *this;
+  }
+
+  int value() const { return value_; }
+
+ private:
+  int value_ = 0;
+  int* destroy_count_ = nullptr;
+};
+
+TEST(ChannelStorage, Reuse) {
+  int destructed = 0;
+  ChannelStorage<TrackingDestructor, 4> storage;
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    EXPECT_TRUE(sender.is_open());
+    EXPECT_TRUE(receiver.is_open());
+    EXPECT_EQ(sender.TrySend(TrackingDestructor(42, &destructed)), OkStatus());
+    pw::Result<TrackingDestructor> received = receiver.TryReceive();
+    ASSERT_TRUE(received.ok());
+    EXPECT_EQ(received->value(), 42);
+  }
+  EXPECT_FALSE(storage.active());
+  EXPECT_EQ(destructed, 1);
+
+  // Reuse the storage for a new channel.
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    EXPECT_TRUE(sender.is_open());
+    EXPECT_TRUE(receiver.is_open());
+    EXPECT_EQ(sender.TrySend(TrackingDestructor(100, &destructed)), OkStatus());
+    pw::Result<TrackingDestructor> received = receiver.TryReceive();
+    ASSERT_TRUE(received.ok());
+    EXPECT_EQ(received->value(), 100);
+  }
+  EXPECT_FALSE(storage.active());
+  EXPECT_EQ(destructed, 2);
+
+  // Reuse storage and verify leftover unread elements from previous channel are
+  // cleared and their destructors are called.
+  int abandoned_destructed = 0;
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    EXPECT_EQ(sender.TrySend(TrackingDestructor(1, &abandoned_destructed)),
+              OkStatus());
+    EXPECT_EQ(sender.TrySend(TrackingDestructor(2, &abandoned_destructed)),
+              OkStatus());
+  }
+  EXPECT_FALSE(storage.active());
+
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(storage);
+    EXPECT_EQ(abandoned_destructed, 2);
+    EXPECT_TRUE(sender.is_open());
+    EXPECT_TRUE(receiver.is_open());
+    EXPECT_EQ(receiver.TryReceive().status(), Status::Unavailable());
+    EXPECT_EQ(sender.TrySend(TrackingDestructor(999, &destructed)), OkStatus());
+    pw::Result<TrackingDestructor> received = receiver.TryReceive();
+    ASSERT_TRUE(received.ok());
+    EXPECT_EQ(received->value(), 999);
+  }
+  EXPECT_FALSE(storage.active());
+  EXPECT_EQ(destructed, 3);
+
+  // Reuse the storage with a different channel type.
+  {
+    MpmcChannelHandle<TrackingDestructor> handle = CreateMpmcChannel(storage);
+    std::optional<Sender<TrackingDestructor>> sender = handle.CreateSender();
+    std::optional<Receiver<TrackingDestructor>> receiver =
+        handle.CreateReceiver();
+    ASSERT_TRUE(sender.has_value());
+    ASSERT_TRUE(receiver.has_value());
+    EXPECT_TRUE(sender->is_open());
+    EXPECT_TRUE(receiver->is_open());
+    EXPECT_EQ(sender->TrySend(TrackingDestructor(77, &destructed)), OkStatus());
+    pw::Result<TrackingDestructor> received = receiver->TryReceive();
+    ASSERT_TRUE(received.ok());
+    EXPECT_EQ(received->value(), 77);
+  }
+  EXPECT_FALSE(storage.active());
+  EXPECT_EQ(destructed, 4);
+}
+
+TEST(ChannelStorage, Reuse_Void) {
+  ChannelStorage<void, 4> void_storage;
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(void_storage);
+    EXPECT_EQ(sender.TrySend(), OkStatus());
+    EXPECT_EQ(receiver.TryReceive(), OkStatus());
+  }
+  EXPECT_FALSE(void_storage.active());
+
+  {
+    auto [handle, sender, receiver] = CreateSpscChannel(void_storage);
+    EXPECT_TRUE(sender.is_open());
+    EXPECT_TRUE(receiver.is_open());
+    EXPECT_EQ(sender.TrySend(), OkStatus());
+    EXPECT_EQ(receiver.TryReceive(), OkStatus());
+  }
+  EXPECT_FALSE(void_storage.active());
 }
 
 }  // namespace
