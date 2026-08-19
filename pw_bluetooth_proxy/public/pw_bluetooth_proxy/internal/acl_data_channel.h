@@ -239,6 +239,13 @@ class AclDataChannel {
   /// @note This method is not thread-safe and must be called during
   /// single-threaded initialization after construction, before packet
   /// traffic is processed or background tasks are started.
+  ///
+  /// @param[in] snapshot ACL state container to restore from.
+  ///
+  /// @returns
+  /// * @OK: State restored successfully.
+  /// * @DATA_LOSS: Snapshot was marked incomplete.
+  /// * @RESOURCE_EXHAUSTED: ACL connection capacity was exceeded.
   Status RecoverFromSnapshot(const AclSnapshot& snapshot)
       PW_LOCKS_EXCLUDED(connection_mutex_, credit_mutex_);
 
@@ -342,7 +349,11 @@ class AclDataChannel {
         }
         return controller_max_packets_ - pending_;
       }
-      return std::get<Static>(data_).proxy_max - pending_;
+      const uint16_t proxy_max = std::get<Static>(data_).proxy_max;
+      if (pending_ >= proxy_max) {
+        return 0;
+      }
+      return proxy_max - pending_;
     }
     bool Available() const { return Remaining() > 0; }
 
@@ -405,9 +416,10 @@ class AclDataChannel {
     }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-    void RecoverFromSnapshot(const AclTransportSnapshot& snapshot) {
-      controller_max_packets_ = snapshot.controller_max_packets;
-      pending_ = snapshot.pending;
+    void RecoverFromSnapshot(uint16_t controller_max_packets,
+                             uint16_t pending_packets) {
+      controller_max_packets_ = controller_max_packets;
+      pending_ = pending_packets;
       if (auto* static_credits = std::get_if<Static>(&data_)) {
         static_credits->proxy_max =
             std::min(controller_max_packets_, static_credits->to_reserve);

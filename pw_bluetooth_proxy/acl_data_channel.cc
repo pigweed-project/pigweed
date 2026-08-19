@@ -833,6 +833,10 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
     PW_LOG_ERROR("Cannot recover from incomplete ACL snapshot");
     return Status::DataLoss();
   }
+  if (snapshot.acl_connections.size() > kMaxConnections) {
+    PW_LOG_ERROR("ACL connection capacity overflow during recovery");
+    return Status::ResourceExhausted();
+  }
 
   std::lock_guard connection_lock(connection_mutex_);
   std::lock_guard credit_lock(credit_mutex_);
@@ -840,14 +844,20 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
   acl_connections_.clear();
   deferred_refunds_.clear();
 
-  le_credits_.RecoverFromSnapshot(snapshot.le_transport);
-  br_edr_credits_.RecoverFromSnapshot(snapshot.br_edr_transport);
+  uint16_t le_pending = 0;
+  uint16_t br_edr_pending = 0;
 
   for (const AclConnectionSnapshot& connection_snapshot :
        snapshot.acl_connections) {
-    if (acl_connections_.full()) {
-      PW_LOG_ERROR("ACL connection capacity overflow during recovery");
-      return Status::ResourceExhausted();
+    const Credits& credits = LookupCredits(connection_snapshot.transport);
+    const uint16_t pending = connection_snapshot.num_proxy_pending_packets +
+                             (credits.dynamic_sharing()
+                                  ? connection_snapshot.num_host_pending_packets
+                                  : 0);
+    if (connection_snapshot.transport == AclTransportType::kLe) {
+      le_pending += pending;
+    } else {
+      br_edr_pending += pending;
     }
 
     acl_connections_.emplace_back(connection_snapshot.transport,
@@ -856,28 +866,29 @@ Status AclDataChannel::RecoverFromSnapshot(const AclSnapshot& snapshot) {
                                   connection_snapshot.num_proxy_pending_packets,
                                   connection_snapshot.num_host_pending_packets);
 
-    uint16_t max_packets =
-        LookupCredits(connection_snapshot.transport).controller_max_packets();
-    if (max_packets > 0 &&
-        !acl_connections_.back().queue().try_reserve(max_packets)) {
+    const uint16_t controller_max =
+        (connection_snapshot.transport == AclTransportType::kLe)
+            ? snapshot.le_controller_max_packets
+            : snapshot.br_edr_controller_max_packets;
+    if (controller_max > 0 &&
+        !acl_connections_.back().queue().try_reserve(controller_max)) {
       PW_LOG_ERROR("Failed to reserve capacity for ACL connection %#x queue.",
                    connection_snapshot.connection_handle);
     }
 
     // Accumulate refunds for packets lost in the proxy queue.
     if (connection_snapshot.num_queued_host_packets > 0) {
-      if (deferred_refunds_.full()) {
-        PW_LOG_ERROR(
-            "Deferred credit refund capacity overflow during recovery");
-        return Status::ResourceExhausted();
-      }
-
       deferred_refunds_.push_back(DeferredRefund{
           .connection_handle = connection_snapshot.connection_handle,
           .num_packets = connection_snapshot.num_queued_host_packets,
       });
     }
   }
+
+  le_credits_.RecoverFromSnapshot(snapshot.le_controller_max_packets,
+                                  le_pending);
+  br_edr_credits_.RecoverFromSnapshot(snapshot.br_edr_controller_max_packets,
+                                      br_edr_pending);
 
   PW_LOG_INFO("Restored ACL state from snapshot");
   return OkStatus();

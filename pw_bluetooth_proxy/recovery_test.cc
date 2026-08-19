@@ -56,16 +56,12 @@ class AclRecoveryTest : public ProxyHostTest {
 
   static AclSnapshot CreateAclSnapshot(
       uint16_t le_max = kLeMaxAclCredits,
-      uint16_t le_pending = 0,
       uint16_t br_edr_max = kBrEdrMaxAclCredits,
-      uint16_t br_edr_pending = 0,
       bool incomplete = false) {
     AclSnapshot snapshot;
     snapshot.snapshot_incomplete = incomplete;
-    snapshot.le_transport.controller_max_packets = le_max;
-    snapshot.le_transport.pending = le_pending;
-    snapshot.br_edr_transport.controller_max_packets = br_edr_max;
-    snapshot.br_edr_transport.pending = br_edr_pending;
+    snapshot.le_controller_max_packets = le_max;
+    snapshot.br_edr_controller_max_packets = br_edr_max;
     return snapshot;
   }
 };
@@ -87,10 +83,8 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
                               GetProxyHostAllocator());
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot snapshot = CreateAclSnapshot(kLeMaxAclCredits,
-                                           kLePendingAclCredits,
-                                           kBrEdrMaxAclCredits,
-                                           kBrEdrPendingAclCredits);
+  AclSnapshot snapshot =
+      CreateAclSnapshot(kLeMaxAclCredits, kBrEdrMaxAclCredits);
   snapshot.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle1,
                                   AclTransportType::kLe,
@@ -291,6 +285,66 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
   send_capture.captured_packet.reset();
   proxy.InitiateAclCreditResynchronization();
   EXPECT_FALSE(send_capture.captured_packet.has_value());
+}
+
+TEST_F(AclRecoveryTest, StaticCreditsPendingDerivedFromConnections) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Connection snapshot has 5 host pending packets (which would exceed
+  // proxy_max = 2 if treated as proxy pending) and 0 proxy pending packets.
+  AclSnapshot snapshot = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
+  snapshot.acl_connections.push_back(
+      CreateAclConnectionSnapshot(kLeConnectionHandle1,
+                                  AclTransportType::kLe,
+                                  /*num_proxy_pending=*/0,
+                                  /*num_host_pending=*/5,
+                                  /*num_queued_host=*/0));
+
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
+
+  // The proxy reserved 2 credits and has 0 proxy pending packets.
+  // Verify that remaining credits is 2 (not reduced by host pending packets).
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 2);
+}
+
+TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              *GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // In dynamic credit sharing, both proxy and host in-flight packets are
+  // counted towards total pending credits against controller max capacity.
+  AclSnapshot snapshot = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
+  snapshot.acl_connections.push_back(
+      CreateAclConnectionSnapshot(kLeConnectionHandle1,
+                                  AclTransportType::kLe,
+                                  /*num_proxy_pending=*/2,
+                                  /*num_host_pending=*/3,
+                                  /*num_queued_host=*/0));
+
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
+
+  // Controller max is 10, total pending is 2 + 3 = 5.
+  // Verify that remaining credits is 10 - 5 = 5.
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 5);
 }
 
 }  // namespace
