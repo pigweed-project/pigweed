@@ -31,7 +31,7 @@ class IsoStreamServer
 
   ~IsoStreamServer() override;
 
-  void OnStreamEstablished(
+  void OnStreamEstablishmentSuccess(
       bt::iso::IsoStream::WeakPtr stream_ptr,
       const bt::iso::CisEstablishedParameters& connection_params);
 

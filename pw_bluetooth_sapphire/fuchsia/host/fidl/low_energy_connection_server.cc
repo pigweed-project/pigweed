@@ -175,8 +175,8 @@ void LowEnergyConnectionServer::AcceptCis(
           if (status == pw::bluetooth::emboss::StatusCode::SUCCESS) {
             PW_CHECK(weak_stream_ptr.has_value());
             PW_CHECK(connection_params.has_value());
-            weak_stream_server->OnStreamEstablished(*weak_stream_ptr,
-                                                    *connection_params);
+            weak_stream_server->OnStreamEstablishmentSuccess(
+                *weak_stream_ptr, *connection_params);
           } else {
             weak_stream_server->OnStreamEstablishmentFailed(status);
           }

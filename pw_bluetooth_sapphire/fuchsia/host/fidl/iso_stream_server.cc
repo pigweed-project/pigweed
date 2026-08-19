@@ -41,7 +41,7 @@ IsoStreamServer::~IsoStreamServer() {
   }
 }
 
-void IsoStreamServer::OnStreamEstablished(
+void IsoStreamServer::OnStreamEstablishmentSuccess(
     bt::iso::IsoStream::WeakPtr stream_ptr,
     const bt::iso::CisEstablishedParameters& connection_params) {
   bt_log(INFO, "fidl", "CIS established");

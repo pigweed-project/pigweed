@@ -48,6 +48,9 @@ class ConnectedIsochronousGroupServer final
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
   std::optional<bt::hci_spec::CigIdentifier> cig_id();
+  void set_iso_group(bt::iso::IsoGroup::WeakPtr iso_group) {
+    iso_group_ = std::move(iso_group);
+  }
 
   void OnCisEstablished(bt::hci_spec::CisIdentifier cis_id,
                         pw::bluetooth::emboss::StatusCode status);

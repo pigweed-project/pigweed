@@ -118,8 +118,8 @@ class IsoStreamServerDataTest : public IsoStreamServerTest {
     IsoStreamServerTest::SetUp();
 
     // Establish stream
-    server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                  kCisParameters);
+    server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                           kCisParameters);
     RunLoopUntilIdle();
 
     // Set up data path
@@ -169,8 +169,8 @@ TEST_F(IsoStreamServerTest, ClosedClientSide) {
 // stream establishment it sends the stream parameters back to the client.
 TEST_F(IsoStreamServerTest, StreamEstablishedSuccessfully) {
   EXPECT_EQ(on_established_events_.size(), (size_t)0);
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
   ASSERT_EQ(on_established_events_.size(), (size_t)1);
 
@@ -269,8 +269,8 @@ TEST_F(IsoStreamServerTest, SetupDataPathBeforeCisEstablished) {
 // Verify that return code from SetupDataPath() callback is properly translated
 // into result of FIDL call.
 TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
   fuchsia::bluetooth::CodecAttributes codec_attributes = BuildCodecAttributes();
 
@@ -417,8 +417,8 @@ TEST_F(IsoStreamServerDataTest, DataReceivedBeforeRead) {
 }
 
 TEST_F(IsoStreamServerDataTest, WriteDataSuccess) {
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
   ASSERT_TRUE(fake_iso_stream());
 
@@ -456,8 +456,8 @@ TEST_F(IsoStreamServerDataTest, WriteDataSuccess) {
 }
 
 TEST_F(IsoStreamServerDataTest, WriteDataFailsWhenStreamClosed) {
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
   ASSERT_TRUE(fake_iso_stream());
 
@@ -503,8 +503,8 @@ TEST_F(IsoStreamServerDataTest, DoubleReadWithNoDataReceived) {
 
 TEST_F(IsoStreamServerTest, DestructorClosesHostStream) {
   fake_iso_stream()->TriggerEstablishedCallback();
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
   EXPECT_TRUE(fake_iso_stream()->is_established());
 
@@ -541,8 +541,8 @@ TEST_F(IsoStreamServerTest, NoDoubleCloseOnDestruction) {
       handle.NewRequest(), [&]() { test_server = nullptr; });
   test_client.Bind(std::move(handle), dispatcher());
 
-  test_server->OnStreamEstablished(close_counter_stream->GetWeakPtr(),
-                                   kCisParameters);
+  test_server->OnStreamEstablishmentSuccess(close_counter_stream->GetWeakPtr(),
+                                            kCisParameters);
   RunLoopUntilIdle();
 
   // Disconnect the client proxy and verify the stream was closed exactly once
@@ -558,8 +558,8 @@ TEST_F(IsoStreamServerTest, EstablishmentCallbackCalledOnSuccess) {
         establishment_status = status;
       });
 
-  server()->OnStreamEstablished(fake_iso_stream()->GetWeakPtr(),
-                                kCisParameters);
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
   RunLoopUntilIdle();
 
   ASSERT_TRUE(establishment_status.has_value());

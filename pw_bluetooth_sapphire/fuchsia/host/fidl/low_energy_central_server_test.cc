@@ -28,6 +28,8 @@
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/fake_adapter_test_fixture.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/helpers.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/measure_tape/hlcpp_measure_tape_for_peer.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/fake_cig_stream_creator.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/fake_iso_group.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/types.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
@@ -178,6 +180,7 @@ class LowEnergyCentralServerTestFakeAdapter
     bt::fidl::testing::FakeAdapterTestFixture::TearDown();
   }
 
+  LowEnergyCentralServer* server() const { return server_.get(); }
   fuchsia::bluetooth::le::Central* central_proxy() const {
     return proxy_.get();
   }
@@ -1584,6 +1587,230 @@ TEST_F(LowEnergyCentralServerTestFakeAdapter,
             fble::PeriodicAdvertisingSyncError::NOT_SUPPORTED_LOCAL);
   ASSERT_TRUE(fidl_error.has_value());
   EXPECT_EQ(fidl_error.value(), ZX_ERR_NOT_SUPPORTED);
+}
+
+TEST_F(LowEnergyCentralServerTest, CreateCigMissingParameters) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  central_proxy()->CreateConnectedIsochronousGroup(std::move(request),
+                                                   [](auto) {});
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(LowEnergyCentralServerTest, CreateCigFeatureNotSupported) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  fble::CigParameters cig_params;
+  cig_params.set_sdu_interval_c_to_p(10000);
+  cig_params.set_sdu_interval_p_to_c(10000);
+  cig_params.set_max_transport_latency_c_to_p(10);
+  cig_params.set_max_transport_latency_p_to_c(10);
+  request.set_cig_parameters(std::move(cig_params));
+
+  std::vector<fble::CisRequestedParameters> cis_params;
+  fble::CisRequestedParameters cis_param;
+  cis_param.set_cis_id(1);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream_handle;
+  cis_param.set_connection_stream(stream_handle.NewRequest());
+  cis_params.push_back(std::move(cis_param));
+  request.set_cis_requested_parameters(std::move(cis_params));
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  central_proxy()->CreateConnectedIsochronousGroup(std::move(request),
+                                                   [](auto) {});
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INTERNAL);
+}
+
+TEST_F(LowEnergyCentralServerTest, CreateCigMissingCigParameters) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  std::vector<fble::CisRequestedParameters> cis_params;
+  fble::CisRequestedParameters cis_param;
+  cis_param.set_cis_id(1);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream_handle;
+  cis_param.set_connection_stream(stream_handle.NewRequest());
+  cis_params.push_back(std::move(cis_param));
+  request.set_cis_requested_parameters(std::move(cis_params));
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  central_proxy()->CreateConnectedIsochronousGroup(std::move(request),
+                                                   [](auto) {});
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(LowEnergyCentralServerTest, CreateCigMissingCisParameters) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  fble::CigParameters cig_params;
+  cig_params.set_sdu_interval_c_to_p(10000);
+  cig_params.set_sdu_interval_p_to_c(10000);
+  cig_params.set_max_transport_latency_c_to_p(10);
+  cig_params.set_max_transport_latency_p_to_c(10);
+  request.set_cig_parameters(std::move(cig_params));
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  central_proxy()->CreateConnectedIsochronousGroup(std::move(request),
+                                                   [](auto) {});
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(epitaph.has_value());
+  EXPECT_EQ(epitaph.value(), ZX_ERR_INVALID_ARGS);
+}
+
+TEST_F(LowEnergyCentralServerTestFakeAdapter, CreateCigSuccess) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  fble::CigParameters cig_params;
+  cig_params.set_sdu_interval_c_to_p(10000);
+  cig_params.set_sdu_interval_p_to_c(10000);
+  cig_params.set_max_transport_latency_c_to_p(10);
+  cig_params.set_max_transport_latency_p_to_c(10);
+  request.set_cig_parameters(std::move(cig_params));
+
+  std::vector<fble::CisRequestedParameters> cis_params;
+  fble::CisRequestedParameters cis_param;
+  cis_param.set_cis_id(1);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream_handle;
+  cis_param.set_connection_stream(stream_handle.NewRequest());
+  cis_params.push_back(std::move(cis_param));
+  request.set_cis_requested_parameters(std::move(cis_params));
+
+  auto stream_creator =
+      std::make_unique<bt::iso::testing::FakeCigStreamCreator>();
+  auto fake_cig = std::make_unique<bt::iso::testing::FakeIsoGroup>(
+      1,  // CIG ID
+      bt::hci::Transport::WeakPtr(),
+      stream_creator->GetWeakPtr(),
+      [](bt::iso::IsoGroup&) {});
+  auto weak_fake_cig = fake_cig->GetWeakPtr();
+
+  adapter()->fake_le()->set_create_cig_callback(
+      [weak_fake_cig](
+          bt::iso::CigParams,
+          std::vector<bt::iso::CigCisParams>,
+          bt::iso::IsoGroupManager::CreateCigCompleteCallback callback) {
+        callback(pw::expected<bt::iso::IsoGroup::WeakPtr, bt::HostError>(
+            weak_fake_cig));
+      });
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  bool callback_called = false;
+  fble::Central_CreateConnectedIsochronousGroup_Result result;
+  central_proxy()->CreateConnectedIsochronousGroup(std::move(request),
+                                                   [&](auto res) {
+                                                     callback_called = true;
+                                                     result = std::move(res);
+                                                   });
+
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_TRUE(result.is_response());
+}
+
+TEST_F(LowEnergyCentralServerTestFakeAdapter, CreateCigClosedDuringCreation) {
+  fble::CentralCreateConnectedIsochronousGroupRequest request;
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> cig_handle;
+  request.set_cig(cig_handle.NewRequest());
+
+  fble::CigParameters cig_params;
+  cig_params.set_sdu_interval_c_to_p(10000);
+  cig_params.set_sdu_interval_p_to_c(10000);
+  cig_params.set_max_transport_latency_c_to_p(10);
+  cig_params.set_max_transport_latency_p_to_c(10);
+  request.set_cig_parameters(std::move(cig_params));
+
+  std::vector<fble::CisRequestedParameters> cis_params;
+  fble::CisRequestedParameters cis_param;
+  cis_param.set_cis_id(1);
+  fidl::InterfaceHandle<fble::IsochronousStream> stream_handle;
+  cis_param.set_connection_stream(stream_handle.NewRequest());
+  cis_params.push_back(std::move(cis_param));
+  request.set_cis_requested_parameters(std::move(cis_params));
+
+  auto stream_creator =
+      std::make_unique<bt::iso::testing::FakeCigStreamCreator>();
+  auto fake_cig = std::make_unique<bt::iso::testing::FakeIsoGroup>(
+      1,  // CIG ID
+      bt::hci::Transport::WeakPtr(),
+      stream_creator->GetWeakPtr(),
+      [](bt::iso::IsoGroup&) {});
+  auto weak_fake_cig = fake_cig->GetWeakPtr();
+
+  bt::iso::IsoGroupManager::CreateCigCompleteCallback saved_callback;
+  adapter()->fake_le()->set_create_cig_callback(
+      [&](bt::iso::CigParams,
+          std::vector<bt::iso::CigCisParams>,
+          bt::iso::IsoGroupManager::CreateCigCompleteCallback callback) {
+        saved_callback = std::move(callback);
+      });
+
+  std::optional<zx_status_t> epitaph;
+  auto client = cig_handle.Bind();
+  client.set_error_handler([&](zx_status_t status) { epitaph = status; });
+
+  bool callback_called = false;
+  central_proxy()->CreateConnectedIsochronousGroup(
+      std::move(request), [&](auto res) { callback_called = true; });
+
+  RunLoopUntilIdle();
+
+  // Creation callback should be pending and not invoked yet
+  EXPECT_FALSE(callback_called);
+  ASSERT_TRUE(saved_callback);
+
+  // Verify CIG servers map is empty
+  EXPECT_EQ(server()->CigServersCountForTesting(), 0u);
+
+  // Close CIG channel from client side by resetting the client proxy
+  client = nullptr;
+  RunLoopUntilIdle();
+
+  // Run the saved creation callback (simulating CIG successfully created)
+  saved_callback(
+      pw::expected<bt::iso::IsoGroup::WeakPtr, bt::HostError>(weak_fake_cig));
+  RunLoopUntilIdle();
+
+  // Central callback should not be invoked since the channel was closed
+  EXPECT_FALSE(callback_called);
+
+  // Verify that the IsoGroupServer was NOT leaked in the map
+  EXPECT_EQ(server()->CigServersCountForTesting(), 0u);
 }
 
 INSTANTIATE_TEST_SUITE_P(LowEnergyCentralServerTestFakeAdapterBoolParamTests,

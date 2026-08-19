@@ -106,8 +106,8 @@ class ConnectedIsochronousGroupServerTest
           if (stream_server_weak.is_alive()) {
             if (status == pw::bluetooth::emboss::StatusCode::SUCCESS &&
                 stream.has_value() && params.has_value()) {
-              stream_server_weak->OnStreamEstablished(std::move(*stream),
-                                                      std::move(*params));
+              stream_server_weak->OnStreamEstablishmentSuccess(
+                  std::move(*stream), std::move(*params));
             } else {
               stream_server_weak->OnStreamEstablishmentFailed(status);
             }

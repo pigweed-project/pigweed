@@ -18,9 +18,12 @@
 
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "lib/fidl/cpp/binding.h"
+#include "pw_bluetooth_sapphire/fuchsia/host/fidl/connected_isochronous_group_server.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/gatt_client_server.h"
+#include "pw_bluetooth_sapphire/fuchsia/host/fidl/iso_stream_server.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/low_energy_connection_server.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/periodic_advertising_sync_server.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/server_base.h"
@@ -55,6 +58,8 @@ class LowEnergyCentralServer
   // used for testing.
   std::optional<bt::gap::LowEnergyConnectionHandle*> FindConnectionForTesting(
       bt::PeerId identifier);
+
+  size_t CigServersCountForTesting() const { return cig_servers_.size(); }
 
  private:
   class ScanResultWatcherServer
@@ -154,7 +159,7 @@ class LowEnergyCentralServer
   void CreateConnectedIsochronousGroup(
       ::fuchsia::bluetooth::le::CentralCreateConnectedIsochronousGroupRequest
           request,
-      CreateConnectedIsochronousGroupCallback callback) override {}
+      CreateConnectedIsochronousGroupCallback callback) override;
 
   void SyncToPeriodicAdvertising(
       ::fuchsia::bluetooth::le::CentralSyncToPeriodicAdvertisingRequest request)
@@ -211,6 +216,10 @@ class LowEnergyCentralServer
   size_t next_server_id_ = 0;
 
   async_dispatcher_t* dispatcher_;
+
+  std::unordered_map<bt::hci_spec::CigIdentifier,
+                     std::unique_ptr<ConnectedIsochronousGroupServer>>
+      cig_servers_;
 
   // Keep this as the last member to make sure that all weak pointers are
   // invalidated before other members get destroyed.

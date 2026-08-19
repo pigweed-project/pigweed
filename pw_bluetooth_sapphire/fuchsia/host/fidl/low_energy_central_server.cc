@@ -27,6 +27,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/error.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
+#include "pw_bluetooth_sapphire/internal/host/iso/iso_group.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/types.h"
 
 using fuchsia::bluetooth::ErrorCode;
@@ -57,6 +58,17 @@ bt::gap::LowEnergyConnectionOptions ConnectionOptionsFromFidl(
 
   return bt::gap::LowEnergyConnectionOptions{.bondable_mode = bondable_mode,
                                              .service_uuid = service_uuid};
+}
+
+fble::CreateCigError HostErrorToCreateCigError(bt::HostError error) {
+  switch (error) {
+    case bt::HostError::kInvalidParameters:
+      return fble::CreateCigError::INVALID_CIS_PARAMETERS;
+    case bt::HostError::kOutOfMemory:
+      return fble::CreateCigError::NOT_ENOUGH_RESOURCES;
+    default:
+      return fble::CreateCigError::UNKNOWN;
+  }
 }
 
 }  // namespace
@@ -409,6 +421,178 @@ void LowEnergyCentralServer::Connect(
 
   adapter()->le()->Connect(
       peer_id, std::move(conn_cb), ConnectionOptionsFromFidl(options));
+}
+
+void LowEnergyCentralServer::CreateConnectedIsochronousGroup(
+    ::fuchsia::bluetooth::le::CentralCreateConnectedIsochronousGroupRequest
+        request,
+    CreateConnectedIsochronousGroupCallback callback) {
+  using Result = fble::Central_CreateConnectedIsochronousGroup_Result;
+  using Response = fble::Central_CreateConnectedIsochronousGroup_Response;
+
+  // TODO: https://pwbug.dev/311641762 - Rename INVALID_CIS_PARAMETERS to
+  // INVALID_PARAMETERS when we move to the next FIDL API version.
+  auto report_invalid_parameters = [&request, &callback](bool close_cig) {
+    if (close_cig) {
+      request.mutable_cig()->Close(ZX_ERR_INVALID_ARGS);
+    }
+    Result fidl_result;
+    fidl_result.set_err(fble::CreateCigError::INVALID_CIS_PARAMETERS);
+    callback(std::move(fidl_result));
+  };
+
+  if (!request.has_cig()) {
+    bt_log(WARN, "fidl", "%s: No CIG channel to connect.", __FUNCTION__);
+    report_invalid_parameters(/*close_cig=*/false);
+    return;
+  }
+
+  if (!request.has_cig_parameters() ||
+      !request.has_cis_requested_parameters()) {
+    bt_log(WARN,
+           "fidl",
+           "%s: Create CIG missing required parameters.",
+           __FUNCTION__);
+    report_invalid_parameters(/*close_cig=*/true);
+    return;
+  }
+
+  auto cig_params = fidl_helpers::FidlToCigParams(request.cig_parameters());
+  if (!cig_params.has_value()) {
+    bt_log(WARN, "fidl", "%s: Invalid CIG parameters.", __FUNCTION__);
+    report_invalid_parameters(/*close_cig=*/true);
+    return;
+  }
+
+  std::vector<bt::iso::CigCisParams> cig_cis_params;
+  std::unordered_map<bt::hci_spec::CisIdentifier,
+                     std::unique_ptr<IsoStreamServer>>
+      stream_servers;
+
+  for (auto& cis_param : *request.mutable_cis_requested_parameters()) {
+    if (!cis_param.has_cis_id() || !cis_param.has_connection_stream()) {
+      bt_log(WARN,
+             "fidl",
+             "%s: CIS parameter missing CIS ID or connection stream.",
+             __FUNCTION__);
+      report_invalid_parameters(/*close_cig=*/true);
+      return;
+    }
+
+    auto cis_id = cis_param.cis_id();
+    auto stream_server = std::make_unique<IsoStreamServer>(
+        std::move(*cis_param.mutable_connection_stream()), [] {});
+
+    auto stream_server_weak = stream_server->GetWeakPtr();
+    auto next_cig_cis_params = fidl_helpers::FidlToCigCisParams(
+        cis_param,
+        [server = std::move(stream_server_weak)](
+            auto status, auto stream, const auto& params) {
+          if (!server.is_alive()) {
+            return;
+          }
+          if (status == pw::bluetooth::emboss::StatusCode::SUCCESS &&
+              stream.has_value() && params.has_value()) {
+            server->OnStreamEstablishmentSuccess(std::move(*stream),
+                                                 std::move(*params));
+            return;
+          }
+          server->OnStreamEstablishmentFailed(status);
+        });
+
+    if (!next_cig_cis_params.has_value()) {
+      bt_log(WARN,
+             "fidl",
+             "%s: Invalid CIS parameters (CIS ID: %u).",
+             __FUNCTION__,
+             cis_id);
+      report_invalid_parameters(/*close_cig=*/true);
+      return;
+    }
+
+    cig_cis_params.emplace_back(std::move(*next_cig_cis_params));
+    auto [_, success] =
+        stream_servers.try_emplace(cis_id, std::move(stream_server));
+
+    if (!success) {
+      bt_log(WARN,
+             "fidl",
+             "%s: Duplicate CIS ID provided (%u)",
+             __FUNCTION__,
+             cis_id);
+      report_invalid_parameters(/*close_cig=*/true);
+      return;
+    }
+  }
+
+  std::vector<bt::PeerId> expected_peers;
+  if (request.cig_parameters().has_expected_peers()) {
+    for (const auto& peer_id : request.cig_parameters().expected_peers()) {
+      expected_peers.push_back(bt::PeerId(peer_id.value));
+    }
+  }
+
+  auto self = weak_self_.GetWeakPtr();
+  auto server = std::make_unique<ConnectedIsochronousGroupServer>(
+      adapter(),
+      std::move(*request.mutable_cig()),
+      /*iso_group=*/bt::iso::IsoGroup::WeakPtr(),
+      std::move(stream_servers),
+      [self](auto& cig_server, auto status) {
+        if (self.is_alive()) {
+          auto cig_id = cig_server.cig_id();
+          if (cig_id.has_value()) {
+            self->cig_servers_.erase(*cig_id);
+          }
+        }
+      });
+
+  adapter()->le()->CreateCig(
+      std::move(*cig_params),
+      std::move(cig_cis_params),
+      [self, server = std::move(server), callback = std::move(callback)](
+          auto result) mutable {
+        if (!self.is_alive()) {
+          return;
+        }
+
+        // Check if the channel was closed by the client during CIG creation.
+        if (!server->is_bound()) {
+          bt_log(INFO, "fidl", "CIG channel closed during CIG creation");
+          return;
+        }
+
+        Result fidl_result;
+        if (!result.has_value()) {
+          bt_log(WARN,
+                 "fidl",
+                 "%s: failed to create CIG: %s",
+                 __FUNCTION__,
+                 bt::HostErrorToString(result.error()).c_str());
+          server->Close(ZX_ERR_INTERNAL);
+          fidl_result.set_err(HostErrorToCreateCigError(result.error()));
+          callback(std::move(fidl_result));
+          return;
+        }
+
+        server->set_iso_group(result.value());
+
+        auto cig_id = result.value()->id();
+        self->cig_servers_.try_emplace(cig_id, std::move(server));
+
+        Response response{};
+        response.set_cig_id(cig_id);
+        fidl_result.set_response(std::move(response));
+
+        bt_log(INFO, "fidl", "Responding to callback, CIG %d created.", cig_id);
+        callback(std::move(fidl_result));
+      },
+      [self](auto& cig) {
+        if (self.is_alive()) {
+          self->cig_servers_.erase(cig.id());
+        }
+      },
+      std::move(expected_peers));
 }
 
 void LowEnergyCentralServer::GetPeripherals(
