@@ -16,6 +16,7 @@
 from pw_symbolizer.symbolizer import (
     CpuArchitecture,
     FakeSymbolizer,
+    InvalidReturnAddressError,
     Symbol,
     Symbolizer,
 )

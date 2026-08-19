@@ -420,6 +420,46 @@ class TestReturnAddressAdjustment(unittest.TestCase):
         # Frame 2 is leaf frame (raw 0x084E3330)
         self.assertIn('foo::Crash() (0x084E3330)', stack_trace)
 
+    def test_cortex_m_even_address_raises_exception(self):
+        """Tests that even addresses on Cortex-M raise
+        InvalidReturnAddressError.
+        """
+        symbolizer = pw_symbolizer.FakeSymbolizer()
+        with self.assertRaises(pw_symbolizer.InvalidReturnAddressError):
+            symbolizer.adjust_return_address(
+                0x00323624, pw_symbolizer.CpuArchitecture.ARMV8M
+            )
+        with self.assertRaises(pw_symbolizer.InvalidReturnAddressError):
+            symbolizer.adjust_return_address(
+                0x00323624, pw_symbolizer.CpuArchitecture.ARMV7M
+            )
+
+    def test_dump_stack_trace_invalid_return_address(self):
+        """Tests that invalid return addresses in parent frames are not
+        symbolized.
+        """
+        known_symbols = (
+            pw_symbolizer.Symbol(0x084E3330, 'foo::Crash()', 'crash.cc', 15),
+            pw_symbolizer.Symbol(
+                0x00323624, 'foo::ShouldNotSymbolize()', 'bad.cc', 1
+            ),
+        )
+        symbolizer = pw_symbolizer.FakeSymbolizer(known_symbols)
+        addresses = [0x084E3330, 0x00323624]
+
+        stack_trace = symbolizer.dump_stack_trace(
+            addresses,
+            cpu_arch=pw_symbolizer.CpuArchitecture.ARMV8M,
+            adjust_parent_frames=True,
+        )
+
+        # Frame 1 is valid & symbolized
+        self.assertIn('foo::Crash() (0x084E3330)', stack_trace)
+        # Frame 2 is invalid on ARMV8M; should remain raw without symbol name
+        self.assertIn('(0x00323624)', stack_trace)
+        self.assertNotIn('foo::ShouldNotSymbolize()', stack_trace)
+        self.assertIn('??:?', stack_trace)
+
 
 if __name__ == '__main__':
     unittest.main()

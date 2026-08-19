@@ -19,6 +19,9 @@ import abc
 from enum import Enum
 from typing import Iterable, Sequence
 from dataclasses import dataclass
+import logging
+
+_LOG: logging.Logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -120,6 +123,10 @@ class CpuArchitecture(Enum):
         )
 
 
+class InvalidReturnAddressError(ValueError):
+    """Raised when a return address is invalid for the target architecture."""
+
+
 class Symbolizer(abc.ABC):
     """An interface for symbolizing addresses."""
 
@@ -175,6 +182,14 @@ class Symbolizer(abc.ABC):
             # address adjustments were made. Downstream projects must set
             # cpu_arch correctly to benefit from this fix.
             offset = 0
+        elif parsed_arch.is_arm_32bit():
+            # This block only catches Thumb-only 32-bit architectures since
+            # architectures that support ARM mode instructions are handled
+            # above.
+            raise InvalidReturnAddressError(
+                f'Return address 0x{address:08X} is missing Thumb bit required '
+                f'for: {parsed_arch}'
+            )
         else:
             raise ValueError(f'Unsupported CPU architecture: {parsed_arch}')
 
@@ -226,14 +241,21 @@ class Symbolizer(abc.ABC):
                 (i > 0) if most_recent_first else (i < num_addresses - 1)
             )
 
-            if is_parent_frame and adjust_parent_frames:
-                lookup_address = self.adjust_return_address(
-                    address, parsed_arch
+            try:
+                if is_parent_frame and adjust_parent_frames:
+                    lookup_address = self.adjust_return_address(
+                        address, parsed_arch
+                    )
+                else:
+                    lookup_address = address
+                symbol = self.symbolize(lookup_address)
+            except InvalidReturnAddressError as err:
+                _LOG.warning(
+                    "Failed to adjust return address at frame %d: %s",
+                    depth,
+                    err,
                 )
-            else:
-                lookup_address = address
-
-            symbol = self.symbolize(lookup_address)
+                symbol = Symbol(address)
 
             if symbol.name:
                 sym_desc = f'{symbol.name} (0x{address:0{hex_width}X})'
