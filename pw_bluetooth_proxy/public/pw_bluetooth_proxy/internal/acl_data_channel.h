@@ -527,12 +527,16 @@ class AclDataChannel {
   AclStateUpdateCallback state_update_callback_
       PW_GUARDED_BY(connection_mutex_);
 
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   // Invokes state update callback if registered.
   void NotifyStateUpdate(const AclConnection& connection)
       PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+#else
+  void NotifyStateUpdate(
+      [[maybe_unused]] const AclConnection& connection) const {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy

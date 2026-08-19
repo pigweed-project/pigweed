@@ -61,18 +61,14 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
 
         if (!credits.dynamic_sharing()) {
           connection_ptr->RecordPacket(PacketSource::kHost);
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           NotifyStateUpdate(*connection_ptr);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           packet_to_send_directly = std::move(h4_packet);
         } else {
           transport = connection_ptr->transport();
           if (h4_packet.HasReleaseFn()) {
             if (connection_ptr->queue().try_push(std::move(h4_packet))) {
               credits.IncrementTotalQueuedPackets();
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
               NotifyStateUpdate(*connection_ptr);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
             } else {
               PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
             }
@@ -87,9 +83,7 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
               if (connection_ptr->queue().try_push(
                       std::move(owned_h4_packet_result.value()))) {
                 credits.IncrementTotalQueuedPackets();
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
                 NotifyStateUpdate(*connection_ptr);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
               } else {
                 PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
               }
@@ -471,11 +465,9 @@ bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
         should_send_to_host = true;
       }
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
       if (proxy_reclaimed > 0 || host_reclaimed > 0) {
         NotifyStateUpdate(*connection_ptr);
       }
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
     }
   }
 
@@ -519,9 +511,7 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
         AclConnection* connection_to_drain = FindConnectionToDrain(transport);
         if (connection_to_drain) {
           packet_to_send = DequeueHostPacket(connection_to_drain, credits);
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           NotifyStateUpdate(*connection_to_drain);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
           host_tried_and_empty = false;
           proxy_tried_and_empty = false;
         } else {
@@ -663,9 +653,7 @@ pw::Status AclDataChannel::SendAcl(H4PacketWithH4&& h4_packet,
 
   connection_ptr->RecordPacket(PacketSource::kProxy);
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   NotifyStateUpdate(*connection_ptr);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   hci_transport_.SendToController(std::move(h4_packet));
   return pw::OkStatus();
@@ -703,9 +691,7 @@ Status AclDataChannel::CreateAclConnection(uint16_t connection_handle,
     }
   }
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   NotifyStateUpdate(acl_connections_.back());
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   return OkStatus();
 }

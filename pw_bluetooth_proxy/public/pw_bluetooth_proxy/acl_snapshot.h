@@ -24,8 +24,8 @@
 namespace pw::bluetooth::proxy {
 
 struct AclConnectionSnapshot {
-  uint16_t connection_handle;
-  AclTransportType transport;
+  uint16_t connection_handle = 0;
+  AclTransportType transport = AclTransportType::kLe;
   uint16_t num_proxy_pending_packets = 0;
   uint16_t num_host_pending_packets = 0;
   uint16_t num_queued_host_packets = 0;
