@@ -28,6 +28,7 @@ using ::pw::async2::ChannelStorage;
 using ::pw::async2::CreateSpscChannel;
 using ::pw::async2::DispatcherForTest;
 using ::pw::async2::Ready;
+using ::pw::async2::ValueFuture;
 using ::pw::async2::ValueProvider;
 using ::pw::async2::experimental::Map;
 using ::pw::async2::experimental::Then;
@@ -130,6 +131,144 @@ TEST(FuturePipe, ThenMoveOnly) {
   pw::Result<int> received = receiver.TryReceive();
   EXPECT_TRUE(received.ok());
   EXPECT_EQ(*received, 50);
+}
+
+TEST(FuturePipe, MapVoidFuture) {
+  DispatcherForTest dispatcher;
+  ValueProvider<void> provider;
+
+  auto future = provider.Get() | Map([]() { return 42; });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, int>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready(42));
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, MapToVoid) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+  int output = 0;
+
+  auto future = provider.Get() | Map([&output](int x) { output = x; });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, void>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider.Resolve(42);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready());
+  EXPECT_EQ(output, 42);
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, MapVoidToVoid) {
+  DispatcherForTest dispatcher;
+  ValueProvider<void> provider;
+  bool executed = false;
+
+  auto future = provider.Get() | Map([&executed]() { executed = true; });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, void>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready());
+  EXPECT_TRUE(executed);
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, ThenVoidFuture) {
+  DispatcherForTest dispatcher;
+  ValueProvider<void> provider1;
+  ValueProvider<int> provider2;
+
+  auto future = provider1.Get() | Then([&]() { return provider2.Get(); });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, int>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider1.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), ::pw::async2::Pending());
+
+  provider2.Resolve(123);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready(123));
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, ThenToVoid) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider1;
+  ValueProvider<void> provider2;
+  int output = 0;
+
+  auto future = provider1.Get() | Then([&](int x) {
+                  output = x;
+                  return provider2.Get();
+                });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, void>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider1.Resolve(42);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), ::pw::async2::Pending());
+  EXPECT_EQ(output, 42);
+
+  provider2.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready());
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, ThenVoidToVoid) {
+  DispatcherForTest dispatcher;
+  ValueProvider<void> provider1;
+  ValueProvider<void> provider2;
+  bool executed = false;
+
+  auto future = provider1.Get() | Then([&]() {
+                  executed = true;
+                  return provider2.Get();
+                });
+  static_assert(std::is_same_v<typename decltype(future)::value_type, void>);
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  provider1.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), ::pw::async2::Pending());
+  EXPECT_TRUE(executed);
+
+  provider2.Resolve();
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(future), Ready());
+
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(FuturePipe, DefaultConstruct) {
+  auto map_func = [](int x) { return x; };
+  using MapFutureType =
+      decltype(std::declval<ValueFuture<int>>() | Map(map_func));
+  MapFutureType map_future;
+  EXPECT_FALSE(map_future.is_pendable());
+  EXPECT_FALSE(map_future.is_complete());
+
+  auto then_func = [](int) { return ValueFuture<int>(); };
+  using ThenFutureType =
+      decltype(std::declval<ValueFuture<int>>() | Then(then_func));
+  ThenFutureType then_future;
+  EXPECT_FALSE(then_future.is_pendable());
+  EXPECT_FALSE(then_future.is_complete());
 }
 
 }  // namespace

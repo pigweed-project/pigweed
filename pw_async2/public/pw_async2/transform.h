@@ -46,6 +46,16 @@ struct ThenOp {
   Func func;
 };
 
+template <typename Func, typename Arg>
+struct MapInvokeResult {
+  using type = std::invoke_result_t<Func, Arg>;
+};
+
+template <typename Func>
+struct MapInvokeResult<Func, void> {
+  using type = std::invoke_result_t<Func>;
+};
+
 }  // namespace internal
 
 template <typename Func>
@@ -56,8 +66,8 @@ constexpr internal::MapOp<Func> Map(Func&& f) {
 template <typename InnerFuture, typename Func>
 class MapFuture {
  public:
-  using value_type =
-      std::invoke_result_t<Func, typename InnerFuture::value_type>;
+  using value_type = typename internal::
+      MapInvokeResult<Func, typename InnerFuture::value_type>::type;
 
   MapFuture() = default;
   MapFuture(MapFuture&&) = default;
@@ -74,8 +84,23 @@ class MapFuture {
       : inner_(std::move(inner)), func_(std::forward<Func>(func)) {}
 
   Poll<value_type> Pend(Context& cx) {
-    PW_TRY_READY_ASSIGN(auto result, inner_.Pend(cx));
-    return Poll<value_type>((*func_)(std::move(result)));
+    if constexpr (std::is_void_v<typename InnerFuture::value_type>) {
+      PW_TRY_READY(inner_.Pend(cx));
+      if constexpr (std::is_void_v<value_type>) {
+        (*func_)();
+        return Ready();
+      } else {
+        return (*func_)();
+      }
+    } else {
+      PW_TRY_READY_ASSIGN(auto result, inner_.Pend(cx));
+      if constexpr (std::is_void_v<value_type>) {
+        (*func_)(std::move(result));
+        return Ready();
+      } else {
+        return (*func_)(std::move(result));
+      }
+    }
   }
 
   bool is_pendable() const { return inner_.is_pendable(); }
@@ -94,8 +119,8 @@ constexpr internal::ThenOp<Func> Then(Func&& f) {
 template <typename FirstFuture, typename Func>
 class ThenFuture {
  public:
-  using SecondFuture =
-      std::invoke_result_t<Func, typename FirstFuture::value_type>;
+  using SecondFuture = typename internal::
+      MapInvokeResult<Func, typename FirstFuture::value_type>::type;
   using value_type = typename SecondFuture::value_type;
 
   ThenFuture() = default;
@@ -111,32 +136,54 @@ class ThenFuture {
 
   ThenFuture(FirstFuture&& first, Func&& func)
       : func_(std::move(func)),
-        state_(std::in_place_index<0>, std::move(first)) {}
+        state_(std::in_place_index<1>, std::move(first)) {}
 
   Poll<value_type> Pend(Context& cx) {
-    if (state_.index() == 0) {
-      auto& first = std::get<0>(state_);
-      PW_TRY_READY_ASSIGN(auto result, first.Pend(cx));
-
-      state_.template emplace<1>((*func_)(std::move(result)));
+    if (state_.index() == 1) {
+      auto& first = std::get<1>(state_);
+      if constexpr (std::is_void_v<typename FirstFuture::value_type>) {
+        PW_TRY_READY(first.Pend(cx));
+        state_.template emplace<2>((*func_)());
+      } else {
+        PW_TRY_READY_ASSIGN(auto result, first.Pend(cx));
+        state_.template emplace<2>((*func_)(std::move(result)));
+      }
+      func_.reset();
     }
 
-    if (state_.index() == 1) {
-      auto& second = std::get<1>(state_);
-      PW_TRY_READY_ASSIGN(auto result, second.Pend(cx));
-      state_.template emplace<2>();
-      return result;
+    if (state_.index() == 2) {
+      auto& second = std::get<2>(state_);
+      if constexpr (std::is_void_v<value_type>) {
+        PW_TRY_READY(second.Pend(cx));
+        state_.template emplace<3>();
+        return Ready();
+      } else {
+        PW_TRY_READY_ASSIGN(auto result, second.Pend(cx));
+        state_.template emplace<3>();
+        return result;
+      }
     }
 
     return Pending();
   }
 
-  bool is_pendable() const { return state_.index() != 2; }
-  bool is_complete() const { return state_.index() == 2; }
+  bool is_pendable() const {
+    if (state_.index() == 1) {
+      return std::get<1>(state_).is_pendable();
+    }
+    if (state_.index() == 2) {
+      return std::get<2>(state_).is_pendable();
+    }
+    return false;
+  }
+
+  bool is_complete() const { return state_.index() == 3; }
 
  private:
+  struct Complete {};
+
   std::optional<Func> func_;
-  std::variant<FirstFuture, SecondFuture, std::monostate> state_;
+  std::variant<std::monostate, FirstFuture, SecondFuture, Complete> state_;
 };
 
 namespace internal {
