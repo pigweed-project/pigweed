@@ -316,6 +316,7 @@ _pw_bluetooth_proxy_test_deps = [
   "$dir_pw_multibuf:from_span",
   "$dir_pw_span:cast",
   "$dir_pw_thread:sleep",
+  "$dir_pw_thread:yield",
 ]
 
 _pw_bluetooth_proxy_test_sources = [

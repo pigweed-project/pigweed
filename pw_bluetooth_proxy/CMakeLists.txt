@@ -405,6 +405,7 @@ set(PW_BLUETOOTH_PROXY_TEST_PRIVATE_DEPS
   pw_multibuf.from_span
   pw_span.cast
   pw_thread.sleep
+  pw_thread.yield
 )
 
 set(PW_BLUETOOTH_PROXY_TEST_SOURCES

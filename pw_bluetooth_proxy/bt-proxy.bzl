@@ -198,6 +198,7 @@ def pw_bluetooth_proxy_test(name, versioned_deps, **kwargs):
             "//pw_multibuf:from_span",
             "//pw_span:cast",
             "//pw_thread:sleep",
+            "//pw_thread:yield",
         ] + versioned_deps,
         # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
         **kwargs

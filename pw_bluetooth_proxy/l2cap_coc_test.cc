@@ -29,6 +29,7 @@
 #include "pw_sync/mutex.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_thread/yield.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::bluetooth::proxy {
@@ -2588,6 +2589,133 @@ TEST_F(L2capCocSegmentationTest, SduSentWhenSegmentedOverFullRangeOfMps) {
 
   EXPECT_EQ(capture.sdus_received, sdus_sent);
 }
+
+#if PW_THREAD_JOINING_ENABLED
+TEST_F(L2capCocTest, ConcurrentDisconnectionDuringDrain) {
+  constexpr uint16_t kHandle1 = 0x123;
+  constexpr uint16_t kHandle2 = 0x456;
+  constexpr uint16_t kActiveLocalCid = 0x0040;
+  constexpr uint16_t kActiveRemoteCid = 0x0060;
+  constexpr size_t kNumStaleChannels = 5;
+
+  pw::Function<void(H4PacketWithHci&&)> send_to_host_fn(
+      [](H4PacketWithHci&&) {});
+  pw::Function<void(H4PacketWithH4&&)> send_to_controller_fn(
+      [](H4PacketWithH4&&) {});
+
+  ProxyHost proxy(std::move(send_to_host_fn),
+                  std::move(send_to_controller_fn),
+                  /*le_acl_credits_to_reserve=*/10,
+                  /*br_edr_acl_credits_to_reserve=*/0,
+                  &pw::allocator::GetLibCAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+
+  struct DisconnectState {
+    std::atomic<bool> stop{false};
+    std::atomic<bool> trigger{false};
+    std::atomic<bool> done{false};
+    ProxyHost* proxy = nullptr;
+  } state;
+  state.proxy = &proxy;
+
+  pw::thread::test::TestThreadContext context;
+  pw::Thread disconnect_thread(context.options(), [&state]() {
+    while (!state.stop) {
+      if (!state.trigger) {
+        pw::this_thread::yield();
+        continue;
+      }
+      state.trigger = false;
+      if (state.stop) {
+        break;
+      }
+      // Note: We manually construct and dispatch the HCI event directly via
+      // HandleH4HciFromController rather than calling the test helper
+      // SendDisconnectionCompleteEvent because SendDisconnectionCompleteEvent
+      // calls RunDispatcher(), which blocks indefinitely when invoked from a
+      // secondary thread in async mode.
+      std::array<uint8_t,
+                 sizeof(emboss::H4PacketType) +
+                     emboss::DisconnectionCompleteEvent::IntrinsicSizeInBytes()>
+          h4_arr;
+      h4_arr.fill(0);
+      H4PacketWithHci dc_event{emboss::H4PacketType::EVENT,
+                               pw::span(h4_arr).subspan(1)};
+      auto view = MakeEmbossWriter<emboss::DisconnectionCompleteEventWriter>(
+          dc_event.GetHciSpan());
+      PW_ASSERT(view.ok());
+      view->header().event_code().Write(
+          emboss::EventCode::DISCONNECTION_COMPLETE);
+      view->header().parameter_total_size().Write(
+          emboss::DisconnectionCompleteEvent::IntrinsicSizeInBytes() -
+          emboss::EventHeader::IntrinsicSizeInBytes());
+      view->status().Write(emboss::StatusCode::SUCCESS);
+      view->connection_handle().Write(kHandle2);
+      state.proxy->HandleH4HciFromController(std::move(dc_event));
+      state.done = true;
+    }
+  });
+
+  std::array<uint8_t, 10> data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+
+  for (int iter = 0; iter < 2000; ++iter) {
+    PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+        proxy, kHandle1, emboss::StatusCode::SUCCESS));
+    PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+        proxy, kHandle2, emboss::StatusCode::SUCCESS));
+
+    auto active_coc = BuildCoc(proxy,
+                               CocParameters{
+                                   .handle = kHandle1,
+                                   .local_cid = kActiveLocalCid,
+                                   .remote_cid = kActiveRemoteCid,
+                                   .tx_mtu = 100,
+                                   .receive_fn = [](multibuf::MultiBuf&&) {},
+                                   .event_fn = [](L2capChannelEvent) {},
+                               });
+
+    pw::Vector<std::optional<L2capCoc>, kNumStaleChannels> stale_cocs;
+    for (size_t j = 0; j < kNumStaleChannels; ++j) {
+      stale_cocs.emplace_back(
+          BuildCoc(proxy,
+                   CocParameters{
+                       .handle = kHandle2,
+                       .local_cid = static_cast<uint16_t>(0x0050 + j),
+                       .remote_cid = static_cast<uint16_t>(0x0100 + j),
+                       .tx_mtu = 100,
+                       .receive_fn = [](multibuf::MultiBuf&&) {},
+                       .event_fn = [](L2capChannelEvent) {},
+                   }));
+    }
+    // Make all channels stale by resetting their client handles.
+    stale_cocs.clear();
+
+    state.done = false;
+    state.trigger = true;
+
+    // Writing to active_coc triggers DrainChannelQueuesIfNewTx which loops over
+    // the stale channels while disconnect_thread is concurrently removing them.
+    auto mbuf = multibuf::FromSpan(pw::allocator::GetLibCAllocator(),
+                                   as_writable_bytes(span(data)),
+                                   [](ByteSpan) {});
+    PW_ASSERT(mbuf.has_value());
+    std::ignore = active_coc.Write(std::move(*mbuf));
+
+    while (!state.done) {
+      pw::this_thread::yield();
+    }
+
+    // Tear down connection before next iteration.
+    PW_TEST_ASSERT_OK(SendDisconnectionCompleteEvent(proxy, kHandle1));
+  }
+
+  state.stop = true;
+  state.trigger = true;
+  disconnect_thread.join();
+}
+#endif  // PW_THREAD_JOINING_ENABLED
 
 }  // namespace
 }  // namespace pw::bluetooth::proxy

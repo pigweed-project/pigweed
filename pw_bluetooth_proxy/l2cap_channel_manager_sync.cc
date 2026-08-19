@@ -95,7 +95,6 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
             manager_.acl_data_channel_.ReserveSendCredit(transport);
       }
     }
-    L2capChannel* channel = nullptr;
     {
       std::lock_guard lock(channels_mutex_);
 
@@ -115,11 +114,11 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
 
       // If we have a credit for the channel's type, attempt to dequeue
       // packet from channel.
-      channel = &lrd_channel_->second;
+      L2capChannel& channel = lrd_channel_->second;
       std::optional<AclDataChannel::SendCredit>& current_credit =
-          credits.at(channel->transport());
+          credits.at(channel.transport());
       if (current_credit.has_value()) {
-        packet = channel->impl_.DequeuePacket();
+        packet = channel.impl_.DequeuePacket();
       }
 
       if (packet) {
@@ -127,57 +126,52 @@ void L2capChannelManagerImpl::DrainChannelQueuesIfNewTx() {
         // to use when sending the packet below.
         packet_credit = std::exchange(current_credit, std::nullopt);
         round_robin_terminus_ = manager_.channels_by_local_cid_.end();
+      } else {
+        if (channel.impl_.IsStale() && channel.impl_.PayloadQueueEmpty()) {
+          // The channel is stale and its queue is empty, so it can be
+          // removed.
+          auto node = manager_.DeregisterChannelLocked(channel);
+          node->mapped().Close();
+          continue;
+        }
+
+        // Always advance so next dequeue is from next channel.
+        manager_.Advance(lrd_channel_);
+
+        std::lock_guard drain_lock(drain_status_mutex_);
+
+        if (drain_needed_) {
+          // Additional tx packets or resources have arrived, so reset
+          // terminus so we attempt to dequeue all the channels again.
+          round_robin_terminus_ = manager_.channels_by_local_cid_.end();
+          drain_needed_ = false;
+          continue;
+        }
+
+        if (lrd_channel_ != round_robin_terminus_) {
+          // Continue until last drained channel is terminus, meaning we have
+          // failed to dequeue from all channels (so nothing left to send).
+          continue;
+        }
+
+        drain_running_ = false;
+        return;
       }
     }  // lock_guard: channels_mutex_
 
-    if (packet) {
-      // A packet with a credit was found inside the lock. Send while unlocked
-      // with that credit.
-      // This will trigger another Drain when `packet` is released. This could
-      // happen during the SendAcl call, but that is fine because `lrd_channel_`
-      // and `round_robin_terminus_` are always adjusted inside the lock. So
-      // each Drain frame's loop will just resume where last one left off and
-      // continue until that it has found no channels with something to dequeue.
-      PW_CHECK_OK(manager_.acl_data_channel_.SendAcl(
-          std::move(*packet),
-          std::move(std::exchange(packet_credit, std::nullopt).value())));
-      continue;
-    }
-    {
-      std::lock_guard channels_lock(channels_mutex_);
-
-      if (channel->impl_.IsStale() && channel->impl_.PayloadQueueEmpty()) {
-        // The channel is stale and its queue is empty, so it can be removed.
-        auto node = manager_.DeregisterChannelLocked(*channel);
-        node->mapped().Close();
-        continue;
-      }
-
-      // Always advance so next dequeue is from next channel.
-      manager_.Advance(lrd_channel_);
-
-      std::lock_guard drain_lock(drain_status_mutex_);
-
-      if (drain_needed_) {
-        // Additional tx packets or resources have arrived, so reset terminus so
-        // we attempt to dequeue all the channels again.
-        round_robin_terminus_ = manager_.channels_by_local_cid_.end();
-        drain_needed_ = false;
-        continue;
-      }
-
-      if (lrd_channel_ != round_robin_terminus_) {
-        // Continue until last drained channel is terminus, meaning we have
-        // failed to dequeue from all channels (so nothing left to send).
-        continue;
-      }
-
-      drain_running_ = false;
-      return;
-    }  // lock_guard: channels_mutex_, drain_status_mutex_
+    PW_DCHECK(packet.has_value());
+    // A packet with a credit was found inside the lock. Send while unlocked
+    // with that credit.
+    // This will trigger another Drain when `packet` is released. This could
+    // happen during the SendAcl call, but that is fine because `lrd_channel_`
+    // and `round_robin_terminus_` are always adjusted inside the lock. So
+    // each Drain frame's loop will just resume where last one left off and
+    // continue until that it has found no channels with something to dequeue.
+    PW_CHECK_OK(manager_.acl_data_channel_.SendAcl(
+        std::move(*packet),
+        std::move(std::exchange(packet_credit, std::nullopt).value())));
   }
 }
-
 }  // namespace internal
 }  // namespace pw::bluetooth::proxy
 
