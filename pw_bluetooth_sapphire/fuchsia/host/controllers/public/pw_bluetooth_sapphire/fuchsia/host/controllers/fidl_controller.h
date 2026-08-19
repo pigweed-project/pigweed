@@ -20,6 +20,7 @@
 #include <lib/zx/channel.h>
 
 #include "pw_bluetooth/controller.h"
+#include "pw_bluetooth_sapphire/lease.h"
 
 namespace bt::controllers {
 
@@ -62,6 +63,7 @@ class FidlController final : public pw::bluetooth::Controller {
   // |dispatcher| must outlive this object.
   FidlController(
       fidl::ClientEnd<fuchsia_hardware_bluetooth::Vendor> vendor_client_end,
+      pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
       async_dispatcher_t* dispatcher);
 
   ~FidlController() override;
@@ -165,6 +167,8 @@ class FidlController final : public pw::bluetooth::Controller {
   PwStatusCallback reset_sco_cb_;
 
   async_dispatcher_t* dispatcher_;
+
+  pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
 
   DataFunction event_cb_;
   DataFunction acl_cb_;

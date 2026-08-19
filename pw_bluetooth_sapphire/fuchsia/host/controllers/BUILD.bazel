@@ -29,6 +29,9 @@ fuchsia_cc_library(
         "public/pw_bluetooth_sapphire/fuchsia/host/controllers/helpers.h",
     ],
     strip_include_prefix = "public",
+    deps = [
+        "//pw_bluetooth_sapphire:lease",
+    ],
 )
 
 fuchsia_cc_library(
@@ -78,6 +81,7 @@ fuchsia_cc_test(
     visibility = ["//visibility:public"],
     deps = [
         ":controllers",
+        "//pw_bluetooth_sapphire:fake_lease_provider",
         "//pw_bluetooth_sapphire/fuchsia/host/fidl:fake_vendor_server",
         "//pw_bluetooth_sapphire/host/testing",
         "//pw_bluetooth_sapphire/host/testing:gtest_helpers",

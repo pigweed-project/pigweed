@@ -92,7 +92,9 @@ bool BtHostComponent::Initialize(
     Config config) {
   std::unique_ptr<bt::controllers::FidlController> controller =
       std::make_unique<bt::controllers::FidlController>(
-          std::move(vendor_client_end), async_get_default_dispatcher());
+          std::move(vendor_client_end),
+          lease_provider(),
+          async_get_default_dispatcher());
 
   bt_log(INFO, "bt-host", "Create HCI transport layer");
   hci_ = std::make_unique<hci::Transport>(

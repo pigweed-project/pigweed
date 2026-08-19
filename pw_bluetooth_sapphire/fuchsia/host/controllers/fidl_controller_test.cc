@@ -17,6 +17,7 @@
 #include <optional>
 
 #include "gmock/gmock.h"
+#include "pw_bluetooth_sapphire/fake_lease_provider.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/fake_vendor_server.h"
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
@@ -43,7 +44,8 @@ class FidlControllerTest : public bt::testing::TestLoopFixture {
         ::fidl::Endpoints<fhbt::Vendor>::Create();
 
     fake_vendor_server_.emplace(std::move(vendor_server_end), dispatcher());
-    fidl_controller_.emplace(std::move(vendor_client_end), dispatcher());
+    fidl_controller_.emplace(
+        std::move(vendor_client_end), lease_provider_, dispatcher());
   }
 
   void InitializeController() {
@@ -66,6 +68,10 @@ class FidlControllerTest : public bt::testing::TestLoopFixture {
     return &fake_vendor_server_.value();
   }
 
+  pw::bluetooth_sapphire::testing::FakeLeaseProvider& lease_provider() {
+    return lease_provider_;
+  }
+
   std::optional<pw::Status> complete_status() const { return complete_status_; }
 
   std::optional<pw::Status> controller_error() const {
@@ -73,6 +79,7 @@ class FidlControllerTest : public bt::testing::TestLoopFixture {
   }
 
  private:
+  pw::bluetooth_sapphire::testing::FakeLeaseProvider lease_provider_;
   std::optional<pw::Status> complete_status_;
   std::optional<pw::Status> controller_error_;
   std::optional<fidl::testing::FakeVendorServer> fake_vendor_server_;
@@ -703,6 +710,29 @@ TEST_F(FidlControllerTest, ResetScoAlreadyPending) {
   EXPECT_EQ(device_cb_count, 1);
   EXPECT_EQ(reset_cb_count_0, 1);
   EXPECT_EQ(reset_cb_count_1, 1);
+}
+
+TEST_F(FidlControllerTest, OnReceiveAcquiresAndReleasesWakeLease) {
+  RETURN_IF_FATAL(InitializeController());
+  RunLoopUntilIdle();
+  ASSERT_THAT(complete_status(), ::testing::Optional(PW_STATUS_OK));
+
+  const StaticByteBuffer kEventPacket(0x04, 0x05, 0x06, 0x07);
+  bool callback_called = false;
+  controller()->SetEventFunction([&](pw::span<const std::byte> /* buffer */) {
+    callback_called = true;
+    EXPECT_EQ(lease_provider().lease_count(), 1u);
+  });
+
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
+  EXPECT_EQ(hci_server()->acks_received(), 0u);
+
+  hci_server()->SendEvent(kEventPacket.view());
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(lease_provider().lease_count(), 0u);
+  EXPECT_EQ(hci_server()->acks_received(), 1u);
 }
 
 }  // namespace bt::controllers

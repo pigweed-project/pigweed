@@ -154,8 +154,10 @@ void HciEventHandler::on_fidl_error(fidl::UnbindInfo error) {
   unbind_callback_(ZX_ERR_PEER_CLOSED);
 }
 
-FidlController::FidlController(fidl::ClientEnd<fhbt::Vendor> vendor_client_end,
-                               async_dispatcher_t* dispatcher)
+FidlController::FidlController(
+    fidl::ClientEnd<fhbt::Vendor> vendor_client_end,
+    pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider,
+    async_dispatcher_t* dispatcher)
     : vendor_event_handler_([this](zx_status_t status) { OnError(status); }),
       hci_event_handler_([this](zx_status_t status) { OnError(status); },
                          [this](fhbt::ReceivedPacket packet) {
@@ -164,7 +166,8 @@ FidlController::FidlController(fidl::ClientEnd<fhbt::Vendor> vendor_client_end,
       sco_event_handler_(
           [this](zx_status_t status) { OnScoUnbind(status); },
           [this](fhbt::ScoPacket packet) { OnReceiveSco(std::move(packet)); }),
-      dispatcher_(dispatcher) {
+      dispatcher_(dispatcher),
+      wake_lease_provider_(wake_lease_provider) {
   PW_CHECK(vendor_client_end.is_valid());
   vendor_client_end_ = std::move(vendor_client_end);
 }
@@ -446,6 +449,9 @@ FidlController::ScoEventHandler::ScoEventHandler(
       unbind_callback_(std::move(unbind_callback)) {}
 
 void FidlController::OnReceive(ReceivedPacket packet) {
+  pw::Result<pw::bluetooth_sapphire::Lease> lease =
+      PW_SAPPHIRE_ACQUIRE_LEASE(wake_lease_provider_, "FidlController");
+  fit::result<fidl::OneWayError> result = hci_->AckReceive();
   switch (packet.Which()) {
     case ReceivedPacket::Tag::kEvent:
       event_cb_(BufferView(packet.event().value()).subspan());
@@ -462,7 +468,6 @@ void FidlController::OnReceive(ReceivedPacket packet) {
              "OnReceive: unknown packet type %lu",
              static_cast<uint64_t>(packet.Which()));
   }
-  fit::result<fidl::OneWayError> result = hci_->AckReceive();
   if (result.is_error()) {
     OnError(ZX_ERR_IO);
   }
