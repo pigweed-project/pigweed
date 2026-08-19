@@ -138,18 +138,13 @@ class ProxyHost : public L2capChannelManagerInterface {
 
   /// Registers a callback for receiving incremental ACL state updates.
   ///
-  /// @note This method is not thread-safe and must be called during
-  /// single-threaded initialization after construction, before packet
-  /// traffic is processed or background tasks are started.
-  ///
   /// @param[in] callback Function to invoke on ACL state mutation.
   void RegisterAclStateUpdateCallback(AclStateUpdateCallback&& callback);
 
   /// Restores ACL state from a previously saved snapshot.
   ///
-  /// @note This method is not thread-safe and must be called during
-  /// single-threaded initialization after construction, before packet
-  /// traffic is processed or background tasks are started.
+  /// @note Must be called during initialization before packet traffic is
+  /// processed. ACL state must be recovered before L2CAP or Sniff recovery.
   ///
   /// @param[in] snapshot ACL state container to restore from.
   /// @returns
