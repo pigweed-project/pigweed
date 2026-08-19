@@ -16,8 +16,6 @@
 
 namespace pw::bluetooth::proxy {
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-
 bool AclConnectionSnapshot::MatchesKey(uint16_t handle) const {
   return connection_handle == handle;
 }
@@ -47,7 +45,5 @@ Status AclSnapshot::ApplyStateUpdate(const AclStateUpdate& update) {
   acl_connections.push_back(update.connection);
   return OkStatus();
 }
-
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy

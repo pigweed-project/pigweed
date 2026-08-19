@@ -23,8 +23,6 @@
 
 namespace pw::bluetooth::proxy {
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-
 struct AclConnectionSnapshot {
   uint16_t connection_handle;
   AclTransportType transport;
@@ -80,7 +78,5 @@ struct AclSnapshot {
   /// Applies state updates in-place to the top-level ACL subsystem snapshot.
   Status ApplyStateUpdate(const AclStateUpdate& update);
 };
-
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy
