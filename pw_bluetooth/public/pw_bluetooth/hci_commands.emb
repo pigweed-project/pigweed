@@ -100,7 +100,6 @@ bits ScoPacketType:
   $next [+1]  Flag  not_3_ev5
 
 
-
 enum OobDataPresent:
   -- Whether there is out-of-band data present, and what type.
   -- All other values reserved for future use.
@@ -639,6 +638,7 @@ struct PinCodeRequestNegativeReplyCommand:
   $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr         bd_addr
     -- BD_ADDR of the peer device that the host is responding to
 
+
 struct ChangeConnectionPacketTypeCommand:
   -- 7.1.14 Change Connection Packet Type command (v1.1) (BR/EDR)
   -- HCI_Change_Connection_Packet_Type
@@ -652,6 +652,7 @@ struct ChangeConnectionPacketTypeCommand:
   $next [+2]         UInt               connection_handle
     -- Connection_Handle (only the lower 12-bits are meaningful).
     --   Range: 0x0000 to 0x0EFF
+
   $next [+2]         hci.PacketType     packet_type
 
 
@@ -1423,7 +1424,6 @@ struct HostBufferSizeCommand:
   $next [+1]         UInt               host_synchronous_data_packet_length
   $next [+2]         UInt               host_total_num_acl_data_packets
   $next [+2]         UInt               host_total_num_synchronous_data_packets
-
 
 # 7.3.40 Host Number Of Completed Packets command
 # HCI_Host_Number_Of_Completed_Packets

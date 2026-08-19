@@ -57,6 +57,7 @@ enum AttOpcode:
   ATT_HANDLE_VALUE_CFM           = 0x1E
   ATT_SIGNED_WRITE_CMD           = 0xD2
 
+
 enum ErrorCode:
   [maximum_bits: 8]
   INVALID_HANDLE                   = 0x01
@@ -95,8 +96,10 @@ enum ErrorCode:
 
 # ============ 3.4.1 Error handling ============
 
+
 struct AttHeader:
-  0     [+1]  AttOpcode  attribute_opcode
+  0 [+1]  AttOpcode  attribute_opcode
+
 
 struct AttErrorRsp:
   0     [+1]  AttOpcode  attribute_opcode
@@ -107,9 +110,11 @@ struct AttErrorRsp:
 
 # ============= 3.4.2 MTU exchange =============
 
+
 struct AttExchangeMtuReq:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       client_rx_mtu
+
 
 struct AttExchangeMtuRsp:
   0     [+1]  AttOpcode  attribute_opcode
@@ -117,78 +122,97 @@ struct AttExchangeMtuRsp:
 
 # =========== 3.4.3 Find information ===========
 
+
 enum AttUuidFormat:
   [maximum_bits: 8]
   BIT16  = 0x01
   BIT128 = 0x02
+
 
 struct AttFindInformationReq:
   [requires: starting_handle <= ending_handle]
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       starting_handle
     [requires: this > 0]
+
   $next [+2]  UInt       ending_handle
     [requires: this > 0]
+
 
 struct AttFindInformationRspHeader:
   0     [+1]  AttOpcode      attribute_opcode
   $next [+1]  AttUuidFormat  format
 
+
 struct AttInformationData16:
-  0     [+2]  UInt       attribute_handle
-  $next [+2]  UInt       uuid
+  0     [+2]  UInt  attribute_handle
+  $next [+2]  UInt  uuid
+
 
 struct AttInformationData128:
-  0     [+2]  UInt       attribute_handle
-  $next [+16] UInt:8[]   uuid
+  0     [+2]   UInt      attribute_handle
+  $next [+16]  UInt:8[]  uuid
+
 
 struct AttFindByTypeValueReqHeader:
   [requires: starting_handle <= ending_handle]
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       starting_handle
     [requires: this > 0]
+
   $next [+2]  UInt       ending_handle
     [requires: this > 0]
+
   $next [+2]  UInt       attribute_type
 
+
 struct AttHandlesInformation:
-  0     [+2]  UInt       attribute_handle
-  $next [+2]  UInt       group_end_handle
+  0     [+2]  UInt  attribute_handle
+  $next [+2]  UInt  group_end_handle
 
 # ========== 3.4.4 Reading attributes ==========
+
 
 struct AttReadByTypeReqHeader:
   [requires: starting_handle <= ending_handle]
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       starting_handle
     [requires: this > 0]
+
   $next [+2]  UInt       ending_handle
     [requires: this > 0]
+
 
 struct AttReadByGroupTypeReqHeader:
   [requires: starting_handle <= ending_handle]
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       starting_handle
     [requires: this > 0]
+
   $next [+2]  UInt       ending_handle
     [requires: this > 0]
 
+
 struct AttReadByGroupTypeRspEntryHeader:
-  0     [+2]  UInt       attribute_handle
-  $next [+2]  UInt       end_group_handle
+  0     [+2]  UInt  attribute_handle
+  $next [+2]  UInt  end_group_handle
+
 
 struct AttReadReq:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       attribute_handle
     [requires: this > 0]
 
+
 struct AttReadBlobReq:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       attribute_handle
     [requires: this > 0]
+
   $next [+2]  UInt       value_offset
 
 # ========== 3.4.5 Writing attributes ==========
+
 
 struct AttWriteCmd(attribute_size: UInt:16):
   -- 3.4.5.3 ATT_WRITE_CMD
@@ -200,22 +224,27 @@ struct AttWriteCmd(attribute_size: UInt:16):
 
 # ============ 3.4.6 Queued writes =============
 
+
 struct AttPrepareWriteHeader:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       attribute_handle
     [requires: this > 0]
+
   $next [+2]  UInt       value_offset
+
 
 enum AttExecuteWriteFlag:
   [maximum_bits: 8]
   CANCEL = 0x00
   WRITE  = 0x01
 
+
 struct AttExecuteWriteReq:
   0     [+1]  AttOpcode            attribute_opcode
   $next [+1]  AttExecuteWriteFlag  flags
 
 # =========== 3.4.7 Server initiated ===========
+
 
 struct AttHandleValueNtf(attribute_size: UInt:16):
   -- 3.4.7.1 ATT_HANDLE_VALUE_NTF
@@ -226,10 +255,12 @@ struct AttHandleValueNtf(attribute_size: UInt:16):
 
   $next [+attribute_size]  UInt:8[attribute_size]  attribute_value
 
+
 struct AttHandleValueNtfHeader:
   0     [+1]  AttOpcode  attribute_opcode
   $next [+2]  UInt       attribute_handle
     [requires: this > 0]
+
 
 struct AttHandleValueIndHeader:
   0     [+1]  AttOpcode  attribute_opcode

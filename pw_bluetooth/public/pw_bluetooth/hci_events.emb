@@ -1437,6 +1437,7 @@ struct DataBufferOverflowEvent:
   0     [+hdr_size]  hci.EventHeader  header
   $next [+1]         LinkType         ll_type
 
+
 struct MaxSlotsChangeEvent:
   -- 7.7.27 Max Slots Change event (v1.1) (BR/EDR)
   -- HCI_Max_Slots_Change
@@ -1444,9 +1445,9 @@ struct MaxSlotsChangeEvent:
   0     [+hdr_size]  hci.EventHeader  header
   $next [+2]         UInt             connection_handle
     [requires: 0x0000 <= this <= 0x0EFF]
+
   $next [+1]         UInt             lmp_max_slots
     [requires: this == 1 || this == 3 || this == 5]
-
 
 # 7.7.28 Read Clock Offset Complete event
 # HCI_Read_Clock_Offset_Complete
@@ -1461,8 +1462,8 @@ struct ConnectionPacketTypeChangedEvent:
   $next [+1]         hci.StatusCode   status
   $next [+2]         UInt             connection_handle
     [requires: 0x0000 <= this <= 0x0EFF]
-  $next [+2]         hci.PacketType   packet_type
 
+  $next [+2]         hci.PacketType   packet_type
 
 # 7.7.30 QoS Violation event
 # HCI_QoS_Violation
