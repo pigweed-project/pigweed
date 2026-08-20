@@ -34,9 +34,22 @@ class AndroidBatchLowEnergyScanner final : public LowEnergyScanner {
   // Usually the Controller will send a storage Threshold breach event to
   // indicate that it's running out of space for batched scan results. However,
   // we don't want to let scan results just sit in the Controller until that
-  // happens. The maximum read delay for batched scan results.
-  static constexpr pw::chrono::SystemClock::duration kMaxReadDelay =
+  // happens. The default maximum read delay for batched scan results.
+  //
+  // Note: This value is a placeholder that resembles the timeouts that android
+  // uses for its nearby and location scanning. We want to establish a good
+  // balance here and not wake up the host too often to request peers from the
+  // controller in a very quiet environment. We also don't want to wait too long
+  // because then appear might just hang out inside the controller and the user
+  // will think scanning is very slow. Android actually has an API that allows
+  // the user to configure how long it should wait instead of hard coding the
+  // amount. We don't have that in our API at the moment, but we can certainly
+  // add it in the future.
+  static constexpr pw::chrono::SystemClock::duration kDefaultMaxReadDelay =
       std::chrono::seconds(3);
+
+  static constexpr pw::chrono::SystemClock::duration kMaxReadDelay =
+      kDefaultMaxReadDelay;
 
   // Android's batch scanning vendor extension allows us to store scan results
   // in two formats: full mode and truncated mode. Truncated mode includes only
@@ -58,7 +71,8 @@ class AndroidBatchLowEnergyScanner final : public LowEnergyScanner {
       pw::async::Dispatcher& pw_dispatcher,
       std::optional<
           std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
-          wake_alarm_provider);
+          wake_alarm_provider,
+      pw::chrono::SystemClock::duration max_read_delay = kDefaultMaxReadDelay);
   ~AndroidBatchLowEnergyScanner() override;
 
   bool StartScan(const ScanOptions& options,
@@ -122,6 +136,8 @@ class AndroidBatchLowEnergyScanner final : public LowEnergyScanner {
 
   // Task that periodically reads scan results from the Controller
   SmartTask read_scan_results_task_;
+
+  pw::chrono::SystemClock::duration max_read_delay_;
 
   // Keep this as the last member to make sure that all weak pointers are
   // invalidated before other members get destroyed

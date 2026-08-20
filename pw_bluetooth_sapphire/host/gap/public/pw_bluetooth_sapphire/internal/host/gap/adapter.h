@@ -105,6 +105,9 @@ class Adapter {
     // LE Scanning parameters
     uint16_t le_active_scan_interval = kLEScanFastInterval;
     uint16_t le_active_scan_window = kLEScanFastWindow;
+    bool le_batched_scanning_enabled = false;
+    pw::chrono::SystemClock::duration le_scan_batch_max_read_delay =
+        std::chrono::seconds(3);
     bool le_scan_offload_filters_enabled = false;
   };
 

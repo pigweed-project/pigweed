@@ -186,12 +186,28 @@
             default: 0,
         },
         {
+            config: "fuchsia.bluetooth.LeBatchedScanningEnabled",
+            from: "parent/bluetooth-le-config",
+            key: "le_batched_scanning_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
+        {
             config: "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
             from: "parent/bluetooth-le-config",
             key: "le_scan_offload_filters_enabled",
             type: "bool",
             availability: "optional",
             default: false,
+        },
+        {
+            config: "fuchsia.bluetooth.LeScanBatchMaxReadDelaySeconds",
+            from: "parent/bluetooth-le-config",
+            key: "le_scan_batch_max_read_delay_seconds",
+            type: "uint8",
+            availability: "optional",
+            default: 3,
         },
     ],
     config: {

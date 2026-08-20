@@ -510,8 +510,7 @@ class AdapterImpl final : public Adapter {
         offloading_enabled = true;
       }
 
-      if (state().android_batch_scan_enabled &&
-          state().android_vendor_capabilities->scan_results_storage_bytes()) {
+      if (state().android_batch_scan_enabled) {
         peer_delivery_mode = PeerDeliveryMode::kBatched;
       }
     }
@@ -582,7 +581,8 @@ class AdapterImpl final : public Adapter {
           packet_filter_config,
           hci_,
           dispatcher_,
-          wake_alarm_provider_);
+          wake_alarm_provider_,
+          config_.le_scan_batch_max_read_delay);
     }
 
     if (extended) {
@@ -1550,9 +1550,18 @@ void AdapterImpl::PerformIsoInitialization() {
 void AdapterImpl::QueueAndroidBatchScanEnableCommands() {
   constexpr auto feature =
       pw::bluetooth::Controller::FeaturesBits::kAndroidVendorExtensions;
-  if (!state().IsControllerFeatureSupported(feature) ||
-      !state().android_vendor_capabilities.has_value() ||
-      state().android_vendor_capabilities->scan_results_storage_bytes() == 0) {
+  bool controller_supported =
+      state().IsControllerFeatureSupported(feature) &&
+      state().android_vendor_capabilities.has_value() &&
+      state().android_vendor_capabilities->scan_results_storage_bytes() > 0;
+
+  bt_log(INFO,
+         "gap",
+         "controller support for batched scanning: %s, config enabled: %s",
+         controller_supported ? "yes" : "no",
+         config_.le_batched_scanning_enabled ? "yes" : "no");
+
+  if (!controller_supported || !config_.le_batched_scanning_enabled) {
     return;
   }
 

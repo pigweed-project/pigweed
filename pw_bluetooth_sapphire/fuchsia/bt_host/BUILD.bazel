@@ -125,9 +125,11 @@ fuchsia_structured_config_values(
         "hci_command_timeout_seconds": 10,
         "le_active_scan_interval": 0,
         "le_active_scan_window": 0,
+        "le_batched_scanning_enabled": False,
         "le_fast_adv_interval_max": 0,
         "le_fast_adv_interval_min": 0,
         "le_fast_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.
+        "le_scan_batch_max_read_delay_seconds": 3,
         "le_scan_offload_filters_enabled": False,
         "le_slow_adv_interval_max": 0,
         "le_slow_adv_interval_min": 0,

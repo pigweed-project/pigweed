@@ -100,6 +100,8 @@ TEST_F(HostComponentTest, InitializeFailsWhenCommandTimesOut) {
       .le_very_fast_adv_max_tx_power = 127,
       .le_active_scan_interval = 0,
       .le_active_scan_window = 0,
+      .le_batched_scanning_enabled = false,
+      .le_scan_batch_max_read_delay_seconds = 3,
       .le_scan_offload_filters_enabled = false,
       .hci_command_timeout_seconds = 14,
   };

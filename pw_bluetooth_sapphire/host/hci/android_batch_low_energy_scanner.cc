@@ -30,13 +30,15 @@ AndroidBatchLowEnergyScanner::AndroidBatchLowEnergyScanner(
     pw::async::Dispatcher& pw_dispatcher,
     std::optional<
         std::reference_wrapper<pw::bluetooth_sapphire::WakeAlarmProvider>>
-        wake_alarm_provider)
+        wake_alarm_provider,
+    pw::chrono::SystemClock::duration max_read_delay)
     : LowEnergyScanner(local_addr_delegate,
                        packet_filter_config,
                        std::move(transport),
                        pw_dispatcher),
       wake_alarm_provider_(wake_alarm_provider),
       read_scan_results_task_(dispatcher()),
+      max_read_delay_(max_read_delay),
       weak_self_(this) {
   auto self = weak_self_.GetWeakPtr();
 
@@ -382,12 +384,12 @@ void AndroidBatchLowEnergyScanner::ScheduleNextRead() {
   read_scan_results_task_.Cancel();
 
   if (!wake_alarm_provider_.has_value()) {
-    read_scan_results_task_.PostAfter(kMaxReadDelay);
+    read_scan_results_task_.PostAfter(max_read_delay_);
     return;
   }
 
   auto self = weak_self_.GetWeakPtr();
-  auto deadline = dispatcher().now() + kMaxReadDelay;
+  auto deadline = dispatcher().now() + max_read_delay_;
 
   auto result = wake_alarm_provider_->get().Set(
       PW_SAPPHIRE_WAKE_ALARM_TOKEN_EXPR("AndroidBatchLowEnergyScannerRead"),
@@ -411,7 +413,7 @@ void AndroidBatchLowEnergyScanner::ScheduleNextRead() {
                  "hci-le",
                  "wake alarm failed: %s",
                  lease_result.status().str());
-          self->read_scan_results_task_.PostAfter(kMaxReadDelay);
+          self->read_scan_results_task_.PostAfter(self->max_read_delay_);
           return;
         }
 
@@ -433,7 +435,7 @@ void AndroidBatchLowEnergyScanner::ScheduleNextRead() {
              "failed to set wake alarm: %s",
              result.status().str());
     }
-    read_scan_results_task_.PostAfter(kMaxReadDelay);
+    read_scan_results_task_.PostAfter(max_read_delay_);
   } else {
     wake_alarm_ = std::move(*result);
   }

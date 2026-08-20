@@ -60,7 +60,8 @@ class AdapterTest : public TestingBase {
 
   void SetUp() override { SetUp(kDefaultFeaturesBits); }
 
-  void SetUp(FeaturesBits features) {
+  void SetUp(FeaturesBits features,
+             Adapter::Config config = {.legacy_pairing_enabled = false}) {
     // Don't initialize Transport yet because Adapter initializes Transport.
     TestingBase::SetUp(features, /*initialize_transport=*/false);
 
@@ -68,9 +69,6 @@ class AdapterTest : public TestingBase {
 
     auto l2cap = std::make_unique<l2cap::testing::FakeL2cap>(dispatcher());
     gatt_ = std::make_unique<gatt::testing::FakeLayer>(dispatcher());
-    Adapter::Config config = {
-        .legacy_pairing_enabled = false,
-    };
     adapter_ = Adapter::Create(dispatcher(),
                                transport()->GetWeakPtr(),
                                gatt_->GetWeakPtr(),
@@ -1531,7 +1529,8 @@ TEST_F(AdapterTest, CreateAdvertiserLegacyAdvertisingSupported) {
 
 TEST_F(AdapterTest, CreateScannerVendorBatchScanningSupported) {
   TearDown();
-  SetUp(FeaturesBits::kAndroidVendorExtensions);
+  SetUp(FeaturesBits::kAndroidVendorExtensions,
+        {.legacy_pairing_enabled = false, .le_batched_scanning_enabled = true});
 
   FakeController::Settings settings;
   settings.ApplyLegacyLEConfig();
@@ -1549,17 +1548,40 @@ TEST_F(AdapterTest, CreateScannerVendorBatchScanningSupported) {
 
 TEST_F(AdapterTest, CreateScannerVendorBatchScanningDisabledNoStorageBytes) {
   TearDown();
-  SetUp(FeaturesBits::kAndroidVendorExtensions);
+  SetUp(FeaturesBits::kAndroidVendorExtensions,
+        {.legacy_pairing_enabled = false, .le_batched_scanning_enabled = true});
 
   FakeController::Settings settings;
   settings.ApplyLegacyLEConfig();
   settings.ApplyAndroidVendorExtensionDefaults();
+
   auto view = settings.android_extension_settings.view();
   view.total_scan_results_storage().Write(0);
   test_device()->set_settings(settings);
   InitializeAdapter([](bool) {});
 
   EXPECT_FALSE(adapter()->state().android_batch_scan_enabled);
+
+  std::vector<hci::DiscoveryFilter> filters;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, filters, [](LowEnergyDiscoverySessionPtr) {});
+  RunUntilIdle();
+  EXPECT_EQ(bt::testing::FakeController::ExtendedOperationType::kLegacy,
+            test_device()->scan_procedure());
+}
+
+TEST_F(AdapterTest, CreateScannerVendorBatchScanningConfigDisabled) {
+  TearDown();
+  SetUp(
+      FeaturesBits::kAndroidVendorExtensions,
+      {.legacy_pairing_enabled = false, .le_batched_scanning_enabled = false});
+
+  FakeController::Settings settings;
+  settings.ApplyLegacyLEConfig();
+  settings.ApplyAndroidVendorExtensionDefaults();
+
+  test_device()->set_settings(settings);
+  InitializeAdapter([](bool) {});
 
   std::vector<hci::DiscoveryFilter> filters;
   adapter()->le()->StartDiscovery(
