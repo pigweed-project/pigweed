@@ -1529,6 +1529,74 @@ TEST_F(AdapterTest, CreateAdvertiserLegacyAdvertisingSupported) {
             test_device()->advertising_procedure());
 }
 
+TEST_F(AdapterTest, CreateScannerVendorBatchScanningSupported) {
+  TearDown();
+  SetUp(FeaturesBits::kAndroidVendorExtensions);
+
+  FakeController::Settings settings;
+  settings.ApplyLegacyLEConfig();
+  settings.ApplyAndroidVendorExtensionDefaults();
+  test_device()->set_settings(settings);
+  InitializeAdapter([](bool) {});
+
+  std::vector<hci::DiscoveryFilter> filters;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, filters, [](LowEnergyDiscoverySessionPtr) {});
+  RunUntilIdle();
+  EXPECT_EQ(bt::testing::FakeController::ExtendedOperationType::kVendor,
+            test_device()->scan_procedure());
+}
+
+TEST_F(AdapterTest, CreateScannerVendorBatchScanningDisabledNoStorageBytes) {
+  TearDown();
+  SetUp(FeaturesBits::kAndroidVendorExtensions);
+
+  FakeController::Settings settings;
+  settings.ApplyLegacyLEConfig();
+  settings.ApplyAndroidVendorExtensionDefaults();
+  auto view = settings.android_extension_settings.view();
+  view.total_scan_results_storage().Write(0);
+  test_device()->set_settings(settings);
+  InitializeAdapter([](bool) {});
+
+  EXPECT_FALSE(adapter()->state().android_batch_scan_enabled);
+
+  std::vector<hci::DiscoveryFilter> filters;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, filters, [](LowEnergyDiscoverySessionPtr) {});
+  RunUntilIdle();
+  EXPECT_EQ(bt::testing::FakeController::ExtendedOperationType::kLegacy,
+            test_device()->scan_procedure());
+}
+
+TEST_F(AdapterTest, CreateScannerExtendedScanningSupported) {
+  FakeController::Settings settings;
+  settings.ApplyExtendedLEConfig();
+  test_device()->set_settings(settings);
+  InitializeAdapter([](bool) {});
+
+  std::vector<hci::DiscoveryFilter> filters;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, filters, [](LowEnergyDiscoverySessionPtr) {});
+  RunUntilIdle();
+  EXPECT_EQ(bt::testing::FakeController::ExtendedOperationType::kExtended,
+            test_device()->scan_procedure());
+}
+
+TEST_F(AdapterTest, CreateScannerLegacyScanningSupported) {
+  FakeController::Settings settings;
+  settings.ApplyLegacyLEConfig();
+  test_device()->set_settings(settings);
+  InitializeAdapter([](bool) {});
+
+  std::vector<hci::DiscoveryFilter> filters;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, filters, [](LowEnergyDiscoverySessionPtr) {});
+  RunUntilIdle();
+  EXPECT_EQ(bt::testing::FakeController::ExtendedOperationType::kLegacy,
+            test_device()->scan_procedure());
+}
+
 // Tests where the constructor must run in the test, rather than Setup.
 
 class AdapterConstructorTest : public TestingBase {

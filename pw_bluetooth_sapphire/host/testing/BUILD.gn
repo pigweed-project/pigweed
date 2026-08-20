@@ -28,6 +28,7 @@ pw_source_set("testing") {
   ]
   public = [
     "public/pw_bluetooth_sapphire/internal/host/testing/controller_test.h",
+    "public/pw_bluetooth_sapphire/internal/host/testing/fake_wake_alarm_provider.h",
     "public/pw_bluetooth_sapphire/internal/host/testing/inspect.h",
     "public/pw_bluetooth_sapphire/internal/host/testing/inspect_util.h",
     "public/pw_bluetooth_sapphire/internal/host/testing/parse_args.h",
@@ -41,6 +42,7 @@ pw_source_set("testing") {
     "$dir_pw_async:heap_dispatcher",
     "$dir_pw_bluetooth_sapphire:config",
     "$dir_pw_bluetooth_sapphire:fake_lease_provider",
+    "$dir_pw_bluetooth_sapphire:wake_alarm",
     "$dir_pw_bluetooth_sapphire/host/common",
     "$dir_pw_bluetooth_sapphire/host/gap:definitions",
     "$dir_pw_bluetooth_sapphire/host/hci-spec",

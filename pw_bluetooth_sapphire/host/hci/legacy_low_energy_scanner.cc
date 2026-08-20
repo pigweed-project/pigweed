@@ -63,7 +63,8 @@ bool LegacyLowEnergyScanner::StartScan(const ScanOptions& options,
   return LowEnergyScanner::StartScan(options, std::move(callback));
 }
 
-CommandPacket LegacyLowEnergyScanner::BuildSetScanParametersPacket(
+std::optional<CommandPacket>
+LegacyLowEnergyScanner::BuildSetScanParametersPacket(
     const DeviceAddress& local_address, const ScanOptions& options) const {
   std::optional<pw::bluetooth::emboss::LEOwnAddressType> own_address_type =
       DeviceAddress::DeviceAddrToLeOwnAddr(local_address.type());

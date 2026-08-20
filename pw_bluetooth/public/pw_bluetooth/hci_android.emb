@@ -1192,8 +1192,8 @@ enum BatchScanDiscardRule:
 
 enum BatchScanReadMode:
   [maximum_bits: 8]
-  TRUNCATED = 0x00
-  FULL      = 0x00
+  TRUNCATED = 0x01
+  FULL      = 0x02
 
 
 struct LEBatchScanCommandCompleteEvent:

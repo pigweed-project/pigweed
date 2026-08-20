@@ -50,7 +50,7 @@ class ExtendedLowEnergyScanner final : public LowEnergyScanner {
  private:
   // Build the HCI command packet to set the scan parameters for the flavor of
   // low energy scanning being implemented.
-  CommandPacket BuildSetScanParametersPacket(
+  std::optional<CommandPacket> BuildSetScanParametersPacket(
       const DeviceAddress& local_address,
       const ScanOptions& options) const override;
 

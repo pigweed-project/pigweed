@@ -16,6 +16,7 @@
 
 #include <pw_assert/check.h>
 #include <pw_async/dispatcher.h>
+#include <pw_bluetooth/hci_android.emb.h>
 #include <pw_bluetooth/hci_commands.emb.h>
 #include <pw_bluetooth/hci_events.emb.h>
 #include <pw_bytes/endian.h>
@@ -38,6 +39,7 @@
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
+#include "pw_bluetooth_sapphire/internal/host/hci/android_batch_low_energy_scanner.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/android_extended_low_energy_advertiser.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/discovery_filter.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/extended_low_energy_advertiser.h"
@@ -456,6 +458,9 @@ class AdapterImpl final : public Adapter {
   // Initializes the ISO data channels on devices that support it.
   void PerformIsoInitialization();
 
+  // Queues commands to enable Android LE Batch Scan if supported.
+  void QueueAndroidBatchScanEnableCommands();
+
   // Reads LMP feature mask's bits from |page|
   void InitQueueReadLMPFeatureMaskPage(uint8_t page);
 
@@ -503,6 +508,11 @@ class AdapterImpl final : public Adapter {
       max_filters = state().android_vendor_capabilities->max_filters();
       if (config_.le_scan_offload_filters_enabled) {
         offloading_enabled = true;
+      }
+
+      if (state().android_batch_scan_enabled &&
+          state().android_vendor_capabilities->scan_results_storage_bytes()) {
+        peer_delivery_mode = PeerDeliveryMode::kBatched;
       }
     }
 
@@ -562,6 +572,19 @@ class AdapterImpl final : public Adapter {
   std::unique_ptr<hci::LowEnergyScanner> CreateScanner(
       bool extended,
       const hci::AdvertisingPacketFilter::Config& packet_filter_config) const {
+    if (state().android_batch_scan_enabled) {
+      bt_log(INFO,
+             "gap",
+             "controller support for batch scanning via android vendor "
+             "extensions: yes");
+      return std::make_unique<hci::AndroidBatchLowEnergyScanner>(
+          le_address_manager_.get(),
+          packet_filter_config,
+          hci_,
+          dispatcher_,
+          wake_alarm_provider_);
+    }
+
     if (extended) {
       return std::make_unique<hci::ExtendedLowEnergyScanner>(
           le_address_manager_.get(), packet_filter_config, hci_, dispatcher_);
@@ -1524,6 +1547,64 @@ void AdapterImpl::PerformIsoInitialization() {
       });
 }
 
+void AdapterImpl::QueueAndroidBatchScanEnableCommands() {
+  constexpr auto feature =
+      pw::bluetooth::Controller::FeaturesBits::kAndroidVendorExtensions;
+  if (!state().IsControllerFeatureSupported(feature) ||
+      !state().android_vendor_capabilities.has_value() ||
+      state().android_vendor_capabilities->scan_results_storage_bytes() == 0) {
+    return;
+  }
+
+  // Android's batch scanning vendor extension redefines what it means to enable
+  // and configure scanning. Unlike legacy and extended scanning, enabling turns
+  // the ability to use the feature on and off. Setting the parameters of the
+  // scan itself starts a batch scan in either full or truncated mode, if the
+  // feature is enabled.
+
+  namespace android_hci = bt::hci_spec::vendor::android;
+  namespace android_emb = pw::bluetooth::vendor::android_hci;
+
+  auto enable = pw::bluetooth::emboss::GenericEnableParam::ENABLE;
+
+  auto enable_packet =
+      hci::CommandPacket::New<android_emb::LEBatchScanEnableCommandWriter>(
+          android_hci::kLEBatchScan);
+  auto enable_view = enable_packet.view_t();
+  enable_view.vendor_command().sub_opcode().Write(
+      android_hci::kLEBatchScanEnableSubopcode);
+  enable_view.enabled().Write(enable);
+  init_seq_runner_->QueueCommand(
+      std::move(enable_packet), [](const hci::EventPacket& event) {
+        HCI_IS_ERROR(
+            event, WARN, "gap", "Failed to enable Android LE Batch Scan");
+      });
+
+  auto storage_packet = hci::CommandPacket::New<
+      android_emb::LEBatchScanSetStorageParametersCommandWriter>(
+      android_hci::kLEBatchScan);
+  auto storage_view = storage_packet.view_t();
+  storage_view.vendor_command().sub_opcode().Write(
+      android_hci::kLEBatchScanSetStorageParametersSubopcode);
+  storage_view.full_max().Write(
+      hci::AndroidBatchLowEnergyScanner::kFullModeStoragePercentage);
+  storage_view.truncated_max().Write(
+      hci::AndroidBatchLowEnergyScanner::kTruncatedModeStoragePercentage);
+  storage_view.notify_threshold().Write(
+      hci::AndroidBatchLowEnergyScanner::
+          kStorageThresholdBreachNotificationPercent);
+  init_seq_runner_->QueueCommand(
+      std::move(storage_packet), [this](const hci::EventPacket& event) {
+        if (!HCI_IS_ERROR(
+                event,
+                WARN,
+                "gap",
+                "Failed to set Android LE Batch Scan storage parameters")) {
+          state_.android_batch_scan_enabled = true;
+        }
+      });
+}
+
 void AdapterImpl::InitializeStep3() {
   PW_CHECK(IsInitializing());
   PW_CHECK(init_seq_runner_->IsReady());
@@ -1650,6 +1731,7 @@ void AdapterImpl::InitializeStep3() {
       max_lmp_feature_page_index_.value() > 1) {
     InitQueueReadLMPFeatureMaskPage(2);
   }
+  QueueAndroidBatchScanEnableCommands();
 
   init_seq_runner_->RunCommands([this](hci::Result<> status) mutable {
     if (bt_is_error(

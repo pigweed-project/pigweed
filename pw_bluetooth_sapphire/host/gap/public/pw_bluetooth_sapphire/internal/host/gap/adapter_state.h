@@ -116,6 +116,10 @@ struct AdapterState final {
   // android vendor extensions first.
   std::optional<AndroidVendorCapabilities> android_vendor_capabilities;
 
+  // True if Android LE Batch Scan was successfully enabled during
+  // initialization.
+  bool android_batch_scan_enabled = false;
+
   // Local name
   std::string local_name;
 };

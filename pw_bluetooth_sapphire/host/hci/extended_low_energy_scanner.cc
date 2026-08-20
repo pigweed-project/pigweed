@@ -70,7 +70,8 @@ bool ExtendedLowEnergyScanner::StartScan(const ScanOptions& options,
   return LowEnergyScanner::StartScan(options, std::move(callback));
 }
 
-CommandPacket ExtendedLowEnergyScanner::BuildSetScanParametersPacket(
+std::optional<CommandPacket>
+ExtendedLowEnergyScanner::BuildSetScanParametersPacket(
     const DeviceAddress& local_address, const ScanOptions& options) const {
   // LESetExtendedScanParametersCommand contains a variable amount of data,
   // depending on how many bits are set within the scanning_phys parameter. As

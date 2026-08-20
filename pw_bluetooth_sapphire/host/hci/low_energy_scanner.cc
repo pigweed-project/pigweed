@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 
 namespace bt::hci {
+namespace pwemb = pw::bluetooth::emboss;
 
 static std::string ScanStateToString(LowEnergyScanner::State state) {
   switch (state) {
@@ -232,13 +233,13 @@ void LowEnergyScanner::StartScanInternal(const DeviceAddress& local_address,
          options.interval,
          options.window);
 
-  CommandPacket scan_params_command =
-      BuildSetScanParametersPacket(local_address, options);
-  CommandPacket scan_enable_command = BuildEnablePacket(
-      options, pw::bluetooth::emboss::GenericEnableParam::ENABLE);
+  if (!EnqueueStartScanPackets(local_address, options)) {
+    bt_log(ERROR, "hci-le", "failed to enqueue scan start packets");
+    state_ = State::kIdle;
+    scan_cb_(ScanStatus::kFailed);
+    return;
+  }
 
-  hci_cmd_runner_->QueueCommand(std::move(scan_params_command));
-  hci_cmd_runner_->QueueCommand(std::move(scan_enable_command));
   hci_cmd_runner_->RunCommands([this,
                                 active = options.active,
                                 period = options.period](Result<> status) {
@@ -270,6 +271,30 @@ void LowEnergyScanner::StartScanInternal(const DeviceAddress& local_address,
       scan_cb_(ScanStatus::kPassive);
     }
   });
+}
+
+bool LowEnergyScanner::EnqueueStartScanPackets(
+    const DeviceAddress& local_address, const ScanOptions& options) {
+  std::optional<CommandPacket> scan_params_command =
+      BuildSetScanParametersPacket(local_address, options);
+  if (!scan_params_command.has_value()) {
+    return false;
+  }
+  CommandPacket scan_enable_command = BuildEnablePacket(
+      options, pw::bluetooth::emboss::GenericEnableParam::ENABLE);
+
+  hci_cmd_runner_->QueueCommand(std::move(*scan_params_command));
+  hci_cmd_runner_->QueueCommand(std::move(scan_enable_command));
+  return true;
+}
+
+void LowEnergyScanner::EnqueueStopScanPackets() {
+  // Tell the controller to stop scanning.
+  ScanOptions options;
+  CommandPacket command = BuildEnablePacket(
+      options, pw::bluetooth::emboss::GenericEnableParam::DISABLE);
+
+  hci_cmd_runner_->QueueCommand(std::move(command));
 }
 
 bool LowEnergyScanner::StopScan() {
@@ -312,14 +337,17 @@ void LowEnergyScanner::StopScanInternal(bool stopped_by_user) {
   pending_results_.clear();
   cached_scan_results_.clear();
 
+  // If the command runner is busy, cancel any in flight commands. This can
+  // happen if a scan rotation (timeout) occurs while a scan result read is in
+  // progress (e.g. in AndroidBatchLowEnergyScanner). Failing to cancel the
+  // runner here would lead to reentrant RunCommands calls which corrupts the
+  // runner state and causes deadlocks.
+  if (!hci_cmd_runner_->IsReady()) {
+    hci_cmd_runner_->Cancel();
+  }
   PW_DCHECK(hci_cmd_runner_->IsReady());
 
-  // Tell the controller to stop scanning.
-  ScanOptions options;
-  CommandPacket command = BuildEnablePacket(
-      options, pw::bluetooth::emboss::GenericEnableParam::DISABLE);
-
-  hci_cmd_runner_->QueueCommand(std::move(command));
+  EnqueueStopScanPackets();
   hci_cmd_runner_->RunCommands([this, stopped_by_user](Result<> status) {
     PW_DCHECK(scan_cb_);
     PW_DCHECK(state_ == State::kStopping);
@@ -343,4 +371,5 @@ void LowEnergyScanner::StopScanInternal(bool stopped_by_user) {
     scan_cb_(scan_status);
   });
 }
+
 }  // namespace bt::hci

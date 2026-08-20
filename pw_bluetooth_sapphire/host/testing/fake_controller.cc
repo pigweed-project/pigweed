@@ -190,9 +190,9 @@ void FakeController::Settings::ApplyAndroidVendorExtensionDefaults() {
   auto view = android_extension_settings.view();
   view.status().Write(pwemb::StatusCode::SUCCESS);
   view.max_advt_instances().Write(3);
+  view.total_scan_results_storage().Write(100);
   view.version_supported().major_number().Write(0);
   view.version_supported().minor_number().Write(55);
-  view.total_scan_results_storage().Write(1);
   view.max_filter().Write(max_apcf_filters);
 }
 
@@ -6103,7 +6103,10 @@ auto FakeController::LEBatchScanReadResultNextPacketSize() const {
       android_emb::LEBatchScanReadResultsCommandCompleteEvent::MinSizeInBytes();
 
   auto itr = peers_.cbegin();
-  std::advance(itr, le_scan_state_.batch_scan_num_peers_read);
+  size_t to_advance =
+      std::min(static_cast<size_t>(le_scan_state_.batch_scan_num_peers_read),
+               peers_.size());
+  std::advance(itr, to_advance);
   for (; itr != peers_.cend(); ++itr) {
     const std::unique_ptr<FakePeer>& peer = itr->second;
     size_t full_result_size =
@@ -6151,6 +6154,62 @@ void FakeController::LEBatchScanFillFullResult(
   }
 }
 
+void FakeController::SendMalformedBatchScanReadResultsCommandCompleteEvent() {
+  size_t results_size = 0;
+  size_t advertising_data_length = 0;
+  size_t scan_response_length = 0;
+
+  switch (malformed_batch_scan_type_) {
+    case MalformedBatchScanType::kHeaderTooShort:
+      results_size = 5;
+      break;
+    case MalformedBatchScanType::kAdvDataTooShort:
+      results_size = android_emb::LEBatchScanFullResult::MinSizeInBytes();
+      advertising_data_length = 5;
+      break;
+    case MalformedBatchScanType::kScanRspTooShort:
+      results_size = android_emb::LEBatchScanFullResult::MinSizeInBytes() + 1;
+      advertising_data_length = 1;
+      scan_response_length = 1;
+      break;
+    case MalformedBatchScanType::kNone:
+      return;
+  }
+
+  size_t packet_size = android_emb::LEBatchScanReadResultsCommandCompleteEvent::
+                           MinSizeInBytes() +
+                       results_size;
+  auto packet = hci::EventPacket::New<
+      android_emb::LEBatchScanReadResultsCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode, packet_size);
+  auto view = packet.view_t();
+  view.status().Write(pwemb::StatusCode::SUCCESS);
+  view.sub_opcode().Write(
+      android_emb::BatchScanSubOpcode::READ_RESULT_PARAMETERS);
+  view.read_mode().Write(android_emb::BatchScanReadMode::FULL);
+  view.num_records().Write(1);
+
+  if (malformed_batch_scan_type_ != MalformedBatchScanType::kHeaderTooShort) {
+    android_emb::LEBatchScanFullResultWriter full_result(
+        view.full_results().BackingStorage().begin(), results_size);
+    full_result.advertising_data_length().Write(advertising_data_length);
+    if (malformed_batch_scan_type_ ==
+        MalformedBatchScanType::kScanRspTooShort) {
+      full_result.scan_response_length().Write(scan_response_length);
+    }
+  }
+
+  RespondWithCommandComplete(pwemb::OpCode::ANDROID_LE_BATCH_SCAN, &packet);
+}
+
+void FakeController::SendScanStorageThresholdBreachEvent() {
+  auto packet = hci::EventPacket::New<pwemb::VendorDebugEventWriter>(
+      hci_spec::kVendorDebugEventCode);
+  auto view = packet.view_t();
+  view.subevent_code().Write(android_hci::kStorageThresholdBreachSubeventCode);
+  SendEvent(hci_spec::kVendorDebugEventCode, &packet);
+}
+
 void FakeController::OnAndroidLEBatchScanReadResultsCommand(
     const android_emb::LEBatchScanReadResultsCommandView& params) {
   auto regular_packet =
@@ -6189,6 +6248,12 @@ void FakeController::OnAndroidLEBatchScanReadResultsCommand(
     return;
   }
 
+  if (malformed_batch_scan_type_ != MalformedBatchScanType::kNone) {
+    SendMalformedBatchScanReadResultsCommandCompleteEvent();
+    malformed_batch_scan_type_ = MalformedBatchScanType::kNone;
+    return;
+  }
+
   auto [num_records, packet_size] = LEBatchScanReadResultNextPacketSize();
 
   auto packet = hci::EventPacket::New<
@@ -6208,10 +6273,15 @@ void FakeController::OnAndroidLEBatchScanReadResultsCommand(
 
   size_t write_offset = 0;
   int start_num_peers_read = le_scan_state_.batch_scan_num_peers_read;
+
   auto itr = peers_.cbegin();
+  size_t to_advance =
+      std::min(static_cast<size_t>(start_num_peers_read), peers_.size());
+  std::advance(itr, to_advance);
+
   for (; itr != peers_.cend(); ++itr) {
-    if (start_num_peers_read + num_records <=
-        le_scan_state_.batch_scan_num_peers_read) {
+    if (le_scan_state_.batch_scan_num_peers_read >=
+        start_num_peers_read + num_records) {
       break;
     }
 

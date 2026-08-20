@@ -651,6 +651,7 @@ class FakeController final : public ControllerTestDoubleBase,
 
   std::vector<PeriodicAdvertisingSync> periodic_advertising_syncs() const {
     std::vector<PeriodicAdvertisingSync> out;
+    out.reserve(periodic_advertising_syncs_.size());
     for (auto& [_, sync] : periodic_advertising_syncs_) {
       out.push_back(sync);
     }
@@ -659,6 +660,8 @@ class FakeController final : public ControllerTestDoubleBase,
 
   // Send a Periodic Advertising Sync Lost event and delete the sync state.
   void LosePeriodicSync(DeviceAddress address, uint8_t advertising_sid);
+
+  void SendScanStorageThresholdBreachEvent();
 
   enum class ExtendedOperationType : uint8_t {
     kUnknown,
@@ -673,6 +676,16 @@ class FakeController final : public ControllerTestDoubleBase,
 
   const ExtendedOperationType& scan_procedure() const {
     return scan_procedure_;
+  }
+
+  enum class MalformedBatchScanType {
+    kNone,
+    kHeaderTooShort,
+    kAdvDataTooShort,
+    kScanRspTooShort
+  };
+  void set_malformed_batch_scan_type(MalformedBatchScanType type) {
+    malformed_batch_scan_type_ = type;
   }
 
  private:
@@ -1318,6 +1331,7 @@ class FakeController final : public ControllerTestDoubleBase,
   void LEBatchScanFillFullResult(
       android_emb::LEBatchScanFullResultWriter& full_result,
       const std::unique_ptr<FakePeer>& peer) const;
+  void SendMalformedBatchScanReadResultsCommandCompleteEvent();
   void OnAndroidLEBatchScanReadResultsCommand(
       const android_emb::LEBatchScanReadResultsCommandView& params);
 
@@ -1471,6 +1485,8 @@ class FakeController final : public ControllerTestDoubleBase,
   ExtendedOperationType advertising_procedure_ =
       ExtendedOperationType::kUnknown;
   ExtendedOperationType scan_procedure_ = ExtendedOperationType::kUnknown;
+  MalformedBatchScanType malformed_batch_scan_type_ =
+      MalformedBatchScanType::kNone;
   uint16_t max_advertising_data_length_ = hci_spec::kMaxLEAdvertisingDataLength;
 
   std::unordered_set<PeriodicAdvertiserListEntry,

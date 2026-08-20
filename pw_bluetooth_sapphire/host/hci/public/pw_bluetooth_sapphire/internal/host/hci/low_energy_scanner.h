@@ -357,7 +357,7 @@ class LowEnergyScanner : public LocalAddressClient {
 
   // Build the HCI command packet to set the scan parameters for the flavor of
   // low energy scanning being implemented.
-  virtual CommandPacket BuildSetScanParametersPacket(
+  virtual std::optional<CommandPacket> BuildSetScanParametersPacket(
       const DeviceAddress& local_address, const ScanOptions& options) const = 0;
 
   // Build the HCI command packet to enable scanning for the flavor of low
@@ -375,9 +375,17 @@ class LowEnergyScanner : public LocalAddressClient {
   std::unique_ptr<PendingScanResult> RemovePendingResult(
       const DeviceAddress& address);
 
+  // Enqueue the packets necessary to start a scan to the hci_cmd_runner().
+  virtual bool EnqueueStartScanPackets(const DeviceAddress& local_address,
+                                       const ScanOptions& options);
+
+  // Enqueue the packets necessary to stop a scan to the hci_cmd_runner().
+  virtual void EnqueueStopScanPackets();
+
   void set_state(State state) { state_ = state; }
   pw::async::Dispatcher& dispatcher() const { return pw_dispatcher_; }
   Transport::WeakPtr hci() const { return hci_; }
+  SequentialCommandRunner& hci_cmd_runner() const { return *hci_cmd_runner_; }
   Delegate* delegate() const { return delegate_; }
 
  private:

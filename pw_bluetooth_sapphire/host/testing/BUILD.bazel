@@ -34,6 +34,7 @@ cc_library(
     ],
     hdrs = [
         "public/pw_bluetooth_sapphire/internal/host/testing/controller_test.h",
+        "public/pw_bluetooth_sapphire/internal/host/testing/fake_wake_alarm_provider.h",
         "public/pw_bluetooth_sapphire/internal/host/testing/inspect.h",
         "public/pw_bluetooth_sapphire/internal/host/testing/inspect_util.h",
         "public/pw_bluetooth_sapphire/internal/host/testing/parse_args.h",
@@ -54,6 +55,7 @@ cc_library(
         "//pw_bluetooth",
         "//pw_bluetooth_sapphire:config",
         "//pw_bluetooth_sapphire:fake_lease_provider",
+        "//pw_bluetooth_sapphire:wake_alarm",
         "//pw_bluetooth_sapphire/fuchsia/lib/inspect_testing",
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/gap:definitions",

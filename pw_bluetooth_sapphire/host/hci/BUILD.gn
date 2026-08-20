@@ -24,6 +24,7 @@ pw_source_set("hci") {
     "acl_connection.cc",
     "advertising_handle_map.cc",
     "advertising_packet_filter.cc",
+    "android_batch_low_energy_scanner.cc",
     "android_extended_low_energy_advertiser.cc",
     "bredr_connection.cc",
     "bredr_connection_request.cc",
@@ -46,6 +47,7 @@ pw_source_set("hci") {
     "public/pw_bluetooth_sapphire/internal/host/hci/advertising_handle_map.h",
     "public/pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h",
     "public/pw_bluetooth_sapphire/internal/host/hci/advertising_report_parser.h",
+    "public/pw_bluetooth_sapphire/internal/host/hci/android_batch_low_energy_scanner.h",
     "public/pw_bluetooth_sapphire/internal/host/hci/android_extended_low_energy_advertiser.h",
     "public/pw_bluetooth_sapphire/internal/host/hci/bredr_connection.h",
     "public/pw_bluetooth_sapphire/internal/host/hci/bredr_connection_request.h",
@@ -66,6 +68,7 @@ pw_source_set("hci") {
   ]
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    "$dir_pw_bluetooth_sapphire:wake_alarm",
     "$dir_pw_bluetooth_sapphire/host/common",
     "$dir_pw_bluetooth_sapphire/host/hci-spec",
     "$dir_pw_bluetooth_sapphire/host/transport",
@@ -104,6 +107,7 @@ pw_test("hci_test") {
   sources = [
     "advertising_handle_map_test.cc",
     "advertising_packet_filter_test.cc",
+    "android_batch_low_energy_scanner_test.cc",
     "connection_test.cc",
     "discovery_filter_test.cc",
     "extended_low_energy_advertiser_test.cc",
