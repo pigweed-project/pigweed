@@ -178,6 +178,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingRemainsDisabledIfConfiguredOff) {
        AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
       transport()->GetWeakPtr());
   packet_filter.SetPacketFilters(0, {});
+  packet_filter.ApplyPacketFilters();
 
   RunUntilIdle();
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
@@ -198,6 +199,7 @@ TEST_F(AdvertisingPacketFilterTest, UsesOffloadedFilteringWhenFiltersAreSet) {
 
   DiscoveryFilter filter;
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   EXPECT_TRUE(packet_filter.IsUsingOffloadedFiltering());
   EXPECT_TRUE(test_device()->packet_filter_state().enabled);
@@ -215,12 +217,14 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingDisabledIfMemoryUnavailable) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   EXPECT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 
   DiscoveryFilter filter_b;
   filter_b.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(1, {filter_b});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
@@ -238,15 +242,18 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingReenabledIfMemoryAvailable) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   DiscoveryFilter filter_b;
   filter_b.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(1, {filter_b});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 
   packet_filter.UnsetPacketFilters(1);
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   EXPECT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 }
@@ -264,12 +271,14 @@ TEST_F(AdvertisingPacketFilterTest, UnsetFiltersDoesntInadvertentlyEnable) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 
   DiscoveryFilter filter_b;
   filter_b.set_name_substring("fuchsia");
   packet_filter.SetPacketFilters(1, {filter_b});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   // Offloading should now be disabled because max_filters is 1 but two filters
@@ -278,6 +287,7 @@ TEST_F(AdvertisingPacketFilterTest, UnsetFiltersDoesntInadvertentlyEnable) {
 
   filter_b.set_name_substring("another");
   packet_filter.SetPacketFilters(1, {filter_b});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   // Offloading should remain off even after calling SetPacketFilters
@@ -295,6 +305,7 @@ TEST_F(AdvertisingPacketFilterTest, FilterWithEmptyFiltersOffloadingSupported) {
   // Ensure we treat an empty set of filters as the allow all filter and send it
   // to the Controller
   packet_filter.SetPacketFilters(0, {});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
@@ -313,6 +324,7 @@ TEST_F(AdvertisingPacketFilterTest, HostFilteringUsesOnlyAllowAllFilter) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 
@@ -325,6 +337,7 @@ TEST_F(AdvertisingPacketFilterTest, HostFilteringUsesOnlyAllowAllFilter) {
   }
 
   packet_filter.UnsetPacketFilters(0);
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 
@@ -356,6 +369,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingSetPacketFiltersReplaces) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("foo");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   {
@@ -368,6 +382,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingSetPacketFiltersReplaces) {
   DiscoveryFilter filter_b;
   filter_b.set_name_substring("bar");
   packet_filter.SetPacketFilters(0, {filter_b});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   {
@@ -391,6 +406,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingServiceUUID) {
   DiscoveryFilter filter;
   filter.set_service_uuids({uuid});
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -413,6 +429,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingSolicitationUUID) {
   DiscoveryFilter filter;
   filter.set_solicitation_uuids({uuid});
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -433,6 +450,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingNameSubstring) {
   DiscoveryFilter filter;
   filter.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -454,6 +472,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingServiceDataUUID) {
   DiscoveryFilter filter;
   filter.set_service_data_uuids({uuid});
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -474,6 +493,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingManufacturerCode) {
   DiscoveryFilter filter;
   filter.set_manufacturer_code(kUuid);
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -496,10 +516,12 @@ TEST_F(AdvertisingPacketFilterTest, UnsetFiltersDoesntEnableWhenFeatureOff) {
   DiscoveryFilter filter;
   filter.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_FALSE(test_device()->packet_filter_state().enabled);
 
   packet_filter.UnsetPacketFilters(0);
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_FALSE(test_device()->packet_filter_state().enabled);
 }
@@ -517,6 +539,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingSetsDefaultRssiThreshold) {
   DiscoveryFilter filter;
   filter.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   uint8_t filter_index = packet_filter.last_filter_index();
@@ -538,6 +561,7 @@ TEST_F(AdvertisingPacketFilterTest, ImmediateDeliveryModeIsUsedWhenConfigured) {
   DiscoveryFilter filter;
   filter.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   EXPECT_EQ(1u, test_device()->packet_filter_state().filters.count(0));
@@ -560,6 +584,7 @@ TEST_F(AdvertisingPacketFilterTest, BatchedDeliveryModeIsUsedWhenConfigured) {
   DiscoveryFilter filter;
   filter.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   EXPECT_EQ(1u, test_device()->packet_filter_state().filters.count(0));
@@ -569,7 +594,8 @@ TEST_F(AdvertisingPacketFilterTest, BatchedDeliveryModeIsUsedWhenConfigured) {
             f.delivery_mode);
 }
 
-// Ensure that we fallback to host filtering if an HCI command fails
+// Verifies that filter offload failures fall back to host filtering and invoke
+// the completion callback once fallback completes.
 TEST_F(AdvertisingPacketFilterTest, OffloadingFailsOnHciError) {
   AdvertisingPacketFilter packet_filter(
       {/*offloading_supported=*/true,
@@ -581,6 +607,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingFailsOnHciError) {
   DiscoveryFilter filter_a;
   filter_a.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_a});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 
@@ -592,8 +619,13 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingFailsOnHciError) {
   DiscoveryFilter filter_b;
   filter_b.set_name_substring("bluetooth");
   packet_filter.SetPacketFilters(0, {filter_b});
+
+  bool callback_invoked = false;
+  packet_filter.ApplyPacketFilters(
+      [&](Result<> /*result*/) { callback_invoked = true; });
   RunUntilIdle();
 
+  EXPECT_TRUE(callback_invoked);
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
 
@@ -611,6 +643,7 @@ TEST_F(AdvertisingPacketFilterTest, OffloadingFilterWithNoOffloadableFields) {
   DiscoveryFilter filter;
   filter.set_rssi(-50);
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
@@ -645,16 +678,19 @@ TEST_F(AdvertisingPacketFilterTest,
       transport()->GetWeakPtr());
 
   packet_filter.SetPacketFilters(0, {});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
   ASSERT_EQ(1u, test_device()->packet_filter_state().filters.size());
 
   packet_filter.SetPacketFilters(1, {});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
   ASSERT_EQ(2u, test_device()->packet_filter_state().filters.size());
 
   packet_filter.SetPacketFilters(2, {});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
@@ -673,14 +709,102 @@ TEST_F(AdvertisingPacketFilterTest, MultipleUUIDsExhaustMemory) {
   filter.set_service_uuids({UUID(uint16_t(0x1234)), UUID(uint16_t(0x5678))});
 
   packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
   ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
 
   DiscoveryFilter filter2;
   filter2.set_service_uuids({UUID(uint16_t(0x90ab))});
   packet_filter.SetPacketFilters(1, {filter2});
+  packet_filter.ApplyPacketFilters();
   RunUntilIdle();
 
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
+// Verifies that ApplyPacketFilters offloads filters asynchronously and invokes
+// the provided completion callback once offloading finishes.
+TEST_F(AdvertisingPacketFilterTest, ApplyPacketFiltersInvokesCallback) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/1,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  filter.set_name_substring("bluetooth");
+  packet_filter.SetPacketFilters(0, {filter});
+
+  std::optional<Result<>> result;
+  packet_filter.ApplyPacketFilters([&](Result<> status) { result = status; });
+  EXPECT_FALSE(result.has_value());
+
+  RunUntilIdle();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_ok());
+  EXPECT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+}
+
+// Verifies that ClearPacketFilters clears registered filter sessions, switches
+// filtering mode back to host filtering, and invokes the completion callback.
+TEST_F(AdvertisingPacketFilterTest, ClearPacketFiltersResetsToHostFiltering) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/1,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  filter.set_name_substring("bluetooth");
+  packet_filter.SetPacketFilters(0, {filter});
+  packet_filter.ApplyPacketFilters();
+  RunUntilIdle();
+  ASSERT_TRUE(packet_filter.IsUsingOffloadedFiltering());
+
+  std::optional<Result<>> result;
+  packet_filter.ClearPacketFilters([&](Result<> status) { result = status; });
+  EXPECT_FALSE(result.has_value());
+
+  RunUntilIdle();
+  ASSERT_TRUE(result.has_value());
+  EXPECT_TRUE(result->is_ok());
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
+// Verifies that calling ApplyPacketFilters or ClearPacketFilters while HCI
+// commands are already running cancels the previous command sequence and queues
+// the new operations safely.
+TEST_F(AdvertisingPacketFilterTest,
+       ReentrantApplyOrClearCancelsPreviousCommands) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/2,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  filter.set_name_substring("first");
+  packet_filter.SetPacketFilters(0, {filter});
+
+  bool first_cb_called_with_cancel = false;
+  packet_filter.ApplyPacketFilters([&](Result<> status) {
+    EXPECT_TRUE(status.is_error());
+    EXPECT_EQ(ToResult(HostError::kCanceled), status);
+    first_cb_called_with_cancel = true;
+  });
+
+  bool second_cb_called = false;
+  packet_filter.ClearPacketFilters([&](Result<> status) {
+    EXPECT_TRUE(status.is_ok());
+    second_cb_called = true;
+  });
+
+  RunUntilIdle();
+  EXPECT_TRUE(first_cb_called_with_cancel);
+  EXPECT_TRUE(second_cb_called);
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
 }  // namespace bt::hci

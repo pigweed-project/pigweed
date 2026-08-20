@@ -139,6 +139,14 @@ void LowEnergyScanner::UnsetPacketFilters(uint16_t scan_id) {
   packet_filter_.UnsetPacketFilters(scan_id);
 }
 
+void LowEnergyScanner::ApplyPacketFilters(ResultFunction<> callback) {
+  packet_filter_.ApplyPacketFilters(std::move(callback));
+}
+
+void LowEnergyScanner::ClearPacketFilters(ResultFunction<> callback) {
+  packet_filter_.ClearPacketFilters(std::move(callback));
+}
+
 void LowEnergyScanner::NotifyCachedPeers(uint16_t scan_id) {
   for (const auto& result : cached_scan_results_) {
     AdvertisingData::ParseResult ad = AdvertisingData::FromBytes(result.data());

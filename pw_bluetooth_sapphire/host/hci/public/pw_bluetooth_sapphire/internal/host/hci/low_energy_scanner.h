@@ -252,6 +252,9 @@ class LowEnergyScanner : public LocalAddressClient {
   bool IsUsingOffloadedFiltering() const {
     return packet_filter_.IsUsingOffloadedFiltering();
   }
+  bool HasRegisteredFilters() const {
+    return packet_filter_.HasRegisteredFilters();
+  }
 
   virtual bool IsExtendedScanner() const { return false; }
 
@@ -271,6 +274,17 @@ class LowEnergyScanner : public LocalAddressClient {
   // Unassociate all packet filters with a particular upper layer scan session
   // with a given scan id.
   void UnsetPacketFilters(uint16_t scan_id);
+
+  // Push the currently associated packet filters down to the Controller (or
+  // fall back to Host level filtering if Controller offloading is not supported
+  // or out of memory). |callback| will be invoked with the result once all HCI
+  // commands have finished running.
+  void ApplyPacketFilters(ResultFunction<> callback = ResultFunction<>());
+
+  // Clear all configured packet filters and reset the Controller to Host level
+  // filtering. |callback| will be invoked with the result once all HCI commands
+  // have finished running.
+  void ClearPacketFilters(ResultFunction<> callback = ResultFunction<>());
 
   // Initiates a scan. This is an asynchronous operation that abides by the
   // following rules:

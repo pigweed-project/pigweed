@@ -58,21 +58,27 @@ class AdvertisingPacketFilter {
 
   AdvertisingPacketFilter(const Config& config, Transport::WeakPtr hci);
 
-  // Set the packet filters for a given scan id. If offloading is supported and
-  // the Controller has memory available (for all currently configured filters,
-  // including the one being added), this method will offload the filters being
-  // added. Conversely, if the Controller doesn't have memory available for all
-  // filters, offloaded filtering will be disabled and we will gracefully fall
-  // back to Host level filtering.
+  // Set the packet filters for a given scan id. This updates the configured
+  // filters for the scan id synchronously. To push the updated filter
+  // configuration to the Controller, call ApplyPacketFilters().
   void SetPacketFilters(ScanId scan_id,
                         const std::vector<DiscoveryFilter>& filters);
 
-  // Remove the packet filters for a given scan id. If offloading is currently
-  // in use, this method will remove filters from the Controller configuration
-  // as well. Conversely, if offloading isn't in use and, by removing this scan
-  // id's filters, we can now push all filters onto the Controller, this method
-  // may re-enable offloaded packet filtering.
+  // Remove the packet filters for a given scan id. This updates the configured
+  // filters synchronously. To push the updated filter configuration to the
+  // Controller, call ApplyPacketFilters().
   void UnsetPacketFilters(ScanId scan_id);
+
+  // Apply the currently configured packet filters to the Controller (or fall
+  // back to Host level filtering if Controller offloading is not supported or
+  // out of memory). |callback| will be invoked with the result of the HCI
+  // command sequence once all commands have finished running.
+  void ApplyPacketFilters(ResultFunction<> callback = ResultFunction<>());
+
+  // Clear all configured packet filters and reset the Controller to Host level
+  // filtering. |callback| will be invoked with the result of the HCI command
+  // sequence once all commands have finished running.
+  void ClearPacketFilters(ResultFunction<> callback = ResultFunction<>());
 
   // Obtain the set of scan ids that have filters that match a particular peer
   std::unordered_set<ScanId> Matches(const AdvertisingData::ParseResult& ad,
@@ -88,6 +94,9 @@ class AdvertisingPacketFilter {
   bool IsUsingOffloadedFiltering() const {
     return filtering_state_ == FilteringState::kOffloadedFiltering;
   }
+
+  // True if packet filters are currently registered for at least one scan id.
+  bool HasRegisteredFilters() const { return !scan_id_to_filters_.empty(); }
 
   // Returns the number of scan ids currently registered. This method is only
   // used for testing.
@@ -110,15 +119,6 @@ class AdvertisingPacketFilter {
     kLocalName,
     kManufacturerCode,
   };
-
-  // Remove the packet filters for a given scan id. If offloading is currently
-  // in use, this method will remove filters from the Controller configuration
-  // as well.
-  //
-  // Importantly, this method will not check whether we can now push all
-  // remaining filters onto the Controller. Even if so, it will not re-enable
-  // offloaded packet filtering in the Controller.
-  void UnsetPacketFiltersInternal(ScanId scan_id, bool run_commands);
 
   // Generate the next valid, available, and within range FilterIndex.
   // This function may fail if there are already the maximum offloadable filters
@@ -153,19 +153,19 @@ class AdvertisingPacketFilter {
   // Enable Controller based filtering. After the commands this method issues
   // are run, all advertising packet filtering will occur on the Controller
   // before we perform any secondary filtering on the Host.
-  [[nodiscard]] bool UseOffloadedFiltering();
+  void UseOffloadedFiltering(ResultFunction<> callback = ResultFunction<>());
 
   // Disable all Controller based filtering and fall back to Host level
   // filtering.
-  void UseHostFiltering();
+  void UseHostFiltering(ResultFunction<> callback = ResultFunction<>());
 
   // Queue HCI commands necessary to offload the given filter to the Controller.
   [[nodiscard]] bool QueueOffloadFilterCommands(ScanId scan_id,
                                                 const DiscoveryFilter& filter);
 
-  // Reset the number of open slots of Controller memory per filter type we
-  // track to the default value.
-  void ResetOpenSlots();
+  // Reset all tracked hardware filter parameter slots, active filter index
+  // mappings, and the last allocated filter index to their initial state.
+  void ResetFilterState();
 
   // Returns the number of filter indexes currently in use
   size_t NumFilterIndexesInUse() const;

@@ -227,6 +227,15 @@ class LowEnergyDiscoveryManager final
   // Tells the scanner to stop scanning.
   void StopScan();
 
+  // Finalizes stopping the scan by transitioning to idle immediately or after
+  // asynchronously clearing offloaded hardware packet filters.
+  void CompleteScanStop();
+
+  // If there are existing sessions or pending requests, initiates scanning (or
+  // transitions to idle if discovery is currently paused) and returns true.
+  // Returns false if both session lists are empty.
+  bool MaybeRestartScanning();
+
   // If there are any pending requests or valid sessions, start discovery.
   // Discovery must not be paused.
   // Called when discovery is unpaused or the scan period ends and needs to be

@@ -119,6 +119,8 @@ class LowEnergyDiscoveryManagerTest : public TestingBase {
     return discovery_manager_.get();
   }
 
+  hci::LowEnergyScanner* scanner() const { return scanner_.get(); }
+
   // Deletes |discovery_manager_|.
   void DeleteDiscoveryManager() { discovery_manager_ = nullptr; }
 
@@ -1245,28 +1247,277 @@ TEST_F(LowEnergyDiscoveryManagerTest, StartActiveScanDuringPassiveScan) {
 }
 
 TEST_F(LowEnergyDiscoveryManagerTest,
-       DISABLED_StartScanDuringOffloadedFilters) {
-  SetupDiscoveryManager(
-      /*extended=*/false,
-      {true,
-       8,
-       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
-
-  auto session_a = StartDiscoverySession(false);
+       StartActiveScanDuringActiveScanDoesNotRestartScan) {
+  auto session1 = StartDiscoverySession(/*active=*/true);
   RunUntilIdle();
+  ASSERT_TRUE(session1);
   ASSERT_TRUE(test_device()->le_scan_state().enabled);
+  ASSERT_EQ(pw::bluetooth::emboss::LEScanType::ACTIVE,
+            test_device()->le_scan_state().scan_type);
 
-  // The scan state should transition to enabled.
   ASSERT_EQ(1u, scan_states().size());
   EXPECT_TRUE(scan_states()[0]);
 
-  // starting another discovery session while offloading is enabled should cause
-  // us to restart the scan so the new filters can take effect in the Controller
-  hci::DiscoveryFilter filter;
-  filter.set_name_substring("bort");
-  auto session_b = StartDiscoverySession(false, {filter});
+  // Starting a second active discovery session while active scan is already
+  // running should attach to the existing scan without restarting the
+  // hardware scanner.
+  auto session2 = StartDiscoverySession(/*active=*/true);
+  RunUntilIdle();
+  EXPECT_TRUE(session2);
+  EXPECT_TRUE(test_device()->le_scan_state().enabled);
+  EXPECT_EQ(pw::bluetooth::emboss::LEScanType::ACTIVE,
+            test_device()->le_scan_state().scan_type);
+  EXPECT_EQ(1u, scan_states().size());
+}
 
+// Verifies that starting a new discovery session while offloaded packet
+// filtering is active causes the scan to restart so the new filters can take
+// effect in the Controller.
+TEST_F(LowEnergyDiscoveryManagerTest, StartScanDuringOffloadedFilters) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter_a;
+  filter_a.set_name_substring("alpha");
+  auto session_a = StartDiscoverySession(false, {filter_a});
+  RunUntilIdle();
+  ASSERT_TRUE(test_device()->le_scan_state().enabled);
+
+  // During initial scan startup from idle, host filtering is used.
+  EXPECT_FALSE(scanner()->IsUsingOffloadedFiltering());
+  ASSERT_EQ(1u, scan_states().size());
+  EXPECT_TRUE(scan_states()[0]);
+
+  // Advance past the initial scan period to activate offloaded filtering.
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
   EXPECT_THAT(scan_states(), ::testing::ElementsAre(true, false, true));
+
+  hci::DiscoveryFilter filter_b;
+  filter_b.set_name_substring("bort");
+  auto session_b = StartDiscoverySession(false, {filter_b});
+
+  EXPECT_THAT(scan_states(),
+              ::testing::ElementsAre(true, false, true, false, true));
+}
+
+// Verifies that removing a discovery session while another session remains
+// active during offloaded filtering causes the scan to restart so the removed
+// filter is cleared from the Controller.
+TEST_F(LowEnergyDiscoveryManagerTest,
+       RemoveSessionDuringOffloadedFiltersRestartsScan) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter_a;
+  filter_a.set_name_substring("alpha");
+  auto session_a = StartDiscoverySession(false, {filter_a});
+
+  hci::DiscoveryFilter filter_b;
+  filter_b.set_name_substring("beta");
+  auto session_b = StartDiscoverySession(false, {filter_b});
+  RunUntilIdle();
+
+  // Advance past the initial scan period to activate offloaded filtering.
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
+
+  session_b = nullptr;
+  RunUntilIdle();
+
+  EXPECT_TRUE(scanner()->IsUsingOffloadedFiltering());
+  EXPECT_THAT(scan_states(),
+              ::testing::ElementsAre(true, false, true, false, true));
+}
+
+// Verifies that stopping all discovery sessions when offloaded filtering is
+// active calls ClearPacketFilters, switching Controller filter memory back to
+// host filtering.
+TEST_F(LowEnergyDiscoveryManagerTest, ScanStopClearsOffloadedPacketFilters) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter;
+  filter.set_name_substring("test");
+  auto session = StartDiscoverySession(false, {filter});
+  RunUntilIdle();
+
+  // Advance past the initial scan period to activate offloaded filtering.
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
+
+  session = nullptr;
+  RunUntilIdle();
+
+  EXPECT_FALSE(scanner()->IsUsingOffloadedFiltering());
+  EXPECT_FALSE(scan_enabled());
+}
+
+// Verifies that pausing discovery while asynchronous packet filter offloading
+// is in flight aborts scan initiation before hardware scanning is enabled.
+TEST_F(LowEnergyDiscoveryManagerTest,
+       PauseDuringApplyPacketFiltersAbortsScanStartup) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter;
+  filter.set_name_substring("alpha");
+
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {filter}, [&](auto cb_session) {
+        session = std::move(cb_session);
+      });
+
+  // Pause discovery before asynchronous ApplyPacketFilters commands complete.
+  auto pause_token = discovery_manager()->PauseDiscovery();
+  RunUntilIdle();
+
+  EXPECT_FALSE(test_device()->le_scan_state().enabled);
+  EXPECT_FALSE(session);
+}
+
+// Verifies that when a discovery session is requested right after scanning
+// stops and during asynchronous packet filter clearing, calling PauseDiscovery
+// before cleanup completes safely inhibits scan restarting until resumed.
+TEST_F(LowEnergyDiscoveryManagerTest,
+       PauseDuringClearPacketFiltersWithPendingRequest) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter;
+  filter.set_name_substring("first");
+
+  std::unique_ptr<LowEnergyDiscoverySession> first_session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {filter}, [&](auto cb_session) {
+        first_session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
+  ASSERT_TRUE(scan_enabled());
+
+  // Destroy session to stop scanning and initiate ClearPacketFilters cleanup.
+  first_session = nullptr;
+
+  // Before RunUntilIdle (while StopScan and ClearPacketFilters are queued),
+  // request a new discovery session and pause discovery.
+  std::unique_ptr<LowEnergyDiscoverySession> second_session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {}, [&](auto cb_session) {
+        second_session = std::move(cb_session);
+      });
+  std::optional<PauseToken> pause_token = discovery_manager()->PauseDiscovery();
+
+  RunUntilIdle();
+  EXPECT_FALSE(scan_enabled());
+  EXPECT_FALSE(second_session);
+
+  // Destroying the pause token resumes discovery and processes pending request.
+  pause_token.reset();
+  RunUntilIdle();
+  EXPECT_TRUE(scan_enabled());
+  EXPECT_TRUE(second_session);
+}
+
+// Verifies that when a discovery session is requested right after scanning
+// stops and during asynchronous packet filter clearing, the request is safely
+// queued in pending_ and not started until filter clearing completes.
+TEST_F(LowEnergyDiscoveryManagerTest,
+       StartDiscoveryDuringClearPacketFiltersQueuesRequest) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter;
+  filter.set_name_substring("first");
+
+  std::unique_ptr<LowEnergyDiscoverySession> first_session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {filter}, [&](auto cb_session) {
+        first_session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
+  ASSERT_TRUE(scan_enabled());
+
+  // Destroy session to stop scanning and initiate ClearPacketFilters cleanup.
+  first_session = nullptr;
+
+  // Before RunUntilIdle (while StopScan and ClearPacketFilters are queued),
+  // request a new discovery session.
+  std::unique_ptr<LowEnergyDiscoverySession> second_session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {}, [&](auto cb_session) {
+        second_session = std::move(cb_session);
+      });
+
+  // Second session callback should not have been called synchronously because
+  // state_ is kStopping.
+  EXPECT_FALSE(second_session);
+
+  RunUntilIdle();
+  EXPECT_TRUE(scan_enabled());
+  EXPECT_TRUE(second_session);
+}
+
+// Verifies that when all active discovery sessions are destroyed while
+// discovery is paused, offloaded packet filters are still cleared from hardware
+// memory.
+TEST_F(LowEnergyDiscoveryManagerTest,
+       ScanStopWhilePausedClearsOffloadedPacketFilters) {
+  SetupDiscoveryManager(
+      /*extended=*/false,
+      {/*offloading_supported=*/true,
+       /*max_filters=*/8,
+       hci::AdvertisingPacketFilter::Config::DeliveryMode::kImmediate});
+  discovery_manager()->set_scan_period(kTestScanPeriod);
+
+  hci::DiscoveryFilter filter;
+  filter.set_name_substring("test");
+  std::unique_ptr<LowEnergyDiscoverySession> session;
+  discovery_manager()->StartDiscovery(
+      /*active=*/false, {filter}, [&](auto cb_session) {
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  RunFor(kTestScanPeriod);
+  ASSERT_TRUE(scanner()->IsUsingOffloadedFiltering());
+
+  auto pause_token = discovery_manager()->PauseDiscovery();
+  RunUntilIdle();
+  EXPECT_FALSE(scan_enabled());
+  EXPECT_TRUE(scanner()->IsUsingOffloadedFiltering());
+
+  // Removing the last session while paused should trigger offload clearing.
+  session = nullptr;
+  RunUntilIdle();
+  EXPECT_FALSE(scanner()->IsUsingOffloadedFiltering());
 }
 
 TEST_F(LowEnergyDiscoveryManagerTest, StartActiveScanWhileStartingPassiveScan) {

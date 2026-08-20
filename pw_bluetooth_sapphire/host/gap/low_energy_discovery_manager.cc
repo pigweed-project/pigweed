@@ -72,12 +72,10 @@ void LowEnergyDiscoverySession::SetResultCallback(PeerFoundFunction callback) {
         }
         self->notify_cached_peers_cb_(&self.get());
       });
-  PW_CHECK(post_status.ok());
+  PW_DCHECK(post_status.ok());
 }
 
 void LowEnergyDiscoverySession::NotifyDiscoveryResult(const Peer& peer) const {
-  PW_CHECK(peer.le());
-
   if (!alive_ || !peer_found_fn_) {
     return;
   }
@@ -110,8 +108,8 @@ LowEnergyDiscoveryManager::LowEnergyDiscoveryManager(
       packet_filter_config_(packet_filter_config),
       paused_count_(0),
       scanner_(scanner) {
-  PW_DCHECK(peer_cache_);
-  PW_DCHECK(scanner_);
+  PW_CHECK(peer_cache_);
+  PW_CHECK(scanner_);
 
   scanner_->set_delegate(this);
 }
@@ -126,30 +124,26 @@ void LowEnergyDiscoveryManager::StartDiscovery(
     bool active,
     std::vector<hci::DiscoveryFilter> discovery_filters,
     SessionCallback callback) {
-  PW_CHECK(callback);
   bt_log(INFO, "gap-le", "start %s discovery", active ? "active" : "passive");
 
-  // If a request to start or stop is currently pending then this one will
-  // become pending until the HCI request completes. This does NOT include
-  // the state in which we are stopping and restarting scan in between scan
-  // periods, in which case session_ will not be empty.
+  // A new discovery request can immediately attach to an existing scan run if:
   //
-  // If the scan needs to be upgraded to an active scan, it will be handled
-  // in OnScanStatus() when the HCI request completes.
-  if (!pending_.empty() ||
-      (scanner_->state() == hci::LowEnergyScanner::State::kStopping &&
-       sessions_.empty())) {
-    PW_CHECK(!scanner_->IsScanning());
-    pending_.push_back(DiscoveryRequest{.active = active,
-                                        .filters = std::move(discovery_filters),
-                                        .callback = std::move(callback)});
-    return;
-  }
+  //    1. There are no requests queued in pending_ waiting to start a scan.
+  //    2. Active discovery sessions exist (sessions_ is not empty).
+  //
+  // Note: If sessions_ is not empty while stopping, scanning was only
+  // transiently stopped (e.g. to reload filters or switch scan periods), so we
+  // can attach the session now and it will be included when scanning resumes.
+  if (pending_.empty() && !sessions_.empty()) {
+    // If this is the first active session (upgrading an ongoing passive scan to
+    // an active scan), stop scanning so OnScanStatus() can restart in active
+    // mode.
+    if (active && std::none_of(sessions_.begin(), sessions_.end(), [](auto& s) {
+          return s.second->active();
+        })) {
+      StopScan();
+    }
 
-  // If a peer scan is already in progress, then the request succeeds (this
-  // includes the state in which we are stopping and restarting scan in
-  // between scan periods).
-  if (!sessions_.empty()) {
     auto session = AddSession(active, std::move(discovery_filters));
 
     // Post the callback instead of calling it synchronously to avoid bugs
@@ -161,17 +155,6 @@ void LowEnergyDiscoveryManager::StartDiscovery(
             cb(std::move(discovery_session));
           }
         });
-
-    // If this is the first active session, stop scanning and wait for
-    // OnScanStatus() to initiate active scan.
-    if (active) {
-      for (const auto& [scan_id, s] : sessions_) {
-        if (s->active()) {
-          StopScan();
-          break;
-        }
-      }
-    }
 
     // If we have already offloaded packet filters to the Controller, the
     // Controller will only return peers matching the filters it is configured
@@ -192,6 +175,11 @@ void LowEnergyDiscoveryManager::StartDiscovery(
     return;
   }
 
+  // Otherwise, queue this request in pending_. This applies when:
+  // - There are no active sessions (sessions_ is empty), so a new scan must be
+  //   started.
+  // - Prior requests are already queued in pending_, so this request must wait
+  //   its turn.
   pending_.push_back({.active = active,
                       .filters = std::move(discovery_filters),
                       .callback = std::move(callback)});
@@ -200,9 +188,10 @@ void LowEnergyDiscoveryManager::StartDiscovery(
     return;
   }
 
-  // If the scanner is not idle, it is starting/stopping, and the
-  // appropriate scanning will be initiated in OnScanStatus().
-  if (scanner_->IsIdle()) {
+  // If both the discovery manager and underlying scanner are idle, initiate
+  // scanning immediately. Otherwise (if starting or stopping), scanning will
+  // be initiated once the state transition completes.
+  if (state_.value() == State::kIdle && scanner_->IsIdle()) {
     StartScan(active);
   }
 }
@@ -221,7 +210,7 @@ LowEnergyDiscoveryManager::PauseDiscovery() {
       return;
     }
 
-    PW_CHECK(paused());
+    PW_DCHECK(paused());
     paused_count_.Set(*paused_count_ - 1);
     if (*paused_count_ == 0) {
       ResumeDiscovery();
@@ -366,11 +355,9 @@ LowEnergyDiscoveryManager::AddSession(
 
 void LowEnergyDiscoveryManager::RemoveSession(
     LowEnergyDiscoverySession* session) {
-  PW_CHECK(session);
-
   // Only alive sessions are allowed to call this method. If there is at
   // least one alive session object out there, then we MUST be scanning.
-  PW_CHECK(session->alive());
+  PW_DCHECK(session->alive());
 
   scanner_->UnsetPacketFilters(session->scan_id());
   sessions_.erase(session->scan_id());
@@ -381,11 +368,14 @@ void LowEnergyDiscoveryManager::RemoveSession(
                                   [](auto& s) { return s.second->active(); });
 
   // Stop scanning if the session count has dropped to zero or the scan type
-  // needs to be downgraded to passive.
-  if (sessions_.empty() || last_active) {
+  // needs to be downgraded to passive. If offloaded filtering is enabled,
+  // stop scanning so offloaded filters are updated when scanning is stopped.
+  if (sessions_.empty() || last_active ||
+      scanner_->IsUsingOffloadedFiltering()) {
     bt_log(TRACE,
            "gap-le",
-           "Last %sdiscovery session removed, stopping scan (sessions: %zu)",
+           "Last %sdiscovery session removed (or reconfiguring offloaded "
+           "filters), stopping scan (sessions: %zu)",
            last_active ? "active " : "",
            sessions_.size());
     StopScan();
@@ -509,7 +499,6 @@ void LowEnergyDiscoveryManager::OnScanFailed() {
   bt_log(ERROR, "gap-le", "failed to initiate scan!");
 
   inspect_.failed_count.Add(1);
-  DeactivateAndNotifySessions();
 
   // Report failure on all currently pending requests. If any of the
   // callbacks issue a retry the new requests will get re-queued and
@@ -520,7 +509,7 @@ void LowEnergyDiscoveryManager::OnScanFailed() {
     request.callback(nullptr);
   }
 
-  state_.Set(State::kIdle);
+  DeactivateAndNotifySessions();
 }
 
 void LowEnergyDiscoveryManager::OnPassiveScanStarted() {
@@ -560,29 +549,8 @@ void LowEnergyDiscoveryManager::OnScanStopped() {
          pending_.size(),
          sessions_.size());
 
-  state_.Set(State::kIdle);
-
-  if (paused()) {
-    return;
-  }
-
-  if (!sessions_.empty()) {
-    bt_log(DEBUG, "gap-le", "initiating scanning");
-    bool active = std::any_of(sessions_.begin(), sessions_.end(), [](auto& s) {
-      return s.second->active();
-    });
-    StartScan(active);
-    return;
-  }
-
-  // Some clients might have requested to start scanning while we were
-  // waiting for it to stop. Restart scanning if that is the case.
-  if (!pending_.empty()) {
-    bt_log(DEBUG, "gap-le", "initiating scanning");
-    bool active = std::any_of(
-        pending_.begin(), pending_.end(), [](auto& p) { return p.active; });
-    StartScan(active);
-    return;
+  if (!MaybeRestartScanning()) {
+    CompleteScanStop();
   }
 }
 
@@ -625,7 +593,6 @@ void LowEnergyDiscoveryManager::NotifyPending() {
       cb(std::move(new_sessions[i]));
     }
   }
-  PW_CHECK(pending_.empty());
 }
 
 void LowEnergyDiscoveryManager::StartScan(bool active) {
@@ -668,7 +635,28 @@ void LowEnergyDiscoveryManager::StartScan(bool active) {
   // scan period for general discovery (by default; |scan_period_| can be
   // modified, e.g. by unit tests).
   state_.Set(State::kStarting);
-  scanner_->StartScan(options, std::move(cb));
+  scanner_->ApplyPacketFilters([self = GetWeakPtr(),
+                                options,
+                                status_cb =
+                                    std::move(cb)](auto result) mutable {
+    if (!self.is_alive()) {
+      return;
+    }
+
+    if (result.is_error()) {
+      bt_log(
+          WARN, "gap-le", "failed to apply packet filters: %s", bt_str(result));
+      self->state_.Set(State::kIdle);
+      return;
+    }
+
+    if (self->state_.value() != State::kStarting || self->paused()) {
+      self->state_.Set(State::kIdle);
+      return;
+    }
+
+    self->scanner_->StartScan(options, std::move(status_cb));
+  });
 
   inspect_.active_scan_interval_ms.Set(HciScanIntervalToMs(options.interval));
   inspect_.active_scan_window_ms.Set(HciScanWindowToMs(options.window));
@@ -676,33 +664,95 @@ void LowEnergyDiscoveryManager::StartScan(bool active) {
 
 void LowEnergyDiscoveryManager::StopScan() {
   state_.Set(State::kStopping);
-  scanner_->StopScan();
+  if (scanner_->StopScan()) {
+    return;
+  }
+
+  CompleteScanStop();
+}
+
+void LowEnergyDiscoveryManager::CompleteScanStop() {
+  if (MaybeRestartScanning()) {
+    return;
+  }
+
+  // When scanning stops while packet filters remain registered (for example,
+  // when StopScan() completes during parameter reconfiguration or when active
+  // discovery sessions still exist), those filters must be preserved for when
+  // scanning resumes. Transitioning to State::kIdle without clearing filters
+  // allows scanning to cleanly restart with existing session filters intact.
+  if (scanner_->HasRegisteredFilters()) {
+    state_.Set(State::kIdle);
+    return;
+  }
+
+  // Remain in State::kStopping while asynchronous hardware filter clearing
+  // executes so any discovery requests arriving during cleanup are safely
+  // queued in pending_.
+  scanner_->ClearPacketFilters([self = GetWeakPtr()](auto /*result*/) {
+    if (!self.is_alive()) {
+      return;
+    }
+
+    if (!self->MaybeRestartScanning()) {
+      self->state_.Set(State::kIdle);
+    }
+  });
+}
+
+bool LowEnergyDiscoveryManager::MaybeRestartScanning() {
+  bool active = false;
+  bool should_restart = false;
+
+  // Existing Sessions (!sessions_.empty()): Scanning was transiently stopped
+  // to commit updated offloaded packet filters to Controller hardware
+  // (Stop-Apply-Start), to toggle between passive and active scan modes, or
+  // to restart scanning after periodic timer expiration (ResumeDiscovery).
+  if (!sessions_.empty()) {
+    active |= std::any_of(sessions_.begin(), sessions_.end(), [](auto& s) {
+      return s.second->active();
+    });
+    should_restart = true;
+  }
+
+  // Pending Requests (!pending_.empty()): New discovery requests arrived while
+  // the scanner was in a transitioning state (kStarting or kStopping, such as
+  // awaiting asynchronous hardware filter clearing). Now that scanning has
+  // stopped, scanning must be initiated to serve these queued clients.
+  if (!pending_.empty()) {
+    active |= std::any_of(
+        pending_.begin(), pending_.end(), [](auto& p) { return p.active; });
+    should_restart = true;
+  }
+
+  if (!should_restart) {
+    return false;
+  }
+
+  // If discovery is currently paused, hardware scanning must remain disabled.
+  // We transition to kIdle and leave session registrations intact in memory so
+  // scanning resumes seamlessly upon unpausing via ResumeDiscovery().
+  if (paused()) {
+    state_.Set(State::kIdle);
+    return true;
+  }
+
+  bt_log(DEBUG,
+         "gap-le",
+         "initiating scanning for existing sessions or pending requests");
+  StartScan(active);
+  return true;
 }
 
 void LowEnergyDiscoveryManager::ResumeDiscovery() {
-  PW_CHECK(!paused());
+  PW_DCHECK(!paused());
 
   if (!scanner_->IsIdle()) {
     bt_log(TRACE, "gap-le", "attempt to resume discovery when it is not idle");
     return;
   }
 
-  if (!sessions_.empty()) {
-    bt_log(TRACE, "gap-le", "resuming scan");
-    bool active = std::any_of(sessions_.begin(), sessions_.end(), [](auto& s) {
-      return s.second->active();
-    });
-    StartScan(active);
-    return;
-  }
-
-  if (!pending_.empty()) {
-    bt_log(TRACE, "gap-le", "starting scan");
-    bool active = std::any_of(
-        pending_.begin(), pending_.end(), [](auto& s) { return s.active; });
-    StartScan(active);
-    return;
-  }
+  MaybeRestartScanning();
 }
 
 void LowEnergyDiscoveryManager::DeactivateAndNotifySessions() {
@@ -718,10 +768,15 @@ void LowEnergyDiscoveryManager::DeactivateAndNotifySessions() {
     }
   }
 
-  // Due to the move, sessions_ should be empty before the loop and any
-  // callbacks will add sessions to pending_ so it should be empty
-  // afterwards as well.
-  PW_CHECK(sessions_.empty());
+  scanner_->ClearPacketFilters([self = GetWeakPtr()](auto /*result*/) {
+    if (!self.is_alive()) {
+      return;
+    }
+
+    if (!self->MaybeRestartScanning()) {
+      self->state_.Set(State::kIdle);
+    }
+  });
 }
 
 }  // namespace bt::gap

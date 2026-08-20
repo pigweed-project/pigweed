@@ -37,12 +37,12 @@ AdvertisingPacketFilter::AdvertisingPacketFilter(
   hci_cmd_runner_ = std::make_unique<SequentialCommandRunner>(
       hci_->command_channel()->AsWeakPtr());
 
-  ResetOpenSlots();
+  ResetFilterState();
 }
 
 void AdvertisingPacketFilter::SetPacketFilters(
     ScanId scan_id, const std::vector<DiscoveryFilter>& filters_in) {
-  UnsetPacketFiltersInternal(scan_id, false);
+  scan_id_to_filters_.erase(scan_id);
 
   bt_log(INFO,
          "hci",
@@ -61,100 +61,37 @@ void AdvertisingPacketFilter::SetPacketFilters(
     filters.emplace_back();
   }
   scan_id_to_filters_[scan_id] = filters;
-
-  if (!config_.offloading_supported()) {
-    return;
-  }
-
-  if (!MemoryAvailable()) {
-    bt_log(INFO, "hci-le", "controller out of offloaded filter memory");
-    UseHostFiltering();
-    return;
-  }
-
-  if (filtering_state_ == FilteringState::kHostFiltering) {
-    bt_log(INFO, "hci-le", "controller filter memory available");
-    bool success = UseOffloadedFiltering();
-    if (!success) {
-      UseHostFiltering();
-    }
-    return;
-  }
-
-  hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
-  for (const DiscoveryFilter& filter : filters) {
-    bool success = QueueOffloadFilterCommands(scan_id, filter);
-    if (!success) {
-      bt_log(WARN, "hci-le", "filter offload failed, using host filtering");
-      UseHostFiltering();
-      return;
-    }
-  }
-
-  hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
-  if (!hci_cmd_runner_->IsReady()) {
-    return;
-  }
-
-  hci_cmd_runner_->RunCommands([this](Result<> result) {
-    if (bt_is_error(result, WARN, "hci-le", "failed offloading filters")) {
-      UseHostFiltering();
-    }
-  });
 }
 
 void AdvertisingPacketFilter::UnsetPacketFilters(ScanId scan_id) {
-  UnsetPacketFiltersInternal(scan_id, true);
-
-  if (!config_.offloading_supported()) {
-    return;
-  }
-
-  if (filtering_state_ == FilteringState::kHostFiltering && MemoryAvailable()) {
-    bt_log(INFO, "hci-le", "controller filter memory available");
-    bool success = UseOffloadedFiltering();
-    if (!success) {
-      UseHostFiltering();
-      return;
-    }
-  }
-}
-
-void AdvertisingPacketFilter::UnsetPacketFiltersInternal(ScanId scan_id,
-                                                         bool run_commands) {
   scan_id_to_filters_.erase(scan_id);
-
-  if (!config_.offloading_supported()) {
-    return;
-  }
-
-  if (filtering_state_ == FilteringState::kHostFiltering) {
-    return;
-  }
-
-  bt_log(INFO, "hci-le", "deleting offloaded filters (scan id: %d)", scan_id);
-  for (FilterIndex filter_index : scan_id_to_index_[scan_id]) {
-    CommandPacket packet = BuildUnsetParametersCommand(filter_index);
-    hci_cmd_runner_->QueueCommand(std::move(packet));
-  }
-  scan_id_to_index_.erase(scan_id);
-
-  if (!hci_cmd_runner_->IsReady() || !run_commands) {
-    return;
-  }
-
-  hci_cmd_runner_->RunCommands([this](Result<> result) {
-    bt_is_error(result, WARN, "hci-le", "failed removing offloaded filters");
-    UseHostFiltering();
-  });
 }
 
-bool AdvertisingPacketFilter::UseOffloadedFiltering() {
-  ResetOpenSlots();
-  last_filter_index_ = kStartFilterIndex;
-  scan_id_to_index_.clear();
+void AdvertisingPacketFilter::ApplyPacketFilters(ResultFunction<> callback) {
+  if (scan_id_to_filters_.empty() || !MemoryAvailable()) {
+    UseHostFiltering(std::move(callback));
+    return;
+  }
+
+  UseOffloadedFiltering(std::move(callback));
+}
+
+void AdvertisingPacketFilter::ClearPacketFilters(ResultFunction<> callback) {
+  scan_id_to_filters_.clear();
+  UseHostFiltering(std::move(callback));
+}
+
+void AdvertisingPacketFilter::UseOffloadedFiltering(ResultFunction<> callback) {
+  ResetFilterState();
   filtering_state_ = FilteringState::kOffloadedFiltering;
 
+  // Cancel any ongoing HCI command sequence. Interrupting an in-flight
+  // configuration operation is safe because every new filter operation strictly
+  // enforces the invariant of first disabling filtering
+  // (BuildEnableCommand(false)) and clearing all hardware parameter slots
+  // (BuildClearParametersCommand()). This complete state reset guarantees that
+  // aborted commands cannot leave the Controller hardware in a corrupted or
+  // intermediate state.
   if (!hci_cmd_runner_->IsReady()) {
     hci_cmd_runner_->Cancel();
   }
@@ -167,31 +104,41 @@ bool AdvertisingPacketFilter::UseOffloadedFiltering() {
     for (const DiscoveryFilter& filter : filters) {
       bool success = QueueOffloadFilterCommands(scan_id, filter);
       if (!success) {
-        return false;
+        bt_log(WARN, "hci-le", "filter offload failed, using host filtering");
+        UseHostFiltering(std::move(callback));
+        return;
       }
     }
   }
 
   hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
-  hci_cmd_runner_->RunCommands([this](Result<> result) {
-    if (bt_is_error(result,
-                    WARN,
-                    "hci-le",
-                    "failed switching to offloaded filtering")) {
-      UseHostFiltering();
-    }
-  });
+  hci_cmd_runner_->RunCommands(
+      [this, cb = std::move(callback)](Result<> result) mutable {
+        if (result == ToResult(HostError::kCanceled)) {
+          bt_log(DEBUG, "hci-le", "switching to offloaded filtering canceled");
 
-  return true;
+          if (cb) {
+            cb(result);
+          }
+        } else if (bt_is_error(result,
+                               WARN,
+                               "hci-le",
+                               "failed switching to offloaded filtering")) {
+          UseHostFiltering(std::move(cb));
+        } else if (cb) {
+          cb(result);
+        }
+      });
 }
 
-void AdvertisingPacketFilter::UseHostFiltering() {
-  ResetOpenSlots();
-  last_filter_index_ = kStartFilterIndex;
-  scan_id_to_index_.clear();
+void AdvertisingPacketFilter::UseHostFiltering(ResultFunction<> callback) {
+  ResetFilterState();
   filtering_state_ = FilteringState::kHostFiltering;
 
   if (!config_.offloading_supported()) {
+    if (callback) {
+      callback(fit::ok());
+    }
     return;
   }
 
@@ -205,8 +152,16 @@ void AdvertisingPacketFilter::UseHostFiltering() {
   hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
   hci_cmd_runner_->QueueCommand(BuildSetParametersCommand(filter_index, {}));
   hci_cmd_runner_->QueueCommand(BuildEnableCommand(true));
-  hci_cmd_runner_->RunCommands([](Result<> result) {
-    bt_is_error(result, WARN, "hci-le", "failed switching to host filtering");
+  hci_cmd_runner_->RunCommands([cb = std::move(callback)](Result<> result) {
+    if (result == ToResult(HostError::kCanceled)) {
+      bt_log(DEBUG, "hci-le", "switching to host filtering canceled");
+    } else {
+      bt_is_error(result, WARN, "hci-le", "failed switching to host filtering");
+    }
+
+    if (cb) {
+      cb(result);
+    }
   });
 }
 
@@ -447,12 +402,14 @@ bool AdvertisingPacketFilter::MemoryAvailable() const {
   return true;
 }
 
-void AdvertisingPacketFilter::ResetOpenSlots() {
+void AdvertisingPacketFilter::ResetFilterState() {
   open_slots_[OffloadedFilterType::kServiceUUID] = config_.max_filters();
   open_slots_[OffloadedFilterType::kServiceDataUUID] = config_.max_filters();
   open_slots_[OffloadedFilterType::kSolicitationUUID] = config_.max_filters();
   open_slots_[OffloadedFilterType::kLocalName] = config_.max_filters();
   open_slots_[OffloadedFilterType::kManufacturerCode] = config_.max_filters();
+  last_filter_index_ = kStartFilterIndex;
+  scan_id_to_index_.clear();
 }
 
 CommandPacket AdvertisingPacketFilter::BuildEnableCommand(bool enabled) const {
