@@ -71,6 +71,7 @@ class BtHostComponent {
 
     uint16_t le_active_scan_interval = 0;
     uint16_t le_active_scan_window = 0;
+    bool le_scan_offload_filters_enabled = false;
 
     uint16_t hci_command_timeout_seconds = 10;
   };

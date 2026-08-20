@@ -310,6 +310,8 @@ int main() {
       .le_very_fast_adv_max_tx_power = config.le_very_fast_adv_max_tx_power(),
       .le_active_scan_interval = config.le_active_scan_interval(),
       .le_active_scan_window = config.le_active_scan_window(),
+      .le_scan_offload_filters_enabled =
+          config.le_scan_offload_filters_enabled(),
       .hci_command_timeout_seconds = config.hci_command_timeout_seconds(),
   };
 

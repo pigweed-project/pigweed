@@ -128,6 +128,7 @@ fuchsia_structured_config_values(
         "le_fast_adv_interval_max": 0,
         "le_fast_adv_interval_min": 0,
         "le_fast_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.
+        "le_scan_offload_filters_enabled": False,
         "le_slow_adv_interval_max": 0,
         "le_slow_adv_interval_min": 0,
         "le_slow_adv_max_tx_power": 127,  # 127 (0x7F) indicates no preference.

@@ -100,6 +100,7 @@ TEST_F(HostComponentTest, InitializeFailsWhenCommandTimesOut) {
       .le_very_fast_adv_max_tx_power = 127,
       .le_active_scan_interval = 0,
       .le_active_scan_window = 0,
+      .le_scan_offload_filters_enabled = false,
       .hci_command_timeout_seconds = 14,
   };
   bool init_result = host()->Initialize(

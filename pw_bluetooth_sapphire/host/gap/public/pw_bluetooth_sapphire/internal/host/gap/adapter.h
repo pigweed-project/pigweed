@@ -105,6 +105,7 @@ class Adapter {
     // LE Scanning parameters
     uint16_t le_active_scan_interval = kLEScanFastInterval;
     uint16_t le_active_scan_window = kLEScanFastWindow;
+    bool le_scan_offload_filters_enabled = false;
   };
 
   static constexpr const char* kMetricsInspectNodeName = "metrics";

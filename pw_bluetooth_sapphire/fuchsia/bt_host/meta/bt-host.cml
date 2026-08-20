@@ -185,6 +185,14 @@
             availability: "optional",
             default: 0,
         },
+        {
+            config: "fuchsia.bluetooth.LeScanOffloadFiltersEnabled",
+            from: "parent/bluetooth-le-config",
+            key: "le_scan_offload_filters_enabled",
+            type: "bool",
+            availability: "optional",
+            default: false,
+        },
     ],
     config: {
         device_path: {

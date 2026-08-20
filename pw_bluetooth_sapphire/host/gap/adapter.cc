@@ -490,6 +490,7 @@ class AdapterImpl final : public Adapter {
     using PeerDeliveryMode = hci::AdvertisingPacketFilter::Config::DeliveryMode;
 
     bool offloading_enabled = false;
+    bool controller_supported = false;
     uint8_t max_filters = 0;
     PeerDeliveryMode peer_delivery_mode = PeerDeliveryMode::kImmediate;
 
@@ -498,15 +499,19 @@ class AdapterImpl final : public Adapter {
     if (state().IsControllerFeatureSupported(feature) &&
         state().android_vendor_capabilities.has_value() &&
         state().android_vendor_capabilities->supports_filtering()) {
-      offloading_enabled = true;
+      controller_supported = true;
       max_filters = state().android_vendor_capabilities->max_filters();
+      if (config_.le_scan_offload_filters_enabled) {
+        offloading_enabled = true;
+      }
     }
 
     bt_log(INFO,
            "gap",
            "controller support for offloaded packet filtering: %s, "
-           "max_filters: %d",
-           offloading_enabled ? "yes" : "no",
+           "config enabled: %s, max_filters: %d",
+           controller_supported ? "yes" : "no",
+           config_.le_scan_offload_filters_enabled ? "yes" : "no",
            max_filters);
 
     return hci::AdvertisingPacketFilter::Config(
