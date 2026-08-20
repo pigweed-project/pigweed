@@ -473,150 +473,6 @@ struct ReadRemoteVersionInfoCompleteEvent:
 # TODO: b/265052417 - Definition needs to be added
 
 
-struct SimpleCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (status only)
-  -- HCI_Command_Complete
-  -- A Command Complete event where a StatusCode is the only return parameter.
-  -- Also useful for generically getting the status of a larger command complete
-  -- event.
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  let header = command_complete.header
-  $next [+1]         hci.StatusCode            status
-
-
-struct CreateConnectionCancelCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.1.7 Create Connection Cancel command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
-  $next [+1]                          hci.StatusCode            status
-  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
-
-
-struct PinCodeRequestReplyCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.1.12 PIN Code Request Reply command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
-  $next [+1]                          hci.StatusCode            status
-  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
-
-
-struct PinCodeRequestNegativeReplyCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.1.13 PIN Code Request Negative Reply command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
-  $next [+1]                          hci.StatusCode            status
-  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
-
-
-struct ReadPinTypeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.5 Read PIN Type command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         hci.PinType               pin_type
-
-
-struct WritePinTypeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.6 Write PIN Type command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-
-
-struct ReadLocalNameCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.12 Read Local Name command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+248]       UInt:8[248]               local_name
-    -- A UTF-8 encoded User Friendly Descriptive Name for the device with type utf8{248}
-
-
-struct ReadScanEnableCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.17 Read Scan Enable command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]                            hci.CommandCompleteEvent  command_complete
-  $next [+1]                                   hci.StatusCode            status
-  $next [+1]  bits:
-    0     [+hci.ScanEnableBits.$size_in_bits]  hci.ScanEnableBits        scan_enable
-
-
-struct ReadPageScanActivityCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.19 Read Page Scan Activity command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+2]         UInt                      page_scan_interval
-    -- Time = N * 0.625 ms
-    -- Range: 11.25 ms to 2560 ms; only even values are valid
-    [requires: 0x0012 <= this <= 0x1000]
-
-  $next [+2]         UInt                      page_scan_window
-    -- Time = N * 0.625 ms
-    -- Range: 10.625 ms to 2560 ms
-    [requires: 0x0011 <= this <= 0x1000]
-
-
-struct ReadInquiryScanTypeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.47 Read Inquiry Scan Type command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         hci.InquiryScanType       inquiry_scan_type
-
-
-struct ReadInquiryModeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.49 Read Inquiry Mode command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         hci.InquiryMode           inquiry_mode
-
-
-struct ReadPageScanTypeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.51 Read Page Scan Type command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         hci.PageScanType          page_scan_type
-
-
-struct ReadSimplePairingModeCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.3.58 Read Simple Pairing Mode command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         hci.GenericEnableParam    simple_pairing_mode
-
-
-struct ReadLocalVersionInfoCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.4.1 Read Local Version Information command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  let header = command_complete.header
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         CoreSpecificationVersion  hci_version
-    -- Version of the HCI Specification supported by the Controller. See
-    -- Assigned Numbers
-
-  $next [+2]         UInt                      hci_subversion
-    -- Revision of the HCI implementation in the Controller. This value is
-    -- vendor-specific.
-
-  $next [+1]         UInt                      lmp_version
-    -- Version of the Current LMP supported by the Controller. See Assigned
-    -- Numbers
-
-  $next [+2]         UInt                      company_identifier
-    -- Company identifier for the manufacturer of the Controller. See Assigned
-    -- Numbers
-
-  $next [+2]         UInt                      lmp_subversion
-    -- Subversion of the Current LMP in the Controller. This value is
-    -- vendor-specific.
-
-
 struct SupportedCommands:
   0  [+1]  bits:
     0  [+1]       Flag  inquiry
@@ -1040,6 +896,196 @@ struct SupportedCommands:
   63 [+1]         UInt  reserved
 
 
+struct LESupportedStates:
+  0  [+8]  bits:
+    0  [+1]       Flag  non_connectable_non_scannable_undirected_advertising
+    1  [+1]       Flag  scannable_undirected_advertising
+    2  [+1]       Flag  connectable_scannable_undirected_advertising
+    3  [+1]       Flag  high_duty_cycle_connectable_directed_advertising
+    4  [+1]       Flag  passive_scanning
+    5  [+1]       Flag  active_scanning
+    6  [+1]       Flag  initiating
+    7  [+1]       Flag  peripheral_role_connection
+    8  [+1]       Flag  passive_scanning_and_non_connectable_non_scannable_undirected_advertising
+    9  [+1]       Flag  passive_scanning_and_scannable_undirected_advertising
+    10 [+1]       Flag  passive_scanning_and_connectable_scannable_undirected_advertising
+    11 [+1]       Flag  passive_scanning_and_high_duty_cycle_connectable_directed_advertising
+    12 [+1]       Flag  active_scanning_and_non_connectable_non_scannable_undirected_advertising
+    13 [+1]       Flag  active_scanning_and_scannable_undirected_advertising
+    14 [+1]       Flag  active_scanning_and_connectable_scannable_undirected_advertising
+    15 [+1]       Flag  active_scanning_and_high_duty_cycle_connectable_directed_advertising
+    16 [+1]       Flag  initiating_and_non_connectable_non_scannable_undirected_advertising
+    17 [+1]       Flag  initiating_and_scannable_undirected_advertising
+    18 [+1]       Flag  central_role_connection_and_non_connectable_non_scannable_undirected_advertising
+    19 [+1]       Flag  central_role_connection_and_scannable_undirected_advertising
+    20 [+1]       Flag  peripheral_role_connection_and_non_connectable_non_scannable_undirected_advertising
+    21 [+1]       Flag  peripheral_role_connection_and_scannable_undirected_advertising
+    22 [+1]       Flag  initiating_and_passive_scanning
+    23 [+1]       Flag  initiating_and_active_scanning
+    24 [+1]       Flag  central_role_connection_and_passive_scanning
+    25 [+1]       Flag  central_role_connection_and_active_scanning
+    26 [+1]       Flag  peripheral_role_connection_and_passive_scanning
+    27 [+1]       Flag  peripheral_role_connection_and_active_scanning
+    28 [+1]       Flag  central_role_connection_and_initiating
+    29 [+1]       Flag  low_duty_cycle_connectable_directed_advertising
+    30 [+1]       Flag  passive_scanning_and_low_duty_cycle_connectable_directed_advertising
+    31 [+1]       Flag  active_scanning_and_low_duty_cycle_connectable_directed_advertising
+    32 [+1]       Flag  initiating_and_connectable_scannable_undirected_advertising
+    33 [+1]       Flag  initiating_and_high_duty_cycle_connectable_directed_advertising
+    34 [+1]       Flag  initiating_and_low_duty_cycle_connectable_directed_advertising
+    35 [+1]       Flag  central_role_connection_and_connectable_scannable_undirected_advertising
+    36 [+1]       Flag  central_role_connection_and_high_duty_cycle_connectable_directed_advertising
+    37 [+1]       Flag  central_role_connection_and_low_duty_cycle_connectable_directed_advertising
+    38 [+1]       Flag  peripheral_role_connection_and_connectable_scannable_undirected_advertising
+    39 [+1]       Flag  peripheral_role_connection_and_high_duty_cycle_connectable_directed_advertising
+    40 [+1]       Flag  peripheral_role_connection_and_low_duty_cycle_connectable_directed_advertising
+    41 [+1]       Flag  peripheral_role_connection_and_initiating
+
+
+struct SimpleCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (status only)
+  -- HCI_Command_Complete
+  -- A Command Complete event where a StatusCode is the only return parameter.
+  -- Also useful for generically getting the status of a larger command complete
+  -- event.
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  let header = command_complete.header
+  $next [+1]         hci.StatusCode            status
+
+
+struct CreateConnectionCancelCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.1.7 Create Connection Cancel command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
+  $next [+1]                          hci.StatusCode            status
+  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
+
+
+struct PinCodeRequestReplyCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.1.12 PIN Code Request Reply command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
+  $next [+1]                          hci.StatusCode            status
+  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
+
+
+struct PinCodeRequestNegativeReplyCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.1.13 PIN Code Request Negative Reply command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]                   hci.CommandCompleteEvent  command_complete
+  $next [+1]                          hci.StatusCode            status
+  $next [+hci.BdAddr.$size_in_bytes]  hci.BdAddr                bd_addr
+
+
+struct ReadPinTypeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.5 Read PIN Type command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         hci.PinType               pin_type
+
+
+struct WritePinTypeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.6 Write PIN Type command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+
+
+struct ReadLocalNameCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.12 Read Local Name command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+248]       UInt:8[248]               local_name
+    -- A UTF-8 encoded User Friendly Descriptive Name for the device with type utf8{248}
+
+
+struct ReadScanEnableCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.17 Read Scan Enable command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]                            hci.CommandCompleteEvent  command_complete
+  $next [+1]                                   hci.StatusCode            status
+  $next [+1]  bits:
+    0     [+hci.ScanEnableBits.$size_in_bits]  hci.ScanEnableBits        scan_enable
+
+
+struct ReadPageScanActivityCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.19 Read Page Scan Activity command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+2]         UInt                      page_scan_interval
+    -- Time = N * 0.625 ms
+    -- Range: 11.25 ms to 2560 ms; only even values are valid
+    [requires: 0x0012 <= this <= 0x1000]
+
+  $next [+2]         UInt                      page_scan_window
+    -- Time = N * 0.625 ms
+    -- Range: 10.625 ms to 2560 ms
+    [requires: 0x0011 <= this <= 0x1000]
+
+
+struct ReadInquiryScanTypeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.47 Read Inquiry Scan Type command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         hci.InquiryScanType       inquiry_scan_type
+
+
+struct ReadInquiryModeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.49 Read Inquiry Mode command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         hci.InquiryMode           inquiry_mode
+
+
+struct ReadPageScanTypeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.51 Read Page Scan Type command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         hci.PageScanType          page_scan_type
+
+
+struct ReadSimplePairingModeCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.3.58 Read Simple Pairing Mode command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         hci.GenericEnableParam    simple_pairing_mode
+
+
+struct ReadLocalVersionInfoCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.4.1 Read Local Version Information command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  let header = command_complete.header
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         CoreSpecificationVersion  hci_version
+    -- Version of the HCI Specification supported by the Controller. See
+    -- Assigned Numbers
+
+  $next [+2]         UInt                      hci_subversion
+    -- Revision of the HCI implementation in the Controller. This value is
+    -- vendor-specific.
+
+  $next [+1]         UInt                      lmp_version
+    -- Version of the Current LMP supported by the Controller. See Assigned
+    -- Numbers
+
+  $next [+2]         UInt                      company_identifier
+    -- Company identifier for the manufacturer of the Controller. See Assigned
+    -- Numbers
+
+  $next [+2]         UInt                      lmp_subversion
+    -- Subversion of the Current LMP in the Controller. This value is
+    -- vendor-specific.
+
+
 struct ReadLocalSupportedCommandsCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.4.2 Read Local Supported Commands command)
   let supported_commands_size = 64
@@ -1207,60 +1253,6 @@ struct LEReadLocalSupportedFeaturesCommandCompleteEvent:
     0     [+LEFeatureSet.$size_in_bits]  LEFeatureSet              le_features
 
 
-struct LESupportedStates:
-  0  [+8]  bits:
-    0  [+1]       Flag  non_connectable_non_scannable_undirected_advertising
-    1  [+1]       Flag  scannable_undirected_advertising
-    2  [+1]       Flag  connectable_scannable_undirected_advertising
-    3  [+1]       Flag  high_duty_cycle_connectable_directed_advertising
-    4  [+1]       Flag  passive_scanning
-    5  [+1]       Flag  active_scanning
-    6  [+1]       Flag  initiating
-    7  [+1]       Flag  peripheral_role_connection
-    8  [+1]       Flag  passive_scanning_and_non_connectable_non_scannable_undirected_advertising
-    9  [+1]       Flag  passive_scanning_and_scannable_undirected_advertising
-    10 [+1]       Flag  passive_scanning_and_connectable_scannable_undirected_advertising
-    11 [+1]       Flag  passive_scanning_and_high_duty_cycle_connectable_directed_advertising
-    12 [+1]       Flag  active_scanning_and_non_connectable_non_scannable_undirected_advertising
-    13 [+1]       Flag  active_scanning_and_scannable_undirected_advertising
-    14 [+1]       Flag  active_scanning_and_connectable_scannable_undirected_advertising
-    15 [+1]       Flag  active_scanning_and_high_duty_cycle_connectable_directed_advertising
-    16 [+1]       Flag  initiating_and_non_connectable_non_scannable_undirected_advertising
-    17 [+1]       Flag  initiating_and_scannable_undirected_advertising
-    18 [+1]       Flag  central_role_connection_and_non_connectable_non_scannable_undirected_advertising
-    19 [+1]       Flag  central_role_connection_and_scannable_undirected_advertising
-    20 [+1]       Flag  peripheral_role_connection_and_non_connectable_non_scannable_undirected_advertising
-    21 [+1]       Flag  peripheral_role_connection_and_scannable_undirected_advertising
-    22 [+1]       Flag  initiating_and_passive_scanning
-    23 [+1]       Flag  initiating_and_active_scanning
-    24 [+1]       Flag  central_role_connection_and_passive_scanning
-    25 [+1]       Flag  central_role_connection_and_active_scanning
-    26 [+1]       Flag  peripheral_role_connection_and_passive_scanning
-    27 [+1]       Flag  peripheral_role_connection_and_active_scanning
-    28 [+1]       Flag  central_role_connection_and_initiating
-    29 [+1]       Flag  low_duty_cycle_connectable_directed_advertising
-    30 [+1]       Flag  passive_scanning_and_low_duty_cycle_connectable_directed_advertising
-    31 [+1]       Flag  active_scanning_and_low_duty_cycle_connectable_directed_advertising
-    32 [+1]       Flag  initiating_and_connectable_scannable_undirected_advertising
-    33 [+1]       Flag  initiating_and_high_duty_cycle_connectable_directed_advertising
-    34 [+1]       Flag  initiating_and_low_duty_cycle_connectable_directed_advertising
-    35 [+1]       Flag  central_role_connection_and_connectable_scannable_undirected_advertising
-    36 [+1]       Flag  central_role_connection_and_high_duty_cycle_connectable_directed_advertising
-    37 [+1]       Flag  central_role_connection_and_low_duty_cycle_connectable_directed_advertising
-    38 [+1]       Flag  peripheral_role_connection_and_connectable_scannable_undirected_advertising
-    39 [+1]       Flag  peripheral_role_connection_and_high_duty_cycle_connectable_directed_advertising
-    40 [+1]       Flag  peripheral_role_connection_and_low_duty_cycle_connectable_directed_advertising
-    41 [+1]       Flag  peripheral_role_connection_and_initiating
-
-
-struct LEReadSupportedStatesCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.8.27 LE Read Supported States command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+8]         LESupportedStates         le_states
-
-
 struct LEReadAdvertisingChannelTxPowerCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.8.6 LE Read Advertising Physical Channel Tx Power command)
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
@@ -1271,6 +1263,24 @@ struct LEReadAdvertisingChannelTxPowerCommandCompleteEvent:
     -- Units: dBm
     -- Accuracy: +/-4 dB
     [requires: this <= 20]
+
+
+struct LERandCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.23 LE Rand command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0          [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  let header = command_complete.header
+  hdr_size   [+1]         hci.StatusCode            status
+  hdr_size+1 [+8]         UInt                      random_number_uint
+  hdr_size+1 [+8]         UInt:8[8]                 random_number_bytes
+
+
+struct LEReadSupportedStatesCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.27 LE Read Supported States command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+8]         LESupportedStates         le_states
 
 
 struct LESetExtendedAdvertisingParametersCommandCompleteEvent:
@@ -1296,6 +1306,41 @@ struct LEReadMaximumAdvertisingDataLengthCommandCompleteEvent:
     -- advertisement data or scan response data in an advertising event or as
     -- periodic advertisement data
     [requires: 0x001F <= this <= 0x0672]
+
+
+struct LEReadNumberOfSupportedAdvertisingSetsCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.58 LE Read Number of Supported Advertising Sets command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  let header = command_complete.header
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         UInt                      num_supported_advertising_sets
+    [requires: 1 <= this <= 0xF0]
+
+
+struct LESetCIGParametersCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.97 LE Set CIG Parameters command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]     hci.CommandCompleteEvent  command_complete
+  $next [+1]            hci.StatusCode            status
+  $next [+1]            UInt                      cig_id
+    [requires: 0x00 <= this <= 0xEF]
+
+  $next [+1]            UInt                      cis_count
+    [requires: 0x00 <= 0x1F]
+
+  $next [+cis_count*2]  UInt:16[cis_count]        connection_handles
+    -- [requires: 0x0000 <= each <= 0x0EFF]  # Can't currently be expressed
+
+
+struct LERejectCisRequestCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.102 LE Reject CIS Request command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+2]         UInt                      connection_handle
+    -- Connection handle of the CIS connection. Only the lower 12-bits are meaningful.
+    [requires: 0x0000 <= this <= 0x0EFF]
 
 
 struct LESetupISODataPathCommandCompleteEvent:
@@ -2496,48 +2541,3 @@ struct LERequestPeerSCACompleteSubevent:
 # 7.7.76 SAM Status Change event
 # HCI_SAM_Status_Change
 # TODO: b/265052417 - Definition needs to be added
-
-
-struct LERandCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.8.23 LE Rand command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0          [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  let header = command_complete.header
-  hdr_size   [+1]         hci.StatusCode            status
-  hdr_size+1 [+8]         UInt                      random_number_uint
-  hdr_size+1 [+8]         UInt:8[8]                 random_number_bytes
-
-
-struct LEReadNumberOfSupportedAdvertisingSetsCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.8.58 LE Read Number of Supported Advertising Sets command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  let header = command_complete.header
-  $next [+1]         hci.StatusCode            status
-  $next [+1]         UInt                      num_supported_advertising_sets
-    [requires: 1 <= this <= 0xF0]
-
-
-struct LESetCIGParametersCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.8.97 LE Set CIG Parameters command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]     hci.CommandCompleteEvent  command_complete
-  $next [+1]            hci.StatusCode            status
-  $next [+1]            UInt                      cig_id
-    [requires: 0x00 <= this <= 0xEF]
-
-  $next [+1]            UInt                      cis_count
-    [requires: 0x00 <= 0x1F]
-
-  $next [+cis_count*2]  UInt:16[cis_count]        connection_handles
-    -- [requires: 0x0000 <= each <= 0x0EFF]  # Can't currently be expressed
-
-
-struct LERejectCisRequestCommandCompleteEvent:
-  -- 7.7.14 Command Complete event (7.8.102 LE Reject CIS Request command)
-  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
-  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
-  $next [+1]         hci.StatusCode            status
-  $next [+2]         UInt                      connection_handle
-    -- Connection handle of the CIS connection. Only the lower 12-bits are meaningful.
-    [requires: 0x0000 <= this <= 0x0EFF]
