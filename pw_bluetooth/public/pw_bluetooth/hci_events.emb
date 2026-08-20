@@ -2498,6 +2498,16 @@ struct LERequestPeerSCACompleteSubevent:
 # TODO: b/265052417 - Definition needs to be added
 
 
+struct LERandCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.23 LE Rand command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0          [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  let header = command_complete.header
+  hdr_size   [+1]         hci.StatusCode            status
+  hdr_size+1 [+8]         UInt                      random_number_uint
+  hdr_size+1 [+8]         UInt:8[8]                 random_number_bytes
+
+
 struct LEReadNumberOfSupportedAdvertisingSetsCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.8.58 LE Read Number of Supported Advertising Sets command)
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes

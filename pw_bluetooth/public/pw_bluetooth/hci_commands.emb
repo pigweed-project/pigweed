@@ -2239,9 +2239,11 @@ struct LEReadRemoteFeaturesCommand:
 # TODO: b/265052417 - Definition needs to be added
 
 
-# 7.8.23 LE Rand command
-# HCI_LE_Rand
-# TODO: b/265052417 - Definition needs to be added
+struct LERandCommand:
+  -- 7.8.23 LE Rand command (v4.0) (LE)
+  -- HCI_LE_Rand
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+  0 [+hdr_size]  hci.CommandHeader  header
 
 
 struct LEEnableEncryptionCommand:
