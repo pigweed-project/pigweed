@@ -19,6 +19,7 @@ config ZEPHYR_PIGWEED_MODULE
 
 if ZEPHYR_PIGWEED_MODULE
 
+rsource "pw_allocator_zephyr/Kconfig"
 rsource "pw_assert_zephyr/Kconfig"
 rsource "pw_base64/Kconfig"
 rsource "pw_bytes/Kconfig"
