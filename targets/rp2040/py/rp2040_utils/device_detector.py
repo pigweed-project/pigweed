@@ -398,8 +398,23 @@ def _detect_pico_usb_info(
 def _detect_pico_serial_ports() -> dict[str, _BoardSerialInfo]:
     """Finds the serial com port associated with each Raspberry Pi Pico."""
     boards = {}
-    all_devs = serial.tools.list_ports.comports()
+    all_devs = sorted(
+        serial.tools.list_ports.comports(), key=lambda d: d.device
+    )
     for dev in all_devs:
+        _LOG.debug(
+            'Detected serial port: device=%s, name=%s, description=%s, '
+            'hwid=%s, vid=%s, pid=%s, serial=%s, location=%s, interface=%s',
+            dev.device,
+            dev.name,
+            dev.description,
+            dev.hwid,
+            dev.vid,
+            dev.pid,
+            dev.serial_number,
+            dev.location,
+            dev.interface,
+        )
         if dev.vid == _RASPBERRY_PI_VENDOR_ID and (
             dev.pid in _PICO_USB_SERIAL_DEVICE_IDS
             or dev.pid == _DEBUG_PROBE_DEVICE_ID
@@ -408,10 +423,13 @@ def _detect_pico_serial_ports() -> dict[str, _BoardSerialInfo]:
             if serial_number is None:
                 _LOG.error('Found pico with no serial number')
                 continue
-            boards[serial_number] = _BoardSerialInfo(
-                serial_port=dev.device,
-                serial_number=serial_number,
-            )
+            # Some devices (e.g. pw_rp2350) expose multiple
+            # CDC-ACM interfaces. Keep the first (primary) port.
+            if serial_number not in boards:
+                boards[serial_number] = _BoardSerialInfo(
+                    serial_port=dev.device,
+                    serial_number=serial_number,
+                )
     return boards
 
 
