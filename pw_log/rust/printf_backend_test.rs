@@ -49,9 +49,8 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     // above #[cfg(test)]
     use std::fs::File;
     use std::io::{stdout, Read};
-    use std::os::fd::AsRawFd;
 
-    use nix::unistd::{dup, dup2, pipe};
+    use nix::unistd::{dup, dup2_stdout, pipe};
 
     // Capture the output of printf by creating a pipe and replacing
     // `STDOUT_FILENO` with the write side of the pipe.  This only works on
@@ -64,11 +63,9 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     // from writing while we capture output.
     let stdout = stdout().lock();
 
-    let stdout_fd = stdout.as_raw_fd();
-
     // Duplicate the current stdout so we can restore it after the test.  Keep
     // it as an owned fd,
-    let old_stdout = dup(stdout_fd).unwrap();
+    let old_stdout = dup(&stdout).unwrap();
 
     // Create a pipe that will let us read stdout.
     let (pipe_rx, pipe_tx) = pipe().unwrap();
@@ -78,7 +75,7 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     flush_stdout();
 
     // Replace stdout with our pipe.
-    dup2(pipe_tx.as_raw_fd(), stdout_fd).unwrap();
+    dup2_stdout(&pipe_tx).unwrap();
 
     action();
 
@@ -86,7 +83,7 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     flush_stdout();
 
     // Restore old stdout.
-    dup2(old_stdout, stdout_fd).unwrap();
+    dup2_stdout(&old_stdout).unwrap();
 
     // Drop the writer side of the pipe to close it so that read will see an
     // EOF.
