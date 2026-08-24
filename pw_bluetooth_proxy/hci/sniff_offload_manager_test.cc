@@ -1495,6 +1495,68 @@ TEST_F(SniffOffloadManagerTest, ParametersWithoutEnableDoesNotCrash) {
   EXPECT_TRUE(NoErrors());
 }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+TEST_F(SniffOffloadManagerTest, AutoSerializeGlobalSniffOnMutation) {
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot last_snapshot;
+  } ctx;
+
+  SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
+    ++ctx.callback_count;
+    ctx.last_snapshot = update;
+  };
+
+  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
+                /*enable=*/true,
+                /*suppress_mode_change_event=*/true,
+                /*suppress_sniff_subrating=*/false)),
+            kInterceptResume);
+
+  EXPECT_EQ(ctx.callback_count, 1);
+  EXPECT_TRUE(ctx.last_snapshot.sniff_enabled);
+  EXPECT_TRUE(ctx.last_snapshot.suppress_mode_change_event);
+  EXPECT_FALSE(ctx.last_snapshot.suppress_sniff_subrating_event);
+  EXPECT_EQ(ctx.last_snapshot.subrating_max_latency, 0x0002);
+  EXPECT_EQ(ctx.last_snapshot.subrating_min_remote_timeout, 0);
+  EXPECT_EQ(ctx.last_snapshot.subrating_min_local_timeout, 0);
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
+                /*enable=*/false,
+                /*suppress_mode_change_event=*/false,
+                /*suppress_sniff_subrating=*/false)),
+            kInterceptResume);
+
+  EXPECT_EQ(ctx.callback_count, 2);
+  EXPECT_FALSE(ctx.last_snapshot.sniff_enabled);
+
+  // Enable again with suppression flags, then verify Reset() triggers an
+  // update.
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
+                /*enable=*/true,
+                /*suppress_mode_change_event=*/true,
+                /*suppress_sniff_subrating=*/true)),
+            kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+  EXPECT_TRUE(ctx.last_snapshot.sniff_enabled);
+  EXPECT_TRUE(ctx.last_snapshot.suppress_mode_change_event);
+  EXPECT_TRUE(ctx.last_snapshot.suppress_sniff_subrating_event);
+
+  sniff_offload_manager().Reset();
+
+  EXPECT_EQ(ctx.callback_count, 4);
+  EXPECT_FALSE(ctx.last_snapshot.sniff_enabled);
+  EXPECT_FALSE(ctx.last_snapshot.suppress_mode_change_event);
+  EXPECT_FALSE(ctx.last_snapshot.suppress_sniff_subrating_event);
+
+  sniff_offload_manager().RegisterStateUpdateCallback(nullptr);
+}
+
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
 std::optional<SniffOffloadManager::CommandOpcode>
 SniffOffloadManagerTest::SentCommand::opcode() {
   std::array<std::byte, emboss::CommandHeader::IntrinsicSizeInBytes()> scratch;

@@ -23,6 +23,8 @@
 #include "pw_async2/time_provider.h"
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/clock.h"
+#include "pw_bluetooth_proxy/config.h"
+#include "pw_bluetooth_proxy/hci/sniff_offload_snapshot.h"
 #include "pw_bluetooth_proxy/hci/types.h"
 #include "pw_containers/dynamic_map.h"
 #include "pw_function/function.h"
@@ -183,6 +185,14 @@ class SniffOffloadManager final {
   HandlerAction ProcessEvent(MultiBuf& event_packet, EventCode event_code)
       PW_LOCKS_EXCLUDED(mutex_);
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Registers a callback for receiving incremental sniff state updates.
+  ///
+  /// @param[in] callback Function to invoke on sniff state mutation.
+  void RegisterStateUpdateCallback(SniffStateUpdateCallback&& callback)
+      PW_LOCKS_EXCLUDED(mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
  private:
   // Finite state machine managing the sniff state of a single connection.
   class ConnectionFsm;
@@ -258,7 +268,7 @@ class SniffOffloadManager final {
       PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   // Utility members.
-  sync::Mutex mutex_;
+  mutable sync::Mutex mutex_;
   Allocator& allocator_ PW_GUARDED_BY(mutex_);
 
   // Async members.
@@ -276,6 +286,15 @@ class SniffOffloadManager final {
 
   bool suppress_mode_change_event_ PW_GUARDED_BY(mutex_) = false;
   bool suppress_sniff_subrating_event_ PW_GUARDED_BY(mutex_) = false;
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  SniffSnapshot CaptureLocked() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  SniffStateUpdateCallback state_update_callback_ PW_GUARDED_BY(mutex_);
+#else
+  void NotifyStateUpdate() const {}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy::hci

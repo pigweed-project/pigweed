@@ -293,6 +293,7 @@ void SniffOffloadManager::DoReset() {
   state_ = Disabled();
   suppress_mode_change_event_ = false;
   suppress_sniff_subrating_event_ = false;
+  NotifyStateUpdate();
 }
 
 void SniffOffloadManager::ProcessAclPacket(const MultiBuf& acl_packet,
@@ -837,6 +838,7 @@ void SniffOffloadManager::DoDisable() {
   }
 
   state_ = Disabled();
+  NotifyStateUpdate();
 }
 
 void SniffOffloadManager::DoEnable(Enabled&& enabled) {
@@ -846,6 +848,7 @@ void SniffOffloadManager::DoEnable(Enabled&& enabled) {
   }
 
   state_ = std::move(enabled);
+  NotifyStateUpdate();
 }
 
 Result<MultiBuf::Instance> SniffOffloadManager::AllocateBuffer(
@@ -1112,5 +1115,35 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
     fsm_.HandleTimeout();
   }
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+SniffSnapshot SniffOffloadManager::CaptureLocked() const {
+  SniffSnapshot snapshot;
+  if (const Enabled* enabled = std::get_if<Enabled>(&state_)) {
+    snapshot.sniff_enabled = true;
+    snapshot.subrating_max_latency = enabled->subrating_max_latency;
+    snapshot.subrating_min_remote_timeout =
+        enabled->subrating_min_remote_timeout;
+    snapshot.subrating_min_local_timeout = enabled->subrating_min_local_timeout;
+  } else {
+    snapshot.sniff_enabled = false;
+  }
+  snapshot.suppress_mode_change_event = suppress_mode_change_event_;
+  snapshot.suppress_sniff_subrating_event = suppress_sniff_subrating_event_;
+  return snapshot;
+}
+
+void SniffOffloadManager::RegisterStateUpdateCallback(
+    SniffStateUpdateCallback&& callback) {
+  std::lock_guard lock(mutex_);
+  state_update_callback_ = std::move(callback);
+}
+
+void SniffOffloadManager::NotifyStateUpdate() const {
+  if (state_update_callback_) {
+    state_update_callback_(CaptureLocked());
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy::hci
