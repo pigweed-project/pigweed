@@ -139,7 +139,7 @@ fn validate_handler_args(handler: &ItemFn) -> Result<()> {
         return Err(handler_function_argument_error(handler));
     };
 
-    if ty.mutability.is_none() {
+    if !matches!(ty.mutability, syn::PointerMutability::Mut(_)) {
         return Err(handler_function_argument_error(handler));
     };
 

@@ -54,7 +54,7 @@ fn entry_impl(
 fn validate_entry_signature(sig: &syn::Signature) -> syn::Result<()> {
     let is_valid = sig.constness.is_none()
         && sig.asyncness.is_none()
-        && sig.unsafety.is_none()
+        && matches!(sig.safety, syn::Safety::Default)
         && sig.abi.is_none()
         && sig.generics.params.is_empty()
         && sig.generics.where_clause.is_none()
