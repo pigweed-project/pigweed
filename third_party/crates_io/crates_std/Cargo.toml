@@ -34,7 +34,7 @@ libc = "0.2.189"
 minijinja = { version = "2.24.0", features = ["loader"] }
 nix = { version = "0.31.3", features = ["fs"] }
 nom = "8.0.0"
-object = { version = "0.38.1", features = ["build", "elf", "read", "write"] }
+object = { version = "0.40.0", features = ["build", "elf", "read", "write"] }
 paste = "1.0.15"
 proc-macro2 = "1.0.107"
 prost = { version = "0.14.4", features = ["derive"] }

@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, HashMap, btree_map, hash_map};
 use std::rc::Rc;
 
 use anyhow::anyhow;
-use object::elf::{STB_GLOBAL, STB_LOCAL, STB_WEAK, STT_FUNC};
+use object::elf::{STB_GLOBAL, STB_LOCAL, STB_WEAK, STT_FUNC, SymbolBind};
 use object::read::elf::{ElfFile32, Sym};
 use pw_cast::CastFrom as _;
 
@@ -33,7 +33,7 @@ pub enum Binding {
 }
 impl Binding {
     #[must_use]
-    pub fn from_st_bind(st_bind: u8) -> Self {
+    pub fn from_st_bind(st_bind: SymbolBind) -> Self {
         match st_bind {
             STB_GLOBAL => Self::Global,
             STB_WEAK => Self::GlobalWeak,

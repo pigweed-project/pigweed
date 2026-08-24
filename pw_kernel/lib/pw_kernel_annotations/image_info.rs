@@ -249,13 +249,13 @@ impl ImageInfo {
             let bytes = chunk
                 .get(start..start + 8)
                 .context("Chunk too small for 64-bit field")?;
-            Ok(endian.read_u64_bytes(bytes.try_into()?))
+            Ok(endian.read_u64(bytes.try_into()?))
         } else {
             let start = index * 4;
             let bytes = chunk
                 .get(start..start + 4)
                 .context("Chunk too small for 32-bit field")?;
-            Ok(u64::from(endian.read_u32_bytes(bytes.try_into()?)))
+            Ok(u64::from(endian.read_u32(bytes.try_into()?)))
         }
     }
 

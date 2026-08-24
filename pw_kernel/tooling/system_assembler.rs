@@ -21,7 +21,7 @@ use std::sync::LazyLock;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use object::build::elf::{
-    AttributeTag, AttributesSection, AttributesSubsection, AttributesSubsubsection, Builder,
+    AttributeScope, AttributesSection, AttributesSubsection, AttributesSubsubsection, Builder,
     Section, SectionData, SectionId,
 };
 use object::build::{ByteString, Bytes, Id};
@@ -213,22 +213,24 @@ impl<'data> SystemImage<'data> {
             let mut attributes_subsection =
                 AttributesSubsection::new(ByteString::from(subsection.vendor.to_vec()));
             for subsubsection in &subsection.subsubsections {
-                let tag = match &subsubsection.tag {
-                    AttributeTag::File => AttributeTag::File,
-                    AttributeTag::Section(section_tag) => {
+                let scope = match &subsubsection.scope {
+                    AttributeScope::File => AttributeScope::File,
+                    AttributeScope::Section(section_tag) => {
                         let mut tag_sections = Vec::new();
                         // Remap the section ids to the new ids in the merged elf.
                         for section_id in section_tag {
                             let mapped_id = Self::get_mapped_section_id(section_map, *section_id);
                             tag_sections.push(mapped_id.unwrap().expect("Section attribute copy"));
                         }
-                        AttributeTag::Section(tag_sections)
+                        AttributeScope::Section(tag_sections)
                     }
-                    AttributeTag::Symbol(symbol_tag) => AttributeTag::Symbol(symbol_tag.to_vec()),
+                    AttributeScope::Symbol(symbol_tag) => {
+                        AttributeScope::Symbol(symbol_tag.to_vec())
+                    }
                 };
 
                 let attributes_subsubsection = AttributesSubsubsection {
-                    tag,
+                    scope,
                     data: Bytes::from(subsubsection.data.to_vec()),
                 };
                 attributes_subsection
