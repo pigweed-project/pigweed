@@ -23,18 +23,18 @@ path = "fake.rs"
 
 [dependencies]
 anyhow = "1.0.104"
-bitfield-struct = "0.12.1"
+bitfield-struct = "0.13.0"
 bitflags = "2.13.1"
 byteorder = "1.5.0"
-clap = { version = "4.6.4", features = ["derive"] }
-cliclack = "0.3.8"
-futures = "0.3.33"
+clap = { version = "4.6.6", features = ["derive"] }
+cliclack = "0.5.6"
+futures = "0.3.34"
 hex = "0.4.3"
 libc = "0.2.189"
-minijinja = { version = "2.21.0", features = ["loader"] }
+minijinja = { version = "2.24.0", features = ["loader"] }
 nix = { version = "0.29.0", features = ["fs"] }
 nom = "7.1.3"
-object = { version = "0.36.7", features = ["build", "elf", "read", "write"] }
+object = { version = "0.38.1", features = ["build", "elf", "read", "write"] }
 paste = "1.0.15"
 proc-macro2 = "1.0.107"
 prost = { version = "0.14.4", features = ["derive"] }
@@ -46,13 +46,13 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 serde_json5 = "0.2.1"
 syn = "2.0.119"
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = { version = "0.7.19", features = ["compat"] }
-toml = "0.8.23"
+toml = "1.1.4"
 zngur = "0.10.0"
 zngur-lib = "0.10.0"
-zerocopy = { version = "0.8.55", features = ["derive"] }
+zerocopy = { version = "0.8.56", features = ["derive"] }
 prost-reflect = { version = "0.16.5", features = ["text-format"] }
 
 [features]

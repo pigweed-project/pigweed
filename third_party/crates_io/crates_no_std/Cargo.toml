@@ -22,11 +22,11 @@ license = "Apache-2.0"
 path = "fake.rs"
 
 [dependencies]
-bitflags = "2.11.1"
+bitflags = "2.13.1"
 byteorder = { version = "1.5.0", default-features = false }
-zerocopy = { version = "0.8.48", default-features = false, features = ["derive"] }
-cortex-m = "0.7.7"
-cortex-m-rt = { version = "0.7.5",  features = ["device"] }
+zerocopy = { version = "0.8.56", default-features = false, features = ["derive"] }
+cortex-m = "0.7.9"
+cortex-m-rt = { version = "0.7.6", features = ["device"] }
 cortex-m-semihosting = "0.5.0"
 embedded-io = "0.7.1"
 panic-halt = "1.0.0"
