@@ -2576,9 +2576,9 @@
         "usagesDigest": "c2tdTR72OmiSCRokb5zGJbhlLOjQmz+MVHPCOmO8LMY=",
         "recordedFileInputs": {
           "@@//third_party/crates_io/crates_no_std/Cargo.lock": "6e163646568d198fe47f57eaddab9cbf8acd8125c6ee492af7410f09fe659b3b",
-          "@@//third_party/crates_io/crates_no_std/Cargo.toml": "0ed41f28a82b51199ab901c6c0ce1fc90262f6d3febc995d9abfe65f5f0fdb38",
+          "@@//third_party/crates_io/crates_no_std/Cargo.toml": "27df4dd5475291f384f37bd3ad75742d9b102a6f5a468afb6455e6b934224015",
           "@@//third_party/crates_io/crates_std/Cargo.lock": "c5305cf8db3f3b5896f0c8b8b65720324adca360a72b944dec88d541ee57ab17",
-          "@@//third_party/crates_io/crates_std/Cargo.toml": "4ed0286c68b2a0a0ec8da4164e21524c704381a6b7d149c1d6390a289acd5194"
+          "@@//third_party/crates_io/crates_std/Cargo.toml": "2516617982e2345c51e9ac1c9879bb32e0b460fa7d15fd63c613357465d53b35"
         },
         "recordedDirentsInputs": {},
         "envVariables": {
