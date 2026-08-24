@@ -338,11 +338,12 @@ impl Packet {
 }
 
 fn parse_stop_reply(input: &str) -> IResult<&str, StopReply> {
-    let (input, kind) = one_of("TSWX")(input)?;
+    let (input, kind) = one_of("TSWX").parse(input)?;
     let (input, val) = map_res(
         take_while_m_n(2usize, 2usize, |c: char| c.is_ascii_hexdigit()),
         |s| u8::from_str_radix(s, 16),
-    )(input)?;
+    )
+    .parse(input)?;
     let reply = match kind {
         'T' | 'S' => StopReply::Signal(val),
         'W' => StopReply::Exited(val),
@@ -375,7 +376,7 @@ fn parse_write_memory(input: &str) -> IResult<&str, (u64, Vec<u8>)> {
     )
     .parse(input)?;
 
-    let (input, _) = char(':')(input)?;
+    let (input, _) = char(':').parse(input)?;
     let (input, hex_data) = nom::character::complete::hex_digit0(input)?;
     let data = hex::decode(hex_data).map_err(|_| {
         nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
@@ -392,10 +393,9 @@ fn parse_write_memory(input: &str) -> IResult<&str, (u64, Vec<u8>)> {
 }
 
 fn parse_breakpoint(input: &str, prefix: char) -> IResult<&str, (BreakpointType, u64, u64)> {
-    use nom::sequence::tuple;
     preceded(
         char(prefix),
-        tuple((
+        (
             map_res(one_of("01234"), |c| {
                 c.to_digit(10)
                     .and_then(|d| u8::try_from(d).ok())
@@ -410,7 +410,7 @@ fn parse_breakpoint(input: &str, prefix: char) -> IResult<&str, (BreakpointType,
                 char(','),
                 map_res(hex_digit1, |s| u64::from_str_radix(s, 16)),
             ),
-        )),
+        ),
     )
     .parse(input)
 }
@@ -430,7 +430,7 @@ fn parse_write_register(input: &str) -> IResult<&str, (u32, Vec<u8>)> {
     )
     .parse(input)?;
 
-    let (input, _) = char('=')(input)?;
+    let (input, _) = char('=').parse(input)?;
     let (input, hex_data) = nom::character::complete::hex_digit0(input)?;
     let val = hex::decode(hex_data).map_err(|_| {
         nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))

@@ -15,7 +15,7 @@
 use nom::bytes::complete::{tag, take_till};
 use nom::multi::count;
 use nom::number::complete::{le_u16, le_u32, le_u8};
-use nom::IResult;
+use nom::{IResult, Parser};
 use pw_status::Result;
 
 use crate::detokenize::database::Database;
@@ -29,7 +29,7 @@ struct BinaryEntry {
 }
 
 fn parse_header(input: &[u8]) -> IResult<&[u8], usize> {
-    let (input, _) = tag(b"TOKENS\0\0")(input)?;
+    let (input, _) = tag(&b"TOKENS\0\0"[..]).parse(input)?;
     let (input, entry_count) = le_u32(input)?;
     let (input, _reserved) = le_u32(input)?;
     Ok((input, entry_count as usize))
@@ -52,8 +52,8 @@ fn parse_entry(input: &[u8]) -> IResult<&[u8], BinaryEntry> {
 }
 
 fn parse_null_terminated_string(input: &[u8]) -> IResult<&[u8], &str> {
-    let (input, s_bytes) = take_till(|b| b == 0)(input)?;
-    let (input, _) = tag(b"\0")(input)?;
+    let (input, s_bytes) = take_till(|b| b == 0).parse(input)?;
+    let (input, _) = tag(&b"\0"[..]).parse(input)?;
     let s = core::str::from_utf8(s_bytes).map_err(|_| {
         nom::Err::Error(nom::error::Error::new(
             s_bytes,
@@ -102,9 +102,11 @@ fn date_remove_string(entry: &BinaryEntry) -> String {
 pub fn parse_binary_database(input: &[u8]) -> Result<Database> {
     let (input, entry_count) =
         parse_header(input).map_err(|_| pw_status::Error::InvalidArgument)?;
-    let (input, raw_entries) =
-        count(parse_entry, entry_count)(input).map_err(|_| pw_status::Error::InvalidArgument)?;
-    let (_input, strings) = count(parse_null_terminated_string, entry_count)(input)
+    let (input, raw_entries) = count(parse_entry, entry_count)
+        .parse(input)
+        .map_err(|_| pw_status::Error::InvalidArgument)?;
+    let (_input, strings) = count(parse_null_terminated_string, entry_count)
+        .parse(input)
         .map_err(|_| pw_status::Error::InvalidArgument)?;
 
     let mut database = Database::new();

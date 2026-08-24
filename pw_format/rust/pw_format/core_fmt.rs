@@ -23,7 +23,7 @@ use nom::character::complete::{alpha1, alphanumeric1, anychar, digit1};
 use nom::combinator::{map, map_res, opt, recognize, value};
 use nom::multi::{many0, many0_count};
 use nom::sequence::pair;
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::parser_util::{fixed_width, precision};
 use crate::{
@@ -36,14 +36,15 @@ fn named_argument(input: &str) -> IResult<&str, Argument> {
     let (input, ident) = recognize(pair(
         alt((alpha1, tag("_"))),
         many0_count(alt((alphanumeric1, tag("_")))),
-    ))(input)?;
+    ))
+    .parse(input)?;
 
     Ok((input, Argument::Named(ident.to_string())))
 }
 
 /// The decimal value a `{0}` format string.  Matches a decimal value.
 fn positional_argument(input: &str) -> IResult<&str, Argument> {
-    let (input, index) = map_res(digit1, |val: &str| val.parse::<usize>())(input)?;
+    let (input, index) = map_res(digit1, |val: &str| val.parse::<usize>()).parse(input)?;
 
     Ok((input, Argument::Positional(index)))
 }
@@ -59,7 +60,7 @@ fn none_argument(input: &str) -> IResult<&str, Argument> {
 ///
 /// ie. `{name:...}` or `{0:...}` of `{:...}
 fn argument(input: &str) -> IResult<&str, Argument> {
-    alt((named_argument, positional_argument, none_argument))(input)
+    alt((named_argument, positional_argument, none_argument)).parse(input)
 }
 
 /// An explicit formatting type
@@ -77,7 +78,8 @@ fn explicit_type(input: &str) -> IResult<&str, Style> {
         value(Style::Binary, tag("b")),
         value(Style::Exponential, tag("e")),
         value(Style::UpperExponential, tag("E")),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// An optional explicit formatting type
@@ -102,7 +104,7 @@ fn map_flag(value: char) -> Result<Flag, String> {
 
 /// A collection of one or more formatting flags (`-`, `+`, `#`, or `0`).
 fn flags(input: &str) -> IResult<&str, HashSet<Flag>> {
-    let (input, flags) = many0(map_res(anychar, map_flag))(input)?;
+    let (input, flags) = many0(map_res(anychar, map_flag)).parse(input)?;
 
     Ok((input, flags.into_iter().collect()))
 }
@@ -118,7 +120,7 @@ fn map_alignment(value: char) -> Result<Alignment, String> {
 
 /// An alignment flag (`<`, `^`, or `>`).
 fn bare_alignment(input: &str) -> IResult<&str, Alignment> {
-    map_res(anychar, map_alignment)(input)
+    map_res(anychar, map_alignment).parse(input)
 }
 
 /// A combined fill character and alignment flag (`<`, `^`, or `>`).
@@ -150,10 +152,10 @@ fn alignment(input: &str) -> IResult<&str, (char, Alignment)> {
 
 /// A complete format specifier (i.e. the part between the `{}`s).
 fn format_spec(input: &str) -> IResult<&str, ConversionSpec> {
-    let (input, _) = tag(":")(input)?;
+    let (input, _) = tag(":").parse(input)?;
     let (input, (fill, alignment)) = alignment(input)?;
     let (input, flags) = flags(input)?;
-    let (input, width) = opt(fixed_width)(input)?;
+    let (input, width) = opt(fixed_width).parse(input)?;
     let (input, precision) = precision(input)?;
     let (input, style) = style(input)?;
 
@@ -175,14 +177,14 @@ fn format_spec(input: &str) -> IResult<&str, ConversionSpec> {
 
 /// A complete conversion specifier (i.e. a `{}` expression).
 fn conversion(input: &str) -> IResult<&str, ConversionSpec> {
-    let (input, _) = tag("{")(input)?;
+    let (input, _) = tag("{").parse(input)?;
     let (input, argument) = argument(input)?;
-    let (input, spec) = opt(format_spec)(input)?;
+    let (input, spec) = opt(format_spec).parse(input)?;
     // Allow trailing whitespace.  Here we specifically match against Rust's
     // idea of whitespace (specified in the Unicode Character Database) as it
     // differs from nom's space0 combinator (just spaces and tabs).
-    let (input, _) = take_while(|c: char| c.is_whitespace())(input)?;
-    let (input, _) = tag("}")(input)?;
+    let (input, _) = take_while(|c: char| c.is_whitespace()).parse(input)?;
+    let (input, _) = tag("}").parse(input)?;
 
     let mut spec = spec.unwrap_or_else(|| ConversionSpec {
         argument: Argument::None,
@@ -205,7 +207,8 @@ fn conversion(input: &str) -> IResult<&str, ConversionSpec> {
 fn literal_fragment(input: &str) -> IResult<&str, FormatFragment> {
     map(take_till1(|c| c == '{' || c == '}'), |s: &str| {
         FormatFragment::Literal(s.to_string())
-    })(input)
+    })
+    .parse(input)
 }
 
 /// An escaped `{` or `}`.
@@ -213,22 +216,23 @@ fn escape_fragment(input: &str) -> IResult<&str, FormatFragment> {
     alt((
         map(tag("{{"), |_| FormatFragment::Literal("{".to_string())),
         map(tag("}}"), |_| FormatFragment::Literal("}".to_string())),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 /// A complete conversion specifier (i.e. a `{}` expression).
 fn conversion_fragment(input: &str) -> IResult<&str, FormatFragment> {
-    map(conversion, FormatFragment::Conversion)(input)
+    map(conversion, FormatFragment::Conversion).parse(input)
 }
 
 /// An escape, literal, or conversion fragment.
 fn fragment(input: &str) -> IResult<&str, FormatFragment> {
-    alt((escape_fragment, conversion_fragment, literal_fragment))(input)
+    alt((escape_fragment, conversion_fragment, literal_fragment)).parse(input)
 }
 
 /// Parse a complete `core::fmt` style format string.
 pub(crate) fn format_string(input: &str) -> IResult<&str, FormatString> {
-    let (input, fragments) = many0(fragment)(input)?;
+    let (input, fragments) = many0(fragment).parse(input)?;
 
     Ok((input, FormatString::from_fragments(&fragments)))
 }

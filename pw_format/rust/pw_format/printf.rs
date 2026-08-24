@@ -19,7 +19,7 @@ use nom::bytes::complete::{tag, take_till1};
 use nom::character::complete::anychar;
 use nom::combinator::{map, map_res};
 use nom::multi::many0;
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::parser_util::{precision, width};
 use crate::{
@@ -49,7 +49,7 @@ fn map_specifier(value: char) -> Result<(Primitive, Style), String> {
 }
 
 fn specifier(input: &str) -> IResult<&str, (Primitive, Style)> {
-    map_res(anychar, map_specifier)(input)
+    map_res(anychar, map_specifier).parse(input)
 }
 
 fn map_flag(value: char) -> Result<Flag, String> {
@@ -64,7 +64,7 @@ fn map_flag(value: char) -> Result<Flag, String> {
 }
 
 fn flags(input: &str) -> IResult<&str, HashSet<Flag>> {
-    let (input, flags) = many0(map_res(anychar, map_flag))(input)?;
+    let (input, flags) = many0(map_res(anychar, map_flag)).parse(input)?;
 
     Ok((input, flags.into_iter().collect()))
 }
@@ -80,11 +80,12 @@ fn length(input: &str) -> IResult<&str, Option<Length>> {
         map(tag("z"), |_| Some(Length::Size)),
         map(tag("t"), |_| Some(Length::PointerDiff)),
         map(tag(""), |_| None),
-    ))(input)
+    ))
+    .parse(input)
 }
 
 fn conversion_spec(input: &str) -> IResult<&str, ConversionSpec> {
-    let (input, _) = tag("%")(input)?;
+    let (input, _) = tag("%").parse(input)?;
     let (input, flags) = flags(input)?;
     let (input, width) = width(input)?;
     let (input, precision) = precision(input)?;
@@ -114,23 +115,24 @@ fn conversion_spec(input: &str) -> IResult<&str, ConversionSpec> {
 fn literal_fragment(input: &str) -> IResult<&str, FormatFragment> {
     map(take_till1(|c| c == '%'), |s: &str| {
         FormatFragment::Literal(s.to_string())
-    })(input)
+    })
+    .parse(input)
 }
 
 fn percent_fragment(input: &str) -> IResult<&str, FormatFragment> {
-    map(tag("%%"), |_| FormatFragment::Literal("%".to_string()))(input)
+    map(tag("%%"), |_| FormatFragment::Literal("%".to_string())).parse(input)
 }
 
 fn conversion_fragment(input: &str) -> IResult<&str, FormatFragment> {
-    map(conversion_spec, FormatFragment::Conversion)(input)
+    map(conversion_spec, FormatFragment::Conversion).parse(input)
 }
 
 fn fragment(input: &str) -> IResult<&str, FormatFragment> {
-    alt((percent_fragment, conversion_fragment, literal_fragment))(input)
+    alt((percent_fragment, conversion_fragment, literal_fragment)).parse(input)
 }
 
 pub(crate) fn format_string(input: &str) -> IResult<&str, FormatString> {
-    let (input, fragments) = many0(fragment)(input)?;
+    let (input, fragments) = many0(fragment).parse(input)?;
 
     Ok((input, FormatString::from_fragments(&fragments)))
 }

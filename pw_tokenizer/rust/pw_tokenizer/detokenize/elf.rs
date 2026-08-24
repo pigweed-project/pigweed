@@ -15,7 +15,7 @@
 use nom::bytes::complete::{tag, take};
 use nom::combinator::verify;
 use nom::number::complete::le_u32;
-use nom::IResult;
+use nom::{IResult, Parser};
 use pw_status::Result;
 use pw_tokenizer_core::TOKENIZER_ENTRY_MAGIC;
 
@@ -34,8 +34,8 @@ fn parse_null_terminated_string_with_len(input: &[u8], len: usize) -> IResult<&[
             nom::error::ErrorKind::Verify,
         )));
     }
-    let (input, s_bytes) = take(len - 1)(input)?;
-    let (input, _) = tag(b"\0")(input)?;
+    let (input, s_bytes) = take(len - 1).parse(input)?;
+    let (input, _) = tag(&b"\0"[..]).parse(input)?;
     let s = core::str::from_utf8(s_bytes).map_err(|_| {
         nom::Err::Error(nom::error::Error::new(
             s_bytes,
@@ -46,7 +46,7 @@ fn parse_null_terminated_string_with_len(input: &[u8], len: usize) -> IResult<&[
 }
 
 fn parse_elf_entry(input: &[u8]) -> IResult<&[u8], ElfSectionEntry<'_>> {
-    let (input, _) = verify(le_u32, |&magic| magic == TOKENIZER_ENTRY_MAGIC)(input)?;
+    let (input, _) = verify(le_u32, |&magic| magic == TOKENIZER_ENTRY_MAGIC).parse(input)?;
     let (input, token) = le_u32(input)?;
     let (input, domain_len) = le_u32(input)?;
     let (input, string_len) = le_u32(input)?;

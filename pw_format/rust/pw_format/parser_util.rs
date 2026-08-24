@@ -16,12 +16,12 @@ use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::digit1;
 use nom::combinator::{map, map_res};
-use nom::IResult;
+use nom::{IResult, Parser};
 
 use crate::{MinFieldWidth, Precision};
 
 fn variable_width(input: &str) -> IResult<&str, MinFieldWidth> {
-    map(tag("*"), |_| MinFieldWidth::Variable)(input)
+    map(tag("*"), |_| MinFieldWidth::Variable).parse(input)
 }
 
 pub(crate) fn fixed_width(input: &str) -> IResult<&str, MinFieldWidth> {
@@ -30,7 +30,8 @@ pub(crate) fn fixed_width(input: &str) -> IResult<&str, MinFieldWidth> {
         |value: &str| -> Result<MinFieldWidth, core::num::ParseIntError> {
             Ok(MinFieldWidth::Fixed(value.parse()?))
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 fn no_width(input: &str) -> IResult<&str, MinFieldWidth> {
@@ -38,22 +39,23 @@ fn no_width(input: &str) -> IResult<&str, MinFieldWidth> {
 }
 
 pub(crate) fn width(input: &str) -> IResult<&str, MinFieldWidth> {
-    alt((variable_width, fixed_width, no_width))(input)
+    alt((variable_width, fixed_width, no_width)).parse(input)
 }
 
 fn variable_precision(input: &str) -> IResult<&str, Precision> {
-    let (input, _) = tag(".")(input)?;
-    map(tag("*"), |_| Precision::Variable)(input)
+    let (input, _) = tag(".").parse(input)?;
+    map(tag("*"), |_| Precision::Variable).parse(input)
 }
 
 fn fixed_precision(input: &str) -> IResult<&str, Precision> {
-    let (input, _) = tag(".")(input)?;
+    let (input, _) = tag(".").parse(input)?;
     map_res(
         digit1,
         |value: &str| -> Result<Precision, core::num::ParseIntError> {
             Ok(Precision::Fixed(value.parse()?))
         },
-    )(input)
+    )
+    .parse(input)
 }
 
 fn no_precision(input: &str) -> IResult<&str, Precision> {
@@ -61,5 +63,5 @@ fn no_precision(input: &str) -> IResult<&str, Precision> {
 }
 
 pub(crate) fn precision(input: &str) -> IResult<&str, Precision> {
-    alt((variable_precision, fixed_precision, no_precision))(input)
+    alt((variable_precision, fixed_precision, no_precision)).parse(input)
 }
