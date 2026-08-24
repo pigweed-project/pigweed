@@ -25,15 +25,15 @@ path = "fake.rs"
 bitflags = "2.13.1"
 byteorder = { version = "1.5.0", default-features = false }
 zerocopy = { version = "0.8.56", default-features = false, features = ["derive"] }
-cortex-m = "0.7.9"
+cortex-m = { version = "0.7.9", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7.6", features = ["device"] }
-cortex-m-semihosting = "0.5.0"
+cortex-m-semihosting = "0.6.0"
 embedded-io = "0.7.1"
 panic-halt = "1.0.0"
 paste = "1.0.15"
 riscv = "0.16.1"
 riscv-rt = "0.12.2"
 riscv-semihosting = "0.2.1"
-rp235x-hal = { version = "0.4.0", features = ["binary-info", "critical-section-impl", "rt"] }
+rp235x-hal = { version = "0.4.0", features = ["binary-info", "rt"] }
 
 [features]

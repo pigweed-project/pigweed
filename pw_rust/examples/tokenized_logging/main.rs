@@ -22,7 +22,7 @@
 #![no_std]
 
 // Panic handler that halts the CPU on panic.
-// Cortex M runtime entry macro.
+use cortex_m as _;
 use cortex_m_rt::entry;
 // Semihosting support which is well supported for QEMU targets.
 use cortex_m_semihosting::{debug, hprintln};
