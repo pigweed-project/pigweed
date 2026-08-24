@@ -104,7 +104,6 @@ rust_binary(
         "@rust_crates//:futures",
         "@rust_crates//:object",
         "@rust_crates//:prost",
-        "@rust_crates//:prost-reflect",
         "@rust_crates//:tokio",
         "@rust_crates//:tokio-util",
     ],

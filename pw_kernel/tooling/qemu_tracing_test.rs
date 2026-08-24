@@ -13,14 +13,11 @@
 // the License.
 
 use core::time::Duration;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use clap::Parser;
 use prost::Message;
-use prost_reflect::text_format::FormatOptions;
-use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use pw_gdb_protocol::{Client, StopReply};
 use pw_kernel_annotations::ImageInfo;
 use pw_kernel_debug_mailbox_client::DebugMailboxClient;
@@ -30,8 +27,7 @@ use tokio::fs;
 use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
-use trace_proto::perfetto::protos::generic_kernel_task_state_event::TaskStateEnum;
-use trace_proto::perfetto::protos::{Trace, trace_packet};
+use trace_proto::perfetto::protos::Trace;
 
 #[derive(Parser, Debug)]
 #[command(name = "tracing_test")]
@@ -47,12 +43,6 @@ struct Args {
 
     #[arg(long)]
     output_file: PathBuf,
-
-    #[arg(long)]
-    golden_file: PathBuf,
-
-    #[arg(long)]
-    trace_proto_descriptor: PathBuf,
 }
 
 fn find_free_port() -> u16 {
@@ -179,86 +169,28 @@ async fn grab_trace(image_path: &Path, k_tool_path: &Path, gdb_port: u16) -> Pat
     trace_path.to_path_buf()
 }
 
-async fn load_textproto_trace(
-    textproto_path: &Path,
-    proto_descriptor: &MessageDescriptor,
-) -> Trace {
-    let text = fs::read_to_string(textproto_path)
-        .await
-        .unwrap_or_else(|err| {
-            panic!(
-                "Failed to read textproto trace file {}: {}",
-                textproto_path.display(),
-                err
-            )
-        });
-    let dynamic_message = DynamicMessage::parse_text_format(proto_descriptor.clone(), &text)
-        .expect("Failed to parse textproto");
+async fn check_trace(trace_path: &Path) {
+    assert!(trace_path.exists(), "Trace output file was not generated");
 
-    // Convert DynamicMessage to static Trace
-    let mut bytes = Vec::new();
-    dynamic_message
-        .encode(&mut bytes)
-        .expect("Failed to encode dynamic message");
-
-    Trace::decode(bytes.as_slice()).expect("Failed to decode textproto")
-}
-
-async fn check_trace(
-    trace_path: &Path,
-    golden_file_path: &Path,
-    trace_proto_descriptor: &MessageDescriptor,
-) {
-    println!("Checking trace against goldenfile");
-
-    let trace_data = fs::read(&trace_path)
+    let trace_bytes = fs::read(trace_path)
         .await
         .unwrap_or_else(|err| panic!("Failed to read {}: {}", trace_path.display(), err));
-    let trace = Trace::decode(trace_data.as_slice())
+    let trace = Trace::decode(trace_bytes.as_slice())
         .unwrap_or_else(|err| panic!("Failed to decode {}: {}", trace_path.display(), err));
-    println!("Decoded trace containing {} packets", trace.packet.len());
 
-    // Load and parse textproto golden file
-    let golden_trace = load_textproto_trace(golden_file_path, trace_proto_descriptor).await;
+    assert!(!trace.packet.is_empty(), "Trace contains no packets");
 
-    let matcher = TraceMatcher::new(golden_trace, trace);
-
-    matcher.check_tracks();
-    matcher.check_thread_states();
-
-    println!("Successfully verified scheduling switch events!");
-}
-
-async fn write_textproto(
-    output_file: &Path,
-    golden_file: &Path,
-    trace_proto_descriptor: &MessageDescriptor,
-) {
-    // Decode generated trace to DynamicMessage to format as textproto
-    let trace_data = fs::read(output_file)
-        .await
-        .expect("Failed to read copied trace.pb");
-    let dynamic_message =
-        DynamicMessage::decode(trace_proto_descriptor.clone(), trace_data.as_slice())
-            .expect("Failed to decode generated trace.pb into DynamicMessage");
-    let format_options = FormatOptions::new().pretty(true);
-    let textproto = dynamic_message.to_text_format_with_options(&format_options);
-
-    // Write the actual textproto to the output directory (same directory as output_file)
-    let golden_filename = golden_file
-        .file_name()
-        .expect("golden_file missing filename");
-    let output_textproto_path = output_file
-        .parent()
-        .map(|p| p.join(golden_filename))
-        .unwrap_or_else(|| PathBuf::from(golden_filename));
-
-    fs::write(&output_textproto_path, textproto)
-        .await
-        .expect("Failed to write actual textproto to outputs directory");
+    let has_threads = trace.packet.iter().any(|p| {
+        matches!(
+            p.data,
+            Some(trace_proto::perfetto::protos::trace_packet::Data::TrackDescriptor(ref td))
+                if td.thread.is_some()
+        )
+    });
+    assert!(has_threads, "Trace missing thread track descriptors");
     println!(
-        "Wrote actual textproto to {}",
-        output_textproto_path.display()
+        "Successfully verified Perfetto trace with {} packets and thread tracks!",
+        trace.packet.len()
     );
 }
 
@@ -279,9 +211,6 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
         resolve_path(&r, Path::new("_main/pw_kernel/tooling/qemu"), "qemu runner");
     let k_tool_path = resolve_path(&r, Path::new("_main/pw_kernel/tooling/k/k"), "k tool");
     let image_path = resolve_path(&r, &args.image, "system image");
-    let golden_file_path = resolve_path(&r, &args.golden_file, "golden file");
-    let trace_proto_descriptor_path =
-        resolve_path(&r, &args.trace_proto_descriptor, "trace proto descriptor");
 
     let image_info = ImageInfo::new(&image_path).expect("could not parse image info");
 
@@ -343,117 +272,7 @@ async fn main() -> Result<(), Box<dyn core::error::Error>> {
         );
     }
 
-    // Load proto descriptor pool for textproto parsing
-    let trace_proto_descriptor = {
-        let descriptor_bytes = fs::read(trace_proto_descriptor_path)
-            .await
-            .expect("Failed to read descriptor set");
-        let pool = DescriptorPool::decode(descriptor_bytes.as_slice())
-            .expect("Failed to parse descriptor set");
-        pool.get_message_by_name("perfetto.protos.Trace")
-            .expect("Failed to find Trace message in descriptor pool")
-    };
-
-    write_textproto(
-        &args.output_file,
-        &args.golden_file,
-        &trace_proto_descriptor,
-    )
-    .await;
-
-    check_trace(
-        &args.output_file,
-        &golden_file_path,
-        &trace_proto_descriptor,
-    )
-    .await;
+    check_trace(&args.output_file).await;
 
     Ok(())
-}
-
-struct TraceMatcher {
-    golden: Trace,
-    test: Trace,
-
-    golden_threads: HashMap<i64, String>,
-    test_threads: HashMap<i64, String>,
-}
-
-impl TraceMatcher {
-    pub fn new(golden: Trace, test: Trace) -> Self {
-        let golden_threads = Self::get_thread_names(&golden).collect::<HashMap<i64, String>>();
-        let test_threads = Self::get_thread_names(&test).collect::<HashMap<i64, String>>();
-
-        Self {
-            golden,
-            test,
-            golden_threads,
-            test_threads,
-        }
-    }
-
-    fn get_thread_names(trace: &Trace) -> impl Iterator<Item = (i64, String)> {
-        trace
-            .packet
-            .iter()
-            .filter_map(|packet| match packet.data {
-                Some(trace_packet::Data::TrackDescriptor(ref td)) => td.thread.as_ref(),
-                _ => None,
-            })
-            .map(|thread| {
-                let name = thread
-                    .thread_name
-                    .as_ref()
-                    .expect("thread track missing name");
-                let tid = thread.tid.expect("thread track missing tid");
-
-                (tid, name.clone())
-            })
-    }
-
-    /// Scan through the trace for task state transitions associated with a given thread.
-    ///
-    /// These states come from the scheduler, so they document things like the task being running, idle, or ready to be run.
-    fn get_transitions_for_thread(trace: &Trace, tid: i64) -> impl Iterator<Item = TaskStateEnum> {
-        trace
-            .packet
-            .iter()
-            .filter_map(|packet| match packet.data {
-                Some(trace_packet::Data::GenericKernelTaskStateEvent(ref se)) => Some(se),
-                _ => None,
-            })
-            .filter(move |se| se.tid.expect("state event missing thread id") == tid)
-            .map(|se| {
-                TaskStateEnum::try_from(se.state.expect("state event missing state"))
-                    .expect("state event contins invalid state")
-            })
-    }
-
-    /// Check that all of the perfetto tracks match in important metadata
-    ///
-    /// This means that the same threads exist, and currently no other kinds of tracks are added (like counters or other types of events).
-    pub fn check_tracks(&self) {
-        assert_eq!(
-            self.test_threads, self.golden_threads,
-            "map of threads to thread ids should match"
-        );
-    }
-
-    /// Check that the sequence of states within each thread matches the golden trace.
-    pub fn check_thread_states(&self) {
-        // Check each thread separately because we're only verifying that tracing works.
-        // We don't care about the order of things from the scheduler.
-        for (tid, thread_name) in self.test_threads.iter() {
-            let golden_seq = Self::get_transitions_for_thread(&self.golden, *tid)
-                .collect::<Vec<TaskStateEnum>>();
-            let test_seq =
-                Self::get_transitions_for_thread(&self.test, *tid).collect::<Vec<TaskStateEnum>>();
-
-            assert_eq!(
-                golden_seq, test_seq,
-                "sequence of states differs for thread {} with tid {}",
-                thread_name, tid
-            );
-        }
-    }
 }

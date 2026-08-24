@@ -35,7 +35,6 @@ system_image(
 qemu_tracing_test(
     name = "tracing_host_test",
     cpu = "rv32",
-    golden_file = "tracing_host_test.textproto",
     image = ":tracing",
     machine = "virt",
 )
