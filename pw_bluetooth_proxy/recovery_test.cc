@@ -797,6 +797,227 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
           .status());
 }
 
+TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  Vector<L2capChannelRemoved, 2> removed_channels;
+  proxy.RegisterL2capStateUpdateCallback(
+      [&removed_channels](const L2capStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+
+  Result<BasicL2capChannel> channel1 =
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       });
+  PW_TEST_EXPECT_OK(channel1.status());
+
+  proxy.CompleteL2capRecovery();
+
+  // Verify that the first channel was re-registered and the second channel was
+  // removed.
+  ASSERT_EQ(removed_channels.size(), 1u);
+  EXPECT_EQ(removed_channels[0].connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(removed_channels[0].local_cid, kLocalCid2);
+}
+
+TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  Vector<L2capChannelRemoved, 2> removed_channels;
+  proxy.RegisterL2capStateUpdateCallback(
+      [&removed_channels](const L2capStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+
+  proxy.CompleteL2capRecovery();
+
+  // Verify that both channels were removed.
+  ASSERT_EQ(removed_channels.size(), 2u);
+  EXPECT_EQ(removed_channels[0].local_cid, kLocalCid1);
+  EXPECT_EQ(removed_channels[1].local_cid, kLocalCid2);
+}
+
+TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  Vector<L2capChannelRemoved, 2> removed_channels;
+  proxy.RegisterL2capStateUpdateCallback(
+      [&removed_channels](const L2capStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+
+  Result<BasicL2capChannel> channel1 =
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       });
+  PW_TEST_EXPECT_OK(channel1.status());
+
+  Result<BasicL2capChannel> channel2 =
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid2,
+                                           .remote_cid = kRemoteCid2,
+                                           .transport = AclTransportType::kLe,
+                                       });
+  PW_TEST_EXPECT_OK(channel2.status());
+
+  proxy.CompleteL2capRecovery();
+
+  // Verify that both channels were re-registered.
+  EXPECT_TRUE(removed_channels.empty());
+}
+
+TEST_F(L2capRecoveryTest, CompleteRecoveryIsIdempotent) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  Vector<L2capChannelRemoved, 4> removed_channels;
+  proxy.RegisterL2capStateUpdateCallback(
+      [&removed_channels](const L2capStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+
+  // Verify that repeated CompleteL2capRecovery() calls are safe and have no
+  // additional effect.
+  proxy.CompleteL2capRecovery();
+  ASSERT_EQ(removed_channels.size(), 2u);
+  proxy.CompleteL2capRecovery();
+  EXPECT_EQ(removed_channels.size(), 2u);
+}
+
 }  // namespace
 }  // namespace pw::bluetooth::proxy
 

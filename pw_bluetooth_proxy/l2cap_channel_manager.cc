@@ -622,7 +622,29 @@ Status L2capChannelManager::RecoverFromSnapshot(const L2capSnapshot* snapshot) {
 }
 
 void L2capChannelManager::CompleteRecovery() {
-  std::lock_guard lock(links_mutex_);
+  std::lock_guard link_lock(links_mutex_);
+  if (restored_snapshot_ == nullptr) {
+    return;
+  }
+
+  std::lock_guard channel_lock(channels_mutex());
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
+    uint32_t key =
+        L2capChannel::MakeKey(channel.connection_handle, channel.local_cid);
+    if (channels_by_local_cid_.find(key) == channels_by_local_cid_.end() &&
+        state_update_callback_) {
+      PW_LOG_INFO(
+          "Sweeping abandoned L2CAP channel: connection %#x, local CID %#x",
+          channel.connection_handle,
+          channel.local_cid);
+      state_update_callback_(L2capChannelRemoved{
+          .connection_handle = channel.connection_handle,
+          .local_cid = channel.local_cid,
+      });
+    }
+  }
+
   restored_snapshot_ = nullptr;
 }
 

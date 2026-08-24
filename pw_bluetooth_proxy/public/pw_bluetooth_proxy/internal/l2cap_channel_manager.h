@@ -230,7 +230,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   /// @note Must be called at the end of the recovery window before packet
   /// traffic is processed, after all active L2CAP channels have been
   /// re-acquired.
-  void CompleteRecovery() PW_LOCKS_EXCLUDED(links_mutex_);
+  void CompleteRecovery() PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   constexpr internal::L2capChannelManagerImpl& impl() { return impl_; }
