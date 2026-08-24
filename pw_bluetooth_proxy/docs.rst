@@ -129,6 +129,8 @@ Module configuration options include:
 - :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS`: Caps the number of
   concurrent ACL connections that can be serialized across the proxy's
   subsystems.
+- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS`: The maximum
+  number of L2CAP channels persisted across snapshot restorations.
 
 Clock Facade
 ============

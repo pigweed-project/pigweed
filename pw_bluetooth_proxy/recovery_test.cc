@@ -21,6 +21,7 @@
 
 #include "pw_bluetooth_proxy/acl_snapshot.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
+#include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_bluetooth_proxy/proxy_host.h"
 #include "pw_bluetooth_proxy_private/test_utils.h"
 #include "pw_function/function.h"
@@ -221,14 +222,14 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
 
   struct {
     std::optional<H4PacketWithHci> captured_packet;
-    Allocator* allocator_ptr;
+    Allocator* allocator;
   } send_capture;
-  send_capture.allocator_ptr = GetProxyHostAllocator();
+  send_capture.allocator = GetProxyHostAllocator();
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       [&send_capture](H4PacketWithHci&& packet) {
         send_capture.captured_packet =
-            H4PacketWithHci::CopyFrom(*send_capture.allocator_ptr, packet)
-                .value();
+            H4PacketWithHci::CopyFrom(*send_capture.allocator, packet).value();
       });
 
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
@@ -345,6 +346,149 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
   // Controller max is 10, total pending is 2 + 3 = 5.
   // Verify that remaining credits is 10 - 5 = 5.
   EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 5);
+}
+
+TEST(L2capSnapshotTest, L2capChannelSnapshotHelpers) {
+  L2capChannelSnapshot snapshot{
+      .local_cid = 2,
+      .remote_cid = 3,
+      .connection_handle = 1,
+      .transport = AclTransportType::kLe,
+  };
+
+  EXPECT_TRUE(snapshot.MatchesKey(1, 2));
+  EXPECT_FALSE(snapshot.MatchesKey(1, 3));
+  EXPECT_FALSE(snapshot.MatchesKey(2, 2));
+
+  L2capChannelRemoved removed{.connection_handle = 1, .local_cid = 2};
+  EXPECT_TRUE(snapshot.MatchesKey(removed));
+  removed.local_cid = 3;
+  EXPECT_FALSE(snapshot.MatchesKey(removed));
+
+  L2capChannelSnapshot update{
+      .local_cid = 2,
+      .remote_cid = 4,
+      .connection_handle = 1,
+      .transport = AclTransportType::kBrEdr,
+  };
+  EXPECT_EQ(snapshot.Update(update), OkStatus());
+  EXPECT_EQ(snapshot.remote_cid, 4);
+  EXPECT_EQ(snapshot.transport, AclTransportType::kBrEdr);
+
+  update.local_cid = 3;
+  EXPECT_EQ(snapshot.Update(update), Status::InvalidArgument());
+}
+
+TEST(L2capSnapshotTest, L2capSnapshotApplyStateUpdate) {
+  L2capSnapshot snapshot;
+
+  // Verify channel insertion.
+  L2capChannelSnapshot channel{
+      .local_cid = 2,
+      .remote_cid = 3,
+      .connection_handle = 1,
+      .transport = AclTransportType::kLe,
+  };
+  EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+  ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
+  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, 3);
+
+  // Verify channel updating.
+  channel.remote_cid = 4;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+  ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
+  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, 4);
+
+  // Verify that removing a non-existent channel is a no-op.
+  L2capChannelRemoved removed{.connection_handle = 2, .local_cid = 2};
+  EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
+  ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
+
+  // Verify channel removal.
+  removed.connection_handle = 1;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
+  EXPECT_TRUE(snapshot.l2cap_channels.empty());
+
+  // Verify that exceeding channel capacity causes the snapshot to be marked as
+  // incomplete.
+  for (uint16_t i = 0;
+       i < PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS;
+       ++i) {
+    channel.local_cid = i;
+    EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+  }
+  EXPECT_TRUE(snapshot.l2cap_channels.full());
+  EXPECT_FALSE(snapshot.snapshot_incomplete);
+  channel.local_cid = 100;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(channel), Status::ResourceExhausted());
+  EXPECT_TRUE(snapshot.snapshot_incomplete);
+}
+
+class L2capRecoveryTest : public ProxyHostTest {};
+
+TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  L2capSnapshot snapshot;
+  EXPECT_FALSE(snapshot.snapshot_incomplete);
+
+  // TODO: b/536078259 - Expect PW_TEST_ASSERT_OK once recovery is implemented.
+  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot), Status::Unimplemented());
+}
+
+TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncompleteOrNullptr) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(nullptr), Status::InvalidArgument());
+
+  L2capSnapshot snapshot;
+  snapshot.snapshot_incomplete = true;
+  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot), Status::DataLoss());
+}
+
+TEST_F(L2capRecoveryTest, RegisterStateUpdateCallback) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  uint32_t callback_invocations = 0;
+  proxy.RegisterL2capStateUpdateCallback(
+      [&callback_invocations](const L2capStateUpdate& /*update*/) {
+        callback_invocations++;
+      });
+
+  EXPECT_EQ(callback_invocations, 0u);
 }
 
 }  // namespace

@@ -113,6 +113,19 @@ pw_source_set("acl_snapshot") {
   sources = [ "acl_snapshot.cc" ]
 }
 
+pw_source_set("l2cap_snapshot") {
+  public = [ "public/pw_bluetooth_proxy/l2cap_snapshot.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":config",
+    ":logical_transport",
+    "$dir_pw_containers:vector",
+    "$dir_pw_function",
+    "$dir_pw_status",
+  ]
+  sources = [ "l2cap_snapshot.cc" ]
+}
+
 # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
 
 # LINT.IfChange
@@ -167,6 +180,7 @@ _pw_bluetooth_proxy_public = [
 _pw_bluetooth_proxy_public_deps = [
   ":acl_snapshot",
   ":config",
+  ":l2cap_snapshot",
   "$dir_pw_allocator:best_fit",
   "$dir_pw_allocator:synchronized_allocator",
   "$dir_pw_async2:basic_dispatcher",

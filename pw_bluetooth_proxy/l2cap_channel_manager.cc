@@ -14,6 +14,7 @@
 
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 #include <optional>
@@ -23,6 +24,7 @@
 #include "pw_bluetooth_proxy/internal/channel_proxy_impl.h"
 #include "pw_bluetooth_proxy/internal/l2cap_signaling_channel.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
+#include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_containers/algorithm.h"
 #include "pw_containers/flat_map.h"
 #include "pw_log/log.h"
@@ -549,6 +551,30 @@ Result<uint16_t> L2capChannelManager::MaxL2capPayloadSize(
   return static_cast<uint16_t>(
       *max_acl_length - emboss::BasicL2capHeader::IntrinsicSizeInBytes());
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+void L2capChannelManager::RegisterStateUpdateCallback(
+    L2capStateUpdateCallback&& callback) {
+  std::lock_guard link_lock(links_mutex_);
+  std::lock_guard channel_lock(channels_mutex());
+  state_update_callback_ = std::move(callback);
+}
+
+Status L2capChannelManager::RecoverFromSnapshot(const L2capSnapshot* snapshot) {
+  if (snapshot == nullptr) {
+    PW_LOG_ERROR("Cannot recover from null L2CAP snapshot pointer");
+    return Status::InvalidArgument();
+  }
+
+  if (snapshot->snapshot_incomplete) {
+    PW_LOG_ERROR("Cannot recover from incomplete L2CAP snapshot");
+    return Status::DataLoss();
+  }
+
+  PW_LOG_INFO("Restored L2CAP state from snapshot");
+  return Status::Unimplemented();
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 void L2capChannelManager::ResetLogicalLinksLocked() { logical_links_.clear(); }
 

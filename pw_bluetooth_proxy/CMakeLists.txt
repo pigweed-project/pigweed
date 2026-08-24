@@ -89,6 +89,21 @@ pw_add_library(pw_bluetooth_proxy.acl_snapshot STATIC
     acl_snapshot.cc
 )
 
+pw_add_library(pw_bluetooth_proxy.l2cap_snapshot STATIC
+  HEADERS
+    public/pw_bluetooth_proxy/l2cap_snapshot.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_bluetooth_proxy.config
+    pw_bluetooth_proxy.logical_transport
+    pw_containers.vector
+    pw_function
+    pw_status
+  SOURCES
+    l2cap_snapshot.cc
+)
+
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 
 # LINT.IfChange
@@ -153,6 +168,7 @@ set(PW_BLUETOOTH_PROXY_PUBLIC_DEPS
   pw_bluetooth.emboss_l2cap_frames
   pw_bluetooth_proxy.acl_snapshot
   pw_bluetooth_proxy.config
+  pw_bluetooth_proxy.l2cap_snapshot
   pw_bytes
   pw_containers.dynamic_map
   pw_containers.dynamic_queue

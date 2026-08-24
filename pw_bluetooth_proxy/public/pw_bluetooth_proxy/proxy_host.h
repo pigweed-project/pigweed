@@ -24,6 +24,7 @@
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_coc.h"
+#include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_bluetooth_proxy/l2cap_status_delegate.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/multibuf.h"
@@ -156,7 +157,27 @@ class ProxyHost : public L2capChannelManagerInterface {
 
   /// Sends the host ACL credit refunds for packets dropped while queued.
   void InitiateAclCreditResynchronization();
-#endif  // Pw_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+  /// Registers a callback for receiving incremental L2CAP state updates.
+  ///
+  /// @note Must be called during initialization before packet traffic is
+  /// processed, and the callback must not be modified or cleared after that.
+  ///
+  /// @param[in] callback Function to invoke on L2CAP state mutation.
+  void RegisterL2capStateUpdateCallback(L2capStateUpdateCallback&& callback);
+
+  /// Restores L2CAP state from a previously saved snapshot.
+  ///
+  /// @note Must be called during initialization before packet traffic is
+  /// processed, and after RecoverAclFromSnapshot().
+  ///
+  /// @param[in] snapshot L2CAP state container to restore from.
+  /// @returns
+  /// * @OK: State restored successfully.
+  /// * @INVALID_ARGUMENT: Snapshot pointer is null.
+  /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
+  Status RecoverL2capFromSnapshot(const L2capSnapshot* snapshot);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   // ##### Container API
   // Containers are expected to call these functions (in addition to ctor).

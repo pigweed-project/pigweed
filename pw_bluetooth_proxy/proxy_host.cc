@@ -111,6 +111,15 @@ Status ProxyHost::RecoverAclFromSnapshot(const AclSnapshot& snapshot) {
 void ProxyHost::InitiateAclCreditResynchronization() {
   acl_data_channel_.InitiateCreditResynchronization();
 }
+
+void ProxyHost::RegisterL2capStateUpdateCallback(
+    L2capStateUpdateCallback&& callback) {
+  l2cap_channel_manager_.RegisterStateUpdateCallback(std::move(callback));
+}
+
+Status ProxyHost::RecoverL2capFromSnapshot(const L2capSnapshot* snapshot) {
+  return l2cap_channel_manager_.RecoverFromSnapshot(snapshot);
+}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 void ProxyHost::DoReset() {

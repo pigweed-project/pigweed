@@ -126,6 +126,7 @@ def pw_bluetooth_proxy_library(name, **kwargs):
         deps = [
             ":acl_snapshot",
             ":config",
+            ":l2cap_snapshot",
             ":logical_transport",
             "//pw_allocator",
             "//pw_allocator:best_fit",

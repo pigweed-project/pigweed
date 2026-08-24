@@ -66,6 +66,30 @@ cc_library_static {
     ],
 }
 
+cc_library_static {
+    name: "pw_bluetooth_proxy_l2cap_snapshot",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    srcs: [
+      "l2cap_snapshot.cc",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+    static_libs: [
+        "pw_containers",
+        "pw_function",
+        "pw_status",
+    ],
+    export_static_lib_headers: [
+        "pw_containers",
+        "pw_function",
+        "pw_status",
+    ],
+}
+
 // LINT.ThenChange(BUILD.gn, BUILD.bazel, CMakeLists.txt)
 
 cc_library_static {
@@ -112,6 +136,7 @@ cc_library_static {
         "pw_async2",
         "pw_bluetooth_proxy_acl_snapshot",
         "pw_bluetooth_proxy_clock",
+        "pw_bluetooth_proxy_l2cap_snapshot",
         "pw_containers",
         "pw_function",
         "pw_multibuf",
@@ -127,6 +152,7 @@ cc_library_static {
         "pw_async2",
         "pw_bluetooth_proxy_acl_snapshot",
         "pw_bluetooth_proxy_clock",
+        "pw_bluetooth_proxy_l2cap_snapshot",
         "pw_containers",
         "pw_function",
         "pw_multibuf",

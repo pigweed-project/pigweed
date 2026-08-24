@@ -30,6 +30,7 @@
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/l2cap_channel_manager_interface.h"
 #include "pw_bluetooth_proxy/l2cap_coc.h"
+#include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_containers/dynamic_map.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/simple_allocator.h"
@@ -206,6 +207,21 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // event was received.
   Result<uint16_t> MaxL2capPayloadSize(AclTransportType transport) const;
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Registers a callback for receiving incremental L2CAP state updates.
+  ///
+  /// @note Must be called during initialization before packet traffic is
+  /// processed, and the callback must not be modified or cleared after that.
+  void RegisterStateUpdateCallback(L2capStateUpdateCallback&& callback)
+      PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
+
+  /// Restores L2CAP state from a previously saved snapshot.
+  ///
+  /// @note Must be called during initialization before packet traffic is
+  /// processed, and after RecoverAclFromSnapshot().
+  Status RecoverFromSnapshot(const L2capSnapshot* snapshot);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   constexpr internal::L2capChannelManagerImpl& impl() { return impl_; }
   constexpr const internal::L2capChannelManagerImpl& impl() const {
     return impl_;
@@ -322,6 +338,13 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       allocator_buffer_;
   multibuf::SimpleAllocator multibuf_allocator_{allocator_buffer_,
                                                 impl_.allocator()};
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  // Registered state update callback for offload recovery persistence. This
+  // must only be modified during initialization before packet traffic is
+  // processed. This allows it to be safely invoked without acquiring any locks.
+  L2capStateUpdateCallback state_update_callback_;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy
