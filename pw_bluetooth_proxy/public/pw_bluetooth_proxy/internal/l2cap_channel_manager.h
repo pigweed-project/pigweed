@@ -219,7 +219,18 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   ///
   /// @note Must be called during initialization before packet traffic is
   /// processed, and after RecoverAclFromSnapshot().
-  Status RecoverFromSnapshot(const L2capSnapshot* snapshot);
+  ///
+  /// @note The caller must ensure that the @p snapshot object remains
+  /// valid and in scope until CompleteRecovery() returns.
+  Status RecoverFromSnapshot(const L2capSnapshot* snapshot)
+      PW_LOCKS_EXCLUDED(links_mutex_);
+
+  /// Completes L2CAP offload recovery and clears the stored snapshot state.
+  ///
+  /// @note Must be called at the end of the recovery window before packet
+  /// traffic is processed, after all active L2CAP channels have been
+  /// re-acquired.
+  void CompleteRecovery() PW_LOCKS_EXCLUDED(links_mutex_);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   constexpr internal::L2capChannelManagerImpl& impl() { return impl_; }
@@ -330,7 +341,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
 
   // A separate links mutex is required so that the channels owned by the links
   // can be destroyed without deadlock.
-  internal::Mutex links_mutex_ PW_ACQUIRED_BEFORE(channels_mutex());
+  mutable internal::Mutex links_mutex_ PW_ACQUIRED_BEFORE(channels_mutex());
   DynamicMap<uint16_t, internal::L2capLogicalLink> logical_links_
       PW_GUARDED_BY(links_mutex_);
 
@@ -340,10 +351,32 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
                                                 impl_.allocator()};
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  // If a snapshot is stored, applies snapshot state to a credit-based flow
+  // control channel. Returns `Status::Cancelled()` if an SDU or ACL frame
+  // transfer was in progress when the snapshot was captured. Updates RX and TX
+  // credit balances in `rx_config` and `tx_config` if credit snapshot updates
+  // are enabled.
+  Status RecoverCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      ConnectionOrientedChannelConfig& rx_config,
+      ConnectionOrientedChannelConfig& tx_config)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
+
+  // If a snapshot is stored, applies snapshot state to a basic mode channel.
+  // Returns `Status::Cancelled()` if an ACL frame recombination was in progress
+  // when the snapshot was captured.
+  Status RecoverBasicModeChannel(ConnectionHandle connection_handle,
+                                 uint16_t local_cid,
+                                 uint16_t remote_cid)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
+
   // Registered state update callback for offload recovery persistence. This
   // must only be modified during initialization before packet traffic is
   // processed. This allows it to be safely invoked without acquiring any locks.
   L2capStateUpdateCallback state_update_callback_;
+
+  // Saved snapshot for offload recovery persistence.
+  const L2capSnapshot* restored_snapshot_ PW_GUARDED_BY(links_mutex_) = nullptr;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 

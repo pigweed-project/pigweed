@@ -120,6 +120,10 @@ void ProxyHost::RegisterL2capStateUpdateCallback(
 Status ProxyHost::RecoverL2capFromSnapshot(const L2capSnapshot* snapshot) {
   return l2cap_channel_manager_.RecoverFromSnapshot(snapshot);
 }
+
+void ProxyHost::CompleteL2capRecovery() {
+  l2cap_channel_manager_.CompleteRecovery();
+}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 void ProxyHost::DoReset() {

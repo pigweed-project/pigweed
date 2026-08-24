@@ -41,6 +41,10 @@ class CreditBasedFlowControlRxEngine final : public RxEngine {
   CreditBasedFlowControlRxEngine& operator=(
       CreditBasedFlowControlRxEngine&& other) = default;
 
+  uint16_t remaining_credits() const;
+
+  bool sdu_in_progress() const;
+
   // RxEngine overrides:
 
   HandlePduFromControllerReturnValue HandlePduFromController(

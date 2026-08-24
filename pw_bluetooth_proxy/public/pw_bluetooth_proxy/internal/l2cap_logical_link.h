@@ -58,6 +58,17 @@ class L2capLogicalLink final : public AclDataChannel::ConnectionDelegate {
         channel_id, credits, multibuf_allocator);
   }
 
+  // Set the Identifier value to use for the next outbound signaling command.
+  void SetSignalingNextIdentifier(uint8_t next_identifier) {
+    signaling_channel_.SetNextIdentifier(next_identifier);
+  }
+
+  // Get the Identifier value that will be used for the next outbound signaling
+  // command.
+  uint8_t GetSignalingNextIdentifier() const {
+    return signaling_channel_.next_identifier();
+  }
+
   // ConnectionDelegate overrides:
   AclDataChannel::ConnectionDelegate::HandleAclDataReturn HandleAclData(
       Direction direction, emboss::AclDataFrameWriter& acl) override;

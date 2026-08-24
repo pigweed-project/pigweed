@@ -99,6 +99,13 @@ class L2capSignalingChannel final {
       uint16_t credits,
       multibuf::MultiBufAllocator& multibuf_allocator);
 
+  // Set the Identifier value to use for the next outbound signaling command.
+  void SetNextIdentifier(uint8_t next_identifier) PW_LOCKS_EXCLUDED(mutex_);
+
+  // Get the Identifier value that will be used for the next outbound signaling
+  // command.
+  uint8_t next_identifier() const PW_LOCKS_EXCLUDED(mutex_);
+
  private:
   struct PendingConnection {
     Direction direction;
@@ -146,7 +153,7 @@ class L2capSignalingChannel final {
   Vector<PendingConfiguration, kMaxPendingConfigurations>
       pending_configurations_ PW_GUARDED_BY(mutex_){};
 
-  internal::Mutex mutex_;
+  mutable internal::Mutex mutex_;
 
   // Core Spec v6.0 Vol 3, Part A, Section 4: "The Identifier field is one octet
   // long and matches responses with requests. The requesting device sets this

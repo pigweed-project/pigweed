@@ -47,6 +47,14 @@ CreditBasedFlowControlTxEngine::CreditBasedFlowControlTxEngine(
       local_cid_(local_cid),
       credits_(config.credits) {}
 
+uint16_t CreditBasedFlowControlTxEngine::remaining_credits() const {
+  return credits_;
+}
+
+bool CreditBasedFlowControlTxEngine::sdu_in_progress() const {
+  return sdu_offset_ > 0 || is_continuing_segment_;
+}
+
 Result<H4PacketWithH4> CreditBasedFlowControlTxEngine::GenerateNextPacket(
     const multibuf::MultiBuf& sdu, bool& keep_payload) {
   keep_payload = true;

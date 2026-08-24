@@ -25,6 +25,28 @@
 
 namespace pw::bluetooth::proxy {
 
+struct L2capSignalingStateSnapshot {
+  uint16_t connection_handle = 0;
+  AclTransportType transport = AclTransportType::kLe;
+  uint8_t next_identifier = 1;
+
+  /// Checks primary-key handle equality.
+  bool MatchesKey(uint16_t handle) const;
+
+  /// Updates an individual signaling state snapshot record in-place.
+  Status Update(const L2capSignalingStateSnapshot& update);
+};
+
+struct FlowControlEngineSnapshot {
+  uint16_t remaining_credits = 0;
+  bool sdu_in_progress = false;
+};
+
+enum class L2capChannelMode : uint8_t {
+  kBasic = 0,
+  kCreditBasedFlowControl = 1,
+};
+
 struct L2capChannelRemoved {
   uint16_t connection_handle = 0;
   uint16_t local_cid = 0;
@@ -35,6 +57,10 @@ struct L2capChannelSnapshot {
   uint16_t remote_cid = 0;
   uint16_t connection_handle = 0;
   AclTransportType transport = AclTransportType::kLe;
+  L2capChannelMode mode = L2capChannelMode::kBasic;
+  bool acl_recombination_in_progress = false;
+  FlowControlEngineSnapshot rx_engine;
+  FlowControlEngineSnapshot tx_engine;
 
   /// Checks primary-key equality against handle/CID or removal events.
   bool MatchesKey(uint16_t handle, uint16_t cid) const;
@@ -44,8 +70,9 @@ struct L2capChannelSnapshot {
   Status Update(const L2capChannelSnapshot& update);
 };
 
-using L2capStateUpdate =
-    std::variant<L2capChannelSnapshot, L2capChannelRemoved>;
+using L2capStateUpdate = std::variant<L2capSignalingStateSnapshot,
+                                      L2capChannelSnapshot,
+                                      L2capChannelRemoved>;
 
 /// Callback type invoked when the L2CAP subsystem state mutates.
 ///
@@ -55,6 +82,9 @@ using L2capStateUpdateCallback = Function<void(const L2capStateUpdate& update)>;
 
 struct L2capSnapshot {
   bool snapshot_incomplete = false;
+  Vector<L2capSignalingStateSnapshot,
+         PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS>
+      l2cap_signaling_states;
   Vector<L2capChannelSnapshot,
          PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS>
       l2cap_channels;

@@ -21,6 +21,7 @@
 
 #include "pw_bluetooth_proxy/acl_snapshot.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
+#include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_bluetooth_proxy/proxy_host.h"
 #include "pw_bluetooth_proxy_private/test_utils.h"
@@ -348,34 +349,46 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
   EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 5);
 }
 
+constexpr uint16_t kLocalCid1 = 0x40;
+constexpr uint16_t kLocalCid2 = 0x41;
+constexpr uint16_t kRemoteCid1 = 0x50;
+constexpr uint16_t kRemoteCid2 = 0x51;
+
+L2capChannelSnapshot CreateL2capChannelSnapshot(
+    uint16_t connection_handle = kLeConnectionHandle1,
+    uint16_t local_cid = kLocalCid1,
+    uint16_t remote_cid = kRemoteCid1,
+    AclTransportType transport = AclTransportType::kLe,
+    L2capChannelMode mode = L2capChannelMode::kBasic) {
+  L2capChannelSnapshot snapshot;
+  snapshot.connection_handle = connection_handle;
+  snapshot.local_cid = local_cid;
+  snapshot.remote_cid = remote_cid;
+  snapshot.transport = transport;
+  snapshot.mode = mode;
+  return snapshot;
+}
+
 TEST(L2capSnapshotTest, L2capChannelSnapshotHelpers) {
-  L2capChannelSnapshot snapshot{
-      .local_cid = 2,
-      .remote_cid = 3,
-      .connection_handle = 1,
-      .transport = AclTransportType::kLe,
-  };
+  L2capChannelSnapshot snapshot = CreateL2capChannelSnapshot();
 
-  EXPECT_TRUE(snapshot.MatchesKey(1, 2));
-  EXPECT_FALSE(snapshot.MatchesKey(1, 3));
-  EXPECT_FALSE(snapshot.MatchesKey(2, 2));
+  EXPECT_TRUE(snapshot.MatchesKey(kLeConnectionHandle1, kLocalCid1));
+  EXPECT_FALSE(snapshot.MatchesKey(kLeConnectionHandle1, kLocalCid2));
+  EXPECT_FALSE(snapshot.MatchesKey(kLeConnectionHandle2, kLocalCid1));
 
-  L2capChannelRemoved removed{.connection_handle = 1, .local_cid = 2};
+  L2capChannelRemoved removed{.connection_handle = kLeConnectionHandle1,
+                              .local_cid = kLocalCid1};
   EXPECT_TRUE(snapshot.MatchesKey(removed));
-  removed.local_cid = 3;
+  removed.local_cid = kLocalCid2;
   EXPECT_FALSE(snapshot.MatchesKey(removed));
 
-  L2capChannelSnapshot update{
-      .local_cid = 2,
-      .remote_cid = 4,
-      .connection_handle = 1,
-      .transport = AclTransportType::kBrEdr,
-  };
+  L2capChannelSnapshot update = CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid2, AclTransportType::kBrEdr);
   EXPECT_EQ(snapshot.Update(update), OkStatus());
-  EXPECT_EQ(snapshot.remote_cid, 4);
+  EXPECT_EQ(snapshot.remote_cid, kRemoteCid2);
   EXPECT_EQ(snapshot.transport, AclTransportType::kBrEdr);
 
-  update.local_cid = 3;
+  update.local_cid = kLocalCid2;
   EXPECT_EQ(snapshot.Update(update), Status::InvalidArgument());
 }
 
@@ -383,29 +396,25 @@ TEST(L2capSnapshotTest, L2capSnapshotApplyStateUpdate) {
   L2capSnapshot snapshot;
 
   // Verify channel insertion.
-  L2capChannelSnapshot channel{
-      .local_cid = 2,
-      .remote_cid = 3,
-      .connection_handle = 1,
-      .transport = AclTransportType::kLe,
-  };
+  L2capChannelSnapshot channel = CreateL2capChannelSnapshot();
   EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
-  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, 3);
+  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, kRemoteCid1);
 
   // Verify channel updating.
-  channel.remote_cid = 4;
+  channel.remote_cid = kRemoteCid2;
   EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
-  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, 4);
+  EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, kRemoteCid2);
 
   // Verify that removing a non-existent channel is a no-op.
-  L2capChannelRemoved removed{.connection_handle = 2, .local_cid = 2};
+  L2capChannelRemoved removed{.connection_handle = kLeConnectionHandle2,
+                              .local_cid = kLocalCid1};
   EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
 
   // Verify channel removal.
-  removed.connection_handle = 1;
+  removed.connection_handle = kLeConnectionHandle1;
   EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
   EXPECT_TRUE(snapshot.l2cap_channels.empty());
 
@@ -440,11 +449,24 @@ TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
                               GetProxyHostAllocator());
   StartDispatcherOnCurrentThread(proxy);
 
-  L2capSnapshot snapshot;
-  EXPECT_FALSE(snapshot.snapshot_incomplete);
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
-  // TODO: b/536078259 - Expect PW_TEST_ASSERT_OK once recovery is implemented.
-  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot), Status::Unimplemented());
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot());
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+      .next_identifier = 42,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  // TODO: https://pwbug.dev/536078259 - Use state updates to verify that
+  // signaling states are restored.
 }
 
 TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncompleteOrNullptr) {
@@ -468,6 +490,33 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncompleteOrNullptr) {
   EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot), Status::DataLoss());
 }
 
+TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  // ACL recovery is a prerequisite for L2CAP recovery. Verify that not
+  // restoring ACL state before restoring L2CAP state fails.
+  L2capSnapshot snapshot;
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot),
+            Status::FailedPrecondition());
+}
+
 TEST_F(L2capRecoveryTest, RegisterStateUpdateCallback) {
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -489,6 +538,263 @@ TEST_F(L2capRecoveryTest, RegisterStateUpdateCallback) {
       });
 
   EXPECT_EQ(callback_invocations, 0u);
+}
+
+TEST_F(L2capRecoveryTest, SnapshotRecoverEstablishesL2capLinks) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kBrEdrConnectionHandle,
+                            .transport = AclTransportType::kBrEdr});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  // Push two channels sharing the same handle. Verify that only one link is
+  // created.
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  snapshot.l2cap_channels.push_back(
+      CreateL2capChannelSnapshot(kBrEdrConnectionHandle,
+                                 kLocalCid1,
+                                 kRemoteCid1,
+                                 AclTransportType::kBrEdr));
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kBrEdrConnectionHandle,
+      .transport = AclTransportType::kBrEdr,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  // TODO: https://pwbug.dev/536078259 - Use state updates to verify that only
+  // two logical links were created despite two channels sharing the same
+  // handle.
+
+  // Verify that the LE connection was restored.
+  Result<BasicL2capChannel> le_basic_channel = BuildBasicL2capChannelWithResult(
+      proxy,
+      BasicL2capParameters{.handle = kLeConnectionHandle1,
+                           .local_cid = kLocalCid1,
+                           .remote_cid = kRemoteCid1});
+  PW_TEST_EXPECT_OK(le_basic_channel.status());
+
+  // Verify that the BR/EDR connection was restored.
+  Result<BasicL2capChannel> bredr_basic_channel =
+      BuildBasicL2capChannelWithResult(
+          proxy,
+          BasicL2capParameters{
+              .handle = kBrEdrConnectionHandle,
+              .local_cid = kLocalCid1,
+              .remote_cid = kRemoteCid1,
+              .transport = AclTransportType::kBrEdr,
+          });
+  PW_TEST_EXPECT_OK(bredr_basic_channel.status());
+}
+
+TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  // Populate snapshot with an interrupted frame.
+  L2capSnapshot snapshot;
+  L2capChannelSnapshot channel = CreateL2capChannelSnapshot();
+  channel.acl_recombination_in_progress = true;
+  snapshot.l2cap_channels.push_back(channel);
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  // Verify that channel registration during the recovery window fails.
+  EXPECT_EQ(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status(),
+      Status::Cancelled());
+
+  // Complete recovery to close the recovery window.
+  proxy.CompleteL2capRecovery();
+
+  // Verify that the saved snapshot with the interrupted frame is cleared and
+  // channel registration now succeeds.
+  Result<BasicL2capChannel> basic_channel =
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       });
+  PW_TEST_EXPECT_OK(basic_channel.status());
+
+  // Test again to verify that snapshot recovery also works for an
+  // already-established logical link.
+  basic_channel->Close();
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  // Verify that channel registration during the recovery window fails.
+  EXPECT_EQ(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status(),
+      Status::Cancelled());
+
+  // Complete recovery to close the recovery window.
+  proxy.CompleteL2capRecovery();
+
+  // Verify that the saved snapshot with the interrupted frame is cleared and
+  // channel registration now succeeds.
+  PW_TEST_EXPECT_OK(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status());
+}
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+TEST_F(L2capRecoveryTest, SnapshotChannelMatchingOverridesCredits) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  L2capChannelSnapshot channel = CreateL2capChannelSnapshot();
+  channel.mode = L2capChannelMode::kCreditBasedFlowControl;
+  channel.rx_engine.remaining_credits = 10;
+  channel.tx_engine.remaining_credits = 20;
+  snapshot.l2cap_channels.push_back(channel);
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  Result<L2capCoc> coc = BuildCocWithResult(proxy,
+                                            CocParameters{
+                                                .handle = kLeConnectionHandle1,
+                                                .local_cid = kLocalCid1,
+                                                .remote_cid = kRemoteCid1,
+                                                .rx_credits = 1,
+                                                .tx_credits = 1,
+                                            });
+  PW_TEST_ASSERT_OK(coc.status());
+
+  // TODO: https://pwbug.dev/536078259 - Use state updates to verify that
+  // snapshot credits overrode client-provided initial credits.
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
+TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator());
+  StartDispatcherOnCurrentThread(proxy);
+
+  AclSnapshot acl_snapshot;
+  acl_snapshot.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+
+  L2capSnapshot snapshot;
+  L2capChannelSnapshot channel = CreateL2capChannelSnapshot();
+  channel.acl_recombination_in_progress = true;
+  snapshot.l2cap_channels.push_back(channel);
+  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+
+  // Verify that registering a channel with a CID that is not in the snapshot
+  // succeeds during the recovery window.
+  PW_TEST_EXPECT_OK(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid2,
+                                           .remote_cid = kRemoteCid2,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status());
 }
 
 }  // namespace

@@ -30,6 +30,7 @@
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
 #include "pw_bluetooth_proxy/internal/mutex.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
+#include "pw_bluetooth_proxy/l2cap_snapshot.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
@@ -437,7 +438,7 @@ class L2capChannel final : public internal::TxEngine::Delegate {
                internal::GattNotifyTxEngine>
       tx_engine_ PW_GUARDED_BY(impl_.mutex_);
 
-  internal::Mutex rx_mutex_ PW_ACQUIRED_BEFORE(impl_.mutex_);
+  mutable internal::Mutex rx_mutex_ PW_ACQUIRED_BEFORE(impl_.mutex_);
   std::variant<std::monostate,
                internal::BasicModeRxEngine,
                internal::CreditBasedFlowControlRxEngine,

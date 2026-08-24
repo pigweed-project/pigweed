@@ -62,6 +62,12 @@ Result<L2capCoc> L2capChannelManager::AcquireL2capCoc(
     Function<void(multibuf::MultiBuf&& payload)>&& receive_fn,
     ChannelEventCallback&& event_fn) {
   std::lock_guard links_lock(links_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  PW_TRY(RecoverCreditBasedFlowControlChannel(
+      ConnectionHandle{connection_handle}, rx_config, tx_config));
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   auto link_iter = logical_links_.find(connection_handle);
   if (link_iter == logical_links_.end()) {
     PW_LOG_WARN("Attempt to create L2capCoc for non-existent connection: %#x",
@@ -112,6 +118,12 @@ Result<BasicL2capChannel> L2capChannelManager::AcquireBasicL2capChannel(
     OptionalPayloadReceiveCallback&& payload_from_host_fn,
     ChannelEventCallback&& event_fn) {
   std::lock_guard links_lock(links_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  PW_TRY(RecoverBasicModeChannel(
+      ConnectionHandle{connection_handle}, local_cid, remote_cid));
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   auto link_iter = logical_links_.find(connection_handle);
   if (link_iter == logical_links_.end()) {
     PW_LOG_WARN(
@@ -571,12 +583,113 @@ Status L2capChannelManager::RecoverFromSnapshot(const L2capSnapshot* snapshot) {
     return Status::DataLoss();
   }
 
+  // Since each logical link has exactly one signaling channel, we only need to
+  // loop through the signaling states to restore them.
+  for (const L2capSignalingStateSnapshot& signaling_state :
+       snapshot->l2cap_signaling_states) {
+    uint16_t handle = signaling_state.connection_handle;
+    AclTransportType transport = signaling_state.transport;
+
+    if (!acl_data_channel_.HasAclConnection(handle)) {
+      PW_LOG_ERROR("ACL connection %#x not restored prior to L2CAP recovery",
+                   handle);
+      return Status::FailedPrecondition();
+    }
+
+    Status l2cap_status = AddConnection(handle, transport);
+    if (!l2cap_status.ok() && l2cap_status != Status::AlreadyExists()) {
+      PW_LOG_ERROR("Could not add L2CAP connection for %#x: %s",
+                   handle,
+                   l2cap_status.str());
+      return l2cap_status;
+    }
+
+    {
+      std::lock_guard lock(links_mutex_);
+      auto link_iter = logical_links_.find(handle);
+      PW_ASSERT(link_iter != logical_links_.end());
+      link_iter->second.SetSignalingNextIdentifier(
+          signaling_state.next_identifier);
+    }
+  }
+
+  {
+    std::lock_guard lock(links_mutex_);
+    restored_snapshot_ = snapshot;
+  }
   PW_LOG_INFO("Restored L2CAP state from snapshot");
-  return Status::Unimplemented();
+  return OkStatus();
+}
+
+void L2capChannelManager::CompleteRecovery() {
+  std::lock_guard lock(links_mutex_);
+  restored_snapshot_ = nullptr;
+}
+
+Status L2capChannelManager::RecoverCreditBasedFlowControlChannel(
+    ConnectionHandle connection_handle,
+    ConnectionOrientedChannelConfig& rx_config,
+    ConnectionOrientedChannelConfig& tx_config) {
+  if (restored_snapshot_ == nullptr) {
+    return OkStatus();
+  }
+
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
+    if (channel.connection_handle == cpp23::to_underlying(connection_handle) &&
+        channel.local_cid == rx_config.cid &&
+        channel.remote_cid == tx_config.cid &&
+        channel.mode == L2capChannelMode::kCreditBasedFlowControl) {
+      if (channel.rx_engine.sdu_in_progress ||
+          channel.tx_engine.sdu_in_progress ||
+          channel.acl_recombination_in_progress) {
+        PW_LOG_WARN("Recovering channel %#x interrupted mid-frame",
+                    rx_config.cid);
+        return Status::Cancelled();
+      }
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+      rx_config.credits = channel.rx_engine.remaining_credits;
+      tx_config.credits = channel.tx_engine.remaining_credits;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+      break;
+    }
+  }
+
+  return OkStatus();
+}
+
+Status L2capChannelManager::RecoverBasicModeChannel(
+    ConnectionHandle connection_handle,
+    uint16_t local_cid,
+    uint16_t remote_cid) {
+  if (restored_snapshot_ == nullptr) {
+    return OkStatus();
+  }
+
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
+    if (channel.connection_handle == cpp23::to_underlying(connection_handle) &&
+        channel.local_cid == local_cid && channel.remote_cid == remote_cid &&
+        channel.mode == L2capChannelMode::kBasic) {
+      if (channel.acl_recombination_in_progress) {
+        PW_LOG_WARN("Recovering basic channel %#x interrupted mid-ACL frame",
+                    local_cid);
+        return Status::Cancelled();
+      }
+      break;
+    }
+  }
+
+  return OkStatus();
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
-void L2capChannelManager::ResetLogicalLinksLocked() { logical_links_.clear(); }
+void L2capChannelManager::ResetLogicalLinksLocked() {
+  logical_links_.clear();
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  restored_snapshot_ = nullptr;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+}
 
 Result<UniquePtr<ChannelProxy>>
 L2capChannelManager::DoInterceptBasicModeChannel(
@@ -588,6 +701,12 @@ L2capChannelManager::DoInterceptBasicModeChannel(
     BufferReceiveFunction&& payload_from_host_fn,
     ChannelEventCallback&& event_fn) {
   std::lock_guard links_lock(links_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  PW_TRY(RecoverBasicModeChannel(
+      connection_handle, local_channel_id, remote_channel_id));
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   auto link_iter =
       logical_links_.find(static_cast<uint16_t>(connection_handle));
   if (link_iter == logical_links_.end()) {
@@ -655,6 +774,12 @@ L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
     MultiBufReceiveFunction&& receive_fn,
     ChannelEventCallback&& event_fn) {
   std::lock_guard links_lock(links_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  PW_TRY(RecoverCreditBasedFlowControlChannel(
+      connection_handle, rx_config, tx_config));
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   auto link_iter = logical_links_.find(cpp23::to_underlying(connection_handle));
   if (link_iter == logical_links_.end()) {
     PW_LOG_WARN("Attempt to create L2capCoc for non-existent connection: %#x",

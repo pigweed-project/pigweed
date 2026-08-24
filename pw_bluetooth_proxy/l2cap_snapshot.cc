@@ -16,6 +16,20 @@
 
 namespace pw::bluetooth::proxy {
 
+bool L2capSignalingStateSnapshot::MatchesKey(uint16_t handle) const {
+  return connection_handle == handle;
+}
+
+Status L2capSignalingStateSnapshot::Update(
+    const L2capSignalingStateSnapshot& update) {
+  if (!MatchesKey(update.connection_handle)) {
+    return Status::InvalidArgument();
+  }
+  transport = update.transport;
+  next_identifier = update.next_identifier;
+  return OkStatus();
+}
+
 bool L2capChannelSnapshot::MatchesKey(uint16_t handle, uint16_t cid) const {
   return connection_handle == handle && local_cid == cid;
 }
@@ -31,6 +45,10 @@ Status L2capChannelSnapshot::Update(const L2capChannelSnapshot& update) {
   }
   remote_cid = update.remote_cid;
   transport = update.transport;
+  mode = update.mode;
+  acl_recombination_in_progress = update.acl_recombination_in_progress;
+  rx_engine = update.rx_engine;
+  tx_engine = update.tx_engine;
   return OkStatus();
 }
 
@@ -38,7 +56,20 @@ Status L2capSnapshot::ApplyStateUpdate(const L2capStateUpdate& update) {
   return std::visit(
       [this](const auto& arg) -> Status {
         using T = std::decay_t<decltype(arg)>;
-        if constexpr (std::is_same_v<T, L2capChannelSnapshot>) {
+        if constexpr (std::is_same_v<T, L2capSignalingStateSnapshot>) {
+          for (L2capSignalingStateSnapshot& state : l2cap_signaling_states) {
+            if (state.MatchesKey(arg.connection_handle)) {
+              return state.Update(arg);
+            }
+          }
+
+          if (l2cap_signaling_states.full()) {
+            snapshot_incomplete = true;
+            return Status::ResourceExhausted();
+          }
+          l2cap_signaling_states.push_back(arg);
+          return OkStatus();
+        } else if constexpr (std::is_same_v<T, L2capChannelSnapshot>) {
           for (L2capChannelSnapshot& channel : l2cap_channels) {
             if (channel.MatchesKey(arg.connection_handle, arg.local_cid)) {
               return channel.Update(arg);

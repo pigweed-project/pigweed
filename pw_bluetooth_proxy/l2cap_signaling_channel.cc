@@ -488,4 +488,20 @@ uint8_t L2capSignalingChannel::GetNextIdentifierAndIncrement() {
   return next_identifier_++;
 }
 
+void L2capSignalingChannel::SetNextIdentifier(uint8_t next_identifier) {
+  std::lock_guard lock(mutex_);
+  if (next_identifier == 0) {
+    PW_LOG_WARN(
+        "Tried to set illegal identifier 0x00. Setting to 0x01 instead.");
+    next_identifier_ = 1;
+  } else {
+    next_identifier_ = next_identifier;
+  }
+}
+
+uint8_t L2capSignalingChannel::next_identifier() const {
+  std::lock_guard lock(mutex_);
+  return next_identifier_;
+}
+
 }  // namespace pw::bluetooth::proxy

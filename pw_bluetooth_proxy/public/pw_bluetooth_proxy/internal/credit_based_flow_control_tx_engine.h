@@ -33,6 +33,10 @@ class CreditBasedFlowControlTxEngine final : public TxEngine {
   CreditBasedFlowControlTxEngine& operator=(
       CreditBasedFlowControlTxEngine&& other) = delete;
 
+  uint16_t remaining_credits() const;
+
+  bool sdu_in_progress() const;
+
   // TxEngine overrides:
 
   Result<H4PacketWithH4> GenerateNextPacket(const multibuf::MultiBuf& sdu,

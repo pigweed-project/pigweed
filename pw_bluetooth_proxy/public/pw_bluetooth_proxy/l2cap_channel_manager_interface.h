@@ -92,6 +92,8 @@ class L2capChannelManagerInterface {
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
   ///   available to accommodate an additional ACL connection.
+  /// * @CANCELLED: Offload channel recovery failed because an ACL frame
+  ///   recombination was in progress when the proxy snapshot was captured.
   Result<UniquePtr<ChannelProxy>> InterceptBasicModeChannel(
       ConnectionHandle connection_handle,
       uint16_t local_channel_id,
@@ -137,6 +139,8 @@ class L2capChannelManagerInterface {
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
   ///   available to accommodate an additional ACL connection.
+  /// * @CANCELLED: Offload channel recovery failed because an SDU or ACL frame
+  ///   transfer was in progress when the proxy snapshot was captured.
   Result<UniquePtr<ChannelProxy>> InterceptCreditBasedFlowControlChannel(
       ConnectionHandle connection_handle,
       ConnectionOrientedChannelConfig rx_config,

@@ -171,12 +171,25 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// @note Must be called during initialization before packet traffic is
   /// processed, and after RecoverAclFromSnapshot().
   ///
+  /// @note The caller must ensure that the @p snapshot object remains
+  /// valid and in scope until CompleteL2capRecovery() returns.
+  ///
   /// @param[in] snapshot L2CAP state container to restore from.
   /// @returns
   /// * @OK: State restored successfully.
-  /// * @INVALID_ARGUMENT: Snapshot pointer is null.
+  /// * @INVALID_ARGUMENT: Snapshot pointer is null, or it contains more
+  ///   connections than the limit.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
+  /// * @FAILED_PRECONDITION: An ACL connection in the snapshot has not been
+  ///   restored prior to L2CAP recovery.
   Status RecoverL2capFromSnapshot(const L2capSnapshot* snapshot);
+
+  /// Completes L2CAP offload recovery and clears the stored snapshot state.
+  ///
+  /// @note Must be called at the end of the recovery window before packet
+  /// traffic is processed, after all active L2CAP channels have been
+  /// re-acquired.
+  void CompleteL2capRecovery();
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   // ##### Container API

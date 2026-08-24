@@ -30,6 +30,14 @@ const float kRxCreditReplenishThreshold = 0.30f;
 
 }  // namespace
 
+uint16_t CreditBasedFlowControlRxEngine::remaining_credits() const {
+  return rx_remaining_credits_;
+}
+
+bool CreditBasedFlowControlRxEngine::sdu_in_progress() const {
+  return rx_sdu_.has_value();
+}
+
 RxEngine::HandlePduFromControllerReturnValue
 CreditBasedFlowControlRxEngine::HandlePduFromController(
     pw::span<uint8_t> frame) {
