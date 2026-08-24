@@ -29,7 +29,6 @@ byteorder = "1.5.0"
 clap = { version = "4.6.4", features = ["derive"] }
 cliclack = "0.3.8"
 futures = "0.3.33"
-hashlink = { version = "0.10.0", features = ["serde", "serde_impl"] }
 hex = "0.4.3"
 libc = "0.2.189"
 minijinja = { version = "2.21.0", features = ["loader"] }
@@ -53,7 +52,6 @@ tokio-util = { version = "0.7.19", features = ["compat"] }
 toml = "0.8.23"
 zngur = "0.10.0"
 zngur-lib = "0.10.0"
-psm = "0.1.31"
 zerocopy = { version = "0.8.55", features = ["derive"] }
 prost-reflect = { version = "0.16.5", features = ["text-format"] }
 

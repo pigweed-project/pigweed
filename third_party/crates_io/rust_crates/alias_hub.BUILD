@@ -153,18 +153,6 @@ alias(
 )
 
 alias(
-    name = "hashlink",
-    target_compatible_with = select({
-        "@pigweed//pw_build/constraints/rust:std": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    actual = select({
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:hashlink",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-alias(
     name = "hex",
     target_compatible_with = select({
         "@pigweed//pw_build/constraints/rust:std": [],
@@ -172,18 +160,6 @@ alias(
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:std": "@crates_std//:hex",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "intrusive-collections",
-    target_compatible_with = select({
-        "@pigweed//pw_build/constraints/rust:no_std": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    actual = select({
-        "@pigweed//pw_build/constraints/rust:no_std": "@crates_no_std//:intrusive-collections",
     }),
     visibility = ["//visibility:public"],
 )
@@ -342,18 +318,6 @@ alias(
     }),
     actual = select({
         "@pigweed//pw_build/constraints/rust:std": "@crates_std//:protoc-gen-prost__protoc-gen-prost",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "psm",
-    target_compatible_with = select({
-        "@pigweed//pw_build/constraints/rust:std": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    actual = select({
-        "@pigweed//pw_build/constraints/rust:std": "@crates_std//:psm",
     }),
     visibility = ["//visibility:public"],
 )
