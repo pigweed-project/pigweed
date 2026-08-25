@@ -462,7 +462,7 @@ Notification Channel API differences
    .. code-block:: cpp
 
       Sender<int> sender = /* ... */;
-      pw::Status status = sender.BlockingSend(123, dispatcher, timeout);
+      pw::Status status = sender.BlockingSend(dispatcher, 123, timeout);
       if (!status.ok()) {
         /* handle failure */
       }
