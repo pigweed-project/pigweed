@@ -292,6 +292,12 @@ class ClockMcuxpressoDivider final : public ClockDividerElement<ElementType> {
     return OkStatus();
   }
 
+  /// Set the divider to 0 to halt the clock on disable.
+  Status DoDisable() final {
+    CLOCK_SetClkDiv(divider_name_, 0);
+    return OkStatus();
+  }
+
   /// Name of divider.
   clock_div_name_t divider_name_;
 };

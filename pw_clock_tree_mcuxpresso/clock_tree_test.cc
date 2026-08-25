@@ -123,7 +123,45 @@ TEST_F(ClockMcuxpressoTest, Divider) {
   EXPECT_EQ(sdk_state.last_div_val, 2u);
   EXPECT_EQ(source.ref_count(), 1u);
 
+  divider.SetDivider(4);
+  EXPECT_EQ(sdk_state.last_div_name, 5u);
+  EXPECT_EQ(sdk_state.last_div_val, 4u);
+
   divider.Release();
+  EXPECT_EQ(sdk_state.last_div_name, 5u);
+  EXPECT_EQ(sdk_state.last_div_val, 0u);
+  EXPECT_EQ(source.ref_count(), 0u);
+
+  divider.Acquire();
+  EXPECT_EQ(sdk_state.last_div_name, 5u);
+  EXPECT_EQ(sdk_state.last_div_val, 4u);
+  EXPECT_EQ(source.ref_count(), 1u);
+
+  divider.Release();
+  EXPECT_EQ(sdk_state.last_div_name, 5u);
+  EXPECT_EQ(sdk_state.last_div_val, 0u);
+}
+
+TEST_F(ClockMcuxpressoTest, DividerBlocking) {
+  class MockSource : public ClockSourceBlocking {
+   public:
+    Status DoEnable() override { return OkStatus(); }
+    Status DoDisable() override { return OkStatus(); }
+  } source;
+
+  ClockMcuxpressoDividerBlocking divider(source, 7, 3);
+  EXPECT_EQ(divider.Acquire(), OkStatus());
+  EXPECT_EQ(sdk_state.last_div_name, 7u);
+  EXPECT_EQ(sdk_state.last_div_val, 3u);
+  EXPECT_EQ(source.ref_count(), 1u);
+
+  EXPECT_EQ(divider.SetDivider(6), OkStatus());
+  EXPECT_EQ(sdk_state.last_div_name, 7u);
+  EXPECT_EQ(sdk_state.last_div_val, 6u);
+
+  EXPECT_EQ(divider.Release(), OkStatus());
+  EXPECT_EQ(sdk_state.last_div_name, 7u);
+  EXPECT_EQ(sdk_state.last_div_val, 0u);
   EXPECT_EQ(source.ref_count(), 0u);
 }
 
