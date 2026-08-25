@@ -50,3 +50,37 @@ cc_library_static {
         "pw_log",
     ]
 }
+
+cc_library_static {
+    name: "pw_hex_dump_log_bytes",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    srcs: [
+        "log_bytes.cc",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+    static_libs: [
+        "pw_bytes",
+        "pw_hex_dump",
+        "pw_preprocessor",
+    ],
+    header_libs: [
+        "pw_log",
+    ],
+    export_static_lib_headers: [
+        "pw_bytes",
+        "pw_hex_dump",
+        "pw_preprocessor",
+    ],
+    export_header_lib_headers: [
+        "pw_log",
+    ],
+}

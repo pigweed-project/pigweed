@@ -29,13 +29,16 @@ pw_add_library(pw_hex_dump STATIC
     pw_string.to_string
 )
 
-pw_add_library(pw_hex_dump.log_bytes INTERFACE
+pw_add_library(pw_hex_dump.log_bytes STATIC
   HEADERS
     public/pw_hex_dump/log_bytes.h
+  SOURCES
+    log_bytes.cc
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_bytes
     pw_hex_dump
     pw_log
+    pw_preprocessor
 )

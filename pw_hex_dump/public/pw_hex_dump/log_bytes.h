@@ -14,6 +14,7 @@
 
 #pragma once
 
+#ifdef __cplusplus
 #include <array>
 #include <cstddef>
 
@@ -21,7 +22,11 @@
 #include "pw_hex_dump/hex_dump.h"
 #include "pw_log/log.h"
 #include "pw_log/options.h"
+#endif  // __cplusplus
 
+#include "pw_preprocessor/util.h"
+
+#ifdef __cplusplus
 namespace pw::dump {
 
 /// @module{pw_hex_dump}
@@ -109,3 +114,13 @@ inline void LogBytes(int log_level, pw::ConstByteSpan bytes) {
 }
 
 }  // namespace pw::dump
+#else
+#include <stddef.h>
+#endif  // __cplusplus
+
+PW_EXTERN_C_START
+
+/// C wrapper for `pw::dump::LogBytes`.
+void pw_dump_LogBytes(int log_level, const void* data, size_t length);
+
+PW_EXTERN_C_END

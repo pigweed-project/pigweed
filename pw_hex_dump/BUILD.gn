@@ -39,12 +39,13 @@ pw_source_set("log_bytes") {
     ":pw_hex_dump",
     dir_pw_bytes,
     dir_pw_log,
+    dir_pw_preprocessor,
     dir_pw_span,
     dir_pw_status,
   ]
   deps = []
   public = [ "public/pw_hex_dump/log_bytes.h" ]
-  sources = []
+  sources = [ "log_bytes.cc" ]
 }
 
 pw_test_group("tests") {

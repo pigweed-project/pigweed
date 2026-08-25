@@ -47,6 +47,7 @@ pw_add_library(pw_log_zephyr.pigweed_overrides INTERFACE
     zephyr_public_overrides
   PUBLIC_DEPS
     pw_log.facade
+    pw_hex_dump.log_bytes
 )
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_PIGWEED_OVERRIDES
