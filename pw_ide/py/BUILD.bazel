@@ -28,6 +28,7 @@ pw_py_library(
         "pw_ide/editors.py",
         "pw_ide/exceptions.py",
         "pw_ide/ide_query.py",
+        "pw_ide/kythe.py",
         "pw_ide/lock.py",
         "pw_ide/merger.py",
         "pw_ide/python.py",
@@ -251,4 +252,11 @@ pw_py_binary(
     deps = [
         ":update_compile_commands_binary",
     ],
+)
+
+pw_py_test(
+    name = "kythe_test",
+    size = "small",
+    srcs = ["kythe_test.py"],
+    deps = [":pw_ide"],
 )
