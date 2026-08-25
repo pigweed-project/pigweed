@@ -1417,6 +1417,12 @@ struct EventHeader:
   0     [+1]  UInt       event_code_uint
   $next [+1]  UInt       parameter_total_size
 
+struct EventPacket:
+  -- HCI Event packet.
+  let hdr_size = EventHeader.$size_in_bytes
+  0     [+hdr_size]  EventHeader  header
+  let length = header.parameter_total_size
+  $next [+length] UInt:8[] payload
 
 struct CommandCompleteEvent:
   -- Core Spec v5.3 Vol 4, Part E, Section 7.7.14
