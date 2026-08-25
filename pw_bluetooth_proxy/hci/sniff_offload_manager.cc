@@ -277,7 +277,12 @@ SniffOffloadManager::SniffOffloadManager(Allocator& allocator,
                           std::move(on_error),
                           internal::GetDefaultTimeProvider()) {}
 
-SniffOffloadManager::~SniffOffloadManager() { Reset(); }
+SniffOffloadManager::~SniffOffloadManager() {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  state_update_callback_ = nullptr;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  Reset();
+}
 
 void SniffOffloadManager::Reset() {
   std::lock_guard lock(mutex_);

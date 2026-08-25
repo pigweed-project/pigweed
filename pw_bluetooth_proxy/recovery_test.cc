@@ -71,6 +71,7 @@ class AclRecoveryTest : public ProxyHostTest {
 TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
   constexpr uint16_t kLePendingAclCredits = 2;
   constexpr uint16_t kBrEdrPendingAclCredits = 1;
+  std::optional<AclConnectionSnapshot> connection_snapshot;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -102,7 +103,6 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
 
-  std::optional<AclConnectionSnapshot> connection_snapshot;
   proxy.RegisterAclStateUpdateCallback(
       [&connection_snapshot](const AclStateUpdate& update) {
         connection_snapshot = update.connection;
@@ -160,6 +160,11 @@ TEST_F(AclRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
 }
 
 TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
+  struct {
+    uint32_t updates_sent = 0;
+    AclStateUpdate last_update;
+  } update_capture;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -175,10 +180,6 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
 
-  struct {
-    uint32_t updates_sent = 0;
-    AclStateUpdate last_update;
-  } update_capture;
   proxy.RegisterAclStateUpdateCallback(
       [&update_capture](const AclStateUpdate& update) {
         update_capture.updates_sent++;
@@ -518,6 +519,8 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
 }
 
 TEST_F(L2capRecoveryTest, RegisterStateUpdateCallback) {
+  uint32_t callback_invocations = 0;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -531,7 +534,6 @@ TEST_F(L2capRecoveryTest, RegisterStateUpdateCallback) {
                               GetProxyHostAllocator());
   StartDispatcherOnCurrentThread(proxy);
 
-  uint32_t callback_invocations = 0;
   proxy.RegisterL2capStateUpdateCallback(
       [&callback_invocations](const L2capStateUpdate& /*update*/) {
         callback_invocations++;
@@ -798,6 +800,8 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
 }
 
 TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
+  Vector<L2capChannelRemoved, 2> removed_channels;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -829,7 +833,6 @@ TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
 
-  Vector<L2capChannelRemoved, 2> removed_channels;
   proxy.RegisterL2capStateUpdateCallback(
       [&removed_channels](const L2capStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
@@ -857,6 +860,8 @@ TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
 }
 
 TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
+  Vector<L2capChannelRemoved, 2> removed_channels;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -888,7 +893,6 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
 
-  Vector<L2capChannelRemoved, 2> removed_channels;
   proxy.RegisterL2capStateUpdateCallback(
       [&removed_channels](const L2capStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
@@ -905,6 +909,8 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
 }
 
 TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
+  Vector<L2capChannelRemoved, 2> removed_channels;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -936,7 +942,6 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
 
-  Vector<L2capChannelRemoved, 2> removed_channels;
   proxy.RegisterL2capStateUpdateCallback(
       [&removed_channels](const L2capStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
@@ -971,6 +976,8 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
 }
 
 TEST_F(L2capRecoveryTest, CompleteRecoveryIsIdempotent) {
+  Vector<L2capChannelRemoved, 4> removed_channels;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -1002,7 +1009,6 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryIsIdempotent) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
 
-  Vector<L2capChannelRemoved, 4> removed_channels;
   proxy.RegisterL2capStateUpdateCallback(
       [&removed_channels](const L2capStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
