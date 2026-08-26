@@ -332,7 +332,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         }
         case 'openDocs': {
           vscode.env.openExternal(
-            vscode.Uri.parse('https://pigweed.dev/pw_ide/guide/vscode/'),
+            vscode.Uri.parse(
+              'https://pigweed.dev/pw_ide/guide/bazel/usage.html#code-intelligence',
+            ),
           );
           break;
         }
