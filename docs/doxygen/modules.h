@@ -233,6 +233,12 @@
 /// [Home](../../pw_bluetooth_sapphire/docs.html)
 /// @endmaindocs
 
+/// @defgroup pw_buf pw_buf
+/// @brief Contiguous buffer views with optional memory ownership.
+/// @maindocs
+/// [Home](../../pw_buf/docs.html)
+/// @endmaindocs
+
 /// @defgroup pw_build pw_build
 /// @brief Integrations for Bazel, GN, and CMake.
 /// @maindocs

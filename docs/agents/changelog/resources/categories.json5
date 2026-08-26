@@ -253,6 +253,7 @@
       "pw_alignment",
       "pw_allocator",
       "pw_atomic",
+      "pw_buf",
       "pw_dma_mcuxpresso",
       "pw_intrusive_ptr",
       "pw_malloc",

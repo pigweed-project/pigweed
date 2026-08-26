@@ -58,6 +58,7 @@ declare_args() {
       get_path_info("../pw_bluetooth_sapphire", "abspath")
   dir_pw_boot = get_path_info("../pw_boot", "abspath")
   dir_pw_boot_cortex_m = get_path_info("../pw_boot_cortex_m", "abspath")
+  dir_pw_buf = get_path_info("../pw_buf", "abspath")
   dir_pw_build = get_path_info("../pw_build", "abspath")
   dir_pw_build_android = get_path_info("../pw_build_android", "abspath")
   dir_pw_build_info = get_path_info("../pw_build_info", "abspath")
@@ -267,6 +268,7 @@ declare_args() {
     dir_pw_bluetooth_sapphire,
     dir_pw_boot,
     dir_pw_boot_cortex_m,
+    dir_pw_buf,
     dir_pw_build,
     dir_pw_build_android,
     dir_pw_build_info,
@@ -460,6 +462,7 @@ declare_args() {
     "$dir_pw_bluetooth_sapphire:tests",
     "$dir_pw_boot:tests",
     "$dir_pw_boot_cortex_m:tests",
+    "$dir_pw_buf:tests",
     "$dir_pw_build:tests",
     "$dir_pw_build_android:tests",
     "$dir_pw_build_info:tests",

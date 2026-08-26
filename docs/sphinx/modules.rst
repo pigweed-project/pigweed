@@ -31,6 +31,7 @@ Modules
    pw_bluetooth_profiles/docs
    pw_bluetooth_sapphire/docs
    pw_boot/docs
+   pw_buf/docs
    pw_build/docs
    pw_build_android/docs
    pw_build_info/docs

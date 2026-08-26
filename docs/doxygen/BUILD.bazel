@@ -47,6 +47,7 @@ filegroup(
         "//pw_bluetooth:doxygen",
         "//pw_bluetooth_proxy:doxygen",
         "//pw_bluetooth_sapphire:doxygen",
+        "//pw_buf:doxygen",
         "//pw_build:doxygen",
         "//pw_bytes:doxygen",
         "//pw_channel:doxygen",

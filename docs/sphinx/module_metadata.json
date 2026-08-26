@@ -179,6 +179,13 @@
       "C++"
     ]
   },
+  "pw_buf": {
+    "tagline": "Contiguous buffer views with optional memory ownership",
+    "status": "unstable",
+    "languages": [
+      "C++"
+    ]
+  },
   "pw_build": {
     "tagline": "Integrations for Bazel, GN, and CMake",
     "status": "stable",

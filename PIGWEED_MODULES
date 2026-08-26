@@ -27,6 +27,7 @@ pw_bluetooth_proxy
 pw_bluetooth_sapphire
 pw_boot
 pw_boot_cortex_m
+pw_buf
 pw_build
 pw_build_android
 pw_build_info
