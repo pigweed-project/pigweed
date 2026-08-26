@@ -14,21 +14,59 @@
 #pragma once
 
 #include <cstdint>
+#include <variant>
 
+#include "pw_bluetooth_proxy/config.h"
+#include "pw_containers/vector.h"
 #include "pw_function/function.h"
+#include "pw_status/status.h"
 
 namespace pw::bluetooth::proxy::hci {
 
+struct SniffConnectionSnapshot {
+  uint16_t connection_handle = 0;
+  uint16_t max_interval = 0;
+  uint16_t min_interval = 0;
+  uint16_t attempt = 0;
+  uint16_t timeout = 0;
+  uint16_t link_inactivity_timeout = 0;
+  uint16_t subrating_max_latency = 0;
+  uint16_t subrating_min_remote_timeout = 0;
+  uint16_t subrating_min_local_timeout = 0;
+  bool allow_exit_sniff_on_rx = false;
+  bool allow_exit_sniff_on_tx = false;
+
+  /// Checks primary-key handle equality.
+  bool MatchesKey(uint16_t handle) const;
+
+  /// Updates an individual Sniff connection snapshot entry in-place.
+  Status Update(const SniffConnectionSnapshot& update);
+};
+
+struct SniffSnapshot;
+
+/// Variant holding either a top-level global Sniff snapshot or a per-connection
+/// update.
+using SniffStateUpdate = std::variant<SniffSnapshot, SniffConnectionSnapshot>;
+
 struct SniffSnapshot {
+  bool snapshot_incomplete = false;
   bool sniff_enabled = false;
   uint16_t subrating_max_latency = 0;
   uint16_t subrating_min_remote_timeout = 0;
   uint16_t subrating_min_local_timeout = 0;
   bool suppress_mode_change_event = false;
   bool suppress_sniff_subrating_event = false;
-};
+  pw::Vector<SniffConnectionSnapshot,
+             PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS>
+      connections;
 
-using SniffStateUpdate = SniffSnapshot;
+  /// Updates an individual Sniff connection snapshot entry in-place.
+  Status Update(const SniffConnectionSnapshot& update);
+
+  /// Applies state updates in-place to the top-level Sniff subsystem snapshot.
+  Status ApplyStateUpdate(const SniffStateUpdate& update);
+};
 
 /// Callback type invoked when the Sniff subsystem state mutates.
 ///

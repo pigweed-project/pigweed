@@ -1497,7 +1497,7 @@ TEST_F(SniffOffloadManagerTest, ParametersWithoutEnableDoesNotCrash) {
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
-TEST_F(SniffOffloadManagerTest, AutoSerializeGlobalSniffOnMutation) {
+TEST_F(SniffOffloadManagerTest, StateUpdateOnDisconnectionComplete) {
   struct Context {
     int callback_count = 0;
     SniffSnapshot last_snapshot;
@@ -1505,7 +1505,37 @@ TEST_F(SniffOffloadManagerTest, AutoSerializeGlobalSniffOnMutation) {
 
   SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
     ++ctx.callback_count;
-    ctx.last_snapshot = update;
+    ctx.last_snapshot = std::get<SniffSnapshot>(update);
+  };
+
+  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0456)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 2);
+  ASSERT_EQ(ctx.last_snapshot.connections.size(), 2u);
+
+  // Remove first connection
+  EXPECT_EQ(Simulate(DisconnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+  ASSERT_EQ(ctx.last_snapshot.connections.size(), 1u);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].connection_handle, 0x0456);
+
+  // Remove second connection
+  EXPECT_EQ(Simulate(DisconnectionComplete(0x0456)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 4);
+  EXPECT_TRUE(ctx.last_snapshot.connections.empty());
+}
+
+TEST_F(SniffOffloadManagerTest, StateUpdatePerConnectionSniffSnapshot) {
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot last_snapshot;
+  } ctx;
+
+  SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
+    ++ctx.callback_count;
+    PW_TEST_EXPECT_OK(ctx.last_snapshot.ApplyStateUpdate(update));
   };
 
   sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
@@ -1518,39 +1548,259 @@ TEST_F(SniffOffloadManagerTest, AutoSerializeGlobalSniffOnMutation) {
 
   EXPECT_EQ(ctx.callback_count, 1);
   EXPECT_TRUE(ctx.last_snapshot.sniff_enabled);
-  EXPECT_TRUE(ctx.last_snapshot.suppress_mode_change_event);
-  EXPECT_FALSE(ctx.last_snapshot.suppress_sniff_subrating_event);
-  EXPECT_EQ(ctx.last_snapshot.subrating_max_latency, 0x0002);
-  EXPECT_EQ(ctx.last_snapshot.subrating_min_remote_timeout, 0);
-  EXPECT_EQ(ctx.last_snapshot.subrating_min_local_timeout, 0);
 
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 2);
+  ASSERT_EQ(ctx.last_snapshot.connections.size(), 1u);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].connection_handle, 0x0123);
+
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0456)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+  ASSERT_EQ(ctx.last_snapshot.connections.size(), 2u);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].connection_handle, 0x0123);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].connection_handle, 0x0456);
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(
+                0x0123,
+                {.sniff_max_interval = 0x0020,
+                 .sniff_min_interval = 0x0010,
+                 .sniff_attempts = 0x0004,
+                 .sniff_timeout = 0x0008,
+                 .link_inactivity_timeout = 0x0064,
+                 .subrating_max_latency = 0x0002,
+                 .subrating_min_remote_timeout = 0x0001,
+                 .subrating_min_local_timeout = 0x0003,
+                 .allow_exit_sniff_on_rx = true,
+                 .allow_exit_sniff_on_tx = false})),
+            kInterceptResume);
+
+  EXPECT_EQ(ctx.callback_count, 4);
+  EXPECT_EQ(ctx.last_snapshot.connections.size(), 2u);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].connection_handle, 0x0123);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].max_interval, 0x0020);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].min_interval, 0x0010);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].attempt, 0x0004);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].timeout, 0x0008);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].link_inactivity_timeout, 0x0064);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_max_latency, 0x0002);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_min_remote_timeout,
+            0x0001);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_min_local_timeout,
+            0x0003);
+  EXPECT_TRUE(ctx.last_snapshot.connections[0].allow_exit_sniff_on_rx);
+  EXPECT_FALSE(ctx.last_snapshot.connections[0].allow_exit_sniff_on_tx);
+
+  // Confirm that the other connection (0x0456) remained unmutated with default
+  // parameters
+  EXPECT_EQ(ctx.last_snapshot.connections[1].connection_handle, 0x0456);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].max_interval, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].min_interval, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].attempt, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].timeout, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].link_inactivity_timeout, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].subrating_max_latency, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].subrating_min_remote_timeout, 0u);
+  EXPECT_EQ(ctx.last_snapshot.connections[1].subrating_min_local_timeout, 0u);
+  EXPECT_FALSE(ctx.last_snapshot.connections[1].allow_exit_sniff_on_rx);
+  EXPECT_FALSE(ctx.last_snapshot.connections[1].allow_exit_sniff_on_tx);
+}
+
+TEST_F(SniffOffloadManagerTest, SniffSnapshotConnectionUpdate) {
+  SniffSnapshot snapshot;
+  SniffConnectionSnapshot conn_update;
+  conn_update.connection_handle = 0x0123;
+  conn_update.max_interval = 0x0020;
+  conn_update.min_interval = 0x0010;
+  conn_update.attempt = 0x0004;
+  conn_update.timeout = 0x0008;
+  conn_update.link_inactivity_timeout = 0x0064;
+  conn_update.subrating_max_latency = 0x0002;
+  conn_update.subrating_min_remote_timeout = 0x0001;
+  conn_update.subrating_min_local_timeout = 0x0003;
+  conn_update.allow_exit_sniff_on_rx = true;
+  conn_update.allow_exit_sniff_on_tx = false;
+
+  PW_TEST_EXPECT_OK(snapshot.Update(conn_update));
+  EXPECT_EQ(snapshot.connections.size(), 1u);
+  EXPECT_EQ(snapshot.connections[0].connection_handle, 0x0123);
+  EXPECT_EQ(snapshot.connections[0].max_interval, 0x0020);
+  EXPECT_EQ(snapshot.connections[0].link_inactivity_timeout, 0x0064);
+
+  // In-place update for existing connection
+  conn_update.max_interval = 0x0040;
+  PW_TEST_EXPECT_OK(snapshot.Update(conn_update));
+  EXPECT_EQ(snapshot.connections.size(), 1u);
+  EXPECT_EQ(snapshot.connections[0].max_interval, 0x0040);
+}
+
+TEST_F(SniffOffloadManagerTest, SniffSnapshotApplyStateUpdate) {
+  SniffSnapshot snapshot;
+  SniffConnectionSnapshot conn_update;
+  conn_update.connection_handle = 0x0123;
+  conn_update.max_interval = 0x0020;
+  conn_update.min_interval = 0x0010;
+  conn_update.attempt = 0x0004;
+  conn_update.timeout = 0x0008;
+
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(SniffStateUpdate{conn_update}));
+  EXPECT_EQ(snapshot.connections.size(), 1u);
+  EXPECT_EQ(snapshot.connections[0].connection_handle, 0x0123);
+  EXPECT_EQ(snapshot.connections[0].max_interval, 0x0020);
+
+  SniffSnapshot global_update;
+  global_update.sniff_enabled = true;
+  global_update.subrating_max_latency = 0x0010;
+  global_update.subrating_min_remote_timeout = 0x0005;
+  global_update.subrating_min_local_timeout = 0x0005;
+  global_update.suppress_mode_change_event = true;
+  global_update.suppress_sniff_subrating_event = false;
+
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(SniffStateUpdate{global_update}));
+  EXPECT_TRUE(snapshot.sniff_enabled);
+  EXPECT_TRUE(snapshot.suppress_mode_change_event);
+}
+
+TEST_F(SniffOffloadManagerTest, AutoSerializeSniffStateOnMutation) {
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot snapshot;
+  } ctx;
+
+  SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
+    ++ctx.callback_count;
+    PW_TEST_EXPECT_OK(ctx.snapshot.ApplyStateUpdate(update));
+  };
+
+  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+
+  // 1. Connection complete (connection added)
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 1);
+  EXPECT_EQ(ctx.snapshot.connections.size(), 1u);
+  EXPECT_EQ(ctx.snapshot.connections[0].connection_handle, 0x0123);
+
+  // 2. Enable sniff offload
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
+                /*enable=*/true,
+                /*suppress_mode_change_event=*/true,
+                /*suppress_sniff_subrating=*/false)),
+            kInterceptResume);
+
+  EXPECT_EQ(ctx.callback_count, 2);
+  EXPECT_TRUE(ctx.snapshot.sniff_enabled);
+  EXPECT_TRUE(ctx.snapshot.suppress_mode_change_event);
+  EXPECT_FALSE(ctx.snapshot.suppress_sniff_subrating_event);
+  EXPECT_EQ(ctx.snapshot.subrating_max_latency, 0x0002);
+  EXPECT_EQ(ctx.snapshot.subrating_min_remote_timeout, 0);
+  EXPECT_EQ(ctx.snapshot.subrating_min_local_timeout, 0);
+
+  // 3. Update sniff offload parameters
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x0123,
+                                                 {.sniff_max_interval = 0x0020,
+                                                  .sniff_min_interval = 0x0010,
+                                                  .sniff_attempts = 0x0004,
+                                                  .sniff_timeout = 0x0008})),
+            kInterceptResume);
+
+  EXPECT_EQ(ctx.callback_count, 3);
+  EXPECT_EQ(ctx.snapshot.connections[0].max_interval, 0x0020);
+
+  // 4. Inactivity timeout triggers transition to sniff (no snapshot mutation)
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_EQ(ctx.callback_count, 3);
+
+  // 5. Controller confirms sniff mode via ModeChangeEvent (no snapshot
+  // mutation)
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::SNIFF)),
+            kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+
+  // 6. ACL activity triggers exit sniff transition (no snapshot mutation)
+  SimulateAclActivity(0x0123,
+                      SniffOffloadManager::Direction::kHostToController);
+  EXPECT_EQ(ctx.callback_count, 3);
+
+  // 7. Controller confirms active mode via ModeChangeEvent (no snapshot
+  // mutation)
+  EXPECT_EQ(
+      Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::ACTIVE)),
+      kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+
+  // 8. Disable sniff offload
   EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
                 /*enable=*/false,
                 /*suppress_mode_change_event=*/false,
                 /*suppress_sniff_subrating=*/false)),
             kInterceptResume);
 
-  EXPECT_EQ(ctx.callback_count, 2);
-  EXPECT_FALSE(ctx.last_snapshot.sniff_enabled);
+  EXPECT_EQ(ctx.callback_count, 4);
+  EXPECT_FALSE(ctx.snapshot.sniff_enabled);
 
-  // Enable again with suppression flags, then verify Reset() triggers an
+  // 9. Disconnection complete (connection removed)
+  EXPECT_EQ(Simulate(DisconnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 5);
+  EXPECT_EQ(ctx.snapshot.connections.size(), 0u);
+
+  // 10. Enable again with suppression flags, then verify Reset() triggers an
   // update.
   EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
                 /*enable=*/true,
                 /*suppress_mode_change_event=*/true,
                 /*suppress_sniff_subrating=*/true)),
             kInterceptResume);
-  EXPECT_EQ(ctx.callback_count, 3);
-  EXPECT_TRUE(ctx.last_snapshot.sniff_enabled);
-  EXPECT_TRUE(ctx.last_snapshot.suppress_mode_change_event);
-  EXPECT_TRUE(ctx.last_snapshot.suppress_sniff_subrating_event);
+  EXPECT_EQ(ctx.callback_count, 6);
+  EXPECT_TRUE(ctx.snapshot.sniff_enabled);
+  EXPECT_TRUE(ctx.snapshot.suppress_mode_change_event);
+  EXPECT_TRUE(ctx.snapshot.suppress_sniff_subrating_event);
 
   sniff_offload_manager().Reset();
 
+  EXPECT_EQ(ctx.callback_count, 7);
+  EXPECT_FALSE(ctx.snapshot.sniff_enabled);
+  EXPECT_FALSE(ctx.snapshot.suppress_mode_change_event);
+  EXPECT_FALSE(ctx.snapshot.suppress_sniff_subrating_event);
+  EXPECT_TRUE(ctx.snapshot.connections.empty());
+
+  sniff_offload_manager().RegisterStateUpdateCallback(nullptr);
+}
+
+TEST_F(SniffOffloadManagerTest,
+       AutoSerializeSniffStateOnMutationDisabledAndPushActive) {
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot snapshot;
+  } ctx;
+
+  SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
+    ++ctx.callback_count;
+    PW_TEST_EXPECT_OK(ctx.snapshot.ApplyStateUpdate(update));
+  };
+
+  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 1);
+
+  // Write parameters while disabled (early return path)
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(
+                0x0123,
+                {.sniff_max_interval = 0x0040, .sniff_min_interval = 0x0020})),
+            kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 2);
+  EXPECT_EQ(ctx.snapshot.connections[0].max_interval, 0x0040);
+
+  // Enable offload
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 3);
+
+  // Write parameters with max_interval = 0 (PushActive early return path)
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(
+                0x0123,
+                {.sniff_max_interval = 0x0000, .sniff_min_interval = 0x0000})),
+            kInterceptResume);
   EXPECT_EQ(ctx.callback_count, 4);
-  EXPECT_FALSE(ctx.last_snapshot.sniff_enabled);
-  EXPECT_FALSE(ctx.last_snapshot.suppress_mode_change_event);
-  EXPECT_FALSE(ctx.last_snapshot.suppress_sniff_subrating_event);
+  EXPECT_EQ(ctx.snapshot.connections[0].max_interval, 0x0000);
 
   sniff_offload_manager().RegisterStateUpdateCallback(nullptr);
 }

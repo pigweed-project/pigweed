@@ -158,7 +158,7 @@ class SniffOffloadManager::ConnectionFsm final {
   void Start();
   void Stop();
   void OnInput(Input&& input) PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
-  void AssertLockHeld(SniffOffloadManager& caller) const
+  void AssertLockHeld(const SniffOffloadManager& caller) const
       PW_ASSERT_EXCLUSIVE_LOCK(manager_.mutex_)
           PW_EXCLUSIVE_LOCKS_REQUIRED(caller.mutex_) {
     // Should be impossible to ever be unsatisfied, but assert to satisfy the
@@ -167,6 +167,15 @@ class SniffOffloadManager::ConnectionFsm final {
   }
 
   ConnectionHandle handle() const { return handle_; }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  SniffConnectionSnapshot CaptureLocked() const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+  void NotifyStateUpdate() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_) {
+    manager_.NotifyStateUpdate(*this);
+  }
 
  private:
   void HandleInput(EnableInput&& input)
@@ -594,6 +603,7 @@ SniffOffloadManager::ProcessConnectionComplete(const MultiBuf& event_packet) {
     fsm.OnInput(std::get<Enabled>(state_));
   }
   fsm.Start();
+  NotifyStateUpdate();
   return {};
 }
 
@@ -622,6 +632,7 @@ SniffOffloadManager::ProcessDisconnectionComplete(
   auto& fsm = iter->second;
   fsm.Stop();
   connections_.erase(iter);
+  NotifyStateUpdate();
   return {};
 }
 
@@ -929,12 +940,14 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
     // Host sent WriteSniffOffloadParameters without a prior Enable (or after a
     // Disable). Tolerate the out-of-order command rather than asserting in
     // SendSniffSubrating().
+    NotifyStateUpdate();
     return;
   }
 
   if (connection_state() == ConnectionState::kPushActive) {
     SendExitSniffMode();
     Stop();  // Do not trigger timeouts.
+    NotifyStateUpdate();
     return;
   }
 
@@ -950,6 +963,7 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
   }
 
   SendSniffSubrating();
+  NotifyStateUpdate();
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
@@ -1122,6 +1136,28 @@ async2::Poll<> SniffOffloadManager::ConnectionFsm::TimeoutTask::DoPend(
 }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+SniffConnectionSnapshot SniffOffloadManager::ConnectionFsm::CaptureLocked()
+    const {
+  SniffConnectionSnapshot conn_snapshot;
+  conn_snapshot.connection_handle = cpp23::to_underlying(handle_);
+  if (parameters_.has_value()) {
+    conn_snapshot.max_interval = parameters_->sniff_max_interval;
+    conn_snapshot.min_interval = parameters_->sniff_min_interval;
+    conn_snapshot.attempt = parameters_->sniff_attempts;
+    conn_snapshot.timeout = parameters_->sniff_timeout;
+    conn_snapshot.link_inactivity_timeout =
+        parameters_->link_inactivity_timeout;
+    conn_snapshot.subrating_max_latency = parameters_->subrating_max_latency;
+    conn_snapshot.subrating_min_remote_timeout =
+        parameters_->subrating_min_remote_timeout;
+    conn_snapshot.subrating_min_local_timeout =
+        parameters_->subrating_min_local_timeout;
+    conn_snapshot.allow_exit_sniff_on_rx = parameters_->allow_exit_sniff_on_rx;
+    conn_snapshot.allow_exit_sniff_on_tx = parameters_->allow_exit_sniff_on_tx;
+  }
+  return conn_snapshot;
+}
+
 SniffSnapshot SniffOffloadManager::CaptureLocked() const {
   SniffSnapshot snapshot;
   if (const Enabled* enabled = std::get_if<Enabled>(&state_)) {
@@ -1132,9 +1168,22 @@ SniffSnapshot SniffOffloadManager::CaptureLocked() const {
     snapshot.subrating_min_local_timeout = enabled->subrating_min_local_timeout;
   } else {
     snapshot.sniff_enabled = false;
+    snapshot.subrating_max_latency = 0;
+    snapshot.subrating_min_remote_timeout = 0;
+    snapshot.subrating_min_local_timeout = 0;
   }
   snapshot.suppress_mode_change_event = suppress_mode_change_event_;
   snapshot.suppress_sniff_subrating_event = suppress_sniff_subrating_event_;
+
+  for (const auto& [_, fsm] : connections_) {
+    fsm.AssertLockHeld(*this);
+    if (snapshot.connections.full()) {
+      snapshot.snapshot_incomplete = true;
+      break;
+    }
+    snapshot.connections.push_back(fsm.CaptureLocked());
+  }
+
   return snapshot;
 }
 
@@ -1147,6 +1196,13 @@ void SniffOffloadManager::RegisterStateUpdateCallback(
 void SniffOffloadManager::NotifyStateUpdate() const {
   if (state_update_callback_) {
     state_update_callback_(CaptureLocked());
+  }
+}
+
+void SniffOffloadManager::NotifyStateUpdate(const ConnectionFsm& fsm) const {
+  fsm.AssertLockHeld(*this);
+  if (state_update_callback_) {
+    state_update_callback_(fsm.CaptureLocked());
   }
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY

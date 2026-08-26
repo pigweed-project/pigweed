@@ -290,10 +290,13 @@ class SniffOffloadManager final {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   SniffSnapshot CaptureLocked() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void NotifyStateUpdate(const ConnectionFsm& fsm) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   SniffStateUpdateCallback state_update_callback_ PW_GUARDED_BY(mutex_);
 #else
   void NotifyStateUpdate() const {}
+  void NotifyStateUpdate([[maybe_unused]] const ConnectionFsm& fsm) const {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 

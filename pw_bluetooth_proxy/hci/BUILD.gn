@@ -72,8 +72,11 @@ pw_source_set("sniff_snapshot") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     "$dir_pw_bluetooth_proxy:config",
+    "$dir_pw_containers:vector",
     "$dir_pw_function",
+    "$dir_pw_status",
   ]
+  sources = [ "sniff_offload_snapshot.cc" ]
 }
 
 # LINT.IfChange

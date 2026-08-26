@@ -64,14 +64,18 @@ pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
 
-pw_add_library(pw_bluetooth_proxy.hci.sniff_snapshot INTERFACE
+pw_add_library(pw_bluetooth_proxy.hci.sniff_snapshot STATIC
   HEADERS
     public/pw_bluetooth_proxy/hci/sniff_offload_snapshot.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
     pw_bluetooth_proxy.config
+    pw_containers.vector
     pw_function
+    pw_status
+  SOURCES
+    sniff_offload_snapshot.cc
 )
 
 # LINT.IfChange

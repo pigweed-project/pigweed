@@ -71,13 +71,18 @@ cc_library(
 
 cc_library(
     name = "sniff_snapshot",
+    srcs = [
+        "sniff_offload_snapshot.cc",
+    ],
     hdrs = [
         "public/pw_bluetooth_proxy/hci/sniff_offload_snapshot.h",
     ],
     strip_include_prefix = "public",
     deps = [
         "//pw_bluetooth_proxy:config",
+        "//pw_containers:vector",
         "//pw_function",
+        "//pw_status",
     ],
 )
 
@@ -130,6 +135,7 @@ cc_library(
     ],
     hdrs = [
         "public/pw_bluetooth_proxy/hci/sniff_offload_manager.h",
+        "public/pw_bluetooth_proxy/hci/sniff_offload_snapshot.h",
     ],
     defines = [
         "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
