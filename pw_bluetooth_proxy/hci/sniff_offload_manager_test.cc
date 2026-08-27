@@ -257,7 +257,8 @@ class SniffOffloadManagerTest : public ::testing::Test {
 
   ControllerEvent ModeChangeEvent(
       uint16_t connection_handle,
-      emboss::AclConnectionMode mode = emboss::AclConnectionMode::SNIFF);
+      emboss::AclConnectionMode mode = emboss::AclConnectionMode::SNIFF,
+      emboss::StatusCode status = emboss::StatusCode::SUCCESS);
   ControllerEvent SniffSubratingEvent(uint16_t connection_handle);
 
   MultiBuf::Instance MakeCommandStatus(CommandOpcode opcode,
@@ -2077,6 +2078,421 @@ TEST_F(SniffOffloadManagerTest, RecoverStateExhaustedAllocatorFails) {
             Status::ResourceExhausted());
 }
 
+TEST_F(SniffOffloadManagerTest,
+       InitiateHardwareResynchronizationSendsExitSniffMode) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0020;
+  snapshot.subrating_min_local_timeout = 0x0030;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  conn1.max_interval = 0x0040;
+  conn1.min_interval = 0x0020;
+  conn1.attempt = 0x0004;
+  conn1.timeout = 0x0008;
+
+  SniffConnectionSnapshot conn2;
+  conn2.connection_handle = 0x0456;
+  conn2.max_interval = 0x0040;
+  conn2.min_interval = 0x0020;
+  conn2.attempt = 0x0004;
+  conn2.timeout = 0x0008;
+
+  snapshot.connections.push_back(conn1);
+  snapshot.connections.push_back(conn2);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+
+  // Should have sent ExitSniffMode commands for both connections with matching
+  // handles
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+  EXPECT_TRUE(CheckSniffExitSent(0x0456));
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       InitiateHardwareResynchronizationNoConnectionsDoesNothing) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  EXPECT_TRUE(packets_to_controller().empty());
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       InitiateHardwareResynchronizationHandlesBufferAllocationFailure) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  WithTestAllocator([](auto& allocator) { allocator.Exhaust(); });
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+
+  EXPECT_EQ(
+      PopLastError(),
+      Error({ErrorReason::kCannotAllocateBuffer, ConnectionHandle{0x0123}}));
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       RecoveredConnectionTransitionsToSniffOnInactivity) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  conn.subrating_max_latency = 0x0004;
+  conn.subrating_min_remote_timeout = 0x0002;
+  conn.subrating_min_local_timeout = 0x0003;
+  conn.allow_exit_sniff_on_rx = true;
+  conn.allow_exit_sniff_on_tx = true;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  EXPECT_EQ(
+      Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::ACTIVE)),
+      kPassthroughResume);
+
+  AdvanceTime(std::chrono::milliseconds(0x0064) + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest, RecoveredConnectionEnforcesAclExitRules) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  conn.allow_exit_sniff_on_rx = false;
+  conn.allow_exit_sniff_on_tx = true;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::SNIFF)),
+            kPassthroughResume);
+
+  // RX traffic should NOT trigger exit sniff because allow_exit_sniff_on_rx is
+  // false
+  SimulateAclActivity(0x0123, SniffOffloadManager::Direction::kRx);
+  EXPECT_FALSE(CheckSniffExitSent(0x0123));
+
+  // TX traffic SHOULD trigger exit sniff because allow_exit_sniff_on_tx is true
+  SimulateAclActivity(0x0123, SniffOffloadManager::Direction::kTx);
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverConnectionWithPendingParameters) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  EXPECT_EQ(
+      Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::ACTIVE)),
+      kPassthroughResume);
+
+  AdvanceTime(kDefaultLinkInactivityTimeout * 2);
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  EXPECT_EQ(Simulate(WriteSniffOffloadParameters(0x0123)), kInterceptResume);
+  EXPECT_TRUE(CheckCommandCompleteEventSent(
+      CommandOpcode::ANDROID_WRITE_SNIFF_OFFLOAD_PARAMETERS,
+      emboss::StatusCode::SUCCESS));
+  EXPECT_TRUE(CheckSniffSubratingSent(0x0123));
+
+  AdvanceTime(kDefaultLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverConnectionInPushActiveMode) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0000;
+  conn.min_interval = 0x0000;
+  conn.link_inactivity_timeout = 0x0064;
+  conn.subrating_max_latency = 0x0002;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  EXPECT_EQ(
+      Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::ACTIVE)),
+      kPassthroughResume);
+
+  AdvanceTime(std::chrono::milliseconds(0x0064) * 2);
+  EXPECT_TRUE(packets_to_controller().empty());
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ResynchronizationToleratesCommandDisallowedOnExitSniffMode) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  // COMMAND_DISALLOWED during resynchronization phase should be tolerated as a
+  // confirmation that the controller is already active.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, ResynchronizationPhaseClearsOnModeChange) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  // Confirm connection mode via ModeChangeEvent, transitioning connection to
+  // steady state.
+  EXPECT_EQ(
+      Simulate(ModeChangeEvent(0x0123, emboss::AclConnectionMode::ACTIVE)),
+      kPassthroughResume);
+
+  // Subsequent COMMAND_DISALLOWED in steady state must be treated as a fatal
+  // error.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_EQ(PopLastError(), Error({ErrorReason::kCommandStatusFailed}));
+}
+
+TEST_F(SniffOffloadManagerTest, ResynchronizationPhaseClearsOnAclTraffic) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  // ACL traffic on this link clears the resynchronization flag.
+  SimulateAclActivity(0x0123, SniffOffloadManager::Direction::kRx);
+
+  // Subsequent COMMAND_DISALLOWED in steady state must be treated as a fatal
+  // error.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_EQ(PopLastError(), Error({ErrorReason::kCommandStatusFailed}));
+}
+
+TEST_F(SniffOffloadManagerTest,
+       ResynchronizationPhaseClearsOnInactivityTimeout) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  // Inactivity timeout triggers SendEnterSniffMode and clears resync flag.
+  AdvanceTime(std::chrono::milliseconds(0x0064) + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+
+  // Subsequent COMMAND_DISALLOWED is now rejected.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_EQ(PopLastError(), Error({ErrorReason::kCommandStatusFailed}));
+}
+
+TEST_F(SniffOffloadManagerTest,
+       PreCrashEventsDoNotExhaustResynchronizationTolerance) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  conn1.max_interval = 0x0040;
+  conn1.min_interval = 0x0020;
+  conn1.attempt = 0x0004;
+  conn1.timeout = 0x0008;
+  conn1.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn1);
+
+  SniffConnectionSnapshot conn2;
+  conn2.connection_handle = 0x0456;
+  conn2.max_interval = 0x0040;
+  conn2.min_interval = 0x0020;
+  conn2.attempt = 0x0004;
+  conn2.timeout = 0x0008;
+  conn2.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn2);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+  EXPECT_TRUE(CheckSniffExitSent(0x0456));
+
+  // Pre-crash orphan command status packet arriving after reboot.
+  EXPECT_EQ(SimulateCommandStatus(MakeCommandStatus(
+                CommandOpcode::EXIT_SNIFF_MODE, emboss::StatusCode::SUCCESS)),
+            OkStatus());
+
+  // Resynchronization responses arriving for each connection with
+  // COMMAND_DISALLOWED are both tolerated.
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+  EXPECT_EQ(SimulateCommandStatus(
+                MakeCommandStatus(CommandOpcode::EXIT_SNIFF_MODE,
+                                  emboss::StatusCode::COMMAND_DISALLOWED)),
+            OkStatus());
+
+  EXPECT_TRUE(NoErrors());
+}
+
+TEST_F(SniffOffloadManagerTest, ModeChangeEventWithFailureStatusIsIgnored) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn;
+  conn.connection_handle = 0x0123;
+  conn.max_interval = 0x0040;
+  conn.min_interval = 0x0020;
+  conn.attempt = 0x0004;
+  conn.timeout = 0x0008;
+  conn.link_inactivity_timeout = 0x0064;
+  snapshot.connections.push_back(conn);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+  sniff_offload_manager().InitiateHardwareResynchronization();
+  EXPECT_TRUE(CheckSniffExitSent(0x0123));
+
+  // Simulate ModeChangeEvent with a failure status.
+  EXPECT_EQ(Simulate(ModeChangeEvent(0x0123,
+                                     emboss::AclConnectionMode::SNIFF,
+                                     emboss::StatusCode::COMMAND_DISALLOWED)),
+            kPassthroughResume);
+
+  // The failed event should be ignored and not disrupt error-free operation.
+  EXPECT_TRUE(NoErrors());
+}
+
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 std::optional<SniffOffloadManager::CommandOpcode>
@@ -2244,7 +2660,8 @@ SniffOffloadManagerTest::WriteSniffOffloadParameters(
 
 SniffOffloadManagerTest::ControllerEvent
 SniffOffloadManagerTest::ModeChangeEvent(uint16_t connection_handle,
-                                         emboss::AclConnectionMode mode) {
+                                         emboss::AclConnectionMode mode,
+                                         emboss::StatusCode status) {
   auto alloc = internal_allocator().MakeUnique<std::byte[]>(
       emboss::ModeChangeEvent::IntrinsicSizeInBytes());
   PW_CHECK(alloc != nullptr, "Test alloc failed");
@@ -2259,6 +2676,7 @@ SniffOffloadManagerTest::ModeChangeEvent(uint16_t connection_handle,
   writer.header().parameter_total_size().Write(
       emboss::ModeChangeEvent::IntrinsicSizeInBytes() -
       emboss::EventHeader::IntrinsicSizeInBytes());
+  writer.status().Write(status);
   writer.connection_handle().Write(connection_handle);
   writer.current_mode().Write(mode);
   PW_CHECK(writer.Ok());

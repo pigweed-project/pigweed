@@ -168,7 +168,24 @@ class SniffOffloadManager::ConnectionFsm final {
 
   ConnectionHandle handle() const { return handle_; }
 
+  /// Controls whether state precondition checks are enforced when issuing
+  /// ExitSniffMode commands.
+  enum class PreconditionCheck {
+    /// Enforce standard operational state preconditions (`should_control()` or
+    /// `connection_state() == kPushActive`).
+    kEnforce,
+    /// Bypass precondition checks to allow unconditional hardware
+    /// resynchronization post-resumption.
+    kBypass,
+  };
+
+  void SendExitSniffMode(PreconditionCheck check = PreconditionCheck::kEnforce)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool is_resynchronizing() const PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_) {
+    return is_resynchronizing_;
+  }
   SniffConnectionSnapshot CaptureLocked() const
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
   void RestoreLocked(const SniffConnectionSnapshot& snapshot, bool enabled)
@@ -197,7 +214,6 @@ class SniffOffloadManager::ConnectionFsm final {
 
   void SendEnterSniffMode() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
   void SendSniffSubrating() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
-  void SendExitSniffMode() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 
   bool ShouldExitSniff(Direction direction)
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
@@ -257,6 +273,9 @@ class SniffOffloadManager::ConnectionFsm final {
   bool enabled_ PW_GUARDED_BY(manager_.mutex_) = false;
   ConnectionMode connection_mode_ PW_GUARDED_BY(manager_.mutex_) =
       ConnectionMode::kActive;
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool is_resynchronizing_ PW_GUARDED_BY(manager_.mutex_) = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   TimeoutTask timeout_task_{*this};
 };
@@ -389,6 +408,14 @@ Status SniffOffloadManager::ProcessCommandStatus(const MultiBuf& event_packet) {
 
   auto status = view->status().Read();
   if (status != emboss::StatusCode::SUCCESS) {
+    if (opcode == emboss::OpCode::EXIT_SNIFF_MODE &&
+        status == emboss::StatusCode::COMMAND_DISALLOWED &&
+        HasResynchronizingConnections()) {
+      PW_LOG_INFO(
+          "Received COMMAND_DISALLOWED for ExitSniffMode during hardware "
+          "resynchronization; controller is already in active mode.");
+      return OkStatus();
+    }
     PW_LOG_ERROR("Command failed (opcode: 0x%04x, status: 0x%04x)",
                  cpp23::to_underlying(opcode),
                  cpp23::to_underlying(status));
@@ -533,6 +560,12 @@ SniffOffloadManager::HandlerAction SniffOffloadManager::ProcessModeChange(
       view->header().event_code().Read() != emboss::EventCode::MODE_CHANGE) {
     PW_LOG_ERROR("Invalid ModeChangeEvent packet.");
     OnError(ErrorReason::kInvalidPacket);
+    return action;
+  }
+
+  if (view->status().Read() != emboss::StatusCode::SUCCESS) {
+    PW_LOG_WARN("ModeChangeEvent indicated failure status (0x%02" PRIX8 ")",
+                cpp23::to_underlying(view->status().Read()));
     return action;
   }
 
@@ -978,6 +1011,9 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  is_resynchronizing_ = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   auto mode_change = std::move(input);
   switch (mode_change.current_mode) {
     case emboss::AclConnectionMode::ACTIVE:
@@ -999,6 +1035,9 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(ModeChangeInput&& input) {
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleTimeout() {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  is_resynchronizing_ = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   switch (connection_mode_) {
     case ConnectionMode::kActive:
       if (should_control()) {
@@ -1014,6 +1053,9 @@ void SniffOffloadManager::ConnectionFsm::HandleTimeout() {
 }
 
 void SniffOffloadManager::ConnectionFsm::HandleInput(AclActivity&& input) {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  is_resynchronizing_ = false;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   auto activity = std::move(input);
   switch (connection_mode_) {
     case ConnectionMode::kActive:
@@ -1101,11 +1143,14 @@ void SniffOffloadManager::ConnectionFsm::SendSniffSubrating() {
   manager_.SendCommand(std::move(*buf), CompletionEvent::kCommandComplete);
 }
 
-void SniffOffloadManager::ConnectionFsm::SendExitSniffMode() {
+void SniffOffloadManager::ConnectionFsm::SendExitSniffMode(
+    PreconditionCheck check) {
   Scratch<emboss::ExitSniffModeCommand::IntrinsicSizeInBytes()> scratch;
 
-  PW_CHECK(should_control() ||
-           connection_state() == ConnectionState::kPushActive);
+  if (check == PreconditionCheck::kEnforce) {
+    PW_CHECK(should_control() ||
+             connection_state() == ConnectionState::kPushActive);
+  }
 
   auto writer = MakeEmbossWriter<emboss::ExitSniffModeCommandWriter>(scratch);
   PW_CHECK_OK(writer);
@@ -1171,6 +1216,7 @@ SniffConnectionSnapshot SniffOffloadManager::ConnectionFsm::CaptureLocked()
 
 void SniffOffloadManager::ConnectionFsm::RestoreLocked(
     const SniffConnectionSnapshot& snapshot, bool enabled) {
+  is_resynchronizing_ = true;
   enabled_ = enabled;
   connection_mode_ = ConnectionMode::kActive;
   bool has_parameters =
@@ -1251,6 +1297,24 @@ Status SniffOffloadManager::RecoverFromSnapshot(const SniffSnapshot& snapshot) {
   }
 
   return OkStatus();
+}
+
+void SniffOffloadManager::InitiateHardwareResynchronization() {
+  std::lock_guard lock(mutex_);
+  for (auto& [_, fsm] : connections_) {
+    fsm.AssertLockHeld(*this);
+    fsm.SendExitSniffMode(ConnectionFsm::PreconditionCheck::kBypass);
+  }
+}
+
+bool SniffOffloadManager::HasResynchronizingConnections() const {
+  for (const auto& [_, fsm] : connections_) {
+    fsm.AssertLockHeld(*this);
+    if (fsm.is_resynchronizing()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 SniffSnapshot SniffOffloadManager::CaptureLocked() const {

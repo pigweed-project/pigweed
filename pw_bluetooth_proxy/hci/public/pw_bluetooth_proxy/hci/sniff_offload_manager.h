@@ -193,8 +193,8 @@ class SniffOffloadManager final {
   ///
   /// Reconstructs connection state machines for each handle present in the
   /// snapshot and baselines all recovered links to ConnectionMode::kActive.
-  /// Hardware resynchronization (issuing HCI_Exit_Sniff_Mode) must be performed
-  /// after resuming packet traffic.
+  /// Hardware resynchronization via `InitiateHardwareResynchronization()` must
+  /// be performed after resuming packet traffic.
   ///
   /// @note Must be called during initialization before packet traffic is
   /// processed. Sniff state must be recovered after ACL and L2CAP state.
@@ -207,6 +207,12 @@ class SniffOffloadManager final {
   /// * @ALREADY_EXISTS: Connection handle in snapshot is already registered.
   Status RecoverFromSnapshot(const SniffSnapshot& snapshot)
       PW_LOCKS_EXCLUDED(mutex_);
+  /// Initiates hardware resynchronization post-resumption for all recovered
+  /// connections to establish an Active baseline state.
+  ///
+  /// @note This method must be called after host and controller traffic
+  /// pipelines have been resumed.
+  void InitiateHardwareResynchronization() PW_LOCKS_EXCLUDED(mutex_);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
  private:
@@ -304,6 +310,8 @@ class SniffOffloadManager final {
   bool suppress_sniff_subrating_event_ PW_GUARDED_BY(mutex_) = false;
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool HasResynchronizingConnections() const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   SniffSnapshot CaptureLocked() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   void NotifyStateUpdate(const ConnectionFsm& fsm) const
@@ -311,8 +319,13 @@ class SniffOffloadManager final {
 
   SniffStateUpdateCallback state_update_callback_ PW_GUARDED_BY(mutex_);
 #else
-  void NotifyStateUpdate() const {}
-  void NotifyStateUpdate([[maybe_unused]] const ConnectionFsm& fsm) const {}
+  bool HasResynchronizingConnections() const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return false;
+  }
+  void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {}
+  void NotifyStateUpdate([[maybe_unused]] const ConnectionFsm& fsm) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
