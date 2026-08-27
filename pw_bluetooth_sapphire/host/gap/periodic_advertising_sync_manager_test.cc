@@ -259,7 +259,6 @@ TEST_F(PeriodicAdvertisingSyncManagerTest, CreateSyncForEstablishedSync) {
   SyncOptions options1{.filter_duplicates = true};
   SyncOptions options2{.filter_duplicates = false};
   DeviceAddress address(DeviceAddress::Type::kLEPublic, {1});
-  const std::unordered_set<UUID> kUuids = {UUID(static_cast<uint16_t>(0x180d))};
 
   auto fake_peer = std::make_unique<testing::FakePeer>(address, dispatcher());
   const StaticByteBuffer kAdvData(
@@ -548,7 +547,6 @@ TEST_F(PeriodicAdvertisingSyncManagerTest, CancelPendingSyncStopsScan) {
 TEST_F(PeriodicAdvertisingSyncManagerTest, TransferSync) {
   SyncDelegate delegate;
   SyncOptions options{.filter_duplicates = true};
-  const std::unordered_set<UUID> kUuids = {UUID(static_cast<uint16_t>(0x180d))};
 
   // Peer 0 is the advertising device
   DeviceAddress address_0(DeviceAddress::Type::kLEPublic, {1});
