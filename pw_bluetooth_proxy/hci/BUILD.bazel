@@ -33,17 +33,25 @@ cc_library(
 )
 
 cc_library(
-    name = "command_multiplexer",
-    # LINT.IfChange
+    name = "command_multiplexer_snapshot",
     srcs = [
-        "command_multiplexer.cc",
+        "command_multiplexer_snapshot.cc",
     ],
     hdrs = [
-        "public/pw_bluetooth_proxy/hci/command_multiplexer.h",
-        "public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h",
+        "public/pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h",
     ],
     strip_include_prefix = "public",
     deps = [
+        "//pw_function",
+        "//pw_status",
+    ],
+)
+
+# LINT.IfChange
+cc_library(
+    name = "command_multiplexer_deps",
+    deps = [
+        ":command_multiplexer_snapshot",
         "//pw_allocator",
         "//pw_assert:assert",
         "//pw_assert:check",
@@ -54,6 +62,7 @@ cc_library(
         "//pw_bluetooth:emboss_hci_events",
         "//pw_bluetooth:emboss_hci_h4",
         "//pw_bluetooth_proxy:clock",
+        "//pw_bluetooth_proxy:config",
         "//pw_containers:dynamic_hash_map",
         "//pw_containers:dynamic_queue",
         "//pw_function",
@@ -66,7 +75,42 @@ cc_library(
         "//pw_sync:lock_annotations",
         "//pw_sync:mutex",
     ],
-    # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+)
+
+cc_library(
+    name = "command_multiplexer",
+    srcs = [
+        "command_multiplexer.cc",
+    ],
+    hdrs = [
+        "public/pw_bluetooth_proxy/hci/command_multiplexer.h",
+        "public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":command_multiplexer_deps",
+    ],
+)
+# LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+
+cc_library(
+    name = "command_multiplexer_recovery",
+    testonly = True,
+    srcs = [
+        "command_multiplexer.cc",
+    ],
+    hdrs = [
+        "public/pw_bluetooth_proxy/hci/command_multiplexer.h",
+        "public/pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h",
+        "public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h",
+    ],
+    defines = [
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":command_multiplexer_deps",
+    ],
 )
 
 cc_library(
@@ -148,24 +192,43 @@ cc_library(
 
 # Tests
 
+# LINT.IfChange
+cc_library(
+    name = "command_multiplexer_test_deps",
+    testonly = True,
+    deps = [
+        ":command_multiplexer_deps",
+        "//pw_allocator:testing",
+        "//pw_async2:simulated_time_provider",
+        "//pw_async2:testing",
+        "//pw_containers:vector",
+    ],
+)
+# LINT.ThenChange(BUILD.gn, CMakeLists.txt)
+
 pw_cc_test(
     name = "command_multiplexer_test",
-
-    # LINT.IfChange
     srcs = [
         "command_multiplexer_test.cc",
     ],
     deps = [
         ":command_multiplexer",
-        "//pw_allocator:testing",
-        "//pw_async2",
-        "//pw_async2:simulated_time_provider",
-        "//pw_async2:testing",
-        "//pw_bluetooth_proxy:clock",
-        "//pw_containers:vector",
-        "//pw_function",
+        ":command_multiplexer_test_deps",
     ],
-    # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
+)
+
+pw_cc_test(
+    name = "command_multiplexer_recovery_test",
+    srcs = [
+        "command_multiplexer_test.cc",
+    ],
+    defines = [
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    deps = [
+        ":command_multiplexer_recovery",
+        ":command_multiplexer_test_deps",
+    ],
 )
 
 # LINT.IfChange

@@ -33,34 +33,48 @@ pw_source_set("types") {
   # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
 }
 
+pw_source_set("command_multiplexer_snapshot") {
+  public = [ "public/pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    "$dir_pw_function",
+    "$dir_pw_status",
+  ]
+  sources = [ "command_multiplexer_snapshot.cc" ]
+}
+
+# LINT.IfChange
+_command_multiplexer_deps = [
+  ":command_multiplexer_snapshot",
+  "$dir_pw_assert:check",
+  "$dir_pw_async2:pw_async2",
+  "$dir_pw_async2:time_provider",
+  "$dir_pw_bluetooth:emboss_hci_commands",
+  "$dir_pw_bluetooth:emboss_hci_common",
+  "$dir_pw_bluetooth:emboss_hci_events",
+  "$dir_pw_bluetooth:emboss_hci_h4",
+  "$dir_pw_bluetooth_proxy:clock",
+  "$dir_pw_bluetooth_proxy:config",
+  "$dir_pw_containers:dynamic_hash_map",
+  "$dir_pw_containers:dynamic_queue",
+  "$dir_pw_function",
+  "$dir_pw_log",
+  "$dir_pw_multibuf/v2:multibuf",
+  "$dir_pw_result",
+  "$dir_pw_result:expected",
+  "$dir_pw_span",
+  "$dir_pw_status",
+  "$dir_pw_sync:lock_annotations",
+  "$dir_pw_sync:mutex",
+]
+
 pw_source_set("command_multiplexer") {
-  # LINT.IfChange
   public = [
     "public/pw_bluetooth_proxy/hci/command_multiplexer.h",
     "public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h",
   ]
   public_configs = [ ":public_include_path" ]
-  public_deps = [
-    "$dir_pw_assert:check",
-    "$dir_pw_async2:pw_async2",
-    "$dir_pw_async2:time_provider",
-    "$dir_pw_bluetooth:emboss_hci_commands",
-    "$dir_pw_bluetooth:emboss_hci_common",
-    "$dir_pw_bluetooth:emboss_hci_events",
-    "$dir_pw_bluetooth:emboss_hci_h4",
-    "$dir_pw_bluetooth_proxy:clock",
-    "$dir_pw_containers:dynamic_hash_map",
-    "$dir_pw_containers:dynamic_queue",
-    "$dir_pw_function",
-    "$dir_pw_log",
-    "$dir_pw_multibuf/v2:multibuf",
-    "$dir_pw_result",
-    "$dir_pw_result:expected",
-    "$dir_pw_span",
-    "$dir_pw_status",
-    "$dir_pw_sync:lock_annotations",
-    "$dir_pw_sync:mutex",
-  ]
+  public_deps = _command_multiplexer_deps
   sources = [ "command_multiplexer.cc" ]
 
   # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
@@ -120,6 +134,30 @@ pw_source_set("sniff_offload_recovery") {
   defines = [ "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1" ]
 }
 
+pw_source_set("command_multiplexer_recovery") {
+  testonly = pw_unit_test_TESTONLY
+  public = [
+    "public/pw_bluetooth_proxy/hci/command_multiplexer.h",
+    "public/pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h",
+    "public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h",
+  ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = _command_multiplexer_deps
+  sources = [ "command_multiplexer.cc" ]
+  defines = [ "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1" ]
+  visibility = [ ":*" ]
+}
+
+# LINT.IfChange
+_command_multiplexer_test_deps = _command_multiplexer_deps + [
+                                   "$dir_pw_allocator:testing",
+                                   "$dir_pw_async2:simulated_time_provider",
+                                   "$dir_pw_async2:testing",
+                                   "$dir_pw_containers:vector",
+                                 ]
+
+# LINT.ThenChange(BUILD.bazel, CMakeLists.txt)
+
 pw_test("command_multiplexer_test") {
   # For now, disable if there's no system timer backend. In the future we will
   # want to remove this restriction since async2 will be the normal way to
@@ -127,17 +165,17 @@ pw_test("command_multiplexer_test") {
   enable_if =
       pw_chrono_SYSTEM_TIMER_BACKEND != "" && dir_pw_third_party_emboss != ""
 
-  # LINT.IfChange
   sources = [ "command_multiplexer_test.cc" ]
-  deps = [
-    ":command_multiplexer",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_async2:simulated_time_provider",
-    "$dir_pw_async2:testing",
-    "$dir_pw_containers:vector",
-  ]
+  deps = _command_multiplexer_test_deps + [ ":command_multiplexer" ]
+}
 
-  # LINT.ThenChange(Android.bp, BUILD.bazel, CMakeLists.txt)
+pw_test("command_multiplexer_recovery_test") {
+  enable_if =
+      pw_chrono_SYSTEM_TIMER_BACKEND != "" && dir_pw_third_party_emboss != ""
+
+  defines = [ "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1" ]
+  sources = [ "command_multiplexer_test.cc" ]
+  deps = _command_multiplexer_test_deps + [ ":command_multiplexer_recovery" ]
 }
 
 # LINT.IfChange
@@ -175,6 +213,7 @@ pw_test("sniff_offload_manager_recovery_test") {
 pw_test_group("tests") {
   tests = [
     ":command_multiplexer_test",
+    ":command_multiplexer_recovery_test",
     ":sniff_offload_manager_test",
     ":sniff_offload_manager_recovery_test",
   ]

@@ -21,9 +21,10 @@
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth/hci_events.emb.h"
 #include "pw_bluetooth_proxy/clock.h"
+#include "pw_bluetooth_proxy/config.h"
+#include "pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h"
 #include "pw_bluetooth_proxy/hci/internal/type_safe_ids.h"
 #include "pw_containers/dynamic_hash_map.h"
-#include "pw_containers/dynamic_queue.h"
 #include "pw_function/function.h"
 #include "pw_multibuf/v2/multibuf.h"
 #include "pw_result/expected.h"
@@ -236,12 +237,15 @@ class CommandMultiplexer final {
   /// @param[in] time_provider - The TimeProvider to use for command timeouts.
   /// @param[in] command_timeout - The duration to wait for a command to
   /// timeout.
+  /// @param[in] state_update_callback - Optional callback to receive
+  /// incremental state updates for offload recovery.
   CommandMultiplexer(
       Allocator& allocator,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
       async2::TimeProvider<Clock>& time_provider,
-      Clock::duration command_timeout = kDefaultCommandTimeout);
+      Clock::duration command_timeout = kDefaultCommandTimeout,
+      CommandMultiplexerStateUpdateCallback state_update_callback = nullptr);
 
   /// Creates a `CommandMultiplexer` that will process HCI command and event
   /// packets.
@@ -252,10 +256,13 @@ class CommandMultiplexer final {
   /// be forwarded to the host, so this is also the default event handler.
   /// @param[in] send_to_controller_fn - Callback that will be called when
   /// proxy wants to send H4 HCI command packets towards the controller.
+  /// @param[in] state_update_callback - Optional callback to receive
+  /// incremental state updates for offload recovery.
   CommandMultiplexer(
       Allocator& allocator,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
-      Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn);
+      Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
+      CommandMultiplexerStateUpdateCallback state_update_callback = nullptr);
 
   /// This constructor will use chrono::SystemTimer for command timeouts.
   /// Prefer to use the other constructor with async2::TimeProvider if possible.
@@ -265,12 +272,15 @@ class CommandMultiplexer final {
   /// alternative.
   /// @param[in] command_timeout - The duration to wait for a command to
   /// timeout.
+  /// @param[in] state_update_callback - Optional callback to receive
+  /// incremental state updates for offload recovery.
   CommandMultiplexer(
       Allocator& allocator,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
       Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
       Function<void()> timeout_fn,
-      Clock::duration command_timeout = kDefaultCommandTimeout);
+      Clock::duration command_timeout = kDefaultCommandTimeout,
+      CommandMultiplexerStateUpdateCallback state_update_callback = nullptr);
 
   ~CommandMultiplexer();
 
@@ -377,6 +387,23 @@ class CommandMultiplexer final {
   Result<CommandInterceptor> RegisterCommandInterceptor(
       pw::bluetooth::emboss::OpCode op_code, CommandHandler&& handler);
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Restores HCI command multiplexer state from a previously captured
+  /// snapshot.
+  ///
+  /// Restores the command credits ledger for post-reboot synchronization.
+  ///
+  /// @note Must be called during initialization within the paused-traffic
+  /// recovery window before packet traffic is processed. State restoration is
+  /// strictly passive and updates local credit quotas without dispatching
+  /// queued packets until traffic is unpaused.
+  ///
+  /// @param[in] snapshot The snapshot containing persisted credit state.
+  /// @returns @OK.
+  Status RecoverFromSnapshot(const CommandMultiplexerSnapshot& snapshot)
+      PW_LOCKS_EXCLUDED(mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
  private:
   static_assert(std::variant_size_v<EventCodeVariant> == 5,
                 "Event code may not be handled in max header size.");
@@ -477,7 +504,7 @@ class CommandMultiplexer final {
   void UpdateCreditsAndProcessQueue(EventCodeValue event_code,
                                     ConstByteSpan bytes)
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_);
-  void ProcessQueue()
+  bool ProcessQueue()
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
   bool SendQueuedCommand(QueuedCommandState& command)
       PW_EXCLUSIVE_LOCKS_REQUIRED(event_interceptors_mutex_, mutex_);
@@ -494,7 +521,7 @@ class CommandMultiplexer final {
   uint8_t reserved_queue_space() PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   Allocator& allocator_;
-  pw::sync::Mutex mutex_;
+  mutable pw::sync::Mutex mutex_;
   pw::sync::Mutex event_interceptors_mutex_ PW_ACQUIRED_BEFORE(mutex_);
   pw::sync::Mutex command_interceptors_mutex_
       PW_ACQUIRED_BEFORE(mutex_, event_interceptors_mutex_);
@@ -517,6 +544,20 @@ class CommandMultiplexer final {
 
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_host_fn_;
   Function<void(MultiBuf::Instance&& h4_packet)> send_to_controller_fn_;
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+#else
+  void NotifyStateUpdate() const PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  CommandMultiplexerSnapshot CaptureLocked() const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
+  CommandMultiplexerStateUpdateCallback state_update_callback_
+      PW_GUARDED_BY(mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 using EventInterceptor = CommandMultiplexer::EventInterceptor;

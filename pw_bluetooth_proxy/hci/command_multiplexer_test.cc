@@ -24,9 +24,9 @@
 #include "pw_async2/func_task.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_bluetooth/hci_h4.emb.h"
+#include "pw_bluetooth_proxy/config.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
-#include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::bluetooth::proxy::hci {
@@ -2210,6 +2210,340 @@ TEST(CommandMultiplexerExhaustionTest,
 
   EXPECT_TRUE(resource_exhausted_hit);
 }
+
+TEST(CommandMultiplexerSnapshotTest, ApplyStateUpdate) {
+  CommandMultiplexerSnapshot snapshot{.command_credits = 1};
+  CommandMultiplexerStateUpdate update{.command_credits = 7};
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(update));
+  EXPECT_EQ(snapshot.command_credits, 7);
+}
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+class CommandMultiplexerRecoveryTest : public ::testing::Test {
+ protected:
+  static constexpr size_t kMuxAllocatorSize = 2048;
+  static constexpr size_t kPacketAllocatorSize = 2048;
+  static constexpr std::array<std::byte, 4> kH4HciReset = {
+      std::byte{0x01},  // H4PacketType::COMMAND
+      std::byte{0x03},  // OpCode LSB (OCF=0x03)
+      std::byte{0x0C},  // OpCode MSB (OGF=0x03)
+      std::byte{0x00},  // Parameter total length
+  };
+
+  MultiBuf::Instance MakeCommandPacket() {
+    MultiBuf::Instance packet(packet_allocator_);
+    PW_CHECK(packet->TryReserveForPushBack());
+    auto payload =
+        packet_allocator_.MakeUnique<std::byte[]>(kH4HciReset.size());
+    PW_CHECK(payload != nullptr);
+    std::memcpy(payload.get(), kH4HciReset.data(), kH4HciReset.size());
+    packet->PushBack(std::move(payload));
+    return packet;
+  }
+
+  MultiBuf::Instance MakeInjectedCommandBuf() {
+    MultiBuf::Instance buf(packet_allocator_);
+    PW_CHECK(buf->TryReserveForPushBack());
+    constexpr size_t kCommandSize = kH4HciReset.size() - 1;
+    auto payload = packet_allocator_.MakeUnique<std::byte[]>(kCommandSize);
+    PW_CHECK(payload != nullptr);
+    std::memcpy(payload.get(), kH4HciReset.data() + 1, kCommandSize);
+    buf->PushBack(std::move(payload));
+    return buf;
+  }
+
+  MultiBuf::Instance MakeEventBuf(ConstByteSpan span) {
+    MultiBuf::Instance buf(packet_allocator_);
+    PW_CHECK(buf->TryReserveForPushBack());
+    auto alloc = packet_allocator_.MakeUnique<std::byte[]>(span.size());
+    PW_CHECK(alloc != nullptr);
+    std::memcpy(alloc.get(), span.data(), span.size());
+    buf->PushBack(std::move(alloc));
+    return buf;
+  }
+
+  CommandMultiplexer CreateMux(
+      Function<void(MultiBuf::Instance&&)> send_to_host =
+          [](MultiBuf::Instance&&) {},
+      Function<void(MultiBuf::Instance&&)> send_to_controller =
+          [](MultiBuf::Instance&&) {},
+      CommandMultiplexerStateUpdateCallback state_update_callback = nullptr) {
+    return CommandMultiplexer(mux_allocator_,
+                              std::move(send_to_host),
+                              std::move(send_to_controller),
+                              time_provider_,
+                              CommandMultiplexer::kDefaultCommandTimeout,
+                              std::move(state_update_callback));
+  }
+
+  pw::allocator::test::AllocatorForTest<kMuxAllocatorSize> mux_allocator_;
+  pw::allocator::test::AllocatorForTest<kPacketAllocatorSize> packet_allocator_;
+  async2::SimulatedTimeProvider<Clock> time_provider_;
+};
+
+TEST_F(CommandMultiplexerRecoveryTest, SnapshotCaptureAndRecover) {
+  size_t sent_to_controller = 0;
+  auto send_to_controller = [&](MultiBuf::Instance&&) { ++sent_to_controller; };
+
+  CommandMultiplexerSnapshot captured_snapshot{.command_credits = 1};
+  {
+    CommandMultiplexer mux = CreateMux(
+        [](MultiBuf::Instance&&) {},
+        send_to_controller,
+        [&captured_snapshot](const CommandMultiplexerStateUpdate& update) {
+          PW_TEST_EXPECT_OK(captured_snapshot.ApplyStateUpdate(update));
+        });
+
+    mux.HandleH4FromController(
+        MakeEventBuf(MakeCommandCompletePacket(0x0C03, 5)));
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+    EXPECT_EQ(captured_snapshot.command_credits, 5);
+#endif
+  }
+
+  {
+    CommandMultiplexer restored_mux =
+        CreateMux([](MultiBuf::Instance&&) {}, send_to_controller);
+
+#if !PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+    captured_snapshot.command_credits = 5;
+#endif
+
+    PW_TEST_ASSERT_OK(restored_mux.RecoverFromSnapshot(captured_snapshot));
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+    sent_to_controller = 0;
+    for (size_t i = 0; i < 5; ++i) {
+      restored_mux.HandleH4FromHost(MakeCommandPacket());
+    }
+    EXPECT_EQ(sent_to_controller, 5u);
+
+    // 6th command should be queued because 5 credits have been exhausted.
+    restored_mux.HandleH4FromHost(MakeCommandPacket());
+    EXPECT_EQ(sent_to_controller, 5u);
+#else
+    sent_to_controller = 0;
+    // Fallback 1 credit:
+    restored_mux.HandleH4FromHost(MakeCommandPacket());
+    EXPECT_EQ(sent_to_controller, 1u);
+
+    restored_mux.HandleH4FromHost(MakeCommandPacket());
+    EXPECT_EQ(sent_to_controller, 1u);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  }
+}
+
+TEST_F(CommandMultiplexerRecoveryTest, RecoverFromSnapshotRestoresCredits) {
+  size_t sent_to_controller = 0;
+  CommandMultiplexer mux =
+      CreateMux([](MultiBuf::Instance&&) {},
+                [&](MultiBuf::Instance&&) { ++sent_to_controller; });
+
+  // Consume the single initial credit.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 1u);
+
+  // Send 3 more commands; they are queued because credits == 0.
+  for (size_t i = 0; i < 3; ++i) {
+    mux.HandleH4FromHost(MakeCommandPacket());
+  }
+  EXPECT_EQ(sent_to_controller, 1u);
+
+  // Recover with 3 credits; state is restored passively during the paused
+  // window without immediately draining queued commands to transport.
+  CommandMultiplexerSnapshot snapshot{.command_credits = 3};
+  PW_TEST_ASSERT_OK(mux.RecoverFromSnapshot(snapshot));
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  EXPECT_EQ(sent_to_controller, 1u);
+
+  // Once traffic resumes and a new command is processed, the 3 queued commands
+  // drain using the 3 restored credits (total 1 + 3 = 4 sent; the new command
+  // remains queued).
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 4u);
+
+  // All credits consumed; sending another command queues it.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 4u);
+#else
+  EXPECT_EQ(sent_to_controller, 1u);
+
+  // With fallback 1 credit, 1 queued command drains (total 1 + 1 = 2 sent).
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 2u);
+
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 2u);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+}
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+TEST_F(CommandMultiplexerRecoveryTest, StateUpdateCallback) {
+  struct Context {
+    uint32_t updates_received = 0;
+    CommandMultiplexerStateUpdate last_update;
+  } ctx;
+
+  CommandMultiplexer mux =
+      CreateMux([](MultiBuf::Instance&&) {},
+                [](MultiBuf::Instance&&) {},
+                [&ctx](const CommandMultiplexerStateUpdate& update) {
+                  ++ctx.updates_received;
+                  ctx.last_update = update;
+                });
+
+  // Event 1: Command Complete gives 4 credits.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 4)));
+  EXPECT_EQ(ctx.updates_received, 1u);
+  EXPECT_EQ(ctx.last_update.command_credits, 4);
+
+  // Event 2: Sending a command consumes 1 credit -> updates to 3.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(ctx.updates_received, 2u);
+  EXPECT_EQ(ctx.last_update.command_credits, 3);
+
+  // Event 3: Command Status sets credits to 2.
+  std::array<std::byte, 7> cs_packet{
+      std::byte(0x04),  // H4 Event
+      std::byte(0x0F),  // Command Status
+      std::byte(0x04),  // Param length
+      std::byte(0x00),  // Status OK
+      std::byte(0x02),  // 2 credits
+      std::byte(0x03),
+      std::byte(0x0C),
+  };
+  mux.HandleH4FromController(MakeEventBuf(cs_packet));
+  EXPECT_EQ(ctx.updates_received, 3u);
+  EXPECT_EQ(ctx.last_update.command_credits, 2);
+
+  // Event 4: Reset resets credits to 1.
+  mux.Reset();
+  EXPECT_EQ(ctx.updates_received, 4u);
+  EXPECT_EQ(ctx.last_update.command_credits, 1);
+
+  // Event 5: RecoverFromSnapshot hydrates state without emitting callbacks
+  // (enforcing the recovery window mutation silence invariant).
+  CommandMultiplexerSnapshot snapshot{.command_credits = 8};
+  PW_TEST_ASSERT_OK(mux.RecoverFromSnapshot(snapshot));
+  EXPECT_EQ(ctx.updates_received, 4u);
+
+  // Subsequent host command uses 1 restored credit (8 -> 7) and emits an
+  // update.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(ctx.updates_received, 5u);
+  EXPECT_EQ(ctx.last_update.command_credits, 7);
+}
+
+TEST_F(CommandMultiplexerRecoveryTest,
+       NoRedundantStateUpdateWhenQueuedCommandDrains) {
+  struct Context {
+    uint32_t updates_received = 0;
+    CommandMultiplexerStateUpdate last_update;
+  } ctx;
+
+  size_t sent_to_controller = 0;
+  CommandMultiplexer mux =
+      CreateMux([](MultiBuf::Instance&&) {},
+                [&](MultiBuf::Instance&&) { ++sent_to_controller; },
+                [&ctx](const CommandMultiplexerStateUpdate& update) {
+                  ++ctx.updates_received;
+                  ctx.last_update = update;
+                });
+
+  // Pathway 1: Host command consumption (SendToControllerOrQueue with credits >
+  // 0). Initial credits = 1. Consuming credit -> sends command, credits 1 -> 0,
+  // emits update.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 1u);
+  EXPECT_EQ(ctx.updates_received, 1u);
+  EXPECT_EQ(ctx.last_update.command_credits, 0);
+
+  // Pathway 1 (zero credits): Queuing command when credits == 0.
+  // ProcessQueue() returns false -> no credit change, no update emitted.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 1u);
+  EXPECT_EQ(ctx.updates_received, 1u);
+
+  // Pathway 2a: Controller reports identical credits (0 == 0).
+  // Short-circuits immediately -> no update emitted.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 0)));
+  EXPECT_EQ(sent_to_controller, 1u);
+  EXPECT_EQ(ctx.updates_received, 1u);
+
+  // Pathway 2b: Exact credit absorption (0 -> 1 -> 0).
+  // Controller gives 1 credit. The 1 queued command drains immediately.
+  // Net credits remain 0 -> no redundant update emitted.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 1)));
+  EXPECT_EQ(sent_to_controller, 2u);
+  EXPECT_EQ(ctx.updates_received, 1u);
+  EXPECT_EQ(ctx.last_update.command_credits, 0);
+
+  // Pathway 2c: Partial credit absorption (0 -> 3 -> 2).
+  // Queue 1 command with 0 credits.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 2u);
+  EXPECT_EQ(ctx.updates_received, 1u);
+
+  // Controller gives 3 credits. The 1 queued command drains (credits 0 -> 3 ->
+  // 2). Net credits mutated (0 -> 2), so exactly 1 update is emitted with
+  // credits = 2.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 3)));
+  EXPECT_EQ(sent_to_controller, 3u);
+  EXPECT_EQ(ctx.updates_received, 2u);
+  EXPECT_EQ(ctx.last_update.command_credits, 2);
+
+  // Pathway 2a (non-zero identical credits): Controller reports 2 credits again
+  // (2 == 2). Short-circuits immediately -> no update emitted.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 2)));
+  EXPECT_EQ(sent_to_controller, 3u);
+  EXPECT_EQ(ctx.updates_received, 2u);
+
+  // Consume 1 credit via host command (credits 2 -> 1). Emits update.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 4u);
+  EXPECT_EQ(ctx.updates_received, 3u);
+  EXPECT_EQ(ctx.last_update.command_credits, 1);
+
+  // Pathway 3: Injected command completion
+  // (ActiveSentCommandData::HandleEvent). Inject command using the remaining 1
+  // credit -> credits 1 -> 0, emits update.
+  bool injected_handler_called = false;
+  auto send_res = mux.SendCommand(
+      {MakeInjectedCommandBuf()},
+      [&](EventPacket&&) -> CommandMultiplexer::EventInterceptorReturn {
+        injected_handler_called = true;
+        return {};
+      },
+      emboss::EventCode::COMMAND_COMPLETE);
+  EXPECT_TRUE(send_res.has_value());
+  EXPECT_EQ(sent_to_controller, 5u);
+  EXPECT_EQ(ctx.updates_received, 4u);
+  EXPECT_EQ(ctx.last_update.command_credits, 0);
+
+  // Queue a host command with 0 credits.
+  mux.HandleH4FromHost(MakeCommandPacket());
+  EXPECT_EQ(sent_to_controller, 5u);
+  EXPECT_EQ(ctx.updates_received, 4u);
+
+  // Controller responds to the injected command with 0 credits (0 == 0).
+  // HandleEvent erases the active command and calls ProcessQueue().
+  // Since credits == 0, ProcessQueue() returns false, so HandleEvent does not
+  // emit an update.
+  mux.HandleH4FromController(
+      MakeEventBuf(MakeCommandCompletePacket(0x0C03, 0)));
+  EXPECT_TRUE(injected_handler_called);
+  EXPECT_EQ(sent_to_controller, 5u);
+  EXPECT_EQ(ctx.updates_received, 4u);
+  EXPECT_EQ(ctx.last_update.command_credits, 0);
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace
 }  // namespace pw::bluetooth::proxy::hci

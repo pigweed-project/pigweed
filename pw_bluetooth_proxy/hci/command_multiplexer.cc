@@ -18,6 +18,7 @@
 #include "pw_assert/check.h"
 #include "pw_bluetooth/hci_events.emb.h"
 #include "pw_bluetooth/hci_h4.emb.h"
+#include "pw_bluetooth_proxy/config.h"
 #include "pw_log/log.h"
 #include "pw_sync/lock_annotations.h"
 
@@ -44,39 +45,57 @@ CommandMultiplexer::CommandMultiplexer(
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
     [[maybe_unused]] async2::TimeProvider<Clock>& time_provider,
-    [[maybe_unused]] Clock::duration command_timeout)
+    [[maybe_unused]] Clock::duration command_timeout,
+    [[maybe_unused]] CommandMultiplexerStateUpdateCallback
+        state_update_callback)
     : allocator_(allocator),
       interceptors_(allocator_),
       event_interceptors_(allocator_),
       command_interceptors_(allocator_),
       command_queue_(allocator),
       send_to_host_fn_(std::move(send_to_host_fn)),
-      send_to_controller_fn_(std::move(send_to_controller_fn)) {}
+      send_to_controller_fn_(std::move(send_to_controller_fn))
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
+}
 
 CommandMultiplexer::CommandMultiplexer(
     Allocator& allocator,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
-    Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn)
+    Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
+    CommandMultiplexerStateUpdateCallback state_update_callback)
     : CommandMultiplexer(
           allocator,
           std::move(send_to_host_fn),
           std::move(send_to_controller_fn),
           ::pw::bluetooth::proxy::internal::GetDefaultTimeProvider(),
-          kDefaultCommandTimeout) {}
+          kDefaultCommandTimeout,
+          std::move(state_update_callback)) {}
 
 CommandMultiplexer::CommandMultiplexer(
     Allocator& allocator,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_host_fn,
     Function<void(MultiBuf::Instance&& h4_packet)>&& send_to_controller_fn,
     [[maybe_unused]] Function<void()> timeout_fn,
-    [[maybe_unused]] Clock::duration command_timeout)
+    [[maybe_unused]] Clock::duration command_timeout,
+    [[maybe_unused]] CommandMultiplexerStateUpdateCallback
+        state_update_callback)
     : allocator_(allocator),
       interceptors_(allocator_),
       event_interceptors_(allocator_),
       command_interceptors_(allocator_),
       command_queue_(allocator),
       send_to_host_fn_(std::move(send_to_host_fn)),
-      send_to_controller_fn_(std::move(send_to_controller_fn)) {}
+      send_to_controller_fn_(std::move(send_to_controller_fn))
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
+}
 
 CommandMultiplexer::~CommandMultiplexer() = default;
 
@@ -93,6 +112,7 @@ void CommandMultiplexer::DoReset() {
   command_queue_.clear();
   active_command_queue_.clear();
   command_credits_ = 1u;
+  NotifyStateUpdate();
 }
 
 Result<async2::Poll<>> CommandMultiplexer::PendCommandTimeout(
@@ -372,6 +392,33 @@ Result<CommandInterceptor> CommandMultiplexer::RegisterCommandInterceptor(
   return CommandInterceptor(*this, std::move(*id));
 }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+CommandMultiplexerSnapshot CommandMultiplexer::CaptureLocked() const {
+  return CommandMultiplexerSnapshot{
+      .command_credits = static_cast<uint16_t>(command_credits_),
+  };
+}
+
+Status CommandMultiplexer::RecoverFromSnapshot(
+    [[maybe_unused]] const CommandMultiplexerSnapshot& snapshot) {
+  std::lock_guard lock(mutex_);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  command_credits_ = snapshot.command_credits;
+#else
+  command_credits_ = 1;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  return OkStatus();
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+void CommandMultiplexer::NotifyStateUpdate() const {
+  if (state_update_callback_) {
+    state_update_callback_(CaptureLocked());
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
 void CommandMultiplexer::UnregisterInterceptor(InterceptorId id) {
   PW_CHECK(id.is_valid(), "Attempt to unregister invalid ID.");
   InterceptorType interceptor_type;
@@ -615,7 +662,9 @@ Status CommandMultiplexer::SendToControllerOrQueue(
       .sent_command_data = std::move(sent_command_data),
   });
 
-  ProcessQueue();
+  if (ProcessQueue()) {
+    NotifyStateUpdate();
+  }
   return OkStatus();
 }
 
@@ -627,13 +676,13 @@ void CommandMultiplexer::SendToControllerOrQueue(MultiBuf::Instance&& buf) {
 void CommandMultiplexer::UpdateCreditsAndProcessQueue(EventCodeValue event_code,
                                                       ConstByteSpan bytes) {
   std::lock_guard lock(mutex_);
+  size_t new_credits = command_credits_;
   if (event_code == cpp23::to_underlying(emboss::EventCode::COMMAND_COMPLETE)) {
     emboss::CommandCompleteEventView cmd_complete_view(
         static_cast<const uint8_t*>(static_cast<const void*>(bytes.data())),
         bytes.size());
     if (cmd_complete_view.Ok()) {
-      command_credits_ = cmd_complete_view.num_hci_command_packets().Read();
-      ProcessQueue();
+      new_credits = cmd_complete_view.num_hci_command_packets().Read();
     }
   } else if (event_code ==
              cpp23::to_underlying(emboss::EventCode::COMMAND_STATUS)) {
@@ -641,14 +690,26 @@ void CommandMultiplexer::UpdateCreditsAndProcessQueue(EventCodeValue event_code,
         static_cast<const uint8_t*>(static_cast<const void*>(bytes.data())),
         bytes.size());
     if (cmd_status_view.Ok()) {
-      command_credits_ = cmd_status_view.num_hci_command_packets().Read();
-      ProcessQueue();
+      new_credits = cmd_status_view.num_hci_command_packets().Read();
     }
+  }
+
+  if (new_credits == command_credits_) {
+    return;
+  }
+
+  size_t starting_credits = command_credits_;
+  command_credits_ = new_credits;
+  ProcessQueue();
+
+  if (command_credits_ != starting_credits) {
+    NotifyStateUpdate();
   }
 }
 
-void CommandMultiplexer::ProcessQueue() {
+bool CommandMultiplexer::ProcessQueue() {
   bool send_injected_commands = true;
+  bool command_sent = false;
   CommandQueue::iterator iter = command_queue_.begin();
   while (iter != command_queue_.end() && command_credits_ > 0) {
     if (iter->sent_command_data != nullptr && !send_injected_commands) {
@@ -665,8 +726,10 @@ void CommandMultiplexer::ProcessQueue() {
     }
 
     --command_credits_;
+    command_sent = true;
     iter = command_queue_.erase(iter);
   }
+  return command_sent;
 }
 
 uint8_t CommandMultiplexer::reserved_queue_space() {
@@ -780,7 +843,9 @@ CommandMultiplexer::ActiveSentCommandData::HandleEvent(EventPacket&& event) {
   auto temporary = std::move(*self_iter);
   cmd_mux_.active_command_queue_.erase(self_iter);
 
-  cmd_mux_.ProcessQueue();
+  if (cmd_mux_.ProcessQueue()) {
+    cmd_mux_.NotifyStateUpdate();
+  }
 
   return result;
 }

@@ -32,37 +32,53 @@ pw_add_library(pw_bluetooth_proxy.hci.types INTERFACE
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
 
-pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
-# LINT.IfChange
+pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer_snapshot STATIC
   HEADERS
-    public/pw_bluetooth_proxy/hci/command_multiplexer.h
-    public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h
-
+    public/pw_bluetooth_proxy/hci/command_multiplexer_snapshot.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_async2
-    pw_async2.time_provider
-    pw_bluetooth.emboss_hci_commands
-    pw_bluetooth.emboss_hci_common
-    pw_bluetooth.emboss_hci_events
-    pw_bluetooth.emboss_hci_h4
-    pw_bluetooth_proxy.clock
-    pw_containers.dynamic_hash_map
-    pw_containers.flat_map
     pw_function
-    pw_multibuf.v2.multibuf
-    pw_result
-    pw_result.expected
-    pw_span
     pw_status
-    pw_sync.mutex
-  PRIVATE_DEPS
-    pw_assert.check
+  SOURCES
+    command_multiplexer_snapshot.cc
+)
+
+# LINT.IfChange
+set(command_multiplexer_deps
+  pw_bluetooth_proxy.hci.command_multiplexer_snapshot
+  pw_assert.check
+  pw_async2
+  pw_async2.time_provider
+  pw_bluetooth.emboss_hci_commands
+  pw_bluetooth.emboss_hci_common
+  pw_bluetooth.emboss_hci_events
+  pw_bluetooth.emboss_hci_h4
+  pw_bluetooth_proxy.clock
+  pw_bluetooth_proxy.config
+  pw_containers.dynamic_hash_map
+  pw_containers.dynamic_queue
+  pw_function
+  pw_multibuf.v2.multibuf
+  pw_result
+  pw_result.expected
+  pw_span
+  pw_status
+  pw_sync.mutex
+)
+
+pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer STATIC
+  HEADERS
+    public/pw_bluetooth_proxy/hci/command_multiplexer.h
+    public/pw_bluetooth_proxy/hci/internal/type_safe_ids.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    ${command_multiplexer_deps}
   SOURCES
     command_multiplexer.cc
-# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 )
+# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 
 pw_add_library(pw_bluetooth_proxy.hci.sniff_snapshot STATIC
   HEADERS
@@ -113,19 +129,36 @@ pw_add_library(pw_bluetooth_proxy.hci.sniff_offload STATIC
 )
 # LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
 
-pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
 # LINT.IfChange
+set(command_multiplexer_test_deps
+  ${command_multiplexer_deps}
+  pw_allocator.testing
+  pw_async2
+  pw_async2.simulated_time_provider
+  pw_async2.testing
+  pw_containers.vector
+  pw_unit_test
+)
+# LINT.ThenChange(BUILD.bazel, BUILD.gn)
+
+pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
   PRIVATE_DEPS
     pw_bluetooth_proxy.hci.command_multiplexer
-    pw_allocator.testing
-    pw_async2
-    pw_async2.simulated_time_provider
-    pw_async2.testing
-    pw_containers.vector
-    pw_unit_test
+    ${command_multiplexer_test_deps}
   SOURCES
     command_multiplexer_test.cc
-# LINT.ThenChange(Android.bp, BUILD.bazel, BUILD.gn)
+)
+
+pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_recovery_test
+  PRIVATE_DEFINES
+    PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1
+  PRIVATE_DEPS
+    ${command_multiplexer_test_deps}
+  SOURCES
+    # Include command_multiplexer.cc directly so it is compiled with the
+    # test-specific recovery configuration flags enabled.
+    command_multiplexer.cc
+    command_multiplexer_test.cc
 )
 
 # LINT.IfChange

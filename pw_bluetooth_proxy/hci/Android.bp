@@ -17,6 +17,28 @@ package {
 }
 
 cc_library_static {
+    name: "command_multiplexer_snapshot",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    srcs: [
+        "command_multiplexer_snapshot.cc",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+    static_libs: [
+        "pw_function",
+        "pw_status",
+    ],
+    export_static_lib_headers: [
+        "pw_function",
+        "pw_status",
+    ],
+}
+
+cc_library_static {
     name: "command_multiplexer",
     defaults: [
         "pw_android_common_backends",
@@ -31,6 +53,7 @@ cc_library_static {
         "public",
     ],
     static_libs: [
+        "command_multiplexer_snapshot",
         "pw_allocator",
         "pw_async2",
         "pw_bluetooth_proxy_clock",
@@ -43,6 +66,7 @@ cc_library_static {
         "pw_status",
     ],
     export_static_lib_headers: [
+        "command_multiplexer_snapshot",
         "pw_allocator",
         "pw_async2",
         "pw_bluetooth_proxy_clock",
