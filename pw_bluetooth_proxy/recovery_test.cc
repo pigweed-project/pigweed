@@ -105,7 +105,9 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
 
   proxy.RegisterAclStateUpdateCallback(
       [&connection_snapshot](const AclStateUpdate& update) {
-        connection_snapshot = update.connection;
+        if (std::holds_alternative<AclConnectionSnapshot>(update)) {
+          connection_snapshot = std::get<AclConnectionSnapshot>(update);
+        }
       });
 
   Result<AclFrameWithStorage> acl_frame = SetupAcl(kLeConnectionHandle1, 10);
@@ -190,8 +192,10 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
   EXPECT_EQ(update_capture.updates_sent, 1u);
+  ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
+      update_capture.last_update));
   AclConnectionSnapshot connection_snapshot =
-      update_capture.last_update.connection;
+      std::get<AclConnectionSnapshot>(update_capture.last_update);
   EXPECT_EQ(connection_snapshot.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(connection_snapshot.num_proxy_pending_packets, 0);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 0);
@@ -204,7 +208,10 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
                            acl_frame->h4_span());
   proxy.HandleH4HciFromHost(std::move(h4_packet));
   EXPECT_EQ(update_capture.updates_sent, 2u);
-  connection_snapshot = update_capture.last_update.connection;
+  ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
+      update_capture.last_update));
+  connection_snapshot =
+      std::get<AclConnectionSnapshot>(update_capture.last_update);
   EXPECT_EQ(connection_snapshot.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 1);
 
@@ -213,9 +220,22 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   PW_TEST_ASSERT_OK(
       SendNumberOfCompletedPackets(proxy, {{kLeConnectionHandle1, 1}}));
   EXPECT_EQ(update_capture.updates_sent, 3u);
-  connection_snapshot = update_capture.last_update.connection;
+  ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
+      update_capture.last_update));
+  connection_snapshot =
+      std::get<AclConnectionSnapshot>(update_capture.last_update);
   EXPECT_EQ(connection_snapshot.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 0);
+
+  // Verify that disconnection triggers a state update callback.
+  PW_TEST_ASSERT_OK(
+      SendDisconnectionCompleteEvent(proxy, kLeConnectionHandle1));
+  EXPECT_EQ(update_capture.updates_sent, 4u);
+  ASSERT_TRUE(
+      std::holds_alternative<AclConnectionRemoved>(update_capture.last_update));
+  EXPECT_EQ(std::get<AclConnectionRemoved>(update_capture.last_update)
+                .connection_handle,
+            kLeConnectionHandle1);
 }
 
 TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {

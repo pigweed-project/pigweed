@@ -535,11 +535,11 @@ class AclDataChannel {
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-  // Invokes state update callback if registered.
-  void NotifyStateUpdate(const AclConnection& connection)
+  // Invokes connection state update callback if registered.
+  void NotifyConnectionStateUpdate(const AclConnection& connection)
       PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
 #else
-  void NotifyStateUpdate(
+  void NotifyConnectionStateUpdate(
       [[maybe_unused]] const AclConnection& connection) const {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 };

@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstdint>
+#include <type_traits>
+#include <variant>
 
 #include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
@@ -22,6 +24,10 @@
 #include "pw_status/status.h"
 
 namespace pw::bluetooth::proxy {
+
+struct AclConnectionRemoved {
+  uint16_t connection_handle = 0;
+};
 
 struct AclConnectionSnapshot {
   uint16_t connection_handle = 0;
@@ -37,13 +43,11 @@ struct AclConnectionSnapshot {
   Status Update(const AclConnectionSnapshot& update);
 };
 
-/// Incremental update payload emitted on connection credit mutations.
-struct AclStateUpdate {
-  /// Updated snapshot of the affected ACL connection.
-  AclConnectionSnapshot connection;
-};
+/// Incremental update payload emitted on ACL connection state mutations.
+using AclStateUpdate =
+    std::variant<AclConnectionSnapshot, AclConnectionRemoved>;
 
-/// Callback invoked when an ACL connection's credit state mutates.
+/// Callback invoked when an ACL subsystem state mutates.
 ///
 /// @note When receiving an @c AclStateUpdate, the platform container is
 /// responsible for updating the corresponding connection in its persistent

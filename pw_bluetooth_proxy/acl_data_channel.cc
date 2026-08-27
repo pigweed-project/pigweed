@@ -61,14 +61,14 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
 
         if (!credits.dynamic_sharing()) {
           connection_ptr->RecordPacket(PacketSource::kHost);
-          NotifyStateUpdate(*connection_ptr);
+          NotifyConnectionStateUpdate(*connection_ptr);
           packet_to_send_directly = std::move(h4_packet);
         } else {
           transport = connection_ptr->transport();
           if (h4_packet.HasReleaseFn()) {
             if (connection_ptr->queue().try_push(std::move(h4_packet))) {
               credits.IncrementTotalQueuedPackets();
-              NotifyStateUpdate(*connection_ptr);
+              NotifyConnectionStateUpdate(*connection_ptr);
             } else {
               PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
             }
@@ -83,7 +83,7 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
               if (connection_ptr->queue().try_push(
                       std::move(owned_h4_packet_result.value()))) {
                 credits.IncrementTotalQueuedPackets();
-                NotifyStateUpdate(*connection_ptr);
+                NotifyConnectionStateUpdate(*connection_ptr);
               } else {
                 PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
               }
@@ -466,7 +466,7 @@ bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
       }
 
       if (proxy_reclaimed > 0 || host_reclaimed > 0) {
-        NotifyStateUpdate(*connection_ptr);
+        NotifyConnectionStateUpdate(*connection_ptr);
       }
     }
   }
@@ -511,7 +511,7 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
         AclConnection* connection_to_drain = FindConnectionToDrain(transport);
         if (connection_to_drain) {
           packet_to_send = DequeueHostPacket(connection_to_drain, credits);
-          NotifyStateUpdate(*connection_to_drain);
+          NotifyConnectionStateUpdate(*connection_to_drain);
           host_tried_and_empty = false;
           proxy_tried_and_empty = false;
         } else {
@@ -583,6 +583,13 @@ void AclDataChannel::ProcessDisconnectionCompleteEvent(
     packets_to_drop.swap(connection_ptr->queue());
 
     acl_connections_.erase(connection_ptr);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    if (state_update_callback_) {
+      state_update_callback_(
+          AclConnectionRemoved{.connection_handle = connection_handle});
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
 
   // Important to drop outside of connection lock since freeing packets will
@@ -653,7 +660,7 @@ pw::Status AclDataChannel::SendAcl(H4PacketWithH4&& h4_packet,
 
   connection_ptr->RecordPacket(PacketSource::kProxy);
 
-  NotifyStateUpdate(*connection_ptr);
+  NotifyConnectionStateUpdate(*connection_ptr);
 
   hci_transport_.SendToController(std::move(h4_packet));
   return pw::OkStatus();
@@ -691,7 +698,7 @@ Status AclDataChannel::CreateAclConnection(uint16_t connection_handle,
     }
   }
 
-  NotifyStateUpdate(acl_connections_.back());
+  NotifyConnectionStateUpdate(acl_connections_.back());
 
   return OkStatus();
 }
@@ -941,17 +948,17 @@ bool AclDataChannel::HasDroppedPackets(uint16_t connection_handle) const {
 }
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-void AclDataChannel::NotifyStateUpdate(const AclConnection& connection) {
+void AclDataChannel::NotifyConnectionStateUpdate(
+    const AclConnection& connection) {
   if (state_update_callback_) {
-    state_update_callback_(AclStateUpdate{
-        .connection = AclConnectionSnapshot{
-            .connection_handle = connection.connection_handle(),
-            .transport = connection.transport(),
-            .num_proxy_pending_packets = connection.num_proxy_pending_packets(),
-            .num_host_pending_packets = connection.num_host_pending_packets(),
-            .num_queued_host_packets =
-                static_cast<uint16_t>(connection.queue().size()),
-        }});
+    state_update_callback_(AclConnectionSnapshot{
+        .connection_handle = connection.connection_handle(),
+        .transport = connection.transport(),
+        .num_proxy_pending_packets = connection.num_proxy_pending_packets(),
+        .num_host_pending_packets = connection.num_host_pending_packets(),
+        .num_queued_host_packets =
+            static_cast<uint16_t>(connection.queue().size()),
+    });
   }
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES

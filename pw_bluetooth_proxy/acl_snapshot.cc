@@ -32,18 +32,34 @@ Status AclConnectionSnapshot::Update(const AclConnectionSnapshot& update) {
 }
 
 Status AclSnapshot::ApplyStateUpdate(const AclStateUpdate& update) {
-  for (AclConnectionSnapshot& connection : acl_connections) {
-    if (connection.MatchesKey(update.connection.connection_handle)) {
-      return connection.Update(update.connection);
-    }
-  }
+  return std::visit(
+      [this](const auto& arg) -> Status {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, AclConnectionSnapshot>) {
+          for (AclConnectionSnapshot& connection : acl_connections) {
+            if (connection.MatchesKey(arg.connection_handle)) {
+              return connection.Update(arg);
+            }
+          }
 
-  if (acl_connections.full()) {
-    snapshot_incomplete = true;
-    return Status::ResourceExhausted();
-  }
-  acl_connections.push_back(update.connection);
-  return OkStatus();
+          if (acl_connections.full()) {
+            snapshot_incomplete = true;
+            return Status::ResourceExhausted();
+          }
+          acl_connections.push_back(arg);
+          return OkStatus();
+        } else if constexpr (std::is_same_v<T, AclConnectionRemoved>) {
+          for (auto it = acl_connections.begin(); it != acl_connections.end();
+               ++it) {
+            if (it->MatchesKey(arg.connection_handle)) {
+              acl_connections.erase(it);
+              return OkStatus();
+            }
+          }
+          return OkStatus();
+        }
+      },
+      update);
 }
 
 }  // namespace pw::bluetooth::proxy
