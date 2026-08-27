@@ -86,4 +86,32 @@ TEST(ContainerOf, VirtualStruct) {
   EXPECT_EQ(pw::ContainerOf(&s.b, &VirtualStruct::b), &s);
 }
 
+TEST(ContainerOf, Reference) {
+  TestStruct s;
+  EXPECT_EQ(&pw::ContainerOf(s.a, &TestStruct::a), &s);
+  EXPECT_EQ(&pw::ContainerOf(s.b, &TestStruct::b), &s);
+}
+
+TEST(ContainerOf, ReferenceConst) {
+  const TestStruct s{};
+  EXPECT_EQ(&pw::ContainerOf(s.a, &TestStruct::a), &s);
+  EXPECT_EQ(&pw::ContainerOf(s.b, &TestStruct::b), &s);
+}
+
+TEST(ContainerOf, ReferenceTemplateAuto) {
+  TestStruct s;
+  EXPECT_EQ(&pw::ContainerOf<&TestStruct::a>(s.a), &s);
+  EXPECT_EQ(&pw::ContainerOf<&TestStruct::b>(s.b), &s);
+
+  const TestStruct const_s{};
+  EXPECT_EQ(&pw::ContainerOf<&TestStruct::a>(const_s.a), &const_s);
+  EXPECT_EQ(&pw::ContainerOf<&TestStruct::b>(const_s.b), &const_s);
+}
+
+TEST(ContainerOf, NullptrAsserts) {
+  uint8_t* null_b = nullptr;
+  ASSERT_DEATH_IF_SUPPORTED((void)pw::ContainerOf(null_b, &TestStruct::b), "");
+  ASSERT_DEATH_IF_SUPPORTED((void)pw::ContainerOf<&TestStruct::b>(null_b), "");
+}
+
 }  // namespace

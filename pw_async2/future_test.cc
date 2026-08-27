@@ -549,4 +549,16 @@ TEST(CustomFutureList, Remove) {
   EXPECT_TRUE(provider.list().empty());
 }
 
+// A nonzero offset, if subtracted from nullptr in systems where that is 0,
+// would underflow to some large offset.
+struct StructWithOffsetFutureCore {
+  int phantom = 0;
+  pw::async2::FutureCore core;
+};
+
+TEST(FutureList, PopIfAvailableEmptyList) {
+  pw::async2::FutureList<&StructWithOffsetFutureCore::core> list;
+  EXPECT_EQ(list.PopIfAvailable(), nullptr);
+}
+
 }  // namespace

@@ -17,6 +17,8 @@ include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 pw_add_library(pw_memory INTERFACE
   HEADERS
     public/pw_memory/container_of.h
+  PUBLIC_DEPS
+    pw_assert.assert
   PUBLIC_INCLUDES
     public
 )

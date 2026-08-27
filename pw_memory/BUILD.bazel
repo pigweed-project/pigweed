@@ -27,6 +27,7 @@ cc_library(
     name = "pw_memory",
     hdrs = ["public/pw_memory/container_of.h"],
     strip_include_prefix = "public",
+    deps = ["//pw_assert:assert"],
 )
 
 cc_library(

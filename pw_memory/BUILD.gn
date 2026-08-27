@@ -25,6 +25,7 @@ config("public_include_path") {
 pw_source_set("pw_memory") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_memory/container_of.h" ]
+  public_deps = [ dir_pw_assert ]
 }
 
 pw_source_set("no_destructor") {

@@ -16,6 +16,8 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "pw_assert/assert.h"
+
 namespace pw {
 namespace internal {
 
@@ -47,13 +49,13 @@ size_t OffsetOf(Member Class::* member) {
   return reinterpret_cast<size_t>(&(c->*member)) - reinterpret_cast<size_t>(c);
 }
 
-/// Returns a pointer to the container of a member.
+/// Returns a reference to the container of a member.
 ///
-/// @param ptr A pointer to the member.
+/// @param ref A reference to the member.
 /// @param member The pointer-to-member for that member (`&Foo::member`).
-/// @return A pointer to the container class.
+/// @return A reference to the container class.
 template <typename Member, typename ClassMember, typename Class>
-const Class* ContainerOf(const Member* ptr, ClassMember Class::* member) {
+const Class& ContainerOf(const Member& ref, ClassMember Class::* member) {
 #ifdef __cpp_lib_is_pointer_interconvertible
   static_assert(
       std::is_same_v<Member, ClassMember> ||
@@ -63,15 +65,33 @@ const Class* ContainerOf(const Member* ptr, ClassMember Class::* member) {
   static_assert(std::is_same_v<Member, ClassMember> ||
                 std::is_base_of_v<Member, ClassMember>);
 #endif  // __cpp_lib_is_pointer_interconvertible
-  return reinterpret_cast<const Class*>(
-      reinterpret_cast<const std::byte*>(ptr) - OffsetOf(member));
+  return *reinterpret_cast<const Class*>(
+      reinterpret_cast<const std::byte*>(&ref) - OffsetOf(member));
+}
+
+/// @copydoc ContainerOf
+template <typename Member, typename ClassMember, typename Class>
+Class& ContainerOf(Member& ref, ClassMember Class::* member) {
+  return const_cast<Class&>(
+      ContainerOf(const_cast<const Member&>(ref), member));
+}
+
+/// Returns a pointer to the container of a member.
+///
+/// @param ptr A pointer to the member.
+/// @param member The pointer-to-member for that member (`&Foo::member`).
+/// @return A pointer to the container class.
+template <typename Member, typename ClassMember, typename Class>
+const Class* ContainerOf(const Member* ptr, ClassMember Class::* member) {
+  PW_ASSERT(ptr != nullptr);
+  return &ContainerOf(*ptr, member);
 }
 
 /// @copydoc ContainerOf
 template <typename Member, typename ClassMember, typename Class>
 Class* ContainerOf(Member* ptr, ClassMember Class::* member) {
-  return const_cast<Class*>(
-      ContainerOf(const_cast<const Member*>(ptr), member));
+  PW_ASSERT(ptr != nullptr);
+  return &ContainerOf(*ptr, member);
 }
 
 /// Returns a pointer to the container of a member.
@@ -83,6 +103,17 @@ template <auto kMemberPtr,
           typename Member = internal::MemberValueType<decltype(kMemberPtr)>>
 auto ContainerOf(Member* ptr) {
   return ContainerOf(ptr, kMemberPtr);
+}
+
+/// Returns a reference to the container of a member.
+///
+/// @tparam kMemberPtr A pointer to the member within the class.
+/// @param ref A reference to the member.
+/// @return A reference to the container class.
+template <auto kMemberPtr,
+          typename Member = internal::MemberValueType<decltype(kMemberPtr)>>
+auto& ContainerOf(Member& ref) {
+  return ContainerOf(ref, kMemberPtr);
 }
 
 /// Function that dereferences a pointer to a member.

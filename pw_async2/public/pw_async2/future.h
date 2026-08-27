@@ -451,10 +451,11 @@ class CustomFutureList : public BaseFutureList {
   reference front() { return *kGetFutureImpl(&BaseFutureList::front()); }
 
   pointer PopIfAvailable() {
-    return kGetFutureImpl(BaseFutureList::PopIfAvailable());
+    FutureCore* future = BaseFutureList::PopIfAvailable();
+    return future == nullptr ? nullptr : kGetFutureImpl(future);
   }
 
-  reference Pop() { return *kGetFutureImpl(BaseFutureList::PopIfAvailable()); }
+  reference Pop() { return *kGetFutureImpl(&BaseFutureList::Pop()); }
 
   /// Removes the first future from the list that matches the predicate.
   ///
@@ -497,7 +498,10 @@ class CustomFutureList : public BaseFutureList {
 ///     class
 template <auto kMemberPtr>
 using FutureList =
-    CustomFutureList<ContainerOf<kMemberPtr, FutureCore>, MemberOf<kMemberPtr>>;
+    CustomFutureList<static_cast<typename ::pw::internal::PointerToMemberTraits<
+                         decltype(kMemberPtr)>::class_type* (*)(FutureCore*)>(
+                         ContainerOf<kMemberPtr, FutureCore>),
+                     MemberOf<kMemberPtr>>;
 
 /// @endsubmodule
 
