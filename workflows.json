@@ -549,6 +549,26 @@
       ]
     },
     {
+      "name": "k_veer",
+      "build_config": {
+        "name": "k_veer_config",
+        "description": "Kernel VeeR PIC config (build-only)",
+        "build_type": "bazel",
+        "args": [
+          "--config=k_lint",
+          "--config=k_veer"
+        ],
+        "env": {},
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//pw_kernel/..."
+      ]
+    },
+    {
       "name": "k_rp2350_lint",
       "build_config": {
         "name": "k_rp2350_lint_config",
@@ -934,6 +954,7 @@
         "k_host_lint",
         "k_qemu_mps2_an505_lint",
         "k_qemu_virt_riscv32_lint",
+        "k_veer",
         "k_rp2350_lint",
         "k_nucleo_f103rb_lint",
         "k_qemu_nucleo_f103rb_lint"

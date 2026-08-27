@@ -215,7 +215,7 @@ pub fn interrupt(from_userspace: bool) {
     // need to write to MEICPCT to capture the interrupt value into meihap.
     MeiCPCT::write(MeiCPCTVal::default());
     let meihap = MeiHAP::read();
-    let irq = meihap.claimid() as u32;
+    let irq = u32::from(meihap.claimid());
 
     if irq == 0 {
         return;

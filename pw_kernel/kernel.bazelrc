@@ -115,6 +115,10 @@ test:k_qemu_virt_riscv32 --run_under="//pw_kernel/tooling:qemu \
   --semihosting \
   --image "
 
+# Build-only: QEMU can't model VeeR's PIC or CSRs, so this is never run.
+common:k_veer --config=k_common
+common:k_veer --platforms=//pw_kernel/target/veer:veer
+
 # QEMU Nucleo-F103RB target configuration (mps2-an385)
 # =======================================
 common:k_qemu_nucleo_f103rb --config=k_common

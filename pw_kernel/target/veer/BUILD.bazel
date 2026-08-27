@@ -1,0 +1,61 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//pw_build:merge_flags.bzl", "flags_from_dict")
+load("//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load("//pw_kernel/target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = [":__subpackages__"])
+
+# Build-only target that selects the VeeR PIC. It keeps `veer_pic.rs` compiled
+# and linted; no image built for it runs, as QEMU has neither the PIC MMIO
+# window nor VeeR's CSRs.
+platform(
+    name = "veer",
+    constraint_values = [
+        ":target_veer",
+        "//pw_build/constraints/riscv/extensions:I",
+        "//pw_build/constraints/riscv/extensions:M",
+        "//pw_build/constraints/riscv/extensions:C",
+        "//pw_build/constraints/riscv/extensions:A",
+        "//pw_build/constraints/rust:no_std",
+        "@platforms//cpu:riscv32",
+        "@platforms//os:none",
+    ],
+    flags = flags_from_dict(
+        KERNEL_DEVICE_COMMON_FLAGS | {
+            "//pw_kernel/arch/riscv:veer_pic": "true",
+            "//pw_kernel/config:kernel_config": ":config",
+        },
+    ),
+)
+
+constraint_value(
+    name = "target_veer",
+    constraint_setting = "//pw_kernel/target:target",
+)
+
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_name = "kernel_config",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//pw_kernel/config:kernel_config_interface",
+        "//pw_kernel/lib/memory_config",
+    ],
+)
