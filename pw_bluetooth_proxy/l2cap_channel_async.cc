@@ -150,6 +150,8 @@ async2::Poll<std::optional<H4PacketWithH4>> L2capChannelImpl::DequeuePacket(
     return async2::Pending();
   }
 
+  channel_.NotifyCreditMutation();
+
   return async2::Ready(std::move(packet));
 }
 

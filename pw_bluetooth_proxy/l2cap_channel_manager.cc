@@ -50,6 +50,9 @@ TargetVariant variant_cast(SourceVariant&& source) {
 internal::Mutex internal::L2capChannelManagerImpl::channels_mutex_;
 
 L2capChannelManager::~L2capChannelManager() {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  state_update_callback_ = nullptr;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   std::lock_guard lock(links_mutex_);
   ResetLogicalLinksLocked();
 }
@@ -300,6 +303,7 @@ Status L2capChannelManager::RegisterChannelLocked(
   PW_CHECK(local_result.inserted);
 
   impl_.OnRegister();
+  NotifyChannelStateUpdate(channel);
   return OkStatus();
 }
 
@@ -311,6 +315,15 @@ void L2capChannelManager::DeregisterChannel(L2capChannel& channel) {
 UniquePtr<L2capChannelManager::L2capChannelNode>
 L2capChannelManager::DeregisterChannelLocked(L2capChannel& channel) {
   impl_.OnDeregister(channel);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  if (state_update_callback_ && !channel.IsSignalingChannel()) {
+    state_update_callback_(L2capChannelRemoved{
+        .connection_handle = channel.connection_handle(),
+        .local_cid = channel.local_cid(),
+    });
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   uint32_t local_key =
       L2capChannel::MakeKey(channel.connection_handle(), channel.local_cid());
@@ -330,14 +343,12 @@ void L2capChannelManager::DeregisterAndCloseChannels(L2capChannelEvent event) {
   ResetLogicalLinksLocked();
   {
     std::lock_guard channels_lock(channels_mutex());
-    channels_by_remote_cid_.clear();
-    for (auto iter = channels_by_local_cid_.begin();
-         iter != channels_by_local_cid_.end();) {
-      auto node = channels_by_local_cid_.take(iter++);
+    while (!channels_by_local_cid_.empty()) {
+      L2capChannel& channel = channels_by_local_cid_.begin()->second;
+      auto node = DeregisterChannelLocked(channel);
       node->mapped().Close(event);
       stale_.insert(std::move(node));
     }
-    impl_.OnDeletion();
   }
   DeleteStaleChannels();
 }
@@ -346,17 +357,6 @@ void L2capChannelManager::DeleteStaleChannels() {
   L2capChannelMap stale(impl_.allocator());
   {
     std::lock_guard channels_lock(channels_mutex());
-
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-    if (state_update_callback_) {
-      for (auto& [key, channel] : stale_) {
-        state_update_callback_(L2capChannelRemoved{
-            .connection_handle = channel.connection_handle(),
-            .local_cid = channel.local_cid(),
-        });
-      }
-    }
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
     stale.swap(stale_);
   }
@@ -511,15 +511,6 @@ void L2capChannelManager::HandleDisconnectionCompleteLocked(
     L2capChannel& channel = it->second;
     auto node = DeregisterChannelLocked(channel);
     node->mapped().Close();
-
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-    if (state_update_callback_) {
-      state_update_callback_(L2capChannelRemoved{
-          .connection_handle = params.connection_handle,
-          .local_cid = params.local_cid,
-      });
-    }
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
   status_tracker_.HandleDisconnectionComplete(params);
 }
@@ -635,23 +626,21 @@ Status L2capChannelManager::RecoverFromSnapshot(const L2capSnapshot* snapshot) {
     }
   }
 
-  {
-    std::lock_guard lock(links_mutex_);
-    restored_snapshot_ = snapshot;
-  }
+  restored_snapshot_.store(snapshot, std::memory_order_release);
   PW_LOG_INFO("Restored L2CAP state from snapshot");
   return OkStatus();
 }
 
 void L2capChannelManager::CompleteRecovery() {
   std::lock_guard link_lock(links_mutex_);
-  if (restored_snapshot_ == nullptr) {
+  const L2capSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot == nullptr) {
     return;
   }
 
   std::lock_guard channel_lock(channels_mutex());
-  for (const L2capChannelSnapshot& channel :
-       restored_snapshot_->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
     uint32_t key =
         L2capChannel::MakeKey(channel.connection_handle, channel.local_cid);
     if (channels_by_local_cid_.find(key) == channels_by_local_cid_.end() &&
@@ -667,19 +656,45 @@ void L2capChannelManager::CompleteRecovery() {
     }
   }
 
-  restored_snapshot_ = nullptr;
+  restored_snapshot_.store(nullptr, std::memory_order_release);
+}
+
+void L2capChannelManager::NotifySignalingStateUpdate(
+    uint16_t connection_handle,
+    AclTransportType transport,
+    uint8_t next_identifier) const {
+  if (state_update_callback_ &&
+      restored_snapshot_.load(std::memory_order_acquire) == nullptr) {
+    state_update_callback_(L2capSignalingStateSnapshot{
+        .connection_handle = connection_handle,
+        .transport = transport,
+        .next_identifier = next_identifier,
+    });
+  }
+}
+
+void L2capChannelManager::NotifyChannelStateUpdate(
+    const L2capChannel& channel) const {
+  if (channel.IsSignalingChannel()) {
+    return;
+  }
+  if (state_update_callback_ &&
+      restored_snapshot_.load(std::memory_order_acquire) == nullptr) {
+    state_update_callback_(channel.CaptureSnapshot());
+  }
 }
 
 Status L2capChannelManager::RecoverCreditBasedFlowControlChannel(
     ConnectionHandle connection_handle,
     ConnectionOrientedChannelConfig& rx_config,
     ConnectionOrientedChannelConfig& tx_config) {
-  if (restored_snapshot_ == nullptr) {
+  const L2capSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot == nullptr) {
     return OkStatus();
   }
 
-  for (const L2capChannelSnapshot& channel :
-       restored_snapshot_->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
     const bool channel_matches =
         channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == rx_config.cid &&
@@ -712,12 +727,13 @@ Status L2capChannelManager::RecoverBasicModeChannel(
     ConnectionHandle connection_handle,
     uint16_t local_cid,
     uint16_t remote_cid) {
-  if (restored_snapshot_ == nullptr) {
+  const L2capSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot == nullptr) {
     return OkStatus();
   }
 
-  for (const L2capChannelSnapshot& channel :
-       restored_snapshot_->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
     const bool channel_matches =
         channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == local_cid && channel.remote_cid == remote_cid &&
@@ -837,7 +853,7 @@ void L2capChannelManager::CreateSilentBasicChannel(
 void L2capChannelManager::ResetLogicalLinksLocked() {
   logical_links_.clear();
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  restored_snapshot_ = nullptr;
+  restored_snapshot_.store(nullptr, std::memory_order_release);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 

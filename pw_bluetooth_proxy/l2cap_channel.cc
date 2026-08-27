@@ -151,6 +151,8 @@ bool L2capChannel::HandlePduFromController(pw::span<uint8_t> l2cap_pdu) {
     result = rx_engine().HandlePduFromController(l2cap_pdu);
   }
 
+  NotifyCreditMutation();
+
   return std::visit(
       Visitors{
           [](std::monostate) {
@@ -479,6 +481,10 @@ Status L2capChannel::InitCreditBasedFlowControl(
         pw::bind_member<&L2capChannel::ReplenishRxCredits>(this));
   }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  is_credit_based_ = true;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
   return impl_.Init();
 }
 
@@ -577,21 +583,86 @@ Status L2capChannel::AddTxCredits(uint16_t credits) {
   if (result.value()) {
     ReportNewTxPacketsOrCredits();
   }
+  NotifyCreditMutation();
   return OkStatus();
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+L2capChannelSnapshot L2capChannel::CaptureSnapshot() const {
+  L2capChannelSnapshot snapshot;
+  snapshot.local_cid = local_cid_;
+  snapshot.remote_cid = remote_cid_;
+  snapshot.connection_handle = connection_handle_;
+  snapshot.transport = transport_;
+  snapshot.allow_data_loss = allow_data_loss_;
+
+  std::lock_guard rx_lock(rx_mutex_);
+  std::lock_guard tx_lock(impl_.mutex_);
+
+  std::visit(
+      Visitors{[&snapshot](const internal::CreditBasedFlowControlTxEngine& tx) {
+                 snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
+                 snapshot.tx_engine.remaining_credits = tx.remaining_credits();
+                 snapshot.tx_engine.sdu_in_progress = tx.sdu_in_progress();
+               },
+               [&snapshot](const internal::BasicModeTxEngine&) {
+                 snapshot.mode = L2capChannelMode::kBasic;
+               },
+               [&snapshot](const internal::GattNotifyTxEngine&) {
+                 snapshot.mode = L2capChannelMode::kBasic;
+               },
+               [](std::monostate) {}},
+      tx_engine_);
+
+  std::visit(
+      Visitors{[&snapshot](const internal::CreditBasedFlowControlRxEngine& rx) {
+                 snapshot.rx_engine.remaining_credits = rx.remaining_credits();
+                 snapshot.rx_engine.sdu_in_progress = rx.sdu_in_progress();
+               },
+               [](const internal::BasicModeRxEngine&) {},
+               [](const internal::GattNotifyRxEngine&) {},
+               [](std::monostate) {}},
+      rx_engine_);
+
+  snapshot.acl_recombination_in_progress =
+      recombination_mbufs_[cpp23::to_underlying(Direction::kFromController)]
+          .has_value() ||
+      recombination_mbufs_[cpp23::to_underlying(Direction::kFromHost)]
+          .has_value();
+
+  return snapshot;
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+void L2capChannel::NotifyCreditMutation() const {
+  if (is_credit_based_) {
+    l2cap_channel_manager_.NotifyChannelStateUpdate(*this);
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
 Status L2capChannel::SendAdditionalRxCredits(uint16_t additional_rx_credits) {
   if (state() != State::kRunning) {
     return Status::FailedPrecondition();
   }
-  std::lock_guard lock(rx_mutex_);
-  Status status = ReplenishRxCredits(additional_rx_credits);
 
-  if (status.ok()) {
-    status = rx_engine().AddRxCredits(additional_rx_credits);
+  Status status;
+  {
+    std::lock_guard lock(rx_mutex_);
+    status = ReplenishRxCredits(additional_rx_credits);
+
+    if (status.ok()) {
+      status = rx_engine().AddRxCredits(additional_rx_credits);
+    }
   }
 
   DrainChannelQueuesIfNewTx();
+
+  if (status.ok()) {
+    NotifyCreditMutation();
+  }
+
   return status;
 }
 

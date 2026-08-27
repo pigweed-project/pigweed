@@ -146,6 +146,10 @@ std::optional<H4PacketWithH4> L2capChannelImpl::DequeuePacket()
     SendEvent(L2capChannelEvent::kWriteAvailable);
   }
 
+  if (packet.has_value()) {
+    channel_.NotifyCreditMutation();
+  }
+
   return packet;
 }
 

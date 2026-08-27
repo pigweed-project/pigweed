@@ -71,11 +71,16 @@ struct L2capChannelSnapshot {
   Status Update(const L2capChannelSnapshot& update);
 };
 
+/// Incremental update payload emitted on L2CAP state mutations.
 using L2capStateUpdate = std::variant<L2capSignalingStateSnapshot,
                                       L2capChannelSnapshot,
                                       L2capChannelRemoved>;
 
 /// Callback type invoked when the L2CAP subsystem state mutates.
+///
+/// @note When receiving an @c L2capStateUpdate, the platform container is
+/// responsible for updating the corresponding connection in its persistent
+/// @c L2capSnapshot.
 ///
 /// @warning **Re-entrancy Safety:** Do not invoke proxy methods from within
 /// this callback; it is called synchronously while holding internal mutexes.

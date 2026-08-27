@@ -18,6 +18,7 @@
 
 #include "pw_allocator/unique_ptr.h"
 #include "pw_assert/assert.h"
+#include "pw_bluetooth/l2cap_frames.emb.h"
 #include "pw_bluetooth_proxy/connection_handle.h"
 #include "pw_bluetooth_proxy/direction.h"
 #include "pw_bluetooth_proxy/h4_packet.h"
@@ -257,6 +258,20 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   /// Returns whether this channel tolerates data loss for snapshot recovery.
   bool allow_data_loss() const { return allow_data_loss_; }
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Captures a complete snapshot of L2CAP state.
+  L2capChannelSnapshot CaptureSnapshot() const
+      PW_LOCKS_EXCLUDED(rx_mutex_, impl_.mutex_);
+
+  /// Returns whether this channel is a fixed signaling channel.
+  bool IsSignalingChannel() const {
+    return local_cid_ ==
+               static_cast<uint16_t>(emboss::L2capFixedCid::ACL_U_SIGNALING) ||
+           local_cid_ ==
+               static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_SIGNALING);
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
  private:
   friend class L2capChannelManager;
   friend class internal::GenericL2capChannel;
@@ -464,9 +479,17 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   internal::L2capChannelImpl impl_;
 
   // Determines whether to restore the channel after a crash despite potential
-  // packet loss, or reject it to force a complete teardown. This field is only
-  // used when `PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY` is enabled.
+  // packet loss, or reject it to force a complete teardown.
   const bool allow_data_loss_ = false;
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  void NotifyCreditMutation() const;
+
+  // True if this channel uses the Credit Based Flow Control mode.
+  bool is_credit_based_ = false;
+#else
+  void NotifyCreditMutation() const {}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 };
 
 }  // namespace pw::bluetooth::proxy

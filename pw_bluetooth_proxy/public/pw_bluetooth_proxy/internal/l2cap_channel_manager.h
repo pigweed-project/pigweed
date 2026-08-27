@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <optional>
 
 #include "pw_allocator/allocator.h"
@@ -231,6 +232,21 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   /// traffic is processed, after all active L2CAP channels have been
   /// re-acquired.
   void CompleteRecovery() PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
+
+  /// Invokes signaling state update callback if registered.
+  void NotifySignalingStateUpdate(uint16_t connection_handle,
+                                  AclTransportType transport,
+                                  uint8_t next_identifier) const;
+
+  /// Invokes channel state update callback if registered.
+  void NotifyChannelStateUpdate(const L2capChannel& channel) const;
+#else
+  void NotifySignalingStateUpdate(
+      [[maybe_unused]] uint16_t connection_handle,
+      [[maybe_unused]] AclTransportType transport,
+      [[maybe_unused]] uint8_t next_identifier) const {}
+  void NotifyChannelStateUpdate(
+      [[maybe_unused]] const L2capChannel& channel) const {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   constexpr internal::L2capChannelManagerImpl& impl() { return impl_; }
@@ -390,8 +406,9 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   // processed. This allows it to be safely invoked without acquiring any locks.
   L2capStateUpdateCallback state_update_callback_;
 
-  // Saved snapshot for offload recovery persistence.
-  const L2capSnapshot* restored_snapshot_ PW_GUARDED_BY(links_mutex_) = nullptr;
+  // Saved snapshot for offload recovery persistence. Recovery is active if this
+  // pointer is non-null.
+  std::atomic<const L2capSnapshot*> restored_snapshot_{nullptr};
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 

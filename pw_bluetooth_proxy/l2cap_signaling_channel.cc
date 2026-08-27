@@ -481,11 +481,20 @@ Status L2capSignalingChannel::SendFlowControlCreditInd(
 
 uint8_t L2capSignalingChannel::GetNextIdentifierAndIncrement() {
   std::lock_guard lock(mutex_);
+  uint8_t assigned_identifier;
   if (next_identifier_ == UINT8_MAX) {
     next_identifier_ = 1;
-    return UINT8_MAX;
+    assigned_identifier = UINT8_MAX;
+  } else {
+    assigned_identifier = next_identifier_++;
   }
-  return next_identifier_++;
+
+  if (channel_) {
+    l2cap_channel_manager_.NotifySignalingStateUpdate(
+        channel_->connection_handle(), channel_->transport(), next_identifier_);
+  }
+
+  return assigned_identifier;
 }
 
 void L2capSignalingChannel::SetNextIdentifier(uint8_t next_identifier) {
