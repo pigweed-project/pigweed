@@ -370,6 +370,21 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
                                  uint16_t remote_cid)
       PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
 
+  // Creates and registers a silent credit-based flow control channel to absorb
+  // peer traffic.
+  void CreateSilentCreditBasedFlowControlChannel(
+      ConnectionHandle connection_handle,
+      const ConnectionOrientedChannelConfig& rx_config,
+      const ConnectionOrientedChannelConfig& tx_config)
+      PW_LOCKS_EXCLUDED(channels_mutex());
+
+  // Creates and registers a silent basic mode channel to absorb peer traffic.
+  void CreateSilentBasicChannel(ConnectionHandle connection_handle,
+                                uint16_t local_cid,
+                                uint16_t remote_cid,
+                                AclTransportType transport)
+      PW_LOCKS_EXCLUDED(channels_mutex());
+
   // Registered state update callback for offload recovery persistence. This
   // must only be modified during initialization before packet traffic is
   // processed. This allows it to be safely invoked without acquiring any locks.

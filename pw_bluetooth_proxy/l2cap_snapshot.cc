@@ -47,6 +47,7 @@ Status L2capChannelSnapshot::Update(const L2capChannelSnapshot& update) {
   transport = update.transport;
   mode = update.mode;
   acl_recombination_in_progress = update.acl_recombination_in_progress;
+  allow_data_loss = update.allow_data_loss;
   rx_engine = update.rx_engine;
   tx_engine = update.tx_engine;
   return OkStatus();

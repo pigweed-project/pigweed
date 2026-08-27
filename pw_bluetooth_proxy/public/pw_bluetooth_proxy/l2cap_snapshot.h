@@ -59,6 +59,7 @@ struct L2capChannelSnapshot {
   AclTransportType transport = AclTransportType::kLe;
   L2capChannelMode mode = L2capChannelMode::kBasic;
   bool acl_recombination_in_progress = false;
+  bool allow_data_loss = false;
   FlowControlEngineSnapshot rx_engine;
   FlowControlEngineSnapshot tx_engine;
 

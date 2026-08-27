@@ -106,7 +106,8 @@ class L2capChannel final : public internal::TxEngine::Delegate {
                         AclTransportType transport,
                         uint16_t local_cid,
                         uint16_t remote_cid,
-                        ChannelEventCallback&& event_fn);
+                        ChannelEventCallback&& event_fn,
+                        bool allow_data_loss = false);
 
   ~L2capChannel() override;
 
@@ -248,6 +249,13 @@ class L2capChannel final : public internal::TxEngine::Delegate {
   std::optional<uint16_t> MaxL2capPayloadSize() override;
 
   Status AddTxCredits(uint16_t credits);
+
+  //--------------
+  //  Offload Recovery:
+  //--------------
+
+  /// Returns whether this channel tolerates data loss for snapshot recovery.
+  bool allow_data_loss() const { return allow_data_loss_; }
 
  private:
   friend class L2capChannelManager;
@@ -454,6 +462,11 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   // Implementation-specific details that may vary between sync and async modes.
   internal::L2capChannelImpl impl_;
+
+  // Determines whether to restore the channel after a crash despite potential
+  // packet loss, or reject it to force a complete teardown. This field is only
+  // used when `PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY` is enabled.
+  const bool allow_data_loss_ = false;
 };
 
 }  // namespace pw::bluetooth::proxy

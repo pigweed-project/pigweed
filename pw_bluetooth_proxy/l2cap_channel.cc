@@ -141,12 +141,6 @@ StatusWithMultiBuf L2capChannel::Write(multibuf::MultiBuf&& payload) {
 
 bool L2capChannel::HandlePduFromController(pw::span<uint8_t> l2cap_pdu) {
   if (state() != State::kRunning) {
-    PW_LOG_ERROR(
-        "btproxy: L2capChannel::OnPduReceivedFromController on non-running "
-        "channel. local_cid: %#x, remote_cid: %#x, state: %u",
-        local_cid(),
-        remote_cid(),
-        cpp23::to_underlying(state()));
     impl_.SendEvent(L2capChannelEvent::kRxWhileStopped);
     return true;
   }
@@ -220,7 +214,8 @@ L2capChannel::L2capChannel(L2capChannelManager& l2cap_channel_manager,
                            AclTransportType transport,
                            uint16_t local_cid,
                            uint16_t remote_cid,
-                           ChannelEventCallback&& event_fn)
+                           ChannelEventCallback&& event_fn,
+                           bool allow_data_loss)
     : l2cap_channel_manager_(l2cap_channel_manager),
       transport_(transport),
       connection_handle_(connection_handle),
@@ -228,7 +223,8 @@ L2capChannel::L2capChannel(L2capChannelManager& l2cap_channel_manager,
       remote_cid_(remote_cid),
       event_fn_(std::move(event_fn)),
       rx_multibuf_allocator_(rx_multibuf_allocator),
-      impl_(*this) {
+      impl_(*this),
+      allow_data_loss_(allow_data_loss) {
   PW_LOG_INFO(
       "btproxy: L2capChannel ctor - transport_: %u, connection_handle_ : %u, "
       "local_cid_ : %#x, remote_cid_: %#x",

@@ -246,6 +246,11 @@ class AclDataChannel {
 
   /// Sends the host credit refunds for packets dropped while queued.
   void InitiateCreditResynchronization() PW_LOCKS_EXCLUDED(connection_mutex_);
+
+  /// Returns true if the ACL connection has pending credit refunds due to
+  /// dropped packets during the crash.
+  bool HasDroppedPackets(uint16_t connection_handle) const
+      PW_LOCKS_EXCLUDED(connection_mutex_);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
  private:

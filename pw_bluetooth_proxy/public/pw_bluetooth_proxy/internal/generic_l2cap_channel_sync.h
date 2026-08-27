@@ -20,7 +20,6 @@
 #include <cstdint>
 
 #include "pw_allocator/allocator.h"
-#include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_multibuf/multibuf.h"
 #include "pw_status/status.h"

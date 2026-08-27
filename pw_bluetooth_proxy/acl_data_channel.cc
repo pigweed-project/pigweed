@@ -929,6 +929,17 @@ void AclDataChannel::InitiateCreditResynchronization() {
   hci_transport_.SendToHost(std::move(nocp_event));
 }
 
+bool AclDataChannel::HasDroppedPackets(uint16_t connection_handle) const {
+  std::lock_guard lock(connection_mutex_);
+  for (const DeferredRefund& refund : deferred_refunds_) {
+    if (refund.connection_handle == connection_handle &&
+        refund.num_packets > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 void AclDataChannel::NotifyStateUpdate(const AclConnection& connection) {
   if (state_update_callback_) {

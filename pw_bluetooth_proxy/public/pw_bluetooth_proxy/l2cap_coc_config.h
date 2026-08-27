@@ -43,5 +43,7 @@ struct ConnectionOrientedChannelConfig {
   ///         value if the container has already sent K-frames and/or received
   ///         credits.
   uint16_t credits;
+  /// Whether this channel tolerates data loss for snapshot recovery.
+  bool allow_data_loss = false;
 };
 }  // namespace pw::bluetooth::proxy

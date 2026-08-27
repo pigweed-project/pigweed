@@ -93,7 +93,8 @@ Result<L2capCoc> L2capChannelManager::AcquireL2capCoc(
                               AclTransportType::kLe,
                               rx_config.cid,
                               tx_config.cid,
-                              std::move(event_fn)));
+                              std::move(event_fn),
+                              rx_config.allow_data_loss));
 
   PW_TRY(channel_node->mapped().InitCreditBasedFlowControl(
       rx_config, tx_config, std::move(receive_fn)));
@@ -345,6 +346,18 @@ void L2capChannelManager::DeleteStaleChannels() {
   L2capChannelMap stale(impl_.allocator());
   {
     std::lock_guard channels_lock(channels_mutex());
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    if (state_update_callback_) {
+      for (auto& [key, channel] : stale_) {
+        state_update_callback_(L2capChannelRemoved{
+            .connection_handle = channel.connection_handle(),
+            .local_cid = channel.local_cid(),
+        });
+      }
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
     stale.swap(stale_);
   }
 }
@@ -498,6 +511,15 @@ void L2capChannelManager::HandleDisconnectionCompleteLocked(
     L2capChannel& channel = it->second;
     auto node = DeregisterChannelLocked(channel);
     node->mapped().Close();
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    if (state_update_callback_) {
+      state_update_callback_(L2capChannelRemoved{
+          .connection_handle = params.connection_handle,
+          .local_cid = params.local_cid,
+      });
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   }
   status_tracker_.HandleDisconnectionComplete(params);
 }
@@ -658,14 +680,20 @@ Status L2capChannelManager::RecoverCreditBasedFlowControlChannel(
 
   for (const L2capChannelSnapshot& channel :
        restored_snapshot_->l2cap_channels) {
-    if (channel.connection_handle == cpp23::to_underlying(connection_handle) &&
+    const bool channel_matches =
+        channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == rx_config.cid &&
         channel.remote_cid == tx_config.cid &&
-        channel.mode == L2capChannelMode::kCreditBasedFlowControl) {
-      if (channel.rx_engine.sdu_in_progress ||
+        channel.mode == L2capChannelMode::kCreditBasedFlowControl;
+    if (channel_matches) {
+      const bool data_loss_occurred =
+          channel.rx_engine.sdu_in_progress ||
           channel.tx_engine.sdu_in_progress ||
-          channel.acl_recombination_in_progress) {
-        PW_LOG_WARN("Recovering channel %#x interrupted mid-frame",
+          channel.acl_recombination_in_progress ||
+          acl_data_channel_.HasDroppedPackets(
+              cpp23::to_underlying(connection_handle));
+      if (!channel.allow_data_loss && data_loss_occurred) {
+        PW_LOG_WARN("L2CAP channel %#x recovery rejected: data loss occurred",
                     rx_config.cid);
         return Status::Cancelled();
       }
@@ -690,11 +718,17 @@ Status L2capChannelManager::RecoverBasicModeChannel(
 
   for (const L2capChannelSnapshot& channel :
        restored_snapshot_->l2cap_channels) {
-    if (channel.connection_handle == cpp23::to_underlying(connection_handle) &&
+    const bool channel_matches =
+        channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == local_cid && channel.remote_cid == remote_cid &&
-        channel.mode == L2capChannelMode::kBasic) {
-      if (channel.acl_recombination_in_progress) {
-        PW_LOG_WARN("Recovering basic channel %#x interrupted mid-ACL frame",
+        channel.mode == L2capChannelMode::kBasic;
+    if (channel_matches) {
+      const bool data_loss_occurred =
+          channel.acl_recombination_in_progress ||
+          acl_data_channel_.HasDroppedPackets(
+              cpp23::to_underlying(connection_handle));
+      if (!channel.allow_data_loss && data_loss_occurred) {
+        PW_LOG_WARN("L2CAP channel %#x recovery rejected: data loss occurred",
                     local_cid);
         return Status::Cancelled();
       }
@@ -703,6 +737,100 @@ Status L2capChannelManager::RecoverBasicModeChannel(
   }
 
   return OkStatus();
+}
+
+void L2capChannelManager::CreateSilentCreditBasedFlowControlChannel(
+    ConnectionHandle connection_handle,
+    const ConnectionOrientedChannelConfig& rx_config,
+    const ConnectionOrientedChannelConfig& tx_config) {
+  uint32_t key = L2capChannel::MakeKey(cpp23::to_underlying(connection_handle),
+                                       rx_config.cid);
+  ChannelEventCallback no_op_event_fn = [](L2capChannelEvent) {};
+  MultiBufReceiveFunction no_op_receive_fn = [](multibuf::MultiBuf) {};
+
+  auto silent_node = CreateChannel(key,
+                                   &multibuf_allocator_,
+                                   cpp23::to_underlying(connection_handle),
+                                   AclTransportType::kLe,
+                                   rx_config.cid,
+                                   tx_config.cid,
+                                   std::move(no_op_event_fn),
+                                   rx_config.allow_data_loss);
+  if (!silent_node.ok()) {
+    PW_LOG_ERROR(
+        "Failed to create silent credit-based flow control L2CAP channel %#x: "
+        "%s",
+        rx_config.cid,
+        silent_node.status().str());
+    return;
+  }
+  Status status = silent_node.value()->mapped().InitCreditBasedFlowControl(
+      rx_config, tx_config, std::move(no_op_receive_fn));
+  if (!status.ok()) {
+    PW_LOG_ERROR(
+        "Failed to initialize silent credit-based flow control L2CAP channel "
+        "%#x: %s",
+        rx_config.cid,
+        status.str());
+    return;
+  }
+  silent_node.value()->mapped().Start();
+  silent_node.value()->mapped().Stop();
+  status = RegisterChannel(std::move(silent_node.value()));
+  if (!status.ok()) {
+    PW_LOG_ERROR(
+        "Failed to register silent credit-based flow control L2CAP channel "
+        "%#x: %s",
+        rx_config.cid,
+        status.str());
+  }
+}
+
+void L2capChannelManager::CreateSilentBasicChannel(
+    ConnectionHandle connection_handle,
+    uint16_t local_cid,
+    uint16_t remote_cid,
+    AclTransportType transport) {
+  uint32_t key =
+      L2capChannel::MakeKey(cpp23::to_underlying(connection_handle), local_cid);
+  ChannelEventCallback no_op_event_fn = [](L2capChannelEvent) {};
+  BufferReceiveFunction no_op_payload_from_controller_fn =
+      [](ConstByteSpan, ConnectionHandle, uint16_t, uint16_t) { return true; };
+  BufferReceiveFunction no_op_payload_from_host_fn =
+      [](ConstByteSpan, ConnectionHandle, uint16_t, uint16_t) { return true; };
+
+  auto silent_node = CreateChannel(key,
+                                   &multibuf_allocator_,
+                                   cpp23::to_underlying(connection_handle),
+                                   transport,
+                                   local_cid,
+                                   remote_cid,
+                                   std::move(no_op_event_fn));
+  if (!silent_node.ok()) {
+    PW_LOG_ERROR("Failed to create silent basic mode L2CAP channel %#x: %s",
+                 local_cid,
+                 silent_node.status().str());
+    return;
+  }
+  Status status = silent_node.value()->mapped().InitBasic(
+      variant_cast<L2capChannel::FromControllerFn>(
+          std::move(no_op_payload_from_controller_fn)),
+      variant_cast<L2capChannel::FromHostFn>(
+          std::move(no_op_payload_from_host_fn)));
+  if (!status.ok()) {
+    PW_LOG_ERROR("Failed to initialize silent basic mode L2CAP channel %#x: %s",
+                 local_cid,
+                 status.str());
+    return;
+  }
+  silent_node.value()->mapped().Start();
+  silent_node.value()->mapped().Stop();
+  status = RegisterChannel(std::move(silent_node.value()));
+  if (!status.ok()) {
+    PW_LOG_ERROR("Failed to register silent basic mode L2CAP channel %#x: %s",
+                 local_cid,
+                 status.str());
+  }
 }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
@@ -725,8 +853,16 @@ L2capChannelManager::DoInterceptBasicModeChannel(
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  PW_TRY(RecoverBasicModeChannel(
-      connection_handle, local_channel_id, remote_channel_id));
+  Status recovery_status = RecoverBasicModeChannel(
+      connection_handle, local_channel_id, remote_channel_id);
+  if (recovery_status == Status::Cancelled()) {
+    CreateSilentBasicChannel(
+        connection_handle, local_channel_id, remote_channel_id, transport);
+    return recovery_status;
+  }
+  if (!recovery_status.ok()) {
+    return recovery_status;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   auto link_iter =
@@ -798,8 +934,16 @@ L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  PW_TRY(RecoverCreditBasedFlowControlChannel(
-      connection_handle, rx_config, tx_config));
+  Status recovery_status = RecoverCreditBasedFlowControlChannel(
+      connection_handle, rx_config, tx_config);
+  if (recovery_status == Status::Cancelled()) {
+    CreateSilentCreditBasedFlowControlChannel(
+        connection_handle, rx_config, tx_config);
+    return recovery_status;
+  }
+  if (!recovery_status.ok()) {
+    return recovery_status;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   auto link_iter = logical_links_.find(cpp23::to_underlying(connection_handle));
@@ -829,7 +973,8 @@ L2capChannelManager::DoInterceptCreditBasedFlowControlChannel(
                               AclTransportType::kLe,
                               rx_config.cid,
                               tx_config.cid,
-                              std::move(event_fn)));
+                              std::move(event_fn),
+                              rx_config.allow_data_loss));
 
   std::optional<uint16_t> max_l2cap_payload_size =
       channel_node->mapped().MaxL2capPayloadSize();
