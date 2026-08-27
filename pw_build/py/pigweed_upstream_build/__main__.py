@@ -128,7 +128,6 @@ def cmake_recipe(repo_root: Path, package_root: Path) -> BuildRecipe:
         f'-Ddir_pw_third_party_nanopb={package_root / "nanopb"}',
         '-Dpw_third_party_nanopb_ADD_SUBDIRECTORY=ON',
         f'-Ddir_pw_third_party_emboss={package_root / "emboss"}',
-        f'-Ddir_pw_third_party_boringssl={package_root / "boringssl"}',
     ]
 
     if shutil.which('ccache'):
@@ -139,7 +138,7 @@ def cmake_recipe(repo_root: Path, package_root: Path) -> BuildRecipe:
         BuildCommand(
             command=['pw', '--no-banner', 'package', 'install', package],
         )
-        for package in ['emboss', 'nanopb', 'boringssl']
+        for package in ['emboss', 'nanopb']
     ]
 
     return BuildRecipe(
