@@ -171,6 +171,8 @@ class SniffOffloadManager::ConnectionFsm final {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   SniffConnectionSnapshot CaptureLocked() const
       PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
+  void RestoreLocked(const SniffConnectionSnapshot& snapshot, bool enabled)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   void NotifyStateUpdate() PW_EXCLUSIVE_LOCKS_REQUIRED(manager_.mutex_) {
@@ -963,9 +965,8 @@ void SniffOffloadManager::ConnectionFsm::HandleInput(
 
   switch (previous_connection_state) {
     case ConnectionState::kPushActive:
-      Start();
-      [[fallthrough]];
     case ConnectionState::kPendingParameters:
+      Start();
       ResetTimer();
       break;
     case ConnectionState::kControlStarted:
@@ -1168,8 +1169,41 @@ SniffConnectionSnapshot SniffOffloadManager::ConnectionFsm::CaptureLocked()
   return conn_snapshot;
 }
 
-// TODO: https://pwbug.dev/536077666 - Implement restoration of per-connection
-// Sniff state.
+void SniffOffloadManager::ConnectionFsm::RestoreLocked(
+    const SniffConnectionSnapshot& snapshot, bool enabled) {
+  enabled_ = enabled;
+  connection_mode_ = ConnectionMode::kActive;
+  bool has_parameters =
+      snapshot.max_interval != 0 || snapshot.min_interval != 0 ||
+      snapshot.attempt != 0 || snapshot.timeout != 0 ||
+      snapshot.link_inactivity_timeout != 0 ||
+      snapshot.subrating_max_latency != 0 ||
+      snapshot.subrating_min_remote_timeout != 0 ||
+      snapshot.subrating_min_local_timeout != 0 ||
+      snapshot.allow_exit_sniff_on_rx || snapshot.allow_exit_sniff_on_tx;
+  if (has_parameters) {
+    parameters_ = SniffOffloadParameters{
+        .sniff_max_interval = snapshot.max_interval,
+        .sniff_min_interval = snapshot.min_interval,
+        .sniff_attempts = snapshot.attempt,
+        .sniff_timeout = snapshot.timeout,
+        .link_inactivity_timeout = snapshot.link_inactivity_timeout,
+        .subrating_max_latency = snapshot.subrating_max_latency,
+        .subrating_min_remote_timeout = snapshot.subrating_min_remote_timeout,
+        .subrating_min_local_timeout = snapshot.subrating_min_local_timeout,
+        .allow_exit_sniff_on_rx = snapshot.allow_exit_sniff_on_rx,
+        .allow_exit_sniff_on_tx = snapshot.allow_exit_sniff_on_tx,
+    };
+  } else {
+    parameters_.reset();
+  }
+
+  if (should_control()) {
+    Start();
+    ResetTimer();
+  }
+}
+
 Status SniffOffloadManager::RecoverFromSnapshot(const SniffSnapshot& snapshot) {
   std::lock_guard lock(mutex_);
 
@@ -1189,6 +1223,31 @@ Status SniffOffloadManager::RecoverFromSnapshot(const SniffSnapshot& snapshot) {
     };
   } else {
     state_ = Disabled{};
+  }
+
+  bool enabled = std::holds_alternative<Enabled>(state_);
+  for (const SniffConnectionSnapshot& conn_snapshot : snapshot.connections) {
+    ConnectionHandle handle = ConnectionHandle(conn_snapshot.connection_handle);
+    auto result =
+        connections_.try_emplace(cpp23::to_underlying(handle), *this, handle);
+    if (!result.has_value()) {
+      PW_LOG_WARN("Failed to allocate connection data for handle 0x%04x.",
+                  cpp23::to_underlying(handle));
+      DoReset();
+      return Status::ResourceExhausted();
+    }
+
+    const auto& [iter, inserted] = *result;
+    if (!inserted) {
+      PW_LOG_WARN("Connection handle 0x%04x already exists.",
+                  cpp23::to_underlying(handle));
+      DoReset();
+      return Status::AlreadyExists();
+    }
+
+    ConnectionFsm& fsm = iter->second;
+    fsm.AssertLockHeld(*this);
+    fsm.RestoreLocked(conn_snapshot, enabled);
   }
 
   return OkStatus();

@@ -1499,6 +1499,8 @@ TEST_F(SniffOffloadManagerTest, ParametersWithoutEnableDoesNotCrash) {
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
+constexpr auto kCustomLinkInactivityTimeout = std::chrono::milliseconds(100);
+
 TEST_F(SniffOffloadManagerTest, StateUpdateOnDisconnectionComplete) {
   struct Context {
     int callback_count = 0;
@@ -1574,7 +1576,7 @@ TEST_F(SniffOffloadManagerTest, StateUpdatePerConnectionSniffSnapshot) {
                  .sniff_min_interval = 0x0010,
                  .sniff_attempts = 0x0004,
                  .sniff_timeout = 0x0008,
-                 .link_inactivity_timeout = 0x0064,
+                 .link_inactivity_timeout = 100,
                  .subrating_max_latency = 0x0002,
                  .subrating_min_remote_timeout = 0x0001,
                  .subrating_min_local_timeout = 0x0003,
@@ -1589,7 +1591,7 @@ TEST_F(SniffOffloadManagerTest, StateUpdatePerConnectionSniffSnapshot) {
   EXPECT_EQ(ctx.last_snapshot.connections[0].min_interval, 0x0010);
   EXPECT_EQ(ctx.last_snapshot.connections[0].attempt, 0x0004);
   EXPECT_EQ(ctx.last_snapshot.connections[0].timeout, 0x0008);
-  EXPECT_EQ(ctx.last_snapshot.connections[0].link_inactivity_timeout, 0x0064);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].link_inactivity_timeout, 100);
   EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_max_latency, 0x0002);
   EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_min_remote_timeout,
             0x0001);
@@ -1621,7 +1623,7 @@ TEST_F(SniffOffloadManagerTest, SniffSnapshotConnectionUpdate) {
   conn_update.min_interval = 0x0010;
   conn_update.attempt = 0x0004;
   conn_update.timeout = 0x0008;
-  conn_update.link_inactivity_timeout = 0x0064;
+  conn_update.link_inactivity_timeout = 100;
   conn_update.subrating_max_latency = 0x0002;
   conn_update.subrating_min_remote_timeout = 0x0001;
   conn_update.subrating_min_local_timeout = 0x0003;
@@ -1632,7 +1634,7 @@ TEST_F(SniffOffloadManagerTest, SniffSnapshotConnectionUpdate) {
   EXPECT_EQ(snapshot.connections.size(), 1u);
   EXPECT_EQ(snapshot.connections[0].connection_handle, 0x0123);
   EXPECT_EQ(snapshot.connections[0].max_interval, 0x0020);
-  EXPECT_EQ(snapshot.connections[0].link_inactivity_timeout, 0x0064);
+  EXPECT_EQ(snapshot.connections[0].link_inactivity_timeout, 100);
 
   // In-place update for existing connection
   conn_update.max_interval = 0x0040;
@@ -1854,6 +1856,225 @@ TEST_F(SniffOffloadManagerTest, RecoverGlobalStateFromIncompleteSnapshotFails) {
 
   EXPECT_EQ(sniff_offload_manager().RecoverFromSnapshot(snapshot),
             Status::DataLoss());
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverPerConnectionStateFromSnapshot) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  conn1.max_interval = 0x0020;
+  conn1.min_interval = 0x0010;
+  conn1.attempt = 0x0004;
+  conn1.timeout = 0x0008;
+  conn1.link_inactivity_timeout = 100;
+  conn1.subrating_max_latency = 0x0002;
+  conn1.subrating_min_remote_timeout = 0x0001;
+  conn1.subrating_min_local_timeout = 0x0003;
+  conn1.allow_exit_sniff_on_rx = true;
+  conn1.allow_exit_sniff_on_tx = false;
+
+  SniffConnectionSnapshot conn2;
+  conn2.connection_handle = 0x0456;
+  conn2.max_interval = 0x0040;
+  conn2.min_interval = 0x0020;
+  conn2.attempt = 0x0004;
+  conn2.timeout = 0x0008;
+  conn2.link_inactivity_timeout = 200;
+  conn2.subrating_max_latency = 0x0004;
+  conn2.subrating_min_remote_timeout = 0x0002;
+  conn2.subrating_min_local_timeout = 0x0006;
+  conn2.allow_exit_sniff_on_rx = false;
+  conn2.allow_exit_sniff_on_tx = true;
+
+  snapshot.connections.push_back(conn1);
+  snapshot.connections.push_back(conn2);
+
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot last_snapshot;
+  } ctx;
+  ctx.last_snapshot = snapshot;
+
+  MakeSniffOffloadWithHandlers(
+      MakeDefaultSendCommand(),
+      MakeDefaultSendEvent(),
+      MakeDefaultOnError(),
+      [&ctx](const SniffStateUpdate& update) {
+        ++ctx.callback_count;
+        PW_TEST_EXPECT_OK(ctx.last_snapshot.ApplyStateUpdate(update));
+      });
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  // Advance time to verify inactivity timeout fires for conn1 (100ms)
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+  EXPECT_FALSE(CheckSniffModeSent(0x0456));
+
+  // Advance time to verify inactivity timeout fires for conn2 (200ms)
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0456));
+  EXPECT_TRUE(packets_to_controller().empty());
+
+  // Confirm that upon disconnection of conn1, conn2's recovered parameters
+  // remain intact
+  EXPECT_EQ(Simulate(DisconnectionComplete(0x0123)), kPassthroughResume);
+  EXPECT_EQ(ctx.callback_count, 1);
+  ASSERT_EQ(ctx.last_snapshot.connections.size(), 1u);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].connection_handle, 0x0456);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].max_interval, 0x0040);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].min_interval, 0x0020);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].attempt, 0x0004);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].timeout, 0x0008);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].link_inactivity_timeout, 200);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_max_latency, 0x0004);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_min_remote_timeout,
+            0x0002);
+  EXPECT_EQ(ctx.last_snapshot.connections[0].subrating_min_local_timeout,
+            0x0006);
+  EXPECT_FALSE(ctx.last_snapshot.connections[0].allow_exit_sniff_on_rx);
+  EXPECT_TRUE(ctx.last_snapshot.connections[0].allow_exit_sniff_on_tx);
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverPerConnectionStateDisabledSnapshot) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = false;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  conn1.max_interval = 0x0020;
+  conn1.min_interval = 0x0010;
+  conn1.attempt = 0x0004;
+  conn1.timeout = 0x0008;
+  conn1.link_inactivity_timeout = 100;
+  snapshot.connections.push_back(conn1);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  // Advance time: since globally disabled, inactivity timer should not fire
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_FALSE(CheckSniffModeSent(0x0123));
+
+  // Enable offload: now it should start controlling, send sniff subrating, and
+  // arm the timer
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(true)), kInterceptResume);
+  EXPECT_TRUE(CheckSniffSubratingSent(0x0123));
+
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverUnconfiguredConnectionState) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  snapshot.connections.push_back(conn1);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  // Advance time: unconfigured connection has no timer, so no sniff mode
+  // command
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_FALSE(CheckSniffModeSent(0x0123));
+
+  // Now configure parameters: it should transition to kControlStarted and send
+  // subrating
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(0x0123,
+                                           {.sniff_max_interval = 0x0020,
+                                            .sniff_min_interval = 0x0010,
+                                            .sniff_attempts = 0x0004,
+                                            .sniff_timeout = 0x0008,
+                                            .link_inactivity_timeout = 100})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckSniffSubratingSent(0x0123));
+
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverPushActiveConnectionState) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  conn1.max_interval = 0x0000;  // PushActive
+  conn1.min_interval = 0x0000;
+  conn1.subrating_max_latency = 0x0002;
+  snapshot.connections.push_back(conn1);
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  // Advance time: PushActive connections do not run inactivity timers
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_FALSE(CheckSniffModeSent(0x0123));
+
+  // Transition from PushActive to ControlStarted
+  EXPECT_EQ(
+      Simulate(WriteSniffOffloadParameters(0x0123,
+                                           {.sniff_max_interval = 0x0020,
+                                            .sniff_min_interval = 0x0010,
+                                            .sniff_attempts = 0x0004,
+                                            .sniff_timeout = 0x0008,
+                                            .link_inactivity_timeout = 100})),
+      kInterceptResume);
+  EXPECT_TRUE(CheckSniffSubratingSent(0x0123));
+
+  AdvanceTime(kCustomLinkInactivityTimeout + kTick);
+  EXPECT_TRUE(CheckSniffModeSent(0x0123));
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverDuplicateConnectionFails) {
+  // First simulate an active connection
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+
+  SniffSnapshot snapshot;
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  snapshot.connections.push_back(conn1);
+
+  // Recovering snapshot with an existing handle returns AlreadyExists
+  EXPECT_EQ(sniff_offload_manager().RecoverFromSnapshot(snapshot),
+            Status::AlreadyExists());
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverDuplicateConnectionInSnapshotFails) {
+  SniffSnapshot snapshot;
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  SniffConnectionSnapshot conn2;
+  conn2.connection_handle = 0x0123;
+  snapshot.connections.push_back(conn1);
+  snapshot.connections.push_back(conn2);
+
+  // Recovering snapshot containing duplicate handles returns AlreadyExists and
+  // resets state
+  EXPECT_EQ(sniff_offload_manager().RecoverFromSnapshot(snapshot),
+            Status::AlreadyExists());
+
+  // Verify rollback left manager reset and ready for new connections
+  EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverStateExhaustedAllocatorFails) {
+  SniffSnapshot snapshot;
+  SniffConnectionSnapshot conn1;
+  conn1.connection_handle = 0x0123;
+  snapshot.connections.push_back(conn1);
+
+  WithTestAllocator([](auto& allocator) { allocator.Exhaust(); });
+
+  // Recovering snapshot when allocator is exhausted returns ResourceExhausted
+  EXPECT_EQ(sniff_offload_manager().RecoverFromSnapshot(snapshot),
+            Status::ResourceExhausted());
 }
 
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY

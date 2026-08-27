@@ -188,17 +188,23 @@ class SniffOffloadManager final {
       PW_LOCKS_EXCLUDED(mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  /// Restores global Sniff subsystem state from a previously saved snapshot.
+  /// Restores global and per-connection Sniff subsystem state from a previously
+  /// saved snapshot.
+  ///
+  /// Reconstructs connection state machines for each handle present in the
+  /// snapshot and baselines all recovered links to ConnectionMode::kActive.
+  /// Hardware resynchronization (issuing HCI_Exit_Sniff_Mode) must be performed
+  /// after resuming packet traffic.
   ///
   /// @note Must be called during initialization before packet traffic is
   /// processed. Sniff state must be recovered after ACL and L2CAP state.
   ///
   /// @param[in] snapshot Sniff state container to restore from.
   /// @returns
-  /// * @OK: Global state restored successfully.
+  /// * @OK: Global and per-connection state restored successfully.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
-  // TODO: https://pwbug.dev/536077666 - Implement restoration of per-connection
-  // Sniff state.
+  /// * @RESOURCE_EXHAUSTED: Container failed to allocate FSM storage.
+  /// * @ALREADY_EXISTS: Connection handle in snapshot is already registered.
   Status RecoverFromSnapshot(const SniffSnapshot& snapshot)
       PW_LOCKS_EXCLUDED(mutex_);
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
