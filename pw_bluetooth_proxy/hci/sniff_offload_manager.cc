@@ -1168,6 +1168,32 @@ SniffConnectionSnapshot SniffOffloadManager::ConnectionFsm::CaptureLocked()
   return conn_snapshot;
 }
 
+// TODO: https://pwbug.dev/536077666 - Implement restoration of per-connection
+// Sniff state.
+Status SniffOffloadManager::RecoverFromSnapshot(const SniffSnapshot& snapshot) {
+  std::lock_guard lock(mutex_);
+
+  if (snapshot.snapshot_incomplete) {
+    PW_LOG_WARN("Sniff snapshot incomplete, data loss during recovery");
+    return Status::DataLoss();
+  }
+
+  suppress_mode_change_event_ = snapshot.suppress_mode_change_event;
+  suppress_sniff_subrating_event_ = snapshot.suppress_sniff_subrating_event;
+
+  if (snapshot.sniff_enabled) {
+    state_ = Enabled{
+        .subrating_max_latency = snapshot.subrating_max_latency,
+        .subrating_min_remote_timeout = snapshot.subrating_min_remote_timeout,
+        .subrating_min_local_timeout = snapshot.subrating_min_local_timeout,
+    };
+  } else {
+    state_ = Disabled{};
+  }
+
+  return OkStatus();
+}
+
 SniffSnapshot SniffOffloadManager::CaptureLocked() const {
   SniffSnapshot snapshot;
   if (const Enabled* enabled = std::get_if<Enabled>(&state_)) {

@@ -1507,7 +1507,7 @@ TEST_F(SniffOffloadManagerTest, StateUpdateOnDisconnectionComplete) {
 
   SniffStateUpdateCallback callback = [&ctx](const SniffStateUpdate& update) {
     ++ctx.callback_count;
-    ctx.last_snapshot = std::get<SniffSnapshot>(update);
+    PW_TEST_EXPECT_OK(ctx.last_snapshot.ApplyStateUpdate(update));
   };
 
   MakeSniffOffloadWithHandlers(MakeDefaultSendCommand(),
@@ -1813,6 +1813,47 @@ TEST_F(SniffOffloadManagerTest,
             kInterceptResume);
   EXPECT_EQ(ctx.callback_count, 4);
   EXPECT_EQ(ctx.snapshot.connections[0].max_interval, 0x0000);
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverGlobalStateFromSnapshot) {
+  SniffSnapshot snapshot;
+  snapshot.sniff_enabled = true;
+  snapshot.subrating_max_latency = 0x0010;
+  snapshot.subrating_min_remote_timeout = 0x0005;
+  snapshot.subrating_min_local_timeout = 0x0005;
+  snapshot.suppress_mode_change_event = true;
+  snapshot.suppress_sniff_subrating_event = true;
+
+  struct Context {
+    int callback_count = 0;
+    SniffSnapshot last_snapshot;
+  } ctx;
+  ctx.last_snapshot = snapshot;
+
+  MakeSniffOffloadWithHandlers(
+      MakeDefaultSendCommand(),
+      MakeDefaultSendEvent(),
+      MakeDefaultOnError(),
+      [&ctx](const SniffStateUpdate& update) {
+        ++ctx.callback_count;
+        PW_TEST_EXPECT_OK(ctx.last_snapshot.ApplyStateUpdate(update));
+      });
+
+  PW_TEST_EXPECT_OK(sniff_offload_manager().RecoverFromSnapshot(snapshot));
+
+  // Verify restored state baseline by disabling offload and verifying callback
+  // convergence
+  EXPECT_EQ(Simulate(WriteSniffOffloadEnable(false)), kInterceptResume);
+  EXPECT_EQ(ctx.callback_count, 1);
+  EXPECT_FALSE(ctx.last_snapshot.sniff_enabled);
+}
+
+TEST_F(SniffOffloadManagerTest, RecoverGlobalStateFromIncompleteSnapshotFails) {
+  SniffSnapshot snapshot;
+  snapshot.snapshot_incomplete = true;
+
+  EXPECT_EQ(sniff_offload_manager().RecoverFromSnapshot(snapshot),
+            Status::DataLoss());
 }
 
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
