@@ -135,13 +135,15 @@ class SniffOffloadManager final {
                       SendCommandFunc&& send_command,
                       SendEventFunc&& send_event,
                       OnErrorFunc&& on_error,
-                      async2::TimeProvider<Clock>& time_provider);
+                      async2::TimeProvider<Clock>& time_provider,
+                      SniffStateUpdateCallback state_update_callback = nullptr);
 
   SniffOffloadManager(Allocator& allocator,
                       async2::Dispatcher& dispatcher,
                       SendCommandFunc&& send_command,
                       SendEventFunc&& send_event,
-                      OnErrorFunc&& on_error = nullptr);
+                      OnErrorFunc&& on_error = nullptr,
+                      SniffStateUpdateCallback state_update_callback = nullptr);
 
   ~SniffOffloadManager();
 
@@ -184,14 +186,6 @@ class SniffOffloadManager final {
   /// events. All others will do nothing and return `{.resume = kStop}`.
   HandlerAction ProcessEvent(MultiBuf& event_packet, EventCode event_code)
       PW_LOCKS_EXCLUDED(mutex_);
-
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  /// Registers a callback for receiving incremental sniff state updates.
-  ///
-  /// @param[in] callback Function to invoke on sniff state mutation.
-  void RegisterStateUpdateCallback(SniffStateUpdateCallback&& callback)
-      PW_LOCKS_EXCLUDED(mutex_);
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
  private:
   // Finite state machine managing the sniff state of a single connection.

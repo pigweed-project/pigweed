@@ -108,13 +108,15 @@ class SniffOffloadManagerTest : public ::testing::Test {
   SniffOffloadManager& MakeSniffOffloadWithHandlers(
       SniffOffloadManager::SendCommandFunc&& send_command,
       SniffOffloadManager::SendEventFunc&& send_event,
-      SniffOffloadManager::OnErrorFunc&& on_error) {
+      SniffOffloadManager::OnErrorFunc&& on_error,
+      SniffStateUpdateCallback state_update_callback = nullptr) {
     return sniff_offload_manager_.emplace(allocator_,
                                           dispatcher_,
                                           std::move(send_command),
                                           std::move(send_event),
                                           std::move(on_error),
-                                          time_provider_);
+                                          time_provider_,
+                                          std::move(state_update_callback));
   }
 
   void DestroySniffOffload() { sniff_offload_manager_.reset(); }
@@ -1508,7 +1510,10 @@ TEST_F(SniffOffloadManagerTest, StateUpdateOnDisconnectionComplete) {
     ctx.last_snapshot = std::get<SniffSnapshot>(update);
   };
 
-  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+  MakeSniffOffloadWithHandlers(MakeDefaultSendCommand(),
+                               MakeDefaultSendEvent(),
+                               MakeDefaultOnError(),
+                               std::move(callback));
 
   EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
   EXPECT_EQ(Simulate(ConnectionComplete(0x0456)), kPassthroughResume);
@@ -1538,7 +1543,10 @@ TEST_F(SniffOffloadManagerTest, StateUpdatePerConnectionSniffSnapshot) {
     PW_TEST_EXPECT_OK(ctx.last_snapshot.ApplyStateUpdate(update));
   };
 
-  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+  MakeSniffOffloadWithHandlers(MakeDefaultSendCommand(),
+                               MakeDefaultSendEvent(),
+                               MakeDefaultOnError(),
+                               std::move(callback));
 
   EXPECT_EQ(Simulate(WriteSniffOffloadEnable(
                 /*enable=*/true,
@@ -1671,7 +1679,10 @@ TEST_F(SniffOffloadManagerTest, AutoSerializeSniffStateOnMutation) {
     PW_TEST_EXPECT_OK(ctx.snapshot.ApplyStateUpdate(update));
   };
 
-  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+  MakeSniffOffloadWithHandlers(MakeDefaultSendCommand(),
+                               MakeDefaultSendEvent(),
+                               MakeDefaultOnError(),
+                               std::move(callback));
 
   // 1. Connection complete (connection added)
   EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
@@ -1761,8 +1772,6 @@ TEST_F(SniffOffloadManagerTest, AutoSerializeSniffStateOnMutation) {
   EXPECT_FALSE(ctx.snapshot.suppress_mode_change_event);
   EXPECT_FALSE(ctx.snapshot.suppress_sniff_subrating_event);
   EXPECT_TRUE(ctx.snapshot.connections.empty());
-
-  sniff_offload_manager().RegisterStateUpdateCallback(nullptr);
 }
 
 TEST_F(SniffOffloadManagerTest,
@@ -1777,7 +1786,10 @@ TEST_F(SniffOffloadManagerTest,
     PW_TEST_EXPECT_OK(ctx.snapshot.ApplyStateUpdate(update));
   };
 
-  sniff_offload_manager().RegisterStateUpdateCallback(std::move(callback));
+  MakeSniffOffloadWithHandlers(MakeDefaultSendCommand(),
+                               MakeDefaultSendEvent(),
+                               MakeDefaultOnError(),
+                               std::move(callback));
 
   EXPECT_EQ(Simulate(ConnectionComplete(0x0123)), kPassthroughResume);
   EXPECT_EQ(ctx.callback_count, 1);
@@ -1801,8 +1813,6 @@ TEST_F(SniffOffloadManagerTest,
             kInterceptResume);
   EXPECT_EQ(ctx.callback_count, 4);
   EXPECT_EQ(ctx.snapshot.connections[0].max_interval, 0x0000);
-
-  sniff_offload_manager().RegisterStateUpdateCallback(nullptr);
 }
 
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY

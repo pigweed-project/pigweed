@@ -265,26 +265,36 @@ SniffOffloadManager::SniffOffloadManager(
     SendCommandFunc&& send_command,
     SendEventFunc&& send_event,
     OnErrorFunc&& on_error,
-    async2::TimeProvider<Clock>& time_provider)
+    async2::TimeProvider<Clock>& time_provider,
+    [[maybe_unused]] SniffStateUpdateCallback state_update_callback)
     : allocator_(allocator),
       dispatcher_(dispatcher),
       time_provider_(time_provider),
       send_command_(std::move(send_command)),
       send_event_(std::move(send_event)),
       on_error_(std::move(on_error)),
-      connections_(allocator) {}
+      connections_(allocator)
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
+}
 
-SniffOffloadManager::SniffOffloadManager(Allocator& allocator,
-                                         async2::Dispatcher& dispatcher,
-                                         SendCommandFunc&& send_command,
-                                         SendEventFunc&& send_event,
-                                         OnErrorFunc&& on_error)
+SniffOffloadManager::SniffOffloadManager(
+    Allocator& allocator,
+    async2::Dispatcher& dispatcher,
+    SendCommandFunc&& send_command,
+    SendEventFunc&& send_event,
+    OnErrorFunc&& on_error,
+    SniffStateUpdateCallback state_update_callback)
     : SniffOffloadManager(allocator,
                           dispatcher,
                           std::move(send_command),
                           std::move(send_event),
                           std::move(on_error),
-                          internal::GetDefaultTimeProvider()) {}
+                          internal::GetDefaultTimeProvider(),
+                          std::move(state_update_callback)) {}
 
 SniffOffloadManager::~SniffOffloadManager() {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -1185,12 +1195,6 @@ SniffSnapshot SniffOffloadManager::CaptureLocked() const {
   }
 
   return snapshot;
-}
-
-void SniffOffloadManager::RegisterStateUpdateCallback(
-    SniffStateUpdateCallback&& callback) {
-  std::lock_guard lock(mutex_);
-  state_update_callback_ = std::move(callback);
 }
 
 void SniffOffloadManager::NotifyStateUpdate() const {
