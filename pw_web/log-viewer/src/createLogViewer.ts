@@ -14,7 +14,7 @@
 
 import { LogViewer as RootComponent } from './components/log-viewer';
 import { LogViewerState } from './shared/state';
-import { LogSource } from '../src/log-source';
+import { LogSource } from './log-source';
 import { LogStore } from './log-store';
 
 import '@material/web/button/filled-button.js';

@@ -202,7 +202,11 @@ export class LogViewer extends LitElement {
    */
   async loadShoelaceComponents() {
     if (this.useShoelaceFeatures) {
-      await import('@shoelace-style/shoelace/dist/components/split-panel/split-panel.js');
+      try {
+        await import('@shoelace-style/shoelace/dist/components/split-panel/split-panel.js');
+      } catch {
+        this.useShoelaceFeatures = false;
+      }
     }
   }
 
