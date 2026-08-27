@@ -67,8 +67,16 @@ Result<L2capCoc> L2capChannelManager::AcquireL2capCoc(
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  PW_TRY(RecoverCreditBasedFlowControlChannel(
-      ConnectionHandle{connection_handle}, rx_config, tx_config));
+  Status recovery_status = RecoverCreditBasedFlowControlChannel(
+      ConnectionHandle{connection_handle}, rx_config, tx_config);
+  if (recovery_status == Status::Cancelled()) {
+    CreateSilentCreditBasedFlowControlChannel(
+        ConnectionHandle{connection_handle}, rx_config, tx_config);
+    return recovery_status;
+  }
+  if (!recovery_status.ok()) {
+    return recovery_status;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   auto link_iter = logical_links_.find(connection_handle);
@@ -124,8 +132,16 @@ Result<BasicL2capChannel> L2capChannelManager::AcquireBasicL2capChannel(
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  PW_TRY(RecoverBasicModeChannel(
-      ConnectionHandle{connection_handle}, local_cid, remote_cid));
+  Status recovery_status = RecoverBasicModeChannel(
+      ConnectionHandle{connection_handle}, local_cid, remote_cid);
+  if (recovery_status == Status::Cancelled()) {
+    CreateSilentBasicChannel(
+        ConnectionHandle{connection_handle}, local_cid, remote_cid, transport);
+    return recovery_status;
+  }
+  if (!recovery_status.ok()) {
+    return recovery_status;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   auto link_iter = logical_links_.find(connection_handle);

@@ -1051,6 +1051,14 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
           .status(),
       Status::Cancelled());
 
+  // Tear down the rejected silent channel.
+  PW_TEST_ASSERT_OK(SendL2capDisconnectRsp(proxy,
+                                           Direction::kFromController,
+                                           AclTransportType::kLe,
+                                           kLeConnectionHandle1,
+                                           kLocalCid1,
+                                           kRemoteCid1));
+
   // Complete recovery to close the recovery window.
   proxy.CompleteRecovery();
 
@@ -1082,6 +1090,14 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
                                        })
           .status(),
       Status::Cancelled());
+
+  // Tear down the rejected silent channel.
+  PW_TEST_ASSERT_OK(SendL2capDisconnectRsp(proxy,
+                                           Direction::kFromController,
+                                           AclTransportType::kLe,
+                                           kLeConnectionHandle1,
+                                           kLocalCid1,
+                                           kRemoteCid1));
 
   // Complete recovery to close the recovery window.
   proxy.CompleteRecovery();
@@ -1352,6 +1368,163 @@ TEST_F(L2capRecoveryTest,
                     tx_config,
                     std::move(rx_fn),
                     /*event_fn=*/nullptr)
+                .status(),
+            Status::Cancelled());
+
+  // Verify that packets are silently absorbed.
+  std::array<uint8_t, 3> payload = {1, 2, 3};
+  SendL2capBFrame(
+      proxy, kLeConnectionHandle1, payload, payload.size(), kLocalCid1);
+  EXPECT_EQ(sent_to_host_count, 0);
+
+  // Verify that channels are removed upon disconnection.
+  PW_TEST_ASSERT_OK(SendL2capDisconnectRsp(proxy,
+                                           Direction::kFromController,
+                                           AclTransportType::kLe,
+                                           kLeConnectionHandle1,
+                                           kLocalCid1,
+                                           kRemoteCid1));
+  ASSERT_EQ(removed_channels.size(), 1u);
+  EXPECT_EQ(removed_channels[0].connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(removed_channels[0].local_cid, kLocalCid1);
+}
+
+TEST_F(L2capRecoveryTest,
+       RejectedAcquiredBasicModeChannelSilentlyAbsorbsPackets) {
+  Vector<L2capChannelRemoved, 1> removed_channels;
+
+  int sent_to_host_count = 0;
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&sent_to_host_count](H4PacketWithHci&&) { ++sent_to_host_count; });
+
+  int sent_to_controller_count = 0;
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_to_controller_count](H4PacketWithH4&&) {
+        ++sent_to_controller_count;
+      });
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  // Populate snapshot with an interrupted frame.
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.acl_recombination_in_progress = true;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+
+  EXPECT_EQ(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status(),
+      Status::Cancelled());
+
+  // Verify that packets are silently absorbed in both directions.
+  std::array<uint8_t, 3> payload = {1, 2, 3};
+  SendL2capBFrame(
+      proxy, kLeConnectionHandle1, payload, payload.size(), kLocalCid1);
+  EXPECT_EQ(sent_to_host_count, 0);
+
+  Result<BFrameWithStorage> host_packet_result =
+      SetupBFrame(kLeConnectionHandle1, kRemoteCid1, 4);
+  PW_TEST_ASSERT_OK(host_packet_result.status());
+  proxy.HandleH4HciFromHost(
+      H4PacketWithH4(host_packet_result.value().acl.h4_span()));
+  EXPECT_EQ(sent_to_controller_count, 0);
+
+  // Verify that channels are removed upon disconnection.
+  PW_TEST_ASSERT_OK(SendL2capDisconnectRsp(proxy,
+                                           Direction::kFromController,
+                                           AclTransportType::kLe,
+                                           kLeConnectionHandle1,
+                                           kLocalCid1,
+                                           kRemoteCid1));
+  ASSERT_EQ(removed_channels.size(), 1u);
+  EXPECT_EQ(removed_channels[0].connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(removed_channels[0].local_cid, kLocalCid1);
+}
+
+TEST_F(L2capRecoveryTest,
+       RejectedAcquiredCreditBasedFlowControlChannelSilentlyAbsorbsPackets) {
+  Vector<L2capChannelRemoved, 1> removed_channels;
+
+  int sent_to_host_count = 0;
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      [&sent_to_host_count](H4PacketWithHci&&) { ++sent_to_host_count; });
+
+  int sent_to_controller_count = 0;
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_to_controller_count](H4PacketWithH4&&) {
+        ++sent_to_controller_count;
+      });
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
+        if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
+          removed_channels.push_back(*removed);
+        }
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Populate snapshot with a queued packet, indicating packet loss.
+  ProxyHostSnapshot snapshot;
+  AclConnectionSnapshot connection_snapshot;
+  connection_snapshot.connection_handle = kLeConnectionHandle1;
+  connection_snapshot.transport = AclTransportType::kLe;
+  connection_snapshot.num_queued_host_packets = 1;
+  snapshot.acl.acl_connections.push_back(connection_snapshot);
+
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+
+  EXPECT_EQ(BuildCocWithResult(proxy,
+                               CocParameters{
+                                   .handle = kLeConnectionHandle1,
+                                   .local_cid = kLocalCid1,
+                                   .remote_cid = kRemoteCid1,
+                                   .rx_mtu = kMtu,
+                                   .rx_mps = kMps,
+                                   .rx_credits = 1,
+                                   .tx_mtu = kMtu,
+                                   .tx_mps = kMps,
+                                   .tx_credits = 1,
+                               })
                 .status(),
             Status::Cancelled());
 
