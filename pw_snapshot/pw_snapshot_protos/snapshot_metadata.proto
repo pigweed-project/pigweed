@@ -68,11 +68,11 @@ message Metadata {
   // UUID associated with the build for the software version.
   bytes software_build_uuid = 5;
 
-  // String containing the specific device name. This should be as specific as
-  // possible, detailing hardware revision, and distinguishing different cores
-  // in a multi-core device. Snapshots aggregated as related_snapshots should
-  // include information that distinguishes the source of the snapshot. This
-  // should either be human readable text, or tokenized data.
+  // String or tokenized data containing the specific device name and other
+  // unique device information to distinguish the source of the snapshot. For
+  // example, this can have the device project name, hardware revision, silicon
+  // version, or a core identifier in a multicore device. However, prefer using
+  // the core_name field for the latter example.
   //
   // Examples:
   //   "propellerhat-evk"
@@ -103,6 +103,9 @@ message Metadata {
   // Projects using Pigweed's LUCI build system should use the LUCI format
   // specified above.
   string build_origin = 9;
+
+  // The name of the core that generated this report.
+  bytes core_name = 10 [(tokenizer.format) = TOKENIZATION_OPTIONAL];
 }
 
 // This message overlays the pw.snapshot.Snapshot proto. It's valid to encode

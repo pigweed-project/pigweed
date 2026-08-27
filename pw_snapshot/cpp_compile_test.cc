@@ -40,6 +40,8 @@ TEST(Status, CompileTest) {
     ASSERT_EQ(
         OkStatus(),
         metadata_encoder.WriteDeviceName(as_bytes(span("smart-shoe-p1"))));
+    ASSERT_EQ(OkStatus(),
+              metadata_encoder.WriteCoreName(as_bytes(span("app-core"))));
   }
   {
     pwpb::MemoryRegion::StreamEncoder memory_region_encoder =

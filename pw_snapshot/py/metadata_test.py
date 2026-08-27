@@ -71,6 +71,11 @@ class MetadataProcessorTest(unittest.TestCase):
         meta = MetadataProcessor(self.snapshot.metadata, self.detok)
         self.assertEqual(meta.device_name(), 'hyper-fast-gshoe')
 
+    def test_core_name_not_tokenized(self):
+        self.snapshot.metadata.core_name = b'sensor-core'
+        meta = MetadataProcessor(self.snapshot.metadata, self.detok)
+        self.assertEqual(meta.core_name(), 'sensor-core')
+
     def test_default_non_fatal(self):
         meta = MetadataProcessor(self.snapshot.metadata, self.detok)
         self.assertFalse(meta.is_fatal())

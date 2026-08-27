@@ -122,6 +122,9 @@ class MetadataProcessor:
     def build_origin(self) -> str:
         return self._metadata.build_origin
 
+    def core_name(self) -> str:
+        return self._metadata.core_name.decode()
+
     def cpu_arch(self) -> str:
         descriptor = (
             snapshot_metadata_pb2.CpuArchitecture.DESCRIPTOR.enum_types_by_name[
@@ -165,6 +168,9 @@ class MetadataProcessor:
 
         if self._metadata.device_name:
             output.append(f'Device:            {self.device_name()}')
+
+        if self._metadata.core_name:
+            output.append(f'Core name:         {self.core_name()}')
 
         if self._metadata.cpu_arch:
             output.append(f'CPU Arch:          {self.cpu_arch()}')
