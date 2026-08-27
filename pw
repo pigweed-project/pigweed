@@ -36,8 +36,19 @@ if test -n "$BASH"; then
 elif test -n "$ZSH_NAME"; then
   declare -r _PW_SCRIPT_DIR="${0:h:A}"
 fi
+
+if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk" ]; then
+  export PATH="${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk:${PATH}"
+fi
+
+declare -r _PW_LAUNCHER_DIR="${_PW_SCRIPT_DIR}/pw_build/workflows_launcher"
 declare -r _PW_WORKFLOWS_OUT_DIR="${_PW_SCRIPT_DIR}/out/workflows_launcher"
-declare -r _PW_WORKFLOWS_BIN_PATH="${_PW_WORKFLOWS_OUT_DIR}/bazel-bin/pw.exe"
+
+if [ -d "$_PW_LAUNCHER_DIR" ]; then
+  declare -r _PW_WORKFLOWS_BIN_PATH="${_PW_WORKFLOWS_OUT_DIR}/bazel-bin/external/pigweed+/pw_build/py/workflows_launcher"
+else
+  declare -r _PW_WORKFLOWS_BIN_PATH="${_PW_WORKFLOWS_OUT_DIR}/bazel-bin/pw.exe"
+fi
 
 # Check if the existing pw tool binary is stale. We consider it stale if the
 # wrapper script, the root BUILD.bazel, or any of the python sources it depends
@@ -52,6 +63,7 @@ declare -r _PW_FRESH_MARKER="${_PW_WORKFLOWS_OUT_DIR}/.pw_fresh"
 # run. Otherwise, fall back to checking sources.
 if [ -f "$_PW_WORKFLOWS_BIN_PATH" ] && [ -f "$_PW_FRESH_MARKER" ]; then
   if [ ! "$_PW_SCRIPT_DIR/pw" -nt "$_PW_FRESH_MARKER" ] && \
+     [ ! "$_PW_LAUNCHER_DIR/MODULE.bazel" -nt "$_PW_FRESH_MARKER" ] && \
      [ ! "$_PW_SCRIPT_DIR/BUILD.bazel" -nt "$_PW_FRESH_MARKER" ]; then
 
     # As a rough proxy for the script's sources and dependencies, consider all
@@ -70,14 +82,7 @@ if [ -f "$_PW_WORKFLOWS_BIN_PATH" ] && [ -f "$_PW_FRESH_MARKER" ]; then
   fi
 fi
 
-if [ $_PW_STALE -eq 0 ]; then
-  # Bypass bazel entirely for speed if the tool is already built and fresh.
-  # We must manually inject the directory environment variables that `bazel run`
-  # normally provides.
-  export BUILD_WORKSPACE_DIRECTORY="${_PW_SCRIPT_DIR}"
-  export BUILD_WORKING_DIRECTORY="${PWD}"
-  exec "$_PW_WORKFLOWS_BIN_PATH" "$@"
-else
+if [ $_PW_STALE -eq 1 ]; then
   # If the `pw` tool hasn't been built yet, don't silence output since it might
   # take a long time.
   if [ -f "$_PW_WORKFLOWS_BIN_PATH" ]; then
@@ -86,22 +91,27 @@ else
     declare -r _PW_WORKFLOWS_QUIET
   fi
 
-  # Note: ${_PW_WORKFLOWS_QUIET} below needs to remain unquoted. This
-  # removes it as an argument to bazelisk. Otherwise an empty string
-  # agument is passed in as the bazel command.
-
-  bazelisk \
-    ${_PW_WORKFLOWS_QUIET} \
-    --output_base="${_PW_WORKFLOWS_OUT_DIR}" \
-    run \
-    --symlink_prefix="${_PW_WORKFLOWS_OUT_DIR}/bazel-" \
-    --show_result=0 \
-    //:pw -- "$@"
+  (
+    if [ -d "$_PW_LAUNCHER_DIR" ]; then
+      cd "$_PW_LAUNCHER_DIR"
+    fi && \
+    bazelisk \
+      ${_PW_WORKFLOWS_QUIET} \
+      --output_base="${_PW_WORKFLOWS_OUT_DIR}" \
+      build \
+      --symlink_prefix="${_PW_WORKFLOWS_OUT_DIR}/bazel-" \
+      --show_result=0 \
+      //:pw
+  )
 
   _PW_EXIT=$?
-  if [ $_PW_EXIT -eq 0 ]; then
-    mkdir -p "$_PW_WORKFLOWS_OUT_DIR"
-    touch "$_PW_FRESH_MARKER"
+  if [ $_PW_EXIT -ne 0 ]; then
+    exit $_PW_EXIT
   fi
-  exit $_PW_EXIT
+  mkdir -p "$_PW_WORKFLOWS_OUT_DIR"
+  touch "$_PW_FRESH_MARKER"
 fi
+
+export BUILD_WORKSPACE_DIRECTORY="${_PW_SCRIPT_DIR}"
+export BUILD_WORKING_DIRECTORY="${PWD}"
+exec "$_PW_WORKFLOWS_BIN_PATH" "$@"
