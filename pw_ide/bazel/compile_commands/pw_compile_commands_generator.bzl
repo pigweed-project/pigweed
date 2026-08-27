@@ -21,6 +21,7 @@ _CompileCommandsTargetPatternsInfo = provider(
         "display_name": "(str) Optional display name for the platform",
         "patterns": "(depset[str]) Bazel target patterns that will be used to evaluate these patterns",
         "platform": "(label) Platform that will be used to evaluate the requested target patterns",
+        "rust_check_args": "(list[str]) Optional extra Bazel arguments used for rust-analyzer check override command",
         "rust_patterns": "(depset[str]) Bazel target patterns used to evaluate Rust code intelligence",
     },
 )
@@ -112,11 +113,14 @@ def _collect_platform_metadata(ctx, platform_key):
     configs_by_platform = {}
     display_names_by_platform = {}
     bazel_args_by_platform = {}
+    rust_check_args_by_platform = {}
     all_keys = {}
     if platform_key:
         all_keys[platform_key] = True
         if hasattr(ctx.attr, "bazel_args") and ctx.attr.bazel_args:
             bazel_args_by_platform[platform_key] = ctx.attr.bazel_args
+        if hasattr(ctx.attr, "rust_check_args") and ctx.attr.rust_check_args:
+            rust_check_args_by_platform[platform_key] = ctx.attr.rust_check_args
         if ctx.attr.config:
             configs_by_platform[platform_key] = ctx.attr.config
         if hasattr(ctx.attr, "display_name") and ctx.attr.display_name:
@@ -131,6 +135,8 @@ def _collect_platform_metadata(ctx, platform_key):
                 all_keys[dep_key] = True
                 if not bazel_args_by_platform.get(dep_key) and platform_patterns.bazel_args:
                     bazel_args_by_platform[dep_key] = platform_patterns.bazel_args
+                if not rust_check_args_by_platform.get(dep_key) and platform_patterns.rust_check_args:
+                    rust_check_args_by_platform[dep_key] = platform_patterns.rust_check_args
                 if not configs_by_platform.get(dep_key):
                     configs_by_platform[dep_key] = platform_patterns.config
                 if platform_patterns.display_name:
@@ -143,7 +149,7 @@ def _collect_platform_metadata(ctx, platform_key):
                             ))
                     else:
                         display_names_by_platform[dep_key] = platform_patterns.display_name
-    return all_keys, configs_by_platform, display_names_by_platform, bazel_args_by_platform
+    return all_keys, configs_by_platform, display_names_by_platform, bazel_args_by_platform, rust_check_args_by_platform
 
 def _collect_target_patterns(ctx):
     """Builds a _CompileCommandsGroupInfo from the current context.
@@ -158,7 +164,7 @@ def _collect_target_patterns(ctx):
     elif ctx.attr.config:
         platform_key = ctx.attr.config
 
-    all_keys, configs_by_platform, display_names_by_platform, bazel_args_by_platform = _collect_platform_metadata(ctx, platform_key)
+    all_keys, configs_by_platform, display_names_by_platform, bazel_args_by_platform, rust_check_args_by_platform = _collect_platform_metadata(ctx, platform_key)
     patterns_by_platform = _collect_cc_target_patterns(ctx, platform_key)
     rust_patterns_by_platform = _collect_rust_target_patterns(ctx, platform_key)
 
@@ -173,6 +179,7 @@ def _collect_target_patterns(ctx):
                 rust_patterns = rust_patterns_by_platform.get(key, depset()),
                 display_name = display_names_by_platform.get(key, ""),
                 bazel_args = bazel_args_by_platform.get(key, []),
+                rust_check_args = rust_check_args_by_platform.get(key, []),
             ),
         )
     return _CompileCommandsGroupInfo(
@@ -209,6 +216,7 @@ def _target_patterns_to_json(compile_commands_patterns):
             "config": platform_pattern.config,
             "display_name": platform_pattern.display_name,
             "platform": str(platform_pattern.platform) if platform_pattern.platform else "",
+            "rust_check_args": platform_pattern.rust_check_args,
             "rust_target_patterns": platform_pattern.rust_patterns.to_list(),
             "target_patterns": platform_pattern.patterns.to_list(),
         })
@@ -257,6 +265,7 @@ _pw_compile_commands_generator = rule(
         "deps": attr.label_list(providers = [_CompileCommandsGroupInfo]),
         "display_name": attr.string(),
         "platform": attr.string(),
+        "rust_check_args": attr.string_list(),
         "rust_target_patterns": attr.string_list(),
         "symlink_prefix": attr.string(default = ""),
         "target_patterns": attr.string_list(),
@@ -265,7 +274,7 @@ _pw_compile_commands_generator = rule(
     executable = True,
 )
 
-def pw_compile_commands_generator(name, target_patterns = None, deps = None, platform = None, symlink_prefix = "", display_name = "", rust_target_patterns = None, config = "", bazel_args = None, **kwargs):
+def pw_compile_commands_generator(name, target_patterns = None, deps = None, platform = None, symlink_prefix = "", display_name = "", rust_target_patterns = None, config = "", bazel_args = None, rust_check_args = None, **kwargs):
     """A rule that can be used to build a compile command database.
 
     Each instance of `pw_compile_commands_generator` is intended to represent
@@ -286,6 +295,7 @@ def pw_compile_commands_generator(name, target_patterns = None, deps = None, pla
       rust_target_patterns: A list of target patterns used to generate Rust code intelligence.
       config: Optional build configuration for compilation and platform inference.
       bazel_args: Optional extra Bazel arguments used for platform builds.
+      rust_check_args: Optional extra Bazel arguments used for rust-analyzer check override command.
       **kwargs: Extra arguments to pass to the underlying `native_binary` rule.
     """
     if target_patterns == None:
@@ -296,6 +306,8 @@ def pw_compile_commands_generator(name, target_patterns = None, deps = None, pla
         rust_target_patterns = []
     if bazel_args == None:
         bazel_args = []
+    if rust_check_args == None:
+        rust_check_args = []
 
     args = [
         "--compile-command-groups",
@@ -317,6 +329,7 @@ def pw_compile_commands_generator(name, target_patterns = None, deps = None, pla
             for pattern in rust_target_patterns
         ],
         bazel_args = bazel_args,
+        rust_check_args = rust_check_args,
         config = config,
         config_out = "{}_target_patterns.json".format(name),
         args = args,

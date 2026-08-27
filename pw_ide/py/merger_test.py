@@ -1792,8 +1792,8 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         )
 
     def test_pure_rust_generation_with_custom_arguments(self):
-        """Test that custom bazel_args are used in override command
-        and generation.
+        """Test that custom bazel_args are used in generation and
+        rust_check_args in override command.
         """
         self.fs.create_dir(self.workspace_root / '.compile_commands')
         platform_dir = (
@@ -1806,7 +1806,7 @@ class MergerTest(fake_filesystem_unittest.TestCase):
             self.assertEqual(args[0], 'run')
             self.assertIn('--config=remote_cache', args)
             self.assertIn('--my-bazel-flag', args)
-            self.assertIn('--output_groups=+default', args)
+            self.assertNotIn('--config=k_lint', args)
             self.assertIn(
                 '@rules_rust//tools/rust_analyzer:gen_rust_project', args
             )
@@ -1833,6 +1833,7 @@ class MergerTest(fake_filesystem_unittest.TestCase):
                 'targets': ['//pw_kernel/...'],
                 'config': 'k_host',
                 'bazel_args': ['--config=remote_cache', '--my-bazel-flag'],
+                'rust_check_args': ['--config=k_lint', '--my-check-flag'],
             },
         )
 
@@ -1844,8 +1845,9 @@ class MergerTest(fake_filesystem_unittest.TestCase):
         cmd = config['rust_analyzer_check_override_command']
         self.assertIn('--config=remote_cache', cmd)
         self.assertIn('--my-bazel-flag', cmd)
-        # Should not contain default --config=k_lint
-        self.assertNotIn('--config=k_lint', cmd)
+        self.assertIn('--config=k_lint', cmd)
+        self.assertIn('--my-check-flag', cmd)
+        self.assertIn('--config=k_host', cmd)
 
     def test_groups_with_config(self):
         """Test using compile command groups JSON with config.

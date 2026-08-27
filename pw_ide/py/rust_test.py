@@ -40,6 +40,10 @@ class RustTest(fake_filesystem_unittest.TestCase):
             self.platform_dir,
             ['//pw_kernel/...'],
             rust_config='k_host',
+            rust_check_args=[
+                '--config=k_lint',
+                '--@rules_rust//:error_format=json',
+            ],
         )
         config_path = self.platform_dir / 'ide_config.json'
         self.assertTrue(config_path.exists())
@@ -48,6 +52,8 @@ class RustTest(fake_filesystem_unittest.TestCase):
 
         cmd = data['rust_analyzer_check_override_command']
         self.assertIn('--config=k_host', cmd)
+        self.assertIn('--config=k_lint', cmd)
+        self.assertIn('--@rules_rust//:error_format=json', cmd)
         self.assertIn('//pw_kernel/...', cmd)
 
     def test_temp_remove_rust_project_backup(self):
@@ -96,9 +102,9 @@ class RustTest(fake_filesystem_unittest.TestCase):
             (self.workspace_root / 'rust-project.json').is_symlink()
         )
 
-    def test_process_rust_project_includes_output_groups_default(self):
-        """Test process_rust_project appends --output_groups=+default even
-        with k_lint.
+    def test_process_rust_project_with_bazel_args_and_check_args(self):
+        """Test process_rust_project passes bazel_args to gen_rust_project
+        and rust_check_args to ide_config.json.
         """
         executed_cmd = []
 
@@ -122,24 +128,34 @@ class RustTest(fake_filesystem_unittest.TestCase):
                 run_bazel_fn=mock_run_bazel,
                 rust_config='k_rp2350',
                 bazel_args=[
+                    '--config=remote_cache',
+                    '--my-bazel-flag',
+                ],
+                rust_check_args=[
                     '--config=k_lint',
                     '--@rules_rust//:error_format=json',
                 ],
             )
 
-        self.assertIn('--config=k_lint', executed_cmd)
-        self.assertIn('--output_groups=+default', executed_cmd)
+        # bazel_args should be passed to gen_rust_project
+        self.assertIn('--config=remote_cache', executed_cmd)
+        self.assertIn('--my-bazel-flag', executed_cmd)
+        self.assertNotIn('--config=k_lint', executed_cmd)
         self.assertIn(
             '@rules_rust//tools/rust_analyzer:gen_rust_project', executed_cmd
         )
 
-        k_lint_idx = executed_cmd.index('--config=k_lint')
-        og_idx = executed_cmd.index('--output_groups=+default')
-        target_idx = executed_cmd.index(
-            '@rules_rust//tools/rust_analyzer:gen_rust_project'
-        )
-        self.assertLess(k_lint_idx, og_idx)
-        self.assertLess(og_idx, target_idx)
+        # rust_check_args and bazel_args should be in ide_config.json
+        config_path = self.platform_dir / 'ide_config.json'
+        self.assertTrue(config_path.exists())
+        with open(config_path, 'r') as f:
+            data = json.load(f)
+        cmd = data['rust_analyzer_check_override_command']
+        self.assertIn('--config=remote_cache', cmd)
+        self.assertIn('--my-bazel-flag', cmd)
+        self.assertIn('--config=k_lint', cmd)
+        self.assertIn('--@rules_rust//:error_format=json', cmd)
+        self.assertIn('--config=k_rp2350', cmd)
 
 
 if __name__ == '__main__':

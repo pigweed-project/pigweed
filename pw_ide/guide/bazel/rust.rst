@@ -71,6 +71,9 @@ Rust code intelligence:
 * ``bazel_args``: Optional list of extra Bazel command-line arguments used when
   evaluating target patterns or building platforms.
 
+* ``rust_check_args``: Optional list of extra Bazel command-line arguments used
+  specifically for the editor's check override command (e.g. for linting on save).
+
 * ``display_name``: Optional human-readable label shown in the Visual Studio
   Code target selection panel.
 

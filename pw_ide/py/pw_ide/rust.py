@@ -96,6 +96,7 @@ def generate_ide_config(
     rust_targets: list[str],
     rust_config: str | None = None,
     bazel_args: list[str] | None = None,
+    rust_check_args: list[str] | None = None,
 ) -> None:
     """Generates ide_config.json containing the check override command.
 
@@ -104,16 +105,10 @@ def generate_ide_config(
         rust_targets: List of Rust targets that are part of this platform.
         rust_config: Optional build configuration for the targets.
         bazel_args: Optional extra Bazel arguments used for platform builds.
+        rust_check_args: Optional extra Bazel arguments used for IDE check
+            command.
     """
     ide_config_path = platform_dir / "ide_config.json"
-
-    if not bazel_args:
-        check_args = [
-            "--@rules_rust//:error_format=json",
-            "--experimental_ui_max_stdouterr_bytes=10485760",
-        ]
-    else:
-        check_args = bazel_args
 
     rust_override_command = [
         "bazelisk",
@@ -121,6 +116,17 @@ def generate_ide_config(
     ]
     if rust_config:
         rust_override_command.append(f"--config={rust_config}")
+
+    if bazel_args:
+        rust_override_command.extend(bazel_args)
+
+    if not rust_check_args:
+        check_args = [
+            "--@rules_rust//:error_format=json",
+            "--experimental_ui_max_stdouterr_bytes=10485760",
+        ]
+    else:
+        check_args = rust_check_args
 
     rust_override_command.extend(check_args)
     rust_override_command.extend(rust_targets)
@@ -138,6 +144,7 @@ def process_rust_project(
     run_bazel_fn: Callable[..., Any],
     rust_config: str | None = None,
     bazel_args: list[str] | None = None,
+    rust_check_args: list[str] | None = None,
 ) -> None:
     """Generates rust-project.json for a platform.
 
@@ -149,6 +156,8 @@ def process_rust_project(
         run_bazel_fn: Function to execute a Bazel command.
         rust_config: Optional build configuration for the targets.
         bazel_args: Optional extra Bazel arguments used for platform builds.
+        rust_check_args: Optional extra Bazel arguments used for IDE check
+            command.
     """
     _LOG.info("⏳ Generating rust-project.json...")
 
@@ -157,10 +166,6 @@ def process_rust_project(
     ]
     if bazel_args:
         rust_cmd.extend(bazel_args)
-    # Ensure default output group (executable binary) is built even if
-    # bazel_args contains flags like --config=k_lint that restrict
-    # output_groups (e.g. to clippy_checks,rustfmt_checks).
-    rust_cmd.append("--output_groups=+default")
     rust_cmd.append("@rules_rust//tools/rust_analyzer:gen_rust_project")
     if rust_config:
         rust_cmd.extend(["--", "--config", rust_config])
@@ -191,8 +196,9 @@ def process_rust_project(
                 _LOG.error("Stderr: %s", e.stderr)
 
     generate_ide_config(
-        platform_dir,
-        rust_targets,
-        rust_config,
-        bazel_args,
+        platform_dir=platform_dir,
+        rust_targets=rust_targets,
+        rust_config=rust_config,
+        bazel_args=bazel_args,
+        rust_check_args=rust_check_args,
     )
