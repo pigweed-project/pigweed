@@ -79,36 +79,35 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/2,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/2,
+      GetProxyHostAllocator(),
+      [&connection_snapshot](const ProxyHostStateUpdate& update) {
+        if (auto* conn_snap = std::get_if<AclConnectionSnapshot>(&update)) {
+          connection_snapshot = *conn_snap;
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot snapshot =
-      CreateAclSnapshot(kLeMaxAclCredits, kBrEdrMaxAclCredits);
-  snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl = CreateAclSnapshot(kLeMaxAclCredits, kBrEdrMaxAclCredits);
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle1,
                                   AclTransportType::kLe,
                                   /*num_proxy_pending=*/kLePendingAclCredits,
                                   /*num_host_pending=*/2,
                                   /*num_queued_host=*/0));
-  snapshot.acl_connections.push_back(
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kBrEdrConnectionHandle,
                                   AclTransportType::kBrEdr,
                                   /*num_proxy_pending=*/kBrEdrPendingAclCredits,
                                   /*num_host_pending=*/1,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
-
-  proxy.RegisterAclStateUpdateCallback(
-      [&connection_snapshot](const AclStateUpdate& update) {
-        if (std::holds_alternative<AclConnectionSnapshot>(update)) {
-          connection_snapshot = std::get<AclConnectionSnapshot>(update);
-        }
-      });
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   Result<AclFrameWithStorage> acl_frame = SetupAcl(kLeConnectionHandle1, 10);
   ASSERT_TRUE(acl_frame.ok());
@@ -153,18 +152,19 @@ TEST_F(AclRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot snapshot;
-  snapshot.snapshot_incomplete = true;
-  EXPECT_EQ(proxy.RecoverAclFromSnapshot(snapshot), Status::DataLoss());
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.snapshot_incomplete = true;
+  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::DataLoss());
 }
 
 TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   struct {
     uint32_t updates_sent = 0;
-    AclStateUpdate last_update;
+    ProxyHostStateUpdate last_update;
   } update_capture;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
@@ -173,20 +173,19 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy =
+      ProxyHost(std::move(send_to_host_fn),
+                std::move(send_to_controller_fn),
+                /*le_acl_credits_to_reserve=*/2,
+                /*br_edr_acl_credits_to_reserve=*/0,
+                GetProxyHostAllocator(),
+                [&update_capture](const ProxyHostStateUpdate& update) {
+                  update_capture.updates_sent++;
+                  update_capture.last_update = update;
+                });
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
-  proxy.RegisterAclStateUpdateCallback(
-      [&update_capture](const AclStateUpdate& update) {
-        update_capture.updates_sent++;
-        update_capture.last_update = update;
-      });
 
   // Verify that connection creation triggers a state update callback.
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
@@ -261,25 +260,27 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
   // Create a snapshot where connections had queued packets that were lost.
-  AclSnapshot snapshot = CreateAclSnapshot();
-  snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl = CreateAclSnapshot();
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle1,
                                   AclTransportType::kLe,
                                   /*num_proxy_pending=*/0,
                                   /*num_host_pending=*/0,
                                   kQueuedPackets1));
-  snapshot.acl_connections.push_back(
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle2,
                                   AclTransportType::kLe,
                                   /*num_proxy_pending=*/0,
                                   /*num_host_pending=*/0,
                                   kQueuedPackets2));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that no refund event is sent to host immediately.
   EXPECT_FALSE(send_capture.captured_packet.has_value());
@@ -321,20 +322,22 @@ TEST_F(AclRecoveryTest, StaticCreditsPendingDerivedFromConnections) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
   // Connection snapshot has 5 host pending packets (which would exceed
   // proxy_max = 2 if treated as proxy pending) and 0 proxy pending packets.
-  AclSnapshot snapshot = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
-  snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle1,
                                   AclTransportType::kLe,
                                   /*num_proxy_pending=*/0,
                                   /*num_host_pending=*/5,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // The proxy reserved 2 credits and has 0 proxy pending packets.
   // Verify that remaining credits is 2 (not reduced by host pending packets).
@@ -350,20 +353,22 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
 
   ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
                               std::move(send_to_controller_fn),
-                              *GetProxyHostAllocator());
+                              *GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
   // In dynamic credit sharing, both proxy and host in-flight packets are
   // counted towards total pending credits against controller max capacity.
-  AclSnapshot snapshot = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
-  snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl = CreateAclSnapshot(/*le_max=*/10, /*br_edr_max=*/0);
+  snapshot.acl.acl_connections.push_back(
       CreateAclConnectionSnapshot(kLeConnectionHandle1,
                                   AclTransportType::kLe,
                                   /*num_proxy_pending=*/2,
                                   /*num_host_pending=*/3,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Controller max is 10, total pending is 2 + 3 = 5.
   // Verify that remaining credits is 10 - 5 = 5.
@@ -468,35 +473,33 @@ TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy =
+      ProxyHost(std::move(send_to_host_fn),
+                std::move(send_to_controller_fn),
+                /*le_acl_credits_to_reserve=*/2,
+                /*br_edr_acl_credits_to_reserve=*/0,
+                GetProxyHostAllocator(),
+                [&signaling_snapshot](const ProxyHostStateUpdate& update) {
+                  if (auto* sig_snap =
+                          std::get_if<L2capSignalingStateSnapshot>(&update)) {
+                    signaling_snapshot = *sig_snap;
+                  }
+                });
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot());
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot());
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
       .next_identifier = 42,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback([&signaling_snapshot](
-                                             const L2capStateUpdate& update) {
-    if (auto* sig_snap = std::get_if<L2capSignalingStateSnapshot>(&update)) {
-      signaling_snapshot = *sig_snap;
-    }
-  });
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   Result<L2capCoc> coc = BuildCocWithResult(proxy,
                                             CocParameters{
@@ -506,7 +509,7 @@ TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
                                             });
   PW_TEST_ASSERT_OK(coc.status());
 
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
   PW_TEST_ASSERT_OK(coc.value().SendAdditionalRxCredits(5));
@@ -519,7 +522,7 @@ TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
   EXPECT_EQ(signaling_snapshot->next_identifier, 43);
 }
 
-TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncompleteOrNullptr) {
+TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -530,14 +533,13 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncompleteOrNullptr) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
-  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(nullptr), Status::InvalidArgument());
-
-  L2capSnapshot snapshot;
-  snapshot.snapshot_incomplete = true;
-  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot), Status::DataLoss());
+  ProxyHostSnapshot snapshot;
+  snapshot.l2cap.snapshot_incomplete = true;
+  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::DataLoss());
 }
 
 TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
@@ -551,24 +553,24 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
-  // ACL recovery is a prerequisite for L2CAP recovery. Verify that not
-  // restoring ACL state before restoring L2CAP state fails.
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+  // Verify that L2CAP recovery fails if the corresponding ACL connection is
+  // missing from the snapshot.
+  ProxyHostSnapshot snapshot;
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
       kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
-  EXPECT_EQ(proxy.RecoverL2capFromSnapshot(&snapshot),
-            Status::FailedPrecondition());
+  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::InvalidArgument());
 }
 
 TEST_F(L2capRecoveryTest, RegisterBasicModeChannelStateUpdateCallback) {
-  Vector<L2capStateUpdate, 2> updates;
+  Vector<ProxyHostStateUpdate, 2> updates;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -576,19 +578,22 @@ TEST_F(L2capRecoveryTest, RegisterBasicModeChannelStateUpdateCallback) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&updates](const ProxyHostStateUpdate& update) {
+        if (std::holds_alternative<L2capSignalingStateSnapshot>(update) ||
+            std::holds_alternative<L2capChannelSnapshot>(update) ||
+            std::holds_alternative<L2capChannelRemoved>(update)) {
+          updates.push_back(update);
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&updates](const L2capStateUpdate& update) {
-        updates.push_back(update);
-      });
 
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
@@ -644,7 +649,7 @@ TEST_F(L2capRecoveryTest,
 #else
   constexpr size_t kExpectedUpdates = 3;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-  Vector<L2capStateUpdate, kExpectedUpdates> updates;
+  Vector<ProxyHostStateUpdate, kExpectedUpdates> updates;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -652,19 +657,22 @@ TEST_F(L2capRecoveryTest,
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&updates](const ProxyHostStateUpdate& update) {
+        if (std::holds_alternative<L2capSignalingStateSnapshot>(update) ||
+            std::holds_alternative<L2capChannelSnapshot>(update) ||
+            std::holds_alternative<L2capChannelRemoved>(update)) {
+          updates.push_back(update);
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&updates](const L2capStateUpdate& update) {
-        updates.push_back(update);
-      });
 
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
@@ -775,7 +783,7 @@ TEST_F(L2capRecoveryTest,
 }
 
 TEST_F(L2capRecoveryTest, AclDisconnectionSendsChannelRemovedUpdates) {
-  Vector<L2capStateUpdate, 2> updates;
+  Vector<ProxyHostStateUpdate, 2> updates;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -783,19 +791,22 @@ TEST_F(L2capRecoveryTest, AclDisconnectionSendsChannelRemovedUpdates) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&updates](const ProxyHostStateUpdate& update) {
+        if (std::holds_alternative<L2capSignalingStateSnapshot>(update) ||
+            std::holds_alternative<L2capChannelSnapshot>(update) ||
+            std::holds_alternative<L2capChannelRemoved>(update)) {
+          updates.push_back(update);
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&updates](const L2capStateUpdate& update) {
-        updates.push_back(update);
-      });
 
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
@@ -824,7 +835,7 @@ TEST_F(L2capRecoveryTest, AclDisconnectionSendsChannelRemovedUpdates) {
 }
 
 TEST_F(L2capRecoveryTest, DuplicateChannelReplacementEmitsStateUpdates) {
-  Vector<L2capStateUpdate, 4> updates;
+  Vector<ProxyHostStateUpdate, 4> updates;
 
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
@@ -832,19 +843,22 @@ TEST_F(L2capRecoveryTest, DuplicateChannelReplacementEmitsStateUpdates) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&updates](const ProxyHostStateUpdate& update) {
+        if (std::holds_alternative<L2capSignalingStateSnapshot>(update) ||
+            std::holds_alternative<L2capChannelSnapshot>(update) ||
+            std::holds_alternative<L2capChannelRemoved>(update)) {
+          updates.push_back(update);
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&updates](const L2capStateUpdate& update) {
-        updates.push_back(update);
-      });
 
   PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
       proxy, kLeConnectionHandle1, emboss::StatusCode::SUCCESS));
@@ -899,63 +913,60 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverEstablishesL2capLinks) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&next_identifier](const ProxyHostStateUpdate& update) {
+        if (auto* signaling_snapshot =
+                std::get_if<L2capSignalingStateSnapshot>(&update);
+            signaling_snapshot &&
+            signaling_snapshot->connection_handle == kLeConnectionHandle1) {
+          next_identifier = signaling_snapshot->next_identifier;
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});
-  acl_snapshot.acl_connections.push_back(
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kBrEdrConnectionHandle,
                             .transport = AclTransportType::kBrEdr});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
-  L2capSnapshot snapshot;
   // Push two channels sharing the same handle. Verify that only one link is
   // created.
-  snapshot.l2cap_channels.push_back(
+  snapshot.l2cap.l2cap_channels.push_back(
       CreateL2capChannelSnapshot(kLeConnectionHandle1,
                                  kLocalCid1,
                                  kRemoteCid1,
                                  AclTransportType::kLe,
                                  L2capChannelMode::kCreditBasedFlowControl));
-  snapshot.l2cap_channels.push_back(
+  snapshot.l2cap.l2cap_channels.push_back(
       CreateL2capChannelSnapshot(kLeConnectionHandle1,
                                  kLocalCid2,
                                  kRemoteCid2,
                                  AclTransportType::kLe,
                                  L2capChannelMode::kCreditBasedFlowControl));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  snapshot.l2cap_channels.push_back(
+  snapshot.l2cap.l2cap_channels.push_back(
       CreateL2capChannelSnapshot(kBrEdrConnectionHandle,
                                  kLocalCid1,
                                  kRemoteCid1,
                                  AclTransportType::kBrEdr));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kBrEdrConnectionHandle,
       .transport = AclTransportType::kBrEdr,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&next_identifier](const L2capStateUpdate& update) {
-        if (auto* signaling_snapshot =
-                std::get_if<L2capSignalingStateSnapshot>(&update)) {
-          if (signaling_snapshot->connection_handle == kLeConnectionHandle1) {
-            next_identifier = signaling_snapshot->next_identifier;
-          }
-        }
-      });
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Re-register the two channels sharing the same handle. This also verifies
   // that the LE connection was restored.
@@ -974,7 +985,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverEstablishesL2capLinks) {
                                              });
   PW_TEST_ASSERT_OK(coc2.status());
 
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that only one logical link was created for the LE connection despite
   // two channels sharing the same handle. Expect next_identifier to be 3
@@ -1008,26 +1019,25 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
   // Populate snapshot with an interrupted frame.
-  L2capSnapshot snapshot;
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
   channel_snapshot.acl_recombination_in_progress = true;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that channel registration during the recovery window fails.
   EXPECT_EQ(
@@ -1042,7 +1052,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
       Status::Cancelled());
 
   // Complete recovery to close the recovery window.
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that the saved snapshot with the interrupted frame is cleared and
   // channel registration now succeeds.
@@ -1059,7 +1069,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
   // Test again to verify that snapshot recovery also works for an
   // already-established logical link.
   basic_channel->Close();
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that channel registration during the recovery window fails.
   EXPECT_EQ(
@@ -1074,7 +1084,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
       Status::Cancelled());
 
   // Complete recovery to close the recovery window.
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that the saved snapshot with the interrupted frame is cleared and
   // channel registration now succeeds.
@@ -1102,41 +1112,37 @@ TEST_F(L2capRecoveryTest, SnapshotChannelMatchingOverridesCredits) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&credit_capture](const ProxyHostStateUpdate& update) {
+        if (auto* chan_snap = std::get_if<L2capChannelSnapshot>(&update);
+            chan_snap && chan_snap->local_cid == kLocalCid1) {
+          credit_capture.rx_credits = chan_snap->rx_engine.remaining_credits;
+          credit_capture.tx_credits = chan_snap->tx_engine.remaining_credits;
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
-  L2capSnapshot snapshot;
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
   channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
   channel_snapshot.rx_engine.remaining_credits = 10;
   channel_snapshot.tx_engine.remaining_credits = 20;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&credit_capture](const L2capStateUpdate& update) {
-        if (auto* chan_snap = std::get_if<L2capChannelSnapshot>(&update)) {
-          if (chan_snap->local_cid == kLocalCid1) {
-            credit_capture.rx_credits = chan_snap->rx_engine.remaining_credits;
-            credit_capture.tx_credits = chan_snap->tx_engine.remaining_credits;
-          }
-        }
-      });
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   Result<L2capCoc> coc = BuildCocWithResult(proxy,
                                             CocParameters{
@@ -1148,7 +1154,7 @@ TEST_F(L2capRecoveryTest, SnapshotChannelMatchingOverridesCredits) {
                                             });
   PW_TEST_ASSERT_OK(coc.status());
 
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that snapshot credits overrode client-provided initial credits.
   // Expect rx_credits to be 15 (10 restored + 5 added).
@@ -1170,25 +1176,24 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
       AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
                             .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
 
-  L2capSnapshot snapshot;
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
   channel_snapshot.acl_recombination_in_progress = true;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that registering a channel with a CID that is not in the snapshot
   // succeeds during the recovery window.
@@ -1216,37 +1221,34 @@ TEST_F(L2capRecoveryTest, RejectedBasicModeChannelSilentlyAbsorbsPackets) {
         ++sent_to_controller_count;
       });
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
-      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
-                            .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  // Populate snapshot with an interrupted frame.
-  L2capSnapshot snapshot;
-  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
-  channel_snapshot.acl_recombination_in_progress = true;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  // Populate snapshot with an interrupted frame.
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.acl_recombination_in_progress = true;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   L2capChannelManagerInterface::SpanReceiveFunction rx_fn =
       [](span<const std::byte>, ConnectionHandle, uint16_t, uint16_t) {
@@ -1307,39 +1309,36 @@ TEST_F(L2capRecoveryTest,
         ++sent_to_controller_count;
       });
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  // Populate snapshot with a queued packet, indicating packet loss.
-  AclSnapshot acl_snapshot;
-  AclConnectionSnapshot connection_snapshot;
-  connection_snapshot.connection_handle = kLeConnectionHandle1;
-  connection_snapshot.transport = AclTransportType::kLe;
-  connection_snapshot.num_queued_host_packets = 1;
-  acl_snapshot.acl_connections.push_back(connection_snapshot);
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
-  channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Populate snapshot with a queued packet, indicating packet loss.
+  ProxyHostSnapshot snapshot;
+  AclConnectionSnapshot connection_snapshot;
+  connection_snapshot.connection_handle = kLeConnectionHandle1;
+  connection_snapshot.transport = AclTransportType::kLe;
+  connection_snapshot.num_queued_host_packets = 1;
+  snapshot.acl.acl_connections.push_back(connection_snapshot);
+
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   ConnectionOrientedChannelConfig rx_config{
       .cid = kLocalCid1, .mtu = kMtu, .mps = kMps, .credits = 1};
@@ -1387,39 +1386,36 @@ TEST_F(L2capRecoveryTest, RejectedChannelIsTornDownOnHostDisconnection) {
         ++sent_to_controller_count;
       });
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  // Populate snapshot with a queued packet, indicating packet loss.
-  AclSnapshot acl_snapshot;
-  AclConnectionSnapshot connection_snapshot;
-  connection_snapshot.connection_handle = kLeConnectionHandle1;
-  connection_snapshot.transport = AclTransportType::kLe;
-  connection_snapshot.num_queued_host_packets = 1;
-  acl_snapshot.acl_connections.push_back(connection_snapshot);
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
-  channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Populate snapshot with a queued packet, indicating packet loss.
+  ProxyHostSnapshot snapshot;
+  AclConnectionSnapshot connection_snapshot;
+  connection_snapshot.connection_handle = kLeConnectionHandle1;
+  connection_snapshot.transport = AclTransportType::kLe;
+  connection_snapshot.num_queued_host_packets = 1;
+  snapshot.acl.acl_connections.push_back(connection_snapshot);
+
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   ConnectionOrientedChannelConfig rx_config{
       .cid = kLocalCid1, .mtu = 100, .mps = 100, .credits = 1};
@@ -1460,29 +1456,28 @@ TEST_F(L2capRecoveryTest, BasicModeChannelAllowsDataLoss) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
   // Populate snapshot with a queued packet, indicating packet loss.
-  AclSnapshot acl_snapshot;
+  ProxyHostSnapshot snapshot;
   AclConnectionSnapshot connection_snapshot;
   connection_snapshot.connection_handle = kLeConnectionHandle1;
   connection_snapshot.transport = AclTransportType::kLe;
   connection_snapshot.num_queued_host_packets = 1;
-  acl_snapshot.acl_connections.push_back(connection_snapshot);
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+  snapshot.acl.acl_connections.push_back(connection_snapshot);
 
-  L2capSnapshot snapshot;
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
   channel_snapshot.mode = L2capChannelMode::kBasic;
   channel_snapshot.allow_data_loss = true;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that snapshot recovery succeeds, despite the packet loss.
   Result<BasicL2capChannel> basic_channel =
@@ -1507,29 +1502,28 @@ TEST_F(L2capRecoveryTest, CreditBasedFlowControlChannelAllowsDataLoss) {
                               std::move(send_to_controller_fn),
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
+                              GetProxyHostAllocator(),
+                              nullptr);
   StartDispatcherOnCurrentThread(proxy);
 
   // Populate snapshot with a queued packet, indicating packet loss.
-  AclSnapshot acl_snapshot;
+  ProxyHostSnapshot snapshot;
   AclConnectionSnapshot connection_snapshot;
   connection_snapshot.connection_handle = kLeConnectionHandle1;
   connection_snapshot.transport = AclTransportType::kLe;
   connection_snapshot.num_queued_host_packets = 1;
-  acl_snapshot.acl_connections.push_back(connection_snapshot);
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
+  snapshot.acl.acl_connections.push_back(connection_snapshot);
 
-  L2capSnapshot snapshot;
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
   channel_snapshot.mode = L2capChannelMode::kCreditBasedFlowControl;
   channel_snapshot.allow_data_loss = true;
-  snapshot.l2cap_channels.push_back(channel_snapshot);
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   ConnectionOrientedChannelConfig rx_config{.cid = kLocalCid1,
                                             .mtu = kMtu,
@@ -1565,37 +1559,34 @@ TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
-      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
-                            .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   Result<BasicL2capChannel> channel1 =
       BuildBasicL2capChannelWithResult(proxy,
@@ -1607,7 +1598,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
                                        });
   PW_TEST_EXPECT_OK(channel1.status());
 
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that the first channel was re-registered and the second channel was
   // removed.
@@ -1625,39 +1616,36 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
-      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
-                            .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
 
-  proxy.CompleteL2capRecovery();
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+
+  proxy.CompleteRecovery();
 
   // Verify that both channels were removed.
   ASSERT_EQ(removed_channels.size(), 2u);
@@ -1674,37 +1662,34 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
-      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
-                            .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   Result<BasicL2capChannel> channel1 =
       BuildBasicL2capChannelWithResult(proxy,
@@ -1726,7 +1711,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
                                        });
   PW_TEST_EXPECT_OK(channel2.status());
 
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
 
   // Verify that both channels were re-registered.
   EXPECT_TRUE(removed_channels.empty());
@@ -1741,44 +1726,70 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryIsIdempotent) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator());
-  StartDispatcherOnCurrentThread(proxy);
-
-  AclSnapshot acl_snapshot;
-  acl_snapshot.acl_connections.push_back(
-      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
-                            .transport = AclTransportType::kLe});
-  PW_TEST_ASSERT_OK(proxy.RecoverAclFromSnapshot(acl_snapshot));
-
-  L2capSnapshot snapshot;
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
-  snapshot.l2cap_channels.push_back(CreateL2capChannelSnapshot(
-      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
-  snapshot.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
-      .connection_handle = kLeConnectionHandle1,
-      .transport = AclTransportType::kLe,
-  });
-
-  PW_TEST_ASSERT_OK(proxy.RecoverL2capFromSnapshot(&snapshot));
-
-  proxy.RegisterL2capStateUpdateCallback(
-      [&removed_channels](const L2capStateUpdate& update) {
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&removed_channels](const ProxyHostStateUpdate& update) {
         if (auto* removed = std::get_if<L2capChannelRemoved>(&update)) {
           removed_channels.push_back(*removed);
         }
       });
+  StartDispatcherOnCurrentThread(proxy);
+
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid1, kRemoteCid1));
+  snapshot.l2cap.l2cap_channels.push_back(CreateL2capChannelSnapshot(
+      kLeConnectionHandle1, kLocalCid2, kRemoteCid2));
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
   // Verify that repeated CompleteL2capRecovery() calls are safe and have no
   // additional effect.
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
   ASSERT_EQ(removed_channels.size(), 2u);
-  proxy.CompleteL2capRecovery();
+  proxy.CompleteRecovery();
   EXPECT_EQ(removed_channels.size(), 2u);
+}
+
+TEST(ProxyHostSnapshotTest, ProxyHostSnapshotApplyStateUpdate) {
+  ProxyHostSnapshot snapshot;
+
+  AclConnectionSnapshot connection_snapshot{.connection_handle =
+                                                kLeConnectionHandle1};
+  EXPECT_EQ(snapshot.ApplyStateUpdate(connection_snapshot), OkStatus());
+  EXPECT_EQ(snapshot.acl.acl_connections.size(), 1u);
+
+  AclConnectionRemoved connection_removed{.connection_handle =
+                                              kLeConnectionHandle1};
+  EXPECT_EQ(snapshot.ApplyStateUpdate(connection_removed), OkStatus());
+  EXPECT_EQ(snapshot.acl.acl_connections.size(), 0u);
+
+  L2capSignalingStateSnapshot signaling_snapshot;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(signaling_snapshot), OkStatus());
+  EXPECT_EQ(snapshot.l2cap.l2cap_signaling_states.size(), 1u);
+
+  L2capChannelSnapshot channel_snapshot;
+  channel_snapshot.connection_handle = kLeConnectionHandle1;
+  channel_snapshot.local_cid = kLocalCid1;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(channel_snapshot), OkStatus());
+  EXPECT_EQ(snapshot.l2cap.l2cap_channels.size(), 1u);
+
+  L2capChannelRemoved channel_removed{.connection_handle = kLeConnectionHandle1,
+                                      .local_cid = kLocalCid1};
+  EXPECT_EQ(snapshot.ApplyStateUpdate(channel_removed), OkStatus());
+  EXPECT_EQ(snapshot.l2cap.l2cap_channels.size(), 0u);
 }
 
 }  // namespace

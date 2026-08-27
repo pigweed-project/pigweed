@@ -15,6 +15,7 @@
 #pragma once
 
 #include <bitset>
+#include <variant>
 
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/acl_snapshot.h"
@@ -48,6 +49,23 @@ class Dispatcher;
 /// Lightweight proxy for augmenting Bluetooth functionality
 namespace pw::bluetooth::proxy {
 
+using ProxyHostStateUpdate = std::variant<AclConnectionSnapshot,
+                                          AclConnectionRemoved,
+                                          L2capSignalingStateSnapshot,
+                                          L2capChannelSnapshot,
+                                          L2capChannelRemoved>;
+
+using ProxyHostStateUpdateCallback =
+    Function<void(const ProxyHostStateUpdate& update)>;
+
+struct ProxyHostSnapshot {
+  AclSnapshot acl;
+  L2capSnapshot l2cap;
+
+  /// Applies incremental state updates in-place to the subsystem snapshots.
+  Status ApplyStateUpdate(const ProxyHostStateUpdate& update);
+};
+
 /// @module{pw_bluetooth_proxy}
 
 /// `ProxyHost` acts as the main coordinator for proxy functionality. After
@@ -76,7 +94,8 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// SynchronizedAllocator.
   ProxyHost(pw::Function<void(H4PacketWithHci&& packet)>&& send_to_host_fn,
             pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
-            pw::Allocator& allocator);
+            pw::Allocator& allocator,
+            ProxyHostStateUpdateCallback state_update_callback = nullptr);
 
   /// Constructor for fixed credit reservation mode.
   ///
@@ -98,7 +117,8 @@ class ProxyHost : public L2capChannelManagerInterface {
             pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
             uint16_t le_acl_credits_to_reserve,
             uint16_t br_edr_acl_credits_to_reserve,
-            pw::Allocator* allocator);
+            pw::Allocator* allocator,
+            ProxyHostStateUpdateCallback state_update_callback = nullptr);
 
   ProxyHost() = delete;
   ProxyHost(const ProxyHost&) = delete;
@@ -137,59 +157,31 @@ class ProxyHost : public L2capChannelManagerInterface {
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   // ##### Offload Recovery & Snapshot APIs
 
-  /// Registers a callback for receiving incremental ACL state updates.
-  ///
-  /// @param[in] callback Function to invoke on ACL state mutation.
-  void RegisterAclStateUpdateCallback(AclStateUpdateCallback&& callback);
-
-  /// Restores ACL state from a previously saved snapshot.
+  /// Restores ACL and L2CAP state from a previously saved snapshot.
   ///
   /// @note Must be called during initialization before packet traffic is
-  /// processed. ACL state must be recovered before L2CAP or Sniff recovery.
+  /// processed. The caller must ensure that the @p snapshot object remains
+  /// valid and in scope until CompleteRecovery() returns.
   ///
-  /// @param[in] snapshot ACL state container to restore from.
+  /// @param[in] snapshot State container to restore from.
   /// @returns
   /// * @OK: State restored successfully.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
   /// * @RESOURCE_EXHAUSTED: ACL connection capacity or deferred credit refund
   /// capacity was exceeded.
-  Status RecoverAclFromSnapshot(const AclSnapshot& snapshot);
+  /// * @INVALID_ARGUMENT: An ACL connection required by L2CAP has not been
+  /// restored, indicating that the ACL and L2CAP snapshots are inconsistent
+  /// with each other.
+  Status RecoverFromSnapshot(const ProxyHostSnapshot& snapshot);
 
   /// Sends the host ACL credit refunds for packets dropped while queued.
   void InitiateAclCreditResynchronization();
 
-  /// Registers a callback for receiving incremental L2CAP state updates.
-  ///
-  /// @note Must be called during initialization before packet traffic is
-  /// processed, and the callback must not be modified or cleared after that.
-  ///
-  /// @param[in] callback Function to invoke on L2CAP state mutation.
-  void RegisterL2capStateUpdateCallback(L2capStateUpdateCallback&& callback);
-
-  /// Restores L2CAP state from a previously saved snapshot.
-  ///
-  /// @note Must be called during initialization before packet traffic is
-  /// processed, and after RecoverAclFromSnapshot().
-  ///
-  /// @note The caller must ensure that the @p snapshot object remains
-  /// valid and in scope until CompleteL2capRecovery() returns.
-  ///
-  /// @param[in] snapshot L2CAP state container to restore from.
-  /// @returns
-  /// * @OK: State restored successfully.
-  /// * @INVALID_ARGUMENT: Snapshot pointer is null, or it contains more
-  ///   connections than the limit.
-  /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
-  /// * @FAILED_PRECONDITION: An ACL connection in the snapshot has not been
-  ///   restored prior to L2CAP recovery.
-  Status RecoverL2capFromSnapshot(const L2capSnapshot* snapshot);
-
-  /// Completes L2CAP offload recovery and clears the stored snapshot state.
+  /// Completes offload recovery and clears the stored snapshot state.
   ///
   /// @note Must be called at the end of the recovery window before packet
-  /// traffic is processed, after all active L2CAP channels have been
-  /// re-acquired.
-  void CompleteL2capRecovery();
+  /// traffic is processed.
+  void CompleteRecovery();
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   // ##### Container API
@@ -560,6 +552,15 @@ class ProxyHost : public L2capChannelManagerInterface {
   // Storage for blocked events (256 bits for 256 possible codes)
   std::bitset<256> blocked_events_ PW_GUARDED_BY(filter_mutex_);
   std::bitset<256> blocked_le_subevents_ PW_GUARDED_BY(filter_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  // Forwards a registered `state_update_callback_` to the ACL and L2CAP
+  // subsystems.
+  void SetUpStateUpdateCallbacks();
+
+  // State update callback for offload recovery persistence.
+  ProxyHostStateUpdateCallback state_update_callback_;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy

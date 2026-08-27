@@ -32,7 +32,8 @@ ProxyHost::ProxyHost(
     pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
     uint16_t le_acl_credits_to_reserve,
     uint16_t br_edr_acl_credits_to_reserve,
-    pw::Allocator* allocator)
+    pw::Allocator* allocator,
+    [[maybe_unused]] ProxyHostStateUpdateCallback state_update_callback)
     : impl_(*this),
       hci_transport_(std::move(send_to_host_fn),
                      std::move(send_to_controller_fn)),
@@ -41,26 +42,43 @@ ProxyHost::ProxyHost(
                         br_edr_acl_credits_to_reserve,
                         *allocator,
                         /*on_tx_credits_fn=*/[this]() { OnAclTxCredits(); }),
-      l2cap_channel_manager_(acl_data_channel_, *allocator) {
+      l2cap_channel_manager_(acl_data_channel_, *allocator)
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
   PW_LOG_INFO(
       "btproxy: ProxyHost ctor - le_acl_credits_to_reserve: %u, "
       "br_edr_acl_credits_to_reserve: %u",
       le_acl_credits_to_reserve,
       br_edr_acl_credits_to_reserve);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  SetUpStateUpdateCallbacks();
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 
 ProxyHost::ProxyHost(
     pw::Function<void(H4PacketWithHci&& packet)>&& send_to_host_fn,
     pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
-    pw::Allocator& allocator)
+    pw::Allocator& allocator,
+    [[maybe_unused]] ProxyHostStateUpdateCallback state_update_callback)
     : impl_(*this),
       hci_transport_(std::move(send_to_host_fn),
                      std::move(send_to_controller_fn)),
       acl_data_channel_(hci_transport_,
                         allocator,
                         /*on_tx_credits_fn=*/[this]() { OnAclTxCredits(); }),
-      l2cap_channel_manager_(acl_data_channel_, allocator) {
+      l2cap_channel_manager_(acl_data_channel_, allocator)
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
   PW_LOG_INFO("btproxy: ProxyHost ctor - Dynamic Credit Sharing");
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  SetUpStateUpdateCallbacks();
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 
 ProxyHost::~ProxyHost() {
@@ -98,32 +116,63 @@ bool ProxyHost::IsLeSubeventBlocked(
   return blocked_le_subevents_.test(static_cast<uint8_t>(subevent_code));
 }
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-void ProxyHost::RegisterAclStateUpdateCallback(
-    AclStateUpdateCallback&& callback) {
-  acl_data_channel_.RegisterStateUpdateCallback(std::move(callback));
+Status ProxyHostSnapshot::ApplyStateUpdate(const ProxyHostStateUpdate& update) {
+  return std::visit(
+      [this](const auto& arg) -> Status {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, AclConnectionSnapshot> ||
+                      std::is_same_v<T, AclConnectionRemoved>) {
+          return acl.ApplyStateUpdate(arg);
+        } else {
+          return l2cap.ApplyStateUpdate(arg);
+        }
+      },
+      update);
 }
 
-Status ProxyHost::RecoverAclFromSnapshot(const AclSnapshot& snapshot) {
-  return acl_data_channel_.RecoverFromSnapshot(snapshot);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+Status ProxyHost::RecoverFromSnapshot(const ProxyHostSnapshot& snapshot) {
+  Status status = acl_data_channel_.RecoverFromSnapshot(snapshot.acl);
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = l2cap_channel_manager_.RecoverFromSnapshot(&snapshot.l2cap);
+  if (status == Status::FailedPrecondition()) {
+    return Status::InvalidArgument();
+  }
+  return status;
 }
 
 void ProxyHost::InitiateAclCreditResynchronization() {
   acl_data_channel_.InitiateCreditResynchronization();
 }
 
-void ProxyHost::RegisterL2capStateUpdateCallback(
-    L2capStateUpdateCallback&& callback) {
-  l2cap_channel_manager_.RegisterStateUpdateCallback(std::move(callback));
-}
-
-Status ProxyHost::RecoverL2capFromSnapshot(const L2capSnapshot* snapshot) {
-  return l2cap_channel_manager_.RecoverFromSnapshot(snapshot);
-}
-
-void ProxyHost::CompleteL2capRecovery() {
+void ProxyHost::CompleteRecovery() {
   l2cap_channel_manager_.CompleteRecovery();
 }
+
+void ProxyHost::SetUpStateUpdateCallbacks() {
+  if (state_update_callback_) {
+    acl_data_channel_.RegisterStateUpdateCallback(
+        [this](const AclStateUpdate& update) {
+          if (state_update_callback_) {
+            std::visit([this](const auto& arg) { state_update_callback_(arg); },
+                       update);
+          }
+        });
+
+    l2cap_channel_manager_.RegisterStateUpdateCallback(
+        [this](const L2capStateUpdate& update) {
+          if (state_update_callback_) {
+            std::visit([this](const auto& arg) { state_update_callback_(arg); },
+                       update);
+          }
+        });
+  }
+}
+
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 void ProxyHost::DoReset() {
