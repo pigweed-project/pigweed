@@ -60,6 +60,8 @@ pw_add_library(pw_third_party.boringssl.private_config INTERFACE
     -Wno-extra-semi
     -Wno-deprecated-this-capture
     -fpermissive
+  SANDBOX
+    OFF
 )
 
 pw_add_library(pw_third_party.boringssl STATIC
@@ -398,6 +400,8 @@ pw_add_library(pw_third_party.boringssl STATIC
   PUBLIC_INCLUDES
     # Contains a faked "sysdeps/sys/socket.h"
     sysdeps
+  SANDBOX
+    OFF
 )
 
 pw_add_test(pw_third_party.boringssl.build_test

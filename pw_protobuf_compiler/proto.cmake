@@ -67,6 +67,8 @@ function(pw_proto_library NAME)
       "${out_dir}/sources"
     PUBLIC_DEPS
       ${include_deps}
+    SANDBOX
+      OFF
   )
 
   # Generate a file with all include paths needed by protoc. Use the include
@@ -358,6 +360,8 @@ function(_pw_pwpb_library NAME)
       pw_span
       pw_string.string
       ${arg_DEPS}
+    SANDBOX
+      OFF
   )
   add_dependencies("${NAME}.pwpb" "${NAME}._generate.pwpb")
 endfunction(_pw_pwpb_library)
@@ -413,6 +417,8 @@ function(_pw_pwpb_rpc_library NAME)
       pw_rpc.pwpb.server_api
       pw_rpc.server
       ${arg_DEPS}
+    SANDBOX
+      OFF
   )
   add_dependencies("${NAME}.pwpb_rpc" "${NAME}._generate.pwpb_rpc")
 endfunction(_pw_pwpb_rpc_library)
@@ -466,6 +472,8 @@ function(_pw_raw_rpc_library NAME)
       pw_rpc.raw.client_api
       pw_rpc.server
       ${arg_DEPS}
+    SANDBOX
+      OFF
   )
   add_dependencies("${NAME}.raw_rpc" "${NAME}._generate.raw_rpc")
 endfunction(_pw_raw_rpc_library)
@@ -534,6 +542,8 @@ function(_pw_nanopb_library NAME)
           pw_build
           pw_third_party.nanopb
           ${arg_DEPS}
+        SANDBOX
+          OFF
       )
     endif()
 
@@ -606,6 +616,8 @@ function(_pw_nanopb_rpc_library NAME)
         pw_rpc.nanopb.server_api
         pw_rpc.server
         ${arg_DEPS}
+      SANDBOX
+        OFF
     )
     add_dependencies("${NAME}.nanopb_rpc" "${NAME}._generate.nanopb_rpc")
   endif()

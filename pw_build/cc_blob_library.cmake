@@ -163,6 +163,8 @@ function(pw_cc_blob_library NAME)
     PUBLIC_DEPS
       pw_polyfill
       pw_preprocessor
+    SANDBOX
+      OFF
   )
   add_dependencies("${NAME}" "${NAME}._gen")
 endfunction(pw_cc_blob_library)
