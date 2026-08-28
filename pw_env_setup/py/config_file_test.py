@@ -13,14 +13,57 @@
 # the License.
 """Tests for the config_file module."""
 
+import json
+from pathlib import Path
+import tempfile
 import unittest
 
 from pw_env_setup import config_file
 
 
 class TestConfigFile(unittest.TestCase):
-    def test_config_load(self):
+    """Tests for loading pigweed.json configurations."""
+
+    def test_default_load_returns_dict(self):
         config = config_file.load()
-        # We should have loaded upstream Pigweed's pigweed.json, which will
-        # contain a top-level "pw" section.
-        self.assertIn(config, "pw")
+        self.assertIsInstance(config, dict)
+
+    def test_config_load_with_workspace_directory(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            json_file = Path(tmp_dir) / 'pigweed.json'
+            json_file.write_text(json.dumps({'pw': {'custom_key': 'test_val'}}))
+
+            config = config_file.load(
+                env={'BUILD_WORKSPACE_DIRECTORY': str(tmp_dir)}
+            )
+            self.assertEqual(config, {'pw': {'custom_key': 'test_val'}})
+
+    def test_config_load_with_project_root(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            json_file = Path(tmp_dir) / 'pigweed.json'
+            json_file.write_text(json.dumps({'pw': {'root_key': 'root_val'}}))
+
+            config = config_file.load(env={'PW_PROJECT_ROOT': str(tmp_dir)})
+            self.assertEqual(config, {'pw': {'root_key': 'root_val'}})
+
+    def test_config_load_missing_returns_empty(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config = config_file.load(
+                env={'BUILD_WORKSPACE_DIRECTORY': str(tmp_dir)}
+            )
+            self.assertEqual(config, {})
+
+    def test_config_load_variable_substitution(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            json_file = Path(tmp_dir) / 'pigweed.json'
+            payload = {'pw': {'path': '$pw_env{BUILD_WORKSPACE_DIRECTORY}/foo'}}
+            json_file.write_text(json.dumps(payload))
+
+            config = config_file.load(
+                env={'BUILD_WORKSPACE_DIRECTORY': str(tmp_dir)}
+            )
+            self.assertEqual(config, {'pw': {'path': f'{tmp_dir}/foo'}})
+
+
+if __name__ == '__main__':
+    unittest.main()

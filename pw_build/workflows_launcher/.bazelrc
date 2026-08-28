@@ -13,3 +13,5 @@
 # the License.
 
 common --enable_platform_specific_config
+common --@pigweed//pw_env_setup/py:pigweed_json=@pigweed//:pigweed_json
+common --experimental_propagate_custom_flag=@pigweed//pw_env_setup/py:pigweed_json

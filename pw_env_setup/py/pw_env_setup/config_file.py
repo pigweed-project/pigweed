@@ -99,13 +99,33 @@ def load(env: Mapping[str, str] | None = None) -> dict:
         try:
             config_path = path_from_runfiles()
         except ValueError:
-            _LOG.warning('pigweed.json not found; defaulting to empty config.')
-            _LOG.warning(
-                'To configure Pigweed, point the '
-                '//pw_env_setup/py:pigweed_json label flag to a filegroup '
-                'containing your pigweed.json file.'
-            )
-            return {}
+            # Fall back to checking the active project root directory (e.g. when
+            # running interactively with BUILD_WORKSPACE_DIRECTORY or
+            # PW_PROJECT_ROOT).
+            try:
+                fallback = path(env=env)
+                if os.path.isfile(fallback):
+                    config_path = fallback
+                else:
+                    _LOG.warning(
+                        'pigweed.json not found; defaulting to empty config.'
+                    )
+                    _LOG.warning(
+                        'To configure Pigweed, point the '
+                        '//pw_env_setup/py:pigweed_json label flag to a '
+                        'filegroup containing your pigweed.json file.'
+                    )
+                    return {}
+            except ValueError:
+                _LOG.warning(
+                    'pigweed.json not found; defaulting to empty config.'
+                )
+                _LOG.warning(
+                    'To configure Pigweed, point the '
+                    '//pw_env_setup/py:pigweed_json label flag to a '
+                    'filegroup containing your pigweed.json file.'
+                )
+                return {}
     else:
         config_path = path(env=env)
 
