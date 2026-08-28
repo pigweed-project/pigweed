@@ -37,16 +37,16 @@ ConstBuf& ConstBuf::operator=(Buf&& other) noexcept {
 }
 
 void ConstBuf::reset() {
-  if (deallocator_ != nullptr && allocation_ != nullptr) {
-    deallocator_->Deallocate(allocation_);
+  if (deallocator_ != nullptr && base_ != nullptr) {
+    deallocator_->Deallocate(base_);
   }
-  allocation_ = nullptr;
+  base_ = nullptr;
   view_ = {};
   deallocator_ = nullptr;
 }
 
 void ConstBuf::MoveFrom(ConstBuf&& other) {
-  allocation_ = std::exchange(other.allocation_, nullptr);
+  base_ = std::exchange(other.base_, nullptr);
   view_ = std::exchange(other.view_, pw::span<std::byte>{});
   deallocator_ = std::exchange(other.deallocator_, nullptr);
 }
@@ -59,7 +59,7 @@ ConstBuf ConstBuf::Slice(size_t offset, size_t length) && {
 }
 
 ConstBuf ConstBuf::Reclaim(size_t prefix_count, size_t suffix_count) && {
-  PW_CHECK(prefix_count <= static_cast<size_t>(view_.data() - allocation_));
+  PW_CHECK(prefix_count <= static_cast<size_t>(view_.data() - base_));
   view_ = pw::span<std::byte>(view_.data() - prefix_count,
                               view_.size() + prefix_count + suffix_count);
   return std::move(*this);

@@ -53,7 +53,7 @@ TEST_F(BufTest, ConstBufMoveConstructor) {
   EXPECT_EQ(moved.data(), raw_ptr);
   EXPECT_NE(moved.deallocator(), nullptr);
 
-  // Original should be reset
+  // Original should be reset and null
   EXPECT_TRUE(original.empty());  // NOLINT(bugprone-use-after-move)
   EXPECT_EQ(original.size(), 0u);
   EXPECT_EQ(original.data(), nullptr);
@@ -72,9 +72,12 @@ TEST_F(BufTest, ConstBufMoveConstructorFromBuf) {
   EXPECT_EQ(moved.data(), raw_ptr);
   EXPECT_NE(moved.deallocator(), nullptr);
 
-  // Original Buf should be empty
+  // Original Buf should be empty and null
   EXPECT_TRUE(original.empty());  // NOLINT(bugprone-use-after-move)
   EXPECT_EQ(original.size(), 0u);
+  EXPECT_EQ(original.data(), nullptr);
+  EXPECT_EQ(original.base(), nullptr);
+  EXPECT_EQ(original.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, ConstBufMoveAssignment) {
@@ -90,6 +93,9 @@ TEST_F(BufTest, ConstBufMoveAssignment) {
   EXPECT_EQ(cb2.size(), 10u);
   EXPECT_EQ(cb2.data(), raw_ptr1);
   EXPECT_TRUE(cb1.empty());  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(cb1.size(), 0u);
+  EXPECT_EQ(cb1.data(), nullptr);
+  EXPECT_EQ(cb1.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, ConstBufMoveAssignmentFromBuf) {
@@ -105,6 +111,10 @@ TEST_F(BufTest, ConstBufMoveAssignmentFromBuf) {
   EXPECT_EQ(cb.size(), 10u);
   EXPECT_EQ(cb.data(), raw_ptr1);
   EXPECT_TRUE(buf.empty());  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, ConstBufReset) {
@@ -165,7 +175,25 @@ TEST_F(BufTest, BufDefaultConstructor) {
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
   EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, BufReset) {
+  auto unique_data = test_allocator_.MakeUnique<std::byte[]>(10);
+  Buf buf(std::move(unique_data));
+
+  EXPECT_FALSE(buf.empty());
+  EXPECT_GT(test_allocator_.metrics().allocated_bytes.value(), 0u);
+
+  buf.reset();
+
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+  EXPECT_EQ(test_allocator_.metrics().allocated_bytes.value(), 0u);
 }
 
 TEST_F(BufTest, BufUniquePtrConstructor) {
@@ -280,14 +308,30 @@ TEST_F(BufTest, BufMoveConstructorAndAssignment) {
 
   EXPECT_EQ(moved.size(), 10u);
   EXPECT_EQ(moved.data(), raw_ptr);
+  EXPECT_EQ(moved.base(), raw_ptr);
+  EXPECT_NE(moved.deallocator(), nullptr);
+
+  // Original should be empty and null
   EXPECT_TRUE(original.empty());  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(original.size(), 0u);
+  EXPECT_EQ(original.data(), nullptr);
+  EXPECT_EQ(original.base(), nullptr);
+  EXPECT_EQ(original.deallocator(), nullptr);
 
   Buf assigned;
   assigned = std::move(moved);
 
   EXPECT_EQ(assigned.size(), 10u);
   EXPECT_EQ(assigned.data(), raw_ptr);
+  EXPECT_EQ(assigned.base(), raw_ptr);
+  EXPECT_NE(assigned.deallocator(), nullptr);
+
+  // Moved instance should now be empty and null
   EXPECT_TRUE(moved.empty());  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(moved.size(), 0u);
+  EXPECT_EQ(moved.data(), nullptr);
+  EXPECT_EQ(moved.base(), nullptr);
+  EXPECT_EQ(moved.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, BufAccessAndIterators) {
@@ -444,10 +488,23 @@ TEST_F(BufTest, IteratorConversions) {
 
 // Bounds checks
 
+TEST_F(BufTest, EmptyUniquePtrConstructor) {
+  UniquePtr<std::byte[]> empty_buffer;
+  Buf buf(std::move(empty_buffer));
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
 TEST_F(BufTest, EmptyUniquePtrOffset) {
   UniquePtr<std::byte[]> empty_buffer;
   ConstBuf const_buf = Buf(std::move(empty_buffer), 0);
   EXPECT_TRUE(const_buf.empty());
+  EXPECT_EQ(const_buf.size(), 0u);
+  EXPECT_EQ(const_buf.data(), nullptr);
+  EXPECT_EQ(const_buf.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, EmptyUniquePtrOffsetOutOfBounds) {
@@ -619,6 +676,7 @@ TEST_F(BufTest, TryAllocateFailureReturnsEmpty) {
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
   EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
@@ -626,12 +684,170 @@ TEST_F(BufTest, TryAllocateFailureWithOffsetReturnsEmpty) {
   allocator::NullAllocator null_allocator;
   Buf buf = Buf::TryAllocate(null_allocator, 3, 7);
   EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, TryAllocateFailureWithOffsetAndSizeReturnsEmpty) {
   allocator::NullAllocator null_allocator;
   Buf buf = Buf::TryAllocate(null_allocator, 2, 5);
   EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, BasePointerPreservedAcrossSlicing) {
+  Buf buf = Buf::Allocate(test_allocator_, 20);
+  const std::byte* orig_base = buf.base();
+  EXPECT_NE(orig_base, nullptr);
+  EXPECT_EQ(orig_base, buf.data());
+
+  Buf sliced = Slice(std::move(buf), 5, 10);
+  EXPECT_EQ(sliced.base(), orig_base);
+  EXPECT_EQ(sliced.data(), orig_base + 5);
+  EXPECT_EQ(sliced.size(), 10u);
+
+  ConstBuf const_sliced(std::move(sliced));
+  EXPECT_EQ(const_sliced.data(), orig_base + 5);
+  EXPECT_EQ(const_sliced.size(), 10u);
+}
+
+TEST_F(BufTest, UnownedZeroSizeBufIsNotNull) {
+  std::array<std::byte, 4> storage = {};
+  Buf empty_unowned = Buf::Unowned(storage.data(), 0);
+  EXPECT_TRUE(empty_unowned.empty());
+  EXPECT_EQ(empty_unowned.size(), 0u);
+  EXPECT_EQ(empty_unowned.data(), storage.data());
+  EXPECT_EQ(empty_unowned.base(), storage.data());
+  EXPECT_NE(empty_unowned.data(), nullptr);
+  EXPECT_NE(empty_unowned.base(), nullptr);
+  EXPECT_EQ(empty_unowned.deallocator(), nullptr);
+
+  ConstBuf empty_unowned_const(std::move(empty_unowned));
+  EXPECT_TRUE(empty_unowned_const.empty());
+  EXPECT_EQ(empty_unowned_const.size(), 0u);
+  EXPECT_EQ(empty_unowned_const.data(), storage.data());
+  EXPECT_NE(empty_unowned_const.data(), nullptr);
+  EXPECT_EQ(empty_unowned_const.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, ZeroLengthSliceIsNotNullAndCanBeReclaimed) {
+  Buf buf = Buf::Allocate(test_allocator_, 10);
+  const std::byte* orig_base = buf.base();
+  ASSERT_NE(orig_base, nullptr);
+
+  Buf empty_sliced = Slice(std::move(buf), 3, 0);
+  EXPECT_TRUE(empty_sliced.empty());
+  EXPECT_EQ(empty_sliced.size(), 0u);
+  EXPECT_EQ(empty_sliced.base(), orig_base);
+  EXPECT_EQ(empty_sliced.data(), orig_base + 3);
+  EXPECT_NE(empty_sliced.base(), nullptr);
+  EXPECT_NE(empty_sliced.data(), nullptr);
+  EXPECT_EQ(empty_sliced.deallocator(), &test_allocator_);
+
+  // An empty slice can still be reclaimed because it is not null.
+  Buf reclaimed = Reclaim(std::move(empty_sliced), 3, 7);
+  EXPECT_FALSE(reclaimed.empty());
+  EXPECT_EQ(reclaimed.size(), 10u);
+  EXPECT_EQ(reclaimed.data(), orig_base);
+  EXPECT_EQ(reclaimed.base(), orig_base);
+}
+
+TEST_F(BufTest, ZeroLengthTruncateIsNotNull) {
+  Buf buf = Buf::Allocate(test_allocator_, 10);
+  const std::byte* orig_base = buf.base();
+  ASSERT_NE(orig_base, nullptr);
+
+  Buf truncated = Truncate(std::move(buf), 0);
+  EXPECT_TRUE(truncated.empty());
+  EXPECT_EQ(truncated.size(), 0u);
+  EXPECT_EQ(truncated.base(), orig_base);
+  EXPECT_EQ(truncated.data(), orig_base);
+  EXPECT_NE(truncated.base(), nullptr);
+  EXPECT_NE(truncated.data(), nullptr);
+  EXPECT_EQ(truncated.deallocator(), &test_allocator_);
+
+  ConstBuf const_truncated = Truncate(ConstBuf(std::move(truncated)), 0);
+  EXPECT_TRUE(const_truncated.empty());
+  EXPECT_EQ(const_truncated.size(), 0u);
+  EXPECT_EQ(const_truncated.data(), orig_base);
+  EXPECT_NE(const_truncated.data(), nullptr);
+  EXPECT_EQ(const_truncated.deallocator(), &test_allocator_);
+}
+
+TEST_F(BufTest, UnownedFromNullSpanIsNull) {
+  Buf buf = Buf::Unowned(ByteSpan{});
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, UnownedFromZeroLengthSpanIsNotNull) {
+  std::array<std::byte, 4> storage = {};
+  Buf buf = Buf::Unowned(ByteSpan(storage.data(), 0));
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), storage.data());
+  EXPECT_EQ(buf.base(), storage.data());
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_NE(buf.base(), nullptr);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, SpanConversionForNullBuf) {
+  Buf buf;
+  ByteSpan span = buf;
+  EXPECT_TRUE(span.empty());
+  EXPECT_EQ(span.size(), 0u);
+  EXPECT_EQ(span.data(), nullptr);
+
+  ConstBuf const_buf;
+  ConstByteSpan const_span = const_buf;
+  EXPECT_TRUE(const_span.empty());
+  EXPECT_EQ(const_span.size(), 0u);
+  EXPECT_EQ(const_span.data(), nullptr);
+}
+
+TEST_F(BufTest, SpanConversionForEmptyNonNullBuf) {
+  std::array<std::byte, 4> storage = {};
+  Buf buf = Buf::Unowned(storage.data(), 0);
+  ByteSpan span = buf;
+  EXPECT_TRUE(span.empty());
+  EXPECT_EQ(span.size(), 0u);
+  EXPECT_EQ(span.data(), storage.data());
+
+  ConstBuf const_buf(std::move(buf));
+  ConstByteSpan const_span = const_buf;
+  EXPECT_TRUE(const_span.empty());
+  EXPECT_EQ(const_span.size(), 0u);
+  EXPECT_EQ(const_span.data(), storage.data());
+}
+
+TEST_F(BufTest, IteratorForNullBuf) {
+  Buf buf;
+  EXPECT_EQ(buf.begin(), buf.end());
+  size_t count = 0;
+  for ([[maybe_unused]] auto byte : buf) {
+    count++;
+  }
+  EXPECT_EQ(count, 0u);
+}
+
+TEST_F(BufTest, IteratorForEmptyNonNullBuf) {
+  std::array<std::byte, 4> storage = {};
+  Buf buf = Buf::Unowned(storage.data(), 0);
+  EXPECT_EQ(buf.begin(), buf.end());
+  size_t count = 0;
+  for ([[maybe_unused]] auto byte : buf) {
+    count++;
+  }
+  EXPECT_EQ(count, 0u);
 }
 
 }  // namespace
