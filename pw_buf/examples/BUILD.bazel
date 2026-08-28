@@ -16,6 +16,8 @@ load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
+package(default_visibility = ["//visibility:public"])
+
 licenses(["notice"])
 
 pw_cc_test(
