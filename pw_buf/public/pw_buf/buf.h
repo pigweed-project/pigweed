@@ -36,6 +36,11 @@ class Buf;
 
 /// Represents a read-only view of a contiguous block of bytes.
 ///
+/// `ConstBuf` is intended for passing ownership of read-only data, optionally
+/// slicing the view between layers. Unlike `Buf`, `ConstBuf` does not support
+/// `Reclaim()` or expose its base pointer. Once a `ConstBuf` is sliced or
+/// truncated, the excluded bytes cannot be recovered.
+///
 /// An `empty()` `ConstBuf` has no bytes (`size() == 0`). A null `ConstBuf` has
 /// no bytes, and its `data()` pointer is `nullptr`. A `ConstBuf` is null when
 /// default-constructed, moved-from, or reset.
@@ -43,9 +48,6 @@ class Buf;
 /// An empty `ConstBuf` is not necessarily null (for example, if it has been
 /// sliced or truncated to length 0), in which case `data()` returns a non-null
 /// pointer.
-///
-/// Users may access a `Buf` through a `ConstBuf` reference to ensure the
-/// underlying data is not modified.
 class ConstBuf {
  public:
   using value_type = std::byte;
@@ -76,7 +78,7 @@ class ConstBuf {
   /// Move-constructs a `ConstBuf` from a mutable `Buf` (move conversion).
   ///
   /// The moved-from `Buf` is left null.
-  explicit constexpr ConstBuf(Buf&& other) noexcept;
+  constexpr ConstBuf(Buf&& other) noexcept;
 
   ConstBuf(const ConstBuf&) = delete;
 
@@ -336,10 +338,14 @@ class Buf {
 
   Buf& operator=(const Buf&) = delete;
 
-  /// Implicit conversion operators to `ConstBuf` reference types.
-  operator ConstBuf&() & { return const_buf_; }
+  /// Implicit conversion to `const ConstBuf&` and `const ConstBuf&&`.
+  /// Conversion to `ConstBuf&` is not supported, since truncating the
+  /// `ConstBuf&` would nullify this `Buf`.
+  ///
+  /// @note Prefer accepting `pw::ConstByteSpan` (or `pw::span<const
+  /// std::byte>`) by value instead of `const ConstBuf&` for functions that only
+  /// require read-only access to the buffer's contents.
   operator const ConstBuf&() const& { return const_buf_; }
-  operator ConstBuf&&() && { return std::move(const_buf_); }
   operator const ConstBuf&&() const&& { return std::move(const_buf_); }
 
   /// Accesses the byte at the specified index as read-only.
@@ -444,14 +450,14 @@ inline constexpr ConstBuf::ConstBuf(Buf&& other) noexcept
   return std::move(const_buf).Slice(offset, length);
 }
 
-/// Slices a read-only `ConstBuf` by shifting its start address to the end.
+/// Slices a `ConstBuf` by shifting its start address to the end.
 ///
 /// @pre `offset` cannot exceed `const_buf.size()`.
 [[nodiscard]] inline ConstBuf Slice(ConstBuf&& const_buf, size_t offset) {
   return Slice(std::move(const_buf), offset, const_buf.size() - offset);
 }
 
-/// Truncates a read-only `ConstBuf` to a smaller size.
+/// Truncates a `ConstBuf` to a smaller size.
 [[nodiscard]] inline ConstBuf Truncate(ConstBuf&& const_buf, size_t length) {
   return Slice(std::move(const_buf), 0, length);
 }
@@ -473,20 +479,6 @@ inline constexpr ConstBuf::ConstBuf(Buf&& other) noexcept
   return Slice(std::move(buf), 0, length);
 }
 
-inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset)
-    : Buf(Slice(Buf(std::move(buffer)), offset)) {}
-
-inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset, size_t size)
-    : Buf(Slice(Buf(std::move(buffer)), offset, size)) {}
-
-inline Buf Buf::Unowned(ByteSpan span, size_t offset, size_t size) {
-  return Slice(Unowned(span.data(), span.size()), offset, size);
-}
-
-inline Buf Buf::Unowned(ByteSpan span, size_t offset) {
-  return Slice(Unowned(span.data(), span.size()), offset);
-}
-
 /// Reclaims up to `prefix_count` bytes at the beginning and `suffix_count`
 /// bytes at the end of the buffer.
 [[nodiscard]] inline Buf Reclaim(Buf&& buf,
@@ -503,6 +495,20 @@ inline Buf Buf::Unowned(ByteSpan span, size_t offset) {
 /// Reclaims up to `count` suffix bytes at the end of the buffer.
 [[nodiscard]] inline Buf ReclaimSuffix(Buf&& buf, size_t count) {
   return Reclaim(std::move(buf), 0, count);
+}
+
+inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset)
+    : Buf(Slice(Buf(std::move(buffer)), offset)) {}
+
+inline Buf::Buf(UniquePtr<std::byte[]>&& buffer, size_t offset, size_t size)
+    : Buf(Slice(Buf(std::move(buffer)), offset, size)) {}
+
+inline Buf Buf::Unowned(ByteSpan span, size_t offset, size_t size) {
+  return Slice(Unowned(span.data(), span.size()), offset, size);
+}
+
+inline Buf Buf::Unowned(ByteSpan span, size_t offset) {
+  return Slice(Unowned(span.data(), span.size()), offset);
 }
 
 /// @endmodule

@@ -41,9 +41,16 @@ pw::Buf TryAllocateBuf(pw::Allocator& allocator) {
 namespace {
 
 TEST(ExampleTests, AllocateBuf) {
-  pw::allocator::test::AllocatorForTest<256> test_allocator;
-  pw::Buf buf = examples::AllocateBuf(test_allocator);
-  EXPECT_EQ(buf.size(), 100u);
+  pw::allocator::test::AllocatorForTest<256> allocator;
+
+  // DOCSTAG: [pw_buf-examples-move]
+  pw::Buf buf = examples::AllocateBuf(allocator);
+  pw::ConstBuf const_buf = std::move(buf);
+  // DOCSTAG: [pw_buf-examples-move]
+
+  EXPECT_EQ(buf.data(), nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_NE(const_buf.data(), nullptr);
+  EXPECT_EQ(const_buf.size(), 100u);
 }
 
 TEST(ExampleTests, TryAllocateBuf) {

@@ -51,16 +51,6 @@ pw_cc_test(
 )
 
 pw_cc_test(
-    name = "pass_as_const_buf_reference",
-    srcs = ["pass_as_const_buf_reference.cc"],
-    deps = [
-        "//pw_allocator:testing",
-        "//pw_buf",
-        "//pw_unit_test",
-    ],
-)
-
-pw_cc_test(
     name = "slice_and_reclaim",
     srcs = ["slice_and_reclaim.cc"],
     deps = [
@@ -88,7 +78,6 @@ sphinx_docs_library(
         "BUILD.bazel",
         "allocate.cc",
         "create_from_unique_ptr.cc",
-        "pass_as_const_buf_reference.cc",
         "pass_as_span.cc",
         "slice_and_reclaim.cc",
         "zero_copy_socket.cc",

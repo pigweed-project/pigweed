@@ -79,12 +79,31 @@ of a buffer:
 - :cc:`pw::Reclaim`: Expands a sliced buffer view back into its originally
   allocated prefix and suffix bytes.
 
-Conversions
-===========
-A :cc:`pw::Buf` can be:
+Relationship between Buf and ConstBuf
+=====================================
+:cc:`pw::Buf` and :cc:`pw::ConstBuf` manage owned or unowned buffer memory, but
+serve different purposes:
 
-- permanently converted to a :cc:`pw::ConstBuf`, or
-- implicitly used as a :cc:`pw::ConstBuf` through a ``ConstBuf&`` reference.
+* **Mutable vs. read-only:** A ``Buf`` provides mutable access to its bytes,
+  whereas a ``ConstBuf`` is strictly read-only.
+* **Slicing and reclaiming:** A ``Buf`` can be sliced (:cc:`pw::Slice`) and
+  later reclaimed (:cc:`pw::Reclaim`), making it ideal for constructing write
+  packets where headers or footers are reserved and populated in stages. A
+  ``ConstBuf`` only supports slicing and truncating, never reclaiming, which is
+  suited for read packets where layers strip headers as data moves up the
+  protocol stack without accessing outside their assigned slice.
+
+A ``Buf`` can be converted to a ``ConstBuf`` by moving it:
+
+.. literalinclude:: examples/allocate.cc
+   :language: c++
+   :start-after: // DOCSTAG: [pw_buf-examples-move]
+   :end-before: // DOCSTAG: [pw_buf-examples-move]
+
+Moving the ``Buf`` transfers ownership and leaves the ``Buf`` null. A ``Buf``
+may also be used through a ``const ConstBuf&``, though accepting a
+``pw::ConstByteSpan`` (or ``pw::span<const std::byte>``) by value is
+recommended for functions that only borrow data for reading.
 
 Examples
 ========
@@ -111,14 +130,6 @@ Pass a ``Buf`` as a ``std::span``
    :language: c++
    :start-after: // DOCSTAG: [pw_buf-examples-span]
    :end-before: // DOCSTAG: [pw_buf-examples-span]
-   :linenos:
-
-Pass a ``Buf`` as a ``ConstBuf&``
----------------------------------
-.. literalinclude:: examples/pass_as_const_buf_reference.cc
-   :language: c++
-   :start-after: // DOCSTAG: [pw_buf-examples-const_buf_reference]
-   :end-before: // DOCSTAG: [pw_buf-examples-const_buf_reference]
    :linenos:
 
 Slice and Reclaim a ``Buf``

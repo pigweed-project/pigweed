@@ -531,13 +531,13 @@ TEST_F(BufTest, SelfAssignment) {
   std::byte* raw_ptr = unique_data.get();
 
   Buf buf(std::move(unique_data));
-  ConstBuf& const_ref = buf;
+  Buf& buf_ref = buf;
 
   // Self assignment should not destroy data
-  const_ref = std::move(buf);
+  buf_ref = std::move(buf);
 
-  EXPECT_EQ(const_ref.size(), 10u);
-  EXPECT_EQ(const_ref.data(), raw_ptr);
+  EXPECT_EQ(buf_ref.size(), 10u);
+  EXPECT_EQ(buf_ref.data(), raw_ptr);
 }
 
 TEST_F(BufTest, SliceConstBufOutOfBounds) {
@@ -621,9 +621,20 @@ TEST_F(BufTest, ConstBufConversion) {
   EXPECT_EQ(const_ref.size(), 10u);
   EXPECT_EQ(const_ref.data(), raw_ptr);
 
-  // Test Buf&& -> ConstBuf&& conversion
+  // Test const Buf&& -> const ConstBuf&& conversion
+  const ConstBuf&& const_rvalue_ref = std::move(buf);
+  EXPECT_EQ(const_rvalue_ref.size(), 10u);
+  EXPECT_EQ(const_rvalue_ref.data(), raw_ptr);
+
+  // Test non-const Buf& -> const ConstBuf& conversion
+  Buf mutable_buf = Buf::Unowned(raw_ptr, 10);
+  const ConstBuf& mutable_to_const_ref = mutable_buf;
+  EXPECT_EQ(mutable_to_const_ref.size(), 10u);
+  EXPECT_EQ(mutable_to_const_ref.data(), raw_ptr);
+
+  // Test implicit move conversion Buf&& -> ConstBuf
   Buf buf2 = Buf::Unowned(raw_ptr, 10);
-  ConstBuf const_moved(std::move(buf2));
+  ConstBuf const_moved = std::move(buf2);
   EXPECT_EQ(const_moved.size(), 10u);
 }
 
