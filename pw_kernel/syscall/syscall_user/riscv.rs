@@ -36,43 +36,73 @@ macro_rules! syscall_veneer {
     };
 }
 
-syscall_veneer!(ObjectWait, object_wait(handle: u32, signals: u32, deadline: u64));
-syscall_veneer!(WaitGroupAdd, wait_group_add(
-     wait_group: u32,
-     object: u32,
-     signal_mask: Signals,
-     user_data: usize,
-));
-syscall_veneer!(WaitGroupRemove, wait_group_remove(
-     wait_group: u32,
-     object: u32,
-));
-syscall_veneer!(ChannelTransact, channel_transact(
-    object_handle: u32, // a0
-    send_data: *const u8, // a1
-    send_len: usize,    // a2
-    recv_data: *mut u8, // a3
-    recv_len: usize,    // a4
-    deadline: u64,      // a6-a7
-));
-syscall_veneer!(ChannelAsyncTransact, channel_async_transact(
-    object_handle: u32,
-    send_data: *const u8,
-    send_len: usize,
-    recv_data: *mut u8,
-    recv_len: usize,
-));
-syscall_veneer!(ChannelAsyncTransactComplete, channel_async_transact_complete(object_handle: u32));
-syscall_veneer!(ChannelAsyncCancel, channel_async_cancel(object_handle: u32));
-syscall_veneer!(ChannelRead, channel_read(
-     object_handle: u32,
-     offset: usize,
-     buffer: *mut u8,
-     buffer_len: usize,
-));
-syscall_veneer!(ChannelRespond, channel_respond(object_handle: u32, buffer: *const u8, buffer_len: usize));
-syscall_veneer!(InterruptAck, interrupt_ack(object_handle: u32, signal_mask: Signals));
-syscall_veneer!(RaisePeerUserSignal, object_set_peer_user_signal(object_handle: u32, set: u32));
+syscall_veneer!(
+    ObjectWait,
+    object_wait(handle: u32, signals: u32, deadline: u64)
+);
+syscall_veneer!(
+    WaitGroupAdd,
+    wait_group_add(
+        wait_group: u32,
+        object: u32,
+        signal_mask: Signals,
+        user_data: usize,
+    )
+);
+syscall_veneer!(
+    WaitGroupRemove,
+    wait_group_remove(wait_group: u32, object: u32)
+);
+syscall_veneer!(
+    ChannelTransact,
+    channel_transact(
+        object_handle: u32, // a0
+        send_data: *const u8, // a1
+        send_len: usize,    // a2
+        recv_data: *mut u8, // a3
+        recv_len: usize,    // a4
+        deadline: u64,      // a6-a7
+    )
+);
+syscall_veneer!(
+    ChannelAsyncTransact,
+    channel_async_transact(
+        object_handle: u32,
+        send_data: *const u8,
+        send_len: usize,
+        recv_data: *mut u8,
+        recv_len: usize,
+    )
+);
+syscall_veneer!(
+    ChannelAsyncTransactComplete,
+    channel_async_transact_complete(object_handle: u32)
+);
+syscall_veneer!(
+    ChannelAsyncCancel,
+    channel_async_cancel(object_handle: u32)
+);
+syscall_veneer!(
+    ChannelRead,
+    channel_read(
+        object_handle: u32,
+        offset: usize,
+        buffer: *mut u8,
+        buffer_len: usize,
+    )
+);
+syscall_veneer!(
+    ChannelRespond,
+    channel_respond(object_handle: u32, buffer: *const u8, buffer_len: usize)
+);
+syscall_veneer!(
+    InterruptAck,
+    interrupt_ack(object_handle: u32, signal_mask: Signals)
+);
+syscall_veneer!(
+    RaisePeerUserSignal,
+    object_set_peer_user_signal(object_handle: u32, set: u32)
+);
 syscall_veneer!(DebugPutc, putc(a: u32));
 syscall_veneer!(DebugShutdown, shutdown(a: u32));
 syscall_veneer!(DebugLog, log(buffer: *const u8, buffer_len: usize));
@@ -80,7 +110,10 @@ syscall_veneer!(DebugNop, nop());
 syscall_veneer!(DebugTriggerInterrupt, debug_trigger_interrupt(irq: u32));
 syscall_veneer!(DebugClockNow, debug_clock_now());
 
-syscall_veneer!(ThreadStart, thread_start(handle: u32, initial_pc: usize, initial_sp: usize));
+syscall_veneer!(
+    ThreadStart,
+    thread_start(handle: u32, initial_pc: usize, initial_sp: usize)
+);
 syscall_veneer!(TaskTerminate, task_terminate(handle: u32));
 syscall_veneer!(TaskJoin, task_join(handle: u32));
 syscall_veneer!(ThreadExit, thread_exit(exit_code: u32));
