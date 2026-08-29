@@ -236,8 +236,8 @@ RUST_VERSION = "git_revisions:d0babd8b6b05ef9bb65d42f928cef4129d64cf65,e8f958994
 
 # TODO(b/488384121): Setup a roller
 # ROLL: Warning: this is automatically updated by
-# ROLL: https://cr-buildbucket.appspot.com/build/8672736437977145489
-RUST_ANALYZER_VERSION = "git_revision:9f4667f303a80ad33457d914f93991242c057c87"
+# ROLL: https://cr-buildbucket.appspot.com/build/8672102261603849601
+RUST_ANALYZER_VERSION = "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb"
 
 RUST_BINDGEN_VERSION = "git_revisions:93726885850c20847ac445664bc7bb2b827d9642,deb6854eec93529b2bd30178d400ad2ee7665cd4"
 
