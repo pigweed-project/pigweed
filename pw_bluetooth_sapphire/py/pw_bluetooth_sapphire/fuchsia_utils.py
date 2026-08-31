@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -65,8 +66,40 @@ def get_sha256(path: Path) -> str:
 
 
 def make_writable(path: Path):
-    """Makes a file writable, prompting the user to run sudo if needed."""
-    if os.access(path, os.W_OK):
+    """Makes a file or directory writable, attempting to fix permissions without
+    sudo first, and prompting the user to run sudo only if needed."""
+    if path.exists() and os.access(path, os.W_OK):
+        return
+
+    if (
+        not path.exists()
+        and path.parent.exists()
+        and os.access(path.parent, os.W_OK | os.X_OK)
+    ):
+        return
+
+    # Attempt to make parent directory and the file writable without sudo
+    # in case the user owns them (e.g. read-only CIPD prebuilts).
+    try:
+        if path.parent.exists() and not os.access(
+            path.parent, os.W_OK | os.X_OK
+        ):
+            path.parent.chmod(
+                path.parent.stat().st_mode | stat.S_IWUSR | stat.S_IXUSR
+            )
+        if path.exists() and not os.access(path, os.W_OK):
+            path.chmod(path.stat().st_mode | stat.S_IWUSR)
+    except OSError:
+        pass
+
+    if path.exists() and os.access(path, os.W_OK):
+        return
+
+    if (
+        not path.exists()
+        and path.parent.exists()
+        and os.access(path.parent, os.W_OK | os.X_OK)
+    ):
         return
 
     if sys.platform == 'win32':

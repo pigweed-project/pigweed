@@ -14,7 +14,10 @@
 """Tests for bluetooth CLI integration."""
 
 import argparse
+import os
 from pathlib import Path
+import sys
+import tempfile
 import unittest
 from unittest.mock import call, patch, MagicMock
 
@@ -424,6 +427,116 @@ class TestBluetoothCli(unittest.TestCase):
                 ),
             ]
         )
+
+    def test_make_writable_already_writable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / 'file.txt'
+            file_path.write_text('content')
+            file_path.chmod(0o755)
+
+            with patch('subprocess.run') as mock_run:
+                fuchsia_utils.make_writable(file_path)
+                mock_run.assert_not_called()
+                self.assertTrue(os.access(file_path, os.W_OK))
+
+    def test_make_writable_nonexistent_file_writable_parent(
+        self,
+    ):  # pylint: disable=no-self-use
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / 'nonexistent.txt'
+
+            with patch('subprocess.run') as mock_run:
+                fuchsia_utils.make_writable(file_path)
+                mock_run.assert_not_called()
+
+    def test_make_writable_read_only_file_chmod_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / 'file.txt'
+            file_path.write_text('content')
+            file_path.chmod(0o555)
+            self.assertFalse(os.access(file_path, os.W_OK))
+
+            with patch('subprocess.run') as mock_run:
+                fuchsia_utils.make_writable(file_path)
+                mock_run.assert_not_called()
+                self.assertTrue(os.access(file_path, os.W_OK))
+
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'Read-only directory permissions not supported on Windows',
+    )
+    def test_make_writable_read_only_parent_chmod_succeeds(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            parent_dir = Path(tmpdir) / 'sub'
+            parent_dir.mkdir()
+            file_path = parent_dir / 'file.txt'
+            file_path.write_text('content')
+            file_path.chmod(0o555)
+            parent_dir.chmod(0o555)
+            self.assertFalse(os.access(parent_dir, os.W_OK))
+            self.assertFalse(os.access(file_path, os.W_OK))
+
+            with patch('subprocess.run') as mock_run:
+                fuchsia_utils.make_writable(file_path)
+                mock_run.assert_not_called()
+                self.assertTrue(os.access(parent_dir, os.W_OK))
+                self.assertTrue(os.access(file_path, os.W_OK))
+
+    @unittest.skipIf(
+        sys.platform == 'win32',
+        'pwd and grp modules not available on Windows',
+    )
+    def test_make_writable_fallback_to_sudo_accepted(
+        self,
+    ):  # pylint: disable=no-self-use
+        """Test fallback to sudo when user accepts prompt."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / 'file.txt'
+            file_path.write_text('content')
+
+            with (
+                patch('os.access', return_value=False),
+                patch(
+                    'pathlib.Path.chmod',
+                    side_effect=OSError('Permission denied'),
+                ),
+                patch('builtins.input', return_value='y'),
+                patch('pwd.getpwuid') as mock_pwd,
+                patch('grp.getgrgid') as mock_grp,
+                patch('subprocess.run') as mock_run,
+            ):
+                mock_pwd.return_value.pw_name = 'testuser'
+                mock_grp.return_value.gr_name = 'testgroup'
+
+                fuchsia_utils.make_writable(file_path)
+
+                expected_calls = [
+                    call(['sudo', 'chmod', '700', str(file_path)], check=True),
+                    call(
+                        ['sudo', 'chown', 'testuser:testgroup', str(file_path)],
+                        check=True,
+                    ),
+                ]
+                mock_run.assert_has_calls(expected_calls)
+
+    @unittest.skipIf(
+        sys.platform != 'win32',
+        'Windows-specific error test',
+    )
+    def test_make_writable_fallback_windows_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / 'file.txt'
+            file_path.write_text('content')
+
+            with (
+                patch('os.access', return_value=False),
+                patch(
+                    'pathlib.Path.chmod',
+                    side_effect=OSError('Permission denied'),
+                ),
+            ):
+                with self.assertRaises(RuntimeError):
+                    fuchsia_utils.make_writable(file_path)
 
 
 if __name__ == '__main__':
