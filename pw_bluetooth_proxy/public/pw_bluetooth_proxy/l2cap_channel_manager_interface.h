@@ -88,12 +88,15 @@ class L2capChannelManagerInterface {
   ///                                       valid until the channel destructor
   ///                                       returns.
   ///
+  /// @param[in] allow_data_loss            Whether this channel tolerates data
+  ///                                       loss for snapshot recovery.
+  ///
   /// @returns @Result{the channel}
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
   ///   available to accommodate an additional ACL connection.
-  /// * @CANCELLED: Offload channel recovery failed because an ACL frame
-  ///   recombination was in progress when the proxy snapshot was captured.
+  /// * @CANCELLED: Offload channel recovery failed because client data was
+  ///   lost according to the snapshot and `allow_data_loss` is false.
   Result<UniquePtr<ChannelProxy>> InterceptBasicModeChannel(
       ConnectionHandle connection_handle,
       uint16_t local_channel_id,
@@ -101,14 +104,16 @@ class L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn) {
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss = false) {
     return DoInterceptBasicModeChannel(connection_handle,
                                        local_channel_id,
                                        remote_channel_id,
                                        transport,
                                        std::move(payload_from_controller_fn),
                                        std::move(payload_from_host_fn),
-                                       std::move(event_fn));
+                                       std::move(event_fn),
+                                       allow_data_loss);
   }
 
   /// Returns an L2CAP credit-based flow control channel that supports writing
@@ -155,6 +160,21 @@ class L2capChannelManagerInterface {
   }
 
  private:
+  // TODO: https://pwbug.dev/553990261 - Remove transitional 7-parameter
+  // overload once downstream implementations are updated.
+  virtual Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
+      ConnectionHandle /*connection_handle*/,
+      uint16_t /*local_channel_id*/,
+      uint16_t /*remote_channel_id*/,
+      AclTransportType /*transport*/,
+      BufferReceiveFunction&& /*payload_from_controller_fn*/,
+      BufferReceiveFunction&& /*payload_from_host_fn*/,
+      ChannelEventCallback&& /*event_fn*/) {
+    return Status::Unimplemented();
+  }
+
+  // TODO: https://pwbug.dev/553990261 - Return to pure virtual once downstream
+  // implementations are updated.
   virtual Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
       ConnectionHandle connection_handle,
       uint16_t local_channel_id,
@@ -162,7 +182,16 @@ class L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn) = 0;
+      ChannelEventCallback&& event_fn,
+      bool /*allow_data_loss*/) {
+    return DoInterceptBasicModeChannel(connection_handle,
+                                       local_channel_id,
+                                       remote_channel_id,
+                                       transport,
+                                       std::move(payload_from_controller_fn),
+                                       std::move(payload_from_host_fn),
+                                       std::move(event_fn));
+  }
 
   virtual Result<UniquePtr<ChannelProxy>>
   DoInterceptCreditBasedFlowControlChannel(

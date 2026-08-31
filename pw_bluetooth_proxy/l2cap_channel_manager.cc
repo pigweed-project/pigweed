@@ -881,7 +881,8 @@ L2capChannelManager::DoInterceptBasicModeChannel(
     AclTransportType transport,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn) {
+    ChannelEventCallback&& event_fn,
+    bool allow_data_loss) {
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -926,7 +927,8 @@ L2capChannelManager::DoInterceptBasicModeChannel(
                               transport,
                               local_channel_id,
                               remote_channel_id,
-                              std::move(event_fn)));
+                              std::move(event_fn),
+                              allow_data_loss));
 
   std::optional<uint16_t> max_l2cap_payload_size =
       channel_node->mapped().MaxL2capPayloadSize();

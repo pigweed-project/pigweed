@@ -80,7 +80,8 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
         {},
         [this, connection_handle](L2capChannelEvent event) {
           this->HandleL2capEvent(event, connection_handle);
-        });
+        },
+        /*allow_data_loss=*/true);
 
     if (!proxy_result.ok()) {
       return proxy_result.status();

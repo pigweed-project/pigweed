@@ -92,6 +92,8 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
 
   MockChannelProxy* last_channel_proxy() { return last_channel_proxy_; }
 
+  bool allow_data_loss() const { return allow_data_loss_; }
+
  private:
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle,
@@ -109,7 +111,9 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
       AclTransportType /*transport*/,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& /*payload_from_host_fn*/,
-      ChannelEventCallback&& event_fn) override {
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss) override {
+    allow_data_loss_ = allow_data_loss;
     payload_from_controller_fn_ = std::move(payload_from_controller_fn);
     event_fn_ = std::move(event_fn);
     auto proxy = allocator_.MakeUnique<MockChannelProxy>();
@@ -121,6 +125,7 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
   BufferReceiveFunction payload_from_controller_fn_;
   ChannelEventCallback event_fn_;
   MockChannelProxy* last_channel_proxy_ = nullptr;
+  bool allow_data_loss_ = false;
 };
 
 }  // namespace testing

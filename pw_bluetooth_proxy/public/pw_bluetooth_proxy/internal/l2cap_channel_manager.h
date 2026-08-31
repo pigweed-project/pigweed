@@ -324,7 +324,8 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn) override
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss) override
       PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle connection_handle,
@@ -379,8 +380,10 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
 
   // If a snapshot is stored, applies snapshot state to a basic mode channel.
-  // Returns `Status::Cancelled()` if an ACL frame recombination was in progress
-  // when the snapshot was captured.
+  // Returns `Status::Cancelled()` if data loss occurred (e.g. an ACL frame
+  // recombination was in progress when the snapshot was captured, or queued
+  // ACL packets were dropped) and the snapshotted channel does not allow data
+  // loss.
   Status RecoverBasicModeChannel(ConnectionHandle connection_handle,
                                  uint16_t local_cid,
                                  uint16_t remote_cid)

@@ -529,7 +529,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::InternalDoInterceptBasicModeChannel(
     AclTransportType transport,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn) {
+    ChannelEventCallback&& event_fn,
+    bool allow_data_loss) {
   return l2cap_channel_manager_.InterceptBasicModeChannel(
       connection_handle,
       local_channel_id,
@@ -537,7 +538,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::InternalDoInterceptBasicModeChannel(
       transport,
       std::move(payload_from_controller_fn),
       std::move(payload_from_host_fn),
-      std::move(event_fn));
+      std::move(event_fn),
+      allow_data_loss);
 }
 
 Result<UniquePtr<ChannelProxy>>

@@ -87,6 +87,8 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
 
   MockChannelProxy* last_channel_proxy() const { return last_channel_proxy_; }
 
+  bool allow_data_loss() const { return allow_data_loss_; }
+
  private:
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle,
@@ -104,8 +106,10 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
       AclTransportType /*transport*/,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& /*payload_from_host_fn*/,
-      ChannelEventCallback&& event_fn) override {
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss) override {
     intercept_channel_count_++;
+    allow_data_loss_ = allow_data_loss;
     payload_from_controller_fn_ = std::move(payload_from_controller_fn);
     event_fn_ = std::move(event_fn);
     auto proxy = allocator_.MakeUnique<MockChannelProxy>();
@@ -118,6 +122,7 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
   ChannelEventCallback event_fn_;
   MockChannelProxy* last_channel_proxy_ = nullptr;
   uint32_t intercept_channel_count_ = 0;
+  bool allow_data_loss_ = false;
 };
 
 }  // namespace testing
@@ -161,6 +166,7 @@ TEST_F(RfcommManagerTest, AcquireSingleChannel) {
                                     nullptr);
   EXPECT_TRUE(channel_result.ok());
   EXPECT_TRUE(channel_result.value());
+  EXPECT_TRUE(l2cap_manager_.allow_data_loss());
 }
 
 TEST_F(RfcommManagerTest, AcquireMultipleChannelsSameConnection) {

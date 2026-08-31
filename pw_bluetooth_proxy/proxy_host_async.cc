@@ -175,7 +175,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
     AclTransportType transport,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn) {
+    ChannelEventCallback&& event_fn,
+    bool allow_data_loss) {
   if (l2cap_channel_manager_.impl().IsRunningOnDispatcherThread()) {
     return InternalDoInterceptBasicModeChannel(
         connection_handle,
@@ -184,7 +185,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
         transport,
         std::move(payload_from_controller_fn),
         std::move(payload_from_host_fn),
-        std::move(event_fn));
+        std::move(event_fn),
+        allow_data_loss);
   }
   ChannelRequest request{
       .params =
@@ -196,7 +198,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
               .payload_from_controller_fn =
                   std::move(payload_from_controller_fn),
               .payload_from_host_fn = std::move(payload_from_host_fn),
-              .event_fn = std::move(event_fn)},
+              .event_fn = std::move(event_fn),
+              .allow_data_loss = allow_data_loss},
   };
   PW_TRY_ASSIGN(auto channel, impl_.ChannelSendAndReceive(std::move(request)));
   return Result<UniquePtr<ChannelProxy>>(
@@ -492,7 +495,8 @@ Result<ProxyHostImpl::ClientChannel> ProxyHostImpl::DoHandleRequest(
                               params.transport,
                               std::move(params.payload_from_controller_fn),
                               std::move(params.payload_from_host_fn),
-                              std::move(params.event_fn)));
+                              std::move(params.event_fn),
+                              params.allow_data_loss));
             return Result<ClientChannel>(std::move(channel));
           }},
       std::move(request.params));

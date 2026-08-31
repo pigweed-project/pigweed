@@ -516,7 +516,8 @@ class ProxyHost : public L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn) override;
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss) override;
 
   Result<UniquePtr<ChannelProxy>> InternalDoInterceptBasicModeChannel(
       ConnectionHandle connection_handle,
@@ -525,7 +526,8 @@ class ProxyHost : public L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn);
+      ChannelEventCallback&& event_fn,
+      bool allow_data_loss);
 
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle connection_handle,

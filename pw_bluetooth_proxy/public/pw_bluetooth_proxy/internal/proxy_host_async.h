@@ -110,6 +110,7 @@ class ProxyHostImpl {
       BufferReceiveFunction payload_from_controller_fn;
       BufferReceiveFunction payload_from_host_fn;
       ChannelEventCallback event_fn;
+      bool allow_data_loss = false;
     };
 
     struct GattNotifyParams {

@@ -108,7 +108,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
     AclTransportType transport,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn) {
+    ChannelEventCallback&& event_fn,
+    bool allow_data_loss) {
   return InternalDoInterceptBasicModeChannel(
       connection_handle,
       local_channel_id,
@@ -116,7 +117,8 @@ Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
       transport,
       std::move(payload_from_controller_fn),
       std::move(payload_from_host_fn),
-      std::move(event_fn));
+      std::move(event_fn),
+      allow_data_loss);
 }
 
 }  // namespace pw::bluetooth::proxy

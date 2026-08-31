@@ -204,7 +204,8 @@ class GattTest : public ::testing::Test, public L2capChannelManagerInterface {
       AclTransportType transport,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn) override {
+      ChannelEventCallback&& event_fn,
+      bool /*allow_data_loss*/) override {
     if (!intercept_channel_status_.ok()) {
       return intercept_channel_status_;
     }

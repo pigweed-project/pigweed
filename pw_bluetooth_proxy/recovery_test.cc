@@ -1745,6 +1745,60 @@ TEST_F(L2capRecoveryTest, BasicModeChannelAllowsDataLoss) {
   PW_TEST_EXPECT_OK(basic_channel.status());
 }
 
+TEST_F(L2capRecoveryTest, InterceptedBasicModeChannelAllowsDataLoss) {
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      []([[maybe_unused]] H4PacketWithH4&& packet) {});
+
+  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
+                              std::move(send_to_controller_fn),
+                              /*le_acl_credits_to_reserve=*/2,
+                              /*br_edr_acl_credits_to_reserve=*/0,
+                              GetProxyHostAllocator(),
+                              nullptr);
+  StartDispatcherOnCurrentThread(proxy);
+
+  // Populate snapshot with an interrupted frame.
+  ProxyHostSnapshot snapshot;
+  snapshot.acl.acl_connections.push_back(
+      AclConnectionSnapshot{.connection_handle = kLeConnectionHandle1,
+                            .transport = AclTransportType::kLe});
+
+  L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
+  channel_snapshot.acl_recombination_in_progress = true;
+  channel_snapshot.allow_data_loss = true;
+  snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
+  snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
+      .connection_handle = kLeConnectionHandle1,
+      .transport = AclTransportType::kLe,
+  });
+
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 2));
+
+  L2capChannelManagerInterface::SpanReceiveFunction rx_fn =
+      [](span<const std::byte>, ConnectionHandle, uint16_t, uint16_t) {
+        return true;
+      };
+  L2capChannelManagerInterface::SpanReceiveFunction tx_fn =
+      [](span<const std::byte>, ConnectionHandle, uint16_t, uint16_t) {
+        return true;
+      };
+  PW_TEST_EXPECT_OK(
+      proxy
+          .InterceptBasicModeChannel(ConnectionHandle{kLeConnectionHandle1},
+                                     kLocalCid1,
+                                     kRemoteCid1,
+                                     AclTransportType::kLe,
+                                     std::move(rx_fn),
+                                     std::move(tx_fn),
+                                     /*event_fn=*/nullptr,
+                                     /*allow_data_loss=*/true)
+          .status());
+}
+
 TEST_F(L2capRecoveryTest, CreditBasedFlowControlChannelAllowsDataLoss) {
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
