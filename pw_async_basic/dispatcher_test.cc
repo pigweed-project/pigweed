@@ -502,7 +502,7 @@ TEST(DispatcherBasic, RepostRaceCondition) {
   dispatcher.task_reposted.release();
   task_run.acquire();
 
-  dispatcher.Post(task);
+  dispatcher.PostAfter(task, 1h);
 
   EXPECT_TRUE(dispatcher.Cancel(task));
   dispatcher.RequestStop();
