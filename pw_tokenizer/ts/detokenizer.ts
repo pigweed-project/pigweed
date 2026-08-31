@@ -13,11 +13,10 @@
 // the License.
 
 /**  Decodes and detokenizes strings from binary or Base64 input. */
-import { Buffer } from 'buffer';
 import { Frame } from 'pigweedjs/pw_hdlc';
+import { base64ToBinaryString } from 'pigweedjs/pw_base64';
 import { TokenDatabase } from './token_database';
 import { PrintfDecoder } from './printf_decoder';
-
 const MAX_RECURSIONS = 9;
 const BASE64CHARS = '[A-Za-z0-9+\\-\\/_]';
 const PATTERN = new RegExp(
@@ -170,7 +169,7 @@ export class Detokenizer {
   private decodeBase64TokenFrame(base64Data: string): TokenAndArgs {
     // Remove the prefix '$' and convert from Base64.
     const prefixRemoved = base64Data.slice(1);
-    const noBase64 = Buffer.from(prefixRemoved, 'base64').toString('binary');
+    const noBase64 = base64ToBinaryString(prefixRemoved);
     // Convert back to bytes and return token and arguments.
     const bytes = noBase64.split('').map((ch) => ch.charCodeAt(0));
     let uIntArray = new Uint8Array(bytes);

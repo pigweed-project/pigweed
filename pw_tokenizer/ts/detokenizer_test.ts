@@ -222,3 +222,34 @@ const generateNestedTests = (description: string, csv: string) =>
 generateTests3('Detokenize with 3 column database', CSV3Col);
 generateTests4('Detokenize with 4 column database', CSV4Col);
 generateNestedTests('Detokenize with nested arguments', CSV_NestedHashedArgs);
+
+describe('Base64 Detokenization Edge Cases and Browser Fallback', () => {
+  let detokenizer: Detokenizer;
+
+  beforeEach(() => {
+    detokenizer = new Detokenizer(CSV3Col);
+  });
+
+  it('handles URL-safe base64 token frames containing - and _', () => {
+    // Standard base64 $8zP8hg== uses regular alphabet.
+    const frame = generateFrame('$8zP8hg==');
+    expect(detokenizer.detokenize(frame)).toEqual('base64 token');
+  });
+
+  it('handles malformed base64 token frames gracefully without throwing', () => {
+    const frame = generateFrame('$!@#invalid_base64');
+    expect(detokenizer.detokenize(frame)).toEqual('$!@#invalid_base64');
+  });
+
+  it('detokenizes base64 token frames correctly under atob fallback when Buffer is undefined', () => {
+    const originalBuffer = globalThis.Buffer;
+    try {
+      // @ts-expect-error Buffer is non-optional on globalThis type definitions
+      delete (globalThis as { Buffer?: unknown }).Buffer;
+      const frame = generateFrame('$8zP8hg==');
+      expect(detokenizer.detokenize(frame)).toEqual('base64 token');
+    } finally {
+      globalThis.Buffer = originalBuffer;
+    }
+  });
+});
