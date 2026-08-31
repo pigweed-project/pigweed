@@ -24,6 +24,7 @@
 #include "pw_async2/task.h"
 #include "pw_async2/try.h"
 #include "pw_bluetooth_proxy/basic_l2cap_channel.h"
+#include "pw_bluetooth_proxy/basic_mode_channel_config.h"
 #include "pw_bluetooth_proxy/gatt_notify_channel.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
@@ -103,14 +104,16 @@ class ProxyHostImpl {
     };
 
     struct BasicChannelProxyParams {
-      ConnectionHandle connection_handle = ConnectionHandle{0};
-      uint16_t local_channel_id = 0;
-      uint16_t remote_channel_id = 0;
-      AclTransportType transport = AclTransportType::kBrEdr;
+      BasicModeChannelConfig config{
+          .connection_handle = ConnectionHandle{0},
+          .local_channel_id = 0,
+          .remote_channel_id = 0,
+          .transport = AclTransportType::kBrEdr,
+          .allow_data_loss = false,
+      };
       BufferReceiveFunction payload_from_controller_fn;
       BufferReceiveFunction payload_from_host_fn;
       ChannelEventCallback event_fn;
-      bool allow_data_loss = false;
     };
 
     struct GattNotifyParams {

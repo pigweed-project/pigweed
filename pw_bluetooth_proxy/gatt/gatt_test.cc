@@ -198,25 +198,21 @@ class GattTest : public ::testing::Test, public L2capChannelManagerInterface {
   }
 
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
-      ConnectionHandle /*connection_handle*/,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool /*allow_data_loss*/) override {
+      ChannelEventCallback&& event_fn) override {
     if (!intercept_channel_status_.ok()) {
       return intercept_channel_status_;
     }
 
     EXPECT_EQ(
-        local_channel_id,
+        config.local_channel_id,
         static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL));
     EXPECT_EQ(
-        remote_channel_id,
+        config.remote_channel_id,
         static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL));
-    EXPECT_EQ(transport, AclTransportType::kLe);
+    EXPECT_EQ(config.transport, AclTransportType::kLe);
 
     auto write_cb = [this](multibuf::MultiBuf&& buf) -> StatusWithMultiBuf {
       if (simulate_channel_write_failures_) {

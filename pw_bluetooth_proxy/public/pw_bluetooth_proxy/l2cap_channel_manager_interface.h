@@ -17,6 +17,7 @@
 #include <variant>
 
 #include "pw_allocator/unique_ptr.h"
+#include "pw_bluetooth_proxy/basic_mode_channel_config.h"
 #include "pw_bluetooth_proxy/channel_proxy.h"
 #include "pw_bluetooth_proxy/connection_handle.h"
 #include "pw_bluetooth_proxy/internal/logical_transport.h"
@@ -53,16 +54,8 @@ class L2capChannelManagerInterface {
   /// Returns an L2CAP channel operating in basic mode that supports writing to
   /// and reading from a remote peer.
   ///
-  /// @param[in] connection_handle          The connection handle of the remote
-  ///                                       peer.
-  ///
-  /// @param[in] local_cid                  L2CAP channel ID of the local
-  ///                                       endpoint.
-  ///
-  /// @param[in] remote_cid                 L2CAP channel ID of the remote
-  ///                                       endpoint.
-  ///
-  /// @param[in] transport                  Logical link transport type.
+  /// @param[in] config                     Configuration parameters for the
+  ///                                       channel.
   ///
   /// @param[in] payload_from_controller_fn Read callback to be invoked on Rx
   ///                                       SDUs. If a multibuf is returned by
@@ -87,10 +80,6 @@ class L2capChannelManagerInterface {
   ///                                       Must outlive the channel and remain
   ///                                       valid until the channel destructor
   ///                                       returns.
-  ///
-  /// @param[in] allow_data_loss            Whether this channel tolerates data
-  ///                                       loss for snapshot recovery.
-  ///
   /// @returns @Result{the channel}
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
@@ -98,22 +87,14 @@ class L2capChannelManagerInterface {
   /// * @CANCELLED: Offload channel recovery failed because client data was
   ///   lost according to the snapshot and `allow_data_loss` is false.
   Result<UniquePtr<ChannelProxy>> InterceptBasicModeChannel(
-      ConnectionHandle connection_handle,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool allow_data_loss = false) {
-    return DoInterceptBasicModeChannel(connection_handle,
-                                       local_channel_id,
-                                       remote_channel_id,
-                                       transport,
+      ChannelEventCallback&& event_fn) {
+    return DoInterceptBasicModeChannel(config,
                                        std::move(payload_from_controller_fn),
                                        std::move(payload_from_host_fn),
-                                       std::move(event_fn),
-                                       allow_data_loss);
+                                       std::move(event_fn));
   }
 
   /// Returns an L2CAP credit-based flow control channel that supports writing
@@ -176,18 +157,14 @@ class L2capChannelManagerInterface {
   // TODO: https://pwbug.dev/553990261 - Return to pure virtual once downstream
   // implementations are updated.
   virtual Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
-      ConnectionHandle connection_handle,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool /*allow_data_loss*/) {
-    return DoInterceptBasicModeChannel(connection_handle,
-                                       local_channel_id,
-                                       remote_channel_id,
-                                       transport,
+      ChannelEventCallback&& event_fn) {
+    return DoInterceptBasicModeChannel(config.connection_handle,
+                                       config.local_channel_id,
+                                       config.remote_channel_id,
+                                       config.transport,
                                        std::move(payload_from_controller_fn),
                                        std::move(payload_from_host_fn),
                                        std::move(event_fn));

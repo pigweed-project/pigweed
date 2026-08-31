@@ -705,10 +705,10 @@ Result<UniquePtr<ChannelProxy>>
 ProxyHostTest::BuildBasicModeChannelProxyWithResult(
     ProxyHost& proxy, BasicChannelProxyParameters&& params) {
   return proxy.InterceptBasicModeChannel(
-      params.connection_handle,
-      params.local_channel_id,
-      params.remote_channel_id,
-      params.transport,
+      {.connection_handle = params.connection_handle,
+       .local_channel_id = params.local_channel_id,
+       .remote_channel_id = params.remote_channel_id,
+       .transport = params.transport},
       std::move(params.payload_from_controller_fn),
       std::move(params.payload_from_host_fn),
       std::move(params.event_fn));

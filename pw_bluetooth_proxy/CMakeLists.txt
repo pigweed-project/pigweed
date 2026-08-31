@@ -109,6 +109,7 @@ pw_add_library(pw_bluetooth_proxy.l2cap_snapshot STATIC
 # LINT.IfChange
 set(PW_BLUETOOTH_PROXY_HEADERS
   public/pw_bluetooth_proxy/basic_l2cap_channel.h
+  public/pw_bluetooth_proxy/basic_mode_channel_config.h
   public/pw_bluetooth_proxy/connection_handle.h
   public/pw_bluetooth_proxy/channel_proxy.h
   public/pw_bluetooth_proxy/direction.h

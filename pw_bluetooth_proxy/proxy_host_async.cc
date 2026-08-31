@@ -169,37 +169,25 @@ Result<BasicL2capChannel> ProxyHost::AcquireBasicL2capChannel(
 }
 
 Result<UniquePtr<ChannelProxy>> ProxyHost::DoInterceptBasicModeChannel(
-    ConnectionHandle connection_handle,
-    uint16_t local_channel_id,
-    uint16_t remote_channel_id,
-    AclTransportType transport,
+    BasicModeChannelConfig config,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn,
-    bool allow_data_loss) {
+    ChannelEventCallback&& event_fn) {
   if (l2cap_channel_manager_.impl().IsRunningOnDispatcherThread()) {
     return InternalDoInterceptBasicModeChannel(
-        connection_handle,
-        local_channel_id,
-        remote_channel_id,
-        transport,
+        config,
         std::move(payload_from_controller_fn),
         std::move(payload_from_host_fn),
-        std::move(event_fn),
-        allow_data_loss);
+        std::move(event_fn));
   }
   ChannelRequest request{
       .params =
           ChannelRequest::BasicChannelProxyParams{
-              .connection_handle = connection_handle,
-              .local_channel_id = local_channel_id,
-              .remote_channel_id = remote_channel_id,
-              .transport = transport,
+              .config = config,
               .payload_from_controller_fn =
                   std::move(payload_from_controller_fn),
               .payload_from_host_fn = std::move(payload_from_host_fn),
-              .event_fn = std::move(event_fn),
-              .allow_data_loss = allow_data_loss},
+              .event_fn = std::move(event_fn)},
   };
   PW_TRY_ASSIGN(auto channel, impl_.ChannelSendAndReceive(std::move(request)));
   return Result<UniquePtr<ChannelProxy>>(
@@ -489,14 +477,10 @@ Result<ProxyHostImpl::ClientChannel> ProxyHostImpl::DoHandleRequest(
               -> Result<ProxyHostImpl::ClientChannel> {
             PW_TRY_ASSIGN(ClientChannel channel,
                           proxy_.InternalDoInterceptBasicModeChannel(
-                              params.connection_handle,
-                              params.local_channel_id,
-                              params.remote_channel_id,
-                              params.transport,
+                              params.config,
                               std::move(params.payload_from_controller_fn),
                               std::move(params.payload_from_host_fn),
-                              std::move(params.event_fn),
-                              params.allow_data_loss));
+                              std::move(params.event_fn)));
             return Result<ClientChannel>(std::move(channel));
           }},
       std::move(request.params));

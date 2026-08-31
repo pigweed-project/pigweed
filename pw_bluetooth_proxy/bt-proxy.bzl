@@ -67,6 +67,7 @@ def pw_bluetooth_proxy_library(name, **kwargs):
         # LINT.IfChange
         hdrs = [
             "public/pw_bluetooth_proxy/basic_l2cap_channel.h",
+            "public/pw_bluetooth_proxy/basic_mode_channel_config.h",
             "public/pw_bluetooth_proxy/connection_handle.h",
             "public/pw_bluetooth_proxy/direction.h",
             "public/pw_bluetooth_proxy/gatt_notify_channel.h",

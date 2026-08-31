@@ -318,14 +318,10 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
 
   // L2capChannelManagerInterface override:
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
-      ConnectionHandle connection_handle,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool allow_data_loss) override
+      ChannelEventCallback&& event_fn) override
       PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle connection_handle,

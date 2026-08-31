@@ -72,16 +72,16 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     };
 
     auto proxy_result = l2cap_channel_manager_.InterceptBasicModeChannel(
-        connection_handle,
-        rx_config.cid,
-        tx_config.cid,
-        AclTransportType::kBrEdr,
+        {.connection_handle = connection_handle,
+         .local_channel_id = rx_config.cid,
+         .remote_channel_id = tx_config.cid,
+         .transport = AclTransportType::kBrEdr,
+         .allow_data_loss = true},
         std::move(from_controller_fn),
         {},
         [this, connection_handle](L2capChannelEvent event) {
           this->HandleL2capEvent(event, connection_handle);
-        },
-        /*allow_data_loss=*/true);
+        });
 
     if (!proxy_result.ok()) {
       return proxy_result.status();

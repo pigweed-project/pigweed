@@ -19,6 +19,7 @@
 
 #include "pw_bluetooth/hci_common.emb.h"
 #include "pw_bluetooth_proxy/acl_snapshot.h"
+#include "pw_bluetooth_proxy/basic_mode_channel_config.h"
 #include "pw_bluetooth_proxy/gatt_notify_channel.h"
 #include "pw_bluetooth_proxy/internal/acl_data_channel.h"
 #include "pw_bluetooth_proxy/internal/hci_transport.h"
@@ -510,24 +511,16 @@ class ProxyHost : public L2capChannelManagerInterface {
 
   // L2capChannelManagerInterface override:
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
-      ConnectionHandle connection_handle,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool allow_data_loss) override;
+      ChannelEventCallback&& event_fn) override;
 
   Result<UniquePtr<ChannelProxy>> InternalDoInterceptBasicModeChannel(
-      ConnectionHandle connection_handle,
-      uint16_t local_channel_id,
-      uint16_t remote_channel_id,
-      AclTransportType transport,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& payload_from_host_fn,
-      ChannelEventCallback&& event_fn,
-      bool allow_data_loss);
+      ChannelEventCallback&& event_fn);
 
   Result<UniquePtr<ChannelProxy>> DoInterceptCreditBasedFlowControlChannel(
       ConnectionHandle connection_handle,

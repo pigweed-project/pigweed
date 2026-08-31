@@ -401,10 +401,13 @@ Status Gatt::CancelInterceptNotification(internal::ClientId client,
 Result<UniquePtr<ChannelProxy>> Gatt::InterceptAttChannel(
     ConnectionHandle connection_handle) {
   return l2cap_.InterceptBasicModeChannel(
-      connection_handle,
-      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
-      static_cast<uint16_t>(emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
-      AclTransportType::kLe,
+      {.connection_handle = connection_handle,
+       .local_channel_id = static_cast<uint16_t>(
+           emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
+       .remote_channel_id = static_cast<uint16_t>(
+           emboss::L2capFixedCid::LE_U_ATTRIBUTE_PROTOCOL),
+       .transport = AclTransportType::kLe,
+       .allow_data_loss = false},
       pw::bind_member<&Gatt::OnSpanReceivedFromController>(this),
       pw::bind_member<&Gatt::OnSpanReceivedFromHost>(this),
       [this, connection_handle](L2capChannelEvent event) {

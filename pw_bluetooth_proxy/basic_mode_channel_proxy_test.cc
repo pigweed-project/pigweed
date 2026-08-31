@@ -139,10 +139,10 @@ class BasicModeChannelProxyTest : public ProxyHostTest {
     };
 
     return proxy_host.InterceptBasicModeChannel(
-        ConnectionHandle{kConnectionHandle},
-        kLocalChannelId,
-        kRemoteChannelId,
-        AclTransportType::kLe,
+        {.connection_handle = ConnectionHandle{kConnectionHandle},
+         .local_channel_id = kLocalChannelId,
+         .remote_channel_id = kRemoteChannelId,
+         .transport = AclTransportType::kLe},
         std::move(from_controller_fn),
         std::move(from_host_fn),
         [this](L2capChannelEvent event) { events_.push_back(event); });
@@ -151,7 +151,7 @@ class BasicModeChannelProxyTest : public ProxyHostTest {
   template <bool kConsumePayloads = false>
   Result<UniquePtr<ChannelProxy>> CreateChannelWithMultiBufCallbacks(
       ProxyHost& proxy_host) {
-    MultiBufReceiveFn from_controllerr_fn =
+    MultiBufReceiveFn from_controller_fn =
         [this](
             multibuf::MultiBuf&& payload,
             ConnectionHandle connection_handle,
@@ -192,11 +192,11 @@ class BasicModeChannelProxyTest : public ProxyHostTest {
     };
 
     return proxy_host.InterceptBasicModeChannel(
-        ConnectionHandle{kConnectionHandle},
-        kLocalChannelId,
-        kRemoteChannelId,
-        AclTransportType::kLe,
-        std::move(from_controllerr_fn),
+        {.connection_handle = ConnectionHandle{kConnectionHandle},
+         .local_channel_id = kLocalChannelId,
+         .remote_channel_id = kRemoteChannelId,
+         .transport = AclTransportType::kLe},
+        std::move(from_controller_fn),
         std::move(from_host_fn),
         [this](L2capChannelEvent event) { events_.push_back(event); });
   }
@@ -422,10 +422,10 @@ TEST_F(BasicModeChannelProxyTest, InvalidConnectionHandle) {
   SendEvents(proxy);
   Result<UniquePtr<ChannelProxy>> channel_result =
       proxy.InterceptBasicModeChannel(
-          ConnectionHandle{1337},
-          kLocalChannelId,
-          kRemoteChannelId,
-          AclTransportType::kLe,
+          {.connection_handle = ConnectionHandle{1337},
+           .local_channel_id = kLocalChannelId,
+           .remote_channel_id = kRemoteChannelId,
+           .transport = AclTransportType::kLe},
           [](auto, auto, auto, auto) { return false; },
           [](auto, auto, auto, auto) { return false; },
           [](L2capChannelEvent) {});

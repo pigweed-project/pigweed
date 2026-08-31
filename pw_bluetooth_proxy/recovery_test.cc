@@ -692,13 +692,14 @@ TEST_F(L2capRecoveryTest, RegisterBasicModeChannelStateUpdateCallback) {
   // Verify that channel registration triggers a state update callback.
   PW_TEST_ASSERT_OK(
       proxy
-          .InterceptBasicModeChannel(ConnectionHandle{kLeConnectionHandle1},
-                                     kLocalCid1,
-                                     kRemoteCid1,
-                                     AclTransportType::kLe,
-                                     std::move(rx_fn),
-                                     std::move(tx_fn),
-                                     /*event_fn=*/nullptr)
+          .InterceptBasicModeChannel(
+              {.connection_handle = ConnectionHandle{kLeConnectionHandle1},
+               .local_channel_id = kLocalCid1,
+               .remote_channel_id = kRemoteCid1,
+               .transport = AclTransportType::kLe},
+              std::move(rx_fn),
+              std::move(tx_fn),
+              /*event_fn=*/nullptr)
           .status());
   ASSERT_EQ(updates.size(), 1u);
   ASSERT_TRUE(std::holds_alternative<L2capChannelSnapshot>(updates[0]));
@@ -1357,13 +1358,14 @@ TEST_F(L2capRecoveryTest, RejectedBasicModeChannelSilentlyAbsorbsPackets) {
       };
   EXPECT_EQ(
       proxy
-          .InterceptBasicModeChannel(ConnectionHandle{kLeConnectionHandle1},
-                                     kLocalCid1,
-                                     kRemoteCid1,
-                                     AclTransportType::kLe,
-                                     std::move(rx_fn),
-                                     std::move(tx_fn),
-                                     /*event_fn=*/nullptr)
+          .InterceptBasicModeChannel(
+              {.connection_handle = ConnectionHandle{kLeConnectionHandle1},
+               .local_channel_id = kLocalCid1,
+               .remote_channel_id = kRemoteCid1,
+               .transport = AclTransportType::kLe},
+              std::move(rx_fn),
+              std::move(tx_fn),
+              /*event_fn=*/nullptr)
           .status(),
       Status::Cancelled());
 
@@ -1788,14 +1790,15 @@ TEST_F(L2capRecoveryTest, InterceptedBasicModeChannelAllowsDataLoss) {
       };
   PW_TEST_EXPECT_OK(
       proxy
-          .InterceptBasicModeChannel(ConnectionHandle{kLeConnectionHandle1},
-                                     kLocalCid1,
-                                     kRemoteCid1,
-                                     AclTransportType::kLe,
-                                     std::move(rx_fn),
-                                     std::move(tx_fn),
-                                     /*event_fn=*/nullptr,
-                                     /*allow_data_loss=*/true)
+          .InterceptBasicModeChannel(
+              {.connection_handle = ConnectionHandle{kLeConnectionHandle1},
+               .local_channel_id = kLocalCid1,
+               .remote_channel_id = kRemoteCid1,
+               .transport = AclTransportType::kLe,
+               .allow_data_loss = true},
+              std::move(rx_fn),
+              std::move(tx_fn),
+              /*event_fn=*/nullptr)
           .status());
 }
 

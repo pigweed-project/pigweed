@@ -875,22 +875,21 @@ void L2capChannelManager::ResetLogicalLinksLocked() {
 
 Result<UniquePtr<ChannelProxy>>
 L2capChannelManager::DoInterceptBasicModeChannel(
-    ConnectionHandle connection_handle,
-    uint16_t local_channel_id,
-    uint16_t remote_channel_id,
-    AclTransportType transport,
+    BasicModeChannelConfig config,
     BufferReceiveFunction&& payload_from_controller_fn,
     BufferReceiveFunction&& payload_from_host_fn,
-    ChannelEventCallback&& event_fn,
-    bool allow_data_loss) {
+    ChannelEventCallback&& event_fn) {
   std::lock_guard links_lock(links_mutex_);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  Status recovery_status = RecoverBasicModeChannel(
-      connection_handle, local_channel_id, remote_channel_id);
+  Status recovery_status = RecoverBasicModeChannel(config.connection_handle,
+                                                   config.local_channel_id,
+                                                   config.remote_channel_id);
   if (recovery_status == Status::Cancelled()) {
-    CreateSilentBasicChannel(
-        connection_handle, local_channel_id, remote_channel_id, transport);
+    CreateSilentBasicChannel(config.connection_handle,
+                             config.local_channel_id,
+                             config.remote_channel_id,
+                             config.transport);
     return recovery_status;
   }
   if (!recovery_status.ok()) {
@@ -899,36 +898,36 @@ L2capChannelManager::DoInterceptBasicModeChannel(
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   auto link_iter =
-      logical_links_.find(static_cast<uint16_t>(connection_handle));
+      logical_links_.find(static_cast<uint16_t>(config.connection_handle));
   if (link_iter == logical_links_.end()) {
     PW_LOG_WARN(
         "Attempt to create BasicL2capChannel for non-existent connection: %#x",
-        static_cast<uint16_t>(connection_handle));
+        static_cast<uint16_t>(config.connection_handle));
     return Status::InvalidArgument();
   }
   if (!acl_data_channel_.HasAclConnection(
-          static_cast<uint16_t>(connection_handle))) {
+          static_cast<uint16_t>(config.connection_handle))) {
     return Status::Unavailable();
   }
   if (!L2capChannel::AreValidParameters(
-          static_cast<uint16_t>(connection_handle),
-          local_channel_id,
-          remote_channel_id)) {
+          static_cast<uint16_t>(config.connection_handle),
+          config.local_channel_id,
+          config.remote_channel_id)) {
     return Status::InvalidArgument();
   }
 
-  uint32_t key = L2capChannel::MakeKey(static_cast<uint16_t>(connection_handle),
-                                       local_channel_id);
+  uint32_t key = L2capChannel::MakeKey(
+      static_cast<uint16_t>(config.connection_handle), config.local_channel_id);
 
   PW_TRY_ASSIGN(UniquePtr<L2capChannelNode> channel_node,
                 CreateChannel(key,
                               &multibuf_allocator_,
-                              static_cast<uint16_t>(connection_handle),
-                              transport,
-                              local_channel_id,
-                              remote_channel_id,
+                              static_cast<uint16_t>(config.connection_handle),
+                              config.transport,
+                              config.local_channel_id,
+                              config.remote_channel_id,
                               std::move(event_fn),
-                              allow_data_loss));
+                              config.allow_data_loss));
 
   std::optional<uint16_t> max_l2cap_payload_size =
       channel_node->mapped().MaxL2capPayloadSize();

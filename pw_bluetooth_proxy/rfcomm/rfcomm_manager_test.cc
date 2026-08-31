@@ -100,16 +100,12 @@ class MockL2capChannelManager final : public L2capChannelManagerInterface {
   }
 
   Result<UniquePtr<ChannelProxy>> DoInterceptBasicModeChannel(
-      ConnectionHandle /*connection_handle*/,
-      uint16_t /*local_channel_id*/,
-      uint16_t /*remote_channel_id*/,
-      AclTransportType /*transport*/,
+      BasicModeChannelConfig config,
       BufferReceiveFunction&& payload_from_controller_fn,
       BufferReceiveFunction&& /*payload_from_host_fn*/,
-      ChannelEventCallback&& event_fn,
-      bool allow_data_loss) override {
+      ChannelEventCallback&& event_fn) override {
     intercept_channel_count_++;
-    allow_data_loss_ = allow_data_loss;
+    allow_data_loss_ = config.allow_data_loss;
     payload_from_controller_fn_ = std::move(payload_from_controller_fn);
     event_fn_ = std::move(event_fn);
     auto proxy = allocator_.MakeUnique<MockChannelProxy>();
