@@ -16,15 +16,41 @@
 import argparse
 import concurrent.futures
 import json
+import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
+import time
+from typing import Any
 
 DEFAULT_KZIP_BIN = "/google/bin/releases/grok/tools/kzip"
 DEFAULT_CORPUS = "pigweed.googlesource.com/pigweed/pigweed"
 DEFAULT_BUCKET = "gs://pigweed-kythe/pigweed-pigweed-pigweed"
+
+_INCLUDE_REGEX = re.compile(r'^\s*#\s*include\s+["<]([^">]+)[">]')
+
+# Caches shared across extraction workers:
+# Maps resolved file path -> list of raw include header strings
+_file_includes_cache: dict[Path, list[str]] = {}
+# Maps (header_name, tuple(include_dirs)) -> resolved Path or None
+_resolved_header_cache: dict[tuple[str, tuple[str, ...]], Path | None] = {}
+
+
+def find_kzip_binary(fallback_bin: str = DEFAULT_KZIP_BIN) -> str:
+    """Finds the kzip binary on the system or environment."""
+    for env_var in ("PW_KYTHE_CIPD_INSTALL_DIR", "PW_PIGWEED_CIPD_INSTALL_DIR"):
+        if cipd := os.environ.get(env_var):
+            p = Path(cipd) / "tools" / "kzip"
+            if p.exists():
+                return str(p)
+    if w := shutil.which("kzip"):
+        return w
+    if Path(fallback_bin).exists():
+        return fallback_bin
+    return "kzip"
 
 
 def get_git_revision(repo_dir: Path) -> str:
@@ -39,6 +65,9 @@ def get_git_revision(repo_dir: Path) -> str:
     return res.stdout.strip()
 
 
+get_git_commit = get_git_revision
+
+
 def find_compilation_databases(workspace: Path) -> list[Path]:
     """Finds all compile_commands.json files in the workspace."""
     results = []
@@ -49,23 +78,54 @@ def find_compilation_databases(workspace: Path) -> list[Path]:
     return results
 
 
+def _get_direct_includes(file_path: Path) -> list[str]:
+    """Extracts raw included header names from a file with in-memory cache."""
+    if file_path in _file_includes_cache:
+        return _file_includes_cache[file_path]
+    includes: list[str] = []
+    try:
+        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("#include"):
+                m = _INCLUDE_REGEX.match(line)
+                if m:
+                    includes.append(m.group(1))
+    except Exception:  # pylint: disable=broad-except
+        pass
+    _file_includes_cache[file_path] = includes
+    return includes
+
+
 def _resolve_header(
     header: str,
     src_path: Path,
     include_dirs: list[str],
     workspace: Path,
 ) -> Path | None:
-    """Resolves an included header to an existing local file path."""
+    """Resolves an included header to an existing local file path with cache."""
+    inc_dirs_tuple = tuple(include_dirs)
+    key = (header, inc_dirs_tuple)
+    if key in _resolved_header_cache:
+        return _resolved_header_cache[key]
+
     cand = src_path.parent / header
-    if cand.exists():
-        return cand.resolve()
+    if cand.exists() and cand.is_file():
+        resolved = cand.resolve()
+        _resolved_header_cache[key] = resolved
+        return resolved
+
     for inc in include_dirs:
         inc_path = Path(inc)
         if not inc_path.is_absolute():
             inc_path = workspace / inc_path
         cand = inc_path / header
-        if cand.exists():
-            return cand.resolve()
+        if cand.exists() and cand.is_file():
+            resolved = cand.resolve()
+            _resolved_header_cache[key] = resolved
+            return resolved
+
+    _resolved_header_cache[key] = None
     return None
 
 
@@ -73,26 +133,27 @@ def _find_required_headers(
     src_path: Path,
     include_dirs: list[str],
     workspace: Path,
+    visited: set[Path] | None = None,
 ) -> set[Path]:
-    """Finds all locally resolvable headers included in the source file."""
-    headers: set[Path] = set()
-    try:
-        content = src_path.read_text(errors="ignore")
-    except Exception:  # pylint: disable=broad-except
-        return headers
+    """Finds all locally resolvable headers included in the source file
+    recursively.
+    """
+    if visited is None:
+        visited = set()
+    if src_path in visited:
+        return set()
+    visited.add(src_path)
 
-    for line in content.splitlines():
-        line = line.strip()
-        if not line.startswith("#include"):
-            continue
-        m = re.search(r'#include\s+["<]([^">]+)[">]', line)
-        if not m:
-            continue
-        resolved = _resolve_header(
-            m.group(1), src_path, include_dirs, workspace
-        )
-        if resolved:
+    headers: set[Path] = set()
+    for inc_name in _get_direct_includes(src_path):
+        resolved = _resolve_header(inc_name, src_path, include_dirs, workspace)
+        if resolved and resolved not in visited:
             headers.add(resolved)
+            headers.update(
+                _find_required_headers(
+                    resolved, include_dirs, workspace, visited
+                )
+            )
     return headers
 
 
@@ -102,9 +163,12 @@ def extract_single_command(
     out_dir: Path,
     workspace: Path,
     corpus: str = DEFAULT_CORPUS,
-    kzip_bin: str = DEFAULT_KZIP_BIN,
+    kzip_bin: str | None = None,
 ) -> Path | None:
     """Extracts a single compilation unit into a .kzip file."""
+    if not kzip_bin:
+        kzip_bin = find_kzip_binary()
+
     src_file_str = entry.get("file")
     if not src_file_str:
         return None
@@ -166,16 +230,55 @@ def extract_single_command(
     return None
 
 
-def generate_kzip(
+def _merge_kzips(
+    kzip_bin: str,
+    output_kzip: Path,
+    unit_kzips: list[Path],
+) -> None:
+    """Merges multiple unit .kzip files into a single .kzip file."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False
+    ) as list_file:
+        for uk in unit_kzips:
+            list_file.write(f"{uk}\n")
+        list_file_path = list_file.name
+
+    try:
+        merge_cmd = [
+            kzip_bin,
+            "merge",
+            f"-output={output_kzip}",
+            "-encoding=Proto",
+            "-ignore_duplicate_cus=true",
+            f"-input_file_list={list_file_path}",
+        ]
+        merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
+        if merge_proc.returncode != 0:
+            # Fallback to positional arguments
+            merge_proc = subprocess.run(
+                [
+                    kzip_bin,
+                    "merge",
+                    f"-output={output_kzip}",
+                    "-encoding=Proto",
+                    "-ignore_duplicate_cus=true",
+                ]
+                + [str(u) for u in unit_kzips],
+                capture_output=True,
+                text=True,
+            )
+            if merge_proc.returncode != 0:
+                raise RuntimeError(f"kzip merge failed: {merge_proc.stderr}")
+    finally:
+        if os.path.exists(list_file_path):
+            os.remove(list_file_path)
+
+
+def _load_compilation_entries(
     workspace: Path,
     compdb_paths: list[Path] | None = None,
-    output_kzip: Path | None = None,
-    corpus: str = DEFAULT_CORPUS,
-    kzip_bin: str = DEFAULT_KZIP_BIN,
-    max_workers: int = 16,
-) -> Path:
-    """Extracts compilation units from compilation databases and merges them."""
-    workspace = workspace.resolve()
+) -> list[dict[str, Any]]:
+    """Loads and deduplicates compilation entries from compilation databases."""
     if not compdb_paths:
         compdb_paths = find_compilation_databases(workspace)
 
@@ -185,14 +288,103 @@ def generate_kzip(
         )
 
     all_entries = []
+    seen_entries = set()
     for cdb in compdb_paths:
         with open(cdb, "r", encoding="utf-8") as f:
             entries = json.load(f)
             if isinstance(entries, list):
-                all_entries.extend(entries)
+                for entry in entries:
+                    key = (
+                        entry.get("file"),
+                        tuple(entry.get("arguments", [])),
+                        entry.get("command"),
+                        entry.get("directory"),
+                    )
+                    if key not in seen_entries:
+                        seen_entries.add(key)
+                        all_entries.append(entry)
 
     if not all_entries:
         raise ValueError("No compilation commands found to extract.")
+
+    return all_entries
+
+
+def _extract_all_units(
+    all_entries: list[dict[str, Any]],
+    tmp_path: Path,
+    workspace: Path,
+    corpus: str,
+    kzip_bin: str,
+    max_workers: int,
+) -> list[Path]:
+    """Extracts all compilation units concurrently with progress logging."""
+    total_units = len(all_entries)
+    print(
+        f"Extracting {total_units} compilation units with "
+        f"{max_workers} workers...",
+        flush=True,
+    )
+    start_time = time.time()
+    unit_kzips: list[Path] = []
+
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        futures = {
+            executor.submit(
+                extract_single_command,
+                entry,
+                i,
+                tmp_path,
+                workspace,
+                corpus,
+                kzip_bin,
+            ): i
+            for i, entry in enumerate(all_entries)
+        }
+        log_interval = max(50, total_units // 20)
+        for count, fut in enumerate(
+            concurrent.futures.as_completed(futures), 1
+        ):
+            try:
+                unit_path = fut.result()
+                if unit_path and unit_path.exists():
+                    unit_kzips.append(unit_path)
+            except Exception as e:  # pylint: disable=broad-except
+                print(f"Error extracting unit: {e}", flush=True)
+
+            if count % log_interval == 0 or count == total_units:
+                elapsed = time.time() - start_time
+                rate = count / elapsed if elapsed > 0 else 0
+                print(
+                    f"[{count}/{total_units}] Extracted {len(unit_kzips)} "
+                    f"units ({elapsed:.1f}s, {rate:.1f} units/s)",
+                    flush=True,
+                )
+
+    if not unit_kzips:
+        raise RuntimeError("Failed to extract any compilation units.")
+
+    extract_elapsed = time.time() - start_time
+    print(f"Extraction completed in {extract_elapsed:.2f}s.", flush=True)
+    return unit_kzips
+
+
+def generate_kzip(
+    workspace: Path,
+    compdb_paths: list[Path] | None = None,
+    output_kzip: Path | None = None,
+    corpus: str = DEFAULT_CORPUS,
+    kzip_bin: str | None = None,
+    max_workers: int = 16,
+) -> Path:
+    """Extracts compilation units from compilation databases and merges them."""
+    if not kzip_bin:
+        kzip_bin = find_kzip_binary()
+
+    workspace = workspace.resolve()
+    all_entries = _load_compilation_entries(workspace, compdb_paths)
 
     if not output_kzip:
         try:
@@ -200,45 +392,34 @@ def generate_kzip(
         except Exception:  # pylint: disable=broad-except
             rev = "HEAD"
         output_kzip = workspace / f"{rev}.kzip"
+    else:
+        output_kzip = output_kzip.resolve()
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    start_time = time.time()
+    with tempfile.TemporaryDirectory(prefix="kythe_units_") as tmp_dir:
         tmp_path = Path(tmp_dir)
-        unit_kzips: list[Path] = []
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_workers
-        ) as executor:
-            futures = [
-                executor.submit(
-                    extract_single_command,
-                    entry,
-                    i,
-                    tmp_path,
-                    workspace,
-                    corpus,
-                    kzip_bin,
-                )
-                for i, entry in enumerate(all_entries)
-            ]
-            for fut in concurrent.futures.as_completed(futures):
-                unit_path = fut.result()
-                if unit_path:
-                    unit_kzips.append(unit_path)
-
-        if not unit_kzips:
-            raise RuntimeError("Failed to extract any compilation units.")
-
-        merge_cmd = [
+        unit_kzips = _extract_all_units(
+            all_entries,
+            tmp_path,
+            workspace,
+            corpus,
             kzip_bin,
-            "merge",
-            f"-output={output_kzip}",
-            "-encoding=Proto",
-            "-ignore_duplicate_cus=true",
-        ] + [str(u) for u in unit_kzips]
+            max_workers,
+        )
 
-        merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
-        if merge_proc.returncode != 0:
-            raise RuntimeError(f"kzip merge failed: {merge_proc.stderr}")
+        print(
+            f"Merging {len(unit_kzips)} units into {output_kzip.name}...",
+            flush=True,
+        )
+        merge_start = time.time()
+        _merge_kzips(kzip_bin, output_kzip, unit_kzips)
+        merge_elapsed = time.time() - merge_start
+
+        print(
+            f"Merge completed in {merge_elapsed:.2f}s. "
+            f"Total time: {time.time() - start_time:.2f}s.",
+            flush=True,
+        )
 
     return output_kzip
 
@@ -308,13 +489,13 @@ def main():
         max_workers=args.max_workers,
     )
 
-    print(f"Successfully generated kzip: {output_kzip}")
+    print(f"Successfully generated kzip: {output_kzip}", flush=True)
 
     if args.upload:
         dest_url = f"{args.gcs_bucket}/{output_kzip.name}"
-        print(f"Uploading to {dest_url}...")
+        print(f"Uploading to {dest_url}...", flush=True)
         subprocess.run(["gsutil", "cp", str(output_kzip), dest_url], check=True)
-        print(f"Upload complete: {dest_url}")
+        print(f"Upload complete: {dest_url}", flush=True)
 
 
 if __name__ == "__main__":

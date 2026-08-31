@@ -19,6 +19,7 @@ import unittest
 
 from pw_ide.kythe import (
     DEFAULT_CORPUS,
+    _find_required_headers,
     extract_single_command,
     find_compilation_databases,
 )
@@ -34,8 +35,14 @@ class KytheExtractorTest(unittest.TestCase):
         # Create sample source and header
         self.src_file = self.workspace / "test.cc"
         self.header_file = self.workspace / "test.h"
+        self.transitive_header_file = self.workspace / "transitive.h"
 
-        self.header_file.write_text("#pragma once\nint getValue();\n")
+        self.transitive_header_file.write_text(
+            "#pragma once\nint getTransitiveValue();\n"
+        )
+        self.header_file.write_text(
+            '#pragma once\n#include "transitive.h"\nint getValue();\n'
+        )
         self.src_file.write_text(
             '#include "test.h"\nint getValue() { return 42; }\n'
         )
@@ -49,6 +56,11 @@ class KytheExtractorTest(unittest.TestCase):
         found = find_compilation_databases(self.workspace)
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0], compdb_path)
+
+    def test_find_required_headers_recursive(self):
+        headers = _find_required_headers(self.src_file, [], self.workspace)
+        self.assertIn(self.header_file.resolve(), headers)
+        self.assertIn(self.transitive_header_file.resolve(), headers)
 
     def test_extract_single_command_missing_file(self):
         out_dir = self.workspace / "out"
