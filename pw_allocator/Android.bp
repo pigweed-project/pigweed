@@ -30,12 +30,10 @@ cc_library {
     header_libs: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
-        "pw_async2_headers",
     ],
     export_header_lib_headers: [
         "fuchsia_sdk_lib_stdcompat",
         "pw_assert",
-        "pw_async2_headers",
     ],
     export_static_lib_headers: [
         "pw_bytes",
@@ -52,7 +50,6 @@ cc_library {
     srcs: [
         "allocator.cc",
         "allocator_as_pool.cc",
-        "async_pool.cc",
         "block/basic.cc",
         "block/contiguous.cc",
         "block/poisonable.cc",
@@ -80,5 +77,27 @@ cc_library {
         "pw_span",
         "pw_status",
         "pw_tokenizer",
+    ],
+}
+
+cc_library_static {
+    name: "pw_allocator_async_pool",
+    export_include_dirs: [
+        "public",
+    ],
+    defaults: [
+        "pw_android_common_backends",
+        "pw_android_common_target_support",
+    ],
+    srcs: [
+        "async_pool.cc",
+    ],
+    static_libs: [
+        "pw_allocator",
+        "pw_async2",
+    ],
+    export_static_lib_headers: [
+        "pw_allocator",
+        "pw_async2",
     ],
 }
