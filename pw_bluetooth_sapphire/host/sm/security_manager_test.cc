@@ -3035,8 +3035,11 @@ TEST_F(InitiatorPairingTest, GenerateCrossTransportLinkKey) {
   EXPECT_EQ(fit::ok(), security_status());
   EXPECT_EQ(security_status(), pairing_complete_status());
 
-  // The PairingData should contain the CTKGenerated BR/EDR link key.
-  EXPECT_TRUE(pairing_data().cross_transport_key.has_value());
+  // The PairingData should contain the CTKGenerated BR/EDR link key with
+  // 16-byte size.
+  ASSERT_TRUE(pairing_data().cross_transport_key.has_value());
+  EXPECT_EQ(hci_spec::kBrEdrLinkKeySize,
+            pairing_data().cross_transport_key->security().enc_key_size());
 }
 
 TEST_F(InitiatorPairingTest, AssignLongTermKey) {

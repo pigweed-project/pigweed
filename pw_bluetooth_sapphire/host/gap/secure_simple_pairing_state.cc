@@ -459,8 +459,18 @@ std::optional<hci_spec::LinkKey> SecureSimplePairingState::OnLinkKeyRequest() {
 
     PW_CHECK(peer_->bredr()->link_key().has_value());
     link_key = peer_->bredr()->link_key();
-    PW_CHECK(link_key->security().enc_key_size() ==
+    PW_DCHECK(link_key->security().enc_key_size() ==
+              hci_spec::kBrEdrLinkKeySize);
+    if (link_key->security().enc_key_size() != hci_spec::kBrEdrLinkKeySize) {
+      bt_log(WARN,
+             "gap-bredr",
+             "%#.4x (id: %s): recalled link key has unexpected enc_key_size "
+             "%zu (expected %zu)",
+             handle(),
+             bt_str(peer_id()),
+             link_key->security().enc_key_size(),
              hci_spec::kBrEdrLinkKeySize);
+    }
 
     const auto link_key_type = link_key->security().GetLinkKeyType();
     link_->set_link_key(link_key->key(), link_key_type);

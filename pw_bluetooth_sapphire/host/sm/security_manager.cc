@@ -31,6 +31,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/random.h"
 #include "pw_bluetooth_sapphire/internal/host/common/uint128.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/gap.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/link_key.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/error.h"
@@ -974,8 +975,8 @@ void SecurityManagerImpl::OnLowEnergyPairingComplete(PairingData pairing_data) {
   PW_CHECK(features_.has_value());
   bt_log(DEBUG, "sm", "LE pairing complete");
 
-  // Core Spec Volume 3, Part H, Section 2.3.6: The waiting interval shall be
-  // reset to its initial value if a pairing attempt succeeds.
+  // Core Spec v6.0, Volume 3, Part H, Section 2.3.6: The waiting interval shall
+  // be reset to its initial value if a pairing attempt succeeds.
   ResetRepeatedAttemptsBackoff();
 
   delegate_->OnPairingComplete(fit::ok());
@@ -1005,8 +1006,13 @@ void SecurityManagerImpl::OnLowEnergyPairingComplete(PairingData pairing_data) {
     std::optional<UInt128> ct_key_value = util::LeLtkToBrEdrLinkKey(
         ltk_->key().value(), features_->generate_ct_key.value());
     if (ct_key_value) {
+      // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are
+      // always 16 bytes (128 bits).
+      sm::SecurityProperties sec_props(ltk_->security().level(),
+                                       hci_spec::kBrEdrLinkKeySize,
+                                       ltk_->security().secure_connections());
       pairing_data.cross_transport_key =
-          sm::LTK(ltk_->security(), hci_spec::LinkKey(*ct_key_value, 0, 0));
+          sm::LTK(sec_props, hci_spec::LinkKey(*ct_key_value, 0, 0));
     } else {
       bt_log(WARN, "sm", "failed to generate cross-transport key");
     }

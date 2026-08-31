@@ -1356,7 +1356,13 @@ std::optional<bt::sm::LTK> BredrKeyFromFidl(const fsys::BredrBondData& data) {
     return std::nullopt;
   }
   auto key = PeerKeyFromFidl(data.link_key());
-  return bt::sm::LTK(key.security(), bt::hci_spec::LinkKey(key.value(), 0, 0));
+
+  // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are always
+  // 16 bytes (128 bits)
+  bt::sm::SecurityProperties sec_props(key.security().level(),
+                                       bt::hci_spec::kBrEdrLinkKeySize,
+                                       key.security().secure_connections());
+  return bt::sm::LTK(sec_props, bt::hci_spec::LinkKey(key.value(), 0, 0));
 }
 
 std::vector<bt::UUID> BredrServicesFromFidl(
@@ -1423,7 +1429,11 @@ fuchsia::bluetooth::sys::BondingData PeerToFidlBondingData(
                    services.end(),
                    std::back_inserter(*out_bredr.mutable_services()),
                    UuidToFidl);
-    out_bredr.set_link_key(LtkToFidlPeerKey(*peer.bredr()->link_key()));
+    fsys::PeerKey link_key = LtkToFidlPeerKey(*peer.bredr()->link_key());
+    // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are
+    // always 16 bytes (128 bits)
+    link_key.security.encryption_key_size = bt::hci_spec::kBrEdrLinkKeySize;
+    out_bredr.set_link_key(std::move(link_key));
     out.set_bredr_bond(std::move(out_bredr));
   }
 
