@@ -27,6 +27,7 @@ cc_library_static {
         "rfcomm_channel_internal.cc",
         "rfcomm_channel.cc",
         "rfcomm_manager.cc",
+        "rfcomm_snapshot.cc",
     ],
     export_include_dirs: [
         "public",

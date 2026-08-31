@@ -131,6 +131,8 @@ Module configuration options include:
   subsystems.
 - :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS`: The maximum
   number of L2CAP channels persisted across snapshot restorations.
+- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_RFCOMM_CHANNELS`: The maximum
+  number of RFCOMM channels persisted across snapshot restorations.
 
 Clock Facade
 ============

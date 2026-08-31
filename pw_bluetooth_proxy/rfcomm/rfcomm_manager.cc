@@ -35,10 +35,17 @@ RfcommManager::ConnectionState::ConnectionState(ConnectionHandle handle,
       channels(allocator) {}
 
 RfcommManager::RfcommManager(
-    L2capChannelManagerInterface& l2cap_channel_manager, Allocator& allocator)
+    L2capChannelManagerInterface& l2cap_channel_manager,
+    Allocator& allocator,
+    [[maybe_unused]] RfcommStateUpdateCallback state_update_callback)
     : l2cap_channel_manager_(l2cap_channel_manager),
       allocator_(allocator),
-      connections_(allocator) {
+      connections_(allocator)
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      ,
+      state_update_callback_(std::move(state_update_callback))
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+{
   PW_LOG_INFO("RFCOMM manager created");
 }
 
@@ -118,24 +125,64 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
     return Status::AlreadyExists();
   }
 
+  RfcommChannelConfig effective_rx_config = rx_config;
+  RfcommChannelConfig effective_tx_config = tx_config;
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool restored_from_snapshot = false;
+  uint8_t rx_total_credits = rx_config.initial_credits;
+  const RfcommSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot != nullptr) {
+    for (const RfcommChannelSnapshot& channel_snap :
+         snapshot->rfcomm_channels) {
+      if (channel_snap.MatchesKey(static_cast<uint16_t>(connection_handle),
+                                  channel_number,
+                                  direction)) {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+        effective_rx_config.initial_credits = channel_snap.rx_credits;
+        effective_tx_config.initial_credits = channel_snap.tx_credits;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+        rx_total_credits = channel_snap.rx_total_credits;
+        restored_from_snapshot = true;
+        break;
+      }
+    }
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   // Insert the new channel into the connection state.
-  auto emplace_result =
-      conn_state.channels.try_emplace(MakeDlci(channel_number, direction),
-                                      rx_multibuf_allocator,
-                                      *conn_state.l2cap_channel_proxy,
-                                      connection_handle,
-                                      channel_number,
-                                      direction,
-                                      mux_initiator,
-                                      rx_config,
-                                      tx_config,
-                                      kRfcommCrc,
-                                      std::move(receive_fn),
-                                      std::move(event_fn));
+  auto emplace_result = conn_state.channels.try_emplace(
+      MakeDlci(channel_number, direction),
+      rx_multibuf_allocator,
+      *conn_state.l2cap_channel_proxy,
+      connection_handle,
+      channel_number,
+      direction,
+      mux_initiator,
+      effective_rx_config,
+      effective_tx_config,
+      kRfcommCrc,
+      std::move(receive_fn),
+      std::move(event_fn)
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+          ,
+      [this](const internal::RfcommChannelInternal& channel) {
+        NotifyChannelStateUpdate(channel);
+      },
+      rx_total_credits
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  );
   if (!emplace_result.has_value()) {
     PW_LOG_ERROR("Failed to insert RFCOMM channel");
     return Status::ResourceExhausted();
   }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  if (!restored_from_snapshot && state_update_callback_) {
+    state_update_callback_(
+        emplace_result.value().first->second.CaptureSnapshot());
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
   return RfcommChannel(connection_handle, channel_number, direction, this);
 }
@@ -190,6 +237,9 @@ Status RfcommManager::DoReleaseRfcommChannel(ConnectionHandle connection_handle,
         conn_state.channels.find(MakeDlci(channel_number, direction));
     // If the channel is found, remove it from the map.
     if (channel_it != conn_state.channels.end()) {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      NotifyChannelRemoved(connection_handle, channel_number, direction);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
       channel_to_close = conn_state.channels.take(channel_it);
     }
 
@@ -260,6 +310,11 @@ void RfcommManager::CloseConnectionState(
   ChannelMap channels_to_close(allocator_);
   channels_to_close.swap(conn_state_node->mapped().channels);
   for (auto& [_, channel] : channels_to_close) {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+    NotifyChannelRemoved(channel.connection_handle(),
+                         channel.channel_number(),
+                         channel.direction());
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
     channel.Close(event);
   }
 }
@@ -377,6 +432,9 @@ std::optional<multibuf::MultiBuf> RfcommManager::HandlePduFromController(
                frame_type ==
                    emboss::RfcommFrameType::DISCONNECT_AND_POLL_FINAL) {
       PW_LOG_INFO("Channel number %u closed by remote", channel_number);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+      NotifyChannelRemoved(connection_handle, channel_number, direction);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
       channel_to_close = conn_state.channels.take(channel_it);
       if (conn_state.channels.empty()) {
         PW_LOG_INFO(
@@ -431,5 +489,81 @@ void RfcommManager::HandleL2capEvent(L2capChannelEvent event,
     CloseConnectionState(std::move(conn_state_to_close), rfcomm_event);
   }
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+Status RfcommManager::RecoverFromSnapshot(const RfcommSnapshot* snapshot) {
+  if (snapshot == nullptr) {
+    PW_LOG_ERROR("Cannot recover from null RFCOMM snapshot pointer");
+    return Status::InvalidArgument();
+  }
+
+  if (snapshot->snapshot_incomplete) {
+    PW_LOG_ERROR("Cannot recover from incomplete RFCOMM snapshot");
+    return Status::DataLoss();
+  }
+
+  restored_snapshot_.store(snapshot, std::memory_order_release);
+  PW_LOG_INFO("Restored RFCOMM state from snapshot");
+  return OkStatus();
+}
+
+void RfcommManager::CompleteRecovery() {
+  std::lock_guard lock(connections_mutex_);
+  const RfcommSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot == nullptr) {
+    return;
+  }
+
+  for (const RfcommChannelSnapshot& channel : snapshot->rfcomm_channels) {
+    auto conn_it = connections_.find(
+        static_cast<ConnectionHandle>(channel.connection_handle));
+    bool channel_active = false;
+    if (conn_it != connections_.end()) {
+      auto ch_it = conn_it->second.channels.find(
+          MakeDlci(channel.channel_number, channel.direction));
+      if (ch_it != conn_it->second.channels.end()) {
+        channel_active = true;
+      }
+    }
+
+    if (!channel_active && state_update_callback_) {
+      PW_LOG_INFO(
+          "Sweeping abandoned RFCOMM channel: connection %#x, channel %u, "
+          "direction %u",
+          channel.connection_handle,
+          channel.channel_number,
+          static_cast<uint8_t>(channel.direction));
+      state_update_callback_(RfcommChannelRemoved{
+          .connection_handle = channel.connection_handle,
+          .channel_number = channel.channel_number,
+          .direction = channel.direction,
+      });
+    }
+  }
+
+  restored_snapshot_.store(nullptr, std::memory_order_release);
+}
+
+void RfcommManager::NotifyChannelStateUpdate(
+    const internal::RfcommChannelInternal& channel) {
+  if (restored_snapshot_.load(std::memory_order_acquire) == nullptr &&
+      state_update_callback_) {
+    state_update_callback_(channel.CaptureSnapshot());
+  }
+}
+
+void RfcommManager::NotifyChannelRemoved(ConnectionHandle connection_handle,
+                                         uint8_t channel_number,
+                                         RfcommDirection direction) {
+  if (state_update_callback_) {
+    state_update_callback_(RfcommChannelRemoved{
+        .connection_handle = static_cast<uint16_t>(connection_handle),
+        .channel_number = channel_number,
+        .direction = direction,
+    });
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy::rfcomm

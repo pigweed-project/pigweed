@@ -14,15 +14,20 @@
 
 #pragma once
 
+#include <optional>
+
 #include "pw_bluetooth/rfcomm_frames.emb.h"
 #include "pw_bluetooth_proxy/channel_proxy.h"
+#include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel.h"
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_common.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_config.h"
+#include "pw_bluetooth_proxy/rfcomm/rfcomm_snapshot.h"
 #include "pw_checksum/crc8.h"
 #include "pw_containers/inline_queue.h"
 #include "pw_function/function.h"
+#include "pw_result/result.h"
 #include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
 
@@ -56,7 +61,14 @@ class RfcommChannelInternal {
                         const RfcommChannelConfig& tx_config,
                         const pw::checksum::Crc8& crc_calculator,
                         RfcommReceiveCallback&& receive_fn,
-                        RfcommEventCallback&& event_fn);
+                        RfcommEventCallback&& event_fn
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+                        ,
+                        Function<void(const RfcommChannelInternal&)>&&
+                            notify_mutation_fn = nullptr,
+                        std::optional<uint8_t> rx_total_credits = std::nullopt
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  );
 
   virtual ~RfcommChannelInternal();
 
@@ -85,15 +97,31 @@ class RfcommChannelInternal {
   // Sends credits to the remote and updates max rx credit.
   Status SendAdditionalRxCredits(uint8_t credits);
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Captures a snapshot of the RFCOMM channel state.
+  RfcommChannelSnapshot CaptureSnapshot() const
+      PW_LOCKS_EXCLUDED(tx_mutex_, rx_mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
  private:
   // Add credits for sending data.
   void AddCredits(uint8_t credits);
 
-  // Sends credits to the controller.
-  Status SendCredits(uint8_t credits);
+  // Sends credits to the controller. Returns true if the credit frame was
+  // immediately transmitted and notified, false if queued/deferred, or error.
+  Result<bool> SendCredits(uint8_t credits);
 
-  // Tries to send a packet if credits are available.
-  void TryToSendPacket() PW_EXCLUSIVE_LOCKS_REQUIRED(tx_mutex_);
+  // Tries to send pending credit frames and queued data packets. Returns true
+  // if pending RX credits were transmitted and rx_credits_ was mutated.
+  bool TryToSendPacket() PW_EXCLUSIVE_LOCKS_REQUIRED(tx_mutex_);
+
+  void NotifyCreditMutation() {
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+    if (notify_mutation_fn_) {
+      notify_mutation_fn_(*this);
+    }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  }
 
   multibuf::MultiBufAllocator& multibuf_allocator_;
   ChannelProxy& l2cap_channel_proxy_;
@@ -106,15 +134,21 @@ class RfcommChannelInternal {
   const RfcommReceiveCallback receive_fn_;
   const RfcommEventCallback event_fn_;
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  const uint16_t local_cid_;
+  Function<void(const RfcommChannelInternal&)> notify_mutation_fn_;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
   // The members below must be protected by their respective mutexes.
-  sync::Mutex mutex_ PW_ACQUIRED_BEFORE(tx_mutex_);
+  mutable sync::Mutex mutex_ PW_ACQUIRED_BEFORE(tx_mutex_);
   enum class State { kOpen, kClosed };
   State state_ PW_GUARDED_BY(mutex_) = State::kOpen;
 
   size_t num_borrows_ PW_GUARDED_BY(mutex_) = 0;
   sync::ThreadNotification unborrowed_notification_;
 
-  sync::Mutex tx_mutex_ PW_ACQUIRED_AFTER(mutex_) PW_ACQUIRED_BEFORE(rx_mutex_);
+  mutable sync::Mutex tx_mutex_ PW_ACQUIRED_AFTER(mutex_)
+      PW_ACQUIRED_BEFORE(rx_mutex_);
   uint8_t tx_credits_ PW_GUARDED_BY(tx_mutex_) = 0;
   // The offset into the current packet that will be sent next.
   size_t send_packet_offset_ PW_GUARDED_BY(tx_mutex_) = 0;
@@ -125,7 +159,7 @@ class RfcommChannelInternal {
   InlineQueue<multibuf::MultiBuf, kDefaultTxQueueSize> tx_queue_
       PW_GUARDED_BY(tx_mutex_);
 
-  sync::Mutex rx_mutex_ PW_ACQUIRED_AFTER(tx_mutex_);
+  mutable sync::Mutex rx_mutex_ PW_ACQUIRED_AFTER(tx_mutex_);
   uint8_t rx_credits_ PW_GUARDED_BY(rx_mutex_) = 0;
   uint8_t rx_total_credits_ PW_GUARDED_BY(rx_mutex_);
 };

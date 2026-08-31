@@ -36,6 +36,7 @@ def pw_bluetooth_proxy_rfcomm_library(name, versioned_deps, **kwargs):
             "rfcomm_channel_internal.cc",
             "rfcomm_channel.cc",
             "rfcomm_manager.cc",
+            "rfcomm_snapshot.cc",
         ],
         # LINT.ThenChange(Android.bp, BUILD.gn, CMakeLists.txt)
         # LINT.IfChange
@@ -45,6 +46,7 @@ def pw_bluetooth_proxy_rfcomm_library(name, versioned_deps, **kwargs):
             "public/pw_bluetooth_proxy/rfcomm/rfcomm_common.h",
             "public/pw_bluetooth_proxy/rfcomm/rfcomm_config.h",
             "public/pw_bluetooth_proxy/rfcomm/rfcomm_manager.h",
+            "public/pw_bluetooth_proxy/rfcomm/rfcomm_snapshot.h",
         ],
         # LINT.ThenChange(BUILD.gn, CMakeLists.txt)
         strip_include_prefix = "public",

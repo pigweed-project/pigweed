@@ -30,6 +30,7 @@ set(RFCOMM_HEADERS
   public/pw_bluetooth_proxy/rfcomm/rfcomm_common.h
   public/pw_bluetooth_proxy/rfcomm/rfcomm_config.h
   public/pw_bluetooth_proxy/rfcomm/rfcomm_manager.h
+  public/pw_bluetooth_proxy/rfcomm/rfcomm_snapshot.h
 )
 # LINT.ThenChange(rfcomm.bzl, BUILD.gn)
 
@@ -52,6 +53,7 @@ set(RFCOMM_SOURCES
   rfcomm_channel_internal.cc
   rfcomm_channel.cc
   rfcomm_manager.cc
+  rfcomm_snapshot.cc
 )
 # LINT.ThenChange(Android.bp, rfcomm.bzl, BUILD.gn)
 

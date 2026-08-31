@@ -15,7 +15,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 
 #include "pw_bluetooth_proxy/l2cap_channel_common.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_common.h"

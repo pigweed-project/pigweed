@@ -19,11 +19,13 @@
 #include "pw_allocator/unique_ptr.h"
 #include "pw_bluetooth/rfcomm_frames.emb.h"
 #include "pw_bluetooth_proxy/channel_proxy.h"
+#include "pw_bluetooth_proxy/config.h"
 #include "pw_bluetooth_proxy/l2cap_channel_manager_interface.h"
 #include "pw_bluetooth_proxy/rfcomm/internal/rfcomm_channel_internal.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_channel_manager_interface.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_common.h"
 #include "pw_bluetooth_proxy/rfcomm/rfcomm_config.h"
+#include "pw_bluetooth_proxy/rfcomm/rfcomm_snapshot.h"
 #include "pw_checksum/crc8.h"
 #include "pw_containers/dynamic_map.h"
 #include "pw_sync/mutex.h"
@@ -35,13 +37,57 @@ namespace pw::bluetooth::proxy::rfcomm {
 // connection.
 class RfcommManager final : public RfcommChannelManagerInterface {
  public:
+  /// Creates an `RfcommManager`.
+  ///
+  /// @param[in] l2cap_channel_manager Interface to L2CAP channel manager.
+  /// @param[in] allocator Allocator used for connection and channel
+  /// allocations.
+  /// @param[in] state_update_callback Optional callback to receive incremental
+  /// state updates for offload recovery persistence.
   RfcommManager(L2capChannelManagerInterface& l2cap_channel_manager,
-                Allocator& allocator);
+                Allocator& allocator,
+                RfcommStateUpdateCallback state_update_callback = nullptr);
   ~RfcommManager() override;
 
   // Deregisters all channels for the given connection and closes the
   // connection.
   void DeregisterAndCloseChannels(RfcommEvent event);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  /// Restores RFCOMM subsystem state from a previously saved snapshot.
+  ///
+  /// @note Must be called during initialization within the paused-traffic
+  /// recovery window before packet traffic is processed, and after
+  /// `RecoverFromSnapshot()` on ACL and L2CAP state.
+  ///
+  /// @note The caller must ensure that the @p snapshot object remains valid
+  /// and in scope until `CompleteRecovery()` returns.
+  ///
+  /// @note During the recovery window, re-acquiring channels that were present
+  /// in the restored snapshot suppresses initial creation notifications to
+  /// avoid duplicate records in the container. Acquiring a channel that was not
+  /// present in the snapshot will emit an initial state update.
+  ///
+  /// @param[in] snapshot The snapshot containing persisted RFCOMM channel
+  /// state.
+  ///
+  /// @returns
+  /// * @OK: State restored successfully.
+  /// * @INVALID_ARGUMENT: Snapshot pointer is null.
+  /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
+  Status RecoverFromSnapshot(const RfcommSnapshot* snapshot);
+
+  /// Completes RFCOMM offload recovery and sweeps abandoned RFCOMM channels.
+  ///
+  /// Purges tracking of channels present in the restored snapshot that were not
+  /// re-acquired by the host during the recovery window, sending channel
+  /// removal notifications for each abandoned channel.
+  ///
+  /// @note Must be called at the end of the recovery window before packet
+  /// traffic is processed, after all active RFCOMM channels have been
+  /// re-acquired.
+  void CompleteRecovery() PW_LOCKS_EXCLUDED(connections_mutex_);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
  private:
   // The map of RFCOMM channels for a connection, keyed by DLCI.
@@ -133,6 +179,20 @@ class RfcommManager final : public RfcommChannelManagerInterface {
   // synchronize the destruction of connection states.
   sync::Mutex connections_mutex_;
   ConnectionMap connections_ PW_GUARDED_BY(connections_mutex_);
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  void NotifyChannelStateUpdate(const internal::RfcommChannelInternal& channel);
+  void NotifyChannelRemoved(ConnectionHandle connection_handle,
+                            uint8_t channel_number,
+                            RfcommDirection direction);
+
+  std::atomic<const RfcommSnapshot*> restored_snapshot_{nullptr};
+
+  // Registered state update callback for offload recovery persistence. This
+  // must only be modified during initialization before packet traffic is
+  // processed. This allows it to be safely invoked without acquiring any locks.
+  RfcommStateUpdateCallback state_update_callback_;
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 
 }  // namespace pw::bluetooth::proxy::rfcomm
