@@ -39,23 +39,78 @@ constexpr uint16_t kBrEdrConnectionHandle = 0x456;
 constexpr uint16_t kLeMaxAclCredits = 10;
 constexpr uint16_t kBrEdrMaxAclCredits = 5;
 
+AclConnectionSnapshot CreateAclConnectionSnapshot(
+    uint16_t connection_handle = kLeConnectionHandle1,
+    AclTransportType transport = AclTransportType::kLe,
+    uint16_t num_proxy_pending = 0,
+    uint16_t num_host_pending = 0,
+    uint16_t num_queued_host = 0) {
+  AclConnectionSnapshot snapshot;
+  snapshot.connection_handle = connection_handle;
+  snapshot.transport = transport;
+  snapshot.num_proxy_pending_packets = num_proxy_pending;
+  snapshot.num_host_pending_packets = num_host_pending;
+  snapshot.num_queued_host_packets = num_queued_host;
+  return snapshot;
+}
+
+TEST(AclSnapshotTest, AclConnectionSnapshotHelpers) {
+  AclConnectionSnapshot snapshot = CreateAclConnectionSnapshot();
+
+  EXPECT_TRUE(snapshot.MatchesKey(kLeConnectionHandle1));
+  EXPECT_FALSE(snapshot.MatchesKey(kLeConnectionHandle2));
+
+  AclConnectionSnapshot update = CreateAclConnectionSnapshot(
+      kLeConnectionHandle1, AclTransportType::kBrEdr, 1);
+  PW_TEST_EXPECT_OK(snapshot.Update(update));
+  EXPECT_EQ(snapshot.transport, AclTransportType::kBrEdr);
+  EXPECT_EQ(snapshot.num_proxy_pending_packets, 1);
+
+  update.connection_handle = kLeConnectionHandle2;
+  EXPECT_EQ(snapshot.Update(update), Status::InvalidArgument());
+}
+
+TEST(AclSnapshotTest, AclSnapshotApplyStateUpdate) {
+  AclSnapshot snapshot;
+
+  // Verify connection insertion.
+  AclConnectionSnapshot connection = CreateAclConnectionSnapshot();
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection));
+  ASSERT_EQ(snapshot.acl_connections.size(), 1u);
+  EXPECT_EQ(snapshot.acl_connections[0].num_proxy_pending_packets, 0);
+
+  // Verify connection updating.
+  connection.num_proxy_pending_packets = 1;
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection));
+  ASSERT_EQ(snapshot.acl_connections.size(), 1u);
+  EXPECT_EQ(snapshot.acl_connections[0].num_proxy_pending_packets, 1);
+
+  // Verify that removing a non-existent connection is a no-op.
+  AclConnectionRemoved removed{.connection_handle = kLeConnectionHandle2};
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
+  ASSERT_EQ(snapshot.acl_connections.size(), 1u);
+
+  // Verify connection removal.
+  removed.connection_handle = kLeConnectionHandle1;
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
+  EXPECT_TRUE(snapshot.acl_connections.empty());
+
+  // Verify that exceeding connection capacity causes the snapshot to be marked
+  // as incomplete.
+  for (uint16_t i = 0; i < PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS;
+       ++i) {
+    connection.connection_handle = i;
+    PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection));
+  }
+  EXPECT_TRUE(snapshot.acl_connections.full());
+  EXPECT_FALSE(snapshot.snapshot_incomplete);
+  connection.connection_handle = 100;
+  EXPECT_EQ(snapshot.ApplyStateUpdate(connection), Status::ResourceExhausted());
+  EXPECT_TRUE(snapshot.snapshot_incomplete);
+}
+
 class AclRecoveryTest : public ProxyHostTest {
  protected:
-  static AclConnectionSnapshot CreateAclConnectionSnapshot(
-      uint16_t connection_handle = kLeConnectionHandle1,
-      AclTransportType transport = AclTransportType::kLe,
-      uint16_t num_proxy_pending = 0,
-      uint16_t num_host_pending = 0,
-      uint16_t num_queued_host = 0) {
-    AclConnectionSnapshot snapshot;
-    snapshot.connection_handle = connection_handle;
-    snapshot.transport = transport;
-    snapshot.num_proxy_pending_packets = num_proxy_pending;
-    snapshot.num_host_pending_packets = num_host_pending;
-    snapshot.num_queued_host_packets = num_queued_host;
-    return snapshot;
-  }
-
   static AclSnapshot CreateAclSnapshot(
       uint16_t le_max = kLeMaxAclCredits,
       uint16_t br_edr_max = kBrEdrMaxAclCredits,
@@ -109,11 +164,16 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
+  // Verify ACL subsystem recovery. Expect free proxy packets to be 0 (2
+  // reserved - 2 pending).
+  EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 0);
+
   Result<AclFrameWithStorage> acl_frame = SetupAcl(kLeConnectionHandle1, 10);
   ASSERT_TRUE(acl_frame.ok());
   proxy.HandleH4HciFromHost(
       H4PacketWithH4(emboss::H4PacketType::ACL_DATA, acl_frame->h4_span()));
 
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   // Verify that the first connection was restored correctly. Expect
   // num_host_pending_packets to be 3 (2 restored + 1 new).
   ASSERT_TRUE(connection_snapshot.has_value());
@@ -139,6 +199,11 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
             kBrEdrPendingAclCredits);
   EXPECT_EQ(connection_snapshot->num_host_pending_packets, 2);
   EXPECT_EQ(connection_snapshot->num_queued_host_packets, 0);
+#else
+  // Verify that credit mutations don't trigger a state update callback when
+  // credit snapshot updates are disabled.
+  EXPECT_FALSE(connection_snapshot.has_value());
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 }
 
 TEST_F(AclRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
@@ -199,13 +264,14 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
   EXPECT_EQ(connection_snapshot.num_proxy_pending_packets, 0);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 0);
 
-  // Verify that sending a packet from the host triggers a state update
-  // callback.
   Result<AclFrameWithStorage> acl_frame = SetupAcl(kLeConnectionHandle1, 10);
   ASSERT_TRUE(acl_frame.ok());
   H4PacketWithH4 h4_packet(emboss::H4PacketType::ACL_DATA,
                            acl_frame->h4_span());
   proxy.HandleH4HciFromHost(std::move(h4_packet));
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  // Verify that sending a packet from the host triggers a state update
+  // callback.
   EXPECT_EQ(update_capture.updates_sent, 2u);
   ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
       update_capture.last_update));
@@ -213,11 +279,17 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
       std::get<AclConnectionSnapshot>(update_capture.last_update);
   EXPECT_EQ(connection_snapshot.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 1);
+#else
+  // Verify that credit mutations don't trigger a state update callback when
+  // credit snapshot updates are disabled.
+  EXPECT_EQ(update_capture.updates_sent, 1u);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
-  // Verify that reclaiming credits via NOCP event triggers a state update
-  // callback.
   PW_TEST_ASSERT_OK(
       SendNumberOfCompletedPackets(proxy, {{kLeConnectionHandle1, 1}}));
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+  // Verify that reclaiming credits via NOCP event triggers a state update
+  // callback.
   EXPECT_EQ(update_capture.updates_sent, 3u);
   ASSERT_TRUE(std::holds_alternative<AclConnectionSnapshot>(
       update_capture.last_update));
@@ -225,11 +297,20 @@ TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
       std::get<AclConnectionSnapshot>(update_capture.last_update);
   EXPECT_EQ(connection_snapshot.connection_handle, kLeConnectionHandle1);
   EXPECT_EQ(connection_snapshot.num_host_pending_packets, 0);
+#else
+  // Verify that credit mutations don't trigger a state update callback when
+  // credit snapshot updates are disabled.
+  EXPECT_EQ(update_capture.updates_sent, 1u);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
   // Verify that disconnection triggers a state update callback.
   PW_TEST_ASSERT_OK(
       SendDisconnectionCompleteEvent(proxy, kLeConnectionHandle1));
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   EXPECT_EQ(update_capture.updates_sent, 4u);
+#else
+  EXPECT_EQ(update_capture.updates_sent, 2u);
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
   ASSERT_TRUE(
       std::holds_alternative<AclConnectionRemoved>(update_capture.last_update));
   EXPECT_EQ(std::get<AclConnectionRemoved>(update_capture.last_update)
@@ -410,7 +491,7 @@ TEST(L2capSnapshotTest, L2capChannelSnapshotHelpers) {
 
   L2capChannelSnapshot update = CreateL2capChannelSnapshot(
       kLeConnectionHandle1, kLocalCid1, kRemoteCid2, AclTransportType::kBrEdr);
-  EXPECT_EQ(snapshot.Update(update), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.Update(update));
   EXPECT_EQ(snapshot.remote_cid, kRemoteCid2);
   EXPECT_EQ(snapshot.transport, AclTransportType::kBrEdr);
 
@@ -423,25 +504,25 @@ TEST(L2capSnapshotTest, L2capSnapshotApplyStateUpdate) {
 
   // Verify channel insertion.
   L2capChannelSnapshot channel = CreateL2capChannelSnapshot();
-  EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(channel));
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
   EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, kRemoteCid1);
 
   // Verify channel updating.
   channel.remote_cid = kRemoteCid2;
-  EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(channel));
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
   EXPECT_EQ(snapshot.l2cap_channels[0].remote_cid, kRemoteCid2);
 
   // Verify that removing a non-existent channel is a no-op.
   L2capChannelRemoved removed{.connection_handle = kLeConnectionHandle2,
                               .local_cid = kLocalCid1};
-  EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
   ASSERT_EQ(snapshot.l2cap_channels.size(), 1u);
 
   // Verify channel removal.
   removed.connection_handle = kLeConnectionHandle1;
-  EXPECT_EQ(snapshot.ApplyStateUpdate(removed), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(removed));
   EXPECT_TRUE(snapshot.l2cap_channels.empty());
 
   // Verify that exceeding channel capacity causes the snapshot to be marked as
@@ -450,7 +531,7 @@ TEST(L2capSnapshotTest, L2capSnapshotApplyStateUpdate) {
        i < PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS;
        ++i) {
     channel.local_cid = i;
-    EXPECT_EQ(snapshot.ApplyStateUpdate(channel), OkStatus());
+    PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(channel));
   }
   EXPECT_TRUE(snapshot.l2cap_channels.full());
   EXPECT_FALSE(snapshot.snapshot_incomplete);
@@ -1941,27 +2022,27 @@ TEST(ProxyHostSnapshotTest, ProxyHostSnapshotApplyStateUpdate) {
 
   AclConnectionSnapshot connection_snapshot{.connection_handle =
                                                 kLeConnectionHandle1};
-  EXPECT_EQ(snapshot.ApplyStateUpdate(connection_snapshot), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection_snapshot));
   EXPECT_EQ(snapshot.acl.acl_connections.size(), 1u);
 
   AclConnectionRemoved connection_removed{.connection_handle =
                                               kLeConnectionHandle1};
-  EXPECT_EQ(snapshot.ApplyStateUpdate(connection_removed), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(connection_removed));
   EXPECT_EQ(snapshot.acl.acl_connections.size(), 0u);
 
   L2capSignalingStateSnapshot signaling_snapshot;
-  EXPECT_EQ(snapshot.ApplyStateUpdate(signaling_snapshot), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(signaling_snapshot));
   EXPECT_EQ(snapshot.l2cap.l2cap_signaling_states.size(), 1u);
 
   L2capChannelSnapshot channel_snapshot;
   channel_snapshot.connection_handle = kLeConnectionHandle1;
   channel_snapshot.local_cid = kLocalCid1;
-  EXPECT_EQ(snapshot.ApplyStateUpdate(channel_snapshot), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(channel_snapshot));
   EXPECT_EQ(snapshot.l2cap.l2cap_channels.size(), 1u);
 
   L2capChannelRemoved channel_removed{.connection_handle = kLeConnectionHandle1,
                                       .local_cid = kLocalCid1};
-  EXPECT_EQ(snapshot.ApplyStateUpdate(channel_removed), OkStatus());
+  PW_TEST_EXPECT_OK(snapshot.ApplyStateUpdate(channel_removed));
   EXPECT_EQ(snapshot.l2cap.l2cap_channels.size(), 0u);
 }
 

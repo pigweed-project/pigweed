@@ -61,14 +61,14 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
 
         if (!credits.dynamic_sharing()) {
           connection_ptr->RecordPacket(PacketSource::kHost);
-          NotifyConnectionStateUpdate(*connection_ptr);
+          NotifyCreditMutation(*connection_ptr);
           packet_to_send_directly = std::move(h4_packet);
         } else {
           transport = connection_ptr->transport();
           if (h4_packet.HasReleaseFn()) {
             if (connection_ptr->queue().try_push(std::move(h4_packet))) {
               credits.IncrementTotalQueuedPackets();
-              NotifyConnectionStateUpdate(*connection_ptr);
+              NotifyCreditMutation(*connection_ptr);
             } else {
               PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
             }
@@ -83,7 +83,7 @@ void AclDataChannel::HandleAclFromHost(H4PacketWithH4&& h4_packet) {
               if (connection_ptr->queue().try_push(
                       std::move(owned_h4_packet_result.value()))) {
                 credits.IncrementTotalQueuedPackets();
-                NotifyConnectionStateUpdate(*connection_ptr);
+                NotifyCreditMutation(*connection_ptr);
               } else {
                 PW_LOG_ERROR("Dropping H4 packet from host: unable to queue");
               }
@@ -466,7 +466,7 @@ bool AclDataChannel::HandleNumberOfCompletedPacketsEvent(
       }
 
       if (proxy_reclaimed > 0 || host_reclaimed > 0) {
-        NotifyConnectionStateUpdate(*connection_ptr);
+        NotifyCreditMutation(*connection_ptr);
       }
     }
   }
@@ -511,7 +511,7 @@ void AclDataChannel::DrainDynamicQuota(AclTransportType transport) {
         AclConnection* connection_to_drain = FindConnectionToDrain(transport);
         if (connection_to_drain) {
           packet_to_send = DequeueHostPacket(connection_to_drain, credits);
-          NotifyConnectionStateUpdate(*connection_to_drain);
+          NotifyCreditMutation(*connection_to_drain);
           host_tried_and_empty = false;
           proxy_tried_and_empty = false;
         } else {
@@ -660,7 +660,7 @@ pw::Status AclDataChannel::SendAcl(H4PacketWithH4&& h4_packet,
 
   connection_ptr->RecordPacket(PacketSource::kProxy);
 
-  NotifyConnectionStateUpdate(*connection_ptr);
+  NotifyCreditMutation(*connection_ptr);
 
   hci_transport_.SendToController(std::move(h4_packet));
   return pw::OkStatus();
@@ -947,9 +947,8 @@ bool AclDataChannel::HasDroppedPackets(uint16_t connection_handle) const {
   return false;
 }
 
-#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 void AclDataChannel::NotifyConnectionStateUpdate(
-    const AclConnection& connection) {
+    const AclConnection& connection) const {
   if (state_update_callback_) {
     state_update_callback_(AclConnectionSnapshot{
         .connection_handle = connection.connection_handle(),
@@ -961,7 +960,7 @@ void AclDataChannel::NotifyConnectionStateUpdate(
     });
   }
 }
-#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 }  // namespace pw::bluetooth::proxy

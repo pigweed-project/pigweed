@@ -519,6 +519,11 @@ class AclDataChannel {
       EventT read_buffer_event);
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+
+  // Invokes connection state update callback if registered.
+  void NotifyConnectionStateUpdate(const AclConnection& connection) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+
   struct DeferredRefund {
     uint16_t connection_handle;
     uint16_t num_packets;
@@ -532,14 +537,20 @@ class AclDataChannel {
   AclStateUpdateCallback state_update_callback_
       PW_GUARDED_BY(connection_mutex_);
 
+#else
+
+  void NotifyConnectionStateUpdate(
+      [[maybe_unused]] const AclConnection& connection) const {}
+
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
-  // Invokes connection state update callback if registered.
-  void NotifyConnectionStateUpdate(const AclConnection& connection)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_);
+  void NotifyCreditMutation(const AclConnection& connection) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(connection_mutex_) {
+    NotifyConnectionStateUpdate(connection);
+  }
 #else
-  void NotifyConnectionStateUpdate(
+  void NotifyCreditMutation(
       [[maybe_unused]] const AclConnection& connection) const {}
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 };
