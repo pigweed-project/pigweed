@@ -52,7 +52,7 @@ config("linker_script") {
       "-T",
       rebase_path("pw_tokenizer_linker_sections.ld", root_build_dir),
     ]
-  } else if (current_os == "linux" && !pw_toolchain_OSS_FUZZ_ENABLED) {
+  } else if (current_os == "linux") {
     # When building for Linux, the linker provides a default linker script.
     # We must instead use pw_add_tokenizer_sections_to_default_script.ld to
     # append to the default linker script instead of overriding it.

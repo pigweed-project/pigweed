@@ -30,7 +30,6 @@ import("$dir_pw_toolchain/non_c_toolchain.gni")
 import("$dir_pw_trace/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 import("$pw_external_ambiq/ambiq.gni")
-import("$pw_external_fuzztest/fuzztest.gni")
 import("$pw_external_mcuxpresso/mcuxpresso.gni")
 
 # Main build file for upstream Pigweed.
@@ -408,27 +407,15 @@ group("pip_vendor_wheels") {
 group("fuzzers") {
   deps = []
 
-  if (host_os != "win" && dir_pw_third_party_fuzztest != "") {
-    # Coverage-guided fuzzing is only supported on Linux and MacOS using clang.
-    # Fuzztest-based fuzzers will run in unit test mode. libFuzzer-based fuzzers
-    # will only build.
+  # Coverage-guided fuzzing is only supported on Linux and MacOS using clang.
+  if (host_os != "win") {
     _clang_fuzz_tc = _default_toolchain_prefix + "fuzz"
     deps += [ ":pw_module_tests.run($_clang_fuzz_tc)" ]
   }
 
   # Also build (but do not run) bespoke fuzzers.
-  if (!pw_toolchain_OSS_FUZZ_ENABLED) {
-    _default_tc = _default_toolchain_prefix + pw_DEFAULT_C_OPTIMIZATION_LEVEL
-    deps += [ ":pw_custom_fuzzers($_default_tc)" ]
-  }
-}
-
-# Build-only target for OSS-Fuzz. No-op unless OSS-Fuzz is enabled.
-group("oss_fuzz") {
-  if (pw_toolchain_OSS_FUZZ_ENABLED) {
-    _clang_fuzz_tc = _default_toolchain_prefix + "fuzz"
-    deps = [ ":pw_module_tests($_clang_fuzz_tc)" ]
-  }
+  _default_tc = _default_toolchain_prefix + pw_DEFAULT_C_OPTIMIZATION_LEVEL
+  deps += [ ":pw_custom_fuzzers($_default_tc)" ]
 }
 
 group("asan") {

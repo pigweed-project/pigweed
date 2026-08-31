@@ -13,7 +13,6 @@
 # the License.
 """Functions for building code during presubmit checks."""
 
-import base64
 import contextlib
 import io
 import itertools
@@ -23,7 +22,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import sys
 from typing import (
     Collection,
     Container,
@@ -518,19 +516,6 @@ def modified_env(**envvars):
         yield
     finally:
         os.environ = saved_env
-
-
-def fuzztest_prng_seed(ctx: PresubmitContext) -> str:
-    """Convert the RNG seed to the format expected by FuzzTest.
-
-    FuzzTest can be configured to use the seed by setting the
-    `FUZZTEST_PRNG_SEED` environment variable to this value.
-
-    Args:
-        ctx: The context that includes a pseudorandom number generator seed.
-    """
-    rng_bytes = ctx.rng_seed.to_bytes(32, sys.byteorder)
-    return base64.urlsafe_b64encode(rng_bytes).decode('ascii').rstrip('=')
 
 
 @filter_paths(

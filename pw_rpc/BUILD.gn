@@ -548,7 +548,7 @@ pw_test("ids_test") {
 pw_test("packet_test") {
   deps = [
     ":server",
-    "$dir_pw_fuzzer:fuzztest",
+    "$dir_pw_fuzzer:fuzztest.disabled",
     dir_pw_bytes,
     dir_pw_protobuf,
   ]
@@ -561,7 +561,7 @@ pw_test("packet_test") {
 pw_test("packet_meta_test") {
   deps = [
     ":server",
-    "$dir_pw_fuzzer:fuzztest",
+    "$dir_pw_fuzzer:fuzztest.disabled",
     dir_pw_bytes,
   ]
   sources = [ "packet_meta_test.cc" ]

@@ -129,7 +129,6 @@ test host targets:
 - pw_toolchain_host_clang.speed_optimized.static_analysis
 - pw_toolchain_host_clang.size_optimized.static_analysis
 - pw_toolchain_host_clang.fuzz.static_analysis
-  (if pw_toolchain_OSS_FUZZ_ENABLED is false)
 - pw_toolchain_arm_clang.debug.static_analysis
 - pw_toolchain_arm_clang.speed_optimized.static_analysis
 - pw_toolchain_arm_clang.size_optimized.static_analysis

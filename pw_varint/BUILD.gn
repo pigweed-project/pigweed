@@ -15,7 +15,6 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
-import("$dir_pw_fuzzer/fuzz_test.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("default_config") {
@@ -54,13 +53,14 @@ pw_test_group("tests") {
   ]
 }
 
-pw_fuzz_test("varint_test") {
+pw_test("varint_test") {
   sources = [
     "varint_test.cc",
     "varint_test_c.c",
   ]
   deps = [
     ":pw_varint",
+    "$dir_pw_fuzzer:fuzztest.disabled",
     "$dir_pw_unit_test:constexpr",
   ]
 }

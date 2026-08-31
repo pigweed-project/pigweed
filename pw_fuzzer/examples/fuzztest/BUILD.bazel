@@ -61,7 +61,6 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "BUILD.bazel",
-        "BUILD.gn",
         "CMakeLists.txt",
         "metrics.h",
         "metrics_fuzztest.cc",

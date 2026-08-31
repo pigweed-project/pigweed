@@ -17,7 +17,6 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_bloat/bloat.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
-import("$dir_pw_fuzzer/fuzz_test.gni")
 import("$dir_pw_sync/backend.gni")
 import("$dir_pw_thread/backend.gni")
 import("$dir_pw_unit_test/test.gni")
@@ -518,7 +517,7 @@ pw_source_set("fuzzing") {
   public_deps = [
     ":pw_allocator",
     ":test_harness",
-    "$dir_pw_fuzzer:fuzztest",
+    "$dir_pw_fuzzer:fuzztest.disabled",
   ]
   sources = [ "fuzzing.cc" ]
 }

@@ -36,7 +36,6 @@ pw_python_package("py") {
     "pw_package/packages/emboss.py",
     "pw_package/packages/flatbuffers.py",
     "pw_package/packages/freertos.py",
-    "pw_package/packages/fuzztest.py",
     "pw_package/packages/googletest.py",
     "pw_package/packages/mbedtls.py",
     "pw_package/packages/mcuxpresso.py",

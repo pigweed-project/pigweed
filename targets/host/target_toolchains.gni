@@ -175,13 +175,9 @@ pw_target_toolchain_host = {
     forward_variables_from(_toolchain_base, "*", _excluded_members)
     defaults = {
       forward_variables_from(_toolchain_base.defaults, "*")
-      forward_variables_from(_host_common, "*", [ "pw_unit_test_MAIN" ])
+      forward_variables_from(_host_common, "*")
       forward_variables_from(_os_specific_config, "*")
       default_configs += _clang_default_configs
-
-      # Always use the FuzzTest wrappers around gtest and gtest_main.
-      pw_unit_test_MAIN = "$dir_pw_fuzzer:fuzztest_main"
-      pw_unit_test_BACKEND = "$dir_pw_fuzzer:gtest"
     }
   }
 
@@ -371,10 +367,6 @@ pw_internal_host_toolchains = [
       forward_variables_from(_pigweed_internal, "*")
       forward_variables_from(_os_specific_config, "*")
       default_configs += _internal_clang_default_configs
-
-      # Always use the FuzzTest wrapper around gtest_main.
-      pw_unit_test_MAIN = "$dir_pw_fuzzer:fuzztest_main"
-      pw_unit_test_BACKEND = "$dir_pw_fuzzer:gtest"
     }
   },
   {

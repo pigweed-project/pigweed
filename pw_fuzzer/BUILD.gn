@@ -17,7 +17,6 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/error.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_unit_test/test.gni")
-import("$pw_external_fuzztest/fuzztest.gni")
 
 config("public_include_path") {
   include_dirs = [ "public" ]
@@ -45,7 +44,6 @@ config("fuzzing_build_mode_unsafe_for_production") {
 pw_test_group("tests") {
   group_deps = [
     ":fuzztest_tests",
-    "examples/fuzztest:tests",
     "examples/libfuzzer:tests",
   ]
 }
@@ -55,47 +53,14 @@ pw_source_set("asan_default_options") {
 }
 
 ################################################################################
-# FuzzTest support
-#
-# Create FuzzTest-style fuzzers by adding a dep on dir_pw_fuzzer:fuzztest
-
-group("fuzztest") {
-  if (dir_pw_third_party_fuzztest != "" && pw_toolchain_FUZZING_ENABLED) {
-    public_deps = [ ":fuzztest.enabled" ]
-  } else {
-    public_deps = [ ":fuzztest.disabled" ]
-  }
-}
-
-# Used by fuzzable unit tests when fuzzing is enabled. Includes headers and deps
-# that provide a Pigweed-compatible subset of FuzzTest, as well as extensions to
-# support common Pigweed types.
-if (dir_pw_third_party_fuzztest != "" && pw_toolchain_FUZZING_ENABLED) {
-  pw_source_set("fuzztest.enabled") {
-    public = [
-      "private/pw_fuzzer/internal/fuzztest.h",
-      "public/pw_fuzzer/fuzztest.h",
-    ]
-    public_configs = [
-      ":public_include_path",
-      ":private_include_path",
-    ]
-    public_deps = [
-      "$pw_external_fuzztest/fuzztest:fuzztest_core",
-      dir_pw_containers,
-      dir_pw_result,
-      dir_pw_status,
-      dir_pw_string,
-    ]
-  }
-}
-
-# Used by fuzzable unit tests when fuzzing is disabled. Includes stubs of the
+# FuzzTest is not supported for GN, so this module needs to provide stubs of the
 # Pigweed-compatible subset of FuzzTest's interface, as well as extensions to
 # support common Pigweed types.
+
 pw_source_set("fuzztest.disabled") {
   public = [
     "private_overrides/pw_fuzzer/internal/fuzztest.h",
+    "public/pw_fuzzer/asan_interface.h",
     "public/pw_fuzzer/fuzztest.h",
     "public_overrides/fuzztest/fuzztest.h",
   ]
@@ -109,68 +74,16 @@ pw_source_set("fuzztest.disabled") {
     dir_pw_status,
     dir_pw_string,
   ]
+  inputs = [
+    # This header is used when FuzzTest is enabled, and not in the GN build.
+    # It is listed here to satisfy the source_is_in_gn_build check.
+    "private/pw_fuzzer/internal/fuzztest.h",
+  ]
 }
 
 pw_test("fuzztest_tests") {
   sources = [ "domain_test.cc" ]
-  deps = [ ":fuzztest" ]
-}
-
-# This target should only be used when defining a fuzzing toolchain, e.g. to set
-# `pw_unit_test_BACKEND = "$dir_pw_fuzzer:gtest"
-# TODO: b/295961502 - Support running FuzzTest-based fuzzers on OSS-Fuzz.
-if (dir_pw_third_party_googletest == "") {
-  pw_error("gtest") {
-    message_lines = [
-      "pw_unit_test_BACKEND is set to dir_pw_fuzzer:gtest, ",
-      "but dir_pw_third_party_googletest is not set.",
-    ]
-  }
-} else if (!pw_toolchain_FUZZING_ENABLED) {
-  pw_error("gtest") {
-    message_lines = [
-      "pw_unit_test_BACKEND is set to dir_pw_fuzzer:gtest, ",
-      "but $current_toolchain does not support fuzzing.",
-    ]
-  }
-} else {
-  group("gtest") {
-    if (pw_toolchain_OSS_FUZZ_ENABLED) {
-      public_deps = [ "$dir_pw_unit_test:light" ]
-    } else {
-      public_deps = [ "$dir_pw_unit_test:googletest" ]
-    }
-  }
-}
-
-# This target should only be used when defining a fuzzing toolchain, e.g. to set
-# `pw_unit_test_MAIN = "$dir_pw_fuzzer:fuzztest_main"
-# TODO: b/295961502 - Support running FuzzTest-based fuzzers on OSS-Fuzz.
-if (dir_pw_third_party_fuzztest == "") {
-  pw_error("fuzztest_main") {
-    message_lines = [
-      "pw_unit_test_MAIN is set to dir_pw_fuzzer:fuzztest_main, ",
-      "but dir_pw_third_party_fuzztest is not set.",
-    ]
-  }
-} else if (!pw_toolchain_FUZZING_ENABLED) {
-  pw_error("fuzztest_main") {
-    message_lines = [
-      "pw_unit_test_MAIN is set to dir_pw_fuzzer:fuzztest_main, ",
-      "but $current_toolchain does not support fuzzing.",
-    ]
-  }
-} else {
-  group("fuzztest_main") {
-    if (pw_toolchain_OSS_FUZZ_ENABLED) {
-      deps = [ "$dir_pw_unit_test:simple_printing_main" ]
-    } else {
-      deps = [
-        ":asan_default_options",
-        "$pw_external_fuzztest/fuzztest:fuzztest_gtest_main",
-      ]
-    }
-  }
+  deps = [ ":fuzztest.disabled" ]
 }
 
 ################################################################################
@@ -183,6 +96,12 @@ if (dir_pw_third_party_fuzztest == "") {
 # automatically by `pw_fuzzer`.
 config("libfuzzer_config") {
   ldflags = [ "-fsanitize=fuzzer" ]
+}
+
+# Add flags for adding LLVM sanitizer coverage for fuzzing. This is added by
+# the host_clang_fuzz toolchains.
+config("instrumentation") {
+  cflags = [ "-fsanitize=fuzzer-no-link" ]
 }
 
 # Includes wrapper's for LLVM's libFuzzer compiler runtime library.
@@ -207,42 +126,4 @@ pw_source_set("libfuzzer_test") {
 # libFuzzer-based fuzzers have a distinct dep graph.
 group("fuzzers") {
   deps = [ "examples/libfuzzer:fuzzers" ]
-}
-
-################################################################################
-# Local fuzzing support
-
-# Add flags for adding LLVM sanitizer coverage for fuzzing. This is added by
-# the host_clang_fuzz toolchains.
-config("instrumentation") {
-  cflags = [ "-fsanitize=fuzzer-no-link" ]
-}
-
-################################################################################
-# OSS-Fuzz support
-#
-# OSS-Fuzz manipulates compiler and linker flags directly. See
-# google.github.io/oss-fuzz/getting-started/new-project-guide/#Requirements.
-#
-# WARNING: This is not hermetic by design. It never can be, and never will be.
-
-config("oss_fuzz_instrumentation") {
-  cflags_c = string_split(getenv("CFLAGS"))
-  cflags_cc = string_split(getenv("CXXFLAGS"))
-
-  # Disable UBSan vptr when the target is built with -fno-rtti.
-  if (cflags_cc + [ "-fno-rtti" ] - [ "-fno-rtti" ] != cflags_cc) {
-    cflags_cc += [ " -fno-sanitize=vptr" ]
-  }
-  cflags_cc += [ "-fcoverage-compilation-dir=" + getenv("PW_ROOT") ]
-
-  ldflags = cflags_cc + [ "-fuse-ld=lld" ]
-}
-
-config("libfuzzer_oss_fuzz_config") {
-  engine = getenv("LIB_FUZZING_ENGINE")
-  if (engine == "") {
-    engine = "-fsanitize=fuzzer"
-  }
-  ldflags = [ engine ]
 }

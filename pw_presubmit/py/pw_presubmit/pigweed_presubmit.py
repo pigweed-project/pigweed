@@ -554,43 +554,7 @@ gn_chre_googletest_nanopb_sapphire_build = PigweedGnGenNinja(
 gn_fuzz_build = PigweedGnGenNinja(
     name='gn_fuzz_build',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
-    packages=('abseil-cpp', 'fuzztest', 'googletest'),
-    gn_args={
-        'dir_pw_third_party_abseil_cpp': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'abseil-cpp'
-        ),
-        'dir_pw_third_party_fuzztest': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'fuzztest'
-        ),
-        'dir_pw_third_party_googletest': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'googletest'
-        ),
-    },
     ninja_targets=('fuzzers',),
-    ninja_contexts=(
-        lambda ctx: build.modified_env(
-            FUZZTEST_PRNG_SEED=build.fuzztest_prng_seed(ctx),
-        ),
-    ),
-)
-
-oss_fuzz_build = PigweedGnGenNinja(
-    name='oss_fuzz_build',
-    path_filter=upstream_checks.BUILD_FILE_FILTER,
-    packages=('abseil-cpp', 'fuzztest', 'googletest'),
-    gn_args={
-        'dir_pw_third_party_abseil_cpp': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'abseil-cpp'
-        ),
-        'dir_pw_third_party_fuzztest': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'fuzztest'
-        ),
-        'dir_pw_third_party_googletest': lambda ctx: '"{}"'.format(
-            ctx.package_root / 'googletest'
-        ),
-        'pw_toolchain_OSS_FUZZ_ENABLED': True,
-    },
-    ninja_targets=('oss_fuzz',),
 )
 
 
@@ -1276,7 +1240,9 @@ SECURITY = (
     # keep-sorted: end
 )
 
-FUZZ = (gn_fuzz_build, oss_fuzz_build)
+# TODO(b/549838057): Restore the oss_fuzz_build using Bazel.
+# We should also build fuzztest targets without oss-fuzz
+FUZZ = (gn_fuzz_build,)
 
 _LINTFORMAT = upstream_programs.QUICK_COMMON + (
     format_code.presubmit_checks(),

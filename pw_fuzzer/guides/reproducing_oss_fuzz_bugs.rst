@@ -35,9 +35,10 @@ To reproduce a bug:
 For example, if the testcase is saved as ``~/Downloads/testcase``
 and the fuzzer is the same as in the examples above, you could run:
 
-.. code-block::
+.. code-block:: console
 
-   $ ./out/host/obj/pw_fuzzer/toy_fuzzer ~/Downloads/testcase
+   $ bazelisk run //pw_fuzzer/toy_fuzzer_run --config=asan --config=libfuzzer\
+   > -- ~/Downloads/testcase
 
 As noted in OSS-Fuzz's documentation on `timeouts and OOMs`_, you may want to
 add a `-timeout=25` or `-rss_limit_mb=2560` argument to reproduce timeouts or

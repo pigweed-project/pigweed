@@ -50,8 +50,6 @@ declare_args() {
   pw_external_freertos =
       get_path_info("$dir_pw_third_party/freertos", "abspath")
   pw_external_fuchsia = get_path_info("$dir_pw_third_party/fuchsia", "abspath")
-  pw_external_fuzztest =
-      get_path_info("$dir_pw_third_party/fuzztest", "abspath")
   pw_external_googletest =
       get_path_info("$dir_pw_third_party/googletest", "abspath")
   pw_external_llvm_builtins =

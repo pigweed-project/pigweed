@@ -36,14 +36,10 @@ import("$dir_pw_unit_test/test.gni")
 #   - enable_test_if: (optional) Passed as `enable_if` to the unit test.
 #   - All of the `pw_executable` args are accepted.
 template("pw_fuzzer") {
-  if (!pw_toolchain_FUZZING_ENABLED) {
+  if (pw_build_defaults.configs + [ "$dir_pw_fuzzer:instrumentation" ] -
+      [ "$dir_pw_fuzzer:instrumentation" ] == pw_build_defaults.configs) {
     pw_error(target_name) {
       message_lines = [ "Toolchain does not enable fuzzing." ]
-    }
-    not_needed(invoker, "*")
-  } else if (pw_toolchain_SANITIZERS == []) {
-    pw_error(target_name) {
-      message_lines = [ "No sanitizer runtime set." ]
     }
     not_needed(invoker, "*")
   } else {
@@ -82,11 +78,7 @@ template("pw_fuzzer") {
                                "visibility",
                              ])
       forward_variables_from(invoker, [ "visibility" ])
-      if (pw_toolchain_OSS_FUZZ_ENABLED) {
-        configs += [ "$dir_pw_fuzzer:libfuzzer_oss_fuzz_config" ]
-      } else {
-        configs += [ "$dir_pw_fuzzer:libfuzzer_config" ]
-      }
+      configs += [ "$dir_pw_fuzzer:libfuzzer_config" ]
       deps += [
         ":$_test_metadata",
         "$dir_pw_fuzzer:libfuzzer",
@@ -132,7 +124,9 @@ template("pw_fuzzer") {
 #         enable_if
 #         output_metadata
 template("pw_fuzzer_group") {
-  _with_fuzzers = pw_toolchain_FUZZING_ENABLED && pw_toolchain_SANITIZERS != []
+  _with_fuzzers =
+      pw_build_defaults.configs + [ "$dir_pw_fuzzer:instrumentation" ] -
+      [ "$dir_pw_fuzzer:instrumentation" ] != pw_build_defaults.configs
   pw_test_group(target_name) {
     forward_variables_from(invoker,
                            "*",

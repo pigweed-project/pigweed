@@ -8,7 +8,8 @@ Adding Fuzzers Using LibFuzzer
 
 .. note::
 
-  `libFuzzer`_ is currently only supported on Linux and MacOS using clang.
+  `libFuzzer`_ is currently only supported on Linux and MacOS using Clang and
+  either Bazel or GN builds.
 
 .. _module-pw_fuzzer-guides-using_libfuzzer-toolchain:
 
@@ -23,6 +24,22 @@ Step 0: Set up libFuzzer for your project
 installation. In order to use it, you only need to define a suitable toolchain.
 
 .. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Include ``rules_fuzzing`` in your ``MODULE.bazel`` file. For example:
+
+      .. code-block::
+
+         bazel_dep(name = "rules_fuzzing", version = "0.5.2")
+
+      Then, import the libFuzzer build configurations in your ``.bazelrc`` file
+      by adding and adapting the following:
+
+      .. code-block::
+
+         import %workspace%/path/to/pigweed/pw_fuzzer/libfuzzer.bazelrc
 
    .. tab-item:: GN
       :sync: gn
@@ -42,28 +59,6 @@ installation. In order to use it, you only need to define a suitable toolchain.
            }
            ...
          }
-
-   .. tab-item:: CMake
-      :sync: cmake
-
-      LibFuzzer-style fuzzers are not currently supported by Pigweed when using
-      CMake.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Include ``rules_fuzzing`` in your ``MODULE.bazel`` file. For example:
-
-      .. code-block::
-
-         bazel_dep(name = "rules_fuzzing", version = "0.5.2")
-
-      Then, import the libFuzzer build configurations in your ``.bazelrc`` file
-      by adding and adapting the following:
-
-      .. code-block::
-
-         import %workspace%/path/to/pigweed/pw_fuzzer/libfuzzer.bazelrc
 
 ------------------------------------
 Step 1: Write a fuzz target function
@@ -99,6 +94,21 @@ Step 2: Add the fuzzer to your build
 To build a fuzzer, do the following:
 
 .. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Add a Bazel target to the module using the ``pw_cc_fuzz_test`` rule. For
+      example:
+
+      .. code-block::
+
+         # In $dir_my_module/BUILD.bazel
+         pw_cc_fuzz_test(
+             name = "my_fuzzer",
+             srcs = ["my_fuzzer.cc"],
+             deps = [":my_lib"]
+         )
 
    .. tab-item:: GN
       :sync: gn
@@ -146,27 +156,6 @@ To build a fuzzer, do the following:
            ]
          }
 
-   .. tab-item:: CMake
-      :sync: cmake
-
-      LibFuzzer-style fuzzers are not currently supported by Pigweed when using
-      CMake.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Add a Bazel target to the module using the ``pw_cc_fuzz_test`` rule. For
-      example:
-
-      .. code-block::
-
-         # In $dir_my_module/BUILD.bazel
-         pw_cc_fuzz_test(
-             name = "my_fuzzer",
-             srcs = ["my_fuzzer.cc"],
-             deps = [":my_lib"]
-         )
-
 ----------------------------------------------
 Step 3: Add the fuzzer unit test to your build
 ----------------------------------------------
@@ -174,6 +163,11 @@ Pigweed automatically generates unit tests for libFuzzer-based fuzzers in some
 build systems.
 
 .. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Fuzzer unit tests are included automatically in Pigweed's Bazel build.
 
    .. tab-item:: GN
       :sync: gn
@@ -194,17 +188,6 @@ build systems.
            ]
          }
 
-   .. tab-item:: CMake
-      :sync: cmake
-
-      LibFuzzer-style fuzzers are not currently supported by Pigweed when using
-      CMake.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Fuzzer unit tests are included automatically in Pigweed's Bazel build.
-
 ------------------------
 Step 4: Build the fuzzer
 ------------------------
@@ -212,6 +195,15 @@ LibFuzzer-style fuzzers require the compiler to add instrumentation and
 runtimes when building.
 
 .. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Specify the libFuzzer config and a sanitizer config when building fuzzers.
+
+      .. code-block:: console
+
+         $ bazel build //my_module:my_fuzzer --config=asan --config=libfuzzer
 
    .. tab-item:: GN
       :sync: gn
@@ -231,25 +223,22 @@ runtimes when building.
 
          $ ninja -C out fuzzers
 
-   .. tab-item:: CMake
-      :sync: cmake
-
-      LibFuzzer-style fuzzers are not currently supported by Pigweed when using
-      CMake.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Specify the libFuzzer config and a sanitizer config when building fuzzers.
-
-      .. code-block:: console
-
-         $ bazel build //my_module:my_fuzzer --config=asan --config=libfuzzer
-
 ----------------------------------
 Step 5: Running the fuzzer locally
 ----------------------------------
 .. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Specify the libFuzzer config and a sanitizer config when building and
+      running fuzzers. For each fuzzer build rule with a given name,
+      `rules_fuzzing`_ produces a ``<name>_run`` target. For example:
+
+      .. code-block:: console
+
+         $ bazel run //my_module:my_fuzzer_run --config=asan --config=libfuzzer\
+         > -- --timeout_secs=60
 
    .. tab-item:: GN
       :sync: gn
@@ -263,24 +252,6 @@ Step 5: Running the fuzzer locally
          $ out/host_clang_fuzz/obj/my_module/bin/my_fuzzer -seed=1 path/to/corpus
 
       Additional `sanitizer flags`_ may be passed uisng environment variables.
-
-   .. tab-item:: CMake
-      :sync: cmake
-
-      LibFuzzer-style fuzzers are not currently supported by Pigweed when using
-      CMake.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Specify the libFuzzer config and a sanitizer config when building and
-      running fuzzers. For each fuzzer build rule with a given name,
-      `rules_fuzzing`_ produces a ``<name>_run`` target. For example:
-
-      .. code-block:: console
-
-         $ bazel run //my_module:my_fuzzer_run --config=asan --config=libfuzzer\
-         > -- --timeout_secs=60
 
 Running the fuzzer should produce output similar to the following:
 

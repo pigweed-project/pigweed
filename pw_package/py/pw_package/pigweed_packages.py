@@ -28,7 +28,6 @@ from pw_package.packages import crlset
 from pw_package.packages import emboss
 from pw_package.packages import flatbuffers
 from pw_package.packages import freertos
-from pw_package.packages import fuzztest
 from pw_package.packages import googletest
 from pw_package.packages import mbedtls
 from pw_package.packages import mcuxpresso

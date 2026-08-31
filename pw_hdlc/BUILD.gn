@@ -18,7 +18,6 @@ import("$dir_pw_async2/backend.gni")
 import("$dir_pw_bloat/bloat.gni")
 import("$dir_pw_build/python.gni")
 import("$dir_pw_build/target_types.gni")
-import("$dir_pw_fuzzer/fuzz_test.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("default_config") {
@@ -216,8 +215,11 @@ pw_python_action("generate_decoder_test") {
   ]
 }
 
-pw_fuzz_test("decoder_test") {
-  deps = [ ":pw_hdlc" ]
+pw_test("decoder_test") {
+  deps = [
+    ":pw_hdlc",
+    "$dir_pw_fuzzer:fuzztest.disabled",
+  ]
   source_gen_deps = [ ":generate_decoder_test" ]
   sources = [ "decoder_test.cc" ]
 

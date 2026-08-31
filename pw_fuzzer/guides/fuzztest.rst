@@ -8,7 +8,8 @@ Adding Fuzzers Using FuzzTest
 
 .. note::
 
-  `FuzzTest`_ is currently only supported on Linux and MacOS using Clang.
+  `FuzzTest`_ is currently only supported on Linux and MacOS using Clang and
+  either Bazel or CMake builds.
 
 .. _module-pw_fuzzer-guides-using_fuzztest-toolchain:
 
@@ -21,36 +22,21 @@ Step 0: Set up FuzzTest for your project
 
 .. tab-set::
 
-   .. tab-item:: GN
-      :sync: gn
+   .. tab-item:: Bazel
+      :sync: bazel
 
-      FuzzTest and its dependencies are not included in Pigweed and need to be
-      added.
-
-      See the following:
-
-      * :ref:`module-pw_third_party_abseil_cpp-using_upstream`
-      * :ref:`module-pw_third_party_fuzztest-using_upstream`
-      * :ref:`module-pw_third_party_googletest-using_upstream`
-
-      You may not want to use upstream GoogleTest all the time. For example, it
-      may not be supported on your target device. In this case, you can limit it
-      to a specific toolchain used for fuzzing. For example:
+      Include FuzzTest in your ``MODULE.bazel`` file. For example:
 
       .. code-block::
 
-         import("$dir_pw_toolchain/host/target_toolchains.gni")
+         bazel_dep(name = "fuzztest", version = "20241028.0")
 
-         my_toolchains = {
-           ...
-           clang_fuzz = {
-             name = "my_clang_fuzz"
-             forward_variables_from(pw_toolchain_host.clang_fuzz, "*", ["name"])
-             pw_unit_test_MAIN = "$dir_pw_fuzzer:fuzztest_main"
-             pw_unit_test_BACKEND = "$dir_pw_fuzzer:gtest"
-           }
-           ...
-         }
+      Then, import the FuzzTest build configurations in your ``.bazelrc`` file
+      by adding and adapting the following:
+
+      .. code-block::
+
+         import %workspace%/path/to/pigweed/pw_fuzzer/fuzztest.bazelrc
 
    .. tab-item:: CMake
       :sync: cmake
@@ -85,22 +71,6 @@ Step 0: Set up FuzzTest for your project
 
       You also must enable fuzzing when you build by passing the
       ``-DFUZZTEST_FUZZING_MODE`` flag to ``cmake`` when building.
-
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Include FuzzTest in your ``MODULE.bazel`` file. For example:
-
-      .. code-block::
-
-         bazel_dep(name = "fuzztest", version = "20241028.0")
-
-      Then, import the FuzzTest build configurations in your ``.bazelrc`` file
-      by adding and adapting the following:
-
-      .. code-block::
-
-         import %workspace%/path/to/pigweed/pw_fuzzer/fuzztest.bazelrc
 
 ----------------------------------------
 Step 1: Write a unit test for the target
@@ -212,18 +182,18 @@ Next, indicate that the unit test includes one or more fuzz tests.
 
 .. tab-set::
 
-   .. tab-item:: GN
-      :sync: gn
+   .. tab-item:: Bazel
+      :sync: bazel
 
-      The ``pw_fuzz_test`` template can be used to add the necessary FuzzTest
-      dependency and generate test metadata.
+      Unit tests can support fuzz tests by simply adding a dependency on
+      FuzzTest.
 
-      For example, consider the following ``BUILD.gn``:
+      For example, consider the following ``BUILD.bazel``:
 
-      .. literalinclude:: ../examples/fuzztest/BUILD.gn
+      .. literalinclude:: ../examples/fuzztest/BUILD.bazel
          :linenos:
-         :start-after: [pwfuzzer_examples_fuzztest-gn]
-         :end-before: [pwfuzzer_examples_fuzztest-gn]
+         :start-after: [pwfuzzer_examples_fuzztest-bazel]
+         :end-before: [pwfuzzer_examples_fuzztest-bazel]
 
    .. tab-item:: CMake
       :sync: cmake
@@ -238,39 +208,21 @@ Next, indicate that the unit test includes one or more fuzz tests.
          :start-after: [pwfuzzer_examples_fuzztest-cmake]
          :end-before: [pwfuzzer_examples_fuzztest-cmake]
 
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      Unit tests can support fuzz tests by simply adding a dependency on
-      FuzzTest.
-
-      For example, consider the following ``BUILD.bazel``:
-
-      .. literalinclude:: ../examples/fuzztest/BUILD.bazel
-         :linenos:
-         :start-after: [pwfuzzer_examples_fuzztest-bazel]
-         :end-before: [pwfuzzer_examples_fuzztest-bazel]
-
 ------------------------
 Step 5: Build the fuzzer
 ------------------------
 .. tab-set::
 
-   .. tab-item:: GN
-      :sync: gn
+   .. tab-item:: Bazel
+      :sync: bazel
 
-      Build using ``ninja`` on a target that includes your fuzzer with a
-      :ref:`fuzzing toolchain<module-pw_fuzzer-guides-using_fuzztest-toolchain>`.
+      By default, ``bazel`` will simply omit the fuzz tests and build unit
+      tests. To build these tests as fuzz tests, specify the ``fuzztest``
+      config. For example:
 
-      Pigweed includes a ``//:fuzzers`` target that builds all tests, including
-      those with fuzzers, using a fuzzing toolchain. You may wish to add a
-      similar top-level to your project. For example:
+      .. code-block:: console
 
-      .. code-block::
-
-         group("fuzzers") {
-           deps = [ ":pw_module_tests.run($dir_pigweed/targets/host:host_clang_fuzz)" ]
-         }
+         $ bazel build //... --config=fuzztest
 
    .. tab-item:: CMake
       :sync: cmake
@@ -286,67 +238,12 @@ Step 5: Build the fuzzer
            -Dpw_unit_test_BACKEND=pw_third_party.fuzztest
 
 
-   .. tab-item:: Bazel
-      :sync: bazel
-
-      By default, ``bazel`` will simply omit the fuzz tests and build unit
-      tests. To build these tests as fuzz tests, specify the ``fuzztest``
-      config. For example:
-
-      .. code-block:: console
-
-         $ bazel build //... --config=fuzztest
-
 ----------------------------------
 Step 6: Running the fuzzer locally
 ----------------------------------
 .. TODO: b/281138993 - Add tooling to make it easier to find and run fuzzers.
 
 .. tab-set::
-
-   .. tab-item:: GN
-      :sync: gn
-
-      When building. Most toolchains will simply omit the fuzz tests and build
-      and run unit tests. A
-      :ref:`fuzzing toolchain<module-pw_fuzzer-guides-using_fuzztest-toolchain>`
-      will include the fuzzers, but only run them for a limited time. This makes
-      them suitable for automated testing as in CQ.
-
-      If you used the top-level ``//:fuzzers`` described in the previous
-      section, you can find available fuzzers using the generated JSON test
-      metadata file:
-
-      .. code-block:: console
-
-         $ jq '.[] | select(contains({tags: ["fuzztest"]}))' \
-         > out/host_clang_fuzz/obj/pw_module_tests.testinfo.json
-
-      To run a fuzz with different options, you can pass additional flags to the
-      fuzzer binary. This binary will be in a subdirectory related to the
-      toolchain. For example:
-
-      .. code-block:: console
-
-         $ out/host_clang_fuzz/obj/my_module/test/metrics_test \
-         > --fuzz=MetricsTest.Roundtrip
-
-      Additional `sanitizer flags`_ may be passed uisng environment variables.
-
-   .. tab-item:: CMake
-      :sync: cmake
-
-      When built with FuzzTest and GoogleTest, the fuzzer binaries can be run
-      directly from the CMake build directory. By default, the fuzzers will only
-      run for a limited time. This makes them suitable for automated testing as
-      in CQ. To run a fuzz with different options, you can pass additional flags
-      to the fuzzer binary.
-
-      For example:
-
-      .. code-block:: console
-
-         $ build/my_module/metrics_test --fuzz=MetricsTest.Roundtrip
 
    .. tab-item:: Bazel
       :sync: bazel
@@ -369,6 +266,21 @@ Step 6: Running the fuzzer locally
 
          $ bazel run //my_module:metrics_test --config=fuzztest \
          > --fuzz=MetricsTest.Roundtrip
+
+   .. tab-item:: CMake
+      :sync: cmake
+
+      When built with FuzzTest and GoogleTest, the fuzzer binaries can be run
+      directly from the CMake build directory. By default, the fuzzers will only
+      run for a limited time. This makes them suitable for automated testing as
+      in CQ. To run a fuzz with different options, you can pass additional flags
+      to the fuzzer binary.
+
+      For example:
+
+      .. code-block:: console
+
+         $ build/my_module/metrics_test --fuzz=MetricsTest.Roundtrip
 
 Running the fuzzer should produce output similar to the following:
 

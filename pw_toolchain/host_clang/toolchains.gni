@@ -33,15 +33,6 @@ declare_args() {
 
   # List of source files to selectively collect coverage.
   pw_toolchain_PROFILE_SOURCE_FILES = []
-
-  # Indicates if this toolchain supports building fuzzers. This is typically
-  # set by individual toolchains and not by GN args.
-  pw_toolchain_FUZZING_ENABLED = false
-
-  # Indicates if this build is a part of OSS-Fuzz, which needs to be able to
-  # provide its own compiler and flags. This violates the build hermeticisim and
-  # should only be used for OSS-Fuzz.
-  pw_toolchain_OSS_FUZZ_ENABLED = false
 }
 
 # Specifies the tools used by host Clang toolchains.
@@ -64,15 +55,10 @@ _defaults = {
                       "$dir_pw_build:extra_debugging",
                       "$dir_pw_toolchain/cc/args:warning_suppression_allowlist",
                       "$dir_pw_toolchain/host_clang:no_system_libcpp",
+                      "$dir_pw_toolchain/host_clang:linux_sysroot",
                       "$dir_pw_toolchain/host_clang:xcode_sysroot",
                       "$dir_pw_toolchain/host_clang:no_ms_compatibility",
                     ]
-
-  # OSS-Fuzz uses -stdlib=libc++, which isn't included in the CIPD-provided
-  # Linux sysroot (it instead provides libstdc++).
-  if (!pw_toolchain_OSS_FUZZ_ENABLED) {
-    default_configs += [ "$dir_pw_toolchain/host_clang:linux_sysroot" ]
-  }
 
   pw_build_LINK_DEPS = [ dir_pw_libc ]
 }
@@ -119,45 +105,23 @@ pw_toolchain_host_clang = {
 
   fuzz = {
     name = "host_clang_fuzz"
-    cc = ""
-    cxx = ""
-    forward_variables_from(_host_clang_toolchain,
-                           "*",
-                           [
-                             "cc",
-                             "cxx",
-                           ])
 
-    # OSS-Fuzz sets compiler paths. See
-    # google.github.io/oss-fuzz/getting-started/new-project-guide/#Requirements.
-    if (pw_toolchain_OSS_FUZZ_ENABLED) {
-      cc = getenv("CC")
-      cxx = getenv("CXX")
+    # Default to ASan for fuzzing, which is what we typically care about.
+    _sanitizers = pw_toolchain_SANITIZERS
+    if (_sanitizers == []) {
+      _sanitizers = [ "address" ]
     }
-    if (cc == "") {
-      cc = _host_clang_toolchain.cc
-    }
-    if (cxx == "") {
-      cxx = _host_clang_toolchain.cxx
-    }
+
+    forward_variables_from(_host_clang_toolchain, "*")
     defaults = {
       forward_variables_from(_defaults, "*")
 
-      pw_toolchain_FUZZING_ENABLED = true
-      if (pw_toolchain_OSS_FUZZ_ENABLED) {
-        default_configs += [ "$dir_pw_fuzzer:oss_fuzz_instrumentation" ]
-      } else {
-        default_configs += [ "$dir_pw_fuzzer:instrumentation" ]
-      }
+      default_configs += [
+        "$dir_pw_build:optimize_speed",
+        "$dir_pw_fuzzer:instrumentation",
+      ]
 
-      # Fuzz faster.
-      default_configs += [ "$dir_pw_build:optimize_speed" ]
-
-      # Default to ASan for fuzzing, which is what we typically care about.
-      if (pw_toolchain_SANITIZERS == []) {
-        pw_toolchain_SANITIZERS = [ "address" ]
-      }
-      foreach(sanitizer, pw_toolchain_SANITIZERS) {
+      foreach(sanitizer, _sanitizers) {
         default_configs +=
             [ "$dir_pw_toolchain/host_clang:sanitize_$sanitizer" ]
       }
