@@ -337,12 +337,18 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
   Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
       []([[maybe_unused]] H4PacketWithH4&& packet) {});
 
-  ProxyHost proxy = ProxyHost(std::move(send_to_host_fn),
-                              std::move(send_to_controller_fn),
-                              /*le_acl_credits_to_reserve=*/2,
-                              /*br_edr_acl_credits_to_reserve=*/0,
-                              GetProxyHostAllocator(),
-                              nullptr);
+  Vector<AclConnectionSnapshot, 2> state_updates;
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/2,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&state_updates](const ProxyHostStateUpdate& update) {
+        if (auto* conn_snap = std::get_if<AclConnectionSnapshot>(&update)) {
+          state_updates.push_back(*conn_snap);
+        }
+      });
   StartDispatcherOnCurrentThread(proxy);
 
   // Create a snapshot where connections had queued packets that were lost.
@@ -365,6 +371,7 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
 
   // Verify that no refund event is sent to host immediately.
   EXPECT_FALSE(send_capture.captured_packet.has_value());
+  EXPECT_TRUE(state_updates.empty());
 
   proxy.InitiateAclCreditResynchronization();
 
@@ -385,6 +392,19 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
             kLeConnectionHandle2);
   EXPECT_EQ(view->nocp_data()[1].num_completed_packets().Read(),
             kQueuedPackets2);
+
+  // Verify that state updates were emitted for each refunded connection,
+  // clearing num_queued_host_packets in the persistent snapshot.
+  ASSERT_EQ(state_updates.size(), 2u);
+  EXPECT_EQ(state_updates[0].connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(state_updates[0].num_queued_host_packets, 0);
+  EXPECT_EQ(state_updates[1].connection_handle, kLeConnectionHandle2);
+  EXPECT_EQ(state_updates[1].num_queued_host_packets, 0);
+
+  PW_TEST_EXPECT_OK(snapshot.acl.ApplyStateUpdate(state_updates[0]));
+  PW_TEST_EXPECT_OK(snapshot.acl.ApplyStateUpdate(state_updates[1]));
+  EXPECT_EQ(snapshot.acl.acl_connections[0].num_queued_host_packets, 0);
+  EXPECT_EQ(snapshot.acl.acl_connections[1].num_queued_host_packets, 0);
 
   // Verify that subsequent triggers do not send duplicate refunds.
   send_capture.captured_packet.reset();
@@ -455,6 +475,145 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
   // Verify that remaining credits is 10 - 5 = 5.
   EXPECT_EQ(proxy.GetNumFreeLeAclPackets(), 5);
 }
+
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
+TEST_F(AclRecoveryTest, RecombinedHostPduEmitsCreditMutation) {
+  constexpr uint16_t kHandle = kLeConnectionHandle1;
+  constexpr uint16_t kLocalCid = 0x40;
+  constexpr uint16_t kRemoteCid = 0x40;
+
+  std::optional<AclConnectionSnapshot> connection_snapshot;
+
+  Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+
+  Vector<H4PacketWithH4, 2> sent_to_controller;
+  Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&sent_to_controller](H4PacketWithH4&& packet) {
+        sent_to_controller.push_back(std::move(packet));
+      });
+
+  ProxyHost proxy = ProxyHost(
+      std::move(send_to_host_fn),
+      std::move(send_to_controller_fn),
+      /*le_acl_credits_to_reserve=*/0,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator(),
+      [&connection_snapshot](const ProxyHostStateUpdate& update) {
+        if (auto* conn_snap = std::get_if<AclConnectionSnapshot>(&update)) {
+          connection_snapshot = *conn_snap;
+        }
+      });
+  StartDispatcherOnCurrentThread(proxy);
+
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kHandle, emboss::StatusCode::SUCCESS));
+
+  // Connection complete triggers an initial state update.
+  ASSERT_TRUE(connection_snapshot.has_value());
+  EXPECT_EQ(connection_snapshot->num_host_pending_packets, 0);
+  connection_snapshot.reset();
+
+  std::array<std::byte, 2048> recombine_buffer{};
+  pw::multibuf::SimpleAllocator recombine_allocator(
+      recombine_buffer, allocator::GetLibCAllocator());
+
+  BasicL2capChannel channel = BuildBasicL2capChannel(
+      proxy,
+      BasicL2capParameters{
+          .rx_multibuf_allocator = &recombine_allocator,
+          .handle = kHandle,
+          .local_cid = kLocalCid,
+          .remote_cid = kRemoteCid,
+          .transport = AclTransportType::kLe,
+          .payload_from_host_fn =
+              [](multibuf::MultiBuf&& buffer) {
+                // Return unhandled to trigger forwarding recombined PDU to
+                // controller.
+                return multibuf::MultiBuf(std::move(buffer));
+              },
+      });
+
+  constexpr size_t kFirstFragPayloadSize = 5;
+  constexpr size_t kSecondFragPayloadSize = 5;
+  constexpr size_t kTotalL2capPayloadSize =
+      kFirstFragPayloadSize + kSecondFragPayloadSize;
+
+  // Send first fragment from host.
+  {
+    constexpr size_t kFirstHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragPayloadSize;
+    std::array<uint8_t, 1 + kFirstHciSize> h4_first{};
+    h4_first[0] = static_cast<uint8_t>(emboss::H4PacketType::ACL_DATA);
+    Result<emboss::AclDataFrameWriter> acl_first =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(
+            pw::span(h4_first).subspan(1));
+    PW_TEST_ASSERT_OK(acl_first.status());
+    acl_first->header().handle().Write(kHandle);
+    acl_first->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::FIRST_FLUSHABLE);
+    acl_first->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl_first->data_total_length().Write(
+        emboss::BasicL2capHeader::IntrinsicSizeInBytes() +
+        kFirstFragPayloadSize);
+
+    emboss::BFrameWriter bframe =
+        emboss::MakeBFrameView(acl_first->payload().BackingStorage().data(),
+                               acl_first->payload().SizeInBytes());
+    bframe.pdu_length().Write(kTotalL2capPayloadSize);
+    bframe.channel_id().Write(kRemoteCid);
+    std::fill(bframe.payload().BackingStorage().begin(),
+              bframe.payload().BackingStorage().end(),
+              0xAB);
+
+    proxy.HandleH4HciFromHost(
+        H4PacketWithH4(emboss::H4PacketType::ACL_DATA, h4_first));
+
+    // First fragment is held for recombination, not sent to controller.
+    EXPECT_TRUE(sent_to_controller.empty());
+    EXPECT_FALSE(connection_snapshot.has_value());
+  }
+
+  // Send continuing fragment from host, completing recombination.
+  {
+    constexpr size_t kSecondHciSize =
+        emboss::AclDataFrameHeader::IntrinsicSizeInBytes() +
+        kSecondFragPayloadSize;
+    std::array<uint8_t, 1 + kSecondHciSize> h4_second{};
+    h4_second[0] = static_cast<uint8_t>(emboss::H4PacketType::ACL_DATA);
+    Result<emboss::AclDataFrameWriter> acl_second =
+        MakeEmbossWriter<emboss::AclDataFrameWriter>(
+            pw::span(h4_second).subspan(1));
+    PW_TEST_ASSERT_OK(acl_second.status());
+    acl_second->header().handle().Write(kHandle);
+    acl_second->header().packet_boundary_flag().Write(
+        emboss::AclDataPacketBoundaryFlag::CONTINUING_FRAGMENT);
+    acl_second->header().broadcast_flag().Write(
+        emboss::AclDataPacketBroadcastFlag::POINT_TO_POINT);
+    acl_second->data_total_length().Write(kSecondFragPayloadSize);
+    std::fill(acl_second->payload().BackingStorage().begin(),
+              acl_second->payload().BackingStorage().end(),
+              0xCD);
+
+    proxy.HandleH4HciFromHost(
+        H4PacketWithH4(emboss::H4PacketType::ACL_DATA, h4_second));
+
+    // Recombined PDU was unhandled by channel, so forwarded to controller.
+    EXPECT_EQ(sent_to_controller.size(), 1u);
+
+    // NotifyCreditMutation should have been called, updating pending host
+    // packets.
+    ASSERT_TRUE(connection_snapshot.has_value());
+    EXPECT_EQ(connection_snapshot->connection_handle, kHandle);
+    EXPECT_EQ(connection_snapshot->num_host_pending_packets, 1);
+    EXPECT_EQ(connection_snapshot->num_queued_host_packets, 0);
+  }
+}
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
 constexpr uint16_t kLocalCid1 = 0x40;
 constexpr uint16_t kLocalCid2 = 0x41;

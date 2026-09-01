@@ -781,6 +781,7 @@ bool AclDataChannel::HandleAclData(Direction direction,
           AclConnection* connection_ptr = FindAclConnection(handle);
           if (connection_ptr) {
             connection_ptr->RecordPacket(PacketSource::kHost);
+            NotifyCreditMutation(*connection_ptr);
           }
         }
         hci_transport_.SendToController(std::move(h4_packet));
@@ -928,6 +929,10 @@ void AclDataChannel::InitiateCreditResynchronization() {
       PW_LOG_INFO("Refunding %d completed packets on connection %#x",
                   refund.num_packets,
                   refund.connection_handle);
+      AclConnection* connection = FindAclConnection(refund.connection_handle);
+      if (connection) {
+        NotifyConnectionStateUpdate(*connection);
+      }
     }
 
     deferred_refunds_.clear();
