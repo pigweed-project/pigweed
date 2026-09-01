@@ -17,8 +17,9 @@
  * Uses Node's Buffer when available; falls back to globalThis.atob() in browser runtimes.
  */
 export function base64ToBinaryString(base64Data: string): string {
-  if (typeof globalThis.Buffer !== 'undefined') {
-    return globalThis.Buffer.from(base64Data, 'base64').toString('binary');
+  const globalBuffer = (globalThis as { Buffer?: any }).Buffer;
+  if (typeof globalBuffer !== 'undefined') {
+    return globalBuffer.from(base64Data, 'base64').toString('binary');
   }
   if (typeof globalThis.atob !== 'undefined') {
     try {
@@ -48,8 +49,9 @@ export function decode(base64Data: string): Uint8Array {
  * Encodes a Uint8Array to a standard Base64 string.
  */
 export function encode(bytes: Uint8Array): string {
-  if (typeof globalThis.Buffer !== 'undefined') {
-    return globalThis.Buffer.from(bytes).toString('base64');
+  const globalBuffer = (globalThis as { Buffer?: any }).Buffer;
+  if (typeof globalBuffer !== 'undefined') {
+    return globalBuffer.from(bytes).toString('base64');
   }
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
