@@ -1286,6 +1286,45 @@ TEST_F(CommandChannelTest, LEMetaEventHandler) {
   EXPECT_EQ(2, event_count1);
 }
 
+TEST_F(CommandChannelTest, MalformedLEMetaEventDropped) {
+  constexpr hci_spec::EventCode kTestSubeventCode = 0xFE;
+  int event_count = 0;
+  auto id = cmd_channel()->AddLEMetaEventHandler(
+      kTestSubeventCode, [&](const EventPacket&) {
+        event_count++;
+        return EventCallbackResult::kContinue;
+      });
+  EXPECT_NE(0u, id);
+
+  // Send a truncated LE Meta Event packet with parameter_total_size=0 (no
+  // subevent code).
+  auto malformed_event = StaticByteBuffer(hci_spec::kLEMetaEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(malformed_event);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, event_count);
+}
+
+TEST_F(CommandChannelTest, MalformedVendorDebugEventDropped) {
+  constexpr hci_spec::EventCode kTestSubeventCode = 0x01;
+  int event_count = 0;
+  auto id = cmd_channel()->AddVendorEventHandler(
+      kTestSubeventCode, [&](const EventPacket&) {
+        event_count++;
+        return EventCallbackResult::kContinue;
+      });
+  EXPECT_NE(0u, id);
+
+  // Send a truncated Vendor Debug Event packet with parameter_total_size=0 (no
+  // subevent code).
+  auto malformed_event =
+      StaticByteBuffer(hci_spec::kVendorDebugEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(malformed_event);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, event_count);
+}
+
 TEST_F(CommandChannelTest, EventHandlerIdsDontCollide) {
   // Add a LE Meta event handler and a event handler and make sure that IDs are
   // generated correctly across the two methods.

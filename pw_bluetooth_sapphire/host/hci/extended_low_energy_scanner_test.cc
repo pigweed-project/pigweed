@@ -469,4 +469,63 @@ TEST_F(ExtendedLowEnergyScannerTest,
   RunUntilIdle();
 }
 
+// Verify that receiving a truncated LE Extended Advertising Report event packet
+// (smaller than the minimum subevent size) is handled gracefully without
+// asserting or crashing.
+TEST_F(ExtendedLowEnergyScannerTest, ParseAdvertisingReportsTruncatedEvent) {
+  // Construct an event packet that is smaller than the minimum size of
+  // LEExtendedAdvertisingReportSubevent.
+  auto event = hci::EventPacket::New(
+      pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes() + 1);
+  auto header = event.view<pw::bluetooth::emboss::EventHeaderWriter>();
+  header.event_code_uint().Write(hci_spec::kLEMetaEventCode);
+  header.parameter_total_size().Write(1);
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+  RunUntilIdle();
+}
+
+// Verify that an LE Extended Advertising Report event with an invalid
+// num_reports field (outside [1, 10]) is safely dropped without crashing.
+TEST_F(ExtendedLowEnergyScannerTest, ParseAdvertisingReportsInvalidNumReports) {
+  size_t data_size = peer(1)->advertising_data().size();
+  size_t reports_size = report_prefix_size + data_size;
+  size_t packet_size = event_prefix_size + reports_size;
+
+  auto event = hci::EventPacket::New<LEExtendedAdvertisingReportSubeventWriter>(
+      hci_spec::kLEMetaEventCode, packet_size);
+  auto packet = event.view_t();
+  packet.le_meta_event().subevent_code().Write(
+      hci_spec::kLEExtendedAdvertisingReportSubeventCode);
+  packet.num_reports().UncheckedWrite(0);
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+  RunUntilIdle();
+}
+
+// Verify that an LE Extended Advertising Report event with insufficient buffer
+// for the fixed report header is safely dropped without reading out of bounds.
+TEST_F(ExtendedLowEnergyScannerTest,
+       ParseAdvertisingReportsTruncatedReportHeader) {
+  // Allocate an event with num_reports=1 but only 2 bytes of reports buffer
+  // (less than LEExtendedAdvertisingReportData::MinSizeInBytes()).
+  size_t packet_size = event_prefix_size + 2;
+
+  auto event = hci::EventPacket::New<LEExtendedAdvertisingReportSubeventWriter>(
+      hci_spec::kLEMetaEventCode, packet_size);
+  auto packet = event.view_t();
+  packet.le_meta_event().subevent_code().Write(
+      hci_spec::kLEExtendedAdvertisingReportSubeventCode);
+  packet.num_reports().Write(1);
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+  RunUntilIdle();
+}
+
 }  // namespace bt::hci

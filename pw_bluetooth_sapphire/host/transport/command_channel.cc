@@ -729,20 +729,32 @@ void CommandChannel::NotifyEventHandler(std::unique_ptr<EventPacket> event) {
 
   EventType event_type;
   switch (event->event_code()) {
-    case hci_spec::kLEMetaEventCode:
+    case hci_spec::kLEMetaEventCode: {
+      auto le_meta_view =
+          event->unchecked_view<pw::bluetooth::emboss::LEMetaEventView>();
+      if (!le_meta_view.Ok()) {
+        bt_log(WARN, "hci", "ignoring malformed LE meta event");
+        return;
+      }
+
       event_type = EventType::kLEMetaEvent;
-      event_code = event->view<pw::bluetooth::emboss::LEMetaEventView>()
-                       .subevent_code()
-                       .Read();
+      event_code = le_meta_view.subevent_code().Read();
       event_handlers = &le_meta_subevent_code_handlers_;
       break;
-    case hci_spec::kVendorDebugEventCode:
+    }
+    case hci_spec::kVendorDebugEventCode: {
+      auto vendor_view =
+          event->unchecked_view<pw::bluetooth::emboss::VendorDebugEventView>();
+      if (!vendor_view.Ok()) {
+        bt_log(WARN, "hci", "ignoring malformed vendor debug event");
+        return;
+      }
+
       event_type = EventType::kVendorEvent;
-      event_code = event->view<pw::bluetooth::emboss::VendorDebugEventView>()
-                       .subevent_code()
-                       .Read();
+      event_code = vendor_view.subevent_code().Read();
       event_handlers = &vendor_subevent_code_handlers_;
       break;
+    }
     default:
       event_type = EventType::kHciEvent;
       event_code = event->event_code();

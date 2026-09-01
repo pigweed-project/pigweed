@@ -1874,5 +1874,107 @@ TEST_F(PeriodicAdvertisingSynchronizerTest,
   ExpectTerminateSync(test_device(), kSyncHandle);
 }
 
+// Verify that receiving a truncated LE Periodic Advertising Sync Established
+// event is handled safely without crashing, failing pending sync requests.
+TEST_F(PeriodicAdvertisingSynchronizerTest, MalformedSyncEstablishedEvent) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+
+  auto add_to_list_packet =
+      bt::testing::LEAddDeviceToPeriodicAdvertiserListPacket(addr, kAdvSid);
+  auto add_to_list_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), add_to_list_packet, &add_to_list_complete);
+
+  auto command_status_rsp = bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/false,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &command_status_rsp);
+
+  auto sync_result = synchronizer()->CreateSync(
+      addr, kAdvSid, {.filter_duplicates = false}, delegate);
+  EXPECT_TRUE(sync_result.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  StaticByteBuffer kTruncatedEvent(
+      hci_spec::kLEMetaEventCode,
+      0x05,  // parameter_total_size
+      0x0E,  // Subevent code: LE Periodic Advertising Sync Established
+      0x00,  // status: Success
+      0x00,
+      0x00,
+      0x00);
+
+  auto cancel_cmd = bt::testing::LEPeriodicAdvertisingCreateSyncCancelPacket();
+  auto cancel_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto sync_established_cancel_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::OPERATION_CANCELLED_BY_HOST,
+          /*handle=*/0,
+          /*sid=*/0,
+          DeviceAddress(DeviceAddress::Type::kLEPublic, {0}),
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x0006,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        cancel_cmd,
+                        &cancel_complete,
+                        &sync_established_cancel_event);
+
+  auto remove_from_list_packet =
+      bt::testing::LERemoveDeviceFromPeriodicAdvertiserListPacket(addr,
+                                                                  kAdvSid);
+  auto remove_from_list_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOVE_DEVICE_FROM_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), remove_from_list_packet, &remove_from_list_complete);
+
+  test_device()->SendCommandChannelPacket(kTruncatedEvent);
+  RunUntilIdle();
+
+  EXPECT_EQ(delegate.sync_established_count(), 0);
+  EXPECT_EQ(delegate.sync_lost_count(), 1);
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+}
+
+// Verify that receiving a truncated LE Periodic Advertising Report event is
+// dropped safely without asserting or crashing.
+TEST_F(PeriodicAdvertisingSynchronizerTest,
+       MalformedPeriodicAdvertisingReport) {
+  TestDelegate delegate;
+  DeviceAddress addr(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSid = 12;
+  constexpr hci_spec::SyncHandle kSyncHandle = 0x01;
+
+  std::optional<PeriodicAdvertisingSync> sync =
+      CreateSyncAndExpectSuccess(delegate, addr, kAdvSid, kSyncHandle);
+  ASSERT_TRUE(sync.has_value());
+
+  StaticByteBuffer kTruncatedReportEvent(
+      hci_spec::kLEMetaEventCode,
+      0x05,  // parameter_total_size
+      0x0F,  // Subevent code: LE Periodic Advertising Report
+      0x00,
+      0x00,
+      0x00);
+
+  test_device()->SendCommandChannelPacket(kTruncatedReportEvent);
+  RunUntilIdle();
+
+  EXPECT_EQ(delegate.report_count(), 0);
+  ExpectTerminateSync(test_device(), kSyncHandle);
+}
+
 }  // namespace
 }  // namespace bt::hci

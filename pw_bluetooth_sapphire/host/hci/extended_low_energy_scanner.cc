@@ -16,6 +16,7 @@
 
 #include <pw_assert/check.h>
 #include <pw_bluetooth/hci_common.emb.h>
+#include <pw_span/span.h>
 
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_scanner.h"
 
@@ -144,41 +145,63 @@ CommandPacket ExtendedLowEnergyScanner::BuildEnablePacket(
 std::vector<LEExtendedAdvertisingReportDataView>
 ExtendedLowEnergyScanner::ParseAdvertisingReports(const EventPacket& event) {
   PW_DCHECK(event.event_code() == hci_spec::kLEMetaEventCode);
-  PW_DCHECK(event.view<LEMetaEventView>().subevent_code().Read() ==
+  auto params = event.unchecked_view<LEExtendedAdvertisingReportSubeventView>();
+  if (!params.Ok()) {
+    bt_log(WARN, "hci-le", "malformed extended advertising report event");
+    return {};
+  }
+  PW_DCHECK(params.le_meta_event().subevent_code().Read() ==
             hci_spec::kLEExtendedAdvertisingReportSubeventCode);
-  auto params = event.view<LEExtendedAdvertisingReportSubeventView>();
 
   uint8_t num_reports = params.num_reports().Read();
   std::vector<LEExtendedAdvertisingReportDataView> reports;
   reports.reserve(num_reports);
 
-  size_t bytes_read = 0;
-  while (bytes_read < params.reports().BackingStorage().SizeInBytes()) {
-    size_t min_size = pw::bluetooth::emboss::LEExtendedAdvertisingReportData::
-        MinSizeInBytes();
+  pw::span<const uint8_t> remaining_data(
+      params.reports().BackingStorage().data(),
+      params.reports().BackingStorage().SizeInBytes());
+
+  while (!remaining_data.empty()) {
+    constexpr size_t min_size = pw::bluetooth::emboss::
+        LEExtendedAdvertisingReportData::MinSizeInBytes();
+
+    if (remaining_data.size() < min_size) {
+      bt_log(WARN,
+             "hci-le",
+             "parsing advertising reports, not enough bytes left for header "
+             "(needed %zu, got %zu)",
+             min_size,
+             remaining_data.size());
+      break;
+    }
+
     auto report_prefix = MakeLEExtendedAdvertisingReportDataView(
-        params.reports().BackingStorage().begin() + bytes_read, min_size);
+        remaining_data.data(), min_size);
 
     uint8_t data_length = report_prefix.data_length().Read();
     size_t actual_size = min_size + data_length;
 
-    size_t bytes_left =
-        params.reports().BackingStorage().SizeInBytes() - bytes_read;
-    if (actual_size > bytes_left) {
+    if (actual_size > remaining_data.size()) {
       bt_log(WARN,
              "hci-le",
              "parsing advertising reports, next report size %zu bytes, but "
              "only %zu bytes left",
              actual_size,
-             bytes_left);
+             remaining_data.size());
       break;
     }
 
-    auto report = MakeLEExtendedAdvertisingReportDataView(
-        params.reports().BackingStorage().begin() + bytes_read, actual_size);
+    auto report = MakeLEExtendedAdvertisingReportDataView(remaining_data.data(),
+                                                          actual_size);
+    if (!report.Ok()) {
+      bt_log(WARN,
+             "hci-le",
+             "skipping malformed advertising report: invalid report fields");
+      break;
+    }
     reports.push_back(report);
 
-    bytes_read += actual_size;
+    remaining_data = remaining_data.subspan(actual_size);
   }
 
   return reports;

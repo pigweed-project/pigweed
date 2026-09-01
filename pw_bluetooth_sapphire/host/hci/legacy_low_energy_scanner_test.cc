@@ -254,4 +254,81 @@ TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsInvalidAddressType) {
   RunUntilIdle();
 }
 
+// Verify that receiving a truncated LE Advertising Report event packet
+// (smaller than the minimum subevent size) is handled gracefully without
+// asserting or crashing.
+TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsTruncatedEvent) {
+  ASSERT_TRUE(StartScan(true));
+  RunUntilIdle();
+
+  // Construct an event packet that is smaller than the minimum size of
+  // LEAdvertisingReportSubevent.
+  auto event = hci::EventPacket::New(
+      pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes() + 1);
+  auto header = event.view<pw::bluetooth::emboss::EventHeaderWriter>();
+  header.event_code_uint().Write(hci_spec::kLEMetaEventCode);
+  header.parameter_total_size().Write(1);
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+  RunUntilIdle();
+}
+
+// Verify that an LE Advertising Report event with an invalid num_reports field
+// (outside [1, 0x0A]) is safely dropped without crashing.
+TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsInvalidNumReports) {
+  {
+    auto peer = std::make_unique<FakePeer>(kPublicAddr,
+                                           dispatcher(),
+                                           /*connectable=*/false,
+                                           /*scannable=*/false,
+                                           /*send_advertising_report=*/false);
+    peer->set_advertising_data(kPlainAdvDataBytes);
+    test_device()->AddPeer(std::move(peer));
+  }
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+
+  ASSERT_TRUE(StartScan(true));
+  RunUntilIdle();
+
+  auto peer = test_device()->FindPeer(kPublicAddr);
+  DynamicByteBuffer buffer = peer->BuildLegacyAdvertisingReportEvent(false);
+
+  auto packet = pw::bluetooth::emboss::LEAdvertisingReportSubeventWriter(
+      buffer.mutable_data(), buffer.size());
+  packet.num_reports().UncheckedWrite(0);
+
+  test_device()->SendCommandChannelPacket(buffer);
+  RunUntilIdle();
+}
+
+// Verify that an LE Advertising Report event with insufficient buffer for the
+// fixed report header is safely dropped without reading out of bounds.
+TEST_F(LegacyLowEnergyScannerTest,
+       ParseAdvertisingReportsTruncatedReportHeader) {
+  ASSERT_TRUE(StartScan(true));
+  RunUntilIdle();
+
+  // Allocate an event with num_reports=1 but only 2 bytes of reports buffer
+  // (less than LEAdvertisingReportData::MinSizeInBytes()).
+  constexpr size_t kEventPrefixSize =
+      pw::bluetooth::emboss::LEAdvertisingReportSubevent::MinSizeInBytes();
+  size_t packet_size = kEventPrefixSize + 2;
+
+  auto event = hci::EventPacket::New<
+      pw::bluetooth::emboss::LEAdvertisingReportSubeventWriter>(
+      hci_spec::kLEMetaEventCode, packet_size);
+  auto packet = event.view_t();
+  packet.le_meta_event().subevent_code().Write(
+      hci_spec::kLEAdvertisingReportSubeventCode);
+  packet.num_reports().Write(1);
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  set_peer_found_callback([&](const LowEnergyScanResult&) { FAIL(); });
+  RunUntilIdle();
+}
+
 }  // namespace bt::hci

@@ -16,6 +16,7 @@
 
 #include <pw_assert/check.h>
 #include <pw_preprocessor/compiler.h>
+#include <pw_span/span.h>
 
 namespace bt::hci {
 namespace pwemb = pw::bluetooth::emboss;
@@ -134,43 +135,64 @@ void LegacyLowEnergyScanner::HandleScanResponse(const DeviceAddress& address,
 std::vector<pw::bluetooth::emboss::LEAdvertisingReportDataView>
 LegacyLowEnergyScanner::ParseAdvertisingReports(const EventPacket& event) {
   PW_DCHECK(event.event_code() == hci_spec::kLEMetaEventCode);
-  PW_DCHECK(event.view<pw::bluetooth::emboss::LEMetaEventView>()
-                .subevent_code()
-                .Read() == hci_spec::kLEAdvertisingReportSubeventCode);
+  auto params = event.unchecked_view<
+      pw::bluetooth::emboss::LEAdvertisingReportSubeventView>();
+  if (!params.Ok()) {
+    bt_log(WARN, "hci-le", "malformed advertising report event");
+    return {};
+  }
+  PW_DCHECK(params.le_meta_event().subevent_code().Read() ==
+            hci_spec::kLEAdvertisingReportSubeventCode);
 
-  auto params =
-      event.view<pw::bluetooth::emboss::LEAdvertisingReportSubeventView>();
   uint8_t num_reports = params.num_reports().Read();
   std::vector<pw::bluetooth::emboss::LEAdvertisingReportDataView> reports;
   reports.reserve(num_reports);
 
-  size_t bytes_read = 0;
-  while (bytes_read < params.reports().BackingStorage().SizeInBytes()) {
-    size_t min_size =
+  pw::span<const uint8_t> remaining_data(
+      params.reports().BackingStorage().data(),
+      params.reports().BackingStorage().SizeInBytes());
+
+  while (!remaining_data.empty()) {
+    constexpr size_t min_size =
         pw::bluetooth::emboss::LEAdvertisingReportData::MinSizeInBytes();
+
+    if (remaining_data.size() < min_size) {
+      bt_log(WARN,
+             "hci-le",
+             "parsing advertising reports, not enough bytes left for header "
+             "(needed %zu, got %zu)",
+             min_size,
+             remaining_data.size());
+      break;
+    }
+
     auto report_prefix = pw::bluetooth::emboss::MakeLEAdvertisingReportDataView(
-        params.reports().BackingStorage().begin() + bytes_read, min_size);
+        remaining_data.data(), min_size);
 
     uint8_t data_length = report_prefix.data_length().Read();
     size_t actual_size = min_size + data_length;
 
-    size_t bytes_left =
-        params.reports().BackingStorage().SizeInBytes() - bytes_read;
-    if (actual_size > bytes_left) {
+    if (actual_size > remaining_data.size()) {
       bt_log(WARN,
              "hci-le",
              "parsing advertising reports, next report size %zu bytes, but "
              "only %zu bytes left",
              actual_size,
-             bytes_left);
+             remaining_data.size());
       break;
     }
 
     auto report = pw::bluetooth::emboss::MakeLEAdvertisingReportDataView(
-        params.reports().BackingStorage().begin() + bytes_read, actual_size);
+        remaining_data.data(), actual_size);
+    if (!report.Ok()) {
+      bt_log(WARN,
+             "hci-le",
+             "skipping malformed advertising report: invalid report fields");
+      break;
+    }
     reports.push_back(report);
 
-    bytes_read += actual_size;
+    remaining_data = remaining_data.subspan(actual_size);
   }
 
   return reports;

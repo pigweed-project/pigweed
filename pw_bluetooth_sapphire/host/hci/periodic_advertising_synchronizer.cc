@@ -68,7 +68,11 @@ struct ParsedSyncEstablishedSubevent {
 template <typename T>
 std::optional<ParsedSyncEstablishedSubevent> ParseSyncEstablishedSubeventHelper(
     const EventPacket& event) {
-  auto view = event.view<T>();
+  auto view = event.unchecked_view<T>();
+  if (!view.Ok()) {
+    bt_log(WARN, "hci", "malformed sync established subevent");
+    return std::nullopt;
+  }
   ParsedSyncEstablishedSubevent result;
   result.status = view.status().Read();
   result.sync_handle = view.sync_handle().Read();
@@ -97,7 +101,12 @@ std::optional<ParsedSyncEstablishedSubevent> ParseSyncEstablishedSubeventHelper(
 
 std::optional<ParsedSyncEstablishedSubevent> ParseSyncEstablishedSubevent(
     const EventPacket& event) {
-  auto meta_event_view = event.view<pw::bluetooth::emboss::LEMetaEventView>();
+  auto meta_event_view =
+      event.unchecked_view<pw::bluetooth::emboss::LEMetaEventView>();
+  if (!meta_event_view.Ok()) {
+    bt_log(WARN, "hci", "malformed meta event for sync established");
+    return std::nullopt;
+  }
   auto subevent_code = meta_event_view.subevent_code_enum().Read();
 
   if (subevent_code == pw::bluetooth::emboss::LeSubEventCode::
@@ -134,7 +143,11 @@ struct ParsedAdvertisingReportSubevent {
 template <typename T>
 std::optional<ParsedAdvertisingReportSubevent>
 ParseAdvertisingReportSubeventHelper(const EventPacket& event) {
-  auto view = event.view<T>();
+  auto view = event.unchecked_view<T>();
+  if (!view.Ok()) {
+    bt_log(WARN, "hci", "malformed periodic advertising report subevent");
+    return std::nullopt;
+  }
   ParsedAdvertisingReportSubevent result;
   result.sync_handle = view.sync_handle().Read();
   result.data_status = view.data_status().Read();
@@ -153,7 +166,12 @@ ParseAdvertisingReportSubeventHelper(const EventPacket& event) {
 
 std::optional<ParsedAdvertisingReportSubevent> ParseAdvertisingReportSubevent(
     const EventPacket& event) {
-  auto meta_event_view = event.view<pw::bluetooth::emboss::LEMetaEventView>();
+  auto meta_event_view =
+      event.unchecked_view<pw::bluetooth::emboss::LEMetaEventView>();
+  if (!meta_event_view.Ok()) {
+    bt_log(WARN, "hci", "malformed meta event for advertising report");
+    return std::nullopt;
+  }
   auto subevent_code = meta_event_view.subevent_code_enum().Read();
 
   if (subevent_code ==
@@ -798,8 +816,12 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
 }
 
 void PeriodicAdvertisingSynchronizer::OnSyncLost(const EventPacket& event) {
-  auto view = event.view<
+  auto view = event.unchecked_view<
       pw::bluetooth::emboss::LEPeriodicAdvertisingSyncLostSubeventView>();
+  if (!view.Ok()) {
+    bt_log(WARN, "hci", "malformed sync lost subevent");
+    return;
+  }
   auto sync_handle = view.sync_handle().Read();
 
   auto sync_node = syncs_.extract(sync_handle);
@@ -816,7 +838,10 @@ void PeriodicAdvertisingSynchronizer::OnSyncLost(const EventPacket& event) {
 void PeriodicAdvertisingSynchronizer::OnPeriodicAdvertisingReport(
     const EventPacket& event) {
   auto parsed_event = ParseAdvertisingReportSubevent(event);
-  PW_CHECK(parsed_event);
+  if (!parsed_event.has_value()) {
+    bt_log(WARN, "hci", "ignoring malformed periodic advertising report");
+    return;
+  }
 
   auto sync_iter = syncs_.find(parsed_event->sync_handle);
   if (sync_iter == syncs_.end()) {
@@ -880,8 +905,12 @@ void PeriodicAdvertisingSynchronizer::OnPeriodicAdvertisingReport(
 
 void PeriodicAdvertisingSynchronizer::OnBigInfoReport(
     const EventPacket& event) {
-  auto view = event.view<
+  auto view = event.unchecked_view<
       pw::bluetooth::emboss::LEBigInfoAdvertisingReportSubeventView>();
+  if (!view.Ok()) {
+    bt_log(WARN, "hci", "malformed biginfo report subevent");
+    return;
+  }
   auto sync_handle = view.sync_handle().Read();
 
   auto sync_iter = syncs_.find(sync_handle);
