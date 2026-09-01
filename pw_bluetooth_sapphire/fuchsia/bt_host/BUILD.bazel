@@ -46,11 +46,9 @@ cc_library(
     name = "sources",
     srcs = [
         "host.cc",
-        "util.cc",
     ],
     hdrs = [
         "host.h",
-        "util.h",
     ],
     # `fuchsia_cc_binary` does not understand Pigweed's sanitizer features, e.g.
     # //pw_toolchain/host_clang:asan_feature. This leads to link errors if the

@@ -32,7 +32,6 @@
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/wake_alarm_provider.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_log/log.h"
-#include "util.h"
 
 using InitCallback = fit::callback<void(bool success)>;
 using ErrorCallback = fit::callback<void()>;
@@ -286,7 +285,8 @@ int main() {
 
   zx::result<fidl::ClientEnd<fuchsia_hardware_bluetooth::Vendor>>
       vendor_client_end_result =
-          bthost::CreateVendorHandle(config.device_path());
+          component::Connect<fuchsia_hardware_bluetooth::Vendor>(
+              config.device_path());
   if (!vendor_client_end_result.is_ok()) {
     bt_log(ERROR,
            "bt-host",
