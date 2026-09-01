@@ -118,6 +118,27 @@ TEST(InspectableTest, Set) {
   EXPECT_EQ(1, prop_value.value());
 }
 
+TEST(InspectableTest, SetWithSameValueDoesNotUpdateProperty) {
+  int prop_set_count = 0;
+  auto prop_cb = [&](auto /*value*/) { prop_set_count++; };
+
+  TestInspectable inspectable(0, TestProperty<int>(0, std::move(prop_cb)));
+  // Property is updated once during construction.
+  EXPECT_EQ(1, prop_set_count);
+
+  // Setting the exact same value should skip updating the property.
+  inspectable.Set(0);
+  EXPECT_EQ(1, prop_set_count);
+
+  // Setting a different value updates the property.
+  inspectable.Set(1);
+  EXPECT_EQ(2, prop_set_count);
+
+  // Setting the same value again should skip updating the property.
+  inspectable.Set(1);
+  EXPECT_EQ(2, prop_set_count);
+}
+
 TEST(InspectableTest, UpdateValueThroughMutable) {
   std::optional<int> prop_value;
   auto prop_cb = [&](auto value) { prop_value = value; };

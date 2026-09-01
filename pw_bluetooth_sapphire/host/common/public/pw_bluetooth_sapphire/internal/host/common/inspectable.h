@@ -25,6 +25,25 @@
 
 namespace bt {
 
+namespace internal {
+
+template <typename T, typename = void>
+struct is_equality_comparable : std::false_type {};
+
+template <typename T>
+struct is_equality_comparable<
+    T,
+    std::void_t<decltype(std::declval<const T&>() == std::declval<const T&>())>>
+    : std::is_convertible<decltype(std::declval<const T&>() ==
+                                   std::declval<const T&>()),
+                          bool> {};
+
+template <typename T>
+inline constexpr bool is_equality_comparable_v =
+    is_equality_comparable<T>::value;
+
+}  // namespace internal
+
 // InspectableGuard is returned by |Inspectable::Mutable()|.
 // It will update the corresponding Inspect property when it is destroyed.
 // Therefore, the lifetime of InspectableGuard should usually be that of a
@@ -123,6 +142,11 @@ class Inspectable {
 
   // Update value and property, making a copy of `value`.
   const ValueT& Set(const ValueT& value) {
+    if constexpr (internal::is_equality_comparable_v<ValueT>) {
+      if (value_ == value) {
+        return value_;
+      }
+    }
     value_ = value;
     UpdateProperty();
     return value_;
@@ -130,6 +154,11 @@ class Inspectable {
 
   // Update value and property, moving `value`.
   const ValueT& Set(ValueT&& value) {
+    if constexpr (internal::is_equality_comparable_v<ValueT>) {
+      if (value_ == value) {
+        return value_;
+      }
+    }
     value_ = std::move(value);
     UpdateProperty();
     return value_;
