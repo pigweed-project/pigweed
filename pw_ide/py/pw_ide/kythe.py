@@ -22,9 +22,11 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
+import zipfile
 
 DEFAULT_KZIP_BIN = "/google/bin/releases/grok/tools/kzip"
 DEFAULT_CORPUS = "pigweed.googlesource.com/pigweed/pigweed"
@@ -234,8 +236,26 @@ def _merge_kzips(
     kzip_bin: str,
     output_kzip: Path,
     unit_kzips: list[Path],
+    units_dir: Path | None = None,
 ) -> None:
     """Merges multiple unit .kzip files into a single .kzip file."""
+    if not unit_kzips:
+        raise ValueError("No unit kzips provided to merge.")
+
+    # 1. Primary method: Native recursive merge over the units directory
+    if units_dir and units_dir.exists():
+        merge_cmd = [
+            kzip_bin,
+            "merge",
+            f"-output={output_kzip}",
+            "-recursive",
+            str(units_dir),
+        ]
+        merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
+        if merge_proc.returncode == 0 and output_kzip.exists():
+            return
+
+    # 2. Native merge using input_file_list if supported
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=False
     ) as list_file:
@@ -248,30 +268,42 @@ def _merge_kzips(
             kzip_bin,
             "merge",
             f"-output={output_kzip}",
-            "-encoding=Proto",
-            "-ignore_duplicate_cus=true",
             f"-input_file_list={list_file_path}",
         ]
         merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
-        if merge_proc.returncode != 0:
-            # Fallback to positional arguments
-            merge_proc = subprocess.run(
-                [
-                    kzip_bin,
-                    "merge",
-                    f"-output={output_kzip}",
-                    "-encoding=Proto",
-                    "-ignore_duplicate_cus=true",
-                ]
-                + [str(u) for u in unit_kzips],
-                capture_output=True,
-                text=True,
-            )
-            if merge_proc.returncode != 0:
-                raise RuntimeError(f"kzip merge failed: {merge_proc.stderr}")
+        if merge_proc.returncode == 0 and output_kzip.exists():
+            return
+
+        # 3. Direct positional arguments for small batches
+        merge_cmd = [
+            kzip_bin,
+            "merge",
+            f"-output={output_kzip}",
+        ] + [str(u) for u in unit_kzips]
+        merge_proc = subprocess.run(merge_cmd, capture_output=True, text=True)
+        if merge_proc.returncode == 0 and output_kzip.exists():
+            return
     finally:
         if os.path.exists(list_file_path):
             os.remove(list_file_path)
+
+    # 4. Fallback: Python zipfile merge if native kzip binary failed
+    print("Falling back to Python zipfile merge...", flush=True)
+    seen_files: set[str] = set()
+    with zipfile.ZipFile(
+        output_kzip, "w", compression=zipfile.ZIP_DEFLATED
+    ) as out_zf:
+        for uk in unit_kzips:
+            try:
+                with zipfile.ZipFile(uk, "r") as in_zf:
+                    for item in in_zf.infolist():
+                        if item.filename not in seen_files:
+                            seen_files.add(item.filename)
+                            out_zf.writestr(item, in_zf.read(item.filename))
+            except Exception as e:  # pylint: disable=broad-except
+                print(
+                    f"Warning: Failed to merge unit {uk}: {e}", file=sys.stderr
+                )
 
 
 def _load_compilation_entries(
@@ -412,7 +444,7 @@ def generate_kzip(
             flush=True,
         )
         merge_start = time.time()
-        _merge_kzips(kzip_bin, output_kzip, unit_kzips)
+        _merge_kzips(kzip_bin, output_kzip, unit_kzips, units_dir=tmp_path)
         merge_elapsed = time.time() - merge_start
 
         print(
