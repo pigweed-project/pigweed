@@ -20,7 +20,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from google.protobuf import json_format
+from google.protobuf import json_format  # type: ignore[import-untyped]
 from pw_build.proto import workflows_pb2
 from pw_build.workflows.launcher import WorkflowsCli
 

@@ -70,8 +70,10 @@ common --incompatible_bazel_test_exec_run_under=True
 # https://github.com/bazelbuild/bazel/issues/26228
 common --experimental_platform_in_output_dir=True
 
+# LINT.IfChange(proto_toolchains)
 # Enable prebuilt protobuf toolchains
 build --incompatible_enable_proto_toolchain_resolution
 build --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
 build --extra_toolchains=@pigweed//pw_build:pw_python_proto_toolchain_toolchain
+# LINT.ThenChange(workflows_launcher/.bazelrc:proto_toolchains)
 

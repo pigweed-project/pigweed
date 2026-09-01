@@ -22,3 +22,7 @@ local_path_override(
     module_name = "pigweed",
     path = "../..",
 )
+
+# LINT.IfChange(protobuf)
+bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
+# LINT.ThenChange(//MODULE.bazel:protobuf)

@@ -43,7 +43,7 @@ bazel_dep(name = "platforms", version = "1.1.0")
 
 # LINT.IfChange(protobuf)
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
-# LINT.ThenChange(pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json,pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list:protobuf)
+# LINT.ThenChange(pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json,pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list:protobuf,pw_build/workflows_launcher/MODULE.bazel:protobuf)
 
 bazel_dep(name = "re2", version = "2025-11-05.bcr.1")
 bazel_dep(name = "rules_android", version = "0.7.2")
