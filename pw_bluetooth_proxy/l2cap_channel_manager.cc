@@ -319,7 +319,24 @@ Status L2capChannelManager::RegisterChannelLocked(
   PW_CHECK(local_result.inserted);
 
   impl_.OnRegister();
-  NotifyChannelStateUpdate(channel);
+#if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
+  bool restored_from_snapshot = false;
+  const L2capSnapshot* snapshot =
+      restored_snapshot_.load(std::memory_order_acquire);
+  if (snapshot != nullptr) {
+    for (const L2capChannelSnapshot& channel_snap : snapshot->l2cap_channels) {
+      if (channel_snap.MatchesKey(channel.connection_handle(),
+                                  channel.local_cid())) {
+        restored_from_snapshot = true;
+        break;
+      }
+    }
+  }
+  if (!channel.IsSignalingChannel() && !restored_from_snapshot &&
+      state_update_callback_) {
+    state_update_callback_(channel.CaptureSnapshot());
+  }
+#endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   return OkStatus();
 }
 

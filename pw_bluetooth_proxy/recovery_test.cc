@@ -458,8 +458,10 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
 
 constexpr uint16_t kLocalCid1 = 0x40;
 constexpr uint16_t kLocalCid2 = 0x41;
+constexpr uint16_t kLocalCid3 = 0x42;
 constexpr uint16_t kRemoteCid1 = 0x50;
 constexpr uint16_t kRemoteCid2 = 0x51;
+constexpr uint16_t kRemoteCid3 = 0x52;
 
 L2capChannelSnapshot CreateL2capChannelSnapshot(
     uint16_t connection_handle = kLeConnectionHandle1,
@@ -1264,6 +1266,8 @@ TEST_F(L2capRecoveryTest, SnapshotChannelMatchingOverridesCredits) {
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES
 
 TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
+  Vector<ProxyHostStateUpdate, 4> updates;
+
   Function<void(H4PacketWithHci && packet)> send_to_host_fn(
       []([[maybe_unused]] H4PacketWithHci&& packet) {});
 
@@ -1275,8 +1279,11 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
                               /*le_acl_credits_to_reserve=*/2,
                               /*br_edr_acl_credits_to_reserve=*/0,
                               GetProxyHostAllocator(),
-                              nullptr);
+                              [&updates](const ProxyHostStateUpdate& update) {
+                                updates.push_back(update);
+                              });
   StartDispatcherOnCurrentThread(proxy);
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
 
   ProxyHostSnapshot snapshot;
   snapshot.acl.acl_connections.push_back(
@@ -1284,7 +1291,7 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
                             .transport = AclTransportType::kLe});
 
   L2capChannelSnapshot channel_snapshot = CreateL2capChannelSnapshot();
-  channel_snapshot.acl_recombination_in_progress = true;
+  channel_snapshot.allow_data_loss = true;
   snapshot.l2cap.l2cap_channels.push_back(channel_snapshot);
   snapshot.l2cap.l2cap_signaling_states.push_back(L2capSignalingStateSnapshot{
       .connection_handle = kLeConnectionHandle1,
@@ -1293,8 +1300,22 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
 
   PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
 
-  // Verify that registering a channel with a CID that is not in the snapshot
-  // succeeds during the recovery window.
+  // Re-acquiring a channel that was present in the snapshot during recovery
+  // suppresses the state update notification to prevent duplicate records.
+  PW_TEST_EXPECT_OK(
+      BuildBasicL2capChannelWithResult(proxy,
+                                       BasicL2capParameters{
+                                           .handle = kLeConnectionHandle1,
+                                           .local_cid = kLocalCid1,
+                                           .remote_cid = kRemoteCid1,
+                                           .transport = AclTransportType::kLe,
+                                       })
+          .status());
+  EXPECT_EQ(updates.size(), 0u);
+
+  // Verify that registering a basic mode channel with a CID that is not in the
+  // snapshot succeeds during the recovery window AND emits an initial state
+  // update.
   PW_TEST_EXPECT_OK(
       BuildBasicL2capChannelWithResult(proxy,
                                        BasicL2capParameters{
@@ -1304,6 +1325,36 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
                                            .transport = AclTransportType::kLe,
                                        })
           .status());
+
+  ASSERT_EQ(updates.size(), 1u);
+  ASSERT_TRUE(std::holds_alternative<L2capChannelSnapshot>(updates[0]));
+  const auto& basic_snap = std::get<L2capChannelSnapshot>(updates[0]);
+  EXPECT_EQ(basic_snap.connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(basic_snap.local_cid, kLocalCid2);
+  EXPECT_EQ(basic_snap.remote_cid, kRemoteCid2);
+
+  // Verify that registering a credit-based flow control channel not in the
+  // snapshot also succeeds during recovery and emits a state update.
+  ConnectionOrientedChannelConfig rx_config{
+      .cid = kLocalCid3, .mtu = kMtu, .mps = kMps, .credits = 5};
+  ConnectionOrientedChannelConfig tx_config{
+      .cid = kRemoteCid3, .mtu = kMtu, .mps = kMps, .credits = 5};
+  MultiBufReceiveFunction rx_fn = [](multibuf::MultiBuf&&) {};
+
+  auto coc_result = proxy.InterceptCreditBasedFlowControlChannel(
+      ConnectionHandle{kLeConnectionHandle1},
+      rx_config,
+      tx_config,
+      std::move(rx_fn),
+      /*event_fn=*/nullptr);
+  PW_TEST_ASSERT_OK(coc_result.status());
+
+  ASSERT_EQ(updates.size(), 2u);
+  ASSERT_TRUE(std::holds_alternative<L2capChannelSnapshot>(updates[1]));
+  const auto& coc_snap = std::get<L2capChannelSnapshot>(updates[1]);
+  EXPECT_EQ(coc_snap.connection_handle, kLeConnectionHandle1);
+  EXPECT_EQ(coc_snap.local_cid, kLocalCid3);
+  EXPECT_EQ(coc_snap.remote_cid, kRemoteCid3);
 }
 
 TEST_F(L2capRecoveryTest, RejectedBasicModeChannelSilentlyAbsorbsPackets) {
