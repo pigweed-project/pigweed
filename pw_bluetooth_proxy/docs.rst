@@ -117,22 +117,8 @@ Module configuration options include:
   internal multibuf allocator, which is used by the ChannelProxy and RFCOMM
   APIs. Configure this value to be large enough to allocate multiple RFCOMM
   packets if you are using RFCOMM.
-- :cc:`PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY`: Controls whether offload
-  recovery persistence infrastructure (snapshots, state restoration, and state
-  update callbacks) is compiled into the proxy. Defaults to 0 (disabled) to
-  guarantee zero memory footprint and zero runtime overhead in production
-  binaries. Setting to 1 compiles recovery APIs and members.
-- :cc:`PW_BLUETOOTH_PROXY_CONFIG_ENABLE_CREDIT_SNAPSHOT_UPDATES`: Whether
-  :cc:`pw::bluetooth::proxy::ProxyHost` emits incremental state update
-  callbacks on dynamic credit mutations (defaults to 1). Disabling reduces
-  power consumption for high-throughput streams.
-- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_CONNECTIONS`: Caps the number of
-  concurrent ACL connections that can be serialized across the proxy's
-  subsystems.
-- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_L2CAP_CHANNELS`: The maximum
-  number of L2CAP channels persisted across snapshot restorations.
-- :cc:`PW_BLUETOOTH_PROXY_CONFIG_MAX_SNAPSHOT_RFCOMM_CHANNELS`: The maximum
-  number of RFCOMM channels persisted across snapshot restorations.
+- For crash recovery configuration options, see
+  :ref:`module-pw_bluetooth_proxy-crash_recovery-configuration`.
 
 Clock Facade
 ============
@@ -203,6 +189,14 @@ Roadmap
 - And more...
 
 
+--------------
+Crash recovery
+--------------
+The proxy can be configured to persist its state and gracefully resume after a
+crash without resetting the Bluetooth subsystem or dropping active connections.
+See :ref:`module-pw_bluetooth_proxy-crash_recovery` for the crash recovery
+guide, architecture overview, and container orchestration requirements.
+
 --------
 Security
 --------
@@ -213,4 +207,5 @@ model.
    :maxdepth: 1
    :hidden:
 
+   crash_recovery
    security

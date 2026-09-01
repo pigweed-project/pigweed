@@ -2083,7 +2083,7 @@ TEST_F(RfcommProxyHostTest, AcquireRfcommChannelSucceedsUnderSnapshotDataLoss) {
           .transport = AclTransportType::kBrEdr,
       });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(proxy_snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&proxy_snapshot));
   PW_TEST_ASSERT_OK(SendReadBufferResponseFromController(proxy, 1, 251));
 
   pw::allocator::test::AllocatorForTest<4096> test_allocator;

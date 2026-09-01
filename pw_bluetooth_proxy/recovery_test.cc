@@ -162,7 +162,7 @@ TEST_F(AclRecoveryTest, SnapshotCaptureAndRecover) {
                                   /*num_host_pending=*/1,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify ACL subsystem recovery. Expect free proxy packets to be 0 (2
   // reserved - 2 pending).
@@ -223,7 +223,7 @@ TEST_F(AclRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
 
   ProxyHostSnapshot snapshot;
   snapshot.acl.snapshot_incomplete = true;
-  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::DataLoss());
+  EXPECT_EQ(proxy.RecoverFromSnapshot(&snapshot), Status::DataLoss());
 }
 
 TEST_F(AclRecoveryTest, RegisterStateUpdateCallback) {
@@ -361,7 +361,7 @@ TEST_F(AclRecoveryTest, CreditResynchronizationDefersAndSends) {
                                   /*num_host_pending=*/0,
                                   kQueuedPackets2));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify that no refund event is sent to host immediately.
   EXPECT_FALSE(send_capture.captured_packet.has_value());
@@ -418,7 +418,7 @@ TEST_F(AclRecoveryTest, StaticCreditsPendingDerivedFromConnections) {
                                   /*num_host_pending=*/5,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // The proxy reserved 2 credits and has 0 proxy pending packets.
   // Verify that remaining credits is 2 (not reduced by host pending packets).
@@ -449,7 +449,7 @@ TEST_F(AclRecoveryTest, DynamicCreditsPendingDerivedFromConnections) {
                                   /*num_host_pending=*/3,
                                   /*num_queued_host=*/0));
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Controller max is 10, total pending is 2 + 3 = 5.
   // Verify that remaining credits is 10 - 5 = 5.
@@ -582,7 +582,7 @@ TEST_F(L2capRecoveryTest, SnapshotCaptureAndRecover) {
       .next_identifier = 42,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   Result<L2capCoc> coc = BuildCocWithResult(proxy,
                                             CocParameters{
@@ -622,7 +622,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnIncomplete) {
 
   ProxyHostSnapshot snapshot;
   snapshot.l2cap.snapshot_incomplete = true;
-  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::DataLoss());
+  EXPECT_EQ(proxy.RecoverFromSnapshot(&snapshot), Status::DataLoss());
 }
 
 TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
@@ -649,7 +649,8 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverFailsOnMissingAclConnection) {
       .connection_handle = kLeConnectionHandle1,
       .transport = AclTransportType::kLe,
   });
-  EXPECT_EQ(proxy.RecoverFromSnapshot(snapshot), Status::InvalidArgument());
+  EXPECT_EQ(proxy.RecoverFromSnapshot(nullptr), Status::InvalidArgument());
+  EXPECT_EQ(proxy.RecoverFromSnapshot(&snapshot), Status::InvalidArgument());
 }
 
 TEST_F(L2capRecoveryTest, RegisterBasicModeChannelStateUpdateCallback) {
@@ -1050,7 +1051,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverEstablishesL2capLinks) {
       .transport = AclTransportType::kBrEdr,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Re-register the two channels sharing the same handle. This also verifies
   // that the LE connection was restored.
@@ -1121,7 +1122,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify that channel registration during the recovery window fails.
   EXPECT_EQ(
@@ -1161,7 +1162,7 @@ TEST_F(L2capRecoveryTest, SnapshotRecoverHandlesInterruptedFrame) {
   // Test again to verify that snapshot recovery also works for an
   // already-established logical link.
   basic_channel->Close();
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify that channel registration during the recovery window fails.
   EXPECT_EQ(
@@ -1242,7 +1243,7 @@ TEST_F(L2capRecoveryTest, SnapshotChannelMatchingOverridesCredits) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   Result<L2capCoc> coc = BuildCocWithResult(proxy,
                                             CocParameters{
@@ -1298,7 +1299,7 @@ TEST_F(L2capRecoveryTest, SnapshotUnmatchedChannelRegistration) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Re-acquiring a channel that was present in the snapshot during recovery
   // suppresses the state update notification to prevent duplicate records.
@@ -1397,7 +1398,7 @@ TEST_F(L2capRecoveryTest, RejectedBasicModeChannelSilentlyAbsorbsPackets) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   L2capChannelManagerInterface::SpanReceiveFunction rx_fn =
       [](span<const std::byte>, ConnectionHandle, uint16_t, uint16_t) {
@@ -1488,7 +1489,7 @@ TEST_F(L2capRecoveryTest,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   ConnectionOrientedChannelConfig rx_config{
       .cid = kLocalCid1, .mtu = kMtu, .mps = kMps, .credits = 1};
@@ -1564,7 +1565,7 @@ TEST_F(L2capRecoveryTest,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   EXPECT_EQ(
       BuildBasicL2capChannelWithResult(proxy,
@@ -1645,7 +1646,7 @@ TEST_F(L2capRecoveryTest,
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   EXPECT_EQ(BuildCocWithResult(proxy,
                                CocParameters{
@@ -1722,7 +1723,7 @@ TEST_F(L2capRecoveryTest, RejectedChannelIsTornDownOnHostDisconnection) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   ConnectionOrientedChannelConfig rx_config{
       .cid = kLocalCid1, .mtu = 100, .mps = 100, .credits = 1};
@@ -1784,7 +1785,7 @@ TEST_F(L2capRecoveryTest, BasicModeChannelAllowsDataLoss) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify that snapshot recovery succeeds, despite the packet loss.
   Result<BasicL2capChannel> basic_channel =
@@ -1828,7 +1829,7 @@ TEST_F(L2capRecoveryTest, InterceptedBasicModeChannelAllowsDataLoss) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 2));
 
   L2capChannelManagerInterface::SpanReceiveFunction rx_fn =
@@ -1885,7 +1886,7 @@ TEST_F(L2capRecoveryTest, CreditBasedFlowControlChannelAllowsDataLoss) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   ConnectionOrientedChannelConfig rx_config{.cid = kLocalCid1,
                                             .mtu = kMtu,
@@ -1948,7 +1949,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoverySweepsAbandonedChannels) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   Result<BasicL2capChannel> channel1 =
       BuildBasicL2capChannelWithResult(proxy,
@@ -2005,7 +2006,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsAbandoned) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   proxy.CompleteRecovery();
 
@@ -2051,7 +2052,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryHandlesAllChannelsReRegistered) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   Result<BasicL2capChannel> channel1 =
       BuildBasicL2capChannelWithResult(proxy,
@@ -2115,7 +2116,7 @@ TEST_F(L2capRecoveryTest, CompleteRecoveryIsIdempotent) {
       .transport = AclTransportType::kLe,
   });
 
-  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(snapshot));
+  PW_TEST_ASSERT_OK(proxy.RecoverFromSnapshot(&snapshot));
 
   // Verify that repeated CompleteL2capRecovery() calls are safe and have no
   // additional effect.

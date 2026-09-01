@@ -132,13 +132,16 @@ Status ProxyHostSnapshot::ApplyStateUpdate(const ProxyHostStateUpdate& update) {
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 
-Status ProxyHost::RecoverFromSnapshot(const ProxyHostSnapshot& snapshot) {
-  Status status = acl_data_channel_.RecoverFromSnapshot(snapshot.acl);
+Status ProxyHost::RecoverFromSnapshot(const ProxyHostSnapshot* snapshot) {
+  if (snapshot == nullptr) {
+    return Status::InvalidArgument();
+  }
+  Status status = acl_data_channel_.RecoverFromSnapshot(snapshot->acl);
   if (!status.ok()) {
     return status;
   }
 
-  status = l2cap_channel_manager_.RecoverFromSnapshot(&snapshot.l2cap);
+  status = l2cap_channel_manager_.RecoverFromSnapshot(&snapshot->l2cap);
   if (status == Status::FailedPrecondition()) {
     return Status::InvalidArgument();
   }

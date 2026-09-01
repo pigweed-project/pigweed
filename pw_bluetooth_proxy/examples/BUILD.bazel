@@ -1,0 +1,55 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
+
+package(
+    default_visibility = ["//visibility:public"],
+    features = ["-layering_check"],
+)
+
+licenses(["notice"])
+
+pw_cc_test(
+    name = "crash_recovery",
+    srcs = ["crash_recovery.cc"],
+    defines = [
+        "PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY=1",
+    ],
+    deps = [
+        "//pw_allocator",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_bluetooth:emboss_hci_common",
+        "//pw_bluetooth:emboss_hci_events",
+        "//pw_bluetooth_proxy:config",
+        "//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery",
+        "//pw_bluetooth_proxy/hci:command_multiplexer_recovery",
+        "//pw_bluetooth_proxy/hci:sniff_offload_recovery",
+        "//pw_bluetooth_proxy/rfcomm:rfcomm_sync_recovery",
+        "//pw_multibuf/v2:multibuf",
+        "//pw_status",
+    ],
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "crash_recovery.cc",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)

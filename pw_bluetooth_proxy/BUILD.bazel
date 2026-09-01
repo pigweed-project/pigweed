@@ -284,10 +284,12 @@ pw_size_table(
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "crash_recovery.rst",
         "docs.rst",
         "proxy_host_test.cc",
         "security.rst",
         ":use_passthrough_proxy_size_report",
+        "//pw_bluetooth_proxy/examples:docs",
     ],
     prefix = "pw_bluetooth_proxy/",
     target_compatible_with = incompatible_with_mcu(),

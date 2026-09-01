@@ -40,7 +40,7 @@ pw_bluetooth_proxy_rfcomm_library(
     name = "rfcomm_sync_recovery",
     testonly = True,
     versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_sync_recovery"],
-    visibility = ["//visibility:private"],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
 pw_bluetooth_proxy_rfcomm_library(
@@ -54,7 +54,7 @@ pw_bluetooth_proxy_rfcomm_library(
     name = "rfcomm_async_recovery",
     testonly = True,
     versioned_deps = ["//pw_bluetooth_proxy:pw_bluetooth_proxy_async_recovery"],
-    visibility = ["//visibility:private"],
+    visibility = ["//pw_bluetooth_proxy:__subpackages__"],
 )
 
 pw_bluetooth_proxy_rfcomm_test(

@@ -167,13 +167,13 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// @param[in] snapshot State container to restore from.
   /// @returns
   /// * @OK: State restored successfully.
+  /// * @INVALID_ARGUMENT: Snapshot pointer is null or an ACL connection
+  /// required by L2CAP has not been restored, indicating that the ACL and
+  /// L2CAP snapshots are inconsistent with each other.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
   /// * @RESOURCE_EXHAUSTED: ACL connection capacity or deferred credit refund
   /// capacity was exceeded.
-  /// * @INVALID_ARGUMENT: An ACL connection required by L2CAP has not been
-  /// restored, indicating that the ACL and L2CAP snapshots are inconsistent
-  /// with each other.
-  Status RecoverFromSnapshot(const ProxyHostSnapshot& snapshot);
+  Status RecoverFromSnapshot(const ProxyHostSnapshot* snapshot);
 
   /// Sends the host ACL credit refunds for packets dropped while queued.
   void InitiateAclCreditResynchronization();
