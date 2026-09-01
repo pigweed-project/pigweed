@@ -14,7 +14,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <optional>
 
 #include "pw_allocator/allocator.h"
@@ -36,7 +35,6 @@
 #include "pw_function/function.h"
 #include "pw_multibuf/simple_allocator.h"
 #include "pw_sync/lock_annotations.h"
-#include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
 
 // This include is not used but a downstream project transitively depends on it.
@@ -224,7 +222,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   /// @note The caller must ensure that the @p snapshot object remains
   /// valid and in scope until CompleteRecovery() returns.
   Status RecoverFromSnapshot(const L2capSnapshot* snapshot)
-      PW_LOCKS_EXCLUDED(links_mutex_);
+      PW_LOCKS_EXCLUDED(links_mutex_, channels_mutex());
 
   /// Completes L2CAP offload recovery and clears the stored snapshot state.
   ///
@@ -373,7 +371,8 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       ConnectionHandle connection_handle,
       ConnectionOrientedChannelConfig& rx_config,
       ConnectionOrientedChannelConfig& tx_config)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_)
+          PW_LOCKS_EXCLUDED(channels_mutex());
 
   // If a snapshot is stored, applies snapshot state to a basic mode channel.
   // Returns `Status::Cancelled()` if data loss occurred (e.g. an ACL frame
@@ -383,7 +382,8 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   Status RecoverBasicModeChannel(ConnectionHandle connection_handle,
                                  uint16_t local_cid,
                                  uint16_t remote_cid)
-      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_);
+      PW_EXCLUSIVE_LOCKS_REQUIRED(links_mutex_)
+          PW_LOCKS_EXCLUDED(channels_mutex());
 
   // Creates and registers a silent credit-based flow control channel to absorb
   // peer traffic.
@@ -407,7 +407,8 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
 
   // Saved snapshot for offload recovery persistence. Recovery is active if this
   // pointer is non-null.
-  std::atomic<const L2capSnapshot*> restored_snapshot_{nullptr};
+  const L2capSnapshot* restored_snapshot_ PW_GUARDED_BY(channels_mutex()){
+      nullptr};
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 };
 

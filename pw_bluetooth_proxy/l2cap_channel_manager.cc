@@ -321,10 +321,9 @@ Status L2capChannelManager::RegisterChannelLocked(
   impl_.OnRegister();
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   bool restored_from_snapshot = false;
-  const L2capSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot != nullptr) {
-    for (const L2capChannelSnapshot& channel_snap : snapshot->l2cap_channels) {
+  if (restored_snapshot_ != nullptr) {
+    for (const L2capChannelSnapshot& channel_snap :
+         restored_snapshot_->l2cap_channels) {
       if (channel_snap.MatchesKey(channel.connection_handle(),
                                   channel.local_cid())) {
         restored_from_snapshot = true;
@@ -659,21 +658,23 @@ Status L2capChannelManager::RecoverFromSnapshot(const L2capSnapshot* snapshot) {
     }
   }
 
-  restored_snapshot_.store(snapshot, std::memory_order_release);
+  {
+    std::lock_guard lock(channels_mutex());
+    restored_snapshot_ = snapshot;
+  }
   PW_LOG_INFO("Restored L2CAP state from snapshot");
   return OkStatus();
 }
 
 void L2capChannelManager::CompleteRecovery() {
   std::lock_guard link_lock(links_mutex_);
-  const L2capSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot == nullptr) {
+  std::lock_guard channel_lock(channels_mutex());
+  if (restored_snapshot_ == nullptr) {
     return;
   }
 
-  std::lock_guard channel_lock(channels_mutex());
-  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
     uint32_t key =
         L2capChannel::MakeKey(channel.connection_handle, channel.local_cid);
     if (channels_by_local_cid_.find(key) == channels_by_local_cid_.end() &&
@@ -689,15 +690,14 @@ void L2capChannelManager::CompleteRecovery() {
     }
   }
 
-  restored_snapshot_.store(nullptr, std::memory_order_release);
+  restored_snapshot_ = nullptr;
 }
 
 void L2capChannelManager::NotifySignalingStateUpdate(
     uint16_t connection_handle,
     AclTransportType transport,
     uint8_t next_identifier) const {
-  if (state_update_callback_ &&
-      restored_snapshot_.load(std::memory_order_acquire) == nullptr) {
+  if (state_update_callback_) {
     state_update_callback_(L2capSignalingStateSnapshot{
         .connection_handle = connection_handle,
         .transport = transport,
@@ -711,8 +711,7 @@ void L2capChannelManager::NotifyChannelStateUpdate(
   if (channel.IsSignalingChannel()) {
     return;
   }
-  if (state_update_callback_ &&
-      restored_snapshot_.load(std::memory_order_acquire) == nullptr) {
+  if (state_update_callback_) {
     state_update_callback_(channel.CaptureSnapshot());
   }
 }
@@ -721,13 +720,13 @@ Status L2capChannelManager::RecoverCreditBasedFlowControlChannel(
     ConnectionHandle connection_handle,
     ConnectionOrientedChannelConfig& rx_config,
     ConnectionOrientedChannelConfig& tx_config) {
-  const L2capSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot == nullptr) {
+  std::lock_guard lock(channels_mutex());
+  if (restored_snapshot_ == nullptr) {
     return OkStatus();
   }
 
-  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
     const bool channel_matches =
         channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == rx_config.cid &&
@@ -760,13 +759,13 @@ Status L2capChannelManager::RecoverBasicModeChannel(
     ConnectionHandle connection_handle,
     uint16_t local_cid,
     uint16_t remote_cid) {
-  const L2capSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot == nullptr) {
+  std::lock_guard lock(channels_mutex());
+  if (restored_snapshot_ == nullptr) {
     return OkStatus();
   }
 
-  for (const L2capChannelSnapshot& channel : snapshot->l2cap_channels) {
+  for (const L2capChannelSnapshot& channel :
+       restored_snapshot_->l2cap_channels) {
     const bool channel_matches =
         channel.connection_handle == cpp23::to_underlying(connection_handle) &&
         channel.local_cid == local_cid && channel.remote_cid == remote_cid &&
@@ -886,7 +885,10 @@ void L2capChannelManager::CreateSilentBasicChannel(
 void L2capChannelManager::ResetLogicalLinksLocked() {
   logical_links_.clear();
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
-  restored_snapshot_.store(nullptr, std::memory_order_release);
+  {
+    std::lock_guard lock(channels_mutex());
+    restored_snapshot_ = nullptr;
+  }
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
 }
 

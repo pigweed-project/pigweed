@@ -130,11 +130,9 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   bool restored_from_snapshot = false;
   uint8_t rx_total_credits = rx_config.initial_credits;
-  const RfcommSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot != nullptr) {
+  if (restored_snapshot_ != nullptr) {
     for (const RfcommChannelSnapshot& channel_snap :
-         snapshot->rfcomm_channels) {
+         restored_snapshot_->rfcomm_channels) {
       if (channel_snap.MatchesKey(static_cast<uint16_t>(connection_handle),
                                   channel_number,
                                   direction)) {
@@ -502,20 +500,22 @@ Status RfcommManager::RecoverFromSnapshot(const RfcommSnapshot* snapshot) {
     return Status::DataLoss();
   }
 
-  restored_snapshot_.store(snapshot, std::memory_order_release);
+  {
+    std::lock_guard lock(connections_mutex_);
+    restored_snapshot_ = snapshot;
+  }
   PW_LOG_INFO("Restored RFCOMM state from snapshot");
   return OkStatus();
 }
 
 void RfcommManager::CompleteRecovery() {
   std::lock_guard lock(connections_mutex_);
-  const RfcommSnapshot* snapshot =
-      restored_snapshot_.load(std::memory_order_acquire);
-  if (snapshot == nullptr) {
+  if (restored_snapshot_ == nullptr) {
     return;
   }
 
-  for (const RfcommChannelSnapshot& channel : snapshot->rfcomm_channels) {
+  for (const RfcommChannelSnapshot& channel :
+       restored_snapshot_->rfcomm_channels) {
     auto conn_it = connections_.find(
         static_cast<ConnectionHandle>(channel.connection_handle));
     bool channel_active = false;
@@ -542,13 +542,12 @@ void RfcommManager::CompleteRecovery() {
     }
   }
 
-  restored_snapshot_.store(nullptr, std::memory_order_release);
+  restored_snapshot_ = nullptr;
 }
 
 void RfcommManager::NotifyChannelStateUpdate(
     const internal::RfcommChannelInternal& channel) {
-  if (restored_snapshot_.load(std::memory_order_acquire) == nullptr &&
-      state_update_callback_) {
+  if (state_update_callback_) {
     state_update_callback_(channel.CaptureSnapshot());
   }
 }

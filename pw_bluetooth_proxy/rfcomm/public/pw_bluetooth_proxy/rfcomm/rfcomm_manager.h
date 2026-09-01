@@ -75,7 +75,8 @@ class RfcommManager final : public RfcommChannelManagerInterface {
   /// * @OK: State restored successfully.
   /// * @INVALID_ARGUMENT: Snapshot pointer is null.
   /// * @DATA_LOSS: Snapshot was marked incomplete or invalid.
-  Status RecoverFromSnapshot(const RfcommSnapshot* snapshot);
+  Status RecoverFromSnapshot(const RfcommSnapshot* snapshot)
+      PW_LOCKS_EXCLUDED(connections_mutex_);
 
   /// Completes RFCOMM offload recovery and sweeps abandoned RFCOMM channels.
   ///
@@ -186,7 +187,8 @@ class RfcommManager final : public RfcommChannelManagerInterface {
                             uint8_t channel_number,
                             RfcommDirection direction);
 
-  std::atomic<const RfcommSnapshot*> restored_snapshot_{nullptr};
+  const RfcommSnapshot* restored_snapshot_ PW_GUARDED_BY(connections_mutex_){
+      nullptr};
 
   // Registered state update callback for offload recovery persistence. This
   // must only be modified during initialization before packet traffic is
