@@ -31,8 +31,13 @@ pw_add_library(pw_log_zephyr STATIC
 )
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_ZEPHYR
     pw_log.facade
-    pw_log_zephyr
 )
+if(CONFIG_PIGWEED_LOG_ZEPHYR)
+  zephyr_library_link_libraries(pw_log_zephyr)
+  if(TARGET zephyr_generated_headers)
+    add_dependencies(pw_log_zephyr zephyr_generated_headers)
+  endif()
+endif()
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_STRING
     pw_log.facade
@@ -46,8 +51,9 @@ pw_add_library(pw_log_zephyr.pigweed_overrides INTERFACE
   PUBLIC_INCLUDES
     zephyr_public_overrides
   PUBLIC_DEPS
-    pw_log.facade
     pw_hex_dump.log_bytes
+    pw_log.facade
+    pw_preprocessor
 )
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_PIGWEED_OVERRIDES

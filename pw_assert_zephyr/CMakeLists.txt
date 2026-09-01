@@ -44,7 +44,8 @@ pw_add_library(pw_assert_zephyr.pigweed_overrides INTERFACE
   PUBLIC_INCLUDES
     zephyr_public_overrides
   PUBLIC_DEPS
-    pw_assert
+    pw_assert.check.facade
+    pw_assert.assert.facade
 )
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_ASSERT_PIGWEED_OVERRIDES
     pw_assert_zephyr.pigweed_overrides
