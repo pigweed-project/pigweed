@@ -324,6 +324,7 @@ common:remote_cache --legacy_important_outputs
 common:remote_cache --remote_cache=grpcs://remotebuildexecution.googleapis.com
 common:remote_cache --remote_instance_name=projects/pigweed-rbe-open/instances/default-instance
 common:remote_cache --remote_upload_local_results=false
+common:remote_cache --remote_download_outputs=toplevel
 
 # cache-silo-key: this is essentially a "salt" added to the remote cache key.
 # Change it to a new value when we want to create a new cache from scratch
