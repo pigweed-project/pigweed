@@ -41,6 +41,8 @@ if(NOT dir_pw_third_party_googletest)
 
 else()  # dir_pw_thid_parrty_googletest is set
   pw_add_library(pw_third_party.googletest STATIC
+    SANDBOX
+      OFF
     SOURCES
       # Only add the "*-all.cc" files (and no headers) to improve maintainability
       # from upstream refactoring. The "*-all.cc" files include the respective
@@ -61,6 +63,8 @@ else()  # dir_pw_thid_parrty_googletest is set
   )
 
   pw_add_library(pw_third_party.googletest.gtest_main STATIC
+    SANDBOX
+      OFF
     SOURCES
       ${dir_pw_third_party_googletest}/googletest/src/gtest_main.cc
     PUBLIC_DEPS
@@ -68,6 +72,8 @@ else()  # dir_pw_thid_parrty_googletest is set
   )
 
   pw_add_library(pw_third_party.googletest.gmock_main STATIC
+    SANDBOX
+      OFF
     SOURCES
       ${dir_pw_third_party_googletest}/googlemock/src/gmock_main.cc
     PUBLIC_DEPS
