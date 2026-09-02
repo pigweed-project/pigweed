@@ -55,9 +55,12 @@ pw_add_library(pw_third_party.freertos._direct_impl STATIC
   HEADERS
     ${dir_pw_third_party_freertos}/include/FreeRTOS.h
     ${dir_pw_third_party_freertos}/include/StackMacros.h
+    ${dir_pw_third_party_freertos}/include/atomic.h
     ${dir_pw_third_party_freertos}/include/croutine.h
     ${dir_pw_third_party_freertos}/include/deprecated_definitions.h
     ${dir_pw_third_party_freertos}/include/event_groups.h
+    ${dir_pw_third_party_freertos}/include/freertos_tasks_c_additions.h
+    ${dir_pw_third_party_freertos}/include/heap_stats.h
     ${dir_pw_third_party_freertos}/include/list.h
     ${dir_pw_third_party_freertos}/include/message_buffer.h
     ${dir_pw_third_party_freertos}/include/mpu_prototypes.h
@@ -137,6 +140,7 @@ if(IS_DIRECTORY ${dir_pw_third_party_freertos}/portable/GCC/ARM_CM33F)
   # ARM CM33F port of FreeRTOS.
   pw_add_library(pw_third_party.freertos.arm_cm33f STATIC
     HEADERS
+      ${dir_pw_third_party_freertos}/portable/GCC/ARM_CM33F/fsl_tickless_generic.h
       ${dir_pw_third_party_freertos}/portable/GCC/ARM_CM33F/portmacro.h
     PUBLIC_DEPS
       ${pw_third_party_freertos_CONFIG}
