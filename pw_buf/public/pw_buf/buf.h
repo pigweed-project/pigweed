@@ -48,6 +48,10 @@ class Buf;
 /// An empty `ConstBuf` is not necessarily null (for example, if it has been
 /// sliced or truncated to length 0), in which case `data()` returns a non-null
 /// pointer.
+///
+/// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
+/// `buf != nullptr`). `operator bool` is not provided to prevent confusion
+/// between nullness and emptiness.
 class ConstBuf {
  public:
   using value_type = std::byte;
@@ -62,6 +66,9 @@ class ConstBuf {
 
   /// Constructs a null `ConstBuf`.
   constexpr ConstBuf() = default;
+
+  /// Constructs a null `ConstBuf`.
+  constexpr ConstBuf(std::nullptr_t) noexcept : ConstBuf() {}
 
   /// Move constructor.
   ///
@@ -97,6 +104,35 @@ class ConstBuf {
 
   ConstBuf& operator=(const ConstBuf&) = delete;
 
+  /// Frees the owned memory (if any) and sets the buffer to null. Same as
+  /// `reset()`.
+  ConstBuf& operator=(std::nullptr_t) noexcept {
+    reset();
+    return *this;
+  }
+
+  /// `operator bool` is not provided to prevent confusion between nullness and
+  /// emptiness. Use `buf == nullptr` to check for null, or `buf.empty()` for
+  /// size 0.
+  explicit operator bool() const = delete;
+
+  [[nodiscard]] friend constexpr bool operator==(const ConstBuf& lhs,
+                                                 std::nullptr_t) noexcept {
+    return lhs.data() == nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator==(std::nullptr_t,
+                                                 const ConstBuf& rhs) noexcept {
+    return rhs.data() == nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator!=(const ConstBuf& lhs,
+                                                 std::nullptr_t) noexcept {
+    return lhs.data() != nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator!=(std::nullptr_t,
+                                                 const ConstBuf& rhs) noexcept {
+    return rhs.data() != nullptr;
+  }
+
   /// Accesses the byte at the specified index.
   reference operator[](size_t index) const {
     PW_DASSERT(index < view_.size());
@@ -109,16 +145,16 @@ class ConstBuf {
   /// @note An empty `ConstBuf` that is not null (e.g. sliced or truncated to
   /// length 0) returns a non-null pointer. `data()` is only `nullptr` when the
   /// buffer is null.
-  pointer data() const { return view_.data(); }
+  constexpr pointer data() const { return view_.data(); }
 
   /// Returns the number of bytes in the buffer view.
-  size_t size() const { return view_.size(); }
+  constexpr size_t size() const { return view_.size(); }
 
   /// Returns true if the buffer view is empty (has no bytes).
   ///
   /// `empty()` returns true for both null buffers and non-null buffers of size
   /// zero (e.g. sliced or truncated to length 0).
-  [[nodiscard]] bool empty() const { return view_.empty(); }
+  [[nodiscard]] constexpr bool empty() const { return view_.empty(); }
 
   /// Returns a read-only iterator pointing to the beginning of the data.
   iterator begin() const { return iterator(view_.data()); }
@@ -136,7 +172,9 @@ class ConstBuf {
 
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.
-  [[nodiscard]] Deallocator* deallocator() const { return deallocator_; }
+  [[nodiscard]] constexpr Deallocator* deallocator() const {
+    return deallocator_;
+  }
 
   /// Frees the owned memory (if any) and sets the buffer to null.
   void reset();
@@ -162,7 +200,7 @@ class ConstBuf {
   ConstBuf Slice(size_t offset, size_t length) &&;
   ConstBuf Reclaim(size_t prefix_count, size_t suffix_count) &&;
 
-  std::byte* mut_data() { return view_.data(); }
+  constexpr std::byte* mut_data() { return view_.data(); }
 
   static constexpr iterator MakeIterator(const std::byte* ptr) {
     return iterator(ptr);
@@ -182,6 +220,10 @@ class ConstBuf {
 /// An empty `Buf` is not necessarily null (for example, if it has been sliced
 /// or truncated to length 0), in which case `base()` and `data()` return
 /// non-null pointers.
+///
+/// Nullness can be checked via comparison to `nullptr` (`buf == nullptr`,
+/// `buf != nullptr`). `operator bool` is not provided to prevent confusion
+/// between nullness and emptiness.
 class Buf {
  public:
   using value_type = std::byte;
@@ -234,6 +276,9 @@ class Buf {
 
   /// Constructs a null `Buf`.
   constexpr Buf() = default;
+
+  /// Constructs a null `Buf`.
+  constexpr Buf(std::nullptr_t) noexcept : Buf() {}
 
   /// Move constructor.
   ///
@@ -338,6 +383,35 @@ class Buf {
 
   Buf& operator=(const Buf&) = delete;
 
+  /// Frees the owned memory (if any) and sets the buffer to null. Same as
+  /// `reset()`.
+  Buf& operator=(std::nullptr_t) noexcept {
+    reset();
+    return *this;
+  }
+
+  /// `operator bool` is not provided to prevent confusion between nullness and
+  /// emptiness. Use `buf == nullptr` to check for null, or `buf.empty()` for
+  /// size 0.
+  explicit operator bool() const = delete;
+
+  [[nodiscard]] friend constexpr bool operator==(const Buf& lhs,
+                                                 std::nullptr_t) noexcept {
+    return lhs.data() == nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator==(std::nullptr_t,
+                                                 const Buf& rhs) noexcept {
+    return rhs.data() == nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator!=(const Buf& lhs,
+                                                 std::nullptr_t) noexcept {
+    return lhs.data() != nullptr;
+  }
+  [[nodiscard]] friend constexpr bool operator!=(std::nullptr_t,
+                                                 const Buf& rhs) noexcept {
+    return rhs.data() != nullptr;
+  }
+
   /// Implicit conversion to `const ConstBuf&` and `const ConstBuf&&`.
   /// Conversion to `ConstBuf&` is not supported, since truncating the
   /// `ConstBuf&` would nullify this `Buf`.
@@ -362,23 +436,23 @@ class Buf {
   /// @note An empty `Buf` that is not null (e.g. sliced or truncated to length
   /// 0) returns a non-null pointer. `data()` is only `nullptr` when the buffer
   /// is null.
-  const_pointer data() const { return const_buf_.data(); }
+  constexpr const_pointer data() const { return const_buf_.data(); }
 
   /// Returns a pointer to the mutable data, or `nullptr` if the `Buf` is null.
   ///
   /// @note An empty `Buf` that is not null (e.g. sliced or truncated to length
   /// 0) returns a non-null pointer. `data()` is only `nullptr` when the buffer
   /// is null.
-  pointer data() { return const_buf_.mut_data(); }
+  constexpr pointer data() { return const_buf_.mut_data(); }
 
   /// Returns the size of the buffer.
-  size_t size() const { return const_buf_.size(); }
+  constexpr size_t size() const { return const_buf_.size(); }
 
   /// Returns true if the buffer is empty (has no bytes).
   ///
   /// `empty()` returns true for both null buffers and non-null buffers of size
   /// zero (e.g. after being sliced or truncated to length 0).
-  [[nodiscard]] bool empty() const { return const_buf_.empty(); }
+  [[nodiscard]] constexpr bool empty() const { return const_buf_.empty(); }
 
   /// Returns a pointer to the base address of the underlying memory buffer,
   /// or `nullptr` if the `Buf` is null.
@@ -386,11 +460,13 @@ class Buf {
   /// Unlike `data()`, which points to the start of the current view, `base()`
   /// always points to the beginning of the underlying memory allocation or
   /// span from which this buffer was created.
-  [[nodiscard]] const std::byte* base() const { return const_buf_.base_; }
+  [[nodiscard]] constexpr const std::byte* base() const {
+    return const_buf_.base_;
+  }
 
   /// Returns a pointer to the deallocator if this buffer owns the underlying
   /// memory allocation, or `nullptr` if the buffer is unowned or null.
-  [[nodiscard]] Deallocator* deallocator() const {
+  [[nodiscard]] constexpr Deallocator* deallocator() const {
     return const_buf_.deallocator();
   }
 

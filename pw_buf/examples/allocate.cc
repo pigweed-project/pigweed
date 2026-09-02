@@ -27,9 +27,9 @@ pw::Buf AllocateBuf(pw::Allocator& allocator) {
 }
 
 pw::Buf TryAllocateBuf(pw::Allocator& allocator) {
-  // Try to allocate 100 bytes. Returns an empty Buf on failure.
+  // Try to allocate 100 bytes. Returns a null Buf on failure.
   pw::Buf buf = pw::Buf::TryAllocate(allocator, 100);
-  if (buf.empty()) {
+  if (buf == nullptr) {
     // Handle allocation failure.
   }
   return buf;
@@ -48,8 +48,8 @@ TEST(ExampleTests, AllocateBuf) {
   pw::ConstBuf const_buf = std::move(buf);
   // DOCSTAG: [pw_buf-examples-move]
 
-  EXPECT_EQ(buf.data(), nullptr);  // NOLINT(bugprone-use-after-move)
-  EXPECT_NE(const_buf.data(), nullptr);
+  EXPECT_EQ(buf, nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_NE(const_buf, nullptr);
   EXPECT_EQ(const_buf.size(), 100u);
 }
 
