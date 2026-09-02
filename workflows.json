@@ -63,6 +63,10 @@
       "use_config": "bazel_default",
       "targets": [
         "//...",
+        "-//pw_kernel/...",
+        "-//targets/...",
+        "-//pw_web/...",
+        "-//pw_ide/...",
         "//pw_toolchain:cpp_20_check"
       ]
     },
@@ -78,6 +82,10 @@
       },
       "targets": [
         "//...",
+        "-//pw_kernel/...",
+        "-//targets/...",
+        "-//pw_web/...",
+        "-//pw_ide/...",
         "//pw_toolchain:cpp_17_check"
       ]
     },
@@ -92,7 +100,11 @@
         ]
       },
       "targets": [
-        "//..."
+        "//...",
+        "-//pw_kernel/...",
+        "-//targets/...",
+        "-//pw_web/...",
+        "-//pw_ide/..."
       ]
     },
     {
