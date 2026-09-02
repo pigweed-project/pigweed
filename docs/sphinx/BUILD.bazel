@@ -412,7 +412,6 @@ sphinx_build_binary(
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
     deps = [
-        "//pw_build/py:pigweed_build",
         "//pw_build/py:pw_build",
         "//pw_build/py:pw_project_builder",
         "//pw_bytes/py:pw_bytes",
@@ -427,6 +426,7 @@ sphinx_build_binary(
         "//pw_ide/py:pw_ide",
         "//pw_log/py:pw_log",
         "//pw_log_rpc/py:pw_log_rpc",
+        "//pw_presubmit/py:format",
         "//pw_presubmit/py:pw_presubmit",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc/py:pw_rpc_benchmark",

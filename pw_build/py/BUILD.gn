@@ -144,28 +144,6 @@ pw_python_package("py") {
   ]
 }
 
-# This is a separate package to avoid dependency cycles with pw_build.
-pw_python_package("pigweed_upstream_build") {
-  generate_setup = {
-    metadata = {
-      name = "pigweed_upstream_build"
-      version = "0.0.1"
-    }
-  }
-  sources = [
-    "pigweed_upstream_build/__init__.py",
-    "pigweed_upstream_build/__main__.py",
-    "pw_build/project_builder_presubmit_runner.py",
-  ]
-  python_deps = [
-    "$dir_pw_build/py",
-    "$dir_pw_presubmit/py",
-  ]
-  pylintrc = "$dir_pigweed/.pylintrc"
-  mypy_ini = "$dir_pigweed/.mypy.ini"
-  ruff_toml = "$dir_pigweed/.ruff.toml"
-}
-
 # These are intentionally excluded from the GN build since they're
 # Bazel-only.
 group("bazel_tests") {

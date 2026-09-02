@@ -19,10 +19,6 @@
     },
     "pw_cli": {
       "plugins": {
-        "build": {
-          "module": "pigweed_upstream_build.__main__",
-          "function": "pigweed_upstream_main"
-        },
         "change": {
           "module": "pw_change.main",
           "function": "main"

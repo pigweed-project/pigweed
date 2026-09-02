@@ -96,10 +96,6 @@ pw_python_group("pigweed_target_support_packages") {
   ]
 }
 
-pw_python_group("pigweed_upstream_build_packages") {
-  python_deps = [ "$dir_pw_build/py:pigweed_upstream_build" ]
-}
-
 pw_python_group("python") {
   python_deps = [
     ":core_pigweed_python_packages",
@@ -132,7 +128,6 @@ pw_python_venv("upstream_pigweed_build_venv") {
   source_packages = [
     ":core_pigweed_python_packages",
     ":pigweed_target_support_packages",
-    ":pigweed_upstream_build_packages",
   ]
 }
 
@@ -144,20 +139,6 @@ pw_python_distribution("target_support_package_distribution") {
   packages = [ ":pigweed_target_support_packages" ]
   generate_setup_cfg = {
     name = "pigweed_target_support"
-    version = "0.0.1"
-    include_default_pyproject_file = true
-    append_date_to_version = true
-  }
-}
-
-pw_python_pip_install("pip_install_pigweed_upstream_build") {
-  packages = [ ":pigweed_upstream_build_distribution" ]
-}
-
-pw_python_distribution("pigweed_upstream_build_distribution") {
-  packages = [ ":pigweed_upstream_build_packages" ]
-  generate_setup_cfg = {
-    name = "pigweed_upstream_build"
     version = "0.0.1"
     include_default_pyproject_file = true
     append_date_to_version = true

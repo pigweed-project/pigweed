@@ -10,7 +10,7 @@ The ``pw_build`` Python module contains a light-weight build command execution
 library used for projects that require running multiple commands to perform a
 build. For example: running ``cmake`` alongside ``gn``.
 
-.. grid:: 3
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`rocket` Get started
       :link: module-pw_build-project_builder-start
@@ -26,13 +26,6 @@ build. For example: running ``cmake`` alongside ``gn``.
 
       Reference details about the ``pw_build`` Python API.
 
-   .. grid-item-card:: :octicon:`terminal` ``pw build`` CLI
-      :link: module-pw_build-project_builder-cli
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Command line interface usage.
-
 .. _module-pw_build-project_builder-start:
 
 -----------
@@ -45,7 +38,6 @@ Example Build Scripts
 =====================
 Examples of Project Builder based ``pw build`` commands:
 
-- :cs:`Upstream Pigweed repo __main__.py <main:pw_build/py/pigweed_upstream_build/__main__.py>`
 - `Examples repo build_project.py <https://cs.opensource.google/pigweed/examples/+/main:tools/sample_project_tools/build_project.py>`_
 - `Kudzu repo build_project.py <https://pigweed.googlesource.com/pigweed/kudzu/+/refs/heads/main/tools/kudzu_tools/build_project.py>`_
 
@@ -116,18 +108,3 @@ BuildRecipe
 ProjectBuilder
 ==============
 .. autoclass:: pw_build.project_builder.ProjectBuilder
-
-
-.. _module-pw_build-project_builder-cli:
-
---------------------------------------------------
-Upstream ``pw build`` Command-Line Interface Usage
---------------------------------------------------
-.. argparse::
-   :module: pigweed_upstream_build.__main__
-   :func: _build_argument_parser
-   :prog: pw build
-
-   This is the command line interface provided by the ``pw build`` command
-   in upstream Pigweed:
-   :cs:`__main__.py <main:pw_build/py/pigweed_upstream_build/__main__.py>`

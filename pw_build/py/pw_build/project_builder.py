@@ -11,37 +11,10 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Build a Pigweed Project.
-
-Run arbitrary commands or invoke build systems (Ninja, Bazel and make) on one or
-more build directories.
-
-Examples:
-
-.. code-block: sh
-
-   # Build the default target in out/ using ninja.
-   python -m pw_build.project_builder -C out
-
-   # Build pw_run_tests.modules in the out/cmake directory
-   python -m pw_build.project_builder -C out/cmake pw_run_tests.modules
-
-   # Build the default target in out/ and pw_apps in out/cmake
-   python -m pw_build.project_builder -C out -C out/cmake pw_apps
-
-   # Build python.tests in out/ and pw_apps in out/cmake/
-   python -m pw_build.project_builder python.tests -C out/cmake pw_apps
-
-   # Run 'bazel build' and 'bazel test' on the target '//...' in outbazel/
-   python -m pw_build.project_builder --run-command 'mkdir -p outbazel'
-   -C outbazel '//...'
-   --build-system-command outbazel 'bazel build'
-   --build-system-command outbazel 'bazel test'
-"""
+"""Pigweed ProjectBuilder API."""
 
 from __future__ import annotations
 
-import argparse
 import concurrent.futures
 from dataclasses import dataclass
 import glob
@@ -69,10 +42,8 @@ from prompt_toolkit.patch_stdout import StdoutProxy
 
 import pw_cli.env
 import pw_cli.log
-from pw_build.build_recipe import BuildRecipe, create_build_recipes
-from pw_build.project_builder_argparse import add_project_builder_arguments
+from pw_build.build_recipe import BuildRecipe
 from pw_build.project_builder_context import get_project_builder_context
-from pw_build.project_builder_prefs import ProjectBuilderPrefs
 
 _COLOR = pw_cli.color.colors()
 _LOG = logging.getLogger('pw_build')
@@ -1453,66 +1424,3 @@ def run_recipe(
 
 def run_builds(project_builder: ProjectBuilder, workers: int = 1) -> int:
     return project_builder.run_builds(workers)
-
-
-def main() -> int:
-    """Build a Pigweed Project."""
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser = add_project_builder_arguments(parser)
-    args = parser.parse_args()
-
-    pw_env = pw_cli.env.pigweed_environment()
-    if pw_env.PW_EMOJI:
-        charset = EMOJI_CHARSET
-    else:
-        charset = ASCII_CHARSET
-
-    prefs = ProjectBuilderPrefs(
-        load_argparse_arguments=add_project_builder_arguments
-    )
-    prefs.apply_command_line_args(args)
-    build_recipes = create_build_recipes(prefs)
-
-    log_level = logging.DEBUG if args.debug_logging else logging.INFO
-
-    pw_cli.log.install(
-        level=log_level,
-        use_color=args.colors,
-        hide_timestamp=False,
-    )
-
-    project_builder = ProjectBuilder(
-        build_recipes=build_recipes,
-        jobs=args.jobs,
-        banners=args.banners,
-        keep_going=args.keep_going,
-        colors=args.colors,
-        charset=charset,
-        separate_build_file_logging=args.separate_logfiles,
-        root_logfile=args.logfile,
-        root_logger=_LOG,
-        log_level=log_level,
-        dry_run=args.dry_run,
-    )
-
-    if project_builder.should_use_progress_bars():
-        project_builder.use_stdout_proxy()
-
-    workers = 1
-    if args.parallel:
-        # If parallel is requested and parallel_workers is set to 0 run all
-        # recipes in parallel. That is, use the number of recipes as the worker
-        # count.
-        if args.parallel_workers == 0:
-            workers = len(project_builder)
-        else:
-            workers = args.parallel_workers
-
-    return project_builder.run_builds(workers)
-
-
-if __name__ == '__main__':
-    sys.exit(main())

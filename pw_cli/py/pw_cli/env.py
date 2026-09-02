@@ -106,20 +106,10 @@ def pigweed_environment() -> envparse.EnvNamespace:
 
 _BAZEL_PROJECT_ROOT_ALLOW_LIST = [
     AllowedCaller(
-        filename='pw_build/py/pigweed_upstream_build/__main__.py',
-        name='__main__',
-        function='<module>',
-    ),
-    AllowedCaller(
         filename='pw_build/py/pw_build/project_builder.py',
         name='*',
         function='__init__',
         self_class='ProjectBuilder',
-    ),
-    AllowedCaller(
-        filename='pw_build/py/pw_build/project_builder_presubmit_runner.py',
-        name='pw_build.project_builder_presubmit_runner',
-        function='main',
     ),
     AllowedCaller(
         filename='pw_change/py/pw_change/review.py',
