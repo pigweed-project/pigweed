@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
+import shutil
 import sys
 from typing import Callable, ContextManager, Sequence
 
@@ -190,6 +191,8 @@ def gn_gen(
 ) -> None:
     """Runs gn gen in the specified directory with optional GN args."""
     all_gn_args = {'pw_build_COLORIZE_OUTPUT': pw_cli.color.is_enabled()}
+    if shutil.which('ccache') and 'pw_command_launcher' not in gn_arguments:
+        all_gn_args['pw_command_launcher'] = '"ccache"'
     all_gn_args.update(gn_arguments)
     all_gn_args.update(ctx.override_gn_args)
     _LOG.debug('%r', all_gn_args)
