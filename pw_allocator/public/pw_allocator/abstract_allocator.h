@@ -32,11 +32,14 @@ class AbstractAllocator : public pw::Allocator {
   constexpr explicit AbstractAllocator(Capabilities capabilities)
       : pw::Allocator(capabilities) {}
 
+// TODO(b/548053990): Always use this as the default.
+#if !PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
   /// @copydoc Allocator::Resize
   bool DoResize([[maybe_unused]] void* ptr,
                 [[maybe_unused]] size_t new_size) override {
     return false;
   }
+#endif
 
   /// @copydoc Allocator::GetAllocated
   size_t DoGetAllocated() const override { return size_t(-1); }

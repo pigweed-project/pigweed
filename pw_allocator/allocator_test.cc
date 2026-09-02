@@ -272,6 +272,8 @@ class BaseAllocator : public pw::Allocator {
 
   void DoDeallocate(void*) override {}
 
+  bool DoResize(void*, size_t) override { return false; }
+
   void* ptr_;
 };
 

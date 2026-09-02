@@ -67,7 +67,10 @@ cc_library(
     name = "config",
     hdrs = ["public/pw_allocator/config.h"],
     strip_include_prefix = "public",
-    deps = [":config_override"],
+    deps = [
+        ":config_override",
+        "//pw_preprocessor",
+    ],
 )
 
 label_flag(

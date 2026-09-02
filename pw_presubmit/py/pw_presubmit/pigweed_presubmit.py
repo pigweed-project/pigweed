@@ -533,6 +533,9 @@ gn_chre_googletest_nanopb_sapphire_build = PigweedGnGenNinja(
         pw_unit_test_BACKEND=lambda ctx: '"{}"'.format(
             ctx.root / 'pw_unit_test:googletest'
         ),
+        pw_allocator_CONFIG=lambda ctx: '"{}"'.format(
+            ctx.root / 'pw_allocator:use_legacy_default_impl'
+        ),
         pw_function_CONFIG=lambda ctx: '"{}"'.format(
             ctx.root / 'pw_function:enable_dynamic_allocation'
         ),

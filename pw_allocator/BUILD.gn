@@ -76,7 +76,10 @@ config("public_include_path") {
 pw_source_set("config") {
   public = [ "public/pw_allocator/config.h" ]
   public_configs = [ ":public_include_path" ]
-  public_deps = [ pw_allocator_CONFIG ]
+  public_deps = [
+    dir_pw_preprocessor,
+    pw_allocator_CONFIG,
+  ]
 }
 
 config("hardening_basic") {
@@ -101,6 +104,16 @@ config("test_config") {
 config("private_override_config") {
   include_dirs = [ "private_overrides" ]
   visibility = [ ":*" ]
+}
+
+config("use_legacy_default_impl_config") {
+  defines = [ "PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL=1" ]
+  visibility = [ ":*" ]
+}
+
+# Use this for pw_allocator_CONFIG to use legacy default implementations.
+pw_source_set("use_legacy_default_impl") {
+  public_configs = [ ":use_legacy_default_impl_config" ]
 }
 
 # Libraries

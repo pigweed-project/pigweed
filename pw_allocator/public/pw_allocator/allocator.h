@@ -287,17 +287,16 @@ class Allocator : public Deallocator {
   /// @copydoc Allocator::Allocate
   virtual void* DoAllocate(Layout layout) = 0;
 
+  // TODO(b/548053990): Make this pure virtual.
   /// @copydoc Allocator::Resize
-  virtual bool DoResize([[maybe_unused]] void* ptr,
-                        [[maybe_unused]] size_t new_size) {
-    return false;
-  }
+  virtual bool DoResize(void* ptr, size_t new_size)
+      PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(false, ptr, new_size);
 
   /// @copydoc Allocator::Reallocate
   ///
-  /// The default implementation will first try to `Resize` the data. If that is
-  /// unsuccessful, it will allocate an entirely new block, copy existing data,
-  /// and deallocate the given block.
+  /// The default implementation will first try to `Resize` the data. If
+  /// that is unsuccessful, it will allocate an entirely new block, copy
+  /// existing data, and deallocate the given block.
   virtual void* DoReallocate(void* ptr, Layout new_layout);
 
   /// @copydoc Allocator::GetAllocated

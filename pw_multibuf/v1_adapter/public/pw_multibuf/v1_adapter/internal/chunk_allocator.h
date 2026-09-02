@@ -97,6 +97,12 @@ class ChunkAllocator : public Allocator {
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
 
+  /// @copydoc Allocator::Resize
+  bool DoResize([[maybe_unused]] void* ptr,
+                [[maybe_unused]] size_t new_size) override {
+    return false;
+  }
+
   /// @copydoc Deallocator::GetInfo
   Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override;
 

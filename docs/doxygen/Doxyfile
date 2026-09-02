@@ -187,6 +187,7 @@ PREDEFINED             = __cplusplus=202002L \
                          configUSE_TIMERS=1 \
                          configCHECK_FOR_STACK_OVERFLOW=1 \
                          PW_EXCLUDE_FROM_DOXYGEN=1 \
+                         PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(...)=; \
                          PW_MULTIBUF_DEPRECATED=
 
 # https://www.doxygen.nl/manual/config.html#cfg_project_brief

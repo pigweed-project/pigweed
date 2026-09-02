@@ -65,6 +65,7 @@ pw_add_library(pw_allocator.config INTERFACE
     public
   PUBLIC_DEPS
     ${pw_allocator_CONFIG}
+    pw_preprocessor
 )
 
 pw_add_library(pw_allocator.test_config INTERFACE

@@ -13,6 +13,10 @@
 // the License.
 #pragma once
 
+#include <tuple>
+
+#include "pw_preprocessor/apply.h"
+
 /// @submodule{pw_allocator,config}
 
 #ifndef PW_ALLOCATOR_BLOCK_POISON_INTERVAL
@@ -93,5 +97,50 @@
 /// TODO(b/402489948): Remove when portable atomics are provided by `pw_atomic`.
 #define PW_ALLOCATOR_HAS_ATOMICS 1
 #endif  // PW_ALLOCATOR_HAS_ATOMICS
+
+// TODO(b/548053990): Remove all definitions and macros for legacy impls.
+#ifndef PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+/// Indicates whether `Allocator` provides default implementations of virtual
+/// methods.
+///
+/// Default implementations of optional virtual methods (such as `DoResize`) are
+/// provided by `AbstractAllocator`. However, some downstream consumers rely on
+/// them being provided directly by `Allocator`.
+///
+/// Setting this to 1 provides legacy default implementations in `Allocator`,
+/// facilitating the transition to `AbstractAllocator`.
+///
+/// Setting this to 0 (default) leaves optional virtual methods in `Allocator`
+/// as pure virtual (`= 0`), requiring allocators that want default
+/// implementations to inherit from `AbstractAllocator`.
+#define PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL 0
+#endif  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+
+#if !PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+/// Provides a default implementation for virtual `Allocator` methods when
+/// legacy default implementations are enabled, or marks them pure virtual.
+///
+/// When `PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL` is non-zero, this macro expands
+/// to a function body that ignores any passed arguments and returns `retval`.
+/// When `PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL` is 0, this macro expands to
+/// `= 0;`.
+///
+/// @param[in] retval Value to return from the default implementation when
+///                   legacy defaults are enabled.
+/// @param[in] ... Optional arguments to ignore in the default implementation.
+#define PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(retval, ...) = 0
+
+#else  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
+
+#define _PW_ALLOCATOR_IGNORE_ARG(index, forwarded_arg, arg) std::ignore = arg;
+#define _PW_ALLOCATOR_EMPTY_SEP(index, forwarded_arg)
+#define PW_ALLOCATOR_LEGACY_DEFAULT_IMPL(retval, ...)                          \
+  {                                                                            \
+    PW_APPLY(_PW_ALLOCATOR_IGNORE_ARG, _PW_ALLOCATOR_EMPTY_SEP, , __VA_ARGS__) \
+    return retval;                                                             \
+  }                                                                            \
+  static_assert(true, "require a comma")
+
+#endif  // PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL
 
 /// @}
