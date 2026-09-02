@@ -65,7 +65,7 @@ this requires listing the allocator twice:
    :end-before: [pw_async2-examples-basic-allocated-explicit]
 
 The previous examples use :cc:`CoroTask <pw::async2::CoroTask>`, which crashes
-if coroutione stack allocation fails. To handle allocation failures gracefully
+if coroutine stack allocation fails. To handle allocation failures gracefully
 with :cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>`, pass an allocation
 error handler function after the coroutine:
 

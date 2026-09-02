@@ -51,12 +51,12 @@ namespace pw::async2 {
 ///   implementations MUST pop and run tasks until `PopTaskToRun()` returns
 ///   `nullptr`. The dispatcher will not be woken when a task becomes ready
 ///   unless `PopTaskToRun()` has returned `nullptr`.
-/// - `PopSingleTaskForThisWake()` and `RunTask()` – Run tasks individually. It
-///   `PopSingleTaskForThisWake` is intended for use then only a single task (or
-///   one final task) should be executed. Is not necessary to call
+/// - `PopSingleTaskForThisWake()` and `RunTask()` – Run tasks individually.
+///   `PopSingleTaskForThisWake` is intended for use when only a single task (or
+///   one final task) should be executed. It is not necessary to call
 ///   `PopSingleTaskForThisWake()` until it returns `nullptr`. Each call can
 ///   result in one potentially redundant `DoWake()` call, so `PopTaskToRun`
-///   should be used one multiple tasks are executed.
+///   should be used when multiple tasks are executed.
 ///
 /// The base `Dispatcher` performs no allocations internally. `Dispatcher`
 /// offers `Post` overloads that allocate a task with the provided allocator,

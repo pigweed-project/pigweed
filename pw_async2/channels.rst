@@ -283,7 +283,7 @@ channel.
              PW_AWAIT(auto reservation, reservation_future_, cx);
              if (!reservation.has_value()) {
                PW_LOG_ERROR("Channel is closed");
-               return;
+               return pw::async2::Ready();
              }
 
              // Emplace a value into the channel.
@@ -381,9 +381,8 @@ methods:
   a :cc:`pw::Status` indicating success.
 
 - :cc:`Sender::TryReserveSend`: Attempts to reserve a slot in the channel
-  immediately. Returns a ``std::optional<SendReservation<T>>`` which contains
-  a reservation if successful, or ``std::nullopt`` if the channel is full or
-  closed.
+  immediately. Returns a ``pw::Result<SendReservation<T>>`` containing a
+  reservation if successful, or an error if the channel is full or closed.
 
 - :cc:`Sender::BlockingSend`: Blocks the running thread until the value is sent
   or an optional timeout elapses. Returns a status indicating success or
@@ -543,7 +542,7 @@ Notification Channel API differences
        /* handle channel closed */
      }
 
-     ReceiveFuture<int> result = /* ... */;
+     ReceiveFuture<void> receive_future = /* ... */;
      PW_TRY_READY_ASSIGN(bool value, receive_future.Pend(cx));
      if (!value) {
        /* handle channel closed */
