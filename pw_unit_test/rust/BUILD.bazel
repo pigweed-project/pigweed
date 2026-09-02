@@ -1,0 +1,99 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+load("@rules_rust_bindgen//:defs.bzl", "rust_bindgen")
+load("//pw_unit_test:pw_rust_test.bzl", "pw_rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_proc_macro(
+    name = "pw_unit_test_macro",
+    srcs = ["pw_unit_test_macro.rs"],
+    edition = "2021",
+    deps = [
+        "@rust_crates//:quote",
+        "@rust_crates//:syn",
+    ],
+)
+
+rust_bindgen(
+    name = "pw_unit_test_bindgen",
+    testonly = True,
+    bindgen_flags = [
+        "--rust-edition",
+        "2021",
+        "--use-core",
+    ],
+    cc_lib = "//pw_unit_test:light",
+    header = "//pw_unit_test:public/pw_unit_test/ffi_test_runner.h",
+)
+
+rust_bindgen(
+    name = "pw_unit_test_config_bindgen",
+    testonly = True,
+    bindgen_flags = [
+        "--rust-edition",
+        "2021",
+        "--use-core",
+        "--enable-cxx-namespaces",
+        "--allowlist-var",
+        "pw::unit_test::config::.*",
+    ],
+    cc_lib = "//pw_unit_test:light",
+    clang_flags = [
+        "-x",
+        "c++",
+        "-std=c++17",
+        "-Wno-pragma-once-outside-header",
+    ],
+    header = "//pw_unit_test:public/pw_unit_test/config.h",
+)
+
+rust_library(
+    name = "pw_unit_test",
+    testonly = True,
+    srcs = [
+        "pw_unit_test.rs",
+        ":pw_unit_test_bindgen",
+        ":pw_unit_test_config_bindgen",
+    ],
+    crate_features = select({
+        "//pw_build/constraints/rust:no_std": [],
+        "//conditions:default": ["std"],
+    }),
+    edition = "2021",
+    proc_macro_deps = [
+        ":pw_unit_test_macro",
+    ],
+    deps = [
+        "//pw_unit_test:light",
+    ],
+)
+
+pw_rust_test(
+    name = "pw_unit_test_test",
+    srcs = ["pw_unit_test_test.rs"],
+)
+
+cc_library(
+    name = "register_ffi_runner",
+    testonly = True,
+    srcs = ["register_ffi_runner.cc"],
+    deps = [
+        "//pw_unit_test:ffi_test_runner",
+    ],
+    alwayslink = True,
+)

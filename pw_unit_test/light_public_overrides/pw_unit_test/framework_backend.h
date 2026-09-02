@@ -607,6 +607,15 @@ class Framework {
     return success;
   }
 
+  // Sets current_test_ and dispatches an event indicating that a test
+  // started.
+  void StartTest(const TestCase& test);
+  void StartTest(const TestInfo& test);
+
+  // Dispatches event indicating that a test finished and clears
+  // current_test_.
+  void EndCurrentTest();
+
   // Skips the current test and dispatches an event for it.
   ::pw::unit_test::internal::FailureMessageAdapter CurrentTestSkip(
       const char* file, int line);
@@ -618,6 +627,9 @@ class Framework {
       const char* file,
       int line,
       bool success);
+
+  // Checks whether a test suite matches the active test suite filter list.
+  bool ShouldRunSuite(std::string_view suite_name) const;
 
  private:
   // Convert char* to void* so that they are printed as pointers instead of
@@ -642,14 +654,6 @@ class Framework {
   // If current_test_ was the last of its suite, call tear_down_ts
   void TearDownTestSuiteIfNeeded(TearDownTestSuiteFunc tear_down_ts) const;
 
-  // Sets current_test_ and dispatches an event indicating that a test
-  // started.
-  void StartTest(const TestInfo& test);
-
-  // Dispatches event indicating that a test finished and clears
-  // current_test_.
-  void EndCurrentTest();
-
   // Singleton instance of the framework class.
   static Framework framework_;
 
@@ -658,7 +662,7 @@ class Framework {
   static TestInfo* tests_;
 
   // The current test case which is running.
-  const TestInfo* current_test_;
+  const TestCase* current_test_;
 
   // Overall result of the current test case (pass/fail/skip).
   TestResult current_result_;

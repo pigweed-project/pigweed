@@ -1281,7 +1281,7 @@
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "GJTxCn//5wg3RxXGVSXy0buVOhE/3tFzfxF+FdY1T4c=",
-        "usagesDigest": "CKxq7FKcOv4kyyGSEFSBbAtfjUAnCFOWnQvk0EGeRFk=",
+        "usagesDigest": "im3D0/D7iOOuGkHwt7c10QDBukDm5/2huZ8yfjsD+xo=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},

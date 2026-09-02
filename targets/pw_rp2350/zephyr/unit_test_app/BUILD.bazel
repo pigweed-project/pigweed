@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_rust//rust:defs.bzl", "rust_library")
 load("@zephyr//:cc.bzl", "zephyr_app", "zephyr_cc_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -25,6 +26,18 @@ zephyr_app(
         "//:host_macos_x86_64": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+)
+
+rust_library(
+    name = "unit_test_boot",
+    testonly = True,
+    srcs = ["unit_test_boot.rs"],
+    crate_name = "boot",
+    edition = "2021",
+    deps = [
+        ":unit_test_boot_cc",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
 )
 
 zephyr_cc_library(

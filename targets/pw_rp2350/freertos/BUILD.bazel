@@ -32,6 +32,7 @@ platform(
         "//pw_cpu_exception:enabled",
         "//pw_build/constraints/arm:cortex-m33",
         "//pw_build/constraints/rust:no_std",
+        "//pw_build/constraints/rust:enabled",
         ":freertos_config_cv",
     ],
     flags = flags_from_dict(FREERTOS_FLAGS | {
@@ -135,14 +136,28 @@ rust_library(
     name = "boot",
     srcs = ["boot.rs"],
     edition = "2021",
+    target_compatible_with = [":freertos_config_cv"],
     deps = [
         ":boot_cc",
         "//pw_log/rust:pw_log",
     ],
 )
 
-cc_library(
+rust_library(
     name = "unit_test_boot",
+    testonly = True,
+    srcs = ["boot.rs"],
+    crate_name = "boot",
+    edition = "2021",
+    target_compatible_with = [":freertos_config_cv"],
+    deps = [
+        ":unit_test_boot_cc",
+        "//pw_log/rust:pw_log",
+    ],
+)
+
+cc_library(
+    name = "unit_test_boot_cc",
     testonly = True,
     srcs = [
         "unit_test_boot.cc",

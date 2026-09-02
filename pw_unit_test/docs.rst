@@ -644,6 +644,73 @@ To set up RPC-based unit tests in your application:
           ) as client:
               run_tests(client.rpcs())
 
+.. _module-pw_unit_test-rust:
+
+Rust unit tests
+===============
+``pw_unit_test`` provides support for writing and running Rust unit tests across
+both host systems and embedded targets.
+
+Write tests
+-----------
+Tests are defined using standard Rust conventions with the ``#[cfg(test)]``
+attribute and assertions provided by ``pw_unit_test``:
+
+.. code-block:: rs
+
+   pub fn add(left: u64, right: u64) -> u64 {
+       left + right
+   }
+
+   #[cfg(test)]
+   mod tests {
+       use super::*;
+       use pw_unit_test::{assert, assert_eq, assert_ne, test};
+
+       #[test]
+       fn test_add() {
+           let result = add(2, 2);
+           assert_eq!(result, 4);
+       }
+   }
+
+Define targets
+--------------
+In Bazel, load ``pw_rust_test`` from ``@pigweed//pw_unit_test:pw_rust_test.bzl``:
+
+.. code-block:: bazel
+
+   load("@pigweed//pw_unit_test:pw_rust_test.bzl", "pw_rust_test")
+
+   pw_rust_test(
+       name = "my_rust_test",
+       srcs = ["my_rust_test.rs"],
+   )
+
+``pw_rust_test`` instantiates a host test executable (``<name>.rust_test``),
+a device library (``<name>.lib``) that registers tests via C FFI, and a device
+test runner (``<name>.pw_cc_test``) that runs tests with ``pw_unit_test:light``.
+
+Run tests
+---------
+.. tab-set::
+
+   .. tab-item:: Host
+
+      Run host unit tests with Bazel:
+
+      .. code-block:: console
+
+         $ bazel test //src:my_rust_test
+
+   .. tab-item:: Device
+
+      Run on-device unit tests for target platforms with Rust enabled:
+
+      .. code-block:: console
+
+         $ bazel test --config=<platform_config> //src:my_rust_test
+
 Golden file testing with ``pw_golden_test``
 ===========================================
 The ``pw_golden_test`` macro in ``//pw_unit_test/golden.bzl`` defines tests that
@@ -743,6 +810,18 @@ all the arguments recognized by ``cc_test``.
 
 ``pw_cc_test`` also supports negative compilation (NC) testing. Pass ``has_nc_test = True`` to enable NC
 tests. See :ref:`module-pw_compilation_testing` for details.
+
+.. _module-pw_unit_test-pw_rust_test:
+
+``pw_rust_test``
+================
+``pw_rust_test`` creates a host test executable (``<name>.rust_test`` using
+``rust_test``), a device library target (``<name>.lib``), and a device test
+runner (``<name>.pw_cc_test``) compatible with ``pw_unit_test:light``.
+When building for device targets with Rust enabled (via
+``//pw_build/constraints/rust:enabled``), tests are registered in the
+``pw_unit_test_desc`` linker section and run alongside C++ tests using the light
+framework.
 
 .. _module-pw_unit_test-bazel-args:
 

@@ -12,17 +12,20 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include <cstdint>
+#include "pw_unit_test/ffi_test_runner.h"
 
-#include "pw_unit_test/framework.h"
+extern "C" void pw_unit_test_RunRustTests(void);
 
-uint64_t Add(uint64_t left, uint64_t right) { return left + right; }
+namespace pw::unit_test::internal {
+namespace {
 
-TEST(UnittestExample, TestAdd) {
-  uint64_t result = Add(2, 2);
-  EXPECT_EQ(result, 4u);
-}
+struct RustTestRunnerRegistrar {
+  RustTestRunnerRegistrar() {
+    pw_unit_test_RegisterFfiTestRunner(pw_unit_test_RunRustTests);
+  }
+};
 
-TEST(UnittestExample, AssertNe) { EXPECT_NE(Add(1, 1), 3u); }
+RustTestRunnerRegistrar g_rust_test_runner_registrar;
 
-TEST(UnittestExample, Assert) { EXPECT_TRUE(Add(5, 5) == 10u); }
+}  // namespace
+}  // namespace pw::unit_test::internal

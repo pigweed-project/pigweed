@@ -12,6 +12,10 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("//pw_build:compatibility.bzl", "boolean_constraint_value")
+
+package(default_visibility = ["//visibility:public"])
+
 constraint_setting(
     name = "std_enabled",
     default_constraint_value = ":std",
@@ -28,4 +32,8 @@ constraint_value(
     name = "no_std",
     constraint_setting = ":std_enabled",
     visibility = ["//visibility:public"],
+)
+
+boolean_constraint_value(
+    name = "enabled",
 )

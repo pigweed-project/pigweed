@@ -106,6 +106,7 @@ def pw_cc_test(name, has_nc_test = False, deps = None, **kwargs):
         "env",
         "env_inherit",
         "flaky",
+        "linkopts",
         "local",
         "malloc",
         "shard_count",

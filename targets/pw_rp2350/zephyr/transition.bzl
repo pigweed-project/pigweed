@@ -68,11 +68,11 @@ _rp2350_zephyr_test = rule(
     cfg = zephyr_transition,
 )
 
-def _rp2350_zephyr_app(name, library, app_label, boot_cc, testonly):
+def _rp2350_zephyr_app(name, library, app_label, boot, testonly):
     app_name = name + "_zephyr_app"
     deps = [library]
-    if boot_cc:
-        deps.append(boot_cc)
+    if boot:
+        deps.append(boot)
     zephyr_app(
         name = app_name,
         app_label = app_label,
@@ -102,7 +102,7 @@ def rp2350_zephyr_binary(name = "", binary = "", app_label = "//app", testonly =
         name = name,
         library = binary + "_lib",
         app_label = app_label,
-        boot_cc = None,
+        boot = None,
         testonly = testonly,
     )
 
@@ -139,7 +139,7 @@ def rp2350_zephyr_test(name = "", binary = "", app_label = "//unit_test_app"):
         name = name,
         library = binary + ".lib",
         app_label = app_label,
-        boot_cc = "//unit_test_app:unit_test_boot_cc",
+        boot = "//unit_test_app:unit_test_boot",
         testonly = True,
     )
 

@@ -75,3 +75,7 @@ Rust
 Indicates whether the Rust ``std`` library is enabled. This is primarily
 used to control the available selection of
 :ref:`module-pw_third_party_crates_io`.
+
+**Constraint Setting**: ``@pigweed//pw_build/constraints/rust:enabled``
+
+Indicates whether Rust support is enabled for the target platform.

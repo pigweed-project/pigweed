@@ -29,6 +29,7 @@ root of the Pigweed repository:
 .. code-block:: console
 
    bazelisk run //targets/pw_rp2350/freertos:flash_sleep_example
+   bazelisk run //targets/pw_rp2350/freertos:flash_system_clock_example
 
 Pigweed Kernel
 ==============
@@ -73,7 +74,7 @@ FreeRTOS
 
    .. code-block:: console
 
-      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_freertos //targets/pw_rp2350:unit_test_example
+      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_freertos //targets/pw_rp2350/...
 
 Zephyr
 ======
@@ -93,4 +94,5 @@ Zephyr
 
    .. code-block:: console
 
-      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_zephyr //:unit_test_example
+      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_zephyr //:unit_test_example_cc
+      bazelisk test --cache_test_results=no --test_output=all --config=pw_rp2350_zephyr //:unit_test_example_rust

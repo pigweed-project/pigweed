@@ -39,6 +39,11 @@ flash_rp2350(
 )
 
 rp2350_zephyr_test(
-    name = "unit_test_example",
-    binary = "@pigweed//targets/pw_rp2350:unit_test_example",
+    name = "unit_test_example_cc",
+    binary = "@pigweed//targets/pw_rp2350:unit_test_example_cc",
+)
+
+rp2350_zephyr_test(
+    name = "unit_test_example_rust",
+    binary = "@pigweed//targets/pw_rp2350:unit_test_example_rust",
 )

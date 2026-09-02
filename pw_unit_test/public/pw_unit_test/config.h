@@ -15,7 +15,9 @@
 // Configuration macros for the unit test module.
 #pragma once
 
-#include <cstddef>
+// Use <stddef.h> rather than <cstddef> so bindgen can parse this header
+// on baremetal targets where C++ standard library headers are not available.
+#include <stddef.h>
 
 /// @submodule{pw_unit_test,configuration}
 

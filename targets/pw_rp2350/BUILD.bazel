@@ -18,6 +18,7 @@ load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_binary.bzl", "pw_rust_binary")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
+load("//pw_unit_test:pw_rust_test.bzl", "pw_rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -68,8 +69,13 @@ sphinx_docs_library(
 )
 
 pw_cc_test(
-    name = "unit_test_example",
+    name = "unit_test_example_cc",
     srcs = ["unit_test_example.cc"],
+)
+
+pw_rust_test(
+    name = "unit_test_example_rust",
+    srcs = ["unit_test_example.rs"],
 )
 
 cc_library(

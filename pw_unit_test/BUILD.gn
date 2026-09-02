@@ -84,6 +84,7 @@ pw_source_set("light") {
   public_deps = [
     ":config",
     ":event_handler",
+    ":ffi_test_runner",
     ":status_macros",
     "$dir_pw_bytes:alignment",
     "$dir_pw_string:builder",
@@ -103,7 +104,10 @@ pw_source_set("light") {
     "public/pw_unit_test/framework.h",
     "public_overrides/gtest/gtest.h",
   ]
-  sources = [ "framework_light.cc" ]
+  sources = [
+    "ffi_test_runner.cc",
+    "framework_light.cc",
+  ]
 }
 
 # Unit test framework backend that redirects to GoogleTest.
@@ -322,6 +326,7 @@ pw_source_set("rpc_service") {
 
   if (pw_unit_test_BACKEND == "$dir_pw_unit_test:light") {
     public_configs += [ ":rpc_service_backend_light" ]
+    deps += [ ":ffi_test_runner" ]
     sources += [ "rpc_light_event_handler.cc" ]
     public += [ "rpc_light_public/pw_unit_test/internal/rpc_event_handler.h" ]
   } else {
@@ -341,6 +346,20 @@ if (pw_unit_test_BACKEND == "$dir_pw_unit_test:light") {
 } else {
   group("static_library_support") {
   }
+}
+
+pw_source_set("ffi_test_runner") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_unit_test/ffi_test_runner.h" ]
+  public_deps = [
+    ":event_handler",
+    dir_pw_preprocessor,
+  ]
+}
+
+pw_source_set("register_ffi_runner") {
+  public_deps = [ ":ffi_test_runner" ]
+  sources = [ "rust/register_ffi_runner.cc" ]
 }
 
 pw_executable("test_rpc_server") {

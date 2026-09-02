@@ -22,7 +22,6 @@
 #include "pw_protobuf/decoder.h"
 #include "pw_status/status.h"
 #include "pw_string/util.h"
-#include "pw_unit_test/framework.h"
 
 namespace pw::unit_test {
 

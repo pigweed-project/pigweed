@@ -25,6 +25,7 @@ platform(
     constraint_values = [
         "//pw_build/constraints/arm:cortex-m33",
         "//pw_build/constraints/rust:no_std",
+        "//pw_build/constraints/rust:enabled",
         "//pw_build/constraints/rtos:pigweed",
         "@pico-sdk//bazel/constraint:rp2350",
         "@platforms//cpu:armv8-m",
@@ -64,7 +65,7 @@ rust_library(
     srcs = ["console.rs"],
     crate_name = "console_backend",
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    target_compatible_with = TARGET_COMPATIBLE_WITH + ["//pw_build/constraints/rtos:pigweed"],
     deps = [
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "//pw_kernel/kernel",
@@ -88,7 +89,7 @@ rust_library(
     name = "boot",
     srcs = ["boot.rs"],
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    target_compatible_with = TARGET_COMPATIBLE_WITH + ["//pw_build/constraints/rtos:pigweed"],
     deps = [
         ":linker_script",
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",

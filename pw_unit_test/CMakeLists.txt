@@ -41,10 +41,28 @@ target_link_libraries(pw_unit_test
     "${pw_unit_test_BACKEND}"
 )
 
+pw_add_library(pw_unit_test.ffi_test_runner INTERFACE
+  HEADERS
+    public/pw_unit_test/ffi_test_runner.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_preprocessor
+    pw_unit_test.event_handler
+)
+
+pw_add_library(pw_unit_test.register_ffi_runner STATIC
+  SOURCES
+    rust/register_ffi_runner.cc
+  PUBLIC_DEPS
+    pw_unit_test.ffi_test_runner
+)
+
 pw_add_library(pw_unit_test.light STATIC
   HEADERS
     light_public_overrides/pw_unit_test/framework_backend.h
   SOURCES
+    ffi_test_runner.cc
     framework_light.cc
   PUBLIC_DEPS
     pw_bytes.alignment
@@ -55,6 +73,7 @@ pw_add_library(pw_unit_test.light STATIC
     pw_string.builder
     pw_unit_test.config
     pw_unit_test.event_handler
+    pw_unit_test.ffi_test_runner
   PRIVATE_DEPS
     pw_assert
   PUBLIC_INCLUDES

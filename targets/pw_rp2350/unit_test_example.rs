@@ -11,18 +11,31 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+#![no_std]
 
-#include <cstdint>
-
-#include "pw_unit_test/framework.h"
-
-uint64_t Add(uint64_t left, uint64_t right) { return left + right; }
-
-TEST(UnittestExample, TestAdd) {
-  uint64_t result = Add(2, 2);
-  EXPECT_EQ(result, 4u);
+pub fn add(left: u64, right: u64) -> u64 {
+    left + right
 }
 
-TEST(UnittestExample, AssertNe) { EXPECT_NE(Add(1, 1), 3u); }
+#[cfg(test)]
+mod tests {
+    use pw_unit_test::{assert, assert_eq, assert_ne, test};
 
-TEST(UnittestExample, Assert) { EXPECT_TRUE(Add(5, 5) == 10u); }
+    use super::*;
+
+    #[test]
+    fn test_add() {
+        let result = add(2, 2);
+        assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn rust_assert_ne() {
+        assert_ne!(add(1, 1), 3);
+    }
+
+    #[test]
+    fn rust_assert() {
+        assert!(add(5, 5) == 10, "5 + 5 should equal 10");
+    }
+}

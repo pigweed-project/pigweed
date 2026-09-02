@@ -11,18 +11,18 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
+#![no_std]
 
-#include <cstdint>
+use core::panic::PanicInfo;
 
-#include "pw_unit_test/framework.h"
-
-uint64_t Add(uint64_t left, uint64_t right) { return left + right; }
-
-TEST(UnittestExample, TestAdd) {
-  uint64_t result = Add(2, 2);
-  EXPECT_EQ(result, 4u);
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    pw_log::error!("Panic!");
+    loop {}
 }
 
-TEST(UnittestExample, AssertNe) { EXPECT_NE(Add(1, 1), 3u); }
-
-TEST(UnittestExample, Assert) { EXPECT_TRUE(Add(5, 5) == 10u); }
+#[unsafe(no_mangle)]
+#[allow(non_snake_case)]
+pub extern "C" fn pw_assert_HandleFailure() -> ! {
+    loop {}
+}

@@ -17,6 +17,7 @@
 
 #include "light_public_overrides/pw_unit_test/framework_backend.h"
 #include "pw_assert/check.h"
+#include "pw_unit_test/ffi_test_runner.h"
 
 namespace pw::unit_test {
 
@@ -79,6 +80,12 @@ int Framework::RunAllTests() {
       run_tests_summary_.skipped_tests++;
     }
   }
+
+  // Run FFI tests (e.g. Rust unit tests) if an FFI runner is registered.
+  if (pw_unit_test_HasFfiTestRunner()) {
+    pw_unit_test_RunFfiTests();
+  }
+
   if (event_handler_ != nullptr) {
     event_handler_->RunAllTestsEnd(run_tests_summary_);
   }
@@ -90,8 +97,10 @@ void Framework::SetUpTestSuiteIfNeeded(SetUpTestSuiteFunc set_up_ts) const {
     return;
   }
 
-  for (TestInfo* info = tests_; info != current_test_; info = info->next()) {
-    if (info->test_case().suite_name == current_test_->test_case().suite_name) {
+  for (TestInfo* info = tests_;
+       info != nullptr && &info->test_case() != current_test_;
+       info = info->next()) {
+    if (strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
       return;
     }
   }
@@ -105,9 +114,15 @@ void Framework::TearDownTestSuiteIfNeeded(
     return;
   }
 
-  for (TestInfo* info = current_test_->next(); info != nullptr;
-       info = info->next()) {
-    if (info->test_case().suite_name == current_test_->test_case().suite_name) {
+  bool found_current = false;
+  for (TestInfo* info = tests_; info != nullptr; info = info->next()) {
+    if (!found_current) {
+      if (&info->test_case() == current_test_) {
+        found_current = true;
+      }
+      continue;
+    }
+    if (strcmp(info->test_case().suite_name, current_test_->suite_name) == 0) {
       return;
     }
   }
@@ -115,14 +130,16 @@ void Framework::TearDownTestSuiteIfNeeded(
   tear_down_ts();
 }
 
-void Framework::StartTest(const TestInfo& test) {
+void Framework::StartTest(const TestCase& test) {
   current_test_ = &test;
   current_result_ = TestResult::kSuccess;
 
   if (event_handler_ != nullptr) {
-    event_handler_->TestCaseStart(test.test_case());
+    event_handler_->TestCaseStart(test);
   }
 }
+
+void Framework::StartTest(const TestInfo& test) { StartTest(test.test_case()); }
 
 void Framework::EndCurrentTest() {
   switch (current_result_) {
@@ -138,7 +155,7 @@ void Framework::EndCurrentTest() {
   }
 
   if (event_handler_ != nullptr) {
-    event_handler_->TestCaseEnd(current_test_->test_case(), current_result_);
+    event_handler_->TestCaseEnd(*current_test_, current_result_);
   }
 
   current_test_ = nullptr;
@@ -181,25 +198,22 @@ FailureMessageAdapter Framework::CurrentTestExpectSimple(
       .success = success,
   };
 
-  event_handler_->TestCaseExpect(current_test_->test_case(), expectation);
+  event_handler_->TestCaseExpect(*current_test_, expectation);
   return {};
 }
 
-bool Framework::ShouldRunTest(const TestInfo& test_info) const {
-  if (!test_suites_to_run_.empty()) {
-    std::string_view test_suite(test_info.test_case().suite_name);
-
-    bool suite_matches =
-        std::any_of(test_suites_to_run_.begin(),
-                    test_suites_to_run_.end(),
-                    [&](auto& name) { return test_suite == name; });
-
-    if (!suite_matches) {
-      return false;
-    }
+bool Framework::ShouldRunSuite(std::string_view suite_name) const {
+  if (test_suites_to_run_.empty()) {
+    return true;
   }
+  return std::any_of(test_suites_to_run_.begin(),
+                     test_suites_to_run_.end(),
+                     [&](auto& name) { return suite_name == name; });
+}
 
-  return test_info.enabled();
+bool Framework::ShouldRunTest(const TestInfo& test_info) const {
+  return ShouldRunSuite(test_info.test_case().suite_name) &&
+         test_info.enabled();
 }
 
 bool TestInfo::enabled() const {

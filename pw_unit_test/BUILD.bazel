@@ -48,6 +48,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ffi_test_runner",
+    testonly = True,
+    hdrs = ["public/pw_unit_test/ffi_test_runner.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":event_handler",
+        "//pw_preprocessor",
+    ],
+)
+
 label_flag(
     name = "config_override",
     build_setting_default = "//pw_build:default_module_config",
@@ -97,17 +108,26 @@ cc_library(
         "public_overrides/gtest/gtest.h",
     ],
     strip_include_prefix = "public_overrides",
-    deps = [":light_private"],
+    deps = [
+        ":ffi_test_runner",
+        ":light_private",
+    ],
 )
 
 cc_library(
     name = "light_private",
     testonly = True,
-    srcs = ["framework_light.cc"],
+    srcs = [
+        "ffi_test_runner.cc",
+        "framework_light.cc",
+    ],
     hdrs = [
         "light_public_overrides/pw_unit_test/framework_backend.h",
     ],
-    implementation_deps = ["//pw_assert:check"],
+    implementation_deps = [
+        ":ffi_test_runner",
+        "//pw_assert:check",
+    ],
     strip_include_prefix = "light_public_overrides",
     visibility = ["//visibility:private"],
     deps = [
@@ -419,7 +439,10 @@ cc_library(
         "//pw_sync:mutex",
         "//pw_sync:thread_notification",
         "//pw_thread:thread_core",
-    ],
+    ] + select({
+        ":backend_is_light": [":ffi_test_runner"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
