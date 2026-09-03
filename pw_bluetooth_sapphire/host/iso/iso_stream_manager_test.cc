@@ -107,10 +107,11 @@ TEST_F(IsoStreamManagerTest, RejectIncomingConnection) {
   test_device()->SendCommandChannelPacket(request_packet);
 }
 
-static DynamicByteBuffer LECisEstablishedPacketWithDefaultValues(
+static DynamicByteBuffer LECisEstablishedPacketWithStatus(
+    pw::bluetooth::emboss::StatusCode status,
     hci_spec::ConnectionHandle connection_handle) {
   return testing::LECisEstablishedEventPacket(
-      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      status,
       connection_handle,
       /*cig_sync_delay_us=*/0x123456,  // Must be in [0x0000ea, 0x7fffff]
       /*cis_sync_delay_us=*/0x7890ab,  // Must be in [0x0000ea, 0x7fffff]
@@ -129,6 +130,12 @@ static DynamicByteBuffer LECisEstablishedPacketWithDefaultValues(
       /*max_pdu_p_to_c=*/0x00fb,  // Must be in [0x0000, 0x00fb]
       /*iso_interval=*/0x0222     // Must be in [0x0004, 0x0c80]
   );
+}
+
+static DynamicByteBuffer LECisEstablishedPacketWithDefaultValues(
+    hci_spec::ConnectionHandle connection_handle) {
+  return LECisEstablishedPacketWithStatus(
+      pw::bluetooth::emboss::StatusCode::SUCCESS, connection_handle);
 }
 
 // We should be able to wait on multiple CIS requests simultaneously, as long as
@@ -298,6 +305,139 @@ TEST_F(IsoStreamManagerTest, CreateCisConfiguration) {
 
   EXPECT_TRUE(on_established_cb_called);
   EXPECT_FALSE(on_closed_cb_called);
+}
+
+TEST_F(IsoStreamManagerTest,
+       CentralCisConfigurationRegistersAndUnregistersWithIsoDataChannel) {
+  const CigCisIdentifier kId(0x14, 0x04);
+  const hci_spec::ConnectionHandle kCisHandle = 0x123;
+
+  bool on_established_cb_called = false;
+  bool on_closed_cb_called = false;
+
+  IsoStream::WeakPtr stream = iso_stream_manager()->CreateCisConfiguration(
+      kId,
+      kCisHandle,
+      [&](pw::bluetooth::emboss::StatusCode status,
+          std::optional<WeakSelf<IsoStream>::WeakPtr> iso_weak_ptr,
+          const std::optional<CisEstablishedParameters>& params) {
+        on_established_cb_called = true;
+        EXPECT_EQ(status, pw::bluetooth::emboss::StatusCode::SUCCESS);
+        EXPECT_TRUE(iso_weak_ptr.has_value());
+        EXPECT_TRUE(params.has_value());
+      },
+      [&]() { on_closed_cb_called = true; });
+
+  ASSERT_TRUE(stream.is_alive());
+  EXPECT_EQ(stream->cis_handle(), kCisHandle);
+
+  // Prior to successful establishment, the connection should NOT be registered
+  // with IsoDataChannel.
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
+
+  // Establish the stream
+  DynamicByteBuffer le_cis_established_packet =
+      LECisEstablishedPacketWithDefaultValues(kCisHandle);
+  test_device()->SendCommandChannelPacket(le_cis_established_packet);
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_established_cb_called);
+  EXPECT_FALSE(on_closed_cb_called);
+
+  // Now that the CIS is successfully established, the connection MUST be
+  // registered.
+  EXPECT_TRUE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_EQ(iso_stream_manager()->registered_handles().count(kCisHandle), 1u);
+
+  // Close the stream (which will trigger a Disconnect command to the mock
+  // controller)
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(kCisHandle));
+  stream->Close();
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_cb_called);
+
+  // Since the stream has been closed, the connection should have been
+  // unregistered.
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
+}
+
+TEST_F(IsoStreamManagerTest,
+       CentralCisConfigurationDoesNotRegisterOnEstablishmentFailure) {
+  const CigCisIdentifier kId(0x14, 0x04);
+  const hci_spec::ConnectionHandle kCisHandle = 0x123;
+
+  bool on_established_cb_called = false;
+  bool on_closed_cb_called = false;
+
+  IsoStream::WeakPtr stream = iso_stream_manager()->CreateCisConfiguration(
+      kId,
+      kCisHandle,
+      [&](pw::bluetooth::emboss::StatusCode status,
+          std::optional<WeakSelf<IsoStream>::WeakPtr> iso_weak_ptr,
+          const std::optional<CisEstablishedParameters>& params) {
+        on_established_cb_called = true;
+        EXPECT_EQ(status,
+                  pw::bluetooth::emboss::StatusCode::
+                      CONNECTION_FAILED_TO_BE_ESTABLISHED);
+        EXPECT_FALSE(iso_weak_ptr.has_value());
+        EXPECT_FALSE(params.has_value());
+      },
+      [&]() { on_closed_cb_called = true; });
+
+  ASSERT_TRUE(stream.is_alive());
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
+
+  // Establish failed
+  DynamicByteBuffer packet = LECisEstablishedPacketWithStatus(
+      pw::bluetooth::emboss::StatusCode::CONNECTION_FAILED_TO_BE_ESTABLISHED,
+      kCisHandle);
+  test_device()->SendCommandChannelPacket(packet);
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_established_cb_called);
+  EXPECT_TRUE(on_closed_cb_called);
+
+  // Connection was never registered.
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
+}
+
+TEST_F(IsoStreamManagerTest,
+       CentralCisConfigurationClosedBeforeEstablishmentDoesNotUnregister) {
+  const CigCisIdentifier kId(0x14, 0x04);
+  const hci_spec::ConnectionHandle kCisHandle = 0x123;
+
+  bool on_established_cb_called = false;
+  bool on_closed_cb_called = false;
+
+  IsoStream::WeakPtr stream = iso_stream_manager()->CreateCisConfiguration(
+      kId,
+      kCisHandle,
+      [&](pw::bluetooth::emboss::StatusCode,
+          std::optional<WeakSelf<IsoStream>::WeakPtr>,
+          const std::optional<CisEstablishedParameters>&) {
+        on_established_cb_called = true;
+      },
+      [&]() { on_closed_cb_called = true; });
+
+  ASSERT_TRUE(stream.is_alive());
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
+
+  // Close before establishment
+  stream->Close();
+  RunUntilIdle();
+
+  EXPECT_FALSE(on_established_cb_called);
+  EXPECT_TRUE(on_closed_cb_called);
+
+  // Connection was never registered.
+  EXPECT_FALSE(iso_stream_manager()->IsConnectionRegistered(kCisHandle));
+  EXPECT_TRUE(iso_stream_manager()->registered_handles().empty());
 }
 
 TEST_F(IsoStreamManagerTest, AcceptCisFailsWhenNotPeripheral) {

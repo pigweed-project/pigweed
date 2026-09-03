@@ -61,14 +61,14 @@ IsoStreamManager::~IsoStreamManager() {
   if (hci_.is_alive()) {
     hci::IsoDataChannel* iso_data_channel = hci_->iso_data_channel();
     if (iso_data_channel) {
-      for (const auto& stream : streams_) {
-        hci_spec::ConnectionHandle cis_handle = stream.second->cis_handle();
+      for (hci_spec::ConnectionHandle cis_handle : registered_handles_) {
         bt_log(INFO,
                "iso",
                "unregistering ISO connection for handle %#x",
                cis_handle);
         iso_data_channel->UnregisterConnection(cis_handle);
       }
+      registered_handles_.clear();
     }
   }
 }
@@ -103,13 +103,54 @@ IsoStream::WeakPtr IsoStreamManager::CreateCisConfiguration(
     hci_spec::ConnectionHandle cis_handle,
     CisEstablishedCallback on_established_cb,
     pw::Callback<void()> on_closed_cb) {
+  CisEstablishedCallback register_cb =
+      [self = weak_self_.GetWeakPtr(),
+       cis_handle,
+       on_established = std::move(on_established_cb)](
+          pw::bluetooth::emboss::StatusCode status,
+          std::optional<WeakSelf<IsoStream>::WeakPtr> stream,
+          const std::optional<CisEstablishedParameters>& params) mutable {
+        if (self.is_alive() &&
+            status == pw::bluetooth::emboss::StatusCode::SUCCESS &&
+            stream.has_value() && self->hci_.is_alive()) {
+          hci::IsoDataChannel* iso_data_channel =
+              self->hci_->iso_data_channel();
+          if (iso_data_channel && iso_data_channel->RegisterConnection(
+                                      cis_handle, stream.value())) {
+            self->registered_handles_.insert(cis_handle);
+          }
+        }
+        on_established(status, std::move(stream), params);
+      };
+
+  auto close_cb = [self = weak_self_.GetWeakPtr(),
+                   id,
+                   cis_handle,
+                   on_closed = std::move(on_closed_cb)]() mutable {
+    if (self.is_alive()) {
+      if (self->hci_.is_alive()) {
+        hci::IsoDataChannel* iso_data_channel = self->hci_->iso_data_channel();
+        if (iso_data_channel &&
+            self->registered_handles_.erase(cis_handle) > 0) {
+          bt_log(INFO,
+                 "iso",
+                 "unregistering ISO connection for handle %#x",
+                 cis_handle);
+          iso_data_channel->UnregisterConnection(cis_handle);
+        }
+      }
+      self->streams_.erase(id);
+    }
+    on_closed();
+  };
+
   auto cis = IsoStream::Create(id.cig_id(),
                                id.cis_id(),
                                cis_handle,
                                hci_,
                                dispatcher_,
-                               std::move(on_established_cb),
-                               std::move(on_closed_cb),
+                               std::move(register_cb),
+                               std::move(close_cb),
                                wake_lease_provider_);
   auto result = cis->GetWeakPtr();
   streams_.emplace(id, std::move(cis));
@@ -177,18 +218,21 @@ void IsoStreamManager::AcceptCisRequest(
 
   PW_CHECK(streams_.count(id) == 0);
 
-  auto on_closed_cb = [this, id, cis_handle]() {
-    if (hci_.is_alive()) {
-      hci::IsoDataChannel* iso_data_channel = hci_->iso_data_channel();
-      if (iso_data_channel) {
-        bt_log(INFO,
-               "iso",
-               "unregistering ISO connection for handle %#x",
-               cis_handle);
-        iso_data_channel->UnregisterConnection(cis_handle);
+  auto on_closed_cb = [self = weak_self_.GetWeakPtr(), id, cis_handle]() {
+    if (self.is_alive()) {
+      if (self->hci_.is_alive()) {
+        hci::IsoDataChannel* iso_data_channel = self->hci_->iso_data_channel();
+        if (iso_data_channel &&
+            self->registered_handles_.erase(cis_handle) > 0) {
+          bt_log(INFO,
+                 "iso",
+                 "unregistering ISO connection for handle %#x",
+                 cis_handle);
+          iso_data_channel->UnregisterConnection(cis_handle);
+        }
       }
+      self->streams_.erase(id);
     }
-    streams_.erase(id);
   };
 
   PW_CHECK(hci_.is_alive(),
@@ -224,9 +268,14 @@ void IsoStreamManager::AcceptCisRequest(
       self->streams_.erase(id);
       return;
     }
-    hci::IsoDataChannel* iso_data_channel = self->hci_->iso_data_channel();
-    iso_data_channel->RegisterConnection(cis_handle,
-                                         self->streams_[id]->GetWeakPtr());
+    if (self->hci_.is_alive()) {
+      hci::IsoDataChannel* iso_data_channel = self->hci_->iso_data_channel();
+      if (iso_data_channel &&
+          iso_data_channel->RegisterConnection(
+              cis_handle, self->streams_[id]->GetWeakPtr())) {
+        self->registered_handles_.insert(cis_handle);
+      }
+    }
   };
 
   cmd_->SendCommand(std::move(command), cmd_complete_cb).IgnoreError();

@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <unordered_set>
+
 #include "pw_async/dispatcher.h"
 #include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/protocol.h"
@@ -105,6 +107,17 @@ class IsoStreamManager final : public CigStreamCreator {
     return accept_handlers_.count(id) != 0;
   }
 
+  // Returns true if the connection handle is currently registered with
+  // IsoDataChannel.
+  bool IsConnectionRegistered(hci_spec::ConnectionHandle handle) const {
+    return registered_handles_.count(handle) != 0;
+  }
+
+  const std::unordered_set<hci_spec::ConnectionHandle>& registered_handles()
+      const {
+    return registered_handles_;
+  }
+
   using WeakPtr = WeakSelf<IsoStreamManager>::WeakPtr;
   IsoStreamManager::WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
@@ -140,6 +153,9 @@ class IsoStreamManager final : public CigStreamCreator {
 
   // All of the allocated streams.
   std::unordered_map<CigCisIdentifier, std::unique_ptr<IsoStream>> streams_;
+
+  // Connection handles currently registered with IsoDataChannel.
+  std::unordered_set<hci_spec::ConnectionHandle> registered_handles_;
 
   WeakSelf<IsoStreamManager> weak_self_;
 
