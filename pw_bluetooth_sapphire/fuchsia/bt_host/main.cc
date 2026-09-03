@@ -15,7 +15,15 @@
 #include <fuchsia/process/lifecycle/cpp/fidl.h>
 #include <lib/async-loop/cpp/loop.h>
 #include <lib/async-loop/default.h>
+#include <pw_preprocessor/compiler.h>
+
+// TODO: https://fxbug.dev/553488242 - Remove when fixed in Fuchsia SDK
+// binding_set.h.
+PW_MODIFY_DIAGNOSTICS_PUSH();
+PW_MODIFY_DIAGNOSTIC(ignored, "-Wunused-variable");
 #include <lib/fidl/cpp/binding_set.h>
+PW_MODIFY_DIAGNOSTICS_POP();
+
 #include <lib/sys/cpp/component_context.h>
 #include <pw_assert/check.h>
 #include <zircon/processargs.h>

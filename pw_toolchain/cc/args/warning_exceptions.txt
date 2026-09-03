@@ -154,9 +154,5 @@ src:*/lib/stdcompat/include/lib/stdcompat/type_traits.h
 # TODO: https://pwbug.dev/535724234 - Update chre so we can remove these.
 src:*/chre/util/include/chre/util/heap_impl.h
 
-[unused-variable]
-# TODO: https://fxbug.dev/553488242 - Update Fuchsia SDK so we can remove these.
-src:*/lib/fidl/cpp/binding_set.h
-
 # TODO: https://pwbug.dev/553490105 - Remove when unused error_msg in json.hpp is fixed upstream.
 src:*/third_party/json/single_include/nlohmann/json.hpp

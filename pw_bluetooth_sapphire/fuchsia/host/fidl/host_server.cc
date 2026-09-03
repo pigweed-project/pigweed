@@ -734,10 +734,12 @@ void HostServer::Forget(fbt::PeerId peer_id, ForgetCallback callback) {
   const bool peer_removed = adapter()->peer_cache()->RemoveDisconnectedPeer(id);
 
   if (!le_disconnected || !bredr_disconnected) {
-    const auto message =
-        bt_lib_cpp_string::StringPrintf("link(s) failed to close:%s%s",
-                                        le_disconnected ? "" : " LE",
-                                        bredr_disconnected ? "" : " BR/EDR");
+    bt_log(WARN,
+           "fidl",
+           "%s: link(s) failed to close:%s%s",
+           __FUNCTION__,
+           le_disconnected ? "" : " LE",
+           bredr_disconnected ? "" : " BR/EDR");
     callback(fpromise::error(fsys::Error::FAILED));
   } else {
     PW_CHECK(peer_removed);
