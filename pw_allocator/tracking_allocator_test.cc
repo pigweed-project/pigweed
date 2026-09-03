@@ -330,7 +330,8 @@ TEST_F(TrackingAllocatorTest, Reallocate) {
   void* ptr4 = tracker_.Reallocate(ptr2, layout4);
   EXPECT_NE(ptr4, ptr2);
   size_t ptr4_allocated = tracker_.GetAllocatedLayout(ptr4)->size();
-  expected.AddRequestedBytes(layout4.size() - layout2.size());
+  expected.AddRequestedBytes(layout4.size());
+  expected.requested_bytes -= layout2.size();
   expected.AddAllocatedBytes(ptr4_allocated);
   expected.allocated_bytes -= ptr2_allocated;
   expected.num_reallocations += 1;
@@ -523,7 +524,8 @@ TEST(TrackingAllocator, ReallocateWithoutLayoutInfo) {
 
   // The metrics should reflect the move: new bytes allocated, old bytes
   // deallocated.
-  expected.AddRequestedBytes(layout2.size() - layout1.size());
+  expected.AddRequestedBytes(layout2.size());
+  expected.requested_bytes -= layout1.size();
   expected.AddAllocatedBytes(ptr_block_allocated2);
   expected.allocated_bytes -= ptr1_allocated;
 

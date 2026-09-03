@@ -164,39 +164,13 @@ template <typename MetricsType>
 void* TrackingAllocator<MetricsType>::DoReallocate(void* ptr,
                                                    Layout new_layout) {
   if constexpr (internal::AnyEnabled<MetricsType>()) {
-    // Check if possible to resize in place with no additional overhead.
-    Layout requested = Layout::Unwrap(GetRequestedLayout(ptr));
-    size_t allocated = allocator_.GetAllocated();
-    size_t new_size = new_layout.size();
-    if (allocator_.Resize(ptr, new_size)) {
-      metrics_.IncrementReallocations();
-      metrics_.ModifyRequested(new_size, requested.size());
-      metrics_.ModifyAllocated(allocator_.GetAllocated(), allocated);
-      return ptr;
-    }
-
-    // Retrieve the allocated layout of the old pointer to calculate the peak
-    // memory usage during reallocation if a move occurs. Note that if the
-    // underlying allocator does not have the `kImplementsGetAllocatedLayout`
-    // capability, this will return an error and the peak metric may be lower
-    // than the actual peak allocation value.
-    Result<Layout> old_allocated_layout = GetAllocatedLayout(ptr);
-
-    void* new_ptr = allocator_.Reallocate(ptr, new_layout);
+    metrics_.set_reallocating(true);
+    void* new_ptr = Allocator::DoReallocate(ptr, new_layout);
+    metrics_.set_reallocating(false);
     if (new_ptr == nullptr) {
-      metrics_.RecordFailure(new_size);
-      return nullptr;
-    }
-    metrics_.IncrementReallocations();
-    metrics_.ModifyRequested(new_size, requested.size());
-
-    size_t current_allocated = allocator_.GetAllocated();
-    if (new_ptr != ptr && old_allocated_layout.ok()) {
-      size_t peak_allocated = current_allocated + old_allocated_layout->size();
-      metrics_.ModifyAllocated(peak_allocated, allocated);
-      metrics_.ModifyAllocated(current_allocated, peak_allocated);
+      metrics_.RecordFailure(new_layout.size());
     } else {
-      metrics_.ModifyAllocated(current_allocated, allocated);
+      metrics_.IncrementReallocations();
     }
     return new_ptr;
   } else {

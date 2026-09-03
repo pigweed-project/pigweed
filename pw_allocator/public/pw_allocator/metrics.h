@@ -113,7 +113,7 @@ struct NoMetrics {
   /// request these values on-demand.
   ///
   /// For this empty base struct, this is simply a no-op.
-  void UpdateDeferred(pw::Allocator&) {}
+  void UpdateDeferred(const pw::Allocator&) {}
 };
 
 #undef PW_ALLOCATOR_METRICS_DECLARE
@@ -156,7 +156,7 @@ struct NoMetrics {
 ///     PW_ALLOCATOR_METRICS_ENABLE(peak_allocated_bytes);
 ///     PW_ALLOCATOR_METRICS_INCLUDE(num_free_blocks);
 ///
-///     void UpdateDeferred(Allocator& allocator);
+///     void UpdateDeferred(const Allocator& allocator);
 ///   };
 /// @endcode
 #define PW_ALLOCATOR_METRICS_ENABLE(metric_name)                 \
@@ -183,6 +183,28 @@ constexpr bool AnyEnabled();
 template <typename MetricsType>
 void CopyMetrics(const MetricsType& src, MetricsType& dst);
 
+/// Non-templated base class for tracking allocator metrics encapsulation.
+class GenericMetrics {
+ public:
+  ~GenericMetrics() = default;
+
+  const metric::Group& group() const { return group_; }
+  metric::Group& group() { return group_; }
+
+  [[nodiscard]] constexpr bool is_reallocating() const { return reallocating_; }
+  constexpr void set_reallocating(bool reallocating) {
+    reallocating_ = reallocating;
+  }
+
+ protected:
+  explicit GenericMetrics(metric::Token token) : group_(token) {}
+
+ private:
+  metric::Group group_;
+
+  bool reallocating_ = false;
+};
+
 /// Encapsulates the metrics struct for ``pw::allocator::TrackingAllocator``.
 ///
 /// This class uses the type traits from ``PW_ALLOCATOR_METRICS_DECLARE`` to
@@ -192,13 +214,10 @@ void CopyMetrics(const MetricsType& src, MetricsType& dst);
 ///
 /// @tparam   MetricsType   The struct defining which metrics are enabled.
 template <typename MetricsType>
-class Metrics final {
+class Metrics final : public internal::GenericMetrics {
  public:
-  Metrics(metric::Token token);
+  constexpr Metrics(metric::Token token);
   ~Metrics() = default;
-
-  const metric::Group& group() const { return group_; }
-  metric::Group& group() { return group_; }
 
   const MetricsType& metrics() const { return metrics_; }
 
@@ -222,6 +241,9 @@ class Metrics final {
   /// ModifyAllocated(increase, 0);
   /// ModifyAllocated(0, decrease);
   /// @endcode
+  ///
+  /// The given `std::optional` parameters be dereferenced if and only if the
+  /// "allocated_bytes" metric is enabled.
   ///
   /// @param  increase         How much memory was allocated.
   /// @param  decrease         How much memory was freed.
@@ -251,24 +273,23 @@ class Metrics final {
   /// Updates metrics by querying an allocator directly.
   ///
   /// See also `NoMetrics::UpdateDeferred`.
-  void UpdateDeferred(pw::Allocator& allocator) {
+  void UpdateDeferred(const pw::Allocator& allocator) {
     metrics_.UpdateDeferred(allocator);
   }
 
  private:
-  metric::Group group_;
   MetricsType metrics_;
 };
+
+/// @}
+
+// Template and inline method implementations.
 
 /// Helper method for converting `size_t`s to `uint32_t`s.
 inline uint32_t ClampU32(size_t size) {
   return static_cast<uint32_t>(std::min(
       size, static_cast<size_t>(std::numeric_limits<uint32_t>::max())));
 }
-
-/// @}
-
-// Template method implementations.
 
 template <typename MetricsType>
 constexpr bool AnyEnabled() {
@@ -298,10 +319,11 @@ void CopyMetrics(const MetricsType& src, MetricsType& dst) {
 }
 
 template <typename MetricsType>
-Metrics<MetricsType>::Metrics(metric::Token token) : group_(token) {
+constexpr Metrics<MetricsType>::Metrics(metric::Token token)
+    : GenericMetrics(token) {
 #define PW_ALLOCATOR_ADD_TO_GROUP(metric_name)      \
   if constexpr (MetricsType::has_##metric_name()) { \
-    group_.Add(metrics_.metric_name);               \
+    group().Add(metrics_.metric_name);              \
   }                                                 \
   PW_ALLOCATOR_ABSORB_SEMICOLON()
 
@@ -353,21 +375,27 @@ void Metrics<MetricsType>::ModifyAllocated(size_t increase, size_t decrease) {
 template <typename MetricsType>
 void Metrics<MetricsType>::IncrementAllocations() {
   if constexpr (MetricsType::num_allocations_enabled()) {
-    metrics_.num_allocations.Increment();
+    if (!is_reallocating()) {
+      metrics_.num_allocations.Increment();
+    }
   }
 }
 
 template <typename MetricsType>
 void Metrics<MetricsType>::IncrementDeallocations() {
   if constexpr (MetricsType::num_deallocations_enabled()) {
-    metrics_.num_deallocations.Increment();
+    if (!is_reallocating()) {
+      metrics_.num_deallocations.Increment();
+    }
   }
 }
 
 template <typename MetricsType>
 void Metrics<MetricsType>::IncrementResizes() {
   if constexpr (MetricsType::num_resizes_enabled()) {
-    metrics_.num_resizes.Increment();
+    if (!is_reallocating()) {
+      metrics_.num_resizes.Increment();
+    }
   }
 }
 
@@ -381,10 +409,14 @@ void Metrics<MetricsType>::IncrementReallocations() {
 template <typename MetricsType>
 void Metrics<MetricsType>::RecordFailure(size_t requested) {
   if constexpr (MetricsType::num_failures_enabled()) {
-    metrics_.num_failures.Increment();
+    if (!is_reallocating()) {
+      metrics_.num_failures.Increment();
+    }
   }
   if constexpr (MetricsType::unfulfilled_bytes_enabled()) {
-    metrics_.unfulfilled_bytes.Increment(internal::ClampU32(requested));
+    if (!is_reallocating()) {
+      metrics_.unfulfilled_bytes.Increment(internal::ClampU32(requested));
+    }
   }
 }
 

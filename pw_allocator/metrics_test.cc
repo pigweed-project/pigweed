@@ -97,4 +97,37 @@ TEST(MetricsTest, GetPresentMetricsReturnsOk) {
 #undef EXPECT_GET_PRESENT_IS_OK
 }
 
+TEST(MetricsTest, ReallocatingFlagSuppressesIncrements) {
+  pw::allocator::internal::Metrics<AllMetrics> metrics(0);
+  metrics.set_reallocating(true);
+
+  metrics.IncrementAllocations();
+  EXPECT_EQ(metrics.metrics().num_allocations.value(), 0u);
+
+  metrics.IncrementDeallocations();
+  EXPECT_EQ(metrics.metrics().num_deallocations.value(), 0u);
+
+  metrics.IncrementResizes();
+  EXPECT_EQ(metrics.metrics().num_resizes.value(), 0u);
+
+  metrics.RecordFailure(100);
+  EXPECT_EQ(metrics.metrics().num_failures.value(), 0u);
+  EXPECT_EQ(metrics.metrics().unfulfilled_bytes.value(), 0u);
+
+  metrics.set_reallocating(false);
+
+  metrics.IncrementAllocations();
+  EXPECT_EQ(metrics.metrics().num_allocations.value(), 1u);
+
+  metrics.IncrementDeallocations();
+  EXPECT_EQ(metrics.metrics().num_deallocations.value(), 1u);
+
+  metrics.IncrementResizes();
+  EXPECT_EQ(metrics.metrics().num_resizes.value(), 1u);
+
+  metrics.RecordFailure(100);
+  EXPECT_EQ(metrics.metrics().num_failures.value(), 1u);
+  EXPECT_EQ(metrics.metrics().unfulfilled_bytes.value(), 100u);
+}
+
 }  // namespace
