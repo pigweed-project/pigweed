@@ -48,7 +48,9 @@ common --host_per_file_copt=external.*pioasm.*@-fexceptions,-frtti
 
 # C++ standard compatibility configs.
 common:cxx17 --//pw_toolchain/cc:cxx_standard=17
+common:cxx20 --//pw_toolchain/cc:cxx_standard=20
 common:cxx23 --//pw_toolchain/cc:cxx_standard=23
+common:cxx26 --//pw_toolchain/cc:cxx_standard=26
 
 # Enable freestanding mode for arm_gcc toolchain by default inside Pigweed's own builds.
 common --//pw_toolchain/arm_gcc:freestanding=True
