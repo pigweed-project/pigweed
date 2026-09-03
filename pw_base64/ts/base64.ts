@@ -19,7 +19,9 @@
 export function base64ToBinaryString(base64Data: string): string {
   const globalBuffer = (globalThis as { Buffer?: any }).Buffer;
   if (typeof globalBuffer !== 'undefined') {
-    return globalBuffer.from(base64Data, 'base64').toString('binary');
+    return globalBuffer
+      .from(base64Data.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+      .toString('binary');
   }
   if (typeof globalThis.atob !== 'undefined') {
     try {

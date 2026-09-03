@@ -244,7 +244,6 @@ describe('Base64 Detokenization Edge Cases and Browser Fallback', () => {
   it('detokenizes base64 token frames correctly under atob fallback when Buffer is undefined', () => {
     const originalBuffer = globalThis.Buffer;
     try {
-      // @ts-expect-error Buffer is non-optional on globalThis type definitions
       delete (globalThis as { Buffer?: unknown }).Buffer;
       const frame = generateFrame('$8zP8hg==');
       expect(detokenizer.detokenize(frame)).toEqual('base64 token');

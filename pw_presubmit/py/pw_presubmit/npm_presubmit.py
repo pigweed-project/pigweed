@@ -15,10 +15,25 @@
 
 import os
 import shutil
-from pw_presubmit.presubmit import call
+from pw_presubmit.presubmit import (
+    Check,
+    call,
+    filter_paths,
+)
 from pw_presubmit.presubmit_context import PresubmitContext
 
 
+@filter_paths(
+    endswith=(
+        '.js',
+        '.ts',
+        '.tsx',
+        'package.json',
+        'tsconfig.json',
+        'pnpm-lock.yaml',
+    )
+)
+@Check
 def npm_test(ctx: PresubmitContext) -> None:
     """Run npm install and npm test in Pigweed root to test all web modules"""
     web_dir = ctx.root / 'pw_web'

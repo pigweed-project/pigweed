@@ -1193,7 +1193,6 @@ OTHER_CHECKS = (
     gn_python_build_check,
     gn_stm_build_check,
     module_owners.presubmit_check(),
-    npm_presubmit.npm_test,
     npm_presubmit.vscode_test,
     pw_internal_namespace.pw_internal_namespace,
     pw_transfer_integration_test,
@@ -1252,6 +1251,7 @@ _LINTFORMAT = upstream_programs.QUICK_COMMON + (
     build.bazel_lint,  # TODO: b/432484923 - Remove when added to Bazel checks
     source_is_in_cmake_build_warn_only,
     javascript_checks.eslint if shutil.which('npm') else (),
+    npm_presubmit.npm_test if shutil.which('npm') else (),
 )
 
 

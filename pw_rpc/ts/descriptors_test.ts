@@ -26,7 +26,7 @@ describe('Descriptors', () => {
     const protoCollection = new ProtoCollection();
     const fd = protoCollection.fileDescriptorSet
       .getFileList()
-      .find((file: any) => file.array[1].indexOf('pw.rpc.test1') !== -1);
+      .find((file: any) => file.getPackage()?.indexOf('pw.rpc.test1') !== -1)!;
     const sd = fd.getServiceList()[0];
     const service = descriptors.Service.fromProtoDescriptor(
       sd,

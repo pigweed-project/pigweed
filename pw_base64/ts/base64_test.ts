@@ -30,9 +30,9 @@ describe('pw_base64', () => {
 
   it('handles URL-safe base64 data with - and _', () => {
     // URL-safe base64 containing '-' and '_'
-    // standard base64 for [0xfb, 0xff, 0xfe] is "++/+"
-    // URL-safe base64 is "--_-"
-    const urlSafe = '--_-';
+    // standard base64 for [0xfb, 0xff, 0xfe] is "+//+"
+    // URL-safe base64 is "-__-"
+    const urlSafe = '-__-';
     const binaryString = base64ToBinaryString(urlSafe);
     expect(binaryString.length).toEqual(3);
     expect(binaryString.charCodeAt(0)).toEqual(0xfb);

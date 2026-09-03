@@ -33,12 +33,22 @@ const config: InitialOptionsTsJest = {
   transformIgnorePatterns: ['/node_modules/(?!rxjs)'],
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/..'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/environment/',
+    '/out/',
+    '/dist/',
+    '/bazel-out/',
+    '/rules_js/',
+    '/pw_ide/',
+  ],
   modulePathIgnorePatterns: [
     '<rootDir>/../out',
     '<rootDir>/../dist',
     '<rootDir>/../bazel-out',
     '<rootDir>/../node_modules',
     '<rootDir>/../rules_js',
+    '<rootDir>/../environment',
   ],
   moduleDirectories: ['node_modules', '<rootDir>/node_modules'],
   globals: {

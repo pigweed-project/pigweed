@@ -12,11 +12,19 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+import googleProtobuf from 'google-protobuf';
 import { ReadableStream, WritableStream } from 'stream/web';
 import {
   TextEncoder as NodeTextEncoder,
   TextDecoder as NodeTextDecoder,
 } from 'util';
+
+globalThis.goog = googleProtobuf;
+globalThis.jspb = googleProtobuf.jspb;
+if (typeof window !== 'undefined') {
+  window.goog = googleProtobuf;
+  window.jspb = googleProtobuf.jspb;
+}
 
 Object.defineProperties(globalThis, {
   ReadableStream: { value: ReadableStream },
