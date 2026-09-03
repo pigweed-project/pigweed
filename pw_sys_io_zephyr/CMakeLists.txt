@@ -40,6 +40,11 @@ pw_add_library(pw_sys_io_zephyr STATIC
 )
 
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_SYS_IO
-  pw_sys_io.default_putget_bytes
-  pw_sys_io_zephyr
+  pw_sys_io.facade
 )
+if(CONFIG_PIGWEED_SYS_IO)
+  zephyr_library_link_libraries(pw_sys_io_zephyr)
+  if(TARGET zephyr_generated_headers)
+    add_dependencies(pw_sys_io_zephyr zephyr_generated_headers)
+  endif()
+endif()
