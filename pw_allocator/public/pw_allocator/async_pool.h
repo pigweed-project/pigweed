@@ -14,7 +14,7 @@
 #pragma once
 
 #include "pw_allocator/deallocator.h"
-#include "pw_allocator/pool.h"
+#include "pw_allocator/forwarding_pool.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/waker.h"
@@ -27,24 +27,19 @@ namespace pw::allocator {
 ///
 /// This class is not thread safe. It should only be used from the dispatcher
 /// thread, or wrapped to provided synchronized access.
-class AsyncPool : public Pool {
+class AsyncPool : public ForwardingPool {
  public:
-  constexpr explicit AsyncPool(Pool& pool)
-      : Pool(pool.capabilities(), pool.layout()), pool_(pool) {}
+  constexpr explicit AsyncPool(Pool& pool) : ForwardingPool(pool) {}
 
   /// Asynchronously allocates a chunk of memory with the fixed layout from the
   /// pool.
   async2::Poll<void*> PendAllocate(async2::Context& context);
 
  protected:
-  /// @copydoc Pool::Allocate
-  void* DoAllocate() override;
-
   /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
 
  private:
-  Pool& pool_;
   async2::Waker waker_;
 };
 

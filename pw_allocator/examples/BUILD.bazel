@@ -47,6 +47,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_allocator",
+        "//pw_allocator:forwarding_allocator",
         "//pw_log",
         "//pw_result",
     ],

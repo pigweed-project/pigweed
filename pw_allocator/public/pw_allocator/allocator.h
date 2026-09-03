@@ -49,7 +49,9 @@ class Allocator : public Deallocator {
   /// size of 0.
   ///
   /// @param[in]  layout      Describes the memory to be allocated.
-  [[nodiscard]] void* Allocate(Layout layout);
+  [[nodiscard]] void* Allocate(Layout layout) {
+    return layout.size() == 0 ? nullptr : DoAllocate(layout);
+  }
 
   /// Constructs an object of type `T` from the given `args`.
   ///
@@ -241,7 +243,9 @@ class Allocator : public Deallocator {
   ///
   /// @param[in]  ptr           Pointer to previously-allocated memory.
   /// @param[in]  new_size      Requested new size for the memory allocation.
-  [[nodiscard]] bool Resize(void* ptr, size_t new_size);
+  [[nodiscard]] bool Resize(void* ptr, size_t new_size) {
+    return ptr != nullptr && new_size != 0 && DoResize(ptr, new_size);
+  }
 
   /// Modifies the size of a previously-allocated block of memory.
   ///
@@ -266,7 +270,12 @@ class Allocator : public Deallocator {
   ///
   /// @param[in]  ptr         Pointer to previously-allocated memory.
   /// @param[in]  new_layout  Describes the memory to be allocated.
-  [[nodiscard]] void* Reallocate(void* ptr, Layout new_layout);
+  [[nodiscard]] void* Reallocate(void* ptr, Layout new_layout) {
+    return new_layout.size() == 0
+               ? nullptr
+               : (ptr == nullptr ? Allocate(new_layout)
+                                 : DoReallocate(ptr, new_layout));
+  }
 
   /// Returns the total bytes that have been allocated by this allocator, or
   /// `size_t(-1)` if this allocator does not track its total allocated bytes.
@@ -279,9 +288,9 @@ class Allocator : public Deallocator {
 
  protected:
   /// TODO(b/326509341): Remove when downstream consumers migrate.
-  constexpr Allocator() = default;
+  constexpr Allocator() noexcept = default;
 
-  explicit constexpr Allocator(const Capabilities& capabilities)
+  constexpr explicit Allocator(const Capabilities& capabilities) noexcept
       : Deallocator(Capability::kCanAllocateArbitraryLayout | capabilities) {}
 
   /// @copydoc Allocator::Allocate
@@ -297,7 +306,77 @@ class Allocator : public Deallocator {
   /// The default implementation will first try to `Resize` the data. If
   /// that is unsuccessful, it will allocate an entirely new block, copy
   /// existing data, and deallocate the given block.
+  ///
+  /// Derived allocators should avoid overiding this method unless absolutely
+  /// necessary, and instead override the `DoBeforeReallocate`,
+  /// `DoAfterReallocateCopy`, and `DoAfterReallocateDone` methods below that
+  /// are called as part of the default implementation. By using the default
+  /// implementation, the derived types guarantees its own implementations of
+  /// `DoAllocate`, `DoDeallocate` and `DoResize` will be used for the
+  /// reallocation. This is especially important for allocators such as
+  /// `ForwardingAllocator` that use composition instead of inheritance.
   virtual void* DoReallocate(void* ptr, Layout new_layout);
+
+  /// Static version of `DoBeforeReallocate` that allows forwarding allocators
+  /// to call it on wrapped allocators.
+  static void BeforeReallocate(Allocator& allocator,
+                               void* ptr,
+                               Layout new_layout) {
+    allocator.DoBeforeReallocate(ptr, new_layout);
+  }
+
+  /// Called at the start of the default implementation of `DoReallocate`.
+  ///
+  /// By default, does nothing. Derived types may implement this method to add
+  /// additional behavior. If they do, they must call `DoBeforeReallocate` on
+  /// their base type just before returning.
+  ///
+  /// `ptr` is guaranteed to be non-null, and `new_layout.size()` is guaranteed
+  /// to be non-zero.
+  virtual void DoBeforeReallocate([[maybe_unused]] void* ptr,
+                                  [[maybe_unused]] Layout new_layout) {}
+
+  /// Static version of `DoAfterReallocateCopy` that allows forwarding
+  /// allocators to call it on wrapped allocators.
+  static void AfterReallocateCopy(Allocator& allocator,
+                                  void* ptr,
+                                  Layout new_layout,
+                                  void* new_ptr) {
+    allocator.DoAfterReallocateCopy(ptr, new_layout, new_ptr);
+  }
+
+  /// Called as part of the default implementation of `DoReallocate` once the
+  /// data from `ptr` has been resized or copied to `new_ptr`.
+  ///
+  /// By default, does nothing. Derived types may implement this method to add
+  /// additional behavior. If they do, they must call `DoAfterReallocateCopy` on
+  /// their base type before performing any other action.
+  ///
+  /// `ptr` and `new_ptr` are guaranteed to be non-null, and `new_layout.size()`
+  /// is guaranteed to be non-zero.
+  virtual void DoAfterReallocateCopy([[maybe_unused]] void* ptr,
+                                     [[maybe_unused]] Layout new_layout,
+                                     [[maybe_unused]] void* new_ptr) {}
+
+  /// Static version of `DoAfterReallocateDone` that allows forwarding
+  /// allocators to call it on wrapped allocators.
+  static void AfterReallocateDone(Allocator& allocator,
+                                  Layout new_layout,
+                                  void* new_ptr) {
+    allocator.DoAfterReallocateDone(new_layout, new_ptr);
+  }
+
+  /// Called as part of the default implementation of `DoReallocate` just before
+  /// returning.
+  ///
+  /// By default, does nothing. Derived types may implement this method to add
+  /// additional behavior. If they do, they must call `DoAfterReallocateDone` on
+  /// their base type before performing any other action.
+  ///
+  /// `new_ptr` is guaranteed to be non-null, and `new_layout.size()` is
+  /// guaranteed to be non-zero.
+  virtual void DoAfterReallocateDone([[maybe_unused]] Layout new_layout,
+                                     [[maybe_unused]] void* new_ptr) {}
 
   /// @copydoc Allocator::GetAllocated
   ///

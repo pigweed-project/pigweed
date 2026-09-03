@@ -138,6 +138,7 @@ pw_source_set("async_pool") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/async_pool.h" ]
   public_deps = [
+    ":forwarding_pool",
     ":pw_allocator",
     "$dir_pw_async2:pw_async2",
   ]
@@ -275,6 +276,24 @@ pw_source_set("first_fit") {
   ]
 }
 
+pw_source_set("forwarding_allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/forwarding_allocator.h" ]
+  deps = [
+    dir_pw_allocator,
+    dir_pw_result,
+  ]
+}
+
+pw_source_set("forwarding_pool") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/forwarding_pool.h" ]
+  deps = [
+    dir_pw_allocator,
+    dir_pw_result,
+  ]
+}
+
 pw_source_set("fragmentation") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/fragmentation.h" ]
@@ -372,7 +391,7 @@ pw_source_set("synchronized_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/synchronized_allocator.h" ]
   public_deps = [
-    ":pw_allocator",
+    ":forwarding_allocator",
     "$dir_pw_sync:borrow",
     "$dir_pw_sync:lock_annotations",
     "$dir_pw_sync:no_lock",
@@ -396,8 +415,8 @@ pw_source_set("tracking_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/tracking_allocator.h" ]
   public_deps = [
+    ":forwarding_allocator",
     ":metrics",
-    ":pw_allocator",
     "$dir_pw_assert:assert",
     dir_pw_status,
   ]
@@ -435,6 +454,7 @@ pw_source_set("testing") {
   ]
   public_deps = [
     ":first_fit",
+    ":forwarding_allocator",
     ":hardening",
     ":metrics",
     ":pw_allocator",

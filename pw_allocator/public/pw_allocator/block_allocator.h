@@ -55,7 +55,7 @@ class GenericBlockAllocator : public pw::Allocator {
   template <typename BlockType>
   static constexpr Capabilities GetCapabilities();
 
-  constexpr explicit GenericBlockAllocator(Capabilities capabilities)
+  constexpr explicit GenericBlockAllocator(Capabilities capabilities) noexcept
       : pw::Allocator(capabilities) {}
 
   /// Crashes with an informational message that a given block is allocated.
@@ -144,7 +144,7 @@ class BlockAllocator : public internal::GenericBlockAllocator {
   size_t GetMaxAllocatable() { return DoGetMaxAllocatable(); }
 
  protected:
-  constexpr explicit BlockAllocator() : Base(kCapabilities) {}
+  constexpr explicit BlockAllocator() noexcept : Base(kCapabilities) {}
 
   /// @copydoc Allocator::Allocate
   void* DoAllocate(Layout layout) override;

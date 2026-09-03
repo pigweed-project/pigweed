@@ -66,7 +66,9 @@ In addition to concrete allocator implementations, the design of
 ``pw_allocator`` also encourages the use of "forwarding" allocators. These are
 implementations of the :cc:`pw::Allocator` interface that
 don't allocate memory directly and instead rely on other allocators while
-providing some additional behavior.
+providing some additional behavior. Typically, these implementations extend the
+basic forwarding behavior provided by
+:cc:`ForwardingAllocator <pw::allocator::ForwardingAllocator>`.
 
 For example, the :cc:`pw::Allocator` records various
 metrics such as the peak number of bytes allocated and the number of failed

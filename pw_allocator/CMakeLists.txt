@@ -104,6 +104,7 @@ pw_add_library(pw_allocator.async_pool STATIC
     public
   PUBLIC_DEPS
     pw_allocator
+    pw_allocator.forwarding_pool
     pw_async2
   SOURCES
     async_pool.cc
@@ -254,6 +255,26 @@ pw_add_library(pw_allocator.first_fit INTERFACE
     pw_allocator.bucket.sequenced
 )
 
+pw_add_library(pw_allocator.forwarding_allocator INTERFACE
+  HEADERS
+    public/pw_allocator/forwarding_allocator.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_result
+)
+
+pw_add_library(pw_allocator.forwarding_pool INTERFACE
+  HEADERS
+    public/pw_allocator/forwarding_pool.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_result
+)
+
 pw_add_library(pw_allocator.fragmentation STATIC
   HEADERS
     public/pw_allocator/fragmentation.h
@@ -371,7 +392,7 @@ pw_add_library(pw_allocator.synchronized_allocator INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_allocator
+    pw_allocator.forwarding_allocator
     pw_sync.borrow
     pw_sync.lock_annotations
     pw_sync.no_lock
@@ -397,7 +418,7 @@ pw_add_library(pw_allocator.tracking_allocator INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_allocator
+    pw_allocator.forwarding_allocator
     pw_allocator.metrics
     pw_assert.assert
     pw_status
@@ -438,6 +459,7 @@ pw_add_library(pw_allocator.testing INTERFACE
   PUBLIC_DEPS
     pw_allocator
     pw_allocator.first_fit
+    pw_allocator.forwarding_allocator
     pw_allocator.hardening
     pw_allocator.metrics
     pw_allocator.test_config

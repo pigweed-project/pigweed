@@ -24,18 +24,16 @@
 namespace examples {
 
 CustomAllocator::CustomAllocator(Allocator& allocator, size_t threshold)
-    : Allocator(pw::allocator::Capabilities()),
-      allocator_(allocator),
-      threshold_(threshold) {}
+    : Base(allocator), threshold_(threshold) {}
 
 // Allocates, and reports if allocated memory exceeds its threshold.
 void* CustomAllocator::DoAllocate(Layout layout) {
-  void* ptr = allocator_.Allocate(layout);
+  void* ptr = Base::DoAllocate(layout);
   if (ptr == nullptr) {
     return nullptr;
   }
   size_t prev = used_;
-  used_ = allocator_.GetAllocated();
+  used_ = Base::DoGetAllocated();
   if (prev <= threshold_ && threshold_ < used_) {
     PW_LOG_INFO("more than %zu bytes allocated.", threshold_);
   }
@@ -46,8 +44,8 @@ void CustomAllocator::DoDeallocate(void* ptr) {
   if (ptr == nullptr) {
     return;
   }
-  allocator_.Deallocate(ptr);
-  used_ = allocator_.GetAllocated();
+  Base::DoDeallocate(ptr);
+  used_ = Base::DoGetAllocated();
 }
 
 }  // namespace examples

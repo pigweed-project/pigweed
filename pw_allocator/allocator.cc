@@ -17,44 +17,37 @@
 #include <algorithm>
 #include <cstring>
 
+#include "pw_bytes/alignment.h"
+
 namespace pw {
 
 using ::pw::allocator::Layout;
 
-void* Allocator::Allocate(Layout layout) {
-  return layout.size() != 0 ? DoAllocate(layout) : nullptr;
-}
-
-bool Allocator::Resize(void* ptr, size_t new_size) {
-  return ptr != nullptr && new_size != 0 && DoResize(ptr, new_size);
-}
-
-void* Allocator::Reallocate(void* ptr, Layout new_layout) {
-  if (new_layout.size() == 0) {
-    return nullptr;
-  }
-  if (ptr == nullptr) {
-    return Allocate(new_layout);
-  }
-  return DoReallocate(ptr, new_layout);
-}
-
 void* Allocator::DoReallocate(void* ptr, Layout new_layout) {
-  if (Resize(ptr, new_layout.size())) {
+  DoBeforeReallocate(ptr, new_layout);
+
+  // Can the reallocation be achieved by simply resizing?
+  if (IsAlignedAs(ptr, new_layout.alignment()) &&
+      Resize(ptr, new_layout.size())) {
+    DoAfterReallocateCopy(ptr, new_layout, ptr);
+    DoAfterReallocateDone(new_layout, ptr);
     return ptr;
   }
+
+  // Allocate a new region of memory.
   Result<Layout> old_layout = GetUsableLayout(ptr);
   if (!old_layout.ok()) {
+    DoAfterReallocateDone(new_layout, nullptr);
     return nullptr;
   }
   void* new_ptr = Allocate(new_layout);
-  if (new_ptr == nullptr) {
-    return nullptr;
-  }
-  if (ptr != nullptr) {
+  if (new_ptr != nullptr) {
     std::memcpy(new_ptr, ptr, std::min(new_layout.size(), old_layout->size()));
+    DoAfterReallocateCopy(ptr, new_layout, new_ptr);
     Deallocate(ptr);
   }
+
+  DoAfterReallocateDone(new_layout, new_ptr);
   return new_ptr;
 }
 

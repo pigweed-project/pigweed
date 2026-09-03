@@ -13,8 +13,8 @@
 // the License.
 #pragma once
 
-#include "pw_allocator/allocator.h"
 #include "pw_allocator/first_fit.h"
+#include "pw_allocator/forwarding_allocator.h"
 
 namespace pw::allocator::test {
 
@@ -25,14 +25,18 @@ namespace pw::allocator::test {
 ///
 /// @warning FaultInjectingAllocator is NOT thread safe, even if used with
 /// `SynchronizedAllocator`.
-class FaultInjectingAllocator : public pw::Allocator {
+class FaultInjectingAllocator : public ForwardingAllocator {
+ private:
+  using Base = ForwardingAllocator;
+
  public:
-  explicit constexpr FaultInjectingAllocator(Allocator& allocator)
-      : Allocator(allocator.capabilities()),
-        allocator_(allocator),
-        allow_allocate_(true),
-        allow_resize_(true),
-        allow_reallocate_(true) {}
+  constexpr FaultInjectingAllocator(const Capabilities& capabilities) noexcept
+      : Base(capabilities) {}
+
+  constexpr explicit FaultInjectingAllocator(Allocator& allocator) noexcept
+      : Base(allocator) {}
+
+  using Base::Init;
 
   /// Forward `Allocate`, `Resize`, and `Reallocate` calls to the allocator.
   void EnableAll() {
@@ -63,30 +67,27 @@ class FaultInjectingAllocator : public pw::Allocator {
   /// Return `nullptr` for `Reallocate` calls.
   void DisableReallocate() { allow_reallocate_ = false; }
 
-  /// Returns a reference to the wrapped allocator.
-  Allocator& real_allocator() { return allocator_; }
+  using Base::allocator;
 
  protected:
   void* DoAllocate(Layout layout) override {
-    return allow_allocate_ ? allocator_.Allocate(layout) : nullptr;
+    return allow_allocate_ ? Base::DoAllocate(layout) : nullptr;
   }
-  void DoDeallocate(void* ptr) override { allocator_.Deallocate(ptr); }
+  void DoDeallocate(void* ptr) override { Base::DoDeallocate(ptr); }
 
   bool DoResize(void* ptr, size_t new_size) override {
-    return allow_resize_ && allocator_.Resize(ptr, new_size);
+    return allow_resize_ && Base::DoResize(ptr, new_size);
   }
 
   void* DoReallocate(void* ptr, Layout new_layout) override {
-    return allow_reallocate_ ? allocator_.Reallocate(ptr, new_layout) : nullptr;
+    return allow_reallocate_ ? Base::DoReallocate(ptr, new_layout) : nullptr;
   }
 
  private:
-  Allocator& allocator_;
-
   // Flags for whether to allow calls to pass through.
-  bool allow_allocate_;
-  bool allow_resize_;
-  bool allow_reallocate_;
+  bool allow_allocate_ = true;
+  bool allow_resize_ = true;
+  bool allow_reallocate_ = true;
 };
 
 /// @endsubmodule

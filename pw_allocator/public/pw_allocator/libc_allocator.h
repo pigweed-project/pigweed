@@ -36,7 +36,7 @@ class LibCAllocator final : public AbstractAllocator {
   /// @copydoc Allocator::Allocate
   void* DoAllocate(Layout layout) override;
 
-  /// @copydoc Allocator::Deallocate
+  /// @copydoc Deallocator::Deallocate
   void DoDeallocate(void* ptr) override;
 
   /// @copydoc Allocator::Reallocate

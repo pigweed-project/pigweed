@@ -325,11 +325,11 @@ template <typename T,
 void Deallocator::Delete(T* ptr) {
   if constexpr (allocator::Hardening::kIncludesDebugChecks) {
     if (auto result = GetRequestedLayout(ptr); result.ok()) {
-      if constexpr (std::has_virtual_destructor_v<T>) {
+      if constexpr (std::is_final_v<T>) {
+        PW_ASSERT(*result == Layout::Of<T>());
+      } else {
         PW_ASSERT(result->size() >= sizeof(T) &&
                   result->alignment() >= alignof(T));
-      } else {
-        PW_ASSERT(*result == Layout::Of<T>());
       }
     }
   }

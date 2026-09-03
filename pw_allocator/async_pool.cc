@@ -16,15 +16,13 @@
 
 namespace pw::allocator {
 
-void* AsyncPool::DoAllocate() { return pool_.Allocate(); }
-
 void AsyncPool::DoDeallocate(void* ptr) {
-  pool_.Deallocate(ptr);
+  pool().Deallocate(ptr);
   waker_.Wake();
 }
 
 async2::Poll<void*> AsyncPool::PendAllocate(async2::Context& context) {
-  void* ptr = pool_.Allocate();
+  void* ptr = pool().Allocate();
   if (ptr == nullptr) {
     PW_ASYNC_STORE_WAKER(context, waker_, "waiting for pool memory");
     return async2::Pending();

@@ -127,6 +127,7 @@ cc_library(
     hdrs = ["public/pw_allocator/async_pool.h"],
     strip_include_prefix = "public",
     deps = [
+        ":forwarding_pool",
         ":pw_allocator",
         "//pw_async2",
     ],
@@ -273,6 +274,26 @@ cc_library(
 )
 
 cc_library(
+    name = "forwarding_allocator",
+    hdrs = ["public/pw_allocator/forwarding_allocator.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_allocator",
+        "//pw_result",
+    ],
+)
+
+cc_library(
+    name = "forwarding_pool",
+    hdrs = ["public/pw_allocator/forwarding_pool.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_allocator",
+        "//pw_result",
+    ],
+)
+
+cc_library(
     name = "fragmentation",
     srcs = ["fragmentation.cc"],
     hdrs = ["public/pw_allocator/fragmentation.h"],
@@ -381,7 +402,7 @@ cc_library(
     hdrs = ["public/pw_allocator/synchronized_allocator.h"],
     strip_include_prefix = "public",
     deps = [
-        ":pw_allocator",
+        ":forwarding_allocator",
         "//pw_sync:borrow",
         "//pw_sync:lock_annotations",
         "//pw_sync:no_lock",
@@ -408,8 +429,8 @@ cc_library(
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
+        ":forwarding_allocator",
         ":metrics",
-        ":pw_allocator",
         "//pw_assert:assert",
         "//pw_status",
     ],
@@ -451,6 +472,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":first_fit",
+        ":forwarding_allocator",
         ":hardening",
         ":metrics",
         ":pw_allocator",
@@ -883,6 +905,8 @@ filegroup(
         "public/pw_allocator/fallback_allocator.h",
         "public/pw_allocator/fault_injecting_allocator.h",
         "public/pw_allocator/first_fit.h",
+        "public/pw_allocator/forwarding_allocator.h",
+        "public/pw_allocator/forwarding_pool.h",
         "public/pw_allocator/fragmentation.h",
         "public/pw_allocator/fuzzing.h",
         "public/pw_allocator/guarded_allocator.h",

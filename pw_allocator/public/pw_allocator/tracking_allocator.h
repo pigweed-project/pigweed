@@ -17,8 +17,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "pw_allocator/allocator.h"
 #include "pw_allocator/capability.h"
+#include "pw_allocator/forwarding_allocator.h"
 #include "pw_allocator/metrics.h"
 #include "pw_assert/assert.h"
 #include "pw_metric/metric.h"
@@ -52,12 +52,17 @@ static constexpr struct AddTrackingAllocatorAsChild {
 /// tracking allocator cannot account for the overlap in memory usage during
 /// reallocation when it occurs as a "move-and-copy" operation.
 template <typename MetricsType>
-class TrackingAllocator : public pw::Allocator {
+class TrackingAllocator : public ForwardingAllocator {
+ private:
+  using Base = ForwardingAllocator;
+
  public:
-  TrackingAllocator(metric::Token token, Allocator& allocator)
-      : Allocator(allocator.capabilities() | kImplementsGetRequestedLayout),
-        allocator_(allocator),
-        metrics_(token) {}
+  explicit TrackingAllocator(metric::Token token,
+                             const Capabilities& capabilities) noexcept
+      : Base(capabilities), metrics_(token) {}
+
+  TrackingAllocator(metric::Token token, Allocator& allocator) noexcept
+      : Base(allocator), metrics_(token) {}
 
   template <typename OtherMetrics>
   TrackingAllocator(metric::Token token,
@@ -67,6 +72,8 @@ class TrackingAllocator : public pw::Allocator {
     parent.metric_group().Add(metric_group());
   }
 
+  using Base::Init;
+
   const metric::Group& metric_group() const { return metrics_.group(); }
   metric::Group& metric_group() { return metrics_.group(); }
 
@@ -75,7 +82,7 @@ class TrackingAllocator : public pw::Allocator {
   /// Requests to update out-of-band metrics, if any.
   ///
   /// See also `NoMetrics::UpdateDeferred`.
-  void UpdateDeferred() const { metrics_.UpdateDeferred(allocator_); }
+  void UpdateDeferred() const { metrics_.UpdateDeferred(allocator()); }
 
  private:
   /// @copydoc Allocator::Allocate
@@ -87,23 +94,12 @@ class TrackingAllocator : public pw::Allocator {
   /// @copydoc Allocator::Resize
   bool DoResize(void* ptr, size_t new_size) override;
 
-  /// @copydoc Allocator::Reallocate
-  void* DoReallocate(void* ptr, Layout new_layout) override;
+  /// @copydoc Allocator::DoBeforeReallocate
+  void DoBeforeReallocate(void* ptr, Layout new_layout) override;
 
-  /// @copydoc Allocator::GetAllocated
-  size_t DoGetAllocated() const override { return allocator_.GetAllocated(); }
+  /// @copydoc Allocator::DoAfterReallocateDone
+  void DoAfterReallocateDone(Layout new_layout, void* new_ptr) override;
 
-  /// @copydoc Allocator::DoMeasureFragmentation
-  std::optional<Fragmentation> DoMeasureFragmentation() const override {
-    return allocator_.MeasureFragmentation();
-  }
-
-  /// @copydoc Deallocator::GetInfo
-  Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override {
-    return GetInfo(allocator_, info_type, ptr);
-  }
-
-  Allocator& allocator_;
   mutable internal::Metrics<MetricsType> metrics_;
 };
 
@@ -113,18 +109,18 @@ template <typename MetricsType>
 void* TrackingAllocator<MetricsType>::DoAllocate(Layout layout) {
   if constexpr (internal::AnyEnabled<MetricsType>()) {
     Layout requested = layout;
-    size_t allocated = allocator_.GetAllocated();
-    void* new_ptr = allocator_.Allocate(requested);
+    size_t allocated = Base::DoGetAllocated();
+    void* new_ptr = Base::DoAllocate(requested);
     if (new_ptr == nullptr) {
       metrics_.RecordFailure(requested.size());
       return nullptr;
     }
     metrics_.IncrementAllocations();
     metrics_.ModifyRequested(requested.size(), 0);
-    metrics_.ModifyAllocated(allocator_.GetAllocated(), allocated);
+    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
     return new_ptr;
   } else {
-    return allocator_.Allocate(layout);
+    return Base::DoAllocate(layout);
   }
 }
 
@@ -132,13 +128,13 @@ template <typename MetricsType>
 void TrackingAllocator<MetricsType>::DoDeallocate(void* ptr) {
   if constexpr (internal::AnyEnabled<MetricsType>()) {
     Layout requested = Layout::Unwrap(GetRequestedLayout(ptr));
-    size_t allocated = allocator_.GetAllocated();
-    allocator_.Deallocate(ptr);
+    size_t allocated = Base::DoGetAllocated();
+    Base::DoDeallocate(ptr);
     metrics_.IncrementDeallocations();
     metrics_.ModifyRequested(0, requested.size());
-    metrics_.ModifyAllocated(allocator_.GetAllocated(), allocated);
+    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
   } else {
-    allocator_.Deallocate(ptr);
+    Base::DoDeallocate(ptr);
   }
 }
 
@@ -146,35 +142,38 @@ template <typename MetricsType>
 bool TrackingAllocator<MetricsType>::DoResize(void* ptr, size_t new_size) {
   if constexpr (internal::AnyEnabled<MetricsType>()) {
     Layout requested = Layout::Unwrap(GetRequestedLayout(ptr));
-    size_t allocated = allocator_.GetAllocated();
-    if (!allocator_.Resize(ptr, new_size)) {
+    size_t allocated = Base::DoGetAllocated();
+    if (!Base::DoResize(ptr, new_size)) {
       metrics_.RecordFailure(new_size);
       return false;
     }
     metrics_.IncrementResizes();
     metrics_.ModifyRequested(new_size, requested.size());
-    metrics_.ModifyAllocated(allocator_.GetAllocated(), allocated);
+    metrics_.ModifyAllocated(Base::DoGetAllocated(), allocated);
     return true;
   } else {
-    return allocator_.Resize(ptr, new_size);
+    return Base::DoResize(ptr, new_size);
   }
 }
 
 template <typename MetricsType>
-void* TrackingAllocator<MetricsType>::DoReallocate(void* ptr,
-                                                   Layout new_layout) {
+void TrackingAllocator<MetricsType>::DoBeforeReallocate(void* ptr,
+                                                        Layout new_layout) {
+  metrics_.set_reallocating(true);
+  Base::DoBeforeReallocate(ptr, new_layout);
+}
+
+template <typename MetricsType>
+void TrackingAllocator<MetricsType>::DoAfterReallocateDone(Layout new_layout,
+                                                           void* new_ptr) {
+  Base::DoAfterReallocateDone(new_layout, new_ptr);
+  metrics_.set_reallocating(false);
   if constexpr (internal::AnyEnabled<MetricsType>()) {
-    metrics_.set_reallocating(true);
-    void* new_ptr = Allocator::DoReallocate(ptr, new_layout);
-    metrics_.set_reallocating(false);
     if (new_ptr == nullptr) {
       metrics_.RecordFailure(new_layout.size());
     } else {
       metrics_.IncrementReallocations();
     }
-    return new_ptr;
-  } else {
-    return allocator_.Reallocate(ptr, new_layout);
   }
 }
 

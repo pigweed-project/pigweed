@@ -36,6 +36,7 @@ pw_add_library(pw_allocator.examples.custom_allocator STATIC
     public
   PUBLIC_DEPS
     pw_allocator
+    pw_allocator.forwarding_allocator
   SOURCES
     custom_allocator.cc
   PRIVATE_DEPS

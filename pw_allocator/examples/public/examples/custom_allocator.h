@@ -16,11 +16,14 @@
 // DOCSTAG: [pw_allocator-examples-custom_allocator]
 #include <cstddef>
 
-#include "pw_allocator/allocator.h"
+#include "pw_allocator/forwarding_allocator.h"
 
 namespace examples {
 
-class CustomAllocator : public pw::Allocator {
+class CustomAllocator : public pw::allocator::ForwardingAllocator {
+ private:
+  using Base = pw::allocator::ForwardingAllocator;
+
  public:
   using Layout = pw::allocator::Layout;
 
@@ -37,7 +40,6 @@ class CustomAllocator : public pw::Allocator {
   bool DoResize(void*, size_t) override { return false; }
 
  private:
-  pw::Allocator& allocator_;
   size_t used_ = 0;
   size_t threshold_ = 0;
 };
