@@ -1,8 +1,8 @@
 ---
-name: run_presubmit_checks
+name: run-presubmit-checks
 description: >-
-  Run presubmit checks on one or more commits. Prepare changes for submission
-  by automatically fixing issues like formatting.
+  Run presubmit checks on each commit in a stack, automatically fixing any
+  issues. This prepares a stack of commits for submission to Gerrit.
 ---
 
 # Presubmit Stack Fix Skill
