@@ -132,7 +132,6 @@ macro_rules! panic_backend {
 #[macro_export]
 macro_rules! assert_unary_backend {
     ($condition:expr $(,)?) => {{
-        #[allow(clippy::deref_addrof)]
         #[allow(clippy::unnecessary_cast)]
         if !$condition {
             // Ideally we'd combine these two log statements.  However, the `pw_log` API
@@ -149,7 +148,6 @@ macro_rules! assert_unary_backend {
     }};
 
     ($condition:expr, $($args:expr),* $(,)?) => {{
-        #[allow(clippy::deref_addrof)]
         #[allow(clippy::unnecessary_cast)]
         if !$condition {
             // Ideally we'd combine these two log statements.  However, the `pw_log` API
@@ -176,7 +174,6 @@ macro_rules! assert_unary_backend {
 #[macro_export]
 macro_rules! assert_binary_backend {
     ($lhs:expr, $op:tt, $rhs:expr $(,)?) => {{
-        #[allow(clippy::deref_addrof)]
         #[allow(clippy::unnecessary_cast)]
         // This match statement ensures that each expression is only evaluated once.
         match (&$lhs, &$rhs) {
@@ -198,7 +195,6 @@ macro_rules! assert_binary_backend {
     }};
 
     ($lhs:expr, $op:tt, $rhs:expr, $($args:expr),* $(,)?) => {{
-        #[allow(clippy::deref_addrof)]
         #[allow(clippy::unnecessary_cast)]
         // This match statement ensures that each expression is only evaluated once.
         match (&$lhs, &$rhs) {
