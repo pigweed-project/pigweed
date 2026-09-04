@@ -15,4 +15,4 @@
 
 #include "pw_multibuf/allocator.h"
 #include "pw_multibuf/multibuf.h"
-#include "pw_multibuf_backend/simple_allocator.h"
+#include "pw_multibuf_backend/simple_allocator.h"  // IWYU pragma: export

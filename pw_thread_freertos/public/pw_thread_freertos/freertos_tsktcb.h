@@ -19,7 +19,7 @@
 // The backend is expected to provide this header which defines the tskTCB
 // strut which matches FreeRTOS's definition of a task control block which is
 // opaquely presented via the public API as the StaticTask_t.
-#include "pw_thread_freertos_backend/freertos_tsktcb.h"
+#include "pw_thread_freertos_backend/freertos_tsktcb.h"  // IWYU pragma: export
 
 static_assert(sizeof(tskTCB) == sizeof(StaticTask_t),
               "The tskTCB mirror of the real task TCB doesn't match FreeRTOS");

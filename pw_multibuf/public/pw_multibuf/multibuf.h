@@ -15,4 +15,4 @@
 
 #include "pw_multibuf/chunk.h"
 #include "pw_multibuf/observer.h"
-#include "pw_multibuf_backend/multibuf.h"
+#include "pw_multibuf_backend/multibuf.h"  // IWYU pragma: export

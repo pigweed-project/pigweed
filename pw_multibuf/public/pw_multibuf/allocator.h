@@ -14,4 +14,4 @@
 #pragma once
 
 #include "pw_multibuf/multibuf.h"
-#include "pw_multibuf_backend/allocator.h"
+#include "pw_multibuf_backend/allocator.h"  // IWYU pragma: export
