@@ -33,6 +33,46 @@ label_flag(
     visibility = ["//pw_toolchain:__subpackages__"],
 )
 
+# Facades for compiler type constraints required by warning flags.
+#
+# We would strongly prefer to use rules_cc constraints and require that
+# toolchains conform to them. Unfortunately, today rules_cc does not provide
+# these constraints, nor does it set these features for the default
+# auto-detected toolchains.
+#
+# By default, these point to Pigweed's native toolchain capabilities. Downstream
+# projects using external toolchains (such as Zephyr) can redirect these flags
+# to their own toolchain constraints or to :always_true.
+label_flag(
+    name = "compiler_is_clang",
+    build_setting_default = "//pw_toolchain/cc/capability:compiler_is_clang",
+)
+
+label_flag(
+    name = "compiler_is_gcc",
+    build_setting_default = "//pw_toolchain/cc/capability:compiler_is_gcc",
+)
+
+# Facades for rules_go and rules_rust features required by
+# warning_suppression_allowlist.
+label_flag(
+    name = "rules_go_unsupported_feature",
+    build_setting_default = "//pw_toolchain/cc/feature:rules_go_unsupported_feature",
+)
+
+label_flag(
+    name = "rules_rust_unsupported_feature",
+    build_setting_default = "//pw_toolchain/cc/feature:rules_rust_unsupported_feature",
+)
+
+# An empty feature constraint that is unconditionally satisfied by any toolchain.
+# Downstream projects with toolchains that do not define or require compiler
+# capability features can point constraint facades here to enable compiler-specific
+# warnings without toolchain validation errors.
+cc_feature_constraint(
+    name = "always_true",
+)
+
 # The common set of warnings for clang and arm_gcc.
 cc_args_list(
     name = "common_warnings",
@@ -85,7 +125,7 @@ cc_args(
         "-Wno-error=deprecated-attributes",
     ],
     requires_any_of = [
-        "//pw_toolchain/cc/capability:compiler_is_clang",
+        ":compiler_is_clang",
     ],
     visibility = ["//visibility:private"],
 )
@@ -104,7 +144,7 @@ cc_args(
         "-D_LIBCPP_ENABLE_THREAD_SAFETY_ANNOTATIONS=1",
     ],
     requires_any_of = [
-        "//pw_toolchain/cc/capability:compiler_is_clang",
+        ":compiler_is_clang",
     ],
 )
 # LINT.ThenChange(//pw_build/BUILD.gn:clang_thread_safety_warnings)
@@ -200,7 +240,7 @@ cc_args(
         "-Wshadow-all",
     ],
     requires_any_of = [
-        "//pw_toolchain/cc/capability:compiler_is_clang",
+        ":compiler_is_clang",
     ],
     visibility = ["//visibility:private"],
 )
@@ -583,9 +623,9 @@ cc_args(
 cc_feature_constraint(
     name = "not_rust_and_not_go",
     all_of = [
-        "//pw_toolchain/cc/feature:rules_go_unsupported_feature",
-        "//pw_toolchain/cc/feature:rules_rust_unsupported_feature",
+        ":rules_go_unsupported_feature",
+        ":rules_rust_unsupported_feature",
     ],
     # Find a better home for this.
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
 )

@@ -403,9 +403,41 @@ flags that are compiler-specific. This can be done with the following steps:
               "@rules_cc//cc/toolchains/actions:compile_actions",
           ],
           requires_any_of = [
-              "//pw_toolchain/cc/capability:compiler_is_clang",
+              "//pw_toolchain/cc/args:compiler_is_clang",
           ],
           args = [
               "-Wshadow-all",
           ],
       )
+
+Warning constraint facades and external toolchains
+==================================================
+Warning arguments in ``//pw_toolchain/cc/args`` use constraint facades (Bazel
+``label_flag`` targets) instead of hardcoding Pigweed-specific capabilities:
+
+* ``//pw_toolchain/cc/args:compiler_is_clang``: Defaults to
+  ``//pw_toolchain/cc/capability:compiler_is_clang``.
+* ``//pw_toolchain/cc/args:compiler_is_gcc``: Defaults to
+  ``//pw_toolchain/cc/capability:compiler_is_gcc``.
+* ``//pw_toolchain/cc/args:rules_go_unsupported_feature``: Defaults to
+  ``//pw_toolchain/cc/feature:rules_go_unsupported_feature``.
+* ``//pw_toolchain/cc/args:rules_rust_unsupported_feature``: Defaults to
+  ``//pw_toolchain/cc/feature:rules_rust_unsupported_feature``.
+
+.. note::
+
+   We would strongly prefer to use standard ``rules_cc`` constraints and
+   require that toolchains conform to them. Unfortunately, today ``rules_cc``
+   does not provide these constraints, nor does it set these features for the
+   default auto-detected toolchains.
+
+When using external toolchains (such as Zephyr toolchains) that do not register
+Pigweed's capabilities in ``known_features``, downstream projects can redirect
+these flags in ``.bazelrc`` or per-platform in ``platform(flags = {...})``:
+
+* **To a toolchain-specific capability:** Redirect to the external toolchain's
+  corresponding compiler feature (e.g.
+  ``@zephyr//toolchain/capability:compiler_is_clang``).
+* **To unconditional satisfaction:** Redirect to
+  ``//pw_toolchain/cc/args:always_true`` if the toolchain is known to be Clang
+  and does not require capability gating.
