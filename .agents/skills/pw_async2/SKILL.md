@@ -39,6 +39,28 @@ Structure pw_async2 systems using a strict 3-tier execution graph:
   `Channel`) or `FutureCore` **only** when interfacing directly with hardware,
   timers, or event providers.
 
+### Top-down design and the coroutine mental model
+
+Design asynchronous code **top-down** from the caller's perspective rather than
+**bottom-up** from low-level wakers or hardware polling.
+
+The recommended mental model for writing a composite future is:
+
+1. **Draft the sequential API as a coroutine** (mental or prototype) using
+   `co_await`, loops, and early returns.
+2. **Derive the factory function and manual state machine**:
+   - Coroutine signature & validation -> Public factory function returning the Future by value.
+   - Variables surviving across `co_await` -> class member fields.
+   - `co_await` suspension points -> state enum and child subfuture members.
+   - Non-overlapping transient state / futures -> group into `std::variant` to optimize memory layout.
+   - Sequential control flow -> `while (true) switch (state_)` loop in `Pend()`.
+   - `PW_CO_TRY` and return values -> `Ready()` returns.
+
+> [!TIP]
+> For a detailed guide on top-down design, the step-by-step transformation
+> workflow, and bottom-up pitfalls to avoid, view
+> [references/top_down_design.md](./references/top_down_design.md).
+
 ---
 
 ## 2. What is a future? (Concept and invariants)
@@ -56,11 +78,14 @@ concrete type `F` is a `Future` if it exposes:
   `void`).
 - `Poll<value_type> Pend(Context& cx)`: Advances the operation. Returns
   `Ready(T)` when complete or `Pending()` when blocked.
-- `bool is_pendable() const`: Returns `true` if active/pollable.
+- `bool is_pendable() const`: Returns `true` if active/pollable (`false` when
+  default-constructed / uninitialized or completed).
 - `bool is_complete() const`: Returns `true` if completed.
-- Special member functions: Default-constructible, destructible, movable.
+- Special member functions: Default-constructible (initializes to an empty,
+  non-pendable state), destructible, movable.
 
 > [!TIP]
+>
 > **ALWAYS verify custom future types with `static_assert`**: Immediately after
 > defining any custom future class, add a static assertion to enforce compliance
 > with `pw::async2::Future` at compile time:
@@ -71,15 +96,18 @@ concrete type `F` is a `Future` if it exposes:
 
 ### Fundamental invariants
 
-1. **Lazy execution**: Creating a future executes no work. Work occurs only when
+1. **Empty default state**: Default-constructing a future initializes it to an
+   empty, uninitialized state where `is_pendable()` and `is_complete()` return
+   `false`. Polling an uninitialized future is an error (`PW_CRASH`).
+2. **Lazy execution**: Creating a future executes no work. Work occurs only when
    polled via `Pend(Context& cx)`.
-2. **Explicit single ownership**: The caller owns the `Future` by value on the
+3. **Explicit single ownership**: The caller owns the `Future` by value on the
    stack or inline inside a parent struct. There is no `std::shared_ptr` or
    hidden heap allocation.
-3. **Zero-cost RAII cancellation**: Destructing a future cancels the operation
+4. **Zero-cost RAII cancellation**: Destructing a future cancels the operation
    immediately and synchronously. Leaf futures unlist from providers and drop
    wakers; composite futures recursively destruct child subfutures inline.
-4. **Single-use completion**: Once `Pend()` returns `Ready()`, the operation is
+5. **Single-use completion**: Once `Pend()` returns `Ready()`, the operation is
    final. **Do NOT poll a completed future again.**
 
 ---
@@ -134,8 +162,7 @@ returned by value.
 Leaf futures interact directly with event providers (hardware interrupts,
 timers, etc.) and manage waker registration.
 
-> [!NOTE]
-> **Prefer pre-built primitives**: In most cases, do NOT write a custom leaf
+> [!NOTE] > **Prefer pre-built primitives**: In most cases, do NOT write a custom leaf
 > future from scratch. Use existing primitives like `ValueFuture<T>` (with
 > `ValueProvider` or `ValueListProvider`), `Notification`, or `Channel`.
 > Pre-built primitives handle synchronization, thread safety, and waker
@@ -148,7 +175,7 @@ hardware driver):
    membership, and state tracking.
 2. **Movability and intrusive relocation**: Leaf futures must be
    move-constructible and move-assignable (`ButtonFuture(ButtonFuture&&) =
-   default;`). `FutureCore` handles movability automatically: when a future is
+default;`). `FutureCore` handles movability automatically: when a future is
    moved by value (e.g. returned from a factory function or stored in a task
    member), `FutureCore` automatically updates its intrusive list pointers in
    the provider's `FutureList` and transfers the `Waker` to the new memory
@@ -181,6 +208,10 @@ Composite futures encapsulate multi-step asynchronous operations without using
   newly created subfutures within the same `Pend(cx)` call. Returning
   `Pending()` before pending a new subfuture prevents waker registration,
   causing the task to stall indefinitely.
+
+For step-by-step guidance on transforming a sequential coroutine mental model
+into a manual composite future, see
+[references/top_down_design.md](./references/top_down_design.md).
 
 For full implementation patterns, see:
 
@@ -253,9 +284,9 @@ prevent callers from bypassing validation.
   **NEVER** use `Async` in function names (`AsyncRead()` ❌) or name after
   future types (`GetReadFuture()` ❌).
 - **Non-blocking immediate operations**: Prefix with `Try` (`std::optional<T>
-  TryRead()`).
+TryRead()`).
 - **Thread-blocking operations**: Prefix with `Blocking` (`pw::Result<T>
-  BlockingRead()`).
+BlockingRead()`).
 
 ---
 
@@ -292,8 +323,7 @@ class SensorReaderTask : public pw::async2::Task {
 };
 ```
 
-> [!IMPORTANT]
-> **Lazy Future Provisioning**: Do **NOT** construct futures in a `Task`'s
+> [!IMPORTANT] > **Lazy Future Provisioning**: Do **NOT** construct futures in a `Task`'s
 > constructor. Constructing futures eagerly in constructors can trigger side
 > effects (e.g. initiating hardware transactions or timer registrations) before
 > the task is posted to or polled by a dispatcher, defeating lazy execution
@@ -319,9 +349,17 @@ task.Deregister();
 ## 7. C++20 coroutines (`pw::async2::Coro`)
 
 > [!NOTE]
-> Prefer manual state machines using composite futures and `PW_AWAIT` by default
-> due to coroutine frame memory overhead and code size. Use `Coro<T>` when
-> coroutines are explicitly requested or already established in the codebase.
+> Prefer manual state machines using composite futures and `PW_AWAIT` by default.
+> C++20 coroutines require dynamic allocation for coroutine frames via
+> `CoroContext` / `pw::Allocator`, introducing a opaque allocations whose sizes
+> vary by toolchain, causing heap fragmentation risks and runtime allocation
+> failure paths. Handwritten futures provide deterministic inline storage.
+>
+> However, **always use the coroutine mental model** to design the control flow
+> before writing the manual future (see
+> [references/top_down_design.md](./references/top_down_design.md)).
+> Use `Coro<T>` when coroutines are explicitly requested or already established
+> in the codebase.
 
 If working with coroutines, view
 [references/coroutines.md](./references/coroutines.md) for detailed patterns,
@@ -349,32 +387,35 @@ for deterministic unit testing patterns with `DispatcherForTest` and
 
 ## 10. Rules and anti-pattern checklist
 
+- [ ] **Top-down design & memory layout**: Draft APIs top-down using the
+      coroutine mental model before implementing manual composite futures; group
+      disjoint transient subfutures in `std::variant` to minimize struct size.
 - [ ] **Verify Future concept**: Always verify custom future types with
-  `static_assert(pw::async2::Future<MyCustomFuture>);`.
+      `static_assert(pw::async2::Future<MyCustomFuture>);`.
 - [ ] **Prefer manual state machines**: Use composite futures and `PW_AWAIT` by
-  default. Only use C++20 coroutines (`Coro<T>`) if explicitly requested or
-  already established in the codebase.
+      default to avoid opaque dynamic coroutine frame allocations. Only use C++20
+      coroutines (`Coro<T>`) if explicitly requested or already established in the
+      codebase.
 - [ ] **Avoid pendable functions**: Do not write functions accepting `Context&`
-  and returning `Poll<T>` for general application logic. Construct and return a
-  concrete `Future` type by value instead (except for low-level internal
-  helpers private to a single caller).
+      and returning `Poll<T>` for general application logic. Construct and return a
+      concrete `Future` type by value instead (except for low-level internal
+      helpers private to a single caller).
 - [ ] **No implicit dynamic allocation**: Core futures and tasks must be
-  stack/inline allocated; channels support both allocator-backed
-  (`pw::allocator::Allocator`) and static (`ChannelStorage`) allocation.
+      stack/inline allocated; channels support both allocator-backed
+      (`pw::allocator::Allocator`) and static (`ChannelStorage`) allocation.
 - [ ] **No `Async` naming**: Name functions `Read()`, not `AsyncRead()`.
 - [ ] **Direct future return**: Return `Future<T>` directly by value, not
-  `Result<Future>`.
+      `Result<Future>`.
 - [ ] **Task deregistration**: Call `task.Deregister()` or `task.Join()` before
-  destroying a posted task.
+      destroying a posted task.
 - [ ] **Lazy future provisioning**: Provision subfutures lazily inside
-  `DoPend()` (when `!future.is_pendable()`), never eagerly in constructors.
+      `DoPend()` (when `!future.is_pendable()`), never eagerly in constructors.
 - [ ] **Completed future invariant**: Never call `Pend()` on a future after it
-  returns `Ready()`.
+      returns `Ready()`.
 - [ ] **State machine loop-through**: Loop state transitions in `Pend()`
-  immediately (`while (true) switch`) to ensure newly created subfutures are
-  pended immediately so their wakers get registered.
+      immediately (`while (true) switch`) to ensure newly created subfutures are
+      pended immediately so their wakers get registered.
 - [ ] **TimeProvider injection**: Inject `TimeProvider<Clock>&` for time
-  operations; never use static wall-clock sleeps.
+      operations; never use static wall-clock sleeps.
 - [ ] **Deterministic tests**: Use `DispatcherForTest::RunUntilStalled()` and
-  `SimulatedTimeProvider::AdvanceUntilNextExpiration()`.
-
+      `SimulatedTimeProvider::AdvanceUntilNextExpiration()`.
