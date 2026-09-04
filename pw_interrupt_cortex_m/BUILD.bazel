@@ -34,12 +34,12 @@ boolean_constraint_value(
 # TODO: https://pwbug.dev/347998044 - This alias will be removed along with the
 # multiplexer.
 alias(
-    name = "context",
-    actual = ":impl",
+    name = "impl",
+    actual = ":context",
 )
 
 cc_library(
-    name = "impl",
+    name = "context",
     hdrs = [
         "public/pw_interrupt_cortex_m/context_inline.h",
         "public_overrides/pw_interrupt_backend/context_inline.h",

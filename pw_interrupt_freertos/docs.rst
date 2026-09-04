@@ -31,7 +31,7 @@ Setup
              ],
              flags = flags_from_dict({
                  # ...
-                 "@pigweed//pw_interrupt:backend": "//pw_interrupt_freertos:impl",
+                 "@pigweed//pw_interrupt:backend": "//pw_interrupt_freertos:context",
              }),
          )
 

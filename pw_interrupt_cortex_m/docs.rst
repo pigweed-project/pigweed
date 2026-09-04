@@ -29,7 +29,7 @@ Setup
              ],
              flags = flags_from_dict({
                  # ...
-                 "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:impl",
+                 "@pigweed//pw_interrupt:backend": "//pw_interrupt_cortex_m:context",
              }),
          )
 
