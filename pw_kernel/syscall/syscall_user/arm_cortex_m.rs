@@ -166,12 +166,7 @@ syscall_veneer!(
 syscall_veneer!(
     WaitGroupAdd,
     4,
-    wait_group_add(
-        wait_group: u32,
-        object: u32,
-        signal_mask: Signals,
-        user_data: usize,
-    )
+    wait_group_add(wait_group: u32, object: u32, signal_mask: Signals, user_data: usize)
 );
 syscall_veneer!(
     WaitGroupRemove,
@@ -214,12 +209,7 @@ syscall_veneer!(
 syscall_veneer!(
     ChannelRead,
     4,
-    channel_read(
-        handle: u32,
-        offset: usize,
-        buffer: *mut u8,
-        buffer_len: usize,
-    )
+    channel_read(handle: u32, offset: usize, buffer: *mut u8, buffer_len: usize)
 );
 syscall_veneer!(
     ChannelRespond,
@@ -240,11 +230,7 @@ syscall_veneer!(DebugPutc, 1, putc(a: u32));
 syscall_veneer!(DebugShutdown, 1, shutdown(a: u32));
 syscall_veneer!(DebugLog, 2, log(buffer: *const u8, buffer_len: usize));
 syscall_veneer!(DebugNop, 0, nop());
-syscall_veneer!(
-    DebugTriggerInterrupt,
-    1,
-    debug_trigger_interrupt(irq: u32)
-);
+syscall_veneer!(DebugTriggerInterrupt, 1, debug_trigger_interrupt(irq: u32));
 syscall_veneer!(DebugClockNow, 0, debug_clock_now());
 
 syscall_veneer!(
