@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_LAZY_INIT_OPTIONS_H_
-#define LIB_LAZY_INIT_OPTIONS_H_
+#ifndef SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_OPTIONS_H_
+#define SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_OPTIONS_H_
 
 namespace lazy_init {
 
@@ -47,4 +47,4 @@ enum class Destructor {
 
 }  // namespace lazy_init
 
-#endif  // LIB_LAZY_INIT_OPTIONS_H_
+#endif  // SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_OPTIONS_H_

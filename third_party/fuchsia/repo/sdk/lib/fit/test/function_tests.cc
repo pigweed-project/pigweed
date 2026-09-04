@@ -12,7 +12,7 @@
 #include <memory>
 #include <type_traits>
 
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 #include "pw_polyfill/language_feature_macros.h"
 
@@ -356,7 +356,7 @@ void closure() {
 
   // target access
   ClosureFunction fslot;
-  EXPECT_NULL(fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
   fslot = SlotMachine{42};
   fslot();
   SlotMachine* fslottarget = fslot.template target<SlotMachine>();
@@ -365,7 +365,7 @@ void closure() {
       const_cast<const ClosureFunction&>(fslot).template target<SlotMachine>();
   EXPECT_EQ(fslottarget, fslottargetconst);
   fslot = nullptr;
-  EXPECT_NULL(fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
 }
 
 template <typename BinaryOpFunction>
@@ -551,7 +551,7 @@ void binary_op() {
 
   // target access
   BinaryOpFunction fslot;
-  EXPECT_NULL(fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
   fslot = SlotMachine{42};
   EXPECT_EQ(54, fslot(3, 4));
   SlotMachine* fslottarget = fslot.template target<SlotMachine>();
@@ -560,7 +560,7 @@ void binary_op() {
       const_cast<const BinaryOpFunction&>(fslot).template target<SlotMachine>();
   EXPECT_EQ(fslottarget, fslottargetconst);
   fslot = nullptr;
-  EXPECT_NULL(fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
 }
 
 TEST(FunctionTests, sized_function_size_bounds) {
@@ -763,11 +763,11 @@ TEST(FunctionTests, sharing) {
   fslot();
   EXPECT_EQ(45, fslottarget->value);
   fslot = nullptr;
-  EXPECT_NULL(fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
   shared_fslot();
   EXPECT_EQ(46, fslottarget->value);
   shared_fslot = nullptr;
-  EXPECT_NULL(shared_fslot.template target<decltype(nullptr)>());
+  EXPECT_EQ(nullptr, shared_fslot.template target<decltype(nullptr)>());
 
 // These statements do not compile because inline functions cannot be shared
 #if 0
@@ -845,7 +845,7 @@ TEST(FunctionTests, deprecated_bind_member) {
   EXPECT_EQ(6, fit::bind_member(&obj, &Obj::Sum)(1, 2, 3));
   move_only_value = fit::bind_member(&obj, &Obj::AddAndReturn)(std::move(move_only_value));
   EXPECT_EQ(5, *move_only_value);
-  EXPECT_EQ(3, obj.calls);
+  EXPECT_EQ(3u, obj.calls);
 }
 
 TEST(FunctionTests, bind_member) {
@@ -860,7 +860,7 @@ TEST(FunctionTests, bind_member) {
   fit::function<int(int, int, int)> f(fit::bind_member<&Obj::Sum>(&obj));
   EXPECT_EQ(6, f(1, 2, 3));
   EXPECT_EQ(5, *move_only_value);
-  EXPECT_EQ(4, obj.calls);
+  EXPECT_EQ(4u, obj.calls);
 }
 
 TEST(FunctionTests, callback_once) {
@@ -1096,13 +1096,13 @@ static_assert(
     "");
 
 TEST(FunctionTests, rounding_function) {
-  EXPECT_EQ(5, fit::internal::RoundUpToMultiple(0, 5));
-  EXPECT_EQ(5, fit::internal::RoundUpToMultiple(1, 5));
-  EXPECT_EQ(5, fit::internal::RoundUpToMultiple(4, 5));
-  EXPECT_EQ(5, fit::internal::RoundUpToMultiple(5, 5));
-  EXPECT_EQ(10, fit::internal::RoundUpToMultiple(6, 5));
-  EXPECT_EQ(10, fit::internal::RoundUpToMultiple(9, 5));
-  EXPECT_EQ(10, fit::internal::RoundUpToMultiple(10, 5));
+  EXPECT_EQ(5u, fit::internal::RoundUpToMultiple(0, 5));
+  EXPECT_EQ(5u, fit::internal::RoundUpToMultiple(1, 5));
+  EXPECT_EQ(5u, fit::internal::RoundUpToMultiple(4, 5));
+  EXPECT_EQ(5u, fit::internal::RoundUpToMultiple(5, 5));
+  EXPECT_EQ(10u, fit::internal::RoundUpToMultiple(6, 5));
+  EXPECT_EQ(10u, fit::internal::RoundUpToMultiple(9, 5));
+  EXPECT_EQ(10u, fit::internal::RoundUpToMultiple(10, 5));
 }
 
 // Test that the alignment of function and callback is always the minimum of alignof(max_align_t)

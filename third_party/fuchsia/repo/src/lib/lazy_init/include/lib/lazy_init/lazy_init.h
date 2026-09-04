@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_LAZY_INIT_LAZY_INIT_H_
-#define LIB_LAZY_INIT_LAZY_INIT_H_
+#ifndef SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_LAZY_INIT_H_
+#define SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_LAZY_INIT_H_
 
 #include <atomic>
 #include <cstddef>
@@ -284,4 +284,4 @@ class LazyInit<T, Check, Destructor::Enabled> : public LazyInit<T, Check, Destru
 
 }  // namespace lazy_init
 
-#endif  // LIB_LAZY_INIT_LAZY_INIT_H_
+#endif  // SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_LAZY_INIT_H_

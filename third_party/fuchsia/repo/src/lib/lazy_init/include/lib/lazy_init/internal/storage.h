@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef LIB_LAZY_INIT_INTERNAL_STORAGE_H_
-#define LIB_LAZY_INIT_INTERNAL_STORAGE_H_
+#ifndef SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_INTERNAL_STORAGE_H_
+#define SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_INTERNAL_STORAGE_H_
 
 #include <lib/lazy_init/options.h>
 
@@ -63,4 +63,4 @@ union LazyInitStorage<T, false> {
 
 }  // namespace internal
 }  // namespace lazy_init
-#endif  // LIB_LAZY_INIT_INTERNAL_STORAGE_H_
+#endif  // SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_INTERNAL_STORAGE_H_
