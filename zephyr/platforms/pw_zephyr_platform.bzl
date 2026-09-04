@@ -21,6 +21,7 @@ _PW_ZEPHYR_DEFAULT_FLAGS = {
     "@pigweed//pw_assert:assert_backend_impl": "@pigweed//pw_assert_basic:impl",
     "@pigweed//pw_assert:check_backend": "@pigweed//pw_assert_basic",
     "@pigweed//pw_assert:check_backend_impl": "@pigweed//pw_assert_basic:impl",
+    "@pigweed//pw_interrupt:backend": "@pigweed//pw_interrupt_zephyr:context",
     "@pigweed//pw_log:backend": "@pigweed//pw_log_basic",
     "@pigweed//pw_log:backend_impl": "@pigweed//pw_build:empty_cc_library",
     "@pigweed//pw_malloc:backend": "@pigweed//pw_malloc:bucket_block_allocator",
