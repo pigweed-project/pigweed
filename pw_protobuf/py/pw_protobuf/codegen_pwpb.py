@@ -785,7 +785,8 @@ class SubMessageEncoderMethod(ProtoMethod):
                     f'{self.field_cast()}) + kReservedSize)) {{'
                 ),
                 (
-                    f'  UncheckedWriteTag({self.field_cast()}, '
+                    '  ::pw::protobuf::BufferEncoderView::UncheckedWriteTag('
+                    f'{self.field_cast()}, '
                     '::pw::protobuf::WireType::kDelimited);'
                 ),
                 (
@@ -837,8 +838,8 @@ class UncheckedSubMessageEncoderMethod(ProtoMethod):
                 'PW_PROTOBUF_CFG_MAX_VARINT_SIZE");'
             ),
             (
-                f'UncheckedWriteTag({self.field_cast()}, '
-                '::pw::protobuf::WireType::kDelimited);'
+                '::pw::protobuf::BufferEncoderView::UncheckedWriteTag('
+                f'{self.field_cast()}, ::pw::protobuf::WireType::kDelimited);'
             ),
             'size_t len_offset = UncheckedReserveLength(kReservedSize);',
             f'return {self._encoder_type()}(*this, len_offset);',

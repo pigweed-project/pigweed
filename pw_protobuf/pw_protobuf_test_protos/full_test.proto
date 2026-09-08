@@ -243,3 +243,11 @@ message LargeNestedTest {
 
   LargeNested large_nested = 1;
 }
+
+message Tag {
+  // Field named 'tag' generates WriteTag() / UncheckedWriteTag() methods,
+  // which must not conflict with BufferEncoderView::UncheckedWriteTag() when
+  // getting submessage encoders.
+  uint32 tag = 1;
+  KeyValuePair nested = 2;
+}

@@ -56,6 +56,7 @@ namespace Period = test::pwpb::Period;
 namespace Pigweed = test::pwpb::Pigweed;
 namespace Proto = test::pwpb::Proto;
 namespace RepeatedTest = test::pwpb::RepeatedTest;
+namespace Tag = test::pwpb::Tag;
 
 namespace imported {
 namespace Timestamp = ::pw::protobuf::test::imported::pwpb::Timestamp;
@@ -699,6 +700,30 @@ TEST(Codegen, BufferEncoderSubMessage) {
   {
     auto pigweed_encoder = encoder.GetPigweedEncoder();
     EXPECT_EQ(pigweed_encoder.WriteStatus(test::pwpb::Bool::kTrue), OkStatus());
+  }
+  EXPECT_EQ(encoder.status(), OkStatus());
+}
+
+TEST(Codegen, SubMessageWithTagField) {
+  std::byte buffer[128];
+  Tag::BufferEncoder encoder(buffer);
+  EXPECT_EQ(encoder.WriteTag(42), OkStatus());
+  {
+    auto nested_encoder = encoder.GetNestedEncoder();
+    EXPECT_EQ(nested_encoder.WriteKey("key"), OkStatus());
+    EXPECT_EQ(nested_encoder.WriteValue("value"), OkStatus());
+  }
+  EXPECT_EQ(encoder.status(), OkStatus());
+}
+
+TEST(Codegen, SubMessageWithTagFieldUnchecked) {
+  std::byte buffer[128];
+  Tag::BufferEncoder encoder(buffer);
+  encoder.UncheckedWriteTag(42);
+  {
+    auto nested_encoder = encoder.UncheckedGetNestedEncoder();
+    EXPECT_EQ(nested_encoder.WriteKey("key"), OkStatus());
+    EXPECT_EQ(nested_encoder.WriteValue("value"), OkStatus());
   }
   EXPECT_EQ(encoder.status(), OkStatus());
 }
