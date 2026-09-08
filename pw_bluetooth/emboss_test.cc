@@ -865,5 +865,30 @@ TEST(EmbossTest, AvrcpVolumeControlPacket) {
   EXPECT_FALSE(view4.Ok());
 }
 
+TEST(EmbossTest, ReadWriteLERemoveCIGCommandCompleteEvent) {
+  std::array<uint8_t,
+             emboss::LERemoveCIGCommandCompleteEventView::SizeInBytes()>
+      buffer{};
+  auto writer = emboss::MakeLERemoveCIGCommandCompleteEventView(&buffer);
+
+  writer.command_complete().header().event_code().Write(
+      emboss::EventCode::COMMAND_COMPLETE);
+  writer.command_complete().header().parameter_total_size().Write(
+      emboss::LERemoveCIGCommandCompleteEventView::SizeInBytes() -
+      emboss::EventHeaderWriter::SizeInBytes());
+  writer.command_complete().num_hci_command_packets().Write(1);
+  writer.command_complete().command_opcode().Write(
+      emboss::OpCode::LE_REMOVE_CIG);
+  writer.status().Write(emboss::StatusCode::SUCCESS);
+  writer.cig_id().Write(0x05);
+
+  EXPECT_TRUE(writer.IsComplete());
+
+  auto reader = emboss::MakeLERemoveCIGCommandCompleteEventView(&buffer);
+  EXPECT_TRUE(reader.Ok());
+  EXPECT_EQ(reader.status().Read(), emboss::StatusCode::SUCCESS);
+  EXPECT_EQ(reader.cig_id().Read(), 0x05);
+}
+
 }  // namespace
 }  // namespace pw::bluetooth

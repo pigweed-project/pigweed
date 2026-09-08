@@ -1333,6 +1333,15 @@ struct LESetCIGParametersCommandCompleteEvent:
     -- [requires: 0x0000 <= each <= 0x0EFF]  # Can't currently be expressed
 
 
+struct LERemoveCIGCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.100 LE Remove CIG command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+1]         UInt                      cig_id
+    [requires: 0x00 <= this <= 0xEF]
+
+
 struct LERejectCisRequestCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.8.102 LE Reject CIS Request command)
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
