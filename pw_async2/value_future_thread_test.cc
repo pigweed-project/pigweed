@@ -312,6 +312,10 @@ class DerivedTestFutureForThreadTest : public pw::async2::ValueFuture<T> {
   constexpr DerivedTestFutureForThreadTest() = default;
   DerivedTestFutureForThreadTest(pw::async2::ValueFuture<T>&& base, int value)
       : pw::async2::ValueFuture<T>(std::move(base)), value_(value) {}
+  DerivedTestFutureForThreadTest(DerivedTestFutureForThreadTest&&) = default;
+  DerivedTestFutureForThreadTest& operator=(DerivedTestFutureForThreadTest&&) =
+      default;
+  ~DerivedTestFutureForThreadTest() { this->Cancel(); }
 
   int value() const { return value_; }
 

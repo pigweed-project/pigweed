@@ -98,6 +98,84 @@ TEST(ValueFuture, ResolvedInPlace) {
   EXPECT_EQ(result->second, 3);
 }
 
+TEST(ValueFuture, Cancel) {
+  DispatcherForTest dispatcher;
+  ValueProvider<int> provider;
+  EXPECT_FALSE(provider.has_future());
+
+  ValueFuture<int> future = provider.Get();
+  EXPECT_TRUE(provider.has_future());
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  future.Cancel();
+  EXPECT_FALSE(provider.has_future());
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  // Reassigning with a new future restores pendability.
+  future = provider.Get();
+  EXPECT_TRUE(provider.has_future());
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  int result = -1;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(int value, future, cx);
+    result = value;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_EQ(result, -1);
+
+  provider.Resolve(42);
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(result, 42);
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
+TEST(VoidFuture, Cancel) {
+  DispatcherForTest dispatcher;
+  ValueProvider<void> provider;
+  EXPECT_FALSE(provider.has_future());
+
+  VoidFuture future = provider.Get();
+  EXPECT_TRUE(provider.has_future());
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  future.Cancel();
+  EXPECT_FALSE(provider.has_future());
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  // Reassigning with a new future restores pendability.
+  future = provider.Get();
+  EXPECT_TRUE(provider.has_future());
+  EXPECT_TRUE(future.is_pendable());
+  EXPECT_FALSE(future.is_complete());
+
+  bool completed = false;
+  FuncTask task([&](Context& cx) -> Poll<> {
+    PW_AWAIT(future, cx);
+    completed = true;
+    return Ready();
+  });
+
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  EXPECT_FALSE(completed);
+
+  provider.Resolve();
+  dispatcher.RunToCompletion();
+  EXPECT_TRUE(completed);
+  EXPECT_FALSE(future.is_pendable());
+  EXPECT_TRUE(future.is_complete());
+}
+
 TEST(ValueProvider, VendsAndResolvesFuture) {
   DispatcherForTest dispatcher;
   ValueProvider<int> provider;

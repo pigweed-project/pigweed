@@ -505,11 +505,19 @@ future by move (``ValueFuture<T>&&``) along with any custom arguments.
                   size_t requested_size)
          : pw::async2::ValueFuture<pw::Result<pw::ByteSpan>>(std::move(base)),
            requested_size_(requested_size) {}
+     BufferFuture(BufferFuture&&) = default;
+     BufferFuture& operator=(BufferFuture&&) = default;
+     ~BufferFuture() { this->Cancel(); }
+
      size_t requested_size() const { return requested_size_; }
 
     private:
      size_t requested_size_;
    };
+
+.. important::
+   Always call ``this->Cancel()`` in the destructor of a derived future so that
+   the future is cancelled before the derived class member fields are destroyed.
 
 Atomic inspection and resolution with ResolveIf
 -----------------------------------------------
@@ -623,6 +631,9 @@ declarations:
                          size_t requested_size)
          : pw::async2::ValueFuture(std::move(base)),
            requested_size_(requested_size) {}
+     CustomRequestFuture(CustomRequestFuture&&) = default;
+     CustomRequestFuture& operator=(CustomRequestFuture&&) = default;
+     ~CustomRequestFuture() { this->Cancel(); }
 
      size_t requested_size() const { return requested_size_; }
 

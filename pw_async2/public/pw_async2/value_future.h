@@ -78,10 +78,18 @@ class ValueFuture {
     return *this;
   }
 
-  ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+  /// Cancels the future.
+  ///
+  /// Always call `Cancel()` in the destructor of any class derived from
+  /// `ValueFuture` to ensure the future is unlisted before the derived class
+  /// members are destroyed.
+  void Cancel() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
     std::lock_guard lock(internal::ValueProviderLock());
-    core_.Unlist();
+    core_.Reset();
+    value_.reset();
   }
+
+  ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) { Cancel(); }
 
   /// Creates a `ValueFuture` that is already resolved by constructing its
   /// value in-place.
@@ -165,10 +173,17 @@ class ValueFuture<void> {
     return *this;
   }
 
-  ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
+  /// Cancels the future.
+  ///
+  /// Always call `Cancel()` in the destructor of any class derived from
+  /// `ValueFuture` to ensure the future is unlisted before the derived class
+  /// members are destroyed.
+  void Cancel() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) {
     std::lock_guard lock(internal::ValueProviderLock());
-    core_.Unlist();
+    core_.Reset();
   }
+
+  ~ValueFuture() PW_LOCKS_EXCLUDED(internal::ValueProviderLock()) { Cancel(); }
 
   Poll<> Pend(Context& cx) {
     std::lock_guard lock(internal::ValueProviderLock());
