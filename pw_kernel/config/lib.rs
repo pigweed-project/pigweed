@@ -100,6 +100,13 @@ pub trait VeerPicConfigInterface {
     /// The maximum number of interrupts the
     /// PIC supports per context.
     const MAX_IRQS: u32 = 256;
+
+    /// Base address of the external-interrupt redirect table, written to MEIVT.
+    ///
+    /// Must be 1KiB-aligned; MEIVT supplies bits [31:10] of MEIHAP. Some
+    /// integrations constrain the address further (the Caliptra MCU requires
+    /// it to fall within DCCM).
+    const MEIVT_BASE_ADDRESS: usize;
 }
 
 /// CLINT timer config.

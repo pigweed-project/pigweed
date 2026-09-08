@@ -181,3 +181,39 @@ rw_csr_reg!(
     0xfc8,
     "Machine External Interrupt Handler Address Pointer"
 );
+
+/// Number of entries in the MEIVT redirect table.
+///
+/// The core indexes the table with the 8-bit `claimid` field of MEIHAP
+/// (`MEIVT + 4 * claimid`), so it can address exactly `2^8 = 256` entries. This
+/// is fixed by the register layout, independent of how many interrupt sources a
+/// given integration configures.
+pub const MEIVT_NUM_ENTRIES: usize = 1 << 8;
+
+#[cfg(test)]
+mod tests {
+    use unittest::test;
+
+    use super::MeiHAPVal;
+
+    /// Hardware composes MEIHAP as `{MEIVT[31:10], CLAIMID[7:0], 2'b0}`. The PIC
+    /// driver dispatches on `claimid`, so an off-by-one in the field range routes
+    /// every interrupt to the wrong handler without any other symptom.
+    #[test]
+    fn meihap_splits_base_and_claimid() -> unittest::Result<()> {
+        const TABLE_BASE: usize = 0xf004_0000;
+        let meihap = MeiHAPVal(TABLE_BASE | (37 << 2));
+
+        unittest::assert_eq!(meihap.claimid(), 37);
+        unittest::assert_eq!(meihap.base(), TABLE_BASE >> 10);
+
+        // Bits [1:0] are always zero in hardware and are not part of claimid.
+        unittest::assert_eq!(MeiHAPVal(0b11).claimid(), 0);
+
+        // claimid is 8 bits wide and must not bleed into the table base.
+        let max_claim = MeiHAPVal(0).with_claimid(0xff);
+        unittest::assert_eq!(max_claim.claimid(), 0xff);
+        unittest::assert_eq!(max_claim.base(), 0);
+        Ok(())
+    }
+}

@@ -48,13 +48,24 @@ impl RiscVKernelConfigInterface for KernelConfig {
     }
 }
 
-// VeeR EH1 PIC. This address is never dereferenced: this target is build-only
-// and exists to keep `veer_pic.rs` compiled and linted. No image built for it
-// runs, as QEMU has neither the PIC MMIO window nor VeeR's CSRs.
+// VeeR EH1 PIC. These addresses are never dereferenced: this target is
+// build-only and exists to keep `veer_pic.rs` compiled and linted. No image
+// built for it runs, as QEMU has neither the PIC MMIO window nor VeeR's CSRs.
 pub struct VeerPicConfig;
 
 impl VeerPicConfigInterface for VeerPicConfig {
     const PIC_BASE_ADDRESS: usize = 0xf00c_0000;
+    // 1KiB-aligned and within DCCM, as MEIVT requires.
+    const MEIVT_BASE_ADDRESS: usize = 0xf004_0000;
+}
+
+impl VeerPicConfig {
+    const _ASSERT_VALID: () = {
+        // MEIVT stores MEIHAP[31:10], so the table base must be 1KiB-aligned.
+        assert!(Self::MEIVT_BASE_ADDRESS & 0x3ff == 0);
+        // claimid is 8 bits, so the core can address at most 256 table entries.
+        assert!(Self::MAX_IRQS <= 256);
+    };
 }
 
 pub struct TimerConfig;

@@ -21,7 +21,10 @@ use log_if::debug_if;
 use pw_log::info;
 use regs::{rw_block_reg, rw_bool_field, rw_int_field};
 
-use crate::regs::veer::{MeiCPCT, MeiCPCTVal, MeiHAP, MeiPT, MeiPTVal};
+use crate::exceptions::_start_trap;
+use crate::regs::veer::{
+    MEIVT_NUM_ENTRIES, MeiCPCT, MeiCPCTVal, MeiHAP, MeiPT, MeiPTVal, MeiVT, MeiVTVal,
+};
 
 const LOG_INTERRUPTS: bool = false;
 
@@ -279,6 +282,29 @@ impl InterruptController for VeerPic {
             GLOBAL_PRIORITY as u32
         );
         set_global_priority(GLOBAL_PRIORITY);
+
+        // VeeR jumps to the word at `MEIVT + 4 * claimid`, not through mtvec,
+        // so this redirect is independent of the mtvec trap mode. Point every
+        // entry at `_start_trap` so interrupts take the standard trap path
+        // where `interrupt()` recovers the claim id. Read the symbol rather
+        // than mtvec, which `exceptions::early_init` programs only after this
+        // runs. Fill the table before `set_mext()`.
+        let base = VeerPicConfig::MEIVT_BASE_ADDRESS;
+        let Ok(trap_vector) = u32::try_from(_start_trap as *const () as usize) else {
+            pw_assert::panic!("trap handler address does not fit in a redirect table entry");
+        };
+        // The core indexes this table by the 8-bit claimid, so fill every slot
+        // regardless of MAX_IRQS; a claimid beyond the configured sources must
+        // still trap rather than jump into an uninitialized slot.
+        let table = base as *mut u32;
+        for irq in 0..MEIVT_NUM_ENTRIES {
+            // SAFETY: the target guarantees the region at `base` is reserved
+            // for the redirect table.
+            unsafe {
+                ptr::write_volatile(table.add(irq), trap_vector);
+            }
+        }
+        MeiVT::write(MeiVTVal(base));
 
         unsafe {
             riscv::register::mie::set_mext();
