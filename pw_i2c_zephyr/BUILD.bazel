@@ -12,12 +12,30 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
+
+cc_library(
+    name = "initiator",
+    srcs = ["initiator.cc"],
+    hdrs = ["public/pw_i2c_zephyr/initiator.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_assert:check",
+        "//pw_chrono:system_clock",
+        "//pw_i2c:address",
+        "//pw_i2c:initiator",
+        "//pw_status",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "@zephyr",
+    ],
+)
 
 filegroup(
     name = "doxygen",
