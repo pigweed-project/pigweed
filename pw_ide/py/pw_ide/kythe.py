@@ -37,8 +37,11 @@ _INCLUDE_REGEX = re.compile(r'^\s*#\s*include\s+["<]([^">]+)[">]')
 # Caches shared across extraction workers:
 # Maps resolved file path -> list of raw include header strings
 _file_includes_cache: dict[Path, list[str]] = {}
-# Maps (header_name, tuple(include_dirs)) -> resolved Path or None
-_resolved_header_cache: dict[tuple[str, tuple[str, ...]], Path | None] = {}
+# Maps (header_name, src_dir, tuple(include_dirs), cmd_dir) ->
+# resolved Path or None
+_resolved_header_cache: dict[
+    tuple[str, str, tuple[str, ...], str | None], Path | None
+] = {}
 
 
 def find_kzip_binary(fallback_bin: str = DEFAULT_KZIP_BIN) -> str:
@@ -104,10 +107,16 @@ def _resolve_header(
     src_path: Path,
     include_dirs: list[str],
     workspace: Path,
+    cmd_dir: Path | None = None,
 ) -> Path | None:
     """Resolves an included header to an existing local file path with cache."""
     inc_dirs_tuple = tuple(include_dirs)
-    key = (header, inc_dirs_tuple)
+    key = (
+        header,
+        str(src_path.parent),
+        inc_dirs_tuple,
+        str(cmd_dir) if cmd_dir else None,
+    )
     if key in _resolved_header_cache:
         return _resolved_header_cache[key]
 
@@ -117,15 +126,22 @@ def _resolve_header(
         _resolved_header_cache[key] = resolved
         return resolved
 
+    base_dirs = [cmd_dir, workspace] if cmd_dir else [workspace]
     for inc in include_dirs:
         inc_path = Path(inc)
-        if not inc_path.is_absolute():
-            inc_path = workspace / inc_path
-        cand = inc_path / header
-        if cand.exists() and cand.is_file():
-            resolved = cand.resolve()
-            _resolved_header_cache[key] = resolved
-            return resolved
+        if inc_path.is_absolute():
+            cand = inc_path / header
+            if cand.exists() and cand.is_file():
+                resolved = cand.resolve()
+                _resolved_header_cache[key] = resolved
+                return resolved
+        else:
+            for base in base_dirs:
+                cand = base / inc_path / header
+                if cand.exists() and cand.is_file():
+                    resolved = cand.resolve()
+                    _resolved_header_cache[key] = resolved
+                    return resolved
 
     _resolved_header_cache[key] = None
     return None
@@ -135,6 +151,7 @@ def _find_required_headers(
     src_path: Path,
     include_dirs: list[str],
     workspace: Path,
+    cmd_dir: Path | None = None,
     visited: set[Path] | None = None,
 ) -> set[Path]:
     """Finds all locally resolvable headers included in the source file
@@ -148,12 +165,18 @@ def _find_required_headers(
 
     headers: set[Path] = set()
     for inc_name in _get_direct_includes(src_path):
-        resolved = _resolve_header(inc_name, src_path, include_dirs, workspace)
+        resolved = _resolve_header(
+            inc_name, src_path, include_dirs, workspace, cmd_dir=cmd_dir
+        )
         if resolved and resolved not in visited:
             headers.add(resolved)
             headers.update(
                 _find_required_headers(
-                    resolved, include_dirs, workspace, visited
+                    resolved,
+                    include_dirs,
+                    workspace,
+                    cmd_dir=cmd_dir,
+                    visited=visited,
                 )
             )
     return headers
@@ -171,13 +194,20 @@ def extract_single_command(
     if not kzip_bin:
         kzip_bin = find_kzip_binary()
 
+    cmd_dir_str = entry.get("directory")
+    cmd_dir = Path(cmd_dir_str).resolve() if cmd_dir_str else workspace
+
     src_file_str = entry.get("file")
     if not src_file_str:
         return None
 
     src_path = Path(src_file_str)
     if not src_path.is_absolute():
-        src_path = (workspace / src_path).resolve()
+        cand = (cmd_dir / src_path).resolve()
+        if cand.exists():
+            src_path = cand
+        else:
+            src_path = (workspace / src_path).resolve()
 
     if not src_path.exists():
         return None
@@ -194,7 +224,7 @@ def extract_single_command(
     # Collect include flags to locate dependent headers
     include_dirs: list[str] = []
     for i, arg in enumerate(args):
-        if arg.startswith("-I") and len(arg) > 2:
+        if arg.startswith("-I") and len(arg) > 2 and not arg.startswith("-I="):
             include_dirs.append(arg[2:])
         elif arg == "-I" and i + 1 < len(args):
             include_dirs.append(args[i + 1])
@@ -202,11 +232,21 @@ def extract_single_command(
             include_dirs.append(arg[8:])
         elif arg == "-isystem" and i + 1 < len(args):
             include_dirs.append(args[i + 1])
+        elif arg.startswith("-iquote") and len(arg) > 7:
+            include_dirs.append(arg[7:])
+        elif arg == "-iquote" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
+        elif arg.startswith("-idirafter") and len(arg) > 10:
+            include_dirs.append(arg[10:])
+        elif arg == "-idirafter" and i + 1 < len(args):
+            include_dirs.append(args[i + 1])
 
     # Find required inputs (source file + referenced local headers)
     required_inputs: set[Path] = {src_path}
     required_inputs.update(
-        _find_required_headers(src_path, include_dirs, workspace)
+        _find_required_headers(
+            src_path, include_dirs, workspace, cmd_dir=cmd_dir
+        )
     )
 
     unit_kzip = out_dir / f"unit_{idx}.kzip"

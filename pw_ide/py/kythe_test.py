@@ -62,6 +62,29 @@ class KytheExtractorTest(unittest.TestCase):
         self.assertIn(self.header_file.resolve(), headers)
         self.assertIn(self.transitive_header_file.resolve(), headers)
 
+    def test_find_required_headers_cmd_dir_relative(self):
+        out_dir = self.workspace / "out"
+        out_dir.mkdir()
+        module_dir = self.workspace / "pw_module" / "public" / "pw_module"
+        module_dir.mkdir(parents=True)
+        module_header = module_dir / "header.h"
+        module_header.write_text("#pragma once\nint getModuleValue();\n")
+
+        src_with_include = self.workspace / "src_test.cc"
+        src_with_include.write_text(
+            '#include "pw_module/header.h"\nint func() { return 0; }\n'
+        )
+
+        # Include path is relative to out_dir: -I../pw_module/public
+        include_dirs = ["../pw_module/public"]
+        headers = _find_required_headers(
+            src_with_include,
+            include_dirs,
+            self.workspace,
+            cmd_dir=out_dir,
+        )
+        self.assertIn(module_header.resolve(), headers)
+
     def test_extract_single_command_missing_file(self):
         out_dir = self.workspace / "out"
         out_dir.mkdir()
