@@ -83,9 +83,9 @@ add_custom_command(
     "${dir_pw_third_party_nanopb}/generator/protoc.bat"
     "$ENV{PW_PIGWEED_CIPD_INSTALL_DIR}/bin/protoc"
   OUTPUT
-    "${dir_pw_third_party_nanopb}/generator/proto/nanopb_pb2.py"
+    "${_pw_protobuf_compiler_NANOPB_PB2_DIR}/nanopb_pb2.py"
 )
 add_custom_target(pw_third_party.nanopb.generate_proto
   DEPENDS
-    "${dir_pw_third_party_nanopb}/generator/proto/nanopb_pb2.py"
+    "${_pw_protobuf_compiler_NANOPB_PB2_DIR}/nanopb_pb2.py"
 )
