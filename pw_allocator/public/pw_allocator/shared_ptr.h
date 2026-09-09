@@ -45,6 +45,20 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
 template <typename T>
 class WeakPtr;
 
+namespace async2 {
+class Task;
+}  // namespace async2
+
+namespace multibuf {
+namespace v1_adapter::internal {
+class ChunkAllocator;
+}  // namespace v1_adapter::internal
+
+namespace v2::internal {
+class GenericMultiBuf;
+}  // namespace v2::internal
+}  // namespace multibuf
+
 /// A `std::shared_ptr<T>`-like type that integrates with `pw::Allocator`.
 ///
 /// This is a RAII smart pointer that deallocates any memory it points to when
@@ -105,13 +119,6 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   /// NOTE: Instances of this type are most commonly constructed using
   /// `Allocator::MakeShared`.
   constexpr SharedPtr() noexcept = default;
-
-  /// Constructs a `SharedPtr` from an already-allocated value.
-  ///
-  /// NOTE: Instances of this type are most commonly constructed using
-  /// `Allocator::MakeShared`.
-  constexpr SharedPtr(element_type* value, ControlBlock* control_block)
-      : Base(value), control_block_(control_block) {}
 
   /// Creates an empty (`nullptr`) instance.
   ///
@@ -328,6 +335,17 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   template <typename>
   friend class WeakPtr;
 
+  // The following classes manage their own ControlBlocks and need to
+  // construct SharedPtr instances to manage their lifetimes.
+  friend class async2::Task;
+  friend class multibuf::v1_adapter::internal::ChunkAllocator;
+  friend class multibuf::v2::internal::GenericMultiBuf;
+
+  /// Constructs a `SharedPtr` from an already-allocated value and control
+  /// block.
+  constexpr SharedPtr(element_type* value, ControlBlock* control_block)
+      : Base(value), control_block_(control_block) {}
+
   /// Copies details from another object without releasing it.
   template <typename U,
             typename = std::enable_if_t<std::is_assignable_v<T*&, U*>>>
@@ -350,6 +368,10 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
 
 template <typename T>
 SharedPtr<T>::SharedPtr(UniquePtr<T>& owned) noexcept {
+  if (owned == nullptr) {
+    return;
+  }
+
   size_t size = sizeof(element_type);
   if constexpr (std::is_array_v<T>) {
     size *= owned.size();
@@ -450,7 +472,8 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept {
 
 template <typename T>
 void SharedPtr<T>::reset() noexcept {
-  if (*this == nullptr) {
+  if (control_block_ == nullptr) {
+    Release();
     return;
   }
   auto action = control_block_->DecrementShared();
@@ -462,7 +485,8 @@ void SharedPtr<T>::reset() noexcept {
 
   // This was the last `SharedPtr` associated with this control block.
   Allocator* allocator = control_block_->allocator();
-  if (!Base::HasCapability(allocator, allocator::kSkipsDestroy)) {
+  if (*this != nullptr &&
+      !Base::HasCapability(allocator, allocator::kSkipsDestroy)) {
     if constexpr (std::is_array_v<T>) {
       Base::Destroy(size());
     } else {
