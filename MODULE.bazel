@@ -448,7 +448,7 @@ go_deps.from_file(go_mod = "//:go.mod")
 use_repo(go_deps, "org_golang_google_grpc", "org_golang_google_grpc_examples", "org_golang_google_protobuf")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.24.12")
+go_sdk.download(version = "1.27.1")
 
 # Configure Java dependencies
 # ===========================
