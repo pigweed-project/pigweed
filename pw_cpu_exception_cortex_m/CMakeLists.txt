@@ -21,6 +21,8 @@ pw_add_module_config(pw_cpu_exception_cortex_m_CONFIG)
 pw_add_library(pw_cpu_exception_cortex_m.config INTERFACE
   HEADERS
     pw_cpu_exception_cortex_m_private/config.h
+  PUBLIC_INCLUDES
+    .
   PUBLIC_DEPS
     ${pw_cpu_exception_cortex_m_CONFIG}
 )
@@ -149,6 +151,8 @@ pw_add_library(pw_cpu_exception_cortex_m.snapshot STATIC
 pw_add_library(pw_cpu_exception_cortex_m.constants INTERFACE
   HEADERS
     pw_cpu_exception_cortex_m_private/cortex_m_constants.h
+  PUBLIC_INCLUDES
+    .
   PUBLIC_DEPS
     pw_preprocessor.arch
 )

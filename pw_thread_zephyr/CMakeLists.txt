@@ -77,6 +77,7 @@ pw_add_library(pw_thread_zephyr.thread STATIC
   HEADERS
     public/pw_thread_zephyr/context.h
     public/pw_thread_zephyr/options.h
+    public/pw_thread_zephyr/priority.h
     public/pw_thread_zephyr/stack.h
     public/pw_thread_zephyr/thread_inline.h
     public/pw_thread_zephyr/thread_native.h

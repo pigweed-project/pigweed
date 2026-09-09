@@ -47,6 +47,8 @@ pw_add_library(pw_bluetooth_proxy.hci.command_multiplexer_snapshot STATIC
 # LINT.IfChange
 set(command_multiplexer_deps
   pw_bluetooth_proxy.hci.command_multiplexer_snapshot
+  pw_allocator
+  pw_assert.assert
   pw_assert.check
   pw_async2
   pw_async2.time_provider
@@ -56,14 +58,17 @@ set(command_multiplexer_deps
   pw_bluetooth.emboss_hci_h4
   pw_bluetooth_proxy.clock
   pw_bluetooth_proxy.config
+  pw_containers.dynamic_deque
   pw_containers.dynamic_hash_map
   pw_containers.dynamic_queue
   pw_function
+  pw_log
   pw_multibuf.v2.multibuf
   pw_result
   pw_result.expected
   pw_span
   pw_status
+  pw_sync.lock_annotations
   pw_sync.mutex
 )
 
@@ -143,8 +148,8 @@ set(command_multiplexer_test_deps
 
 pw_add_test(pw_bluetooth_proxy.hci.command_multiplexer_test
   PRIVATE_DEPS
-    pw_bluetooth_proxy.hci.command_multiplexer
     ${command_multiplexer_test_deps}
+    pw_bluetooth_proxy.hci.command_multiplexer
   SOURCES
     command_multiplexer_test.cc
 )

@@ -20,6 +20,8 @@ pw_add_module_config(pw_cpu_exception_risc_v_CONFIG)
 pw_add_library(pw_cpu_exception_risc_v.config INTERFACE
   HEADERS
     pw_cpu_exception_risc_v_private/config.h
+  PUBLIC_INCLUDES
+    .
   PUBLIC_DEPS
     ${pw_cpu_exception_risc_v_CONFIG}
 )

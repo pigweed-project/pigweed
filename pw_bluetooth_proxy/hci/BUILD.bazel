@@ -63,6 +63,7 @@ cc_library(
         "//pw_bluetooth:emboss_hci_h4",
         "//pw_bluetooth_proxy:clock",
         "//pw_bluetooth_proxy:config",
+        "//pw_containers:dynamic_deque",
         "//pw_containers:dynamic_hash_map",
         "//pw_containers:dynamic_queue",
         "//pw_function",

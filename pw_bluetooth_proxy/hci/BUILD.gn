@@ -46,6 +46,8 @@ pw_source_set("command_multiplexer_snapshot") {
 # LINT.IfChange
 _command_multiplexer_deps = [
   ":command_multiplexer_snapshot",
+  "$dir_pw_allocator",
+  "$dir_pw_assert:assert",
   "$dir_pw_assert:check",
   "$dir_pw_async2:pw_async2",
   "$dir_pw_async2:time_provider",
@@ -55,6 +57,7 @@ _command_multiplexer_deps = [
   "$dir_pw_bluetooth:emboss_hci_h4",
   "$dir_pw_bluetooth_proxy:clock",
   "$dir_pw_bluetooth_proxy:config",
+  "$dir_pw_containers:dynamic_deque",
   "$dir_pw_containers:dynamic_hash_map",
   "$dir_pw_containers:dynamic_queue",
   "$dir_pw_function",
