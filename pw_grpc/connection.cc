@@ -368,7 +368,9 @@ Status Connection::SharedState::SendBytes(ConstByteSpan message) {
   }
 
   std::memcpy(buffer.get(), message.data(), message.size());
-  send_queue_.QueueSend(std::move(buffer));
+  if (!send_queue_.QueueSend(std::move(buffer))) {
+    return Status::ResourceExhausted();
+  }
   return OkStatus();
 }
 
@@ -380,7 +382,9 @@ Status Connection::SharedState::SendData(StreamId stream_id,
                stream_id,
                static_cast<uint32_t>(message_size));
 
-  send_queue_.QueueSend(data_frame.release());
+  if (!send_queue_.QueueSend(data_frame.release())) {
+    return Status::ResourceExhausted();
+  }
   return OkStatus();
 }
 
@@ -429,7 +433,9 @@ Status Connection::SharedState::SendHeaders(StreamId stream_id,
     offset += payload2.size();
   }
 
-  send_queue_.QueueSend(std::move(buffer));
+  if (!send_queue_.QueueSend(std::move(buffer))) {
+    return Status::ResourceExhausted();
+  }
   return OkStatus();
 }
 

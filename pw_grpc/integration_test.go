@@ -438,3 +438,40 @@ func TestFullWindowBlockedSend(t *testing.T) {
 		t.Fatalf("Expected EOF, got %v", err)
 	}
 }
+
+func TestSendQueueExhaustion(t *testing.T) {
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := echo_client.ServerStreamingEcho(ctx, &pb.EchoRequest{Message: "queue_exhaust"})
+	if err != nil {
+		t.Fatalf("Failed to call ServerStreamingEcho %v", err)
+	}
+
+	resp, err := client.Recv()
+	if err != nil {
+		t.Fatalf("Failed to receive first message: %v", err)
+	}
+	if resp.Message != "message0" {
+		t.Fatalf("Unexpected message: got %q, want %q", resp.Message, "message0")
+	}
+
+	_, err = client.Recv()
+	if err == nil {
+		t.Fatalf("Expected error on second message, got nil")
+	}
+	if err == io.EOF {
+		t.Fatalf("Expected ResourceExhausted error, got EOF")
+	}
+	if gotCode := status.Convert(err).Code(); gotCode != codes.ResourceExhausted {
+		t.Fatalf("Expected ResourceExhausted error, got %v", gotCode)
+	}
+}

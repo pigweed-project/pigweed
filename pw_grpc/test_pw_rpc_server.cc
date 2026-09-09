@@ -12,6 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <atomic>
 #include <cstring>
 #include <map>
 #include <string>
@@ -49,6 +50,41 @@ using pw::grpc::StreamId;
 
 namespace {
 static constexpr size_t kBufferSize = 512;
+
+std::atomic<bool> g_fail_queue_send = false;
+
+class TestSendQueue : public pw::grpc::SendQueue {
+ public:
+  TestSendQueue(pw::grpc::SendQueue& inner) : inner_(inner) {}
+
+  bool QueueSend(pw::UniquePtr<std::byte[]>&& buffer) override {
+    if (g_fail_queue_send.load()) {
+      // Only fail DATA frames on an active RPC stream (type == 0, stream_id !=
+      // 0). WireFrameHeader is 9 bytes: byte 3 is type, bytes 5..8 are
+      // stream_id.
+      auto type = static_cast<uint8_t>(buffer[3]);
+      uint32_t stream_id = (static_cast<uint32_t>(buffer[5]) << 24) |
+                           (static_cast<uint32_t>(buffer[6]) << 16) |
+                           (static_cast<uint32_t>(buffer[7]) << 8) |
+                           static_cast<uint32_t>(buffer[8]);
+      if (type == 0 && stream_id != 0) {
+        g_fail_queue_send.store(false);
+        return false;
+      }
+    }
+    return inner_.QueueSend(std::move(buffer));
+  }
+
+  void set_on_error(ErrorHandler&& error_handler) override {
+    inner_.set_on_error(std::move(error_handler));
+  }
+
+  void Run() override { inner_.Run(); }
+  void RequestStop() override { inner_.RequestStop(); }
+
+ private:
+  pw::grpc::SendQueue& inner_;
+};
 
 class EchoService
     : public ::grpc::examples::echo::pw_rpc::pwpb::Echo::Service<EchoService> {
@@ -104,6 +140,23 @@ class EchoService
     last_writer_ = std::move(writer);
     if (quiet_) {
       PW_LOG_INFO("not writing server streaming echo");
+      return;
+    }
+    bool queue_exhaust = request.message.compare("queue_exhaust") == 0;
+    if (queue_exhaust) {
+      auto status = last_writer_.Write({.message = "message0"});
+      if (!status.ok()) {
+        last_writer_.Finish(status).IgnoreError();
+        return;
+      }
+      g_fail_queue_send = true;
+      status = last_writer_.Write({.message = "message1"});
+      g_fail_queue_send = false;
+      if (!status.ok()) {
+        last_writer_.Finish(pw::Status::ResourceExhausted()).IgnoreError();
+        return;
+      }
+      last_writer_.Finish(status).IgnoreError();
       return;
     }
     size_t num_responses = 3;
@@ -201,7 +254,7 @@ class ConnectionThread : public pw::grpc::Connection,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator)
       : pw::grpc::Connection(stream.as_reader(),
-                             send_queue_,
+                             test_send_queue_,
                              callbacks,
                              message_assembly_allocator,
                              send_allocator,
@@ -209,7 +262,8 @@ class ConnectionThread : public pw::grpc::Connection,
                              /*read_allocator=*/read_allocator,
                              &read_dispatcher_),
         send_queue_thread_options_(send_thread_options),
-        send_queue_(stream, send_allocator) {}
+        send_queue_(stream, send_allocator),
+        test_send_queue_(send_queue_) {}
 
   // Process the connection. Does not return until the connection is closed.
   void Run() override {
@@ -233,6 +287,7 @@ class ConnectionThread : public pw::grpc::Connection,
   pw::async::BasicDispatcher read_dispatcher_;
   const pw::thread::Options& send_queue_thread_options_;
   pw::grpc::DefaultSendQueue send_queue_;
+  TestSendQueue test_send_queue_;
 };
 
 constexpr uint32_t kTestChannelId = 1;
