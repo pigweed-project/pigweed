@@ -692,6 +692,15 @@ void CommandMultiplexer::UpdateCreditsAndProcessQueue(EventCodeValue event_code,
     if (cmd_status_view.Ok()) {
       new_credits = cmd_status_view.num_hci_command_packets().Read();
     }
+  } else if (event_code ==
+             cpp23::to_underlying(emboss::EventCode::LOOPBACK_COMMAND)) {
+    // In Local Loopback mode (Core Spec Vol 4, Part E, Section 7.6.2), the
+    // controller loops back commands via the HCI_Loopback_Command event instead
+    // of HCI_Command_Complete or HCI_Command_Status. Unlike those events,
+    // HCI_Loopback_Command does not contain a Num_HCI_Command_Packets field.
+    // However, because the controller has finished echoing the command, we
+    // assume it is implicitly returning the credit consumed by that command.
+    new_credits = 1;
   }
 
   if (new_credits == command_credits_) {

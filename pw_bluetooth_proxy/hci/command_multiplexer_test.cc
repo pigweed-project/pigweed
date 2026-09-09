@@ -2025,6 +2025,68 @@ TEST_F(CommandMultiplexerTest, CreditRecoveredWhenInterceptedTimer) {
   TestCreditRecoveredWhenIntercepted(accessor_timer());
 }
 
+void TestLoopbackCommandFlowControl(Accessor test) {
+  static constexpr std::array<std::byte, 4> inquiry_packet_bytes{
+      // Packet type (command)
+      std::byte(0x01),
+      // OpCode (Inquiry, 0x0401)
+      std::byte(0x01),
+      std::byte(0x04),
+      // Parameter size
+      std::byte(0x00),
+  };
+  static constexpr std::array<std::byte, 6> loopback_event_bytes{
+      // Packet type (event)
+      std::byte(0x04),
+      // Event code (Loopback Command, 0x19)
+      std::byte(0x19),
+      // Parameter total size
+      std::byte(0x03),
+      // Looped-back command header (OpCode 0x0401, Parameter size 0x00)
+      std::byte(0x01),
+      std::byte(0x04),
+      std::byte(0x00),
+  };
+
+  // Host sends command 1; with initial 1 credit, it is forwarded to controller.
+  MultiBuf::Instance buf1(test.allocator());
+  buf1->Insert(buf1->end(), inquiry_packet_bytes);
+  test.SendFromHost(std::move(buf1));
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  test.packets_to_controller().pop_front();
+
+  // Credits are now exhausted (0 credits). Host sends command 2, which gets
+  // queued.
+  MultiBuf::Instance buf2(test.allocator());
+  buf2->Insert(buf2->end(), inquiry_packet_bytes);
+  test.SendFromHost(std::move(buf2));
+  EXPECT_TRUE(test.packets_to_controller().empty());
+
+  // Controller sends Loopback Command event, which restores 1 credit and
+  // unblocks the queued command.
+  auto loopback_buf = test.AllocBuf(loopback_event_bytes);
+  ASSERT_TRUE(loopback_buf.ok());
+  test.hci_cmd_mux().HandleH4FromController(std::move(*loopback_buf));
+
+  // Loopback event forwarded to host.
+  ASSERT_EQ(test.packets_to_host().size(), 1u);
+  test.packets_to_host().pop_front();
+
+  // Queued command 2 is sent to controller.
+  ASSERT_EQ(test.packets_to_controller().size(), 1u);
+  std::array<std::byte, 4> out;
+  test.packets_to_controller().front()->CopyTo(out);
+  EXPECT_EQ(inquiry_packet_bytes, out);
+  test.packets_to_controller().pop_front();
+}
+
+TEST_F(CommandMultiplexerTest, LoopbackCommandFlowControlAsync) {
+  TestLoopbackCommandFlowControl(accessor_async2());
+}
+TEST_F(CommandMultiplexerTest, LoopbackCommandFlowControlTimer) {
+  TestLoopbackCommandFlowControl(accessor_timer());
+}
+
 void TestReset(Accessor test) {
   static constexpr std::array<std::byte, 3>
       read_local_version_information_packet_bytes{
