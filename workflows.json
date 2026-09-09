@@ -954,8 +954,23 @@
     {
       "name": "kernel",
       "description": "Kernel-related builds/configurations",
+      "groups": [
+        "kernel_host",
+        "kernel_device"
+      ]
+    },
+    {
+      "name": "kernel_host",
+      "description": "Kernel host build, test, and clippy verification",
       "builds": [
         "k_host",
+        "k_host_lint"
+      ]
+    },
+    {
+      "name": "kernel_device",
+      "description": "Kernel target builds running on device and emulation",
+      "builds": [
         "k_qemu_mps2_an505",
         "k_qemu_virt_riscv32",
         "k_adventure",
@@ -963,13 +978,19 @@
         "k_rp2350",
         "k_nucleo_f103rb",
         "k_qemu_nucleo_f103rb",
-        "k_host_lint",
         "k_qemu_mps2_an505_lint",
         "k_qemu_virt_riscv32_lint",
         "k_veer",
         "k_rp2350_lint",
         "k_nucleo_f103rb_lint",
         "k_qemu_nucleo_f103rb_lint"
+      ]
+    },
+    {
+      "name": "kernel_qemu",
+      "description": "Alias for kernel_device (temporary for backwards compatibility with infra)",
+      "groups": [
+        "kernel_device"
       ]
     },
     {

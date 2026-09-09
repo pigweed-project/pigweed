@@ -15,7 +15,7 @@ This skill provides instructions for running tests and lints for the Pigweed ker
 
 ### Common Configurations
 
-Configurations are defined in `//workflows.json` under the `kernel` group. Common ones include:
+Configurations are defined in `//workflows.json` under the `kernel` group (via `kernel_host` and `kernel_device` subgroups). Common ones include:
 
 - `k_host`: Host builds and tests.
 - `k_qemu_mps2_an505`: ARM QEMU emulation.
