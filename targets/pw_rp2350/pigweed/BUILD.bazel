@@ -23,6 +23,7 @@ load("//targets/rp2040:flash.bzl", "flash_rp2350")
 platform(
     name = "pw_rp2350",
     constraint_values = [
+        "//pw_kernel/target/pw_rp2350:target_pw_rp2350",
         "//pw_build/constraints/arm:cortex-m33",
         "//pw_build/constraints/rust:no_std",
         "//pw_build/constraints/rust:enabled",
@@ -42,6 +43,7 @@ platform(
             "//pw_log/rust:pw_log_backend": "//pw_kernel/subsys/console:pw_log_backend_basic",
             "//pw_log:backend": "//pw_log_basic",
             "//pw_log:backend_impl": "//pw_log_basic:impl",
+            "//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend": "@pigweed//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend_pigweed",
             "//pw_sync:interrupt_spin_lock_backend": "//pw_sync_baremetal:interrupt_spin_lock",
             "//pw_thread/rust:pw_thread_backend": "@pigweed//pw_thread/rust:pw_thread_backend_pigweed",
             "//pw_time/rust:pw_time_backend": "@pigweed//pw_time/rust:pw_time_backend_pigweed",
@@ -115,4 +117,17 @@ system_image(
 flash_rp2350(
     name = "flash_sleep_example",
     rp2350_binary = ":sleep_example_image",
+)
+
+system_image(
+    name = "mutex_example_image",
+    kernel = "//targets/pw_rp2350:mutex_example",
+    platform = ":pw_rp2350",
+    system_config = "system.json5",
+    userspace = False,
+)
+
+flash_rp2350(
+    name = "flash_mutex_example",
+    rp2350_binary = ":mutex_example_image",
 )

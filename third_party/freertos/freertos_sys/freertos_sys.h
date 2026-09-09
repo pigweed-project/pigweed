@@ -15,6 +15,7 @@
 #pragma once
 
 #include "FreeRTOS.h"
+#include "semphr.h"
 #include "task.h"
 
 // Define a constant for configTICK_RATE_HZ. Since it is defined as a macro
@@ -23,11 +24,20 @@ static const TickType_t __configTICK_RATE_HZ = configTICK_RATE_HZ;
 #undef configTICK_RATE_HZ
 static const TickType_t configTICK_RATE_HZ = __configTICK_RATE_HZ;
 
-// FreeRTOS implements critical section entry/exit as preprocessor macros
-// or inline functions, which cannot be directly translated to Rust FFI by
-// bindgen. These wrapper functions expose them as standard C symbols.
+// FreeRTOS implements critical section entry/exit and semaphore operations as
+// preprocessor macros or inline functions, which cannot be directly translated
+// to Rust FFI by bindgen. These wrapper functions expose them as standard C
+// symbols.
 UBaseType_t freertos_sys_taskENTER_CRITICAL_FROM_ISR(void);
 void freertos_sys_taskEXIT_CRITICAL_FROM_ISR(UBaseType_t mask);
 void freertos_sys_taskENTER_CRITICAL(void);
 void freertos_sys_taskEXIT_CRITICAL(void);
 void freertos_sys_taskYIELD(void);
+
+SemaphoreHandle_t freertos_sys_xSemaphoreCreateMutex(void);
+SemaphoreHandle_t freertos_sys_xSemaphoreCreateMutexStatic(
+    StaticSemaphore_t* pxMutexBuffer);
+void freertos_sys_vSemaphoreDelete(SemaphoreHandle_t xSemaphore);
+BaseType_t freertos_sys_xSemaphoreTake(SemaphoreHandle_t xSemaphore,
+                                       TickType_t xBlockTime);
+BaseType_t freertos_sys_xSemaphoreGive(SemaphoreHandle_t xSemaphore);

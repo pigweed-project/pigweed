@@ -39,6 +39,7 @@ platform(
 constraint_value(
     name = "target_pw_rp2350",
     constraint_setting = "//pw_kernel/target:target",
+    visibility = ["//visibility:public"],
 )
 
 rust_library(

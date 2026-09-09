@@ -30,3 +30,8 @@ pub use freertos_sys_taskENTER_CRITICAL_FROM_ISR as taskENTER_CRITICAL_FROM_ISR;
 pub use freertos_sys_taskEXIT_CRITICAL as taskEXIT_CRITICAL;
 pub use freertos_sys_taskEXIT_CRITICAL_FROM_ISR as taskEXIT_CRITICAL_FROM_ISR;
 pub use freertos_sys_taskYIELD as taskYIELD;
+pub use freertos_sys_vSemaphoreDelete as vSemaphoreDelete;
+pub use freertos_sys_xSemaphoreCreateMutex as xSemaphoreCreateMutex;
+pub use freertos_sys_xSemaphoreCreateMutexStatic as xSemaphoreCreateMutexStatic;
+pub use freertos_sys_xSemaphoreGive as xSemaphoreGive;
+pub use freertos_sys_xSemaphoreTake as xSemaphoreTake;

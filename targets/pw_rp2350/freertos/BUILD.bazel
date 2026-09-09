@@ -23,6 +23,7 @@ platform(
     name = "pw_rp2350",
     constraint_values = [
         "@freertos//:port_ARM_CM33_NTZ",
+        "@freertos//:malloc_heap_4",
         "@freertos//:disable_task_statics",
         "@pico-sdk//bazel/constraint:rp2350",
         "@platforms//cpu:armv8-m",
@@ -41,6 +42,7 @@ platform(
         "//pw_assert:check_backend": "//pw_assert_trap:check_backend",
         "//pw_assert:check_backend_impl": "//pw_assert_trap:impl",
         "//pw_build:default_module_config": ":pigweed_module_config",
+        "//pw_chrono:system_clock_backend": "//pw_chrono_freertos:system_clock",
         "//pw_cpu_exception:entry_backend": "//pw_cpu_exception_cortex_m:cpu_exception",
         "//pw_cpu_exception:entry_backend_impl": "//pw_cpu_exception_cortex_m:cpu_exception_impl",
         "//pw_cpu_exception:handler_backend": "//pw_cpu_exception:basic_handler",
@@ -50,6 +52,7 @@ platform(
         "//pw_log:backend": "//pw_log_basic",
         "//pw_log:backend_impl": "//pw_log_basic:impl",
         "//pw_rpc/system_server:backend": "//pw_hdlc:hdlc_sys_io_system_server",
+        "//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend": "//pw_sync/rust/pw_sync_mutex:pw_sync_mutex_backend_freertos",
         "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend": "//pw_sync/rust/pw_sync_spinlock:pw_sync_spinlock_backend_freertos",
         "//pw_sys_io:backend": "//pw_sys_io_rp2040",
         "//pw_thread/rust:pw_thread_backend": "//pw_thread/rust:pw_thread_backend_freertos",
@@ -194,4 +197,14 @@ rp2350_binary(
 flash_rp2350(
     name = "flash_sleep_example",
     rp2350_binary = ":sleep_example_binary",
+)
+
+rp2350_binary(
+    name = "mutex_example_binary",
+    binary = "//targets/pw_rp2350:mutex_example",
+)
+
+flash_rp2350(
+    name = "flash_mutex_example",
+    rp2350_binary = ":mutex_example_binary",
 )
