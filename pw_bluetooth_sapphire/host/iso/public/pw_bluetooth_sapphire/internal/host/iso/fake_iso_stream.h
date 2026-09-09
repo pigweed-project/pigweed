@@ -61,11 +61,25 @@ class FakeIsoStream : public IsoStream {
   hci_spec::ConnectionHandle cis_handle() const override { return cis_handle_; }
 
   void Close() override {
+    close_called_ = true;
+    if (close_synchronously_) {
+      is_established_ = false;
+      if (on_closed_callback_) {
+        on_closed_callback_();
+      }
+    }
+  }
+
+  void CompleteClose() {
+    PW_CHECK(!close_synchronously_);
     is_established_ = false;
     if (on_closed_callback_) {
       on_closed_callback_();
     }
   }
+
+  bool close_called() const { return close_called_; }
+  void set_close_synchronously(bool sync) { close_synchronously_ = sync; }
 
   std::optional<IsoDataPacket> ReadNextQueuedIncomingPacket() override {
     if (incoming_packet_queue_.size() < 1) {
@@ -118,7 +132,7 @@ class FakeIsoStream : public IsoStream {
     return (*on_incoming_data_available_cb_)(packet);
   }
 
-  bool is_established() const { return is_established_; }
+  bool is_established() const override { return is_established_; }
 
  protected:
   IsoStream::SetupDataPathError setup_data_path_status_ =
@@ -129,6 +143,8 @@ class FakeIsoStream : public IsoStream {
   CisEstablishedCallback cis_established_callback_;
   pw::Callback<void()> on_closed_callback_;
   bool is_established_ = false;
+  bool close_synchronously_ = true;
+  bool close_called_ = false;
 
   std::optional<IncomingDataHandler> on_incoming_data_available_cb_;
   std::queue<IsoDataPacket> incoming_packet_queue_;

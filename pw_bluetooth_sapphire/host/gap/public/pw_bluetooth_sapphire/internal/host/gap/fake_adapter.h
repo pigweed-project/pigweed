@@ -195,7 +195,7 @@ class FakeAdapter final : public Adapter {
     void DoCreateCig(iso::CigParams cig_params,
                      std::vector<iso::CigCisParams> cis_params,
                      iso::IsoGroupManager::CreateCigCompleteCallback callback,
-                     iso::IsoGroup::OnClosedCallback /*on_closed_callback*/,
+                     iso::IsoGroup::OnRemovedCallback /*on_removed_callback*/,
                      std::vector<PeerId> /*expected_peers*/) override {
       if (create_cig_cb_) {
         create_cig_cb_(

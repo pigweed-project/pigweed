@@ -177,6 +177,27 @@ TEST_F(ConnectedIsochronousGroupServerTest, RemoveClosedServerSide) {
   EXPECT_EQ(epitaph_.value(), ZX_OK);
 }
 
+TEST_F(ConnectedIsochronousGroupServerTest, ClosingChannelRemovesGroup) {
+  bool group_removed = false;
+  fake_cig() = std::make_unique<bt::iso::testing::FakeIsoGroup>(
+      /*id=*/1,
+      bt::hci::Transport::WeakPtr(),
+      stream_creator()->GetWeakPtr(),
+      [&](bt::iso::IsoGroup&) { group_removed = true; });
+
+  fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> handle;
+  CreateServer(handle.NewRequest(), fake_cig()->GetWeakPtr());
+
+  {
+    auto client = handle.Bind();
+    // Let client go out of scope to close the channel
+  }
+  RunLoopUntilIdle();
+
+  EXPECT_TRUE(group_removed);
+  EXPECT_EQ(on_close_called_times_, 1u);
+}
+
 TEST_F(ConnectedIsochronousGroupServerTest, EstablishStreamsSuccess) {
   SetupFakeCig();
 
@@ -982,6 +1003,7 @@ TEST_F(ConnectedIsochronousGroupServerTest, EstablishStreamsEmptyCisParams) {
   EXPECT_EQ(epitaph_, ZX_ERR_INVALID_ARGS);
 
   // Request with empty vector
+  SetupFakeCig();
   fidl::InterfaceHandle<fble::ConnectedIsochronousGroup> handle2;
   CreateServer(handle2.NewRequest(), fake_cig()->GetWeakPtr());
   auto client2 = handle2.Bind();

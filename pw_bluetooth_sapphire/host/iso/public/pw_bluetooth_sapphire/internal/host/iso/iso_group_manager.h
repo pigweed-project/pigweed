@@ -31,7 +31,7 @@ class IsoGroupManager final {
       pw::Function<std::unique_ptr<IsoGroup>(hci_spec::CigIdentifier,
                                              hci::Transport::WeakPtr,
                                              CigStreamCreator::WeakPtr,
-                                             IsoGroup::OnClosedCallback)>;
+                                             IsoGroup::OnRemovedCallback)>;
 
   // Constructs an IsoGroupManager.
   //  `hci`: The HCI transport to use for sending commands.
@@ -48,7 +48,7 @@ class IsoGroupManager final {
   void CreateCig(CigParams cig_params,
                  std::vector<CigCisParams> cis_params,
                  CreateCigCompleteCallback callback,
-                 IsoGroup::OnClosedCallback on_closed_callback);
+                 IsoGroup::OnRemovedCallback on_removed_callback);
 
   using WeakPtr = WeakSelf<IsoGroupManager>::WeakPtr;
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }

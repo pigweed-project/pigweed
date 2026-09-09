@@ -331,12 +331,12 @@ class Adapter {
     void CreateCig(iso::CigParams cig_params,
                    std::vector<iso::CigCisParams> cis_params,
                    iso::IsoGroupManager::CreateCigCompleteCallback callback,
-                   iso::IsoGroup::OnClosedCallback on_closed_callback,
+                   iso::IsoGroup::OnRemovedCallback on_removed_callback,
                    std::vector<PeerId> expected_peers = {}) {
       DoCreateCig(std::move(cig_params),
                   std::move(cis_params),
                   std::move(callback),
-                  std::move(on_closed_callback),
+                  std::move(on_removed_callback),
                   std::move(expected_peers));
     }
 
@@ -367,7 +367,7 @@ class Adapter {
         iso::CigParams cig_params,
         std::vector<iso::CigCisParams> cis_params,
         iso::IsoGroupManager::CreateCigCompleteCallback callback,
-        iso::IsoGroup::OnClosedCallback on_closed_callback,
+        iso::IsoGroup::OnRemovedCallback on_removed_callback,
         std::vector<PeerId> expected_peers) = 0;
   };
 

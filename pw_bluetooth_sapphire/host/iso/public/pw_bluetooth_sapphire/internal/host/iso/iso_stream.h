@@ -56,6 +56,8 @@ class IsoStream : public hci::IsoDataChannel::ConnectionInterface {
 
   virtual hci_spec::ConnectionHandle cis_handle() const = 0;
 
+  virtual bool is_established() const = 0;
+
   // Terminate this stream.
   virtual void Close() = 0;
 

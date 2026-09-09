@@ -55,11 +55,11 @@ class IsoGroupImpl final : public IsoGroup {
   IsoGroupImpl(hci_spec::CigIdentifier id,
                hci::Transport::WeakPtr hci,
                CigStreamCreator::WeakPtr cig_stream_creator,
-               OnClosedCallback on_closed_callback)
+               OnRemovedCallback on_removed_callback)
       : IsoGroup(id,
                  std::move(hci),
                  std::move(cig_stream_creator),
-                 std::move(on_closed_callback)),
+                 std::move(on_removed_callback)),
         weak_self_(this) {}
 
  private:
@@ -79,6 +79,7 @@ class IsoGroupImpl final : public IsoGroup {
         kConfigurable = 1 << 1,
         kActive = 1 << 2,
         kInactive = 1 << 3,
+        kRemoving = 1 << 4,
       };
 
       constexpr /* !explicit */ State(Value value) : value_(value) {}
@@ -113,6 +114,8 @@ class IsoGroupImpl final : public IsoGroup {
             return "Active";
           case kInactive:
             return "Inactive";
+          case kRemoving:
+            return "Removing";
         }
       }
 
@@ -173,6 +176,7 @@ class IsoGroupImpl final : public IsoGroup {
       constexpr auto kConfigurable = State::kConfigurable;
       constexpr auto kActive = State::kActive;
       constexpr auto kInactive = State::kInactive;
+      constexpr auto kRemoving = State::kRemoving;
 
       if (!is_valid()) {
         return false;
@@ -182,11 +186,13 @@ class IsoGroupImpl final : public IsoGroup {
         case kNotCreated:
           return update.IsOneOf(kConfigurable);
         case kConfigurable:
-          return update.IsOneOf(kNotCreated, kConfigurable, kActive);
+          return update.IsOneOf(kNotCreated, kConfigurable, kActive, kRemoving);
         case kActive:
-          return update.IsOneOf(kActive, kInactive);
+          return update.IsOneOf(kActive, kInactive, kRemoving);
         case kInactive:
-          return update.IsOneOf(kActive, kNotCreated);
+          return update.IsOneOf(kActive, kNotCreated, kRemoving);
+        case kRemoving:
+          return update.IsOneOf(kNotCreated);
       }
     }
 
@@ -216,9 +222,12 @@ class IsoGroupImpl final : public IsoGroup {
              current().IsOneOf(State::kNotCreated, State::kConfigurable);
     }
 
+    [[nodiscard]] constexpr bool CanInitiateRemove() const {
+      return IsTransitionValid(State::kRemoving);
+    }
+
     [[nodiscard]] constexpr bool CanRemoveCig() const {
-      return is_valid() &&
-             current().IsOneOf(State::kConfigurable, State::kInactive);
+      return is_valid() && current() == State::kRemoving;
     }
 
     [[nodiscard]] constexpr bool CanCreateCis() const {
@@ -242,6 +251,7 @@ class IsoGroupImpl final : public IsoGroup {
                  std::vector<CigCisParams> cis_params,
                  SetParamsCallback callback) override;
   pw::Status CreateCises(pw::span<CreateCisData> establish_data) override;
+  void Remove() override;
   WeakPtr GetWeakPtr() override { return weak_self_.GetWeakPtr(); }
 
   // Impl-specific.
@@ -249,6 +259,8 @@ class IsoGroupImpl final : public IsoGroup {
       const hci::EventPacket& cmd_complete,
       std::vector<CigCisParams> cis_params,
       SetParamsCallback callback);
+
+  void SendRemoveCigCommand();
 
   Fsm fsm_{State::kNotCreated};
   std::optional<pw::bluetooth::emboss::LESleepClockAccuracyRange>
@@ -480,6 +492,9 @@ void IsoGroupImpl::HandleSetCIGParametersCommandCompleteEvent(
         return;
       }
       self->streams_.erase(cis_id);
+      if (self->fsm_.current() == State::kRemoving && self->streams_.empty()) {
+        self->SendRemoveCigCommand();
+      }
     };
 
     if (!cig_stream_creator_.is_alive()) {
@@ -508,17 +523,108 @@ void IsoGroupImpl::HandleSetCIGParametersCommandCompleteEvent(
   callback({});
 }
 
+void IsoGroupImpl::Remove() {
+  if (fsm_.current() == State::kRemoving) {
+    bt_log(
+        WARN, "iso", "Remove() called while CIG %u is already removing", id());
+    return;
+  }
+  if (!fsm_.CanInitiateRemove()) {
+    bt_log(ERROR, "iso", "CIG in state %s cannot be removed", fsm_.ToString());
+    return;
+  }
+  fsm_.CheckedTransitionTo(State::kRemoving);
+
+  if (streams_.empty()) {
+    SendRemoveCigCommand();
+    return;
+  }
+
+  // Copy weak pointers to a temporary vector because calling Close() can
+  // trigger synchronous callbacks that modify `streams_` (invalidating
+  // iterators).
+  std::vector<IsoStream::WeakPtr> streams_to_close;
+  for (const auto& [cis_id, stream_weak] : streams_) {
+    if (stream_weak.is_alive()) {
+      streams_to_close.push_back(stream_weak);
+    }
+  }
+
+  for (auto& stream : streams_to_close) {
+    if (stream.is_alive()) {
+      stream->Close();
+    }
+  }
+}
+
+void IsoGroupImpl::SendRemoveCigCommand() {
+  if (!fsm_.CanRemoveCig()) {
+    bt_log(ERROR, "iso", "CIG in state %s cannot be removed", fsm_.ToString());
+    return;
+  }
+
+  if (!hci_.is_alive()) {
+    bt_log(WARN, "iso", "HCI transport unavailable to remove CIG %u", id());
+    fsm_.CheckedTransitionTo(State::kNotCreated);
+    if (on_removed_callback_) {
+      on_removed_callback_(*this);
+    }
+    return;
+  }
+
+  auto cmd_packet =
+      hci::CommandPacket::New<pw::bluetooth::emboss::LERemoveCIGCommandWriter>(
+          pw::bluetooth::emboss::OpCode::LE_REMOVE_CIG);
+  auto cmd_view = cmd_packet.view_t();
+  cmd_view.cig_id().Write(id());
+
+  auto self = weak_self_.GetWeakPtr();
+  auto result = hci_->command_channel()->SendCommand(
+      std::move(cmd_packet), [self](auto, const hci::EventPacket& event) {
+        if (!self.is_alive()) {
+          return;
+        }
+        auto view = event.view<
+            pw::bluetooth::emboss::LERemoveCIGCommandCompleteEventView>();
+        if (!view.Ok() || view.status().Read() !=
+                              pw::bluetooth::emboss::StatusCode::SUCCESS) {
+          bt_log(ERROR,
+                 "iso",
+                 "Failed to remove CIG %u from controller",
+                 self->id());
+          // TODO: b/559220982 - Handle controller failure to remove CIG.
+        }
+        self->fsm_.CheckedTransitionTo(State::kNotCreated);
+        if (self->on_removed_callback_) {
+          self->on_removed_callback_(self.get());
+        }
+      });
+  if (!result.ok()) {
+    bt_log(ERROR,
+           "iso",
+           "Failed to send LE_Remove_CIG command for CIG %u: %s",
+           id(),
+           pw_StatusString(result.status()));
+    // TODO: b/559220982 - If sending the HCI command fails synchronously, the
+    // CIG may remain allocated in the controller. Consider retry logic.
+    fsm_.CheckedTransitionTo(State::kNotCreated);
+    if (on_removed_callback_) {
+      on_removed_callback_(*this);
+    }
+  }
+}
+
 }  // namespace
 
 std::unique_ptr<IsoGroup> IsoGroup::CreateCig(
     hci_spec::CigIdentifier id,
     hci::Transport::WeakPtr hci,
     CigStreamCreator::WeakPtr cig_stream_creator,
-    IsoGroup::OnClosedCallback on_closed_callback) {
+    IsoGroup::OnRemovedCallback on_removed_callback) {
   return std::make_unique<IsoGroupImpl>(id,
                                         std::move(hci),
                                         std::move(cig_stream_creator),
-                                        std::move(on_closed_callback));
+                                        std::move(on_removed_callback));
 }
 
 }  // namespace bt::iso

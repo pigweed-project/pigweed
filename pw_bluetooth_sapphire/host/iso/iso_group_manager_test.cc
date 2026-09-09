@@ -42,12 +42,12 @@ class IsoGroupManagerTest : public bt::testing::FakeDispatcherControllerTest<
         [this](hci_spec::CigIdentifier id,
                hci::Transport::WeakPtr hci,
                CigStreamCreator::WeakPtr cig_stream_creator,
-               IsoGroup::OnClosedCallback on_closed_callback) {
+               IsoGroup::OnRemovedCallback on_removed_callback) {
           auto fake_cig =
               std::make_unique<FakeIsoGroup>(id,
                                              std::move(hci),
                                              std::move(cig_stream_creator),
-                                             std::move(on_closed_callback));
+                                             std::move(on_removed_callback));
           last_created_cig_ = fake_cig->GetWeakPtrForFake();
           return fake_cig;
         });
@@ -163,7 +163,7 @@ TEST_F(IsoGroupManagerTest, CreateCigAndDeleteOnClose) {
 
   EXPECT_EQ(last_created_cig_->id(), 0);
 
-  last_created_cig_->TriggerOnClosedCallback();
+  last_created_cig_->TriggerOnRemovedCallback();
   RunUntilIdle();
   EXPECT_TRUE(on_closed_cb_called);
   EXPECT_FALSE(last_created_cig_.is_alive());
@@ -224,7 +224,7 @@ TEST_F(IsoGroupManagerTest, CreateCigExhaustiveAllocation) {
   // Delete ID 239 (the last one created)
   ASSERT_TRUE(last_created_cig_.is_alive());
   EXPECT_EQ(last_created_cig_->id(), 239);
-  last_created_cig_->TriggerOnClosedCallback();
+  last_created_cig_->TriggerOnRemovedCallback();
   RunUntilIdle();
 
   // Try to allocate again. It should succeed and get ID 239.
@@ -250,7 +250,7 @@ TEST_F(IsoGroupManagerTest, CreateCigExhaustiveAllocation) {
   // Delete ID 42
   ASSERT_TRUE(cig_42.is_alive());
   EXPECT_EQ(cig_42->id(), 42);
-  cig_42->TriggerOnClosedCallback();
+  cig_42->TriggerOnRemovedCallback();
   RunUntilIdle();
 
   // Try to allocate again. It should succeed and get ID 42.
@@ -319,9 +319,9 @@ TEST_F(IsoGroupManagerTest, CreateCigCigDestroyedBeforeSetParamsCompletes) {
   auto callback = last_created_cig_->steal_set_params_callback();
   ASSERT_TRUE(callback);
 
-  // Destroy the CIG by triggering the OnClosedCallback which causes the manager
-  // to erase it.
-  last_created_cig_->TriggerOnClosedCallback();
+  // Destroy the CIG by triggering the OnRemovedCallback which causes the
+  // manager to erase it.
+  last_created_cig_->TriggerOnRemovedCallback();
   RunUntilIdle();
 
   EXPECT_FALSE(last_created_cig_.is_alive());

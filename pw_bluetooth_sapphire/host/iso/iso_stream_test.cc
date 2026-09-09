@@ -154,6 +154,48 @@ class IsoStreamTest : public MockControllerTestBase {
     return stream_lease_provider_;
   }
 
+  std::unique_ptr<IsoStream> CreateAndEstablishStream(
+      hci_spec::ConnectionHandle handle, pw::Callback<void()> on_closed_cb) {
+    auto stream = IsoStream::Create(
+        kCigId,
+        kCisId,
+        handle,
+        transport()->GetWeakPtr(),
+        dispatcher(),
+        /*on_established_cb=*/[](auto, auto, auto) {},
+        /*on_closed_cb=*/
+        [this, handle, cb = std::move(on_closed_cb)]() mutable {
+          cb();
+          transport()->iso_data_channel()->UnregisterConnection(handle);
+        },
+        stream_lease_provider());
+
+    DynamicByteBuffer le_cis_established_packet =
+        testing::LECisEstablishedEventPacket(
+            pw::bluetooth::emboss::StatusCode::SUCCESS,
+            handle,
+            0x123456,
+            0x7890ab,
+            0x654321,
+            0x0fedcb,
+            pw::bluetooth::emboss::IsoPhyType::LE_2M,
+            pw::bluetooth::emboss::IsoPhyType::LE_CODED,
+            0x10,
+            0x05,
+            0x0f,
+            0x01,
+            0xff,
+            0x0042,
+            0x00fb,
+            0x0222);
+    test_device()->SendCommandChannelPacket(le_cis_established_packet);
+    RunUntilIdle();
+
+    transport()->iso_data_channel()->RegisterConnection(handle,
+                                                        stream->GetWeakPtr());
+    return stream;
+  }
+
  protected:
   bool accept_incoming_sdus_ = true;
 
@@ -1014,6 +1056,52 @@ TEST_F(IsoStreamTest, HoldWakeLeaseWhileTxPacketQueued) {
   RunUntilIdle();
   EXPECT_TRUE(test_device()->AllExpectedIsoPacketsSent());
   EXPECT_EQ(stream_lease_provider().lease_count(), 0u);
+}
+
+TEST_F(IsoStreamTest, CloseAfterPeerDisconnectedDoesNotCrash) {
+  bool closed_callback_called = false;
+  constexpr hci_spec::ConnectionHandle kCustomCisHandle = 0x600;
+  auto custom_stream = CreateAndEstablishStream(
+      kCustomCisHandle, [&]() { closed_callback_called = true; });
+
+  // Simulate peer disconnection (Disconnection Complete event)
+  test_device()->SendCommandChannelPacket(
+      testing::DisconnectionCompletePacket(kCustomCisHandle));
+  RunUntilIdle();
+
+  EXPECT_TRUE(closed_callback_called);
+
+  // Calling Close() now should NOT crash / assert on connection state.
+  custom_stream->Close();
+  RunUntilIdle();
+}
+
+TEST_F(IsoStreamTest, CloseMultipleTimesDuringDisconnectDoesNotCrash) {
+  bool closed_callback_called = false;
+  constexpr hci_spec::ConnectionHandle kCustomCisHandle = 0x601;
+  auto custom_stream = CreateAndEstablishStream(
+      kCustomCisHandle, [&]() { closed_callback_called = true; });
+
+  // Calling Close() the first time should send a Disconnect command.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::DisconnectPacket(kCustomCisHandle,
+                                pw::bluetooth::emboss::StatusCode::
+                                    REMOTE_USER_TERMINATED_CONNECTION));
+  custom_stream->Close();
+  RunUntilIdle();
+
+  // Calling Close() a second time (before the disconnection completes) should
+  // return early and NOT crash.
+  custom_stream->Close();
+  RunUntilIdle();
+
+  // Now, simulate the disconnection complete event from the controller.
+  test_device()->SendCommandChannelPacket(
+      testing::DisconnectionCompletePacket(kCustomCisHandle));
+  RunUntilIdle();
+
+  EXPECT_TRUE(closed_callback_called);
 }
 
 }  // namespace

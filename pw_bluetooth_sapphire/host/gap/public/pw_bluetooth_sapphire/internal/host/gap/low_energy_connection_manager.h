@@ -205,7 +205,7 @@ class LowEnergyConnectionManager final {
   void CreateCig(iso::CigParams cig_params,
                  std::vector<iso::CigCisParams> cis_params,
                  iso::IsoGroupManager::CreateCigCompleteCallback callback,
-                 iso::IsoGroup::OnClosedCallback on_closed_callback,
+                 iso::IsoGroup::OnRemovedCallback on_removed_callback,
                  std::vector<PeerId> expected_peers = {});
 
   // TODO(armansito): Add a PeerCache::Observer interface and move these

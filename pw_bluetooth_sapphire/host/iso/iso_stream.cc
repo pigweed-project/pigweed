@@ -17,6 +17,7 @@
 #include <pw_assert/check.h>
 
 #include "pw_bluetooth/hci_data.emb.h"
+#include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/sequential_command_runner.h"
@@ -106,6 +107,9 @@ class IsoStreamImpl final : public IsoStream {
   hci_spec::ConnectionHandle cis_handle() const override {
     return cis_hci_handle_;
   }
+  bool is_established() const override {
+    return state_ == IsoStreamState::kEstablished;
+  }
   void Close() override;
   std::optional<IsoDataPacket> ReadNextQueuedIncomingPacket() override;
   void Send(pw::ConstByteSpan data) override;
@@ -133,7 +137,22 @@ class IsoStreamImpl final : public IsoStream {
   enum class IsoStreamState {
     kNotEstablished,
     kEstablished,
+    kClosing,
+    kClosed,
   } state_;
+
+  static const char* StateToString(IsoStreamState state) {
+    switch (state) {
+      case IsoStreamState::kNotEstablished:
+        return "NotEstablished";
+      case IsoStreamState::kEstablished:
+        return "Established";
+      case IsoStreamState::kClosing:
+        return "Closing";
+      case IsoStreamState::kClosed:
+        return "Closed";
+    }
+  }
 
   uint8_t cig_id_ __attribute__((unused));
   uint8_t cis_id_ __attribute__((unused));
@@ -273,8 +292,11 @@ bool IsoStreamImpl::OnCisEstablished(const hci::EventPacket& event) {
   link_->set_peer_disconnect_callback(
       [this](const hci::Connection&, pw::bluetooth::emboss::StatusCode) {
         bt_log(INFO, "iso", "CIS Disconnected at handle %#x", cis_hci_handle_);
-        if (on_closed_cb_) {
-          on_closed_cb_();
+        if (state_ != IsoStreamState::kClosed) {
+          state_ = IsoStreamState::kClosed;
+          if (on_closed_cb_) {
+            on_closed_cb_();
+          }
         }
       });
 
@@ -645,7 +667,24 @@ void IsoStreamImpl::Send(pw::ConstByteSpan data) {
   UpdateWakeLease();
 }
 
-void IsoStreamImpl::Close() { on_closed_cb_(); }
+void IsoStreamImpl::Close() {
+  if (state_ == IsoStreamState::kClosing || state_ == IsoStreamState::kClosed) {
+    bt_log(DEBUG,
+           "iso",
+           "Close() called on stream (%#x) in state %s",
+           cis_hci_handle_,
+           StateToString(state_));
+    return;
+  }
+  if (state_ == IsoStreamState::kEstablished) {
+    state_ = IsoStreamState::kClosing;
+    link_->Disconnect(
+        pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+  } else {
+    state_ = IsoStreamState::kClosed;
+    on_closed_cb_();
+  }
+}
 
 void IsoStreamImpl::UpdateWakeLease() {
   if (outbound_pdu_queue_.empty() && incoming_data_queue_.empty()) {

@@ -29,12 +29,13 @@ class IsoGroup {
  public:
   virtual ~IsoGroup() = default;
 
-  using OnClosedCallback = pw::Callback<void(IsoGroup&)>;
+  // Invoked when the CIG has been removed and all its resources torn down.
+  using OnRemovedCallback = pw::Callback<void(IsoGroup&)>;
   static std::unique_ptr<IsoGroup> CreateCig(
       hci_spec::CigIdentifier id,
       hci::Transport::WeakPtr hci,
       CigStreamCreator::WeakPtr cig_stream_creator,
-      OnClosedCallback on_closed_callback);
+      OnRemovedCallback on_removed_callback);
 
   // Create the CIG or update parameters for a CIG that has already been
   // configured, and add new CIS configs. See the HCI Set CIG Parameters command
@@ -57,6 +58,8 @@ class IsoGroup {
   };
   virtual pw::Status CreateCises(pw::span<CreateCisData> establish_data) = 0;
 
+  virtual void Remove() = 0;
+
   [[nodiscard]] hci_spec::CigIdentifier id() const { return id_; }
   const std::unordered_map<hci_spec::CisIdentifier, IsoStream::WeakPtr>&
   streams() const {
@@ -70,11 +73,11 @@ class IsoGroup {
   IsoGroup(hci_spec::CigIdentifier id,
            hci::Transport::WeakPtr hci,
            CigStreamCreator::WeakPtr cig_stream_creator,
-           OnClosedCallback on_closed_callback)
+           OnRemovedCallback on_removed_callback)
       : id_(id),
         hci_(std::move(hci)),
         cig_stream_creator_(std::move(cig_stream_creator)),
-        on_closed_callback_(std::move(on_closed_callback)) {}
+        on_removed_callback_(std::move(on_removed_callback)) {}
 
   const hci_spec::CigIdentifier id_;
   hci::Transport::WeakPtr hci_;
@@ -82,7 +85,7 @@ class IsoGroup {
   CigStreamCreator::WeakPtr cig_stream_creator_;
   std::unordered_map<hci_spec::CisIdentifier, IsoStream::WeakPtr> streams_;
 
-  OnClosedCallback on_closed_callback_;
+  OnRemovedCallback on_removed_callback_;
 };
 
 }  // namespace bt::iso

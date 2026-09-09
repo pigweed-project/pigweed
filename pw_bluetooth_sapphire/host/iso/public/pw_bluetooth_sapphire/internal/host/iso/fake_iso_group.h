@@ -25,18 +25,22 @@ class FakeIsoGroup : public IsoGroup {
   FakeIsoGroup(hci_spec::CigIdentifier id,
                hci::Transport::WeakPtr hci,
                CigStreamCreator::WeakPtr cig_stream_creator,
-               OnClosedCallback on_closed_callback)
+               OnRemovedCallback on_removed_callback)
       : IsoGroup(id,
                  std::move(hci),
                  std::move(cig_stream_creator),
-                 std::move(on_closed_callback)),
+                 std::move(on_removed_callback)),
         weak_self_(this) {}
 
   void set_create_cises_result(pw::Status result) {
     create_cises_result_ = result;
   }
 
-  void TriggerOnClosedCallback() { on_closed_callback_(*this); }
+  void TriggerOnRemovedCallback() {
+    if (on_removed_callback_) {
+      on_removed_callback_(*this);
+    }
+  }
 
   void CompleteSetParams(SetParamsResult result) {
     PW_CHECK(set_params_callback_);
@@ -62,6 +66,8 @@ class FakeIsoGroup : public IsoGroup {
                                    establish_data.end());
     return create_cises_result_;
   }
+
+  void Remove() override { TriggerOnRemovedCallback(); }
 
   IsoGroup::WeakPtr GetWeakPtr() override { return weak_self_.GetWeakPtr(); }
 

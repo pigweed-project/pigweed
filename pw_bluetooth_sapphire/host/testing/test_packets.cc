@@ -689,6 +689,30 @@ DynamicByteBuffer LESetCIGParametersCompletePacket(
   return packet;
 }
 
+DynamicByteBuffer LERemoveCIGCommandPacket(uint8_t cig_id) {
+  constexpr auto opcode =
+      static_cast<uint16_t>(pw::bluetooth::emboss::OpCode::LE_REMOVE_CIG);
+  return DynamicByteBuffer(StaticByteBuffer(LowerBits(opcode),
+                                            UpperBits(opcode),
+                                            0x01,  // parameter_total_size
+                                            cig_id));
+}
+
+DynamicByteBuffer LERemoveCIGCompletePacket(
+    uint8_t cig_id, pw::bluetooth::emboss::StatusCode status) {
+  constexpr uint8_t kNumHciCommandPacketsAllowed = 240;
+  constexpr auto opcode =
+      static_cast<uint16_t>(pw::bluetooth::emboss::OpCode::LE_REMOVE_CIG);
+  return DynamicByteBuffer(StaticByteBuffer(
+      hci_spec::kCommandCompleteEventCode,
+      0x05,  // parameter_total_size (num_packets + opcode + status + cig_id)
+      kNumHciCommandPacketsAllowed,
+      LowerBits(opcode),
+      UpperBits(opcode),
+      status,
+      cig_id));
+}
+
 DynamicByteBuffer LECreateCISCommandPacket(
     pw::span<const CreateCisHandles> cis_handles) {
   constexpr size_t kStaticSize = 4;

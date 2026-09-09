@@ -35,12 +35,12 @@ class FakeIsoGroupManagerProvider final {
       hci_spec::CigIdentifier id,
       hci::Transport::WeakPtr hci,
       CigStreamCreator::WeakPtr cig_stream_creator,
-      IsoGroup::OnClosedCallback on_closed_callback) {
+      IsoGroup::OnRemovedCallback on_removed_callback) {
     auto fake_cig =
         std::make_unique<FakeIsoGroup>(id,
                                        std::move(hci),
                                        std::move(cig_stream_creator),
-                                       std::move(on_closed_callback));
+                                       std::move(on_removed_callback));
     last_created_cig_ = fake_cig->GetWeakPtrForFake();
     return fake_cig;
   }

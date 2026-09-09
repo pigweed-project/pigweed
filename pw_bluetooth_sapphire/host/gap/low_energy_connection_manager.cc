@@ -603,7 +603,7 @@ void LowEnergyConnectionManager::CreateCig(
     iso::CigParams cig_params,
     std::vector<iso::CigCisParams> cis_params,
     iso::IsoGroupManager::CreateCigCompleteCallback callback,
-    iso::IsoGroup::OnClosedCallback on_closed_callback,
+    iso::IsoGroup::OnRemovedCallback on_removed_callback,
     std::vector<PeerId> expected_peers) {
   if (!iso_group_manager_) {
     callback(pw::unexpected(HostError::kNotSupported));
@@ -632,7 +632,7 @@ void LowEnergyConnectionManager::CreateCig(
   iso_group_manager_->CreateCig(std::move(cig_params),
                                 std::move(cis_params),
                                 std::move(callback),
-                                std::move(on_closed_callback));
+                                std::move(on_removed_callback));
 }
 
 void LowEnergyConnectionManager::SetDisconnectCallbackForTesting(

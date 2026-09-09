@@ -46,6 +46,53 @@ class IsoGroupTest : public bt::testing::FakeDispatcherControllerTest<
   }
 
  protected:
+  static constexpr hci_spec::CigIdentifier kDefaultCigId = 0x99;
+  static constexpr uint32_t kDefaultSduIntervalCToP = 0x000F0E0D;
+  static constexpr uint32_t kDefaultSduIntervalPToC = 0x000C0B0A;
+  static constexpr uint16_t kDefaultMaxTransportLatencyCToP = 0x0102;
+  static constexpr uint16_t kDefaultMaxTransportLatencyPToC = 0x0304;
+
+  static constexpr hci_spec::ConnectionHandle kDefaultCisHandle1 = 0x0001;
+  static constexpr hci_spec::ConnectionHandle kDefaultCisHandle2 = 0x0002;
+
+  static constexpr std::array<CisConfigParams, 2> kDefaultCisConfigParams = {{
+      {
+          .cis_id = 0x01,
+          .max_sdu_c_to_p = 0x100,
+          .max_sdu_p_to_c = 0x200,
+      },
+      {
+          .cis_id = 0x02,
+          .max_sdu_c_to_p = 0x300,
+          .max_sdu_p_to_c = 0x400,
+      },
+  }};
+
+  static CigParams DefaultCigParams() {
+    return CigParams{
+        .sdu_interval_c_to_p = kDefaultSduIntervalCToP,
+        .sdu_interval_p_to_c = kDefaultSduIntervalPToC,
+        .packing = CigPacking::kSequential,
+        .framing = CigFraming::kUnframed,
+        .max_transport_latency_c_to_p = kDefaultMaxTransportLatencyCToP,
+        .max_transport_latency_p_to_c = kDefaultMaxTransportLatencyPToC,
+        .worst_case_sca =
+            pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+    };
+  }
+
+  static std::vector<CigCisParams> DefaultCisParams(size_t count = 2) {
+    std::vector<CigCisParams> params;
+    params.reserve(count);
+    for (size_t i = 0; i < count && i < kDefaultCisConfigParams.size(); ++i) {
+      params.push_back({
+          .config = kDefaultCisConfigParams[i],
+          .on_established_cb = [](auto, auto, auto) {},
+      });
+    }
+    return params;
+  }
+
   std::unique_ptr<FakeCigStreamCreator> cig_stream_creator_;
 };
 
@@ -982,6 +1029,592 @@ TEST_F(IsoGroupTest, CreateCisesCisNotFound) {
                             .sca = std::nullopt});
 
   EXPECT_EQ(cig->CreateCises(establish_data), pw::Status::NotFound());
+}
+
+TEST_F(IsoGroupTest, RemoveCigNoEstablishedCises) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(), {}, [&](IsoGroup::SetParamsResult result) {
+    callback_called = true;
+    EXPECT_TRUE(result.has_value());
+  });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          {}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kDefaultCigId, {}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 0u);
+
+  // Expect LERemoveCIG command to be sent immediately since no CISes are
+  // established.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  cig->Remove();
+  RunUntilIdle();
+
+  // Complete LERemoveCIG.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCig) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(),
+                 DefaultCisParams(),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          kDefaultCisConfigParams));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(
+          kDefaultCigId, {kDefaultCisHandle1, kDefaultCisHandle2}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 2u);
+
+  // Trigger establishment of both streams so they are active.
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[0].cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[1].cis_id,
+                            .acl_handle = 0x000B,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LECreateCISCommandPacket(
+          std::vector<bt::testing::CreateCisHandles>{
+              {kDefaultCisHandle1, 0x000A}, {kDefaultCisHandle2, 0x000B}}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  // Mark streams as established in fake stream objects
+  ASSERT_TRUE(cig_stream_creator_->streams().count(
+      {kDefaultCigId, kDefaultCisConfigParams[0].cis_id}));
+  auto* stream1 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[0].cis_id})
+                      .get();
+  stream1->TriggerEstablishedCallback();
+  stream1->set_close_synchronously(false);
+
+  ASSERT_TRUE(cig_stream_creator_->streams().count(
+      {kDefaultCigId, kDefaultCisConfigParams[1].cis_id}));
+  auto* stream2 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[1].cis_id})
+                      .get();
+  stream2->TriggerEstablishedCallback();
+  stream2->set_close_synchronously(false);
+
+  RunUntilIdle();
+
+  // Now call Remove()
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_TRUE(stream1->close_called());
+  EXPECT_TRUE(stream2->close_called());
+
+  // Complete close on stream 1.
+  stream1->CompleteClose();
+  RunUntilIdle();
+
+  // CIG should not be removed yet since stream 2 is still active.
+  EXPECT_FALSE(on_closed_callback_called);
+
+  // Now, before we complete close on stream 2, we expect kLERemoveCIG command
+  // to be sent once stream 2 is closed.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  // Complete close on stream 2.
+  stream2->CompleteClose();
+  RunUntilIdle();
+
+  // We should also complete the LERemoveCIG command.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  // CIG should now be closed and removed.
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCigCisesCreatedButNotEstablished) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(),
+                 DefaultCisParams(),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          kDefaultCisConfigParams));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(
+          kDefaultCigId, {kDefaultCisHandle1, kDefaultCisHandle2}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 2u);
+
+  auto* stream1 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[0].cis_id})
+                      .get();
+  auto* stream2 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[1].cis_id})
+                      .get();
+
+  // Streams are created but not established. They will close synchronously.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_TRUE(stream1->close_called());
+  EXPECT_TRUE(stream2->close_called());
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+// Verifies that when Remove() is called on a CIG with a mix of established and
+// non-established CISes, all are closed appropriately (established
+// asynchronously, non-established synchronously), and the CIG is only removed
+// once all are fully closed.
+TEST_F(IsoGroupTest, RemoveCigCisesMix) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(),
+                 DefaultCisParams(),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          kDefaultCisConfigParams));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(
+          kDefaultCigId, {kDefaultCisHandle1, kDefaultCisHandle2}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 2u);
+
+  // Trigger establishment of both streams, but only establish Stream 1.
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[0].cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[1].cis_id,
+                            .acl_handle = 0x000B,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LECreateCISCommandPacket(
+          std::vector<bt::testing::CreateCisHandles>{
+              {kDefaultCisHandle1, 0x000A}, {kDefaultCisHandle2, 0x000B}}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  // Establish stream 1 (close asynchronously)
+  auto* stream1 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[0].cis_id})
+                      .get();
+  stream1->TriggerEstablishedCallback();
+  stream1->set_close_synchronously(false);
+
+  // Stream 2 is NOT established, so it remains in non-established state.
+  auto* stream2 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[1].cis_id})
+                      .get();
+
+  RunUntilIdle();
+
+  // Call Remove()
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_TRUE(stream1->close_called());
+  EXPECT_TRUE(stream2->close_called());
+
+  // CIG should not be removed yet since stream 1 is still closing.
+  EXPECT_FALSE(on_closed_callback_called);
+
+  // Expect LERemoveCIG once stream 1 completes close.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  // Complete close on stream 1.
+  stream1->CompleteClose();
+  RunUntilIdle();
+
+  // Complete the LERemoveCIG command.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCigAllCisesClosedOnTheirOwn) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(),
+                 DefaultCisParams(),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          kDefaultCisConfigParams));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(
+          kDefaultCigId, {kDefaultCisHandle1, kDefaultCisHandle2}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 2u);
+
+  // Trigger establishment.
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[0].cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[1].cis_id,
+                            .acl_handle = 0x000B,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LECreateCISCommandPacket(
+          std::vector<bt::testing::CreateCisHandles>{
+              {kDefaultCisHandle1, 0x000A}, {kDefaultCisHandle2, 0x000B}}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  auto* stream1 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[0].cis_id})
+                      .get();
+  stream1->TriggerEstablishedCallback();
+
+  auto* stream2 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[1].cis_id})
+                      .get();
+  stream2->TriggerEstablishedCallback();
+
+  RunUntilIdle();
+
+  // Close both streams directly (closed by link or application on their own).
+  stream1->Close();
+  stream2->Close();
+  RunUntilIdle();
+
+  // Streams should be removed from the CIG, meaning streams count is 0.
+  EXPECT_EQ(cig->streams().size(), 0u);
+  EXPECT_FALSE(on_closed_callback_called);
+
+  // Now when we call Remove(), it should immediately send LERemoveCIG.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  cig->Remove();
+  RunUntilIdle();
+
+  // Complete LERemoveCIG.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCigInNotCreatedStateFails) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  // CIG is in kNotCreated. Calling Remove() should fail / do nothing.
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_FALSE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCigCalledTwice) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(),
+                 DefaultCisParams(1),
+                 [&](IsoGroup::SetParamsResult result) {
+                   callback_called = true;
+                   EXPECT_TRUE(result.has_value());
+                 });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          pw::span<const CisConfigParams>(&kDefaultCisConfigParams[0], 1)));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kDefaultCigId,
+                                                    {kDefaultCisHandle1}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_EQ(cig->streams().size(), 1u);
+
+  std::vector<IsoGroup::CreateCisData> establish_data;
+  establish_data.push_back({.peer_id = PeerId(1),
+                            .cis_id = kDefaultCisConfigParams[0].cis_id,
+                            .acl_handle = 0x000A,
+                            .sca = std::nullopt});
+
+  EXPECT_EQ(cig->CreateCises(establish_data), pw::OkStatus());
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LECreateCISCommandPacket(
+                            std::vector<bt::testing::CreateCisHandles>{
+                                {kDefaultCisHandle1, 0x000A}}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_CREATE_CIS,
+      pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  auto* stream1 = cig_stream_creator_->streams()
+                      .at({kDefaultCigId, kDefaultCisConfigParams[0].cis_id})
+                      .get();
+  stream1->TriggerEstablishedCallback();
+  stream1->set_close_synchronously(false);
+
+  RunUntilIdle();
+
+  // Call Remove() first time.
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_TRUE(stream1->close_called());
+
+  // Call Remove() a second time.
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_FALSE(on_closed_callback_called);
+
+  // Expect LERemoveCIG once stream 1 completes close.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        bt::testing::LERemoveCIGCommandPacket(kDefaultCigId));
+
+  // Complete close on stream 1.
+  stream1->CompleteClose();
+  RunUntilIdle();
+
+  // Complete LERemoveCIG.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LERemoveCIGCompletePacket(kDefaultCigId));
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
+}
+
+TEST_F(IsoGroupTest, RemoveCigTransportDestroyedDoesNotCrash) {
+  bool on_closed_callback_called = false;
+  auto cig =
+      IsoGroup::CreateCig(kDefaultCigId,
+                          transport()->GetWeakPtr(),
+                          cig_stream_creator_->GetWeakPtr(),
+                          [&](IsoGroup&) { on_closed_callback_called = true; });
+
+  bool callback_called = false;
+  cig->SetParams(DefaultCigParams(), {}, [&](IsoGroup::SetParamsResult result) {
+    callback_called = true;
+    EXPECT_TRUE(result.has_value());
+  });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      bt::testing::LESetCIGParametersCommandPacket(
+          kDefaultCigId,
+          kDefaultSduIntervalCToP,
+          kDefaultSduIntervalPToC,
+          pw::bluetooth::emboss::LESleepClockAccuracyRange::PPM_0_TO_20,
+          pw::bluetooth::emboss::LECISPacking::SEQUENTIAL,
+          pw::bluetooth::emboss::LECISFraming::UNFRAMED,
+          kDefaultMaxTransportLatencyCToP,
+          kDefaultMaxTransportLatencyPToC,
+          {}));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      bt::testing::LESetCIGParametersCompletePacket(kDefaultCigId, {}));
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+
+  // Destroy the transport to simulate transport shutdown.
+  DeleteTransport();
+
+  // Remove() should handle the expired transport safely and invoke the
+  // callback.
+  cig->Remove();
+  RunUntilIdle();
+
+  EXPECT_TRUE(on_closed_callback_called);
 }
 
 }  // namespace

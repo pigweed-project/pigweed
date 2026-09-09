@@ -279,12 +279,12 @@ class LowEnergyConnectionManagerTest : public TestingBase {
       hci_spec::CigIdentifier id,
       hci::Transport::WeakPtr hci,
       iso::CigStreamCreator::WeakPtr cig_stream_creator,
-      iso::IsoGroup::OnClosedCallback on_closed_callback) {
+      iso::IsoGroup::OnRemovedCallback on_removed_callback) {
     auto fake_cig =
         std::make_unique<FakeIsoGroup>(id,
                                        std::move(hci),
                                        std::move(cig_stream_creator),
-                                       std::move(on_closed_callback));
+                                       std::move(on_removed_callback));
     iso_groups_.push_back(fake_cig->GetWeakPtrForFake());
     return fake_cig;
   }

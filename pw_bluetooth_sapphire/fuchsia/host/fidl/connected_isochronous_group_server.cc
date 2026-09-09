@@ -65,6 +65,9 @@ ConnectedIsochronousGroupServer::cig_id() {
 }
 
 void ConnectedIsochronousGroupServer::OnClose(zx_status_t status) {
+  if (iso_group_.is_alive()) {
+    iso_group_->Remove();
+  }
   if (on_close_cb_) {
     on_close_cb_(*this, status);
   }

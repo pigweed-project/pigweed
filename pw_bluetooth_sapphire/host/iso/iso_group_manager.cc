@@ -38,23 +38,23 @@ void IsoGroupManager::CreateCig(
     CigParams cig_params,
     std::vector<CigCisParams> cis_params,
     IsoGroupManager::CreateCigCompleteCallback callback,
-    IsoGroup::OnClosedCallback on_closed_callback) {
+    IsoGroup::OnRemovedCallback on_removed_callback) {
   auto cig_id = AllocateCigId();
   if (!cig_id.has_value()) {
     callback(pw::unexpected(HostError::kOutOfMemory));
     return;
   }
 
-  auto wrapped_on_closed_callback =
+  auto wrapped_on_removed_callback =
       [self = GetWeakPtr(),
-       on_closed_cb = std::move(on_closed_callback)](IsoGroup& cig) mutable {
-        on_closed_cb(cig);
+       on_removed_cb = std::move(on_removed_callback)](IsoGroup& cig) mutable {
+        on_removed_cb(cig);
         if (self.is_alive()) {
           self->groups_.erase(cig.id());
         }
       };
   auto cig = create_cig_(
-      *cig_id, hci_, cis_creator_, std::move(wrapped_on_closed_callback));
+      *cig_id, hci_, cis_creator_, std::move(wrapped_on_removed_callback));
 
   auto on_set_params_completed_callback =
       [cb = std::move(callback),

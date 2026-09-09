@@ -215,6 +215,9 @@ TEST_F(IsoStreamManagerTest, MultipleCISAcceptRequests) {
   EXPECT_CMD_PACKET_OUT(test_device(),
                         testing::DisconnectPacket(kAltCisHandleId));
   iso_streams_[kId1]->Close();
+  test_device()->SendCommandChannelPacket(
+      testing::DisconnectionCompletePacket(kAltCisHandleId));
+  RunUntilIdle();
   EXPECT_EQ(CallAcceptCis(kId1), AcceptCisStatus::kSuccess);
   ASSERT_TRUE(iso_stream_manager()->HandlerRegistered(kId1));
 }
@@ -354,6 +357,8 @@ TEST_F(IsoStreamManagerTest,
   // controller)
   EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(kCisHandle));
   stream->Close();
+  test_device()->SendCommandChannelPacket(
+      testing::DisconnectionCompletePacket(kCisHandle));
   RunUntilIdle();
 
   EXPECT_TRUE(on_closed_cb_called);
