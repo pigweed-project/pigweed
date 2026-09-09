@@ -159,6 +159,7 @@ if (pw_third_party_mcuxpresso_SDK ==
   # Project-specific FreeRTOS port.
   _freertos_port_dir =
       "$dir_pw_third_party_freertos/portable/GCC/ARM_CM33_NTZ/non_secure"
+
   config("freertos_port_public_includes") {
     include_dirs = [
       "$_freertos_port_dir",

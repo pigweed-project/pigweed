@@ -144,6 +144,7 @@ pw_source_set("emboss_util") {
     dir_pw_uuid,
   ]
 }
+
 pw_source_set("hci_util") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_bluetooth/hci_util.h" ]
@@ -291,26 +292,37 @@ if (dir_pw_third_party_emboss != "") {
 } else {
   group("emboss_att") {
   }
+
   group("emboss_avctp_avrcp") {
   }
+
   group("emboss_hci_android") {
   }
+
   group("emboss_hci_common") {
   }
+
   group("emboss_hci_commands") {
   }
+
   group("emboss_hci_data") {
   }
+
   group("emboss_hci_events") {
   }
+
   group("emboss_hci_h4") {
   }
+
   group("emboss_hci_test") {
   }
+
   group("emboss_hci_group") {
   }
+
   group("emboss_l2cap_frames") {
   }
+
   group("emboss_rfcomm_frames") {
   }
 }

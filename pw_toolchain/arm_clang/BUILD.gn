@@ -70,6 +70,7 @@ if (pw_toolchain_USE_LLVM_PREBUILT_LIBRARIES) {
     # instruction.
     "_LIBCPP_VERBOSE_ABORT(...)=__builtin_trap()",
   ]
+
   config("cortex_m0plus") {
     cflags = [
       "-mcpu=cortex-m0plus",

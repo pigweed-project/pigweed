@@ -92,6 +92,7 @@ template("generate_toolchain") {
       # print("Generating toolchain: ${target_name} by ${current_toolchain}")
 
       assert(defined(invoker.cc), "toolchain is missing 'cc'")
+
       tool("asm") {
         if (pw_command_launcher != "") {
           command_launcher = pw_command_launcher
@@ -142,6 +143,7 @@ template("generate_toolchain") {
       }
 
       assert(defined(invoker.cxx), "toolchain is missing 'cxx'")
+
       tool("cxx") {
         if (pw_command_launcher != "") {
           command_launcher = pw_command_launcher
@@ -216,6 +218,7 @@ template("generate_toolchain") {
       }
 
       assert(defined(invoker.ar), "toolchain is missing 'ar'")
+
       tool("alink") {
         if (host_os == "win") {
           rspfile = "{{output}}.rsp"
@@ -468,6 +471,7 @@ template("generate_toolchain") {
     }
   } else {
     not_needed(invoker, "*")
+
     group(target_name) {
     }
   }

@@ -144,6 +144,7 @@ template("pw_static_analysis_toolchain") {
     }
 
     assert(defined(invoker.cc), "toolchain is missing 'cc'")
+
     tool("cc") {
       _post_command_hook = ""
       if (defined(_static_analysis_args.cc_post) &&
@@ -179,6 +180,7 @@ template("pw_static_analysis_toolchain") {
     }
 
     assert(defined(invoker.cxx), "toolchain is missing 'cxx'")
+
     tool("cxx") {
       _post_command_hook = ""
       if (defined(_static_analysis_args.cxx_post) &&

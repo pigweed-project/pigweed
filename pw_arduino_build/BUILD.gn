@@ -30,6 +30,7 @@ if (pw_arduino_build_CORE_PATH != "") {
     public = [ "public/pw_arduino_build/init.h" ]
     public_configs = [ ":default_config" ]
   }
+
   config("default_config") {
     include_dirs = [ "public" ]
   }

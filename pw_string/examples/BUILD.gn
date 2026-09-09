@@ -16,6 +16,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_unit_test/test.gni")
+
 pw_test_group("tests") {
   tests = [
     ":build_inlinestring_with_stringbuilder_test",

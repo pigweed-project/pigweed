@@ -195,6 +195,7 @@ template("pw_size_report") {
     }
   } else {
     not_needed(invoker, "*")
+
     group(target_name) {
     }
   }
@@ -451,6 +452,7 @@ template("pw_size_diff") {
     }
   } else {
     not_needed(invoker, "*")
+
     group(target_name) {
     }
   }
@@ -504,6 +506,7 @@ template("pw_toolchain_size_diff") {
     # Create a config which adds the toolchain's linker script as a linker flag
     # if the toolchain provides one.
     _linker_script_target_name = "${_prefix}_linker_script"
+
     config(_linker_script_target_name) {
       if (defined(_toolchain.linker_script)) {
         ldflags =
@@ -516,12 +519,14 @@ template("pw_toolchain_size_diff") {
 
     # Create a group which forces the linker script config its dependents.
     _linker_group_target_name = "${_prefix}_linker_group"
+
     group(_linker_group_target_name) {
       public_configs = [ ":$_linker_script_target_name" ]
     }
 
     # Define the size report base executable with the toolchain's linker script.
     _base_target_name = "${_prefix}_base"
+
     executable(_base_target_name) {
       forward_variables_from(invoker.base_executable, "*")
       if (!defined(deps)) {
@@ -532,6 +537,7 @@ template("pw_toolchain_size_diff") {
 
     # Define the size report diff executable with the toolchain's linker script.
     _diff_target_name = "${_prefix}_diff"
+
     executable(_diff_target_name) {
       forward_variables_from(invoker.diff_executable, "*")
       if (!defined(deps)) {
@@ -578,6 +584,7 @@ template("pw_toolchain_size_diff") {
     not_needed(invoker, "*")
 
     _doc_rst_output = "$target_gen_dir/$target_name"
+
     pw_python_action(target_name) {
       metadata = {
         pw_doc_sources = rebase_path([ _doc_rst_output ], root_build_dir)

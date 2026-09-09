@@ -555,7 +555,7 @@ use_repo(cipd_ext, buildifier = "pigweed.buildifier")
 cipd_ext.require(
     name = "pigweed.gn",
     packages = {
-        "gn/gn/${platform}": "git_revision:4a060c55dcc5380837a8684949b74400e929b85e",
+        "gn/gn/${platform}": "git_revision:4f6a76b64b8279e98004f541f8e136307efe5e01",
     },
 )
 use_repo(cipd_ext, gn = "pigweed.gn")

@@ -131,6 +131,7 @@ if (dir_pw_third_party_nanopb != "") {
 } else {
   group("nanopb") {
   }
+
   pw_python_group("generate_nanopb_proto") {
   }
 }

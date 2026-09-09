@@ -464,6 +464,7 @@ template("pw_python_distribution") {
 
     outputs = [ _wheel_requirement ]
   }
+
   group("$target_name.wheel") {
     public_deps = [ ":${invoker.target_name}._build_wheel" ]
   }

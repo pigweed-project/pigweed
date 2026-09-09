@@ -318,6 +318,7 @@ template("pw_test") {
     forward_variables_from(invoker, [ "extra_metadata" ])
     test_directory = rebase_path(_test_output_dir, root_build_dir)
   }
+
   pw_test_info(_test_metadata) {
     test_type = "unit_test"
     test_name = _test_target_name
@@ -530,6 +531,7 @@ template("pw_test_group") {
         }
       }
     }
+
     pw_test_info(_test_group_metadata) {
       testonly = pw_unit_test_TESTONLY
       build_label = _group_target
@@ -578,6 +580,7 @@ template("pw_test_group") {
     # Create empty groups for the tests to avoid pulling in any dependencies.
     group(_group_target) {
     }
+
     group(_group_target + ".lib") {
     }
 

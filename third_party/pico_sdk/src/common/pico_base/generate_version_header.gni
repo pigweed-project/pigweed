@@ -16,6 +16,7 @@ import("//build_overrides/pi_pico.gni")
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
+
 declare_args() {
   PICO_SDK_VERSION_MAJOR = 1
   PICO_SDK_VERSION_MINOR = 3

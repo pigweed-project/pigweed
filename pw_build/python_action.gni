@@ -211,6 +211,7 @@ template("pw_python_action") {
   # Build a list of relative paths containing all the python
   # package_metadata.json files we depend on.
   _metadata_path_list_target = "${target_name}._metadata_path_list.txt"
+
   generated_file(_metadata_path_list_target) {
     data_keys = [ "pw_python_package_metadata_json" ]
     rebase = root_build_dir

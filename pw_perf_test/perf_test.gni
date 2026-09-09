@@ -82,6 +82,7 @@ template("pw_perf_test") {
     forward_variables_from(invoker, [ "extra_metadata" ])
     test_directory = rebase_path(_test_output_dir, root_build_dir)
   }
+
   pw_test_info(_test_metadata) {
     test_type = "perf_test"
     test_name = _test_target_name

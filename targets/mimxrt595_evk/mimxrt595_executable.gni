@@ -28,6 +28,7 @@ template("mimxrt595_executable") {
 
   # .elf binary created by the standard toolchain.
   _base_target_name = target_name
+
   executable("${target_name}__elf") {
     output_name = "${_base_target_name}"
     forward_variables_from(invoker, "*")

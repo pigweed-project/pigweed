@@ -89,6 +89,7 @@ import("$dir_pw_build/python_action.gni")
 #
 template("pw_zip") {
   _delimiter = ">"
+
   pw_python_action(target_name) {
     forward_variables_from(invoker,
                            [

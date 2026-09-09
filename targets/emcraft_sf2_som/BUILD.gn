@@ -64,6 +64,7 @@ if (current_toolchain != default_toolchain) {
     ]
     linker_script = "emcraft_sf2_som_mddr_debug.ld"
   }
+
   pw_linker_script("mddr_production_linker_script") {
     defines = [
       "PW_BOOT_FLASH_BEGIN=0x00000200",  # After vector table.

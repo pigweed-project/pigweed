@@ -104,6 +104,7 @@ template("pw_doc_gen") {
   if (pw_docgen_BUILD_DOCS) {
     # Collects all dependency metadata into a single JSON file.
     _metadata_file_target = "${target_name}_metadata"
+
     generated_file(_metadata_file_target) {
       outputs = [ "$target_gen_dir/$target_name.json" ]
       data_keys = [

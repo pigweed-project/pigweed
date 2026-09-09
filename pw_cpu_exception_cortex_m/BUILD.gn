@@ -71,6 +71,7 @@ pw_source_set("support") {
 group("support_armv7m") {
   public_deps = [ ":support" ]
 }
+
 group("support_armv8m") {
   public_deps = [ ":support" ]
 }
@@ -123,6 +124,7 @@ pw_source_set("proto_dump") {
 group("proto_dump_armv7m") {
   public_deps = [ ":proto_dump" ]
 }
+
 group("proto_dump_armv8m") {
   public_deps = [ ":proto_dump" ]
 }
@@ -157,9 +159,11 @@ pw_source_set("cpu_exception") {
 group("cpu_exception_armv6m") {
   public_deps = [ ":cpu_exception" ]
 }
+
 group("cpu_exception_armv7m") {
   public_deps = [ ":cpu_exception" ]
 }
+
 group("cpu_exception_armv8m") {
   public_deps = [ ":cpu_exception" ]
 }
@@ -194,6 +198,7 @@ pw_source_set("cpu_exception.impl") {
 group("cpu_exception_armv7m.impl") {
   public_deps = [ ":cpu_exception.impl" ]
 }
+
 group("cpu_exception_armv8m.impl") {
   public_deps = [ ":cpu_exception.impl" ]
 }
@@ -223,6 +228,7 @@ pw_source_set("snapshot") {
 group("snapshot_armv7m") {
   public_deps = [ ":snapshot" ]
 }
+
 group("snapshot_armv8m") {
   public_deps = [ ":snapshot" ]
 }
@@ -238,6 +244,7 @@ group("cortex_m_constants_armv7m") {
   public_deps = [ ":cortex_m_constants" ]
   visibility = [ ":*" ]
 }
+
 group("cortex_m_constants_armv8m") {
   public_deps = [ ":cortex_m_constants" ]
   visibility = [ ":*" ]

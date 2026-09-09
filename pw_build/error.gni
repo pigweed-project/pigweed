@@ -84,6 +84,7 @@ template("pw_build_assert") {
 
   if (invoker.condition) {
     not_needed(invoker, _pw_error_variables)
+
     group(target_name) {
       forward_variables_from(invoker, [ "visibility" ])
     }

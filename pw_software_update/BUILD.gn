@@ -114,8 +114,10 @@ if (pw_crypto_SHA256_BACKEND != "" && pw_crypto_ECDSA_BACKEND != "") {
 } else {
   group("openable_reader") {
   }
+
   group("blob_store_openable_reader") {
   }
+
   group("update_bundle") {
   }
 }

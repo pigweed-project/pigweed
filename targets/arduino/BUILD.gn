@@ -106,6 +106,7 @@ if (pw_arduino_build_CORE_PATH != "") {
 } else {
   config("arduino_build") {
   }
+
   group("pre_init") {
   }
 }

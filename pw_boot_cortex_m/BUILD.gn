@@ -29,8 +29,10 @@ if (_boot_backend != "$dir_pw_boot_cortex_m:pw_boot_cortex_m" &&
     _boot_backend != "$dir_pw_boot_cortex_m:armv8m") {
   group("pw_boot_cortex_m") {
   }
+
   group("armv7m") {
   }
+
   group("armv8m") {
   }
 } else {
@@ -61,6 +63,7 @@ if (_boot_backend != "$dir_pw_boot_cortex_m:pw_boot_cortex_m" &&
   group("armv7m") {
     public_deps = [ ":pw_boot_cortex_m" ]
   }
+
   group("armv8m") {
     public_deps = [ ":pw_boot_cortex_m" ]
   }

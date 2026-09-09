@@ -81,6 +81,7 @@ template("pw_python_action_test") {
       forward_variables_from(invoker, [ "extra_metadata" ])
       ninja_target = rebase_path(_ninja_target, root_build_dir)
     }
+
     pw_test_info(_test_metadata) {
       test_type = "action_test"
       test_name = _test_target_name
@@ -162,6 +163,7 @@ template("pw_python_action_test") {
 
       # Create a Python group in order to ensure the package is linted.
       _test_python_group = _test_target_name + ".group"
+
       pw_python_group(_test_python_group) {
         python_deps = [ ":$_test_script_name" ]
       }

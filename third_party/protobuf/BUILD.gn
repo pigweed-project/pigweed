@@ -169,6 +169,7 @@ if (dir_pw_third_party_protobuf != "") {
   # argument pointing to the protobuf source directory is not set.
   group("libprotobuf_lite") {
   }
+
   group("libprotobuf") {
   }
 }

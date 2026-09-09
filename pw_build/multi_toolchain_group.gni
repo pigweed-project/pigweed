@@ -31,6 +31,7 @@ template("pw_multi_toolchain_group") {
   assert(defined(invoker.deps), "`deps` must be defined to use this template")
   assert(defined(invoker.toolchains),
          "`toolchains` must be defined to use this template")
+
   group(target_name) {
     deps = []
     public_deps = []

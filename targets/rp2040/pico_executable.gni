@@ -29,6 +29,7 @@ template("pico_executable") {
   } else {
     _uf2_name = "${target_name}.uf2"
     _elf_name = "${target_name}.elf"
+
     executable(_elf_name) {
       forward_variables_from(invoker, "*")
     }

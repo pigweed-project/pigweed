@@ -106,6 +106,7 @@ template("pw_go_executable") {
   # Collect all of the external dependencies of the executable and its packages.
   _deps_metadata_target_name = "${target_name}_pw_go_deps"
   _deps_metadata_file = "$target_gen_dir/${target_name}_pw_go_deps.txt"
+
   generated_file(_deps_metadata_target_name) {
     deps = invoker.deps
     data_keys = [ "external_deps" ]
@@ -118,6 +119,7 @@ template("pw_go_executable") {
   # GOPATH in the out directory. This is only run once; "go get" does not
   # re-download existing packages.
   _download_target_name = "${target_name}_pw_go_get"
+
   pw_exec(_download_target_name) {
     program = "go"
     args = [ "get" ]

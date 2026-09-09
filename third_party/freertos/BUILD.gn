@@ -46,6 +46,7 @@ if (dir_pw_third_party_freertos == "") {
                   [ rebase_path("$dir_pw_third_party_freertos/include/task.h",
                                 root_build_dir) ],
                   "scope")
+
   config("disable_warnings") {
     cflags = [
       "-Wno-unused-parameter",

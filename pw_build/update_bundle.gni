@@ -43,6 +43,7 @@ template("pw_update_bundle") {
   assert(defined(invoker.out), "An output path must be provided via 'out'")
   assert(defined(invoker.targets),
          "A list of targets must be provided via 'targets'")
+
   pw_python_action(target_name) {
     _delimiter = ">"
     forward_variables_from(invoker,

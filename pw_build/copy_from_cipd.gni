@@ -58,6 +58,7 @@ template("pw_cipd_static_library") {
   _out_relative = rebase_path(_out_dir, root_build_dir)
   _out_file = "$_out_dir/${invoker.library_path}"
   _manifest_path = rebase_path(invoker.manifest, root_build_dir)
+
   pw_python_action("$target_name.check_copy") {
     module = "pw_build.copy_from_cipd"
     args = [

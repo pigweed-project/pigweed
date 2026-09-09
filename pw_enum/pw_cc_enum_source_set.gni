@@ -52,6 +52,7 @@ template("pw_cc_enum_source_set") {
   write_file(_base_cc_file, [ "// placeholder" ])
 
   _base_target = "${target_name}._base"
+
   pw_source_set(_base_target) {
     forward_variables_from(invoker, [ "testonly" ])
     sources = [ _base_cc_file ]
@@ -72,6 +73,7 @@ template("pw_cc_enum_source_set") {
   }
 
   _generate_target = "${target_name}.generate"
+
   pw_python_action(_generate_target) {
     forward_variables_from(invoker, [ "testonly" ])
     module = "pw_enum.generate_gn"

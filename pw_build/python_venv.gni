@@ -454,9 +454,11 @@ template("pw_python_venv") {
       group("${target_name}._compile_requirements") {
         public_deps = [ ":${target_name}($pw_build_PYTHON_TOOLCHAIN)" ]
       }
+
       group("${target_name}._install_3p_deps") {
         public_deps = [ ":${target_name}($pw_build_PYTHON_TOOLCHAIN)" ]
       }
+
       group("${target_name}.vendor_wheels") {
         public_deps = [ ":${target_name}($pw_build_PYTHON_TOOLCHAIN)" ]
       }
@@ -473,6 +475,7 @@ template("pw_python_venv") {
       # requirements or source packages are provided.
       public_deps = [ ":${invoker.target_name}._create_virtualenv($pw_build_PYTHON_TOOLCHAIN)" ]
     }
+
     group("${target_name}.vendor_wheels") {
     }
   }

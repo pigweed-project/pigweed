@@ -66,6 +66,7 @@ if (dir_pw_third_party_smartfusion_mss != "") {
 
   foreach(ele, liberosoc_configs) {
     config_name = ele.name + "_config"
+
     config(config_name) {
       # Custom config file is specified by macro liberosoc_CONFIG_FILE
       # for liberosoc
@@ -73,6 +74,7 @@ if (dir_pw_third_party_smartfusion_mss != "") {
     }
 
     srcset_name = ele.name + "_config_srcset"
+
     pw_source_set(srcset_name) {
       public = [
         "configs/config_pigweed_common.h",

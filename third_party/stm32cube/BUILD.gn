@@ -21,14 +21,19 @@ import("$pw_external_stm32cube/stm32cube.gni")
 if (dir_pw_third_party_stm32cube == "") {
   group("linker_script_template") {
   }
+
   group("core_init_template") {
   }
+
   group("cmsis_init_template") {
   }
+
   group("hal_config_template") {
   }
+
   group("stm32cube_headers") {
   }
+
   group("stm32cube") {
   }
 } else {
@@ -105,9 +110,11 @@ if (dir_pw_third_party_stm32cube == "") {
   # Generate a stub config header that points to the correct template.
   write_file("$target_gen_dir/template_config/${files.family}_hal_conf.h",
              "#include \"${files.family}_hal_conf_template.h\"")
+
   config("hal_config_template_includes") {
     include_dirs = [ "$target_gen_dir/template_config" ]
   }
+
   pw_source_set("hal_config_template") {
     public_configs = [ ":hal_config_template_includes" ]
 
