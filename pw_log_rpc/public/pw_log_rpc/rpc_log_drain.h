@@ -135,7 +135,10 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
         max_bundles_per_trickle_(max_bundles_per_trickle),
         trickle_delay_(trickle_delay),
         no_writes_until_(chrono::SystemClock::now()),
-        on_open_callback_(nullptr) {
+        on_open_callback_(nullptr),
+        is_writer_open_(false),
+        is_writing_(false),
+        session_id_(0) {
     PW_ASSERT(log_entry_buffer.size_bytes() >= kMinEntryBufferSize);
   }
 
@@ -234,11 +237,14 @@ class RpcLogDrain : public multisink::MultiSink::Drain {
   uint32_t drop_count_writer_error_ PW_GUARDED_BY(mutex_);
   sync::Mutex& mutex_;
   Filter* filter_;
-  uint32_t sequence_id_;
+  uint32_t sequence_id_ PW_GUARDED_BY(mutex_);
   size_t max_bundles_per_trickle_;
   pw::chrono::SystemClock::duration trickle_delay_;
   pw::chrono::SystemClock::time_point no_writes_until_;
   pw::Function<void()> on_open_callback_;
+  bool is_writer_open_ PW_GUARDED_BY(mutex_);
+  bool is_writing_ PW_GUARDED_BY(mutex_);
+  uint32_t session_id_ PW_GUARDED_BY(mutex_);
 };
 
 }  // namespace pw::log_rpc

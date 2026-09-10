@@ -17,6 +17,8 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_chrono/backend.gni")
+import("$dir_pw_sync/backend.gni")
+import("$dir_pw_thread/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 
 declare_args() {
@@ -219,7 +221,10 @@ pw_test("log_filter_test") {
 }
 
 pw_test("rpc_log_drain_test") {
-  enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != ""
+  enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
+              pw_sync_TIMED_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != ""
   sources = [ "rpc_log_drain_test.cc" ]
   deps = [
     ":log_filter",
@@ -227,6 +232,7 @@ pw_test("rpc_log_drain_test") {
     ":rpc_log_drain",
     ":test_utils",
     "$dir_pw_bytes",
+    "$dir_pw_chrono:system_clock",
     "$dir_pw_log:proto_utils",
     "$dir_pw_log:protos.pwpb",
     "$dir_pw_log_tokenized:metadata",
@@ -238,6 +244,11 @@ pw_test("rpc_log_drain_test") {
     "$dir_pw_rpc/raw:test_method_context",
     "$dir_pw_status",
     "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_sync:timed_thread_notification",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_thread:thread_core",
   ]
 
   # TODO: https://pwbug.dev/325509758 - Doesn't work on the Pico yet; hangs

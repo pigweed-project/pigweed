@@ -208,12 +208,16 @@ pw_add_test(pw_log_rpc.log_filter_test
     pw_log_rpc
 )
 
-if(NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "")
+if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_sync.timed_thread_notification_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.test_thread_context_BACKEND}" STREQUAL "") AND
+   (NOT "${pw_thread.thread_BACKEND}" STREQUAL ""))
   pw_add_test(pw_log_rpc.rpc_log_drain_test
     SOURCES
       rpc_log_drain_test.cc
     PRIVATE_DEPS
       pw_bytes
+      pw_chrono.system_clock
       pw_log.proto_utils
       pw_log.protos.pwpb
       pw_log_rpc.log_filter
@@ -229,6 +233,11 @@ if(NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "")
       pw_rpc.raw.test_method_context
       pw_status
       pw_sync.mutex
+      pw_sync.thread_notification
+      pw_sync.timed_thread_notification
+      pw_thread.test_thread_context
+      pw_thread.thread
+      pw_thread.thread_core
     GROUPS
       modules
       pw_log_rpc

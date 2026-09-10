@@ -65,10 +65,12 @@ Status RpcLogDrain::Open(rpc::RawServerWriter& writer) {
     return Status::FailedPrecondition();
   }
   std::lock_guard lock(mutex_);
-  if (server_writer_.active()) {
+  if (is_writer_open_ && (is_writing_ || server_writer_.active())) {
     return Status::AlreadyExists();
   }
   server_writer_ = std::move(writer);
+  is_writer_open_ = true;
+  ++session_id_;
 
   // Set a callback to close the drain when RequestCompletion() is requested by
   // the reader. This callback is only set and invoked if
@@ -115,38 +117,77 @@ RpcLogDrain::LogDrainState RpcLogDrain::SendLogs(size_t max_num_bundles,
   PW_CHECK_NOTNULL(multisink_);
 
   LogDrainState log_sink_state = LogDrainState::kMoreEntriesRemaining;
-  std::lock_guard lock(mutex_);
   size_t sent_bundle_count = 0;
   while (sent_bundle_count < max_num_bundles &&
          log_sink_state != LogDrainState::kCaughtUp) {
-    if (!server_writer_.active()) {
-      encoding_status_out = Status::Unavailable();
-      // No reason to keep polling this drain until the writer is opened.
-      return LogDrainState::kCaughtUp;
-    }
     log::pwpb::LogEntries::MemoryEncoder encoder(encoding_buffer);
+    rpc::RawServerWriter local_writer;
+    uint32_t current_session_id = 0;
     uint32_t packed_entry_count = 0;
-    log_sink_state = EncodeOutgoingPacket(encoder, packed_entry_count);
 
-    // Avoid sending empty packets.
-    if (encoder.size() == 0) {
-      continue;
+    {
+      // Acquire mutex_ to verify the stream is open.
+      // Holding mutex_ across the active check prevents draining entries into
+      // an inactive stream.
+      std::lock_guard lock(mutex_);
+      if (!is_writer_open_ || !server_writer_.active()) {
+        is_writer_open_ = false;
+        encoding_status_out = Status::Unavailable();
+        // No reason to keep polling this drain until the writer is opened.
+        return LogDrainState::kCaughtUp;
+      }
+      log_sink_state = EncodeOutgoingPacket(encoder, packed_entry_count);
+
+      // Avoid sending empty packets.
+      if (encoder.size() == 0) {
+        continue;
+      }
+
+      encoder.WriteFirstEntrySequenceId(sequence_id_)
+          .IgnoreError();  // TODO: b/242598609 - Handle Status properly
+      sequence_id_ += packed_entry_count;
+
+      current_session_id = session_id_;
+      is_writing_ = true;
+      local_writer = std::move(server_writer_);
     }
 
-    encoder.WriteFirstEntrySequenceId(sequence_id_)
-        .IgnoreError();  // TODO: b/242598609 - Handle Status properly
-    sequence_id_ += packed_entry_count;
-    const Status status = server_writer_.Write(encoder);
+    // Release mutex_ before sending data via the RPC server writer.
+    // This avoids deadlocks when transport egress blocks on flow control,
+    // allowing other threads (e.g. the transport dispatcher receiving
+    // Open()) to acquire mutex_ concurrently.
+    const Status status = local_writer.Write(encoder);
     sent_bundle_count++;
 
-    if (!status.ok() &&
-        error_handling_ == LogDrainErrorHandling::kCloseStreamOnWriterError) {
-      // Only update this drop count when writer errors are not ignored.
-      drop_count_writer_error_ += packed_entry_count;
-      server_writer_.Finish().IgnoreError();
-      encoding_status_out = Status::Aborted();
-      return log_sink_state;
+    const bool close_stream_on_writer_error =
+        !status.ok() &&
+        error_handling_ == LogDrainErrorHandling::kCloseStreamOnWriterError;
+
+    {
+      std::lock_guard lock(mutex_);
+      is_writing_ = false;
+      const bool is_current_session =
+          is_writer_open_ && session_id_ == current_session_id;
+
+      // Happy path: move server_writer_ back and continue the loop.
+      if (is_current_session && !close_stream_on_writer_error) {
+        server_writer_ = std::move(local_writer);
+        continue;
+      }
+
+      // Error: clean things up and call Finish() after releasing the mutex
+      if (is_current_session && close_stream_on_writer_error) {
+        is_writer_open_ = false;
+        // Only update this drop count when writer errors are not ignored.
+        drop_count_writer_error_ += packed_entry_count;
+        encoding_status_out = Status::Aborted();
+      }
     }
+
+    // Stream was closed, replaced with a new session while writing, or had an
+    // unignored writer error.
+    local_writer.Finish().IgnoreError();
+    return log_sink_state;
   }
   return log_sink_state;
 }
@@ -266,6 +307,13 @@ RpcLogDrain::LogDrainState RpcLogDrain::EncodeOutgoingPacket(
 
 Status RpcLogDrain::Close() {
   std::lock_guard lock(mutex_);
+  if (!is_writer_open_) {
+    return Status::FailedPrecondition();
+  }
+  is_writer_open_ = false;
+  if (is_writing_) {
+    return OkStatus();
+  }
   return server_writer_.Finish();
 }
 

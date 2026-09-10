@@ -15,11 +15,13 @@
 #include "pw_log_rpc/rpc_log_drain.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string_view>
 
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
+#include "pw_chrono/system_clock.h"
 #include "pw_log/proto/log.pwpb.h"
 #include "pw_log/proto_utils.h"
 #include "pw_log_rpc/log_filter.h"
@@ -36,6 +38,11 @@
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_sync/mutex.h"
+#include "pw_sync/thread_notification.h"
+#include "pw_sync/timed_thread_notification.h"
+#include "pw_thread/test_thread_context.h"
+#include "pw_thread/thread.h"
+#include "pw_thread/thread_core.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::log_rpc {
@@ -501,6 +508,226 @@ TEST(RpcLogDrain, OverrideOnOpenCallbackUnforced) {
 
   // Setting a callback from an existing registered callback should fail.
   ASSERT_FALSE(drain.set_on_open_callback(nullptr, /*force=*/false));
+}
+
+// Mock ChannelOutput that simulates transport backpressure (e.g. flow control
+// blocking). When Send() is called, it signals send_started and blocks on
+// unblock_send.
+class BlockingChannelOutput : public rpc::ChannelOutput {
+ public:
+  BlockingChannelOutput() : rpc::ChannelOutput("BlockingChannelOutput") {}
+
+  Status Send(span<const std::byte>) override {
+    if (block_on_send) {
+      send_started.release();
+      unblock_send.acquire();
+    }
+    return OkStatus();
+  }
+
+  std::atomic<bool> block_on_send{true};
+  sync::ThreadNotification send_started;
+  sync::ThreadNotification unblock_send;
+};
+
+// Verifies that RpcLogDrain::SendLogs releases mutex_ before calling
+// server_writer_.Write(), avoiding deadlocks when transport egress blocks on
+// flow control while another thread accesses the drain mutex.
+TEST(RpcLogDrain, FlushReleasesMutexDuringTransportEgress) {
+  using namespace std::chrono_literals;
+
+  constexpr uint32_t kDrainChannelId = 1;
+  std::array<std::byte, kBufferSize> log_entry_buffer;
+  sync::Mutex drains_mutex;
+
+  std::array<RpcLogDrain, 1> drains{
+      RpcLogDrain(kDrainChannelId,
+                  log_entry_buffer,
+                  drains_mutex,
+                  RpcLogDrain::LogDrainErrorHandling::kIgnoreWriterErrors,
+                  nullptr),
+  };
+
+  RpcLogDrainMap drain_map(drains);
+  LogService log_service(drain_map);
+
+  BlockingChannelOutput output;
+  rpc::Channel channel(rpc::Channel::Create<kDrainChannelId>(&output));
+  rpc::Server server(span(&channel, 1));
+
+  std::array<std::byte, 512> multisink_buffer;
+  multisink::MultiSink multisink(multisink_buffer);
+  multisink.AttachDrain(drains[0]);
+
+  // Add test log to multisink so Flush() has data to transmit.
+  constexpr log_tokenized::Metadata kSampleMetadata =
+      log_tokenized::Metadata::Set<PW_LOG_LEVEL_INFO, 123, 0x03, 300>();
+  std::array<std::byte, 64> log_encode_buf;
+  std::string_view message = "Deadlock test message";
+  Result<ConstByteSpan> encoded_log_result =
+      log::EncodeTokenizedLog(kSampleMetadata,
+                              as_bytes(span<const char>(message)),
+                              1000,
+                              as_bytes(span<const char>("test_thread")),
+                              log_encode_buf);
+  ASSERT_EQ(encoded_log_result.status(), OkStatus());
+  multisink.HandleEntry(encoded_log_result.value());
+
+  // Initially open the writer for the drain.
+  rpc::RawServerWriter writer =
+      rpc::RawServerWriter::Open<log::pw_rpc::raw::Logs::Listen>(
+          server, kDrainChannelId, log_service);
+  ASSERT_TRUE(writer.active());
+  EXPECT_EQ(drains[0].Open(writer), OkStatus());
+
+  // Thread 1: Drain thread calling Flush().
+  thread::test::TestThreadContext drain_thread_ctx;
+  std::array<std::byte, 256> encoding_buffer;
+
+  class DrainFlushThread final : public thread::ThreadCore {
+   public:
+    DrainFlushThread(RpcLogDrain& drain, pw::ByteSpan buffer)
+        : drain_(drain), buffer_(buffer) {}
+
+    void Run() override { flush_status_ = drain_.Flush(buffer_); }
+
+    Status flush_status() const { return flush_status_; }
+
+   private:
+    RpcLogDrain& drain_;
+    pw::ByteSpan buffer_;
+    Status flush_status_ = Status::Unknown();
+  };
+
+  DrainFlushThread drain_flush_thread(drains[0], encoding_buffer);
+  thread::Thread drain_thread(drain_thread_ctx.options(), drain_flush_thread);
+
+  // Wait until Thread 1 enters Send() and blocks.
+  output.send_started.acquire();
+
+  // Verify that drains_mutex is not held while Thread 1 is blocked in
+  // transport Send().
+  {
+    std::unique_lock lock(drains_mutex, std::try_to_lock);
+    EXPECT_TRUE(lock.owns_lock());
+  }
+
+  // Thread 2: Confirms drains_mutex can be acquired by another thread.
+  thread::test::TestThreadContext lock_thread_ctx;
+  sync::TimedThreadNotification lock_acquired;
+
+  class LockAcquireThread final : public thread::ThreadCore {
+   public:
+    LockAcquireThread(sync::Mutex& mutex,
+                      sync::TimedThreadNotification& lock_acquired)
+        : mutex_(mutex), lock_acquired_(lock_acquired) {}
+
+    void Run() override {
+      std::lock_guard lock(mutex_);
+      lock_acquired_.release();
+    }
+
+   private:
+    sync::Mutex& mutex_;
+    sync::TimedThreadNotification& lock_acquired_;
+  };
+
+  LockAcquireThread lock_thread_core(drains_mutex, lock_acquired);
+  thread::Thread lock_thread(lock_thread_ctx.options(), lock_thread_core);
+
+  EXPECT_TRUE(lock_acquired.try_acquire_for(200ms));
+  lock_thread.join();
+
+  // Unblock transport send and join drain thread.
+  output.unblock_send.release();
+  drain_thread.join();
+  EXPECT_EQ(drain_flush_thread.flush_status(), OkStatus());
+}
+
+// Verifies that Close() can be called while a write is blocked in transport
+// egress, gracefully closing the stream and finishing the writer once egress
+// completes.
+TEST(RpcLogDrain, CloseDuringTransportEgress) {
+  constexpr uint32_t kDrainChannelId = 1;
+  std::array<std::byte, kBufferSize> log_entry_buffer;
+  sync::Mutex drains_mutex;
+
+  std::array<RpcLogDrain, 1> drains{
+      RpcLogDrain(kDrainChannelId,
+                  log_entry_buffer,
+                  drains_mutex,
+                  RpcLogDrain::LogDrainErrorHandling::kIgnoreWriterErrors,
+                  nullptr),
+  };
+
+  RpcLogDrainMap drain_map(drains);
+  LogService log_service(drain_map);
+
+  BlockingChannelOutput output;
+  rpc::Channel channel(rpc::Channel::Create<kDrainChannelId>(&output));
+  rpc::Server server(span(&channel, 1));
+
+  std::array<std::byte, 512> multisink_buffer;
+  multisink::MultiSink multisink(multisink_buffer);
+  multisink.AttachDrain(drains[0]);
+
+  // Add test log to multisink so Flush() has data to transmit.
+  constexpr log_tokenized::Metadata kSampleMetadata =
+      log_tokenized::Metadata::Set<PW_LOG_LEVEL_INFO, 123, 0x03, 300>();
+  std::array<std::byte, 64> log_encode_buf;
+  std::string_view message = "Close test message";
+  Result<ConstByteSpan> encoded_log_result =
+      log::EncodeTokenizedLog(kSampleMetadata,
+                              as_bytes(span<const char>(message)),
+                              1000,
+                              as_bytes(span<const char>("test_thread")),
+                              log_encode_buf);
+  ASSERT_EQ(encoded_log_result.status(), OkStatus());
+  multisink.HandleEntry(encoded_log_result.value());
+
+  rpc::RawServerWriter writer =
+      rpc::RawServerWriter::Open<log::pw_rpc::raw::Logs::Listen>(
+          server, kDrainChannelId, log_service);
+  ASSERT_TRUE(writer.active());
+  EXPECT_EQ(drains[0].Open(writer), OkStatus());
+
+  thread::test::TestThreadContext drain_thread_ctx;
+  std::array<std::byte, 256> encoding_buffer;
+
+  class DrainFlushThread final : public thread::ThreadCore {
+   public:
+    DrainFlushThread(RpcLogDrain& drain, pw::ByteSpan buffer)
+        : drain_(drain), buffer_(buffer) {}
+
+    void Run() override { flush_status_ = drain_.Flush(buffer_); }
+
+    Status flush_status() const { return flush_status_; }
+
+   private:
+    RpcLogDrain& drain_;
+    pw::ByteSpan buffer_;
+    Status flush_status_ = Status::Unknown();
+  };
+
+  DrainFlushThread drain_flush_thread(drains[0], encoding_buffer);
+  thread::Thread drain_thread(drain_thread_ctx.options(), drain_flush_thread);
+
+  // Wait until Flush enters Send() and blocks.
+  output.send_started.acquire();
+
+  // Close the drain while egress is blocked.
+  EXPECT_EQ(drains[0].Close(), OkStatus());
+
+  // Disable blocking so the closing response packet can be transmitted
+  // without stalling the drain thread.
+  output.block_on_send = false;
+  output.unblock_send.release();
+  drain_thread.join();
+  EXPECT_EQ(drain_flush_thread.flush_status(), OkStatus());
+
+  // Drain is closed; subsequent Flush should report Unavailable.
+  EXPECT_EQ(drains[0].Flush(encoding_buffer), Status::Unavailable());
+  EXPECT_EQ(drains[0].Close(), Status::FailedPrecondition());
 }
 
 }  // namespace

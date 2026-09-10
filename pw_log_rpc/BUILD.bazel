@@ -223,6 +223,7 @@ pw_cc_test(
         ":rpc_log_drain",
         ":test_utils",
         "//pw_bytes",
+        "//pw_chrono:system_clock",
         "//pw_log:log_proto_pwpb",
         "//pw_log:proto_utils",
         "//pw_multisink",
@@ -232,6 +233,11 @@ pw_cc_test(
         "//pw_rpc/raw:test_method_context",
         "//pw_status",
         "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
+        "//pw_sync:timed_thread_notification",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_thread:thread_core",
     ],
 )
 
