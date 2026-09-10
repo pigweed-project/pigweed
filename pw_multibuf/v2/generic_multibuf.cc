@@ -127,6 +127,30 @@ auto GenericMultiBuf::Insert(const_iterator pos,
   return iter;
 }
 
+auto GenericMultiBuf::Insert(const_iterator pos, ConstBuf&& bytes) -> iterator {
+  if (bytes.empty()) {
+    bytes.reset();
+    return MakeIterator(pos.chunk_, pos.offset_);
+  }
+  PW_CHECK(TryReserveForInsert(pos));
+  if (bytes.deallocator() == nullptr) {
+    auto [iter, unused] = Insert(pos, bytes, 0, bytes.size());
+    bytes.reset();
+    return iter;
+  }
+
+  size_t offset = static_cast<size_t>(bytes.data() - bytes.base_);
+  auto [iter, chunk] = Insert(pos,
+                              ConstByteSpan(bytes.base_, offset + bytes.size()),
+                              offset,
+                              bytes.size());
+  deque_[memory_context_index(chunk)].deallocator =
+      std::exchange(bytes.deallocator_, nullptr);
+  deque_[base_view_index(chunk)].base_view.owned = true;
+  bytes.reset();
+  return iter;
+}
+
 auto GenericMultiBuf::Insert(const_iterator pos,
                              const SharedPtr<const std::byte[]>& shared,
                              size_t offset,
@@ -196,15 +220,23 @@ bool GenericMultiBuf::IsReleasable(const_iterator pos) const {
   return IsOwned(pos.chunk_);
 }
 
-UniquePtr<std::byte[]> GenericMultiBuf::Release(const_iterator pos) {
+UniquePtr<std::byte[]> GenericMultiBuf::ReleaseChunk(const_iterator pos) {
   PW_CHECK(IsReleasable(pos));
-  ByteSpan bytes = GetView(pos.chunk_, 1);
-  Deallocator& deallocator = GetDeallocator(pos.chunk_);
-  EraseRange(pos - pos.offset_, size_t{GetLength(pos.chunk_)});
+  const size_type chunk = pos.chunk_;
+  const size_type size = GetOffset(chunk, 1) + GetLength(chunk, 1);
+  UniquePtr<std::byte[]> chunk_ptr(GetData(chunk), size, GetDeallocator(chunk));
   if (observer_ != nullptr) {
-    observer_->Notify(Observer::Event::kBytesRemoved, bytes.size());
+    observer_->Notify(Observer::Event::kBytesRemoved, GetLength(chunk));
   }
-  return UniquePtr<std::byte[]>(bytes.data(), bytes.size(), deallocator);
+  EraseRange(pos - pos.offset_, size_t{GetLength(chunk)});
+  return chunk_ptr;
+}
+
+Buf GenericMultiBuf::Release(const_iterator pos) {
+  // Record view bounds before ReleaseChunk erases the chunk from deque_.
+  const size_type offset = GetOffset(pos.chunk_);
+  const size_type length = GetLength(pos.chunk_);
+  return Buf(ReleaseChunk(pos), offset, length);
 }
 
 bool GenericMultiBuf::IsShareable(const_iterator pos) const {

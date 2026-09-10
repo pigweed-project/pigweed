@@ -25,6 +25,7 @@
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/null_allocator.h"
+#include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_multibuf/v2/chunks.h"
 #include "pw_multibuf/v2/internal/byte_iterator.h"
@@ -226,6 +227,7 @@ class BasicMultiBuf {
   using value_type = std::conditional_t<is_const(),
                                         const_iterator::value_type,
                                         typename iterator::value_type>;
+  using buf_type = std::conditional_t<is_const(), ConstBuf, Buf>;
 
   /// An instantiation of a `MultiBuf`.
   ///
@@ -507,6 +509,8 @@ class BasicMultiBuf {
   /// @{
   iterator Insert(const_iterator pos, UniquePtr<std::byte[]>&& bytes);
   iterator Insert(const_iterator pos, UniquePtr<const std::byte[]>&& bytes);
+  iterator Insert(const_iterator pos, Buf&& bytes);
+  iterator Insert(const_iterator pos, ConstBuf&& bytes);
   /// @}
 
   /// @name Insert
@@ -605,6 +609,8 @@ class BasicMultiBuf {
   /// @{
   void PushBack(UniquePtr<std::byte[]>&& bytes);
   void PushBack(UniquePtr<const std::byte[]>&& bytes);
+  void PushBack(Buf&& bytes);
+  void PushBack(ConstBuf&& bytes);
   /// @}
 
   /// @name PushBack
@@ -732,7 +738,21 @@ class BasicMultiBuf {
   /// will result in some bytes before the iterator being removed.
   ///
   /// @param    pos     Location within the MultiBuf of the memory to release.
-  UniquePtr<value_type[]> Release(const_iterator pos);
+  UniquePtr<value_type[]> ReleaseChunk(const_iterator pos);
+
+  /// Removes a memory allocation from this object and releases ownership of it.
+  ///
+  /// The location given by `pos` MUST be releasable.
+  ///
+  /// This method returns a `Buf` (for mutable MultiBufs) or `ConstBuf` (for
+  /// const MultiBufs) which owns the removed memory. The returned buffer's
+  /// view (`data()` and `size()`) reflects the active top layer of the chunk,
+  /// while its `base()` retains the original allocation address and
+  /// deallocator.
+  ///
+  /// Contrast with `ReleaseChunk`, which releases the full unlayered chunk as
+  /// a `UniquePtr`.
+  buf_type Release(const_iterator pos);
 
   /// Returns whether the given iterator refers to a location within a "shared"
   /// chunk, that is, memory that was added as a `SharedPtr`.
@@ -1238,6 +1258,22 @@ class GenericMultiBuf final
   /// pre-allocate the needed space without crashing.
   ///
   /// @param    pos     Location to insert memory within the MultiBuf.
+  /// @param    bytes   Buffer to be inserted.
+  /// @returns          An iterator to the inserted memory.
+  /// @{
+  iterator Insert(const_iterator pos, ConstBuf&& bytes);
+  iterator Insert(const_iterator pos, Buf&& bytes) {
+    return Insert(pos, static_cast<ConstBuf>(std::move(bytes)));
+  }
+  /// @}
+
+  /// Insert memory before the given iterator.
+  ///
+  /// It is a fatal error if this method cannot allocate space for necessary
+  /// metadata. See also `TryReserveForInsert`, which can be used to try to
+  /// pre-allocate the needed space without crashing.
+  ///
+  /// @param    pos     Location to insert memory within the MultiBuf.
   /// @param    shared  Shared memory to be inserted.
   /// @param    offset  Used to denote a subspan of `shared`.
   /// @param    length  Used to denote a subspan of `shared`.
@@ -1284,8 +1320,11 @@ class GenericMultiBuf final
   /// @copydoc ::BasicMultiBuf<>::IsReleasable
   [[nodiscard]] bool IsReleasable(const_iterator pos) const;
 
+  /// @copydoc ::BasicMultiBuf<>::ReleaseChunk
+  UniquePtr<std::byte[]> ReleaseChunk(const_iterator pos);
+
   /// @copydoc ::BasicMultiBuf<>::Release
-  UniquePtr<std::byte[]> Release(const_iterator pos);
+  Buf Release(const_iterator pos);
 
   /// @copydoc ::BasicMultiBuf<>::IsShareable
   [[nodiscard]] bool IsShareable(const_iterator pos) const;
@@ -1752,6 +1791,20 @@ auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
 }
 
 template <Property... kProperties>
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos, Buf&& bytes)
+    -> iterator {
+  return generic().Insert(pos, std::move(bytes));
+}
+
+template <Property... kProperties>
+auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos, ConstBuf&& bytes)
+    -> iterator {
+  static_assert(is_const(),
+                "Cannot `Insert` read-only bytes into mutable MultiBuf");
+  return generic().Insert(pos, std::move(bytes));
+}
+
+template <Property... kProperties>
 auto BasicMultiBuf<kProperties...>::Insert(const_iterator pos,
                                            const SharedPtr<std::byte[]>& bytes,
                                            size_t offset,
@@ -1813,6 +1866,18 @@ void BasicMultiBuf<kProperties...>::PushBack(
 }
 
 template <Property... kProperties>
+void BasicMultiBuf<kProperties...>::PushBack(Buf&& bytes) {
+  Insert(end(), std::move(bytes));
+}
+
+template <Property... kProperties>
+void BasicMultiBuf<kProperties...>::PushBack(ConstBuf&& bytes) {
+  static_assert(is_const(),
+                "Cannot `PushBack` read-only bytes into mutable MultiBuf");
+  Insert(end(), std::move(bytes));
+}
+
+template <Property... kProperties>
 void BasicMultiBuf<kProperties...>::PushBack(
     const SharedPtr<std::byte[]>& bytes, size_t offset, size_t length) {
   Insert(end(), bytes, offset, length);
@@ -1848,8 +1913,8 @@ BasicMultiBuf<kProperties...>::PopFrontFragment() {
 
 template <Property... kProperties>
 UniquePtr<typename BasicMultiBuf<kProperties...>::value_type[]>
-BasicMultiBuf<kProperties...>::Release(const_iterator pos) {
-  UniquePtr<std::byte[]> bytes = generic().Release(pos);
+BasicMultiBuf<kProperties...>::ReleaseChunk(const_iterator pos) {
+  UniquePtr<std::byte[]> bytes = generic().ReleaseChunk(pos);
   if constexpr (is_const()) {
     UniquePtr<const std::byte[]> const_bytes(
         bytes.get(), bytes.size(), *(bytes.deallocator()));
@@ -1858,6 +1923,11 @@ BasicMultiBuf<kProperties...>::Release(const_iterator pos) {
   } else {
     return bytes;
   }
+}
+
+template <Property... kProperties>
+auto BasicMultiBuf<kProperties...>::Release(const_iterator pos) -> buf_type {
+  return generic().Release(pos);
 }
 
 template <Property... kProperties>

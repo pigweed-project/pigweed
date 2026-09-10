@@ -453,6 +453,18 @@ PW_NC_EXPECT_GCC("assignment of read-only location");
   *(mb.begin()) = std::byte(0);
 }
 
+#elif PW_NC_TEST(CannotInsertConstBufIntoMutableMultiBuf)
+PW_NC_EXPECT("Cannot `Insert` read-only bytes into mutable MultiBuf");
+[[maybe_unused]] void ShouldAssert(MultiBuf& mb, pw::ConstBuf& buf) {
+  mb.Insert(mb.begin(), std::move(buf));
+}
+
+#elif PW_NC_TEST(CannotPushBackConstBufIntoMutableMultiBuf)
+PW_NC_EXPECT("Cannot `PushBack` read-only bytes into mutable MultiBuf");
+[[maybe_unused]] void ShouldAssert(MultiBuf& mb, pw::ConstBuf& buf) {
+  mb.PushBack(std::move(buf));
+}
+
 #endif  // PW_NC_TEST
 #endif  // !PW_MULTIBUF_INCLUDE_V1_ADAPTERS
 

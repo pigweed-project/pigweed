@@ -112,6 +112,7 @@ pw_add_library(pw_multibuf.v2.multibuf STATIC
     pw_containers.dynamic_deque
     pw_multibuf.v2.iterators
     pw_multibuf.v2.properties
+    pw_buf
   SOURCES
     generic_multibuf.cc
   PRIVATE_DEPS
@@ -142,6 +143,7 @@ pw_add_test(pw_multibuf.v2.multibuf_test
     pw_allocator.chunk_pool
     pw_allocator.testing
     pw_assert.check
+    pw_buf
     pw_bytes
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_multibuf.facade

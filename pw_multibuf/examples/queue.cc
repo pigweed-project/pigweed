@@ -45,7 +45,7 @@ class MultiBufQueue {
   }
 
   pw::UniquePtr<const std::byte[]> pop_front() {
-    return mbuf_->Release(mbuf_->cbegin());
+    return mbuf_->ReleaseChunk(mbuf_->cbegin());
   }
 
  private:

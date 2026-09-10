@@ -170,7 +170,8 @@ class DynamicPacket {
     }
     if (moved_buf->NumFragments() == 1 &&
         moved_buf->IsReleasable(moved_buf->begin())) {
-      buffer_ = DynamicByteBuffer(size, moved_buf->Release(moved_buf->begin()));
+      buffer_ =
+          DynamicByteBuffer(size, moved_buf->ReleaseChunk(moved_buf->begin()));
     } else {
       buffer_ = DynamicByteBuffer(size, allocator);
       moved_buf->CopyTo(

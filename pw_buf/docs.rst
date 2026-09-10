@@ -105,6 +105,49 @@ may also be used through a ``const ConstBuf&``, though accepting a
 ``pw::ConstByteSpan`` (or ``pw::span<const std::byte>``) by value is
 recommended for functions that only borrow data for reading.
 
+.. LINT.IfChange(multibuf_relationship)
+
+Relationship to pw_multibuf
+===========================
+Conceptually, a :ref:`module-pw_multibuf` is a sequence of layered :cc:`pw::Buf`
+or :cc:`pw::ConstBuf` instances. Both modules provide abstractions for zero-copy
+buffer management and safe ownership tracking with :ref:`module-pw_allocator`,
+operating at different levels of granularity:
+
+* **Contiguous buffer vs. sequence of buffers:** :cc:`pw::Buf` and
+  :cc:`pw::ConstBuf` manage a *single, contiguous* block of memory. In contrast,
+  a ``MultiBuf`` aggregates a *sequence* of multiple contiguous buffers (chunks)
+  into a unified virtual span.
+* **Slicing vs. layering:** A ``Buf`` allows in-place slicing and reclamation of
+  reserved prefix/suffix bytes within its single allocation. A ``MultiBuf``
+  generalizes this across its sequence of buffers, allowing callers to add and
+  pop non-destructive layers over the entire collection of chunks.
+* **Overhead:** ``pw::Buf`` has minimal metadata overhead (storing only view
+  pointers and an optional deallocator), making it lightweight for operations on
+  a single buffer. ``pw_multibuf`` maintains an internal deque of chunk and
+  layer metadata to manage arbitrary fragments and layers across the sequence.
+
+``pw_buf`` and ``pw_multibuf`` integrate directly:
+
+* **Ingestion:** A :cc:`pw::Buf` or :cc:`pw::ConstBuf` can be inserted or
+  appended into a ``MultiBuf`` via ``Insert()`` or ``PushBack()``, transferring
+  ownership of the underlying allocation into the ``MultiBuf``.
+* **Extraction:** Contiguous owned memory can be extracted from a ``MultiBuf``
+  back into a :cc:`pw::Buf` or :cc:`pw::ConstBuf` using ``Release()``.
+  Sliced views are preserved so that only the visible bytes are exposed,
+  while the full underlying allocation is safely tracked for deallocation.
+
+**When to use which:**
+
+* Use ``pw_buf`` when working with a single contiguous allocation (e.g. DMA
+  buffers, fixed packet buffers), especially when reserving and populating
+  headers and footers in-place via :cc:`pw::Slice` and :cc:`pw::Reclaim`.
+* Use ``pw_multibuf`` when assembling or disassembling data across multiple
+  disjoint buffers, performing scatter-gather I/O, or composing multi-layer
+  network packets from disparate memory sources.
+
+.. LINT.ThenChange(//pw_multibuf/docs.rst:buf_relationship)
+
 Examples
 ========
 

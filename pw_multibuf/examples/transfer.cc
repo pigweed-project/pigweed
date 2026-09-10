@@ -123,7 +123,7 @@ class NetworkPacket {
     PW_TRY_ASSIGN(
         auto iter,
         packet.mbuf_->Discard(packet.mbuf_->cbegin(), kDemoNetworkHeaderLen));
-    return packet.mbuf_->Release(iter);
+    return packet.mbuf_->ReleaseChunk(iter);
   }
 
  private:

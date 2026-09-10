@@ -19,6 +19,7 @@
 #include "pw_allocator/chunk_pool.h"
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
+#include "pw_buf/buf.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
 #include "pw_multibuf_private/multibuf_testing.h"
@@ -1383,7 +1384,7 @@ TEST_F(MultiBufV2Test, IsReleasableReturnsFalseWhenNotOwned) {
   EXPECT_FALSE(mb->IsReleasable(mb->begin()));
 }
 
-TEST_F(MultiBufV2Test, ReleaseSucceedsWhenNotEmptyAndOwned) {
+TEST_F(MultiBufV2Test, ReleaseChunkSucceedsWhenNotEmptyAndOwned) {
   ConstMultiBufInstance mbi(allocator_);
   auto& mb = mbi->as<ConstMultiBuf>();
   ASSERT_TRUE(mb.TryReserveForPushBack());
@@ -1393,17 +1394,17 @@ TEST_F(MultiBufV2Test, ReleaseSucceedsWhenNotEmptyAndOwned) {
   ASSERT_TRUE(mb.TryReserveForPushBack());
   mb.PushBack(std::move(chunk));
 
-  pw::UniquePtr<const std::byte[]> released = mb.Release(mb.begin());
+  pw::UniquePtr<const std::byte[]> released = mb.ReleaseChunk(mb.begin());
   EXPECT_EQ(released.get(), owned_bytes_.data());
   EXPECT_EQ(released.size(), owned_bytes_.size());
   EXPECT_EQ(mb.size(), kN * 2);
 }
 
-TEST_F(MultiBufV2Test, ReleaseSucceedsWithoutMatchingChunkBoundary) {
+TEST_F(MultiBufV2Test, ReleaseChunkSucceedsWithoutMatchingChunkBoundary) {
   ConstMultiBufInstance mbi(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
   mbi->PushBack(std::move(chunk));
-  auto released = mbi->Release(mbi->begin() + 1);
+  auto released = mbi->ReleaseChunk(mbi->begin() + 1);
   EXPECT_EQ(released.size(), kN);
   EXPECT_TRUE(mbi->empty());
 }
@@ -1968,7 +1969,7 @@ TEST_F(MultiBufV2Test, DiscardFromLayeredIsRelativeToTopLayer) {
   EXPECT_EQ(&(*(mbi->begin() + 2 * kN)), data + 3 * kN);
 }
 
-TEST_F(MultiBufV2Test, ReleaseFromLayeredIsRelativeToTopLayer) {
+TEST_F(MultiBufV2Test, ReleaseChunkFromLayeredIsRelativeToTopLayer) {
   MultiBufInstance mbi(allocator_);
   auto chunk = allocator_.MakeUnique<std::byte[]>(2 * kN);
   mbi->PushBack(std::move(chunk));
@@ -1982,7 +1983,7 @@ TEST_F(MultiBufV2Test, ReleaseFromLayeredIsRelativeToTopLayer) {
   EXPECT_TRUE(mbi->AddLayer(kN, 3 * kN));
   EXPECT_EQ(mbi->size(), 3 * kN);
 
-  chunk = mbi->Release(mbi->begin() + kN);
+  chunk = mbi->ReleaseChunk(mbi->begin() + kN);
   EXPECT_EQ(chunk.get(), data);
   EXPECT_EQ(mbi->size(), 2 * kN);
 }
@@ -2464,6 +2465,18 @@ TEST_F(MultiBufV2Test, DiscardNotifiesObserver) {
   EXPECT_EQ(observer.value, kN);
 }
 
+TEST_F(MultiBufV2Test, ReleaseChunkNotifiesObserver) {
+  TestObserver observer;
+  TrackedMultiBufInstance mb(allocator_);
+  auto chunk = allocator_.MakeUnique<std::byte[]>(kN);
+  mb->PushBack(std::move(chunk));
+  mb->set_observer(&observer);
+  mb->ReleaseChunk(mb->begin());
+  ASSERT_TRUE(observer.event.has_value());
+  EXPECT_EQ(observer.event.value(), Event::kBytesRemoved);
+  EXPECT_EQ(observer.value, kN);
+}
+
 TEST_F(MultiBufV2Test, ReleaseNotifiesObserver) {
   TestObserver observer;
   TrackedMultiBufInstance mb(allocator_);
@@ -2560,6 +2573,368 @@ TEST_F(MultiBufV2Test, ShallowCopyFailsWhenAllocationExhausted) {
 
   // Original should be unchanged and still not shareable.
   EXPECT_FALSE(mbi->IsShareable(mbi->begin()));
+}
+
+TEST_F(MultiBufV2Test, InsertBufIntoEmptyMultiBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(10);
+  std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 10; ++i) {
+    raw_ptr[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf(std::move(unique_data));
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  auto iter = mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(&(*iter), raw_ptr);
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[3], std::byte(3));
+}
+
+TEST_F(MultiBufV2Test, InsertConstBufIntoConstMultiBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(10);
+  std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 10; ++i) {
+    raw_ptr[i] = static_cast<std::byte>(i);
+  }
+
+  pw::ConstBuf buf = pw::Buf(std::move(unique_data), 0);
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+
+  auto iter = mb.Insert(mb.begin(), std::move(buf));
+  EXPECT_EQ(&(*iter), raw_ptr);
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[4], std::byte(4));
+}
+
+TEST_F(MultiBufV2Test, PushBackBuf) {
+  auto unique_data1 = allocator_.MakeUnique<std::byte[]>(10);
+  std::byte* raw_ptr1 = unique_data1.get();
+  for (size_t i = 0; i < 10; ++i) {
+    raw_ptr1[i] = static_cast<std::byte>(i);
+  }
+  pw::Buf buf1(std::move(unique_data1));
+
+  auto unique_data2 = allocator_.MakeUnique<std::byte[]>(5);
+  std::byte* raw_ptr2 = unique_data2.get();
+  for (size_t i = 0; i < 5; ++i) {
+    raw_ptr2[i] = static_cast<std::byte>(10 + i);
+  }
+  pw::Buf buf2(std::move(unique_data2));
+
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  mb.PushBack(std::move(buf1));
+  mb.PushBack(std::move(buf2));
+
+  EXPECT_EQ(mb.size(), 15u);
+  EXPECT_EQ(mb[0], std::byte(0));
+  EXPECT_EQ(mb[10], std::byte(10));
+}
+
+TEST_F(MultiBufV2Test, PushBackConstBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(10);
+  std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 10; ++i) {
+    raw_ptr[i] = static_cast<std::byte>(i);
+  }
+  pw::ConstBuf buf = pw::Buf(std::move(unique_data));
+
+  ConstMultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<ConstMultiBuf>();
+
+  mb.PushBack(std::move(buf));
+
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[0], std::byte(0));
+  EXPECT_EQ(mb[9], std::byte(9));
+}
+
+TEST_F(MultiBufV2Test, ReleaseAndConst) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(10);
+  std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 10; ++i) {
+    raw_ptr[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf(std::move(unique_data));
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  mb.PushBack(std::move(buf));
+  EXPECT_EQ(mb.size(), 10u);
+
+  // Release Buf from mutable MultiBuf
+  pw::Buf released = mb.Release(mb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.size(), 10u);
+  EXPECT_EQ(released.data(), raw_ptr);
+  EXPECT_TRUE(mb.empty());
+
+  // Re-insert into ConstMultiBuf and release as ConstBuf via unified Release()
+  ConstMultiBufInstance const_mbi(allocator_);
+  auto& const_mb = const_mbi->as<ConstMultiBuf>();
+  const_mb.PushBack(std::move(released));
+  pw::ConstBuf released_const = const_mb.Release(const_mb.begin());
+  EXPECT_NE(released_const.deallocator(), nullptr);
+  EXPECT_EQ(released_const.size(), 10u);
+  EXPECT_EQ(released_const.data(), raw_ptr);
+  EXPECT_TRUE(const_mb.empty());
+}
+
+TEST_F(MultiBufV2Test, ReleaseWithNonZeroOffset) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    raw_ptr[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf(std::move(unique_data));
+  pw::Buf sliced = pw::Slice(std::move(buf), 5, 10);
+  EXPECT_EQ(sliced.size(), 10u);
+  EXPECT_EQ(sliced.data(), raw_ptr + 5);
+
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  mb.PushBack(std::move(sliced));
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[0], std::byte(5));
+
+  // Release
+  pw::Buf released = mb.Release(mb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.size(), 10u);
+  EXPECT_EQ(released.data(), raw_ptr + 5);
+
+  // Verify prefix reclamation on released Buf
+  pw::Buf reclaimed = pw::ReclaimPrefix(std::move(released), 5);
+  EXPECT_EQ(reclaimed.data(), raw_ptr);
+  EXPECT_EQ(reclaimed.size(), 15u);
+
+  // Check that when reclaimed is destroyed, it deallocates the original
+  // unshifted raw_ptr. We do this by verifying allocator metrics.
+  size_t before_destruct = allocator_.metrics().num_deallocations.value();
+  reclaimed.reset();
+  size_t after_destruct = allocator_.metrics().num_deallocations.value();
+  EXPECT_EQ(after_destruct, before_destruct + 1);
+}
+
+TEST_F(MultiBufV2Test, ReleaseFromLayeredIsRelativeToTopLayer) {
+  MultiBufInstance mbi(allocator_);
+  auto chunk = allocator_.MakeUnique<std::byte[]>(2 * kN);
+  const std::byte* data = chunk.get();
+  mbi->PushBack(std::move(chunk));
+  mbi->PushBack(allocator_.MakeUnique<std::byte[]>(2 * kN));
+  EXPECT_EQ(mbi->size(), 4 * kN);
+
+  // Add a layer that skips the first `kN` bytes of the first chunk and extends
+  // `2 * kN` bytes into the MultiBuf.
+  EXPECT_TRUE(mbi->AddLayer(kN, 2 * kN));
+  EXPECT_EQ(mbi->size(), 2 * kN);
+
+  pw::Buf released = mbi->Release(mbi->begin());
+  EXPECT_EQ(released.base(), data);
+  EXPECT_EQ(released.data(), data + kN);
+  EXPECT_EQ(released.size(), kN);
+  EXPECT_EQ(mbi->size(), kN);
+
+  // Verify that the prefix can be reclaimed from the released Buf.
+  pw::Buf reclaimed = pw::ReclaimPrefix(std::move(released), kN);
+  EXPECT_EQ(reclaimed.data(), data);
+  EXPECT_EQ(reclaimed.size(), 2 * kN);
+}
+
+TEST_F(MultiBufV2Test, InsertEmptyOwnedBufTakesOwnershipAndResetsCaller) {
+  size_t initial_bytes = allocator_.metrics().allocated_bytes.value();
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  pw::Buf buf(std::move(unique_data));
+  pw::Buf sliced = pw::Slice(std::move(buf), 5, 0);
+  EXPECT_TRUE(sliced.empty());
+  EXPECT_NE(sliced.deallocator(), nullptr);
+
+  size_t before = allocator_.metrics().num_deallocations.value();
+  {
+    MultiBufInstance mbi(allocator_);
+    auto& mb = mbi->as<MultiBuf>();
+    mb.PushBack(std::move(sliced));
+    EXPECT_TRUE(sliced == nullptr);  // NOLINT(bugprone-use-after-move)
+    EXPECT_EQ(mb.size(), 0u);
+  }
+  size_t after = allocator_.metrics().num_deallocations.value();
+  EXPECT_EQ(after, before + 1);
+  EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), initial_bytes);
+}
+
+TEST_F(MultiBufV2Test, InsertUnownedBufResetsCaller) {
+  std::array<std::byte, 10> data{};
+  pw::Buf buf = pw::Buf::Unowned(data);
+  EXPECT_EQ(buf.deallocator(), nullptr);
+
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(buf));
+  EXPECT_TRUE(buf == nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_EQ(mb.size(), 10u);
+}
+
+TEST_F(MultiBufV2Test, ReleaseSlicedChunk) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  const std::byte* const raw_ptr = unique_data.get();
+  pw::Buf buf(std::move(unique_data));
+
+  pw::Buf sliced = pw::Slice(std::move(buf), 5, 10);
+  EXPECT_EQ(sliced.size(), 10u);
+  EXPECT_EQ(sliced.data(), raw_ptr + 5);
+
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+
+  mb.PushBack(std::move(sliced));
+  EXPECT_EQ(mb.size(), 10u);
+  EXPECT_EQ(mb[0], std::byte(5));
+
+  // Release the full chunk as a UniquePtr
+  pw::UniquePtr<std::byte[]> released = mb.ReleaseChunk(mb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+
+  // Verify that the UniquePtr points to the original base allocation,
+  // not the sliced offset.
+  EXPECT_EQ(released.get(), raw_ptr);
+
+  // The size of the released chunk encompasses the offset + length of
+  // the inserted buffer (5 + 10).
+  EXPECT_EQ(released.size(), 15u);
+
+  // Ensure the UniquePtr deallocates the memory from the original base pointer.
+  const size_t before_destruct = allocator_.metrics().num_deallocations.value();
+  released.Reset();
+  const size_t after_destruct = allocator_.metrics().num_deallocations.value();
+  EXPECT_EQ(after_destruct, before_destruct + 1);
+}
+
+TEST_F(MultiBufV2Test, ReleaseSlicedBufFromLayeredMultiBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(24);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 24; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  // Slice initial Buf: offset = 4, length = 16.
+  pw::Buf sliced = pw::Slice(pw::Buf(std::move(unique_data)), 4, 16);
+  MultiBufInstance mbi(allocator_);
+  mbi->PushBack(std::move(sliced));
+  EXPECT_EQ(mbi->size(), 16u);
+
+  // Add a layer that skips 2 bytes and takes 8 bytes.
+  EXPECT_TRUE(mbi->AddLayer(2, 8));
+  EXPECT_EQ(mbi->size(), 8u);
+
+  // Release: view must reflect top layer (offset = 4 + 2 = 6, length = 8).
+  pw::Buf released = mbi->Release(mbi->begin());
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.data(), raw_ptr + 6);
+  EXPECT_EQ(released.size(), 8u);
+
+  // Reclaim prefix: should be able to reclaim all 6 bytes back to base().
+  pw::Buf reclaimed = pw::ReclaimPrefix(std::move(released), 6);
+  EXPECT_EQ(reclaimed.data(), raw_ptr);
+  EXPECT_EQ(reclaimed.size(), 14u);
+}
+
+TEST_F(MultiBufV2Test, InsertUnownedSlicedBuf) {
+  std::array<std::byte, 20> data{};
+  for (size_t i = 0; i < 20; ++i) {
+    data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf = pw::Buf::Unowned(data, 3, 7);
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(buf));
+
+  EXPECT_EQ(mb.size(), 7u);
+  EXPECT_EQ(mb[0], std::byte(3));
+  EXPECT_EQ(mb[6], std::byte(9));
+  EXPECT_FALSE(mb.IsReleasable(mb.begin()));
+}
+
+TEST_F(MultiBufV2Test, RemoveSlicedBufPreservesOwnership) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf sliced = pw::Slice(pw::Buf(std::move(unique_data)), 5, 10);
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(sliced));
+
+  // Remove entire chunk into a new MultiBuf.
+  auto removed_res = mb.Remove(mb.begin(), 10);
+  ASSERT_TRUE(removed_res.ok());
+  MultiBufInstance removed_mb(std::move(*removed_res));
+
+  EXPECT_TRUE(mb.empty());
+  EXPECT_EQ(removed_mb->size(), 10u);
+  EXPECT_TRUE(removed_mb->IsReleasable(removed_mb->begin()));
+
+  pw::Buf released = removed_mb->Release(removed_mb->begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.data(), raw_ptr + 5);
+  EXPECT_EQ(released.size(), 10u);
+}
+
+TEST_F(MultiBufV2Test, InsertSlicedBufIntoMiddleOfExistingChunk) {
+  auto unique_data1 = allocator_.MakeUnique<std::byte[]>(10);
+  std::memset(unique_data1.get(), 0xAA, 10);
+  pw::Buf buf1(std::move(unique_data1));
+
+  auto unique_data2 = allocator_.MakeUnique<std::byte[]>(20);
+  std::memset(unique_data2.get(), 0xBB, 20);
+  pw::Buf buf2 = pw::Slice(pw::Buf(std::move(unique_data2)), 5, 10);
+
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(buf1));
+
+  // Insert buf2 into middle of buf1 (at offset 4).
+  [[maybe_unused]] auto iter = mb.Insert(mb.begin() + 4, std::move(buf2));
+  EXPECT_EQ(mb.size(), 20u);
+  EXPECT_EQ(mb[3], std::byte(0xAA));
+  EXPECT_EQ(mb[4], std::byte(0xBB));
+  EXPECT_EQ(mb[13], std::byte(0xBB));
+  EXPECT_EQ(mb[14], std::byte(0xAA));
+}
+
+TEST_F(MultiBufV2Test, ReleaseWithInteriorIterator) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf sliced = pw::Slice(pw::Buf(std::move(unique_data)), 5, 10);
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(sliced));
+
+  // Call Release with an iterator pointing into the middle of the chunk.
+  pw::Buf released = mb.Release(mb.begin() + 3);
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.data(), raw_ptr + 5);
+  EXPECT_EQ(released.size(), 10u);
+  EXPECT_TRUE(mb.empty());
 }
 
 }  // namespace

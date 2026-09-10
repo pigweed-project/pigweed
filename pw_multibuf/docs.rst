@@ -48,6 +48,33 @@ data which are one or more of the following:
   sockets, various packets, or shared-memory protocols can benefit from the
   fragmentation, multiplexing, and layering features of the MultiBuf type.
 
+.. LINT.IfChange(buf_relationship)
+
+----------------------
+Relationship to pw_buf
+----------------------
+Conceptually, a ``MultiBuf`` is a sequence of layered :cc:`pw::Buf` or
+:cc:`pw::ConstBuf` instances. While :ref:`module-pw_buf` manages a *single,
+contiguous* block of memory, ``pw_multibuf`` aggregates a sequence of such
+buffers into a unified virtual span, with support for non-destructive layering
+and fragmentation across the collection.
+
+The two modules complement each other and integrate directly:
+
+* **Ingestion:** :cc:`pw::Buf` and :cc:`pw::ConstBuf` instances can be added to
+  a MultiBuf using ``PushBack()`` or ``Insert()``. Unowned bufs are added as
+  spans, while allocated bufs transfer their ownership to the MultiBuf.
+* **Extraction:** Contiguous owned allocations can be extracted from a MultiBuf
+  back into a :cc:`pw::Buf` or :cc:`pw::ConstBuf` using ``Release()``.
+  (To release the raw chunk as a :cc:`pw::UniquePtr`, use ``ReleaseChunk()``.)
+
+Use ``pw_buf`` when a single contiguous buffer is sufficient, especially for
+in-place slicing and prefix/suffix reclamation. Use ``pw_multibuf`` when
+aggregating multiple buffers, decomposing packets across layers, or performing
+scatter-gather I/O.
+
+.. LINT.ThenChange(//pw_buf/docs.rst:multibuf_relationship)
+
 .. toctree::
    :hidden:
    :maxdepth: 1

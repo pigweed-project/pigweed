@@ -192,6 +192,7 @@ cc_library_static {
     ],
     static_libs: [
         "pw_allocator",
+        "pw_buf",
         "pw_bytes",
         "pw_preprocessor",
         "pw_containers",
@@ -200,6 +201,7 @@ cc_library_static {
     ],
     export_static_lib_headers: [
         "pw_allocator",
+        "pw_buf",
         "pw_bytes",
         "pw_containers",
         "pw_preprocessor",

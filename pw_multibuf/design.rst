@@ -72,8 +72,8 @@ move part of it to a different MultiBuf instance, as this would create
 ambiguous ownership.
 
 These operations seamlessly integrate different memory management strategies by
-handling various data types, including  MultiBuf, :cc:`pw::UniquePtr`,
-:cc:`pw::SharedPtr`, and ``ByteSpan``.
+handling various data types, including MultiBuf, :cc:`pw::UniquePtr`,
+:cc:`pw::SharedPtr`, :cc:`pw::Buf`, :cc:`pw::ConstBuf`, and ``ByteSpan``.
 
 -------------
 Virtual spans

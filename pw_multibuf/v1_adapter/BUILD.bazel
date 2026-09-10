@@ -166,6 +166,7 @@ pw_cc_test(
         "//pw_allocator:chunk_pool",
         "//pw_allocator:testing",
         "//pw_assert:check",
+        "//pw_buf",
         "//pw_bytes",
         "//pw_multibuf:pw_multibuf.facade",
         "//pw_multibuf/v2",

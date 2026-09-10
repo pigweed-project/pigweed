@@ -29,9 +29,10 @@ others may have shared pointer semantics. The collection should correctly handle
 memory ownership in all these cases to preserve correctness and prevent leaks.
 
 :cc:`GenericMultiBuf <pw::multibuf::v2::internal::GenericMultiBuf>` and its
-derived types have been designed to meet these needs. These types are
-collectively referred to as "MultiBuf" in the following sections, except where
-details of the derived types differ.
+derived types have been designed to meet these needs. Conceptually, a MultiBuf
+is a sequence of layered :cc:`pw::Buf` or :cc:`pw::ConstBuf` instances. These
+types are collectively referred to as "MultiBuf" in the following sections,
+except where details of the derived types differ.
 
 --------------
 MultiBuf ideas
@@ -66,9 +67,9 @@ represents the primary contribution to memory overhead for the type.
 Chunks
 ======
 Chunks are contiguous memory regions in a MultiBuf instance. They are
-represented by two or more entries. The first entry will be the pointer to
-memory region. The remaining will correspond to each layer. Each chunk is
-conceptually smiliar to a ``ByteSpan`` instance.
+represented by two or more entries. The first entry will be the pointer to the
+memory region. The remaining will correspond to each layer. Conceptually,
+each chunk corresponds to a layered :cc:`pw::Buf` or :cc:`pw::ConstBuf`.
 
 .. TODO: b/444237874 - Render this diagram directly once the mermaid plugin is
    updated. For now, use a pre-rendered image.
@@ -192,14 +193,24 @@ Ownership here refers to what object is responsible for freeing the memory when
 it is no longer needed. A single MultiBuf instance can hold memory from each of
 three categories:
 
-  - **Unique Ownership**: Memory is provided as a :cc:`pw::UniquePtr`. A
-    flag in the corresponding entry marks the memory as "owned". The
-    MultiBuf instance will deallocate the memory when it is no longer
-    referenced.
+  - **Unique Ownership**: Memory is provided as a :cc:`pw::UniquePtr` or
+    allocated :cc:`pw::Buf` / :cc:`pw::ConstBuf`. A flag in the corresponding
+    entry marks the memory as "owned". The MultiBuf instance will deallocate the
+    memory when it is no longer referenced.
   - **Shared Ownership**: Memory is provided as a :cc:`pw::SharedPtr`. A
     flag in the corresponding entry marks the memory as "shared". The MultiBuf
     instance will deallocate the memory when it is discarded, but only if no
     other existing objects share ownership.
-  - **No Ownership**: Memory is provided as a ``ByteSpan``, and treated as
-    unowned. The MultiBuf instance simply holds a reference, and the caller
-    is responsible for managing the memory's lifetime.
+  - **No Ownership**: Memory is provided as a ``ByteSpan``, or an unowned
+    :cc:`pw::Buf` / :cc:`pw::ConstBuf`, and treated as unowned. The MultiBuf
+    instance simply holds a reference, and the caller is responsible for
+    managing the memory's lifetime.
+
+Owned memory can also be removed from a MultiBuf and returned to the caller:
+
+  - ``Release()`` returns ownership of a contiguous chunk as a :cc:`pw::Buf`
+    (for a mutable MultiBuf) or :cc:`pw::ConstBuf` (for a const MultiBuf),
+    preserving any active view offset and length while managing the underlying
+    allocation.
+  - ``ReleaseChunk()`` returns ownership of a contiguous chunk as a
+    :cc:`pw::UniquePtr`.
