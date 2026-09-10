@@ -9,37 +9,29 @@ TypeScript client
 Pigweed TypeScript client provides two ways to call RPCs. The :ref:`Device <module-pw_web-device>` API is
 easier to work with if you are using the RPC via HDLC over WebSerial.
 
-If the ``device`` abstraction is not a good fit, Pigweed provides ``pw_rpc`` module,
+If the ``device`` abstraction is not a good fit, Pigweed provides the ``pw_rpc`` module,
 which makes it possible to call Pigweed RPCs from TypeScript. The module includes
-client library to facilitate handling RPCs.
+a client library to facilitate handling RPCs.
 
 Creating an RPC Client
 ======================
 The RPC client is instantiated from a list of channels and a set of protos.
 
-.. code-block:: typescript
-
-   import { ProtoCollection } from 'pigweedjs/protos/collection';
-
-   const channels = [new Channel(1, savePacket), new Channel(5)];
-   const client = Client.fromProtoSet(channels, new ProtoCollection());
-
-   function savePacket(packetBytes: Uint8Array): void {
-     const packet = RpcPacket.deserializeBinary(packetBytes);
-     ...
-   }
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-create-client]
+   :end-before: [pw_rpc-ts-create-client]
 
 To generate a ProtoSet/ProtoCollection from your own ``.proto`` files, use
-``pw_proto_compiler`` in your ``package.json`` like this:
+``pw_proto_compiler`` in your ``package.json``:
 
 .. code-block:: javascript
 
-   ...
    "scripts": {
-     "build-protos": "pw_proto_compiler -p protos/rpc1.proto -p protos/rpc2.proto --out dist/protos",
+     "build-protos": "pw_proto_compiler -p protos/rpc1.proto -p protos/rpc2.proto --out dist/protos"
+   }
 
-This will generate a `collection.js` file which can be used similar to above
-example.
+This will generate a `collection.js` file which can be passed to ``Client.fromProtoSet``.
 
 Finding an RPC Method
 =====================
@@ -47,67 +39,41 @@ Once the client is instantiated with the correct proto library, the target RPC
 method is found by searching based on the full name:
 ``{packageName}.{serviceName}.{methodName}``
 
-.. code-block:: typescript
-
-   const channel = client.channel()!;
-   unaryStub = channel.methodStub('pw.rpc.test1.TheTestService.SomeUnary')!
-       as UnaryMethodStub;
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-find-method]
+   :end-before: [pw_rpc-ts-find-method]
 
 The four possible RPC stubs are ``UnaryMethodStub``,
 ``ServerStreamingMethodStub``, ``ClientStreamingMethodStub``, and
-``BidirectionalStreamingMethodStub``.  Note that ``channel.methodStub()``
+``BidirectionalStreamingMethodStub``. Note that ``channel.methodStub()``
 returns a general stub. Since each stub type has different invoke
 parameters, the general stub should be typecast before using.
 
 Invoke an RPC with callbacks
 ============================
 
-.. code-block:: typescript
-
-   invoke(request?: Message,
-       onNext: Callback = () => {},
-       onCompleted: Callback = () => {},
-       onError: Callback = () => {},
-       maxResponses: number = DEFAULT_MAX_STREAM_RESPONSES): Call
-
 All RPC methods can be invoked with a set of callbacks that are triggered when
 either a response is received, the RPC is completed, or an error occurs. The
-example below demonstrates registering these callbacks on a Bidirectional RPC.
-Other RPC types can be invoked in a similar fashion. The request parameter may
-differ slightly between RPC types.
+example below demonstrates registering these callbacks on a Bidirectional RPC:
+
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-callback-invocation]
+   :end-before: [pw_rpc-ts-callback-invocation]
 
 Server streaming and bidirectional streaming methods can receive many responses
 from the server. The client limits the maximum number of responses it stores for
 a single RPC call to avoid unbounded memory usage in long-running streams. Once
-the limit is reached, the oldest responses will be replaced as new ones arrives.
+the limit is reached, the oldest responses will be replaced as new ones arrive.
 By default, the limit is set to ``DEFAULT_MAX_STREAM_RESPONSES (=16384)``, but
 this can be configured on a per-call basis.
 
-.. code-block:: typescript
-
-   bidiRpc = client.channel()?.methodStub(
-       'pw.rpc.test1.TheTestService.SomeBidi')!
-       as BidirectionalStreamingMethodStub;
-
-   // Configure callback functions
-   const onNext = (response: Message) => {
-     console.log(response);
-   }
-   const onComplete = (status: Status) => {
-     console.log('completed!');
-   }
-   const onError = (error: Error) => {
-     console.log();
-   }
-
-   bidiRpc.invoke(request, onNext, onComplete, onError);
-
 Open an RPC: ignore initial errors
-=====================================
-
-Open allows you to start and register an RPC without crashing on errors. This
-is useful for starting an RPC before the server is ready. For instance, starting
-a logging RPC while the device is booting.
+==================================
+``open`` allows you to start and register an RPC without throwing on initial errors. This
+is useful for starting an RPC before the server is ready (for instance, starting
+a logging RPC while the device is booting):
 
 .. code-block:: typescript
 
@@ -118,89 +84,34 @@ a logging RPC while the device is booting.
 
 Blocking RPCs: promise API
 ==========================
-
-Each MethodStub type provides an call() function that allows sending requests
-and awaiting responses through the promise API. The timeout field is optional.
-If no timeout is specified, the RPC will wait indefinitely.
+Each MethodStub type provides a ``call()`` / ``finishAndWait()`` method that allows
+sending requests and awaiting responses through promises. The timeout field is optional;
+if no timeout is specified, the RPC will wait indefinitely.
 
 Unary RPC
 ---------
-.. code-block:: typescript
-
-   unaryRpc = client.channel()?.methodStub(
-       'pw.rpc.test1.TheTestService.SomeUnary')!
-       as UnaryMethodStub;
-   const request = new unaryRpc.requestType();
-   request.setFooProperty(4);
-   const timeout = 2000 // 2 seconds
-   const [status, response] = await unaryRpc.call(request, timeout);
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-unary-promise]
+   :end-before: [pw_rpc-ts-unary-promise]
 
 Server Streaming RPC
 --------------------
-.. code-block:: typescript
-
-   serverStreamRpc = client.channel()?.methodStub(
-       'pw.rpc.test1.TheTestService.SomeServerStreaming')!
-       as ServerStreamingMethodStub;
-
-   const call = serverStreamRpc.invoke();
-   const timeout = 2000
-   for await (const response of call.getResponses(2, timeout)) {
-    console.log(response);
-   }
-   const responses = call.getResponses() // All responses until stream end.
-   while (!responses.done) {
-     console.log(await responses.value());
-   }
-
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-server-streaming-promise]
+   :end-before: [pw_rpc-ts-server-streaming-promise]
 
 Client Streaming RPC
 --------------------
-.. code-block:: typescript
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-client-streaming-promise]
+   :end-before: [pw_rpc-ts-client-streaming-promise]
 
-   clientStreamRpc = client.channel()!.methodStub(
-     'pw.rpc.test1.TheTestService.SomeClientStreaming')!
-     as ClientStreamingMethodStub;
-   clientStreamRpc.invoke();
-   const request = new clientStreamRpc.method.requestType();
-   request.setFooProperty('foo_test');
-   clientStreamRpc.send(request);
-
-   // Send three more requests, end the stream, and wait for a response.
-   const timeout = 2000 // 2 seconds
-   request.finishAndWait([request, request, request], timeout)
-       .then((status, response) => {
-         console.log(`Client stream finished successfully: ${response}`);
-       })
-       .catch((reason) => {
-         console.log(`Client stream error: ${reason}`);
-       });
-
-Bidirectional Stream RPC
-------------------------
-.. code-block:: typescript
-
-   bidiStreamingRpc = client.channel()!.methodStub(
-     'pw.rpc.test1.TheTestService.SomeBidiStreaming')!
-     as BidirectionalStreamingMethodStub;
-   bidiStreamingRpc.invoke();
-   const request = new bidiStreamingRpc.method.requestType();
-   request.setFooProperty('foo_test');
-
-   // Send requests
-   bidiStreamingRpc.send(request);
-
-   // Receive responses
-   const timeout = 2000 // 2 seconds
-   for await (const response of call.getResponses(1, timeout)) {
-    console.log(response);
-   }
-
-   // Send three more requests, end the stream, and wait for a response.
-   request.finishAndWait([request, request, request], timeout)
-       .then(() => {
-         console.log('Bidirectional stream finished successfully');
-       })
-       .catch((reason) => {
-         console.log(`Bidirectional stream error: ${reason}`);
-       });
+Bidirectional Streaming RPC
+---------------------------
+.. literalinclude:: docs_example.ts
+   :language: typescript
+   :start-after: [pw_rpc-ts-bidi-streaming-promise]
+   :end-before: [pw_rpc-ts-bidi-streaming-promise]

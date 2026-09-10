@@ -95,12 +95,18 @@ Example of the redirect that ``sphinx-reredirects`` auto-generates:
 
 .. _contrib-docs-website-urls:
 
-------------------------------------------
-Auto-generated source code and issues URLS
-------------------------------------------
-In the site nav there's a ``Source code`` and ``Issues`` URL for each module.
-These links are auto-generated. The auto-generation logic lives in
-``//pw_docgen/py/pw_docgen/sphinx/module_metadata.py``.
+-----------------------------
+Auto-generated metadata links
+-----------------------------
+In the site nav, ``C/C++ API reference``, ``Rust API reference``,
+``Source code``, and ``Issues`` URLs are auto-generated for each module.
+The auto-generation logic lives in
+``//docs/sphinx/_extensions/module_metadata.py``.
+
+By default, these links are appended to the end of each module homepage's
+``.. toctree::``. To control their placement within the TOC, authors can insert
+standard placeholder slugs (``pw://cc-api-ref``, ``pw://rust-api-ref``,
+``pw://source-code``, ``pw://issues``) into the ``.. toctree::`` directive.
 
 .. _contrib-docs-website-copy:
 

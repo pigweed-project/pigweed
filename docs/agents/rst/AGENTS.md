@@ -429,6 +429,39 @@ At build time, our custom Sphinx extension
 (`//docs/sphinx/_extensions/toctree.py`) intercepts it and rewrites it to the
 correct local relative path (e.g., `../../pw_allocator_zephyr/docs.html`).
 
+### Auto-generated metadata links in toctrees
+
+By default, Pigweed's Sphinx extension (`//docs/sphinx/_extensions/module_metadata.py`)
+automatically appends generated links (C/C++ API reference, Rust API reference,
+Source code, and Issues) to the end of a module homepage's `.. toctree::`.
+
+To explicitly position these auto-generated links anywhere within the `.. toctree::`,
+use standard placeholder slugs:
+
+* `pw://cc-api-ref`: C/C++ API reference (Doxygen)
+* `pw://rust-api-ref`: Rust API reference (Rustdoc)
+* `pw://source-code`: Source code (Code Search)
+* `pw://issues`: Issues (Issue tracker)
+
+Example:
+
+```rst
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   setup
+   services
+   cpp
+   pw://cc-api-ref
+   py/docs
+   ts/docs
+```
+
+When present, the extension replaces the placeholder in-place with the correct URL
+and title while preserving local preview and staging link rewrites. If omitted,
+the link continues to be appended to the end of the `.. toctree::`.
+
 ## Iteration loop
 
 To check your work, build the documentation and resolve any errors:

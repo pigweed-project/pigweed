@@ -6,13 +6,13 @@ pw_rpc
 .. pigweed-module::
    :name: pw_rpc
 
-``pw_rpc`` provides an embedded-friendly system for defining and using remote
-procedure calls (RPCs) over arbitrary serial or packet-oriented transports.
-Services and their request/response messages are defined in shared protobuf
-files.
+``pw_rpc`` provides an embedded-friendly remote procedure call (RPC) system for
+defining and invoking structured methods over arbitrary serial, bus, or packet
+transports (UART, SPI, USB, BLE, Sockets). Services and messages are defined in
+shared Protocol Buffer (``.proto``) files.
 
-``pw_rpc`` supports several languages, and both ``Nanopb`` and ``pw_protobuf``
-code generation in C++.
+``pw_rpc`` supports C++ (with Nanopb, ``pw_protobuf``, or Raw RPC codegen), Python,
+TypeScript, and Java.
 
 .. tab-set::
 
@@ -36,79 +36,115 @@ code generation in C++.
          :start-after: [pw_rpc-examples-blinky-build]
          :end-before: [pw_rpc-examples-blinky-build]
 
+-------------------
+Where to go next
+-------------------
+
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`rocket` Quickstart & guides
-      :link: module-pw_rpc-guides
+   .. grid-item-card:: :octicon:`tools` Integration & setup
+      :link: module-pw_rpc-setup
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Check out the ``pw_rpc`` quickstart for more explanation of the code above.
-      The guides answer common questions such as whether
-      to use ``proto2`` or ``proto3`` syntax.
+      **For Platform Engineers & System Architects.**
+      Step-by-step checklist to bring up ``pw_rpc`` on target hardware:
+      transports, channels, RX/TX plumbing, and dispatch loops.
 
-   .. grid-item-card:: :octicon:`code-square` C++ server and client
+   .. grid-item-card:: :octicon:`rocket` Creating services
+      :link: module-pw_rpc-services
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      **For Application Developers.**
+      How to define ``.proto`` services, generate C++ code, implement unary
+      and streaming methods, and write unit tests.
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`code-square` C++ client & server
       :link: module-pw_rpc-cpp
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      C++ server and client library API guides.
+      Core C++ runtime mechanics: channels, call objects, synchronous call
+      wrappers, concurrency rules, and test fixtures.
 
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`info` Packet protocol
-      :link: module-pw_rpc-protocol
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      A detailed description of the ``pw_rpc`` packet protocol.
-
-   .. grid-item-card:: :octicon:`info` Design
-      :link: module-pw_rpc-design
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      An overview of the RPC call lifecycle, naming conventions,
-      and the ``pw_rpc`` roadmap.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`code-square` Python client
-      :link: module-pw_rpc-py
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Python client library API reference.
-
-   .. grid-item-card:: :octicon:`code-square` TypeScript client
-      :link: module-pw_rpc-ts
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      TypeScript client library API guide.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`code-square` Nanopb codegen
+   .. grid-item-card:: :octicon:`file-code` C++ with Nanopb
       :link: module-pw_rpc_nanopb
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Nanopb codegen library API guide.
+      Lightweight C struct message generator (recommended for embedded C++).
 
-   .. grid-item-card:: :octicon:`code-square` pw_protobuf codegen
+   .. grid-item-card:: :octicon:`file-code` C++ with pw_protobuf
       :link: module-pw_rpc_pw_protobuf
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      ``pw_protobuf`` codegen library API guide.
+      Type-safe pure C++ message generator.
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`cpu` C++ with raw RPC
+      :link: module-pw_rpc-raw
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Zero-copy byte buffer RPCs and method fallback mechanics.
+
+   .. grid-item-card:: :octicon:`terminal` Python client
+      :link: module-pw_rpc-py
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Python client library, custom channels, and ``pw_console`` tools.
+
+   .. grid-item-card:: :octicon:`globe` TypeScript client
+      :link: module-pw_rpc-ts
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      WebSerial, WebUSB, and browser/Node.js client library.
+
+.. grid:: 3
+
+   .. grid-item-card:: :octicon:`device-mobile` Java client
+      :link: module-pw_rpc-java
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Android and JVM client library in ``dev.pigweed.pw_rpc``.
+
+   .. grid-item-card:: :octicon:`meter` Benchmarking
+      :link: module-pw_rpc-benchmarking
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Tools for measuring throughput, latency, and fuzzer testing.
+
+   .. grid-item-card:: :octicon:`info` Wire protocol
+      :link: module-pw_rpc-protocol
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Packet wire format and envelope protocol specification.
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   guides
-   libraries
+   setup
+   services
+   cpp
+   nanopb/docs
+   pwpb/docs
+   raw/docs
+   pw://cc-api-ref
+   py/docs
+   ts/docs
+   java/docs
+   benchmarking
    protocol
    design
-   HDLC example <pw://pw_hdlc/rpc_example/docs.html>
+   Serial & HDLC example <pw://pw_hdlc/rpc_example/docs.html>

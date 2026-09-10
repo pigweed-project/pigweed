@@ -2,14 +2,18 @@
 
 .. _module-pw_rpc-cpp:
 
-=====================
-C++ server and client
-=====================
+====================
+C++ client & server
+====================
 .. pigweed-module-subpage::
    :name: pw_rpc
 
-This page provides further guidance on how to use the C++ server
-and client libraries.
+This page provides in-depth guidance on the C++ server, client, channel, and
+call object APIs, concurrency rules, and testing fixtures.
+
+.. tip::
+   * **Looking to bring up pw_rpc on your hardware?** See the :ref:`module-pw_rpc-setup`.
+   * **Looking to define and implement RPC services?** See :ref:`module-pw_rpc-services`.
 
 ----------
 RPC server
@@ -142,7 +146,7 @@ registered channels instead. A service client class is generated from a .proto
 file for each selected protobuf library, which is then used to send RPC requests
 through a given channel. The API for this depends on the protobuf library;
 please refer to the
-:ref:`appropriate documentation <module-pw_rpc-libraries>`. Multiple
+:ref:`service authoring documentation <module-pw_rpc-services>`. Multiple
 service client implementations can exist simulatenously and share the same
 ``Client`` class.
 
@@ -156,48 +160,10 @@ as long as its call object is alive.
 
 Example
 -------
-.. code-block:: c++
-
-   #include "pw_rpc/echo_service_nanopb.h"
-
-   namespace {
-   // Generated clients are namespaced with their proto library.
-   using EchoClient = pw_rpc::nanopb::EchoService::Client;
-
-   // RPC channel ID on which to make client calls. RPC calls cannot be made on
-   // channel 0 (Channel::kUnassignedChannelId).
-   constexpr uint32_t kDefaultChannelId = 1;
-
-   pw::rpc::NanopbUnaryReceiver<pw_rpc_EchoMessage> echo_call;
-
-   // Callback invoked when a response is received. This is called synchronously
-   // from Client::ProcessPacket.
-   void EchoResponse(const pw_rpc_EchoMessage& response, pw::Status status) {
-     if (status.ok()) {
-       PW_LOG_INFO("Received echo response: %s", response.msg);
-     } else {
-       PW_LOG_ERROR("Echo failed with status %d", static_cast<int>(status.code()));
-     }
-   }
-
-   }  // namespace
-
-   void CallEcho(const char* message) {
-     // Create a client to call the EchoService.
-     EchoClient echo_client(my_rpc_client, kDefaultChannelId);
-
-     pw_rpc_EchoMessage request{};
-     pw::string::Copy(message, request.msg);
-
-     // By assigning the returned call to the global echo_call, the RPC
-     // call is kept alive until it completes. When a response is received, it
-     // will be logged by the handler function and the call will complete.
-     echo_call = echo_client.Echo(request, EchoResponse);
-     if (!echo_call.active()) {
-       // The RPC call was not sent. This could occur due to, for example, an
-       // invalid channel ID. Handle if necessary.
-     }
-   }
+.. literalinclude:: examples/client_example.cc
+   :language: cpp
+   :start-after: [pw_rpc-examples-async-client-call]
+   :end-before: [pw_rpc-examples-async-client-call]
 
 --------
 Channels

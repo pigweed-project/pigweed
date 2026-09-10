@@ -13,14 +13,24 @@
 # the License.
 
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
+load("@com_google_protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_test")
+load(
+    "//pw_protobuf_compiler:pw_proto_filegroup.bzl",
+    "pw_proto_filegroup",
+)
 load(
     "//pw_protobuf_compiler:pw_proto_library.bzl",
     "nanopb_proto_library",
     "nanopb_rpc_proto_library",
+    "pwpb_proto_library",
+    "pwpb_rpc_proto_library",
+    "raw_rpc_proto_library",
 )
+load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -58,12 +68,252 @@ cc_library(
 )
 # [pw_rpc-examples-blinky-build]
 
+# [pw_rpc-examples-sensor-build]
+proto_library(
+    name = "sensor_proto",
+    srcs = ["sensor_service.proto"],
+    deps = [
+        "//pw_protobuf:common_proto",
+    ],
+)
+
+nanopb_proto_library(
+    name = "sensor_nanopb",
+    deps = [":sensor_proto"],
+)
+
+nanopb_rpc_proto_library(
+    name = "sensor_nanopb_rpc",
+    nanopb_proto_library_deps = [":sensor_nanopb"],
+    deps = [":sensor_proto"],
+)
+
+raw_rpc_proto_library(
+    name = "sensor_raw_rpc",
+    deps = [":sensor_proto"],
+)
+
+py_proto_library(
+    name = "sensor_proto_pb2",
+    deps = [":sensor_proto"],
+)
+
+pw_py_test(
+    name = "host_client_test",
+    srcs = ["host_client.py"],
+    main = "host_client.py",
+    deps = [
+        ":sensor_proto_pb2",
+        "//pw_hdlc/py:pw_hdlc",
+        "//pw_rpc/py:pw_rpc",
+        "//pw_status/py:pw_status",
+    ],
+)
+
+cc_library(
+    name = "sensor_service",
+    srcs = ["sensor_service.cc"],
+    hdrs = ["sensor_service.h"],
+    deps = [
+        ":sensor_nanopb_rpc",
+        "//pw_bytes",
+        "//pw_rpc",
+        "//pw_rpc/nanopb:server_api",
+        "//pw_rpc/raw:server_api",
+        "//pw_status",
+    ],
+)
+
+pw_cc_test(
+    name = "sensor_service_test",
+    srcs = ["sensor_service_test.cc"],
+    deps = [
+        ":sensor_service",
+        "//pw_rpc/nanopb:test_method_context",
+        "//pw_unit_test",
+    ],
+)
+# [pw_rpc-examples-sensor-build]
+
+# [pw_rpc-examples-chat-build]
+pw_proto_filegroup(
+    name = "chat_proto_and_options",
+    srcs = ["chat_service.proto"],
+    options_files = ["chat_service.options"],
+)
+
+proto_library(
+    name = "chat_proto",
+    srcs = [":chat_proto_and_options"],
+)
+
+nanopb_proto_library(
+    name = "chat_nanopb",
+    deps = [":chat_proto"],
+)
+
+nanopb_rpc_proto_library(
+    name = "chat_nanopb_rpc",
+    nanopb_proto_library_deps = [":chat_nanopb"],
+    deps = [":chat_proto"],
+)
+
+pwpb_proto_library(
+    name = "chat_pwpb",
+    deps = [":chat_proto"],
+)
+
+pwpb_rpc_proto_library(
+    name = "chat_pwpb_rpc",
+    pwpb_proto_library_deps = [":chat_pwpb"],
+    deps = [":chat_proto"],
+)
+
+raw_rpc_proto_library(
+    name = "chat_raw_rpc",
+    deps = [":chat_proto"],
+)
+
+cc_library(
+    name = "nanopb_chat_service",
+    srcs = ["nanopb_chat_service.cc"],
+    deps = [
+        ":chat_nanopb",
+        ":chat_nanopb_rpc",
+        "//pw_bytes",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_rpc/nanopb:client_api",
+        "//pw_rpc/nanopb:server_api",
+        "//pw_status",
+    ],
+)
+
+cc_library(
+    name = "pwpb_chat_service",
+    srcs = ["pwpb_chat_service.cc"],
+    deps = [
+        ":chat_pwpb",
+        ":chat_pwpb_rpc",
+        "//pw_bytes",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_rpc/pwpb:client_api",
+        "//pw_rpc/pwpb:server_api",
+        "//pw_status",
+    ],
+)
+
+cc_library(
+    name = "raw_service",
+    srcs = ["raw_service.cc"],
+    deps = [
+        ":sensor_nanopb_rpc",
+        ":sensor_raw_rpc",
+        "//pw_bytes",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_rpc/nanopb:server_api",
+        "//pw_rpc/raw:client_api",
+        "//pw_rpc/raw:server_api",
+        "//pw_status",
+    ],
+)
+# [pw_rpc-examples-chat-build]
+
+cc_library(
+    name = "custom_channel_output",
+    srcs = ["custom_channel_output.cc"],
+    deps = [
+        "//pw_bytes",
+        "//pw_rpc",
+        "//pw_status",
+        "//pw_sync:mutex",
+    ],
+)
+
+cc_library(
+    name = "ingress_thread",
+    srcs = ["ingress_thread.cc"],
+    deps = [
+        "//pw_hdlc",
+        "//pw_hdlc:default_addresses",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_thread:thread_core",
+    ],
+)
+
+cc_library(
+    name = "client_example",
+    srcs = ["client_example.cc"],
+    deps = [
+        ":sensor_nanopb_rpc",
+        "//pw_bytes",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_rpc:client_server",
+        "//pw_rpc:synchronous_client_api",
+        "//pw_rpc/nanopb:client_api",
+        "//pw_status",
+    ],
+)
+
+# [pw_rpc-examples-echo-build]
+proto_library(
+    name = "echo_proto",
+    srcs = ["echo_service.proto"],
+)
+
+nanopb_proto_library(
+    name = "echo_nanopb",
+    deps = [":echo_proto"],
+)
+
+nanopb_rpc_proto_library(
+    name = "echo_nanopb_rpc",
+    nanopb_proto_library_deps = [":echo_nanopb"],
+    deps = [":echo_proto"],
+)
+# [pw_rpc-examples-echo-build]
+
+cc_library(
+    name = "full_integration",
+    srcs = ["full_integration.cc"],
+    deps = [
+        ":echo_nanopb_rpc",
+        "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_hdlc",
+        "//pw_hdlc:default_addresses",
+        "//pw_log",
+        "//pw_rpc",
+        "//pw_sync:mutex",
+        "//pw_thread:thread_core",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
         "BUILD.bazel",
+        "DocsExample.java",
         "blinky.proto",
         "blinky_service.cc",
+        "chat_service.proto",
+        "client_example.cc",
+        "custom_channel_output.cc",
+        "echo_service.proto",
+        "full_integration.cc",
+        "host_client.py",
+        "ingress_thread.cc",
+        "nanopb_chat_service.cc",
+        "pwpb_chat_service.cc",
+        "raw_service.cc",
+        "sensor_service.cc",
+        "sensor_service.h",
+        "sensor_service.proto",
+        "sensor_service_test.cc",
     ],
     target_compatible_with = incompatible_with_mcu(),
 )

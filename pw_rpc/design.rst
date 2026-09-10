@@ -1,8 +1,8 @@
 .. _module-pw_rpc-design:
 
-================
-Design & roadmap
-================
+======
+Design
+======
 .. pigweed-module-subpage::
    :name: pw_rpc
 

@@ -1,8 +1,8 @@
 .. _module-pw_rpc-protocol:
 
-===============
-Packet protocol
-===============
+=============
+Wire protocol
+=============
 .. pigweed-module-subpage::
    :name: pw_rpc
 

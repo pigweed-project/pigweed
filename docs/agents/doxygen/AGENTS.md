@@ -38,6 +38,9 @@ Every `@module` and `@submodule` annotation must have an accompanying
 
 * Sphinx to Doxygen: use the `:cc:` role. See
   `//docs/agents/rst/AGENTS.md`.
+* Module TOC positioning: by default the C/C++ API reference link is auto-appended
+  to the module homepage's TOC. To explicitly control its position, place
+  `pw://cc-api-ref` in the `.. toctree::`. See `//docs/agents/rst/AGENTS.md`.
 * Everything else (Doxygen to Sphinx, Doxygen to Rustdoc, Rustdoc to
   Doxygen): use hardcoded Markdown links with relative paths.
 

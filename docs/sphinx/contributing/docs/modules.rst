@@ -202,6 +202,12 @@ be ordered like this:
 The sales pitch and quickstart instructions are required. Everything else
 is optional and can be rearranged in whatever way seems to flow best.
 
+By default, auto-generated links (C/C++ Doxygen reference, Rust API reference,
+Source code, and Issues) are appended to the end of the module's ``toctree``.
+To position them explicitly, use standard placeholder slugs (such as
+``pw://cc-api-ref`` or ``pw://rust-api-ref``) inside the ``.. toctree::``
+directive on ``docs.rst``.
+
 You can split ``Quickstart & guides`` into 2 docs if that works better for
 your module. The filenames should be ``get_started.rst`` and ``guides.rst``.
 

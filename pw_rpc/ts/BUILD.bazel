@@ -43,6 +43,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "docs.rst",
+        "docs_example.ts",
     ],
     prefix = "pw_rpc/",
     target_compatible_with = incompatible_with_mcu(),

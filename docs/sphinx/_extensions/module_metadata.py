@@ -600,11 +600,36 @@ def should_add_doxygen_link(module_name) -> bool:
     return module_name in ok
 
 
-def add_links(module_name: str, toctree: Element) -> None:
-    """Adds source code and issues URLs to a module's table of contents tree.
+def _insert_or_append_link(
+    toctree: Element,
+    slug: str,
+    default_title: str,
+    url: str,
+) -> None:
+    """Inserts link at slug placeholder position, or appends to end of toctree."""
+    entries = toctree.setdefault('entries', [])
+    rawentries = toctree.setdefault('rawentries', [])
+    slug_uri = f'pw://{slug}'
 
-    This function is how we auto-generate the source code and issues URLs
-    that appear for each module in the pigweed.dev site nav.
+    for i, (title, target) in enumerate(entries):
+        if target == slug or target == slug_uri:
+            new_title = title if title is not None else default_title
+            entries[i] = (new_title, url)
+            if i < len(rawentries):
+                rawentries[i] = new_title
+            return
+
+    link = (default_title, url)
+    entries.append(link)
+    rawentries.append(default_title)
+
+
+def add_links(module_name: str, toctree: Element) -> None:
+    """Adds API reference, source code, and issues URLs to a module's table of contents tree.
+
+    If a standard slug placeholder (e.g. `cc-api-ref`, `rust-api-ref`,
+    `source-code`, `issues`) is present in the `toctree`, the link replaces
+    the placeholder in-place. Otherwise, links are appended to the end.
 
     Args:
         module_name:
@@ -616,28 +641,33 @@ def add_links(module_name: str, toctree: Element) -> None:
         `None`. `toctree` is modified in-place.
     """
     languages = get_languages(module_name)
-    ignore = [
-        # TODO: https://pwbug.dev/424641732 - Remove this.
-        'pw_kernel',
-    ]
+
     if should_add_rust_link(module_name, languages):
-        rustdoc = ('Rust API reference', rustdoc_url(module_name))
-        toctree['entries'] += [rustdoc]
-        toctree['rawentries'] += [rustdoc[0]]
+        _insert_or_append_link(
+            toctree,
+            slug='rust-api-ref',
+            default_title='Rust API reference',
+            url=rustdoc_url(module_name),
+        )
     if should_add_doxygen_link(module_name):
-        doxygen = ('C/C++ API reference', doxygen_url(module_name))
-        toctree['entries'] += [doxygen]
-        toctree['rawentries'] += [doxygen[0]]
-    src = ('Source code', cs_url(module_name))
-    issues = ('Issues', issues_url(module_name))
-    # Maintenance tip: the trick here is to create the `toctree` the same way
-    # that Sphinx generates it. When in doubt, enable logging in this file,
-    # manually modify the `.. toctree::` directive on a module's homepage, log
-    # out `toctree` from somewhere in this script (you should see an XML-style
-    # node), and then just make sure your code modifies the `toctree` the same
-    # way that Sphinx generates it.
-    toctree['entries'] += [src, issues]
-    toctree['rawentries'] += [src[0], issues[0]]
+        _insert_or_append_link(
+            toctree,
+            slug='cc-api-ref',
+            default_title='C/C++ API reference',
+            url=doxygen_url(module_name),
+        )
+    _insert_or_append_link(
+        toctree,
+        slug='source-code',
+        default_title='Source code',
+        url=cs_url(module_name),
+    )
+    _insert_or_append_link(
+        toctree,
+        slug='issues',
+        default_title='Issues',
+        url=issues_url(module_name),
+    )
 
 
 def find_first_toctree(doctree: Document) -> Element | None:
