@@ -96,6 +96,17 @@ cc_library(
 )
 
 cc_library(
+    name = "forward_list",
+    hdrs = ["public/pw_containers/forward_list.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":intrusive_forward_list",
+        "//pw_allocator",
+        "//pw_assert:assert",
+    ],
+)
+
+cc_library(
     name = "intrusive_list",
     hdrs = ["public/pw_containers/intrusive_list.h"],
     strip_include_prefix = "public",
@@ -828,6 +839,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "forward_list_test",
+    srcs = ["forward_list_test.cc"],
+    deps = [
+        ":forward_list",
+        ":test_helpers",
+        "//pw_allocator:testing",
+    ],
+)
+
+pw_cc_test(
     name = "intrusive_list_test",
     srcs = ["intrusive_list_test.cc"],
     has_nc_test = True,
@@ -953,6 +974,7 @@ filegroup(
         "public/pw_containers/dynamic_vector.h",
         "public/pw_containers/filtered_view.h",
         "public/pw_containers/flat_map.h",
+        "public/pw_containers/forward_list.h",
         "public/pw_containers/functional.h",
         "public/pw_containers/inline_deque.h",
         "public/pw_containers/inline_queue.h",

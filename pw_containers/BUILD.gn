@@ -377,6 +377,16 @@ pw_source_set("intrusive_forward_list") {
   ]
 }
 
+pw_source_set("forward_list") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_containers/forward_list.h" ]
+  public_deps = [
+    ":intrusive_forward_list",
+    dir_pw_allocator,
+    dir_pw_assert,
+  ]
+}
+
 pw_source_set("intrusive_queue") {
   public_configs = [ ":public_include_path" ]
   public = [
@@ -488,6 +498,7 @@ pw_test_group("tests") {
     ":dynamic_hash_map_test",
     ":dynamic_map_test",
     ":dynamic_queue_test",
+    ":forward_list_test",
     ":inline_deque_test",
     ":inline_queue_test",
     ":inline_var_len_entry_queue_test",
@@ -825,6 +836,15 @@ pw_test("intrusive_forward_list_test") {
 
   # TODO: b/259746255 - Remove this when everything compiles with -Wconversion.
   configs = [ "$dir_pw_build:conversion_warnings" ]
+}
+
+pw_test("forward_list_test") {
+  sources = [ "forward_list_test.cc" ]
+  deps = [
+    ":forward_list",
+    ":test_helpers",
+    "$dir_pw_allocator:testing",
+  ]
 }
 
 pw_test("intrusive_queue_test") {

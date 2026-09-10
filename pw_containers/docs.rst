@@ -28,7 +28,8 @@ resource-constrained than conventional applications. These containers include:
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Intrusive singly and doubly linked lists, and intrusive queues.
+      Dynamic and intrusive singly and doubly linked lists, and intrusive
+      queues.
 
    .. grid-item-card:: :octicon:`database` Maps
       :link: module-pw_containers-maps

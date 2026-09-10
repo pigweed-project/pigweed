@@ -8,9 +8,11 @@ Lists
 
 A linked list is an ordered collection of items in which each item is associated
 with pointers to one or more of its adjacent items. Pigweed provides intrusive
-lists, meaning the pointers are stored within the items themselves. This allows
-an arbitrary number of items to be added to a list without requiring additional
-memory beyond that of the items themselves.
+lists, meaning the pointers are stored within the items themselves, allowing an
+arbitrary number of items to be added without requiring additional memory
+beyond that of the items themselves. Pigweed also provides
+:cc:`pw::ForwardList`, a dynamically allocated singly linked list backed by a
+:cc:`pw::Allocator`.
 
 .. _module-pw_containers-intrusive_list:
 
@@ -61,8 +63,8 @@ intrusive list implementation. It is very similar to
 :ref:`module-pw_containers-intrusive_list`, except that it is singly rather than
 doubly linked.
 
-This class is similar to ``std::forward_list<T>``. Items to be added must derive
-from ``pw::IntrusiveForwardList<T>::Item``.
+This class is similar to ``std::forward_list<T>``, but items to be added must
+derive from ``pw::IntrusiveForwardList<T>::Item``.
 
 See also :ref:`module-pw_containers-multiple_containers`.
 
@@ -75,7 +77,33 @@ Example
    :end-before: [pw_containers-intrusive_forward_list]
 
 If you need to add this item to containers of more than one type, see
-:ref:`module-pw_containers-multiple_containers`,
+:ref:`module-pw_containers-multiple_containers`.
+
+.. _module-pw_containers-forward_list:
+
+---------------
+pw::ForwardList
+---------------
+:cc:`pw::ForwardList` provides an embedded-friendly, singly linked list that
+owns its elements and allocates them dynamically using a :cc:`pw::Allocator`.
+It provides an interface similar to ``std::forward_list<T>``. Unlike
+:cc:`pw::IntrusiveForwardList`, items do not need to inherit from a certain
+base.
+
+Internally, ``pw::ForwardList`` wraps :cc:`pw::IntrusiveForwardList` to maximize
+code reuse.
+
+Key features of :cc:`pw::ForwardList`:
+
+* **Allocator-driven**: Uses a :cc:`pw::Allocator` to allocate each node.
+* **Infallible and fallible APIs**: Provides a standard
+  ``std::forward_list``-like API (such as ``push_front`` and ``resize``), as
+  well as fallible ``try_*`` versions (such as ``try_push_front`` and
+  ``try_resize``) that return a boolean or iterator on allocation failure
+  without exceptions.
+
+.. note::
+   The allocator associated with a ``ForwardList`` must outlive the list.
 
 ------------------
 pw::IntrusiveQueue

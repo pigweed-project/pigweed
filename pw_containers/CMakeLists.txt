@@ -431,6 +431,17 @@ pw_add_library(pw_containers.intrusive_queue STATIC
     pw_containers._intrusive_list_common
 )
 
+pw_add_library(pw_containers.forward_list INTERFACE
+  HEADERS
+    public/pw_containers/forward_list.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_containers.intrusive_forward_list
+    pw_allocator
+    pw_assert.assert
+)
+
 pw_add_library(pw_containers.intrusive_list INTERFACE
   HEADERS
     public/pw_containers/intrusive_list.h
@@ -870,6 +881,18 @@ pw_add_test(pw_containers.intrusive_forward_list_test
     pw_containers.intrusive_forward_list
     pw_containers.vector
     pw_preprocessor
+  GROUPS
+    modules
+    pw_containers
+)
+
+pw_add_test(pw_containers.forward_list_test
+  SOURCES
+    forward_list_test.cc
+  PRIVATE_DEPS
+    pw_containers.forward_list
+    pw_containers._test_helpers
+    pw_allocator.testing
   GROUPS
     modules
     pw_containers
