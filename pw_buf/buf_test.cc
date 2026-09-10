@@ -168,6 +168,50 @@ TEST_F(BufTest, ConstBufSpanConversion) {
   EXPECT_EQ(span.data(), raw_ptr);
 }
 
+TEST_F(BufTest, ConstBufUnownedFromSpan) {
+  const std::array<std::byte, 10> data = {};
+  ConstBuf buf = ConstBuf::Unowned(data);
+  EXPECT_FALSE(buf.empty());
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_EQ(buf.data(), data.data());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, ConstBufUnownedFromPointerAndSize) {
+  const std::array<std::byte, 10> data = {};
+  ConstBuf buf = ConstBuf::Unowned(data.data(), 10);
+  EXPECT_FALSE(buf.empty());
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_EQ(buf.data(), data.data());
+  EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, ConstBufUnownedFromNullSpanIsNull) {
+  ConstBuf buf = ConstBuf::Unowned(ConstByteSpan{});
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), nullptr);
+  EXPECT_EQ(buf, nullptr);
+}
+
+TEST_F(BufTest, ConstBufUnownedFromZeroLengthSpanIsNotNull) {
+  const std::array<std::byte, 4> storage = {};
+  ConstBuf buf = ConstBuf::Unowned(ConstByteSpan(storage.data(), 0));
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), storage.data());
+  EXPECT_NE(buf, nullptr);
+}
+
+TEST_F(BufTest, ConstBufUnownedZeroSizePointerIsNotNull) {
+  const std::array<std::byte, 4> storage = {};
+  ConstBuf buf = ConstBuf::Unowned(storage.data(), 0);
+  EXPECT_TRUE(buf.empty());
+  EXPECT_EQ(buf.size(), 0u);
+  EXPECT_EQ(buf.data(), storage.data());
+  EXPECT_NE(buf, nullptr);
+}
+
 // Buf tests
 
 TEST_F(BufTest, BufDefaultConstructor) {

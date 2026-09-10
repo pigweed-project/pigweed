@@ -36,10 +36,10 @@ class Buf;
 
 /// Represents a read-only view of a contiguous block of bytes.
 ///
-/// `ConstBuf` is intended for passing ownership of read-only data, optionally
-/// slicing the view between layers. Unlike `Buf`, `ConstBuf` does not support
-/// `Reclaim()` or expose its base pointer. Once a `ConstBuf` is sliced or
-/// truncated, the excluded bytes cannot be recovered.
+/// `ConstBuf` is intended for passing ownership of read-only data, or providing
+/// an unowned view, optionally slicing the view between layers. Unlike `Buf`,
+/// `ConstBuf` does not support `Reclaim()` or expose its base pointer. Once a
+/// `ConstBuf` is sliced or truncated, the excluded bytes cannot be recovered.
 ///
 /// An `empty()` `ConstBuf` has no bytes (`size() == 0`). A null `ConstBuf` has
 /// no bytes, and its `data()` pointer is `nullptr`. A `ConstBuf` is null when
@@ -87,9 +87,23 @@ class ConstBuf {
   /// The moved-from `Buf` is left null.
   constexpr ConstBuf(Buf&& other) noexcept;
 
+  /// Creates an unowned `ConstBuf` from a `ConstByteSpan`.
+  [[nodiscard]] static ConstBuf Unowned(ConstByteSpan span) {
+    return Unowned(span.data(), span.size());
+  }
+
+  /// Creates an unowned `ConstBuf` from a pointer and size in bytes.
+  [[nodiscard]] static ConstBuf Unowned(const std::byte* data,
+                                        size_t size_bytes) {
+    return ConstBuf(
+        const_cast<std::byte*>(data),
+        nullptr,
+        pw::span<std::byte>(const_cast<std::byte*>(data), size_bytes));
+  }
+
   ConstBuf(const ConstBuf&) = delete;
 
-  /// Destructor. Releases the owned memory back to the allocator.
+  /// Destructor. Releases the owned memory (if any) back to the allocator.
   ~ConstBuf() { reset(); }
 
   /// Move assignment operator.
