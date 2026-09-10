@@ -39,9 +39,10 @@ fuchsia_repo_files = [
     "sdk/lib/stdcompat/include/lib/stdcompat/internal/type_traits.h",
     "sdk/lib/stdcompat/include/lib/stdcompat/internal/utility.h",
     # lazy_init
-    "zircon/system/ulib/lazy_init/include/lib/lazy_init/internal/storage.h",
-    "zircon/system/ulib/lazy_init/include/lib/lazy_init/lazy_init.h",
-    "zircon/system/ulib/lazy_init/include/lib/lazy_init/options.h",
+    "src/lib/lazy_init/include/lib/lazy_init/internal/assert.h",
+    "src/lib/lazy_init/include/lib/lazy_init/internal/storage.h",
+    "src/lib/lazy_init/include/lib/lazy_init/lazy_init.h",
+    "src/lib/lazy_init/include/lib/lazy_init/options.h",
 ]
 
 core.workflow(
@@ -66,8 +67,6 @@ core.workflow(
         core.move("", "third_party/fuchsia/repo"),
         # Apply the patch file created by generate_fuchsia_patch.py.
         patch.apply(["pigweed_adaptations.patch"]),
-        # Replace test #includes with gtest.
-        core.replace("#include <zxtest/zxtest.h>", "#include \"gtest/gtest.h\""),
         # Show all commits but exclude the author to reduce line length.
         metadata.squash_notes(
             "third_party/fuchsia: Copybara import\n\n",

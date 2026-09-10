@@ -33,7 +33,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
 
  namespace fit {
  namespace internal {
-@@ -90,7 +92,7 @@ inline const void* unshared_target_type_id(void* /*bits*/, const void* impl_ops)
+@@ -78,7 +80,7 @@ inline void trivial_target_destroy(void* /*bits*/) {}
  // elsewhere in the header as an inline variable.
  template <typename Unused = void>
  struct null_target {
@@ -42,7 +42,7 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
 
    static const target_ops<void> ops;
 
-@@ -542,7 +544,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
+@@ -474,7 +476,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
    template <typename SharedFunction>
    void copy_shared_target_to(SharedFunction& copy) {
      copy.destroy_target();
@@ -51,15 +51,6 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/funct
      shared_target_type<SharedFunction>::copy_shared_ptr(base::bits(), copy.bits());
      copy.set_ops(base::ops());
    }
-@@ -572,7 +574,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
-   void check_target_type() const {
-     if (target_type<Callable>::ops.target_type_id(nullptr, &target_type<Callable>::ops) !=
-         base::target_type_id()) {
--      __builtin_abort();
-+      PW_ASSERT(false);
-     }
-   }
- };
 diff --git a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/result.h b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/result.h
 --- a/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/result.h
 +++ b/third_party/fuchsia/repo/sdk/lib/fit/include/lib/fit/internal/result.h
@@ -311,24 +302,14 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/test/function_tests.cc b/third
  #include <array>
 @@ -15,6 +14,8 @@
 
- #include <zxtest/zxtest.h>
+ #include <gtest/gtest.h>
 
 +#include "pw_polyfill/language_feature_macros.h"
 +
  namespace {
 
  using ::std::size_t;
-@@ -54,8 +55,7 @@ struct EmptyFunction<R(Args...)> {
-   R operator()(Args... args) const { return fptr(args...); }
-   bool operator==(decltype(nullptr)) const { return true; }
-
--  R(*fptr)
--  (Args...) = nullptr;
-+  R (*fptr)(Args...) = nullptr;
- };
-
- struct alignas(4 * alignof(void*)) LargeAlignedCallable {
-@@ -1029,8 +1029,8 @@ TEST(FunctionTests, callback_with_custom_allocator) {
+@@ -990,8 +991,8 @@ TEST(FunctionTests, callback_with_custom_allocator) {
    EXPECT_EQ(1, cbheapdestroy);
  }
 
@@ -339,3 +320,22 @@ diff --git a/third_party/fuchsia/repo/sdk/lib/fit/test/function_tests.cc b/third
 
  TEST(FunctionTests, null_constructors_are_constexpr) {
    EXPECT_EQ(kDefaultConstructed, nullptr);
+diff --git a/third_party/fuchsia/repo/src/lib/lazy_init/include/lib/lazy_init/internal/assert.h b/third_party/fuchsia/repo/src/lib/lazy_init/include/lib/lazy_init/internal/assert.h
+--- a/third_party/fuchsia/repo/src/lib/lazy_init/include/lib/lazy_init/internal/assert.h
++++ b/third_party/fuchsia/repo/src/lib/lazy_init/include/lib/lazy_init/internal/assert.h
+@@ -8,12 +8,14 @@
+ #ifndef SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_INTERNAL_ASSERT_H_
+ #define SRC_LIB_LAZY_INIT_INCLUDE_LIB_LAZY_INIT_INTERNAL_ASSERT_H_
+
++#include "pw_assert/assert.h"
++
+ namespace lazy_init {
+ namespace internal {
+
+ constexpr void Assert(bool condition) {
+   if (!condition) {
+-    __builtin_abort();
++    PW_ASSERT(false);
+   }
+ }
+
