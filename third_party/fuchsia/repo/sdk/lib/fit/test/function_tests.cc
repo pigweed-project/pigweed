@@ -59,8 +59,16 @@ struct EmptyFunction<R(Args...)> {
 };
 
 struct alignas(4 * alignof(void*)) LargeAlignedCallable {
-  void operator()() { calls += 1; }
+  explicit LargeAlignedCallable(uintptr_t* out_address = nullptr) : address_out(out_address) {}
 
+  void operator()() {
+    calls += 1;
+    if (address_out) {
+      *address_out = cpp20::bit_cast<uintptr_t>(this);
+    }
+  }
+
+  uintptr_t* address_out = nullptr;
   int8_t calls = 0;
 };
 
@@ -353,19 +361,6 @@ void closure() {
   // "empty std::function" assignment
   fmutinline = empty;
   EXPECT_FALSE(!!fmutinline);
-
-  // target access
-  ClosureFunction fslot;
-  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
-  fslot = SlotMachine{42};
-  fslot();
-  SlotMachine* fslottarget = fslot.template target<SlotMachine>();
-  EXPECT_EQ(43, fslottarget->value);
-  const SlotMachine* fslottargetconst =
-      const_cast<const ClosureFunction&>(fslot).template target<SlotMachine>();
-  EXPECT_EQ(fslottarget, fslottargetconst);
-  fslot = nullptr;
-  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
 }
 
 template <typename BinaryOpFunction>
@@ -548,19 +543,6 @@ void binary_op() {
   // "empty std::function" assignment
   fmutinline = empty;
   EXPECT_FALSE(!!fmutinline);
-
-  // target access
-  BinaryOpFunction fslot;
-  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
-  fslot = SlotMachine{42};
-  EXPECT_EQ(54, fslot(3, 4));
-  SlotMachine* fslottarget = fslot.template target<SlotMachine>();
-  EXPECT_EQ(54, fslottarget->value);
-  const SlotMachine* fslottargetconst =
-      const_cast<const BinaryOpFunction&>(fslot).template target<SlotMachine>();
-  EXPECT_EQ(fslottarget, fslottargetconst);
-  fslot = nullptr;
-  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
 }
 
 TEST(FunctionTests, sized_function_size_bounds) {
@@ -748,26 +730,6 @@ TEST(FunctionTests, sharing) {
   EXPECT_EQ(0, fheapdestroy);
   fheapshare1 = nullptr;
   EXPECT_EQ(1, fheapdestroy);
-
-  // target access now available after share()
-  using ClosureFunction = fit::function<Closure, HugeCallableSize>;
-  ClosureFunction fslot = SlotMachine{42};
-  fslot();
-  SlotMachine* fslottarget = fslot.template target<SlotMachine>();
-  EXPECT_EQ(43, fslottarget->value);
-
-  auto shared_fslot = fslot.share();
-  shared_fslot();
-  fslottarget = shared_fslot.template target<SlotMachine>();
-  EXPECT_EQ(44, fslottarget->value);
-  fslot();
-  EXPECT_EQ(45, fslottarget->value);
-  fslot = nullptr;
-  EXPECT_EQ(nullptr, fslot.template target<decltype(nullptr)>());
-  shared_fslot();
-  EXPECT_EQ(46, fslottarget->value);
-  shared_fslot = nullptr;
-  EXPECT_EQ(nullptr, shared_fslot.template target<decltype(nullptr)>());
 
 // These statements do not compile because inline functions cannot be shared
 #if 0
@@ -1040,32 +1002,28 @@ TEST(FunctionTests, null_constructors_are_constexpr) {
 TEST(FunctionTests, function_with_callable_aligned_larger_than_inline_size) {
   static_assert(sizeof(LargeAlignedCallable) > sizeof(void*), "Should not fit inline in function.");
 
-  fit::function<void(), sizeof(void*)> function = LargeAlignedCallable();
+  uintptr_t callable_address = 0;
+  fit::function<void(), sizeof(void*)> function = LargeAlignedCallable(&callable_address);
 
   static_assert(alignof(LargeAlignedCallable) > alignof(decltype(function)));
 
-  // Verify that the allocated target is aligned correctly.
-  LargeAlignedCallable* callable_ptr = function.target<LargeAlignedCallable>();
-  EXPECT_EQ(cpp20::bit_cast<uintptr_t>(callable_ptr) % alignof(LargeAlignedCallable), 0u);
-
   function();
-  EXPECT_EQ(callable_ptr->calls, 1);
+  EXPECT_NE(callable_address, 0u);
+  EXPECT_EQ(callable_address % alignof(LargeAlignedCallable), 0u);
 }
 
 TEST(FunctionTests, function_with_callable_aligned_larger_than_inline_size_with_custom_allocator) {
   static_assert(sizeof(LargeAlignedCallable) > sizeof(void*), "Should not fit inline in function.");
 
+  uintptr_t callable_address = 0;
   fit::function<void(), sizeof(void*), SingleObjectAllocator<std::byte>> function =
-      LargeAlignedCallable();
+      LargeAlignedCallable(&callable_address);
 
   static_assert(alignof(LargeAlignedCallable) > alignof(decltype(function)));
 
-  // Verify that the allocated target is aligned correctly.
-  LargeAlignedCallable* callable_ptr = function.target<LargeAlignedCallable>();
-  EXPECT_EQ(cpp20::bit_cast<uintptr_t>(callable_ptr) % alignof(LargeAlignedCallable), 0u);
-
   function();
-  EXPECT_EQ(callable_ptr->calls, 1);
+  EXPECT_NE(callable_address, 0u);
+  EXPECT_EQ(callable_address % alignof(LargeAlignedCallable), 0u);
 }
 
 // Test that function inline sizes round up to the nearest word.

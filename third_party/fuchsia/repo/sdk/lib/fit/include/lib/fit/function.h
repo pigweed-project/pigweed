@@ -194,10 +194,6 @@ class function_impl<inline_target_size, require_inline, Result(Args...), Allocat
   // function_base requires private access during share()
   friend base;
 
-  // supports target() for shared functions
-  friend const void* ::fit::internal::get_target_type_id<>(
-      const function_impl<inline_target_size, require_inline, Result(Args...), Allocator>&);
-
   template <typename U>
   using not_self_type = ::fit::internal::not_same_type<function_impl, U>;
 
@@ -303,9 +299,6 @@ class function_impl<inline_target_size, require_inline, Result(Args...), Allocat
   // Swaps the functions' targets.
   void swap(function_impl& other) { base::swap(other); }
 
-  // Returns a pointer to the function's target.
-  using base::target;
-
   // Returns true if the function has a non-empty target.
   using base::operator bool;
 
@@ -366,10 +359,6 @@ class callback_impl<inline_target_size, require_inline, Result(Args...), Allocat
 
   // function_base requires private access during share()
   friend base;
-
-  // supports target() for shared functions
-  friend const void* ::fit::internal::get_target_type_id<>(
-      const callback_impl<inline_target_size, require_inline, Result(Args...), Allocator>&);
 
   template <typename U>
   using not_self_type = ::fit::internal::not_same_type<callback_impl, U>;
@@ -451,11 +440,16 @@ class callback_impl<inline_target_size, require_inline, Result(Args...), Allocat
   // Swaps the callbacks' targets.
   void swap(callback_impl& other) { base::swap(other); }
 
-  // Returns a pointer to the callback's target.
-  using base::target;
-
   // Returns true if the callback has a non-empty target.
-  using base::operator bool;
+  explicit operator bool() const {
+    if constexpr (!require_inline) {
+      if (base::ops() == &base::template shared_target_type<callback_impl>::ops) {
+        return static_cast<bool>(
+            **static_cast<const std::shared_ptr<callback_impl>*>(base::bits()));
+      }
+    }
+    return base::operator bool();
+  }
 
   // Invokes the callback's target.
   // Aborts if the callback's target is empty.

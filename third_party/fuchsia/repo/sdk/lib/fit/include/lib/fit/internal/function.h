@@ -42,43 +42,31 @@ constexpr size_t RoundUpToWord(size_t value) { return RoundUpToMultiple(value, s
 // Splitting the common functions into base_target_ops allows all function_base instantiations to
 // share the same vtable for their null function instantiation, reducing code size.
 struct base_target_ops {
-  const void* (*target_type_id)(void* bits, const void* impl_ops);
-  void* (*get)(void* bits);
   void (*move)(void* from_bits, void* to_bits);
   void (*destroy)(void* bits);
 
  protected:
   // Aggregate initialization isn't supported with inheritance until C++17, so define a constructor.
-  constexpr base_target_ops(decltype(target_type_id) target_type_id_func, decltype(get) get_func,
-                            decltype(move) move_func, decltype(destroy) destroy_func)
-      : target_type_id(target_type_id_func),
-        get(get_func),
-        move(move_func),
-        destroy(destroy_func) {}
+  constexpr base_target_ops(decltype(move) move_func, decltype(destroy) destroy_func)
+      : move(move_func), destroy(destroy_func) {}
 };
 
 template <typename Result, typename... Args>
 struct target_ops final : public base_target_ops {
   Result (*invoke)(void* bits, Args... args);
 
-  constexpr target_ops(decltype(target_type_id) target_type_id_func, decltype(get) get_func,
-                       decltype(move) move_func, decltype(destroy) destroy_func,
+  constexpr target_ops(decltype(move) move_func, decltype(destroy) destroy_func,
                        decltype(invoke) invoke_func)
-      : base_target_ops(target_type_id_func, get_func, move_func, destroy_func),
-        invoke(invoke_func) {}
+      : base_target_ops(move_func, destroy_func), invoke(invoke_func) {}
 };
 
-static_assert(sizeof(target_ops<void>) == sizeof(void (*)()) * 5, "Unexpected target_ops padding");
+static_assert(sizeof(target_ops<void>) == sizeof(void (*)()) * 3, "Unexpected target_ops padding");
 
 template <typename Callable, bool is_inline, bool is_shared, typename Allocator, typename Result,
           typename... Args>
 struct target;
 
 inline void trivial_target_destroy(void* /*bits*/) {}
-
-inline const void* unshared_target_type_id(void* /*bits*/, const void* impl_ops) {
-  return impl_ops;
-}
 
 // vtable for nullptr (empty target function)
 
@@ -104,12 +92,10 @@ struct target<decltype(nullptr), /*is_inline=*/true, /*is_shared=*/false, Alloca
               Args...>
     final : public null_target<> {};
 
-inline void* null_target_get(void* /*bits*/) { return nullptr; }
 inline void null_target_move(void* /*from_bits*/, void* /*to_bits*/) {}
 
 template <typename Unused>
-constexpr target_ops<void> null_target<Unused>::ops = {&unshared_target_type_id, &null_target_get,
-                                                       &null_target_move, &trivial_target_destroy,
+constexpr target_ops<void> null_target<Unused>::ops = {&null_target_move, &trivial_target_destroy,
                                                        &null_target::invoke};
 
 // vtable for inline target function
@@ -160,13 +146,10 @@ struct target<Callable, /*is_inline=*/true, /*is_shared=*/false, Allocator, Resu
   }
 };
 
-inline void* inline_target_get(void* bits) { return bits; }
-
 template <typename Callable, typename Allocator, typename Result, typename... Args>
 constexpr target_ops<Result, Args...>
     target<Callable, /*is_inline=*/true, /*is_shared=*/false, Allocator, Result, Args...>::ops = {
-        &unshared_target_type_id, &inline_target_get, target::get_move_function(),
-        target::get_destroy_function(), &target::invoke};
+        target::get_move_function(), target::get_destroy_function(), &target::invoke};
 
 // vtable for pointer to target function
 
@@ -213,20 +196,12 @@ struct target<Callable, /*is_inline=*/false, /*is_shared=*/false, Allocator, Res
                 "must be able to deallocate the memory allocated by a different Allocator object.");
 };
 
-inline void* heap_target_get(void* bits) { return *static_cast<void**>(bits); }
-
 template <typename Callable, typename Allocator, typename Result, typename... Args>
 constexpr target_ops<Result, Args...>
     target<Callable, /*is_inline=*/false, /*is_shared=*/false, Allocator, Result, Args...>::ops = {
-        &unshared_target_type_id, &heap_target_get, &target::move, &target::destroy,
-        &target::invoke};
+        &target::move, &target::destroy, &target::invoke};
 
 // vtable for fit::function std::shared_ptr to target function
-
-template <typename SharedFunction>
-const void* get_target_type_id(const SharedFunction& function_or_callback) {
-  return function_or_callback.target_type_id();
-}
 
 // For this vtable,
 // Callable by definition will be either a fit::function or fit::callback
@@ -240,15 +215,6 @@ struct target<SharedFunction, /*is_inline=*/false, /*is_shared=*/true, Allocator
   static void copy_shared_ptr(void* from_bits, void* to_bits) {
     auto& from_shared_ptr = *static_cast<std::shared_ptr<SharedFunction>*>(from_bits);
     new (to_bits) std::shared_ptr<SharedFunction>(from_shared_ptr);
-  }
-  static const void* target_type_id(void* bits, const void* /*impl_ops*/) {
-    auto& function_or_callback = **static_cast<std::shared_ptr<SharedFunction>*>(bits);
-    return ::fit::internal::get_target_type_id(function_or_callback);
-  }
-  static void* get(void* bits) {
-    auto& function_or_callback = **static_cast<std::shared_ptr<SharedFunction>*>(bits);
-    return function_or_callback.template target<SharedFunction>(
-        /*check=*/false);  // void* will fail the check
   }
   static Result invoke(void* bits, Args... args) {
     auto& function_or_callback = **static_cast<std::shared_ptr<SharedFunction>*>(bits);
@@ -266,7 +232,7 @@ struct target<SharedFunction, /*is_inline=*/false, /*is_shared=*/true, Allocator
 template <typename SharedFunction, typename Allocator, typename Result, typename... Args>
 constexpr target_ops<Result, Args...> target<
     SharedFunction, /*is_inline=*/false, /*is_shared=*/true, Allocator, Result, Args...>::ops = {
-    &target::target_type_id, &target::get, &target::move, &target::destroy, &target::invoke};
+    &target::move, &target::destroy, &target::invoke};
 
 // Calculates the alignment to use for a function of the provided
 // inline_target_size. Some platforms use a large alignment for max_align_t, so
@@ -323,7 +289,7 @@ class alignas(FunctionAlignment(inline_target_size)) generic_function_base {
   ~generic_function_base() { destroy_target(); }
 
   // Returns true if the function has a non-empty target.
-  explicit operator bool() const { return ops_->get(bits_) != nullptr; }
+  explicit operator bool() const { return ops_ != &null_target<>::ops; }
 
   // Used by derived "impl" classes to implement operator=().
   // Assigns an empty target.
@@ -356,18 +322,11 @@ class alignas(FunctionAlignment(inline_target_size)) generic_function_base {
     temp_ops->move(temp_bits, other.bits_);
   }
 
-  // returns an opaque ID unique to the |Callable| type of the target.
-  // Used by check_target_type.
-  const void* target_type_id() const { return ops_->target_type_id(bits_, ops_); }
-
   // leaves target uninitialized
   void destroy_target() { ops_->destroy(bits_); }
 
   // assumes target is uninitialized
   void initialize_null_target() { ops_ = &null_target<>::ops; }
-
-  // Gets a pointer to the function context.
-  void* get() const { return ops_->get(bits_); }
 
   // Allow function_base to directly access bits_ and ops_ when needed.
   void* bits() const { return bits_; }
@@ -422,6 +381,10 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
                                                   FunctionAlignment(inline_target_size)),
                 "generic_function_base has unexpected padding and is not minimal in size");
 
+ public:
+  ~function_base() = default;
+
+ protected:
   template <typename Callable>
   using target_type = target<Callable, (sizeof(Callable) <= inline_target_size),
                              /*is_shared=*/false, Allocator, Result, Args...>;
@@ -430,11 +393,6 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
       target<SharedFunction, /*is_inline=*/false, /*is_shared=*/true, Allocator, Result, Args...>;
 
   using ops_type = const target_ops<Result, Args...>*;
-
- public:
-  ~function_base() = default;
-
- protected:
   using result_type = Result;
 
   constexpr function_base() = default;
@@ -451,32 +409,6 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
   }
 
   function_base(function_base&&) noexcept = default;
-
-  // Returns a pointer to the function's target.
-  // If |check| is true (the default), the function _may_ abort if the
-  // caller tries to assign the target to a varible of the wrong type. (This
-  // check is currently skipped for share()d objects.)
-  // Note the shared pointer vtable must set |check| to false to assign the
-  // target to |void*|.
-  template <typename Callable>
-  Callable* target(bool check = true) {
-    if (check)
-      check_target_type<Callable>();
-    return static_cast<Callable*>(base::get());
-  }
-
-  // Returns a pointer to the function's target (const version).
-  // If |check| is true (the default), the function _may_ abort if the
-  // caller tries to assign the target to a varible of the wrong type. (This
-  // check is currently skipped for share()d objects.)
-  // Note the shared pointer vtable must set |check| to false to assign the
-  // target to |void*|.
-  template <typename Callable>
-  const Callable* target(bool check = true) const {
-    if (check)
-      check_target_type<Callable>();
-    return static_cast<Callable*>(base::get());
-  }
 
   // Used by the derived "impl" classes to implement share().
   //
@@ -498,7 +430,7 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
   template <typename SharedFunction>
   void share_with(SharedFunction& copy) {
     static_assert(!require_inline, "Inline functions cannot be shared.");
-    if (base::get() != nullptr) {
+    if (*static_cast<SharedFunction*>(this)) {
       // Convert to a shared function if it isn't already.
       if (base::ops() != &shared_target_type<SharedFunction>::ops) {
         shared_target_type<SharedFunction>::initialize(
@@ -563,18 +495,6 @@ class function_base<inline_target_size, require_inline, Result(Args...), Allocat
     } else {
       base::set_ops(&target_type<DecayedCallable>::ops);
       target_type<DecayedCallable>::initialize(base::bits(), std::forward<Callable>(target));
-    }
-  }
-
-  // Called by target() if |check| is true.
-  // Checks the template parameter, usually inferred from the context of
-  // the call to target(), and aborts the program if it can determine that
-  // the Callable type is not compatible with the function's Result and Args.
-  template <typename Callable>
-  void check_target_type() const {
-    if (target_type<Callable>::ops.target_type_id(nullptr, &target_type<Callable>::ops) !=
-        base::target_type_id()) {
-      PW_ASSERT(false);
     }
   }
 };
