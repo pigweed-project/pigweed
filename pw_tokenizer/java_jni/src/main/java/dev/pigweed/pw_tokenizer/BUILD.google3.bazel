@@ -14,9 +14,10 @@
 
 # Java wrapper around pw_tokenizer's Detokenizer class.
 load("//java/com/google/devtools/staticanalysis/java/checker:build_defs.bzl", "android_library_with_nullness_check")
+load("//third_party/bazel_rules/rules_java/java:defs.bzl", "java_library")
 
 package(
-    default_applicable_licenses = ["//third_party/pigweed/pigweed:license"],
+    default_applicable_licenses = ["//third_party/pigweed:license"],
 )
 
 android_library_with_nullness_check(
@@ -26,13 +27,17 @@ android_library_with_nullness_check(
     deps = [
         "//third_party/java/android_libs/guava_jdk5",
         "//third_party/java/jsr305_annotations",
-        "//third_party/pigweed/pigweed/pw_tokenizer/java_jni/src/main/native/dev/pigweed/pw_tokenizer:native_android",
+        "//third_party/pigweed/pw_tokenizer/java_jni/src/main/native/dev/pigweed/pw_tokenizer:native_android",
     ],
 )
 
-# Provide non-Android alias for DetokenizerTest.java.
-alias(
+# Provide a non-Android version for host-side tests.
+java_library(
     name = "detokenizer",
-    actual = ":detokenizer_android",
-    visibility = ["//third_party/pigweed/pigweed/pw_tokenizer/java_jni/src/test/java/dev/pigweed/pw_tokenizer:__pkg__"],
+    srcs = ["Detokenizer.java"],
+    visibility = ["//third_party/pigweed/pw_tokenizer/java_jni/src/test/java/dev/pigweed/pw_tokenizer:__pkg__"],
+    deps = [
+        "//third_party/java/android_libs/guava_jdk5",
+        "//third_party/java/jsr305_annotations",
+    ],
 )

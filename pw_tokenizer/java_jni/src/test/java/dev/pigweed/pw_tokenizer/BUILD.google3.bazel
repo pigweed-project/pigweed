@@ -1,0 +1,68 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("//third_party/bazel_rules/rules_java/java:defs.bzl", "java_test")
+load("//third_party/pigweed/pw_build:compatibility.bzl", "incompatible_with_mcu")
+
+package(
+    default_applicable_licenses = ["//third_party/pigweed:license"],
+)
+
+java_test(
+    name = "DetokenizerTest",
+    size = "small",
+    srcs = ["DetokenizerTest.java"],
+    tags = [
+        # Sanitizers do not work properly with JNI. Test runs fail with linking
+        # errors for sanitizer-related functions.
+        "noasan",
+        "nomsan",
+        "notsan",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    test_class = "dev.pigweed.pw_tokenizer.DetokenizerTest",
+    deps = [
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+        "//third_party/pigweed/pw_tokenizer/java_jni/src/main/java/dev/pigweed/pw_tokenizer:detokenizer",
+        "//third_party/pigweed/pw_tokenizer/java_jni/src/main/native/dev/pigweed/pw_tokenizer:native",
+    ],
+)
+
+genrule(
+    name = "generate_data_driven_detokenize_test",
+    outs = ["DataDrivenDetokenizerTest.java"],
+    cmd = "$(location //third_party/pigweed/pw_tokenizer/py:data_driven_detokenize_test_generator) --generate-java-test $@",
+    tools = ["//third_party/pigweed/pw_tokenizer/py:data_driven_detokenize_test_generator"],
+    visibility = ["//visibility:private"],
+)
+
+java_test(
+    name = "DataDrivenDetokenizerTest",
+    size = "small",
+    srcs = [":generate_data_driven_detokenize_test"],
+    tags = [
+        "noasan",
+        "nomsan",
+        "notsan",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    test_class = "dev.pigweed.pw_tokenizer.DataDrivenDetokenizerTest",
+    deps = [
+        "//third_party/java/junit",
+        "//third_party/java/truth",
+        "//third_party/pigweed/pw_tokenizer/java_jni/src/main/java/dev/pigweed/pw_tokenizer:detokenizer",
+        "//third_party/pigweed/pw_tokenizer/java_jni/src/main/native/dev/pigweed/pw_tokenizer:native",
+    ],
+)
