@@ -1,5 +1,3 @@
-:html_theme.sidebar_secondary.remove:
-
 .. _docs-root:
 
 =======

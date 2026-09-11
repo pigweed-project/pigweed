@@ -14,46 +14,10 @@
 
 window.pw = {};
 
-// Miscellaneous fixes that are only applied when someone is locally
-// previewing the site or viewing the staging site.
-window.pw.dev = () => {
-  if (window.location.host === 'pigweed.dev') {
-    return;
-  }
-  // Fix the hard-coded C/C++ API reference links. By default they point
-  // to the production site. We want to update them to point to the local
-  // or staging site.
-  const selector = 'ul.nav a.reference.external';
-  const links = Array.from(document.querySelectorAll(selector));
-  const prefix = 'https://pigweed.dev/api/cc/';
-  links.forEach((link) => {
-    if (!link.href.startsWith(prefix)) {
-      return;
-    }
-    const target = link.href.replace(prefix, '');
-    let tokens = window.location.href.split('/');
-    switch (window.location.hostname) {
-      case 'localhost':
-      case '0.0.0.0':
-        link.href = link.href.replace(
-          'https://pigweed.dev',
-          window.location.origin,
-        );
-        break;
-      case 'storage.googleapis.com':
-        // Staging URLs look like this:
-        // https://storage.googleapis.com/pigweed-docs-try/8706711556001999761/index.html
-        // `tokens` already holds an array like this:
-        // ['https:', '', 'storage.googleapis.com', 'pigweed-docs-try', '8706711556001999761', 'index.html']
-        // We only need the first 5 tokens.
-        tokens.length = 5;
-        tokens.push('doxygen');
-        tokens = tokens.concat(target.split('/'));
-        link.href = tokens.join('/');
-        break;
-    }
-  });
-};
+// IMPORTANT: This script should ONLY contain JavaScript logic that ONLY
+// applies to the Sphinx subsite. Scripts that apply globally across Sphinx,
+// Rustdoc, and Doxygen should go into //docs/common/header.js
+// instead.
 
 window.pw.monkeyPatchSphinxSearchIndex = async () => {
   // eslint-disable-next-line no-undef
@@ -159,33 +123,6 @@ window.pw.monkeyPatchSphinxSearchIndex = async () => {
   Search.performSearch(query);
 };
 
-// Measure how much pigweed.dev visitors use the site's various navigation
-// aids: global nav, breadcrumbs, page nav, etc.
-window.pw.setUpNavigationAnalytics = () => {
-  const selectors = {
-    breadcrumbs: '.bd-breadcrumbs a',
-    global_nav: '.bd-header a',
-    main_content: '.bd-article a',
-    page_nav: '.bd-sidebar-secondary a',
-    prev_next: '.prev-next-footer a',
-    section_nav: '.bd-sidebar-primary a',
-  };
-  for (const [label, selector] of Object.entries(selectors)) {
-    const links = Array.from(document.querySelectorAll(selector));
-    links.forEach((link) => {
-      link.addEventListener('click', (e) => {
-        // eslint-disable-next-line no-undef
-        if (typeof window.gtag === 'function') {
-          const pw_href = link.href;
-          const pw_component = label;
-          // eslint-disable-next-line no-undef
-          gtag('event', 'pw_navigation', { pw_href, pw_component });
-        }
-      });
-    });
-  }
-};
-
 window.pw.setUpSearchAnalytics = () => {
   // Report search analytics when the user clicks a SERP link.
   const listen = (node) => {
@@ -239,7 +176,5 @@ window.addEventListener('DOMContentLoaded', () => {
   // HTML builder auto-inserts this metadata on every page.
   window.pw.root = document.documentElement.dataset.content_root;
   window.pw.monkeyPatchSphinxSearchIndex();
-  window.pw.setUpNavigationAnalytics();
   window.pw.setUpSearchAnalytics();
-  window.pw.dev();
 });

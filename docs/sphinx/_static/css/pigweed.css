@@ -66,7 +66,12 @@ figcaption {
   color: var(--pw-color-foreground-primary) !important;
 }
 
-h1,
+h1 {
+  margin: 0 0 1rem 0 !important;
+  font-family: var(--pw-font-headings);
+  font-weight: bold;
+}
+
 h2,
 h3,
 h4,
@@ -93,6 +98,12 @@ details.sd-dropdown {
 
 #search-results {
   overflow-y: hidden !important;
+}
+
+@media (min-width: 840px) {
+  .bd-article {
+    padding: 0 0 0 0.5rem !important;
+  }
 }
 
 /********** Dark mode styles ***********/

@@ -49,6 +49,7 @@ pw_rust_docs(
         "//pw_thread/rust:pw_thread",
         "//pw_rust/rust/pigweed:pigweed",
     ],
+    html_before_content = "header.html",
     rustdoc_flags = [
         "-Z",
         "unstable-options",

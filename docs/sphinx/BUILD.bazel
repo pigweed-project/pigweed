@@ -492,6 +492,7 @@ sphinx_docs(
         ":extensions",
         ":rust",
         ":static",
+        "//docs/common",
         "//docs/doxygen:html",
         "//docs/doxygen:xml",
     ],

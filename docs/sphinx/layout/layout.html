@@ -41,11 +41,21 @@ the License.
   {% endif %}
 {% endblock %}
 
-{% block extrahead %}
+{% block header %}
+  <!-- `pw-sentinel` will be replaced during site build
+       post-processing (`docs/common/__init__.py`) with the
+       compiled universal site header. -->
+  <!-- pw-sentinel -->
   {{ super() }}
-  <!-- Preconnect with Google Fonts to speed up font loading. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+{% endblock header %}
+
+{#
+   Override extrahead to prevent loading of the client-side Sphinx
+   search scripts that we no longer need.
+   https://github.com/pydata/pydata-sphinx-theme/blob/v0.18.0/src/pydata_sphinx_theme/theme/pydata_sphinx_theme/layout.html#L33
+#}
+{% block extrahead %}
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
 {% endblock extrahead %}
 
 {% block docs_main %}

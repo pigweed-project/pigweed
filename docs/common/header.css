@@ -1,0 +1,154 @@
+/*
+ * Copyright 2026 The Pigweed Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+/* ========== THEME & FONT VARIABLES ========== */
+:root {
+  /* Pigweed typography variables */
+  --pw-font-body: 'Noto Sans', sans-serif;
+  --pw-font-code: 'Roboto Mono', monospace;
+  --pw-font-headings: 'Lato', sans-serif;
+}
+
+body {
+  margin: 0;
+  padding-top: 64px !important;
+  box-sizing: border-box;
+  min-height: 100vh;
+}
+
+/* ========== TOP HEADER BAR LAYOUT ========== */
+#pw-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 64px;
+  box-sizing: border-box;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--pw-color-background-secondary);
+  color: var(--pw-color-foreground-primary);
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--pf-border);
+  font-family: var(--pw-font-body);
+}
+
+/* Brand container: menu toggle button, logo, and site title. */
+#pw-header-brand {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+
+  a,
+  a:visited,
+  a:hover,
+  a:active {
+    color: var(--pw-color-foreground-primary);
+    font-family: var(--pw-font-headings);
+    font-weight: bold;
+    font-style: italic;
+    font-size: 24px;
+    margin: 0 !important;
+    padding: 0;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  img {
+    height: 100%;
+    width: auto;
+  }
+}
+
+/* Tools container: action buttons such as search and the theme selector. */
+#pw-header-tools {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ========== SPHINX (PYDATA THEME) INTEGRATION ========== */
+#pst-header {
+  display: none !important;
+}
+
+/* ========== RUSTDOC SUBSITE INTEGRATION ========== */
+body.rustdoc,
+body:has(> nav.sidebar) {
+  display: block !important;
+}
+
+body.rustdoc > nav.sidebar,
+body.rustdoc > .sidebar,
+body.rustdoc > .sidebar-resizer,
+body:has(> nav.sidebar) > nav.sidebar,
+body:has(> nav.sidebar) > .sidebar,
+body:has(> nav.sidebar) > .sidebar-resizer {
+  display: none !important;
+}
+
+/* Position rustdoc's topbar directly below the 64px Pigweed header. */
+rustdoc-topbar {
+  position: sticky !important;
+  top: 64px !important;
+  z-index: 10 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Hide the default rustdoc sidebar toggle since navigation is handled by
+   Pigweed. */
+rustdoc-topbar .sidebar-menu-toggle {
+  display: none !important;
+}
+
+body.rustdoc > main,
+body:has(> nav.sidebar) > main {
+  width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  padding: 20px 40px !important;
+}
+
+@media (max-width: 839px) {
+  body.rustdoc > main,
+  body:has(> nav.sidebar) > main {
+    padding: 16px !important;
+  }
+}
+
+/* ========== DOXYGEN SUBSITE INTEGRATION ========== */
+#side-nav,
+#splitbar,
+#navrow1 {
+  display: none !important;
+}
+
+#doc-content {
+  margin-left: 0 !important;
+  height: calc(100vh - 64px) !important;
+  width: 100% !important;
+}
+
+#nav-path {
+  margin-left: 0 !important;
+}

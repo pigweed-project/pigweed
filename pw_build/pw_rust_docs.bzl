@@ -50,6 +50,11 @@ def _pw_rust_docs_impl(ctx):
             "{}={}".format(crate_info.name, crate_info.output.path),
         ]
         rustdoc_flags.extend(ctx.attr.rustdoc_flags)
+        if getattr(ctx.file, "html_before_content", None):
+            rustdoc_flags.extend([
+                "--html-before-content",
+                ctx.file.html_before_content.path,
+            ])
 
         action = rustdoc_compile_action(
             ctx = ctx,

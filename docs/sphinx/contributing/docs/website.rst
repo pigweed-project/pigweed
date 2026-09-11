@@ -6,8 +6,54 @@ Website updates
 .. _Sphinx: https://www.sphinx-doc.org
 
 This page discusses how to make frontend and backend website changes
-to ``pigweed.dev``, Pigweed's main documentation website, and how to
-customize `Sphinx`_, the website generator that powers ``pigweed.dev``.
+to ``pigweed.dev``, Pigweed's main documentation website.
+
+.. _contrib-docs-website-overview:
+
+--------
+Overview
+--------
+.. _Doxygen: https://www.doxygen.nl
+.. _rustdoc: https://doc.rust-lang.org/rustdoc/
+.. _Sphinx: https://www.sphinx-doc.org
+.. inclusive-language: ignore
+.. _extensions: https://www.sphinx-doc.org/en/master/development/tutorials/extending_build.html
+
+The key thing to understand is that ``pigweed.dev`` is actually 3 completely
+separate documentation websites combined together. The C/C++ API reference is
+generated with `Doxygen`_. The Rust API reference is generated with `rustdoc`_.
+Everything else is generated with `Sphinx`_. We use Bazel to ensure that the
+rustdoc and Doxygen builds finish before the Sphinx build and are available as
+inputs to Sphinx. We then use Sphinx `extensions`_ to glue the 3 sites together
+into one cohesive whole.
+
+.. _contrib-docs-website-overview-build:
+
+Life of a docs build
+====================
+A brief explanation of what happens when you run ``bazelisk build //docs``:
+
+#. Bazel resolves the ``//docs`` alias to ``//docs/sphinx:docs`` and attempts
+   to build that target. I.e. it attempts to run the Sphinx build.
+
+#. Bazel detects that it must actually run the Doxygen and rustdoc builds first
+   because the ``//docs/sphinx:docs`` target lists  ``//docs/doxygen:html`` and
+   ``//pw_rust:docs`` as ``deps``. When these targets finish building, the
+   complete Doxygen and rustdoc subsites are essentially provided as inputs to
+   the Sphinx build.
+
+#. The Sphinx build runs. Sphinx invokes our extensions. These extensions
+   inspect and mutate Doxygen, rustdoc, and Sphinx information in order to glue
+   the 3 subsites together.
+
+.. _contrib-docs-website-overview-deploy:
+
+Docs deployments
+================
+How do docs updates get deployed to ``pigweed.dev``? When a new commit
+merges, we have a CI pipeline that runs ``bazelisk build //docs`` and uploads
+the built site to a Google Cloud Storage bucket. A Google App Engine server
+runs the production site. All of the docs deployment workflow is closed source.
 
 .. _contrib-docs-website-images:
 
@@ -196,3 +242,43 @@ upstream Pigweed repo. It is passed through the environment like this:
 Passing the ID through the environment helps us ensure that the production
 ID is only used when someone views the docs from the production domain
 (``pigweed.dev``).
+
+.. _contrib-docs-website-header:
+
+----------------
+Universal header
+----------------
+As mentioned in :ref:`contrib-docs-website-overview`, ``pigweed.dev`` is
+actually 3 separate sites glued together: Sphinx, rustdoc, and Doxygen. Yet
+as you browse the website there is a consistent header at the top of all pages.
+How does that work?
+
+It's essentially postprocessing. We inject an HTML comment
+(``<!-- pw-sentinel -->``) into every page. At the end of the Sphinx build, one
+of our Sphinx extensions replaces this sentinel comment with the header HTML,
+CSS, and JS. We also have to override a lot of the default Doxygen and rustdoc
+CSS styling in order to make our custom header look correct on those subsites.
+All of the header customization code is located at ``//docs/common/header.*``.
+
+.. _contrib-docs-website-url-rewriting:
+
+Client-side URL rewriting
+=========================
+``pigweed.dev`` documentation is published in various deployment environments:
+
+* Production site: Rooted at ``https://pigweed.dev/``
+* Staging builds: Rooted at arbitrary subpaths (e.g.
+  ``https://storage.googleapis.com/pigweed-docs-try/8673174856411998625/index.html``)
+* Local preview servers: Rooted at custom ports or local filesystem paths (e.g.
+  ``http://localhost:8000/`` or ``file:///path/to/docs/out/``)
+
+Because navigation links cannot assume that the root of the website is
+always ``/`` or ``/index.html``, absolute links like
+``https://pigweed.dev/pw_string/`` would break staging and local preview
+workflows by navigating users away to the production site.
+
+To solve this, the ``<pw-header>`` Web Component dynamically inspects the
+current document's relative root path (derived from Sphinx's
+``DOCUMENT_NAME`` or ``data-content_root`` attribute) and rewrites all
+top-level header URLs on page load so that links resolve relative to the
+active server's root.

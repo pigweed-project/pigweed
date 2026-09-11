@@ -22,8 +22,17 @@ the License.
 <meta http-equiv="X-UA-Compatible" content="IE=11"/>
 <meta name="generator" content="Doxygen $doxygenversion"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<!-- `doxygen-site-root` provides the relative path from the current Doxygen
+     page back to the main site root (e.g. `../../` for `api/cc/`). The
+     universal header/nav JS component (`getSiteRootPath()` in
+     `docs/common/header.js`) uses this to rewrite production URLs to relative
+     paths on local/staging builds. -->
+<meta name="doxygen-site-root" content="../../$relpath^"/>
 <link rel="icon" href="https://www.gstatic.com/pigweed/pw_logo.ico"/>
 <!--BEGIN PROJECT_NAME--><title>$title — $projectname $projectbrief</title><!--END PROJECT_NAME-->
+<!-- HTML comments of the form 'BEGIN SECTION' and 'END SECTION' are Doxygen
+     template sentinels. Doxygen evaluates them against Doxyfile settings
+     during generation, including or stripping the enclosed HTML blocks. -->
 <!--BEGIN DISABLE_INDEX-->
   <!--BEGIN FULL_SIDEBAR-->
 <script type="text/javascript">var page_layout=1;</script>
@@ -47,16 +56,13 @@ $search
 $mathjax
 $darkmode
 <link href="$relpath^$stylesheet" rel="stylesheet" type="text/css" />
-<!-- Preconnect to speed up font loading. -->
-<link href="https://fonts.googleapis.com" rel="preconnect" crossorigin>
-<link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
-<!-- Load Pigweed's fonts. -->
-<link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet" type="text/css"/>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" type="text/css"/>
-<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap" rel="stylesheet" type="text/css"/>
 $extrastylesheet
 </head>
 <body>
+<!-- `pw-sentinel` will be replaced during site build
+     post-processing (`docs/common/__init__.py`) with the
+     compiled universal site header. -->
+<!-- pw-sentinel -->
 <!--BEGIN DISABLE_INDEX-->
   <!--BEGIN FULL_SIDEBAR-->
 <div id="side-nav" class="ui-resizable side-nav-resizable"><!-- do not remove this div, it is closed by doxygen! -->
@@ -66,43 +72,20 @@ $extrastylesheet
 <div id="top"><!-- do not remove this div, it is closed by doxygen! -->
 
 <!--BEGIN TITLEAREA-->
-<div id="titlearea">
-<table cellspacing="0" cellpadding="0">
- <tbody>
- <tr id="projectrow">
-  <!-- We hardcode the logo here because setting it via Doxygen's PROJECT_LOGO
-       option does not work. PROJECT_LOGO expects the logo file to be local
-       whereas we fetch ours over a CDN. -->
-  <td id="projectlogo"><a href="../index.html"><img alt="Logo" src="https://www.gstatic.com/pigweed/pw_logo.svg"/></a></td>
   <!--BEGIN PROJECT_NAME-->
-  <td id="projectalign">
-   <div id="projectname"><a href="../index.html">$projectname</a><!--BEGIN PROJECT_NUMBER--><span id="projectnumber">&#160;$projectnumber</span><!--END PROJECT_NUMBER-->
-   </div>
-   <!--BEGIN PROJECT_BRIEF--><div id="projectbrief">$projectbrief</div><!--END PROJECT_BRIEF-->
-  </td>
+   <!--BEGIN PROJECT_NUMBER--><!--END PROJECT_NUMBER-->
+   <!--BEGIN PROJECT_BRIEF--><!--END PROJECT_BRIEF-->
   <!--END PROJECT_NAME-->
   <!--BEGIN !PROJECT_NAME-->
-   <!--BEGIN PROJECT_BRIEF-->
-    <td>
-    <div id="projectbrief">$projectbrief</div>
-    </td>
-   <!--END PROJECT_BRIEF-->
+   <!--BEGIN PROJECT_BRIEF--><!--END PROJECT_BRIEF-->
   <!--END !PROJECT_NAME-->
   <!--BEGIN DISABLE_INDEX-->
    <!--BEGIN SEARCHENGINE-->
-     <!--BEGIN !FULL_SIDEBAR-->
-    <td>$searchbox</td>
-     <!--END !FULL_SIDEBAR-->
+     <!--BEGIN !FULL_SIDEBAR--><!--END !FULL_SIDEBAR-->
    <!--END SEARCHENGINE-->
   <!--END DISABLE_INDEX-->
- </tr>
   <!--BEGIN SEARCHENGINE-->
-   <!--BEGIN FULL_SIDEBAR-->
-   <tr><td colspan="2">$searchbox</td></tr>
-   <!--END FULL_SIDEBAR-->
+   <!--BEGIN FULL_SIDEBAR--><!--END FULL_SIDEBAR-->
   <!--END SEARCHENGINE-->
- </tbody>
-</table>
-</div>
 <!--END TITLEAREA-->
 <!-- end header part -->

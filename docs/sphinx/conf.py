@@ -69,7 +69,8 @@ pygments_monkeypatch_style('pigweed_code_light_style', PigweedCodeLightStyle)
 # //docs/sphinx/_extensions must be added to the system path so that Sphinx
 # knows where to find the Sphinx extensions that have been custom-built
 # for pigweed.dev.
-sys.path.append(str(Path('_extensions').resolve()))
+_SPHINX_DIR = Path(__file__).parent
+sys.path.append(str(_SPHINX_DIR / '_extensions'))
 
 extensions = [
     'bug',  # Custom extension to normalize Pigweed bug links.
@@ -77,6 +78,7 @@ extensions = [
     'cs',
     'module_metadata',
     'modules_index',
+    'common',
     'pigweed_live',
     'pw_docgen.sphinx.google_analytics',  # Enables optional Google Analytics
     'seed_metadata',
@@ -132,15 +134,6 @@ html_static_path = ['_static']
 # or fully qualified paths (eg. https://...)
 html_css_files = [
     'css/pigweed.css',
-    # We could potentially merge the Google Fonts stylesheets into a single network
-    # request but we already preconnect with the service in //docs/sphinx/layout/layout.html
-    # so the performance impact of keeping these as 3 separate calls should be
-    # negligible.
-    'https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap',
-    'https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap',
-    'https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap',
-    # FontAwesome for mermaid and sphinx-design
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
 ]
 
 html_js_files = [
@@ -163,34 +156,18 @@ html_extra_path = [
 ]
 
 html_theme_options = {
-    # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/header-links.html#navigation-bar-dropdown-links
-    'header_links_before_dropdown': 6,
-    # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/header-links.html#icon-links
-    'icon_links': [
-        {
-            'name': 'Source code',
-            'url': 'https://cs.opensource.google/pigweed/pigweed/',
-            'icon': 'fa-solid fa-code',
-        },
-        {
-            'name': 'Issue tracker',
-            'url': 'https://pwbug.dev',
-            'icon': 'fa-solid fa-bug',
-        },
-        {
-            'name': 'Discord',
-            'url': 'https://discord.com/channels/691686718377558037/691686718377558040',
-            'icon': 'fa-brands fa-discord',
-        },
-    ],
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/branding.html
     'logo': {
         'text': 'Pigweed',
         'image_light': 'https://www.gstatic.com/pigweed/pw_logo.svg',
         'image_dark': 'https://www.gstatic.com/pigweed/pw_logo.svg',
     },
-    # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/layout.html#configure-the-navbar-center-alignment
-    'navbar_align': 'right',
+    # Hide default PyData Sphinx Theme navbar elements. Top navigation is now
+    # provided by //docs/common.
+    'navbar_center': None,
+    'navbar_end': None,
+    'navbar_persistent': None,
+    'navbar_start': None,
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/styling.html#configure-pygments-theme
     'pygments_light_style': 'pigweed_code_light_style',
     'pygments_dark_style': 'pigweed_code_style',
