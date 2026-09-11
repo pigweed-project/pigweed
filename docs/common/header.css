@@ -168,6 +168,59 @@ pagefind-modal-trigger .pf-trigger-icon {
   }
 }
 
+/* Theme switcher component within the header bar. Root-level theme CSS
+ * variables that transcend the header live in theme.css. */
+pw-theme {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+  background-color: var(--pw-color-background-primary);
+  border: 1px solid var(--pf-border);
+  border-radius: 20px;
+  padding: 2px;
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.pw-theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--pf-text-muted);
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+  line-height: 1;
+
+  .material-symbols-outlined {
+    font-size: 20px;
+    display: block;
+    line-height: 1;
+    user-select: none;
+  }
+
+  &:hover {
+    color: var(--pw-color-foreground-primary);
+    background-color: var(--pf-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-outline-focus);
+  }
+
+  &.active {
+    background-color: var(--pw-color-background-code);
+    color: var(--pw-color-link);
+  }
+}
+
 /* ========== SPHINX (PYDATA THEME) INTEGRATION ========== */
 #pst-header {
   display: none !important;

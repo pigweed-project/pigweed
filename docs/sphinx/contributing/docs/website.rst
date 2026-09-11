@@ -332,3 +332,17 @@ current document's relative root path (derived from Sphinx's
 ``DOCUMENT_NAME`` or ``data-content_root`` attribute) and rewrites all
 top-level header URLs on page load so that links resolve relative to the
 active server's root.
+
+.. _contrib-docs-website-theme:
+
+--------------
+Theme selector
+--------------
+The universal site header includes a light/dark theme switcher component
+(``<pw-theme>``).
+
+The theme selector component is defined in ``//docs/common/header.js`` and
+``//docs/common/header.css``, with root-level color scheme variables defined in
+``//docs/common/theme.css``. It automatically syncs with the user's operating
+system color scheme preference and persists user selections in
+``localStorage``.

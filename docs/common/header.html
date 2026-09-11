@@ -23,7 +23,7 @@ the License.
 <link rel="stylesheet" type="text/css"
   href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap"/>
 <link rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=search" />
+  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=dark_mode,light_mode,search" />
 <style>
 {{ style }}
 </style>
@@ -48,6 +48,22 @@ the License.
         search
       </span>
     </button>
+    <pw-theme role="radiogroup" aria-label="Theme selection">
+      <button type="button" class="pw-theme-btn"
+        data-theme-val="light" aria-label="Light mode"
+        title="Light mode" role="radio" aria-checked="false">
+        <span class="material-symbols-outlined">
+          light_mode
+        </span>
+      </button>
+      <button type="button" class="pw-theme-btn"
+        data-theme-val="dark" aria-label="Dark mode"
+        title="Dark mode" role="radio" aria-checked="false">
+        <span class="material-symbols-outlined">
+          dark_mode
+        </span>
+      </button>
+    </pw-theme>
   </div>
 </pw-header>
 <pagefind-modal>

@@ -206,3 +206,66 @@ function getSiteRootPath() {
 }
 
 customElements.define('pw-header', PwHeader);
+
+/**
+ * Custom element for managing theme preferences (light/dark mode) within the
+ * header. Root-level theme variables that transcend the header live in
+ * theme.css.
+ */
+class PwTheme extends HTMLElement {
+  connectedCallback() {
+    this.buttons = this.querySelectorAll('.pw-theme-btn');
+    if (!this.buttons.length) return;
+
+    const savedTheme =
+      localStorage.getItem('theme') ||
+      localStorage.getItem('mode') ||
+      document.documentElement.getAttribute('data-theme') ||
+      document.documentElement.getAttribute('data-mode') ||
+      (document.documentElement.classList.contains('dark-mode')
+        ? 'dark'
+        : '') ||
+      (document.documentElement.classList.contains('light-mode')
+        ? 'light'
+        : '') ||
+      'dark';
+
+    this.setTheme(savedTheme);
+
+    this.buttons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const theme = btn.getAttribute('data-theme-val');
+        if (theme) {
+          this.setTheme(theme);
+        }
+      });
+    });
+  }
+
+  setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-mode', theme);
+    document.documentElement.classList.remove('light-mode', 'dark-mode');
+    document.documentElement.classList.add(`${theme}-mode`);
+
+    this.buttons.forEach((btn) => {
+      const isSelected = btn.getAttribute('data-theme-val') === theme;
+      if (isSelected) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-checked', 'true');
+      } else {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-checked', 'false');
+      }
+    });
+
+    try {
+      localStorage.setItem('theme', theme);
+      localStorage.setItem('mode', theme);
+    } catch (e) {
+      // localStorage might be disabled or unavailable in some contexts
+    }
+  }
+}
+
+customElements.define('pw-theme', PwTheme);

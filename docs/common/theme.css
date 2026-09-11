@@ -1,0 +1,72 @@
+/*
+ * Copyright 2026 The Pigweed Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+/* ========== ROOT THEME VARIABLES ========== */
+/* This file contains root-level CSS custom property definitions for dark and
+ * light color schemes that transcend the header and affect the entire site.
+ * Styles for the theme switcher UI component located within the header bar live
+ * in header.css. */
+html[data-theme='dark'] {
+  --pw-color-link: #2b8cee;
+  --pw-color-link-inactive: #9ca0a5;
+  --pw-color-background-primary: #1c2128;
+  --pw-color-background-secondary: #22272e;
+  --pw-color-background-code: #2d333b;
+  --pw-color-foreground-primary: #ffffffcc;
+
+  --pf-text-secondary: var(--pw-color-foreground-primary) !important;
+  --pf-text-muted: #949494;
+  --pf-border: #333;
+  --pf-border-focus: #555;
+  --pf-skeleton: #2a2a2a;
+  --pf-skeleton-shine: #333;
+  --pf-mark: #e5e5e5;
+  --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+  --pf-outline-focus: #58a6ff;
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --pf-error-bg: #2a1a1a;
+  --pf-error-border: #5c2828;
+  --pf-error-text: #f87171;
+  --pf-error-text-secondary: #ef4444;
+}
+
+html[data-theme='light'] {
+  --pw-color-link: #2a5adf;
+  --pw-color-link-inactive: #9ca0a5;
+  --pw-color-background-primary: #ffffff;
+  --pw-color-background-secondary: #f8f9fb;
+  --pw-color-background-code: #e8ecef;
+  --pw-color-foreground-primary: #222832;
+
+  --pf-text-secondary: var(--pw-color-foreground-primary) !important;
+  --pf-text-muted: #767676;
+  --pf-border: #e0e0e0;
+  --pf-border-focus: #999;
+  --pf-skeleton: #eee;
+  --pf-skeleton-shine: #f5f5f5;
+  --pf-mark: #1a1a1a;
+  --pf-scroll-shadow: rgba(0, 0, 0, 0.08);
+  --pf-outline-focus: #0969da;
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.2);
+  --pf-error-bg: #fef2f2;
+  --pf-error-border: #fecaca;
+  --pf-error-text: #dc2626;
+  --pf-error-text-secondary: #b91c1c;
+}
