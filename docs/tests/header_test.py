@@ -143,6 +143,54 @@ class HeaderTest(unittest.TestCase):
 
             browser.close()
 
+    def test_reference_page_mobile_nav(self):
+        """Verifies that the reference landing page (api/index.html) mobile
+        drawer is not blank and renders the full site navigation."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 375, "height": 667}
+            )
+            page = context.new_page()
+
+            page.goto(
+                self.server.url_for("api/index.html"),
+                wait_until="domcontentloaded",
+            )
+            menu_btn = page.locator("#pw-header-menu")
+            menu_btn.wait_for(state="visible", timeout=5000)
+            self.assertEqual(menu_btn.get_attribute("aria-expanded"), "false")
+
+            # Click hamburger button to open drawer
+            menu_btn.click()
+            self.assertEqual(menu_btn.get_attribute("aria-expanded"), "true")
+
+            sidebar = page.locator(".bd-sidebar-primary")
+            sidebar.wait_for(state="visible", timeout=5000)
+
+            # Check that pw-site-nav is visible and contains navigation links
+            site_nav = sidebar.locator(".pw-site-nav")
+            site_nav.wait_for(state="visible", timeout=5000)
+            nav_links = site_nav.locator("a")
+            self.assertGreater(nav_links.count(), 0)
+
+            # Verify active link for Reference page
+            active_link = site_nav.locator("a[aria-current='page']")
+            active_link.wait_for(state="visible", timeout=5000)
+            self.assertIn("Reference", active_link.inner_text())
+
+            # Click backdrop to close drawer
+            backdrop = page.locator("#pw-nav-backdrop")
+            backdrop.click(force=True)
+            self.assertEqual(menu_btn.get_attribute("aria-expanded"), "false")
+
+            browser.close()
+
     def test_doxygen_mobile_nav_press_and_scroll(self):
         """Verifies Doxygen navigation drawer on mobile supports clicking
         tree links and scrolling."""
@@ -517,79 +565,6 @@ class HeaderTest(unittest.TestCase):
 
             browser.close()
 
-    def test_sidebar_api_links_rewritten(self):
-        """Verifies that links inside the primary sidebar (such as C/C++ API
-        references) have absolute pigweed.dev URLs rewritten to relative
-        paths."""
-        chromium_bin = get_chromium_executable()
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                executable_path=chromium_bin,
-                headless=True,
-            )
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 800}
-            )
-            page = context.new_page()
-
-            page.goto(
-                self.server.url_for("pw_analog/docs.html"),
-                wait_until="domcontentloaded",
-            )
-
-            # Find C/C++ API reference link in #pst-primary-sidebar / .bd-sidebar-primary
-            sidebar_link = page.locator(
-                '.bd-sidebar-primary a[href*="group__pw__analog"]'
-            ).first
-            sidebar_link.wait_for(state="attached", timeout=5000)
-
-            href = sidebar_link.get_attribute("href")
-            self.assertIsNotNone(href)
-            self.assertFalse(
-                href.startswith("https://pigweed.dev/"),
-                f"Sidebar link href '{href}' should not start with https://pigweed.dev/",
-            )
-            self.assertTrue(
-                href.startswith("../") or href.startswith("./"),
-                f"Sidebar link href '{href}' should be rewritten to relative path",
-            )
-
-            browser.close()
-
-    def test_rustdoc_main_content_link_rewritten(self):
-        """Verifies that links within main content on Rustdoc pages (e.g.
-        'Pigweed Homepage' on rustdoc/pigweed/index.html) have absolute
-        pigweed.dev URLs rewritten to relative paths."""
-        chromium_bin = get_chromium_executable()
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                executable_path=chromium_bin,
-                headless=True,
-            )
-            context = browser.new_context(
-                viewport={"width": 1280, "height": 800}
-            )
-            page = context.new_page()
-
-            page.goto(
-                self.server.url_for("rustdoc/pigweed/index.html"),
-                wait_until="domcontentloaded",
-            )
-
-            # Find 'Pigweed Homepage' link within main content
-            link = page.locator('main a:has-text("Pigweed Homepage")').first
-            link.wait_for(state="attached", timeout=5000)
-
-            href = link.get_attribute("href")
-            self.assertIsNotNone(href)
-            self.assertFalse(
-                href.startswith("https://pigweed.dev/"),
-                f"Rustdoc main content link href '{href}' should not start with https://pigweed.dev/",
-            )
-            browser.close()
-
     def test_sphinx_sitewide_nav_expanded_and_scrolled_on_mobile(self):
         """Verifies that on mobile, the hamburger menu opens the sitewide
         navigation on Sphinx pages, expands ancestors for nested pages, and
@@ -736,6 +711,165 @@ class HeaderTest(unittest.TestCase):
             # Verify hamburger menu has returned to original closed icon
             self.assertEqual(menu_btn.get_attribute("aria-expanded"), "false")
             self.assertEqual(icon.inner_text().strip(), "menu")
+
+            browser.close()
+
+    def test_universal_skip_link(self):
+        """Verifies universal skip link presence and behavior across Sphinx,
+        Rustdoc, and Doxygen."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            pages_to_test = [
+                ("pw_bytes/docs.html", "Sphinx", "#main-content"),
+                ("rustdoc/pigweed/index.html", "Rustdoc", "#main-content"),
+                ("api/cc/group__pw__bytes.html", "Doxygen", "#doc-content"),
+                ("api/index.html", "Reference", "#main-content"),
+            ]
+
+            for path, name, expected_target in pages_to_test:
+                context = browser.new_context(
+                    viewport={"width": 1280, "height": 800}
+                )
+                page = context.new_page()
+                page.goto(
+                    self.server.url_for(path),
+                    wait_until="domcontentloaded",
+                )
+
+                # Verify #pw-skip-link exists and targets the engine's content container
+                skip_link = page.locator("#pw-skip-link")
+                self.assertEqual(
+                    skip_link.count(),
+                    1,
+                    f"#pw-skip-link should exist on {name}",
+                )
+                self.assertEqual(
+                    skip_link.get_attribute("href"),
+                    expected_target,
+                    f"#pw-skip-link href on {name} should be {expected_target}",
+                )
+                self.assertEqual(
+                    skip_link.inner_text().strip(), "Skip to main content"
+                )
+
+                # Verify native skip links are suppressed
+                pst_skip = page.locator("#pst-skip-link")
+                if pst_skip.count() > 0:
+                    self.assertFalse(
+                        pst_skip.is_visible(),
+                        f"#pst-skip-link should be hidden on {name}",
+                    )
+                rust_skip = page.locator(".skip-main-content")
+                if rust_skip.count() > 0:
+                    self.assertFalse(
+                        rust_skip.is_visible(),
+                        f".skip-main-content should be hidden on {name}",
+                    )
+
+                # Verify skip link target container exists
+                target_locator = page.locator(expected_target)
+                self.assertTrue(
+                    target_locator.count() > 0,
+                    f"{expected_target} target container should exist on {name}",
+                )
+
+                # Tabbing initially from top of document focuses #pw-skip-link
+                page.keyboard.press("Tab")
+                focused_id = page.evaluate("document.activeElement.id")
+                self.assertEqual(
+                    focused_id,
+                    "pw-skip-link",
+                    f"First focused element on {name} should be #pw-skip-link, got {focused_id}",
+                )
+
+                # Activating the skip link moves focus to the target content container
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(100)
+
+                if name == "Rustdoc":
+                    # Verify #main-content does not have a yellow target background
+                    bg_color = page.evaluate(
+                        "() => window.getComputedStyle(document.querySelector('#main-content')).backgroundColor"
+                    )
+                    self.assertIn(
+                        bg_color,
+                        ("rgba(0, 0, 0, 0)", "transparent"),
+                        f"Rustdoc main content should not have a target highlight background, got {bg_color}",
+                    )
+
+                # Pressing Tab after skip link should focus inside content, not #pw-header
+                page.keyboard.press("Tab")
+                is_inside_header = page.evaluate(
+                    "() => document.querySelector('#pw-header').contains(document.activeElement)"
+                )
+                self.assertFalse(
+                    is_inside_header,
+                    f"After using skip link on {name}, Tab should focus content, not header",
+                )
+
+                context.close()
+
+            browser.close()
+
+    def test_nav_popover_escape_dismiss(self):
+        """Verifies that dropdown popovers opened via keyboard focus can be
+        closed with Escape and that subsequent Tab moves to the next header item.
+        """
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("pw_bytes/docs.html"),
+                wait_until="domcontentloaded",
+            )
+
+            # Find nav item with dropdown popover
+            item = page.locator(".pw-nav-item:has(.pw-nav-popover)").first
+            trigger = item.locator(".pw-nav-link.has-children")
+            popover = item.locator(".pw-nav-popover")
+
+            trigger.focus()
+            page.wait_for_timeout(100)
+            self.assertEqual(trigger.get_attribute("aria-expanded"), "true")
+            self.assertTrue(popover.is_visible())
+
+            # Press Escape to dismiss popover
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(100)
+            self.assertEqual(trigger.get_attribute("aria-expanded"), "false")
+            self.assertFalse(popover.is_visible())
+
+            # Focus should remain on trigger
+            is_trigger_focused = page.evaluate(
+                "() => document.activeElement === document.querySelector('.pw-nav-item:has(.pw-nav-popover) .pw-nav-link.has-children')"
+            )
+            self.assertTrue(
+                is_trigger_focused,
+                "Focus should return to trigger link after pressing Escape",
+            )
+
+            # Tab should skip all popover links and advance to next nav item
+            page.keyboard.press("Tab")
+            is_inside_popover = page.evaluate(
+                "() => document.querySelector('.pw-nav-popover').contains(document.activeElement)"
+            )
+            self.assertFalse(
+                is_inside_popover,
+                "Next focused element should not be inside the dismissed popover",
+            )
 
             browser.close()
 

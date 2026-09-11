@@ -23,6 +23,7 @@ sphinx_docs_library(
         "__init__.py",
         "breadcrumbs.css",
         "breadcrumbs.py",
+        "dev.js",
         "header.css",
         "header.html",
         "header.js",

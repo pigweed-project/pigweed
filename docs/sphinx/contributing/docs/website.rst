@@ -327,11 +327,11 @@ always ``/`` or ``/index.html``, absolute links like
 ``https://pigweed.dev/pw_string/`` would break staging and local preview
 workflows by navigating users away to the production site.
 
-To solve this, the ``<pw-header>`` Web Component dynamically inspects the
+To solve this, ``//docs/common/dev.js`` dynamically inspects the
 current document's relative root path (derived from Sphinx's
-``DOCUMENT_NAME`` or ``data-content_root`` attribute) and rewrites all
-top-level header URLs on page load so that links resolve relative to the
-active server's root.
+``DOCUMENT_NAME`` or ``data-content_root`` attribute) and rewrites absolute
+production URLs on page load so that links resolve relative to the active
+server's root.
 
 .. _contrib-docs-website-theme:
 

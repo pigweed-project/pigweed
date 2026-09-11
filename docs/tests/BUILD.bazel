@@ -82,3 +82,16 @@ pw_py_test(
         requirement("pyee"),
     ],
 )
+
+pw_py_test(
+    name = "dev_test",
+    srcs = ["dev_test.py"],
+    data = [":chromium_files"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+        requirement("greenlet"),
+        requirement("playwright"),
+        requirement("pyee"),
+    ],
+)

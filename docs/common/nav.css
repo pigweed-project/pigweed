@@ -53,15 +53,15 @@
 }
 
 /* Custom site vs Section navigation visibility across viewports:
- * - On desktop (>=960px): Display PyData's native section navigation; hide custom site nav.
- * - On mobile (<960px): Display the custom site navigation inside the mobile drawer; hide section nav. */
+ * - On desktop (>=840px): Display PyData's native section navigation; hide custom site nav.
+ * - On mobile (<840px): Display the custom site navigation inside the mobile drawer; hide section nav. */
 .pw-site-nav {
   display: none !important;
 }
 
-/* Mobile Sphinx navigation (<960px):
+/* Mobile Sphinx navigation (<840px):
  * Slide-out drawer positioned below header, controlled via body.pw-sphinx-nav-open */
-@media (max-width: 959px) {
+@media (max-width: 839px) {
   .pw-site-nav {
     display: block !important;
   }
@@ -196,7 +196,7 @@
   cursor: pointer;
 }
 
-@media (max-width: 959px) {
+@media (max-width: 839px) {
   body.pw-sphinx-nav-open #pw-nav-backdrop {
     display: block !important;
   }
@@ -269,7 +269,9 @@ html.sidebar-resizing > body {
   body:has(> nav.sidebar) .sidebar {
     position: fixed !important;
     top: calc(var(--pw-header-height) + var(--topbar-height, 45px)) !important;
-    height: calc(100vh - var(--pw-header-height) - var(--topbar-height, 45px)) !important;
+    height: calc(
+      100vh - var(--pw-header-height) - var(--topbar-height, 45px)
+    ) !important;
     z-index: 1055 !important;
     background-color: var(--pw-color-background-primary) !important;
     width: 100vw !important;

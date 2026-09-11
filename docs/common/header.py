@@ -132,7 +132,7 @@ class HeaderCompiler:
             template_path.read_text(encoding="utf-8")
         )
 
-    def compile(self) -> str:
+    def compile(self, skip_target: str = "#main-content") -> str:
         css_files = [
             "header.css",
             "search.css",
@@ -140,7 +140,7 @@ class HeaderCompiler:
             "nav.css",
             "breadcrumbs.css",
         ]
-        js_files = ["header.js"]
+        js_files = ["dev.js", "header.js"]
 
         css_parts = [
             (self.integration_dir / f).read_text(encoding="utf-8")
@@ -155,6 +155,7 @@ class HeaderCompiler:
             style="\n".join(css_parts),
             script="\n".join(js_parts),
             nav_links=self.nav_links,
+            skip_target=skip_target,
         )
 
         lines = [line for line in html.splitlines() if line.strip() != ""]
@@ -183,7 +184,8 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
 
     integration_dir = Path(__file__).parent
     compiler = HeaderCompiler(integration_dir, nav_links=header_nav_links)
-    header_html = compiler.compile()
+    header_html_default = compiler.compile(skip_target="#main-content")
+    header_html_doxygen = compiler.compile(skip_target="#doc-content")
 
     env = Environment(trim_blocks=True, lstrip_blocks=True)
     env.globals["is_matching"] = is_matching_url
@@ -202,12 +204,17 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
                 continue
 
             rel_parts = path.relative_to(outdir).parts
-            rel_page_path = str(path.relative_to(outdir))
+            rel_page_path = path.relative_to(outdir).as_posix()
 
-            # 1. For Sphinx pages (not assets, api, or rustdoc), inject mobile site nav
-            if not any(
-                part in ("_static", "_sources", "rustdoc", "api")
-                for part in rel_parts
+            is_doxygen = rel_parts[:2] == ("api", "cc")
+
+            # 1. For Sphinx pages (not assets, Doxygen under api/cc, or rustdoc), inject mobile site nav
+            if (
+                not any(
+                    part in ("_static", "_sources", "rustdoc")
+                    for part in rel_parts
+                )
+                and not is_doxygen
             ):
                 content = inject_site_nav_into_content(
                     content, rel_page_path, site_nav_links, env
@@ -220,10 +227,13 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
             breadcrumbs_html = render_breadcrumbs(trail)
 
             # 3. Replace placeholder with header + breadcrumbs
+            active_header = (
+                header_html_doxygen if is_doxygen else header_html_default
+            )
             header_and_breadcrumbs = (
-                f"{header_html}\n{breadcrumbs_html}"
+                f"{active_header}\n{breadcrumbs_html}"
                 if breadcrumbs_html
-                else header_html
+                else active_header
             )
             new_content = content.replace(
                 _HEADER_PLACEHOLDER, header_and_breadcrumbs

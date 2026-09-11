@@ -154,6 +154,161 @@ class ThemeTest(unittest.TestCase):
 
             browser.close()
 
+    def test_os_color_scheme_preference(self):
+        """Verifies that PwTheme respects OS-level prefers-color-scheme when no
+        explicit localStorage theme has been set."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+
+            # 1. Test OS light mode preference
+            context_light = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="light",
+            )
+            page_light = context_light.new_page()
+            page_light.goto(
+                self.server.url_for("pw_bytes/docs.html"),
+                wait_until="domcontentloaded",
+            )
+            page_light.wait_for_function(
+                "() => document.documentElement.getAttribute('data-theme')"
+                " === 'light'",
+                timeout=5000,
+            )
+            self.assertEqual(
+                page_light.evaluate(
+                    "document.documentElement.getAttribute('data-theme')"
+                ),
+                "light",
+                "Theme should default to light when prefers-color-scheme is light",
+            )
+            light_btn = page_light.locator(
+                "pw-theme button[data-theme-val='light']"
+            )
+            self.assertIn("active", light_btn.get_attribute("class") or "")
+            self.assertEqual(light_btn.get_attribute("aria-checked"), "true")
+            context_light.close()
+
+            # 2. Test OS dark mode preference
+            context_dark = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="dark",
+            )
+            page_dark = context_dark.new_page()
+            page_dark.goto(
+                self.server.url_for("pw_bytes/docs.html"),
+                wait_until="domcontentloaded",
+            )
+            page_dark.wait_for_function(
+                "() => document.documentElement.getAttribute('data-theme')"
+                " === 'dark'",
+                timeout=5000,
+            )
+            self.assertEqual(
+                page_dark.evaluate(
+                    "document.documentElement.getAttribute('data-theme')"
+                ),
+                "dark",
+                "Theme should default to dark when prefers-color-scheme is dark",
+            )
+            dark_btn = page_dark.locator(
+                "pw-theme button[data-theme-val='dark']"
+            )
+            self.assertIn("active", dark_btn.get_attribute("class") or "")
+            self.assertEqual(dark_btn.get_attribute("aria-checked"), "true")
+            context_dark.close()
+
+            browser.close()
+
+    def test_localStorage_security_error_graceful_handling(self):
+        """Verifies that PwTheme handles localStorage throwing a SecurityError
+        without throwing unhandled exceptions or breaking theme initialization.
+        """
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                color_scheme="light",
+            )
+            # Simulate SecurityError on window.localStorage access
+            context.add_init_script(
+                """
+                Object.defineProperty(window, 'localStorage', {
+                    get: function() {
+                        throw new DOMException(
+                            "The operation is insecure.",
+                            "SecurityError"
+                        );
+                    }
+                });
+            """
+            )
+            page = context.new_page()
+
+            # Verify PwTheme on Rustdoc page (which does not use Sphinx scripts)
+            rustdoc_errors = []
+            page.on("pageerror", lambda err: rustdoc_errors.append(str(err)))
+
+            page.goto(
+                self.server.url_for("rustdoc/pw_bytes/index.html"),
+                wait_until="domcontentloaded",
+            )
+
+            self.assertEqual(
+                rustdoc_errors,
+                [],
+                f"Rustdoc page had uncaught errors: {rustdoc_errors}",
+            )
+
+            # Theme should default to system preference (light)
+            page.wait_for_function(
+                "() => document.documentElement.getAttribute('data-theme')"
+                " === 'light'",
+                timeout=5000,
+            )
+            self.assertEqual(
+                page.evaluate(
+                    "document.documentElement.getAttribute('data-theme')"
+                ),
+                "light",
+            )
+
+            dark_btn = page.locator("pw-theme button[data-theme-val='dark']")
+            dark_btn.wait_for(state="visible", timeout=5000)
+            dark_btn.click()
+
+            page.wait_for_function(
+                "() => document.documentElement.getAttribute('data-theme')"
+                " === 'dark'",
+                timeout=5000,
+            )
+            self.assertEqual(
+                page.evaluate(
+                    "document.documentElement.getAttribute('data-theme')"
+                ),
+                "dark",
+            )
+
+            is_bc_defined = page.evaluate(
+                "() => customElements.get('pw-breadcrumbs') !== undefined"
+            )
+            self.assertTrue(
+                is_bc_defined,
+                "pw-breadcrumbs custom element should be successfully defined",
+            )
+
+            browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

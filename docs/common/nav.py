@@ -106,7 +106,7 @@ def extract_site_nav(app: Sphinx) -> list[NavLink]:
 
 def _normalize_url_for_matching(url: str) -> str:
     """Normalizes a URL or path for matching against the current page path."""
-    url = url.split("?")[0].split("#")[0]
+    url = url.split("?")[0].split("#")[0].replace("\\", "/")
     if url.startswith("https://pigweed.dev/"):
         url = url[len("https://pigweed.dev/") :]
     elif url.startswith("http://pigweed.dev/"):
@@ -239,15 +239,19 @@ def inject_site_nav(app: Sphinx) -> None:
                 continue
             path = Path(root) / file
             rel_parts = path.relative_to(outdir).parts
+            is_doxygen = rel_parts[:2] == ("api", "cc")
             # Skip asset directories and external subsites (Doxygen, Rustdoc)
-            if any(
-                part in ("_static", "_sources", "rustdoc", "api")
-                for part in rel_parts
+            if (
+                any(
+                    part in ("_static", "_sources", "rustdoc")
+                    for part in rel_parts
+                )
+                or is_doxygen
             ):
                 continue
 
             content = path.read_text(encoding="utf-8")
-            rel_page_path = str(path.relative_to(outdir))
+            rel_page_path = path.relative_to(outdir).as_posix()
             new_content = inject_site_nav_into_content(
                 content, rel_page_path, nav_links, env
             )

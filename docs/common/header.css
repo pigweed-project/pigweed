@@ -42,6 +42,48 @@ body {
   min-height: 100vh;
 }
 
+/* Universal Skip Link for keyboard and screen reader accessibility */
+.pw-skip-link {
+  position: fixed;
+  top: -100px;
+  left: var(--pw-header-padding-x);
+  z-index: 10001;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  background-color: var(--pw-color-background-primary);
+  color: var(--pw-color-foreground-primary) !important;
+  border: 1px solid var(--pf-border);
+  border-radius: 6px;
+  font-family: var(--pw-font-body);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none !important;
+  box-shadow: var(--pf-shadow-md);
+  transition:
+    top 0.15s ease-in-out,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pw-skip-link:hover {
+  background-color: var(--pf-hover);
+  color: var(--pw-color-link) !important;
+  border-color: var(--pf-border-focus);
+}
+
+.pw-skip-link:focus,
+.pw-skip-link:focus-visible {
+  top: calc((var(--pw-header-height) - 36px) / 2);
+  outline: 2px solid var(--pf-outline-focus);
+  outline-offset: 2px;
+  border-color: var(--pf-border-focus);
+}
+
 /* ========== TOP HEADER BAR LAYOUT ========== */
 #pw-header {
   position: fixed;
@@ -238,6 +280,14 @@ body {
 .pw-nav-item:hover > .pw-nav-popover,
 .pw-nav-item:focus-within > .pw-nav-popover {
   display: block !important;
+}
+
+.pw-nav-item.is-closed > .pw-nav-popover {
+  display: none !important;
+}
+
+.pw-nav-item.is-closed .pw-dropdown-arrow {
+  transform: none !important;
 }
 
 .pw-nav-item:nth-last-child(-n + 4) > .pw-nav-popover {
@@ -467,4 +517,23 @@ pw-theme {
 #pst-header,
 #navrow1 {
   display: none !important;
+}
+
+/* Suppress native Sphinx and Rustdoc skip links in favor of the universal
+ * pw-skip-link component. */
+#pst-skip-link,
+.skip-main-content {
+  display: none !important;
+}
+
+/* Hide the 'ayu' theme option in Rustdoc settings. */
+label[for='theme-ayu'] {
+  display: none !important;
+}
+
+/* Prevent #main-content from inheriting Rustdoc's yellow :target highlight
+ * when targeted by the skip link. */
+#main-content:target {
+  background-color: transparent !important;
+  border-right: none !important;
 }

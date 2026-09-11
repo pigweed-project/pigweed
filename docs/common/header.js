@@ -17,24 +17,36 @@
  */
 class PwHeader extends HTMLElement {
   connectedCallback() {
+    this.setupSkipLink();
     this.setupPagefind();
     this.setupSearch();
     this.setupNavPopovers();
     this.setupMobileMenu();
-    // We wait for DOMContentLoaded (or run immediately if already loaded) to
-    // rewrite URLs across the entire page. Because <pw-header> is connected at
-    // the very top of <body>, running rewriteUrls() immediately would miss
-    // elements parsed later in the document, such as Sphinx sidebar navigation
-    // links within #pst-primary-sidebar (e.g. C/C++ API reference links).
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        this.rewriteUrls();
         this.setupTocFab();
       });
     } else {
-      this.rewriteUrls();
       this.setupTocFab();
     }
+  }
+
+  /**
+   * Sets up the universal skip link: transfers keyboard focus to the target
+   * content container when activated.
+   */
+  setupSkipLink() {
+    const skipLink = document.getElementById('pw-skip-link');
+    if (!skipLink) return;
+
+    skipLink.addEventListener('click', () => {
+      const href = skipLink.getAttribute('href');
+      const target = href ? document.querySelector(href) : null;
+      if (target) {
+        target.tabIndex = -1;
+        target.focus();
+      }
+    });
   }
 
   /**
@@ -279,29 +291,64 @@ class PwHeader extends HTMLElement {
   }
 
   /**
-   * Progressive accessibility enhancement: sets aria-expanded on dropdown items.
+   * Progressive accessibility enhancement: sets aria-expanded on dropdown items
+   * and allows dismissing popovers with the Escape key so keyboard users are not
+   * trapped inside long dropdown lists.
    */
   setupNavPopovers() {
     const navItems = this.querySelectorAll('.pw-nav-item');
     navItems.forEach((item) => {
       const link = item.querySelector('.pw-nav-link.has-children');
+      const popover = item.querySelector('.pw-nav-popover');
       if (!link) return;
 
       link.setAttribute('aria-expanded', 'false');
       link.setAttribute('aria-haspopup', 'true');
 
-      item.addEventListener('mouseenter', () => {
+      const openPopover = () => {
+        item.classList.remove('is-closed');
         link.setAttribute('aria-expanded', 'true');
+      };
+
+      const closePopover = (returnFocus = false) => {
+        item.classList.add('is-closed');
+        link.setAttribute('aria-expanded', 'false');
+        if (returnFocus) {
+          link.focus();
+        }
+      };
+
+      item.addEventListener('mouseenter', () => {
+        openPopover();
       });
       item.addEventListener('mouseleave', () => {
         link.setAttribute('aria-expanded', 'false');
+        item.classList.remove('is-closed');
       });
       item.addEventListener('focusin', () => {
-        link.setAttribute('aria-expanded', 'true');
+        if (!item.classList.contains('is-closed')) {
+          link.setAttribute('aria-expanded', 'true');
+        }
       });
       item.addEventListener('focusout', (e) => {
         if (!item.contains(e.relatedTarget)) {
           link.setAttribute('aria-expanded', 'false');
+          item.classList.remove('is-closed');
+        }
+      });
+
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          closePopover(true);
+        } else if (e.key === 'ArrowDown' && document.activeElement === link) {
+          e.preventDefault();
+          openPopover();
+          const firstItem = popover ? popover.querySelector('a') : null;
+          if (firstItem) {
+            firstItem.focus();
+          }
         }
       });
     });
@@ -334,7 +381,7 @@ class PwHeader extends HTMLElement {
    * 404s.
    */
   setupPagefind() {
-    const root = getSiteRootPath();
+    const root = window.getSiteRootPath();
     const baseUrl = new URL(root, window.location.href).href;
     const bundleUrl = new URL(`${root}search/`, window.location.href).href;
 
@@ -403,29 +450,6 @@ class PwHeader extends HTMLElement {
       }
     }
   }
-
-  /**
-   * Rewrites absolute production URLs (https://pigweed.dev/...) to relative
-   * staging/local paths based on the current page's data-content_root,
-   * rustdoc metadata, or URL pathname depth.
-   */
-  rewriteUrls() {
-    const root = getSiteRootPath();
-    const links = document.querySelectorAll('a[href^="https://pigweed.dev"]');
-    const pattern = /^https:\/\/pigweed\.dev(\/)?/;
-    links.forEach((link) => {
-      const href = link.getAttribute('href');
-      if (!href || !href.startsWith('https://pigweed.dev')) return;
-      let target = href.replace(pattern, root);
-      if (target === root || target.endsWith('/') || target === '') {
-        target = `${root}index.html`;
-      } else if (target.startsWith('#') || target.startsWith('?')) {
-        target = `${root}index.html${target}`;
-      }
-      link.setAttribute('href', target);
-      link.href = target;
-    });
-  }
 }
 
 /**
@@ -434,7 +458,7 @@ class PwHeader extends HTMLElement {
 function formatDocPath(href) {
   if (!href) return '';
   try {
-    const rootPathname = new URL(getSiteRootPath(), window.location.href)
+    const rootPathname = new URL(window.getSiteRootPath(), window.location.href)
       .pathname;
     const targetUrl = new URL(href, window.location.href);
     let docPath = targetUrl.pathname;
@@ -451,48 +475,49 @@ function formatDocPath(href) {
   }
 }
 
+customElements.define('pw-header', PwHeader);
+
 /**
- * Resolves the relative root path (e.g. "./", "../", "../../") based on
- * data-content_root, rustdoc metadata, or URL pathname depth.
+ * Safely retrieves an item from localStorage.
+ *
+ * In restrictive browsing contexts (such as sandboxed iframes without
+ * allow-same-origin, browsers configured to block third-party cookies/storage,
+ * or strict privacy extensions), accessing window.localStorage or calling
+ * getItem can throw a SecurityError. Wrapping reads in a try/catch prevents
+ * unhandled exceptions from halting component initialization, crashing PwTheme,
+ * and blocking subsequent custom element registrations.
  */
-function getSiteRootPath() {
-  const html = document.documentElement;
-  const metaRustdoc = document.querySelector('meta[name="rustdoc-vars"]');
-  const metaDoxygen = document.querySelector('meta[name="doxygen-site-root"]');
-  let root = null;
-
-  if (html?.dataset?.content_root != null) {
-    root = html.dataset.content_root;
-  } else if (metaRustdoc?.dataset?.rootPath != null) {
-    root = `../${metaRustdoc.dataset.rootPath}`;
-  } else if (metaDoxygen?.getAttribute('content') != null) {
-    root = metaDoxygen.getAttribute('content');
-  } else if (
-    document.querySelector('#side-nav, #nav-path') ||
-    window.location.pathname.includes('/api/cc/')
-  ) {
-    // Doxygen C++ API reference pages reside in api/cc/ (2 levels below site
-    // root)
-    root = '../../';
-  } else {
-    const currentPath = window.location.pathname
-      .replace(/^\//, '')
-      .replace(/\/$/, '');
-    if (!currentPath) {
-      root = './';
-    } else {
-      const depth = currentPath.split('/').length - 1;
-      root = depth > 0 ? '../'.repeat(depth) : './';
-    }
+function safeGetStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
   }
-
-  if (!root.endsWith('/')) {
-    root += '/';
-  }
-  return root;
 }
 
-customElements.define('pw-header', PwHeader);
+/**
+ * Safely removes an item from localStorage.
+ */
+function safeRemoveStorage(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {
+    // localStorage might be disabled or unavailable in some contexts
+  }
+}
+
+/**
+ * Safely retrieves an explicit theme choice ('light' or 'dark') from storage.
+ * Legacy values such as mode="auto" from older Sphinx theme configurations
+ * are ignored so returning users do not experience broken styling.
+ */
+function getStoredTheme() {
+  const theme = safeGetStorage('theme');
+  if (theme === 'light' || theme === 'dark') return theme;
+  const mode = safeGetStorage('mode');
+  if (mode === 'light' || mode === 'dark') return mode;
+  return null;
+}
 
 /**
  * Custom element for managing theme preferences (light/dark mode) within the
@@ -502,33 +527,47 @@ customElements.define('pw-header', PwHeader);
 class PwTheme extends HTMLElement {
   connectedCallback() {
     this.buttons = this.querySelectorAll('.pw-theme-btn');
-    if (!this.buttons.length) return;
 
-    // Hide the 'ayu' theme option in Rustdoc settings.
-    const style = document.createElement('style');
-    style.textContent = 'label[for="theme-ayu"] { display: none !important; }';
-    document.head.appendChild(style);
+    // Clean up legacy non-standard mode/theme values (e.g. mode="auto" or theme="auto")
+    const legacyMode = safeGetStorage('mode');
+    if (legacyMode && legacyMode !== 'light' && legacyMode !== 'dark') {
+      safeRemoveStorage('mode');
+    }
+    const legacyTheme = safeGetStorage('theme');
+    if (legacyTheme && legacyTheme !== 'light' && legacyTheme !== 'dark') {
+      safeRemoveStorage('theme');
+    }
 
-    const savedTheme =
-      localStorage.getItem('theme') ||
-      localStorage.getItem('mode') ||
-      document.documentElement.getAttribute('data-theme') ||
-      document.documentElement.getAttribute('data-mode') ||
-      (document.documentElement.classList.contains('dark-mode')
+    const explicitTheme = getStoredTheme();
+
+    const systemTheme =
+      window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
         ? 'dark'
-        : '') ||
-      (document.documentElement.classList.contains('light-mode')
-        ? 'light'
-        : '') ||
-      'dark';
+        : 'light';
 
-    this.setTheme(savedTheme);
+    const activeTheme = explicitTheme || systemTheme;
+
+    this.setTheme(activeTheme, Boolean(explicitTheme));
+
+    // If the user has not set an explicit theme preference, dynamically follow
+    // the system color scheme when the OS preference changes.
+    if (!explicitTheme && window.matchMedia) {
+      const colorSchemeQuery = window.matchMedia(
+        '(prefers-color-scheme: dark)',
+      );
+      colorSchemeQuery.addEventListener('change', (e) => {
+        if (!getStoredTheme()) {
+          this.setTheme(e.matches ? 'dark' : 'light', false);
+        }
+      });
+    }
 
     this.buttons.forEach((btn) => {
       btn.addEventListener('click', () => {
         const theme = btn.getAttribute('data-theme-val');
         if (theme) {
-          this.setTheme(theme);
+          this.setTheme(theme, true);
         }
       });
     });
@@ -539,23 +578,37 @@ class PwTheme extends HTMLElement {
     window.addEventListener('pageshow', (event) => {
       if (event.persisted) {
         const currentTheme =
-          localStorage.getItem('theme') ||
-          (window.matchMedia('(prefers-color-scheme: dark)').matches
+          getStoredTheme() ||
+          (window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
             : 'light');
-        this.setTheme(currentTheme);
-        setTimeout(() => this.setTheme(currentTheme), 0);
+        this.setTheme(currentTheme, false);
+        setTimeout(() => this.setTheme(currentTheme, false), 0);
       }
     });
   }
 
-  setTheme(theme) {
+  setTheme(theme, persist = true) {
+    if (theme !== 'light' && theme !== 'dark') {
+      theme =
+        window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light';
+    }
+
     document.documentElement.setAttribute('data-theme', theme);
     document.documentElement.setAttribute('data-mode', theme);
-    document.documentElement.classList.remove('light-mode', 'dark-mode');
+    document.documentElement.classList.remove(
+      'light-mode',
+      'dark-mode',
+      'auto-mode',
+    );
     document.documentElement.classList.add(`${theme}-mode`);
 
-    this.buttons.forEach((btn) => {
+    const buttons = this.buttons || this.querySelectorAll('.pw-theme-btn');
+    buttons.forEach((btn) => {
       const isSelected = btn.getAttribute('data-theme-val') === theme;
       if (isSelected) {
         btn.classList.add('active');
@@ -566,18 +619,20 @@ class PwTheme extends HTMLElement {
       }
     });
 
-    try {
-      localStorage.setItem('theme', theme);
-      localStorage.setItem('mode', theme);
-      // Synchronize Rustdoc's theme keys to prevent Rustdoc's storage script
-      // from falling back to or activating default themes on page load or
-      // Back/Forward Cache (bfcache) restorations.
-      localStorage.setItem('rustdoc-theme', theme);
-      localStorage.setItem('rustdoc-use-system-theme', 'false');
-      localStorage.setItem('rustdoc-preferred-dark-theme', 'dark');
-      localStorage.setItem('rustdoc-preferred-light-theme', 'light');
-    } catch (e) {
-      // localStorage might be disabled or unavailable in some contexts
+    if (persist) {
+      try {
+        localStorage.setItem('theme', theme);
+        localStorage.setItem('mode', theme);
+        // Synchronize Rustdoc's theme keys to prevent Rustdoc's storage script
+        // from falling back to or activating default themes on page load or
+        // Back/Forward Cache (bfcache) restorations.
+        localStorage.setItem('rustdoc-theme', theme);
+        localStorage.setItem('rustdoc-use-system-theme', 'false');
+        localStorage.setItem('rustdoc-preferred-dark-theme', 'dark');
+        localStorage.setItem('rustdoc-preferred-light-theme', 'light');
+      } catch (e) {
+        // localStorage might be disabled or unavailable in some contexts
+      }
     }
   }
 }
