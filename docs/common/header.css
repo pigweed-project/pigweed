@@ -77,6 +77,54 @@ body {
   }
 }
 
+/* Search UI elements within the header bar (desktop trigger and mobile button).
+ * Styles for the Pagefind search modal and search results outside the header
+ * live in search.css. */
+#pw-header-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+pagefind-modal-trigger {
+  all: unset !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  contain: none !important;
+  flex-shrink: 0 !important;
+}
+
+pagefind-modal-trigger .pf-trigger-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 36px !important;
+  background: var(--pf-background) !important;
+  border: 1px solid var(--pf-border) !important;
+  border-radius: var(--pf-border-radius) !important;
+  color: var(--pw-color-foreground-primary) !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+}
+
+pagefind-modal-trigger .pf-trigger-icon {
+  width: 16px !important;
+  height: 16px !important;
+  display: inline-block !important;
+  background-color: var(--pw-color-foreground-primary) !important;
+  -webkit-mask-image: var(--pf-icon-search) !important;
+  mask-image: var(--pf-icon-search) !important;
+  -webkit-mask-size: 100% 100% !important;
+  mask-size: 100% 100% !important;
+  -webkit-mask-repeat: no-repeat !important;
+  mask-repeat: no-repeat !important;
+  -webkit-mask-position: center !important;
+  mask-position: center !important;
+  flex-shrink: 0 !important;
+}
+
 /* Tools container: action buttons such as search and the theme selector. */
 #pw-header-tools {
   height: 100%;
@@ -84,6 +132,40 @@ body {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+#pw-search-mobile {
+  background-color: var(--pw-color-background-primary);
+  border: 1px solid var(--pf-border);
+  color: var(--pw-color-foreground-primary);
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background-color: var(--pf-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-outline-focus);
+  }
+
+  .material-symbols-outlined {
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+    user-select: none;
+  }
 }
 
 /* ========== SPHINX (PYDATA THEME) INTEGRATION ========== */

@@ -35,7 +35,7 @@ class HeaderCompiler:
         )
 
     def compile(self) -> str:
-        css_files = ["header.css"]
+        css_files = ["header.css", "search.css"]
         js_files = ["header.js"]
 
         css_parts = [

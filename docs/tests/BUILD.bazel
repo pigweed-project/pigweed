@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@docs_tests_pip//:requirements.bzl", "requirement")
 load("@pigweed//pw_build:python.bzl", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,5 +37,18 @@ pw_py_test(
     tags = ["local"],
     deps = [
         ":helpers",
+    ],
+)
+
+pw_py_test(
+    name = "search_test",
+    srcs = ["search_test.py"],
+    data = [":chromium_files"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+        requirement("greenlet"),
+        requirement("playwright"),
+        requirement("pyee"),
     ],
 )

@@ -3,8 +3,6 @@
 ===============
 Website updates
 ===============
-.. _Sphinx: https://www.sphinx-doc.org
-
 This page discusses how to make frontend and backend website changes
 to ``pigweed.dev``, Pigweed's main documentation website.
 
@@ -192,23 +190,32 @@ Rationale for current choices:
 
 .. _contrib-docs-website-search:
 
--------------
-Inline search
--------------
-In the header of every page there's a search box. When you focus that search box
-(or press :kbd:`Ctrl+K`) a search modal appears. After you type some text in the
-search modal, you immediately see results below your search query. This was
-originally Pigweed-specific code, but we upstreamed it to PyData Sphinx Theme in
-PR `#2093 <https://github.com/pydata/pydata-sphinx-theme/pull/2093>`_. The
-feature is enabled by setting ``html_theme_options['search_as_you_type']`` to
-``True`` in :cs:`docs/sphinx/conf.py`.
+--------------
+In-site search
+--------------
+In the header of every page there is a search box. When you focus that search
+box (or press :kbd:`Ctrl+K` or :kbd:`/`), a search modal appears. After you
+type a query, search results appear instantly.
+
+In-site search is powered by `Pagefind <https://pagefind.app/>`_. Pagefind
+builds a static search index after Sphinx finishes building the HTML output.
+Because Pagefind indexes the rendered HTML files rather than Sphinx source files
+directly, it indexes all generated subsites—achieving 100% search index
+coverage across Sphinx documentation, Rustdoc crates, and Doxygen C/C++ API
+references. The index generation is handled by the Sphinx extension located at
+``//docs/common/search.py``.
+
+The search modal UI is rendered by Pagefind's web components integrated into
+the universal header component (``//docs/common/header.js`` and
+``//docs/common/search.css``).
 
 .. _contrib-docs-website-search-nosearch:
 
-Remove a page from the search results
-=====================================
-To exclude a page from the search results, add ``:nosearch:`` to the top of the
-page's reStructuredText source file.
+Remove a page from search results
+=================================
+To exclude a page from search results, add ``:nosearch:`` to the top of the
+page's reStructuredText source file, or use Pagefind's ``data-pagefind-ignore``
+attribute on HTML elements.
 
 .. _contrib-docs-website-sitemap:
 
@@ -256,8 +263,9 @@ There are 2 types of tests:
 
 * **Static tests** inspect the built HTML files directly without running a
   browser. E.g. verifying that every page contains a ``<pw-header>`` element.
-* **Runtime tests** launch a headless Chromium browser instance via Playwright
-  to test interactive UI behavior.
+* **Runtime tests** launch a headless Chromium browser instance via
+  Playwright to test interactive UI behavior. E.g. verifying that searching via
+  Pagefind navigates to expected results.
 
 Quickstart
 ==========

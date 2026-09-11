@@ -18,8 +18,105 @@
 class PwHeader extends HTMLElement {
   connectedCallback() {
     this.rewriteUrls();
-    this.setupPagefind?.();
-    this.setupSearch?.();
+    this.setupPagefind();
+    this.setupSearch();
+  }
+
+  /**
+   * Sets up search functionality:
+   * On small viewports, the mobile search button triggers the Pagefind search
+   * modal.
+   */
+  setupSearch() {
+    const mobileBtn = this.querySelector('#pw-search-mobile');
+    const desktopTrigger = this.querySelector('#pw-search-desktop');
+
+    if (mobileBtn && desktopTrigger) {
+      mobileBtn.addEventListener('click', () => {
+        const targetBtn =
+          desktopTrigger.querySelector('button, .pf-trigger-btn') ||
+          desktopTrigger;
+        targetBtn.dispatchEvent(
+          new MouseEvent('click', { bubbles: true, cancelable: true }),
+        );
+      });
+    }
+  }
+
+  /**
+   * Dynamically loads Pagefind assets using the relative site root path so that
+   * staging sites, subsites, and local servers load search resources without
+   * 404s.
+   */
+  setupPagefind() {
+    const root = getSiteRootPath();
+    const baseUrl = new URL(root, window.location.href).href;
+    const bundleUrl = new URL(`${root}search/`, window.location.href).href;
+
+    const config = document.querySelector('pagefind-config');
+    if (config) {
+      config.setAttribute('base-url', baseUrl);
+      config.setAttribute('bundle-path', bundleUrl);
+    }
+
+    if (!document.querySelector('link[data-pagefind-css]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = `${root}search/pagefind-component-ui.css`;
+      link.setAttribute('data-pagefind-css', '');
+      document.head.appendChild(link);
+    }
+
+    if (!document.querySelector('script[data-pagefind-js]')) {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = `${root}search/pagefind-component-ui.js`;
+      script.setAttribute('data-pagefind-js', '');
+      document.head.appendChild(script);
+    }
+
+    // Dynamically inject document path below search result titles.
+    const modal = document.querySelector('pagefind-modal');
+    if (modal) {
+      const processResults = (rootNode) => {
+        if (!rootNode) return;
+        const links = rootNode.querySelectorAll(
+          'a[href]:not([data-path-added])',
+        );
+        links.forEach((link) => {
+          link.setAttribute('data-path-added', 'true');
+          const href = link.getAttribute('href');
+          if (!href) return;
+          const title = link.querySelector(
+            '.pagefind-ui__result-title, .pagefind-ui__sub-result-title, ' +
+              '[class*="title"]',
+          );
+          const docPath = formatDocPath(href);
+          if (!docPath) return;
+
+          const pathDiv = document.createElement('div');
+          pathDiv.className = 'pagefind-ui__result-path';
+          pathDiv.textContent = docPath;
+          if (title) {
+            title.insertAdjacentElement('afterend', pathDiv);
+          } else {
+            link.appendChild(pathDiv);
+          }
+        });
+      };
+
+      const observeTarget = (target) => {
+        if (!target) return;
+        processResults(target);
+        const observer = new MutationObserver(() => processResults(target));
+        observer.observe(target, { childList: true, subtree: true });
+      };
+
+      observeTarget(modal);
+      if (modal.shadowRoot) {
+        observeTarget(modal.shadowRoot);
+      }
+    }
   }
 
   /**
@@ -41,6 +138,29 @@ class PwHeader extends HTMLElement {
       link.setAttribute('href', target);
       link.href = target;
     });
+  }
+}
+
+/**
+ * Resolves a search result href into a clean document relative path.
+ */
+function formatDocPath(href) {
+  if (!href) return '';
+  try {
+    const rootPathname = new URL(getSiteRootPath(), window.location.href)
+      .pathname;
+    const targetUrl = new URL(href, window.location.href);
+    let docPath = targetUrl.pathname;
+
+    if (docPath.startsWith(rootPathname)) {
+      docPath = docPath.slice(rootPathname.length);
+    } else {
+      docPath = docPath.replace(/^\//, '');
+    }
+
+    return docPath || 'index.html';
+  } catch (e) {
+    return href.split('#')[0].split('?')[0].replace(/^\//, '');
   }
 }
 

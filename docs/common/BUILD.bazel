@@ -25,6 +25,8 @@ sphinx_docs_library(
         "header.html",
         "header.js",
         "header.py",
+        "search.css",
+        "search.py",
     ],
     prefix = "_extensions/common",
     strip_prefix = "docs/common",

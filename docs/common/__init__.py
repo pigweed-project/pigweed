@@ -18,6 +18,7 @@ from typing import Any
 from sphinx.application import Sphinx
 
 from .header import postprocess
+from .search import generate_search_index
 
 
 def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
@@ -25,6 +26,7 @@ def _on_build_finished(app: Sphinx, exception: Exception | None) -> None:
         return
 
     postprocess(app, exception)
+    generate_search_index(app, exception)
 
 
 def setup(app: Sphinx) -> dict[str, Any]:

@@ -22,9 +22,12 @@ the License.
   href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap"/>
 <link rel="stylesheet" type="text/css"
   href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap"/>
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=search" />
 <style>
 {{ style }}
 </style>
+<pagefind-config></pagefind-config>
 
 <!-- Top Navigation Header -->
 <pw-header id="pw-header">
@@ -34,7 +37,27 @@ the License.
     <!-- Do not use an H1 here. Pagefind will assume it's the title. -->
     <a href="https://pigweed.dev/index.html">Pigweed</a>
   </div>
+  <div id="pw-header-search">
+    <pagefind-modal-trigger id="pw-search-desktop"
+      placeholder="Search pigweed.dev"></pagefind-modal-trigger>
+  </div>
+  <div id="pw-header-tools">
+    <button type="button" id="pw-search-mobile"
+      aria-label="Open search" title="Search">
+      <span class="material-symbols-outlined">
+        search
+      </span>
+    </button>
+  </div>
 </pw-header>
+<pagefind-modal>
+  <pagefind-modal-header>
+    <pagefind-input></pagefind-input>
+  </pagefind-modal-header>
+  <pagefind-modal-body>
+    <pagefind-results max-results="100"></pagefind-results>
+  </pagefind-modal-body>
+</pagefind-modal>
 
 <script>
 {{ script }}

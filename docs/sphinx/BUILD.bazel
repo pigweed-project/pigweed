@@ -442,6 +442,8 @@ sphinx_build_binary(
         "//pw_watch/py:watch",
         "@pigweed_doxylink",
         "@pigweed_python_packages//jsonschema",
+        "@pigweed_python_packages//pagefind",
+        "@pigweed_python_packages//pagefind_bin_extended",
         "@pigweed_python_packages//pydata_sphinx_theme",
         "@pigweed_python_packages//pytz",
         "@pigweed_python_packages//sphinx",

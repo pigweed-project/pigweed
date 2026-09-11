@@ -1,0 +1,70 @@
+/*
+ * Copyright 2026 The Pigweed Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+/* ========== PAGEFIND SEARCH STYLING OVERRIDES & LAYOUT ========== */
+/* This file contains styles for Pagefind UI components displayed outside the
+ * header (such as the search modal overlay, query input, results list, and
+ * chips), as well as global --pf-* CSS variable overrides. Styles for search
+ * controls located within the header bar live in header.css. */
+:root {
+  /* Pagefind search UI overrides */
+  --pf-text: var(--pw-color-foreground-primary) !important;
+  --pf-text-secondary: #a0a0a0;
+  --pf-text-muted: #949494;
+  --pf-background: var(--pw-color-background-primary) !important;
+  --pf-border: #333;
+  --pf-border-focus: #555;
+  --pf-skeleton: #2a2a2a;
+  --pf-skeleton-shine: #333;
+  --pf-hover: var(--pw-color-background-secondary) !important;
+  --pf-mark: #e5e5e5;
+  --pf-scroll-shadow: rgba(255, 255, 255, 0.1);
+  --pf-outline-focus: #58a6ff;
+  --pf-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --pf-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --pf-error-bg: #2a1a1a;
+  --pf-error-border: #5c2828;
+  --pf-error-text: #f87171;
+  --pf-error-text-secondary: #ef4444;
+  --pf-input-height: 36px;
+  --pf-border-radius: 6px;
+}
+
+.pf-result {
+  border: 2px solid var(--pf-border) !important;
+  border-radius: var(--pf-border-radius);
+  padding: 8px !important;
+}
+
+.pf-result-card {
+  border: none !important;
+  padding: 0 !important;
+}
+
+.pf-heading-chip {
+  border: none !important;
+  padding: 4px 0 0 0 !important;
+}
+
+.pagefind-ui__result-path,
+.pagefind-ui__sub-result-path {
+  font-family: var(--pw-font-code);
+  font-size: 0.8em;
+  color: var(--pw-color-foreground-muted);
+  word-break: break-all;
+  margin-top: 2px;
+}

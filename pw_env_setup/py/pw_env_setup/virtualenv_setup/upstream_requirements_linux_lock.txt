@@ -1128,6 +1128,20 @@ packaging==24.2 \
     #   black
     #   build
     #   sphinx
+pagefind==1.5.2 \
+    --hash=sha256:6c4086ad9eaa7e8f863085652f6b1093549b1737848d946daa0706ee57f778d1 \
+    --hash=sha256:fffddd6e2016b06bdca83b83d4ac4bef379cf0559f05ecdb6908a8729a27dbf3
+    # via -r compiled_requirements.txt
+pagefind-bin-extended==1.5.2 \
+    --hash=sha256:1762f4a8c2137ca07261b0fec1b441df1ba421a0f124a86e33c43c09ca2d1d6c \
+    --hash=sha256:2a59c73b19857f84d7f3482c781897bd20d9409ab4b4e146d54c7b67713dd7cb \
+    --hash=sha256:2bf653ca30062b50e461887b14cd97be8e44dce6a28b9949b02db4b7f7ca694f \
+    --hash=sha256:9c4e2d7e0def5ba3a7814594e1d91cb6876030c5e05ccec53cc778b94d8af6e6 \
+    --hash=sha256:bcf47caa731c423c6ba355f593cf41febde986a296e8dd3a47620c72aa7a18e1 \
+    --hash=sha256:c4db4b46e5aa42c6641cee257b0767895a1d9471c2332717763116e295bd7340
+    # via
+    #   -r compiled_requirements.txt
+    #   pagefind
 parameterized==0.9.0 \
     --hash=sha256:4e0758e3d41bea3bbd05ec14fc2c24736723f243b28d702081aef438c9372b1b \
     --hash=sha256:7fc905272cefa4f364c1a3429cbbe9c0f98b793988efb5bf90aac80f08db09b1
