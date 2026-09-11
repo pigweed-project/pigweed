@@ -177,16 +177,10 @@ Talk to us
    Tour <showcases/sense/index>
    modules
    Contributing <contributing/index>
-   What's new <changelog/index>
-   concepts/index
    build/index
    targets
-   Toolchain <toolchain>
-   size_optimizations
    os/index
    third_party_support
-   showcases/index
    community/index
    security/index
-   Blog <blog/index>
    api/index

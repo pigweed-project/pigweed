@@ -1,4 +1,4 @@
-# Home {#home}
+# C/C++ API reference home {#home}
 
 Welcome to the official [Pigweed](https://pigweed.dev) C/C++ API reference.
 

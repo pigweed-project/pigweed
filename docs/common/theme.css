@@ -43,6 +43,9 @@ html[data-theme='dark'] {
   --pf-error-border: #5c2828;
   --pf-error-text: #f87171;
   --pf-error-text-secondary: #ef4444;
+
+  --pw-scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --pw-scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
 }
 
 html[data-theme='light'] {
@@ -69,4 +72,12 @@ html[data-theme='light'] {
   --pf-error-border: #fecaca;
   --pf-error-text: #dc2626;
   --pf-error-text-secondary: #b91c1c;
+
+  --pw-scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --pw-scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
+}
+
+/* Hide Rustdoc ayu theme option in settings */
+label[for='theme-ayu'] {
+  display: none !important;
 }

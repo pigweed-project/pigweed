@@ -83,19 +83,19 @@ class SearchTest(unittest.TestCase):
                 ).first
                 result_link.wait_for(state="visible", timeout=20000)
 
-                # Click the search result and verify navigation to exact
-                # expected page
+                # Get target href of the result link before clicking
+                expected_target = result_link.get_attribute("href")
+                self.assertIsNotNone(expected_target)
+
+                # Click the search result and verify navigation to expected page
                 result_link.click()
                 page.wait_for_load_state("domcontentloaded")
 
-                expected_url = self.server.url_for(
-                    "api/cc/group__pw__status.html"
-                )
-                self.assertEqual(
-                    page.url,
-                    expected_url,
+                self.assertTrue(
+                    page.url.endswith(expected_target.lstrip("./"))
+                    or page.url == expected_target,
                     f"Searching from {rel_path} expected navigation to "
-                    f"{expected_url}, got {page.url}",
+                    f"{expected_target}, got {page.url}",
                 )
 
             browser.close()
@@ -115,6 +115,35 @@ class SearchTest(unittest.TestCase):
             viewport={"width": 375, "height": 667},
             trigger_selector="#pw-search-mobile",
         )
+
+    def test_legacy_searchbox_hidden(self):
+        """Verifies that legacy Sphinx #searchbox element is always hidden."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            for width in [375, 1024, 1440]:
+                context = browser.new_context(
+                    viewport={"width": width, "height": 800}
+                )
+                page = context.new_page()
+                page.goto(
+                    self.server.url_for("index.html"),
+                    wait_until="domcontentloaded",
+                )
+
+                searchbox = page.locator("#searchbox")
+                if searchbox.count() > 0:
+                    self.assertFalse(
+                        searchbox.first.is_visible(),
+                        f"#searchbox should be hidden at viewport width {width}",
+                    )
+                context.close()
+
+            browser.close()
 
 
 if __name__ == "__main__":

@@ -530,6 +530,7 @@ a:hover {
 
 a.el {
   font-weight: bold;
+  text-shadow: none;
 }
 
 a.elRef {

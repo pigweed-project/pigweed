@@ -1,0 +1,392 @@
+/*
+ * Copyright 2026 The Pigweed Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+/* ========== CONSISTENT SCROLLBAR STYLING ========== */
+/* Uniform, subtle scrollbar styles across Sphinx, Rustdoc, and Doxygen. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pw-scrollbar-thumb, rgba(128, 128, 128, 0.3))
+    transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--pw-scrollbar-thumb, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--pw-scrollbar-thumb-hover, rgba(128, 128, 128, 0.5));
+}
+
+::-webkit-scrollbar-corner {
+  background-color: transparent;
+}
+
+/* ========== SPHINX (PYDATA THEME) NAVIGATION ========== */
+.bd-sidebar-primary,
+.bd-sidebar-secondary {
+  top: 64px !important;
+  height: calc(100vh - 64px) !important;
+}
+
+/* Custom site vs Section navigation visibility across viewports:
+ * - On desktop (>=960px): Display PyData's native section navigation; hide custom site nav.
+ * - On mobile (<960px): Display the custom site navigation inside the mobile drawer; hide section nav. */
+.pw-site-nav {
+  display: none !important;
+}
+
+/* Mobile Sphinx navigation (<960px):
+ * Slide-out drawer positioned below header, controlled via body.pw-sphinx-nav-open */
+@media (max-width: 959px) {
+  .pw-site-nav {
+    display: block !important;
+  }
+
+  .sidebar-primary-item:not(.pw-site-nav) {
+    display: none !important;
+  }
+
+  .bd-sidebar-primary {
+    display: block !important;
+    position: fixed !important;
+    top: 64px !important;
+    left: 0 !important;
+    width: 75vw !important;
+    max-width: 350px !important;
+    height: calc(100vh - 64px) !important;
+    max-height: calc(100vh - 64px) !important;
+    margin-left: -75% !important;
+    visibility: hidden !important;
+    background-color: var(--pw-color-background-primary) !important;
+    border-right: 1px solid var(--pf-border) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2) !important;
+    z-index: 1055 !important;
+    transition:
+      visibility 0.2s ease-out,
+      margin 0.2s ease-out !important;
+    overflow-y: auto !important;
+  }
+
+  body.pw-sphinx-nav-open .bd-sidebar-primary {
+    margin-left: 0 !important;
+    visibility: visible !important;
+  }
+}
+
+/* Sphinx Secondary Sidebar (Page Table of Contents) Drawer on mobile (<1200px) */
+@media (max-width: 1199px) {
+  .bd-sidebar-secondary {
+    display: block !important;
+    position: fixed !important;
+    top: 64px !important;
+    right: 0 !important;
+    left: auto !important;
+    width: 75vw !important;
+    max-width: 350px !important;
+    height: calc(100vh - 64px) !important;
+    max-height: calc(100vh - 64px) !important;
+    margin-right: -75% !important;
+    visibility: hidden !important;
+    background-color: var(--pw-color-background-primary) !important;
+    border-left: 1px solid var(--pf-border) !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2) !important;
+    z-index: 1055 !important;
+    transition:
+      visibility 0.2s ease-out,
+      margin 0.2s ease-out !important;
+    overflow-y: auto !important;
+    padding: 16px !important;
+  }
+
+  body.pw-sphinx-toc-open .bd-sidebar-secondary {
+    margin-right: 0 !important;
+    visibility: visible !important;
+  }
+}
+
+/* Floating Action Button (FAB) for Sphinx Page Table of Contents on mobile */
+#pw-toc-fab {
+  display: none;
+  position: fixed;
+  top: calc(64px + 12px);
+  right: 16px;
+  bottom: auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background-color: var(--pw-color-background-primary);
+  border: 1px solid var(--pf-border);
+  color: var(--pw-color-foreground-primary);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 1055 !important;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#pw-toc-fab:hover {
+  background-color: var(--pf-hover);
+}
+
+#pw-toc-fab:active {
+  transform: scale(0.95);
+}
+
+#pw-toc-fab:focus-visible {
+  outline: 2px solid var(--pf-outline-focus);
+}
+
+#pw-toc-fab .material-symbols-outlined {
+  font-size: 20px;
+  line-height: 1;
+  display: block;
+  user-select: none;
+  color: inherit;
+}
+
+@media (max-width: 1199px) {
+  body:has(#pst-secondary-sidebar .toc-entry) #pw-toc-fab,
+  body:has(#pst-secondary-sidebar nav.page-toc a) #pw-toc-fab,
+  body:has(.bd-sidebar-secondary .toc-entry) #pw-toc-fab,
+  #pw-toc-fab.has-toc {
+    display: flex !important;
+  }
+}
+
+/* Mobile backdrop overlay for mobile navigation drawers */
+#pw-nav-backdrop {
+  display: none;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 64px);
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 1050;
+  cursor: pointer;
+}
+
+@media (max-width: 959px) {
+  body.pw-sphinx-nav-open #pw-nav-backdrop {
+    display: block !important;
+  }
+}
+
+@media (max-width: 1199px) {
+  body.pw-sphinx-toc-open #pw-nav-backdrop {
+    display: block !important;
+  }
+}
+
+@media (max-width: 839px) {
+  body.pw-doxygen-nav-open #pw-nav-backdrop {
+    display: block !important;
+  }
+}
+
+/* ========== RUSTDOC SUBSITE NAVIGATION ========== */
+.rustdoc .sidebar,
+body:has(> nav.sidebar) .sidebar {
+  position: sticky !important;
+  top: 64px !important;
+  height: calc(100vh - 64px) !important;
+}
+
+.rustdoc .sidebar-resizer,
+body:has(> nav.sidebar) .sidebar-resizer {
+  top: 64px !important;
+  height: calc(100vh - 64px) !important;
+}
+
+/* Prevent layout jump when resizing the rustdoc sidebar.
+ * rustdoc sets padding-left on body when .sidebar-resizing is active,
+ * which conflicts with flex layout and the fixed header. */
+html.sidebar-resizing > body {
+  padding-left: 0 !important;
+}
+
+@media (max-width: 700px) {
+  /* Position rustdoc's mobile topbar directly below the 64px Pigweed header. */
+  rustdoc-topbar {
+    position: sticky !important;
+    top: 64px !important;
+    z-index: 10 !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    align-items: center !important;
+    padding: 0 12px !important;
+  }
+
+  /* Hide rustdoc's internal hamburger toggle since the universal header has pw-header-menu */
+  rustdoc-topbar .sidebar-menu-toggle {
+    display: none !important;
+  }
+
+  /* Left-align API item title and crate title within rustdoc-topbar */
+  rustdoc-topbar > h2 {
+    margin: 0 0 0 12px !important;
+    padding: 0 !important;
+    text-align: left !important;
+    align-self: center !important;
+  }
+
+  rustdoc-topbar .logo-container > img {
+    margin: 0 8px 0 0 !important;
+  }
+
+  .rustdoc .sidebar,
+  body:has(> nav.sidebar) .sidebar {
+    position: fixed !important;
+    top: calc(64px + var(--topbar-height, 45px)) !important;
+    height: calc(100vh - 64px - var(--topbar-height, 45px)) !important;
+    z-index: 1055 !important;
+    background-color: var(--pw-color-background-primary) !important;
+    width: 100vw !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
+
+/* ========== DOXYGEN SUBSITE NAVIGATION ========== */
+#side-nav {
+  top: 64px !important;
+  height: calc(100vh - 64px) !important;
+}
+
+#doc-content {
+  height: calc(100vh - 64px) !important;
+}
+
+/* Mobile Doxygen navigation (<840px):
+ * Hide splitbar/resizable handles and hide #side-nav by default.
+ * When toggled open via pw-header-menu (body.pw-doxygen-nav-open),
+ * display #side-nav as a full-width mobile navigation drawer with high z-index
+ * above backdrop, allowing touches and vertical scrolling. */
+@media (max-width: 839px) {
+  #splitbar,
+  .ui-resizable-handle {
+    display: none !important;
+  }
+
+  #side-nav {
+    display: none !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 64px !important;
+    width: 100vw !important;
+    height: calc(100vh - 64px) !important;
+    max-height: calc(100vh - 64px) !important;
+    background-color: var(--pw-color-background-primary) !important;
+    z-index: 1055 !important;
+    padding: 16px !important;
+    box-sizing: border-box !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    border-right: none !important;
+  }
+
+  body.pw-doxygen-nav-open #side-nav {
+    display: block !important;
+  }
+
+  #doc-content {
+    margin-left: 0 !important;
+    width: 100vw !important;
+    height: calc(100vh - 64px) !important;
+  }
+
+  #nav-path {
+    left: 0 !important;
+    width: 100vw !important;
+  }
+
+  /* Doxygen tree styling customization on mobile */
+  #nav-tree {
+    background-color: transparent !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    font-size: 15px !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+  }
+
+  #nav-tree-contents {
+    margin: 0 !important;
+    height: auto !important;
+  }
+
+  #nav-tree ul {
+    padding-left: 8px !important;
+  }
+
+  #nav-tree li {
+    padding: 4px 0 !important;
+    white-space: normal !important;
+  }
+
+  #nav-tree .item {
+    display: flex !important;
+    align-items: center !important;
+    min-height: 36px !important;
+    padding: 2px 0 !important;
+  }
+
+  #nav-tree .label {
+    font-size: 15px !important;
+  }
+
+  #nav-tree .label a {
+    font-size: 15px !important;
+    padding: 6px 8px !important;
+    color: var(--pw-color-foreground-primary) !important;
+    display: inline-block !important;
+  }
+
+  #nav-tree .arrow {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+    font-size: 14px !important;
+    cursor: pointer !important;
+  }
+
+  #nav-tree .selected a {
+    color: var(--pw-color-link) !important;
+    font-weight: bold !important;
+  }
+}

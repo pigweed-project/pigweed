@@ -23,7 +23,7 @@ the License.
 <link rel="stylesheet" type="text/css"
   href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap"/>
 <link rel="stylesheet"
-  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=dark_mode,light_mode,search" />
+  href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=dark_mode,expand_more,light_mode,menu,menu_open,search,toc" />
 <style>
 {{ style }}
 </style>
@@ -31,12 +31,44 @@ the License.
 
 <!-- Top Navigation Header -->
 <pw-header id="pw-header">
+  <button id="pw-header-menu"
+    aria-label="Toggle navigation menu"
+    aria-expanded="false">
+    <span class="material-symbols-outlined">
+      menu
+    </span>
+  </button>
   <div id="pw-header-brand">
     <img src="https://www.gstatic.com/pigweed/pw_logo.svg"
       alt="Pigweed's logo"/>
     <!-- Do not use an H1 here. Pagefind will assume it's the title. -->
     <a href="https://pigweed.dev/index.html">Pigweed</a>
   </div>
+  {% if nav_links %}
+  <nav id="pw-header-nav" aria-label="Site navigation">
+    {% for link in nav_links %}
+    <div class="pw-nav-item">
+      <a href="{{ link.href }}" class="pw-nav-link{% if link.children %} has-children{% endif %}">
+        <span>{{ link.title }}</span>
+        {% if link.children %}
+        <span class="material-symbols-outlined pw-dropdown-arrow">expand_more</span>
+        {% endif %}
+      </a>
+      {% if link.children %}
+      <div class="pw-nav-popover">
+        <ul class="pw-nav-dropdown-list">
+          {% for child in link.children %}
+          <li>
+            <a href="{{ child.href }}" class="pw-nav-dropdown-link">{{ child.title }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </nav>
+  {% endif %}
   <div id="pw-header-search">
     <pagefind-modal-trigger id="pw-search-desktop"
       placeholder="Search pigweed.dev"></pagefind-modal-trigger>
@@ -66,6 +98,15 @@ the License.
     </pw-theme>
   </div>
 </pw-header>
+<div id="pw-nav-backdrop" aria-hidden="true"></div>
+<button type="button" id="pw-toc-fab"
+  aria-label="Table of contents"
+  aria-expanded="false"
+  title="Table of contents">
+  <span class="material-symbols-outlined">
+    toc
+  </span>
+</button>
 <pagefind-modal>
   <pagefind-modal-header>
     <pagefind-input></pagefind-input>

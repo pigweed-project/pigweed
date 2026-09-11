@@ -40,7 +40,10 @@ body {
   z-index: 1000;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Use flex-start instead of space-between so that on mobile #pw-header-menu
+   * and #pw-header-brand remain grouped on the left, while #pw-header-tools is
+   * pushed to the far right via margin-left: auto. */
+  justify-content: flex-start;
   background-color: var(--pw-color-background-secondary);
   color: var(--pw-color-foreground-primary);
   padding: 16px 24px;
@@ -49,12 +52,52 @@ body {
 }
 
 /* Brand container: menu toggle button, logo, and site title. */
+#pw-header-menu {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--pw-color-foreground-primary);
+  cursor: pointer;
+  padding: 4px;
+  margin: 0 12px 0 0;
+  border-radius: 4px;
+  line-height: 1;
+
+  &:hover {
+    background-color: var(--pf-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-outline-focus);
+  }
+
+  .material-symbols-outlined {
+    font-size: 24px;
+    line-height: 1;
+    display: block;
+    user-select: none;
+  }
+}
+
+@media (min-width: 840px) {
+  #pw-header-menu {
+    display: none !important;
+  }
+}
+
 #pw-header-brand {
   height: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  margin-right: 0;
+
+  @media (min-width: 840px) {
+    margin-right: 0;
+  }
 
   a,
   a:visited,
@@ -77,61 +120,139 @@ body {
   }
 }
 
+/* Site navigation links and dropdown popovers. */
+#pw-header-nav {
+  display: none !important;
+}
+
+@media (min-width: 840px) {
+  #pw-header-nav {
+    display: flex !important;
+    align-items: center;
+    height: 100%;
+    gap: 2px;
+    margin-left: auto !important;
+    margin-right: 12px;
+    overflow: visible;
+  }
+}
+
+.pw-nav-item {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pw-nav-link,
+.pw-nav-link:visited {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  color: var(--pw-color-foreground-primary) !important;
+  text-decoration: none !important;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover,
+  &:active {
+    background-color: var(--pf-hover);
+    color: var(--pw-color-link) !important;
+    text-decoration: none !important;
+  }
+}
+
+.pw-nav-item:hover > .pw-nav-link,
+.pw-nav-item:focus-within > .pw-nav-link {
+  background-color: var(--pf-hover);
+  color: var(--pw-color-link) !important;
+  text-decoration: none !important;
+}
+
+.pw-dropdown-arrow {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
+  text-decoration: none !important;
+  user-select: none;
+}
+
+.pw-nav-item:hover .pw-dropdown-arrow,
+.pw-nav-item:focus-within .pw-dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+/* Dropdown popover container */
+.pw-nav-popover {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background-color: var(--pw-color-background-primary);
+  border: 1px solid var(--pf-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  padding: 6px 0;
+  margin: 0;
+  z-index: 1001;
+}
+
+.pw-nav-item:hover > .pw-nav-popover,
+.pw-nav-item:focus-within > .pw-nav-popover {
+  display: block !important;
+}
+
+.pw-nav-item:nth-last-child(-n + 4) > .pw-nav-popover {
+  left: auto;
+  right: 0;
+}
+
+.pw-nav-dropdown-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pw-nav-dropdown-link,
+.pw-nav-dropdown-link:visited {
+  display: block;
+  padding: 8px 16px;
+  color: var(--pw-color-foreground-primary) !important;
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover,
+  &:focus,
+  &:active {
+    background-color: var(--pf-hover);
+    color: var(--pw-color-link) !important;
+  }
+}
+
 /* Search UI elements within the header bar (desktop trigger and mobile button).
  * Styles for the Pagefind search modal and search results outside the header
  * live in search.css. */
 #pw-header-search {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-pagefind-modal-trigger {
-  all: unset !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  contain: none !important;
-  flex-shrink: 0 !important;
-}
-
-pagefind-modal-trigger .pf-trigger-btn {
-  display: inline-flex !important;
-  align-items: center !important;
-  height: 36px !important;
-  background: var(--pf-background) !important;
-  border: 1px solid var(--pf-border) !important;
-  border-radius: var(--pf-border-radius) !important;
-  color: var(--pw-color-foreground-primary) !important;
-  cursor: pointer !important;
-  box-sizing: border-box !important;
-}
-
-pagefind-modal-trigger .pf-trigger-icon {
-  width: 16px !important;
-  height: 16px !important;
-  display: inline-block !important;
-  background-color: var(--pw-color-foreground-primary) !important;
-  -webkit-mask-image: var(--pf-icon-search) !important;
-  mask-image: var(--pf-icon-search) !important;
-  -webkit-mask-size: 100% 100% !important;
-  mask-size: 100% 100% !important;
-  -webkit-mask-repeat: no-repeat !important;
-  mask-repeat: no-repeat !important;
-  -webkit-mask-position: center !important;
-  mask-position: center !important;
-  flex-shrink: 0 !important;
-}
-
-/* Tools container: action buttons such as search and the theme selector. */
-#pw-header-tools {
+  display: none !important;
   height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
 }
 
 #pw-search-mobile {
@@ -141,7 +262,7 @@ pagefind-modal-trigger .pf-trigger-icon {
   cursor: pointer;
   padding: 0;
   margin: 0;
-  display: flex;
+  display: flex !important;
   align-items: center;
   justify-content: center;
   width: 36px;
@@ -165,6 +286,99 @@ pagefind-modal-trigger .pf-trigger-icon {
     line-height: 1;
     display: block;
     user-select: none;
+  }
+}
+
+pagefind-modal-trigger {
+  all: unset !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  contain: none !important;
+  flex-shrink: 0 !important;
+}
+
+pagefind-modal-trigger .pf-trigger-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 36px !important;
+  background: var(--pf-background) !important;
+  border: 1px solid var(--pf-border) !important;
+  border-radius: var(--pf-border-radius) !important;
+  color: var(--pw-color-foreground-primary) !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover {
+    background-color: var(--pf-hover) !important;
+    border-color: var(--pf-border-focus) !important;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-outline-focus) !important;
+  }
+}
+
+pagefind-modal-trigger .pf-trigger-icon {
+  width: 16px !important;
+  height: 16px !important;
+  display: inline-block !important;
+  background-color: var(--pw-color-foreground-primary) !important;
+  -webkit-mask-image: var(--pf-icon-search) !important;
+  mask-image: var(--pf-icon-search) !important;
+  -webkit-mask-size: 100% 100% !important;
+  mask-size: 100% 100% !important;
+  -webkit-mask-repeat: no-repeat !important;
+  mask-repeat: no-repeat !important;
+  -webkit-mask-position: center !important;
+  mask-position: center !important;
+  flex-shrink: 0 !important;
+}
+
+/* Wide viewports (1120px and higher):
+ * Display full desktop search bar in header flow and hide condensed button.
+ * Between 840px and 1120px, the navigation links stay visible while search
+ * switches to the condensed button in #pw-header-tools to prevent overflow. */
+@media (min-width: 1120px) {
+  #pw-header-search {
+    display: flex !important;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 0;
+    margin-right: 8px;
+  }
+
+  pagefind-modal-trigger {
+    width: 260px !important;
+  }
+
+  pagefind-modal-trigger .pf-trigger-btn {
+    width: 100% !important;
+    padding: 0 14px !important;
+    gap: 8px !important;
+  }
+
+  #pw-search-mobile {
+    display: none !important;
+  }
+}
+
+/* Tools container: action buttons such as search and the theme selector.
+ * On mobile (<840px), margin-left: auto pushes tools to the far right edge,
+ * ensuring the largest gap is in the middle between the brand and tools.
+ * On desktop (>=840px), nav already has margin-left: auto, so tools margin-left is 0. */
+#pw-header-tools {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+
+  @media (min-width: 840px) {
+    margin-left: 0;
   }
 }
 
@@ -221,69 +435,10 @@ pw-theme {
   }
 }
 
-/* ========== SPHINX (PYDATA THEME) INTEGRATION ========== */
-#pst-header {
-  display: none !important;
-}
-
-/* ========== RUSTDOC SUBSITE INTEGRATION ========== */
-body.rustdoc,
-body:has(> nav.sidebar) {
-  display: block !important;
-}
-
-body.rustdoc > nav.sidebar,
-body.rustdoc > .sidebar,
-body.rustdoc > .sidebar-resizer,
-body:has(> nav.sidebar) > nav.sidebar,
-body:has(> nav.sidebar) > .sidebar,
-body:has(> nav.sidebar) > .sidebar-resizer {
-  display: none !important;
-}
-
-/* Position rustdoc's topbar directly below the 64px Pigweed header. */
-rustdoc-topbar {
-  position: sticky !important;
-  top: 64px !important;
-  z-index: 10 !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-/* Hide the default rustdoc sidebar toggle since navigation is handled by
-   Pigweed. */
-rustdoc-topbar .sidebar-menu-toggle {
-  display: none !important;
-}
-
-body.rustdoc > main,
-body:has(> nav.sidebar) > main {
-  width: 100% !important;
-  min-width: 0 !important;
-  box-sizing: border-box !important;
-  padding: 20px 40px !important;
-}
-
-@media (max-width: 839px) {
-  body.rustdoc > main,
-  body:has(> nav.sidebar) > main {
-    padding: 16px !important;
-  }
-}
-
-/* ========== DOXYGEN SUBSITE INTEGRATION ========== */
-#side-nav,
-#splitbar,
+/* ========== NATIVE HEADER REPLACEMENTS ========== */
+/* Hide native headers from Sphinx and Doxygen that are superseded by the
+ * universal header bar. */
+#pst-header,
 #navrow1 {
   display: none !important;
-}
-
-#doc-content {
-  margin-left: 0 !important;
-  height: calc(100vh - 64px) !important;
-  width: 100% !important;
-}
-
-#nav-path {
-  margin-left: 0 !important;
 }

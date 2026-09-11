@@ -17,9 +17,294 @@
  */
 class PwHeader extends HTMLElement {
   connectedCallback() {
-    this.rewriteUrls();
     this.setupPagefind();
     this.setupSearch();
+    this.setupNavPopovers();
+    this.setupMobileMenu();
+    // We wait for DOMContentLoaded (or run immediately if already loaded) to
+    // rewrite URLs across the entire page. Because <pw-header> is connected at
+    // the very top of <body>, running rewriteUrls() immediately would miss
+    // elements parsed later in the document, such as Sphinx sidebar navigation
+    // links within #pst-primary-sidebar (e.g. C/C++ API reference links).
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        this.rewriteUrls();
+        this.setupTocFab();
+      });
+    } else {
+      this.rewriteUrls();
+      this.setupTocFab();
+    }
+  }
+
+  /**
+   * Sets up the mobile hamburger menu button to toggle the active subsite's
+   * navigation menu (Sphinx, Rustdoc, or Doxygen).
+   */
+  setupMobileMenu() {
+    const menuBtn = this.querySelector('#pw-header-menu');
+    if (!menuBtn) return;
+
+    const icon = menuBtn.querySelector('.material-symbols-outlined');
+
+    const updateMenuIcon = (isOpen) => {
+      menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (icon) {
+        icon.textContent = isOpen ? 'menu_open' : 'menu';
+      }
+    };
+
+    const scrollToActiveItem = () => {
+      requestAnimationFrame(() => {
+        // 1. Rustdoc subsite
+        const rustdocActive = document.querySelector(
+          'nav.sidebar .current, nav.sidebar [aria-current="page"], nav.sidebar #rustdoc-toc .current',
+        );
+        const rustdocSidebar = document.querySelector('nav.sidebar');
+        if (rustdocActive && rustdocSidebar) {
+          const sRect = rustdocSidebar.getBoundingClientRect();
+          const aRect = rustdocActive.getBoundingClientRect();
+          if (sRect.height > 0) {
+            rustdocSidebar.scrollTop = Math.max(
+              0,
+              aRect.top -
+                sRect.top +
+                rustdocSidebar.scrollTop -
+                sRect.height / 2 +
+                aRect.height / 2,
+            );
+          }
+          return;
+        }
+
+        // 2. Doxygen subsite
+        const doxygenActive = document.querySelector(
+          '#side-nav .selected, #side-nav .item.selected, #side-nav a.selected',
+        );
+        const doxygenSideNav = document.querySelector('#side-nav');
+        if (doxygenActive && doxygenSideNav) {
+          const sRect = doxygenSideNav.getBoundingClientRect();
+          const aRect = doxygenActive.getBoundingClientRect();
+          if (sRect.height > 0) {
+            doxygenSideNav.scrollTop = Math.max(
+              0,
+              aRect.top -
+                sRect.top +
+                doxygenSideNav.scrollTop -
+                sRect.height / 2 +
+                aRect.height / 2,
+            );
+          }
+          return;
+        }
+
+        // 3. Sphinx subsite
+        const sphinxSidebar = document.querySelector('.bd-sidebar-primary');
+        let sphinxActive = document.querySelector(
+          '.bd-sidebar-primary .pw-site-nav [aria-current="page"], .bd-sidebar-primary .pw-site-nav a.current, .bd-sidebar-primary .pw-site-nav a.active',
+        );
+        if (!sphinxActive || sphinxActive.getClientRects().length === 0) {
+          sphinxActive = document.querySelector(
+            '.bd-sidebar-primary [aria-current="page"], .bd-sidebar-primary a.current, .bd-sidebar-primary a.active, .bd-sidebar-primary .active, .bd-sidebar-primary .current',
+          );
+        }
+        if (sphinxActive && sphinxSidebar) {
+          const sRect = sphinxSidebar.getBoundingClientRect();
+          const aRect = sphinxActive.getBoundingClientRect();
+          if (sRect.height > 0 && aRect.height > 0) {
+            sphinxSidebar.scrollTop = Math.max(
+              0,
+              aRect.top -
+                sRect.top +
+                sphinxSidebar.scrollTop -
+                sRect.height / 2 +
+                aRect.height / 2,
+            );
+          }
+        }
+      });
+    };
+
+    menuBtn.addEventListener('click', () => {
+      // Close TOC drawer if open
+      document.body.classList.remove('pw-sphinx-toc-open');
+      const tocFab = document.querySelector('#pw-toc-fab');
+      if (tocFab) tocFab.setAttribute('aria-expanded', 'false');
+
+      // 1. Rustdoc subsite
+      const rustdocSidebar = document.querySelector(
+        'nav.sidebar, .rustdoc .sidebar',
+      );
+      if (rustdocSidebar) {
+        const isShown = rustdocSidebar.classList.contains('shown');
+        if (isShown) {
+          rustdocSidebar.classList.remove('shown');
+          updateMenuIcon(false);
+        } else {
+          rustdocSidebar.classList.add('shown');
+          updateMenuIcon(true);
+          scrollToActiveItem();
+        }
+        return;
+      }
+
+      // 2. Doxygen subsite
+      const doxygenSideNav = document.querySelector('#side-nav');
+      if (doxygenSideNav) {
+        const isOpen = document.body.classList.toggle('pw-doxygen-nav-open');
+        updateMenuIcon(isOpen);
+        if (isOpen) {
+          scrollToActiveItem();
+        }
+        return;
+      }
+
+      // 3. Sphinx subsite (PyData Sphinx Theme)
+      const primarySidebar = document.querySelector(
+        '#pst-primary-sidebar, .bd-sidebar-primary',
+      );
+      if (primarySidebar) {
+        const isOpen = document.body.classList.toggle('pw-sphinx-nav-open');
+        updateMenuIcon(isOpen);
+        if (isOpen) {
+          scrollToActiveItem();
+        }
+        return;
+      }
+    });
+
+    const closeAllDrawers = () => {
+      document.body.classList.remove('pw-sphinx-nav-open');
+      document.body.classList.remove('pw-sphinx-toc-open');
+      document.body.classList.remove('pw-doxygen-nav-open');
+      const rustdocSidebar = document.querySelector(
+        'nav.sidebar, .rustdoc .sidebar',
+      );
+      if (rustdocSidebar) {
+        rustdocSidebar.classList.remove('shown');
+      }
+      updateMenuIcon(false);
+      const tocFab = document.querySelector('#pw-toc-fab');
+      if (tocFab) tocFab.setAttribute('aria-expanded', 'false');
+    };
+
+    // Close menu when clicking on the backdrop outside the drawer
+    const backdrop = document.querySelector('#pw-nav-backdrop');
+    if (backdrop) {
+      backdrop.addEventListener('click', closeAllDrawers);
+    }
+
+    // Close mobile drawer when a link in Rustdoc sidebar is clicked
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest('nav.sidebar a, .rustdoc .sidebar a');
+      if (link) {
+        closeAllDrawers();
+      }
+    });
+
+    // Close on Escape key press
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeAllDrawers();
+      }
+    });
+
+    // Reset menu state on viewport resize back to desktop
+    const mediaQuery = window.matchMedia('(min-width: 840px)');
+    mediaQuery.addEventListener('change', (e) => {
+      if (e.matches) {
+        closeAllDrawers();
+      }
+    });
+  }
+
+  /**
+   * Sets up the floating action button (FAB) for page table of contents (TOC)
+   * on Sphinx pages on mobile viewports.
+   */
+  setupTocFab() {
+    const fab = document.querySelector('#pw-toc-fab');
+    if (!fab) return;
+
+    const updateTocState = () => {
+      const secondarySidebar = document.querySelector(
+        '#pst-secondary-sidebar, .bd-sidebar-secondary',
+      );
+      if (!secondarySidebar) {
+        fab.classList.remove('has-toc');
+        return;
+      }
+
+      const tocEntries = secondarySidebar.querySelectorAll(
+        '.toc-entry, nav#pst-page-toc-nav li, nav.page-toc li, nav.page-toc a',
+      );
+      if (tocEntries.length > 0) {
+        fab.classList.add('has-toc');
+      } else {
+        fab.classList.remove('has-toc');
+      }
+    };
+
+    updateTocState();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', updateTocState);
+    }
+    window.addEventListener('load', updateTocState);
+
+    fab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Close primary navigation if open
+      document.body.classList.remove('pw-sphinx-nav-open');
+      const menuBtn = document.querySelector('#pw-header-menu');
+      if (menuBtn) {
+        menuBtn.setAttribute('aria-expanded', 'false');
+        const icon = menuBtn.querySelector('.material-symbols-outlined');
+        if (icon) icon.textContent = 'menu';
+      }
+
+      const isOpen = document.body.classList.toggle('pw-sphinx-toc-open');
+      fab.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+
+    // Close TOC drawer when a TOC link is clicked
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest(
+        '#pst-secondary-sidebar a, .bd-sidebar-secondary a',
+      );
+      if (link) {
+        document.body.classList.remove('pw-sphinx-toc-open');
+        fab.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  /**
+   * Progressive accessibility enhancement: sets aria-expanded on dropdown items.
+   */
+  setupNavPopovers() {
+    const navItems = this.querySelectorAll('.pw-nav-item');
+    navItems.forEach((item) => {
+      const link = item.querySelector('.pw-nav-link.has-children');
+      if (!link) return;
+
+      link.setAttribute('aria-expanded', 'false');
+      link.setAttribute('aria-haspopup', 'true');
+
+      item.addEventListener('mouseenter', () => {
+        link.setAttribute('aria-expanded', 'true');
+      });
+      item.addEventListener('mouseleave', () => {
+        link.setAttribute('aria-expanded', 'false');
+      });
+      item.addEventListener('focusin', () => {
+        link.setAttribute('aria-expanded', 'true');
+      });
+      item.addEventListener('focusout', (e) => {
+        if (!item.contains(e.relatedTarget)) {
+          link.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
   }
 
   /**
@@ -126,14 +411,16 @@ class PwHeader extends HTMLElement {
    */
   rewriteUrls() {
     const root = getSiteRootPath();
-    const links = document.querySelectorAll('a[href^="https://pigweed.dev/"]');
-    const pattern = 'https://pigweed.dev/';
+    const links = document.querySelectorAll('a[href^="https://pigweed.dev"]');
+    const pattern = /^https:\/\/pigweed\.dev(\/)?/;
     links.forEach((link) => {
       const href = link.getAttribute('href');
-      if (!href || !href.startsWith(pattern)) return;
+      if (!href || !href.startsWith('https://pigweed.dev')) return;
       let target = href.replace(pattern, root);
-      if (target === root || target.endsWith('/')) {
-        target += 'index.html';
+      if (target === root || target.endsWith('/') || target === '') {
+        target = `${root}index.html`;
+      } else if (target.startsWith('#') || target.startsWith('?')) {
+        target = `${root}index.html${target}`;
       }
       link.setAttribute('href', target);
       link.href = target;
@@ -217,6 +504,11 @@ class PwTheme extends HTMLElement {
     this.buttons = this.querySelectorAll('.pw-theme-btn');
     if (!this.buttons.length) return;
 
+    // Hide the 'ayu' theme option in Rustdoc settings.
+    const style = document.createElement('style');
+    style.textContent = 'label[for="theme-ayu"] { display: none !important; }';
+    document.head.appendChild(style);
+
     const savedTheme =
       localStorage.getItem('theme') ||
       localStorage.getItem('mode') ||
@@ -240,6 +532,21 @@ class PwTheme extends HTMLElement {
         }
       });
     });
+
+    // Re-assert the active Pigweed theme on Back/Forward Cache (bfcache) restoration.
+    // Rustdoc's storage script listens to 'pageshow' and runs updateTheme() asynchronously
+    // via setTimeout(..., 0), which can otherwise revert or switch data-theme unexpectedly.
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        const currentTheme =
+          localStorage.getItem('theme') ||
+          (window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light');
+        this.setTheme(currentTheme);
+        setTimeout(() => this.setTheme(currentTheme), 0);
+      }
+    });
   }
 
   setTheme(theme) {
@@ -262,6 +569,13 @@ class PwTheme extends HTMLElement {
     try {
       localStorage.setItem('theme', theme);
       localStorage.setItem('mode', theme);
+      // Synchronize Rustdoc's theme keys to prevent Rustdoc's storage script
+      // from falling back to or activating default themes on page load or
+      // Back/Forward Cache (bfcache) restorations.
+      localStorage.setItem('rustdoc-theme', theme);
+      localStorage.setItem('rustdoc-use-system-theme', 'false');
+      localStorage.setItem('rustdoc-preferred-dark-theme', 'dark');
+      localStorage.setItem('rustdoc-preferred-light-theme', 'light');
     } catch (e) {
       // localStorage might be disabled or unavailable in some contexts
     }

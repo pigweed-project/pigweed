@@ -1,8 +1,8 @@
 .. _docs-build:
 
-=============
-Build systems
-=============
+=========================
+Build systems & toolchain
+=========================
 Pigweed has full support for Bazel and partial support for GN and CMake.
 See :ref:`docs-concepts-build-system` for more information.
 
@@ -94,3 +94,5 @@ CMake
    bazel/index
    gn/index
    cmake/index
+   Toolchain <../toolchain>
+   ../size_optimizations

@@ -363,3 +363,12 @@ Next steps
   `talk to us on Discord`_. If you prefer email, DM one of the Discord
   admins (they're all on the Pigweed team) and they'll kick off an email
   thread for you.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Pigweed overview <self>
+   ../mission
+   ../glossary
+   FAQs <../faq>

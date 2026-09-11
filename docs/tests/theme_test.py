@@ -117,6 +117,43 @@ class ThemeTest(unittest.TestCase):
 
             browser.close()
 
+    def test_rustdoc_ayu_theme_option_hidden(self):
+        """Verifies that the ayu theme option is hidden in Rustdoc settings."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+
+            page.goto(
+                self.server.url_for("rustdoc/settings.html"),
+                wait_until="domcontentloaded",
+            )
+
+            # Wait for settings to load
+            page.wait_for_selector('label[for="theme-dark"]', timeout=5000)
+            self.assertTrue(
+                page.locator('label[for="theme-dark"]').is_visible()
+            )
+            self.assertTrue(
+                page.locator('label[for="theme-light"]').is_visible()
+            )
+
+            # Verify label[for="theme-ayu"] is not shown
+            ayu_label = page.locator('label[for="theme-ayu"]')
+            self.assertFalse(
+                ayu_label.is_visible(),
+                "label[for='theme-ayu'] should be hidden in Rustdoc settings",
+            )
+
+            browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

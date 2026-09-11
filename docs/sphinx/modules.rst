@@ -11,8 +11,9 @@ Modules
    :maxdepth: 1
    :hidden:
 
-   self
+   Overview <self>
    module_structure
+   facades
    pw_alignment/docs
    pw_allocator/docs
    pw_analog/docs

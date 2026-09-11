@@ -100,6 +100,10 @@ details.sd-dropdown {
   overflow-y: hidden !important;
 }
 
+#searchbox {
+  display: none !important;
+}
+
 @media (min-width: 840px) {
   .bd-article {
     padding: 0 0 0 0.5rem !important;
@@ -219,12 +223,6 @@ html[data-theme='light'] {
 .bd-sidebar-primary {
   background-color: var(--pw-color-background-primary);
   font-family: var(--pw-font-body);
-  /* Hide the "Section Navigation" scrollbar. */
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  ::-webkit-scrollbar {
-    display: none;
-  }
 }
 
 /* Main content of the page. */

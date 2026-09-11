@@ -190,7 +190,6 @@ html_sidebars = {
     'changelog': [],
     'size_optimizations': [],
     'index': [],
-    'overview': [],
     'toolchain': [],
 }
 

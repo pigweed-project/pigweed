@@ -109,7 +109,6 @@ sphinx_docs_library(
         "code_of_conduct.rst",
         "code_reviews.rst",
         "community/index.rst",
-        "concepts/index.rst",
         "contributing/build.rst",
         "contributing/docs/build.rst",
         "contributing/docs/changelog.rst",
