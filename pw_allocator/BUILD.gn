@@ -304,6 +304,22 @@ pw_source_set("fragmentation") {
   ]
 }
 
+pw_source_set("framing_allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/framing_allocator.h" ]
+  public_deps = [
+    ":bump_allocator",
+    ":forwarding_allocator",
+    ":hardening",
+    ":pw_allocator",
+    "$dir_pw_assert:assert",
+    "$dir_pw_bytes:alignment",
+    dir_pw_preprocessor,
+  ]
+  sources = [ "framing_allocator.cc" ]
+  deps = [ "$dir_pw_assert:check" ]
+}
+
 pw_source_set("freertos_allocator") {
   public_deps = [ ":freertos_allocator_headers" ]
   deps = [ "$pw_external_freertos" ]
@@ -671,6 +687,15 @@ pw_test("fragmentation_test") {
   sources = [ "fragmentation_test.cc" ]
 }
 
+pw_test("framing_allocator_test") {
+  deps = [
+    ":framing_allocator",
+    ":testing",
+  ]
+  sources = [ "framing_allocator_test.cc" ]
+  negative_compilation_tests = true
+}
+
 pw_test("freertos_allocator_test") {
   deps = [
     ":freertos_allocator_headers",
@@ -836,6 +861,7 @@ pw_test_group("tests") {
     ":fallback_allocator_test",
     ":first_fit_test",
     ":fragmentation_test",
+    ":framing_allocator_test",
     ":freertos_allocator_test",
     ":guarded_allocator_test",
     ":layout_test",

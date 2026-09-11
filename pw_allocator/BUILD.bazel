@@ -305,6 +305,25 @@ cc_library(
 )
 
 cc_library(
+    name = "framing_allocator",
+    srcs = ["framing_allocator.cc"],
+    hdrs = ["public/pw_allocator/framing_allocator.h"],
+    implementation_deps = [
+        "//pw_assert:check",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":bump_allocator",
+        ":forwarding_allocator",
+        ":hardening",
+        "//pw_allocator",
+        "//pw_assert:assert",
+        "//pw_bytes:alignment",
+        "//pw_preprocessor",
+    ],
+)
+
+cc_library(
     name = "freertos_allocator",
     srcs = ["freertos_allocator.cc"],
     deps = [
@@ -720,6 +739,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "framing_allocator_test",
+    srcs = ["framing_allocator_test.cc"],
+    has_nc_test = True,
+    deps = [
+        ":framing_allocator",
+        ":testing",
+    ],
+)
+
+pw_cc_test(
     name = "freertos_allocator_test",
     srcs = [
         "freertos_allocator.cc",
@@ -908,6 +937,7 @@ filegroup(
         "public/pw_allocator/forwarding_allocator.h",
         "public/pw_allocator/forwarding_pool.h",
         "public/pw_allocator/fragmentation.h",
+        "public/pw_allocator/framing_allocator.h",
         "public/pw_allocator/fuzzing.h",
         "public/pw_allocator/guarded_allocator.h",
         "public/pw_allocator/layout.h",

@@ -60,6 +60,7 @@ cc_library {
         "control_block.cc",
         "fallback_allocator.cc",
         "fragmentation.cc",
+        "framing_allocator.cc",
         "guarded_allocator.cc",
         "libc_allocator.cc",
         "managed_ptr.cc",

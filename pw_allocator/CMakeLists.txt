@@ -287,6 +287,25 @@ pw_add_library(pw_allocator.fragmentation STATIC
     fragmentation.cc
 )
 
+pw_add_library(pw_allocator.framing_allocator STATIC
+  HEADERS
+    public/pw_allocator/framing_allocator.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator.bump_allocator
+    pw_allocator.forwarding_allocator
+    pw_allocator.hardening
+    pw_allocator
+    pw_assert.assert
+    pw_bytes.alignment
+    pw_preprocessor
+  PRIVATE_DEPS
+    pw_assert.check
+  SOURCES
+    framing_allocator.cc
+)
+
 pw_add_library(pw_allocator.freertos_allocator STATIC
   PUBLIC_DEPS
     pw_allocator.freertos_allocator_headers
@@ -721,6 +740,18 @@ pw_add_test(pw_allocator.fragmentation_test
   PRIVATE_DEPS
     pw_allocator.fragmentation
     pw_allocator.testing
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.framing_allocator_test
+  SOURCES
+    framing_allocator_test.cc
+  PRIVATE_DEPS
+    pw_allocator.framing_allocator
+    pw_allocator.testing
+    pw_compilation_testing._pigweed_only_negative_compilation
   GROUPS
     modules
     pw_allocator

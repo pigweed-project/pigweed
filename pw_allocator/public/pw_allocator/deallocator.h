@@ -104,6 +104,15 @@ class Deallocator {
   template <typename ElementType>
   void DeleteArray(ElementType* ptr, size_t count);
 
+  /// Invokes the destructor on the elements of the given array.
+  ///
+  /// This method is a no-op if this object is configured to skip destruction.
+  ///
+  /// @param[in] ptr      Pointer to previously-allocated array.
+  /// @param[in] count    Number of items in the array.
+  template <typename ElementType>
+  void Destroy(ElementType* ptr, size_t count);
+
   /// Returns the total amount of memory provided by this object.
   ///
   /// This is an optional method. Some memory providers may not have an easily
@@ -357,10 +366,15 @@ void Deallocator::Delete(ElementType* ptr, size_t count) {
 
 template <typename ElementType>
 void Deallocator::DeleteArray(ElementType* ptr, size_t count) {
+  Destroy(ptr, count);
+  Deallocate(ptr);
+}
+
+template <typename ElementType>
+void Deallocator::Destroy(ElementType* ptr, size_t count) {
   if (!capabilities_.has(Capability::kSkipsDestroy)) {
     std::destroy_n(ptr, count);
   }
-  Deallocate(ptr);
 }
 
 StatusWithSize Deallocator::GetCapacity() const {

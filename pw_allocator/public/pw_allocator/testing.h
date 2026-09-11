@@ -91,6 +91,8 @@ class AllocatorForTest : public ForwardingAllocator {
 
   ~AllocatorForTest() override { FreeAll<BlockType>(blocks()); }
 
+  ByteSpan buffer() { return buffer_; }
+
   typename BlockType::Range blocks() const { return allocator_.blocks(); }
   typename BlockType::Range blocks() { return allocator_.blocks(); }
 

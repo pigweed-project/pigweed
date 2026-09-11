@@ -280,12 +280,14 @@ Consult the :cc:`API reference <pw_allocator>` for additional details.
 
 - :cc:`FallbackAllocator <pw::allocator::FallbackAllocator>`: Dispatches
   first to a primary allocator, and, if that fails, to a secondary allocator.
-- :cc:`PmrAllocator <pw::allocator::PmrAllocator>`: Adapts an allocator to
-  be a ``std::pmr::polymorphic_allocator``, which can be used with standard
-  library containers that `use allocators`_, such as ``std::pmr::vector<T>``.
+- :cc:`FramingAllocator <pw::allocator::FramingAllocator>`: Reserves space for a
+  prefix before each allocation, or a suffix after each allocation, or both.
 - :cc:`GuardedAllocator <pw::allocator::GuardedAllocator>`: Inserts guard
   values before and after allocations, and provides a thread-safe way to check
   them in order to detect heap overflows.
+- :cc:`PmrAllocator <pw::allocator::PmrAllocator>`: Adapts an allocator to
+  be a ``std::pmr::polymorphic_allocator``, which can be used with standard
+  library containers that `use allocators`_, such as ``std::pmr::vector<T>``.
 - :cc:`SynchronizedAllocator <pw::allocator::SynchronizedAllocator>`:
   Synchronizes access to another allocator, allowing it to be used by multiple
   threads.
