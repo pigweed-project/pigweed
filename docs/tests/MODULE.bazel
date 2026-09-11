@@ -1,0 +1,83 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# The documentation test suite is maintained as a separate standalone Bazel
+# module to avoid adding heavy dependencies (such as Playwright and hermetic
+# browser binaries) and long-running integration tests to the root Pigweed
+# workspace. Because it is a separate module, the tests run against pre-built
+# documentation outputs generated from the main workspace.
+
+module(
+    name = "docs_tests",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_python", version = "1.8.5")
+bazel_dep(name = "pigweed")
+local_path_override(
+    module_name = "pigweed",
+    path = "../..",
+)
+
+http_archive = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:http.bzl",
+    "http_archive",
+)
+
+build_file_content = """
+filegroup(
+    name = "files",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+"""
+
+http_archive(
+    name = "playwright_chromium_linux_x64",
+    build_file_content = build_file_content,
+    sha256 = "ae8736ac28bc69278551500f219fc749575648263c43ec5990749eff43b9fcf8",
+    strip_prefix = "chrome-linux64",
+    urls = [
+        "https://cdn.playwright.dev/builds/cft/151.0.7922.34/linux64/chrome-linux64.zip",
+    ],
+)
+
+http_archive(
+    name = "playwright_chromium_mac_arm64",
+    build_file_content = build_file_content,
+    sha256 = "01a23ef9501b2745e0c2944c2e583207e6f6132d8d91c3a87ff65b5079e438ef",
+    strip_prefix = "chrome-mac-arm64",
+    urls = [
+        "https://cdn.playwright.dev/builds/cft/151.0.7922.34/mac-arm64/chrome-mac-arm64.zip",
+    ],
+)
+
+http_archive(
+    name = "playwright_chromium_mac_x64",
+    build_file_content = build_file_content,
+    sha256 = "69bcc853db975a2380767e9ff36da17f1d7b782fbbe191a210f676d2d5967d3e",
+    strip_prefix = "chrome-mac-x64",
+    urls = [
+        "https://cdn.playwright.dev/builds/cft/151.0.7922.34/mac-x64/chrome-mac-x64.zip",
+    ],
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    hub_name = "docs_tests_pip",
+    python_version = "3.11",
+    requirements_lock = "//:requirements.txt",
+)
+use_repo(pip, "docs_tests_pip")

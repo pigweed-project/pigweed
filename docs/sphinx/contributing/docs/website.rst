@@ -243,6 +243,48 @@ Passing the ID through the environment helps us ensure that the production
 ID is only used when someone views the docs from the production domain
 (``pigweed.dev``).
 
+.. _contrib-docs-website-tests:
+
+-------
+Testing
+-------
+All documentation tests are located in ``//docs/tests``. The directory is
+a standalone Bazel workspace because the integration tests are slow and pull
+in heavy dependencies e.g. `Playwright <https://playwright.dev>`_.
+
+There are 2 types of tests:
+
+* **Static tests** inspect the built HTML files directly without running a
+  browser. E.g. verifying that every page contains a ``<pw-header>`` element.
+* **Runtime tests** launch a headless Chromium browser instance via Playwright
+  to test interactive UI behavior.
+
+Quickstart
+==========
+#. Build the docs:
+
+   .. code-block:: console
+
+      bazelisk build //docs
+
+#. ``cd`` into the tests directory:
+
+   .. code-block:: console
+
+      cd docs/tests
+
+#. Run all tests:
+
+   .. code-block:: console
+
+      bazelisk test --test_output=all //...
+
+   Or run an individual test e.g. ``header_test``:
+
+   .. code-block:: console
+
+      bazelisk test --test_output=all //:header_test
+
 .. _contrib-docs-website-header:
 
 ----------------
