@@ -322,10 +322,12 @@ TEST(Base64, Empty) {
 }
 
 TEST(Base64, ExampleFromRfc3548Section7) {
+  // DOCSTAG: [pw_base64-encode]
   constexpr uint8_t input[] = {0x14, 0xfb, 0x9c, 0x03, 0xd9, 0x7e};
   char output[EncodedSize(sizeof(input)) + 1] = {};
 
   Encode(as_bytes(span(input)), output);
+  // DOCSTAG: [pw_base64-encode]
   EXPECT_STREQ("FPucA9l+", output);
   Encode(as_bytes(span(input, 5)), output);
   EXPECT_STREQ("FPucA9k=", output);

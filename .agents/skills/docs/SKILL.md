@@ -90,6 +90,7 @@ Triggers:
 
 * A target in `//docs/doxygen` has failed to build
 * The user is attempting to create new C/C++ API reference content
+* The user is adding code examples to Doxygen comments
 
 Guards:
 

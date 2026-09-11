@@ -57,6 +57,7 @@ ALIASES                = "rst=^^\verbatim embed:rst:leading-asterisk^^" \
                          "endmaindocs=@htmlonly <!-- endmaindocs --> @endhtmlonly" \
                          "security=@if IGNORE_BLOCK" \
                          "endsecurity=@endif" \
+                         "example{2}=\par Example^^\snippet \1 \2^^Source: <a href=\"https://cs.opensource.google/pigweed/pigweed/+/main:\1?q=\2\">\1</a>"
 
 # https://www.doxygen.nl/manual/config.html#cfg_case_sense_names
 CASE_SENSE_NAMES       = NO
@@ -70,6 +71,12 @@ DISABLE_INDEX          = NO
 
 # https://www.doxygen.nl/manual/config.html#cfg_enable_preprocessing
 ENABLE_PREPROCESSING   = YES
+
+# https://www.doxygen.nl/manual/config.html#cfg_example_path
+EXAMPLE_PATH           = .
+
+# https://www.doxygen.nl/manual/config.html#cfg_example_recursive
+EXAMPLE_RECURSIVE      = YES
 
 # https://www.doxygen.nl/manual/config.html#cfg_extract_package
 EXTRACT_PACKAGE        = YES

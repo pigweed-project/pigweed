@@ -254,6 +254,24 @@ Use the following pattern:
    ///
    /// @endsecurity
 
+.. _style-doxygen-pw-example:
+
+@example
+========
+Use ``@example{<path>,<tag-name>}`` to import testable code examples from unit
+tests into function, method, or class doc comments:
+
+.. code-block:: cpp
+
+   /// @example{pw_base64/base64_test.cc,pw_base64-encode}
+
+* ``<path>``: The repository-relative path to the unit test file.
+* ``<tag-name>``: The snippet tag name inside the ``// DOCSTAG: [<tag-name>]``
+  comments in the test file.
+
+See :ref:`contributing-docs-examples-quickstart-a-include-doxygen` for
+instructions on configuring the unit test and build target.
+
 Links
 =====
 * For linking from Sphinx to Doxygen, see :ref:`contrib-doxygen-doxylink`.

@@ -34,6 +34,50 @@ Every `@module` and `@submodule` annotation must have an accompanying
    index of the entire public API that Doxygen is aware of. It can be found at
    `//bazel-bin/docs/sphinx/_docs/_sources/doxygen/api/cc/index.tag`.
 
+## Code examples
+
+Pigweed uses a custom `@example` Doxygen alias to import testable code examples
+directly from unit tests into API reference doc comments:
+
+1. **Tag the example in the unit test:** Wrap the test code using
+   `// DOCSTAG: [<tag-name>]` comments:
+
+   ```cpp
+   // DOCSTAG: [pw_base64-encode]
+   constexpr uint8_t input[] = {0x14, 0xfb, 0x9c, 0x03, 0xd9, 0x7e};
+   char output[EncodedSize(sizeof(input)) + 1] = {};
+
+   Encode(as_bytes(span(input)), output);
+   // DOCSTAG: [pw_base64-encode]
+   ```
+
+2. **Expose the test file to Doxygen:** In the module's `BUILD.bazel`, ensure the
+   test file is included in the `doxygen` `filegroup`:
+
+   ```starlark
+   filegroup(
+       name = "doxygen",
+       srcs = [
+           "base64_test.cc",
+           "public/pw_base64/base64.h",
+       ],
+   )
+   ```
+
+3. **Include the example in the doc comment:** Use the
+   `@example{<path>,<tag-name>}` alias:
+
+   ```cpp
+   /// @example{pw_base64/base64_test.cc,pw_base64-encode}
+   ```
+
+   The first argument is the repository-relative path to the test file, and the
+   second is the snippet tag name. This alias automatically wraps the snippet in
+   a `@par Example` section and generates a `Source: <path>` link to Pigweed Code
+   Search with a `?q=<tag-name>` query parameter to locate the snippet.
+
+See `//docs/sphinx/contributing/docs/examples.rst` for more details.
+
 ## Linking
 
 * Sphinx to Doxygen: use the `:cc:` role. See

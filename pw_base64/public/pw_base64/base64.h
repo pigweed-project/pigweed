@@ -106,6 +106,8 @@ constexpr size_t EncodedSize(size_t binary_size_bytes) {
 ///   occur in place.
 ///
 /// @warning The resulting string in the output is **NOT** null-terminated!
+///
+/// @example{pw_base64/base64_test.cc,pw_base64-encode}
 inline void Encode(span<const std::byte> binary, char* output) {
   pw_Base64Encode(binary.data(), binary.size_bytes(), output);
 }

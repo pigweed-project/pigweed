@@ -52,6 +52,7 @@ pw_cc_test(
 filegroup(
     name = "doxygen",
     srcs = [
+        "base64_test.cc",
         "public/pw_base64/base64.h",
     ],
 )

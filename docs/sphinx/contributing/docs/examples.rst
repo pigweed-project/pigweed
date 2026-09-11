@@ -228,6 +228,13 @@ CMake
 
 Pull the example into a doc
 ---------------------------
+Code examples can be pulled into Sphinx documentation (reStructuredText),
+Doxygen C/C++ API references, or both.
+
+.. _contributing-docs-examples-quickstart-a-include-sphinx:
+
+Sphinx (reStructuredText)
+~~~~~~~~~~~~~~~~~~~~~~~~~
 #. In your module's top-level ``BUILD.bazel`` file (e.g.
    ``//pw_string/BUILD.bazel``), update the ``sphinx_docs_library`` target:
 
@@ -248,6 +255,77 @@ Pull the example into a doc
       :dedent:
       :start-after: .. DOCSTAG: [contributing-docs-examples]
       :end-before: .. DOCSTAG: [contributing-docs-examples]
+
+.. _contributing-docs-examples-quickstart-a-include-doxygen:
+
+Doxygen (C/C++ API reference)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Pigweed supports importing testable code snippets from unit tests into
+function, method, or class doc comments via a custom ``@example`` alias that
+wraps Doxygen's native ``@snippet`` command. The exact same
+``// DOCSTAG: [tag-name]`` delimiters used for Sphinx are recognized by
+Doxygen as snippet boundaries. Doxygen identifies the snippet by matching the
+identifier inside the square brackets (``[tag-name]``) and ignores preceding
+comment text such as ``DOCSTAG:``, so ``DOCSTAG`` does not need to be (and
+should not be) included in the snippet ID.
+
+#. In your existing unit test file (e.g. ``pw_base64/base64_test.cc``), tag
+   the relevant portion of the test with ``// DOCSTAG: [tag-name]``:
+
+   .. code-block:: cpp
+
+      TEST(Base64, ExampleFromRfc3548Section7) {
+        // DOCSTAG: [pw_base64-encode]
+        constexpr uint8_t input[] = {0x14, 0xfb, 0x9c, 0x03, 0xd9, 0x7e};
+        char output[EncodedSize(sizeof(input)) + 1] = {};
+
+        Encode(as_bytes(span(input)), output);
+        // DOCSTAG: [pw_base64-encode]
+        EXPECT_STREQ("FPucA9l+", output);
+        // ...
+      }
+
+#. In your module's top-level ``BUILD.bazel`` file (e.g.
+   ``//pw_base64/BUILD.bazel``), ensure the test file is explicitly included in
+   the ``doxygen`` filegroup:
+
+   .. code-block:: starlark
+
+      filegroup(
+          name = "doxygen",
+          srcs = [
+              "base64_test.cc",
+              "public/pw_base64/base64.h",
+              # ...
+          ],
+      )
+
+#. In your C/C++ header file (e.g. ``public/pw_base64/base64.h``),
+   reference the snippet in the Doxygen comment for a function or class using
+   Pigweed's custom ``@example{<path>,<tag-name>}`` alias:
+
+   .. code-block:: cpp
+
+      /// Encodes the provided data in Base64 and writes the result to the buffer.
+      ///
+      /// @example{pw_base64/base64_test.cc,pw_base64-encode}
+      inline void Encode(span<const std::byte> binary, char* output);
+
+   The first argument is the repository-relative path to the test file
+   (e.g. ``pw_base64/base64_test.cc``), and the second argument is the snippet
+   tag name inside the brackets (e.g. ``pw_base64-encode``).
+
+   When Doxygen runs, this alias automatically:
+
+   * Creates a structured ``Example`` section (similar to ``@pre`` or
+     ``@returns``).
+   * Extracts the lines between the opening and closing
+     ``// DOCSTAG: [pw_base64-encode]`` comments, strips indentation, applies
+     syntax highlighting, and autolinks referenced C++ symbols to their API
+     reference entries.
+   * Appends a ``Source: <path>`` link pointing directly to the test file in
+     Pigweed Code Search (with a ``?q=<tag-name>`` query parameter to highlight
+     the snippet tag).
 
 You're done!
 
@@ -337,3 +415,6 @@ AI agents MUST follow this process:
 #. Inspect ``//pw_string/docs.rst`` and the files in the
    ``//pw_string/examples`` directory to see a working demonstration
    of buildable and testable code examples.
+
+#. You MUST explicitly list all files in ``BUILD.bazel`` files and MUST NOT
+   use ``glob()``.
