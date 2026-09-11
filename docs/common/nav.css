@@ -48,8 +48,8 @@
 /* ========== SPHINX (PYDATA THEME) NAVIGATION ========== */
 .bd-sidebar-primary,
 .bd-sidebar-secondary {
-  top: 64px !important;
-  height: calc(100vh - 64px) !important;
+  top: var(--pw-header-height) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
 }
 
 /* Custom site vs Section navigation visibility across viewports:
@@ -73,12 +73,12 @@
   .bd-sidebar-primary {
     display: block !important;
     position: fixed !important;
-    top: 64px !important;
+    top: var(--pw-header-height) !important;
     left: 0 !important;
     width: 75vw !important;
     max-width: 350px !important;
-    height: calc(100vh - 64px) !important;
-    max-height: calc(100vh - 64px) !important;
+    height: calc(100vh - var(--pw-header-height)) !important;
+    max-height: calc(100vh - var(--pw-header-height)) !important;
     margin-left: -75% !important;
     visibility: hidden !important;
     background-color: var(--pw-color-background-primary) !important;
@@ -102,13 +102,13 @@
   .bd-sidebar-secondary {
     display: block !important;
     position: fixed !important;
-    top: 64px !important;
+    top: var(--pw-header-height) !important;
     right: 0 !important;
     left: auto !important;
     width: 75vw !important;
     max-width: 350px !important;
-    height: calc(100vh - 64px) !important;
-    max-height: calc(100vh - 64px) !important;
+    height: calc(100vh - var(--pw-header-height)) !important;
+    max-height: calc(100vh - var(--pw-header-height)) !important;
     margin-right: -75% !important;
     visibility: hidden !important;
     background-color: var(--pw-color-background-primary) !important;
@@ -132,7 +132,7 @@
 #pw-toc-fab {
   display: none;
   position: fixed;
-  top: calc(64px + 12px);
+  top: calc(var(--pw-header-height) + 12px);
   right: 16px;
   bottom: auto;
   width: 36px;
@@ -187,10 +187,10 @@
 #pw-nav-backdrop {
   display: none;
   position: fixed;
-  top: 64px;
+  top: var(--pw-header-height);
   left: 0;
   width: 100vw;
-  height: calc(100vh - 64px);
+  height: calc(100vh - var(--pw-header-height));
   background-color: rgba(0, 0, 0, 0.4);
   z-index: 1050;
   cursor: pointer;
@@ -218,14 +218,14 @@
 .rustdoc .sidebar,
 body:has(> nav.sidebar) .sidebar {
   position: sticky !important;
-  top: 64px !important;
-  height: calc(100vh - 64px) !important;
+  top: var(--pw-header-height) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
 }
 
 .rustdoc .sidebar-resizer,
 body:has(> nav.sidebar) .sidebar-resizer {
-  top: 64px !important;
-  height: calc(100vh - 64px) !important;
+  top: var(--pw-header-height) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
 }
 
 /* Prevent layout jump when resizing the rustdoc sidebar.
@@ -236,10 +236,10 @@ html.sidebar-resizing > body {
 }
 
 @media (max-width: 700px) {
-  /* Position rustdoc's mobile topbar directly below the 64px Pigweed header. */
+  /* Position rustdoc's mobile topbar directly below the Pigweed header. */
   rustdoc-topbar {
     position: sticky !important;
-    top: 64px !important;
+    top: var(--pw-header-height) !important;
     z-index: 10 !important;
     width: 100% !important;
     box-sizing: border-box !important;
@@ -268,8 +268,8 @@ html.sidebar-resizing > body {
   .rustdoc .sidebar,
   body:has(> nav.sidebar) .sidebar {
     position: fixed !important;
-    top: calc(64px + var(--topbar-height, 45px)) !important;
-    height: calc(100vh - 64px - var(--topbar-height, 45px)) !important;
+    top: calc(var(--pw-header-height) + var(--topbar-height, 45px)) !important;
+    height: calc(100vh - var(--pw-header-height) - var(--topbar-height, 45px)) !important;
     z-index: 1055 !important;
     background-color: var(--pw-color-background-primary) !important;
     width: 100vw !important;
@@ -280,12 +280,17 @@ html.sidebar-resizing > body {
 
 /* ========== DOXYGEN SUBSITE NAVIGATION ========== */
 #side-nav {
-  top: 64px !important;
-  height: calc(100vh - 64px) !important;
+  position: fixed !important;
+  top: var(--pw-header-height) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
 }
 
 #doc-content {
-  height: calc(100vh - 64px) !important;
+  height: calc(100vh - var(--pw-header-height)) !important;
+}
+
+#nav-tree {
+  height: 100% !important;
 }
 
 /* Mobile Doxygen navigation (<840px):
@@ -303,10 +308,10 @@ html.sidebar-resizing > body {
     display: none !important;
     position: fixed !important;
     left: 0 !important;
-    top: 64px !important;
+    top: var(--pw-header-height) !important;
     width: 100vw !important;
-    height: calc(100vh - 64px) !important;
-    max-height: calc(100vh - 64px) !important;
+    height: calc(100vh - var(--pw-header-height)) !important;
+    max-height: calc(100vh - var(--pw-header-height)) !important;
     background-color: var(--pw-color-background-primary) !important;
     z-index: 1055 !important;
     padding: 16px !important;
@@ -324,7 +329,7 @@ html.sidebar-resizing > body {
   #doc-content {
     margin-left: 0 !important;
     width: 100vw !important;
-    height: calc(100vh - 64px) !important;
+    height: calc(100vh - var(--pw-header-height)) !important;
   }
 
   #nav-path {

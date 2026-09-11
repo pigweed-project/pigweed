@@ -168,6 +168,9 @@ html_theme_options = {
     'navbar_end': None,
     'navbar_persistent': None,
     'navbar_start': None,
+    # Hide default PyData breadcrumbs. Universal breadcrumbs are now provided by
+    # //docs/common.
+    'article_header_start': [],
     # https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/styling.html#configure-pygments-theme
     'pygments_light_style': 'pigweed_code_light_style',
     'pygments_dark_style': 'pigweed_code_style',
@@ -175,13 +178,14 @@ html_theme_options = {
     'disable_search': True,
 }
 
-if 'LUCI_IS_TRY' in os.environ and os.environ['LUCI_IS_TRY'] == '1':
-    html_theme_options['announcement'] = (
-        "You are viewing Pigweed's docs on an automatically generated staging "
-        'site. <b>The content on this staging site may be incorrect or '
-        "unapproved.</b> Pigweed's official, approved docs are only published "
-        'at <a href="https://pigweed.dev">pigweed.dev</a>.'
-    )
+# TODO: b/559244998 - Re-enable the staging site announcement banner.
+# if 'LUCI_IS_TRY' in os.environ and os.environ['LUCI_IS_TRY'] == '1':
+#     html_theme_options['announcement'] = (
+#         "You are viewing Pigweed's docs on an automatically generated staging "
+#         'site. <b>The content on this staging site may be incorrect or '
+#         "unapproved.</b> Pigweed's official, approved docs are only published "
+#         'at <a href="https://pigweed.dev">pigweed.dev</a>.'
+#     )
 
 html_baseurl = 'https://pigweed.dev/'
 

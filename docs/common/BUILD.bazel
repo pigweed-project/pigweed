@@ -21,6 +21,8 @@ sphinx_docs_library(
     name = "common",
     srcs = [
         "__init__.py",
+        "breadcrumbs.css",
+        "breadcrumbs.py",
         "header.css",
         "header.html",
         "header.js",

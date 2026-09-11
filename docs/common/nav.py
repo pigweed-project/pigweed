@@ -185,6 +185,41 @@ def render_site_nav(
     return template.render(nav_links=nav_links, current_page=current_page)
 
 
+def inject_site_nav_into_content(
+    content: str,
+    rel_page_path: str,
+    nav_links: list[NavLink],
+    env: Environment,
+) -> str:
+    """Injects sitewide navigation into the content of a Sphinx HTML page."""
+    if 'id="pst-primary-sidebar"' not in content:
+        return content
+
+    site_nav_html = render_site_nav(nav_links, rel_page_path, env)
+    pattern = r'<div class="sidebar-primary-item">\s*<nav class="bd-docs-nav bd-links"[\s\S]*?</nav>\s*</div>'
+    site_nav_item = f'<div class="sidebar-primary-item pw-site-nav">\n{site_nav_html}\n</div>'
+
+    if re.search(pattern, content):
+        return re.sub(
+            pattern,
+            lambda m: f"{m.group(0)}\n{site_nav_item}",
+            content,
+            count=1,
+        )
+
+    target = '<div class="sidebar-header-items sidebar-primary__section">'
+    if target in content:
+        replacement = f"{target}\n{site_nav_item}"
+        return content.replace(target, replacement, 1)
+
+    end_target = '<div class="sidebar-primary-items__end'
+    if end_target in content:
+        replacement = f"{site_nav_item}\n{end_target}"
+        return content.replace(end_target, replacement, 1)
+
+    return content
+
+
 def inject_site_nav(app: Sphinx) -> None:
     """Injects the generated sitewide navigation menu into all Sphinx HTML pages."""
     outdir = Path(app.outdir)
@@ -212,36 +247,9 @@ def inject_site_nav(app: Sphinx) -> None:
                 continue
 
             content = path.read_text(encoding="utf-8")
-            if 'id="pst-primary-sidebar"' not in content:
-                continue
-
             rel_page_path = str(path.relative_to(outdir))
-            site_nav_html = render_site_nav(nav_links, rel_page_path, env)
-
-            # 1. If existing section nav is present, append pw-site-nav right after it
-            pattern = r'<div class="sidebar-primary-item">\s*<nav class="bd-docs-nav bd-links"[\s\S]*?</nav>\s*</div>'
-            site_nav_item = f'<div class="sidebar-primary-item pw-site-nav">\n{site_nav_html}\n</div>'
-
-            if re.search(pattern, content):
-                new_content = re.sub(
-                    pattern,
-                    lambda m: f"{m.group(0)}\n{site_nav_item}",
-                    content,
-                    count=1,
-                )
+            new_content = inject_site_nav_into_content(
+                content, rel_page_path, nav_links, env
+            )
+            if new_content != content:
                 path.write_text(new_content, encoding="utf-8")
-            else:
-                # 2. On index.html (or pages without existing bd-docs-nav):
-                target = '<div class="sidebar-header-items sidebar-primary__section">'
-                if target in content:
-                    replacement = f"{target}\n{site_nav_item}"
-                    new_content = content.replace(target, replacement, 1)
-                    path.write_text(new_content, encoding="utf-8")
-                else:
-                    end_target = '<div class="sidebar-primary-items__end'
-                    if end_target in content:
-                        replacement = f"{site_nav_item}\n{end_target}"
-                        new_content = content.replace(
-                            end_target, replacement, 1
-                        )
-                        path.write_text(new_content, encoding="utf-8")

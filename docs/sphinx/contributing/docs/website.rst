@@ -346,3 +346,24 @@ The theme selector component is defined in ``//docs/common/header.js`` and
 ``//docs/common/theme.css``. It automatically syncs with the user's operating
 system color scheme preference and persists user selections in
 ``localStorage``.
+
+.. _contrib-docs-website-breadcrumbs:
+
+-----------
+Breadcrumbs
+-----------
+Immediately below the universal header on all subpages is a universal
+breadcrumb bar (``<pw-breadcrumbs>``).
+
+Breadcrumbs are generated statically at build time during the single
+postprocessing pass over the output directory (``//docs/common/breadcrumbs.py``)
+rather than injected dynamically via client-side JavaScript. This ensures that
+navigation remains fully accessible when JavaScript is disabled and renders
+immediately without client-side layout shift:
+
+* **Sphinx pages:** Derived from the root documentation toctree hierarchy.
+* **C/C++ reference pages (Doxygen):** Formatted as ``Home`` > ``Reference`` >
+  ``C/C++`` > ``<group>`` > ``<symbol>``.
+* **Rust reference pages (Rustdoc):** Formatted as ``Home`` > ``Reference`` >
+  ``Rust`` > ``<crate>`` > ``<item>``.
+* **Homepage:** Omitted to maintain a clean landing experience.

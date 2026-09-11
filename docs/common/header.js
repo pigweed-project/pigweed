@@ -583,3 +583,10 @@ class PwTheme extends HTMLElement {
 }
 
 customElements.define('pw-theme', PwTheme);
+
+/**
+ * Custom element for Pigweed breadcrumbs.
+ */
+class PwBreadcrumbs extends HTMLElement {}
+
+customElements.define('pw-breadcrumbs', PwBreadcrumbs);

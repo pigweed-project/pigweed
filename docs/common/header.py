@@ -133,7 +133,13 @@ class HeaderCompiler:
         )
 
     def compile(self) -> str:
-        css_files = ["header.css", "search.css", "theme.css", "nav.css"]
+        css_files = [
+            "header.css",
+            "search.css",
+            "theme.css",
+            "nav.css",
+            "breadcrumbs.css",
+        ]
         js_files = ["header.js"]
 
         css_parts = [
@@ -156,28 +162,74 @@ class HeaderCompiler:
 
 
 def postprocess(app: Sphinx, exception: Exception | None) -> None:
-    """Generates global header and injects it into all generated HTML."""
+    """Generates global header, sitewide nav, and breadcrumbs in a single pass."""
     if exception is not None or app.builder.format != "html":
         return
 
-    nav_links = extract_header_nav(app)
-    integration_dir = Path(__file__).parent
-    compiler = HeaderCompiler(integration_dir, nav_links=nav_links)
-    header_html = compiler.compile()
+    from .breadcrumbs import (
+        build_breadcrumb_trail,
+        render_breadcrumbs,
+    )
+    from .nav import (
+        extract_site_nav,
+        has_active_descendant,
+        inject_site_nav_into_content,
+        is_matching_url,
+    )
 
     outdir = Path(app.outdir)
+    site_nav_links = extract_site_nav(app)
+    header_nav_links = extract_header_nav(app)
+
+    integration_dir = Path(__file__).parent
+    compiler = HeaderCompiler(integration_dir, nav_links=header_nav_links)
+    header_html = compiler.compile()
+
+    env = Environment(trim_blocks=True, lstrip_blocks=True)
+    env.globals["is_matching"] = is_matching_url
+    env.globals["has_active_child"] = lambda item, cur: any(
+        has_active_descendant(child, cur) for child in item.children
+    )
+
     injected_count = 0
     for root, _, files in os.walk(outdir):
         for file in files:
-            if file.endswith(".html"):
-                path = Path(root) / file
-                content = path.read_text(encoding="utf-8")
-                if _HEADER_PLACEHOLDER in content:
-                    new_content = content.replace(
-                        _HEADER_PLACEHOLDER, header_html
-                    )
-                    path.write_text(new_content, encoding="utf-8")
-                    injected_count += 1
+            if not file.endswith(".html"):
+                continue
+            path = Path(root) / file
+            content = path.read_text(encoding="utf-8")
+            if _HEADER_PLACEHOLDER not in content:
+                continue
+
+            rel_parts = path.relative_to(outdir).parts
+            rel_page_path = str(path.relative_to(outdir))
+
+            # 1. For Sphinx pages (not assets, api, or rustdoc), inject mobile site nav
+            if not any(
+                part in ("_static", "_sources", "rustdoc", "api")
+                for part in rel_parts
+            ):
+                content = inject_site_nav_into_content(
+                    content, rel_page_path, site_nav_links, env
+                )
+
+            # 2. Build breadcrumb trail and HTML
+            trail = build_breadcrumb_trail(
+                rel_page_path, content, site_nav_links
+            )
+            breadcrumbs_html = render_breadcrumbs(trail)
+
+            # 3. Replace placeholder with header + breadcrumbs
+            header_and_breadcrumbs = (
+                f"{header_html}\n{breadcrumbs_html}"
+                if breadcrumbs_html
+                else header_html
+            )
+            new_content = content.replace(
+                _HEADER_PLACEHOLDER, header_and_breadcrumbs
+            )
+            path.write_text(new_content, encoding="utf-8")
+            injected_count += 1
 
     if injected_count == 0:
         raise RuntimeError(

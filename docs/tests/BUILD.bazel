@@ -32,6 +32,19 @@ pw_py_library(
 )
 
 pw_py_test(
+    name = "breadcrumbs_test",
+    srcs = ["breadcrumbs_test.py"],
+    data = [":chromium_files"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+        requirement("greenlet"),
+        requirement("playwright"),
+        requirement("pyee"),
+    ],
+)
+
+pw_py_test(
     name = "header_test",
     srcs = ["header_test.py"],
     data = [":chromium_files"],

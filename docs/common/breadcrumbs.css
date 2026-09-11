@@ -1,0 +1,186 @@
+/*
+ * Copyright 2026 The Pigweed Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+/* ========== BREADCRUMBS ROW ========== */
+#pw-breadcrumbs {
+  position: fixed;
+  top: var(--pw-header-height);
+  left: 0;
+  width: 100vw;
+  height: var(--pw-breadcrumbs-height);
+  box-sizing: border-box;
+  z-index: 990;
+  display: flex;
+  align-items: center;
+  background-color: var(--pw-color-background-secondary);
+  border-bottom: 1px solid var(--pf-border);
+  padding: 0 var(--pw-header-padding-x);
+  font-family: var(--pw-font-body);
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+@media (max-width: 839px) {
+  #pw-breadcrumbs {
+    font-size: 12.5px;
+  }
+}
+
+body:has(#pw-breadcrumbs) {
+  padding-top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) .bd-sidebar-primary,
+body:has(#pw-breadcrumbs) .bd-sidebar-secondary {
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) #pw-nav-backdrop {
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) #pw-toc-fab {
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height) + 12px
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) #side-nav {
+  position: fixed !important;
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+  max-height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) #doc-content {
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+body:has(#pw-breadcrumbs) #nav-tree {
+  height: 100% !important;
+}
+
+.rustdoc:has(#pw-breadcrumbs) .sidebar,
+body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar {
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+.rustdoc:has(#pw-breadcrumbs) .sidebar-resizer,
+body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar-resizer {
+  top: calc(
+    var(--pw-header-height) + var(--pw-breadcrumbs-height)
+  ) !important;
+  height: calc(
+    100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height)
+  ) !important;
+}
+
+@media (max-width: 700px) {
+  body:has(#pw-breadcrumbs) rustdoc-topbar {
+    top: calc(
+      var(--pw-header-height) + var(--pw-breadcrumbs-height)
+    ) !important;
+  }
+
+  .rustdoc:has(#pw-breadcrumbs) .sidebar,
+  body:has(#pw-breadcrumbs):has(> nav.sidebar) .sidebar {
+    top: calc(
+      var(--pw-header-height) + var(--pw-breadcrumbs-height) +
+        var(--topbar-height, 45px)
+    ) !important;
+    height: calc(
+      100vh - var(--pw-header-height) - var(--pw-breadcrumbs-height) -
+        var(--topbar-height, 45px)
+    ) !important;
+  }
+}
+
+#pw-breadcrumbs::-webkit-scrollbar {
+  display: none;
+}
+
+#pw-breadcrumbs.pw-breadcrumbs-empty {
+  display: none !important;
+}
+
+.pw-breadcrumbs-list {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+}
+
+.pw-breadcrumbs-item {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.pw-breadcrumbs-item a,
+.pw-breadcrumbs-item a:visited {
+  color: var(--pw-color-foreground-primary);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.pw-breadcrumbs-item a:hover {
+  color: var(--pw-color-link);
+  text-decoration: underline;
+}
+
+.pw-breadcrumbs-item span[aria-current='page'] {
+  color: var(--pf-text-muted);
+  font-weight: 400;
+}
+
+.pw-breadcrumbs-separator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pf-text-muted);
+  user-select: none;
+  font-size: 12px;
+}
