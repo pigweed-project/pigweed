@@ -21,6 +21,12 @@ from sphinx.application import Sphinx
 
 # Selectors excluded from Pagefind indexing to prevent UI/anchor artifacts
 # from polluting search results.
+_PW_EXCLUDE_SELECTORS = [
+    '.pw-skip-link',  # "Skip to main content" a11y feature
+    'pw-header',  # Universal header
+    'pw-breadcrumbs',  # Universal breadcrumbs
+]
+
 _SPHINX_EXCLUDE_SELECTORS = [
     '.headerlink',  # Section permalink symbols (¶)
 ]
@@ -32,10 +38,14 @@ _DOXYGEN_EXCLUDE_SELECTORS = [
 _RUSTDOC_EXCLUDE_SELECTORS = [
     '#copy-path',  # Item path copy button
     '.doc-anchor',  # Markdown heading anchor links (§)
+    '.hideme',  # "Expand description" button
+    '.main-heading .sub-heading .src',  # Link to source code
+    '.skip-main-content',  # "Skip to main content" a11y feature
 ]
 
 _EXCLUDE_SELECTORS = (
-    _SPHINX_EXCLUDE_SELECTORS
+    _PW_EXCLUDE_SELECTORS
+    + _SPHINX_EXCLUDE_SELECTORS
     + _DOXYGEN_EXCLUDE_SELECTORS
     + _RUSTDOC_EXCLUDE_SELECTORS
 )

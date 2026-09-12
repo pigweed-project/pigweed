@@ -209,6 +209,38 @@ The search modal UI is rendered by Pagefind's web components integrated into
 the universal header component (``//docs/common/header.js`` and
 ``//docs/common/search.css``).
 
+.. _contrib-docs-website-search-customize:
+
+Customize search indexing
+=========================
+Search index generation is configured in ``//docs/common/search.py``.
+
+Exclude UI elements from the index
+----------------------------------
+To prevent UI elements (such as navigation headers, breadcrumbs, buttons, or
+anchor links) from polluting search results and excerpts, add their CSS
+selectors to ``_EXCLUDE_SELECTORS`` in ``//docs/common/search.py``.
+
+Selectors are grouped by subsite:
+
+* ``_PW_EXCLUDE_SELECTORS``: Universal Pigweed components like ``pw-header``,
+  ``pw-breadcrumbs``, and the skip link (``.pw-skip-link``).
+* ``_SPHINX_EXCLUDE_SELECTORS``: Sphinx elements like section permalink
+  symbols (``.headerlink``).
+* ``_DOXYGEN_EXCLUDE_SELECTORS``: Doxygen elements like member and section
+  anchors (``.anchor``).
+* ``_RUSTDOC_EXCLUDE_SELECTORS``: Rustdoc elements like copy buttons
+  (``#copy-path``), heading anchors (``.doc-anchor``), "Expand description"
+  buttons (``.hideme``), source links (``.main-heading .sub-heading .src``),
+  and native skip links (``.skip-main-content``).
+
+.. note::
+
+   Supposedly you can also can exclude elements directly in HTML templates
+   or components by adding the ``data-pagefind-ignore="all"`` attribute, but
+   this does not seem to work as reliably as the ``_PW_EXCLUDE_SELECTORS``
+   approach.
+
 .. _contrib-docs-website-search-nosearch:
 
 Remove a page from search results

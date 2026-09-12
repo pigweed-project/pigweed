@@ -145,6 +145,123 @@ class SearchTest(unittest.TestCase):
 
             browser.close()
 
+    def _get_first_search_excerpt(self, query: str) -> str:
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("index.html"),
+                wait_until="networkidle",
+            )
+
+            # Open Pagefind search modal
+            search_btn = page.locator(
+                "#pw-search-desktop button, .pf-trigger-btn, #pw-search-desktop"
+            ).first
+            search_btn.wait_for(state="attached", timeout=5000)
+            search_btn.click(force=True)
+
+            # Locate search input inside the modal and submit query
+            modal = page.locator("pagefind-modal")
+            search_input = modal.locator("input").first
+            search_input.wait_for(state="visible", timeout=10000)
+            search_input.fill(query)
+
+            # Wait for search result fragment to load
+            result_link = modal.locator(
+                "a.pf-result-link, a.pf-heading-link"
+            ).first
+            result_link.wait_for(state="visible", timeout=20000)
+
+            # Retrieve the first result excerpt
+            excerpt = modal.locator(".pf-result-excerpt").first
+            excerpt.wait_for(state="visible", timeout=20000)
+            excerpt_text = excerpt.inner_text()
+
+            browser.close()
+            return excerpt_text
+
+    def test_search_excerpt_excludes_skip_link(self):
+        """Verifies that the first search result excerpt for
+        'Crate pw_log_backend_api' does not include 'Skip to main content'."""
+        excerpt_text = self._get_first_search_excerpt(
+            "Crate pw_log_backend_api"
+        )
+        self.assertTrue(
+            excerpt_text,
+            "Expected search result excerpt to be non-empty",
+        )
+        self.assertNotIn(
+            "Skip to main content",
+            excerpt_text,
+            f"First search result excerpt should not contain 'Skip to main content', got: {excerpt_text}",
+        )
+
+    def test_search_excerpt_excludes_header(self):
+        """Verifies that the first search result excerpt for 'Crate pw_base64'
+        excludes 'light_mode', ensuring pw-header is excluded from indexing."""
+        excerpt_text = self._get_first_search_excerpt("Crate pw_base64")
+        self.assertTrue(
+            excerpt_text,
+            "Expected search result excerpt to be non-empty",
+        )
+        self.assertNotIn(
+            "light_mode",
+            excerpt_text,
+            f"First search result excerpt should not contain 'light_mode', got: {excerpt_text}",
+        )
+
+    def test_search_excerpt_excludes_breadcrumbs(self):
+        """Verifies that the first search result excerpt for 'Crate pw_base64'
+        excludes 'Home', ensuring breadcrumbs UI is excluded from indexing."""
+        excerpt_text = self._get_first_search_excerpt("Crate pw_base64")
+        self.assertTrue(
+            excerpt_text,
+            "Expected search result excerpt to be non-empty",
+        )
+        self.assertNotIn(
+            "Home",
+            excerpt_text,
+            f"First search result excerpt should not contain 'Home', got: {excerpt_text}",
+        )
+
+    def test_search_excerpt_excludes_rustdoc_source(self):
+        """Verifies that the first search result excerpt for 'Crate pw_status'
+        excludes 'Source', ensuring rustdoc source link UI is excluded."""
+        excerpt_text = self._get_first_search_excerpt("Crate pw_status")
+        self.assertTrue(
+            excerpt_text,
+            "Expected search result excerpt to be non-empty",
+        )
+        self.assertNotIn(
+            "Source",
+            excerpt_text,
+            f"First search result excerpt should not contain 'Source', got: {excerpt_text}",
+        )
+
+    def test_search_excerpt_excludes_rustdoc_expand_description(self):
+        """Verifies that the first search result excerpt for 'Crate pw_status'
+        excludes 'Expand description', ensuring rustdoc hideme button is excluded.
+        """
+        excerpt_text = self._get_first_search_excerpt("Crate pw_status")
+        self.assertTrue(
+            excerpt_text,
+            "Expected search result excerpt to be non-empty",
+        )
+        self.assertNotIn(
+            "Expand description",
+            excerpt_text,
+            f"First search result excerpt should not contain 'Expand description', got: {excerpt_text}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
