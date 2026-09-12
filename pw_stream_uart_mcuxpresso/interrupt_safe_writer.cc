@@ -42,9 +42,14 @@ pw::Status InterruptSafeUartWriterMcuxpresso::Enable() {
 }
 
 pw::Status InterruptSafeUartWriterMcuxpresso::DoWrite(pw::ConstByteSpan data) {
+  // NOTE: This function does not use USART_WriteBlocking() because that may
+  // result in a kStatus_USART_Timeout if UART_RETRY_TIMES is defined.
+  //
+  // This function will block indefinitely attempting to write (if e.g.,
+  // hardware flow control is enabled and CTS is deasserted).
+
+  // Do nothing if input data is empty.
   if (data.empty()) {
-    // USART_WriteBlocking() will abort if its data argument is null, even if
-    // length is zero.
     return pw::OkStatus();
   }
 
@@ -53,10 +58,33 @@ pw::Status InterruptSafeUartWriterMcuxpresso::DoWrite(pw::ConstByteSpan data) {
   PW_TRY(clock_tree_element_.Acquire());
   pw::ScopeGuard guard([this] { clock_tree_element_.Release().IgnoreError(); });
 
-  const status_t hal_status = USART_WriteBlocking(
-      base(), reinterpret_cast<const uint8_t*>(data.data()), data.size_bytes());
-  return hal_status == kStatus_Success ? pw::OkStatus()
-                                       : pw::Status::Internal();
+  // Verify TX FIFO is enabled.
+  if (!(base()->FIFOCFG & USART_FIFOCFG_ENABLETX_MASK)) {
+    return pw::Status::FailedPrecondition();
+  }
+
+  // Write all of the data into the TX FIFO.
+  for (std::byte b : data) {
+    // Wait until the FIFO is not full.
+    while (true) {
+      if (base()->FIFOSTAT & USART_FIFOSTAT_TXNOTFULL_MASK) {
+        break;
+      }
+    }
+
+    // Write the byte into the TX FIFO.
+    base()->FIFOWR = static_cast<uint8_t>(b);
+  }
+
+  // Wait for the transmitter to become idle, indicating that all queued data
+  // has been transmitted.
+  while (true) {
+    if (base()->STAT & USART_STAT_TXIDLE_MASK) {
+      break;
+    }
+  }
+
+  return pw::OkStatus();
 }
 
 }  // namespace pw::stream
