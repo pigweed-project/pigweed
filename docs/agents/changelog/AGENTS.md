@@ -13,6 +13,10 @@ The intended audience is a software engineer in a downstream project that
 relies on Pigweed. Users should be able to enjoy reading a changelog
 update during their morning coffee or commute.
 
+Bug fixes should be ignored. Commits that only fix bugs should not have
+stories created for them; assign them to the appropriate `misc` category
+with a score of `0`.
+
 Do not attempt to create scripts to speed up this process.
 You must process commits in small batches, as specified in this document,
 to ensure that each commit is properly analyzed.
@@ -196,13 +200,15 @@ Explanation of scoring ranges:
     test-only change will generate a lot of noise.)
   * Trivial build system fixes. (Again, this technically has user-facing impact,
     but it's boring to read.)
+  * Bug fixes. (Bug fixes should be ignored for changelog updates. Put any bug
+    fix commits into the relevant `misc` story with a score of `0`.)
 
 * `1` to `250`: The story has trivial impact on downstream projects. Less than
   10% of users are likely to be affected. Examples:
 
   * An extra parameter with a default value was added to an unimportant
     function.
-  * A minor feature or bug fix was applied to an experimental or "work in
+  * A minor feature was applied to an experimental or "work in
     progress" module.
   * A new set of documentation was added.
 
@@ -225,7 +231,6 @@ Explanation of scoring ranges:
 * `751` to `1000`: The story has high impact on downstream projects. 76%
   or more of users are likely to be affected. Examples:
 
-  * A critical bug was fixed.
   * A core Pigweed module like `pw_kernel` or `pw_async2` was created.
   * An important function was added to an important Pigweed module.
   * A refactor of a Pigweed module has improved performance and resource usage
@@ -278,9 +283,10 @@ url = "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/388292"
 
 #### Dump miscellaneous commits into `stories.<category_id>.misc`
 
-When you encounter miscellaneous commits with 0 or low user-facing impact,
-you should dump them all into a `stories.<category_id>.misc` story, set the
-`score` to `0`, and set `example` to `""""""`.
+When you encounter miscellaneous commits with 0 or low user-facing impact (such as
+bug fixes, docs-only changes, test-only changes, or trivial build fixes), you
+should dump them all into a `stories.<category_id>.misc` story, set the `score`
+to `0`, and set `example` to `""""""`.
 
 ## 5. End
 

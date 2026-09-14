@@ -1,0 +1,199 @@
+==================================
+What's new in Pigweed: August 2026
+==================================
+
+.. changelog_highlights_start
+
+Highlights:
+
+* :ref:`changelog-2026-08-memory-pw-buf` - Slice, truncate, and reclaim
+  contiguous memory buffers with the new ``pw_buf`` module.
+
+* :ref:`changelog-2026-08-dev-ide-rust` - Configure and generate Rust code
+  intelligence in VS Code via ``rust-project.json`` and a new target selection
+  panel.
+
+* :ref:`changelog-2026-08-async-future-or-value` - Preserve in-progress futures
+  or resolved results across task suspension points with the new
+  ``pw::async2::FutureOrValue`` container.
+
+.. changelog_highlights_end
+
+---------------
+Arch interfaces
+---------------
+
+.. _changelog-2026-08-arch-pw-interrupt-bazel:
+
+pw_interrupt Bazel backend configuration
+========================================
+``pw_interrupt`` now supports selecting backend implementations in Bazel via
+``:compatible`` constraints and the ``@pigweed//pw_interrupt:backend`` flag
+mapped to ``:impl``, laying the groundwork to deprecate the legacy backend
+multiplexer. CLs: `1 <https://pwrev.dev/446652>`__
+
+.. code-block:: bazel
+
+   # In platform configuration:
+   constraint_values = [
+       "@pigweed//pw_interrupt_cortex_m:compatible",
+   ]
+   flags = {
+       "@pigweed//pw_interrupt:backend": "@pigweed//pw_interrupt_cortex_m:impl",
+   }
+
+---------------------
+Async and concurrency
+---------------------
+
+.. _changelog-2026-08-async-future-or-value:
+
+FutureOrValue container in pw_async2
+====================================
+The new ``pw::async2::FutureOrValue`` container holds either an in-progress
+future or its resolved result. This simplifies manual state machine polling by
+preserving values across suspension points without extra boilerplate.
+CLs: `1 <https://pwrev.dev/453972>`__, `2 <https://pwrev.dev/404773>`__
+
+.. code-block:: c++
+
+   #include "pw_async2/future_or_value.h"
+
+   class ConcurrentOperationsTask : public pw::async2::Task {
+    private:
+     pw::async2::Poll<> DoPend(pw::async2::Context& cx) override {
+       // Start operations when empty:
+       if (op_a_.empty()) {
+         op_a_ = DoWork(1);
+       }
+       if (op_b_.empty()) {
+         op_b_ = DoWork(2);
+       }
+
+       // Advance both slots without short-circuiting:
+       PW_FOV_TRY_ADVANCE(cx, op_a_, op_b_);
+
+       // Both values are now available across suspension points:
+       pw::Status status_a = op_a_.Take();
+       pw::Status status_b = op_b_.Take();
+
+       return pw::async2::Ready();
+     }
+
+     pw::async2::FutureOrValue<ValueFuture<pw::Status>> op_a_;
+     pw::async2::FutureOrValue<ValueFuture<pw::Status>> op_b_;
+   };
+
+-------------
+Build systems
+-------------
+
+.. _changelog-2026-08-build-workflows-launcher-subworkspace:
+
+Dedicated sub-workspace for pw workflows launcher
+=================================================
+The ``./pw`` command-line wrapper now builds inside an isolated sub-workspace
+in ``pw_build/workflows_launcher``. This prevents Bazel from evaluating root
+development dependencies, eliminating hundreds of megabytes of unnecessary
+toolchain downloads on fresh checkouts. CLs: `1 <https://pwrev.dev/463065>`__
+
+---------------
+Developer tools
+---------------
+
+.. _changelog-2026-08-dev-ide-rust:
+
+Rust code intelligence in pw_ide and VS Code
+============================================
+``pw_ide`` and the Pigweed VS Code extension now support generating
+``rust-project.json`` compilation databases for Rust code intelligence.
+The release also introduces a dedicated target selection panel with separate
+tables for C++ and Rust, custom ``bazel_args`` support, and dedicated
+``rust_check_args`` for editor check and lint commands.
+CLs: `1 <https://pwrev.dev/420572>`__, `2 <https://pwrev.dev/462965>`__,
+`3 <https://pwrev.dev/424614>`__
+
+.. _changelog-2026-08-dev-module-create-python:
+
+Python module scaffolding in pw_module
+======================================
+``pw module create`` now supports Python via ``--languages py``. Developers can
+scaffold new Python modules complete with starter templates for
+``BUILD.bazel``, ``BUILD.gn``, ``pyproject.toml``, and unit tests.
+CLs: `1 <https://pwrev.dev/397892>`__
+
+.. code-block:: console
+
+   $ pw module create --languages py pw_my_module
+
+.. _changelog-2026-08-dev-presubmit-multi-directory:
+
+Multi-directory formatting in pw_presubmit
+==========================================
+The ``pw_presubmit`` format CLI now accepts multiple ``-C`` / ``--directory``
+arguments, making it possible to format code across multiple directories in a
+single invocation. CLs: `1 <https://pwrev.dev/453272>`__
+
+-----------------
+Memory management
+-----------------
+
+.. _changelog-2026-08-memory-pw-buf:
+
+pw_buf module for contiguous memory buffers
+===========================================
+The new ``pw_buf`` module introduces ``pw::Buf`` and ``pw::ConstBuf``
+abstractions for contiguous memory buffers. It supports owned and unowned
+buffer views, zero-copy slicing, truncation, and prefix/suffix byte
+reclamation. CLs: `1 <https://pwrev.dev/464765>`__,
+`2 <https://pwrev.dev/457445>`__, `3 <https://pwrev.dev/463846>`__
+
+.. code-block:: c++
+
+   #include "pw_buf/buf.h"
+
+   pw::Buf buf = pw::Buf::Unowned(my_span);
+   pw::Buf sliced = pw::Slice(std::move(buf), /*offset=*/4, /*length=*/16);
+   pw::Buf reclaimed = pw::ReclaimPrefix(std::move(sliced), /*count=*/4);
+
+---------------------------------
+Third-party hardware and software
+---------------------------------
+
+.. _changelog-2026-08-third-party-stm32f429i-bazel-tests:
+
+On-device Bazel unit testing on STM32F429I-DISC1
+================================================
+The STM32F429I-DISC1 target platform now supports running on-device unit
+tests directly with Bazel, including automatic device flashing and RPC test
+result reporting via a target test server.
+CLs: `1 <https://pwrev.dev/437952>`__
+
+.. code-block:: console
+
+   # Start the test server:
+   $ bazelisk run //targets/stm32f429i_disc1/py:unit_test_server
+
+   # Run on-device unit tests:
+   $ bazelisk test //... --config=stm32f429i_freertos
+
+------------
+Tokenization
+------------
+
+.. _changelog-2026-08-token-rust-elf-detokenizer:
+
+ELF token database parsing in Rust
+==================================
+The Rust ``pw_tokenizer`` crate now supports parsing ELF token database
+sections (``.pw_tokenizer.entries``) directly via
+``Detokenizer::from_elf_section`` and
+``Detokenizer::from_elf_section_with_prefix``.
+CLs: `1 <https://pwrev.dev/450212>`__
+
+.. code-block:: rs
+
+   use pw_tokenizer::Detokenizer;
+
+   let detok = Detokenizer::from_elf_section(elf_section_bytes)?;
+   let result = detok.detokenize(&encoded_bytes);
