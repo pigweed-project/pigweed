@@ -189,6 +189,20 @@ _PROTO_FIELD_TYPES = {
 }
 
 
+def _is_repeated(field: Any) -> bool:
+    # FieldDescriptor.is_repeated is supported in protobuf 5.26+ (Python
+    # protobuf 5.x, 6.x, and 7.34+).
+    if hasattr(field, 'is_repeated'):
+        return field.is_repeated
+
+    # FieldDescriptor.label was supported up through Python protobuf 6.33.x
+    # for older versions (< 5.26 / 4.x / 3.x), but was removed in 7.34+
+    # (protobuf 34.0+).
+    return getattr(field, 'label', None) == getattr(
+        FieldDescriptor, 'LABEL_REPEATED', 3
+    )
+
+
 def _field_type_annotation(field: FieldDescriptor):
     """Creates a field type annotation to use in the help message only."""
     if field.type == FieldDescriptor.TYPE_MESSAGE:
@@ -196,7 +210,7 @@ def _field_type_annotation(field: FieldDescriptor):
     else:
         annotation = _PROTO_FIELD_TYPES.get(field.type, Parameter.empty)
 
-    if field.label == FieldDescriptor.LABEL_REPEATED:
+    if _is_repeated(field):
         return Iterable[annotation]  # type: ignore[valid-type]
 
     return annotation

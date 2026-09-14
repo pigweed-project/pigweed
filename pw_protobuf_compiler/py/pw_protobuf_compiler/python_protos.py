@@ -422,13 +422,10 @@ def _proto_repr(message) -> Iterator[str]:
                 continue
         except ValueError:
             # Skip default-valued fields that don't support HasField.
-            if (
-                field.label != field.LABEL_REPEATED
-                and value == field.default_value
-            ):
+            if not field.is_repeated and value == field.default_value:
                 continue
 
-        if field.label == field.LABEL_REPEATED:
+        if field.is_repeated:
             if not value:
                 continue
 
