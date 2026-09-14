@@ -568,7 +568,7 @@ TEST(Metric, ListForEachWithFunctor) {
 
   struct Count {
     int count = 0;
-    void operator()(const Metric&) { count++; }
+    void operator()(const UntypedMetric&) { count++; }
   };
 
   Count c = group.metrics().for_each(Count());

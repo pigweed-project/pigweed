@@ -436,7 +436,8 @@ TEST(MetricService, MaxDepth4) {
 // Helper function to precisely calculate the encoded size of a metric as it
 // would appear in a WalkResponse. This is critical for setting up deterministic
 // pagination tests.
-size_t GetEncodedMetricSize(const Metric& metric, const Vector<Token>& path) {
+size_t GetEncodedMetricSize(const UntypedMetric& metric,
+                            const Vector<Token>& path) {
   // 1) Calculate the size of the *nested* Metric message's payload.
   size_t metric_payload_size = 0;
 

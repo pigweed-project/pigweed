@@ -31,7 +31,8 @@ namespace pw::metric {
 class MetricWriter {
  public:
   virtual ~MetricWriter() = default;
-  virtual Status Write(const Metric& metric, const Vector<Token>& path) = 0;
+  virtual Status Write(const UntypedMetric& metric,
+                       const Vector<Token>& path) = 0;
 };
 
 // Walk a metric tree recursively; passing metrics with their path (names) to a
@@ -84,7 +85,8 @@ class UnaryMetricWriter {
   virtual ~UnaryMetricWriter() = default;
 
   // `Write` returns `RESOURCE_EXHAUSTED` to signal a full buffer.
-  virtual Status Write(const Metric& metric, const Vector<Token>& path) = 0;
+  virtual Status Write(const UntypedMetric& metric,
+                       const Vector<Token>& path) = 0;
 };
 
 // A walker that can be resumed from a cursor (address).
