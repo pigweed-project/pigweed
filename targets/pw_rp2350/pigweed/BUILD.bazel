@@ -15,7 +15,6 @@
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
-load("//pw_kernel/target/pw_rp2350:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//pw_kernel/tooling:system_image.bzl", "system_image")
 load("//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("//targets/rp2040:flash.bzl", "flash_rp2350")
@@ -23,7 +22,6 @@ load("//targets/rp2040:flash.bzl", "flash_rp2350")
 platform(
     name = "pw_rp2350",
     constraint_values = [
-        "//pw_kernel/target/pw_rp2350:target_pw_rp2350",
         "//pw_build/constraints/arm:cortex-m33",
         "//pw_build/constraints/rust:no_std",
         "//pw_build/constraints/rust:enabled",
@@ -67,7 +65,10 @@ rust_library(
     srcs = ["console.rs"],
     crate_name = "console_backend",
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH + ["//pw_build/constraints/rtos:pigweed"],
+    target_compatible_with = [
+        "//pw_build/constraints/rtos:pigweed",
+        "@pico-sdk//bazel/constraint:rp2350",
+    ],
     deps = [
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "//pw_kernel/kernel",
@@ -91,7 +92,10 @@ rust_library(
     name = "boot",
     srcs = ["boot.rs"],
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH + ["//pw_build/constraints/rtos:pigweed"],
+    target_compatible_with = [
+        "//pw_build/constraints/rtos:pigweed",
+        "@pico-sdk//bazel/constraint:rp2350",
+    ],
     deps = [
         ":linker_script",
         "//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
