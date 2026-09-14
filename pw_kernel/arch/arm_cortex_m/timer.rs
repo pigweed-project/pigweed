@@ -20,6 +20,7 @@ use pw_log::info;
 use pw_time_core::Clock as _;
 
 use crate::regs::Regs;
+use crate::regs::systick::CsrClkSource;
 
 static TICKS: SpinLock<crate::Arch, u64> = SpinLock::new(0);
 const LOG_SYSTICK: bool = false;
@@ -66,14 +67,19 @@ pub fn systick_early_init() {
     info!("Starting monotonic SysTick timer");
 
     let mut csr = Regs::get().systick.csr;
-    // Disable counter and interrupts; explicitly use processor clock (always available)
-    // rather than external reference (implementation-defined, may not be connected on
-    // boards like AST1060).
+    // Disable counter and interrupts; configure clock source based on KernelConfig.
+    // By default, the processor clock is used (always available) rather than the external
+    // reference (implementation-defined, may not be connected on boards like AST1060).
+    // Targets can override this if an external clock source is available (e.g. RP2350).
+    let clksource = match KernelConfig::SYS_TICK_CLOCK_SOURCE {
+        KernelConfig::SYS_TICK_CLOCK_SOURCE_EXTERNAL => CsrClkSource::External,
+        KernelConfig::SYS_TICK_CLOCK_SOURCE_PROCESSOR => CsrClkSource::PE,
+    };
     let mut csr_val = csr
         .read()
         .with_enable(false)
         .with_tickint(false)
-        .with_clksource(crate::regs::systick::CsrClkSource::PE);
+        .with_clksource(clksource);
     csr.write(csr_val);
 
     // clear current value

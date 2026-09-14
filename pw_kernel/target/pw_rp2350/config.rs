@@ -13,12 +13,14 @@
 // the License.
 #![no_std]
 
+use kernel_config::SysTickClockSource;
 pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface};
 
 pub struct KernelConfig;
 
 impl CortexMKernelConfigInterface for KernelConfig {
     const SYS_TICK_HZ: u32 = 1_000_000;
+    const SYS_TICK_CLOCK_SOURCE: SysTickClockSource = Self::SYS_TICK_CLOCK_SOURCE_EXTERNAL;
 
     const NUM_MPU_REGIONS: usize = 8;
 }

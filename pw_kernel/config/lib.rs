@@ -26,11 +26,26 @@ pub trait KernelConfigInterface {
     const SYSTEM_CLOCK_HZ: u64;
 }
 
+/// SysTick clock source.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SysTickClockSource {
+    /// External reference clock (e.g. 1 μs tick generator on RP2350).
+    External = 0,
+    /// Processor clock (PE - Processing Element).
+    Processor = 1,
+}
+
 /// Cortex-M specific configuration.
 // TODO: davidroth - Once Arch is out of tree, move this configuration also.
 pub trait CortexMKernelConfigInterface {
     /// Rate of the Cortex-M systick system timer.
     const SYS_TICK_HZ: u32;
+
+    /// SysTick clock source. Defaults to the processor clock (`SysTickClockSource::Processor`).
+    const SYS_TICK_CLOCK_SOURCE: SysTickClockSource = Self::SYS_TICK_CLOCK_SOURCE_PROCESSOR;
+    const SYS_TICK_CLOCK_SOURCE_EXTERNAL: SysTickClockSource = SysTickClockSource::External;
+    const SYS_TICK_CLOCK_SOURCE_PROCESSOR: SysTickClockSource = SysTickClockSource::Processor;
 
     /// Number of supported MPU regions
     const NUM_MPU_REGIONS: usize;
