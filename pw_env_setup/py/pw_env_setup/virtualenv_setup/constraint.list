@@ -11,7 +11,7 @@ babel==2.16.0
 beautifulsoup4==4.12.2
 black==24.10.0
 cachetools==5.0.0
-certifi==2021.10.8
+certifi==2023.5.7
 cffi==1.17.1
 charset-normalizer==3.2.0
 colorama==0.4.6
@@ -76,7 +76,7 @@ pytz==2023.3
 pyusb==1.2.1
 pyyaml==6.0.1
 referencing==0.36.1
-requests==2.32.5
+requests==2.33.0
 rpds-py==0.22.3
 rsa==4.8
 ruamel-yaml==0.18.10
