@@ -2937,4 +2937,166 @@ TEST_F(MultiBufV2Test, ReleaseWithInteriorIterator) {
   EXPECT_TRUE(mb.empty());
 }
 
+TEST_F(MultiBufV2Test, InsertEmptyOwnedBufAlongsideNonEmptyChunks) {
+  size_t initial_bytes = allocator_.metrics().allocated_bytes.value();
+  auto unique_data1 = allocator_.MakeUnique<std::byte[]>(10);
+  auto unique_data2 = allocator_.MakeUnique<std::byte[]>(20);
+  pw::Buf buf1(std::move(unique_data1));
+  pw::Buf buf2 = pw::Slice(pw::Buf(std::move(unique_data2)), 5, 0);
+
+  {
+    MultiBufInstance mbi(allocator_);
+    auto& mb = mbi->as<MultiBuf>();
+    mb.PushBack(std::move(buf2));  // empty owned buf
+    mb.PushBack(std::move(buf1));  // non-empty owned buf
+
+    EXPECT_EQ(mb.size(), 10u);
+  }
+  EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), initial_bytes);
+}
+
+TEST_F(MultiBufV2Test, ReleaseDoesNotEraseSubsequentZeroLengthChunks) {
+  MultiBufInstance mbi(allocator_);
+  auto chunk0 = allocator_.MakeUnique<std::byte[]>(kN);
+  const std::byte* data0 = chunk0.get();
+  auto chunk1 = allocator_.MakeUnique<std::byte[]>(kN);
+  const std::byte* data1 = chunk1.get();
+
+  mbi->PushBack(std::move(chunk0));
+  mbi->PushBack(std::move(chunk1));
+  EXPECT_EQ(mbi->size(), 2 * kN);
+
+  // Add a layer covering only the first chunk, leaving chunk1 with length 0 in
+  // layer 2.
+  EXPECT_TRUE(mbi->AddLayer(0, kN));
+  EXPECT_EQ(mbi->size(), kN);
+
+  // Release chunk 0.
+  pw::Buf released = mbi->Release(mbi->begin());
+  EXPECT_EQ(released.base(), data0);
+  EXPECT_EQ(released.size(), kN);
+  EXPECT_EQ(mbi->size(), 0u);
+
+  // Pop layer: chunk1 must still exist and be intact in the lower layer!
+  mbi->PopLayer();
+  EXPECT_EQ(mbi->size(), kN);
+  EXPECT_EQ(&(*(mbi->begin())), data1);
+
+  // Release chunk1 as well.
+  pw::Buf released1 = mbi->Release(mbi->begin());
+  EXPECT_EQ(released1.base(), data1);
+  EXPECT_TRUE(mbi->empty());
+}
+
+TEST_F(MultiBufV2Test, ReleaseChunkDoesNotEraseSubsequentZeroLengthChunks) {
+  MultiBufInstance mbi(allocator_);
+  auto chunk0 = allocator_.MakeUnique<std::byte[]>(kN);
+  const std::byte* data0 = chunk0.get();
+  auto chunk1 = allocator_.MakeUnique<std::byte[]>(kN);
+  const std::byte* data1 = chunk1.get();
+
+  mbi->PushBack(std::move(chunk0));
+  mbi->PushBack(std::move(chunk1));
+  EXPECT_EQ(mbi->size(), 2 * kN);
+
+  // Add a layer covering only the first chunk.
+  EXPECT_TRUE(mbi->AddLayer(0, kN));
+  EXPECT_EQ(mbi->size(), kN);
+
+  // Release chunk 0 as UniquePtr.
+  pw::UniquePtr<std::byte[]> released = mbi->ReleaseChunk(mbi->begin());
+  EXPECT_EQ(released.get(), data0);
+  EXPECT_EQ(released.size(), kN);
+
+  // Pop layer: chunk1 must still exist and be intact.
+  mbi->PopLayer();
+  EXPECT_EQ(mbi->size(), kN);
+  EXPECT_EQ(&(*(mbi->begin())), data1);
+}
+
+TEST_F(MultiBufV2Test, TryConvertToSharedPreservesFullExtentOfSlicedBuf) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf sliced = pw::Slice(pw::Buf(std::move(unique_data)), 5, 10);
+  MultiBufInstance mbi(allocator_);
+  mbi->PushBack(std::move(sliced));
+
+  // ShallowCopy forces conversion of owned chunk to shared.
+  auto copy_res = mbi->ShallowCopy();
+  ASSERT_TRUE(copy_res.ok());
+  MultiBufInstance copy(std::move(*copy_res));
+
+  // Verify that the SharedPtr covers the allocation through the end of the base
+  // view (5 + 10 = 15).
+  pw::SharedPtr<std::byte[]> shared = copy->Share(copy->begin());
+  EXPECT_EQ(shared.get(), raw_ptr);
+  EXPECT_EQ(shared.size(), 15u);
+  EXPECT_EQ(shared[5], std::byte(5));
+  EXPECT_EQ(shared[14], std::byte(14));
+}
+
+TEST_F(MultiBufV2Test,
+       DiscardPrefixFromOwnedChunkPreservesOwnershipAndIsReleasable) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf(std::move(unique_data));
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(buf));
+
+  // Discard 5 bytes from prefix.
+  auto discard_res = mb.Discard(mb.begin(), 5);
+  ASSERT_TRUE(discard_res.ok());
+  EXPECT_EQ(mb.size(), 15u);
+  EXPECT_EQ(mb[0], std::byte(5));
+
+  // Verify the chunk remains owned and releasable!
+  EXPECT_TRUE(mb.IsReleasable(mb.begin()));
+  pw::Buf released = mb.Release(mb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.data(), raw_ptr + 5);
+  EXPECT_EQ(released.size(), 15u);
+
+  // Reclaim discarded prefix.
+  pw::Buf reclaimed = pw::ReclaimPrefix(std::move(released), 5);
+  EXPECT_EQ(reclaimed.data(), raw_ptr);
+  EXPECT_EQ(reclaimed.size(), 20u);
+}
+
+TEST_F(MultiBufV2Test,
+       DiscardSuffixFromOwnedChunkPreservesOwnershipAndIsReleasable) {
+  auto unique_data = allocator_.MakeUnique<std::byte[]>(20);
+  const std::byte* raw_ptr = unique_data.get();
+  for (size_t i = 0; i < 20; ++i) {
+    unique_data[i] = static_cast<std::byte>(i);
+  }
+
+  pw::Buf buf(std::move(unique_data));
+  MultiBufInstance mbi(allocator_);
+  auto& mb = mbi->as<MultiBuf>();
+  mb.PushBack(std::move(buf));
+
+  // Discard 5 bytes from suffix.
+  auto discard_res = mb.Discard(mb.end() - 5, 5);
+  ASSERT_TRUE(discard_res.ok());
+  EXPECT_EQ(mb.size(), 15u);
+
+  // Verify the chunk remains owned and releasable!
+  EXPECT_TRUE(mb.IsReleasable(mb.begin()));
+  pw::Buf released = mb.Release(mb.begin());
+  EXPECT_NE(released.deallocator(), nullptr);
+  EXPECT_EQ(released.base(), raw_ptr);
+  EXPECT_EQ(released.data(), raw_ptr);
+  EXPECT_EQ(released.size(), 15u);
+}
+
 }  // namespace

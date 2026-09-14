@@ -228,7 +228,10 @@ UniquePtr<std::byte[]> GenericMultiBuf::ReleaseChunk(const_iterator pos) {
   if (observer_ != nullptr) {
     observer_->Notify(Observer::Event::kBytesRemoved, GetLength(chunk));
   }
-  EraseRange(pos - pos.offset_, size_t{GetLength(chunk)});
+  // Erase only this chunk directly from deque_. EraseRange operates on a byte
+  // count in the top layer, whereas ReleaseChunk releases the chunk by index.
+  deque_.erase(deque_.begin() + (chunk * entries_per_chunk_),
+               deque_.begin() + ((chunk + 1) * entries_per_chunk_));
   return chunk_ptr;
 }
 
@@ -335,7 +338,12 @@ void GenericMultiBuf::Clear() {
     PopLayer();
   }
   size_t num_bytes = size();
-  ClearRange(begin(), num_bytes);
+  // Deallocate all chunks in deque_ directly to avoid leaking zero-length
+  // chunks that ClearRange would not reach.
+  for (size_type chunk = 0; chunk < num_chunks(); ++chunk) {
+    DeallocateChunk(chunk);
+  }
+  deque_.clear();
   if (observer_ != nullptr) {
     observer_->Notify(Observer::Event::kBytesRemoved, num_bytes);
     observer_ = nullptr;
@@ -550,10 +558,11 @@ bool GenericMultiBuf::TryConvertToShared(size_type chunk) {
   std::byte* data = GetData(chunk);
   Entry::BaseView& base_view = deque_[base_view_index(chunk)].base_view;
 
-  // Create a new control block using a restricted method.
+  // Create a new control block using a restricted method. Include
+  // base_view.offset so that shared pointers cover the chunk's active data.
   const auto& handle = ControlBlockHandle::GetInstance_DO_NOT_USE();
-  auto* control_block =
-      ControlBlock::Create(handle, &deallocator, data, base_view.length);
+  auto* control_block = ControlBlock::Create(
+      handle, &deallocator, data, base_view.offset + base_view.length);
 
   if (control_block == nullptr) {
     return false;
@@ -708,22 +717,22 @@ bool GenericMultiBuf::TryReserveForRemove(const_iterator pos,
   auto end = pos + CheckedCast<difference_type>(size);
   size_type shift = end.chunk_ - pos.chunk_;
 
-  // If removing part of an owned chunk, make it shared.
-  if (pos.offset_ != 0 && IsOwned(pos.chunk_) &&
-      !TryConvertToShared(pos.chunk_)) {
+  // A chunk needs to be shared if it is split across MultiBufs (out != nullptr)
+  // or split into two chunks within the same MultiBuf (shift == 0).
+  bool split_pos = pos.offset_ != 0 && (out != nullptr || shift == 0);
+  if (split_pos && IsOwned(pos.chunk_) && !TryConvertToShared(pos.chunk_)) {
     return false;
   }
 
-  // Removing a sub-chunk.
+  bool split_end = end.offset_ != 0 && out != nullptr;
+  if (split_end && IsOwned(end.chunk_) && !TryConvertToShared(end.chunk_)) {
+    return false;
+  }
+
+  // Removing a sub-chunk splits a single chunk into two chunks.
   if (shift == 0 && pos.offset_ != 0) {
     return (out == nullptr || out->TryReserveEntries(entries_per_chunk_)) &&
            TryReserveEntries(0, /*split=*/true);
-  }
-
-  // If removing part of an owned chunk, make it shared.
-  if (end.offset_ != 0 && IsOwned(end.chunk_) &&
-      !TryConvertToShared(end.chunk_)) {
-    return false;
   }
 
   // Discarding entries, no room needed.
@@ -804,21 +813,22 @@ void GenericMultiBuf::ClearRange(const_iterator pos, size_t size) {
     ++chunk;
   }
   for (; chunk < end.chunk_; ++chunk) {
-    std::byte* data = GetData(chunk);
-    if (IsOwned(chunk)) {
-      Deallocator& deallocator = GetDeallocator(chunk);
-      deallocator.Deallocate(data);
-      continue;
-    }
-    if (!IsShared(chunk)) {
-      continue;
-    }
+    DeallocateChunk(chunk);
+  }
+  EraseRange(pos, size);
+}
+
+void GenericMultiBuf::DeallocateChunk(size_type chunk) {
+  std::byte* data = GetData(chunk);
+  if (IsOwned(chunk)) {
+    Deallocator& deallocator = GetDeallocator(chunk);
+    deallocator.Deallocate(data);
+  } else if (IsShared(chunk)) {
     // To avoid races with other shared or weak pointers to the data, put the
     // data pointer back into a SharedPtr and let it go out scope.
     ControlBlock& control_block = GetControlBlock(chunk);
     SharedPtr<std::byte[]> shared(data, &control_block);
   }
-  EraseRange(pos, size);
 }
 
 void GenericMultiBuf::EraseRange(const_iterator pos, size_t size) {

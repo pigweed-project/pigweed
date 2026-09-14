@@ -1591,6 +1591,10 @@ class GenericMultiBuf final
   /// Owned chunks within the range will be deallocated.
   void ClearRange(const_iterator pos, size_t size);
 
+  /// Deallocates the chunk if owned, or decrements its reference count if
+  /// shared.
+  void DeallocateChunk(size_type chunk);
+
   /// Removes the entries corresponding to the given range from this object.
   ///
   /// It is an error to call this method without calling `TryReserveForRemove`
