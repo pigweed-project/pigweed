@@ -20,13 +20,10 @@ import logging
 from typing import Any, Iterable, List, Optional, Union
 
 from pw_tokenizer import detokenize
+from pw_metric.constants import TOKEN_MASK
 from pw_metric_proto import metric_service_pb2
 
 _LOG = logging.getLogger(__name__)
-
-# Token masks used by pw_metric.
-_TOKEN_MASK_31 = 0x7FFFFFFF
-_TOKEN_MASK_28 = 0x0FFFFFFF
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,9 +48,7 @@ def parse_metric(
                 # Fallback: Try a compatible 28-bit masked lookup for backward
                 # compatibility with old 31-bit token databases.
                 for db_token in detokenizer.database.token_to_entries:
-                    if (db_token & _TOKEN_MASK_28) == (
-                        path_token & _TOKEN_MASK_28
-                    ):
+                    if (db_token & TOKEN_MASK) == (path_token & TOKEN_MASK):
                         lookup_result = detokenizer.lookup(db_token)
                         _LOG.warning(
                             'Metric token 0x%08x not found; fell back '

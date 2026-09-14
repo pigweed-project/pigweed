@@ -80,7 +80,9 @@ using tokenizer::Token;
 // token collisions compared to a 31-bit mask, 28 bits (268M states) is still
 // extremely large and sufficient to avoid collisions in practice for typical
 // metric sets.
+// LINT.IfChange(token_mask_macro)
 #define _PW_METRIC_TOKEN_MASK 0x0fffffff
+// LINT.ThenChange(//pw_metric/py/pw_metric/constants.py:metric_masks)
 
 // An individual metric. There are three supported types: uint32_t, float, and
 // optionally uint64_t. More complicated compound metrics can be built on these
@@ -102,6 +104,7 @@ class UntypedMetric : public MetricList::Item {
   UntypedMetric(UntypedMetric const&) = delete;
   void operator=(const UntypedMetric&) = delete;
 
+  // LINT.IfChange(metric_types)
   enum Type : uint32_t {
     kTypeUint32 = 0x00000000,
     kTypeFloat = 0x10000000,
@@ -114,6 +117,7 @@ class UntypedMetric : public MetricList::Item {
     kTypeBool = 0x60000000,
     kTypeToken = 0x70000000,
   };
+  // LINT.ThenChange(//pw_metric/py/pw_metric/constants.py:metric_types)
 
   Type type() const { return static_cast<Type>(name_and_type_ & kTypeMask); }
 
@@ -165,10 +169,12 @@ class UntypedMetric : public MetricList::Item {
 
   Token name_and_type_;
 
+  // LINT.IfChange(metric_masks)
   static constexpr uint32_t kTokenMask = _PW_METRIC_TOKEN_MASK;
   static constexpr uint32_t kTypeMask = 0xf0000000;
   static_assert((kTokenMask & kTypeMask) == 0,
                 "Token mask and Type mask must not overlap.");
+  // LINT.ThenChange(//pw_metric/py/pw_metric/constants.py:metric_masks)
 
   friend class ResumableMetricWalker;
   friend class MetricWalker;

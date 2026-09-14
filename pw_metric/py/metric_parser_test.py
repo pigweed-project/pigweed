@@ -16,7 +16,7 @@
 from collections.abc import Mapping
 from typing import Iterable
 from unittest import TestCase, mock, main
-from pw_metric import metric_parser
+from pw_metric import constants, metric_parser
 
 from pw_metric_proto import metric_service_pb2
 from pw_status import Status
@@ -601,6 +601,25 @@ class GetAllMetricsTest(TestCase):
         )
         self.assertEqual({'$22198280': 100}, metrics)
         self.rpcs.pw.metric.proto.MetricService.Walk.assert_called_once()
+
+
+class TestMetricConstants(TestCase):
+    """Test metric constants match expectations from metric.h."""
+
+    def test_metric_types(self) -> None:
+        self.assertEqual(constants.TYPE_UINT32, 0x00000000)
+        self.assertEqual(constants.TYPE_FLOAT, 0x10000000)
+        self.assertEqual(constants.TYPE_UINT64, 0x20000000)
+        self.assertEqual(constants.TYPE_INT64, 0x30000000)
+        self.assertEqual(constants.TYPE_DOUBLE, 0x40000000)
+        self.assertEqual(constants.TYPE_INT32, 0x50000000)
+        self.assertEqual(constants.TYPE_BOOL, 0x60000000)
+        self.assertEqual(constants.TYPE_TOKEN, 0x70000000)
+
+    def test_masks(self) -> None:
+        self.assertEqual(constants.TOKEN_MASK, 0x0FFFFFFF)
+        self.assertEqual(constants.TYPE_MASK, 0xF0000000)
+        self.assertEqual(constants.TOKEN_MASK & constants.TYPE_MASK, 0)
 
 
 if __name__ == '__main__':

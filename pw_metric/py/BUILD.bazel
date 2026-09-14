@@ -22,6 +22,7 @@ pw_py_library(
     name = "pw_metric",
     srcs = [
         "pw_metric/__init__.py",
+        "pw_metric/constants.py",
         "pw_metric/metric_parser.py",
     ],
     imports = ["."],

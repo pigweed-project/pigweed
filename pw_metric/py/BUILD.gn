@@ -25,6 +25,7 @@ pw_python_package("py") {
   }
   sources = [
     "pw_metric/__init__.py",
+    "pw_metric/constants.py",
     "pw_metric/metric_parser.py",
   ]
   tests = [ "metric_parser_test.py" ]
