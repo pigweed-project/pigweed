@@ -126,6 +126,8 @@ class CoroTask<T, ReturnValuePolicy::kDiscard> final : public Task {
         internal::CrashDueToCoroutineAllocationFailure();
       case internal::CoroPollState::kReady:
         return Ready();
+      default:
+        PW_UNREACHABLE;
     }
   }
 
