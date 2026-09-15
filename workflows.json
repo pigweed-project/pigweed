@@ -108,6 +108,13 @@
       ]
     },
     {
+      "name": "ghish",
+      "use_config": "bazel_default",
+      "targets": [
+        "//pw_ghish/..."
+      ]
+    },
+    {
       "name": "docs",
       "use_config": "bazel_default_notest",
       "targets": [
