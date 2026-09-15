@@ -15,6 +15,7 @@
 
 import argparse
 import concurrent.futures
+import copy
 import json
 import os
 from pathlib import Path
@@ -75,11 +76,43 @@ get_git_commit = get_git_revision
 
 def find_compilation_databases(workspace: Path) -> list[Path]:
     """Finds all compile_commands.json files in the workspace."""
-    results = []
-    for p in workspace.rglob("compile_commands.json"):
-        # Ignore test fixture compilation databases
-        if "test" not in p.parts:
-            results.append(p)
+    results: list[Path] = []
+    root_cc = workspace / "compile_commands.json"
+    if root_cc.exists():
+        results.append(root_cc.resolve())
+    for p in workspace.glob(".compile_commands/**/compile_commands.json"):
+        resolved = p.resolve()
+        if resolved not in results:
+            results.append(resolved)
+    if not results:
+        for p in workspace.rglob("compile_commands.json"):
+            # Ignore test fixture and build output compilation databases
+            if "test" not in p.parts and "out" not in p.parts:
+                resolved = p.resolve()
+                if resolved not in results:
+                    results.append(resolved)
+    return results
+
+
+def find_rust_projects(workspace: Path) -> list[Path]:
+    """Finds all rust-project.json files in the workspace."""
+    results: list[Path] = []
+    root_rp = workspace / "rust-project.json"
+    if root_rp.exists():
+        results.append(root_rp.resolve())
+    for p in workspace.glob(".compile_commands/**/rust-project.json"):
+        resolved = p.resolve()
+        if resolved not in results:
+            results.append(resolved)
+    if not results:
+        for p in workspace.rglob("rust-project.json"):
+            rel_parts = p.relative_to(workspace).parts
+            if "test" not in rel_parts and not any(
+                part.startswith(".") for part in rel_parts
+            ):
+                resolved = p.resolve()
+                if resolved not in results:
+                    results.append(resolved)
     return results
 
 
@@ -443,9 +476,253 @@ def _extract_all_units(
     return unit_kzips
 
 
+def extract_single_rust_crate(
+    c: dict[str, Any],
+    orig_idx: int,
+    base_manifest: dict[str, Any],
+    all_rs_files: set[str],
+    rust_units_dir: Path,
+    tmp_path: Path,
+    workspace: Path,
+    corpus: str = DEFAULT_CORPUS,
+    kzip_bin: str | None = None,
+) -> Path | None:
+    """Extracts a single Rust crate compilation unit into a .kzip file."""
+    if not kzip_bin:
+        kzip_bin = find_kzip_binary()
+
+    crate_name = c.get("display_name", f"crate_{orig_idx}")
+    rm = c.get("root_module", "")
+    rel_root = (
+        Path(rm).relative_to(workspace) if Path(rm).is_absolute() else Path(rm)
+    )
+
+    crate_dir = tmp_path / f"rust_crate_{orig_idx}"
+    crate_dir.mkdir(parents=True, exist_ok=True)
+    for entry in workspace.iterdir():
+        if entry.name in (
+            ".git",
+            "bazel-out",
+            "bazel-bin",
+            "bazel-pigweed",
+            "out",
+            "environment",
+            "rust-project.json",
+        ):
+            continue
+        try:
+            (crate_dir / entry.name).symlink_to(entry)
+        except OSError:
+            pass
+
+    m_copy = copy.deepcopy(base_manifest)
+    for j, cr in enumerate(m_copy["crates"]):
+        cr["is_workspace_member"] = j == orig_idx
+
+    with open(crate_dir / "rust-project.json", "w", encoding="utf-8") as f:
+        json.dump(m_copy, f)
+
+    unit_kzip = rust_units_dir / f"rust_{crate_name}_{orig_idx}.kzip"
+    cmd = [
+        kzip_bin,
+        "create",
+        f"-output={unit_kzip}",
+        "-encoding=PROTO",
+        f"-uri=kythe://{corpus}?lang=rust&path={rel_root}",
+        f"-working_directory={crate_dir}",
+        f"-source_file={rel_root}",
+        "-required_input=rust-project.json",
+    ]
+    for sf in all_rs_files:
+        cmd.append(f"-required_input={sf}")
+
+    res = subprocess.run(cmd, cwd=crate_dir, capture_output=True, text=True)
+    if res.returncode == 0 and unit_kzip.exists():
+        return unit_kzip
+    print(
+        f"Warning: Failed to extract Rust unit for {crate_name}: "
+        f"{res.stderr}",
+        file=sys.stderr,
+    )
+    return None
+
+
+_EXCLUDED_RS_DIRS = frozenset(
+    {
+        "target",
+        "out",
+        "bazel-out",
+        "bazel-bin",
+        "bazel-testlogs",
+        ".git",
+        ".cargo",
+    }
+)
+
+
+def _collect_rs_files(
+    ws_crates: list[tuple[int, dict[str, Any]]], workspace: Path
+) -> set[str]:
+    """Finds all Rust source files belonging to workspace crates."""
+    rs_files: set[str] = set()
+    ws_resolved = workspace.resolve()
+    dirs_to_search: set[Path] = set()
+    for _, c in ws_crates:
+        rm = c.get("root_module", "")
+        p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
+        parent = p.resolve().parent
+        if parent.exists():
+            dirs_to_search.add(parent)
+
+    sorted_dirs = sorted(dirs_to_search, key=lambda d: len(d.parts))
+    deduped_dirs: list[Path] = []
+    for d in sorted_dirs:
+        if not any(
+            d == parent or parent in d.parents for parent in deduped_dirs
+        ):
+            deduped_dirs.append(d)
+
+    for search_dir in deduped_dirs:
+        for root, dirs, files in os.walk(search_dir):
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in _EXCLUDED_RS_DIRS and not d.startswith(".")
+            ]
+            for f in files:
+                if f.endswith(".rs"):
+                    sf = Path(root) / f
+                    try:
+                        rs_files.add(str(sf.resolve().relative_to(ws_resolved)))
+                    except ValueError:
+                        pass
+    return rs_files
+
+
+def _extract_crates_from_manifest(
+    manifest: dict[str, Any],
+    rp_name: str,
+    rust_units_dir: Path,
+    tmp_path: Path,
+    workspace: Path,
+    corpus: str,
+    kzip_bin: str,
+    max_workers: int,
+) -> list[Path]:
+    """Extracts compilation units from a parsed rust-project.json manifest."""
+    raw_crates = manifest.get("crates", [])
+    ws_crates: list[tuple[int, dict[str, Any]]] = []
+    ws_resolved = workspace.resolve()
+    for i, c in enumerate(raw_crates):
+        rm = c.get("root_module", "")
+        if not rm:
+            continue
+        p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
+        try:
+            resolved = p.resolve()
+            if resolved.is_relative_to(ws_resolved) and resolved.exists():
+                ws_crates.append((i, c))
+        except (ValueError, OSError):
+            continue
+
+    if not ws_crates:
+        return []
+
+    print(
+        f"Extracting {len(ws_crates)} Rust compilation units from "
+        f"{rp_name} with {max_workers} workers...",
+        flush=True,
+    )
+    start_time = time.time()
+    all_rs_files = _collect_rs_files(ws_crates, workspace)
+
+    base_manifest = copy.deepcopy(manifest)
+    for c in base_manifest.get("crates", []):
+        rm = c.get("root_module", "")
+        if rm:
+            p = Path(rm) if Path(rm).is_absolute() else (workspace / rm)
+            try:
+                resolved = p.resolve()
+                if resolved.is_relative_to(ws_resolved):
+                    c["root_module"] = str(resolved.relative_to(ws_resolved))
+            except (ValueError, OSError):
+                pass
+
+    unit_kzips: list[Path] = []
+    with concurrent.futures.ThreadPoolExecutor(
+        max_workers=max_workers
+    ) as executor:
+        futures = [
+            executor.submit(
+                extract_single_rust_crate,
+                c,
+                orig_idx,
+                base_manifest,
+                all_rs_files,
+                rust_units_dir,
+                tmp_path,
+                workspace,
+                corpus,
+                kzip_bin,
+            )
+            for orig_idx, c in ws_crates
+        ]
+        for fut in concurrent.futures.as_completed(futures):
+            res_unit = fut.result()
+            if res_unit:
+                unit_kzips.append(res_unit)
+
+    print(
+        f"Extracted {len(unit_kzips)} Rust compilation units in "
+        f"{time.time() - start_time:.2f}s.",
+        flush=True,
+    )
+    return unit_kzips
+
+
+def extract_rust_units(
+    rust_project_paths: list[Path],
+    tmp_path: Path,
+    workspace: Path,
+    corpus: str = DEFAULT_CORPUS,
+    kzip_bin: str | None = None,
+    max_workers: int = 16,
+) -> list[Path]:
+    """Extracts Kythe compilation units for Rust crates in rust-project.json."""
+    if not kzip_bin:
+        kzip_bin = find_kzip_binary()
+
+    unit_kzips: list[Path] = []
+    rust_units_dir = tmp_path / "rust_units"
+    rust_units_dir.mkdir(parents=True, exist_ok=True)
+
+    for rp_path in rust_project_paths:
+        try:
+            with open(rp_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:  # pylint: disable=broad-except
+            print(f"Warning: Failed to load {rp_path}: {e}", file=sys.stderr)
+            continue
+
+        units = _extract_crates_from_manifest(
+            manifest=manifest,
+            rp_name=rp_path.name,
+            rust_units_dir=rust_units_dir,
+            tmp_path=tmp_path,
+            workspace=workspace,
+            corpus=corpus,
+            kzip_bin=kzip_bin,
+            max_workers=max_workers,
+        )
+        unit_kzips.extend(units)
+
+    return unit_kzips
+
+
 def generate_kzip(
     workspace: Path,
     compdb_paths: list[Path] | None = None,
+    rust_project_paths: list[Path] | None = None,
     output_kzip: Path | None = None,
     corpus: str = DEFAULT_CORPUS,
     kzip_bin: str | None = None,
@@ -456,7 +733,33 @@ def generate_kzip(
         kzip_bin = find_kzip_binary()
 
     workspace = workspace.resolve()
-    all_entries = _load_compilation_entries(workspace, compdb_paths)
+
+    if compdb_paths is None:
+        compdb_paths = find_compilation_databases(workspace)
+
+    if rust_project_paths is None:
+        rust_project_paths = find_rust_projects(workspace)
+
+    if not compdb_paths and not rust_project_paths:
+        raise FileNotFoundError(
+            f"No compilation databases or rust projects found in workspace: "
+            f"{workspace}"
+        )
+
+    all_entries: list[dict[str, Any]] = []
+    if compdb_paths:
+        try:
+            all_entries = _load_compilation_entries(workspace, compdb_paths)
+        except Exception as e:  # pylint: disable=broad-except
+            if not rust_project_paths:
+                raise
+            print(
+                f"Warning: Failed to load C++ compilation entries: {e}",
+                file=sys.stderr,
+            )
+
+    if not all_entries and not rust_project_paths:
+        raise ValueError("No compilation commands found to extract.")
 
     if not output_kzip:
         try:
@@ -470,14 +773,40 @@ def generate_kzip(
     start_time = time.time()
     with tempfile.TemporaryDirectory(prefix="kythe_units_") as tmp_dir:
         tmp_path = Path(tmp_dir)
-        unit_kzips = _extract_all_units(
-            all_entries,
-            tmp_path,
-            workspace,
-            corpus,
-            kzip_bin,
-            max_workers,
-        )
+        unit_kzips: list[Path] = []
+
+        if all_entries:
+            cxx_units = _extract_all_units(
+                all_entries,
+                tmp_path,
+                workspace,
+                corpus,
+                kzip_bin,
+                max_workers,
+            )
+            unit_kzips.extend(cxx_units)
+
+        if rust_project_paths:
+            try:
+                rust_units = extract_rust_units(
+                    rust_project_paths,
+                    tmp_path,
+                    workspace,
+                    corpus,
+                    kzip_bin,
+                    max_workers,
+                )
+                unit_kzips.extend(rust_units)
+            except Exception as e:  # pylint: disable=broad-except
+                if not all_entries:
+                    raise
+                print(
+                    f"Warning: Failed to extract Rust compilation units: {e}",
+                    file=sys.stderr,
+                )
+
+        if not unit_kzips:
+            raise RuntimeError("Failed to extract any compilation units.")
 
         print(
             f"Merging {len(unit_kzips)} units into {output_kzip.name}...",
@@ -507,6 +836,14 @@ def parse_args():
         help=(
             "Path to compile_commands.json "
             "(defaults to searching .compile_commands/)"
+        ),
+    )
+    parser.add_argument(
+        "--rust-project",
+        type=Path,
+        help=(
+            "Path to rust-project.json "
+            "(defaults to searching workspace and .compile_commands/)"
         ),
     )
     parser.add_argument(
@@ -552,10 +889,19 @@ def main():
     args = parse_args()
     workspace = args.workspace.resolve()
     compdbs = [args.compdb] if args.compdb else None
+    rust_projects = [args.rust_project] if args.rust_project else None
+
+    # If compdb was explicitly specified without rust_project, skip rust
+    if args.compdb and not args.rust_project:
+        rust_projects = []
+    # If rust_project was explicitly specified without compdb, skip compdb
+    if args.rust_project and not args.compdb:
+        compdbs = []
 
     output_kzip = generate_kzip(
         workspace=workspace,
         compdb_paths=compdbs,
+        rust_project_paths=rust_projects,
         output_kzip=args.output_kzip,
         corpus=args.corpus,
         max_workers=args.max_workers,

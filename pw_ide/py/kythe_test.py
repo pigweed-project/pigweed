@@ -13,15 +13,20 @@
 # the License.
 """Tests for pw_ide.kythe."""
 
+import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
 from pw_ide.kythe import (
     DEFAULT_CORPUS,
     _find_required_headers,
+    extract_rust_units,
     extract_single_command,
     find_compilation_databases,
+    find_kzip_binary,
+    find_rust_projects,
 )
 
 
@@ -97,6 +102,129 @@ class KytheExtractorTest(unittest.TestCase):
             entry, 0, out_dir, self.workspace, corpus=DEFAULT_CORPUS
         )
         self.assertIsNone(res)
+
+    def test_find_rust_projects(self):
+        """Tests discovering rust-project.json in the workspace root."""
+        rp_path = self.workspace / "rust-project.json"
+        rp_path.write_text("{}")
+        found = find_rust_projects(self.workspace)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0], rp_path.resolve())
+
+    def test_find_rust_projects_compile_commands(self):
+        """Tests discovering rust-project.json under .compile_commands."""
+        cc_dir = self.workspace / ".compile_commands" / "target"
+        cc_dir.mkdir(parents=True)
+        rp_path = cc_dir / "rust-project.json"
+        rp_path.write_text("{}")
+        found = find_rust_projects(self.workspace)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0], rp_path.resolve())
+
+    def test_extract_rust_units_empty_manifest(self):
+        """Tests extracting Rust units with an empty crates list."""
+        rp_path = self.workspace / "rust-project.json"
+        rp_path.write_text(json.dumps({"crates": []}))
+        out_dir = self.workspace / "out"
+        out_dir.mkdir()
+        res = extract_rust_units([rp_path], out_dir, self.workspace)
+        self.assertEqual(res, [])
+
+    def test_extract_rust_units_valid_crate(self):
+        """Tests extracting a valid Rust compilation unit into a kzip."""
+        kzip_bin = find_kzip_binary()
+        if not shutil.which(kzip_bin) and not Path(kzip_bin).exists():
+            self.skipTest("kzip binary not found")
+        crate_dir = self.workspace / "pw_sample"
+        crate_dir.mkdir()
+        src_file = crate_dir / "lib.rs"
+        src_file.write_text("pub fn sample() -> i32 { 42 }")
+        rp_path = self.workspace / "rust-project.json"
+        rp_path.write_text(
+            json.dumps(
+                {
+                    "crates": [
+                        {
+                            "display_name": "pw_sample",
+                            "root_module": "pw_sample/lib.rs",
+                            "edition": "2021",
+                            "deps": [],
+                            "is_workspace_member": True,
+                        }
+                    ]
+                }
+            )
+        )
+        out_dir = self.workspace / "out"
+        out_dir.mkdir()
+        res = extract_rust_units(
+            [rp_path], out_dir, self.workspace, kzip_bin=kzip_bin
+        )
+        self.assertEqual(len(res), 1)
+        self.assertTrue(res[0].exists())
+
+    def test_find_rust_projects_ignores_hidden_directories(self):
+        """Tests that rust-project.json in hidden directories is ignored."""
+        hidden_dir = self.workspace / ".git" / "subdir"
+        hidden_dir.mkdir(parents=True)
+        (hidden_dir / "rust-project.json").write_text("{}")
+        found = find_rust_projects(self.workspace)
+        self.assertEqual(found, [])
+
+    def test_extract_rust_units_malformed_json(self):
+        """Tests that malformed rust-project.json is skipped gracefully."""
+        rp_path = self.workspace / "rust-project.json"
+        rp_path.write_text("{ invalid json")
+        out_dir = self.workspace / "out"
+        out_dir.mkdir()
+        res = extract_rust_units([rp_path], out_dir, self.workspace)
+        self.assertEqual(res, [])
+
+    def test_extract_rust_units_filters_external_crates(self):
+        """Tests that external crates outside the workspace are excluded."""
+        kzip_bin = find_kzip_binary()
+        if not shutil.which(kzip_bin) and not Path(kzip_bin).exists():
+            self.skipTest("kzip binary not found")
+        local_dir = self.workspace / "pw_sample"
+        local_dir.mkdir()
+        (local_dir / "lib.rs").write_text("pub fn sample() -> i32 { 42 }")
+
+        with tempfile.TemporaryDirectory() as ext_temp:
+            ext_dir = Path(ext_temp) / "external_pkg"
+            ext_dir.mkdir()
+            (ext_dir / "lib.rs").write_text("pub fn ext() -> i32 { 100 }")
+
+            rp_path = self.workspace / "rust-project.json"
+            rp_path.write_text(
+                json.dumps(
+                    {
+                        "crates": [
+                            {
+                                "display_name": "pw_sample",
+                                "root_module": "pw_sample/lib.rs",
+                                "edition": "2021",
+                                "deps": [],
+                                "is_workspace_member": True,
+                            },
+                            {
+                                "display_name": "external_pkg",
+                                "root_module": str(ext_dir / "lib.rs"),
+                                "edition": "2021",
+                                "deps": [],
+                                "is_workspace_member": False,
+                            },
+                        ]
+                    }
+                )
+            )
+            out_dir = self.workspace / "out"
+            out_dir.mkdir()
+            res = extract_rust_units(
+                [rp_path], out_dir, self.workspace, kzip_bin=kzip_bin
+            )
+            self.assertEqual(len(res), 1)
+            self.assertTrue(res[0].exists())
+            self.assertIn("rust_pw_sample_0.kzip", res[0].name)
 
 
 if __name__ == "__main__":
