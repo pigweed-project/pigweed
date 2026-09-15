@@ -120,7 +120,7 @@ TEST(FutureTask, VoidFuture) {
   provider.Resolve();
   dispatcher.RunUntilStalled();
 
-  task.Join();
+  task.BlockingJoin();
 }
 
 TEST(FutureTask, Reference) {

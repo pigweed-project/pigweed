@@ -68,7 +68,7 @@ tasks, so cannot inherit from :cc:`Task <pw::async2::Task>` itself.
 :cc:`FutureTask <pw::async2::FutureTask>` is a task that runs a single future to
 completion in a task. The value produced by the future is accessible by calling
 :cc:`Wait() <pw::async2::FutureTask::Wait>` or, if the task has been :cc:`joined
-<pw::async2::Task::Join>`, :cc:`value() <pw::async2::FutureTask::value>`.
+<pw::async2::Task::BlockingJoin>`, :cc:`value() <pw::async2::FutureTask::value>`.
 ``FutureTask`` can take ownership of a future:
 
 .. literalinclude:: examples/task_helpers.cc

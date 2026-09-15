@@ -62,7 +62,8 @@ class FallibleCoroTask final : public Task {
 
   /// The return value from the coroutine.
   ///
-  /// @pre The task must have completed. Call `Join` to ensure it finished.
+  /// @pre The task must have completed. Call `BlockingJoin` to ensure it
+  /// finished.
   value_type& value() { return return_value_.value(); }
 
   /// @copydoc value
@@ -72,7 +73,7 @@ class FallibleCoroTask final : public Task {
   /// `std::optional`. The `std::optional` is empty if coroutine allocation
   /// failed.
   std::optional<value_type>& Wait() {
-    Task::Join();
+    Task::BlockingJoin();
     return return_value_;
   }
 

@@ -144,7 +144,7 @@ TEST(Task, DeregisterRunningTask_TaskReturnsReady) {
   DeregisterWhileRunning(Ready());
 }
 
-TEST(Task, Join_RunningTask) {
+TEST(Task, BlockingJoin_RunningTask) {
   DispatcherForTest dispatcher;
   BlockingTask task(Ready());
   dispatcher.Post(task);
@@ -161,14 +161,14 @@ TEST(Task, Join_RunningTask) {
     task.Unblock();
   });
 
-  task.Join();
+  task.BlockingJoin();
   EXPECT_FALSE(task.IsRegistered());
 
   unblock_thread.join();
   dispatcher_thread.join();
 }
 
-TEST(Task, Join_SleepingTask) {
+TEST(Task, BlockingJoin_SleepingTask) {
   DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
   SleepingTask task;
@@ -186,7 +186,7 @@ TEST(Task, Join_SleepingTask) {
     task.Wake();
   });
 
-  task.Join();
+  task.BlockingJoin();
   EXPECT_FALSE(task.IsRegistered());
 
   wake_thread.join();

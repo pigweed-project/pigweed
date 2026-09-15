@@ -69,7 +69,7 @@ class FutureTask final : public FutureTaskBase {
 
   /// Returns the value produced by the future.
   ///
-  /// @pre The task MUST have been @ref Task::Join "joined" first.
+  /// @pre The task MUST have been @ref Task::BlockingJoin "joined" first.
   FutureValue<future_type>& value() & { return output_.value(); }
   /// @copydoc value
   const FutureValue<future_type>& value() const& { return output_.value(); }
@@ -83,7 +83,7 @@ class FutureTask final : public FutureTaskBase {
   /// Joins that task, blocking until the future completes, then returns a
   /// reference its value.
   FutureValue<future_type>& Wait() {
-    Task::Join();
+    Task::BlockingJoin();
     return *output_;
   }
 

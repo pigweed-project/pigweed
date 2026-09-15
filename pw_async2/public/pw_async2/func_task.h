@@ -106,7 +106,8 @@ class RunOnceTask final : public Task {
 
   /// The return value from the function.
   ///
-  /// @pre The task must have completed. Call `Join` to ensure it finished.
+  /// @pre The task must have completed. Call `BlockingJoin` to ensure it
+  /// finished.
   value_type& value() { return return_value_.value(); }
 
   /// @copydoc value
@@ -114,7 +115,7 @@ class RunOnceTask final : public Task {
 
   /// Blocks until the task completes and returns a reference its return value.
   value_type& Wait() {
-    Task::Join();
+    Task::BlockingJoin();
     return *return_value_;
   }
 

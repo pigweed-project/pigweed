@@ -97,7 +97,7 @@ class ExampleClass {
         [this](pw::async2::Context& cx) { return RunCalibration(cx); });
     dispatcher.Post(task);
     // DOCSTAG: [pw_async2-examples-func-task-class]
-    task.Join();
+    task.BlockingJoin();
   }
 };
 

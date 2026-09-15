@@ -192,7 +192,7 @@ TEST(RunOnce, DiscardNonVoidReturnValue) {
 
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
-  task.Join();
+  task.BlockingJoin();
 
   EXPECT_EQ(count, 1);
 }

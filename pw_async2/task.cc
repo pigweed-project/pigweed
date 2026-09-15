@@ -93,7 +93,7 @@ bool Task::TryDeregister() {
   return true;
 }
 
-void Task::Join() {
+void Task::BlockingJoin() {
   while (true) {
     {
       std::lock_guard lock(internal::lock());

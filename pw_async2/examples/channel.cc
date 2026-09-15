@@ -170,7 +170,7 @@ TEST(Channel, Coro) {
   dispatcher.RunToCompletion();
 
   EXPECT_EQ(producer.Wait(), 3);
-  consumer.Join();
+  consumer.BlockingJoin();
   EXPECT_EQ(values.size(), 3u);
 }
 

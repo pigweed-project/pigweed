@@ -340,7 +340,7 @@ dispatcher.Post(task);
 
 // ... run dispatcher ...
 
-// MUST call Deregister() or Join() before destruction!
+// MUST call Deregister() or BlockingJoin() before destruction!
 task.Deregister();
 ```
 
@@ -406,8 +406,8 @@ for deterministic unit testing patterns with `DispatcherForTest` and
 - [ ] **No `Async` naming**: Name functions `Read()`, not `AsyncRead()`.
 - [ ] **Direct future return**: Return `Future<T>` directly by value, not
       `Result<Future>`.
-- [ ] **Task deregistration**: Call `task.Deregister()` or `task.Join()` before
-      destroying a posted task.
+- [ ] **Task deregistration**: Call `task.Deregister()` or `task.BlockingJoin()`
+      before destroying a posted task.
 - [ ] **Lazy future provisioning**: Provision subfutures lazily inside
       `DoPend()` (when `!future.is_pendable()`), never eagerly in constructors.
 - [ ] **Completed future invariant**: Never call `Pend()` on a future after it

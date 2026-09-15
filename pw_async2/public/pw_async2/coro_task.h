@@ -60,7 +60,8 @@ class CoroTask final : public Task {
 
   /// The return value from the coroutine.
   ///
-  /// @pre The task must have completed. Call `Join` to ensure it has completed.
+  /// @pre The task must have completed. Call `BlockingJoin` to ensure it has
+  /// completed.
   value_type& value() { return return_value_.value(); }
 
   /// @copydoc value
@@ -68,7 +69,7 @@ class CoroTask final : public Task {
 
   /// Blocks until the task completes and returns a reference its return value.
   value_type& Wait() {
-    Task::Join();
+    Task::BlockingJoin();
     return *return_value_;
   }
 

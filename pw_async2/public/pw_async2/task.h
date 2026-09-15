@@ -195,7 +195,7 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   ///
   /// @pre The task must be posted to a `Dispatcher` that runs in a different
   /// thread.
-  void Join() PW_LOCKS_EXCLUDED(internal::lock());
+  void BlockingJoin() PW_LOCKS_EXCLUDED(internal::lock());
 
  protected:
   /// Alias Context here so subclasses don't try to look up the private base.
