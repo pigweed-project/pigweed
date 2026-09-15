@@ -17,22 +17,13 @@ package pw_ghish
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
 
 func TestPushIntegration(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("feature-branch\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("feature-branch")
 
 	output, err := executeCommand(RootCmd, "pr", "push")
 	if err != nil {
@@ -51,15 +42,7 @@ func TestPushIntegration(t *testing.T) {
 }
 
 func TestPush_RichOptions(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main")
 	SetTestProfile(t, "pigweed")
 
 	_, err := executeCommand(RootCmd, "pr", "push",
@@ -109,16 +92,7 @@ func TestPush_RichOptions(t *testing.T) {
 }
 
 func TestPush_TopLevelAlias(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main")
 
 	output, err := executeCommand(RootCmd, "push")
 	if err != nil {
@@ -131,15 +105,7 @@ func TestPush_TopLevelAlias(t *testing.T) {
 }
 
 func TestPush_UploadAliases(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main")
 
 	// Test 'pr upload'
 	output, err := executeCommand(RootCmd, "pr", "upload")
@@ -161,15 +127,7 @@ func TestPush_UploadAliases(t *testing.T) {
 }
 
 func TestPush_ErrorReturnedWhenPushFails(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				return fmt.Errorf("remote rejected")
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnError("push", fmt.Errorf("remote rejected"))
 
 	_, err := executeCommand(RootCmd, "pr", "push")
 	if err == nil {
@@ -182,21 +140,7 @@ func TestPush_ErrorReturnedWhenPushFails(t *testing.T) {
 
 func TestPush_FailsWhenMissingChangeID(t *testing.T) {
 	tempDir := t.TempDir()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Commit message without change ID\n"))
-			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").WithCommit("Commit message without change ID\n").OnCommand("rev-parse --git-dir", tempDir+"\n")
 
 	_, err := executeCommand(RootCmd, "pr", "push")
 	if err == nil {
@@ -208,19 +152,7 @@ func TestPush_FailsWhenMissingChangeID(t *testing.T) {
 }
 
 func TestPush_MultiCommitStackGuard_RejectsWithoutStack(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("5\n"))
-				return nil
-			}
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnCommand("rev-list --count origin/main..HEAD", "5\n")
 
 	_, err := executeCommand(RootCmd, "pr", "push", "--base", "main")
 	if err == nil {
@@ -236,19 +168,7 @@ func TestPush_MultiCommitStackGuard_RejectsWithoutStack(t *testing.T) {
 }
 
 func TestPush_MultiCommitStackGuard_AllowsWithStack(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("5\n"))
-				return nil
-			}
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnCommand("rev-list --count origin/main..HEAD", "5\n")
 
 	output, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack")
 	if err != nil {
@@ -270,15 +190,7 @@ func TestPush_GerritBranchMemory(t *testing.T) {
 		},
 	})
 
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("local-main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("local-main")
 
 	output, err := executeCommand(RootCmd, "pr", "push")
 	if err != nil {
@@ -304,15 +216,7 @@ func TestPush_ExplicitBaseOverridesGerritBranchMemory(t *testing.T) {
 		},
 	})
 
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("local-main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("local-main")
 
 	output, err := executeCommand(RootCmd, "pr", "push", "--base", "custom-branch")
 	if err != nil {
@@ -326,4 +230,36 @@ func TestPush_ExplicitBaseOverridesGerritBranchMemory(t *testing.T) {
 	if !strings.Contains(output, "Pushing patchset for branch custom-branch...") {
 		t.Errorf("Unexpected output: %s", output)
 	}
+}
+
+func TestVerifyHeadForPush(t *testing.T) {
+	t.Run("valid commit with existing change lookup", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnDefaultChange(472267, WithBranch("sandbox/feature"))
+		mockGit := NewMockGit(t).WithBranch("main").WithCommit("Subject\n\nChange-Id: I0000000000000000000000000000000000000001\n")
+
+		cfg := &Config{Host: server.URL, Git: mockGit}
+		SetConfig(RootCmd, cfg)
+		state, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, true)
+		if err != nil {
+			t.Fatalf("VerifyHeadForPush failed: %v", err)
+		}
+		if state.ChangeID != "I0000000000000000000000000000000000000001" {
+			t.Errorf("got ChangeID %q, want I0000000000000000000000000000000000000001", state.ChangeID)
+		}
+		if state.ExistingChange == nil || state.ExistingChange.Branch != "sandbox/feature" {
+			t.Errorf("got ExistingChange %+v, want branch sandbox/feature", state.ExistingChange)
+		}
+	})
+
+	t.Run("rejects GitHub issue syntax", func(t *testing.T) {
+		mockGit := NewMockGit(t).WithBranch("main").WithCommit("Subject\n\nFixes #123\nChange-Id: I0000000000000000000000000000000000000001\n")
+
+		cfg := &Config{Git: mockGit}
+		SetConfig(RootCmd, cfg)
+		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false)
+		if err == nil || !strings.Contains(err.Error(), "#123") {
+			t.Errorf("expected GitHub issue syntax error, got: %v", err)
+		}
+	})
 }

@@ -52,6 +52,62 @@ func isBuildbucketID(s string) bool {
 	return true
 }
 
+// parseRunTargetArgs resolves target arguments for 'run view' and 'run rerun'.
+// It handles 0, 1, or 2 positional arguments where a single argument may be a
+// Buildbucket build ID (if allowBuildID is true), a Gerrit change identifier,
+// or a builder name.
+func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allowBuildID bool) (rawID, targetBuilder, directBuildID string, err error) {
+	if len(args) == 0 {
+		id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
+		if err != nil {
+			return "", "", "", err
+		}
+		return id, jobFlag, "", nil
+	}
+	if len(args) == 1 {
+		arg := args[0]
+		if allowBuildID && isBuildbucketID(arg) {
+			return "", "", arg, nil
+		}
+		if isChangeIdentifier(arg) {
+			return arg, jobFlag, "", nil
+		}
+		id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
+		if err != nil {
+			return "", "", "", err
+		}
+		targetBuilder = arg
+		if jobFlag != "" {
+			targetBuilder = jobFlag
+		}
+		return id, targetBuilder, "", nil
+	}
+	rawID = args[0]
+	targetBuilder = args[1]
+	if jobFlag != "" {
+		targetBuilder = jobFlag
+	}
+	return rawID, targetBuilder, "", nil
+}
+
+// collectFailedBuilders returns deduplicated failed builder names from the latest builds.
+func collectFailedBuilders(builds []bbBuild, includeExperimental bool) []string {
+	var failed []string
+	seen := make(map[string]bool)
+	for _, b := range deduplicateLatestBuilds(builds) {
+		if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
+			if !includeExperimental && b.IsExperimental() {
+				continue
+			}
+			if !seen[b.Builder.Builder] {
+				seen[b.Builder.Builder] = true
+				failed = append(failed, b.Builder.Builder)
+			}
+		}
+	}
+	return failed
+}
+
 // RunCmd is the top-level command for managing CI/CD runs (from Buildbucket).
 var RunCmd = &cobra.Command{
 	Use:          "run",
@@ -76,21 +132,12 @@ var runListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		res, err := resolveChangeContext(cmd, rawID)
+		res, err := ResolveCIContext(cmd, rawID)
 		if err != nil {
 			return fmt.Errorf("failed to load runs for %q: %w", rawID, err)
 		}
 
-		builds := deduplicateLatestBuilds(res.Builds)
-		var relevant []bbBuild
-		omittedExp := 0
-		for _, b := range builds {
-			if !runListExperimental && b.IsExperimental() {
-				omittedExp++
-				continue
-			}
-			relevant = append(relevant, b)
-		}
+		relevant, omittedExp := FilterExperimentalBuilds(deduplicateLatestBuilds(res.Builds), runListExperimental)
 
 		if len(relevant) == 0 {
 			fmt.Fprintf(cmd.OutOrStdout(), "No checks scheduled for Change %d (Patchset %d).\n", res.Change.Number, res.PatchsetNum)
@@ -98,19 +145,7 @@ var runListCmd = &cobra.Command{
 		}
 
 		if runListJSON {
-			var items []CheckItem
-			for _, b := range relevant {
-				items = append(items, CheckItem{
-					ID:           b.ID,
-					Name:         b.Builder.Builder,
-					Bucket:       b.Builder.Bucket,
-					Status:       b.Status,
-					StatusSymbol: getStatusSymbol(b.Status),
-					Duration:     formatDuration(b.StartTime, b.EndTime),
-					URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
-					Experimental: b.IsExperimental(),
-				})
-			}
+			items := BuildCheckItems(relevant)
 			data, err := json.MarshalIndent(items, "", "  ")
 			if err != nil {
 				return fmt.Errorf("failed to marshal JSON: %w", err)
@@ -131,12 +166,8 @@ var runListCmd = &cobra.Command{
 		}
 		w.Flush()
 
-		if omittedExp > 0 {
-			plural := "s"
-			if omittedExp == 1 {
-				plural = ""
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "\n(%d non-blocking experimental builder%s omitted; add --experimental to see them)\n", omittedExp, plural)
+		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
 		return nil
 	},
@@ -148,49 +179,17 @@ var runViewCmd = &cobra.Command{
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var rawID string
-		var targetBuilder string
-		var directBuildID string
-
-		if len(args) == 0 {
-			id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
-			if err != nil {
-				return err
-			}
-			rawID = id
-			targetBuilder = runViewJob
-		} else if len(args) == 1 {
-			arg := args[0]
-			if isBuildbucketID(arg) {
-				directBuildID = arg
-			} else if isChangeIdentifier(arg) {
-				rawID = arg
-				targetBuilder = runViewJob
-			} else {
-				id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
-				if err != nil {
-					return err
-				}
-				rawID = id
-				targetBuilder = arg
-				if runViewJob != "" {
-					targetBuilder = runViewJob
-				}
-			}
-		} else {
-			rawID = args[0]
-			targetBuilder = args[1]
-			if runViewJob != "" {
-				targetBuilder = runViewJob
-			}
+		rawID, targetBuilder, directBuildID, err := parseRunTargetArgs(cmd, args, runViewJob, true)
+		if err != nil {
+			return err
 		}
 
 		ctx := cmd.Context()
 		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
 
-		var res *resolvedChangeContext
+		var res *CIContext
 		if directBuildID == "" {
-			r, err := resolveChangeContext(cmd, rawID)
+			r, err := ResolveCIContext(cmd, rawID)
 			if err != nil {
 				return fmt.Errorf("failed to load checks for %q: %w", rawID, err)
 			}
@@ -284,12 +283,8 @@ var runViewCmd = &cobra.Command{
 						failedExpCount++
 					}
 				}
-				if failedExpCount > 0 {
-					plural := "s"
-					if failedExpCount == 1 {
-						plural = ""
-					}
-					fmt.Fprintf(cmd.OutOrStdout(), "No failed blocking checks found on this change (%d non-blocking experimental builder%s omitted; add --experimental to see them).\n", failedExpCount, plural)
+				if notice := FormatOmittedExperimentalNotice(failedExpCount); notice != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "No failed blocking checks found on this change %s.\n", notice)
 					return nil
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "No failed checks found on this change.")
@@ -401,20 +396,13 @@ var runViewCmd = &cobra.Command{
 		}
 
 		// Default view: structured summary of the whole workflow run
-		builds := deduplicateLatestBuilds(res.Builds)
-		var relevant []bbBuild
-		omittedExp := 0
+		relevant, omittedExp := FilterExperimentalBuilds(deduplicateLatestBuilds(res.Builds), runViewExperimental)
 		hasFailure := false
 		hasRunning := false
 		passedCount := 0
 		failedCount := 0
 
-		for _, b := range builds {
-			if !runViewExperimental && b.IsExperimental() {
-				omittedExp++
-				continue
-			}
-			relevant = append(relevant, b)
+		for _, b := range relevant {
 			if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 				hasFailure = true
 				failedCount++
@@ -446,19 +434,7 @@ var runViewCmd = &cobra.Command{
 		}
 
 		if runViewJSON {
-			var checkItems []CheckItem
-			for _, b := range relevant {
-				checkItems = append(checkItems, CheckItem{
-					ID:           b.ID,
-					Name:         b.Builder.Builder,
-					Bucket:       b.Builder.Bucket,
-					Status:       b.Status,
-					StatusSymbol: getStatusSymbol(b.Status),
-					Duration:     formatDuration(b.StartTime, b.EndTime),
-					URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
-					Experimental: b.IsExperimental(),
-				})
-			}
+			checkItems := BuildCheckItems(relevant)
 			summary := map[string]any{
 				"change":   res.Change.Number,
 				"patchset": res.PatchsetNum,
@@ -494,12 +470,8 @@ var runViewCmd = &cobra.Command{
 		}
 		w.Flush()
 
-		if omittedExp > 0 {
-			plural := "s"
-			if omittedExp == 1 {
-				plural = ""
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "\n(%d non-blocking experimental builder%s omitted; add --experimental to see them)\n", omittedExp, plural)
+		if notice := FormatOmittedExperimentalNotice(omittedExp); notice != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout())
@@ -519,41 +491,12 @@ var runRerunCmd = &cobra.Command{
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		var rawID string
-		var targetBuilder string
-
-		if len(args) == 0 {
-			id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
-			if err != nil {
-				return err
-			}
-			rawID = id
-			targetBuilder = runRerunJob
-		} else if len(args) == 1 {
-			arg := args[0]
-			if isChangeIdentifier(arg) {
-				rawID = arg
-				targetBuilder = runRerunJob
-			} else {
-				id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
-				if err != nil {
-					return err
-				}
-				rawID = id
-				targetBuilder = arg
-				if runRerunJob != "" {
-					targetBuilder = runRerunJob
-				}
-			}
-		} else {
-			rawID = args[0]
-			targetBuilder = args[1]
-			if runRerunJob != "" {
-				targetBuilder = runRerunJob
-			}
+		rawID, targetBuilder, _, err := parseRunTargetArgs(cmd, args, runRerunJob, false)
+		if err != nil {
+			return err
 		}
 
-		res, err := resolveChangeContext(cmd, rawID)
+		res, err := ResolveCIContext(cmd, rawID)
 		if err != nil {
 			return fmt.Errorf("failed to load checks for %q: %w", rawID, err)
 		}
@@ -582,36 +525,13 @@ var runRerunCmd = &cobra.Command{
 				return fmt.Errorf("builder %q not found on change %s%s", targetBuilder, rawID, sortMsg)
 			}
 		} else if runRerunFailed {
-			seen := make(map[string]bool)
-			for _, b := range deduplicateLatestBuilds(res.Builds) {
-				if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
-					if !runRerunExperimental && b.IsExperimental() {
-						continue
-					}
-					if !seen[b.Builder.Builder] {
-						seen[b.Builder.Builder] = true
-						buildersToRerun = append(buildersToRerun, b.Builder.Builder)
-					}
-				}
-			}
+			buildersToRerun = collectFailedBuilders(res.Builds, runRerunExperimental)
 			if len(buildersToRerun) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No failed checks found to rerun.")
 				return nil
 			}
 		} else {
-			var failedBuilders []string
-			seen := make(map[string]bool)
-			for _, b := range deduplicateLatestBuilds(res.Builds) {
-				if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
-					if !runRerunExperimental && b.IsExperimental() {
-						continue
-					}
-					if !seen[b.Builder.Builder] {
-						seen[b.Builder.Builder] = true
-						failedBuilders = append(failedBuilders, b.Builder.Builder)
-					}
-				}
-			}
+			failedBuilders := collectFailedBuilders(res.Builds, runRerunExperimental)
 			if len(failedBuilders) > 0 {
 				return fmt.Errorf("no builder specified to rerun: specify a builder name or pass --failed to rerun all failed checks.\n\nUsage examples:\n  gh run rerun --failed\n  gh run rerun <builder-name>\n  gh run rerun -j <builder-name>\n\nFailed checks available to rerun:\n  - %s", strings.Join(failedBuilders, "\n  - "))
 			}

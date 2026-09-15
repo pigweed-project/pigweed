@@ -448,6 +448,38 @@ func (c *Config) GerritURL(ctx context.Context) (string, error) {
 	return host, nil
 }
 
+// CleanGerritHost extracts and normalizes the hostname from a Gerrit host string or URL,
+// stripping schemes (http://, https://), paths, trailing slashes, and Gerrit's /a suffix.
+func CleanGerritHost(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, "://") {
+		if parsedU, err := url.Parse(raw); err == nil && parsedU.Host != "" {
+			return parsedU.Host
+		}
+	}
+	raw = strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
+	raw = strings.TrimSuffix(raw, "/")
+	raw = strings.TrimSuffix(raw, "/a")
+	return strings.TrimSuffix(raw, "/")
+}
+
+// GerritHost returns the cleaned Gerrit hostname (without scheme or path),
+// resolving from Config.GerritURL(ctx) or falling back to HostFlag.
+func (c *Config) GerritHost(ctx context.Context) string {
+	var raw string
+	if c != nil {
+		if gURL, err := c.GerritURL(ctx); err == nil {
+			raw = gURL
+		}
+	}
+	if raw == "" {
+		raw = HostFlag
+	}
+	return CleanGerritHost(raw)
+}
+
 // FindLatestChangeBySubject searches for the latest change with the given subject and owner:self.
 func FindLatestChangeBySubject(ctx context.Context, cmd *cobra.Command, subject string) (int, error) {
 	client, err := NewGerritClient(ctx, cmd)

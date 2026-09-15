@@ -780,30 +780,6 @@ func TestFormatGerritError_Conflict409_Open(t *testing.T) {
 	}
 }
 
-func TestTrimHostScheme(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"https://pigweed-review.googlesource.com", "pigweed-review.googlesource.com"},
-		{"https://pigweed-review.googlesource.com/", "pigweed-review.googlesource.com"},
-		{"https://pigweed-review.googlesource.com/a", "pigweed-review.googlesource.com"},
-		{"https://pigweed-review.googlesource.com/a/", "pigweed-review.googlesource.com"},
-		{"http://localhost:8080/", "localhost:8080"},
-		{"gerrit.example.com", "gerrit.example.com"},
-		{"", ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.input, func(t *testing.T) {
-			got := trimHostScheme(tc.input)
-			if got != tc.expected {
-				t.Errorf("trimHostScheme(%q) = %q, want %q", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
-
 func TestResolveProfile(t *testing.T) {
 	ctx := context.Background()
 
@@ -834,19 +810,11 @@ func TestResolveProfile(t *testing.T) {
 		t.Errorf("ResolveProfile generic fallback = %q, want generic", p.Name())
 	}
 
-	// 4. ChangeContext.ResolveProfile with nil context
-	var nilCtx *ChangeContext
-	p, err = nilCtx.ResolveProfile()
-	if err != nil {
-		t.Fatalf("nilCtx.ResolveProfile failed: %v", err)
-	}
-	if p == nil {
-		t.Fatal("nilCtx.ResolveProfile returned nil profile")
-	}
-
-	// 5. ChangeContext.ResolveProfile with populated context
+	// 4. ChangeContext.ResolveProfile with populated context
+	client, _ := gerrit.NewClient(ctx, "https://pigweed-review.googlesource.com", nil)
 	chCtx := &ChangeContext{
 		Context:  ctx,
+		Client:   client,
 		ChangeID: "123",
 	}
 	p, err = chCtx.ResolveProfile("pigweed/pigweed")
@@ -855,5 +823,78 @@ func TestResolveProfile(t *testing.T) {
 	}
 	if p.Name() != "pigweed" {
 		t.Errorf("chCtx.ResolveProfile = %q, want pigweed", p.Name())
+	}
+
+	// 5. Nil ChangeContext and nil Client safety
+	var nilCtx *ChangeContext
+	p, err = nilCtx.ResolveProfile()
+	if err != nil || p == nil {
+		t.Fatalf("nil ChangeContext.ResolveProfile() failed: %v, p=%v", err, p)
+	}
+
+	emptyCtx := &ChangeContext{Context: ctx}
+	p, err = emptyCtx.ResolveProfile("pigweed/pigweed")
+	if err != nil || p == nil || p.Name() != "pigweed" {
+		t.Fatalf("empty ChangeContext.ResolveProfile() = %v, %v; want pigweed", p, err)
+	}
+}
+
+func TestResolveCIContext(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("CI Context Change"))
+	server.OnSearchBuilds(
+		FakeBuild("901", "pigweed-linux", "SUCCESS"),
+	)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetConfig(cmd, &Config{Host: server.URL})
+
+	oldBB := buildbucketHost
+	buildbucketHost = server.URL
+	defer func() { buildbucketHost = oldBB }()
+
+	ciCtx, err := ResolveCIContext(cmd, "12345")
+	if err != nil {
+		t.Fatalf("ResolveCIContext failed: %v", err)
+	}
+	if ciCtx.Change.Number != 12345 || ciCtx.PatchsetNum != 1 {
+		t.Errorf("got change %d patchset %d, want 12345 / 1", ciCtx.Change.Number, ciCtx.PatchsetNum)
+	}
+	if len(ciCtx.Builds) != 1 || ciCtx.Builds[0].ID != "901" {
+		t.Errorf("unexpected builds: %+v", ciCtx.Builds)
+	}
+
+	// Explicit revision in ChangeID (e.g. "12345/2")
+	ciCtxRev, err := ResolveCIContext(cmd, "12345/2")
+	if err != nil {
+		t.Fatalf("ResolveCIContext(12345/2) failed: %v", err)
+	}
+	if ciCtxRev.PatchsetNum != 2 {
+		t.Errorf("ResolveCIContext(12345/2) PatchsetNum = %d, want 2", ciCtxRev.PatchsetNum)
+	}
+}
+
+func TestChangeContext_Mutations(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345)
+
+	server.OnJSON("POST", "/a/changes/12345/wip", http.StatusOK, map[string]any{})
+	server.OnJSON("POST", "/a/changes/12345/reviewers", http.StatusOK, map[string]any{})
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetConfig(cmd, &Config{Host: server.URL})
+
+	chCtx, err := ResolveChangeContext(cmd, []string{"12345"})
+	if err != nil {
+		t.Fatalf("ResolveChangeContext failed: %v", err)
+	}
+
+	if err := chCtx.SetWorkInProgress("moving to draft"); err != nil {
+		t.Errorf("SetWorkInProgress failed: %v", err)
+	}
+	if err := chCtx.AddCC("cc@google.com"); err != nil {
+		t.Errorf("AddCC failed: %v", err)
 	}
 }

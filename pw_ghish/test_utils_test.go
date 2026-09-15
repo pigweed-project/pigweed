@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ import (
 
 func resetAllFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		if f.Name == "host" || f.Name == "profile" {
+		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
 			return
 		}
 		if s, ok := f.Value.(pflag.SliceValue); ok {
@@ -103,19 +104,104 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 
 // MockGitRunner implements GitRunner for testing.
 type MockGitRunner struct {
-	mu    sync.Mutex
-	Calls []string
-	RunFn func(ctx context.Context, stdout, stderr io.Writer, args ...string) error
+	mu               sync.Mutex
+	Calls            []string
+	RunFn            func(ctx context.Context, stdout, stderr io.Writer, args ...string) error
+	responses        map[string]string
+	errors           map[string]error
+	defaultBranch    string
+	defaultCommitMsg string
 }
 
 func (m *MockGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 	m.mu.Lock()
-	m.Calls = append(m.Calls, strings.Join(args, " "))
+	call := strings.Join(args, " ")
+	m.Calls = append(m.Calls, call)
+	resp, hasResp := m.responses[call]
+	var errToReturn error
+	for pattern, err := range m.errors {
+		if call == pattern || strings.HasPrefix(call, pattern) {
+			errToReturn = err
+			break
+		}
+	}
+	defaultBranch := m.defaultBranch
+	defaultCommitMsg := m.defaultCommitMsg
 	m.mu.Unlock()
+
+	if errToReturn != nil {
+		return errToReturn
+	}
+	if hasResp {
+		stdout.Write([]byte(resp))
+		return nil
+	}
+	if defaultBranch != "" && len(args) >= 1 && args[0] == "branch" {
+		stdout.Write([]byte(defaultBranch + "\n"))
+		return nil
+	}
+	if defaultCommitMsg != "" && len(args) >= 2 && args[0] == "log" && args[1] == "-1" {
+		stdout.Write([]byte(defaultCommitMsg))
+		return nil
+	}
 	if m.RunFn != nil {
 		return m.RunFn(ctx, stdout, stderr, args...)
 	}
 	return nil
+}
+
+// OnCommand registers a fixed stdout response for an exact command argument string.
+func (m *MockGitRunner) OnCommand(args, stdout string) *MockGitRunner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.responses == nil {
+		m.responses = make(map[string]string)
+	}
+	m.responses[args] = stdout
+	return m
+}
+
+// OnError registers an error for a command argument string (supports prefix matching).
+func (m *MockGitRunner) OnError(prefix string, err error) *MockGitRunner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.errors == nil {
+		m.errors = make(map[string]error)
+	}
+	m.errors[prefix] = err
+	return m
+}
+
+// WithBranch configures git branch queries to return the specified branch name.
+func (m *MockGitRunner) WithBranch(branch string) *MockGitRunner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.defaultBranch = branch
+	return m
+}
+
+// WithCommit configures git log -1 queries to return the specified commit message.
+func (m *MockGitRunner) WithCommit(msg string) *MockGitRunner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.defaultCommitMsg = msg
+	return m
+}
+
+// WithCleanStatus configures git status --porcelain to report a clean working tree.
+func (m *MockGitRunner) WithCleanStatus() *MockGitRunner {
+	return m.OnCommand("status --porcelain", "")
+}
+
+// NewMockGit creates a MockGitRunner, registers it with SetMockGit, and returns it.
+func NewMockGit(t *testing.T) *MockGitRunner {
+	t.Helper()
+	runner := &MockGitRunner{
+		responses:        make(map[string]string),
+		defaultCommitMsg: "Default commit subject\n\nChange-Id: I0000000000000000000000000000000000000001\n",
+	}
+	SetMockGit(t, runner)
+	return runner
 }
 
 func (m *MockGitRunner) LastCall() string {
@@ -254,6 +340,10 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	HostFlag = s.URL
 	t.Cleanup(func() { HostFlag = oldHost })
 
+	oldBBHost := buildbucketHost
+	buildbucketHost = s.URL
+	t.Cleanup(func() { buildbucketHost = oldBBHost })
+
 	origClient := NewGerritClient
 	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
 		return gerrit.NewClient(ctx, s.URL, s.Server.Client())
@@ -280,14 +370,16 @@ func (s *MockGerritServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		Header: r.Header.Clone(),
 	})
 
-	// Match route (in registered order)
+	// Match route (in registered order), normalizing optional /a prefix
 	var matchedHandler http.HandlerFunc
+	reqPath := strings.TrimPrefix(r.URL.Path, "/a")
 	for _, route := range s.routes {
 		if route.Method != "" && route.Method != r.Method {
 			continue
 		}
-		matchGlob, _ := path.Match(route.Path, r.URL.Path)
-		if route.Path == r.URL.Path || matchGlob || (strings.HasSuffix(route.Path, "*") && strings.HasPrefix(r.URL.Path, strings.TrimSuffix(route.Path, "*"))) {
+		routePath := strings.TrimPrefix(route.Path, "/a")
+		matchGlob, _ := path.Match(routePath, reqPath)
+		if routePath == reqPath || matchGlob || (strings.HasSuffix(routePath, "*") && strings.HasPrefix(reqPath, strings.TrimSuffix(routePath, "*"))) {
 			matchedHandler = route.Handler
 			break
 		}
@@ -398,4 +490,273 @@ func (s *MockGerritServer) LastRequest() *MockRequest {
 	}
 	req := s.requests[len(s.requests)-1]
 	return &req
+}
+
+// -----------------------------------------------------------------------------
+// Declarative Gerrit Fixtures
+// -----------------------------------------------------------------------------
+
+// DefaultMockChange returns a map representing a typical Gerrit ChangeInfo.
+func DefaultMockChange(number int, opts ...func(map[string]any)) map[string]any {
+	ch := map[string]any{
+		"id":               fmt.Sprintf("pigweed~main~I%d", number),
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        fmt.Sprintf("I%d", number),
+		"subject":          fmt.Sprintf("Change %d", number),
+		"status":           "NEW",
+		"current_revision": "rev1",
+		"_number":          number,
+		"revisions": map[string]any{
+			"rev1": map[string]any{
+				"_number": 1,
+			},
+		},
+	}
+	for _, opt := range opts {
+		opt(ch)
+	}
+	return ch
+}
+
+// WithSubject sets the commit subject on a mock change.
+func WithSubject(subject string) func(map[string]any) {
+	return func(ch map[string]any) { ch["subject"] = subject }
+}
+
+// WithStatus sets the status (NEW, MERGED, ABANDONED) on a mock change.
+func WithStatus(status string) func(map[string]any) {
+	return func(ch map[string]any) { ch["status"] = status }
+}
+
+// WithBranch sets the branch name on a mock change.
+func WithBranch(branch string) func(map[string]any) {
+	return func(ch map[string]any) { ch["branch"] = branch }
+}
+
+// WithProjectName sets the project name on a mock change.
+func WithProjectName(project string) func(map[string]any) {
+	return func(ch map[string]any) { ch["project"] = project }
+}
+
+// WithChangeID sets the change_id and id on a mock change.
+func WithChangeID(changeID string) func(map[string]any) {
+	return func(ch map[string]any) {
+		ch["change_id"] = changeID
+		ch["id"] = fmt.Sprintf("pigweed~main~%s", changeID)
+	}
+}
+
+// WithCurrentPatchset configures current_revision and revisions map.
+func WithCurrentPatchset(patchset int) func(map[string]any) {
+	return func(ch map[string]any) {
+		revName := fmt.Sprintf("rev%d", patchset)
+		ch["current_revision"] = revName
+		revs, ok := ch["revisions"].(map[string]any)
+		if !ok {
+			revs = make(map[string]any)
+		}
+		revs[revName] = map[string]any{"_number": patchset}
+		ch["revisions"] = revs
+	}
+}
+
+// OnDefaultChange registers GET /changes/<number>* returning DefaultMockChange.
+func (s *MockGerritServer) OnDefaultChange(number any, opts ...func(map[string]any)) *MockGerritServer {
+	num := 1
+	var pattern string
+	switch v := number.(type) {
+	case int:
+		num = v
+		pattern = fmt.Sprintf("/changes/%d*", v)
+	case string:
+		pattern = fmt.Sprintf("/changes/%s*", v)
+	}
+	ch := DefaultMockChange(num, opts...)
+	if cID, ok := ch["change_id"].(string); ok && cID != "" {
+		s.OnJSON("GET", fmt.Sprintf("/changes/%s*", cID), http.StatusOK, ch)
+	}
+	s.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{ch})
+	return s.OnJSON("GET", pattern, http.StatusOK, ch)
+}
+
+// OnCommitMessage registers GET /changes/<number>/revisions/current/commit returning a commit message.
+func (s *MockGerritServer) OnCommitMessage(number int, message string) *MockGerritServer {
+	return s.OnJSON("GET", fmt.Sprintf("/changes/%d/revisions/current/commit", number), http.StatusOK, map[string]any{
+		"message": message,
+	})
+}
+
+// OnReview registers POST /changes/<number>/revisions/current/review.
+func (s *MockGerritServer) OnReview(number int, payload ...any) *MockGerritServer {
+	var resp any = map[string]any{}
+	if len(payload) > 0 {
+		resp = payload[0]
+	}
+	return s.OnJSON("POST", fmt.Sprintf("/changes/%d/revisions/current/review", number), http.StatusOK, resp)
+}
+
+// OnAccountSelf registers GET /accounts/self returning the specified account ID.
+func (s *MockGerritServer) OnAccountSelf(accountID int) *MockGerritServer {
+	return s.OnJSON("GET", "/accounts/self", http.StatusOK, map[string]any{
+		"_account_id": accountID,
+	})
+}
+
+// -----------------------------------------------------------------------------
+// Declarative LUCI / Buildbucket Fixtures
+// -----------------------------------------------------------------------------
+
+// FakeBuild constructs a bbBuild fixture for testing.
+func FakeBuild(id, builder, status string, opts ...func(*bbBuild)) bbBuild {
+	b := bbBuild{
+		ID: id,
+		Builder: bbBuilder{
+			Project: "pigweed",
+			Bucket:  "try",
+			Builder: builder,
+		},
+		Status:    status,
+		StartTime: "2026-05-26T20:23:35.000000000Z",
+		EndTime:   "2026-05-26T20:24:35.000000000Z",
+	}
+	for _, opt := range opts {
+		opt(&b)
+	}
+	return b
+}
+
+// WithCreateTime sets the createTime RFC3339 timestamp on a fake build.
+func WithCreateTime(createTime string) func(*bbBuild) {
+	return func(b *bbBuild) { b.CreateTime = createTime }
+}
+
+// WithBucket sets the bucket for a fake build.
+func WithBucket(bucket string) func(*bbBuild) {
+	return func(b *bbBuild) { b.Builder.Bucket = bucket }
+}
+
+// WithBuildProject sets the project for a fake build.
+func WithBuildProject(project string) func(*bbBuild) {
+	return func(b *bbBuild) { b.Builder.Project = project }
+}
+
+// WithSummary sets the summary markdown for a fake build.
+func WithSummary(summary string) func(*bbBuild) {
+	return func(b *bbBuild) { b.SummaryMarkdown = summary }
+}
+
+// WithTimes sets the start and end RFC3339 timestamps for a fake build.
+func WithTimes(start, end string) func(*bbBuild) {
+	return func(b *bbBuild) {
+		b.StartTime = start
+		b.EndTime = end
+	}
+}
+
+// WithCritical sets the critical field ("NO" marks non-blocking).
+func WithCritical(critical string) func(*bbBuild) {
+	return func(b *bbBuild) { b.Critical = critical }
+}
+
+// WithExperiments sets experiments in the input struct.
+func WithExperiments(experiments ...string) func(*bbBuild) {
+	return func(b *bbBuild) {
+		b.Input = &bbInput{Experiments: experiments}
+	}
+}
+
+// WithTags appends tags to the build.
+func WithTags(tags ...bbTag) func(*bbBuild) {
+	return func(b *bbBuild) {
+		b.Tags = append(b.Tags, tags...)
+	}
+}
+
+// WithCQExperimental sets the cq_experimental tag.
+func WithCQExperimental(exp bool) func(*bbBuild) {
+	val := "false"
+	if exp {
+		val = "true"
+	}
+	return WithTags(bbTag{Key: "cq_experimental", Value: val})
+}
+
+// OnSearchBuilds registers a SearchBuilds mock responding with the provided builds.
+func (s *MockGerritServer) OnSearchBuilds(builds ...bbBuild) *MockGerritServer {
+	if builds == nil {
+		builds = []bbBuild{}
+	}
+	return s.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
+		"builds": builds,
+	})
+}
+
+// OnSearchBuildsStatus registers a SearchBuilds mock returning a custom HTTP status code and body.
+func (s *MockGerritServer) OnSearchBuildsStatus(status int, body string) *MockGerritServer {
+	return s.OnString("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", status, "text/plain", body)
+}
+
+// FakeBuildDetails creates a LUCIBuildDetails fixture for testing.
+func FakeBuildDetails(id, builder, status string, opts ...func(*LUCIBuildDetails)) *LUCIBuildDetails {
+	d := &LUCIBuildDetails{
+		ID: id,
+		Builder: bbBuilder{
+			Project: "pigweed",
+			Bucket:  "try",
+			Builder: builder,
+		},
+		Status: status,
+	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
+}
+
+// WithBuildSummary sets the summary markdown on a build details fixture.
+func WithBuildSummary(summary string) func(*LUCIBuildDetails) {
+	return func(d *LUCIBuildDetails) { d.SummaryMarkdown = summary }
+}
+
+// WithCancellation sets the cancellation markdown on a build details fixture.
+func WithCancellation(summary string) func(*LUCIBuildDetails) {
+	return func(d *LUCIBuildDetails) { d.CancellationMarkdown = summary }
+}
+
+// WithSteps sets the steps on a build details fixture.
+func WithSteps(steps ...LUCIStep) func(*LUCIBuildDetails) {
+	return func(d *LUCIBuildDetails) { d.Steps = append(d.Steps, steps...) }
+}
+
+// FakeStep creates a LUCIStep fixture for testing.
+func FakeStep(name, status string, opts ...func(*LUCIStep)) LUCIStep {
+	s := LUCIStep{
+		Name:   name,
+		Status: status,
+	}
+	for _, opt := range opts {
+		opt(&s)
+	}
+	return s
+}
+
+// WithStepSummary sets the summary markdown on a step fixture.
+func WithStepSummary(summary string) func(*LUCIStep) {
+	return func(s *LUCIStep) { s.SummaryMarkdown = summary }
+}
+
+// WithStepLogs appends logs to a step fixture.
+func WithStepLogs(logs ...LUCILog) func(*LUCIStep) {
+	return func(s *LUCIStep) { s.Logs = append(s.Logs, logs...) }
+}
+
+// FakeLog creates a LUCILog fixture.
+func FakeLog(name, viewURL string) LUCILog {
+	return LUCILog{Name: name, ViewURL: viewURL}
+}
+
+// OnGetBuild registers a GetBuild mock responding with the provided build details.
+func (s *MockGerritServer) OnGetBuild(details any) *MockGerritServer {
+	return s.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, details)
 }

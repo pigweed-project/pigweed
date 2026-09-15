@@ -39,30 +39,14 @@ An optional message can be supplied with -m, --message.`,
 		message, _ := cmd.Flags().GetString("message")
 
 		if undo {
-			var payload any
-			if message != "" {
-				payload = map[string]any{"message": message}
-			}
-			req, err := chCtx.Client.NewRequest(chCtx.Context, "POST", fmt.Sprintf("changes/%s/wip", chCtx.ChangeID), payload)
-			if err != nil {
-				return chCtx.FormatError(err, "marking change as work in progress")
-			}
-			if _, err := chCtx.Client.Do(req, nil); err != nil {
-				return chCtx.FormatError(err, "marking change as work in progress")
+			if err := chCtx.SetWorkInProgress(message); err != nil {
+				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Change marked as work in progress successfully.")
 			return nil
 		}
 
-		var input *gerrit.ReadyForReviewInput
-		if message != "" {
-			input = &gerrit.ReadyForReviewInput{
-				Message: message,
-			}
-		}
-
-		_, err = chCtx.Client.Changes.SetReadyForReview(chCtx.Context, chCtx.ChangeID, input)
-		if err != nil {
+		if _, err := chCtx.Client.Changes.SetReadyForReview(chCtx.Context, chCtx.ChangeID, &gerrit.ReadyForReviewInput{Message: message}); err != nil {
 			return chCtx.FormatError(err, "marking change as ready for review")
 		}
 

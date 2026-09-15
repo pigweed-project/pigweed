@@ -556,3 +556,50 @@ func TestRootAliases_Execution(t *testing.T) {
 		t.Errorf("Expected 'diff 12345 --name-only' to list file.go, got:\n%s", outDiff)
 	}
 }
+
+func TestCleanGerritHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"https://pigweed-review.googlesource.com/a", "pigweed-review.googlesource.com"},
+		{"https://pigweed-review.googlesource.com/a/", "pigweed-review.googlesource.com"},
+		{"http://pigweed-review.googlesource.com/", "pigweed-review.googlesource.com"},
+		{"https://pigweed-review.googlesource.com/c/pigweed/+/12345", "pigweed-review.googlesource.com"},
+		{"pigweed-review.googlesource.com/a", "pigweed-review.googlesource.com"},
+		{"pigweed-review.googlesource.com/", "pigweed-review.googlesource.com"},
+		{"localhost:8080", "localhost:8080"},
+		{"http://localhost:8080/a/", "localhost:8080"},
+		{"", ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := CleanGerritHost(tc.input); got != tc.want {
+				t.Errorf("CleanGerritHost(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConfigGerritHost(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("resolves from Config.Host", func(t *testing.T) {
+		cfg := &Config{Host: "https://pigweed-review.googlesource.com/a"}
+		if got := cfg.GerritHost(ctx); got != "pigweed-review.googlesource.com" {
+			t.Errorf("got %q, want pigweed-review.googlesource.com", got)
+		}
+	})
+
+	t.Run("falls back to HostFlag when Config is nil", func(t *testing.T) {
+		oldFlag := HostFlag
+		HostFlag = "https://fuchsia-review.googlesource.com/a/"
+		defer func() { HostFlag = oldFlag }()
+
+		var nilCfg *Config
+		if got := nilCfg.GerritHost(ctx); got != "fuchsia-review.googlesource.com" {
+			t.Errorf("got %q, want fuchsia-review.googlesource.com", got)
+		}
+	})
+}

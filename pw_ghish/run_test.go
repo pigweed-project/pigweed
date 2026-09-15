@@ -15,54 +15,21 @@
 package pw_ghish
 
 import (
+	"context"
 	"encoding/json"
-	"net/http"
 	"strings"
 	"testing"
 )
 
 func TestRunList(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Test Run List",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-pass",
-				},
-				"status":    "SUCCESS",
-				"startTime": "2026-09-08T10:00:00Z",
-				"endTime":   "2026-09-08T10:02:00Z",
-			},
-			{
-				"id": "222",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-fail",
-				},
-				"status":    "FAILURE",
-				"startTime": "2026-09-08T10:00:00Z",
-				"endTime":   "2026-09-08T10:01:00Z",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Test Run List"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "builder-pass", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:02:00Z")),
+		FakeBuild("222", "builder-fail", "FAILURE", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "list", "12345", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "list", "12345")
 	if err != nil {
 		t.Fatalf("run list failed: %v\nOutput: %s", err, output)
 	}
@@ -80,46 +47,13 @@ func TestRunList(t *testing.T) {
 
 func TestRunView_DefaultStructuredSummary(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Test Run View Summary",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-pass",
-				},
-				"status":    "SUCCESS",
-				"startTime": "2026-09-08T10:00:00Z",
-				"endTime":   "2026-09-08T10:02:00Z",
-			},
-			{
-				"id": "222",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-fail",
-				},
-				"status":    "FAILURE",
-				"startTime": "2026-09-08T10:00:00Z",
-				"endTime":   "2026-09-08T10:01:00Z",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Test Run View Summary"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "builder-pass", "SUCCESS", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:02:00Z")),
+		FakeBuild("222", "builder-fail", "FAILURE", WithTimes("2026-09-08T10:00:00Z", "2026-09-08T10:01:00Z")),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345")
 	if err != nil {
 		t.Fatalf("run view failed: %v\nOutput: %s", err, output)
 	}
@@ -143,33 +77,12 @@ func TestRunView_DefaultStructuredSummary(t *testing.T) {
 
 func TestRunView_Default_JSON(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Test Run View Summary JSON",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "builder-pass",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Test Run View Summary JSON"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "builder-pass", "SUCCESS"),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "--json", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "--json")
 	if err != nil {
 		t.Fatalf("run view --json failed: %v\nOutput: %s", err, output)
 	}
@@ -192,46 +105,16 @@ func TestRunView_Default_JSON(t *testing.T) {
 
 func TestRunView_LogFailed(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Test Run View Log Failed",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "222",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-lint",
-				},
-				"status": "FAILURE",
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, map[string]any{
-		"id": "222",
-		"builder": map[string]any{
-			"project": "pigweed",
-			"bucket":  "try",
-			"builder": "pigweed-lint",
-		},
-		"status":          "FAILURE",
-		"summaryMarkdown": "flake in linter",
-		"steps": []map[string]any{
-			{"name": "lint_check", "status": "FAILURE"},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Test Run View Log Failed"))
+	server.OnSearchBuilds(
+		FakeBuild("222", "pigweed-lint", "FAILURE"),
+	)
+	server.OnGetBuild(FakeBuildDetails("222", "pigweed-lint", "FAILURE",
+		WithBuildSummary("flake in linter"),
+		WithSteps(FakeStep("lint_check", "FAILURE")),
+	))
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed")
 	if err != nil {
 		t.Fatalf("run view --log-failed failed: %v\nOutput: %s", err, output)
 	}
@@ -246,33 +129,12 @@ func TestRunView_LogFailed(t *testing.T) {
 
 func TestRunView_LogFailed_NoFailedChecks(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "All Passing Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-build",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("All Passing Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-build", "SUCCESS"),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed")
 	if err != nil {
 		t.Fatalf("run view --log-failed failed: %v\nOutput: %s", err, output)
 	}
@@ -284,46 +146,18 @@ func TestRunView_LogFailed_NoFailedChecks(t *testing.T) {
 
 func TestRunView_VerboseSteps(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Steps Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-compile",
-				},
-				"status": "STARTED",
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, map[string]any{
-		"id": "111",
-		"builder": map[string]any{
-			"project": "pigweed",
-			"bucket":  "try",
-			"builder": "pigweed-compile",
-		},
-		"status": "STARTED",
-		"steps": []map[string]any{
-			{"name": "setup", "status": "SUCCESS"},
-			{"name": "compile", "status": "STARTED"},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Steps Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-compile", "STARTED"),
+	)
+	server.OnGetBuild(FakeBuildDetails("111", "pigweed-compile", "STARTED",
+		WithSteps(
+			FakeStep("setup", "SUCCESS"),
+			FakeStep("compile", "STARTED"),
+		),
+	))
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "pigweed-compile", "-v", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "pigweed-compile", "-v")
 	if err != nil {
 		t.Fatalf("run view -v failed: %v\nOutput: %s", err, output)
 	}
@@ -338,44 +172,15 @@ func TestRunView_VerboseSteps(t *testing.T) {
 
 func TestRunView_JobFlag(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Job Flag Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-compile",
-				},
-				"status": "FAILURE",
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, map[string]any{
-		"id": "111",
-		"builder": map[string]any{
-			"project": "pigweed",
-			"bucket":  "try",
-			"builder": "pigweed-compile",
-		},
-		"status":          "FAILURE",
-		"summaryMarkdown": "compiler error",
-		"steps":           []any{},
-	})
+	server.OnDefaultChange(12345, WithSubject("Job Flag Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-compile", "FAILURE"),
+	)
+	server.OnGetBuild(FakeBuildDetails("111", "pigweed-compile", "FAILURE",
+		WithBuildSummary("compiler error"),
+	))
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-compile", "--log-failed", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-compile", "--log-failed")
 	if err != nil {
 		t.Fatalf("run view -j failed: %v\nOutput: %s", err, output)
 	}
@@ -387,46 +192,18 @@ func TestRunView_JobFlag(t *testing.T) {
 
 func TestRunView_JobFlag_ShowsStepsByDefault(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Job Flag Steps Default",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-compile",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, map[string]any{
-		"id": "111",
-		"builder": map[string]any{
-			"project": "pigweed",
-			"bucket":  "try",
-			"builder": "pigweed-compile",
-		},
-		"status": "SUCCESS",
-		"steps": []map[string]any{
-			{"name": "setup", "status": "SUCCESS"},
-			{"name": "build", "status": "SUCCESS"},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Job Flag Steps Default"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-compile", "SUCCESS"),
+	)
+	server.OnGetBuild(FakeBuildDetails("111", "pigweed-compile", "SUCCESS",
+		WithSteps(
+			FakeStep("setup", "SUCCESS"),
+			FakeStep("build", "SUCCESS"),
+		),
+	))
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-compile", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-compile")
 	if err != nil {
 		t.Fatalf("run view -j failed: %v\nOutput: %s", err, output)
 	}
@@ -441,31 +218,10 @@ func TestRunView_JobFlag_ShowsStepsByDefault(t *testing.T) {
 
 func TestRunView_Web(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Web Run View",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "8671017385591991697",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "static-checks-pigweed",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Web Run View"))
+	server.OnSearchBuilds(
+		FakeBuild("8671017385591991697", "static-checks-pigweed", "SUCCESS"),
+	)
 
 	var openedURL string
 	oldOpenBrowser := OpenBrowserFn
@@ -475,7 +231,7 @@ func TestRunView_Web(t *testing.T) {
 		return nil
 	}
 
-	output, err := executeCommand(RootCmd, "run", "view", "12345", "static-checks-pigweed", "-w", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "static-checks-pigweed", "-w")
 	if err != nil {
 		t.Fatalf("run view -w failed: %v\nOutput: %s", err, output)
 	}
@@ -490,33 +246,12 @@ func TestRunView_Web(t *testing.T) {
 
 func TestRunRerun_Failed(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Rerun Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "pigweed.try",
-					"builder": "pigweed-linux",
-				},
-				"status": "FAILURE",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Rerun Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "FAILURE", WithBucket("pigweed.try")),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "--failed", "--dry-run", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "--failed", "--dry-run")
 	if err != nil {
 		t.Fatalf("run rerun --failed failed: %v\nOutput: %s", err, output)
 	}
@@ -528,33 +263,12 @@ func TestRunRerun_Failed(t *testing.T) {
 
 func TestRunRerun_Job(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Rerun Job Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "pigweed.try",
-					"builder": "pigweed-linux",
-				},
-				"status": "FAILURE",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Rerun Job Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "FAILURE", WithBucket("pigweed.try")),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "-j", "pigweed-linux", "--dry-run", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "rerun", "12345", "-j", "pigweed-linux", "--dry-run")
 	if err != nil {
 		t.Fatalf("run rerun -j failed: %v\nOutput: %s", err, output)
 	}
@@ -566,33 +280,12 @@ func TestRunRerun_Job(t *testing.T) {
 
 func TestRunRerun_MissingBuilderError(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Rerun Missing Error Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "pigweed.try",
-					"builder": "pigweed-linux",
-				},
-				"status": "FAILURE",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Rerun Missing Error Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "FAILURE", WithBucket("pigweed.try")),
+	)
 
-	_, err := executeCommand(RootCmd, "run", "rerun", "12345", "--buildbucket-host", server.URL)
+	_, err := executeCommand(RootCmd, "run", "rerun", "12345")
 	if err == nil {
 		t.Fatal("Expected error when no builder specified and --failed not passed, got nil")
 	}
@@ -607,19 +300,11 @@ func TestRunRerun_MissingBuilderError(t *testing.T) {
 
 func TestRunView_DirectBuildID(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, map[string]any{
-		"id": "8671182706745774001",
-		"builder": map[string]any{
-			"project": "pigweed",
-			"bucket":  "try",
-			"builder": "pigweed-lint",
-		},
-		"status":          "FAILURE",
-		"summaryMarkdown": "lint check failed",
-		"steps":           []any{},
-	})
+	server.OnGetBuild(FakeBuildDetails("8671182706745774001", "pigweed-lint", "FAILURE",
+		WithBuildSummary("lint check failed"),
+	))
 
-	output, err := executeCommand(RootCmd, "run", "view", "8671182706745774001", "-v", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "view", "8671182706745774001", "-v")
 	if err != nil {
 		t.Fatalf("run view direct build ID failed: %v\nOutput: %s", err, output)
 	}
@@ -653,33 +338,12 @@ func TestRunView_DirectBuildID_Web(t *testing.T) {
 
 func TestRunView_BuilderNotFound_ShowsAvailable(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Builder Not Found Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-linux",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Builder Not Found Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "SUCCESS"),
+	)
 
-	_, err := executeCommand(RootCmd, "run", "view", "12345", "-v", "-j", "nonexistent", "--buildbucket-host", server.URL)
+	_, err := executeCommand(RootCmd, "run", "view", "12345", "-v", "-j", "nonexistent")
 	if err == nil {
 		t.Fatal("Expected error for nonexistent builder, got nil")
 	}
@@ -694,33 +358,12 @@ func TestRunView_BuilderNotFound_ShowsAvailable(t *testing.T) {
 
 func TestRunRerun_BuilderNotFound_ShowsAvailable(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Rerun Not Found Change",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-linux",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Rerun Not Found Change"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "SUCCESS"),
+	)
 
-	_, err := executeCommand(RootCmd, "run", "rerun", "12345", "-j", "nonexistent", "--buildbucket-host", server.URL)
+	_, err := executeCommand(RootCmd, "run", "rerun", "12345", "-j", "nonexistent")
 	if err == nil {
 		t.Fatal("Expected error for nonexistent builder, got nil")
 	}
@@ -735,33 +378,12 @@ func TestRunRerun_BuilderNotFound_ShowsAvailable(t *testing.T) {
 
 func TestRunList_JSON(t *testing.T) {
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
-		"id":               "pigweed~main~I12345",
-		"project":          "pigweed/pigweed",
-		"branch":           "main",
-		"_number":          12345,
-		"subject":          "Run List JSON",
-		"status":           "NEW",
-		"current_revision": "rev1",
-		"revisions": map[string]any{
-			"rev1": map[string]any{"_number": 1},
-		},
-	})
-	server.OnJSON("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", http.StatusOK, map[string]any{
-		"builds": []map[string]any{
-			{
-				"id": "111",
-				"builder": map[string]any{
-					"project": "pigweed",
-					"bucket":  "try",
-					"builder": "pigweed-linux",
-				},
-				"status": "SUCCESS",
-			},
-		},
-	})
+	server.OnDefaultChange(12345, WithSubject("Run List JSON"))
+	server.OnSearchBuilds(
+		FakeBuild("111", "pigweed-linux", "SUCCESS"),
+	)
 
-	output, err := executeCommand(RootCmd, "run", "list", "12345", "--json", "--buildbucket-host", server.URL)
+	output, err := executeCommand(RootCmd, "run", "list", "12345", "--json")
 	if err != nil {
 		t.Fatalf("run list --json failed: %v\nOutput: %s", err, output)
 	}
@@ -775,5 +397,81 @@ func TestRunList_JSON(t *testing.T) {
 	}
 	if parsed[0]["name"] != "pigweed-linux" {
 		t.Errorf("Expected builder pigweed-linux, got %v", parsed[0]["name"])
+	}
+}
+
+func TestParseRunTargetArgs(t *testing.T) {
+	ctx := context.Background()
+	mockGit := NewMockGit(t).WithCommit("Subject\n\nChange-Id: I9999999999999999999999999999999999999999\n")
+	cmd := mockCmdWithGit(ctx, mockGit)
+
+	t.Run("zero args uses active change and jobFlag", func(t *testing.T) {
+		rawID, builder, directID, err := parseRunTargetArgs(cmd, nil, "pigweed-linux", true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rawID != "I9999999999999999999999999999999999999999" || builder != "pigweed-linux" || directID != "" {
+			t.Errorf("got (%q, %q, %q)", rawID, builder, directID)
+		}
+	})
+
+	t.Run("one arg Buildbucket ID when allowBuildID is true", func(t *testing.T) {
+		rawID, builder, directID, err := parseRunTargetArgs(cmd, []string{"8680709829694997521"}, "", true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rawID != "" || builder != "" || directID != "8680709829694997521" {
+			t.Errorf("got (%q, %q, %q)", rawID, builder, directID)
+		}
+	})
+
+	t.Run("one arg numeric change number", func(t *testing.T) {
+		rawID, builder, directID, err := parseRunTargetArgs(cmd, []string{"12345"}, "my-job", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rawID != "12345" || builder != "my-job" || directID != "" {
+			t.Errorf("got (%q, %q, %q)", rawID, builder, directID)
+		}
+	})
+
+	t.Run("one arg builder name resolves active change", func(t *testing.T) {
+		rawID, builder, directID, err := parseRunTargetArgs(cmd, []string{"pigweed-windows"}, "", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rawID != "I9999999999999999999999999999999999999999" || builder != "pigweed-windows" || directID != "" {
+			t.Errorf("got (%q, %q, %q)", rawID, builder, directID)
+		}
+	})
+
+	t.Run("two args change and builder", func(t *testing.T) {
+		rawID, builder, directID, err := parseRunTargetArgs(cmd, []string{"12345", "pos-builder"}, "flag-builder", true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rawID != "12345" || builder != "flag-builder" || directID != "" {
+			t.Errorf("got (%q, %q, %q)", rawID, builder, directID)
+		}
+	})
+}
+
+func TestCollectFailedBuilders(t *testing.T) {
+	builds := []bbBuild{
+		FakeBuild("1", "builder-pass", "SUCCESS"),
+		FakeBuild("2", "builder-fail", "FAILURE"),
+		FakeBuild("3", "builder-infra", "INFRA_FAILURE"),
+		FakeBuild("4", "builder-exp-fail", "FAILURE", WithExperiments("luci.non_production")),
+		FakeBuild("5", "builder-fail", "FAILURE"), // duplicate builder name
+	}
+
+	gotNoExp := collectFailedBuilders(builds, false)
+	if len(gotNoExp) != 2 || gotNoExp[0] != "builder-fail" || gotNoExp[1] != "builder-infra" {
+		t.Errorf("collectFailedBuilders(includeExperimental=false) = %v, want [builder-fail builder-infra]", gotNoExp)
+	}
+
+	gotExp := collectFailedBuilders(builds, true)
+	if len(gotExp) != 3 || gotExp[2] != "builder-exp-fail" {
+		t.Errorf("collectFailedBuilders(includeExperimental=true) = %v, want 3 items including builder-exp-fail", gotExp)
 	}
 }

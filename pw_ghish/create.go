@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -70,38 +69,15 @@ Supports rich push options:
 			}
 		}
 
-		// Ensure HEAD commit has a Gerrit Change-Id
-		if err := EnsureChangeID(ctx, cfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
-			return fmt.Errorf("error verifying Change-Id: %w", err)
-		}
-
-		// Check whether an existing change on Gerrit already matches this Change-Id
-		logMsg, err := cfg.GitClient().HeadCommitMessage(ctx)
+		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
 		if err != nil {
-			return fmt.Errorf("error reading HEAD commit message: %w", err)
-		}
-		// A message written with plain `git commit` never passes through a
-		// gh-ish flag, so checking only --title/--body would miss the common
-		// case. Better to refuse here than to upload a change whose bug link
-		// silently does nothing.
-		if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
 			return err
 		}
-		changeID := ExtractChangeID(logMsg)
-		if changeID != "" && !force {
-			client, cErr := NewGerritClient(ctx, cmd)
-			if cErr == nil && client != nil {
-				opt := &gerrit.QueryChangeOptions{}
-				opt.Query = []string{changeID}
-				changes, _, qErr := client.Changes.QueryChanges(ctx, opt)
-				if qErr == nil && changes != nil && len(*changes) > 0 {
-					existing := (*changes)[0]
-					gerritURL, _ := cfg.GerritURL(ctx)
-					baseURL := strings.TrimSuffix(gerritURL, "/a")
-					changeURL := fmt.Sprintf("%s/c/%s/+/%d", baseURL, existing.Project, existing.Number)
-					return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", changeID, changeURL)
-				}
-			}
+		if state.ExistingChange != nil {
+			gerritURL, _ := cfg.GerritURL(ctx)
+			baseURL := strings.TrimSuffix(gerritURL, "/a")
+			changeURL := fmt.Sprintf("%s/c/%s/+/%d", baseURL, state.ExistingChange.Project, state.ExistingChange.Number)
+			return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", state.ChangeID, changeURL)
 		}
 
 		branch := resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())

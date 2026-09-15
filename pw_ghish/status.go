@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -174,24 +173,7 @@ var statusCmd = &cobra.Command{
 				}
 			}
 
-			var blockers []string
-			if !activeChange.Submittable {
-				if cr, ok := activeChange.Labels["Code-Review"]; ok {
-					if cr.Approved.AccountID == 0 {
-						blockers = append(blockers, "Code-Review (+2 required)")
-					}
-				}
-				if v, ok := activeChange.Labels["Verified"]; ok {
-					if v.Approved.AccountID == 0 && v.Recommended.AccountID == 0 {
-						blockers = append(blockers, "Verified (+1 required)")
-					}
-				}
-				for name, info := range activeChange.Labels {
-					if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 {
-						blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
-					}
-				}
-			}
+			blockers := extractBlockers(activeChange)
 
 			type labelItem struct {
 				Name  string `json:"name"`
@@ -237,24 +219,7 @@ var statusCmd = &cobra.Command{
 
 			var checks []CheckItem
 			var checksSummary string
-			gHost := ""
-			if cfg != nil {
-				if gURL, err := cfg.GerritURL(ctx); err == nil {
-					if parsedU, err := url.Parse(gURL); err == nil && parsedU.Host != "" {
-						gHost = parsedU.Host
-					}
-				}
-			}
-			if gHost == "" {
-				gHost = HostFlag
-				if parsedU, err := url.Parse(gHost); err == nil && parsedU.Host != "" {
-					gHost = parsedU.Host
-				}
-			}
-			gHost = strings.TrimPrefix(gHost, "https://")
-			gHost = strings.TrimPrefix(gHost, "http://")
-			gHost = strings.TrimSuffix(gHost, "/a")
-			gHost = strings.TrimSuffix(gHost, "/")
+			gHost := cfg.GerritHost(ctx)
 
 			bbHost := buildbucketHost
 			if bbHost == "" {
@@ -273,18 +238,7 @@ var statusCmd = &cobra.Command{
 					defer subWg.Done()
 					if builds, bErr := queryBuildbucket(ctx, bbHost, gHost, activeChange.Project, activeChange.Number, patchsetNum, http.DefaultClient); bErr == nil && builds != nil {
 						checksSummary = formatCheckSummary(builds)
-						for _, b := range builds {
-							checks = append(checks, CheckItem{
-								ID:           b.ID,
-								Name:         b.Builder.Builder,
-								Bucket:       b.Builder.Bucket,
-								Status:       b.Status,
-								StatusSymbol: getStatusSymbol(b.Status),
-								Duration:     formatDuration(b.StartTime, b.EndTime),
-								URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
-								Summary:      b.SummaryMarkdown,
-							})
-						}
+						checks = BuildCheckItems(builds)
 					}
 				}()
 			}
@@ -397,77 +351,13 @@ var statusCmd = &cobra.Command{
 		processChanges := func(changes []gerrit.ChangeInfo) []map[string]any {
 			var result []map[string]any
 			for _, change := range changes {
-				var crScore, vScore int
-				if change.Labels != nil {
-					if cr, ok := change.Labels["Code-Review"]; ok {
-						hasNegative := false
-						minScore := 0
-						maxScore := 0
-						for _, app := range cr.All {
-							val := int(app.Value)
-							if val < 0 {
-								hasNegative = true
-								if val < minScore {
-									minScore = val
-								}
-							} else {
-								if val > maxScore {
-									maxScore = val
-								}
-							}
-						}
-						if hasNegative {
-							crScore = minScore
-						} else {
-							crScore = maxScore
-						}
-					}
-					if v, ok := change.Labels["Verified"]; ok {
-						hasNegative := false
-						minScore := 0
-						maxScore := 0
-						for _, app := range v.All {
-							val := int(app.Value)
-							if val < 0 {
-								hasNegative = true
-								if val < minScore {
-									minScore = val
-								}
-							} else {
-								if val > maxScore {
-									maxScore = val
-								}
-							}
-						}
-						if hasNegative {
-							vScore = minScore
-						} else {
-							vScore = maxScore
-						}
-					}
-				}
+				crScore := extractLabelScore(change.Labels, "Code-Review")
+				vScore := extractLabelScore(change.Labels, "Verified")
 
 				attnMap := BuildAttentionMap(change.AttentionSet)
 				inAttentionSet := attnMap[myAccountID]
 
-				var blockers []string
-				if !change.Submittable {
-					if cr, ok := change.Labels["Code-Review"]; ok {
-						if cr.Approved.AccountID == 0 {
-							blockers = append(blockers, "Code-Review (+2 required)")
-						}
-					}
-					if v, ok := change.Labels["Verified"]; ok {
-						if v.Approved.AccountID == 0 && v.Recommended.AccountID == 0 {
-							blockers = append(blockers, "Verified (+1 required)")
-						}
-					}
-					for name, info := range change.Labels {
-						if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 {
-							blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
-						}
-					}
-				}
+				blockers := extractBlockers(&change)
 
 				owner := FormatAccount(change.Owner)
 
@@ -526,4 +416,58 @@ func init() {
 	statusCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	statusCmd.Flags().MarkHidden("buildbucket-host")
 	PrCmd.AddCommand(statusCmd)
+}
+
+// extractLabelScore extracts the decisive score for a label from ApprovalInfo entries.
+// If any negative approval exists, the lowest negative score is returned (e.g. -2 takes precedence over -1).
+// Otherwise, the highest positive approval score is returned.
+func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int {
+	info, ok := labels[labelName]
+	if !ok {
+		return 0
+	}
+	hasNegative := false
+	minScore := 0
+	maxScore := 0
+	for _, app := range info.All {
+		val := int(app.Value)
+		if val < 0 {
+			hasNegative = true
+			if val < minScore {
+				minScore = val
+			}
+		} else {
+			if val > maxScore {
+				maxScore = val
+			}
+		}
+	}
+	if hasNegative {
+		return minScore
+	}
+	return maxScore
+}
+
+// extractBlockers computes blocking reasons for an unsubmitted change.
+func extractBlockers(change *gerrit.ChangeInfo) []string {
+	if change.Submittable {
+		return nil
+	}
+	var blockers []string
+	if cr, ok := change.Labels["Code-Review"]; ok {
+		if cr.Approved.AccountID == 0 {
+			blockers = append(blockers, "Code-Review (+2 required)")
+		}
+	}
+	if v, ok := change.Labels["Verified"]; ok {
+		if v.Approved.AccountID == 0 && v.Recommended.AccountID == 0 {
+			blockers = append(blockers, "Verified (+1 required)")
+		}
+	}
+	for name, info := range change.Labels {
+		if info.Rejected.AccountID != 0 || info.Disliked.AccountID != 0 {
+			blockers = append(blockers, fmt.Sprintf("%s (Rejected)", name))
+		}
+	}
+	return blockers
 }

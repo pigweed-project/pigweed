@@ -125,17 +125,6 @@ func (c *ChangeContext) GetChange(opt *gerrit.ChangeOptions) (*gerrit.ChangeInfo
 	return change, nil
 }
 
-// trimHostScheme removes http(s) prefixes and trailing /a or slashes from a host name.
-func trimHostScheme(host string) string {
-	if host == "" {
-		return ""
-	}
-	host = strings.TrimPrefix(strings.TrimPrefix(host, "https://"), "http://")
-	host = strings.TrimSuffix(host, "/")
-	host = strings.TrimSuffix(host, "/a")
-	return strings.TrimSuffix(host, "/")
-}
-
 // FormatGerritError translates raw Gerrit REST errors into actionable messages with debug crumbs.
 func FormatGerritError(err error, actionDesc string, changeID string, gerritHost string) error {
 	if err == nil {
@@ -147,7 +136,7 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	if reStatus401.MatchString(errStr) || strings.Contains(errStr, "Unauthorized") ||
 		reStatus403.MatchString(errStr) || strings.Contains(errStr, "Forbidden") ||
 		strings.Contains(errStr, "Authentication required") {
-		cleanHost := trimHostScheme(gerritHost)
+		cleanHost := CleanGerritHost(gerritHost)
 		if cleanHost == "" {
 			cleanHost = "<host>"
 		}
@@ -162,7 +151,7 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 
 	// 2. Change Not Found (HTTP 404)
 	if reStatus404.MatchString(errStr) || strings.Contains(errStr, "Not Found") {
-		cleanHost := trimHostScheme(gerritHost)
+		cleanHost := CleanGerritHost(gerritHost)
 		if cleanHost == "" {
 			cleanHost = "Gerrit"
 		}
@@ -212,14 +201,10 @@ func (c *ChangeContext) FormatError(err error, actionDesc string) error {
 	if err == nil {
 		return nil
 	}
-	gerritHost := ""
-	if c != nil && c.Config != nil {
-		if u, uErr := c.Config.GerritURL(c.Context); uErr == nil {
-			gerritHost = u
-		}
-	}
-	changeID := ""
+	var gerritHost string
+	var changeID string
 	if c != nil {
+		gerritHost = c.Config.GerritHost(c.Context)
 		changeID = c.ChangeID
 	}
 	return FormatGerritError(err, actionDesc, changeID, gerritHost)
@@ -455,25 +440,109 @@ func ResolveProfile(ctx context.Context, cfg *Config, gerritHost, project string
 
 // ResolveProfile resolves the active project profile for this change context.
 func (c *ChangeContext) ResolveProfile(project ...string) (ProjectProfile, error) {
-	if c == nil {
-		return DetectProfile("", HostFlag, ProfileFlag)
-	}
 	var proj string
 	if len(project) > 0 {
 		proj = project[0]
 	}
+	if c == nil {
+		return DetectProfile("", "", ProfileFlag)
+	}
 	var gHost string
 	if c.Client != nil {
 		u := c.Client.BaseURL()
-		gHost = trimHostScheme(u.String())
+		gHost = CleanGerritHost(u.String())
 	}
 	if gHost == "" && c.Config != nil {
-		if u, err := c.Config.GerritURL(c.Context); err == nil {
-			gHost = trimHostScheme(u)
-		}
-	}
-	if gHost == "" {
-		gHost = HostFlag
+		gHost = c.Config.GerritHost(c.Context)
 	}
 	return ResolveProfile(c.Context, c.Config, gHost, proj)
+}
+
+// CIContext encapsulates the resolved Gerrit change, patchset number, profile,
+// host, and Buildbucket builds for CI/CD commands (checks, run).
+type CIContext struct {
+	*ChangeContext
+	Change      *gerrit.ChangeInfo
+	PatchsetNum int
+	GerritHost  string
+	Profile     ProjectProfile
+	Builds      []bbBuild
+}
+
+// ResolveCIContext resolves the change context, fetches Gerrit change metadata,
+// determines the target patchset number, resolves the project profile, and queries Buildbucket.
+func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
+	chCtx, err := ResolveChangeContext(cmd, []string{rawID})
+	if err != nil {
+		return nil, err
+	}
+	patchsetNum := 0
+	if chCtx.Revision != "" && chCtx.Revision != "current" {
+		n, err := strconv.Atoi(chCtx.Revision)
+		if err != nil {
+			return nil, fmt.Errorf("invalid patchset number %q: %w", chCtx.Revision, err)
+		}
+		patchsetNum = n
+	}
+	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
+		AdditionalFields: []string{"CURRENT_REVISION"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if patchsetNum == 0 && change.Revisions != nil && change.CurrentRevision != "" {
+		if rev, ok := change.Revisions[change.CurrentRevision]; ok {
+			patchsetNum = rev.Number
+		}
+	}
+	profile, err := chCtx.ResolveProfile(change.Project)
+	if err != nil {
+		return nil, err
+	}
+	gerritHost := chCtx.Config.GerritHost(chCtx.Context)
+	if gerritHost == "" && profile != nil {
+		gerritHost = CleanGerritHost(profile.DefaultGerritHost())
+	}
+	luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(chCtx.Context, buildbucketHost))
+	builds, err := luciClient.SearchBuilds(chCtx.Context, gerritHost, change.Project, change.Number, patchsetNum)
+	if err != nil {
+		return nil, fmt.Errorf("error querying Buildbucket: %w", err)
+	}
+	return &CIContext{
+		ChangeContext: chCtx,
+		Change:        change,
+		PatchsetNum:   patchsetNum,
+		GerritHost:    gerritHost,
+		Profile:       profile,
+		Builds:        builds,
+	}, nil
+}
+
+// SetWorkInProgress marks the change as Work-In-Progress (WIP / draft) with an optional message.
+func (c *ChangeContext) SetWorkInProgress(message string) error {
+	var payload any
+	if message != "" {
+		payload = map[string]any{"message": message}
+	}
+	req, err := c.Client.NewRequest(c.Context, "POST", fmt.Sprintf("changes/%s/wip", c.ChangeID), payload)
+	if err != nil {
+		return c.FormatError(err, "marking change as work in progress on")
+	}
+	if _, err := c.Client.Do(req, nil); err != nil {
+		return c.FormatError(err, "marking change as work in progress on")
+	}
+	return nil
+}
+
+// AddCC adds a user to the change's CC list via Gerrit REST API.
+func (c *ChangeContext) AddCC(cc string) error {
+	ccPayload := map[string]any{"reviewer": cc, "state": "CC"}
+	req, err := c.Client.NewRequest(c.Context, "POST", fmt.Sprintf("changes/%s/reviewers", c.ChangeID), ccPayload)
+	if err != nil {
+		return c.FormatError(err, "adding CC on")
+	}
+	if _, err := c.Client.Do(req, nil); err != nil {
+		return c.FormatError(err, "adding CC on")
+	}
+	return nil
 }

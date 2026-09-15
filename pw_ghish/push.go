@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -27,42 +26,15 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	flags := ParseCommonPushFlags(cmd)
 
-	// Ensure HEAD commit has a Gerrit Change-Id
-	if err := EnsureChangeID(ctx, cfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
-		return fmt.Errorf("error verifying Change-Id: %w", err)
-	}
-
-	// Read once: both the syntax guard and the branch-memory lookup below
-	// need the HEAD commit message, and the guard must run even when --base
-	// makes the lookup unnecessary.
-	logMsg, err := cfg.GitClient().HeadCommitMessage(ctx)
+	state, err := VerifyHeadForPush(ctx, cmd, cfg, flags.Base == "")
 	if err != nil {
-		return fmt.Errorf("error reading HEAD commit message: %w", err)
-	}
-	if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
 		return err
 	}
 
 	branch := flags.Base
-	if branch == "" {
-		// Attempt to remember the origin branch from Gerrit for this Change-Id
-		changeID := ExtractChangeID(logMsg)
-		if changeID != "" {
-			client, cErr := NewGerritClient(ctx, cmd)
-			if cErr == nil && client != nil {
-				opt := &gerrit.QueryChangeOptions{}
-				opt.Query = []string{changeID}
-				changes, _, qErr := client.Changes.QueryChanges(ctx, opt)
-				if qErr == nil && changes != nil && len(*changes) > 0 {
-					existing := (*changes)[0]
-					if existing.Branch != "" {
-						branch = existing.Branch
-					}
-				}
-			}
-		}
+	if branch == "" && state.ExistingChange != nil {
+		branch = state.ExistingChange.Branch
 	}
-
 	if branch == "" {
 		branch = resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
 	}

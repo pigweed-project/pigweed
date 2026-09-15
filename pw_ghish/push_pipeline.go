@@ -224,7 +224,6 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	if err != nil {
 		return err
 	}
-	client := chCtx.Client
 	changeID := chCtx.ChangeID
 
 	if pushOpts.CQ > 0 || pushOpts.Publish {
@@ -249,45 +248,36 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 	}
 
 	if pushOpts.Topic != "" {
-		if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: pushOpts.Topic}); err != nil {
+		if _, _, err := chCtx.Client.Changes.SetTopic(chCtx.Context, chCtx.ChangeID, &gerrit.TopicInput{Topic: pushOpts.Topic}); err != nil {
 			return chCtx.FormatError(err, "setting topic on")
 		}
 	}
 
 	if len(pushOpts.Hashtags) > 0 {
-		if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{Add: pushOpts.Hashtags}); err != nil {
+		if _, _, err := chCtx.Client.Changes.SetHashtags(chCtx.Context, chCtx.ChangeID, &gerrit.HashtagsInput{Add: pushOpts.Hashtags}); err != nil {
 			return chCtx.FormatError(err, "setting hashtags on")
 		}
 	}
 
 	if pushOpts.Draft || pushOpts.Wip {
-		req, err := client.NewRequest(ctx, "POST", fmt.Sprintf("changes/%s/wip", changeID), nil)
-		if err != nil {
-			return chCtx.FormatError(err, "marking change as WIP on")
-		}
-		if _, err := client.Do(req, nil); err != nil {
-			return chCtx.FormatError(err, "marking change as WIP on")
+		if err := chCtx.SetWorkInProgress(""); err != nil {
+			return err
 		}
 	} else if pushOpts.Ready {
-		if _, err := client.Changes.SetReadyForReview(ctx, changeID, nil); err != nil {
-			return chCtx.FormatError(err, "marking change as ready for review on")
+		if _, err := chCtx.Client.Changes.SetReadyForReview(chCtx.Context, chCtx.ChangeID, &gerrit.ReadyForReviewInput{}); err != nil {
+			return chCtx.FormatError(err, "marking ready for review")
 		}
 	}
 
 	for _, r := range pushOpts.Reviewers {
-		if _, _, err := client.Changes.AddReviewer(ctx, changeID, &gerrit.ReviewerInput{Reviewer: r}); err != nil {
-			return chCtx.FormatError(err, "adding reviewer on")
+		if _, _, err := chCtx.Client.Changes.AddReviewer(chCtx.Context, chCtx.ChangeID, &gerrit.ReviewerInput{Reviewer: r}); err != nil {
+			return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", r))
 		}
 	}
 
 	for _, c := range pushOpts.CC {
-		ccPayload := map[string]any{"reviewer": c, "state": "CC"}
-		req, err := client.NewRequest(ctx, "POST", fmt.Sprintf("changes/%s/reviewers", changeID), ccPayload)
-		if err != nil {
-			return chCtx.FormatError(err, "adding CC on")
-		}
-		if _, err := client.Do(req, nil); err != nil {
-			return chCtx.FormatError(err, "adding CC on")
+		if err := chCtx.AddCC(c); err != nil {
+			return err
 		}
 	}
 
@@ -299,4 +289,46 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 		fmt.Fprintln(cmd.OutOrStdout(), "Draft comments published successfully.")
 	}
 	return nil
+}
+
+// VerifiedPushState holds verified pre-flight commit information for create and push.
+type VerifiedPushState struct {
+	CommitMsg      string
+	ChangeID       string
+	ExistingChange *gerrit.ChangeInfo
+}
+
+// VerifyHeadForPush ensures the HEAD commit has a valid Change-Id, checks that
+// the commit message contains no GitHub issue syntax, and optionally queries
+// Gerrit for an existing change matching the Change-Id.
+func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, queryExisting bool) (*VerifiedPushState, error) {
+	if err := EnsureChangeID(ctx, cfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
+	}
+
+	logMsg, err := cfg.GitClient().HeadCommitMessage(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error reading HEAD commit message: %w", err)
+	}
+	if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
+		return nil, err
+	}
+
+	changeID := ExtractChangeID(logMsg)
+	var existing *gerrit.ChangeInfo
+	if queryExisting && changeID != "" {
+		if client, err := NewGerritClient(ctx, cmd); err == nil {
+			opt := &gerrit.QueryChangeOptions{}
+			opt.Query = []string{changeID}
+			if changes, _, err := client.Changes.QueryChanges(ctx, opt); err == nil && len(*changes) > 0 {
+				existing = &(*changes)[0]
+			}
+		}
+	}
+
+	return &VerifiedPushState{
+		CommitMsg:      logMsg,
+		ChangeID:       changeID,
+		ExistingChange: existing,
+	}, nil
 }

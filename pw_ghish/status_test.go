@@ -639,3 +639,125 @@ func TestStatus_CurrentBranch_ChecksSummary_JSON(t *testing.T) {
 		t.Errorf("Expected 1 item in checks array, got %d", len(res.CurrentBranch.Checks))
 	}
 }
+
+func TestExtractLabelScore(t *testing.T) {
+	tests := []struct {
+		name      string
+		labels    map[string]gerrit.LabelInfo
+		labelName string
+		want      int
+	}{
+		{
+			name:      "nil map",
+			labels:    nil,
+			labelName: "Code-Review",
+			want:      0,
+		},
+		{
+			name:      "missing label",
+			labels:    map[string]gerrit.LabelInfo{},
+			labelName: "Code-Review",
+			want:      0,
+		},
+		{
+			name: "highest positive score wins",
+			labels: map[string]gerrit.LabelInfo{
+				"Code-Review": {
+					All: []gerrit.ApprovalInfo{
+						{Value: 1},
+						{Value: 2},
+						{Value: 1},
+					},
+				},
+			},
+			labelName: "Code-Review",
+			want:      2,
+		},
+		{
+			name: "negative score overrides positive scores",
+			labels: map[string]gerrit.LabelInfo{
+				"Code-Review": {
+					All: []gerrit.ApprovalInfo{
+						{Value: 2},
+						{Value: -1},
+						{Value: 1},
+					},
+				},
+			},
+			labelName: "Code-Review",
+			want:      -1,
+		},
+		{
+			name: "lowest negative score wins",
+			labels: map[string]gerrit.LabelInfo{
+				"Code-Review": {
+					All: []gerrit.ApprovalInfo{
+						{Value: -1},
+						{Value: -2},
+						{Value: 2},
+					},
+				},
+			},
+			labelName: "Code-Review",
+			want:      -2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractLabelScore(tt.labels, tt.labelName); got != tt.want {
+				t.Errorf("extractLabelScore() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractBlockers(t *testing.T) {
+	tests := []struct {
+		name   string
+		change *gerrit.ChangeInfo
+		want   []string
+	}{
+		{
+			name:   "submittable change has no blockers",
+			change: &gerrit.ChangeInfo{Submittable: true},
+			want:   nil,
+		},
+		{
+			name: "missing Code-Review and Verified approvals",
+			change: &gerrit.ChangeInfo{
+				Submittable: false,
+				Labels: map[string]gerrit.LabelInfo{
+					"Code-Review": {},
+					"Verified":    {},
+				},
+			},
+			want: []string{"Code-Review (+2 required)", "Verified (+1 required)"},
+		},
+		{
+			name: "rejected label reported",
+			change: &gerrit.ChangeInfo{
+				Submittable: false,
+				Labels: map[string]gerrit.LabelInfo{
+					"Code-Review": {Approved: gerrit.AccountInfo{AccountID: 1}},
+					"Lint":        {Rejected: gerrit.AccountInfo{AccountID: 2}},
+				},
+			},
+			want: []string{"Lint (Rejected)"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractBlockers(tt.change)
+			if len(got) != len(tt.want) {
+				t.Fatalf("extractBlockers() = %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("extractBlockers()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

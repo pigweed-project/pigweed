@@ -17,7 +17,6 @@ package pw_ghish
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"text/template"
@@ -125,25 +124,7 @@ var viewCmd = &cobra.Command{
 			revisionToFetch = reqRev
 		}
 
-		cfg := chCtx.Config
-		gHost := ""
-		if cfg != nil {
-			if gURL, err := cfg.GerritURL(ctx); err == nil {
-				if parsedU, err := url.Parse(gURL); err == nil && parsedU.Host != "" {
-					gHost = parsedU.Host
-				}
-			}
-		}
-		if gHost == "" {
-			gHost = HostFlag
-			if parsedU, err := url.Parse(gHost); err == nil && parsedU.Host != "" {
-				gHost = parsedU.Host
-			}
-		}
-		gHost = strings.TrimPrefix(gHost, "https://")
-		gHost = strings.TrimPrefix(gHost, "http://")
-		gHost = strings.TrimSuffix(gHost, "/a")
-		gHost = strings.TrimSuffix(gHost, "/")
+		gHost := chCtx.Config.GerritHost(ctx)
 
 		bbHost := buildbucketHost
 		if bbHost == "" {

@@ -18,13 +18,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +53,58 @@ type CheckItem struct {
 	URL          string `json:"url"`
 	Summary      string `json:"summary,omitempty"`
 	Experimental bool   `json:"experimental"`
+}
+
+// NewCheckItem creates a CheckItem from a Buildbucket build.
+func NewCheckItem(b bbBuild) CheckItem {
+	return CheckItem{
+		ID:           b.ID,
+		Name:         b.Builder.Builder,
+		Bucket:       b.Builder.Bucket,
+		Status:       b.Status,
+		StatusSymbol: getStatusSymbol(b.Status),
+		Duration:     formatDuration(b.StartTime, b.EndTime),
+		URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
+		Summary:      b.SummaryMarkdown,
+		Experimental: b.IsExperimental(),
+	}
+}
+
+// BuildCheckItems converts a slice of Buildbucket builds into CheckItems.
+func BuildCheckItems(builds []bbBuild) []CheckItem {
+	items := make([]CheckItem, 0, len(builds))
+	for _, b := range builds {
+		items = append(items, NewCheckItem(b))
+	}
+	return items
+}
+
+// FilterExperimentalBuilds filters builds according to includeExperimental,
+// returning the filtered slice and the number of omitted experimental builds.
+func FilterExperimentalBuilds(builds []bbBuild, includeExperimental bool) ([]bbBuild, int) {
+	var relevant []bbBuild
+	omittedCount := 0
+	for _, b := range builds {
+		if !includeExperimental && b.IsExperimental() {
+			omittedCount++
+			continue
+		}
+		relevant = append(relevant, b)
+	}
+	return relevant, omittedCount
+}
+
+// FormatOmittedExperimentalNotice returns the standard notice for omitted experimental builders,
+// or an empty string if omittedCount <= 0.
+func FormatOmittedExperimentalNotice(omittedCount int) string {
+	if omittedCount <= 0 {
+		return ""
+	}
+	plural := "s"
+	if omittedCount == 1 {
+		plural = ""
+	}
+	return fmt.Sprintf("(%d non-blocking experimental builder%s omitted; add --experimental to see them)", omittedCount, plural)
 }
 
 // getLUCIHTTPClient returns an HTTP client for LUCI Buildbucket queries.
@@ -169,100 +218,6 @@ func deduplicateLatestBuilds(builds []bbBuild) []bbBuild {
 	return deduped
 }
 
-type resolvedChangeContext struct {
-	Change      *gerrit.ChangeInfo
-	PatchsetNum int
-	GerritHost  string
-	Profile     ProjectProfile
-	Builds      []bbBuild
-}
-
-func resolveChangeContext(cmd *cobra.Command, rawID string) (*resolvedChangeContext, error) {
-	ctx := cmd.Context()
-	changeID, reqRev := ParseChangeAndRevision(rawID)
-
-	patchsetNum := 0
-	if reqRev != "" && reqRev != "current" {
-		n, err := strconv.Atoi(reqRev)
-		if err != nil {
-			return nil, fmt.Errorf("invalid patchset number %q: %w", reqRev, err)
-		}
-		patchsetNum = n
-	}
-
-	client, err := NewGerritClient(ctx, cmd)
-	if err != nil {
-		return nil, fmt.Errorf("error creating Gerrit client: %w", err)
-	}
-
-	opt := &gerrit.ChangeOptions{
-		AdditionalFields: []string{"CURRENT_REVISION"},
-	}
-
-	change, _, err := client.Changes.GetChange(ctx, changeID, opt)
-	if err != nil {
-		return nil, fmt.Errorf("error getting change %s: %w", changeID, err)
-	}
-
-	if patchsetNum == 0 && change.Revisions != nil && change.CurrentRevision != "" {
-		if rev, ok := change.Revisions[change.CurrentRevision]; ok {
-			patchsetNum = rev.Number
-		}
-	}
-
-	cfg := GetConfig(cmd)
-	gerritHost := ""
-	if cfg != nil {
-		if gURL, err := cfg.GerritURL(ctx); err == nil {
-			if parsedU, err := url.Parse(gURL); err == nil && parsedU.Host != "" {
-				gerritHost = parsedU.Host
-			}
-		}
-	}
-	if gerritHost == "" {
-		gerritHost = HostFlag
-		if parsedU, err := url.Parse(gerritHost); err == nil && parsedU.Host != "" {
-			gerritHost = parsedU.Host
-		}
-	}
-	gerritHost = strings.TrimPrefix(gerritHost, "https://")
-	gerritHost = strings.TrimPrefix(gerritHost, "http://")
-	gerritHost = strings.TrimSuffix(gerritHost, "/a")
-	gerritHost = strings.TrimSuffix(gerritHost, "/")
-
-	var changeProj string
-	if change != nil {
-		changeProj = change.Project
-	}
-	profile, err := ResolveProfile(ctx, cfg, gerritHost, changeProj)
-	if err != nil {
-		return nil, err
-	}
-	if gerritHost == "" {
-		defHost := profile.DefaultGerritHost()
-		if parsedU, err := url.Parse(defHost); err == nil && parsedU.Host != "" {
-			gerritHost = parsedU.Host
-		} else {
-			gerritHost = strings.TrimPrefix(defHost, "https://")
-			gerritHost = strings.TrimSuffix(gerritHost, "/a")
-		}
-	}
-
-	luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(ctx, buildbucketHost))
-	builds, err := luciClient.SearchBuilds(ctx, gerritHost, change.Project, change.Number, patchsetNum)
-	if err != nil {
-		return nil, fmt.Errorf("error querying Buildbucket: %w", err)
-	}
-
-	return &resolvedChangeContext{
-		Change:      change,
-		PatchsetNum: patchsetNum,
-		GerritHost:  gerritHost,
-		Profile:     profile,
-		Builds:      builds,
-	}, nil
-}
-
 var checksCmd = &cobra.Command{
 	Use:          "checks [<id>[/<patchset>]]",
 	Short:        "Show CI/CD status (from Buildbucket)",
@@ -283,7 +238,7 @@ Use --web (-w) to open checks in the browser.`,
 		if err != nil {
 			return err
 		}
-		res, err := resolveChangeContext(cmd, rawID)
+		res, err := ResolveCIContext(cmd, rawID)
 		if err != nil {
 			return fmt.Errorf("failed to load checks for %q: %w", rawID, err)
 		}
@@ -445,17 +400,7 @@ Use --web (-w) to open checks in the browser.`,
 					continue
 				}
 			}
-			checks = append(checks, CheckItem{
-				ID:           b.ID,
-				Name:         b.Builder.Builder,
-				Bucket:       b.Builder.Bucket,
-				Status:       b.Status,
-				StatusSymbol: getStatusSymbol(b.Status),
-				Duration:     formatDuration(b.StartTime, b.EndTime),
-				URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
-				Summary:      b.SummaryMarkdown,
-				Experimental: isExp,
-			})
+			checks = append(checks, NewCheckItem(b))
 			if isExp {
 				// Experimental builders are non-blocking by definition: the
 				// Commit-Queue ignores them, so a failing one must not make

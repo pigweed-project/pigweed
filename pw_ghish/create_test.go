@@ -56,15 +56,7 @@ func TestDefaultBranch(t *testing.T) {
 }
 
 func TestCreateIntegration(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("feature-branch\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("feature-branch")
 
 	output, err := executeCommand(RootCmd, "pr", "create")
 	if err != nil {
@@ -87,15 +79,7 @@ func TestCreateIntegration(t *testing.T) {
 }
 
 func TestCreateStandardWorkspaceWithTitleAndBody(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main")
 
 	output, err := executeCommand(RootCmd, "pr", "create", "--title", "Standard Title", "--body", "Standard Body")
 	if err != nil {
@@ -108,15 +92,7 @@ func TestCreateStandardWorkspaceWithTitleAndBody(t *testing.T) {
 }
 
 func TestCreate_RichPushOptions_Pigweed(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main")
 	SetTestProfile(t, "pigweed")
 
 	_, err := executeCommand(RootCmd, "pr", "create",
@@ -166,15 +142,7 @@ func TestCreate_RichPushOptions_Pigweed(t *testing.T) {
 }
 
 func TestCreate_AutoSubmit_Fuchsia(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main")
 	SetTestProfile(t, "fuchsia")
 
 	_, err := executeCommand(RootCmd, "pr", "create", "--auto")
@@ -207,29 +175,23 @@ func TestCreate_ChangeID_AutoRepair(t *testing.T) {
 	}
 
 	amended := false
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("")
+	mockGit.RunFn = func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+		if len(args) > 1 && args[0] == "commit" && args[1] == "--amend" {
+			amended = true
+		}
+		if len(args) >= 2 && args[0] == "log" {
+			if amended {
+				stdout.Write([]byte("Commit message\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
+			} else {
+				stdout.Write([]byte("Commit message without change ID\n"))
 			}
-			if len(args) > 1 && args[0] == "commit" && args[1] == "--amend" {
-				amended = true
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				if amended {
-					stdout.Write([]byte("Commit message\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-				} else {
-					stdout.Write([]byte("Commit message without change ID\n"))
-				}
-			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
-			}
-			return nil
-		},
+		}
+		if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
+			stdout.Write([]byte(tempDir + "\n"))
+		}
+		return nil
 	}
-
-	SetupMockConfig(t, mockGit)
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err != nil {
@@ -243,21 +205,7 @@ func TestCreate_ChangeID_AutoRepair(t *testing.T) {
 
 func TestCreate_FailsWhenMissingChangeID(t *testing.T) {
 	tempDir := t.TempDir()
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Commit message without change ID\n"))
-			}
-			if len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--git-dir" {
-				stdout.Write([]byte(tempDir + "\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").WithCommit("Commit message without change ID\n").OnCommand("rev-parse --git-dir", tempDir+"\n")
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err == nil {
@@ -274,18 +222,7 @@ func TestCreate_ExistingChangeError(t *testing.T) {
 		{"_number": 472267, "project": "pigweed/pigweed", "status": "NEW"},
 	})
 
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("Subject\n\nChange-Id: I1234567890123456789012345678901234567890\n")
 
 	output, err := executeCommand(RootCmd, "pr", "create")
 	if err == nil {
@@ -309,15 +246,7 @@ func TestCreate_ExistingChangeError(t *testing.T) {
 }
 
 func TestCreate_ErrorWhenCommitFails(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "commit" {
-				return fmt.Errorf("pre-commit hook failed")
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnError("commit", fmt.Errorf("pre-commit hook failed"))
 
 	_, err := executeCommand(RootCmd, "pr", "create", "-t", "My Title")
 	if err == nil {
@@ -329,15 +258,7 @@ func TestCreate_ErrorWhenCommitFails(t *testing.T) {
 }
 
 func TestCreate_ErrorWhenPushFails(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "push" {
-				return fmt.Errorf("remote rejected")
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnError("push", fmt.Errorf("remote rejected"))
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err == nil {
@@ -354,18 +275,7 @@ func TestCreate_ExistingChangeWithForce(t *testing.T) {
 		{"_number": 472267, "project": "pigweed/pigweed", "status": "NEW"},
 	})
 
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			if len(args) >= 2 && args[0] == "log" {
-				stdout.Write([]byte("Subject\n\nChange-Id: I1234567890123456789012345678901234567890\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("Subject\n\nChange-Id: I1234567890123456789012345678901234567890\n")
 
 	output, err := executeCommand(RootCmd, "pr", "create", "--force")
 	if err != nil {
@@ -381,19 +291,7 @@ func TestCreate_ExistingChangeWithForce(t *testing.T) {
 }
 
 func TestCreate_MultiCommitStackGuard_RejectsWithoutStack(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("50\n"))
-				return nil
-			}
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnCommand("rev-list --count origin/main..HEAD", "50\n")
 
 	_, err := executeCommand(RootCmd, "pr", "create", "--base", "main")
 	if err == nil {
@@ -409,19 +307,7 @@ func TestCreate_MultiCommitStackGuard_RejectsWithoutStack(t *testing.T) {
 }
 
 func TestCreate_MultiCommitStackGuard_AllowsWithStack(t *testing.T) {
-	mockGit := &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
-				stdout.Write([]byte("50\n"))
-				return nil
-			}
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			return nil
-		},
-	}
-	SetupMockConfig(t, mockGit)
+	NewMockGit(t).WithBranch("main").OnCommand("rev-list --count origin/main..HEAD", "50\n")
 
 	output, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
 	if err != nil {
@@ -462,27 +348,10 @@ func TestResolvePushBranch_LocalBranchNotOnRemoteFallsBackToMain(t *testing.T) {
 	}
 }
 
-// mockGitWithCommitMessage returns a git mock whose HEAD commit message is
-// msg, and which reports `branch` for branch queries.
-func mockGitWithCommitMessage(msg string) *MockGitRunner {
-	return &MockGitRunner{
-		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
-			if len(args) > 0 && args[0] == "branch" {
-				stdout.Write([]byte("main\n"))
-			}
-			if len(args) > 0 && args[0] == "log" {
-				stdout.Write([]byte(msg))
-			}
-			return nil
-		},
-	}
-}
-
 // TestCreate_RejectsGitHubIssueSyntaxFromFlags catches the reference before
 // any commit is made, so the working tree is left exactly as it was found.
 func TestCreate_RejectsGitHubIssueSyntaxFromFlags(t *testing.T) {
-	mockGit := mockGitWithCommitMessage("pw_foo: S\n\nBody.\n")
-	SetupMockConfig(t, mockGit)
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("pw_foo: S\n\nBody.\n")
 
 	_, err := executeCommand(RootCmd, "pr", "create",
 		"--title", "pw_foo: Rework", "--body", "Rework the loop.\n\nFixes #456")
@@ -504,10 +373,9 @@ func TestCreate_RejectsGitHubIssueSyntaxFromFlags(t *testing.T) {
 // wrote with plain `git commit`, which never passes through a gh-ish flag.
 // This is the common case, so checking only the flags would miss most of it.
 func TestCreate_RejectsGitHubIssueSyntaxInHeadCommit(t *testing.T) {
-	mockGit := mockGitWithCommitMessage(
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit(
 		"pw_foo: Rework\n\nRework the loop.\n\nCloses #456\n" +
 			"Change-Id: I0123456789abcdef0123456789abcdef01234567\n")
-	SetupMockConfig(t, mockGit)
 
 	_, err := executeCommand(RootCmd, "pr", "create")
 	if err == nil {
@@ -526,10 +394,9 @@ func TestCreate_RejectsGitHubIssueSyntaxInHeadCommit(t *testing.T) {
 
 // TestCreate_AcceptsGerritBugTrailerInHeadCommit is the false-positive guard.
 func TestCreate_AcceptsGerritBugTrailerInHeadCommit(t *testing.T) {
-	mockGit := mockGitWithCommitMessage(
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit(
 		"pw_foo: Rework\n\nRework the loop.\n\nFixed: b/456\n" +
 			"Change-Id: I0123456789abcdef0123456789abcdef01234567\n")
-	SetupMockConfig(t, mockGit)
 
 	if _, err := executeCommand(RootCmd, "pr", "create", "--force"); err != nil {
 		t.Fatalf("A correct Gerrit trailer blocked the push: %v", err)
@@ -540,10 +407,9 @@ func TestCreate_AcceptsGerritBugTrailerInHeadCommit(t *testing.T) {
 }
 
 func TestPush_RejectsGitHubIssueSyntaxInHeadCommit(t *testing.T) {
-	mockGit := mockGitWithCommitMessage(
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit(
 		"pw_foo: Rework\n\nRework the loop.\n\nResolves #456\n" +
 			"Change-Id: I0123456789abcdef0123456789abcdef01234567\n")
-	SetupMockConfig(t, mockGit)
 
 	_, err := executeCommand(RootCmd, "pr", "push")
 	if err == nil {

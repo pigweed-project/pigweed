@@ -1311,3 +1311,34 @@ func TestNormalizeCQArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestFindChangeIDInCommitRange(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("finds first Change-Id in multi-commit range", func(t *testing.T) {
+		mockGit := NewMockGit(t).
+			OnCommand("log -10 --format=%B origin/main..HEAD", "Fix doc typo\n\nChange-Id: I1111111111111111111111111111111111111111\n\nEarlier commit\n\nChange-Id: I2222222222222222222222222222222222222222")
+		got := findChangeIDInCommitRange(ctx, NewGitClient(mockGit), "origin/main..HEAD")
+		if got != "I1111111111111111111111111111111111111111" {
+			t.Errorf("got %q, want I1111111111111111111111111111111111111111", got)
+		}
+	})
+
+	t.Run("returns empty when no Change-Id in range", func(t *testing.T) {
+		mockGit := NewMockGit(t).
+			OnCommand("log -10 --format=%B origin/main..refs/heads/feat", "Regular commit without change id\n\nAnother commit")
+		got := findChangeIDInCommitRange(ctx, NewGitClient(mockGit), "origin/main..refs/heads/feat")
+		if got != "" {
+			t.Errorf("got %q, want empty string", got)
+		}
+	})
+
+	t.Run("returns empty when git log fails", func(t *testing.T) {
+		mockGit := NewMockGit(t).
+			OnError("log -10 --format=%B origin/main..HEAD", fmt.Errorf("git error"))
+		got := findChangeIDInCommitRange(ctx, NewGitClient(mockGit), "origin/main..HEAD")
+		if got != "" {
+			t.Errorf("got %q, want empty string", got)
+		}
+	})
+}

@@ -726,19 +726,28 @@ func ResolveActiveChangeID(ctx context.Context, cfg *Config) (string, error) {
 	}
 
 	// 4. Check recent commits ahead of origin/main
-	var rangeBuf bytes.Buffer
-	if err := git.Run(ctx, &rangeBuf, io.Discard, "log", "-10", "--format=%B", "origin/main..HEAD"); err == nil {
-		for _, block := range strings.Split(rangeBuf.String(), "\n\n") {
-			if id := ExtractChangeID(block); id != "" {
-				return id, nil
-			}
-		}
+	if id := findChangeIDInCommitRange(ctx, git, "origin/main..HEAD"); id != "" {
+		return id, nil
 	}
 
 	if currentBranch != "" {
 		return "", fmt.Errorf("no change ID specified and no Gerrit Change-Id found for current branch %q.\nSpecify a change number (e.g. 'gh pr view 12345') or create a commit with a Change-Id", currentBranch)
 	}
 	return "", fmt.Errorf("no change ID specified and no Gerrit Change-Id found in current commit.\nSpecify a change number (e.g. 'gh pr view 12345')")
+}
+
+// findChangeIDInCommitRange scans recent commits in the specified git range
+// (e.g. "origin/main..HEAD") and returns the first Gerrit Change-Id trailer found.
+func findChangeIDInCommitRange(ctx context.Context, git GitClient, rangeSpec string) string {
+	var rangeBuf bytes.Buffer
+	if err := git.Run(ctx, &rangeBuf, io.Discard, "log", "-10", "--format=%B", rangeSpec); err == nil {
+		for _, block := range strings.Split(rangeBuf.String(), "\n\n") {
+			if id := ExtractChangeID(block); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 // ResolveTargetChangeID determines the target change ID from CLI args or the local git state.
@@ -779,14 +788,8 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 			}
 
 			// Inspect recent commits on branch ahead of origin/main
-			var rangeBuf bytes.Buffer
-			rangeSpec := fmt.Sprintf("origin/main..%s", refTarget)
-			if err := git.Run(ctx, &rangeBuf, io.Discard, "log", "-10", "--format=%B", rangeSpec); err == nil {
-				for _, block := range strings.Split(rangeBuf.String(), "\n\n") {
-					if id := ExtractChangeID(block); id != "" {
-						return id, nil
-					}
-				}
+			if id := findChangeIDInCommitRange(ctx, git, fmt.Sprintf("origin/main..%s", refTarget)); id != "" {
+				return id, nil
 			}
 
 			return "", fmt.Errorf("branch %q has no associated Gerrit Change-Id", target)

@@ -235,12 +235,8 @@ var editCmd = &cobra.Command{
 		}
 
 		for _, reviewer := range editAddReviewer {
-			input := &gerrit.ReviewerInput{
-				Reviewer: reviewer,
-			}
-			_, _, err = client.Changes.AddReviewer(ctx, changeID, input)
-			if err != nil {
-				return fmt.Errorf("error adding reviewer %s: %w", reviewer, err)
+			if _, _, err := client.Changes.AddReviewer(ctx, changeID, &gerrit.ReviewerInput{Reviewer: reviewer}); err != nil {
+				return chCtx.FormatError(err, fmt.Sprintf("adding reviewer %s to", reviewer))
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Reviewer added successfully.")
 		}
@@ -254,17 +250,8 @@ var editCmd = &cobra.Command{
 		}
 
 		for _, assignee := range editAddAssignee {
-			ccPayload := map[string]any{
-				"reviewer": assignee,
-				"state":    "CC",
-			}
-			req, err := client.NewRequest(ctx, "POST", fmt.Sprintf("changes/%s/reviewers", changeID), ccPayload)
-			if err != nil {
-				return fmt.Errorf("error creating request for adding assignee (CC) %s: %w", assignee, err)
-			}
-			_, err = client.Do(req, nil)
-			if err != nil {
-				return fmt.Errorf("error adding assignee (CC) %s: %w", assignee, err)
+			if err := chCtx.AddCC(assignee); err != nil {
+				return err
 			}
 
 			review := &gerrit.ReviewInput{
@@ -320,15 +307,13 @@ var editCmd = &cobra.Command{
 
 		if hasTopicEdit {
 			if editRemoveTopic || (cmd.Flags().Changed("topic") && strings.TrimSpace(editTopic) == "") {
-				_, err = client.Changes.DeleteTopic(ctx, changeID)
-				if err != nil {
-					return chCtx.FormatError(err, "removing topic on")
+				if _, err := client.Changes.DeleteTopic(ctx, changeID); err != nil {
+					return chCtx.FormatError(err, "deleting topic on")
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Topic removed successfully.")
 			} else {
 				targetTopic := strings.TrimSpace(editTopic)
-				_, _, err = client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: targetTopic})
-				if err != nil {
+				if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: targetTopic}); err != nil {
 					return chCtx.FormatError(err, "setting topic on")
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "Topic set to %q successfully.\n", targetTopic)
@@ -336,12 +321,10 @@ var editCmd = &cobra.Command{
 		}
 
 		if hasHashtagEdit {
-			input := &gerrit.HashtagsInput{
+			if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{
 				Add:    editAddHashtags,
 				Remove: editRemoveHashtags,
-			}
-			_, _, err = client.Changes.SetHashtags(ctx, changeID, input)
-			if err != nil {
+			}); err != nil {
 				return chCtx.FormatError(err, "updating hashtags on")
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Hashtags updated successfully.")
@@ -349,9 +332,7 @@ var editCmd = &cobra.Command{
 
 		if hasCQEdit {
 			input := &gerrit.ReviewInput{
-				Labels: map[string]int{
-					"Commit-Queue": editCQ,
-				},
+				Labels: map[string]int{"Commit-Queue": editCQ},
 			}
 			if err := chCtx.SetReviewRevision("current", input); err != nil {
 				return chCtx.FormatError(err, "setting Commit-Queue on")
