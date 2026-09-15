@@ -112,6 +112,7 @@ declare_args() {
   dir_pw_fortifier = get_path_info("../pw_fortifier", "abspath")
   dir_pw_function = get_path_info("../pw_function", "abspath")
   dir_pw_fuzzer = get_path_info("../pw_fuzzer", "abspath")
+  dir_pw_ghish = get_path_info("../pw_ghish", "abspath")
   dir_pw_grpc = get_path_info("../pw_grpc", "abspath")
   dir_pw_hdlc = get_path_info("../pw_hdlc", "abspath")
   dir_pw_hex_dump = get_path_info("../pw_hex_dump", "abspath")
@@ -317,6 +318,7 @@ declare_args() {
     dir_pw_fortifier,
     dir_pw_function,
     dir_pw_fuzzer,
+    dir_pw_ghish,
     dir_pw_grpc,
     dir_pw_hdlc,
     dir_pw_hex_dump,
@@ -511,6 +513,7 @@ declare_args() {
     "$dir_pw_fortifier:tests",
     "$dir_pw_function:tests",
     "$dir_pw_fuzzer:tests",
+    "$dir_pw_ghish:tests",
     "$dir_pw_grpc:tests",
     "$dir_pw_hdlc:tests",
     "$dir_pw_hex_dump:tests",

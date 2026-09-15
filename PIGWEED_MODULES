@@ -76,6 +76,7 @@ pw_format
 pw_fortifier
 pw_function
 pw_fuzzer
+pw_ghish
 pw_grpc
 pw_hdlc
 pw_hex_dump

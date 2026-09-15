@@ -68,6 +68,7 @@ Modules
    pw_fortifier/docs
    pw_function/docs
    pw_fuzzer/docs
+   pw_ghish/docs
    pw_grpc/docs
    pw_hdlc/docs
    pw_hex_dump/docs

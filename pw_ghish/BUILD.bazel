@@ -1,0 +1,145 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "pw_ghish",
+    srcs = [
+        "account.go",
+        "auth.go",
+        "bug_links.go",
+        "bug_normalizer.go",
+        "change_context.go",
+        "checkout.go",
+        "checks.go",
+        "cherry_pick.go",
+        "close.go",
+        "comment.go",
+        "comment_tree.go",
+        "comments_summary.go",
+        "create.go",
+        "diff.go",
+        "edit.go",
+        "exit.go",
+        "git_client.go",
+        "github_syntax.go",
+        "list.go",
+        "luci.go",
+        "merge.go",
+        "profile.go",
+        "push.go",
+        "push_pipeline.go",
+        "ready.go",
+        "render.go",
+        "reopen.go",
+        "review.go",
+        "root.go",
+        "run.go",
+        "status.go",
+        "utils.go",
+        "view.go",
+    ],
+    importpath = "pigweed.dev/pw_ghish",
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
+
+go_binary(
+    name = "gh-ish",
+    srcs = ["cmd/main.go"],
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        ":pw_ghish",
+    ],
+)
+
+go_test(
+    name = "pw_ghish_test",
+    srcs = [
+        "account_test.go",
+        "auth_test.go",
+        "bug_links_test.go",
+        "bug_normalizer_test.go",
+        "change_context_test.go",
+        "checkout_test.go",
+        "checks_test.go",
+        "cherry_pick_test.go",
+        "close_test.go",
+        "comment_test.go",
+        "comment_tree_test.go",
+        "comments_summary_test.go",
+        "create_test.go",
+        "diff_test.go",
+        "edit_test.go",
+        "exit_test.go",
+        "git_client_test.go",
+        "github_syntax_test.go",
+        "list_test.go",
+        "luci_test.go",
+        "merge_test.go",
+        "profile_test.go",
+        "push_pipeline_test.go",
+        "push_test.go",
+        "ready_test.go",
+        "render_test.go",
+        "reopen_test.go",
+        "review_test.go",
+        "root_test.go",
+        "run_test.go",
+        "status_test.go",
+        "test_utils_test.go",
+        "utils_test.go",
+        "view_test.go",
+    ],
+    embed = [":pw_ghish"],
+    tags = [
+        # Pure Go test target: Clang C/C++ sanitizers do not instrument Go
+        # code (Go uses its native -race detector instead).
+        "noasan",
+        "nomsan",
+        "notsan",
+        "noubsan",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_spf13_cobra//:cobra",
+        "@com_github_spf13_pflag//:pflag",
+    ],
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "agent_eval.rst",
+        "ai_workflows.rst",
+        "cli.rst",
+        "cli_comparison.rst",
+        "docs.rst",
+        "flag_compatibility.rst",
+        "project_integration.rst",
+        "roadmap.rst",
+    ],
+    prefix = "pw_ghish/",
+    target_compatible_with = incompatible_with_mcu(),
+)

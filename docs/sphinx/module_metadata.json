@@ -458,6 +458,13 @@
       "C++"
     ]
   },
+  "pw_ghish": {
+    "tagline": "GitHub CLI-like interface for Gerrit code reviews and CI checks",
+    "status": "experimental",
+    "languages": [
+      "Go"
+    ]
+  },
   "pw_grpc": {
     "tagline": "pw_rpc over gRPC",
     "status": "unstable",

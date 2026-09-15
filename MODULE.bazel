@@ -445,7 +445,16 @@ register_toolchains("@rules_python//python/runtime_env_toolchains:all")
 # =========================
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-use_repo(go_deps, "org_golang_google_grpc", "org_golang_google_grpc_examples", "org_golang_google_protobuf")
+use_repo(
+    go_deps,
+    "com_github_andygrunwald_go_gerrit",
+    "com_github_google_go_cmp",
+    "com_github_spf13_cobra",
+    "com_github_spf13_pflag",
+    "org_golang_google_grpc",
+    "org_golang_google_grpc_examples",
+    "org_golang_google_protobuf",
+)
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.27.1")

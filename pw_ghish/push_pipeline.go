@@ -1,0 +1,302 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+package pw_ghish
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/andygrunwald/go-gerrit"
+	"github.com/spf13/cobra"
+)
+
+// CommonPushFlags holds parsed CLI flags shared between 'gh pr create' and 'gh pr push'.
+type CommonPushFlags struct {
+	Base        string
+	Stack       bool
+	NoVerify    bool
+	PushOptions PushOptions
+}
+
+// AddCommonPushFlags registers common push flags shared across 'gh pr create' and 'gh pr push'.
+func AddCommonPushFlags(cmd *cobra.Command) {
+	cmd.Flags().StringSliceP("reviewer", "r", []string{}, "Request a review from someone")
+	cmd.Flags().StringSliceP("cc", "c", []string{}, "CC someone on the change")
+	cmd.Flags().BoolP("draft", "d", false, "Mark as work in progress (WIP)")
+	cmd.Flags().Bool("auto", false, "Automatically submit change when checks and reviews pass")
+	cmd.Flags().Bool("auto-submit", false, "Alias for --auto")
+	_ = cmd.Flags().MarkHidden("auto-submit")
+	cmd.Flags().Int("cq", 0, "Commit-Queue vote (1 = dry run, 2 = submit)")
+	cmd.Flags().Lookup("cq").NoOptDefVal = "1"
+	cmd.Flags().Bool("publish", false, "Publish draft comments on push")
+	cmd.Flags().StringSliceP("push-option", "o", []string{}, "Raw Gerrit push options (passed via %...)")
+	cmd.Flags().Bool("no-verify", false, "Bypass pre-push git hooks")
+	cmd.Flags().StringP("base", "B", "", "The branch into which you want your code merged")
+	cmd.Flags().Bool("stack", false, "Allow pushing multiple commits as a stack of Gerrit changes")
+	cmd.Flags().String("topic", "", "Set Gerrit topic for the change")
+	cmd.Flags().StringSlice("hashtag", []string{}, "Add hashtags to the change")
+}
+
+// ParseCommonPushFlags parses the common push flags from the Cobra command.
+func ParseCommonPushFlags(cmd *cobra.Command) CommonPushFlags {
+	reviewers, _ := cmd.Flags().GetStringSlice("reviewer")
+	cc, _ := cmd.Flags().GetStringSlice("cc")
+	draft, _ := cmd.Flags().GetBool("draft")
+	ready, _ := cmd.Flags().GetBool("ready")
+	auto, _ := cmd.Flags().GetBool("auto")
+	autoSubmit, _ := cmd.Flags().GetBool("auto-submit")
+	cq, _ := cmd.Flags().GetInt("cq")
+	publish, _ := cmd.Flags().GetBool("publish")
+	pushOptions, _ := cmd.Flags().GetStringSlice("push-option")
+	noVerify, _ := cmd.Flags().GetBool("no-verify")
+	base, _ := cmd.Flags().GetString("base")
+	stack, _ := cmd.Flags().GetBool("stack")
+	topic, _ := cmd.Flags().GetString("topic")
+	hashtags, _ := cmd.Flags().GetStringSlice("hashtag")
+
+	return CommonPushFlags{
+		Base:     base,
+		Stack:    stack,
+		NoVerify: noVerify,
+		PushOptions: PushOptions{
+			Reviewers:    reviewers,
+			CC:           cc,
+			Draft:        draft,
+			Ready:        ready,
+			AutoSubmit:   auto || autoSubmit,
+			CQ:           cq,
+			Publish:      publish,
+			Topic:        topic,
+			Hashtags:     hashtags,
+			ExtraOptions: pushOptions,
+		},
+	}
+}
+
+// defaultBranch resolves the default target branch (defaults to "main").
+func defaultBranch(ctx context.Context, cfg *Config, stderr io.Writer) string {
+	git := cfg.GitClient()
+	for _, ref := range []string{"refs/heads/main", "refs/remotes/origin/main", "origin/main"} {
+		if ok, err := git.VerifyRef(ctx, ref); err == nil && ok {
+			return "main"
+		}
+	}
+	return "main"
+}
+
+// resolvePushBranch determines the target branch for a push.
+// Priority:
+// 1. Explicit --base flag
+// 2. Tracking branch upstream (@{upstream})
+// 3. Remote branch on origin matching current branch name
+// 4. Default branch (main)
+func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr io.Writer) string {
+	if baseFlag != "" {
+		return baseFlag
+	}
+	git := cfg.GitClient()
+	// 1. Try tracking upstream (@{upstream})
+	if upstream, err := git.RevParse(ctx, "--abbrev-ref", "@{upstream}"); err == nil {
+		if idx := strings.IndexByte(upstream, '/'); idx != -1 {
+			branch := upstream[idx+1:]
+			if branch != "" {
+				return branch
+			}
+		}
+	}
+	// 2. Check if current local branch matches an existing remote branch on origin
+	if curr, err := git.CurrentBranch(ctx); err == nil && curr != "" {
+		if ok, err := git.VerifyRef(ctx, "origin/"+curr); err == nil && ok {
+			return curr
+		}
+	}
+	// 3. Fall back to default repo branch (main)
+	return defaultBranch(ctx, cfg, stderr)
+}
+
+// ValidateCommitStack checks if pushing HEAD would push multiple commits ahead of the target branch.
+// Returns an actionable error if count > 1 and stack is false.
+func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stack bool, commandName string) error {
+	count, countErr := git.CountCommitsAhead(ctx, branch)
+	if countErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return nil
+	}
+	if count == 0 && commandName == "create" {
+		return fmt.Errorf("cannot create a new change: HEAD has 0 commits ahead of target branch %q.\n\n"+
+			"In Gerrit, each change corresponds to a local commit.\n"+
+			"To create a change, first stage and commit your modifications:\n"+
+			"  git add <files>\n"+
+			"  git commit -m \"<module>: <summary>\"\n"+
+			"  gh pr create", branch)
+	}
+	if count > 1 && !stack {
+		if commandName == "create" {
+			return fmt.Errorf("pushing HEAD would create %d separate Gerrit changes targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr create --base <branch>\n\nTo create a stack of %d changes, pass --stack", count, branch, count)
+		}
+		return fmt.Errorf("pushing HEAD would push %d commits targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr push --base <branch>\n\nTo push a stack of %d changes, pass --stack", count, branch, count)
+	}
+	return nil
+}
+
+// executePush runs git push to Gerrit with the specified push options.
+func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, pushOpts PushOptions, noVerify bool) error {
+	if cmd == nil {
+		return fmt.Errorf("internal error: cmd is uninitialized in executePush")
+	}
+	if cfg == nil {
+		return fmt.Errorf("internal error: cfg is uninitialized in executePush")
+	}
+	profile := cfg.GetProfile(ctx)
+	refStr := profile.FormatPushRef(branch, pushOpts)
+
+	pushArgs := []string{"push"}
+	if noVerify {
+		pushArgs = append(pushArgs, "--no-verify")
+	}
+	pushArgs = append(pushArgs, "origin", "HEAD:"+refStr)
+
+	var errBuf bytes.Buffer
+	if err := cfg.GitClient().Run(ctx, cmd.OutOrStdout(), &errBuf, pushArgs...); err != nil {
+		errStr := errBuf.String()
+		if strings.Contains(errStr, "missing Change-Id") {
+			host := cfg.Host
+			if host == "" {
+				host = "<gerrit-host>"
+			}
+			hookURL := fmt.Sprintf("https://%s/tools/hooks/commit-msg", host)
+			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Ensure the commit-msg hook is installed:\n     curl -Lo .git/hooks/commit-msg %s && chmod +x .git/hooks/commit-msg\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     gh pr push\n\nUnderlying error: %w", hookURL, err)
+		}
+		if strings.Contains(errStr, "no new changes") {
+			if hasMetadataUpdates(pushOpts) {
+				if restErr := applyPushOptionsViaREST(ctx, cmd, cfg, pushOpts); restErr != nil {
+					return fmt.Errorf("no new commits to push, and failed to apply metadata updates via Gerrit API: %w", restErr)
+				}
+				return nil
+			}
+			return fmt.Errorf("no new changes to push (HEAD is already up-to-date with Gerrit).\n\n" +
+				"To push an update, make code changes and commit or amend first:\n" +
+				"  git commit --amend\n" +
+				"  gh pr push\n\n" +
+				"To update change metadata (CQ, topic, reviewers) without a new commit:\n" +
+				"  gh pr edit --cq\n" +
+				"  gh pr edit --topic <topic>\n" +
+				"  gh pr edit --add-reviewer <user>")
+		}
+		cmd.ErrOrStderr().Write(errBuf.Bytes())
+		return err
+	}
+	cmd.ErrOrStderr().Write(errBuf.Bytes())
+	return nil
+}
+
+func hasMetadataUpdates(opts PushOptions) bool {
+	return opts.CQ > 0 || opts.Topic != "" || len(opts.Hashtags) > 0 ||
+		opts.Draft || opts.Wip || opts.Ready || opts.Publish ||
+		len(opts.Reviewers) > 0 || len(opts.CC) > 0
+}
+
+func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Config, pushOpts PushOptions) error {
+	if cmd == nil {
+		return fmt.Errorf("internal error: cmd is uninitialized in applyPushOptionsViaREST")
+	}
+	if cfg == nil {
+		return fmt.Errorf("internal error: cfg is uninitialized in applyPushOptionsViaREST")
+	}
+	chCtx, err := ResolveChangeContext(cmd, nil)
+	if err != nil {
+		return err
+	}
+	client := chCtx.Client
+	changeID := chCtx.ChangeID
+
+	if pushOpts.CQ > 0 || pushOpts.Publish {
+		input := &gerrit.ReviewInput{}
+		if pushOpts.CQ > 0 {
+			input.Labels = map[string]int{
+				"Commit-Queue": pushOpts.CQ,
+			}
+		}
+		if pushOpts.Publish {
+			input.Drafts = "PUBLISH_ALL_REVISIONS"
+		}
+		if err := chCtx.SetReviewRevision("current", input); err != nil {
+			action := "updating review on"
+			if pushOpts.CQ > 0 && !pushOpts.Publish {
+				action = "setting Commit-Queue on"
+			} else if pushOpts.Publish && pushOpts.CQ == 0 {
+				action = "publishing drafts on"
+			}
+			return chCtx.FormatError(err, action)
+		}
+	}
+
+	if pushOpts.Topic != "" {
+		if _, _, err := client.Changes.SetTopic(ctx, changeID, &gerrit.TopicInput{Topic: pushOpts.Topic}); err != nil {
+			return chCtx.FormatError(err, "setting topic on")
+		}
+	}
+
+	if len(pushOpts.Hashtags) > 0 {
+		if _, _, err := client.Changes.SetHashtags(ctx, changeID, &gerrit.HashtagsInput{Add: pushOpts.Hashtags}); err != nil {
+			return chCtx.FormatError(err, "setting hashtags on")
+		}
+	}
+
+	if pushOpts.Draft || pushOpts.Wip {
+		req, err := client.NewRequest(ctx, "POST", fmt.Sprintf("changes/%s/wip", changeID), nil)
+		if err != nil {
+			return chCtx.FormatError(err, "marking change as WIP on")
+		}
+		if _, err := client.Do(req, nil); err != nil {
+			return chCtx.FormatError(err, "marking change as WIP on")
+		}
+	} else if pushOpts.Ready {
+		if _, err := client.Changes.SetReadyForReview(ctx, changeID, nil); err != nil {
+			return chCtx.FormatError(err, "marking change as ready for review on")
+		}
+	}
+
+	for _, r := range pushOpts.Reviewers {
+		if _, _, err := client.Changes.AddReviewer(ctx, changeID, &gerrit.ReviewerInput{Reviewer: r}); err != nil {
+			return chCtx.FormatError(err, "adding reviewer on")
+		}
+	}
+
+	for _, c := range pushOpts.CC {
+		ccPayload := map[string]any{"reviewer": c, "state": "CC"}
+		req, err := client.NewRequest(ctx, "POST", fmt.Sprintf("changes/%s/reviewers", changeID), ccPayload)
+		if err != nil {
+			return chCtx.FormatError(err, "adding CC on")
+		}
+		if _, err := client.Do(req, nil); err != nil {
+			return chCtx.FormatError(err, "adding CC on")
+		}
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "No new commits to push; applied metadata updates to Change %s via Gerrit API.\n", changeID)
+	if pushOpts.CQ > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Commit-Queue+%d set successfully.\n", pushOpts.CQ)
+	}
+	if pushOpts.Publish {
+		fmt.Fprintln(cmd.OutOrStdout(), "Draft comments published successfully.")
+	}
+	return nil
+}
