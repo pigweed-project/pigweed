@@ -48,7 +48,7 @@ refer to the full style guide.
 
 - **C++ Standard:** All C++ code must compile with `-std=c++17`. C++20 features
   can be used if the code remains C++17 compatible.
-- **Formatting:** Code is automatically formatted with `clang-format`.
+- **Formatting:** Format code with `./pw format`.
 - **C and C++ Standard Libraries:**
   - Use C++-style headers (e.g., `<cstdlib>` instead of `<stdlib.h>`).
   - A limited subset of the C++ Standard Library is permitted. Dynamic memory
@@ -84,16 +84,14 @@ refer to the full style guide.
   - Standalone statement macros must require a semicolon.
 - **Unsigned Integers:** Permitted, but be careful when mixing with signed
   integers.
-- **Unused Variables:** The `PW_MAYBE_UNUSED` macro is deprecated and has been
-  removed. For handling unused variables, the standard C++ attribute
-  `[[maybe_unused]]` should be used instead.
+- **Unused Variables:** Leave function parameters unnamed or use the standard
+  C++ attribute `[[maybe_unused]]`.
 
 ## Python Development Guidance
 
 ### Python Style Guide (Condensed)
 
-- **Style:** Pigweed follows PEP 8. Code should pass `pw format`, which uses
-  `black`.
+- **Style:** Pigweed follows PEP 8. Format code with `./pw format`.
 - **Python Versions:** Upstream Pigweed code must support the officially
   supported Python versions.
 - **Generated Files:** Python packages with generated files should extend their
