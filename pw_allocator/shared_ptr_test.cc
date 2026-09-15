@@ -116,6 +116,35 @@ TEST_F(SharedPtrTest, CopyAssignmentDecreasesOldUseCount) {
   EXPECT_EQ(Counter::TakeNumDtorCalls(), 1U);
 }
 
+TEST_F(SharedPtrTest, SelfCopyAssignment) {
+  auto ptr = allocator_.MakeShared<Counter>(42u);
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_EQ(ptr->value(), 42u);
+  EXPECT_EQ(ptr.use_count(), 1);
+  EXPECT_EQ(Counter::TakeNumCtorCalls(), 1U);
+
+  ptr = *&ptr;
+
+  EXPECT_NE(ptr, nullptr);
+  EXPECT_EQ(ptr->value(), 42u);
+  EXPECT_EQ(ptr.use_count(), 1);
+  EXPECT_EQ(Counter::TakeNumDtorCalls(), 0U);
+}
+
+TEST_F(SharedPtrTest, ConvertingSelfCopyAssignment) {
+  auto ptr = allocator_.MakeShared<Counter>(42u);
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_EQ(ptr->value(), 42u);
+  EXPECT_EQ(ptr.use_count(), 1);
+
+  ptr.operator= <Counter>(ptr);
+
+  EXPECT_NE(ptr, nullptr);
+  EXPECT_EQ(ptr->value(), 42u);
+  EXPECT_EQ(ptr.use_count(), 1);
+  EXPECT_EQ(Counter::TakeNumDtorCalls(), 0U);
+}
+
 TEST_F(SharedPtrTest, MakeSharedForwardsConstructorArguments) {
   Counter counter(6);
   auto ptr = allocator_.MakeShared<CounterSink>(std::move(counter));

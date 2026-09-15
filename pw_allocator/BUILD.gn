@@ -32,6 +32,7 @@ pw_source_set("pw_allocator") {
     "public/pw_allocator/internal/control_block.h",
     "public/pw_allocator/internal/managed_ptr.h",
     "public/pw_allocator/layout.h",
+    "public/pw_allocator/maybe_shared_ptr.h",
     "public/pw_allocator/pool.h",
     "public/pw_allocator/shared_ptr.h",
     "public/pw_allocator/unique_ptr.h",
@@ -763,6 +764,15 @@ pw_test("pmr_allocator_test") {
   sources = [ "pmr_allocator_test.cc" ]
 }
 
+pw_test("maybe_shared_ptr_test") {
+  deps = [
+    ":counter",
+    ":pw_allocator",
+    ":testing",
+  ]
+  sources = [ "maybe_shared_ptr_test.cc" ]
+}
+
 pw_test("shared_ptr_test") {
   deps = [
     ":counter",
@@ -867,6 +877,7 @@ pw_test_group("tests") {
     ":layout_test",
     ":libc_allocator_test",
     ":metrics_test",
+    ":maybe_shared_ptr_test",
     ":null_allocator_test",
     ":pmr_allocator_test",
     ":shared_ptr_test",

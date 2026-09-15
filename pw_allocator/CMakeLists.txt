@@ -24,6 +24,7 @@ pw_add_library(pw_allocator STATIC
     public/pw_allocator/internal/control_block.h
     public/pw_allocator/internal/managed_ptr.h
     public/pw_allocator/layout.h
+    public/pw_allocator/maybe_shared_ptr.h
     public/pw_allocator/pool.h
     public/pw_allocator/shared_ptr.h
     public/pw_allocator/unique_ptr.h
@@ -836,6 +837,18 @@ pw_add_test(pw_allocator.pmr_allocator_test
     pw_allocator.pmr_allocator
     pw_allocator.testing
     pw_unit_test
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.maybe_shared_ptr_test
+  SOURCES
+    maybe_shared_ptr_test.cc
+  PRIVATE_DEPS
+    pw_allocator
+    pw_allocator.counter
+    pw_allocator.testing
   GROUPS
     modules
     pw_allocator

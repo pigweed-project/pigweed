@@ -38,6 +38,7 @@ cc_library(
         "public/pw_allocator/internal/control_block.h",
         "public/pw_allocator/internal/managed_ptr.h",
         "public/pw_allocator/layout.h",
+        "public/pw_allocator/maybe_shared_ptr.h",
         "public/pw_allocator/pool.h",
         "public/pw_allocator/shared_ptr.h",
         "public/pw_allocator/unique_ptr.h",
@@ -819,6 +820,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "maybe_shared_ptr_test",
+    srcs = ["maybe_shared_ptr_test.cc"],
+    deps = [
+        ":counter",
+        ":pw_allocator",
+        ":testing",
+    ],
+)
+
+pw_cc_test(
     name = "shared_ptr_test",
     srcs = ["shared_ptr_test.cc"],
     deps = [
@@ -942,6 +953,7 @@ filegroup(
         "public/pw_allocator/guarded_allocator.h",
         "public/pw_allocator/layout.h",
         "public/pw_allocator/libc_allocator.h",
+        "public/pw_allocator/maybe_shared_ptr.h",
         "public/pw_allocator/metrics.h",
         "public/pw_allocator/null_allocator.h",
         "public/pw_allocator/pmr_allocator.h",

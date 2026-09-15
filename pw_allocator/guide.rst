@@ -162,6 +162,18 @@ In a similar fashion, :cc:`SharedPtr <pw::SharedPtr>` and
 ``std::shared_ptr`` and ``std::weak_ptr``, respectively, and share ownership of
 allocated memory.
 
+:cc:`pw::MaybeSharedPtr` is a smart pointer designed to support sharing objects
+between dynamic and statically allocated code. An instance can either own a
+dynamically allocated object backed by a control block (constructed from a
+:cc:`pw::SharedPtr`), or hold a non-owning borrowed reference to an lvalue
+object constructed via :cc:`pw::Unowned` (or
+:cc:`MaybeSharedPtr::Unowned <pw::MaybeSharedPtr::Unowned>`). When unowned,
+resetting or destroying the pointer clears the reference without destroying the
+object or freeing memory. Callers can query whether the object is dynamically
+owned using :cc:`is_owned <pw::MaybeSharedPtr::is_owned>`.
+:cc:`pw::MaybeSharedPtr` explicitly does not support array types because array
+sizes are stored in the dynamic control block, which unowned instances lack.
+
 Determine an allocation's Layout
 ================================
 Several of the :cc:`pw::Allocator` methods take a parameter of the

@@ -45,6 +45,9 @@ constexpr SharedPtr<To> const_pointer_cast(const SharedPtr<From>& p) noexcept;
 template <typename T>
 class WeakPtr;
 
+template <typename T>
+class MaybeSharedPtr;
+
 namespace async2 {
 class Task;
 }  // namespace async2
@@ -167,6 +170,9 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   ///
   /// This operation releases the value currently stored in `this`.
   constexpr SharedPtr& operator=(const SharedPtr& other) noexcept {
+    if (this == &other) {
+      return *this;
+    }
     operator= <T>(other);
     return *this;
   }
@@ -335,6 +341,9 @@ class SharedPtr final : public ::pw::allocator::internal::ManagedPtr<T> {
   template <typename>
   friend class WeakPtr;
 
+  template <typename>
+  friend class MaybeSharedPtr;
+
   // The following classes manage their own ControlBlocks and need to
   // construct SharedPtr instances to manage their lifetimes.
   friend class async2::Task;
@@ -428,6 +437,9 @@ template <typename U, typename>
 constexpr SharedPtr<T>& SharedPtr<T>::operator=(
     const SharedPtr<U>& other) noexcept {
   CheckArrayTypes<U>();
+  if (static_cast<const void*>(this) == static_cast<const void*>(&other)) {
+    return *this;
+  }
   reset();
   CopyFrom(other);
   if (control_block_ != nullptr) {
@@ -440,6 +452,9 @@ template <typename T>
 template <typename U, typename>
 SharedPtr<T>& SharedPtr<T>::operator=(SharedPtr<U>&& other) noexcept {
   CheckArrayTypes<U>();
+  if (static_cast<const void*>(this) == static_cast<const void*>(&other)) {
+    return *this;
+  }
   reset();
   CopyFrom(other);
   other.Release();
