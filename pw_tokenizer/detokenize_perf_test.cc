@@ -13,12 +13,14 @@
 // the License.
 
 #include <array>
+#include <string_view>
 
 #include "pw_assert/check.h"
 #include "pw_bytes/array.h"
 #include "pw_perf_test/perf_test.h"
 #include "pw_span/span.h"
 #include "pw_tokenizer/detokenize.h"
+#include "pw_tokenizer/internal/decode.h"
 
 namespace pw::tokenizer {
 namespace {
@@ -120,6 +122,36 @@ PW_PERF_TEST(DetokenizeText_TwoMessages,
              DetokenizeText,
              "What the $qqqqqvwB, $Dg8AAQQEdGhlbQ==",
              "What the ~!, Now there are 2 of them!");
+
+void FormatStringFormat(perf_test::State& state,
+                        const char* fmt,
+                        std::string_view args_str) {
+  FormatString format_string(fmt);
+  span<const uint8_t> args(reinterpret_cast<const uint8_t*>(args_str.data()),
+                           args_str.size());
+
+  while (state.KeepRunning()) {
+    volatile auto result = format_string.Format(args);
+  }
+}
+
+PW_PERF_TEST(FormatStringFormat_NoArgs, FormatStringFormat, "Hello", "");
+PW_PERF_TEST(FormatStringFormat_OneArg,
+             FormatStringFormat,
+             "Hello %s",
+             "\5hello");
+PW_PERF_TEST(FormatStringFormat_TwoArgs,
+             FormatStringFormat,
+             "The %d %s",
+             "\6\x0amusketeer");
+PW_PERF_TEST(FormatStringFormat_FourArgs,
+             FormatStringFormat,
+             "A %d B %d C %d D %d",
+             "\2\4\6\x08");
+PW_PERF_TEST(FormatStringFormat_EightArgs,
+             FormatStringFormat,
+             "%d %d %d %d %d %d %d %d",
+             "\2\4\6\x08\x0a\x0c\x0e\x10");
 
 }  // namespace
 }  // namespace pw::tokenizer

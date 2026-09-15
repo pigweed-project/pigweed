@@ -433,6 +433,7 @@ FormatString::FormatString(const char* format) {
 
 DecodedFormatString FormatString::Format(span<const uint8_t> arguments) const {
   std::vector<DecodedArg> results;
+  results.reserve(segments_.size());
   bool skip = false;
 
   for (const auto& segment : segments_) {
