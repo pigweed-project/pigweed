@@ -246,14 +246,18 @@ TEST_F(IsoStreamServerTest, StreamNotEstablishedUnknownCommand) {
   on_established_events_.pop();
 }
 
-TEST_F(IsoStreamServerTest, SetupDataPathInvalidDirection) {
+TEST_F(IsoStreamServerTest, SetupDataPathInputDirection) {
+  server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
+                                         kCisParameters);
+  RunLoopUntilIdle();
   fuchsia::bluetooth::CodecAttributes codec_attributes = BuildCodecAttributes();
+  fake_iso_stream()->SetSetupDataPathReturnStatus(
+      bt::iso::IsoStream::SetupDataPathError::kSuccess);
   std::optional<zx_status_t> status;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::INPUT,
                     std::move(codec_attributes),
                     &status);
-  EXPECT_TRUE(status.has_value());
-  EXPECT_EQ(*status, ZX_ERR_NOT_SUPPORTED);
+  EXPECT_FALSE(status.has_value());
 }
 
 TEST_F(IsoStreamServerTest, SetupDataPathBeforeCisEstablished) {

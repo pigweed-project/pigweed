@@ -92,15 +92,6 @@ void IsoStreamServer::SetupDataPath(
          "fidl",
          "Request received to set up data path (direction: %s)",
          direction_as_str);
-  if (direction != pw::bluetooth::emboss::DataPathDirection::OUTPUT) {
-    // We only support Controller => Host at the moment
-    bt_log(WARN,
-           "fidl",
-           "Attempt to set up data path with unsupported direction: %s",
-           direction_as_str);
-    fidl_cb(fpromise::error(ZX_ERR_NOT_SUPPORTED));
-    return;
-  }
 
   bt::StaticPacket<pw::bluetooth::emboss::CodecIdWriter> codec_id =
       fidl_helpers::CodecIdFromFidl(parameters.codec_attributes().codec_id());
