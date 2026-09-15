@@ -246,7 +246,7 @@ export class Root extends LitElement {
         <div class="status-line status-error">
           <span>❌</span>
           <span style="color: red">
-            <a href="https://pigweed.dev/pw_ide/guide/" target="_blank"
+            <a href="https://pigweed.dev/pw_ide/" target="_blank"
               >Configure compile commands in your project</a
             >
           </span>
@@ -283,9 +283,7 @@ export class Root extends LitElement {
                     </p>
                     <p>
                       See the
-                      <a
-                        href="https://pigweed.dev/pw_ide/guide/"
-                        target="_blank"
+                      <a href="https://pigweed.dev/pw_ide/" target="_blank"
                         >Pigweed IDE Guide</a
                       >
                       for more details.
