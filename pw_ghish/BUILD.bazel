@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
@@ -70,6 +71,38 @@ go_binary(
     deps = [
         ":pw_ghish",
     ],
+)
+
+# Stages the gh-ish binary and its CIPD package definition side-by-side in
+# bazel-bin/pw_ghish/cipd/. rules_go emits the binary at gh-ish_/gh-ish, so the
+# files have to be copied into a common directory for the relative `file:`
+# path in cipd.yaml to resolve.
+copy_file(
+    name = "cipd_gh_ish",
+    src = ":gh-ish",
+    out = "cipd/gh-ish",
+    allow_symlink = False,
+    is_executable = True,
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+copy_file(
+    name = "cipd_yaml",
+    src = "cipd.yaml",
+    out = "cipd/cipd.yaml",
+    allow_symlink = False,
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+# Build this to produce a directory ready for
+# `cipd create -pkg-def bazel-bin/pw_ghish/cipd/cipd.yaml`.
+filegroup(
+    name = "cipd_package",
+    srcs = [
+        ":cipd_gh_ish",
+        ":cipd_yaml",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
 )
 
 go_test(
