@@ -19,25 +19,33 @@ large-scale changes (LSCs) and restrict the search by default to core
 team members listed in the root OWNERS file.
 """
 
-import subprocess
+import argparse
 import os
+from pathlib import Path
 import re
 import sys
-import argparse
-from typing import NamedTuple
+from pw_fortifier.code_snippet import CodeSnippet, find_location
+from pw_fortifier.git_utils import ReadOnlyGitWorkspace
 
 
 def parse_owners_file(path: str | os.PathLike[str]) -> list[str]:
-    """Parses an OWNERS file and returns the list of emails found."""
+    """Parses an OWNERS file and returns the list of emails found.
+
+    Args:
+        path: Path to the OWNERS file.
+
+    Returns:
+        List of email address strings parsed from the file.
+    """
     members = []
-    with open(path, "r") as f:
+    with open(path, 'r') as f:
         for line in f:
             line = line.strip()
             if (
                 not line
-                or line.startswith("#")
-                or line.startswith("include")
-                or line.startswith("per-file")
+                or line.startswith('#')
+                or line.startswith('include')
+                or line.startswith('per-file')
             ):
                 continue
 
@@ -49,73 +57,74 @@ def parse_owners_file(path: str | os.PathLike[str]) -> list[str]:
     return members
 
 
-def run_git(args: list[str], cwd: str | os.PathLike[str]) -> list[str]:
-    """Runs a git command in the specified directory.
-
-    Args:
-        args: Arguments to the git command, starting with the subcommand.
-        cwd: Current working directory for the command.
-
-    Returns:
-        A list of stripped output lines, or an empty list on error.
-    """
-    try:
-        cmd = ["git"] + args
-        result = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, check=True
-        )
-        return [line.strip() for line in result.stdout.splitlines()]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
-
-
 class CoreOwnerFinder:
-    """Finds the core owner for a set of code snippets."""
+    """Finds the core assignee for a set of code snippets."""
 
-    class CodeSnippet(NamedTuple):
-        """Represents a file or range of lines in a file containing code."""
-
-        file: str | os.PathLike[str]
-        lines: tuple[int, int] | None
-
-    def __init__(self, root: str | os.PathLike[str] = "."):
-        self.root = os.path.abspath(root)
+    def __init__(self, repo: ReadOnlyGitWorkspace):
+        self.repo = repo
+        self.root = str(repo.project_dir)
         self.owners_path = os.path.join(self.root, 'OWNERS')
-        self._snippets: list[CoreOwnerFinder.CodeSnippet] = []
+        self._snippets: list[CodeSnippet] = []
 
     def core_members(self) -> set[str]:
-        """Gets core team members from the OWNERS file in the repo root."""
+        """Gets core team members from the OWNERS file in the repo root.
+
+        Returns:
+            Set of email addresses of core team members.
+        """
         return set(parse_owners_file(self.owners_path))
 
     def add(
-        self, file: str | os.PathLike[str], lines: tuple[int, int] | None = None
+        self,
+        file: str | os.PathLike[str] | CodeSnippet,
+        lines: tuple[int, int] | None = None,
     ) -> None:
-        """Adds a file or file range to be examined."""
-        self._snippets.append(self.CodeSnippet(file=file, lines=lines))
+        """Adds a file or file range to be examined.
+
+        Args:
+            file: Path to the file or a CodeSnippet instance.
+            lines: Optional inclusive line range tuple (start, end).
+        """
+        if isinstance(file, CodeSnippet):
+            self._snippets.append(file)
+        else:
+            self._snippets.append(CodeSnippet(file=file, lines=lines))
+
+    def _abs_path(self, path: str | os.PathLike[str]) -> str:
+        """Resolves path to absolute relative to repo root."""
+        if os.path.isabs(path):
+            return os.path.abspath(path)
+        return os.path.abspath(os.path.join(self.root, path))
 
     def find(self, any_owner: bool = False) -> str | None:
-        """Finds the core team member who most modified the added snippets."""
+        """Finds the core team member who most modified the added snippets.
+
+        Args:
+            any_owner: Whether to allow any author or only core team members.
+
+        Returns:
+            The chosen assignee email address, or None.
+        """
         cores = self.core_members() if not any_owner else None
         author_counts: dict[str, int] = {}
 
         for snippet in self._snippets:
-            try:
-                abs_file = os.path.abspath(snippet.file)
-                rel_file = os.path.relpath(abs_file, self.root)
-            except ValueError:
-                continue
+            abs_file = Path(self._abs_path(snippet.file)).resolve()
+            root_path = Path(self.root).resolve()
+            if not abs_file.is_relative_to(root_path):
+                raise ValueError(
+                    f"File '{snippet.file}' is outside repository '{self.root}'"
+                )
+            rel_file = str(abs_file.relative_to(root_path))
 
             revision_line = self._find_nonlsc_revision(rel_file)
             if not revision_line:
                 continue
             commit_hash = revision_line.split()[0]
 
-            args = ["blame", "-e"]
-            if snippet.lines:
-                args += ["-L", f"{snippet.lines[0]},{snippet.lines[1]}"]
-            args += [commit_hash, "--", rel_file]
-
-            blame_lines = run_git(args, cwd=self.root)
+            blame_lines = self.repo.blame(
+                file=rel_file, commit=commit_hash, lines=snippet.lines
+            )
 
             for line in blame_lines:
                 author = _extract_author(line)
@@ -129,17 +138,17 @@ class CoreOwnerFinder:
 
         # Fallback to local OWNERS files
         for snippet in self._snippets:
-            owner = self._find_local_owner(snippet.file, cores)
-            if owner:
-                return owner
+            assignee = self._find_local_owner(snippet.file, cores)
+            if assignee:
+                return assignee
 
         return None
 
     def _find_local_owner(
         self, file: str | os.PathLike[str], cores: set[str] | None
     ) -> str | None:
-        """Searches for an owner in local OWNERS files up to self.root."""
-        abs_file = os.path.abspath(file)
+        """Searches for an assignee in local OWNERS files up to self.root."""
+        abs_file = self._abs_path(file)
         directory = os.path.dirname(abs_file)
         repo_root_prefix = self.root + os.sep
 
@@ -186,17 +195,35 @@ class CoreOwnerFinder:
 
     def _revisions(self, rel_target_file: str) -> list[str]:
         """Runs git log to get up to 20 revisions for a file."""
-        return run_git(
-            ["log", "--follow", "--oneline", "-n", "20", "--", rel_target_file],
-            cwd=self.root,
-        )
+        return self.repo.log_revisions(file=rel_target_file, limit=20)
 
     def _files_changed(self, commit_hash: str) -> list[str]:
         """Runs git show to get files changed in a commit."""
-        return run_git(
-            ["show", "--name-only", "--pretty=format:", commit_hash],
-            cwd=self.root,
-        )
+        return self.repo.show_names(commit=commit_hash)
+
+
+def find_owners(
+    root_path: str | os.PathLike[str],
+    file_path: str | os.PathLike[str],
+    *args: str | re.Pattern,
+) -> str | None:
+    """Finds assignee of first line containing args or matching regexes.
+
+    Args:
+        root_path: Path to the repository root.
+        file_path: Path to the target file relative to root.
+        *args: Substrings or Patterns to search for in lines.
+
+    Returns:
+        Assignee email string or None if not found.
+    """
+    loc = find_location(root_path, file_path, *args)
+    if loc.lines:
+        repo = ReadOnlyGitWorkspace(project_dir=root_path)
+        finder = CoreOwnerFinder(repo=repo)
+        finder.add(os.path.join(root_path, loc.file), loc.lines)
+        return finder.find()
+    return None
 
 
 def _extract_author(blame_line: str) -> str | None:
@@ -216,9 +243,9 @@ def _extract_author(blame_line: str) -> str | None:
 
 def _parse_snippet_arg(arg: str) -> tuple[str, tuple[int, int] | None]:
     """Parses a command line argument of the form file[:start-end]."""
-    if ":" in arg:
-        path, range_str = arg.rsplit(":", 1)
-        match = re.match(r"^(\d+)-(\d+)$", range_str)
+    if ':' in arg:
+        path, range_str = arg.rsplit(':', 1)
+        match = re.match(r'^(\d+)-(\d+)$', range_str)
         if match:
             start = int(match.group(1))
             end = int(match.group(2))
@@ -228,9 +255,16 @@ def _parse_snippet_arg(arg: str) -> tuple[str, tuple[int, int] | None]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Finds core owners for code snippets."""
+    """Finds core owners for code snippets.
+
+    Args:
+        argv: Optional list of command-line arguments.
+
+    Returns:
+        Exit code (0 on success).
+    """
     parser = argparse.ArgumentParser(
-        description="Finds core owners for code snippets in the repository.",
+        description='Finds core owners for code snippets in the repository.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Arguments should be of the form '<file>[:start-end]', where:
@@ -243,34 +277,39 @@ Examples:
 """,
     )
     parser.add_argument(
-        "snippets",
-        nargs="+",
+        'snippets',
+        nargs='+',
         help="Code snippets to examine, in the form 'file[:start-end]'",
     )
     parser.add_argument(
-        "-a",
-        "--any",
-        action="store_true",
-        help="Allow any owner, not just core team members",
+        '-a',
+        '--any',
+        action='store_true',
+        help='Allow any assignee, not just core team members',
+    )
+    default_root = os.environ.get(
+        'BUILD_WORKSPACE_DIRECTORY',
+        os.environ.get('BUILD_WORKING_DIRECTORY', '.'),
     )
     parser.add_argument(
-        "-r",
-        "--root",
-        default=".",
-        help="Root directory of the repository (defaults to current directory)",
+        '-r',
+        '--root',
+        default=default_root,
+        help='Root directory of the repository (defaults to current directory)',
     )
 
     args = parser.parse_args(argv)
 
+    repo = ReadOnlyGitWorkspace(project_dir=args.root)
     for arg in args.snippets:
         file, lines = _parse_snippet_arg(arg)
-        finder = CoreOwnerFinder(root=args.root)
+        finder = CoreOwnerFinder(repo=repo)
         finder.add(file, lines)
-        owner = finder.find(any_owner=args.any)
-        print(f"{arg}: {owner}")
+        assignee = finder.find(any_owner=args.any)
+        print(f'{arg}: {assignee}')
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())

@@ -22,7 +22,17 @@ licenses(["notice"])
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "api.rst",
+        "design.rst",
+        "doc_resources/issue_tracker.rst",
+        "doc_resources/scanner_cli.rst",
+        "doc_resources/testing_tips.rst",
         "docs.rst",
+        "guides/defect_impl.rst",
+        "guides/defect_user.rst",
+        "guides/freshness_impl.rst",
+        "guides/freshness_user.rst",
+        "other_utils.rst",
     ],
     prefix = "pw_fortifier/",
     target_compatible_with = incompatible_with_mcu(),

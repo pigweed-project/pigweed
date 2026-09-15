@@ -12,3 +12,9 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 """pw_fortifier package."""
+
+from pkgutil import extend_path  # type: ignore
+
+# Allows importing modules from both the source tree and the generated output
+# tree under a single pw_fortifier namespace.
+__path__ = extend_path(__path__, __name__)  # type: ignore

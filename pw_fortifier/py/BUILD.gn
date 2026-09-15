@@ -16,48 +16,227 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/python.gni")
 
-pw_python_package("py") {
+# ============================================================================
+# Binaries / Scripts
+# ============================================================================
+
+pw_python_script("find_core_owners") {
+  sources = [ "pw_fortifier/find_core_owners.py" ]
+  python_deps = [ ":find_core_owners_lib" ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_script("demo_freshness_scanner") {
+  sources = [ "demo_freshness_scanner.py" ]
+  python_deps = [ ":demo_freshness_scanner_lib" ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_script("demo_issue_tracker") {
+  sources = [ "pw_fortifier/demo_issue_tracker.py" ]
+  python_deps = [ ":demo_freshness_scanner_lib" ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+# ============================================================================
+# Libraries
+# ============================================================================
+
+pw_python_package("find_core_owners_lib") {
   generate_setup = {
     metadata = {
-      name = "pw_fortifier"
+      name = "find_core_owners_lib"
       version = "0.0.1"
     }
   }
   sources = [
     "pw_fortifier/__init__.py",
-    "pw_fortifier/bazel_cipd_scanner.py",
-    "pw_fortifier/bazel_dep_scanner.py",
-    "pw_fortifier/bazel_maven_scanner.py",
-    "pw_fortifier/bazel_repo_scanner.py",
-    "pw_fortifier/bazel_scanner.py",
-    "pw_fortifier/cargo_scanner.py",
-    "pw_fortifier/cipd_scanner.py",
-    "pw_fortifier/cipd_setup_scanner.py",
-    "pw_fortifier/copybara_scanner.py",
+    "pw_fortifier/code_snippet.py",
     "pw_fortifier/find_core_owners.py",
-    "pw_fortifier/freshness_scan.py",
-    "pw_fortifier/git_repo_scanner.py",
-    "pw_fortifier/go_mod_scanner.py",
-    "pw_fortifier/npm_scanner.py",
-    "pw_fortifier/package_scanner.py",
-    "pw_fortifier/pip_scanner.py",
+    "pw_fortifier/git_utils.py",
   ]
   tests = [
-    "bazel_cipd_scanner_test.py",
-    "bazel_dep_scanner_test.py",
-    "bazel_maven_scanner_test.py",
-    "cargo_scanner_test.py",
-    "cipd_scanner_test.py",
-    "cipd_setup_scanner_test.py",
-    "copybara_scanner_test.py",
     "find_core_owners_test.py",
-    "freshness_scan_test.py",
-    "go_mod_scanner_test.py",
-    "npm_scanner_test.py",
-    "pip_scanner_test.py",
-    "package_scanner_test.py",
+    "git_utils_test.py",
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_package("freshness_scan_lib") {
+  generate_setup = {
+    metadata = {
+      name = "freshness_scan_lib"
+      version = "0.0.1"
+    }
+  }
+  sources = [
+    "pw_fortifier/__init__.py",
+    "pw_fortifier/bazel_cipd.py",
+    "pw_fortifier/bazel_dep.py",
+    "pw_fortifier/bazel_maven.py",
+    "pw_fortifier/cargo.py",
+    "pw_fortifier/cipd_setup.py",
+    "pw_fortifier/cipd_utils.py",
+    "pw_fortifier/copybara.py",
+    "pw_fortifier/freshness_collector.py",
+    "pw_fortifier/freshness_deduplicator.py",
+    "pw_fortifier/freshness_result.py",
+    "pw_fortifier/freshness_result_tracker.py",
+    "pw_fortifier/freshness_scanner.py",
+    "pw_fortifier/freshness_triager.py",
+    "pw_fortifier/go_mod.py",
+    "pw_fortifier/npm.py",
+    "pw_fortifier/package_analyzer.py",
+    "pw_fortifier/package_updater.py",
+    "pw_fortifier/pip.py",
+    "pw_fortifier/roll_generator.py",
+    "pw_fortifier/semver.py",
+  ]
+  tests = [
+    "bazel_cipd_test.py",
+    "bazel_dep_test.py",
+    "bazel_maven_test.py",
+    "cargo_test.py",
+    "cipd_setup_test.py",
+    "cipd_utils_test.py",
+    "copybara_test.py",
+    "freshness_deduplicator_test.py",
+    "freshness_result_test.py",
+    "freshness_result_tracker_test.py",
+    "freshness_scanner_test.py",
+    "freshness_triager_test.py",
+    "go_mod_test.py",
+    "npm_test.py",
+    "package_analyzer_test.py",
+    "pip_test.py",
+    "roll_generator_test.py",
+    "semver_test.py",
+  ]
+  python_deps = [
+    ":find_core_owners_lib",
+    ":pipeline_lib",
+  ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_package("security_scan_lib") {
+  generate_setup = {
+    metadata = {
+      name = "security_scan_lib"
+      version = "0.0.1"
+    }
+  }
+  sources = [
+    "pw_fortifier/__init__.py",
+    "pw_fortifier/code_analyzer.py",
+    "pw_fortifier/critic.py",
+    "pw_fortifier/defect.py",
+    "pw_fortifier/defect_scanner.py",
+    "pw_fortifier/defect_tracker.py",
+    "pw_fortifier/poc_and_fix_generator.py",
+  ]
+  tests = [
+    "code_analyzer_test.py",
+    "critic_test.py",
+    "defect_scanner_test.py",
+    "defect_test.py",
+    "defect_tracker_test.py",
+    "poc_and_fix_generator_test.py",
+  ]
+  python_deps = [
+    ":find_core_owners_lib",
+    ":pipeline_lib",
+  ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_package("pipeline_lib") {
+  generate_setup = {
+    metadata = {
+      name = "pipeline_lib"
+      version = "0.0.1"
+    }
+  }
+  sources = [
+    "pw_fortifier/__init__.py",
+    "pw_fortifier/async_path.py",
+    "pw_fortifier/bazelisk_utils.py",
+    "pw_fortifier/build_utils.py",
+    "pw_fortifier/code_editor.py",
+    "pw_fortifier/collector.py",
+    "pw_fortifier/deduplicator.py",
+    "pw_fortifier/emitter.py",
+    "pw_fortifier/issue.py",
+    "pw_fortifier/issue_tracker.py",
+    "pw_fortifier/path_enumerator.py",
+    "pw_fortifier/pipeline_stage.py",
+    "pw_fortifier/scanner.py",
+    "pw_fortifier/triager.py",
+  ]
+  tests = [
+    "bazelisk_utils_test.py",
+    "build_utils_test.py",
+    "code_editor_test.py",
+    "collector_test.py",
+    "deduplicator_test.py",
+    "issue_test.py",
+    "issue_tracker_test.py",
+    "path_enumerator_test.py",
+    "pipeline_stage_test.py",
+    "triager_test.py",
+  ]
+  python_deps = [ ":find_core_owners_lib" ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+pw_python_package("demo_freshness_scanner_lib") {
+  generate_setup = {
+    metadata = {
+      name = "demo_freshness_scanner_lib"
+      version = "0.0.1"
+    }
+  }
+  sources = [
+    "pw_fortifier/__init__.py",
+    "pw_fortifier/demo_issue_tracker.py",
+  ]
+  tests = [ "demo_issue_tracker_test.py" ]
+  python_deps = [
+    ":freshness_scan_lib",
+    ":pipeline_lib",
+  ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}
+
+# ==============================================================================
+# Groups
+# ==============================================================================
+
+pw_python_group("py") {
+  python_deps = [
+    ":demo_freshness_scanner",
+    ":demo_freshness_scanner_lib",
+    ":demo_issue_tracker",
+    ":find_core_owners",
+    ":find_core_owners_lib",
+    ":freshness_scan_lib",
+    ":pipeline_lib",
+    ":security_scan_lib",
+  ]
 }

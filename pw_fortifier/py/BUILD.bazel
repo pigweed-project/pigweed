@@ -18,31 +18,296 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
+# ==============================================================================
+# Binaries
+# ==============================================================================
+
+pw_py_binary(
+    name = "find_core_owners",
+    srcs = ["pw_fortifier/find_core_owners.py"],
+    deps = [":find_core_owners_lib"],
+)
+
+pw_py_binary(
+    name = "demo_freshness_scanner",
+    srcs = ["demo_freshness_scanner.py"],
+    deps = [
+        ":demo_freshness_scanner_lib",
+    ],
+)
+
+pw_py_binary(
+    name = "demo_issue_tracker",
+    srcs = ["pw_fortifier/demo_issue_tracker.py"],
+    deps = [
+        ":demo_freshness_scanner_lib",
+    ],
+)
+
+# ==============================================================================
+# Libraries
+# ==============================================================================
+
 pw_py_library(
     name = "pw_fortifier",
     srcs = [
         "pw_fortifier/__init__.py",
-        "pw_fortifier/bazel_cipd_scanner.py",
-        "pw_fortifier/bazel_dep_scanner.py",
-        "pw_fortifier/bazel_maven_scanner.py",
-        "pw_fortifier/bazel_repo_scanner.py",
-        "pw_fortifier/bazel_scanner.py",
-        "pw_fortifier/cargo_scanner.py",
-        "pw_fortifier/cipd_scanner.py",
-        "pw_fortifier/cipd_setup_scanner.py",
-        "pw_fortifier/copybara_scanner.py",
-        "pw_fortifier/find_core_owners.py",
-        "pw_fortifier/freshness_scan.py",
-        "pw_fortifier/git_repo_scanner.py",
-        "pw_fortifier/go_mod_scanner.py",
-        "pw_fortifier/npm_scanner.py",
-        "pw_fortifier/package_scanner.py",
-        "pw_fortifier/pip_scanner.py",
     ],
     imports = ["."],
     deps = [
+        ":demo_freshness_scanner_lib",
+        ":find_core_owners_lib",
+        ":freshness_scan_lib",
+        ":pipeline_lib",
+        ":security_scan_lib",
+    ],
+)
+
+pw_py_library(
+    name = "demo_freshness_scanner_lib",
+    srcs = [
+        "pw_fortifier/__init__.py",
+        "pw_fortifier/demo_issue_tracker.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":freshness_scan_lib",
+        ":pipeline_lib",
+    ],
+)
+
+pw_py_library(
+    name = "find_core_owners_lib",
+    srcs = [
+        "pw_fortifier/__init__.py",
+        "pw_fortifier/code_snippet.py",
+        "pw_fortifier/find_core_owners.py",
+        "pw_fortifier/git_utils.py",
+    ],
+    imports = ["."],
+)
+
+pw_py_library(
+    name = "freshness_scan_lib",
+    srcs = [
+        "pw_fortifier/__init__.py",
+        "pw_fortifier/bazel_cipd.py",
+        "pw_fortifier/bazel_dep.py",
+        "pw_fortifier/bazel_maven.py",
+        "pw_fortifier/cargo.py",
+        "pw_fortifier/cipd_setup.py",
+        "pw_fortifier/cipd_utils.py",
+        "pw_fortifier/copybara.py",
+        "pw_fortifier/freshness_collector.py",
+        "pw_fortifier/freshness_deduplicator.py",
+        "pw_fortifier/freshness_result.py",
+        "pw_fortifier/freshness_result_tracker.py",
+        "pw_fortifier/freshness_scanner.py",
+        "pw_fortifier/freshness_triager.py",
+        "pw_fortifier/go_mod.py",
+        "pw_fortifier/npm.py",
+        "pw_fortifier/package_analyzer.py",
+        "pw_fortifier/package_updater.py",
+        "pw_fortifier/pip.py",
+        "pw_fortifier/roll_generator.py",
+        "pw_fortifier/semver.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":find_core_owners_lib",
+        ":pipeline_lib",
         "@pigweed_python_packages//packaging",
         "@pigweed_python_packages//requests",
+    ],
+)
+
+pw_py_library(
+    name = "security_scan_lib",
+    srcs = [
+        "pw_fortifier/__init__.py",
+        "pw_fortifier/code_analyzer.py",
+        "pw_fortifier/critic.py",
+        "pw_fortifier/defect.py",
+        "pw_fortifier/defect_scanner.py",
+        "pw_fortifier/defect_tracker.py",
+        "pw_fortifier/poc_and_fix_generator.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":find_core_owners_lib",
+        ":pipeline_lib",
+    ],
+)
+
+pw_py_library(
+    name = "pipeline_lib",
+    srcs = [
+        "pw_fortifier/__init__.py",
+        "pw_fortifier/async_path.py",
+        "pw_fortifier/bazelisk_utils.py",
+        "pw_fortifier/build_utils.py",
+        "pw_fortifier/code_editor.py",
+        "pw_fortifier/collector.py",
+        "pw_fortifier/deduplicator.py",
+        "pw_fortifier/emitter.py",
+        "pw_fortifier/issue.py",
+        "pw_fortifier/issue_tracker.py",
+        "pw_fortifier/path_enumerator.py",
+        "pw_fortifier/pipeline_stage.py",
+        "pw_fortifier/scanner.py",
+        "pw_fortifier/triager.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":find_core_owners_lib",
+        "@pigweed_python_packages//pathspec",
+        "@pigweed_python_packages//requests",
+    ],
+)
+
+# ==============================================================================
+# Tests
+# ==============================================================================
+
+pw_py_test(
+    name = "code_editor_test",
+    size = "small",
+    srcs = [
+        "code_editor_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "code_analyzer_test",
+    size = "small",
+    srcs = [
+        "code_analyzer_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "bazel_cipd_test",
+    size = "small",
+    srcs = ["bazel_cipd_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "bazel_dep_test",
+    size = "small",
+    srcs = ["bazel_dep_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "bazel_maven_test",
+    size = "small",
+    srcs = ["bazel_maven_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+        "@pigweed_python_packages//requests",
+    ],
+)
+
+pw_py_test(
+    name = "bazelisk_utils_test",
+    size = "small",
+    srcs = ["bazelisk_utils_test.py"],
+    deps = [":pipeline_lib"],
+)
+
+pw_py_test(
+    name = "build_utils_test",
+    size = "small",
+    srcs = ["build_utils_test.py"],
+    deps = [":pipeline_lib"],
+)
+
+pw_py_test(
+    name = "cargo_test",
+    size = "small",
+    srcs = ["cargo_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "cipd_setup_test",
+    size = "small",
+    srcs = ["cipd_setup_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "cipd_utils_test",
+    size = "small",
+    srcs = ["cipd_utils_test.py"],
+    deps = [":freshness_scan_lib"],
+)
+
+pw_py_test(
+    name = "collector_test",
+    size = "small",
+    srcs = [
+        "collector_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "copybara_test",
+    size = "small",
+    srcs = ["copybara_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "critic_test",
+    size = "small",
+    srcs = [
+        "critic_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "deduplicator_test",
+    size = "small",
+    srcs = [
+        "deduplicator_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
     ],
 )
 
@@ -53,97 +318,259 @@ pw_py_test(
         "find_core_owners_test.py",
     ],
     deps = [
-        ":pw_fortifier",
+        ":find_core_owners_lib",
     ],
 )
 
-pw_py_binary(
-    name = "freshness_scan",
-    srcs = ["pw_fortifier/freshness_scan.py"],
-    tags = ["nomypy"],
-    deps = [":pw_fortifier"],
+pw_py_test(
+    name = "git_utils_test",
+    size = "small",
+    srcs = [
+        "git_utils_test.py",
+    ],
+    deps = [
+        ":find_core_owners_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "package_scanner_test",
+    name = "go_mod_test",
     size = "small",
-    srcs = ["package_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["go_mod_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "freshness_scan_test",
+    name = "npm_test",
     size = "small",
-    srcs = ["freshness_scan_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["npm_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "cargo_scanner_test",
+    name = "defect_scanner_test",
     size = "small",
-    srcs = ["cargo_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "defect_scanner_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "go_mod_scanner_test",
+    name = "freshness_scanner_test",
     size = "small",
-    srcs = ["go_mod_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["freshness_scanner_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "npm_scanner_test",
+    name = "package_analyzer_test",
     size = "small",
-    srcs = ["npm_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["package_analyzer_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "pip_scanner_test",
+    name = "semver_test",
     size = "small",
-    srcs = ["pip_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["semver_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+    ],
 )
 
 pw_py_test(
-    name = "bazel_maven_scanner_test",
+    name = "path_enumerator_test",
     size = "small",
-    srcs = ["bazel_maven_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "path_enumerator_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "bazel_dep_scanner_test",
+    name = "pipeline_stage_test",
     size = "small",
-    srcs = ["bazel_dep_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "pipeline_stage_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "copybara_scanner_test",
+    name = "pip_test",
     size = "small",
-    srcs = ["copybara_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = ["pip_test.py"],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//packaging",
+        "@pigweed_python_packages//pyfakefs",
+        "@pigweed_python_packages//requests",
+    ],
 )
 
 pw_py_test(
-    name = "cipd_scanner_test",
+    name = "issue_test",
     size = "small",
-    srcs = ["cipd_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "issue_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "bazel_cipd_scanner_test",
+    name = "issue_tracker_test",
     size = "small",
-    srcs = ["bazel_cipd_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "issue_tracker_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
 
 pw_py_test(
-    name = "cipd_setup_scanner_test",
+    name = "demo_issue_tracker_test",
     size = "small",
-    srcs = ["cipd_setup_scanner_test.py"],
-    deps = [":pw_fortifier"],
+    srcs = [
+        "demo_issue_tracker_test.py",
+    ],
+    deps = [
+        ":demo_freshness_scanner_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "defect_test",
+    size = "small",
+    srcs = [
+        "defect_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "defect_tracker_test",
+    size = "small",
+    srcs = [
+        "defect_tracker_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "freshness_deduplicator_test",
+    size = "small",
+    srcs = [
+        "freshness_deduplicator_test.py",
+    ],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "freshness_result_test",
+    size = "small",
+    srcs = [
+        "freshness_result_test.py",
+    ],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "freshness_result_tracker_test",
+    size = "small",
+    srcs = [
+        "freshness_result_tracker_test.py",
+    ],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "freshness_triager_test",
+    size = "small",
+    srcs = [
+        "freshness_triager_test.py",
+    ],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "triager_test",
+    size = "small",
+    srcs = [
+        "triager_test.py",
+    ],
+    deps = [
+        ":pipeline_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "roll_generator_test",
+    size = "small",
+    srcs = [
+        "roll_generator_test.py",
+    ],
+    deps = [
+        ":freshness_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
+)
+
+pw_py_test(
+    name = "poc_and_fix_generator_test",
+    size = "small",
+    srcs = [
+        "poc_and_fix_generator_test.py",
+    ],
+    deps = [
+        ":security_scan_lib",
+        "@pigweed_python_packages//pyfakefs",
+    ],
 )
