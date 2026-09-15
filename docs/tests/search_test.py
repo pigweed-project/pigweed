@@ -404,6 +404,59 @@ class SearchTest(unittest.TestCase):
             f"First search result excerpt should not contain 'No Matches', got: {excerpt_text}",
         )
 
+    def test_search_results_exclude_rustdoc_source_links(self):
+        """Verifies that searching for 'pw_time' returns results and none of the
+        .pf-result-link[href] values match the pattern */rustdoc/src/*."""
+        chromium_bin = get_chromium_executable()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+            page.goto(
+                self.server.url_for("index.html"),
+                wait_until="networkidle",
+            )
+
+            # Open Pagefind search modal
+            search_btn = page.locator(
+                "#pw-search-desktop button, .pf-trigger-btn, #pw-search-desktop"
+            ).first
+            search_btn.wait_for(state="attached", timeout=5000)
+            search_btn.click(force=True)
+
+            # Locate search input inside the modal and submit query
+            modal = page.locator("pagefind-modal")
+            search_input = modal.locator("input").first
+            search_input.wait_for(state="visible", timeout=10000)
+            search_input.fill("pw_time")
+
+            # Wait for search result links to appear
+            result_links = modal.locator(".pf-result-link")
+            result_links.first.wait_for(state="visible", timeout=20000)
+
+            hrefs = [link.get_attribute("href") for link in result_links.all()]
+            self.assertGreater(
+                len(hrefs),
+                0,
+                "Expected at least one .pf-result-link for query 'pw_time'",
+            )
+
+            for href in hrefs:
+                self.assertIsNotNone(href)
+                self.assertNotIn(
+                    "/rustdoc/src/",
+                    href,
+                    f"Search result link href should not match */rustdoc/src/*, got: {href}",
+                )
+
+            browser.close()
+
 
 if __name__ == "__main__":
     unittest.main()

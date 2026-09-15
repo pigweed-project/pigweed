@@ -50,6 +50,7 @@ _RUSTDOC_EXCLUDE_SELECTORS = [
     '.main-heading .sub-heading .src',  # Link to source code
     '.skip-main-content',  # "Skip to main content" a11y feature
     '#copy-path',  # Item path copy button
+    'body.rustdoc.src',  # Source pages
 ]
 
 _EXCLUDE_SELECTORS = (
