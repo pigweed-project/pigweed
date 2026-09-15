@@ -229,8 +229,8 @@ rust.toolchain(versions = [])
 pw_rust = use_extension("//pw_toolchain/rust:extensions.bzl", "pw_rust")
 
 # ROLL: Warning: this is automatically updated by
-# ROLL: https://cr-buildbucket.appspot.com/build/8671747175785928833
-RUST_VERSION = "git_revisions:93c9086fdd5b80d286480a19ac047746ecc5fa1f,5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a"
+# ROLL: https://cr-buildbucket.appspot.com/build/8670577270764980097
+RUST_VERSION = "git_revisions:526c36b4c477994b7905ec6a084d6150e49076f5,5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a"
 
 # TODO(b/488384121): Setup a roller
 # ROLL: Warning: this is automatically updated by
