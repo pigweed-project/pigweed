@@ -22,6 +22,7 @@
  */
 
 ENTRY(_start)
+ASSERT(DEFINED(_start), "Application entry point _start is not defined; did you forget #[entry]?")
 
 MEMORY
 {

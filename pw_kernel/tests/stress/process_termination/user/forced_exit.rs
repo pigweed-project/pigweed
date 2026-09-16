@@ -15,9 +15,9 @@
 #![no_std]
 #![no_main]
 
-use userspace::process_entry;
+use userspace::entry;
 
-#[process_entry("extra")]
+#[entry]
 fn main() {
     test_logger::step_info!("I am the extra process. Spinning...");
     loop {
