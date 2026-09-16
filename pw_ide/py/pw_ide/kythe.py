@@ -77,42 +77,31 @@ get_git_commit = get_git_revision
 def find_compilation_databases(workspace: Path) -> list[Path]:
     """Finds all compile_commands.json files in the workspace."""
     results: list[Path] = []
-    root_cc = workspace / "compile_commands.json"
-    if root_cc.exists():
-        results.append(root_cc.resolve())
-    for p in workspace.glob(".compile_commands/**/compile_commands.json"):
-        resolved = p.resolve()
-        if resolved not in results:
-            results.append(resolved)
-    if not results:
-        for p in workspace.rglob("compile_commands.json"):
-            # Ignore test fixture and build output compilation databases
-            if "test" not in p.parts and "out" not in p.parts:
-                resolved = p.resolve()
-                if resolved not in results:
-                    results.append(resolved)
+    for p in workspace.rglob("compile_commands.json"):
+        rel_parts = p.relative_to(workspace).parts
+        # Ignore test fixture and hidden directories (except .compile_commands)
+        if not any(part in ("test", "tests") for part in rel_parts) and not any(
+            part.startswith(".") and part != ".compile_commands"
+            for part in rel_parts
+        ):
+            resolved = p.resolve()
+            if resolved not in results:
+                results.append(resolved)
     return results
 
 
 def find_rust_projects(workspace: Path) -> list[Path]:
     """Finds all rust-project.json files in the workspace."""
     results: list[Path] = []
-    root_rp = workspace / "rust-project.json"
-    if root_rp.exists():
-        results.append(root_rp.resolve())
-    for p in workspace.glob(".compile_commands/**/rust-project.json"):
-        resolved = p.resolve()
-        if resolved not in results:
-            results.append(resolved)
-    if not results:
-        for p in workspace.rglob("rust-project.json"):
-            rel_parts = p.relative_to(workspace).parts
-            if "test" not in rel_parts and not any(
-                part.startswith(".") for part in rel_parts
-            ):
-                resolved = p.resolve()
-                if resolved not in results:
-                    results.append(resolved)
+    for p in workspace.rglob("rust-project.json"):
+        rel_parts = p.relative_to(workspace).parts
+        if not any(part in ("test", "tests") for part in rel_parts) and not any(
+            part.startswith(".") and part != ".compile_commands"
+            for part in rel_parts
+        ):
+            resolved = p.resolve()
+            if resolved not in results:
+                results.append(resolved)
     return results
 
 
@@ -528,7 +517,7 @@ def extract_single_rust_crate(
         "create",
         f"-output={unit_kzip}",
         "-encoding=PROTO",
-        f"-uri=kythe://{corpus}?lang=rust&path={rel_root}",
+        f"-uri=kythe://{corpus}?lang=rust?path={rel_root}",
         f"-working_directory={crate_dir}",
         f"-source_file={rel_root}",
         "-required_input=rust-project.json",

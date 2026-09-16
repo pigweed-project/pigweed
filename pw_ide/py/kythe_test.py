@@ -16,6 +16,7 @@
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -61,6 +62,39 @@ class KytheExtractorTest(unittest.TestCase):
         found = find_compilation_databases(self.workspace)
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0], compdb_path)
+
+    def test_find_compilation_databases_multiple(self):
+        """Tests finding compile_commands.json across multiple locations."""
+        root_db = self.workspace / "compile_commands.json"
+        root_db.write_text("[]")
+        out_db = self.workspace / "out" / "compile_commands.json"
+        out_db.parent.mkdir(parents=True)
+        out_db.write_text("[]")
+        cc_db = (
+            self.workspace
+            / ".compile_commands"
+            / "foo"
+            / "compile_commands.json"
+        )
+        cc_db.parent.mkdir(parents=True)
+        cc_db.write_text("[]")
+        contest_db = self.workspace / "contest" / "compile_commands.json"
+        contest_db.parent.mkdir(parents=True)
+        contest_db.write_text("[]")
+        test_db = self.workspace / "test" / "compile_commands.json"
+        test_db.parent.mkdir(parents=True)
+        test_db.write_text("[]")
+        tests_db = self.workspace / "tests" / "compile_commands.json"
+        tests_db.parent.mkdir(parents=True)
+        tests_db.write_text("[]")
+
+        found = find_compilation_databases(self.workspace)
+        self.assertIn(root_db.resolve(), found)
+        self.assertIn(out_db.resolve(), found)
+        self.assertIn(cc_db.resolve(), found)
+        self.assertIn(contest_db.resolve(), found)
+        self.assertNotIn(test_db.resolve(), found)
+        self.assertNotIn(tests_db.resolve(), found)
 
     def test_find_required_headers_recursive(self):
         headers = _find_required_headers(self.src_file, [], self.workspace)
@@ -162,6 +196,18 @@ class KytheExtractorTest(unittest.TestCase):
         )
         self.assertEqual(len(res), 1)
         self.assertTrue(res[0].exists())
+
+        # Verify unit metadata via kzip info
+        info_res = subprocess.run(
+            [kzip_bin, "info", f"-input={res[0]}"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(info_res.returncode, 0)
+        info = json.loads(info_res.stdout)
+        corpus_data = info.get("corpora", {}).get(DEFAULT_CORPUS, {})
+        cu_info = corpus_data.get("language_cu_info", {})
+        self.assertEqual(list(cu_info.keys()), ["rust"])
 
     def test_find_rust_projects_ignores_hidden_directories(self):
         """Tests that rust-project.json in hidden directories is ignored."""
