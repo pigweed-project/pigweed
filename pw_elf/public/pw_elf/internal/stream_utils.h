@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <string>
+
 #include "pw_status/try.h"
 #include "pw_stream/stream.h"
 

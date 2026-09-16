@@ -14,6 +14,8 @@
 
 #include "pw_elf/reader.h"
 
+#include <string>
+
 #include "pw_bytes/endian.h"
 #include "pw_log/log.h"
 #include "pw_status/try.h"
