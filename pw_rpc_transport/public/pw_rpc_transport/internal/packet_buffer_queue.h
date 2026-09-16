@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include <algorithm>
 #include <mutex>
 
 #include "pw_bytes/span.h"
