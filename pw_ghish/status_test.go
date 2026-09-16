@@ -135,15 +135,11 @@ func TestStatus_CurrentBranch_ActivePR(t *testing.T) {
 		Status:   "NEW",
 		Branch:   "main",
 		Labels: map[string]gerrit.LabelInfo{
-			"Code-Review": {
-				Approved: gerrit.AccountInfo{AccountID: 1000},
-			},
-			"Presubmit-Verified": {
-				Approved: gerrit.AccountInfo{AccountID: 2000},
-			},
-			"Lint": {
-				Recommended: gerrit.AccountInfo{AccountID: 3000},
-			},
+			// Ranges mirror the real Pigweed labels: Code-Review and Lint
+			// span -2..+2, but Presubmit-Verified tops out at +1.
+			"Code-Review":        narrowLabel(-2, 2, 2),
+			"Presubmit-Verified": narrowLabel(-1, 1, 1),
+			"Lint":               narrowLabel(-2, 2, 1),
 		},
 	}
 
@@ -164,7 +160,7 @@ func TestStatus_CurrentBranch_ActivePR(t *testing.T) {
 		"Branch:      main",
 		"Status:      NEW",
 		"Code-Review: +2 (Approved)",
-		"Presubmit-Verified: +2 (Approved)",
+		"Presubmit-Verified: +1 (Approved)",
 		"Lint: +1 (Recommended)",
 	}
 	for _, exp := range expectedStrings {

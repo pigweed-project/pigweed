@@ -426,26 +426,8 @@ func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int
 	if !ok {
 		return 0
 	}
-	hasNegative := false
-	minScore := 0
-	maxScore := 0
-	for _, app := range info.All {
-		val := int(app.Value)
-		if val < 0 {
-			hasNegative = true
-			if val < minScore {
-				minScore = val
-			}
-		} else {
-			if val > maxScore {
-				maxScore = val
-			}
-		}
-	}
-	if hasNegative {
-		return minScore
-	}
-	return maxScore
+	score, _ := castVote(info)
+	return score
 }
 
 // extractBlockers computes blocking reasons for an unsubmitted change.

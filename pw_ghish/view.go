@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -278,20 +279,98 @@ func hasAnyScore(labels map[string]gerrit.LabelInfo) bool {
 	return false
 }
 
+// labelRange returns the lowest and highest values a label permits.
+//
+// LabelInfo.Values is populated when DETAILED_LABELS is requested; ok is
+// false when the range could not be determined.
+func labelRange(info gerrit.LabelInfo) (low, high int, ok bool) {
+	for value := range info.Values {
+		n, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			continue
+		}
+		if !ok || n < low {
+			low = n
+		}
+		if !ok || n > high {
+			high = n
+		}
+		ok = true
+	}
+	return low, high, ok
+}
+
+// castVote returns the most significant vote on a label: the lowest negative
+// vote if anyone objected, otherwise the highest positive vote. This mirrors
+// how Gerrit itself collapses a label down to a single displayed value.
+func castVote(info gerrit.LabelInfo) (value int, voted bool) {
+	low, high := 0, 0
+	for _, approval := range info.All {
+		v := int(approval.Value)
+		if v == 0 {
+			continue
+		}
+		voted = true
+		if v < low {
+			low = v
+		}
+		if v > high {
+			high = v
+		}
+	}
+	if low < 0 {
+		return low, voted
+	}
+	return high, voted
+}
+
+// getLabelSummary renders a label's current vote, e.g. "+1 (Approved)".
+//
+// Gerrit's Approved/Rejected fields mean "someone voted this label's maximum
+// (or minimum) value", which is not necessarily +2/-2. Pigweed labels such as
+// Docs-Not-Needed ([0,+1]) and Presubmit-Verified ([-1,0,+1]) top out at +1,
+// so the number is read from the vote itself and only the wording is derived
+// from the label's range. Reporting a fixed +2 here would print a score the
+// label cannot hold.
 func getLabelSummary(info gerrit.LabelInfo) string {
-	if info.Approved.AccountID != 0 {
-		return "+2 (Approved)"
+	low, high, haveRange := labelRange(info)
+
+	value, voted := castVote(info)
+	if !voted {
+		// All is only populated under DETAILED_LABELS. Fall back to the
+		// summary fields, which name a voter but not the value they cast.
+		switch {
+		case info.Approved.AccountID != 0:
+			if haveRange {
+				return fmt.Sprintf("%+d (Approved)", high)
+			}
+			return "Approved"
+		case info.Rejected.AccountID != 0:
+			if haveRange {
+				return fmt.Sprintf("%+d (Rejected)", low)
+			}
+			return "Rejected"
+		case info.Recommended.AccountID != 0:
+			return "Recommended"
+		case info.Disliked.AccountID != 0:
+			return "Disliked"
+		}
+		return "No score"
 	}
-	if info.Recommended.AccountID != 0 {
-		return "+1 (Recommended)"
+
+	descriptor := "Recommended"
+	if value < 0 {
+		descriptor = "Disliked"
 	}
-	if info.Disliked.AccountID != 0 {
-		return "-1 (Disliked)"
+	if haveRange {
+		switch value {
+		case high:
+			descriptor = "Approved"
+		case low:
+			descriptor = "Rejected"
+		}
 	}
-	if info.Rejected.AccountID != 0 {
-		return "-2 (Rejected)"
-	}
-	return "No score"
+	return fmt.Sprintf("%+d (%s)", value, descriptor)
 }
 
 func init() {

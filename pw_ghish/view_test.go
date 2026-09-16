@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -43,6 +44,19 @@ func TestDefaultViewTemplate(t *testing.T) {
 		"labels": map[string]gerrit.LabelInfo{
 			"Code-Review": {
 				Approved: gerrit.AccountInfo{AccountID: 1},
+				// Only the keys are parsed; the descriptions are
+				// placeholders. Avoid Gerrit's real wording here, as its
+				// -2 text trips the submission-blocking phrase lint.
+				Values: map[string]string{
+					"-2": "Veto",
+					"-1": "Negative",
+					" 0": "No score",
+					"+1": "Positive",
+					"+2": "Approved",
+				},
+				All: []gerrit.ApprovalInfo{
+					{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: 2},
+				},
 			},
 		},
 	}
@@ -84,6 +98,79 @@ Labels:
 
 	if got != want {
 		t.Errorf("template output mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// narrowLabel builds a LabelInfo for a label whose range is [low, high],
+// voted at value. Gerrit sets Approved/Rejected when a vote hits the label's
+// maximum/minimum, whatever those happen to be.
+func narrowLabel(low, high, value int) gerrit.LabelInfo {
+	info := gerrit.LabelInfo{Values: map[string]string{}}
+	for v := low; v <= high; v++ {
+		info.Values[fmt.Sprintf("%+d", v)] = "desc"
+	}
+	if value != 0 {
+		info.All = []gerrit.ApprovalInfo{
+			{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: value},
+		}
+	}
+	switch value {
+	case high:
+		info.Approved = gerrit.AccountInfo{AccountID: 1}
+	case low:
+		info.Rejected = gerrit.AccountInfo{AccountID: 1}
+	}
+	return info
+}
+
+func TestGetLabelSummary(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		info gerrit.LabelInfo
+		want string
+	}{
+		// Labels that top out at +1 must never be reported as +2: that is
+		// not a value they can hold.
+		{"Docs-Not-Needed approved", narrowLabel(0, 1, 1), "+1 (Approved)"},
+		{"Pigweed-Auto-Submit approved", narrowLabel(0, 1, 1), "+1 (Approved)"},
+		{"Presubmit-Verified approved", narrowLabel(-1, 1, 1), "+1 (Approved)"},
+		{"Presubmit-Verified rejected", narrowLabel(-1, 1, -1), "-1 (Rejected)"},
+
+		// A full -2..+2 label keeps its familiar rendering.
+		{"Code-Review approved", narrowLabel(-2, 2, 2), "+2 (Approved)"},
+		{"Code-Review recommended", narrowLabel(-2, 2, 1), "+1 (Recommended)"},
+		{"Code-Review disliked", narrowLabel(-2, 2, -1), "-1 (Disliked)"},
+		{"Code-Review rejected", narrowLabel(-2, 2, -2), "-2 (Rejected)"},
+
+		{"no score", narrowLabel(-2, 2, 0), "No score"},
+		{"empty label", gerrit.LabelInfo{}, "No score"},
+
+		// A negative vote outranks a positive one, matching Gerrit.
+		{
+			"negative outranks positive",
+			gerrit.LabelInfo{
+				Values: map[string]string{"-2": "d", "-1": "d", "+0": "d", "+1": "d", "+2": "d"},
+				All: []gerrit.ApprovalInfo{
+					{AccountInfo: gerrit.AccountInfo{AccountID: 1}, Value: 2},
+					{AccountInfo: gerrit.AccountInfo{AccountID: 2}, Value: -1},
+				},
+			},
+			"-1 (Disliked)",
+		},
+
+		// Without DETAILED_LABELS there is no All[] and no range, so report
+		// the state without inventing a number.
+		{
+			"approved without detail",
+			gerrit.LabelInfo{Approved: gerrit.AccountInfo{AccountID: 1}},
+			"Approved",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getLabelSummary(tt.info); got != tt.want {
+				t.Errorf("getLabelSummary() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
