@@ -7,11 +7,12 @@ CLI User Guide
    :name: pw_ghish
 
 ``pw_ghish`` (invoked via the ``./gh`` repository wrapper) provides GitHub CLI
-(``gh pr``) command syntax on top of Gerrit code reviews and LUCI CI
-infrastructure.
+(``gh pr`` and ``gh issue``) command syntax on top of Gerrit code reviews,
+Google Issue Tracker (Buganizer), and LUCI CI infrastructure.
 
 This guide provides detailed documentation and examples for each subcommand
-available in ``./gh pr``.
+available in ``./gh pr``. For Buganizer issue tracking workflows (``./gh
+issue``), see :ref:`module-pw_ghish-issue`.
 
 ---------------
 Getting started

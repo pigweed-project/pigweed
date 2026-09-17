@@ -18,12 +18,14 @@ pw_ghish
      automatic per-commit compilation and caching.
    * **Pigweed CI & review integration**: First-class support for Pigweed
      auto-submit, Commit-Queue, and LUCI tryjobs.
+   * **Buganizer issue integration**: Triage, branch, create, and resolve issues
+     using standard ``gh issue`` commands linked directly to Git commits.
    * **Multi-project support**: Pluggable profiles and standalone binary
      distribution for Fuchsia and generic Gerrit projects.
 
 ``pw_ghish`` (invoked via the ``./gh`` wrapper at the repository root) provides
-GitHub CLI (``gh pr``) ergonomics on top of Gerrit code review and LUCI CI
-infrastructure.
+GitHub CLI (``gh pr`` and ``gh issue``) ergonomics on top of Gerrit code review,
+Google Issue Tracker (Buganizer), and LUCI CI infrastructure.
 
 .. warning::
 
@@ -42,6 +44,12 @@ Run the ``./gh`` repository wrapper from anywhere in your Pigweed checkout:
 
    # View review dashboard for active branch & your open CLs:
    $ ./gh pr status
+
+   # Check open Buganizer issues assigned to or reported by you:
+   $ ./gh issue status
+
+   # File a new bug and automatically add 'Bug: b/<id>' to your HEAD commit:
+   $ ./gh issue create --title "pw_foo: Fix bar overflow" --body "..." --amend
 
    # Push a new patchset on the current branch to Gerrit:
    $ ./gh pr push
@@ -63,13 +71,23 @@ Documentation
 -------------
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`terminal` CLI User Guide
+   .. grid-item-card:: :octicon:`terminal` CLI User Guide (gh pr)
       :link: module-pw_ghish-cli
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
       Subcommand reference and examples for viewing, pushing, reviewing,
-      commenting, inspecting CI, and merging.
+      commenting, inspecting CI, and merging Gerrit changes.
+
+   .. grid-item-card:: :octicon:`issue-opened` Issue Tracking (gh issue)
+      :link: module-pw_ghish-issue
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      End-to-end user journey for triaging, branching, filing bugs with commit
+      trailers, commenting, and resolving Buganizer issues.
+
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`cpu` AI Workflows
       :link: module-pw_ghish-ai-workflows
@@ -79,8 +97,6 @@ Documentation
       Workflows for AI pair programming: private draft steering, staged review
       replies, CL handoffs, and CI failure triage.
 
-.. grid:: 2
-
    .. grid-item-card:: :octicon:`table` GitHub CLI Comparison
       :link: module-pw_ghish-cli-comparison
       :link-type: ref
@@ -88,6 +104,8 @@ Documentation
 
       Command comparison with GitHub CLI (``gh``), flag mapping, and
       architectural differences in Gerrit.
+
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`milestone` Status & Roadmap
       :link: module-pw_ghish-roadmap
@@ -97,8 +115,6 @@ Documentation
       Operational status, upstream Pigweed focus, and roadmap for multi-project
       decoupling, SCM exploration, setup automation, and hooks.
 
-.. grid:: 2
-
    .. grid-item-card:: :octicon:`gear` Project Adoption Guide
       :link: module-pw_ghish-project-integration
       :link-type: ref
@@ -107,6 +123,8 @@ Documentation
       Installing standalone binaries, setting up repository wrappers,
       configuring project profiles, and authentication.
 
+.. grid:: 2
+
    .. grid-item-card:: :octicon:`sliders` Flag Compatibility Policy
       :link: module-pw_ghish-flag-compatibility
       :link-type: ref
@@ -114,8 +132,6 @@ Documentation
 
       Compatibility principles with upstream GitHub CLI, compatibility tiers,
       and ghish-only flag designations.
-
-.. grid:: 2
 
    .. grid-item-card:: :octicon:`checklist` Agent Evaluation Runbook
       :link: module-pw_ghish-agent-eval
@@ -130,6 +146,7 @@ Documentation
    :hidden:
 
    cli
+   issue
    ai_workflows
    cli_comparison
    flag_compatibility

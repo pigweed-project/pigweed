@@ -85,6 +85,15 @@ type ProjectProfile interface {
 
 	// FormatPushRef formats the git push destination ref, including % options.
 	FormatPushRef(branch string, opts PushOptions) string
+
+	// IssueTrackerAPIEndpoint returns the Google Issue Tracker REST API base URL.
+	IssueTrackerAPIEndpoint() string
+
+	// DefaultComponentID returns the default Buganizer component ID for the project (0 if none).
+	DefaultComponentID() int64
+
+	// IssueWebURL returns the canonical web URL for viewing a Buganizer issue.
+	IssueWebURL(issueID int64) string
 }
 
 func defaultFormatPushRef(branch string, opts PushOptions, extraOptions ...string) string {
@@ -237,6 +246,19 @@ func (p *pigweedProfile) FormatPushRef(branch string, opts PushOptions) string {
 	return defaultFormatPushRef(branch, opts, extra...)
 }
 
+func (p *pigweedProfile) IssueTrackerAPIEndpoint() string {
+	return DefaultIssueTrackerEndpoint
+}
+
+func (p *pigweedProfile) DefaultComponentID() int64 {
+	// 1194524 corresponds to "Public Trackers > Pigweed".
+	return 1194524
+}
+
+func (p *pigweedProfile) IssueWebURL(issueID int64) string {
+	return fmt.Sprintf("https://issues.pigweed.dev/issues/%d", issueID)
+}
+
 // --- Fuchsia Profile ---
 
 type fuchsiaProfile struct{}
@@ -286,6 +308,18 @@ func (p *fuchsiaProfile) FormatPushRef(branch string, opts PushOptions) string {
 	return defaultFormatPushRef(branch, opts, extra...)
 }
 
+func (p *fuchsiaProfile) IssueTrackerAPIEndpoint() string {
+	return DefaultIssueTrackerEndpoint
+}
+
+func (p *fuchsiaProfile) DefaultComponentID() int64 {
+	return 1363195
+}
+
+func (p *fuchsiaProfile) IssueWebURL(issueID int64) string {
+	return fmt.Sprintf("https://issues.fuchsia.dev/issues/%d", issueID)
+}
+
 // --- Generic Profile ---
 
 type genericProfile struct{}
@@ -329,6 +363,18 @@ func (p *genericProfile) RerunCheck(ctx context.Context, change GerritChangeRef,
 
 func (p *genericProfile) FormatPushRef(branch string, opts PushOptions) string {
 	return defaultFormatPushRef(branch, opts)
+}
+
+func (p *genericProfile) IssueTrackerAPIEndpoint() string {
+	return DefaultIssueTrackerEndpoint
+}
+
+func (p *genericProfile) DefaultComponentID() int64 {
+	return 0
+}
+
+func (p *genericProfile) IssueWebURL(issueID int64) string {
+	return fmt.Sprintf("https://issuetracker.google.com/issues/%d", issueID)
 }
 
 // --- Chromium Profile ---

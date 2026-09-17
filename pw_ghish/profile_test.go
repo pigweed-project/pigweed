@@ -183,6 +183,16 @@ func TestPigweedProfile_Properties(t *testing.T) {
 		t.Errorf("BuildbucketProject() = %q, want \"pigweed\"", p.BuildbucketProject())
 	}
 
+	if p.DefaultComponentID() != 1194524 {
+		t.Errorf("DefaultComponentID() = %d, want 1194524", p.DefaultComponentID())
+	}
+	if p.IssueTrackerAPIEndpoint() != "https://issuetracker.googleapis.com/v1" {
+		t.Errorf("IssueTrackerAPIEndpoint() = %q, want https://issuetracker.googleapis.com/v1", p.IssueTrackerAPIEndpoint())
+	}
+	if gotURL := p.IssueWebURL(345678); gotURL != "https://issues.pigweed.dev/issues/345678" {
+		t.Errorf("IssueWebURL(345678) = %q, want https://issues.pigweed.dev/issues/345678", gotURL)
+	}
+
 	// Test FormatPushRef with AutoSubmit
 	ref := p.FormatPushRef("main", PushOptions{
 		Reviewers:  []string{"reviewer@google.com"},
@@ -237,6 +247,13 @@ func TestFuchsiaProfile_Properties(t *testing.T) {
 		t.Errorf("BuildbucketProject() = %q, want \"fuchsia\"", p.BuildbucketProject())
 	}
 
+	if p.DefaultComponentID() != 1363195 {
+		t.Errorf("DefaultComponentID() = %d, want 1363195", p.DefaultComponentID())
+	}
+	if gotURL := p.IssueWebURL(98765); gotURL != "https://issues.fuchsia.dev/issues/98765" {
+		t.Errorf("IssueWebURL(98765) = %q, want https://issues.fuchsia.dev/issues/98765", gotURL)
+	}
+
 	// Test FormatPushRef with AutoSubmit (which maps to CQ+2 for Fuchsia)
 	ref := p.FormatPushRef("main", PushOptions{
 		AutoSubmit: true,
@@ -269,6 +286,13 @@ func TestGenericProfile_Properties(t *testing.T) {
 	_, hasCQ := p.CQLabel()
 	if hasCQ {
 		t.Error("Generic profile should not have CQLabel")
+	}
+
+	if p.DefaultComponentID() != 0 {
+		t.Errorf("DefaultComponentID() = %d, want 0", p.DefaultComponentID())
+	}
+	if gotURL := p.IssueWebURL(55555); gotURL != "https://issuetracker.google.com/issues/55555" {
+		t.Errorf("IssueWebURL(55555) = %q, want https://issuetracker.google.com/issues/55555", gotURL)
 	}
 
 	ref := p.FormatPushRef("main", PushOptions{

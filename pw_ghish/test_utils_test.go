@@ -25,9 +25,12 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
@@ -759,4 +762,397 @@ func FakeLog(name, viewURL string) LUCILog {
 // OnGetBuild registers a GetBuild mock responding with the provided build details.
 func (s *MockGerritServer) OnGetBuild(details any) *MockGerritServer {
 	return s.OnJSON("POST", "/prpc/buildbucket.v2.Builds/GetBuild", http.StatusOK, details)
+}
+
+// MockIssueTrackerServer provides an in-memory Google Issue Tracker v1 REST server for testing.
+type MockIssueTrackerServer struct {
+	Server          *httptest.Server
+	mu              sync.Mutex
+	Issues          map[int64]*BuganizerIssue
+	Comments        map[int64][]BuganizerComment
+	NextIssueID     int64
+	Calls           []string
+	ForceStatus     int
+	CommentPageSize int
+}
+
+// NewMockIssueTrackerServer creates and starts a new MockIssueTrackerServer.
+func NewMockIssueTrackerServer(t *testing.T) *MockIssueTrackerServer {
+	t.Helper()
+	s := &MockIssueTrackerServer{
+		Issues:      make(map[int64]*BuganizerIssue),
+		Comments:    make(map[int64][]BuganizerComment),
+		NextIssueID: 300001,
+	}
+	s.Server = httptest.NewServer(http.HandlerFunc(s.serveHTTP))
+	t.Cleanup(func() {
+		s.Server.Close()
+	})
+	return s
+}
+
+// Client returns an IssueTrackerClient configured to talk to this mock server.
+func (s *MockIssueTrackerServer) Client() *IssueTrackerClient {
+	c := NewIssueTrackerClient(s.Server.URL+"/v1", s.Server.Client())
+	c.TokenProvider = func(context.Context) (string, error) {
+		return "test-mock-token", nil
+	}
+	c.QuotaProjectProvider = func(context.Context, string) string {
+		return "mock-quota-project"
+	}
+	return c
+}
+
+// Install hooks NewIssueTrackerClientForCommand to return this mock server's client for the duration of the test.
+func (s *MockIssueTrackerServer) Install(t *testing.T) {
+	t.Helper()
+	old := NewIssueTrackerClientForCommand
+	NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Command) (*IssueTrackerClient, error) {
+		return s.Client(), nil
+	}
+	t.Cleanup(func() {
+		NewIssueTrackerClientForCommand = old
+	})
+}
+
+// SeedIssue adds an issue and optional initial description comment to the mock server.
+func (s *MockIssueTrackerServer) SeedIssue(issue *BuganizerIssue, description string) *BuganizerIssue {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if issue.IssueID == 0 {
+		issue.IssueID = FlexInt64(s.NextIssueID)
+		s.NextIssueID++
+	}
+	id := int64(issue.IssueID)
+	if issue.CreatedTime.IsZero() {
+		issue.CreatedTime = time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	}
+	if issue.ModifiedTime.IsZero() {
+		issue.ModifiedTime = issue.CreatedTime
+	}
+	if description != "" {
+		c := BuganizerComment{
+			CommentNumber: 1,
+			Comment:       description,
+			Author:        issue.State.Reporter,
+			CreatedTime:   issue.CreatedTime,
+		}
+		s.Comments[id] = []BuganizerComment{c}
+		issue.Description = &c
+	}
+	s.Issues[id] = issue
+	return issue
+}
+
+func (s *MockIssueTrackerServer) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.Calls = append(s.Calls, fmt.Sprintf("%s %s", r.Method, r.URL.Path))
+
+	if s.ForceStatus != 0 {
+		w.WriteHeader(s.ForceStatus)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    s.ForceStatus,
+				"message": fmt.Sprintf("mock forced HTTP %d", s.ForceStatus),
+			},
+		})
+		return
+	}
+
+	if r.Header.Get("Authorization") == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    http.StatusUnauthorized,
+				"message": "missing Authorization Bearer header",
+			},
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// POST /v1/issues
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/issues" {
+		var req CreateIssueRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+			return
+		}
+		id := s.NextIssueID
+		s.NextIssueID++
+		now := time.Now().UTC()
+		issue := &BuganizerIssue{
+			IssueID:      FlexInt64(id),
+			CreatedTime:  now,
+			ModifiedTime: now,
+			State:        req.IssueState,
+		}
+		if req.IssueComment != nil && req.IssueComment.Comment != "" {
+			c := BuganizerComment{
+				CommentNumber: 1,
+				Comment:       req.IssueComment.Comment,
+				Author:        req.IssueState.Reporter,
+				CreatedTime:   now,
+			}
+			s.Comments[id] = []BuganizerComment{c}
+			issue.Description = &c
+		}
+		s.Issues[id] = issue
+		_ = json.NewEncoder(w).Encode(issue)
+		return
+	}
+
+	// GET /v1/issues
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/issues" {
+		query := r.URL.Query().Get("query")
+		var ids []int64
+		for id := range s.Issues {
+			ids = append(ids, id)
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+		var matched []*BuganizerIssue
+		for _, id := range ids {
+			iss := s.Issues[id]
+			if !matchesIssueQuery(iss, query) {
+				continue
+			}
+			copyIss := *iss
+			if len(s.Comments[id]) > 0 {
+				copyIss.Description = &s.Comments[id][0]
+			}
+			matched = append(matched, &copyIss)
+		}
+		_ = json.NewEncoder(w).Encode(ListIssuesResponse{Issues: matched})
+		return
+	}
+
+	// Sub-routes under /v1/issues/{id}...
+	if strings.HasPrefix(r.URL.Path, "/v1/issues/") {
+		rest := strings.TrimPrefix(r.URL.Path, "/v1/issues/")
+
+		// POST /v1/issues/{id}:modify
+		if r.Method == http.MethodPost && strings.HasSuffix(rest, ":modify") {
+			idStr := strings.TrimSuffix(rest, ":modify")
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || s.Issues[id] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"})
+				return
+			}
+			var req ModifyIssueRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+				return
+			}
+			issue := s.Issues[id]
+			applyIssueModify(issue, &req)
+			issue.ModifiedTime = time.Now().UTC()
+			if req.IssueComment != nil && req.IssueComment.Comment != "" {
+				num := len(s.Comments[id]) + 1
+				c := BuganizerComment{
+					CommentNumber: num,
+					Comment:       req.IssueComment.Comment,
+					CreatedTime:   issue.ModifiedTime,
+				}
+				s.Comments[id] = append(s.Comments[id], c)
+			}
+			if len(s.Comments[id]) > 0 {
+				issue.Description = &s.Comments[id][0]
+			}
+			_ = json.NewEncoder(w).Encode(issue)
+			return
+		}
+
+		// GET or POST /v1/issues/{id}/comments
+		if strings.HasSuffix(rest, "/comments") {
+			idStr := strings.TrimSuffix(rest, "/comments")
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || s.Issues[id] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"})
+				return
+			}
+			if r.Method == http.MethodGet {
+				all := s.Comments[id]
+				offset := 0
+				if tok := r.URL.Query().Get("pageToken"); tok != "" {
+					if idx, err := strconv.Atoi(tok); err == nil && idx >= 0 && idx < len(all) {
+						offset = idx
+					}
+				}
+				limit := len(all)
+				if s.CommentPageSize > 0 {
+					limit = s.CommentPageSize
+				} else if ps := r.URL.Query().Get("pageSize"); ps != "" {
+					if parsedPS, err := strconv.Atoi(ps); err == nil && parsedPS > 0 {
+						limit = parsedPS
+					}
+				}
+				end := offset + limit
+				var nextTok string
+				if end < len(all) {
+					nextTok = strconv.Itoa(end)
+				} else {
+					end = len(all)
+				}
+				_ = json.NewEncoder(w).Encode(ListIssueCommentsResponse{
+					IssueComments: all[offset:end],
+					NextPageToken: nextTok,
+				})
+				return
+			}
+			if r.Method == http.MethodPost {
+				var req BuganizerComment
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+					return
+				}
+				req.CommentNumber = len(s.Comments[id]) + 1
+				req.CreatedTime = time.Now().UTC()
+				s.Comments[id] = append(s.Comments[id], req)
+				_ = json.NewEncoder(w).Encode(req)
+				return
+			}
+		}
+
+		// GET /v1/issues/{id}
+		if r.Method == http.MethodGet {
+			id, err := strconv.ParseInt(rest, 10, 64)
+			if err != nil || s.Issues[id] == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"})
+				return
+			}
+			issue := *s.Issues[id]
+			if len(s.Comments[id]) > 0 {
+				issue.Description = &s.Comments[id][0]
+			}
+			_ = json.NewEncoder(w).Encode(issue)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "unhandled mock route: " + r.URL.Path})
+}
+
+func matchesIssueQuery(iss *BuganizerIssue, query string) bool {
+	if query == "" {
+		return true
+	}
+	isOpen := iss.State.Status == "NEW" || iss.State.Status == "ASSIGNED" || iss.State.Status == "ACCEPTED"
+	tokens := strings.Fields(query)
+	for _, tok := range tokens {
+		switch {
+		case tok == "status:open":
+			if !isOpen {
+				return false
+			}
+		case tok == "status:closed":
+			if isOpen {
+				return false
+			}
+		case strings.HasPrefix(tok, "assignee:"):
+			want := strings.TrimPrefix(tok, "assignee:")
+			if iss.State.Assignee == nil || !strings.EqualFold(iss.State.Assignee.EmailAddress, want) {
+				return false
+			}
+		case strings.HasPrefix(tok, "reporter:"):
+			want := strings.TrimPrefix(tok, "reporter:")
+			if iss.State.Reporter == nil || !strings.EqualFold(iss.State.Reporter.EmailAddress, want) {
+				return false
+			}
+		case strings.HasPrefix(tok, "priority:"):
+			want := strings.TrimPrefix(tok, "priority:")
+			if !strings.EqualFold(iss.State.Priority, want) {
+				return false
+			}
+		case strings.HasPrefix(tok, "componentid:"):
+			want := strings.TrimPrefix(tok, "componentid:")
+			if fmt.Sprintf("%d", iss.State.ComponentID) != want {
+				return false
+			}
+		default:
+			clean := strings.Trim(tok, "\"")
+			if !strings.Contains(strings.ToLower(iss.State.Title), strings.ToLower(clean)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func applyIssueModify(issue *BuganizerIssue, req *ModifyIssueRequest) {
+	if req.Add != nil && req.AddMask != "" {
+		for _, field := range strings.Split(req.AddMask, ",") {
+			switch strings.TrimSpace(field) {
+			case "title":
+				issue.State.Title = req.Add.Title
+			case "status":
+				issue.State.Status = req.Add.Status
+			case "priority":
+				issue.State.Priority = req.Add.Priority
+			case "severity":
+				issue.State.Severity = req.Add.Severity
+			case "type":
+				issue.State.Type = req.Add.Type
+			case "componentId":
+				issue.State.ComponentID = req.Add.ComponentID
+			case "assignee":
+				issue.State.Assignee = req.Add.Assignee
+			case "canonicalIssueId":
+				issue.State.CanonicalIssueID = req.Add.CanonicalIssueID
+			case "ccs":
+				issue.State.CCs = append(issue.State.CCs, req.Add.CCs...)
+			case "hotlistIds":
+				issue.State.HotlistIDs = append(issue.State.HotlistIDs, req.Add.HotlistIDs...)
+			}
+		}
+	}
+	if req.Remove != nil && req.RemoveMask != "" {
+		for _, field := range strings.Split(req.RemoveMask, ",") {
+			switch strings.TrimSpace(field) {
+			case "assignee":
+				issue.State.Assignee = nil
+			case "ccs":
+				var kept []BuganizerUser
+				for _, existing := range issue.State.CCs {
+					remove := false
+					for _, rem := range req.Remove.CCs {
+						if strings.EqualFold(existing.EmailAddress, rem.EmailAddress) {
+							remove = true
+							break
+						}
+					}
+					if !remove {
+						kept = append(kept, existing)
+					}
+				}
+				issue.State.CCs = kept
+			case "hotlistIds":
+				var kept []FlexInt64
+				for _, existing := range issue.State.HotlistIDs {
+					remove := false
+					for _, rem := range req.Remove.HotlistIDs {
+						if existing == rem {
+							remove = true
+							break
+						}
+					}
+					if !remove {
+						kept = append(kept, existing)
+					}
+				}
+				issue.State.HotlistIDs = kept
+			}
+		}
+	}
 }

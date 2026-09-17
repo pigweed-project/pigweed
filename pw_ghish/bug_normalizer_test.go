@@ -26,10 +26,15 @@ func TestNormalizeBugID(t *testing.T) {
 	}{
 		{"https://issues.pigweed.dev/issues/123456", "b/123456", true},
 		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654", "b/987654", true},
+		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654&q=status:open", "b/987654", true},
+		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654#c2", "b/987654", true},
 		{"b/123456", "b/123456", true},
 		{"b:123456", "b/123456", true},
+		{"fxb/98765", "b/98765", true},
+		{"fxbug.dev/98765", "b/98765", true},
 		{"123456", "b/123456", true},
 		{"none", "none", false},
+		{"fxbug/98765", "fxbug/98765", false},
 		{"https://github.com/google/pigweed/issues/42", "https://github.com/google/pigweed/issues/42", false},
 		{"", "", false},
 	}
@@ -103,6 +108,53 @@ func TestNormalizeTrailer(t *testing.T) {
 		got := NormalizeTrailer(tc.input)
 		if got != tc.want {
 			t.Errorf("NormalizeTrailer(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestParseIssueID(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantID  int64
+		wantErr bool
+	}{
+		{"123456", 123456, false},
+		{"42", 42, false},
+		{"b/123456", 123456, false},
+		{"b:123456", 123456, false},
+		{"pwbug/123456", 123456, false},
+		{"pwbug.dev/123456", 123456, false},
+		{"fxb/98765", 98765, false},
+		{"fxbug.dev/98765", 98765, false},
+		{"https://issues.pigweed.dev/issues/123456", 123456, false},
+		{"https://g-issues.pigweed.dev/issues/503634", 503634, false},
+		{"https://issues.fuchsia.dev/issues/98765", 98765, false},
+		{"https://issuetracker.google.com/issues/55555", 55555, false},
+		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654", 987654, false},
+		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654&q=foo", 987654, false},
+		{"https://bugs.chromium.org/p/pigweed/issues/detail?id=987654#c1", 987654, false},
+		{"", 0, true},
+		{"none", 0, true},
+		{"fxbug/98765", 0, true},
+		{"0", 0, true},
+		{"-123", 0, true},
+		{"https://github.com/google/pigweed/issues/42", 0, true},
+	}
+
+	for _, tc := range tests {
+		got, err := ParseIssueID(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("ParseIssueID(%q) expected error, got %d", tc.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ParseIssueID(%q) unexpected error: %v", tc.input, err)
+			continue
+		}
+		if got != tc.wantID {
+			t.Errorf("ParseIssueID(%q) = %d, want %d", tc.input, got, tc.wantID)
 		}
 	}
 }

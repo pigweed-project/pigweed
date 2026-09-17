@@ -15,8 +15,8 @@ Testing ``pw_ghish`` involves two distinct categories of validation:
 
 1. **Automated Live Integration Suite**: Programmatic end-to-end checks executed
    against Google infrastructure (``pigweed-review.googlesource.com``,
-   ``cr-buildbucket.appspot.com``, and ``logs.chromium.org``) using developer
-   credentials.
+   ``cr-buildbucket.appspot.com``, ``logs.chromium.org``, and Google Issue Tracker /
+   Buganizer) using developer workstation credentials.
 2. **Agent Behavior & Skill Evaluation**: A structured rubric to evaluate
    whether coding agents discover and follow the ``ghish`` skill, use standard
    commands, and avoid ad-hoc REST scripts or raw ``git push``.
@@ -27,16 +27,31 @@ Part 1: Automated Live Integration Suite
 ========================================
 The repository provides an automated live integration test suite in
 ``pw_ghish/live_test.go``. Guarded behind the ``live`` build tag, it runs against
-production services using your local workstation authentication (``gob-curl``
-or ``~/.gitcookies``).
+production services using your local workstation authentication (``luci-auth``,
+``gob-curl``, or ``gcloud``).
 
 Running the Live Suite
 ----------------------
-Execute the suite directly from your repository root:
+Execute the full suite directly from your repository root:
 
 .. code-block:: console
 
    $ go test -v -tags=live ./pw_ghish -run TestLive
+
+To run the Buganizer issue lifecycle test interactively (supervisor mode, where
+the test pauses after each mutation so you can click the printed
+``https://issues.pigweed.dev/<ID>`` link and inspect the live bug in your
+browser):
+
+.. code-block:: console
+
+   $ go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
+
+To run ``TestLive_IssueLifecycle`` automatically without interactive prompts:
+
+.. code-block:: console
+
+   $ GHISH_INTERACTIVE=0 go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
 
 What the Live Suite Automatically Verifies
 ------------------------------------------
@@ -48,11 +63,18 @@ What the Live Suite Automatically Verifies
   browser navigation.
 * **Draft Comment Round-Trip**: Posts an inline review comment as a private draft
   using ``--draft``, verifies via the Gerrit REST API that the draft is created
-  privately, and immediately cleans it up using ``DeleteDraft`` so zero orphaned
-  drafts remain in Gerrit.
+  privately, and immediately cleans it up using ``DeleteDraft`` (backed by a
+  ``t.Cleanup`` guard) so zero orphaned drafts remain in Gerrit.
 * **Check Rerun Command Resolution**: Verifies that ``run rerun --dry-run``
   correctly constructs the project-specific ``bb add -cl ...`` command with exact
   change and builder coordinates.
+* **Live Buganizer Issue Lifecycle (``TestLive_IssueLifecycle``)**: Exercises the
+  end-to-end ``./gh issue`` lifecycle against live Buganizer: creates a test
+  issue in the Pigweed Scratch component (``1455250``), inspects it via
+  ``issue view --json``, posts a comment via ``issue comment``, updates priority/title
+  via ``issue edit``, closes as ``FIXED`` via ``issue close``, reopens via
+  ``issue reopen``, and finally marks it ``OBSOLETE`` (backed by a ``t.Cleanup``
+  safety net so aborted runs never leave open test issues behind).
 
 --------------------------------------------------------------------------------
 

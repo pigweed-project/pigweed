@@ -185,6 +185,17 @@ CORE COMMAND CHEAT-SHEET
    - Post change-level comment from a file:
      $ %[1]s pr comment <change_id> -F <body_file_path> [--draft]
 
+6. BUGANIZER ISSUES
+   - View issue details (auto-detects Bug:/Fixed: trailer from HEAD if ID omitted):
+     $ %[1]s issue view [<number> | <url>] [--comments] [--json <fields>]
+   - List open issues in project component:
+     $ %[1]s issue list [--assignee <email|me>] [--state open|closed|all] [-l P1] [-S "query"]
+   - Create an issue (and optionally link to current commit via --amend):
+     $ %[1]s issue create -t "Title" -b "Body" [-P P1] [--amend]
+   - Close, reopen, comment, or edit issues:
+     $ %[1]s issue close [<number> | <url>] [-r completed|"not planned"] [--duplicate-of <id>] [-c "Comment"]
+     $ %[1]s issue comment [<number> | <url>] -b "Comment text"
+
 ===========================
 RECOMMENDED AGENT WORKFLOW
 ===========================
@@ -221,6 +232,7 @@ flag is spelled as it is in 'gh' but the Gerrit concept underneath differs.
   --json state            gh OPEN/CLOSED/MERGED  -> here Gerrit's NEW/MERGED/ABANDONED
   pr review --request-changes  gh blocks the PR  -> here Code-Review-1, advisory; -2 is the veto
   pr comment --draft      (gh: a draft PR)       -> here an unpublished draft comment
+  issue -l/--label        gh free-form text      -> here Buganizer priority/type/hotlist (P0-P4, bug, feature, task, hotlist:<id>)
 
 Long form only, because 'gh' gives the shorthand another meaning: --auto
 (gh -a is --assignee), --publish (-p is --project), --force (-f is --fill),
@@ -278,6 +290,12 @@ var PrCmd = &cobra.Command{
 	Short: "Manage pull requests (changes)",
 }
 
+// IssueCmd is the command for managing Buganizer issues.
+var IssueCmd = &cobra.Command{
+	Use:   "issue",
+	Short: "Manage Buganizer issues",
+}
+
 func setupRootCmdHelp() {
 	invokedAs := os.Getenv("GH_ISH_INVOKED_AS")
 	if invokedAs == "" {
@@ -295,6 +313,7 @@ func init() {
 	setupRootCmdHelp()
 
 	RootCmd.AddCommand(PrCmd)
+	RootCmd.AddCommand(IssueCmd)
 	RootCmd.PersistentFlags().StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
 	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")

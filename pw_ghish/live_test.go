@@ -17,10 +17,12 @@
 package pw_ghish
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -28,6 +30,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/google/go-cmp/cmp"
@@ -195,6 +198,24 @@ func TestLive_DraftCommentRoundTrip(t *testing.T) {
 
 	// 1. Post draft comment via CLI
 	draftMsg := "[AUTOMATED_LIVE_INTEGRATION_TEST] Temporary verification draft"
+	cleanedUp := false
+	t.Cleanup(func() {
+		if cleanedUp {
+			return
+		}
+		if draftsMap, _, err := client.Changes.ListChangeDrafts(ctx, "472267"); err == nil && draftsMap != nil {
+			for filePath, comments := range *draftsMap {
+				if filePath == "pw_ghish/docs.rst" {
+					for _, c := range comments {
+						if strings.Contains(c.Message, draftMsg) {
+							_, _ = client.Changes.DeleteDraft(ctx, "472267", "current", c.ID)
+						}
+					}
+				}
+			}
+		}
+	})
+
 	output, err := executeLiveCommand("pr", "comment", "472267", "--path", "pw_ghish/docs.rst", "--line", "1", "-m", draftMsg, "--draft")
 	if err != nil {
 		t.Fatalf("pr comment --draft failed: %v\nOutput: %s", err, output)
@@ -228,6 +249,7 @@ func TestLive_DraftCommentRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to cleanup draft comment %s: %v", foundDraftID, err)
 	} else {
+		cleanedUp = true
 		t.Logf("Cleanly deleted draft comment %s", foundDraftID)
 	}
 }
@@ -821,15 +843,47 @@ func TestLive_View_JSON_Body(t *testing.T) {
 	}
 }
 
-// TestLive_List_AuthorMe verifies that --author @me queries changes for the current user.
+// TestLive_List_AuthorMe verifies that --author @me queries changes for the current user,
+// and --author <email> queries changes for a specific user.
 func TestLive_List_AuthorMe(t *testing.T) {
-	output, err := executeLiveCommand("pr", "list", "--author", "@me", "--limit", "5")
+	ctx := t.Context()
+	client, err := NewGerritClient(ctx, RootCmd)
+	if err != nil {
+		t.Fatalf("NewGerritClient failed: %v", err)
+	}
+	self, _, err := client.Accounts.GetAccount(ctx, "self")
+	if err != nil {
+		t.Fatalf("GetAccount(self) failed: %v", err)
+	}
+
+	output, err := executeLiveCommand("pr", "list", "--author", "@me", "--state", "all", "--limit", "5", "--json", "number,author")
 	if err != nil {
 		t.Fatalf("pr list --author @me failed: %v\nOutput: %s", err, output)
 	}
 
-	if !strings.Contains(output, "472267") && !strings.Contains(output, "Keir Mierle") {
-		t.Errorf("Expected pr list --author @me to find user changes, got:\n%s", output)
+	var items []struct {
+		Number int    `json:"number"`
+		Author string `json:"author"`
+	}
+	if err := json.Unmarshal([]byte(output), &items); err != nil {
+		t.Fatalf("Failed to unmarshal JSON output from pr list --author @me: %v\nRaw: %s", err, output)
+	}
+
+	t.Logf("Verified --author @me resolved to %s <%s> (%d change(s) returned)", self.Name, self.Email, len(items))
+	for _, item := range items {
+		if item.Author != self.Name && item.Author != self.Email && item.Author != self.Username {
+			t.Errorf("Change #%d returned by --author @me has author %q, expected %q or %q",
+				item.Number, item.Author, self.Name, self.Email)
+		}
+	}
+
+	// Also verify explicit author lookup works for a known public contributor.
+	knownOutput, err := executeLiveCommand("pr", "list", "--author", "keir@google.com", "--state", "all", "--limit", "5")
+	if err != nil {
+		t.Fatalf("pr list --author keir@google.com failed: %v\nOutput: %s", err, knownOutput)
+	}
+	if !strings.Contains(knownOutput, "472267") && !strings.Contains(knownOutput, "Keir Mierle") {
+		t.Errorf("Expected pr list --author keir@google.com to find known CLs, got:\n%s", knownOutput)
 	}
 }
 
@@ -1360,4 +1414,324 @@ func TestLive_View_BugAgreesWithCommitMessage(t *testing.T) {
 	if want := FormatBugLinks(wantLinks); data.Bug != want {
 		t.Errorf("bug = %q, want %q", data.Bug, want)
 	}
+}
+
+func isInteractiveLiveTest() bool {
+	if val := strings.TrimSpace(os.Getenv("GHISH_INTERACTIVE")); val != "" {
+		return val == "1" || strings.EqualFold(val, "true") || strings.EqualFold(val, "yes")
+	}
+	if os.Getenv("CI") != "" || os.Getenv("GHISH_NONINTERACTIVE") != "" {
+		return false
+	}
+	for _, arg := range os.Args {
+		if strings.Contains(arg, "TestLive_IssueLifecycle") {
+			return true
+		}
+	}
+	return false
+}
+
+func printSupervisorBanner(t *testing.T, msg string) {
+	t.Helper()
+	if tty, err := os.OpenFile("/dev/tty", os.O_WRONLY, 0); err == nil {
+		defer tty.Close()
+		fmt.Fprintln(tty, msg)
+		return
+	}
+	t.Log(msg)
+}
+
+func pauseForSupervisor(t *testing.T, stepNum, totalSteps int, title string, issueID int64, details string) {
+	t.Helper()
+	pwURL := fmt.Sprintf("https://issues.pigweed.dev/issues/%d", issueID)
+	corpURL := fmt.Sprintf("https://issuetracker.google.com/issues/%d", issueID)
+
+	var sb strings.Builder
+	sb.WriteString("\n================================================================================\n")
+	fmt.Fprintf(&sb, "👉 [STEP %d/%d COMPLETED] %s\n", stepNum, totalSteps, title)
+	sb.WriteString("--------------------------------------------------------------------------------\n")
+	fmt.Fprintf(&sb, "🔗 Buganizer URL (Pigweed):  %s\n", pwURL)
+	fmt.Fprintf(&sb, "🔗 Buganizer URL (Internal): %s\n", corpURL)
+	if strings.TrimSpace(details) != "" {
+		sb.WriteString("--------------------------------------------------------------------------------\n")
+		sb.WriteString(strings.TrimSpace(details) + "\n")
+	}
+	sb.WriteString("================================================================================\n")
+
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		defer tty.Close()
+		fmt.Fprint(tty, sb.String())
+		if isInteractiveLiveTest() && stepNum < totalSteps {
+			fmt.Fprintf(tty, "⏸  Press [ENTER] to advance to Step %d (or Ctrl+C to abort)... ", stepNum+1)
+			reader := bufio.NewReader(tty)
+			_, _ = reader.ReadString('\n')
+			fmt.Fprintln(tty, "")
+		}
+		return
+	}
+
+	t.Log(sb.String())
+}
+
+// TestLive_IssueLifecycle exercises the complete ./gh issue lifecycle against live Buganizer:
+//
+//	Step 1: Create a new issue (./gh issue create)
+//	Step 2: View & validate JSON schema (./gh issue view --json)
+//	Step 3: Edit title, priority, severity label, and assign to 'me' (./gh issue edit)
+//	Step 4: Add comments and verify comment thread (./gh issue comment & view --comments)
+//	Step 5: Verify issue appears in './gh issue list' and './gh issue status'
+//	Step 6: Close issue as 'not planned' (OBSOLETE) (./gh issue close)
+//	Step 7: Reopen issue (./gh issue reopen) and perform final close (./gh issue close)
+//
+// Run interactively (pauses at each step so you can inspect Buganizer in your browser):
+//
+//	go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
+//
+// Run non-interactively (auto-advances while still printing live URLs):
+//
+//	GHISH_INTERACTIVE=0 go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
+func TestLive_IssueLifecycle(t *testing.T) {
+	ctx := context.Background()
+
+	// Verify IssueTracker OAuth credentials are available before starting.
+	if _, err := DefaultIssueTrackerToken(ctx); err != nil {
+		t.Skipf("Skipping live Buganizer test: no OAuth token available: %v", err)
+	}
+
+	const totalSteps = 7
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
+	initialTitle := fmt.Sprintf("[gh-ish LIVE TEST] Issue Lifecycle Walkthrough (%s)", timestamp)
+	initialBody := "This is a temporary live integration test issue created by `pw_ghish` (`./gh issue`).\n\n" +
+		"It will be automatically closed as OBSOLETE at the end of the test run."
+
+	printSupervisorBanner(t, fmt.Sprintf("\n"+
+		"🚀 Starting Live Buganizer Issue Lifecycle Test\n"+
+		"   Interactive Mode: %v (set GHISH_INTERACTIVE=0 to auto-advance, or GHISH_INTERACTIVE=1 to pause)\n",
+		isInteractiveLiveTest()))
+
+	// -------------------------------------------------------------------------
+	// STEP 1: Create a new Buganizer issue
+	// -------------------------------------------------------------------------
+	createOut, err := executeLiveCommand("issue", "create",
+		"-t", initialTitle,
+		"-b", initialBody,
+		"-P", "P3",
+		"-T", "task")
+	if err != nil {
+		t.Fatalf("Step 1 (issue create) failed: %v\nOutput: %s", err, createOut)
+	}
+
+	issueID, err := ParseIssueID(createOut)
+	if err != nil {
+		// Extract b/<id> from output lines
+		for _, line := range strings.Split(createOut, "\n") {
+			for _, token := range strings.Fields(line) {
+				if parsed, pErr := ParseIssueID(strings.TrimSuffix(token, ":")); pErr == nil && parsed > 0 {
+					issueID = parsed
+					break
+				}
+			}
+			if issueID > 0 {
+				break
+			}
+		}
+	}
+	if issueID <= 0 {
+		t.Fatalf("Step 1: could not parse created issue ID from output:\n%s", createOut)
+	}
+
+	issueIDStr := fmt.Sprintf("%d", issueID)
+	testCompletedCleanly := false
+
+	// Safety net: guarantee the test issue is closed as OBSOLETE even if the test fails or is interrupted.
+	t.Cleanup(func() {
+		if !testCompletedCleanly {
+			printSupervisorBanner(t, fmt.Sprintf("🧹 Cleanup: closing test issue b/%d as OBSOLETE...", issueID))
+			_, _ = executeLiveCommand("issue", "close", issueIDStr,
+				"--reason", "not planned",
+				"-c", "Closed automatically by TestLive_IssueLifecycle cleanup handler.")
+		}
+	})
+
+	pauseForSupervisor(t, 1, totalSteps,
+		fmt.Sprintf("Created new Buganizer issue b/%d", issueID),
+		issueID,
+		fmt.Sprintf("CLI Output:\n%s\nVerify in Buganizer:\n  • Title: %s\n  • Priority: P3, Type: TASK, Status: NEW",
+			strings.TrimSpace(createOut), initialTitle))
+
+	// -------------------------------------------------------------------------
+	// STEP 2: View issue & validate JSON schema
+	// -------------------------------------------------------------------------
+	viewJSONOut, err := executeLiveCommand("issue", "view", issueIDStr,
+		"--json", "number,title,state,priority,type,componentId,url")
+	if err != nil {
+		t.Fatalf("Step 2 (issue view --json) failed: %v\nOutput: %s", err, viewJSONOut)
+	}
+
+	var viewData struct {
+		Number      int64  `json:"number"`
+		Title       string `json:"title"`
+		State       string `json:"state"`
+		Priority    string `json:"priority"`
+		Type        string `json:"type"`
+		ComponentID int64  `json:"componentId"`
+		URL         string `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(viewJSONOut), &viewData); err != nil {
+		t.Fatalf("Step 2: failed to unmarshal JSON: %v\nRaw:\n%s", err, viewJSONOut)
+	}
+	if viewData.Number != issueID || viewData.State != "OPEN" || viewData.Priority != "P3" {
+		t.Errorf("Step 2: unexpected JSON fields: %+v", viewData)
+	}
+
+	humanViewOut, err := executeLiveCommand("issue", "view", issueIDStr)
+	if err != nil {
+		t.Fatalf("Step 2 (human issue view) failed: %v", err)
+	}
+
+	pauseForSupervisor(t, 2, totalSteps,
+		fmt.Sprintf("Inspected issue b/%d (human & JSON view)", issueID),
+		issueID,
+		fmt.Sprintf("Human View Output:\n%s", strings.TrimSpace(humanViewOut)))
+
+	// -------------------------------------------------------------------------
+	// STEP 3: Edit issue (Title, Priority -> P2, Severity -> S3, Assignee -> me)
+	// -------------------------------------------------------------------------
+	updatedTitle := fmt.Sprintf("[gh-ish LIVE TEST] Updated & Assigned (%s)", timestamp)
+	editOut, err := executeLiveCommand("issue", "edit", issueIDStr,
+		"-t", updatedTitle,
+		"-P", "P2",
+		"--add-label", "S3",
+		"--add-assignee", "me")
+	if err != nil {
+		t.Fatalf("Step 3 (issue edit) failed: %v\nOutput: %s", err, editOut)
+	}
+
+	afterEditJSON, err := executeLiveCommand("issue", "view", issueIDStr,
+		"--json", "title,priority,severity,assignees")
+	if err != nil {
+		t.Fatalf("Step 3 verification view failed: %v", err)
+	}
+
+	pauseForSupervisor(t, 3, totalSteps,
+		fmt.Sprintf("Edited issue b/%d: Title, Priority=P2, Severity=S3, Assignee=me", issueID),
+		issueID,
+		fmt.Sprintf("CLI Output:\n%s\nUpdated JSON State:\n%s\nVerify in Buganizer:\n  • Status automatically transitioned from NEW -> ASSIGNED\n  • Priority is now P2, Severity is S3\n  • Assigned to your email",
+			strings.TrimSpace(editOut), strings.TrimSpace(afterEditJSON)))
+
+	// -------------------------------------------------------------------------
+	// STEP 4: Add comments and verify comment thread
+	// -------------------------------------------------------------------------
+	comment1Out, err := executeLiveCommand("issue", "comment", issueIDStr,
+		"-b", "Live test comment #1: Verifying `./gh issue comment` execution.")
+	if err != nil {
+		t.Fatalf("Step 4 (first comment) failed: %v\nOutput: %s", err, comment1Out)
+	}
+
+	comment2Out, err := executeLiveCommand("issue", "comment", issueIDStr,
+		"-b", "Live test comment #2: Verifying multi-comment thread formatting.")
+	if err != nil {
+		t.Fatalf("Step 4 (second comment) failed: %v\nOutput: %s", err, comment2Out)
+	}
+
+	viewCommentsOut, err := executeLiveCommand("issue", "view", issueIDStr, "--comments")
+	if err != nil {
+		t.Fatalf("Step 4 (issue view --comments) failed: %v", err)
+	}
+	if !strings.Contains(viewCommentsOut, "temporary live integration test issue") {
+		t.Errorf("Step 4: expected initial issue description in view output, got:\n%s", viewCommentsOut)
+	}
+	if strings.Contains(viewCommentsOut, "by unknown") {
+		t.Errorf("Step 4: expected comment authors to resolve to real email addresses (not 'unknown'), got:\n%s", viewCommentsOut)
+	}
+	idx1 := strings.Index(viewCommentsOut, "Live test comment #1")
+	idx2 := strings.Index(viewCommentsOut, "Live test comment #2")
+	if idx1 < 0 || idx2 < 0 || idx1 > idx2 {
+		t.Errorf("Step 4: expected both comments in chronological order (#1 before #2), got:\n%s", viewCommentsOut)
+	}
+
+	pauseForSupervisor(t, 4, totalSteps,
+		fmt.Sprintf("Posted 2 comments and verified thread on b/%d", issueID),
+		issueID,
+		fmt.Sprintf("View with --comments:\n%s\nVerify in Buganizer:\n  • Both comments appear in the issue history",
+			strings.TrimSpace(viewCommentsOut)))
+
+	// -------------------------------------------------------------------------
+	// STEP 5: Verify issue in `issue list` and `issue status`
+	// -------------------------------------------------------------------------
+	listOut, err := executeLiveCommand("issue", "list", "--assignee", "me", "--limit", "15")
+	if err != nil {
+		t.Fatalf("Step 5 (issue list) failed: %v\nOutput: %s", err, listOut)
+	}
+
+	statusOut, err := executeLiveCommand("issue", "status")
+	if err != nil {
+		t.Fatalf("Step 5 (issue status) failed: %v\nOutput: %s", err, statusOut)
+	}
+
+	pauseForSupervisor(t, 5, totalSteps,
+		fmt.Sprintf("Verified b/%d in `./gh issue list` and `./gh issue status`", issueID),
+		issueID,
+		fmt.Sprintf("`./gh issue status` output:\n%s", strings.TrimSpace(statusOut)))
+
+	// -------------------------------------------------------------------------
+	// STEP 6: Close the issue as 'not planned' (OBSOLETE)
+	// -------------------------------------------------------------------------
+	closeOut, err := executeLiveCommand("issue", "close", issueIDStr,
+		"--reason", "not planned",
+		"-c", "Closing temporarily to test `./gh issue close` -> OBSOLETE state.")
+	if err != nil {
+		t.Fatalf("Step 6 (issue close) failed: %v\nOutput: %s", err, closeOut)
+	}
+
+	closedJSONOut, err := executeLiveCommand("issue", "view", issueIDStr, "--json", "state,stateReason")
+	if err != nil {
+		t.Fatalf("Step 6 verification failed: %v", err)
+	}
+
+	pauseForSupervisor(t, 6, totalSteps,
+		fmt.Sprintf("Closed issue b/%d as 'not planned' (OBSOLETE)", issueID),
+		issueID,
+		fmt.Sprintf("CLI Output:\n%s\nJSON state:\n%s\nVerify in Buganizer:\n  • Issue status is now OBSOLETE (Closed)",
+			strings.TrimSpace(closeOut), strings.TrimSpace(closedJSONOut)))
+
+	// -------------------------------------------------------------------------
+	// STEP 7: Reopen the issue, verify ASSIGNED state, then perform final close
+	// -------------------------------------------------------------------------
+	reopenOut, err := executeLiveCommand("issue", "reopen", issueIDStr,
+		"-c", "Reopening to test `./gh issue reopen` state restoration.")
+	if err != nil {
+		t.Fatalf("Step 7 (issue reopen) failed: %v\nOutput: %s", err, reopenOut)
+	}
+
+	reopenedJSONOut, err := executeLiveCommand("issue", "view", issueIDStr, "--json", "state")
+	if err != nil {
+		t.Fatalf("Step 7 verification failed: %v", err)
+	}
+	if !strings.Contains(reopenedJSONOut, `"OPEN"`) {
+		t.Errorf("Step 7: expected reopened issue state to be OPEN, got:\n%s", reopenedJSONOut)
+	}
+
+	if isInteractiveLiveTest() {
+		pauseForSupervisor(t, 7, totalSteps+1,
+			fmt.Sprintf("Reopened issue b/%d (restored to ASSIGNED)", issueID),
+			issueID,
+			fmt.Sprintf("CLI Output:\n%s\nVerify in Buganizer:\n  • Issue is open again (ASSIGNED)\n  • Next: Pressing ENTER will perform the final close.",
+				strings.TrimSpace(reopenOut)))
+	}
+
+	finalCloseOut, err := executeLiveCommand("issue", "close", issueIDStr,
+		"--reason", "not planned",
+		"-c", "Live integration test completed successfully. Closing ephemeral test issue.")
+	if err != nil {
+		t.Fatalf("Step 7 (final close) failed: %v\nOutput: %s", err, finalCloseOut)
+	}
+
+	testCompletedCleanly = true
+	pauseForSupervisor(t, totalSteps, totalSteps,
+		fmt.Sprintf("Lifecycle test complete! Issue b/%d is closed (OBSOLETE)", issueID),
+		issueID,
+		fmt.Sprintf("Final Close Output:\n%s\n🎉 All 7 Buganizer lifecycle steps succeeded!",
+			strings.TrimSpace(finalCloseOut)))
 }

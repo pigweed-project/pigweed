@@ -17,46 +17,75 @@ package pw_ghish
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 var (
-	// Matches public issue tracker URLs that resolve to numeric IDs:
+	// Matches Google Issue Tracker URLs that resolve to numeric IDs:
 	// - https://issues.pigweed.dev/issues/<id>
+	// - https://g-issues.pigweed.dev/issues/<id>
+	// - https://issues.fuchsia.dev/issues/<id>
+	// - https://issuetracker.google.com/issues/<id>
 	// - https://bugs.chromium.org/p/<project>/issues/detail?id=<id>
-	// - b/<id> or b:<id>
-	// - raw numeric string <id> (at least 3 digits)
-	publicPigweedIssueRegex  = regexp.MustCompile(`^https?://issues\.pigweed\.dev/issues/(\d+)$`)
-	publicChromiumIssueRegex = regexp.MustCompile(`^https?://bugs\.chromium\.org/p/[^/]+/issues/detail\?id=(\d+)$`)
-	shorthandBugRegex        = regexp.MustCompile(`^(?:b/|b:)(\d+)$`)
-	pureNumericBugRegex      = regexp.MustCompile(`^(\d{3,})$`)
+	issueTrackerURLRegex     = regexp.MustCompile(`^https?://(?:(?:g-)?issues\.pigweed\.dev|issues\.fuchsia\.dev|issuetracker\.google\.com)/issues/(\d+)(?:[/?#].*)?$`)
+	publicChromiumIssueRegex = regexp.MustCompile(`^https?://bugs\.chromium\.org/p/[^/]+/issues/detail\?id=(\d+)(?:[&#].*)?$`)
+	shorthandBugRegex        = regexp.MustCompile(`^(?:b/|b:|pwbug(?:\.dev)?/|fxb/|fxbug\.dev/)(\d+)$`)
+	pureNumericBugRegex      = regexp.MustCompile(`^(\d+)$`)
 
 	bugTrailerRegex = regexp.MustCompile(`(?i)^(bug|bugs|bugfix|issue|issues)\s*:\s*(.+)$`)
 	fixTrailerRegex = regexp.MustCompile(`(?i)^(fix|fixes|fixed|fixing)\s*:\s*(.+)$`)
 )
 
+func extractBugNumber(token string, minNumericDigits int) (int64, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, false
+	}
+
+	var numStr string
+	if m := issueTrackerURLRegex.FindStringSubmatch(token); len(m) > 1 {
+		numStr = m[1]
+	} else if m := publicChromiumIssueRegex.FindStringSubmatch(token); len(m) > 1 {
+		numStr = m[1]
+	} else if m := shorthandBugRegex.FindStringSubmatch(token); len(m) > 1 {
+		numStr = m[1]
+	} else if m := pureNumericBugRegex.FindStringSubmatch(token); len(m) > 1 && len(m[1]) >= minNumericDigits {
+		numStr = m[1]
+	}
+
+	if numStr == "" {
+		return 0, false
+	}
+
+	id, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+// ParseIssueID extracts a positive Buganizer issue ID from a numeric string, shorthand (b/123), or URL.
+func ParseIssueID(token string) (int64, error) {
+	id, ok := extractBugNumber(token, 1)
+	if !ok {
+		return 0, fmt.Errorf("invalid Buganizer issue identifier %q.\n\n"+
+			"Expected formats:\n"+
+			"  - Numeric ID (e.g., 345678)\n"+
+			"  - Shorthand prefix (e.g., b/345678, pwbug/345678, fxb/345678, fxbug.dev/345678)\n"+
+			"  - Issue Tracker URL (e.g., https://issues.pigweed.dev/issues/345678)", token)
+	}
+	return id, nil
+}
+
 // NormalizeBugID attempts to extract a canonical bug ID (e.g. "b/12345") from a token.
 // Returns the normalized bug ID if matched, or the original token if not.
 func NormalizeBugID(token string) (string, bool) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return "", false
+	id, ok := extractBugNumber(token, 3)
+	if !ok {
+		return strings.TrimSpace(token), false
 	}
-
-	if m := publicPigweedIssueRegex.FindStringSubmatch(token); len(m) > 1 {
-		return "b/" + m[1], true
-	}
-	if m := publicChromiumIssueRegex.FindStringSubmatch(token); len(m) > 1 {
-		return "b/" + m[1], true
-	}
-	if m := shorthandBugRegex.FindStringSubmatch(token); len(m) > 1 {
-		return "b/" + m[1], true
-	}
-	if m := pureNumericBugRegex.FindStringSubmatch(token); len(m) > 1 {
-		return "b/" + m[1], true
-	}
-
-	return token, false
+	return fmt.Sprintf("b/%d", id), true
 }
 
 // bugChainSeparatorRegex splits a trailer value into candidate bug tokens.

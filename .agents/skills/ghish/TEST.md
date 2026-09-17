@@ -1,12 +1,12 @@
 # Testing `ghish` Skill
 
-This document provides instructions on how to verify that the `ghish` (`./gh`) skill functions correctly and interacts reliably with live Gerrit and Buildbucket instances.
+This document provides instructions on how to verify that the `ghish` (`./gh`) skill functions correctly and interacts reliably with live Gerrit, LUCI Buildbucket, and Google Issue Tracker (Buganizer) instances.
 
 ## Setup & Prerequisites
 
 1. Run from the repository root:
    ```bash
-   cd /usr/local/google/home/keir/wrk/pw-ghish  # or your active pigweed checkout
+   cd <pigweed_repo_root>
    ```
 2. Verify the `./gh` wrapper script is executable and cached:
    ```bash
@@ -141,6 +141,32 @@ Verify that invalid user inputs fail fast with exit code 1 and actionable stderr
 # 4. pr merge on explicit patchset:
 ./gh pr merge 472267/1
 # Verify: exits with code 1; stderr explains patchsets cannot be merged individually
+```
+
+### 11. Live Issue Tracker (Buganizer) Queries (`issue list`, `issue status`)
+
+```bash
+# List recent open issues in Pigweed component:
+./gh issue list --limit 5
+
+# View dashboard of issues assigned to or reported by you:
+./gh issue status
+```
+
+**Verify:**
+- Authenticates automatically (via `luci-auth` or `gcloud` credentials).
+- Displays formatted tables with issue IDs, titles, priorities (`P0`–`P4`), and statuses.
+
+### 12. Automated Live Issue Lifecycle Test (`TestLive_IssueLifecycle`)
+
+To run the full end-to-end Buganizer issue lifecycle test (create in Scratch component `1455250`, view, comment, edit, close, reopen, and mark `OBSOLETE`):
+
+```bash
+# Interactive supervisor mode (pauses after each step with https://issues.pigweed.dev/<ID> links):
+go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
+
+# Non-interactive automated mode:
+GHISH_INTERACTIVE=0 go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
 ```
 
 ---
