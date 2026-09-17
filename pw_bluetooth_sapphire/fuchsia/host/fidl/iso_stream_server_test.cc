@@ -306,6 +306,16 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
   EXPECT_TRUE(status2.has_value());
   EXPECT_EQ(*status2, ZX_ERR_BAD_STATE);
 
+  // kStreamRejectedByController => ZX_ERR_INTERNAL
+  fake_iso_stream()->SetSetupDataPathReturnStatus(
+      SetupDataPathError::kStreamRejectedByController);
+  status2 = std::nullopt;
+  CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
+                    BuildCodecAttributes(),
+                    &status2);
+  EXPECT_TRUE(status2.has_value());
+  EXPECT_EQ(*status2, ZX_ERR_INTERNAL);
+
   // kInvalidArgs => ZX_ERR_INVALID_ARGS
   fake_iso_stream()->SetSetupDataPathReturnStatus(
       SetupDataPathError::kInvalidArgs);
@@ -315,6 +325,16 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
                     &status2);
   EXPECT_TRUE(status2.has_value());
   EXPECT_EQ(*status2, ZX_ERR_INVALID_ARGS);
+
+  // kStreamClosed => ZX_ERR_BAD_STATE
+  fake_iso_stream()->SetSetupDataPathReturnStatus(
+      SetupDataPathError::kStreamClosed);
+  status2 = std::nullopt;
+  CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
+                    BuildCodecAttributes(),
+                    &status2);
+  EXPECT_TRUE(status2.has_value());
+  EXPECT_EQ(*status2, ZX_ERR_BAD_STATE);
 }
 
 TEST_F(IsoStreamServerDataTest, ReadBeforeDataReceived) {
