@@ -26,6 +26,8 @@
 
 namespace bthost {
 
+using SetupDataPathError = bt::iso::IsoStream::SetupDataPathError;
+
 IsoStreamServer::IsoStreamServer(
     fidl::InterfaceRequest<fuchsia::bluetooth::le::IsochronousStream> request,
     fit::callback<void()> on_closed_cb)
@@ -113,41 +115,38 @@ void IsoStreamServer::SetupDataPath(
     return;
   }
 
-  auto on_setup_complete_cb =
-      [fidl_cb =
-           std::move(fidl_cb)](bt::iso::IsoStream::SetupDataPathError error) {
-        switch (error) {
-          case bt::iso::IsoStream::kSuccess:
-            bt_log(INFO, "fidl", "data path successfully setup");
-            fidl_cb(fpromise::ok());
-            break;
-          case bt::iso::IsoStream::kStreamAlreadyExists:
-            bt_log(
-                WARN, "fidl", "data path setup failed (stream already setup)");
-            fidl_cb(fpromise::error(ZX_ERR_ALREADY_EXISTS));
-            break;
-          case bt::iso::IsoStream::kCisNotEstablished:
-            bt_log(
-                WARN, "fidl", "data path setup failed (CIS not established)");
-            fidl_cb(fpromise::error(ZX_ERR_BAD_STATE));
-            break;
-          case bt::iso::IsoStream::kInvalidArgs:
-            bt_log(WARN, "fidl", "data path setup failed (invalid parameters)");
-            fidl_cb(fpromise::error(ZX_ERR_INVALID_ARGS));
-            break;
-          case bt::iso::IsoStream::kStreamClosed:
-            bt_log(WARN, "fidl", "data path setup failed (stream closed)");
-            fidl_cb(fpromise::error(ZX_ERR_BAD_STATE));
-            break;
-          default:
-            bt_log(ERROR,
-                   "fidl",
-                   "Unsupported case in SetupDataPathError: %u",
-                   static_cast<unsigned>(error));
-            fidl_cb(fpromise::error(ZX_ERR_INTERNAL));
-            break;
-        }
-      };
+  auto on_setup_complete_cb = [fidl_cb = std::move(fidl_cb)](
+                                  SetupDataPathError error) {
+    switch (error) {
+      case SetupDataPathError::kSuccess:
+        bt_log(INFO, "fidl", "data path successfully setup");
+        fidl_cb(fpromise::ok());
+        break;
+      case SetupDataPathError::kStreamAlreadyExists:
+        bt_log(WARN, "fidl", "data path setup failed (stream already setup)");
+        fidl_cb(fpromise::error(ZX_ERR_ALREADY_EXISTS));
+        break;
+      case SetupDataPathError::kCisNotEstablished:
+        bt_log(WARN, "fidl", "data path setup failed (CIS not established)");
+        fidl_cb(fpromise::error(ZX_ERR_BAD_STATE));
+        break;
+      case SetupDataPathError::kInvalidArgs:
+        bt_log(WARN, "fidl", "data path setup failed (invalid parameters)");
+        fidl_cb(fpromise::error(ZX_ERR_INVALID_ARGS));
+        break;
+      case SetupDataPathError::kStreamClosed:
+        bt_log(WARN, "fidl", "data path setup failed (stream closed)");
+        fidl_cb(fpromise::error(ZX_ERR_BAD_STATE));
+        break;
+      default:
+        bt_log(ERROR,
+               "fidl",
+               "Unsupported case in SetupDataPathError: %u",
+               static_cast<unsigned>(error));
+        fidl_cb(fpromise::error(ZX_ERR_INTERNAL));
+        break;
+    }
+  };
   (*iso_stream_)
       ->SetupDataPath(
           direction,

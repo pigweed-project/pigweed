@@ -33,7 +33,7 @@ class IsoStream : public hci::IsoDataChannel::ConnectionInterface {
   // indicating whether the vent was handled.
   virtual bool OnCisEstablished(const hci::EventPacket& event) = 0;
 
-  enum SetupDataPathError {
+  enum class SetupDataPathError {
     kSuccess,
     kStreamAlreadyExists,
     kCisNotEstablished,

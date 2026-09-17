@@ -26,6 +26,8 @@
 
 namespace bt::iso {
 
+using SetupDataPathError = IsoStream::SetupDataPathError;
+
 // These values are unfortunately not available for extracting from the emboss
 // definition directly.
 constexpr size_t kTimestampSize = 4;
@@ -343,7 +345,7 @@ void IsoStreamImpl::SetupDataPath(
     IncomingDataHandler&& on_incoming_data_available_cb) {
   if (state_ != IsoStreamState::kEstablished) {
     bt_log(WARN, "iso", "failed to setup data path - CIS not established");
-    on_complete_cb(kCisNotEstablished);
+    on_complete_cb(SetupDataPathError::kCisNotEstablished);
     return;
   }
 
@@ -363,7 +365,7 @@ void IsoStreamImpl::SetupDataPath(
              "iso",
              "invalid data path direction (%u)",
              static_cast<unsigned>(direction));
-      on_complete_cb(kInvalidArgs);
+      on_complete_cb(SetupDataPathError::kInvalidArgs);
       return;
   }
 
@@ -372,7 +374,7 @@ void IsoStreamImpl::SetupDataPath(
            "iso",
            "attempt to setup %s CIS path - already setup",
            direction_as_str);
-    on_complete_cb(kStreamAlreadyExists);
+    on_complete_cb(SetupDataPathError::kStreamAlreadyExists);
     return;
   }
 
@@ -417,7 +419,7 @@ void IsoStreamImpl::SetupDataPath(
                std::move(on_incoming_data_available_cb)](
               auto, const hci::EventPacket& cmd_complete) mutable {
             if (!self.is_alive()) {
-              on_complete_callback(kStreamClosed);
+              on_complete_callback(SetupDataPathError::kStreamClosed);
               return;
             }
 
@@ -438,7 +440,8 @@ void IsoStreamImpl::SetupDataPath(
                      connection_handle,
                      static_cast<uint8_t>(status));
               *target_data_path_state = DataPathState::kNotSetUp;
-              on_complete_callback(kStreamRejectedByController);
+              on_complete_callback(
+                  SetupDataPathError::kStreamRejectedByController);
               return;
             }
 
@@ -456,7 +459,8 @@ void IsoStreamImpl::SetupDataPath(
                      cis_handle,
                      connection_handle);
               *target_data_path_state = DataPathState::kNotSetUp;
-              on_complete_callback(kStreamRejectedByController);
+              on_complete_callback(
+                  SetupDataPathError::kStreamRejectedByController);
               return;
             }
 
@@ -468,7 +472,7 @@ void IsoStreamImpl::SetupDataPath(
             }
             *target_data_path_state = DataPathState::kSetUp;
             bt_log(INFO, "iso", "successfully set up data path");
-            on_complete_callback(kSuccess);
+            on_complete_callback(SetupDataPathError::kSuccess);
           })
       .IgnoreError();
 }

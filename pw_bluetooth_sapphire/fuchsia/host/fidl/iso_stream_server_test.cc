@@ -21,6 +21,8 @@
 namespace bthost {
 namespace {
 
+using SetupDataPathError = bt::iso::IsoStream::SetupDataPathError;
+
 const bt::iso::CisEstablishedParameters kCisParameters = {
     .cig_sync_delay = 1000000,
     .cis_sync_delay = 2000000,
@@ -126,7 +128,7 @@ class IsoStreamServerDataTest : public IsoStreamServerTest {
     fuchsia::bluetooth::CodecAttributes codec_attributes =
         BuildCodecAttributes();
     fake_iso_stream()->SetSetupDataPathReturnStatus(
-        bt::iso::IsoStream::SetupDataPathError::kSuccess);
+        SetupDataPathError::kSuccess);
     std::optional<zx_status_t> status1;
     CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
                       std::move(codec_attributes),
@@ -251,8 +253,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathInputDirection) {
                                          kCisParameters);
   RunLoopUntilIdle();
   fuchsia::bluetooth::CodecAttributes codec_attributes = BuildCodecAttributes();
-  fake_iso_stream()->SetSetupDataPathReturnStatus(
-      bt::iso::IsoStream::SetupDataPathError::kSuccess);
+  fake_iso_stream()->SetSetupDataPathReturnStatus(SetupDataPathError::kSuccess);
   std::optional<zx_status_t> status;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::INPUT,
                     std::move(codec_attributes),
@@ -279,8 +280,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
   fuchsia::bluetooth::CodecAttributes codec_attributes = BuildCodecAttributes();
 
   // kSuccess => no error
-  fake_iso_stream()->SetSetupDataPathReturnStatus(
-      bt::iso::IsoStream::SetupDataPathError::kSuccess);
+  fake_iso_stream()->SetSetupDataPathReturnStatus(SetupDataPathError::kSuccess);
   std::optional<zx_status_t> status1;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
                     std::move(codec_attributes),
@@ -289,7 +289,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
 
   // kStreamAlreadyExists => ZX_ERR_ALREADY_EXISTS
   fake_iso_stream()->SetSetupDataPathReturnStatus(
-      bt::iso::IsoStream::SetupDataPathError::kStreamAlreadyExists);
+      SetupDataPathError::kStreamAlreadyExists);
   std::optional<zx_status_t> status2;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
                     std::move(codec_attributes),
@@ -299,7 +299,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
 
   // kCisNotEstablished => ZX_ERR_BAD_STATE
   fake_iso_stream()->SetSetupDataPathReturnStatus(
-      bt::iso::IsoStream::SetupDataPathError::kCisNotEstablished);
+      SetupDataPathError::kCisNotEstablished);
   status2 = std::nullopt;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
                     std::move(codec_attributes),
@@ -309,7 +309,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
 
   // kInvalidArgs => ZX_ERR_INVALID_ARGS
   fake_iso_stream()->SetSetupDataPathReturnStatus(
-      bt::iso::IsoStream::SetupDataPathError::kInvalidArgs);
+      SetupDataPathError::kInvalidArgs);
   status2 = std::nullopt;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
                     std::move(codec_attributes),
