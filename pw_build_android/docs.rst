@@ -435,3 +435,9 @@ Android targets support dynamic allocation since the Android environment is not
 memory constrained. Thus, ``PW_FUNCTION_ENABLE_DYNAMIC_ALLOCATION`` is enabled
 in ``pw_android_common_backends``. Components built with dynamic allocation
 disabled cannot be linked against components with dynamic allocation enabled.
+
+``PW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL``
+----------------------------------------
+This flag provides legacy default implementations of optional virtual methods
+ in :cpp:class:`pw::Allocator` (such as ``DoResize``) to facilitate the transition
+ to :cpp:class:`pw::allocator::AbstractAllocator`.

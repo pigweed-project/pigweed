@@ -37,6 +37,7 @@ cc_defaults {
         // Allow `pw::Function`s to exceed the inline size. This assumes all
         // targets built with this backend can use dynamic allocation.
         "-DPW_FUNCTION_ENABLE_DYNAMIC_ALLOCATION=1",
+        "-DPW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL=1",
     ],
 
     // Note for maintainers:

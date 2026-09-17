@@ -18,6 +18,9 @@ package {
 
 cc_library {
     name: "pw_allocator",
+    cflags: [
+        "-DPW_ALLOCATOR_USE_LEGACY_DEFAULT_IMPL=1",
+    ],
     export_include_dirs: [
         "block/public",
         "bucket/public",

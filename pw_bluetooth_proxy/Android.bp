@@ -16,6 +16,16 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
+cc_library_headers {
+    name: "pw_bluetooth_proxy_headers",
+    defaults: [
+        "pw_android_common_target_support",
+    ],
+    export_include_dirs: [
+        "public",
+    ],
+}
+
 // LINT.IfChange
 
 cc_library_static {
@@ -49,7 +59,7 @@ cc_library_static {
         "pw_android_common_target_support",
     ],
     srcs: [
-      "acl_snapshot.cc",
+        "acl_snapshot.cc",
     ],
     export_include_dirs: [
         "public",
@@ -73,7 +83,7 @@ cc_library_static {
         "pw_android_common_target_support",
     ],
     srcs: [
-      "l2cap_snapshot.cc",
+        "l2cap_snapshot.cc",
     ],
     export_include_dirs: [
         "public",
@@ -131,12 +141,14 @@ cc_library_static {
     export_include_dirs: [
         "public",
     ],
+    whole_static_libs: [
+        "pw_bluetooth_proxy_acl_snapshot",
+        "pw_bluetooth_proxy_l2cap_snapshot",
+    ],
     static_libs: [
         "pw_allocator",
         "pw_async2",
-        "pw_bluetooth_proxy_acl_snapshot",
         "pw_bluetooth_proxy_clock",
-        "pw_bluetooth_proxy_l2cap_snapshot",
         "pw_containers",
         "pw_function",
         "pw_multibuf",
