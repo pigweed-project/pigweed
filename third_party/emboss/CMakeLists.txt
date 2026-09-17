@@ -15,20 +15,6 @@
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/third_party/emboss/emboss.cmake)
 
-# Hardcoding overrides to use pw_assert. This could potentially be done in a
-# more clever way.
-pw_add_library(pw_third_party.emboss.config_assert INTERFACE
-  PUBLIC_DEPS
-    pw_assert.assert
-  PUBLIC_DEFINES
-    EMBOSS_CHECK=PW_DASSERT
-    EMBOSS_CHECK_ABORTS
-    EMBOSS_DCHECK=PW_DASSERT
-    EMBOSS_DCHECK_ABORTS
-  PUBLIC_COMPILE_OPTIONS
-    -include pw_assert/assert.h
-)
-
 set(dir_pw_third_party_emboss "" CACHE PATH "Path to the emboss installation.")
 
 if("${dir_pw_third_party_emboss}" STREQUAL "")
@@ -39,6 +25,12 @@ if("${dir_pw_third_party_emboss}" STREQUAL "")
   )
   return()
 endif()
+
+configure_file(
+  runtime/cpp/emboss_defines.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/include/runtime/cpp/emboss_defines.h
+  @ONLY
+)
 
 if(EXISTS ${dir_pw_third_party_emboss}/gen/sources.cmake)
   include(${dir_pw_third_party_emboss}/gen/sources.cmake)
@@ -71,9 +63,11 @@ pw_add_library(pw_third_party.emboss.cpp_utils INTERFACE
   SANDBOX
     OFF
   HEADERS
+    ${CMAKE_CURRENT_BINARY_DIR}/include/runtime/cpp/emboss_defines.h
     ${emboss_headers}
   PUBLIC_INCLUDES
+    ${CMAKE_CURRENT_BINARY_DIR}/include
     ${dir_pw_third_party_emboss}
   PUBLIC_DEPS
-    pw_third_party.emboss.config_assert
+    pw_assert.assert
 )
