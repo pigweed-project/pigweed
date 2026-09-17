@@ -172,8 +172,8 @@ pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_c
 
 # Fetch llvm toolchain.
 # ROLL: Warning: this is automatically updated by
-# ROLL: https://cr-buildbucket.appspot.com/build/8671747175785928833
-LLVM_VERSION = "git_revision:5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a"
+# ROLL: https://cr-buildbucket.appspot.com/build/8670561689753343041
+LLVM_VERSION = "git_revision:3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
 
 pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
 pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@15.2.rel1.1")
@@ -229,8 +229,8 @@ rust.toolchain(versions = [])
 pw_rust = use_extension("//pw_toolchain/rust:extensions.bzl", "pw_rust")
 
 # ROLL: Warning: this is automatically updated by
-# ROLL: https://cr-buildbucket.appspot.com/build/8670577270764980097
-RUST_VERSION = "git_revisions:526c36b4c477994b7905ec6a084d6150e49076f5,5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a"
+# ROLL: https://cr-buildbucket.appspot.com/build/8670561689753343041
+RUST_VERSION = "git_revisions:c26ce708de5d14682647895d2f3caf38f70b5aa6,3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
 
 # TODO(b/488384121): Setup a roller
 # ROLL: Warning: this is automatically updated by
