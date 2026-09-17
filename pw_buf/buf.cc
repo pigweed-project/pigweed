@@ -14,6 +14,8 @@
 
 #include "pw_buf/buf.h"
 
+#include <cstring>
+
 #include "pw_allocator/allocator.h"
 #include "pw_assert/assert.h"
 #include "pw_assert/check.h"
@@ -65,24 +67,60 @@ ConstBuf ConstBuf::Reclaim(size_t prefix_count, size_t suffix_count) && {
   return std::move(*this);
 }
 
-Buf Buf::Allocate(Allocator& allocator, size_t offset, size_t size) {
-  size_t allocation_size = offset + size;
+Buf Buf::Allocate(Allocator& allocator, size_t size_bytes) {
   void* ptr =
-      allocator.Allocate(allocator::Layout::Of<std::byte[]>(allocation_size));
-  PW_ASSERT(ptr != nullptr);
-  std::byte* byte_ptr = static_cast<std::byte*>(ptr);
-  return Buf(byte_ptr, offset, size, allocator);
+      allocator.Allocate(allocator::Layout::Of<std::byte[]>(size_bytes));
+  PW_CHECK_NOTNULL(ptr);
+  return Buf(static_cast<std::byte*>(ptr), size_bytes, allocator);
 }
 
-Buf Buf::TryAllocate(Allocator& allocator, size_t offset, size_t size) {
-  size_t allocation_size = offset + size;
+Buf Buf::AllocateFill(Allocator& allocator,
+                      size_t size_bytes,
+                      std::byte value) {
+  Buf buf = Allocate(allocator, size_bytes);
+  if (size_bytes > 0) {
+    std::memset(buf.data(), static_cast<int>(value), size_bytes);
+  }
+  return buf;
+}
+
+Buf Buf::AllocateCopy(Allocator& allocator,
+                      const std::byte* data,
+                      size_t size_bytes) {
+  Buf buf = Allocate(allocator, size_bytes);
+  if (size_bytes > 0) {
+    std::memcpy(buf.data(), data, size_bytes);
+  }
+  return buf;
+}
+
+Buf Buf::TryAllocate(Allocator& allocator, size_t size_bytes) {
   void* ptr =
-      allocator.Allocate(allocator::Layout::Of<std::byte[]>(allocation_size));
+      allocator.Allocate(allocator::Layout::Of<std::byte[]>(size_bytes));
   if (ptr == nullptr) {
     return Buf();
   }
-  std::byte* byte_ptr = static_cast<std::byte*>(ptr);
-  return Buf(byte_ptr, offset, size, allocator);
+  return Buf(static_cast<std::byte*>(ptr), size_bytes, allocator);
+}
+
+Buf Buf::TryAllocateFill(Allocator& allocator,
+                         size_t size_bytes,
+                         std::byte value) {
+  Buf buf = TryAllocate(allocator, size_bytes);
+  if (buf != nullptr && size_bytes > 0) {
+    std::memset(buf.data(), static_cast<int>(value), size_bytes);
+  }
+  return buf;
+}
+
+Buf Buf::TryAllocateCopy(Allocator& allocator,
+                         const std::byte* data,
+                         size_t size_bytes) {
+  Buf buf = TryAllocate(allocator, size_bytes);
+  if (buf != nullptr && size_bytes > 0) {
+    std::memcpy(buf.data(), data, size_bytes);
+  }
+  return buf;
 }
 
 }  // namespace pw

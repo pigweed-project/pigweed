@@ -356,32 +356,62 @@ class Buf {
   /// Allocates a new owned `Buf` of the specified size.
   ///
   /// Asserts if allocation fails.
-  [[nodiscard]] static Buf Allocate(Allocator& allocator, size_t size) {
-    return Allocate(allocator, 0, size);
-  }
+  [[nodiscard]] static Buf Allocate(Allocator& allocator, size_t size_bytes);
 
-  /// Allocates a new owned `Buf` of the specified allocation size, shifted to
-  /// `offset`, with the specified size.
+  /// Allocates a new owned `Buf` of the specified size and fills it with
+  /// `value`.
   ///
   /// Asserts if allocation fails.
-  [[nodiscard]] static Buf Allocate(Allocator& allocator,
-                                    size_t offset,
-                                    size_t size);
+  [[nodiscard]] static Buf AllocateFill(Allocator& allocator,
+                                        size_t size_bytes,
+                                        std::byte value = std::byte{0});
+
+  /// Allocates a new owned `Buf` the same size as `data` and copies the
+  /// contents of `data` into it.
+  ///
+  /// Asserts if allocation fails.
+  [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
+                                        ConstByteSpan data) {
+    return AllocateCopy(allocator, data.data(), data.size());
+  }
+
+  /// Allocates a new owned `Buf` of the specified size and copies from `data`
+  /// into it.
+  ///
+  /// Asserts if allocation fails.
+  [[nodiscard]] static Buf AllocateCopy(Allocator& allocator,
+                                        const std::byte* data,
+                                        size_t size_bytes);
 
   /// Allocates a new owned `Buf` of the specified size.
   ///
   /// Returns a null `Buf` if allocation fails.
-  [[nodiscard]] static Buf TryAllocate(Allocator& allocator, size_t size) {
-    return TryAllocate(allocator, 0, size);
-  }
+  [[nodiscard]] static Buf TryAllocate(Allocator& allocator, size_t size_bytes);
 
-  /// Allocates a new owned `Buf` of the specified allocation size, shifted to
-  /// `offset`, with the specified size.
+  /// Allocates a new owned `Buf` of the specified size and fills it with
+  /// `value`.
   ///
   /// Returns a null `Buf` if allocation fails.
-  [[nodiscard]] static Buf TryAllocate(Allocator& allocator,
-                                       size_t offset,
-                                       size_t size);
+  [[nodiscard]] static Buf TryAllocateFill(Allocator& allocator,
+                                           size_t size_bytes,
+                                           std::byte value = std::byte{0});
+
+  /// Allocates a new owned `Buf` the same size as `data` and copies the
+  /// contents of `data` into it.
+  ///
+  /// Returns a null `Buf` if allocation fails.
+  [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
+                                           ConstByteSpan data) {
+    return TryAllocateCopy(allocator, data.data(), data.size());
+  }
+
+  /// Allocates a new owned `Buf` of the specified size and copies from `data`
+  /// into it.
+  ///
+  /// Returns a null `Buf` if allocation fails.
+  [[nodiscard]] static Buf TryAllocateCopy(Allocator& allocator,
+                                           const std::byte* data,
+                                           size_t size_bytes);
 
   Buf(const Buf&) = delete;
 

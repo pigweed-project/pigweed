@@ -689,39 +689,42 @@ TEST_F(BufTest, AllocateSuccess) {
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
-TEST_F(BufTest, AllocateSuccessWithOffset) {
-  Buf buf = Buf::Allocate(test_allocator_, 3, 7);
-  EXPECT_EQ(buf.size(), 7u);
-  EXPECT_EQ(buf.deallocator(), &test_allocator_);
-}
-
-TEST_F(BufTest, AllocateSuccessWithOffsetAndSize) {
-  Buf buf = Buf::Allocate(test_allocator_, 2, 5);
-  EXPECT_EQ(buf.size(), 5u);
-  EXPECT_EQ(buf.deallocator(), &test_allocator_);
-}
-
 TEST_F(BufTest, AllocateFailureAsserts) {
   allocator::NullAllocator null_allocator;
   EXPECT_DEATH_IF_SUPPORTED((void)Buf::Allocate(null_allocator, 10), ".*");
+}
+
+TEST_F(BufTest, AllocateFillSuccessDefaultValue) {
+  Buf buf = Buf::AllocateFill(test_allocator_, 10);
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  for (std::byte b : buf) {
+    EXPECT_EQ(b, std::byte{0});
+  }
+}
+
+TEST_F(BufTest, AllocateFillSuccessCustomValue) {
+  Buf buf = Buf::AllocateFill(test_allocator_, 10, std::byte{0xAB});
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  for (std::byte b : buf) {
+    EXPECT_EQ(b, std::byte{0xAB});
+  }
+}
+
+TEST_F(BufTest, AllocateFillFailureAsserts) {
+  allocator::NullAllocator null_allocator;
+  EXPECT_DEATH_IF_SUPPORTED((void)Buf::AllocateFill(null_allocator, 10), ".*");
+
+  EXPECT_DEATH_IF_SUPPORTED((void)Buf::AllocateFill(test_allocator_, 0), ".*");
 }
 
 TEST_F(BufTest, TryAllocateSuccess) {
   Buf buf = Buf::TryAllocate(test_allocator_, 10);
   EXPECT_EQ(buf.size(), 10u);
   EXPECT_NE(buf.data(), nullptr);
-  EXPECT_EQ(buf.deallocator(), &test_allocator_);
-}
-
-TEST_F(BufTest, TryAllocateSuccessWithOffset) {
-  Buf buf = Buf::TryAllocate(test_allocator_, 3, 7);
-  EXPECT_EQ(buf.size(), 7u);
-  EXPECT_EQ(buf.deallocator(), &test_allocator_);
-}
-
-TEST_F(BufTest, TryAllocateSuccessWithOffsetAndSize) {
-  Buf buf = Buf::TryAllocate(test_allocator_, 2, 5);
-  EXPECT_EQ(buf.size(), 5u);
   EXPECT_EQ(buf.deallocator(), &test_allocator_);
 }
 
@@ -735,9 +738,28 @@ TEST_F(BufTest, TryAllocateFailureReturnsEmpty) {
   EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
-TEST_F(BufTest, TryAllocateFailureWithOffsetReturnsEmpty) {
-  allocator::NullAllocator null_allocator;
-  Buf buf = Buf::TryAllocate(null_allocator, 3, 7);
+TEST_F(BufTest, TryAllocateFillSuccessDefaultValue) {
+  Buf buf = Buf::TryAllocateFill(test_allocator_, 10);
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  for (std::byte b : buf) {
+    EXPECT_EQ(b, std::byte{0});
+  }
+}
+
+TEST_F(BufTest, TryAllocateFillSuccessCustomValue) {
+  Buf buf = Buf::TryAllocateFill(test_allocator_, 10, std::byte{0xCD});
+  EXPECT_EQ(buf.size(), 10u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  for (std::byte b : buf) {
+    EXPECT_EQ(b, std::byte{0xCD});
+  }
+}
+
+TEST_F(BufTest, TryAllocateFillZeroSizeReturnsEmpty) {
+  Buf buf = Buf::TryAllocateFill(test_allocator_, 0);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
@@ -745,14 +767,113 @@ TEST_F(BufTest, TryAllocateFailureWithOffsetReturnsEmpty) {
   EXPECT_EQ(buf.deallocator(), nullptr);
 }
 
-TEST_F(BufTest, TryAllocateFailureWithOffsetAndSizeReturnsEmpty) {
+TEST_F(BufTest, TryAllocateFillFailureReturnsEmpty) {
   allocator::NullAllocator null_allocator;
-  Buf buf = Buf::TryAllocate(null_allocator, 2, 5);
+  Buf buf = Buf::TryAllocateFill(null_allocator, 10);
   EXPECT_TRUE(buf.empty());
   EXPECT_EQ(buf.size(), 0u);
   EXPECT_EQ(buf.data(), nullptr);
   EXPECT_EQ(buf.base(), nullptr);
   EXPECT_EQ(buf.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, AllocateCopyFromSpanSuccess) {
+  constexpr std::array<std::byte, 5> data = {
+      std::byte(1), std::byte(2), std::byte(3), std::byte(4), std::byte(5)};
+  Buf buf = Buf::AllocateCopy(test_allocator_, ConstByteSpan(data));
+  EXPECT_EQ(buf.size(), 5u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
+}
+
+TEST_F(BufTest, AllocateCopyFromPointerAndSizeSuccess) {
+  constexpr std::array<std::byte, 5> data = {std::byte(10),
+                                             std::byte(20),
+                                             std::byte(30),
+                                             std::byte(40),
+                                             std::byte(50)};
+  Buf buf = Buf::AllocateCopy(test_allocator_, data.data(), data.size());
+  EXPECT_EQ(buf.size(), 5u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
+}
+
+TEST_F(BufTest, AllocateCopyFailureAsserts) {
+  allocator::NullAllocator null_allocator;
+  constexpr std::array<std::byte, 4> data = {
+      std::byte(1), std::byte(2), std::byte(3), std::byte(4)};
+  EXPECT_DEATH_IF_SUPPORTED(
+      (void)Buf::AllocateCopy(null_allocator, ConstByteSpan(data)), ".*");
+  EXPECT_DEATH_IF_SUPPORTED(
+      (void)Buf::AllocateCopy(null_allocator, data.data(), data.size()), ".*");
+
+  // Allocating size 0 also fails because Allocator returns nullptr for size 0.
+  ConstByteSpan empty_span;
+  EXPECT_DEATH_IF_SUPPORTED(
+      (void)Buf::AllocateCopy(test_allocator_, empty_span), ".*");
+  EXPECT_DEATH_IF_SUPPORTED(
+      (void)Buf::AllocateCopy(test_allocator_, nullptr, 0), ".*");
+}
+
+TEST_F(BufTest, TryAllocateCopyFromSpanSuccess) {
+  constexpr std::array<std::byte, 5> data = {
+      std::byte(1), std::byte(2), std::byte(3), std::byte(4), std::byte(5)};
+  Buf buf = Buf::TryAllocateCopy(test_allocator_, ConstByteSpan(data));
+  EXPECT_EQ(buf.size(), 5u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
+}
+
+TEST_F(BufTest, TryAllocateCopyFromPointerAndSizeSuccess) {
+  constexpr std::array<std::byte, 5> data = {std::byte(10),
+                                             std::byte(20),
+                                             std::byte(30),
+                                             std::byte(40),
+                                             std::byte(50)};
+  Buf buf = Buf::TryAllocateCopy(test_allocator_, data.data(), data.size());
+  EXPECT_EQ(buf.size(), 5u);
+  EXPECT_NE(buf.data(), nullptr);
+  EXPECT_EQ(buf.deallocator(), &test_allocator_);
+  EXPECT_TRUE(std::equal(buf.begin(), buf.end(), data.begin(), data.end()));
+}
+
+TEST_F(BufTest, TryAllocateCopyZeroSizeReturnsEmpty) {
+  ConstByteSpan empty_span;
+  Buf buf1 = Buf::TryAllocateCopy(test_allocator_, empty_span);
+  EXPECT_TRUE(buf1.empty());
+  EXPECT_EQ(buf1.size(), 0u);
+  EXPECT_EQ(buf1.data(), nullptr);
+  EXPECT_EQ(buf1.base(), nullptr);
+  EXPECT_EQ(buf1.deallocator(), nullptr);
+
+  Buf buf2 = Buf::TryAllocateCopy(test_allocator_, nullptr, 0);
+  EXPECT_TRUE(buf2.empty());
+  EXPECT_EQ(buf2.size(), 0u);
+  EXPECT_EQ(buf2.data(), nullptr);
+  EXPECT_EQ(buf2.base(), nullptr);
+  EXPECT_EQ(buf2.deallocator(), nullptr);
+}
+
+TEST_F(BufTest, TryAllocateCopyFailureReturnsEmpty) {
+  allocator::NullAllocator null_allocator;
+  constexpr std::array<std::byte, 4> data = {
+      std::byte(1), std::byte(2), std::byte(3), std::byte(4)};
+  Buf buf_span = Buf::TryAllocateCopy(null_allocator, ConstByteSpan(data));
+  EXPECT_TRUE(buf_span.empty());
+  EXPECT_EQ(buf_span.size(), 0u);
+  EXPECT_EQ(buf_span.data(), nullptr);
+  EXPECT_EQ(buf_span.base(), nullptr);
+  EXPECT_EQ(buf_span.deallocator(), nullptr);
+
+  Buf buf_ptr = Buf::TryAllocateCopy(null_allocator, data.data(), data.size());
+  EXPECT_TRUE(buf_ptr.empty());
+  EXPECT_EQ(buf_ptr.size(), 0u);
+  EXPECT_EQ(buf_ptr.data(), nullptr);
+  EXPECT_EQ(buf_ptr.base(), nullptr);
+  EXPECT_EQ(buf_ptr.deallocator(), nullptr);
 }
 
 TEST_F(BufTest, BasePointerPreservedAcrossSlicing) {
