@@ -422,7 +422,7 @@ def _extract_all_units(
     start_time = time.time()
     unit_kzips: list[Path] = []
 
-    with concurrent.futures.ThreadPoolExecutor(
+    with concurrent.futures.ProcessPoolExecutor(
         max_workers=max_workers
     ) as executor:
         futures = {
@@ -638,7 +638,7 @@ def _extract_crates_from_manifest(
                 pass
 
     unit_kzips: list[Path] = []
-    with concurrent.futures.ThreadPoolExecutor(
+    with concurrent.futures.ProcessPoolExecutor(
         max_workers=max_workers
     ) as executor:
         futures = [
