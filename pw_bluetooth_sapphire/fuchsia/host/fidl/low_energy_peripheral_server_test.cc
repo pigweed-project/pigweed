@@ -23,6 +23,7 @@
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_advertising_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connection_manager.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/test_helpers.h"
 
@@ -929,6 +930,59 @@ TEST_F(LowEnergyPeripheralServerTestFakeAdapter,
                   ->registered_advertisements()
                   .begin()
                   ->second.include_tx_power_level);
+}
+
+TEST_F(LowEnergyPeripheralServerTest, StartAdvertisingDataTooLong) {
+  // Legacy advertising PDU limit is 31 bytes (kMaxLEAdvertisingDataLength).
+  // A name of kMaxLEAdvertisingDataLength requires 33 bytes in the AD structure
+  // (1 byte length + 1 byte type + 31 bytes payload), exceeding the allowable
+  // limit.
+  fble::AdvertisingParameters params;
+  fble::AdvertisingData adv_data;
+  adv_data.set_name(
+      std::string(bt::hci_spec::kMaxLEAdvertisingDataLength, 'a'));
+  params.set_data(std::move(adv_data));
+
+  FidlAdvHandle token;
+
+  std::optional<fpromise::result<void, fble::PeripheralError>> result;
+  server()->StartAdvertising(
+      std::move(params), token.NewRequest(), [&](auto cb_result) {
+        result = std::move(cb_result);
+      });
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_error());
+  EXPECT_EQ(result->error(), fble::PeripheralError::ADVERTISING_DATA_TOO_LONG);
+  EXPECT_TRUE(IsChannelPeerClosed(token.channel()));
+}
+
+TEST_F(LowEnergyPeripheralServerTest, StartAdvertisingScanResponseDataTooLong) {
+  // Legacy scan response PDU limit is 31 bytes (kMaxLEAdvertisingDataLength).
+  // A name of kMaxLEAdvertisingDataLength requires 33 bytes in the AD structure
+  // (1 byte length + 1 byte type + 31 bytes payload), exceeding the allowable
+  // limit.
+  fble::AdvertisingParameters params;
+  fble::AdvertisingData scan_rsp;
+  scan_rsp.set_name(
+      std::string(bt::hci_spec::kMaxLEAdvertisingDataLength, 'a'));
+  params.set_scan_response(std::move(scan_rsp));
+
+  FidlAdvHandle token;
+
+  std::optional<fpromise::result<void, fble::PeripheralError>> result;
+  server()->StartAdvertising(
+      std::move(params), token.NewRequest(), [&](auto cb_result) {
+        result = std::move(cb_result);
+      });
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(result.has_value());
+  ASSERT_TRUE(result->is_error());
+  EXPECT_EQ(result->error(),
+            fble::PeripheralError::SCAN_RESPONSE_DATA_TOO_LONG);
+  EXPECT_TRUE(IsChannelPeerClosed(token.channel()));
 }
 
 TEST_F(LowEnergyPeripheralServerTestFakeAdapter,
