@@ -277,13 +277,12 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
   server()->OnStreamEstablishmentSuccess(fake_iso_stream()->GetWeakPtr(),
                                          kCisParameters);
   RunLoopUntilIdle();
-  fuchsia::bluetooth::CodecAttributes codec_attributes = BuildCodecAttributes();
 
   // kSuccess => no error
   fake_iso_stream()->SetSetupDataPathReturnStatus(SetupDataPathError::kSuccess);
   std::optional<zx_status_t> status1;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
-                    std::move(codec_attributes),
+                    BuildCodecAttributes(),
                     &status1);
   EXPECT_FALSE(status1.has_value());
 
@@ -292,7 +291,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
       SetupDataPathError::kStreamAlreadyExists);
   std::optional<zx_status_t> status2;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
-                    std::move(codec_attributes),
+                    BuildCodecAttributes(),
                     &status2);
   EXPECT_TRUE(status2.has_value());
   EXPECT_EQ(*status2, ZX_ERR_ALREADY_EXISTS);
@@ -302,7 +301,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
       SetupDataPathError::kCisNotEstablished);
   status2 = std::nullopt;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
-                    std::move(codec_attributes),
+                    BuildCodecAttributes(),
                     &status2);
   EXPECT_TRUE(status2.has_value());
   EXPECT_EQ(*status2, ZX_ERR_BAD_STATE);
@@ -312,7 +311,7 @@ TEST_F(IsoStreamServerTest, SetupDataPathStatusCodes) {
       SetupDataPathError::kInvalidArgs);
   status2 = std::nullopt;
   CallSetupDataPath(fuchsia::bluetooth::DataDirection::OUTPUT,
-                    std::move(codec_attributes),
+                    BuildCodecAttributes(),
                     &status2);
   EXPECT_TRUE(status2.has_value());
   EXPECT_EQ(*status2, ZX_ERR_INVALID_ARGS);
