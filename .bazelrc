@@ -298,9 +298,15 @@ test:stm32f429i_baremetal --run_under=//targets/stm32f429i_disc1/py:unit_test_cl
 build:stm32f429i_freertos --platforms=//targets/stm32f429i_disc1_stm32cube:stm32f429i_freertos
 test:stm32f429i_freertos --run_under=//targets/stm32f429i_disc1/py:unit_test_client
 
-# Config for the lm3s6965evb platfor
+# Config for the lm3s6965evb platform
 build:lm3s6965evb --platforms=//targets/lm3s6965evb_qemu
 test:lm3s6965evb --run_under=//targets/lm3s6965evb_qemu/py:exec_cfg_unit_test_runner
+run:lm3s6965evb --run_under=//targets/lm3s6965evb_qemu/py:exec_cfg_unit_test_runner
+
+# Config for the lm3s6965evb FreeRTOS QEMU platform
+build:lm3s6965evb_freertos --platforms=//targets/lm3s6965evb_qemu:lm3s6965evb_freertos
+test:lm3s6965evb_freertos --run_under=//targets/lm3s6965evb_qemu/py:exec_cfg_unit_test_runner
+run:lm3s6965evb_freertos --run_under=//targets/lm3s6965evb_qemu/py:exec_cfg_unit_test_runner
 
 # Config for the microbit platform, used to build pw_rust/examples.
 build:microbit --platforms=//targets/microbit

@@ -13,6 +13,7 @@
 // the License.
 #pragma once
 
+#include "pw_thread_freertos/config.h"
 #include "pw_thread_freertos/context.h"
 #include "pw_thread_freertos/options.h"
 
@@ -21,7 +22,8 @@ namespace pw::thread::test::backend {
 // Native Test Thread Options backend class for FreeRTOS.
 class TestThreadContextNative {
  public:
-  static constexpr size_t kStackSizeWords = 8192;
+  static constexpr size_t kStackSizeWords =
+      PW_THREAD_FREERTOS_CONFIG_TEST_THREAD_STACK_SIZE_WORDS;
 
   constexpr TestThreadContextNative() : context_(kConstexpr) {
     options_.set_static_context(context_);

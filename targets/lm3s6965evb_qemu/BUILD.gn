@@ -45,3 +45,14 @@ if (current_toolchain != default_toolchain) {
     ]
   }
 }
+
+# Declared in GN to satisfy presubmit checks requiring all C/C++ source files in
+# the repository to be listed in GN build files.
+pw_source_set("bazel_freertos_qemu_files") {
+  sources = [
+    "config/FreeRTOSConfig.h",
+    "freertos_perf_test_main.cc",
+    "freertos_unit_test_main.cc",
+    "systick_timer_public_overrides/pw_perf_test_timer_backend/timer.h",
+  ]
+}

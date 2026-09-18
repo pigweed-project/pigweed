@@ -27,7 +27,7 @@ def pw_cc_perf_test(**kwargs):
       **kwargs: Passed to cc_binary.
     """
     kwargs["deps"] = kwargs.get("deps", []) + \
-                     [str(Label("//pw_perf_test:logging_main"))]
+                     [str(Label("//pw_perf_test:main"))]
     kwargs["deps"] = kwargs["deps"] + [str(Label("//pw_assert:assert_backend_impl"))]
     kwargs["deps"] = kwargs["deps"] + [str(Label("//pw_assert:check_backend_impl"))]
     kwargs["testonly"] = True

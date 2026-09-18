@@ -126,6 +126,11 @@ cc_library(
     ],
 )
 
+label_flag(
+    name = "main",
+    build_setting_default = ":logging_main",
+)
+
 # Timer facade
 
 cc_library(
@@ -134,7 +139,6 @@ cc_library(
         "public/pw_perf_test/internal/duration_unit.h",
     ],
     strip_include_prefix = "public",
-    visibility = ["//visibility:private"],
 )
 
 pw_facade(

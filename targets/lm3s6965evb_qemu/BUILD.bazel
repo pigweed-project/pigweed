@@ -17,6 +17,7 @@ load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:merge_flags.bzl", "flags_from_dict")
 load("//pw_build:pigweed.bzl", "pw_linker_script")
+load("//third_party/freertos:flags.bzl", "FREERTOS_FLAGS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -73,6 +74,118 @@ platform(
         "//pw_toolchain/arm_gcc:freestanding": "False",
         "//pw_unit_test:main": "//pw_unit_test:logging_main",
         "@bazel_tools//tools/cpp:link_extra_libs": ":pre_init",
+    }),
+)
+
+constraint_value(
+    name = "freertos_config_cv",
+    constraint_setting = "@freertos//:freertos_config_setting",
+)
+
+cc_library(
+    name = "freertos_config",
+    hdrs = [
+        "config/FreeRTOSConfig.h",
+    ],
+    strip_include_prefix = "config",
+    target_compatible_with = [":freertos_config_cv"],
+    deps = [
+        "//third_party/freertos:config_assert",
+    ],
+)
+
+cc_library(
+    name = "freertos_module_config",
+    defines = [
+        "PW_ASSERT_BASIC_ACTION=PW_ASSERT_BASIC_ACTION_EXIT",
+        "PW_THREAD_FREERTOS_CONFIG_JOINING_ENABLED=1",
+        "PW_THREAD_FREERTOS_CONFIG_TEST_THREAD_STACK_SIZE_WORDS=512",
+    ],
+)
+
+cc_library(
+    name = "freertos_unit_test_main",
+    testonly = True,
+    srcs = [
+        "freertos_unit_test_main.cc",
+    ],
+    deps = [
+        "//pw_boot",
+        "//pw_unit_test",
+        "//pw_unit_test:logging_event_handler",
+        "@freertos",
+    ],
+)
+
+cc_library(
+    name = "freertos_perf_test_main",
+    testonly = True,
+    srcs = [
+        "freertos_perf_test_main.cc",
+    ],
+    deps = [
+        "//pw_boot",
+        "//pw_perf_test",
+        "//pw_perf_test:logging_event_handler",
+        "@freertos",
+    ],
+)
+
+cc_library(
+    name = "freertos_systick_timer",
+    hdrs = [
+        "systick_timer_public_overrides/pw_perf_test_timer_backend/timer.h",
+    ],
+    includes = [
+        "systick_timer_public_overrides",
+    ],
+    deps = [
+        "//pw_perf_test:duration_unit",
+        "//pw_perf_test:timer.facade",
+        "@freertos",
+    ],
+)
+
+cc_library(
+    name = "freertos_pre_init",
+    deps = [
+        ":pre_init",
+        "//third_party/freertos:support",
+    ],
+    alwayslink = 1,
+)
+
+platform(
+    name = "lm3s6965evb_freertos",
+    constraint_values = [
+        "//pw_build/constraints/arm:cortex-m3",
+        "@platforms//cpu:armv7-m",
+        "@platforms//os:none",
+        "//pw_build/constraints/rust:no_std",
+        "//pw_sys_io_baremetal_lm3s6965evb:compatible",
+        "//pw_build/constraints/rtos:freertos",
+        "//pw_interrupt_cortex_m:compatible",
+        ":freertos_config_cv",
+        "@freertos//:port_ARM_CM3",
+        "@freertos//:malloc_heap_4",
+        "@freertos//:disable_task_statics",
+    ],
+    flags = flags_from_dict(FREERTOS_FLAGS | {
+        "//pw_assert:check_backend": "//pw_assert_basic",
+        "//pw_assert:check_backend_impl": "//pw_assert_basic:impl",
+        "//pw_boot:backend": "//pw_boot_cortex_m",
+        "//pw_build:default_module_config": "//targets/lm3s6965evb_qemu:freertos_module_config",
+        "//pw_interrupt:backend": "//pw_interrupt_cortex_m:context",
+        "//pw_log:backend": "//pw_log_basic",
+        "//pw_log:backend_impl": "//pw_log_basic:impl",
+        "//pw_malloc:backend": "//pw_malloc:bucket_allocator",
+        "//pw_perf_test:main": "//targets/lm3s6965evb_qemu:freertos_perf_test_main",
+        "//pw_perf_test:test_timer_backend": "//targets/lm3s6965evb_qemu:freertos_systick_timer",
+        "//pw_sys_io:backend": "//pw_sys_io_baremetal_lm3s6965evb",
+        "//pw_toolchain/arm_gcc:freestanding": "False",
+        "//pw_unit_test:main": "//targets/lm3s6965evb_qemu:freertos_unit_test_main",
+        "@bazel_tools//tools/cpp:link_extra_libs": ":freertos_pre_init",
+        "@freertos//:freertos_config": ":freertos_config",
     }),
 )
 

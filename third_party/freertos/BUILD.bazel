@@ -43,6 +43,7 @@ cc_library(
 alias(
     name = "freertos_config",
     actual = select({
+        "//targets/lm3s6965evb_qemu:freertos_config_cv": "//targets/lm3s6965evb_qemu:freertos_config",
         "//targets/rp2040:freertos_config_cv": "//targets/rp2040:freertos_config",
         "//targets/stm32f429i_disc1_stm32cube:freertos_config_cv": "//targets/stm32f429i_disc1_stm32cube:freertos_config",
         "//conditions:default": "@freertos//:default_freertos_config",

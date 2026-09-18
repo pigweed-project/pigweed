@@ -63,6 +63,11 @@ def launch_tests(binary: str) -> int:
         'lm3s6965evb',
         '-nographic',
         '-no-reboot',
+        # Advance virtual time deterministically by 2^6 ns per instruction for
+        # cycle-accurate SysTick measurements; align=off runs at full host TCG
+        # speed without throttling to wall clock and fast-forwards WFI sleeps.
+        '-icount',
+        'shift=6,align=off',
         '-kernel',
         binary,
     ]

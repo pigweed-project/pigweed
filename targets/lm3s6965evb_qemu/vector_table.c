@@ -13,18 +13,31 @@
 // the License.
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "pw_boot/boot.h"
 #include "pw_boot_cortex_m/boot.h"
 #include "pw_memory/busy_wait_forever.h"
+#include "pw_preprocessor/compiler.h"
 
 // Default handler to insert into the ARMv7-M vector table (below).
 // This function exists for convenience. If a device isn't doing what you
 // expect, it might have hit a fault and ended up here.
 static void DefaultFaultHandler(void) {
-  // Wait for debugger to attach.
+  // Tell QEMU to shut down immediately on fault instead of hanging.
+  volatile uint32_t* aircr = (uint32_t*)(0xE000ED0CU);
+  *aircr = 0x5fa0004;
+  // Wait for debugger to attach if not running in QEMU.
   pw_BusyWaitForever();
 }
+
+// Interrupt handlers critical for OS operation.
+// Default weak implementations fall back to DefaultFaultHandler if no OS is
+// linked. When FreeRTOS is linked, its port handlers override these symbols.
+PW_WEAK void SVC_Handler(void) { DefaultFaultHandler(); }
+PW_WEAK void DebugMon_Handler(void) { DefaultFaultHandler(); }
+PW_WEAK void PendSV_Handler(void) { DefaultFaultHandler(); }
+PW_WEAK void SysTick_Handler(void) { DefaultFaultHandler(); }
 
 // This is the device's interrupt vector table. It's not referenced in any
 // code because the platform (STM32F4xx) expects this table to be present at the
@@ -55,4 +68,25 @@ const InterruptHandler vector_table[] = {
     [2] = DefaultFaultHandler,
     // HardFault handler.
     [3] = DefaultFaultHandler,
+    // MemManage fault handler.
+    [4] = DefaultFaultHandler,
+    // BusFault handler.
+    [5] = DefaultFaultHandler,
+    // UsageFault handler.
+    [6] = DefaultFaultHandler,
+    // 7-10: Reserved.
+    [7] = 0,
+    [8] = 0,
+    [9] = 0,
+    [10] = 0,
+    // SVCall handler.
+    [11] = SVC_Handler,
+    // DebugMon handler.
+    [12] = DebugMon_Handler,
+    // 13: Reserved.
+    [13] = 0,
+    // PendSV handler.
+    [14] = PendSV_Handler,
+    // SysTick handler.
+    [15] = SysTick_Handler,
 };
