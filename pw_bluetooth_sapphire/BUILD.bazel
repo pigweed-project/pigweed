@@ -220,7 +220,7 @@ cc_library(
     srcs = ["peripheral.cc"],
     hdrs = ["public/pw_bluetooth_sapphire/peripheral.h"],
     features = ["-conversion_warnings"],
-    includes = ["public"],
+    strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
         "//pw_async2:value_future",

@@ -61,7 +61,7 @@ cc_library(
         "public/pw_bluetooth/uuid.h",
         "public/pw_bluetooth/vendor.h",
     ],
-    includes = ["public"],
+    strip_include_prefix = "public",
     deps = [
         "//pw_assert:assert",
         "//pw_chrono:system_clock",
@@ -104,7 +104,7 @@ cc_library(
         "public/pw_bluetooth/uuid.h",
         "public/pw_bluetooth/vendor.h",
     ],
-    includes = ["public"],
+    strip_include_prefix = "public",
     deps = [
         ":config",
         "//pw_assert:assert",
@@ -153,7 +153,7 @@ cc_library(
         "public/pw_bluetooth/snoop.h",
     ],
     implementation_deps = ["//pw_assert:check"],
-    includes = ["public"],
+    strip_include_prefix = "public",
     deps = [
         ":emboss_hci",
         ":emboss_snoop",
@@ -178,7 +178,7 @@ cc_library(
     hdrs = [
         "public/pw_bluetooth/emboss_util.h",
     ],
-    includes = ["public"],
+    strip_include_prefix = "public",
     deps = [
         "//pw_result",
         "//pw_span",
