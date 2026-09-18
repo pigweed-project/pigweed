@@ -18,7 +18,12 @@ mod tests {
     use pw_log_backend::{pw_log_backend, pw_logf_backend};
     use pw_log_backend_api::LogLevel;
 
-    use crate::run_with_capture;
+    // Run with capture that checks no panics occurred in the result.
+    fn run_with_capture<F: FnOnce()>(action: F) -> String {
+        let (output, result) = crate::run_with_capture(action);
+        result.unwrap();
+        output
+    }
 
     #[test]
     fn no_argument_log_line_prints_to_stdout() {

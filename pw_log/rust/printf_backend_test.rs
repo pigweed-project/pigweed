@@ -15,7 +15,7 @@
 mod backend_tests;
 
 #[cfg(not(target_os = "macos"))]
-#[cfg(test)]
+// TODO: https://pwbug.dev/563021166 - Restore cfg(test) for this function.
 fn flush_stdout() {
     // Safety: Test only.  Calling into a libc function w/o any dependency on
     // data from the Rust side.
@@ -28,7 +28,7 @@ fn flush_stdout() {
 }
 
 #[cfg(target_os = "macos")]
-#[cfg(test)]
+// TODO: https://pwbug.dev/563021166 - Restore cfg(test) for this function.
 fn flush_stdout() {
     // Safety: Test only.  Calling into a libc function w/o any dependency on
     // data from the Rust side.
@@ -43,10 +43,9 @@ fn flush_stdout() {
 }
 
 // Runs `action` while capturing stdout and returns the captured output.
-#[cfg(test)]
-fn run_with_capture<F: FnOnce()>(action: F) -> String {
-    // Use statements here instead of at the module level to scope them to the
-    // above #[cfg(test)]
+// TODO: https://pwbug.dev/563021166 - Restore cfg(test) for this function.
+pub fn run_with_capture<F: FnOnce()>(action: F) -> (String, std::thread::Result<()>) {
+    // Use statements here instead of at the module level for a narrower scope.
     use std::fs::File;
     use std::io::{stdout, Read};
 
@@ -77,7 +76,7 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     // Replace stdout with our pipe.
     dup2_stdout(&pipe_tx).unwrap();
 
-    action();
+    let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(action));
 
     // Flush buffers again before restoring stdout.
     flush_stdout();
@@ -94,7 +93,7 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     let mut output = String::new();
     pipe_rx.read_to_string(&mut output).unwrap();
 
-    output
+    (output, result)
 }
 
 #[cfg(test)]
@@ -107,7 +106,8 @@ mod fmt_concat_tests {
     #[test]
     fn fmt_concat_prints_to_stdout() {
         assert_eq!(
-            run_with_capture(|| pw_log_backend!(LogLevel::Info, "Hello " PW_FMT_CONCAT "Pigweed")),
+            run_with_capture(|| pw_log_backend!(LogLevel::Info, "Hello " PW_FMT_CONCAT "Pigweed"))
+                .0,
             "[INF] Hello Pigweed\n"
         );
     }
@@ -118,7 +118,8 @@ mod fmt_concat_tests {
             run_with_capture(
                 #[allow(clippy::unnecessary_cast)]
                 || pw_log_backend!(LogLevel::Info, "The answer is " PW_FMT_CONCAT "{}", 42 as i32)
-            ),
+            )
+            .0,
             "[INF] The answer is 42\n"
         );
     }

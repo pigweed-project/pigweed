@@ -36,6 +36,7 @@ config_setting(
     },
 )
 
+# TODO: https://pwbug.dev/563018764 - Remove the default_handler crate feature.
 bool_flag(
     name = "default_handler",
     build_setting_default = False,
@@ -107,6 +108,31 @@ label_flag(
     name = "pw_assert_backend",
     build_setting_default = ":pw_assert_backend_pw_log",
     visibility = ["//visibility:public"],
+)
+
+# pw_assert_backend_pw_log unit test
+platform(
+    name = "host_pw_assert_backend_pw_log",
+    flags = [
+        "--//pw_assert/rust:color=false",
+        "--//pw_assert/rust:pw_assert_backend=//pw_assert/rust:pw_assert_backend_pw_log",
+        "--//pw_log/rust:pw_log_backend=//pw_log/rust:pw_log_backend_printf",
+    ],
+    parents = ["@bazel_tools//tools:host_platform"],
+)
+
+rust_test(
+    name = "pw_log_backend_test",
+    srcs = [
+        "pw_log_backend_test.rs",
+    ],
+    edition = "2021",
+    platform = ":host_pw_assert_backend_pw_log",
+    deps = [
+        "@pigweed//pw_assert/rust:pw_assert",
+        "@pigweed//pw_assert/rust:pw_assert_backend_pw_log",
+        "@pigweed//pw_log/rust:printf_backend_test",
+    ],
 )
 
 # Duplicate library for 'pw_assert_backend_pw_log' which is only used

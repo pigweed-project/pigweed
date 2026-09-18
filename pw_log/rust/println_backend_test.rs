@@ -20,7 +20,7 @@ mod backend_tests;
 // Runs `action` while capturing `println!` output and returns the
 // captured output.
 #[cfg(test)]
-fn run_with_capture<F: FnOnce()>(action: F) -> String {
+fn run_with_capture<F: FnOnce()>(action: F) -> (String, std::thread::Result<()>) {
     // Use statements here instead of at the module level to scope them to the
     // above #[cfg(test)]
     use std::sync::{Arc, Mutex};
@@ -28,9 +28,9 @@ fn run_with_capture<F: FnOnce()>(action: F) -> String {
     let output = Arc::new(Mutex::new(Vec::new()));
     let old_capture = std::io::set_output_capture(Some(output.clone()));
 
-    action();
+    let result = std::panic::catch_unwind(core::panic::AssertUnwindSafe(action));
 
     std::io::set_output_capture(old_capture);
     let output_data = output.lock().unwrap();
-    String::from_utf8((*output_data).to_vec()).unwrap()
+    (String::from_utf8((*output_data).to_vec()).unwrap(), result)
 }
