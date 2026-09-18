@@ -22,6 +22,8 @@
 #include <pw_assert/check.h>
 #include <zircon/errors.h>
 
+#include <memory>
+
 #include "fuchsia/bluetooth/host/cpp/fidl.h"
 #include "pw_bluetooth_sapphire/fake_lease_provider.h"
 #include "pw_bluetooth_sapphire/fuchsia/host/fidl/adapter_test_fixture.h"
@@ -78,6 +80,10 @@ const fbt::Address kTestFidlAddrResolvable{
     fbt::AddressType::RANDOM, {0x55, 0x44, 0x33, 0x22, 0x11, 0b01000011}};
 const fbt::Address kTestFidlAddrNonResolvable{
     fbt::AddressType::RANDOM, {0x55, 0x44, 0x33, 0x22, 0x11, 0x00}};
+
+const bt::PeerId kTestId2(2);
+const fbt::Address kTestFidlAddrPublic2{fbt::AddressType::PUBLIC,
+                                        {2, 0, 0, 0, 0, 0}};
 
 class MockFidlPairingDelegate : public fsys::testing::PairingDelegate_TestBase {
  public:
@@ -137,6 +143,87 @@ class MockFidlPairingDelegate : public fsys::testing::PairingDelegate_TestBase {
   RemoteKeypressCallback remote_keypress_cb_;
 };
 
+// Clones a fidl::Clone'able data object. This allows move-only FIDL types to be
+// duplicated and re-used across test assertions.
+template <typename T>
+T CloneFidl(const T& data) {
+  T clone;
+  zx_status_t status = fidl::Clone(data, &clone);
+  EXPECT_EQ(ZX_OK, status);
+  return clone;
+}
+
+// Constructs a vector of a fidl::Clone'able data type that contains a copy of
+// the input |data|. This allows move-only FIDL types to be re-used in test
+// cases that need to refer to such data.
+//
+// Returns an empty vector if |data| could not be copied, e.g. because it
+// contains handles that cannot be duplicated.
+template <typename T>
+std::vector<T> MakeClonedVector(const T& data) {
+  std::vector<T> output;
+  T clone;
+
+  zx_status_t status = fidl::Clone(data, &clone);
+  EXPECT_EQ(ZX_OK, status);
+  if (status == ZX_OK) {
+    output.push_back(std::move(clone));
+  }
+
+  return output;
+}
+
+// Construct bonding data structure for testing using the given ID and address
+// and an empty LE bond structure.
+fsys::BondingData MakeTestBond(bt::PeerId id, fbt::Address address) {
+  fsys::BondingData bond;
+  bond.set_identifier(fbt::PeerId{id.value()});
+  bond.set_address(address);
+  bond.set_le_bond(fsys::LeBondData());
+  return bond;
+}
+
+// Construct bonding data structure for testing using the given ID and address
+// and a valid LE bond structure with LTK.
+fsys::BondingData MakeTestBondWithLtk(bt::PeerId id, fbt::Address address) {
+  fsys::BondingData bond = MakeTestBond(id, address);
+  auto ltk = fsys::Ltk{.key =
+                           fsys::PeerKey{
+                               .security =
+                                   fsys::SecurityProperties{
+                                       .authenticated = true,
+                                       .secure_connections = true,
+                                       .encryption_key_size = 16,
+                                   },
+                               .data =
+                                   fsys::Key{
+                                       .value = {1,
+                                                 2,
+                                                 3,
+                                                 4,
+                                                 5,
+                                                 6,
+                                                 7,
+                                                 8,
+                                                 9,
+                                                 10,
+                                                 11,
+                                                 12,
+                                                 13,
+                                                 14,
+                                                 15,
+                                                 16},
+                                   },
+                           },
+                       .ediv = 0,
+                       .rand = 0};
+  fsys::LeBondData le;
+  le.set_peer_ltk(ltk);
+  le.set_local_ltk(ltk);
+  bond.set_le_bond(std::move(le));
+  return bond;
+}
+
 class HostServerTest : public bthost::testing::AdapterTestFixture {
  public:
   HostServerTest() = default;
@@ -150,6 +237,7 @@ class HostServerTest : public bthost::testing::AdapterTestFixture {
   }
 
   void ResetHostServer() {
+    bonding_delegate_ = nullptr;
     fidl::InterfaceHandle<fuchsia::bluetooth::host::Host> host_handle;
     uint8_t sco_offload_index = 6;
     host_server_ =
@@ -165,6 +253,7 @@ class HostServerTest : public bthost::testing::AdapterTestFixture {
   void TearDown() override {
     RunLoopUntilIdle();
 
+    bonding_delegate_ = nullptr;
     host_ = nullptr;
     host_server_ = nullptr;
     gatt_ = nullptr;
@@ -241,37 +330,77 @@ class HostServerTest : public bthost::testing::AdapterTestFixture {
     return std::make_tuple(peer, fake_chan);
   }
 
+  // Set and bind a BondingDelegate to the HostServer under test.
+  fhost::BondingDelegatePtr SetBondingDelegate() {
+    fidl::InterfaceHandle<fhost::BondingDelegate> handle;
+    host_client()->SetBondingDelegate(handle.NewRequest());
+    return handle.Bind();
+  }
+
   // Calls the RestoreBonds method and verifies that the callback is run with
-  // the expected output.
-  void TestRestoreBonds(fhost::BondingDelegatePtr& delegate,
-                        std::vector<fsys::BondingData> bonds,
-                        std::vector<fsys::BondingData> expected) {
+  // the expected errors.
+  void TestRestoreBonds(std::vector<fsys::BondingData> bonds,
+                        std::vector<fsys::BondingData> expected_errors) {
+    if (!bonding_delegate_) {
+      bonding_delegate_ = SetBondingDelegate();
+    }
     bool called = false;
-    delegate->RestoreBonds(
+    bonding_delegate_->RestoreBonds(
         std::move(bonds),
         [&](fhost::BondingDelegate_RestoreBonds_Result result) {
           ASSERT_TRUE(result.is_response());
           called = true;
-          ASSERT_EQ(expected.size(), result.response().errors.size());
+          ASSERT_EQ(expected_errors.size(), result.response().errors.size());
           for (size_t i = 0; i < result.response().errors.size(); i++) {
             SCOPED_TRACE(i);
-            EXPECT_TRUE(fidl::Equals(result.response().errors[i], expected[i]));
+            EXPECT_TRUE(
+                fidl::Equals(result.response().errors[i], expected_errors[i]));
           }
         });
     RunLoopUntilIdle();
     EXPECT_TRUE(called);
   }
 
+  // Sets and binds a PeerWatcher to the HostServer under test.
   fidl::InterfacePtr<fhost::PeerWatcher> SetPeerWatcher() {
     fidl::InterfaceHandle<fhost::PeerWatcher> handle;
     host_server()->SetPeerWatcher(handle.NewRequest());
     return handle.Bind();
   }
 
+  // Verifies that the next update received by |watcher| contains a single peer
+  // matching |expected_peer|.
+  void ExpectPeerWatcherUpdated(fhost::PeerWatcherPtr& watcher,
+                                const bt::gap::Peer& expected_peer) {
+    auto response =
+        std::make_shared<std::optional<fhost::PeerWatcher_GetNext_Response>>();
+    watcher->GetNext([response](fhost::PeerWatcher_GetNext_Result result) {
+      ASSERT_TRUE(result.is_response());
+      *response = std::move(result.response());
+    });
+    RunLoopUntilIdle();
+    ASSERT_TRUE(response->has_value());
+    const auto& resp = **response;
+    ASSERT_TRUE(resp.is_updated());
+    ASSERT_EQ(1u, resp.updated().size());
+    EXPECT_TRUE(fidl::Equals(fidl_helpers::PeerToFidl(expected_peer),
+                             resp.updated()[0]));
+  }
+
+  // Verifies that calling GetNext on |watcher| hangs (i.e. does not immediately
+  // invoke the callback because there are no pending peer updates).
+  void ExpectPeerWatcherHangs(fhost::PeerWatcherPtr& watcher) {
+    auto replied = std::make_shared<bool>(false);
+    watcher->GetNext([replied](auto) { *replied = true; });
+    RunLoopUntilIdle();
+    EXPECT_FALSE(*replied);
+  }
+
  private:
   std::unique_ptr<HostServer> host_server_;
   std::unique_ptr<bt::gatt::GATT> gatt_;
   fuchsia::bluetooth::host::HostPtr host_;
+  fhost::BondingDelegatePtr bonding_delegate_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(HostServerTest);
 };
@@ -321,36 +450,6 @@ class HostServerPairingTest : public HostServerTest {
   bt::gap::Peer* fake_peer_ = nullptr;
   FakeChannel::WeakPtr fake_chan_;
 };
-
-// Constructs a vector of a fidl::Clone'able data type that contains a copy of
-// the input |data|. This allows move-only FIDL types to be re-used in test
-// cases that need to refer to such data.
-//
-// Returns an empty vector if |data| could not be copied, e.g. because it
-// contains handles that cannot be duplicated.
-template <typename T>
-std::vector<T> MakeClonedVector(const T& data) {
-  std::vector<T> output;
-  T clone;
-
-  zx_status_t status = fidl::Clone(data, &clone);
-  EXPECT_EQ(ZX_OK, status);
-  if (status == ZX_OK) {
-    output.push_back(std::move(clone));
-  }
-
-  return output;
-}
-
-// Construct bonding data structure for testing using the given ID and address
-// and an empty LE bond structure.
-fsys::BondingData MakeTestBond(bt::PeerId id, fbt::Address address) {
-  fsys::BondingData bond;
-  bond.set_identifier(fbt::PeerId{id.value()});
-  bond.set_address(address);
-  bond.set_le_bond(fsys::LeBondData());
-  return bond;
-}
 
 TEST_F(HostServerTest, FidlIoCapabilitiesMapToHostIoCapability) {
   // Isolate HostServer's private bt::gap::PairingDelegate implementation.
@@ -1269,109 +1368,60 @@ TEST_F(HostServerTest, ConnectDualMode) {
 }
 
 TEST_F(HostServerTest, RestoreBondsErrorDataMissing) {
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
-
   fsys::BondingData bond;
 
   // Empty bond.
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // ID missing.
   bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
   bond.clear_identifier();
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // Address missing.
   bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
   bond.clear_address();
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // Transport data missing.
   bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
   bond.clear_le_bond();
   bond.clear_bredr_bond();
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // Transport data missing keys.
   bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 }
 
 TEST_F(HostServerTest, RestoreBondsInvalidAddress) {
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
-
   // LE Random address on dual-mode or BR/EDR-only bond should not be supported.
   fsys::BondingData bond = MakeTestBond(kTestId, kTestFidlAddrRandom);
   bond.set_bredr_bond(fsys::BredrBondData());
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // BR/EDR only
   bond.clear_le_bond();
-  TestRestoreBonds(delegate, MakeClonedVector(bond), MakeClonedVector(bond));
+  TestRestoreBonds(MakeClonedVector(bond), MakeClonedVector(bond));
 
   // Resolvable Private address should not be supported
   fsys::BondingData resolvable_bond =
       MakeTestBond(kTestId, kTestFidlAddrResolvable);
-  TestRestoreBonds(delegate,
-                   MakeClonedVector(resolvable_bond),
+  TestRestoreBonds(MakeClonedVector(resolvable_bond),
                    MakeClonedVector(resolvable_bond));
 
   // Non-resolvable Private address should not be supported
   fsys::BondingData non_resolvable_bond =
       MakeTestBond(kTestId, kTestFidlAddrNonResolvable);
-  TestRestoreBonds(delegate,
-                   MakeClonedVector(non_resolvable_bond),
+  TestRestoreBonds(MakeClonedVector(non_resolvable_bond),
                    MakeClonedVector(non_resolvable_bond));
 }
 
 TEST_F(HostServerTest, RestoreBondsLeOnlySuccess) {
-  fsys::BondingData bond = MakeTestBond(kTestId, kTestFidlAddrRandom);
-  auto ltk = fsys::Ltk{.key =
-                           fsys::PeerKey{
-                               .security =
-                                   fsys::SecurityProperties{
-                                       .authenticated = true,
-                                       .secure_connections = true,
-                                       .encryption_key_size = 16,
-                                   },
-                               .data =
-                                   fsys::Key{
-                                       .value = {1,
-                                                 2,
-                                                 3,
-                                                 4,
-                                                 5,
-                                                 6,
-                                                 7,
-                                                 8,
-                                                 9,
-                                                 10,
-                                                 11,
-                                                 12,
-                                                 13,
-                                                 14,
-                                                 15,
-                                                 16},
-                                   },
-                           },
-                       .ediv = 0,
-                       .rand = 0};
-  fsys::LeBondData le;
-  le.set_peer_ltk(ltk);
-  le.set_local_ltk(ltk);
-  bond.set_le_bond(std::move(le));
-
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
+  fsys::BondingData bond = MakeTestBondWithLtk(kTestId, kTestFidlAddrRandom);
 
   // This should succeed.
-  TestRestoreBonds(
-      delegate, MakeClonedVector(bond), {} /* no errors expected */);
+  TestRestoreBonds(MakeClonedVector(bond), {});
 
   auto* peer = adapter()->peer_cache()->FindById(kTestId);
   ASSERT_TRUE(peer);
@@ -1381,10 +1431,6 @@ TEST_F(HostServerTest, RestoreBondsLeOnlySuccess) {
 }
 
 TEST_F(HostServerTest, RestoreBondsBredrOnlySuccess) {
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
-
   fsys::BondingData bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
   bond.clear_le_bond();
 
@@ -1406,8 +1452,7 @@ TEST_F(HostServerTest, RestoreBondsBredrOnlySuccess) {
   bond.set_bredr_bond(std::move(bredr));
 
   // This should succeed.
-  TestRestoreBonds(
-      delegate, MakeClonedVector(bond), {} /* no errors expected */);
+  TestRestoreBonds(MakeClonedVector(bond), {});
 
   auto* peer = adapter()->peer_cache()->FindById(kTestId);
   ASSERT_TRUE(peer);
@@ -1418,10 +1463,6 @@ TEST_F(HostServerTest, RestoreBondsBredrOnlySuccess) {
 }
 
 TEST_F(HostServerTest, RestoreBondsDualModeSuccess) {
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
-
   fsys::BondingData bond = MakeTestBond(kTestId, kTestFidlAddrPublic);
   auto key = fsys::PeerKey{
       .security =
@@ -1448,8 +1489,7 @@ TEST_F(HostServerTest, RestoreBondsDualModeSuccess) {
   bond.set_bredr_bond(std::move(bredr));
 
   // This should succeed.
-  TestRestoreBonds(
-      delegate, MakeClonedVector(bond), {} /* no errors expected */);
+  TestRestoreBonds(MakeClonedVector(bond), {});
 
   auto* peer = adapter()->peer_cache()->FindById(kTestId);
   ASSERT_TRUE(peer);
@@ -1460,9 +1500,6 @@ TEST_F(HostServerTest, RestoreBondsDualModeSuccess) {
 }
 
 TEST_F(HostServerTest, RestoreBondsDeviceClass) {
-  fhost::BondingDelegatePtr delegate;
-  host_server()->SetBondingDelegate(delegate.NewRequest());
-
   fsys::BondingData bond;
   bond.set_identifier(fbt::PeerId{kTestId.value()});
   bond.set_address(kTestFidlAddrPublic);
@@ -1484,14 +1521,105 @@ TEST_F(HostServerTest, RestoreBondsDeviceClass) {
   });
   bond.set_bredr_bond(std::move(bredr));
 
-  TestRestoreBonds(
-      delegate, MakeClonedVector(bond), {} /* no errors expected */);
+  TestRestoreBonds(MakeClonedVector(bond), {});
 
   auto* peer = adapter()->peer_cache()->FindById(kTestId);
   ASSERT_TRUE(peer);
   ASSERT_TRUE(peer->bredr());
   ASSERT_TRUE(peer->bredr()->device_class());
   EXPECT_EQ(bt::DeviceClass(0x200101), *peer->bredr()->device_class());
+}
+
+TEST_F(HostServerTest, RestoreNoBondsSucceeds) {
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  TestRestoreBonds({}, {});
+
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+}
+
+TEST_F(HostServerTest, RestoreBondedDevicesNoLtkFails) {
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  // Inserting a bonded device without an LTK should fail.
+  fsys::BondingData bond_data = MakeTestBond(kTestId, kTestFidlAddrPublic);
+  bond_data.set_name("Name1");
+
+  TestRestoreBonds(MakeClonedVector(bond_data),
+                   /*expected_errors=*/MakeClonedVector(bond_data));
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+}
+
+TEST_F(HostServerTest, RestoreBondedDevicesDuplicateEntry) {
+  fidl::InterfacePtr<fhost::PeerWatcher> peer_watcher = SetPeerWatcher();
+
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  // Initialize one entry.
+  fsys::BondingData bond_data =
+      MakeTestBondWithLtk(kTestId, kTestFidlAddrPublic);
+  bond_data.set_name("Name1");
+
+  TestRestoreBonds(MakeClonedVector(bond_data), {});
+  EXPECT_EQ(1u, adapter()->peer_cache()->count());
+
+  // We should receive a notification for the newly added device.
+  auto* peer = adapter()->peer_cache()->FindById(kTestId);
+  ASSERT_TRUE(peer);
+  ExpectPeerWatcherUpdated(peer_watcher, *peer);
+
+  // Adding an entry with the existing id should fail.
+  fsys::BondingData duplicate_id_bond =
+      MakeTestBondWithLtk(kTestId, kTestFidlAddrPublic2);
+  duplicate_id_bond.set_name("Name2");
+  TestRestoreBonds(MakeClonedVector(duplicate_id_bond),
+                   MakeClonedVector(duplicate_id_bond));
+
+  // Adding an entry with a different ID but existing address should fail.
+  fsys::BondingData duplicate_addr_bond =
+      MakeTestBondWithLtk(kTestId2, kTestFidlAddrPublic);
+  duplicate_addr_bond.set_name("Name1");
+  TestRestoreBonds(MakeClonedVector(duplicate_addr_bond),
+                   MakeClonedVector(duplicate_addr_bond));
+
+  EXPECT_EQ(1u, adapter()->peer_cache()->count());
+  EXPECT_NE(nullptr, adapter()->peer_cache()->FindById(kTestId));
+  EXPECT_EQ(nullptr, adapter()->peer_cache()->FindById(kTestId2));
+
+  // Verify no new peer updates were sent for duplicate attempts.
+  ExpectPeerWatcherHangs(peer_watcher);
+}
+
+TEST_F(HostServerTest, RestoreBondedDevicesInvalidEntry) {
+  fidl::InterfacePtr<fhost::PeerWatcher> peer_watcher = SetPeerWatcher();
+
+  EXPECT_EQ(0u, adapter()->peer_cache()->count());
+
+  // Add one entry with no LTK (invalid) and one with (valid). This should
+  // create an entry for the valid device but report an error for the invalid
+  // entry.
+  fsys::BondingData no_ltk = MakeTestBond(kTestId, kTestFidlAddrPublic);
+  no_ltk.set_name("Name1");
+
+  fsys::BondingData with_ltk =
+      MakeTestBondWithLtk(kTestId2, kTestFidlAddrPublic2);
+  with_ltk.set_name("Name2");
+
+  std::vector<fsys::BondingData> bonds;
+  bonds.push_back(CloneFidl(no_ltk));
+  bonds.push_back(CloneFidl(with_ltk));
+
+  TestRestoreBonds(std::move(bonds), MakeClonedVector(no_ltk));
+
+  EXPECT_EQ(1u, adapter()->peer_cache()->count());
+  EXPECT_EQ(nullptr, adapter()->peer_cache()->FindById(kTestId));
+  auto* peer = adapter()->peer_cache()->FindById(kTestId2);
+  ASSERT_NE(nullptr, peer);
+  EXPECT_TRUE(peer->le());
+  EXPECT_TRUE(peer->le()->bonded());
+
+  // We should receive a notification for the valid added device.
+  ExpectPeerWatcherUpdated(peer_watcher, *peer);
 }
 
 TEST_F(HostServerTest, SetHostData) {
@@ -1535,9 +1663,7 @@ TEST_F(HostServerTest, OnNewBondingData) {
 
   // Set the bonding delegate after the bond has already been stored. The
   // delegate should still be notified.
-  fidl::InterfaceHandle<fhost::BondingDelegate> delegate_handle;
-  host_client_ptr()->SetBondingDelegate(delegate_handle.NewRequest());
-  fhost::BondingDelegatePtr delegate = delegate_handle.Bind();
+  fhost::BondingDelegatePtr delegate = SetBondingDelegate();
   std::optional<fsys::BondingData> data;
   delegate->WatchBonds(
       [&data](fhost::BondingDelegate_WatchBonds_Result result) {
