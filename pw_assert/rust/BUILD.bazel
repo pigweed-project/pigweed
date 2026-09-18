@@ -154,6 +154,52 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "pw_assert_backend_std",
+    srcs = [
+        "pw_assert_backend_std.rs",
+    ],
+    crate_name = "pw_assert_backend",
+    edition = "2021",
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+# pw_assert_backend_std unit test
+platform(
+    name = "host_pw_assert_backend_std",
+    flags = [
+        "--//pw_assert/rust:pw_assert_backend=//pw_assert/rust:pw_assert_backend_std",
+    ],
+    parents = ["@bazel_tools//tools:host_platform"],
+)
+
+rust_test(
+    name = "std_backend_test",
+    srcs = [
+        "std_backend_test.rs",
+    ],
+    edition = "2021",
+    platform = ":host_pw_assert_backend_std",
+    deps = ["@pigweed//pw_assert/rust:pw_assert"],
+)
+
+# Duplicate library for 'pw_assert_backend_std' which is only used
+# to generate rustdocs.
+rust_library(
+    name = "pw_assert_backend_std_docs",
+    srcs = [
+        "pw_assert_backend_std.rs",
+    ],
+    crate_features = [
+        "default_handler",
+    ],
+    crate_name = "pw_assert_backend_std",
+    edition = "2021",
+    deps = [
+        ":pw_assert",
+    ],
+)
+
 # Base pw_assert doc targets
 rust_doc_test(
     name = "pw_assert_doc_test",
@@ -174,7 +220,7 @@ rust_doc(
 )
 
 # Use the _docs target for rust_test and rust_doc_tests so they get
-# the unique crate name.
+# unique crate names.
 rust_test(
     name = "pw_assert_backend_pw_log_test",
     crate = ":pw_assert_backend_pw_log_docs",
@@ -185,5 +231,18 @@ rust_test(
 rust_doc_test(
     name = "pw_assert_backend_pw_log_docs_test",
     crate = ":pw_assert_backend_pw_log_docs",
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+rust_test(
+    name = "pw_assert_backend_std_test",
+    crate = ":pw_assert_backend_std_docs",
+    edition = "2021",
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+rust_doc_test(
+    name = "pw_assert_backend_std_docs_test",
+    crate = ":pw_assert_backend_std_docs",
     target_compatible_with = incompatible_with_mcu(),
 )
