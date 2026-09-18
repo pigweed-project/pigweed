@@ -12,57 +12,67 @@ Additionally, the structure is designed to limit the number of places a file
 could go, so that when reading call sites it is obvious where a header is from.
 That is where the duplicated ``<module>`` occurrences in file paths comes from.
 
+.. important::
+
+   Many Pigweed modules do not currently conform to the module structure
+   guidelines, particularly for C++. These modules will be migrated over time.
+
+   Use the module structure described herein for all new modules.
+
 Example module structure
 ------------------------
 .. code-block:: text
 
    pw_foo/...
 
-     docs.rst         # Docs landing page (required)
-     concepts.rst     # Conceptual docs (optional)
-     design.rst       # Design docs (optional)
-     guides.rst       # How-to guides (optional)
-     api.rst          # API reference (optional)
-     cli.rst          # CLI reference (optional)
-     gui.rst          # GUI reference (optional)
-     tutorials/*.rst  # Tutorials (optional)
+     # Docs go into docs/
+     docs/docs.rst         # Docs landing page (required)
+     docs/concepts.rst     # Conceptual docs (optional)
+     docs/design.rst       # Design docs (optional)
+     docs/guides.rst       # How-to guides (optional)
+     docs/api.rst          # API reference (optional)
+     docs/cli.rst          # CLI reference (optional)
+     docs/gui.rst          # GUI reference (optional)
+     docs/tutorials/*.rst  # Tutorials (optional)
 
      BUILD.bazel
      BUILD.gn
      CMakeLists.txt
 
-     # C++ public headers; the repeated module name is required
-     public/pw_foo/foo.h
-     public/pw_foo/baz.h
+     # C++ and C source code goes into cpp/
+     cpp/...
 
-     # Exposed private headers go under internal/
-     public/pw_foo/internal/bar.h
-     public/pw_foo/internal/qux.h
+     # Public headers go under cpp/public/<module>/
+     cpp/public/pw_foo/foo.h
+     cpp/public/pw_foo/baz.h
 
-     # Public override headers must go in 'public_overrides'
-     public_overrides/gtest/gtest.h
-     public_overrides/string.h
+     # Exposed private headers go under cpp/public/<module>/internal/
+     cpp/public/pw_foo/internal/bar.h
+     cpp/public/pw_foo/internal/qux.h
 
-     # Private headers go into <module>_*/...
-     pw_foo_internal/zap.h
-     pw_foo_private/zip.h
-     pw_foo_secret/alxx.h
+     # Public override headers must go in cpp/public_overrides/
+     cpp/public_overrides/gtest/gtest.h
+     cpp/public_overrides/string.h
 
-     # C++ implementations go in the root
-     foo_impl.cc
-     foo.cc
-     baz.cc
-     bar.cc
-     zap.cc
-     zip.cc
-     alxx.cc
+     # Private headers go into cpp/private/<module>_*/
+     cpp/private/pw_foo_internal/zap.h
+     cpp/private/pw_foo_private/zip.h
 
-     # C++ tests also go in the root
-     foo_test.cc
-     bar_test.cc
-     zip_test.cc
+     # Implementations go in cpp/
+     cpp/foo_impl.cc
+     cpp/foo.cc
+     cpp/baz.cc
+     cpp/bar.cc
+     cpp/zap.cc
+     cpp/zip.cc
+     cpp/alxx.cc
 
-     # Python files go into 'py/<module>/...'
+     # Tests also go in cpp/
+     cpp/foo_test.cc
+     cpp/bar_test.cc
+     cpp/zip_test.cc
+
+     # Python files go into py/<module>/
      py/BUILD.bazel  # Python packages are declared in Bazel using py_library
      py/BUILD.gn     # Python packages are declared in GN using pw_python_package
      py/setup.py     # Python files are structured as standard Python packages
@@ -73,7 +83,7 @@ Example module structure
      py/pw_foo/bar.py
      py/pw_foo/py.typed  # Indicates that this package has type annotations
 
-     # Rust crates go into 'rust/...'
+     # Rust crates go into rust/
      rust/BUILD.bazel
      rust/crate_one.rs          # Single file crates are in rust/<crate_name>.rs
      rust/crate_two/lib.rs      # Multi-file crate's top level source in:
@@ -82,20 +92,21 @@ Example module structure
      rust/crate_two/mod_two.rs  #   rust/<crate>/<module_name>.rs
                                 # Prefer not using mod.rs files.
 
-     # Go files go into 'go/...'
+     # Go files go into go/
      go/...
 
-     # Examples go in examples/, mixing different languages
+     # Examples go in examples/, either mixing different languages or nested
+     # under the language directory
      examples/BUILD.bazel  # Only the Bazel build is required
      examples/demo.py
-     examples/demo.cc
      examples/demo.go
+     cpp/examples/demo.cc
 
-     # Size reports go under size_report/
-     size_report/BUILD.bazel  # Only the Bazel build is required
-     size_report/base.cc
-     size_report/use_case_a.cc
-     size_report/use_case_b.cc
+     # Size reports go under <language>/size_report/
+     cpp/size_report/BUILD.bazel  # Only the Bazel build is required
+     cpp/size_report/base.cc
+     cpp/size_report/use_case_a.cc
+     cpp/size_report/use_case_b.cc
 
      # Protobuf definition files go into <module>_protos/...
      pw_foo_protos/foo.proto
