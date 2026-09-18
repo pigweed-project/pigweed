@@ -56,13 +56,11 @@ public interface Call {
   /** Represents a call to a unary or client streaming RPC that uses a future. */
   @SuppressWarnings("ShouldNotSubclass")
   interface UnaryFuture<ResponseT extends MessageLite>
-      extends Call, ListenableFuture<UnaryResult<ResponseT>> {
-  }
+      extends Call, ListenableFuture<UnaryResult<ResponseT>> {}
 
   /** Represents a call to a server or bidirectional streaming RPC that uses a future. */
   @SuppressWarnings("ShouldNotSubclass")
-  interface ServerStreamingFuture extends Call, ListenableFuture<Status> {
-  }
+  interface ServerStreamingFuture extends Call, ListenableFuture<Status> {}
 
   /** Represents a call to a client or bidirectional streaming RPC. */
   interface ClientStreaming<RequestT extends MessageLite> extends Call {
@@ -89,11 +87,9 @@ public interface Call {
 
   /** Represents a call to a client streaming RPC that uses a future. */
   interface ClientStreamingFuture<RequestT extends MessageLite, ResponseT extends MessageLite>
-      extends ClientStreaming<RequestT>, UnaryFuture<ResponseT> {
-  }
+      extends ClientStreaming<RequestT>, UnaryFuture<ResponseT> {}
 
   /** Represents a call to a bidirectional streaming RPC that uses a future. */
   interface BidirectionalStreamingFuture<RequestT extends MessageLite>
-      extends ClientStreaming<RequestT>, ServerStreamingFuture {
-  }
+      extends ClientStreaming<RequestT>, ServerStreamingFuture {}
 }
