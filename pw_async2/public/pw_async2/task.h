@@ -74,6 +74,14 @@ class Context {
   /// again.
   PendingType Unschedule();
 
+  /// Returns whether the provided dispatcher is the dispatcher running the
+  /// task.
+  ///
+  /// This is helpful for subsystems that require their components to run on a
+  /// single dispatcher. Futures can verify that they are only being pended by
+  /// the correct dispatcher.
+  [[nodiscard]] bool IsRunningOn(const Dispatcher& dispatcher) const;
+
  private:
   friend class Task;
 
@@ -355,6 +363,11 @@ inline PendingType Context::Unschedule() {
 
 inline void Context::ReEnqueue() {
   Waker(static_cast<Task&>(*this), {}).Wake();
+}
+
+inline bool Context::IsRunningOn(const Dispatcher& dispatcher) const
+    PW_NO_LOCK_SAFETY_ANALYSIS {
+  return static_cast<const Task&>(*this).dispatcher_ == &dispatcher;
 }
 
 /// @endsubmodule

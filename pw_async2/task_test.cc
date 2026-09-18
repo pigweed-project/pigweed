@@ -14,6 +14,8 @@
 
 #include "pw_async2/task.h"
 
+#include <utility>
+
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_sync/binary_semaphore.h"
 #include "pw_sync/mutex.h"
@@ -191,6 +193,26 @@ TEST(Task, BlockingJoin_SleepingTask) {
 
   wake_thread.join();
   dispatcher_thread.join();
+}
+
+TEST(Context, IsRunningOn) {
+  DispatcherForTest dispatcher_a;
+  DispatcherForTest dispatcher_b;
+
+  bool ran_on_a = false;
+  bool ran_on_b = true;
+
+  pw::async2::FuncTask task([&](Context& cx) {
+    ran_on_a = cx.IsRunningOn(dispatcher_a);
+    ran_on_b = cx.IsRunningOn(std::as_const(dispatcher_b));
+    return Ready();
+  });
+
+  dispatcher_a.Post(task);
+  dispatcher_a.RunToCompletion();
+
+  EXPECT_TRUE(ran_on_a);
+  EXPECT_FALSE(ran_on_b);
 }
 
 }  // namespace
