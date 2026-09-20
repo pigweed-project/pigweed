@@ -564,7 +564,9 @@ use_repo(cipd_ext, buildifier = "pigweed.buildifier")
 cipd_ext.require(
     name = "pigweed.gn",
     packages = {
-        "gn/gn/${platform}": "git_revision:4f6a76b64b8279e98004f541f8e136307efe5e01",
+        # ROLL: Warning: this is automatically updated by
+        # ROLL: https://cr-buildbucket.appspot.com/build/8670110887850913873
+        "gn/gn/${platform}": "git_revision:127dd2a6d582528d6d61c4d838dc17385ef31abd",
     },
 )
 use_repo(cipd_ext, gn = "pigweed.gn")
