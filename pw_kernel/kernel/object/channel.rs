@@ -16,7 +16,7 @@ use foreign_box::{ForeignRc, ForeignRcState};
 use pw_status::{Error, Result};
 use pw_time_core::Instant;
 
-use crate::object::{KernelObject, ObjectBase, Signals, SyscallBuffer, WaitReturn};
+use crate::object::{KernelObject, ObjectBase, SignalUpdate, Signals, SyscallBuffer, WaitReturn};
 use crate::sync::mutex::Mutex;
 use crate::sync::spinlock::SpinLock;
 use crate::{Arch, Kernel};
@@ -103,13 +103,14 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         response_buffer.copy_into(0, &mut transaction.recv_buffer)?;
 
         transaction.recv_buffer.truncate(response_buffer.size());
-        self.base.signal(kernel, |signals| {
-            signals - (Signals::READABLE | Signals::WRITEABLE)
-        });
+        self.base.signal(
+            kernel,
+            SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE),
+        );
         transaction
             .initiator
             .base
-            .signal(kernel, |signals| signals | Signals::READABLE);
+            .signal(kernel, SignalUpdate::raise(Signals::READABLE));
         Ok(())
     }
 
@@ -117,13 +118,9 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         let Some(initiator) = self.initiator.lock(kernel).clone() else {
             return Err(Error::FailedPrecondition);
         };
-        initiator.base.signal(kernel, |signals| {
-            if set {
-                signals | Signals::USER
-            } else {
-                signals - Signals::USER
-            }
-        });
+        initiator
+            .base
+            .signal(kernel, SignalUpdate::set_if(Signals::USER, set));
         Ok(())
     }
 
@@ -133,7 +130,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         if let Some(initiator) = self.initiator.lock(kernel).clone() {
             initiator
                 .base
-                .signal(kernel, |signals| signals - Signals::USER);
+                .signal(kernel, SignalUpdate::clear(Signals::USER));
         }
 
         let mut active_transaction = self.active_transaction.lock();
@@ -143,7 +140,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
             transaction
                 .initiator
                 .base
-                .signal(kernel, |signals| signals | Signals::ERROR);
+                .signal(kernel, SignalUpdate::raise(Signals::ERROR));
         }
         Ok(())
     }
@@ -175,20 +172,22 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
         // Clear peer USER signal on handler.
         self.handler
             .base
-            .signal(kernel, |signals| signals - Signals::USER);
+            .signal(kernel, SignalUpdate::clear(Signals::USER));
 
         // Cancel the active transaction.
         if self.handler.active_transaction.lock().take().is_some() {
             self.handler
                 .base
-                .signal(kernel, |signals| signals | Signals::ERROR);
+                .signal(kernel, SignalUpdate::raise(Signals::ERROR));
         }
 
         // Restore objects initial signals.
         if let Some(base) = self.base() {
-            base.signal(kernel, |signals| {
-                (signals | Signals::WRITEABLE) - (Signals::READABLE | Signals::ERROR)
-            });
+            base.signal(
+                kernel,
+                SignalUpdate::raise(Signals::WRITEABLE)
+                    .and_clear(Signals::READABLE | Signals::ERROR),
+            );
         }
 
         Ok(())
@@ -248,13 +247,9 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     }
 
     fn object_set_peer_user_signal(&self, kernel: K, set: bool) -> Result<()> {
-        self.handler.base.signal(kernel, |signals| {
-            if set {
-                signals | Signals::USER
-            } else {
-                signals - Signals::USER
-            }
-        });
+        self.handler
+            .base
+            .signal(kernel, SignalUpdate::set_if(Signals::USER, set));
         Ok(())
     }
 }
@@ -290,13 +285,15 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
 
         // Clear Readable and Writable & Error signals on our side before
         // signaling the handler.
-        self.base.signal(kernel, |signals| {
-            signals - (Signals::READABLE | Signals::WRITEABLE | Signals::ERROR)
-        });
+        self.base.signal(
+            kernel,
+            SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE | Signals::ERROR),
+        );
 
-        self.handler.base.signal(kernel, |signals| {
-            (signals | Signals::READABLE) - Signals::WRITEABLE
-        });
+        self.handler.base.signal(
+            kernel,
+            SignalUpdate::raise(Signals::READABLE).and_clear(Signals::WRITEABLE),
+        );
 
         Ok(())
     }
@@ -304,14 +301,16 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
     fn finish_transaction(&self, kernel: K) -> Result<usize> {
         // TODO: konkers - Rationalize signal behavior with syscall_defs.rs.
         // Go back to the writable state now that the transaction is finished.
-        self.base.signal(kernel, |signals| {
-            (signals | Signals::WRITEABLE) - Signals::READABLE
-        });
+        self.base.signal(
+            kernel,
+            SignalUpdate::raise(Signals::WRITEABLE).and_clear(Signals::READABLE),
+        );
 
         // Also reset the handler signals.
-        self.handler.base.signal(kernel, |signals| {
-            signals - (Signals::READABLE | Signals::WRITEABLE)
-        });
+        self.handler.base.signal(
+            kernel,
+            SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE),
+        );
 
         let mut active_transaction = self.handler.active_transaction.lock();
 

@@ -28,7 +28,7 @@ use pw_status::{Error, Result};
 use pw_time_core::Instant;
 
 #[cfg(feature = "user_space")]
-use crate::object::NullObjectTable;
+use crate::object::{NullObjectTable, SignalUpdate, Signals};
 use crate::scheduler::algorithm::{RescheduleReason, SchedulerAlgorithm};
 use crate::scheduler::locks::WaitQueueLock;
 use crate::scheduler::process::{Process, ProcessHandle, ProcessListAdapter, ProcessState};
@@ -627,7 +627,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             // Clear JOINABLE signal.
             #[cfg(feature = "user_space")]
             if let Some(object) = thread.object.take() {
-                self = object.signal_locked(kernel, self, |s| s - syscall_defs::Signals::JOINABLE);
+                self = object.signal_locked(kernel, self, SignalUpdate::clear(Signals::JOINABLE));
             }
 
             let Some(status) = thread.exit_status.take() else {
@@ -709,8 +709,11 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
 
             if let Some(thread_object) = thread_object {
                 // Ensure we set them as JOINABLE again if it transitions to Terminated
-                self = thread_object
-                    .signal_locked(kernel, self, |s| s | syscall_defs::Signals::JOINABLE);
+                self = thread_object.signal_locked(
+                    kernel,
+                    self,
+                    SignalUpdate::raise(Signals::JOINABLE),
+                );
 
                 if process_handle.get_state_locked(&self) == ProcessState::Terminating {
                     (self, _) = thread_object.join_locked(kernel, self);
@@ -804,7 +807,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         // Raise JOINABLE signal.
         #[cfg(feature = "user_space")]
         if let Some(object) = unsafe { process.process.as_ref().object.as_ref() } {
-            self = object.signal_locked(kernel, self, |s| s | syscall_defs::Signals::JOINABLE);
+            self = object.signal_locked(kernel, self, SignalUpdate::raise(Signals::JOINABLE));
         }
         #[cfg(not(feature = "user_space"))]
         {
@@ -842,7 +845,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             // Clear JOINABLE signal.
             #[cfg(feature = "user_space")]
             if let Some(object) = process_box.object.take() {
-                self = object.signal_locked(kernel, self, |s| s - syscall_defs::Signals::JOINABLE);
+                self = object.signal_locked(kernel, self, SignalUpdate::clear(Signals::JOINABLE));
             }
             #[cfg(not(feature = "user_space"))]
             {

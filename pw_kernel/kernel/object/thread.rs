@@ -17,7 +17,7 @@ use pw_status::{Error, Result};
 use syscall_defs::ExitStatus;
 
 use crate::Kernel;
-use crate::object::{KernelObject, ObjectBase, Signals};
+use crate::object::{KernelObject, ObjectBase, SignalUpdate, Signals};
 use crate::scheduler::{ProcessHandle, SchedulerState, Thread, ThreadHandle, TryJoinResult};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
@@ -161,13 +161,13 @@ impl<K: Kernel> ThreadObject<K> {
         }
     }
 
-    pub(crate) fn signal_locked<'a, F: Fn(Signals) -> Signals>(
+    pub(crate) fn signal_locked<'a>(
         &self,
         kernel: K,
         sched: SpinLockGuard<'a, K, SchedulerState<K>>,
-        update_fn: F,
+        update: SignalUpdate,
     ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
-        self.base.signal_locked(kernel, sched, update_fn)
+        self.base.signal_locked(kernel, sched, update)
     }
 }
 

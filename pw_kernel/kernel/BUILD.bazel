@@ -15,6 +15,7 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
 load("//pw_kernel/arch/arm_cortex_m:defs.bzl", "SUPPORTED_CORTEX_M_CPUS")
 
 package(default_visibility = ["//visibility:public"])
@@ -87,6 +88,7 @@ rust_library(
         "@platforms//cpu:riscv32": ["//pw_kernel/macros:riscv_macro"],
         "//conditions:default": [],
     }),
+    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
     tags = ["kernel"],
     target_compatible_with = selects.with_or({
         SUPPORTED_CORTEX_M_CPUS: [],
@@ -113,7 +115,7 @@ rust_library(
         "//pw_time/rust:pw_time_core",
         "//pw_tokenizer/rust:pw_tokenizer",
         "@rust_crates//:bitflags",
-    ] + select({
+    ] + KERNEL_TEST_DEPS + select({
         "//pw_kernel/userspace:userspace_build_enabled": [
             "//pw_kernel/syscall:syscall_defs",
         ],

@@ -393,6 +393,70 @@ impl<const N: usize, K: Kernel> ObjectTable<K>
         Ok(())
     }
 }
+
+/// A masked signal update applied by [`ObjectBase::signal`].
+///
+/// All bits in `mask` are updated to match `values`; bits outside `mask`
+/// are preserved.
+#[derive(Copy, Clone)]
+pub struct SignalUpdate {
+    mask: Signals,
+    values: Signals,
+}
+
+impl SignalUpdate {
+    #[must_use]
+    #[inline(always)]
+    pub const fn raise(raise: Signals) -> Self {
+        Self {
+            mask: raise,
+            values: raise,
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub const fn clear(clear: Signals) -> Self {
+        Self {
+            mask: clear,
+            values: Signals::no_active(),
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub const fn set_if(signal: Signals, cond: bool) -> Self {
+        Self {
+            mask: signal,
+            values: if cond { signal } else { Signals::no_active() },
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub const fn and_raise(self, raise: Signals) -> Self {
+        Self {
+            mask: self.mask.union(raise),
+            values: self.values.union(raise),
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub const fn and_clear(self, clear: Signals) -> Self {
+        Self {
+            mask: self.mask.union(clear),
+            values: self.values.difference(clear),
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub const fn apply(self, signals: Signals) -> Signals {
+        signals.difference(self.mask).union(self.values)
+    }
+}
+
 /// Common functionality used by many kernel objects
 pub struct ObjectBase<K: Kernel> {
     wait_group_link: Link,
@@ -434,19 +498,19 @@ impl<K: Kernel> ObjectBase<K> {
         wait_on_object(kernel, &self.state, state, signal_mask, deadline)
     }
 
-    pub fn signal<F: Fn(Signals) -> Signals>(&self, kernel: K, update_fn: F) {
+    pub fn signal(&self, kernel: K, update: SignalUpdate) {
         let sched = kernel.get_scheduler().lock(kernel);
-        let _ = self.signal_locked(kernel, sched, update_fn);
+        let _ = self.signal_locked(kernel, sched, update);
     }
 
-    pub(crate) fn signal_locked<'a, F: Fn(Signals) -> Signals>(
+    pub(crate) fn signal_locked<'a>(
         &self,
         kernel: K,
         sched: SpinLockGuard<'a, K, SchedulerState<K>>,
-        update_fn: F,
+        update: SignalUpdate,
     ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
         let mut state = self.state.lock(kernel);
-        state.active_signals = update_fn(state.active_signals);
+        state.active_signals = update.apply(state.active_signals);
         self.signal_impl_locked(kernel, sched, state)
     }
 
@@ -465,5 +529,53 @@ impl<K: Kernel> ObjectBase<K> {
 
         // These waiters are never a wait group, so always set user_data to 0.
         signal_all_matching_waiters_locked(sched, &mut state.waiters, active_signals, 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use unittest::test;
+
+    use super::*;
+
+    #[test]
+    fn signal_update_raise() -> unittest::Result<()> {
+        let initial = Signals::READABLE;
+        let updated = SignalUpdate::raise(Signals::WRITEABLE).apply(initial);
+        unittest::assert_eq!(updated, Signals::READABLE | Signals::WRITEABLE);
+        Ok(())
+    }
+
+    #[test]
+    fn signal_update_clear() -> unittest::Result<()> {
+        let initial = Signals::READABLE | Signals::WRITEABLE;
+        let updated = SignalUpdate::clear(Signals::READABLE).apply(initial);
+        unittest::assert_eq!(updated, Signals::WRITEABLE);
+        Ok(())
+    }
+
+    #[test]
+    fn signal_update_set_if() -> unittest::Result<()> {
+        let initial = Signals::READABLE;
+        unittest::assert_eq!(
+            SignalUpdate::set_if(Signals::USER, true).apply(initial),
+            Signals::READABLE | Signals::USER
+        );
+        unittest::assert_eq!(
+            SignalUpdate::set_if(Signals::READABLE, false).apply(initial),
+            Signals::no_active()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn signal_update_chained_and_raise_and_clear() -> unittest::Result<()> {
+        let initial = Signals::READABLE | Signals::USER;
+        let updated = SignalUpdate::clear(Signals::READABLE)
+            .and_raise(Signals::WRITEABLE)
+            .and_clear(Signals::USER)
+            .apply(initial);
+        unittest::assert_eq!(updated, Signals::WRITEABLE);
+        Ok(())
     }
 }

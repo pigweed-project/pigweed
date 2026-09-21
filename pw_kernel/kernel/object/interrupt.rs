@@ -16,7 +16,7 @@ use pw_status::Result;
 use pw_time_core::Instant;
 
 use crate::Kernel;
-use crate::object::{KernelObject, ObjectBase, Signals, WaitReturn};
+use crate::object::{KernelObject, ObjectBase, SignalUpdate, Signals, WaitReturn};
 
 /// Object for handling userspace interrupts.
 pub struct InterruptObject<K: Kernel> {
@@ -34,7 +34,7 @@ impl<K: Kernel> InterruptObject<K> {
     }
 
     pub fn interrupt(&self, kernel: K, signal_mask: Signals) {
-        self.base.signal(kernel, |current| current | signal_mask);
+        self.base.signal(kernel, SignalUpdate::raise(signal_mask));
     }
 }
 
@@ -54,7 +54,7 @@ impl<K: Kernel> KernelObject<K> for InterruptObject<K> {
 
     fn interrupt_ack(&self, kernel: K, signal_mask: Signals) -> Result<()> {
         // Clear the signaled interrupts.
-        self.base.signal(kernel, |signals| signals - signal_mask);
+        self.base.signal(kernel, SignalUpdate::clear(signal_mask));
         (self.ack_irqs)(signal_mask);
         Ok(())
     }
