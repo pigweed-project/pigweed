@@ -54,6 +54,11 @@ class DefaultSendQueue : public SendQueue {
   void set_on_error(ErrorHandler&& error_handler) override
       PW_LOCKS_EXCLUDED(send_mutex_);
 
+  // Set callback to be called when space becomes available in the send queue.
+  // QueueSend should not be called from this callback.
+  void set_on_space_available(SpaceAvailableCallback&& on_space_available)
+      override PW_LOCKS_EXCLUDED(send_mutex_);
+
  private:
   DefaultSendQueue(stream::ReaderWriter& socket, Allocator& allocator)
       : socket_(socket),
@@ -65,11 +70,13 @@ class DefaultSendQueue : public SendQueue {
 
   UniquePtr<std::byte[]> PopNext() PW_LOCKS_EXCLUDED(send_mutex_);
   void NotifyOnError(Status status) PW_LOCKS_EXCLUDED(send_mutex_);
+  void NotifyOnSpaceAvailable() PW_LOCKS_EXCLUDED(send_mutex_);
 
   stream::ReaderWriter& socket_;
   async::BasicDispatcher send_dispatcher_;
   async::Task send_task_;
   ErrorHandler on_error_;
+  SpaceAvailableCallback on_space_available_ PW_GUARDED_BY(send_mutex_);
   sync::Mutex send_mutex_;
   DynamicDeque<UniquePtr<std::byte[]>> queue_ PW_GUARDED_BY(send_mutex_);
 };

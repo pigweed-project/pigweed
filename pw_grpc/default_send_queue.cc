@@ -37,9 +37,22 @@ void DefaultSendQueue::NotifyOnError(Status status) {
   }
 }
 
+void DefaultSendQueue::NotifyOnSpaceAvailable() {
+  std::lock_guard lock(send_mutex_);
+  if (on_space_available_) {
+    on_space_available_();
+  }
+}
+
 void DefaultSendQueue::set_on_error(ErrorHandler&& error_handler) {
   std::lock_guard lock(send_mutex_);
   on_error_ = std::move(error_handler);
+}
+
+void DefaultSendQueue::set_on_space_available(
+    SpaceAvailableCallback&& on_space_available) {
+  std::lock_guard lock(send_mutex_);
+  on_space_available_ = std::move(on_space_available);
 }
 
 void DefaultSendQueue::ProcessSendQueue(async::Context&, Status task_status) {
@@ -56,6 +69,7 @@ void DefaultSendQueue::ProcessSendQueue(async::Context&, Status task_status) {
       NotifyOnError(status);
       return;
     }
+    NotifyOnSpaceAvailable();
     buffer = PopNext();
   }
 }

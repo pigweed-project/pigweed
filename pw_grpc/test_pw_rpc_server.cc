@@ -79,6 +79,10 @@ class TestSendQueue : public pw::grpc::SendQueue {
     inner_.set_on_error(std::move(error_handler));
   }
 
+  void set_on_space_available(SpaceAvailableCallback&& callback) override {
+    inner_.set_on_space_available(std::move(callback));
+  }
+
   void Run() override { inner_.Run(); }
   void RequestStop() override { inner_.RequestStop(); }
 
@@ -263,7 +267,10 @@ class ConnectionThread : public pw::grpc::Connection,
                              &read_dispatcher_),
         send_queue_thread_options_(send_thread_options),
         send_queue_(stream, send_allocator),
-        test_send_queue_(send_queue_) {}
+        test_send_queue_(send_queue_) {
+    test_send_queue_.set_on_space_available(
+        []() { PW_LOG_DEBUG("Send queue space available"); });
+  }
 
   // Process the connection. Does not return until the connection is closed.
   void Run() override {

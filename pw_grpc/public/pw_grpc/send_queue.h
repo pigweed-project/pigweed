@@ -24,6 +24,7 @@ namespace pw::grpc {
 class SendQueue {
  public:
   using ErrorHandler = pw::Function<void(pw::Status)>;
+  using SpaceAvailableCallback = pw::Function<void()>;
 
   virtual ~SendQueue() {}
 
@@ -34,6 +35,12 @@ class SendQueue {
   // Sets callback to be called when write to socket fails. QueueSend must not
   // be called from this callback.
   virtual void set_on_error(ErrorHandler&& error_handler) = 0;
+
+  // Sets callback to be called when space becomes available in the send queue.
+  // This callback may be called with internal queue mutexes held. Callers
+  // must not call back into this SendQueue (such as QueueSend) from within
+  // this callback.
+  virtual void set_on_space_available(SpaceAvailableCallback&&) {}
 
   // Runs this send queue.
   virtual void Run() = 0;
