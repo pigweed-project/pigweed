@@ -47,3 +47,14 @@ pw_python_package("py") {
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
+
+pw_python_script("dump_hdlc_frames") {
+  sources = [ "dump_hdlc_frames.py" ]
+  python_deps = [
+    "$dir_pw_cli/py",
+    "$dir_pw_hdlc/py",
+  ]
+  pylintrc = "$dir_pigweed/.pylintrc"
+  mypy_ini = "$dir_pigweed/.mypy.ini"
+  ruff_toml = "$dir_pigweed/.ruff.toml"
+}

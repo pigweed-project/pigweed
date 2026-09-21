@@ -162,6 +162,18 @@ Allocating buffers when decoding
              pw::hdlc::Decoder::RequiredBufferSizeForFrameSize(kMtu);
          pw::hdlc::DecoderBuffer<kDecoderBufferSize> decoder;
 
+Tools
+=====
+The ``dump_hdlc_frames.py`` script can be used to examine HDLC streams, e.g.,
+from a raw UART log:
+
+.. code-block:: console
+
+   $ bazelisk --quiet run //pw_hdlc/py:dump_hdlc_frames -- < raw_uart.bin
+   [0000] OK addr=0x01 ctrl=0x03 len=5   'hello'
+   [0001] OK addr=0x01 ctrl=0x03 len=5   'world'
+
+
 -----------------
 More pw_hdlc docs
 -----------------

@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -57,5 +57,15 @@ pw_py_test(
     deps = [
         ":pw_hdlc",
         "//pw_build/py:pw_build",
+    ],
+)
+
+pw_py_binary(
+    name = "dump_hdlc_frames",
+    srcs = ["dump_hdlc_frames.py"],
+    main = "dump_hdlc_frames.py",
+    deps = [
+        ":pw_hdlc",
+        "//pw_cli/py:pw_cli",
     ],
 )
