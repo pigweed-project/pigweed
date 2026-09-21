@@ -56,6 +56,7 @@ fuchsia_cc_library(
         "emulator.h",
         "loopback.cc",
         "loopback.h",
+        "vendor_service_publisher.h",
     ],
     target_compatible_with = ["@platforms//os:fuchsia"],
     deps = [
@@ -70,6 +71,7 @@ fuchsia_cc_library(
         "@fuchsia_sdk//pkg/driver_component_cpp",
         "@fuchsia_sdk//pkg/driver_devfs_cpp",
         "@fuchsia_sdk//pkg/driver_logging_cpp",
+        "@fuchsia_sdk//pkg/driver_outgoing_cpp",
         "@fuchsia_sdk//pkg/driver_runtime",
     ],
 )
@@ -154,6 +156,7 @@ fuchsia_cc_test(
         ":common",
         "//pw_bluetooth_sapphire/host/testing:gtest_main",
         "//pw_unit_test",
+        "@fuchsia_sdk//pkg/component_incoming_cpp",
         "@fuchsia_sdk//pkg/driver_testing_cpp",
     ],
 )

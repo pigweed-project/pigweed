@@ -110,12 +110,19 @@ EmulatorDevice::EmulatorDevice()
       vendor_devfs_connector_(
           fit::bind_member<&EmulatorDevice::ConnectVendor>(this)) {}
 
-EmulatorDevice::~EmulatorDevice() { fake_device_.Stop(); }
+EmulatorDevice::~EmulatorDevice() {
+  UnpublishHci();
+  fake_device_.Stop();
+}
 
 zx_status_t EmulatorDevice::Initialize(std::string_view name,
                                        AddChildCallback callback,
-                                       ShutdownCallback shutdown) {
+                                       ShutdownCallback shutdown,
+                                       fdf::OutgoingDirectory* outgoing,
+                                       std::string_view service_instance_name) {
   shutdown_cb_ = std::move(shutdown);
+  outgoing_ = outgoing;
+  service_instance_name_ = std::string(service_instance_name);
 
   bt::set_random_generator(&rng_);
 
@@ -164,6 +171,7 @@ zx_status_t EmulatorDevice::Initialize(std::string_view name,
 }
 
 void EmulatorDevice::Shutdown() {
+  UnpublishHci();
   fake_device_.Stop();
   peers_.clear();
 
@@ -183,14 +191,31 @@ void EmulatorDevice::Publish(PublishRequest& request,
   FakeController::Settings settings = SettingsFromFidl(request);
   fake_device_.set_settings(settings);
 
-  zx_status_t status = AddHciDeviceChildNode();
+  zx_status_t status;
+
+  status = AddHciDeviceChildNode();
   if (status != ZX_OK) {
     fdf::warn("Failed to publish bt-hci-device node");
     completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
-  } else {
-    fdf::info("Successfully published bt-hci-device node");
-    completer.Reply(fit::success());
+    return;
   }
+  fdf::info("Successfully published bt-hci-device node");
+
+  if (outgoing_ != nullptr) {
+    status = vendor_service_.Publish(
+        outgoing_,
+        service_instance_name_,
+        fit::bind_member<&EmulatorDevice::ConnectVendor>(this));
+    if (status != ZX_OK) {
+      fdf::warn("Failed to start vendor service");
+      UnpublishHci();
+      completer.Reply(fit::error(fhbt::EmulatorError::kFailed));
+      return;
+    }
+    fdf::info("Successfully started vendor service {}", service_instance_name_);
+  }
+
+  completer.Reply(fit::success());
 }
 
 void EmulatorDevice::AddLowEnergyPeer(
@@ -544,12 +569,17 @@ void EmulatorDevice::OnPeerConnectionStateChanged(
 }
 
 void EmulatorDevice::UnpublishHci() {
+  vendor_service_.Unpublish();
+
   // Unpublishing the bt-hci-device child node shuts down the associated bt-host
   // component
-  auto status = hci_node_controller_->Remove();
-  if (!status.ok()) {
-    fdf::error("Could not remove bt-hci-device child node: {}",
-               status.status_string());
+  if (hci_node_controller_.is_valid()) {
+    auto status = hci_node_controller_->Remove();
+    if (!status.ok()) {
+      fdf::error("Could not remove bt-hci-device child node: {}",
+                 status.status_string());
+    }
+    hci_node_controller_ = {};
   }
 }
 

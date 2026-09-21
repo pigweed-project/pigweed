@@ -18,6 +18,7 @@
 #include <fidl/fuchsia.hardware.bluetooth/cpp/fidl.h>
 #include <lib/async/cpp/wait.h>
 #include <lib/driver/devfs/cpp/connector.h>
+#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <pw_async_fuchsia/dispatcher.h>
 
 #include <queue>
@@ -26,6 +27,7 @@
 #include "emulated_peer.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_controller.h"
 #include "pw_random_fuchsia/zircon_random_generator.h"
+#include "vendor_service_publisher.h"
 
 namespace bt_hci_virtual {
 
@@ -59,9 +61,12 @@ class EmulatorDevice
 
   // Methods used by the VirtualController to control the EmulatorDevice's
   // lifecycle
-  zx_status_t Initialize(std::string_view name,
-                         AddChildCallback callback,
-                         ShutdownCallback shutdown);
+  zx_status_t Initialize(
+      std::string_view name,
+      AddChildCallback callback,
+      ShutdownCallback shutdown,
+      fdf::OutgoingDirectory* outgoing = nullptr,
+      std::string_view service_instance_name = fdf::kDefaultInstance);
   void Shutdown();
 
   void set_emulator_ptr(std::unique_ptr<EmulatorDevice> ptr) {
@@ -190,6 +195,10 @@ class EmulatorDevice
   fidl::WireClient<fuchsia_driver_framework::NodeController>
       hci_node_controller_;
   fidl::WireClient<fuchsia_driver_framework::Node> hci_child_node_;
+
+  fdf::OutgoingDirectory* outgoing_ = nullptr;
+  std::string service_instance_name_;
+  VendorServicePublisher vendor_service_;
 };
 
 }  // namespace bt_hci_virtual
