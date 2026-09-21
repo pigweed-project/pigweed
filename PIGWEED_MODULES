@@ -181,6 +181,7 @@ pw_toolchain
 pw_trace
 pw_trace_tokenized
 pw_transfer
+pw_transport
 pw_uart
 pw_uart_mcuxpresso
 pw_unit_test

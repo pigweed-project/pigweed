@@ -101,6 +101,7 @@ filegroup(
         "//pw_toolchain:doxygen",
         "//pw_trace_tokenized:doxygen",
         "//pw_transfer:doxygen",
+        "//pw_transport/cpp:doxygen",
         "//pw_uart:doxygen",
         "//pw_unit_test:doxygen",
         "//pw_uuid:doxygen",

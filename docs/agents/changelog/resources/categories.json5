@@ -276,6 +276,7 @@
       "pw_tls_client",
       "pw_tls_client_boringssl",
       "pw_tls_client_mbedtls",
+      "pw_transport",
     ]
   },
   rpc: {

@@ -225,6 +225,7 @@ declare_args() {
   dir_pw_trace = get_path_info("../pw_trace", "abspath")
   dir_pw_trace_tokenized = get_path_info("../pw_trace_tokenized", "abspath")
   dir_pw_transfer = get_path_info("../pw_transfer", "abspath")
+  dir_pw_transport = get_path_info("../pw_transport", "abspath")
   dir_pw_uart = get_path_info("../pw_uart", "abspath")
   dir_pw_uart_mcuxpresso = get_path_info("../pw_uart_mcuxpresso", "abspath")
   dir_pw_unit_test = get_path_info("../pw_unit_test", "abspath")
@@ -423,6 +424,7 @@ declare_args() {
     dir_pw_trace,
     dir_pw_trace_tokenized,
     dir_pw_transfer,
+    dir_pw_transport,
     dir_pw_uart,
     dir_pw_uart_mcuxpresso,
     dir_pw_unit_test,
@@ -618,6 +620,7 @@ declare_args() {
     "$dir_pw_trace:tests",
     "$dir_pw_trace_tokenized:tests",
     "$dir_pw_transfer:tests",
+    "$dir_pw_transport:tests",
     "$dir_pw_uart:tests",
     "$dir_pw_uart_mcuxpresso:tests",
     "$dir_pw_unit_test:tests",

@@ -972,6 +972,13 @@
   "pw_transfer": {
     "status": "stable"
   },
+  "pw_transport": {
+    "tagline": "Asynchronous datagram-oriented transport interface",
+    "status": "experimental",
+    "languages": [
+      "C++"
+    ]
+  },
   "pw_uart": {
     "tagline": "Core interfaces for UART communication",
     "status": "unstable",

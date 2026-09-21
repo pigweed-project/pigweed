@@ -757,6 +757,12 @@
 /// [Home](../../pw_transfer/docs.html)
 /// @endmaindocs
 
+/// @defgroup pw_transport pw_transport
+/// @brief Asynchronous datagram-oriented transport interface.
+/// @maindocs
+/// [Home](../../pw_transport/docs.html)
+/// @endmaindocs
+
 /// @defgroup pw_varint pw_varint
 /// @brief Functions for encoding and decoding variable length integers.
 /// @maindocs

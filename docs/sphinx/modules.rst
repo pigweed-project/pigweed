@@ -125,6 +125,7 @@ Modules
    pw_toolchain/docs
    pw_trace/docs
    pw_transfer/docs
+   pw_transport/docs
    pw_uart/docs
    pw_unit_test/docs
    pw_uuid/docs

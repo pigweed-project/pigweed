@@ -386,6 +386,7 @@ sphinx_docs_library(
         "//pw_trace:docs",
         "//pw_trace_tokenized:docs",
         "//pw_transfer:docs",
+        "//pw_transport:docs",
         "//pw_uart:docs",
         "//pw_uart_mcuxpresso:docs",
         "//pw_unit_test:docs",
