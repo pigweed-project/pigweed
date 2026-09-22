@@ -300,6 +300,20 @@ TEST(PacketTest, EncodeErrorTruncatesExtraBuffer) {
   EXPECT_EQ(encode_result->size(), sizeof(internal::ErrorWireFormat));
 }
 
+TEST(PacketTest, EncodeHandshakeTruncatesExtraBuffer) {
+  pw::allocator::test::AllocatorForTest<256> allocator;
+  auto buf = pw::Buf::Allocate(allocator, 64);
+  auto encode_result =
+      internal::HandshakePacket(internal::HandshakePacket::Type::kSyn)
+          .Encode(std::move(buf));
+  ASSERT_EQ(encode_result.status(), pw::OkStatus());
+  EXPECT_EQ(encode_result->size(), internal::HandshakePacket::kWireSizeBytes);
+
+  auto decode_result = internal::HandshakePacket::Decode(*encode_result);
+  ASSERT_EQ(decode_result.status(), pw::OkStatus());
+  EXPECT_EQ(decode_result->type(), internal::HandshakePacket::Type::kSyn);
+}
+
 TEST(PacketTest, EncodeRejectsBufferSmallerThanHeader) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf =

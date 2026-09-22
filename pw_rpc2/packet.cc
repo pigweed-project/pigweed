@@ -59,6 +59,9 @@ Status HandshakePacket::Encode(ByteSpan buffer) const {
 }
 
 Result<Buf> HandshakePacket::Encode(Buf buffer) const {
+  if (buffer.size() > kWireSizeBytes) {
+    buffer = Truncate(std::move(buffer), kWireSizeBytes);
+  }
   PW_TRY(Encode(ByteSpan(buffer)));
   return buffer;
 }
