@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/cc_blob_library.gni")
+import("$dir_pw_build/ignore_group.gni")
 import("$dir_pw_build/python.gni")
 import("$dir_pw_build/relative_source_file_names.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
@@ -618,9 +619,16 @@ if (current_toolchain != default_toolchain) {
   }
 }
 
-# The python files listed here are only useful for the Bazel build. However the
-# "source_is_in_gn_build" check requires that they be mentioned here, as there
-# is no explicit ignore-list for that check.
-pw_python_script("_bazel_only") {
-  sources = [ "pw_pylint_test_example.py" ]
+# Files listed here are only used for Bazel rules/tests, but are listed
+# here so the "source_is_in_gn_build" presubmit check recognizes them.
+pw_ignore_group("_bazel_only") {
+  sources = [
+    "bazel_tests/hermetic_cc_library/hermetic_cc_library_test.cc",
+    "bazel_tests/hermetic_cc_library/hermetic_test_lib.cc",
+    "bazel_tests/hermetic_cc_library/hermetic_test_lib.h",
+    "bazel_tests/hermetic_cc_library/private_dep.cc",
+    "bazel_tests/hermetic_cc_library/private_dep.h",
+    "pw_pylint_test_example.py",
+    "py/pw_build/verify_hermetic_elf.py",
+  ]
 }

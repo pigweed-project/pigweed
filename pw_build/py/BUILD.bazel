@@ -151,6 +151,17 @@ pw_py_binary(
 )
 
 pw_py_binary(
+    name = "verify_hermetic_elf",
+    srcs = [
+        "pw_build/verify_hermetic_elf.py",
+    ],
+    tags = ["nomypy"],
+    deps = [
+        "@pigweed_python_packages//pyelftools",
+    ],
+)
+
+pw_py_binary(
     name = "bazel_build_driver",
     srcs = [
         "pw_build/workflows/bazel_driver.py",

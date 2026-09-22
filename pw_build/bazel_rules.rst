@@ -497,3 +497,43 @@ host_backend_alias
 ------------------
 An alias that resolves to the backend for host platforms. This is useful when
 declaring a facade that provides a default backend for host platform use.
+
+.. _module-pw_build-bazel-pw_hermetic_cc_library:
+
+----------------------
+pw_hermetic_cc_library
+----------------------
+The ``pw_hermetic_cc_library`` rule produces an incrementally-linked hermetic C/C++ static
+library. It compiles source files from ``srcs``, takes private dependencies from ``deps``,
+performs a relocatable link (``ld -r``), and localizes all internal symbols using ``objcopy``.
+
+Only linkage symbols explicitly listed in ``global_symbols`` or ``global_symbols_file`` remain
+globally exported. Public dependencies and headers specified in ``public_deps`` and ``hdrs`` are
+propagated to downstream consumers without localization.
+
+.. code-block:: python
+
+   load("@pigweed//pw_build:pw_hermetic_cc_library.bzl", "pw_hermetic_cc_library")
+
+   pw_hermetic_cc_library(
+       name = "my_hermetic_lib",
+       srcs = ["lib.cc"],
+       hdrs = ["public/my_lib/lib.h"],
+       includes = ["public"],
+       deps = [":private_dependency"],
+       # Preserved global symbols reflecting the public linkage API of this library.
+       # (Wildcards are not supported for global_symbols).
+       global_symbols = [
+           "my_lib_exported_foo",
+           "my_lib_exported_bar",
+       ],
+       # External symbols allowed to be referenced by this library.
+       # (Supports fnmatch wildcard patterns).
+       undefined_symbols = [
+           "malloc",
+           "free",
+           "memset",
+           "memcpy",
+           "*printf",
+       ],
+   )
