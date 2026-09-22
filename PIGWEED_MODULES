@@ -128,6 +128,7 @@ pw_result
 pw_ring_buffer
 pw_router
 pw_rpc
+pw_rpc2
 pw_rpc_transport
 pw_rust
 pw_sensor

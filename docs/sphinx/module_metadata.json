@@ -745,6 +745,13 @@
       "TypeScript"
     ]
   },
+  "pw_rpc2": {
+    "tagline": "Next gen, zero-copy async RPC with end-to-end backpressure",
+    "status": "experimental",
+    "languages": [
+      "C++"
+    ]
+  },
   "pw_rpc_transport": {
     "status": "unstable"
   },

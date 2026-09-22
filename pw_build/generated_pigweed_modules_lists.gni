@@ -166,6 +166,7 @@ declare_args() {
   dir_pw_ring_buffer = get_path_info("../pw_ring_buffer", "abspath")
   dir_pw_router = get_path_info("../pw_router", "abspath")
   dir_pw_rpc = get_path_info("../pw_rpc", "abspath")
+  dir_pw_rpc2 = get_path_info("../pw_rpc2", "abspath")
   dir_pw_rpc_transport = get_path_info("../pw_rpc_transport", "abspath")
   dir_pw_rust = get_path_info("../pw_rust", "abspath")
   dir_pw_sensor = get_path_info("../pw_sensor", "abspath")
@@ -371,6 +372,7 @@ declare_args() {
     dir_pw_ring_buffer,
     dir_pw_router,
     dir_pw_rpc,
+    dir_pw_rpc2,
     dir_pw_rpc_transport,
     dir_pw_rust,
     dir_pw_sensor,
@@ -567,6 +569,7 @@ declare_args() {
     "$dir_pw_ring_buffer:tests",
     "$dir_pw_router:tests",
     "$dir_pw_rpc:tests",
+    "$dir_pw_rpc2:tests",
     "$dir_pw_rpc_transport:tests",
     "$dir_pw_rust:tests",
     "$dir_pw_sensor:tests",

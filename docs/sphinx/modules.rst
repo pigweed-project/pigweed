@@ -102,6 +102,7 @@ Modules
    pw_ring_buffer/docs
    pw_router/docs
    pw_rpc/docs
+   pw_rpc2/docs
    pw_rpc_transport/docs
    pw_rust/docs
    pw_sensor/docs
