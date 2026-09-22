@@ -56,22 +56,29 @@ class CountingSemaphore {
   /// Atomically increments the internal counter by the value of update.
   /// Any thread(s) waiting for the counter to be greater than 0, i.e. blocked
   /// in acquire, will subsequently be unblocked.
-  /// This is IRQ safe.
   ///
   /// @pre `update >= 0`
   ///
   /// @pre `update <= max() - counter`
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   void release(ptrdiff_t update = 1);
 
   /// Decrements the internal counter by 1 or blocks indefinitely until it can.
   ///
-  /// This is thread safe, but not IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void acquire();
 
   /// Tries to decrement by the internal counter by 1 without blocking.
   /// Returns true if the internal counter was decremented successfully.
   ///
-  /// This is IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire() noexcept;
 
   /// Tries to decrement the internal counter by 1. Blocks until the specified
@@ -79,7 +86,10 @@ class CountingSemaphore {
   /// first.
   ///
   /// Returns true if the internal counter was decremented successfully.
-  /// This is thread safe, but not IRQ safe.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_for(chrono::SystemClock::duration timeout);
 
   /// Tries to decrement the internal counter by 1. Blocks until the specified
@@ -88,11 +98,17 @@ class CountingSemaphore {
   ///
   /// Returns true if the internal counter was decremented successfully.
   ///
-  /// This is thread safe, but not IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_until(
       chrono::SystemClock::time_point deadline);
 
   /// Returns the internal counter's maximum possible value.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{yes}
   [[nodiscard]] static constexpr ptrdiff_t max() noexcept {
     return backend::kCountingSemaphoreMaxValue;
   }
@@ -120,17 +136,68 @@ typedef struct pw_sync_CountingSemaphore pw_sync_CountingSemaphore;
 
 PW_EXTERN_C_START
 
+/// @module{pw_sync}
+
+/// Invokes the `CountingSemaphore::release` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 void pw_sync_CountingSemaphore_Release(pw_sync_CountingSemaphore* semaphore);
+
+/// Invokes the `CountingSemaphore::release` member function with `update` on
+/// the given `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 void pw_sync_CountingSemaphore_ReleaseNum(pw_sync_CountingSemaphore* semaphore,
                                           ptrdiff_t update);
+
+/// Invokes the `CountingSemaphore::acquire` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_CountingSemaphore_Acquire(pw_sync_CountingSemaphore* semaphore);
+
+/// Invokes the `CountingSemaphore::try_acquire` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 bool pw_sync_CountingSemaphore_TryAcquire(pw_sync_CountingSemaphore* semaphore);
+
+/// Invokes the `CountingSemaphore::try_acquire_for` member function on the
+/// given `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_CountingSemaphore_TryAcquireFor(
     pw_sync_CountingSemaphore* semaphore,
     pw_chrono_SystemClock_Duration timeout);
+
+/// Invokes the `CountingSemaphore::try_acquire_until` member function on the
+/// given `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_CountingSemaphore_TryAcquireUntil(
     pw_sync_CountingSemaphore* semaphore,
     pw_chrono_SystemClock_TimePoint deadline);
+
+/// Invokes the `CountingSemaphore::max` member function.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{yes}
 ptrdiff_t pw_sync_CountingSemaphore_Max(void);
+
+/// @}
 
 PW_EXTERN_C_END

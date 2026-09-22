@@ -52,6 +52,10 @@ class ThreadNotification {
   /// Clears the notification latch.
   ///
   /// @attention This should only be used by a single consumer thread.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void acquire();
 
   /// Returns whether the thread has been notified, i.e. whether the notificion
@@ -63,6 +67,10 @@ class ThreadNotification {
   /// reset successfully.
   ///
   /// @attention This should only be used by a single consumer thread.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire();
 
   /// Notifies the thread in a saturating manner, setting the notification
@@ -74,6 +82,10 @@ class ThreadNotification {
   /// the time.
   ///
   /// This is IRQ and thread safe.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   void release();
 
   [[nodiscard]] native_handle_type native_handle();

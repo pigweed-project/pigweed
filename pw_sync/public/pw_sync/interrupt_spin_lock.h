@@ -61,17 +61,29 @@ class PW_LOCKABLE("pw::sync::InterruptSpinLock") InterruptSpinLock {
   /// Locks the spinlock, blocking indefinitely. Failures are fatal.
   ///
   /// @pre Recursive locking is undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   void lock() PW_EXCLUSIVE_LOCK_FUNCTION();
 
   /// Tries to lock the spinlock in a non-blocking manner.
   /// Returns true if the spinlock was successfully acquired.
   ///
   /// @pre Recursive locking is undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_lock() PW_EXCLUSIVE_TRYLOCK_FUNCTION(true);
 
   /// Unlocks the spinlock. Failures are fatal.
   ///
   /// @pre The spinlock is held by the caller.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   void unlock() PW_UNLOCK_FUNCTION();
 
   [[nodiscard]] native_handle_type native_handle();
@@ -105,16 +117,28 @@ PW_EXTERN_C_START
 
 /// Invokes the `InterruptSpinLock::lock` member function on the given
 /// `interrupt_spin_lock`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 void pw_sync_InterruptSpinLock_Lock(pw_sync_InterruptSpinLock* spin_lock)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `InterruptSpinLock::try_lock` member function on the given
 /// `interrupt_spin_lock`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 bool pw_sync_InterruptSpinLock_TryLock(pw_sync_InterruptSpinLock* spin_lock)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `InterruptSpinLock::unlock` member function on the given
 /// `interrupt_spin_lock`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 void pw_sync_InterruptSpinLock_Unlock(pw_sync_InterruptSpinLock* spin_lock)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 

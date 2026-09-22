@@ -124,6 +124,9 @@ class Initiator {
   /// * @FAILED_PRECONDITION: The interface isn't initialized or enabled.
   /// * @UNIMPLEMENTED: The interface doesn't support the necessary I2C
   ///   features or combination of I2C messages.
+  ///
+  /// @isrsafe{no}
+  /// @threadsafe{yes}
   Status WriteReadFor(Address device_address,
                       ConstByteSpan tx_buffer,
                       ByteSpan rx_buffer,
@@ -182,6 +185,9 @@ class Initiator {
   /// * @FAILED_PRECONDITION: The interface isn't initialized or enabled.
   /// * @UNIMPLEMENTED: The interface doesn't support the necessary I2C
   ///   features or combination of I2C messages.
+  ///
+  /// @isrsafe{no}
+  /// @threadsafe{yes}
   Status TransferFor(span<const Message> messages,
                      chrono::SystemClock::duration timeout) {
     return DoValidateAndTransferFor(messages, timeout);
@@ -232,6 +238,9 @@ class Initiator {
   /// * @FAILED_PRECONDITION: The interface isn't initialized or enabled.
   /// * @UNIMPLEMENTED: The interface doesn't support the necessary I2C
   ///   features or combination of I2C messages.
+  ///
+  /// @isrsafe{no}
+  /// @threadsafe{yes}
   Status WriteFor(Address device_address,
                   ConstByteSpan tx_buffer,
                   chrono::SystemClock::duration timeout) {
@@ -278,6 +287,9 @@ class Initiator {
   /// * @FAILED_PRECONDITION: The interface isn't initialized or enabled.
   /// * @UNIMPLEMENTED: The interface doesn't support the necessary I2C
   ///   features or combination of I2C messages.
+  ///
+  /// @isrsafe{no}
+  /// @threadsafe{yes}
   Status ReadFor(Address device_address,
                  ByteSpan rx_buffer,
                  chrono::SystemClock::duration timeout) {
@@ -322,6 +334,9 @@ class Initiator {
   /// * @FAILED_PRECONDITION: The interface isn't initialized or enabled.
   /// * @UNIMPLEMENTED: The interface doesn't support the necessary I2C
   ///   features or combination of I2C messages.
+  ///
+  /// @isrsafe{no}
+  /// @threadsafe{yes}
   Status ProbeDeviceFor(Address device_address,
                         chrono::SystemClock::duration timeout) {
     std::byte ignored_buffer[1] = {};  // Read a byte to probe.

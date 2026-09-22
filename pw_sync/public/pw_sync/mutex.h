@@ -52,6 +52,10 @@ class PW_LOCKABLE("pw::sync::Mutex") Mutex {
   ///
   /// @pre The lock isn't already held by this thread. Recursive locking is
   /// undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void lock() PW_EXCLUSIVE_LOCK_FUNCTION();
 
   /// Attempts to lock the mutex in a non-blocking manner.
@@ -59,11 +63,19 @@ class PW_LOCKABLE("pw::sync::Mutex") Mutex {
   ///
   /// @pre The lock isn't already held by this thread. Recursive locking is
   /// undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_lock() PW_EXCLUSIVE_TRYLOCK_FUNCTION(true);
 
   /// Unlocks the mutex. Failures are fatal.
   ///
   /// @pre The mutex is held by this thread.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void unlock() PW_UNLOCK_FUNCTION();
 
   [[nodiscard]] native_handle_type native_handle();
@@ -105,12 +117,24 @@ PW_EXTERN_C_START
 /// @module{pw_sync}
 
 /// Invokes the `Mutex::lock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_Mutex_Lock(pw_sync_Mutex* mutex) PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `Mutex::try_lock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_Mutex_TryLock(pw_sync_Mutex* mutex) PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `Mutex::unlock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_Mutex_Unlock(pw_sync_Mutex* mutex) PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// @}

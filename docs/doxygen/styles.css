@@ -2331,3 +2331,52 @@ code {
     position: relative;
   }
 }
+
+span.badge {
+  display: inline-block;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  color: var(--memdef-proto-text-color);
+  background-color: var(--memdef-proto-background-color);
+  border-top: 1px solid var(--memdef-border-color);
+  border-bottom: 1px solid var(--memdef-border-color);
+}
+
+span.badge-left {
+  border-top-left-radius: 0.25rem;
+  border-bottom-left-radius: 0.25rem;
+  margin-left: 3px;
+  margin-right: 0px;
+  border-left: 1px solid var(--memdef-border-color);
+}
+
+span.badge-right {
+  border-top-right-radius: 0.25rem;
+  border-bottom-right-radius: 0.25rem;
+  margin-left: 0px;
+  margin-right: 3px;
+  border-right: 1px solid var(--memdef-border-color);
+}
+
+span.badge-green {
+  color: #fff;
+  background-color: #67ac09;
+}
+
+span.badge-orange {
+  color: #fff;
+  background-color: #ea7233;
+}
+span.badge-red {
+  color: #fff;
+  background-color: #dc3545;
+}
+
+a.badge-link {
+  text-decoration: none;
+}

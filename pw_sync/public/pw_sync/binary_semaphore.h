@@ -54,25 +54,32 @@ class BinarySemaphore {
   /// Atomically increments the internal counter by 1.
   /// Any thread(s) waiting for the counter to be greater than 0, i.e.
   /// blocked in acquire, will subsequently be unblocked.
-  /// This is thread and IRQ safe.
   ///
   /// There exists an overflow risk if one releases more than max() times
   /// between acquires because many RTOS implementations internally
   /// increment the counter past one where it is only cleared when acquired.
   ///
   /// @pre `1 <= max() - counter`
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   void release();
 
   /// Decrements the internal counter to 0 or blocks indefinitely until it can.
   ///
-  /// This is thread safe, but not IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void acquire();
 
   /// Tries to decrement by the internal counter to 0 without blocking.
   ///
   /// @retval true if the internal counter was reset successfully.
   ///
-  /// This is thread and IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire() noexcept;
 
   /// Tries to decrement the internal counter to 0. Blocks until the specified
@@ -81,7 +88,9 @@ class BinarySemaphore {
   ///
   /// @retval true if the internal counter was decremented successfully.
   ///
-  /// This is thread safe, but not IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_for(chrono::SystemClock::duration timeout);
 
   /// Tries to decrement the internal counter to 0. Blocks until the specified
@@ -90,12 +99,20 @@ class BinarySemaphore {
   ///
   /// @retval true if the internal counter was decremented successfully.
   ///
-  /// This is thread safe, but not IRQ safe.
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_until(
       chrono::SystemClock::time_point deadline);
 
+  /// Returns the internal counter's maximum possible value.
+  ///
   /// @retval backend::kBinarySemaphoreMaxValue the internal counter's maximum
   /// possible value.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{yes}
+  /// @nmisafe{yes}
   [[nodiscard]] static constexpr ptrdiff_t max() noexcept {
     return backend::kBinarySemaphoreMaxValue;
   }
@@ -123,14 +140,58 @@ typedef struct pw_sync_BinarySemaphore pw_sync_BinarySemaphore;
 
 PW_EXTERN_C_START
 
+/// @module{pw_sync}
+
+/// Invokes the `BinarySemaphore::release` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 void pw_sync_BinarySemaphore_Release(pw_sync_BinarySemaphore* semaphore);
+
+/// Invokes the `BinarySemaphore::acquire` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_BinarySemaphore_Acquire(pw_sync_BinarySemaphore* semaphore);
+
+/// Invokes the `BinarySemaphore::try_acquire` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{no}
 bool pw_sync_BinarySemaphore_TryAcquire(pw_sync_BinarySemaphore* semaphore);
+
+/// Invokes the `BinarySemaphore::try_acquire_for` member function on the given
+/// `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_BinarySemaphore_TryAcquireFor(
     pw_sync_BinarySemaphore* semaphore, pw_chrono_SystemClock_Duration timeout);
+
+/// Invokes the `BinarySemaphore::try_acquire_until` member function on the
+/// given `semaphore`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_BinarySemaphore_TryAcquireUntil(
     pw_sync_BinarySemaphore* semaphore,
     pw_chrono_SystemClock_TimePoint deadline);
+
+/// Invokes the `BinarySemaphore::max` member function.
+///
+/// @threadsafe{yes}
+/// @isrsafe{yes}
+/// @nmisafe{yes}
 ptrdiff_t pw_sync_BinarySemaphore_Max(void);
+
+/// @}
 
 PW_EXTERN_C_END

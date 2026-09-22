@@ -57,7 +57,21 @@ ALIASES                = "rst=^^\verbatim embed:rst:leading-asterisk^^" \
                          "endmaindocs=@htmlonly <!-- endmaindocs --> @endhtmlonly" \
                          "security=@if IGNORE_BLOCK" \
                          "endsecurity=@endif" \
-                         "example{2}=\par Example^^\snippet \1 \2^^Source: <a href=\"https://cs.opensource.google/pigweed/pigweed/+/main:\1?q=\2\">\1</a>"
+                         "example{2}=\par Example^^\snippet \1 \2^^Source: <a href=\"https://cs.opensource.google/pigweed/pigweed/+/main:\1?q=\2\">\1</a>" \
+                         "badge{3}=@htmlonly^^<span class=\"badge badge-left\">\1</span><span class=\"badge badge-right badge-\2\">\3</span>^^@endhtmlonly" \
+                         "badge{4}=@htmlonly^^<a href=\"\4\" class=\"badge-link\"><span class=\"badge badge-left\">\1</span><span class=\"badge badge-right badge-\2\">\3</span></a>^^@endhtmlonly" \
+                         "isrsafe{1}=@isrsafe_\1" \
+                         "isrsafe_yes=@badge{isr safe,green,yes,../../embedded_cpp_guide.html#docs-embedded-cpp-isr-safety}" \
+                         "isrsafe_no=@badge{isr safe,red,no,../../embedded_cpp_guide.html#docs-embedded-cpp-isr-safety}" \
+                         "isrsafe_maybe=@badge{isr safe,orange,maybe,../../embedded_cpp_guide.html#docs-embedded-cpp-isr-safety}" \
+                         "nmisafe{1}=@nmisafe_\1" \
+                         "nmisafe_yes=@badge{nmi safe,green,yes,../../embedded_cpp_guide.html#docs-embedded-cpp-nmi-safety}" \
+                         "nmisafe_no=@badge{nmi safe,red,no,../../embedded_cpp_guide.html#docs-embedded-cpp-nmi-safety}" \
+                         "nmisafe_maybe=@badge{nmi safe,orange,maybe,../../embedded_cpp_guide.html#docs-embedded-cpp-nmi-safety}" \
+                         "threadsafe{1}=@threadsafe_\1" \
+                         "threadsafe_yes=@badge{thread safe,green,yes,../../embedded_cpp_guide.html#docs-embedded-cpp-thread-safety}" \
+                         "threadsafe_no=@badge{thread safe,red,no,../../embedded_cpp_guide.html#docs-embedded-cpp-thread-safety}" \
+                         "threadsafe_maybe=@badge{thread safe,orange,maybe,../../embedded_cpp_guide.html#docs-embedded-cpp-thread-safety}" \
 
 # https://www.doxygen.nl/manual/config.html#cfg_case_sense_names
 CASE_SENSE_NAMES       = NO

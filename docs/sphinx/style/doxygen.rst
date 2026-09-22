@@ -272,6 +272,43 @@ tests into function, method, or class doc comments:
 See :ref:`contributing-docs-examples-quickstart-a-include-doxygen` for
 instructions on configuring the unit test and build target.
 
+@badge
+======
+Use ``@badge{<left string>,<color>,<right string>}`` to generate a
+:cc:`badge <pw::sync::BinarySemaphore::acquire>` in your documentation.
+Alternatively, ``@badge{<left string>,<color>,<right string>,<link>}`` can be
+used to generate a badge which is also a link to the given document.
+
+.. code-block:: cpp
+
+   /// My non-reentrant function.
+   ///
+   /// @badge{reentrant,red,no}
+
+   /// My reentrant function.
+   ///
+   /// @badge{reentrant,green,yes,../../treatise-on-reentrancy.html}
+
+.. note::
+
+   Not all colors are supported, currently only "green", "orange", and "red".
+
+A few common badges are provided already, including "thread safe", "isr safe",
+and "nmi safe". These badges should be put at the bottom of your Doxygen block
+with an empty line before the first.
+
+.. code-block:: cpp
+
+   /// My great function.
+   ///
+   /// @param[in] param An input parameter.
+   ///
+   /// @return The result.
+   ///
+   /// @threadsafe{yes}
+   /// @isrsafe{maybe}
+   /// @nmisafe{no}
+
 Links
 =====
 * For linking from Sphinx to Doxygen, see :ref:`contrib-doxygen-doxylink`.

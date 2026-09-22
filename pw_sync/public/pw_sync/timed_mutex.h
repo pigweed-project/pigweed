@@ -54,6 +54,10 @@ class TimedMutex : public Mutex {
   ///
   /// @pre The lock isn't already held by this thread. Recursive locking is
   /// undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_lock_for(chrono::SystemClock::duration timeout)
       PW_EXCLUSIVE_TRYLOCK_FUNCTION(true);
 
@@ -63,6 +67,10 @@ class TimedMutex : public Mutex {
   ///
   /// @pre The lock isn't already held by this thread. Recursive locking is
   /// undefined behavior.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_lock_until(chrono::SystemClock::time_point deadline)
       PW_EXCLUSIVE_TRYLOCK_FUNCTION(true);
 };
@@ -102,25 +110,45 @@ PW_EXTERN_C_START
 /// @module{pw_sync}
 
 /// Invokes the `TimedMutex::lock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_TimedMutex_Lock(pw_sync_TimedMutex* mutex)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `TimedMutex::try_lock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_TimedMutex_TryLock(pw_sync_TimedMutex* mutex)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `TimedMutex::try_lock_for` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_TimedMutex_TryLockFor(pw_sync_TimedMutex* mutex,
                                    pw_chrono_SystemClock_Duration timeout)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `TimedMutex::try_lock_until` member function on the given
 /// `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 bool pw_sync_TimedMutex_TryLockUntil(pw_sync_TimedMutex* mutex,
                                      pw_chrono_SystemClock_TimePoint deadline)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 
 /// Invokes the `TimedMutex::unlock` member function on the given `mutex`.
+///
+/// @threadsafe{yes}
+/// @isrsafe{no}
+/// @nmisafe{no}
 void pw_sync_TimedMutex_Unlock(pw_sync_TimedMutex* mutex)
     PW_NO_LOCK_SAFETY_ANALYSIS;
 

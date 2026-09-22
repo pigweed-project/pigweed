@@ -188,3 +188,65 @@ used.
 
    DoThingWithStatus().IgnoreError();
    std::ignore = DoThingWithReturnValue();
+
+.. _docs-embedded-cpp-isr-safety:
+
+ISR safety
+==========
+Interrupt Service Routines (ISRs) are fairly unique to embedded systems. They
+generally occur when the hardware requires servicing by the software, so the
+hardware will "interrupt" whatever processing the CPU was doing and the CPU
+will jump to a specified instruction. These ISR functions may occur at anytime
+during the run-time of an application, thus they pose a concurrency risk.
+
+On some low level modules (such as :ref:`module-pw_i2c`) there are some
+functions which may safely be called from an ISR context, some which should
+*not* be called from ISR context, and some where it depends on the
+implementation chosen. This is usually noted in the documentation.
+
+A function that is marked as "ISR safe" *may* be safely called from ISR context.
+
+.. caution::
+
+   Not all functions will specify if they are ISR **unsafe**, since they may
+   not expect to interact with ISRs. If a function does not specify ISR safety,
+   assume it is not safe to call from an ISR.
+
+.. note::
+
+   If you are implementing a virtual function that specifies "ISR safe", you
+   must implement that function such that it can be called from ISR context.
+
+.. _docs-embedded-cpp-nmi-safety:
+
+NMI safety
+----------
+Non-Maskable Interrupts (NMIs) are a type of interrupt that cannot be disabled.
+This means that unlike standard ISRs, they cannot use typical critical sections
+to "lock" potential concurrent accesses.
+
+There are other mechanisms which can be used to share data between NMI context
+and others, such as atomics, but this is very specific to the platform.
+
+.. caution::
+
+   Just because a function is ISR safe, it may *not* be NMI safe.
+
+.. _docs-embedded-cpp-thread-safety:
+
+Thread safety
+=============
+Functions which are "thread safe" may safely be called concurrently from
+multiple thread contexts. They either do not have shared state or protect their
+shared state.
+
+.. caution::
+
+   Not all functions will specify if they are thread **unsafe**, since they may
+   not expect to interact across threads. If a function does not specify thread
+   safety, assume it is not safe to call concurrently.
+
+.. note::
+
+   If you are implementing a virtual function that specifies "thread safe", you
+   must implement that function such that it can be called concurrently.

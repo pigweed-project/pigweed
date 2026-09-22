@@ -56,6 +56,10 @@ class TimedThreadNotification : public ThreadNotification {
   /// was reset successfully.
   ///
   /// @attention This should only be used by a single consumer thread.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_for(chrono::SystemClock::duration timeout);
 
   /// Blocks until the specified deadline time has been reached the thread has
@@ -68,6 +72,10 @@ class TimedThreadNotification : public ThreadNotification {
   /// was reset successfully.
   ///
   /// @attention This should only be used by a single consumer thread.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   [[nodiscard]] bool try_acquire_until(
       chrono::SystemClock::time_point deadline);
 };

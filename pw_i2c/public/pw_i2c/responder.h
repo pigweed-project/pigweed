@@ -33,6 +33,8 @@ class ResponderEvents {
   /// @returns
   /// * true to send an ACK
   /// * false to NACK
+  ///
+  /// @isrsafe{yes}
   [[nodiscard]] virtual bool OnStartRead() { return true; }
 
   /// Called when a write start condition is seen.
@@ -40,6 +42,8 @@ class ResponderEvents {
   /// @returns
   /// * true to send an ACK
   /// * false to NACK
+  ///
+  /// @isrsafe{yes}
   [[nodiscard]] virtual bool OnStartWrite() { return true; }
 
   /// Called when data is available on the bus.
@@ -52,6 +56,8 @@ class ResponderEvents {
   /// @returns
   /// * true to send an ACK
   /// * false to NACK
+  ///
+  /// @isrsafe{yes}
   [[nodiscard]] virtual bool OnWrite(ConstByteSpan data) {
     // Provide a name for argument to be used in doxygen
     static_cast<void>(data);
@@ -69,6 +75,8 @@ class ResponderEvents {
   /// * @OK along with a byte span used to send to the initiator.
   ///   An ACK will be sent for each valid byte.
   /// * Any error status to NACK.
+  ///
+  /// @isrsafe{yes}
   [[nodiscard]] virtual Result<ConstByteSpan> OnRead() {
     return Status::Unimplemented();
   }
