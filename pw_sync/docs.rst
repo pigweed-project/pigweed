@@ -1009,8 +1009,7 @@ locks with thread safety lock annotations with more capabilities than
 
 Unlike a ``std::lock_guard`` and ``std::scoped_lock``, this helper can be
 constructed with the lock deferred. In addition, this does not support the
-``std::lock`` deadlock avoidance algorithm nor lock adoption from
-``std::scoped_lock``.
+``std::lock`` deadlock avoidance algorithm from ``std::scoped_lock``.
 
 Lastly this supports explicit ``lock()`` and ``unlock()`` like
 ``std::unique_lock``, however unlike ``std::unique_lock``, ``pw::ScopedLocker``

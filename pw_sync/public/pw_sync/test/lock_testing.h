@@ -38,7 +38,7 @@ class FakeBasicLockable : public VirtualBasicLockable {
 /// Fake lock that meet's C++'s \em Lockable named requirement.
 class FakeLockable : public FakeBasicLockable {
  public:
-  bool try_lock();
+  bool try_lock() PW_EXCLUSIVE_TRYLOCK_FUNCTION(true);
 };
 
 /// Fake clock that merely provides the expected dependent types.

@@ -31,8 +31,7 @@ namespace pw {
 ///
 /// Unlike a `std::lock_guard` and `std::scoped_lock`, this helper can be
 /// constructed with the lock deferred. In addition, this does not support
-/// `std::lock` deadlock avoidance algorithm nor lock adoption from
-/// `std::scoped_lock`.
+/// `std::lock` deadlock avoidance algorithm from `std::scoped_lock`.
 ///
 /// Lastly this supports explicit `lock()` and `unlock()` like
 /// `std::unique_lock`, however unlike `std::unique_lock`, `pw::ScopedLocker`
@@ -51,6 +50,10 @@ class PW_SCOPED_LOCKABLE ScopedLocker {
     lock_.lock();
     locked_ = true;
   }
+
+  ScopedLocker(BasicLockable& lock, std::adopt_lock_t) noexcept
+      PW_EXCLUSIVE_LOCKS_REQUIRED(lock)
+      : lock_(lock), locked_(true) {}
 
   ScopedLocker(BasicLockable& lock, std::defer_lock_t) noexcept
       PW_LOCKS_EXCLUDED(lock)
@@ -86,6 +89,11 @@ class PW_SCOPED_LOCKABLE ScopedLocker {
 // ``ScopedLocker<T>(lock)``.
 template <typename T>
 ScopedLocker(T lock) -> ScopedLocker<T>;
+
+// Deduction guide to allow ``ScopedLocker(lock, std::adopt_lock)`` rather than
+// ``ScopedLocker<T>(lock, std::adopt_lock)``.
+template <typename T>
+ScopedLocker(T lock, std::adopt_lock_t) -> ScopedLocker<T>;
 
 // Deduction guide to allow ``ScopedLocker(lock, std::defer_lock)`` rather than
 // ``ScopedLocker<T>(lock, std::defer_lock)``.
