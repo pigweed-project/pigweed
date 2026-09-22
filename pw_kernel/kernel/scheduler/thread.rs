@@ -279,6 +279,7 @@ pub trait ThreadState: 'static + Sized {
 pub enum ThreadOwner<K: Kernel> {
     None,
     Scheduler,
+    WakeList,
     WaitQueue {
         queue: NonNull<WaitQueue<K>>,
         wait_type: WaitType,
@@ -445,7 +446,7 @@ impl<K: Kernel> Drop for ThreadHandle<K> {
                 self.kernel
                     .get_scheduler()
                     .lock(self.kernel)
-                    .thread_signal_join(self);
+                    .thread_signal_join(self.kernel, self);
             }
         };
     }

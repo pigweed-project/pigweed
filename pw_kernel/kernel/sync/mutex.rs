@@ -189,9 +189,14 @@ impl<K: Kernel> RawMutex<K> {
 
         // TODO - konkers: investigate using core::intrinsics::unlikely() or
         //                 core::hint::unlikely()
-        if state.count > 0 {
-            let _ = state.wake_one();
-        }
+        //
+        // Unify the guard drop site at function exit to avoid duplicate drop glue.
+        // This saves ~20 bytes of code space.
+        let _sched = if state.count > 0 {
+            state.wake_one_and_reschedule()
+        } else {
+            state.into_sched()
+        };
     }
 }
 

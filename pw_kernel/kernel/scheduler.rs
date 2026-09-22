@@ -59,4 +59,4 @@ pub use thread::{
     init_thread_in,
 };
 pub use timer::TimerQueue;
-pub use wait_queue::{WaitQueue, WaitType, WakeResult};
+pub use wait_queue::{WaitQueue, WaitType, WakeList, WakeResult};

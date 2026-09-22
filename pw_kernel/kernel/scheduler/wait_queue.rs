@@ -23,11 +23,11 @@ use list::ForeignList;
 use pw_status::{Error, Result};
 use pw_time_core::Instant;
 
-use crate::Kernel;
 use crate::scheduler::RescheduleReason;
 use crate::scheduler::locks::SchedLockGuard;
 use crate::scheduler::thread::{State, Thread, ThreadListAdapter, ThreadOwner};
 use crate::scheduler::timer::{self, Timer};
+use crate::{Kernel, SchedulerState, SpinLockGuard};
 
 const WAIT_QUEUE_DEBUG: bool = false;
 macro_rules! wait_queue_debug {
@@ -81,7 +81,102 @@ pub enum WakeResult {
     QueueEmpty,
 }
 
-impl<K: Kernel> SchedLockGuard<'_, K, WaitQueue<K>> {
+/// A list of threads dequeued from a wait queue that are not yet runnable.
+///
+/// Dequeuing into a `WakeList` allows a caller to release all references to a
+/// wait queue (or an object embedding it, like a stack-allocated event) before
+/// the woken threads are made runnable and can destroy that storage.
+///
+/// Use [`WakeList::wake_and_reschedule`] to make the threads runnable.
+#[must_use = "threads in a WakeList are not runnable until they are woken"]
+pub struct WakeList<K: Kernel> {
+    threads: ForeignList<Thread<K>, ThreadListAdapter<K>>,
+}
+
+impl<K: Kernel> WakeList<K> {
+    pub const fn new() -> Self {
+        Self {
+            threads: ForeignList::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.threads.is_empty()
+    }
+
+    pub(super) fn push(&mut self, thread: ForeignBox<Thread<K>>) {
+        self.threads.push_back(thread);
+    }
+
+    /// Makes all threads in the list runnable and reschedules if any were woken.
+    pub fn wake_and_reschedule<'a>(
+        mut self,
+        kernel: K,
+        mut sched: SpinLockGuard<'a, K, SchedulerState<K>>,
+    ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
+        let mut woke_any = false;
+        while let Some(thread) = self.threads.pop_head() {
+            wait_queue_debug!(
+                "WakeList: waking thread '{}' ({:#010x})",
+                thread.name as &str,
+                thread.id() as usize
+            );
+            sched
+                .algorithm
+                .schedule_thread(thread, RescheduleReason::Woken);
+            woke_any = true;
+        }
+
+        if woke_any {
+            sched.try_reschedule(kernel, RescheduleReason::Preempted)
+        } else {
+            sched
+        }
+    }
+}
+
+impl<K: Kernel> Default for WakeList<K> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K: Kernel> WaitQueue<K> {
+    /// Removes the head of the wait queue and marks it ready, without scheduling it.
+    fn pop_head_to_wake(&mut self) -> Option<ForeignBox<Thread<K>>> {
+        let mut thread = self.queue.pop_head()?;
+        wait_queue_debug!(
+            "WaitQueue: dequeuing thread '{}' ({:#010x})",
+            thread.name as &str,
+            thread.id() as usize
+        );
+        thread.state = State::Ready;
+        thread.owner = ThreadOwner::WakeList;
+        Some(thread)
+    }
+
+    /// Dequeues the head of the wait queue into `list` without making it runnable.
+    pub(super) fn dequeue_one(&mut self, list: &mut WakeList<K>) -> WakeResult {
+        let Some(thread) = self.pop_head_to_wake() else {
+            return WakeResult::QueueEmpty;
+        };
+        list.push(thread);
+        WakeResult::Woken
+    }
+
+    /// Dequeues all threads from the wait queue into `list` without making them runnable.
+    pub(super) fn dequeue_all(&mut self, list: &mut WakeList<K>) -> WakeResult {
+        let mut woke_any = WakeResult::QueueEmpty;
+        while let Some(thread) = self.pop_head_to_wake() {
+            list.push(thread);
+            woke_any = WakeResult::Woken;
+        }
+        woke_any
+    }
+}
+
+impl<K: Kernel> SchedLockGuard<'_, '_, K, WaitQueue<K>> {
     fn add_to_queue_and_reschedule(
         mut self,
         mut thread: ForeignBox<Thread<K>>,
@@ -130,38 +225,6 @@ impl<K: Kernel> SchedLockGuard<'_, K, WaitQueue<K>> {
             .algorithm
             .schedule_thread(thread, RescheduleReason::Woken);
         Some(Error::DeadlineExceeded)
-    }
-
-    #[allow(clippy::must_use_candidate)]
-    pub fn wake_one(mut self) -> (Self, WakeResult) {
-        let Some(mut thread) = self.queue.pop_head() else {
-            return (self, WakeResult::QueueEmpty);
-        };
-        wait_queue_debug!(
-            "WaitQueue: waking thread '{}' ({:#010x})",
-            thread.name as &str,
-            thread.id() as usize
-        );
-        thread.state = State::Ready;
-        self.sched_mut()
-            .algorithm
-            .schedule_thread(thread, RescheduleReason::Woken);
-
-        (
-            self.try_reschedule(RescheduleReason::Preempted),
-            WakeResult::Woken,
-        )
-    }
-
-    #[allow(clippy::return_self_not_must_use, clippy::must_use_candidate)]
-    pub fn wake_all(mut self) -> Self {
-        loop {
-            let result;
-            (self, result) = self.wake_one();
-            if result == WakeResult::QueueEmpty {
-                return self;
-            }
-        }
     }
 
     #[allow(clippy::return_self_not_must_use, clippy::must_use_candidate)]

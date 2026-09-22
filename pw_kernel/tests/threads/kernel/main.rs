@@ -13,6 +13,8 @@
 // the License.
 #![no_std]
 
+use core::cell::Cell;
+
 use kernel::scheduler::{self, Priority, StackStorage, StackStorageExt as _, Thread};
 use kernel::sync::event::{Event, EventConfig, EventSignaler};
 use kernel::sync::mutex::Mutex;
@@ -44,7 +46,7 @@ impl<K: Kernel> AppState<K> {
 
 struct ThreadAArgs<'a, K: Kernel> {
     test_counter: &'a Mutex<K, u64>,
-    done_signaler: EventSignaler<K>,
+    done_signaler: Cell<Option<EventSignaler<K>>>,
 }
 
 pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()> {
@@ -52,7 +54,7 @@ pub fn main<K: Kernel>(kernel: K, state: &'static mut AppState<K>) -> Result<()>
 
     let thread_b_args = ThreadAArgs {
         test_counter: &state.test_counter,
-        done_signaler: state.thread_a_done_event.get_signaler(),
+        done_signaler: Cell::new(Some(state.thread_a_done_event.get_signaler())),
     };
 
     let thread_b = scheduler::init_thread_in(
@@ -120,5 +122,7 @@ fn thread_b<K: Kernel>(kernel: K, args: &ThreadAArgs<K>) {
         kernel::yield_timeslice(kernel);
     }
     test_logger::info!("Thread B: Done");
-    args.done_signaler.signal();
+    if let Some(signaler) = args.done_signaler.take() {
+        signaler.signal_and_wake();
+    }
 }

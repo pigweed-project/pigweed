@@ -20,7 +20,6 @@ use pw_status::Result;
 use pw_time_core::Instant;
 
 use crate::Kernel;
-use crate::scheduler::algorithm::RescheduleReason;
 use crate::scheduler::thread::State;
 use crate::scheduler::{SchedulerState, WaitQueue, WaitType};
 use crate::sync::spinlock::SpinLockGuard;
@@ -34,7 +33,9 @@ impl<K: Kernel, T> SmuggledSchedLock<K, T> {
     /// # Safety
     /// The caller must guarantee that the underlying lock and it's enclosed data
     /// is still valid.
-    pub unsafe fn lock(&self) -> SchedLockGuard<'_, K, T> {
+    // The `'static` lifetime applies to `'sched`, which is sound because
+    // `Kernel::get_scheduler()` returns a `&'static SpinLock`.
+    pub unsafe fn lock(&self) -> SchedLockGuard<'_, 'static, K, T> {
         let guard = self.kernel.get_scheduler().lock(self.kernel);
         SchedLockGuard {
             guard,
@@ -44,20 +45,20 @@ impl<K: Kernel, T> SmuggledSchedLock<K, T> {
     }
 }
 
-pub struct SchedLockGuard<'lock, K: Kernel, T> {
-    guard: SpinLockGuard<'lock, K, SchedulerState<K>>,
+pub struct SchedLockGuard<'lock, 'sched, K: Kernel, T> {
+    guard: SpinLockGuard<'sched, K, SchedulerState<K>>,
     inner: &'lock mut T,
     pub(super) kernel: K,
 }
 
-impl<'lock, K: Kernel, T> SchedLockGuard<'lock, K, T> {
+impl<'lock, 'sched, K: Kernel, T> SchedLockGuard<'lock, 'sched, K, T> {
     #[must_use]
-    pub fn sched(&self) -> &SpinLockGuard<'lock, K, SchedulerState<K>> {
+    pub fn sched(&self) -> &SpinLockGuard<'sched, K, SchedulerState<K>> {
         &self.guard
     }
 
     #[must_use]
-    pub fn sched_mut(&mut self) -> &mut SpinLockGuard<'lock, K, SchedulerState<K>> {
+    pub fn sched_mut(&mut self) -> &mut SpinLockGuard<'sched, K, SchedulerState<K>> {
         &mut self.guard
     }
 
@@ -66,18 +67,6 @@ impl<'lock, K: Kernel, T> SchedLockGuard<'lock, K, T> {
         let inner = self.inner;
         let kernel = self.kernel;
         let guard = super::block(kernel, self.guard, current_thread_id, current_thead_state);
-        Self {
-            guard,
-            inner,
-            kernel,
-        }
-    }
-
-    #[allow(clippy::return_self_not_must_use, clippy::must_use_candidate)]
-    pub fn try_reschedule(self, reason: RescheduleReason) -> Self {
-        let inner = self.inner;
-        let kernel = self.kernel;
-        let guard = self.guard.try_reschedule(kernel, reason);
         Self {
             guard,
             inner,
@@ -98,7 +87,7 @@ impl<'lock, K: Kernel, T> SchedLockGuard<'lock, K, T> {
     }
 }
 
-impl<K: Kernel, T> Deref for SchedLockGuard<'_, K, T> {
+impl<K: Kernel, T> Deref for SchedLockGuard<'_, '_, K, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -106,7 +95,7 @@ impl<K: Kernel, T> Deref for SchedLockGuard<'_, K, T> {
     }
 }
 
-impl<K: Kernel, T> DerefMut for SchedLockGuard<'_, K, T> {
+impl<K: Kernel, T> DerefMut for SchedLockGuard<'_, '_, K, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.inner
     }
@@ -114,7 +103,7 @@ impl<K: Kernel, T> DerefMut for SchedLockGuard<'_, K, T> {
 
 /// An owning lock that shares the global scheduler lock.
 ///
-/// A [`SchedLockGuard`] can be turned into a `SpinLockGuard<'lock, SchedulerState>`
+/// A [`SchedLockGuard`] can be turned into a `SpinLockGuard<'sched, SchedulerState>`
 /// so that it can be passed to `reschedule()`
 ///
 /// # Safety
@@ -137,8 +126,10 @@ impl<K, T> SchedLock<K, T> {
 }
 
 impl<K: Kernel, T> SchedLock<K, T> {
+    // The `'static` lifetime applies to `'sched`, which is sound because
+    // `Kernel::get_scheduler()` returns a `&'static SpinLock`.
     #[allow(unused)]
-    pub fn try_lock(&self) -> Option<SchedLockGuard<'_, K, T>> {
+    pub fn try_lock(&self) -> Option<SchedLockGuard<'_, 'static, K, T>> {
         // Safety: The lock guarantees
         self.kernel
             .get_scheduler()
@@ -150,7 +141,9 @@ impl<K: Kernel, T> SchedLock<K, T> {
             })
     }
 
-    pub fn lock(&self) -> SchedLockGuard<'_, K, T> {
+    // The `'static` lifetime applies to `'sched`, which is sound because
+    // `Kernel::get_scheduler()` returns a `&'static SpinLock`.
+    pub fn lock(&self) -> SchedLockGuard<'_, 'static, K, T> {
         let guard = self.kernel.get_scheduler().lock(self.kernel);
         SchedLockGuard {
             inner: unsafe { &mut *self.inner.get() },
@@ -182,16 +175,18 @@ impl<K: Kernel, T> WaitQueueLock<K, T> {
         }
     }
 
-    pub fn lock(&self) -> WaitQueueLockGuard<'_, K, T> {
+    // The `'static` lifetime applies to `'sched`, which is sound because
+    // `SchedLock::lock()` locks the `&'static SpinLock` from `Kernel::get_scheduler()`.
+    pub fn lock(&self) -> WaitQueueLockGuard<'_, 'static, K, T> {
         WaitQueueLockGuard {
             inner: self.state.lock(),
         }
     }
 
-    pub(crate) fn inherit_sched_lock<'lock>(
-        &self,
-        guard: SpinLockGuard<'lock, K, SchedulerState<K>>,
-    ) -> WaitQueueLockGuard<'lock, K, T> {
+    pub(crate) fn inherit_sched_lock<'lock, 'sched>(
+        &'lock self,
+        guard: SpinLockGuard<'sched, K, SchedulerState<K>>,
+    ) -> WaitQueueLockGuard<'lock, 'sched, K, T> {
         WaitQueueLockGuard {
             inner: SchedLockGuard {
                 inner: unsafe { &mut *self.state.inner.get() },
@@ -202,21 +197,21 @@ impl<K: Kernel, T> WaitQueueLock<K, T> {
     }
 }
 
-pub struct WaitQueueLockGuard<'lock, K: Kernel, T> {
-    inner: SchedLockGuard<'lock, K, WaitQueueLockState<K, T>>,
+pub struct WaitQueueLockGuard<'lock, 'sched, K: Kernel, T> {
+    inner: SchedLockGuard<'lock, 'sched, K, WaitQueueLockState<K, T>>,
 }
 
-impl<'lock, K: Kernel, T> WaitQueueLockGuard<'lock, K, T> {
-    pub fn sched(&self) -> &SpinLockGuard<'lock, K, SchedulerState<K>> {
+impl<'lock, 'sched, K: Kernel, T> WaitQueueLockGuard<'lock, 'sched, K, T> {
+    pub fn sched(&self) -> &SpinLockGuard<'sched, K, SchedulerState<K>> {
         &self.inner.guard
     }
 
-    pub fn into_sched(self) -> SpinLockGuard<'lock, K, SchedulerState<K>> {
+    pub fn into_sched(self) -> SpinLockGuard<'sched, K, SchedulerState<K>> {
         self.inner.guard
     }
 
     #[allow(dead_code)]
-    pub fn sched_mut(&mut self) -> &mut SpinLockGuard<'lock, K, SchedulerState<K>> {
+    pub fn sched_mut(&mut self) -> &mut SpinLockGuard<'sched, K, SchedulerState<K>> {
         &mut self.inner.guard
     }
 
@@ -224,10 +219,10 @@ impl<'lock, K: Kernel, T> WaitQueueLockGuard<'lock, K, T> {
     pub fn operate_on_wait_queue<F, R>(mut self, f: F) -> (Self, R)
     where
         F: FnOnce(
-            SchedLockGuard<'lock, K, WaitQueue<K>>,
-        ) -> (SchedLockGuard<'lock, K, WaitQueue<K>>, R),
+            SchedLockGuard<'lock, 'sched, K, WaitQueue<K>>,
+        ) -> (SchedLockGuard<'lock, 'sched, K, WaitQueue<K>>, R),
     {
-        let guard = SchedLockGuard::<'lock, _, WaitQueue<K>> {
+        let guard = SchedLockGuard::<'lock, 'sched, _, WaitQueue<K>> {
             guard: self.inner.guard,
             // Safety: Mutable reference only lives as long as the call into f()
             #[allow(clippy::deref_addrof)]
@@ -251,18 +246,42 @@ impl<'lock, K: Kernel, T> WaitQueueLockGuard<'lock, K, T> {
         self.operate_on_wait_queue(|guard| guard.wait(wait_type))
     }
 
-    #[must_use]
-    pub fn wake_one(self) -> (Self, super::WakeResult) {
-        self.operate_on_wait_queue(|guard| guard.wake_one())
+    /// Wakes all threads in `wake_list` and reschedules if needed.
+    pub fn wake_list_and_reschedule(
+        self,
+        wake_list: super::WakeList<K>,
+    ) -> SpinLockGuard<'sched, K, SchedulerState<K>> {
+        let kernel = self.inner.kernel;
+        let sched = self.into_sched();
+        wake_list.wake_and_reschedule(kernel, sched)
     }
 
-    #[must_use]
-    pub fn wake_all(self) -> Self {
-        self.operate_on_wait_queue(|guard| (guard.wake_all(), ())).0
+    /// Dequeues and wakes one waiter, rescheduling if needed.
+    pub fn wake_one_and_reschedule(mut self) -> SpinLockGuard<'sched, K, SchedulerState<K>> {
+        let mut wake_list = super::WakeList::new();
+        let _ = self.dequeue_one(&mut wake_list);
+        self.wake_list_and_reschedule(wake_list)
+    }
+
+    /// Dequeues and wakes all waiters, rescheduling if needed.
+    pub fn wake_all_and_reschedule(mut self) -> SpinLockGuard<'sched, K, SchedulerState<K>> {
+        let mut wake_list = super::WakeList::new();
+        let _ = self.dequeue_all(&mut wake_list);
+        self.wake_list_and_reschedule(wake_list)
+    }
+
+    /// Dequeues the head of the wait queue into `list` without waking it.
+    pub fn dequeue_one(&mut self, list: &mut super::WakeList<K>) -> super::WakeResult {
+        self.inner.inner.queue.dequeue_one(list)
+    }
+
+    /// Dequeues all threads from the wait queue into `list` without waking them.
+    pub fn dequeue_all(&mut self, list: &mut super::WakeList<K>) -> super::WakeResult {
+        self.inner.inner.queue.dequeue_all(list)
     }
 }
 
-impl<K: Kernel, T> Deref for WaitQueueLockGuard<'_, K, T> {
+impl<K: Kernel, T> Deref for WaitQueueLockGuard<'_, '_, K, T> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -270,7 +289,7 @@ impl<K: Kernel, T> Deref for WaitQueueLockGuard<'_, K, T> {
     }
 }
 
-impl<K: Kernel, T> DerefMut for WaitQueueLockGuard<'_, K, T> {
+impl<K: Kernel, T> DerefMut for WaitQueueLockGuard<'_, '_, K, T> {
     fn deref_mut(&mut self) -> &mut T {
         &mut self.inner.inner.inner
     }

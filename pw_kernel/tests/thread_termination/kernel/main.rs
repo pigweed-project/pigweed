@@ -196,7 +196,7 @@ fn signaled_termination_test<K: Kernel>(
     )?;
 
     test_logger::info!("Signaling signaled thread");
-    event.get_signaler().signal();
+    event.get_signaler().signal_and_wake();
 
     test_logger::info!("Joining signaled thread");
     let (thread, status) = thread_handle.join(kernel)?;
@@ -328,7 +328,7 @@ fn thread_handle_drop_test<K: Kernel>(
             }
         };
     test_logger::info!("Join timed out as expected. Signaling utility thread to drop ref");
-    signaler.signal();
+    signaler.signal_and_wake();
 
     test_logger::info!("Joining test thread");
     let (test_thread, status) = test_thread_handle.join(kernel)?;

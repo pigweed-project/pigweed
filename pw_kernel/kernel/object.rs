@@ -13,7 +13,7 @@
 // the License.
 
 use core::any::Any;
-use core::cell::UnsafeCell;
+use core::cell::{Cell, UnsafeCell};
 use core::ptr::NonNull;
 
 use foreign_box::{ForeignBox, ForeignRc};
@@ -24,7 +24,7 @@ pub use syscall_defs::{ExitStatus, Signals, WaitReturn};
 
 use crate::Kernel;
 use crate::object::wait_group::WaitGroupMember;
-use crate::scheduler::SchedulerState;
+use crate::scheduler::{SchedulerState, WakeList};
 use crate::sync::event::{Event, EventConfig, EventSignaler};
 use crate::sync::spinlock::{SpinLock, SpinLockGuard};
 
@@ -189,7 +189,7 @@ fn wait_on_object<'a, K: Kernel, S: WaiterState<K>>(
     let event = Event::new(kernel, EventConfig::ManualReset);
     let waiter = ObjectWaiter {
         link: Link::new(),
-        signaler: event.get_signaler(),
+        signaler: Cell::new(Some(event.get_signaler())),
         signal_mask,
         wait_result: WaitResult::new(),
     };
@@ -226,36 +226,49 @@ fn wait_on_object<'a, K: Kernel, S: WaiterState<K>>(
 // the same.  For a wait group, the wake_signal is READABLE, and the return signal
 // is the signal of the woken element.
 pub(crate) fn signal_all_matching_waiters_with_return_signals_locked<'a, K: Kernel>(
+    kernel: K,
     mut sched: SpinLockGuard<'a, K, SchedulerState<K>>,
     waiters: &mut RandomAccessForeignList<ObjectWaiter<K>, ObjectWaiterListAdapter<K>>,
     wake_signals: Signals,
     return_signals: Signals,
     user_data: usize,
 ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
+    // Dequeue matching waiters into a WakeList and wake them after the loop.
+    let mut wake_list = WakeList::new();
+
     for waiter in waiters.iter() {
         if waiter.signal_mask.intersects(wake_signals) {
-            // SAFETY: While a waiter is in an object's `waiters` list, that
-            // object has exclusive access to the waiter.  The below
-            // operation is done with the object's spinlock held.
-            unsafe {
-                waiter.wait_result.set(Ok(WaitReturn {
-                    user_data,
-                    pending_signals: return_signals,
-                }))
-            };
-            sched = waiter.signaler.signal_locked(sched);
+            // It is important to pass the signaler by value instead of cloning
+            // it in order to support stack allocated waiters.  The signaler
+            // needs to be dropped before the thread is woken and the underlying
+            // event is dropped.
+            if let Some(signaler) = waiter.signaler.take() {
+                // SAFETY: While a waiter is in an object's `waiters` list, that
+                // object has exclusive access to the waiter.  The below
+                // operation is done with the object's spinlock held.
+                unsafe {
+                    waiter.wait_result.set(Ok(WaitReturn {
+                        user_data,
+                        pending_signals: return_signals,
+                    }))
+                };
+                sched = signaler.signal_and_dequeue_locked(sched, &mut wake_list);
+            }
         }
     }
-    sched
+
+    wake_list.wake_and_reschedule(kernel, sched)
 }
 
 pub(crate) fn signal_all_matching_waiters_locked<'a, K: Kernel>(
+    kernel: K,
     sched: SpinLockGuard<'a, K, SchedulerState<K>>,
     waiters: &mut RandomAccessForeignList<ObjectWaiter<K>, ObjectWaiterListAdapter<K>>,
     active_signals: Signals,
     user_data: usize,
 ) -> SpinLockGuard<'a, K, SchedulerState<K>> {
     signal_all_matching_waiters_with_return_signals_locked(
+        kernel,
         sched,
         waiters,
         active_signals,
@@ -292,7 +305,9 @@ impl WaitResult {
 
 pub struct ObjectWaiter<K: Kernel> {
     link: Link,
-    signaler: EventSignaler<K>,
+    // Interior mutability is used so that the signaler can be taken when it is
+    // signaled/woken by the object.
+    signaler: Cell<Option<EventSignaler<K>>>,
     signal_mask: Signals,
     wait_result: WaitResult,
 }
@@ -528,7 +543,7 @@ impl<K: Kernel> ObjectBase<K> {
         }
 
         // These waiters are never a wait group, so always set user_data to 0.
-        signal_all_matching_waiters_locked(sched, &mut state.waiters, active_signals, 0)
+        signal_all_matching_waiters_locked(kernel, sched, &mut state.waiters, active_signals, 0)
     }
 }
 

@@ -544,7 +544,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         thread.exit_status = Some(status);
         match &mut thread.owner {
             ThreadOwner::None => Err(Error::InvalidArgument),
-            ThreadOwner::Scheduler => {
+            // Threads in a `WakeList` are already dequeued from their
+            // `WaitQueue` and on their way to the scheduler.
+            ThreadOwner::Scheduler | ThreadOwner::WakeList => {
                 // Mark thread as terminating so that it can clean itself up.
                 thread.terminating = true;
 
@@ -584,9 +586,9 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         }
     }
 
-    pub(crate) fn thread_signal_join(mut self, thread: &mut ThreadHandle<K>) -> Self {
+    pub(crate) fn thread_signal_join(mut self, kernel: K, thread: &mut ThreadHandle<K>) -> Self {
         if let Some(signaler) = unsafe { thread.thread.as_mut() }.join_event.take() {
-            self = signaler.signal_locked(self);
+            self = signaler.signal_and_wake_locked(kernel, self);
         }
 
         self
@@ -687,13 +689,13 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         );
 
         // Since the current thread has already been removed from the scheduler,
-        // a PreemptDisableGuard is taken to prevent the event wait from doing a
-        // reschedule.
+        // a PreemptDisableGuard is taken to prevent any wakeups during thread
+        // and process teardown from triggering a reschedule before the final
+        // context_switch.
         let guard = PreemptDisableGuard::new(kernel);
         if let Some(signaler) = current_thread.as_mut().join_event.take() {
-            self = signaler.signal_locked(self);
+            self = signaler.signal_and_wake_locked(kernel, self);
         }
-        drop(guard);
         current_thread.state = State::Terminated;
         current_thread.terminating = true;
 
@@ -726,6 +728,7 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
             self.termination_queue.push_back(current_thread);
         }
 
+        drop(guard);
         let _ = context_switch(kernel, self, current_thread_id, State::Terminated);
 
         // On some systems like M-profile ARM context switch is deferred if called
@@ -801,19 +804,13 @@ impl<K: Kernel> SpinLockGuard<'_, K, SchedulerState<K>> {
         // mutable reference does not live beyond the unsafe taking the signaler
         let signaler = unsafe { process.process.as_mut().join_event.take() };
         if let Some(signaler) = signaler {
-            self = signaler.signal_locked(self);
+            self = signaler.signal_and_wake_locked(kernel, self);
         }
 
         // Raise JOINABLE signal.
         #[cfg(feature = "user_space")]
         if let Some(object) = unsafe { process.process.as_ref().object.as_ref() } {
             self = object.signal_locked(kernel, self, SignalUpdate::raise(Signals::JOINABLE));
-        }
-        #[cfg(not(feature = "user_space"))]
-        {
-            // `kernel` is only used above when `user_space` is enabled.
-            // Reference it here to suppress warning.
-            let _ = kernel;
         }
         self
     }

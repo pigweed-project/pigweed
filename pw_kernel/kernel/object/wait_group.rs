@@ -112,6 +112,7 @@ impl<K: Kernel> WaitGroupMember<K> {
         self.is_signaled = signaled;
         if signaled {
             sched = signal_all_matching_waiters_with_return_signals_locked(
+                kernel,
                 sched,
                 &mut state.waiters,
                 Signals::READABLE,
