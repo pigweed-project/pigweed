@@ -55,6 +55,16 @@ config_setting(
     flag_values = {":enable_tests": "True"},
 )
 
+bool_flag(
+    name = "enable_smp",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "smp_enabled_setting",
+    flag_values = {":enable_smp": "True"},
+)
+
 alias(
     name = "log_backend_basic",
     actual = select({

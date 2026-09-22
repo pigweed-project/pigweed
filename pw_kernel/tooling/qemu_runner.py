@@ -90,6 +90,12 @@ def _parse_args():
         help='image file to run',
     )
     parser.add_argument(
+        '--smp',
+        type=int,
+        default=1,
+        help='number of smp cores',
+    )
+    parser.add_argument(
         '--qemu-args',
         nargs='*',
         help='Extra arguments to pass to qemu',
@@ -122,7 +128,7 @@ def _detokenizer(
     try:
         detokenizer = detokenize.Detokenizer(image)
         line_buffer = ""
-        with open(tokenized_file, 'r', buffering=1) as f:
+        with open(tokenized_file, 'r', buffering=1, errors='replace') as f:
             while not qemu_finished.is_set():
                 try:
                     chunk = f.readline()
@@ -183,6 +189,9 @@ def _main(args) -> int:
         "-kernel",
         args.image,
     ]
+
+    if args.smp > 1:
+        qemu_args.extend(["-smp", str(args.smp)])
 
     if args.semihosting:
         qemu_args.extend(

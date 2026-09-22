@@ -48,6 +48,10 @@ constraint_value(
 rust_library(
     name = "entry",
     srcs = ["entry.rs"],
+    crate_features = select({
+        "//pw_kernel:smp_enabled_setting": ["smp"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -61,6 +65,10 @@ rust_library(
 rust_library(
     name = "config",
     srcs = ["config.rs"],
+    crate_features = select({
+        "//pw_kernel:smp_enabled_setting": ["smp"],
+        "//conditions:default": [],
+    }),
     crate_name = "kernel_config",
     edition = "2024",
     tags = ["kernel"],

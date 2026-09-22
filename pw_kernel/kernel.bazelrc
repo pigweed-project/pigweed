@@ -119,6 +119,23 @@ test:k_qemu_virt_riscv32 --run_under="//pw_kernel/tooling:qemu \
 common:k_veer --config=k_common
 common:k_veer --platforms=//pw_kernel/target/veer:veer
 
+# QEMU virt riscv32 SMP (8-core) target configuration
+# ====================================================
+common:k_qemu_virt_riscv32_smp --config=k_qemu_virt_riscv32
+common:k_qemu_virt_riscv32_smp --@pigweed//pw_kernel:enable_smp=true
+run:k_qemu_virt_riscv32_smp --run_under="//pw_kernel/tooling:qemu \
+  --cpu rv32 \
+  --machine virt \
+  --smp 8 \
+  --semihosting \
+  --image "
+test:k_qemu_virt_riscv32_smp --run_under="//pw_kernel/tooling:qemu \
+  --cpu rv32 \
+  --machine virt \
+  --smp 8 \
+  --semihosting \
+  --image "
+
 # QEMU Nucleo-F103RB target configuration (mps2-an385)
 # =======================================
 common:k_qemu_nucleo_f103rb --config=k_common
@@ -149,3 +166,7 @@ run:k_nucleo_f103rb --run_under="//pw_kernel/tooling:serial_detokenizer "
 common:k_rp2350 --config=k_common
 common:k_rp2350 --platforms=//pw_kernel/target/pw_rp2350
 run:k_rp2350 --run_under="//pw_kernel/tooling:serial_detokenizer "
+
+common:k_rp2350_smp --config=k_rp2350
+common:k_rp2350_smp --@pigweed//pw_kernel:enable_smp=true
+

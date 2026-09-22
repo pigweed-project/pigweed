@@ -65,6 +65,9 @@ rust_library(
         "//conditions:default": [],
     }),
     crate_features = select({
+        "//pw_kernel:smp_enabled_setting": ["smp"],
+        "//conditions:default": [],
+    }) + select({
         "//pw_kernel/userspace:userspace_build_enabled": ["user_space"],
         "//conditions:default": [],
     }) + select({

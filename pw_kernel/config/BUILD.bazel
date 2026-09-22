@@ -22,6 +22,10 @@ rust_library(
     srcs = [
         "lib.rs",
     ],
+    crate_features = select({
+        "//pw_kernel:smp_enabled_setting": ["smp"],
+        "//conditions:default": [],
+    }),
     crate_name = "kernel_config",
     edition = "2024",
     tags = ["kernel"],
