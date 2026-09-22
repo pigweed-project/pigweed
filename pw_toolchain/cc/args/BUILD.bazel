@@ -104,12 +104,6 @@ cc_args(
         "-Werror",
         "-Wno-error=cpp",  # preprocessor #warning statement
         "-Wno-error=deprecated-declarations",  # [[deprecated]] attribute
-
-        # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of
-        # unused templates produces warnings in both Pigweed an downstream
-        # code. While the Pigweed fixes are easy, the downstream fixes will
-        # take a while.
-        "-Wno-unused-template",
     ],
 )
 
@@ -123,6 +117,12 @@ cc_args(
     args = [
         # TODO: b/540919302 - Unblock LLVM toolchain roll.
         "-Wno-error=deprecated-attributes",
+
+        # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of
+        # unused templates produces warnings in both Pigweed an downstream
+        # code. While the Pigweed fixes are easy, the downstream fixes will
+        # take a while.
+        "-Wno-unused-template",
     ],
     requires_any_of = [
         ":compiler_is_clang",

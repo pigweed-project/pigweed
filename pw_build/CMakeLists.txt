@@ -100,7 +100,8 @@ pw_add_library_generic(pw_build.strict_warnings INTERFACE
     # TODO: b/535724234 - Unblock LLVM toolchain roll. New detection of unused
     # templates produces warnings in both Pigweed an downstream code. While
     # the Pigweed fixes are easy, the downstream fixes will take a while.
-    "-Wno-unused-template"
+    $<$<C_COMPILER_ID:Clang>:-Wno-unused-template>
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-unused-template>
 
     $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
 )
