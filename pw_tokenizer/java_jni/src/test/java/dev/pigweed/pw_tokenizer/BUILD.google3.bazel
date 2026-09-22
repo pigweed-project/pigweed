@@ -43,7 +43,7 @@ java_test(
 genrule(
     name = "generate_data_driven_detokenize_test",
     outs = ["DataDrivenDetokenizerTest.java"],
-    cmd = "$(location //third_party/pigweed/pw_tokenizer/py:data_driven_detokenize_test_generator) --generate-java-test $@",
+    cmd = "$(execpath //third_party/pigweed/pw_tokenizer/py:data_driven_detokenize_test_generator) --generate-java-test $@",
     tools = ["//third_party/pigweed/pw_tokenizer/py:data_driven_detokenize_test_generator"],
     visibility = ["//visibility:private"],
 )
