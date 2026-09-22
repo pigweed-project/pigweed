@@ -42,23 +42,20 @@ pub fn start() {
     {% endfor %}
 
 
-    // Channel handlers are declared first so that initiators can reference them.
-    // Unlike other object templates, handlers return a tuple of two ForeignRcs.
-    // The first is a `dyn KernelObject<K>` which is suitable for adding to a
-    // processes object table.  The second is a `ChannelHandlerObject<K>` which
-    // is suitable for creating a `ChannelInitiator` object
+    // Each channel is a single kernel object shared by its two endpoints, so
+    // it is declared before either of them.
     {% for app in apps %}
     {% for process in app.processes %}
     {% for object in process.objects %}
         {% if object.type == "channel_handler" %}
-            let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}} =
-                {% include "object_channel_handler" %};
             #[allow(unused_variables)]
-            let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}_handler =
-                object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}.clone();
-
+            let channel_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}} = unsafe {
+                static_foreign_rc!(
+                    <K as kernel::Arch>::AtomicUsize,
+                    kernel::object::Channel<K>,
+                    kernel::object::Channel::new(kernel))
+            };
         {% endif %}
-        // Other objects declared later.
     {% endfor %}
     {% endfor %}
     {% endfor %}
@@ -87,8 +84,7 @@ pub fn start() {
     {% for object in process.objects %}
         let object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident }} =
         {% if object.type == "channel_handler" %}
-                // Reference to handler object already declared above.
-                object_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}
+            {% include "object_channel_handler" %}
         {%- elif object.type == "channel_initiator" %}
             {% include "object_channel_initiator" %}
         {%- elif object.type == "interrupt" %}

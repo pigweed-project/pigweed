@@ -12,61 +12,60 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use foreign_box::{ForeignRc, ForeignRcState};
+use foreign_box::ForeignRc;
 use pw_status::{Error, Result};
 use pw_time_core::Instant;
 
 use crate::object::{KernelObject, ObjectBase, SignalUpdate, Signals, SyscallBuffer, WaitReturn};
 use crate::sync::mutex::Mutex;
-use crate::sync::spinlock::SpinLock;
 use crate::{Arch, Kernel};
 
-type InitiatorRef<K> =
-    SpinLock<K, Option<ForeignRc<<K as Arch>::AtomicUsize, ChannelInitiatorObject<K>>>>;
-
-struct Transaction<K: Kernel> {
+struct Transaction {
     send_buffer: SyscallBuffer,
     recv_buffer: SyscallBuffer,
-    initiator: ForeignRc<K::AtomicUsize, ChannelInitiatorObject<K>>,
 }
 
-pub struct ChannelHandlerObject<K: Kernel> {
-    base: ObjectBase<K>,
-    // SpinLock is used rather than UnsafeCell because the type system cannot
-    // guarantee set_initiator() is only called before threads start. The lock
-    // is always uncontended at runtime; cost is a few atomic instructions.
-    //
-    // TODO: https://pwbug.dev/493955030 - Eliminate this SpinLock by wiring the
-    // back-reference at construction time so set_initiator() is not needed.
-    initiator: InitiatorRef<K>,
-    active_transaction: Mutex<K, Option<Transaction<K>>>,
+/// The shared state of a channel.
+///
+/// Both endpoint objects hold a `ForeignRc` to one of these.  The endpoints do
+/// not reference each other.
+///
+/// `initiator_base` and `handler_base` each carry an independent [`ObjectBase`]
+/// lock and can be reached from either endpoint.  Never hold both locks at the
+/// same time, as initiator and handler paths would acquire them in opposite
+/// orders.
+pub struct Channel<K: Kernel> {
+    initiator_base: ObjectBase<K>,
+    handler_base: ObjectBase<K>,
+    active_transaction: Mutex<K, Option<Transaction>>,
 }
 
-impl<K: Kernel> ChannelHandlerObject<K> {
+impl<K: Kernel> Channel<K> {
+    #[must_use]
     pub fn new(kernel: K) -> Self {
         Self {
-            base: ObjectBase::new(Signals::no_active()),
-            initiator: SpinLock::new(None),
+            initiator_base: ObjectBase::new(Signals::WRITEABLE),
+            handler_base: ObjectBase::new(Signals::no_active()),
             active_transaction: Mutex::new(kernel, None),
         }
     }
+}
 
-    /// Binds the paired initiator back-reference.
-    ///
-    /// Must be called before either the initiator or handler are added to any
-    /// object tables.
-    pub fn set_initiator(
-        &self,
-        kernel: K,
-        initiator: Option<ForeignRc<K::AtomicUsize, ChannelInitiatorObject<K>>>,
-    ) {
-        *self.initiator.lock(kernel) = initiator;
+/// The handler endpoint of a [`Channel`].
+pub struct ChannelHandlerObject<K: Kernel> {
+    channel: ForeignRc<<K as Arch>::AtomicUsize, Channel<K>>,
+}
+
+impl<K: Kernel> ChannelHandlerObject<K> {
+    #[must_use]
+    pub fn new(channel: ForeignRc<<K as Arch>::AtomicUsize, Channel<K>>) -> Self {
+        Self { channel }
     }
 }
 
 impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
     fn base(&self) -> Option<&ObjectBase<K>> {
-        Some(&self.base)
+        Some(&self.channel.handler_base)
     }
 
     fn object_wait(
@@ -75,7 +74,9 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         signal_mask: Signals,
         deadline: Instant<<K>::Clock>,
     ) -> Result<WaitReturn> {
-        self.base.wait_until(kernel, signal_mask, deadline)
+        self.channel
+            .handler_base
+            .wait_until(kernel, signal_mask, deadline)
     }
 
     fn channel_read(
@@ -84,7 +85,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         offset: usize,
         mut read_buffer: SyscallBuffer,
     ) -> Result<usize> {
-        let active_transaction = self.active_transaction.lock();
+        let active_transaction = self.channel.active_transaction.lock();
         let Some(ref transaction) = *active_transaction else {
             return Err(Error::Unavailable);
         };
@@ -93,7 +94,7 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
     }
 
     fn channel_respond(&self, kernel: K, response_buffer: SyscallBuffer) -> Result<()> {
-        let mut active_transaction = self.active_transaction.lock();
+        let mut active_transaction = self.channel.active_transaction.lock();
         let Some(ref mut transaction) = *active_transaction else {
             return Err(Error::Unavailable);
         };
@@ -103,23 +104,19 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
         response_buffer.copy_into(0, &mut transaction.recv_buffer)?;
 
         transaction.recv_buffer.truncate(response_buffer.size());
-        self.base.signal(
+        self.channel.handler_base.signal(
             kernel,
             SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE),
         );
-        transaction
-            .initiator
-            .base
+        self.channel
+            .initiator_base
             .signal(kernel, SignalUpdate::raise(Signals::READABLE));
         Ok(())
     }
 
     fn object_set_peer_user_signal(&self, kernel: K, set: bool) -> Result<()> {
-        let Some(initiator) = self.initiator.lock(kernel).clone() else {
-            return Err(Error::FailedPrecondition);
-        };
-        initiator
-            .base
+        self.channel
+            .initiator_base
             .signal(kernel, SignalUpdate::set_if(Signals::USER, set));
         Ok(())
     }
@@ -127,68 +124,59 @@ impl<K: Kernel> KernelObject<K> for ChannelHandlerObject<K> {
     /// Reset the handler object. If there is a mid-flight transaction, cancel it.
     fn reset(&self, kernel: K) -> Result<()> {
         // Clear peer USER signal on initiator.
-        if let Some(initiator) = self.initiator.lock(kernel).clone() {
-            initiator
-                .base
-                .signal(kernel, SignalUpdate::clear(Signals::USER));
-        }
+        self.channel
+            .initiator_base
+            .signal(kernel, SignalUpdate::clear(Signals::USER));
 
-        let mut active_transaction = self.active_transaction.lock();
-        if let Some(transaction) = active_transaction.take() {
+        let mut active_transaction = self.channel.active_transaction.lock();
+        if active_transaction.take().is_some() {
             drop(active_transaction);
 
-            transaction
-                .initiator
-                .base
+            self.channel
+                .initiator_base
                 .signal(kernel, SignalUpdate::raise(Signals::ERROR));
         }
         Ok(())
     }
 }
 
+/// The initiator endpoint of a [`Channel`].
 pub struct ChannelInitiatorObject<K: Kernel> {
-    base: ObjectBase<K>,
-    handler: ForeignRc<K::AtomicUsize, ChannelHandlerObject<K>>,
+    channel: ForeignRc<<K as Arch>::AtomicUsize, Channel<K>>,
 }
 
 impl<K: Kernel> ChannelInitiatorObject<K> {
     #[must_use]
-    pub fn new(handler: ForeignRc<K::AtomicUsize, ChannelHandlerObject<K>>) -> Self {
-        Self {
-            base: ObjectBase::new(Signals::WRITEABLE),
-            handler,
-        }
+    pub fn new(channel: ForeignRc<<K as Arch>::AtomicUsize, Channel<K>>) -> Self {
+        Self { channel }
     }
 }
 
 impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     fn base(&self) -> Option<&ObjectBase<K>> {
-        Some(&self.base)
+        Some(&self.channel.initiator_base)
     }
 
     /// Reset the initiator object. Clear any active transaction, and
     /// restore the initial signals.
     fn reset(&self, kernel: K) -> Result<()> {
         // Clear peer USER signal on handler.
-        self.handler
-            .base
+        self.channel
+            .handler_base
             .signal(kernel, SignalUpdate::clear(Signals::USER));
 
         // Cancel the active transaction.
-        if self.handler.active_transaction.lock().take().is_some() {
-            self.handler
-                .base
+        if self.channel.active_transaction.lock().take().is_some() {
+            self.channel
+                .handler_base
                 .signal(kernel, SignalUpdate::raise(Signals::ERROR));
         }
 
         // Restore objects initial signals.
-        if let Some(base) = self.base() {
-            base.signal(
-                kernel,
-                SignalUpdate::raise(Signals::WRITEABLE)
-                    .and_clear(Signals::READABLE | Signals::ERROR),
-            );
-        }
+        self.channel.initiator_base.signal(
+            kernel,
+            SignalUpdate::raise(Signals::WRITEABLE).and_clear(Signals::READABLE | Signals::ERROR),
+        );
 
         Ok(())
     }
@@ -199,7 +187,9 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
         signal_mask: Signals,
         deadline: Instant<<K>::Clock>,
     ) -> Result<WaitReturn> {
-        self.base.wait_until(kernel, signal_mask, deadline)
+        self.channel
+            .initiator_base
+            .wait_until(kernel, signal_mask, deadline)
     }
 
     fn channel_transact(
@@ -232,7 +222,12 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     }
 
     fn channel_async_transact_complete(&self, kernel: K) -> Result<usize> {
-        let active_signals = self.base.state.lock(kernel).active_signals;
+        let active_signals = self
+            .channel
+            .initiator_base
+            .state
+            .lock(kernel)
+            .active_signals;
         if active_signals.contains(Signals::READABLE) {
             // Transaction completed successfully.
             self.finish_transaction(kernel)
@@ -247,8 +242,8 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     }
 
     fn object_set_peer_user_signal(&self, kernel: K, set: bool) -> Result<()> {
-        self.handler
-            .base
+        self.channel
+            .handler_base
             .signal(kernel, SignalUpdate::set_if(Signals::USER, set));
         Ok(())
     }
@@ -266,9 +261,7 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
         // * a region locking mechanism will need to be built
         // * IPC will be disallowed too/from dynamically mappable memory.
 
-        let self_rc = unsafe { ForeignRcState::create_ref_from_inner(self) };
-
-        let mut active_transaction = self.handler.active_transaction.lock();
+        let mut active_transaction = self.channel.active_transaction.lock();
 
         // Check to see if a transaction is already active on the channel.
         if active_transaction.is_some() {
@@ -278,19 +271,18 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
         *active_transaction = Some(Transaction {
             send_buffer,
             recv_buffer,
-            initiator: self_rc,
         });
 
         drop(active_transaction);
 
         // Clear Readable and Writable & Error signals on our side before
         // signaling the handler.
-        self.base.signal(
+        self.channel.initiator_base.signal(
             kernel,
             SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE | Signals::ERROR),
         );
 
-        self.handler.base.signal(
+        self.channel.handler_base.signal(
             kernel,
             SignalUpdate::raise(Signals::READABLE).and_clear(Signals::WRITEABLE),
         );
@@ -301,18 +293,18 @@ impl<K: Kernel> ChannelInitiatorObject<K> {
     fn finish_transaction(&self, kernel: K) -> Result<usize> {
         // TODO: konkers - Rationalize signal behavior with syscall_defs.rs.
         // Go back to the writable state now that the transaction is finished.
-        self.base.signal(
+        self.channel.initiator_base.signal(
             kernel,
             SignalUpdate::raise(Signals::WRITEABLE).and_clear(Signals::READABLE),
         );
 
         // Also reset the handler signals.
-        self.handler.base.signal(
+        self.channel.handler_base.signal(
             kernel,
             SignalUpdate::clear(Signals::READABLE | Signals::WRITEABLE),
         );
 
-        let mut active_transaction = self.handler.active_transaction.lock();
+        let mut active_transaction = self.channel.active_transaction.lock();
 
         // All success and error paths reset `active_transaction` to `None`.
         let transaction = active_transaction.take();

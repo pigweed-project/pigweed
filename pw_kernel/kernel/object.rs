@@ -36,7 +36,7 @@ mod thread;
 mod wait_group;
 
 pub use buffer::SyscallBuffer;
-pub use channel::{ChannelHandlerObject, ChannelInitiatorObject};
+pub use channel::{Channel, ChannelHandlerObject, ChannelInitiatorObject};
 pub use interrupt::InterruptObject;
 pub use process::{MainThread, ProcessObject};
 pub use thread::ThreadObject;

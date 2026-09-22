@@ -20,5 +20,9 @@ the License.
 
     type AtomicUsize = <K as kernel::Arch>::AtomicUsize;
 
-    unsafe { static_foreign_rc!(AtomicUsize, ChannelHandlerObject<K>, ChannelHandlerObject::new(kernel)) }
+    unsafe { static_foreign_rc!(
+        AtomicUsize,
+        ChannelHandlerObject<K>,
+        ChannelHandlerObject::new(channel_{{process.name | to_lower_ident}}_{{object.name | to_lower_ident}}.clone()))
+    }
 }
