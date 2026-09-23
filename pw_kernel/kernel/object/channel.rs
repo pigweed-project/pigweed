@@ -222,12 +222,7 @@ impl<K: Kernel> KernelObject<K> for ChannelInitiatorObject<K> {
     }
 
     fn channel_async_transact_complete(&self, kernel: K) -> Result<usize> {
-        let active_signals = self
-            .channel
-            .initiator_base
-            .state
-            .lock(kernel)
-            .active_signals;
+        let active_signals = self.channel.initiator_base.active_signals(kernel);
         if active_signals.contains(Signals::READABLE) {
             // Transaction completed successfully.
             self.finish_transaction(kernel)

@@ -54,12 +54,14 @@ rust_library(
     ] + select({
         "//pw_kernel/userspace:userspace_build_enabled": [
             "object.rs",
+            "object/base.rs",
+            "object/base/core.rs",
+            "object/base/wait_group.rs",
             "object/buffer.rs",
             "object/channel.rs",
             "object/interrupt.rs",
             "object/process.rs",
             "object/thread.rs",
-            "object/wait_group.rs",
             "syscall.rs",
         ],
         "//conditions:default": [],
