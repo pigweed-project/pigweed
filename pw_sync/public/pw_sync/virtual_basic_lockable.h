@@ -30,10 +30,20 @@ namespace pw::sync {
 /// an object without incurring the code size hit for templating the object.
 class PW_LOCKABLE("pw::sync::VirtualBasicLockable") VirtualBasicLockable {
  public:
+  /// Lock the underlying BasicLockable object.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void lock() PW_EXCLUSIVE_LOCK_FUNCTION() {
     DoLockOperation(Operation::kLock);
   }
 
+  /// Unlock the underlying BasicLockable object.
+  ///
+  /// @threadsafe{yes}
+  /// @isrsafe{no}
+  /// @nmisafe{no}
   void unlock() PW_UNLOCK_FUNCTION() { DoLockOperation(Operation::kUnlock); }
 
  protected:

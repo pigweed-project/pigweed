@@ -127,6 +127,23 @@ pw_facade("mutex") {
   sources = [ "mutex.cc" ]
 }
 
+pw_source_set("shared_mutex") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_sync/shared_mutex.h" ]
+  sources = [ "shared_mutex.cc" ]
+  public_deps = [
+    ":mutex",
+    ":thread_notification",
+    ":virtual_basic_lockable",
+    "$dir_pw_assert:check",
+    dir_pw_metric,
+  ]
+  deps = [
+    ":scoped_locker",
+    "$dir_pw_trace",
+  ]
+}
+
 pw_facade("timed_mutex") {
   backend = pw_sync_TIMED_MUTEX_BACKEND
   public_configs = [ ":public_include_path" ]
@@ -254,6 +271,7 @@ pw_test_group("tests") {
     ":thread_notification_facade_test",
     ":timed_thread_notification_facade_test",
     ":inline_borrowable_test",
+    ":shared_mutex_test",
   ]
 }
 
@@ -471,6 +489,22 @@ pw_source_set("condition_variable_test") {
     "$dir_pw_thread:sleep",
     "$dir_pw_thread:thread",
     "$dir_pw_unit_test",
+  ]
+}
+
+pw_test("shared_mutex_test") {
+  enable_if = pw_sync_MUTEX_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  sources = [ "shared_mutex_test.cc" ]
+  deps = [
+    ":scoped_locker",
+    ":shared_mutex",
+    "$dir_pw_thread:sleep",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_thread:yield",
   ]
 }
 

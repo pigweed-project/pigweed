@@ -345,6 +345,196 @@ RecursiveMutex
 implementation. At this time, this facade can only be used internally by
 Pigweed.
 
+SharedMutex
+===========
+The :cc:`SharedMutex <pw::sync::SharedMutex>` is a synchronization primitive
+that can be used to protect shared data from being simultaneously accessed by
+multiple threads. It offers shared (multiple readers) and exclusive (single
+writer), non-recursive ownership semantics.
+
+The API is C++14/C++17 STL
+`std::shared_mutex <https://en.cppreference.com/w/cpp/thread/shared_mutex>`_
+like. It satisfies the
+`BasicLockable <https://en.cppreference.com/w/cpp/named_req/BasicLockable>`_
+and `Lockable <https://en.cppreference.com/w/cpp/named_req/Lockable>`_
+requirements for exclusive ownership, and provides shared ownership via
+``lock_shared()``, ``try_lock_shared()``, and ``unlock_shared()``.
+
+Design Discussion
+-----------------
+To acquire the shared lock, each reader thread must briefly take the internal
+exclusive lock (:cc:`Mutex <pw::sync::Mutex>`) to increment the active reader
+count before releasing the exclusive lock. Because each reader must acquire the
+exclusive lock, readers are serialized behind each other during acquisition.
+
+Furthermore, when a writer calls ``lock_exclusive()`` (or ``lock()``), it
+acquires the internal exclusive lock and waits on a
+:cc:`ThreadNotification <pw::sync::ThreadNotification>` until all active readers
+have released the lock. While a writer holds the exclusive lock (either while
+waiting for active readers to finish or while performing exclusive work),
+subsequent readers are blocked from acquiring the shared lock.
+
+This design prefers writers over readers, which avoids writer starvation. On
+small embedded systems with few readers, this writer-preference design provides
+lightweight synchronization with minimal overhead. However, on large SMP
+systems with many concurrent readers, serializing readers through the exclusive
+lock tends to cause high lock contention, making it less suitable for
+read-heavy workloads on such architectures.
+
+Unlike other synchronization primitives that require a backend facade,
+``SharedMutex`` is implemented using other synchronization primitives
+(:cc:`Mutex <pw::sync::Mutex>` and
+:cc:`ThreadNotification <pw::sync::ThreadNotification>`). It is supported on
+any target where backends for both underlying primitives are available.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Supported on
+     - Backend module
+   * - FreeRTOS
+     - :ref:`module-pw_sync_freertos`
+   * - Zephyr
+     - :ref:`module-pw_sync_zephyr`
+   * - ThreadX
+     - :ref:`module-pw_sync_threadx`
+   * - embOS
+     - :ref:`module-pw_sync_embos`
+   * - STL
+     - :ref:`module-pw_sync_stl`
+   * - Baremetal
+     - Planned
+   * - CMSIS-RTOS API v2 & RTX5
+     - Planned
+
+C++
+---
+.. list-table::
+   :header-rows: 1
+   :widths: 70 10 10 10
+
+   * - Safe to use in context
+     - Thread
+     - Interrupt
+     - NMI
+   * - Constructor
+     - ✔
+     -
+     -
+   * - Destructor
+     - ✔
+     -
+     -
+   * - :cc:`lock <pw::sync::SharedMutex::lock>`
+     - ✔
+     -
+     -
+   * - :cc:`try_lock <pw::sync::SharedMutex::try_lock>`
+     - ✔
+     -
+     -
+   * - :cc:`unlock <pw::sync::SharedMutex::unlock>`
+     - ✔
+     -
+     -
+   * - :cc:`lock_exclusive <pw::sync::SharedMutex::lock_exclusive>`
+     - ✔
+     -
+     -
+   * - :cc:`try_lock_exclusive <pw::sync::SharedMutex::try_lock_exclusive>`
+     - ✔
+     -
+     -
+   * - :cc:`unlock_exclusive <pw::sync::SharedMutex::unlock_exclusive>`
+     - ✔
+     -
+     -
+   * - :cc:`lock_shared <pw::sync::SharedMutex::lock_shared>`
+     - ✔
+     -
+     -
+   * - :cc:`try_lock_shared <pw::sync::SharedMutex::try_lock_shared>`
+     - ✔
+     -
+     -
+   * - :cc:`unlock_shared <pw::sync::SharedMutex::unlock_shared>`
+     - ✔
+     -
+     -
+   * - :cc:`reader_count <pw::sync::SharedMutex::reader_count>`
+     - ✔
+     -
+     -
+
+Examples in C++
+^^^^^^^^^^^^^^^
+.. code-block:: cpp
+
+   #include "pw_sync/shared_mutex.h"
+
+   pw::sync::SharedMutex shared_mutex;
+
+   int ReadData() {
+     shared_mutex.lock_shared();
+     int value = ReadSharedState();
+     shared_mutex.unlock_shared();
+     return value;
+   }
+
+   void WriteData(int value) {
+     shared_mutex.lock_exclusive();
+     WriteSharedState(value);
+     shared_mutex.unlock_exclusive();
+   }
+
+Alternatively you can use C++'s RAII helpers, such as ``std::shared_lock`` for
+shared locking and ``std::lock_guard`` or ``std::unique_lock`` for exclusive
+locking.
+
+.. code-block:: cpp
+
+   #include <mutex>
+   #include <shared_mutex>
+
+   #include "pw_sync/shared_mutex.h"
+
+   pw::sync::SharedMutex shared_mutex;
+
+   int ReadData() {
+     std::shared_lock lock(shared_mutex);
+     return ReadSharedState();
+   }
+
+   void WriteData(int value) {
+     std::lock_guard lock(shared_mutex);
+     WriteSharedState(value);
+   }
+
+Pigweed also provides :cc:`SharedLockable <pw::sync::SharedLockable>` and
+:cc:`ExclusiveLockable <pw::sync::ExclusiveLockable>` helper adapters to expose
+the reader and writer interfaces as
+:cc:`VirtualBasicLockable <pw::sync::VirtualBasicLockable>` objects (for
+example, for use with :cc:`pw::ScopedLocker`).
+
+.. code-block:: cpp
+
+   #include "pw_sync/scoped_locker.h"
+   #include "pw_sync/shared_mutex.h"
+
+   pw::sync::SharedMutex shared_mutex;
+   pw::sync::SharedLockable shared_lock(&shared_mutex);
+   pw::sync::ExclusiveLockable exclusive_lock(&shared_mutex);
+
+   int ReadData() {
+     pw::ScopedLocker lock(shared_lock);
+     return ReadSharedState();
+   }
+
+   void WriteData(int value) {
+     pw::ScopedLocker lock(exclusive_lock);
+     WriteSharedState(value);
+   }
+
 InterruptSpinLock
 =================
 :cc:`InterruptSpinLock <pw::sync::InterruptSpinLock>` is a synchronization

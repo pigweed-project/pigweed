@@ -130,6 +130,24 @@ pw_add_facade(pw_sync.mutex STATIC
     mutex.cc
 )
 
+pw_add_library(pw_sync.shared_mutex STATIC
+  HEADERS
+    public/pw_sync/shared_mutex.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_assert.check
+    pw_metric
+    pw_sync.mutex
+    pw_sync.thread_notification
+    pw_sync.virtual_basic_lockable
+  SOURCES
+    shared_mutex.cc
+  PRIVATE_DEPS
+    pw_sync.scoped_locker
+    pw_trace
+)
+
 pw_add_facade(pw_sync.timed_mutex STATIC
   BACKEND
     pw_sync.timed_mutex_BACKEND
@@ -467,6 +485,26 @@ pw_add_library(pw_sync.condition_variable_test STATIC
   SOURCES
     condition_variable_test.cc
 )
+
+if(NOT "${pw_sync.mutex_BACKEND}" STREQUAL "" AND
+   NOT "${pw_sync.thread_notification_BACKEND}" STREQUAL "" AND
+   NOT "${pw_thread.thread_BACKEND}" STREQUAL "" AND
+   NOT "${pw_thread.test_thread_context_BACKEND}" STREQUAL "")
+  pw_add_test(pw_sync.shared_mutex_test
+    SOURCES
+      shared_mutex_test.cc
+    PRIVATE_DEPS
+      pw_sync.scoped_locker
+      pw_sync.shared_mutex
+      pw_thread.sleep
+      pw_thread.test_thread_context
+      pw_thread.thread
+      pw_thread.yield
+    GROUPS
+      modules
+      pw_sync
+  )
+endif()
 
 pw_add_test(pw_sync.no_lock_test
   SOURCES

@@ -192,6 +192,26 @@ host_backend_alias(
     backend = "//pw_sync_stl:mutex",
 )
 
+cc_library(
+    name = "shared_mutex",
+    srcs = [
+        "shared_mutex.cc",
+    ],
+    hdrs = [
+        "public/pw_sync/shared_mutex.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":mutex",
+        ":scoped_locker",
+        ":thread_notification",
+        ":virtual_basic_lockable",
+        "//pw_assert:check",
+        "//pw_metric:metric",
+        "//pw_trace",
+    ],
+)
+
 pw_facade(
     name = "timed_mutex",
     srcs = [
@@ -579,6 +599,21 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "shared_mutex_test",
+    srcs = [
+        "shared_mutex_test.cc",
+    ],
+    deps = [
+        ":scoped_locker",
+        ":shared_mutex",
+        "//pw_thread:sleep",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_thread:yield",
+    ],
+)
+
+pw_cc_test(
     name = "scoped_locker_test",
     srcs = ["scoped_locker_test.cc"],
     deps = [
@@ -632,6 +667,7 @@ filegroup(
         "public/pw_sync/mutex.h",
         "public/pw_sync/no_lock.h",
         "public/pw_sync/scoped_locker.h",
+        "public/pw_sync/shared_mutex.h",
         "public/pw_sync/thread_notification.h",
         "public/pw_sync/timed_borrow.h",
         "public/pw_sync/timed_mutex.h",
