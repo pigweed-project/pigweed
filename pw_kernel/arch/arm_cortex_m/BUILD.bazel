@@ -38,6 +38,9 @@ rust_library(
         "regs/scb.rs",
         "regs/systick.rs",
         "spinlock.rs",
+        "spinlock/common.rs",
+        "spinlock/smp.rs",
+        "spinlock/up.rs",
         "threads.rs",
         "timer.rs",
     ] + select({
