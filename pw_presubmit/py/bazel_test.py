@@ -39,11 +39,20 @@ class BazelPresubmitTest(unittest.TestCase):
     def test_python_lint(self, mock_run):
         """Test the python linting step."""
 
+        recorded_queries: list[str] = []
+
         # Mock responses from `bazel query`
         def run_subprocess_side_effect(args, **unused_kwargs):
             cmd = list(args)
             if 'query' in cmd:
                 query_expr = cmd[-1]
+                for arg in cmd:
+                    if arg.startswith('--query_file='):
+                        query_expr = pathlib.Path(
+                            arg.split('=', 1)[1]
+                        ).read_text()
+                        recorded_queries.append(query_expr)
+                        break
                 if 'except attr("tags", "manual",' in query_expr:
                     # Base query
                     stdout = (
@@ -86,7 +95,10 @@ class BazelPresubmitTest(unittest.TestCase):
 
         # Verify second query checks nomypy tag on all rules set
         self.assertIn('query', calls[1])
-        self.assertIn('attr("tags", "nomypy", set(', calls[1][-1])
+        self.assertTrue(
+            any(arg.startswith('--query_file=') for arg in calls[1])
+        )
+        self.assertIn('attr("tags", "nomypy", set(', recorded_queries[0])
 
         # Verify first build built mypy targets (excluding //foo:pylint_ok)
         self.assertEqual(calls[2][1], 'build')
@@ -96,7 +108,10 @@ class BazelPresubmitTest(unittest.TestCase):
 
         # Verify third query checks nopylint tag on all rules set
         self.assertIn('query', calls[3])
-        self.assertIn('attr("tags", "nopylint", set(', calls[3][-1])
+        self.assertTrue(
+            any(arg.startswith('--query_file=') for arg in calls[3])
+        )
+        self.assertIn('attr("tags", "nopylint", set(', recorded_queries[1])
 
         # Verify second build built pylint targets (excluding mypy targets)
         self.assertEqual(calls[4][1], 'build')
@@ -106,11 +121,19 @@ class BazelPresubmitTest(unittest.TestCase):
     @mock.patch('pw_presubmit.private.tools.run_subprocess')
     def test_clang_tidy(self, mock_run):
         """Test the clang-tidy step."""
+        recorded_queries: list[str] = []
 
         def run_subprocess_side_effect(args, **unused_kwargs):
             cmd = list(args)
             if 'query' in cmd:
                 query_expr = cmd[-1]
+                for arg in cmd:
+                    if arg.startswith('--query_file='):
+                        query_expr = pathlib.Path(
+                            arg.split('=', 1)[1]
+                        ).read_text()
+                        recorded_queries.append(query_expr)
+                        break
                 if 'except attr("tags", "manual",' in query_expr:
                     stdout = "cc_library rule //foo:cpp_target\n"
                 else:
@@ -139,7 +162,10 @@ class BazelPresubmitTest(unittest.TestCase):
 
         # Verify second query checks noclangtidy tag
         self.assertIn('query', calls[1])
-        self.assertIn('attr("tags", "noclangtidy", set(', calls[1][-1])
+        self.assertTrue(
+            any(arg.startswith('--query_file=') for arg in calls[1])
+        )
+        self.assertIn('attr("tags", "noclangtidy", set(', recorded_queries[0])
 
         # Verify build built clang-tidy target
         self.assertEqual(calls[2][1], 'build')

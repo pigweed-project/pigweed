@@ -16,6 +16,7 @@
 import functools
 import logging
 from pathlib import Path
+import tempfile
 from typing import Sequence
 
 from pw_presubmit.format.cpp import CPP_EXTS
@@ -84,16 +85,19 @@ def _get_affected_targets(
     # Fast targeted query to find which of all_rules have any of the extra_tags.
     skip_tags = '|'.join(extra_tags)
     rules_list = ' '.join(all_rules)
-    res = tools.run_subprocess(
-        [
-            'bazelisk',
-            'query',
-            '--keep_going',
-            f'attr("tags", "{skip_tags}", set({rules_list}))',
-        ],
-        cwd=root,
-        allowed_returncodes=(0, 3),
-    )
+    with tempfile.TemporaryDirectory() as temp_dir:
+        query_file = Path(temp_dir) / 'query.txt'
+        query_file.write_text(f'attr("tags", "{skip_tags}", set({rules_list}))')
+        res = tools.run_subprocess(
+            [
+                'bazelisk',
+                'query',
+                '--keep_going',
+                f'--query_file={query_file}',
+            ],
+            cwd=root,
+            allowed_returncodes=(0, 3),
+        )
     if res.returncode not in (0, 3):
         raise PresubmitFailure('bazel query failed')
 
