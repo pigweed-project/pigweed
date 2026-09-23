@@ -69,10 +69,8 @@ void VirtualController::CreateEmulator(
     emulator_device_.reset();
   };
 
-  zx_status_t status = emulator_device_->Initialize(std::string_view(name),
-                                                    std::move(add_child_cb),
-                                                    std::move(shutdown_cb),
-                                                    outgoing().get());
+  zx_status_t status = emulator_device_->Initialize(
+      std::string_view(name), std::move(add_child_cb), std::move(shutdown_cb));
 
   if (status != ZX_OK) {
     fdf::error("Failed to bind: {}", zx_status_get_string(status));
@@ -101,8 +99,7 @@ void VirtualController::CreateLoopbackDevice(
         // Add LoopbackDevice as a child node of VirtualController
         fdf::info("LoopbackDevice successfully initialized");
         AddLoopbackChildNode(args);
-      },
-      outgoing().get());
+      });
   if (status != ZX_OK) {
     fdf::error("Failed to bind: {}", zx_status_get_string(status));
     auto _ = loopback_node_controller_->Remove();

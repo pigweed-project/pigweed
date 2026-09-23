@@ -14,12 +14,8 @@
 
 #include "loopback.h"
 
-#include <lib/component/incoming/cpp/service.h>
 #include <lib/driver/logging/cpp/logger.h>
-#include <lib/driver/outgoing/cpp/outgoing_directory.h>
 #include <lib/driver/testing/cpp/driver_runtime.h>
-
-#include <memory>
 
 #include "gtest/gtest.h"
 
@@ -103,54 +99,6 @@ class LoopbackTest : public ::testing::Test,
     return received_packets_;
   }
 
-  fidl::ClientEnd<fuchsia_io::Directory> SetupOutgoingDirectory(
-      fdf::OutgoingDirectory& outgoing) {
-    auto endpoints = fidl::CreateEndpoints<fuchsia_io::Directory>();
-    ZX_ASSERT(endpoints.is_ok());
-    zx::result result = outgoing.Serve(std::move(endpoints->server));
-    ZX_ASSERT(result.is_ok());
-    return std::move(endpoints->client);
-  }
-
-  std::unique_ptr<LoopbackDevice> CreateLoopbackDevice(
-      fdf::OutgoingDirectory* outgoing) {
-    zx::channel loopback_chan, loopback_channel_device_end;
-    zx::channel::create(0, &loopback_chan, &loopback_channel_device_end);
-    auto device = std::make_unique<LoopbackDevice>();
-    zx_status_t status = device->Initialize(
-        std::move(loopback_channel_device_end),
-        "loopback-service",
-        [](auto) {},
-        outgoing);
-    ZX_ASSERT(status == ZX_OK);
-    return device;
-  }
-
-  fidl::WireClient<fhb::Vendor> ConnectToVendorService(
-      fidl::UnownedClientEnd<fuchsia_io::Directory> outgoing_dir,
-      const std::string& instance = component::kDefaultInstance) {
-    std::string service_path =
-        "svc/" +
-        component::MakeServiceMemberPath<fhb::Service::Vendor>(instance);
-    zx::result<fidl::ClientEnd<fhb::Vendor>> client_end =
-        component::ConnectAt<fhb::Vendor>(outgoing_dir, service_path);
-    EXPECT_TRUE(client_end.is_ok());
-    if (client_end.is_error()) {
-      return {};
-    }
-    return fidl::WireClient<fhb::Vendor>(std::move(*client_end), dispatcher());
-  }
-
-  bool CheckGetFeatures(fidl::WireClient<fhb::Vendor>& client) {
-    bool ok = false;
-    client->GetFeatures().ThenExactlyOnce(
-        [&ok](fidl::WireUnownedResult<fhb::Vendor::GetFeatures>& res) {
-          ok = res.ok();
-        });
-    fdf_testing_run_until_idle();
-    return ok;
-  }
-
  private:
   // fidl::AsyncEventHandler<fhb::HciTransport> overrides:
   void OnReceive(
@@ -223,7 +171,7 @@ class LoopbackTest : public ::testing::Test,
   void InitializeLogger() {
     std::vector<fuchsia_component_runner::ComponentNamespaceEntry> entries;
     zx::result open_result = component::OpenServiceRoot();
-    ASSERT_TRUE(open_result.is_ok());
+    ZX_ASSERT(open_result.is_ok());
 
     ::fidl::ClientEnd<::fuchsia_io::Directory> svc = std::move(*open_result);
     entries.emplace_back(fuchsia_component_runner::ComponentNamespaceEntry{{
@@ -233,11 +181,11 @@ class LoopbackTest : public ::testing::Test,
 
     // Create Namespace object from the entries.
     auto ns = fdf::Namespace::Create(entries);
-    ASSERT_TRUE(ns.is_ok());
+    ZX_ASSERT(ns.is_ok());
 
     // Create Logger with dispatcher and namespace.
     logger_ = fdf::Logger::Create2(*ns, dispatcher(), "vendor-hci-logger");
-    ASSERT_TRUE(logger_);
+    ZX_ASSERT(logger_);
     fdf::Logger::SetGlobalInstance(logger_.get());
   }
 
@@ -513,33 +461,6 @@ TEST_F(LoopbackTest, DropSnoopPackets) {
   ASSERT_EQ(dropped_snoop_packets().size(), 1u);
   EXPECT_EQ(dropped_snoop_packets()[0].sent(), 2u);
   EXPECT_EQ(dropped_snoop_packets()[0].received(), 0u);
-}
-
-TEST_F(LoopbackTest, PublishService) {
-  fdf::OutgoingDirectory outgoing(fdf::Dispatcher::GetCurrent()->get());
-  fidl::ClientEnd<fuchsia_io::Directory> outgoing_client =
-      SetupOutgoingDirectory(outgoing);
-
-  std::unique_ptr<LoopbackDevice> device = CreateLoopbackDevice(&outgoing);
-
-  fidl::WireClient<fhb::Vendor> client =
-      ConnectToVendorService(outgoing_client.borrow());
-  ASSERT_TRUE(client.is_valid());
-  EXPECT_TRUE(CheckGetFeatures(client));
-}
-
-TEST_F(LoopbackTest, DestroyDeviceUnpublishesService) {
-  fdf::OutgoingDirectory outgoing(fdf::Dispatcher::GetCurrent()->get());
-  fidl::ClientEnd<fuchsia_io::Directory> outgoing_client =
-      SetupOutgoingDirectory(outgoing);
-
-  std::unique_ptr<LoopbackDevice> device = CreateLoopbackDevice(&outgoing);
-  device.reset();
-
-  fidl::WireClient<fhb::Vendor> client =
-      ConnectToVendorService(outgoing_client.borrow());
-  ASSERT_TRUE(client.is_valid());
-  EXPECT_FALSE(CheckGetFeatures(client));
 }
 
 }  // namespace bt_hci_virtual

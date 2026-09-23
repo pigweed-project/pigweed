@@ -24,9 +24,7 @@ LoopbackDevice::LoopbackDevice()
 
 zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                                        std::string_view name,
-                                       AddChildCallback callback,
-                                       fdf::OutgoingDirectory* outgoing,
-                                       std::string_view service_instance_name) {
+                                       AddChildCallback callback) {
   // Setup up incoming channel waiter
   loopback_chan_ = std::move(channel);
   loopback_chan_wait_.set_object(loopback_chan_.get());
@@ -50,17 +48,8 @@ zx_status_t LoopbackDevice::Initialize(zx::channel channel,
                   .devfs_args(devfs)
                   .Build();
 
-  if (outgoing != nullptr) {
-    zx_status_t status = vendor_service_.Publish(
-        outgoing,
-        service_instance_name,
-        fit::bind_member<&LoopbackDevice::Connect>(this));
-    if (status != ZX_OK) {
-      return status;
-    }
-  }
-
   callback(args);
+
   return ZX_OK;
 }
 
