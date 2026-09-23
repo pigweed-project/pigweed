@@ -256,6 +256,9 @@ func (w *defaultGitRunnerWrapper) Run(ctx context.Context, stdout, stderr io.Wri
 	return err
 }
 
+// MockCWD allows tests using SetupMockConfig to override Config.CWD.
+var MockCWD string
+
 // SetupMockConfig wraps gitRunner to provide default commit info on git log -1 and configures RootCmd.PersistentPreRun, restoring everything on test cleanup.
 func SetupMockConfig(t *testing.T, gitRunner GitRunner) {
 	t.Helper()
@@ -263,14 +266,24 @@ func SetupMockConfig(t *testing.T, gitRunner GitRunner) {
 	DefaultGitRunner = &defaultGitRunnerWrapper{inner: gitRunner}
 	t.Cleanup(func() { DefaultGitRunner = oldGit })
 
-	oldPreRun := RootCmd.PersistentPreRun
-	RootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
-		SetConfig(cmd, &Config{
-			Host: HostFlag,
-			Git:  DefaultGitRunner,
-		})
+	oldPreRunE := RootCmd.PersistentPreRunE
+	RootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if oldPreRunE != nil {
+			if err := oldPreRunE(cmd, args); err != nil {
+				return err
+			}
+		}
+		if MockCWD != "" {
+			if cfg := GetConfig(cmd); cfg != nil {
+				cfg.CWD = MockCWD
+			}
+		}
+		return nil
 	}
-	t.Cleanup(func() { RootCmd.PersistentPreRun = oldPreRun })
+	t.Cleanup(func() {
+		RootCmd.PersistentPreRunE = oldPreRunE
+		MockCWD = ""
+	})
 }
 
 // mockTransport allows tests to customize RoundTrip behavior.

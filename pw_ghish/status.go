@@ -418,9 +418,13 @@ func init() {
 	PrCmd.AddCommand(statusCmd)
 }
 
-// extractLabelScore extracts the decisive score for a label from ApprovalInfo entries.
-// If any negative approval exists, the lowest negative score is returned (e.g. -2 takes precedence over -1).
-// Otherwise, the highest positive approval score is returned.
+// ExtractLabelScore extracts the decisive score for a label from ApprovalInfo entries.
+// In Gerrit, any negative score (e.g., -1, -2) blocks submission or indicates attention needed,
+// otherwise the highest positive score wins.
+func ExtractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int {
+	return extractLabelScore(labels, labelName)
+}
+
 func extractLabelScore(labels map[string]gerrit.LabelInfo, labelName string) int {
 	info, ok := labels[labelName]
 	if !ok {

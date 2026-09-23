@@ -59,6 +59,11 @@ func NewGitClient(runner GitRunner) GitClient {
 	return &defaultGitClient{runner: runner}
 }
 
+// NewGitClientInDir returns a GitClient configured to execute git commands in dir.
+func NewGitClientInDir(dir string) GitClient {
+	return NewGitClient(&RealGitRunner{Dir: dir})
+}
+
 // GitClient returns a GitClient for the configuration, falling back to DefaultGitRunner if unconfigured.
 func (c *Config) GitClient() GitClient {
 	if c == nil || c.Git == nil {

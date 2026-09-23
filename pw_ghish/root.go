@@ -47,10 +47,15 @@ type GitRunner interface {
 }
 
 // RealGitRunner implements GitRunner using os/exec.
-type RealGitRunner struct{}
+type RealGitRunner struct {
+	Dir string
+}
 
 func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
+	if r != nil && r.Dir != "" {
+		cmd.Dir = r.Dir
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
@@ -196,6 +201,20 @@ CORE COMMAND CHEAT-SHEET
      $ %[1]s issue close [<number> | <url>] [-r completed|"not planned"] [--duplicate-of <id>] [-c "Comment"]
      $ %[1]s issue comment [<number> | <url>] -b "Comment text"
 
+7. WORKTREES & MULTI-AGENT SLOTS
+   - Inspect/configure warm worktree pool, hooks, and shared Bazel caches:
+     $ %[1]s wt init [--check] [--slots 10]
+   - Allocate or resume a project in a warm slot (zero-click Antigravity/Jetski sidebar sync):
+     $ %[1]s wt use <project> [--branch <branch>] [--cl <change_id>] [--json]
+   - View live dashboard of mounted and parked projects with Gerrit statuses:
+     $ %[1]s wt list
+   - Park an idle project to free its warm slot (branch & CL remain tracked):
+     $ %[1]s wt park <project>
+   - Rebase onto origin/main in-place to start the next CL in a persistent project:
+     $ %[1]s wt next [<project>]
+   - Close a completed workstream permanently:
+     $ %[1]s wt close <project>
+
 ===========================
 RECOMMENDED AGENT WORKFLOW
 ===========================
@@ -262,6 +281,9 @@ var RootCmd = &cobra.Command{
 		}
 
 		existingCfg := GetConfig(cmd)
+		if existingCfg != nil && existingCfg.CWD != "" {
+			cwd = existingCfg.CWD
+		}
 		gitRunner := DefaultGitRunner
 		if existingCfg != nil && existingCfg.Git != nil {
 			gitRunner = existingCfg.Git

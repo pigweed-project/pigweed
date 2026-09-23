@@ -18,6 +18,7 @@ import (
 	"os"
 
 	"pigweed.dev/pw_ghish"
+	_ "pigweed.dev/pw_ghish/worktree"
 )
 
 func main() {

@@ -133,6 +133,17 @@ Documentation
       Compatibility principles with upstream GitHub CLI, compatibility tiers,
       and ghish-only flag designations.
 
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`repo-forked` Worktrees & Caches
+      :link: module-pw_ghish-worktrees
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Manage warm worktree slots, project symlinks, shared Bazel caches, and
+      IDE workspace synchronization across Antigravity (Jetski) and standard
+      environments.
+
    .. grid-item-card:: :octicon:`checklist` Agent Evaluation Runbook
       :link: module-pw_ghish-agent-eval
       :link-type: ref
@@ -148,6 +159,7 @@ Documentation
    cli
    issue
    ai_workflows
+   worktrees
    cli_comparison
    flag_compatibility
    roadmap

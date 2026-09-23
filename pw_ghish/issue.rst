@@ -59,6 +59,11 @@ assigned to you and open issues reported by you:
 
    $ ./gh issue status
 
+If you use :ref:`module-pw_ghish-worktrees` to manage parallel tasks,
+``./gh issue status`` automatically annotates issues that have an active
+worktree project with their residency badge (such as ``[📂 MOUNTED: pw-01]`` or
+``[💤 PARKED]``), showing which bugs are currently checked out on disk.
+
 Searching and filtering: issue list
 ===================================
 Use ``./gh issue list`` to query issues across the project. By default, it
@@ -106,11 +111,19 @@ a local feature branch for that issue:
 
 .. code-block:: console
 
-   # Creates and checks out branch 'issue-315378787' from main:
+   # Creates and checks out branch 'b-315378787-<slug>' from main:
    $ ./gh issue develop 315378787 --checkout
 
    # Specify a custom branch name and base branch:
    $ ./gh issue develop 315378787 --name fix-rpc-framing --base main --checkout
+
+   # Allocate a dedicated warm worktree slot instead of switching in place:
+   $ ./gh issue develop 315378787 --worktree
+
+When you pass ``--worktree`` (``-w``), ``./gh issue develop`` delegates to
+:ref:`module-pw_ghish-worktrees` (``./gh wt use --issue <id>``) to allocate a
+warm physical slot and symlink in ``~/wrk/projects/``, leaving your primary Git
+checkout untouched.
 
 Filing and linking bugs on the fly: issue create
 ================================================
@@ -140,12 +153,20 @@ instead of ``--amend`` to create a new Git commit using the issue title and
 ---------------------------------
 Step 3: Working in branch context
 ---------------------------------
-Once your ``HEAD`` commit contains a ``Bug: b/<id>`` or ``Fixed: b/<id>``
-trailer (or you are on a branch created via ``issue develop``), **you can omit
-the issue ID argument from all issue commands**.
+When working on an issue branch or inside a linked worktree, **you can omit the
+issue ID argument from all issue commands**.
 
-``pw_ghish`` automatically inspects your current Git context to determine the
-active issue:
+``pw_ghish`` automatically resolves the active issue using a three-tier
+fallback chain:
+
+1. **HEAD commit trailers**: Inspects ``Bug: b/<id>`` or ``Fixed: b/<id>``
+   trailers on your current ``HEAD`` commit.
+2. **Active branch name**: Parses standard issue branch naming patterns (such
+   as ``b-315378787-fix-rpc``, ``issue-315378787``, or ``315378787-fix``),
+   allowing issue commands to work immediately on a newly created branch before
+   your first commit.
+3. **Worktree metadata**: Queries your active :ref:`module-pw_ghish-worktrees`
+   project state if the worktree was initialized with ``--issue <id>``.
 
 .. code-block:: console
 
@@ -275,7 +296,8 @@ Every subcommand that accepts an issue target supports any of the following
 formats interchangeably:
 
 * **Omitted argument**: Resolves automatically from ``HEAD`` commit trailers
-  (``Bug:`` / ``Fixed:``) or branch naming conventions.
+  (``Bug:`` / ``Fixed:``), branch naming conventions, or active worktree
+  metadata.
 * **Numeric ID**: ``315378787``
 * **Buganizer shorthand**: ``b/315378787``
 * **Issue tracker URLs**: ``https://issues.chromium.org/issues/315378787`` or

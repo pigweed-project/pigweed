@@ -30,5 +30,6 @@ pw_doc_group("docs") {
     "flag_compatibility.rst",
     "project_integration.rst",
     "roadmap.rst",
+    "worktrees.rst",
   ]
 }

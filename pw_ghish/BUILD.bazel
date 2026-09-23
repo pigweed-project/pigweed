@@ -57,6 +57,7 @@ go_library(
         "status.go",
         "utils.go",
         "view.go",
+        "workspace_hook.go",
     ],
     importpath = "pigweed.dev/pw_ghish",
     target_compatible_with = incompatible_with_mcu(),
@@ -72,6 +73,7 @@ go_binary(
     target_compatible_with = incompatible_with_mcu(),
     deps = [
         ":pw_ghish",
+        "//pw_ghish/worktree",
     ],
 )
 
@@ -146,6 +148,7 @@ go_test(
         "test_utils_test.go",
         "utils_test.go",
         "view_test.go",
+        "workspace_hook_test.go",
     ],
     embed = [":pw_ghish"],
     tags = [
@@ -177,6 +180,7 @@ sphinx_docs_library(
         "issue.rst",
         "project_integration.rst",
         "roadmap.rst",
+        "worktrees.rst",
     ],
     prefix = "pw_ghish/",
     target_compatible_with = incompatible_with_mcu(),

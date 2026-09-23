@@ -56,6 +56,22 @@ func resolveTargetIssueID(ctx context.Context, cmd *cobra.Command, args []string
 	}
 
 	if len(ids) == 0 {
+		// Tier 2: Branch name inference (e.g. b-315378787-fix-rpc or 315378787-fix-rpc)
+		if branch, brErr := cfg.GitClient().CurrentBranch(ctx); brErr == nil && branch != "" {
+			if id, ok := ExtractIssueIDFromBranchName(branch); ok && id > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Using issue b/%d from active branch name %q.\n", id, branch)
+				return id, nil
+			}
+		}
+
+		// Tier 3: Optional Worktree state hook inference
+		if RegisteredWorkspaceIntegration != nil && RegisteredWorkspaceIntegration.IsEnabled() && cfg.CWD != "" {
+			if id, ok := RegisteredWorkspaceIntegration.ResolveIssueIDForPath(cfg.CWD); ok && id > 0 {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Using issue b/%d from active worktree project.\n", id)
+				return id, nil
+			}
+		}
+
 		return 0, fmt.Errorf("no issue <number> provided and HEAD commit contains no Bug: or Fixed: trailer.\n\n"+
 			"Remediation:\n"+
 			"  1. Specify the Buganizer issue ID explicitly:\n"+
@@ -437,13 +453,28 @@ var issueStatusCmd = &cobra.Command{
 			return nil
 		}
 
+		formatWS := func(id int64) string {
+			if RegisteredWorkspaceIntegration == nil || !RegisteredWorkspaceIntegration.IsEnabled() {
+				return ""
+			}
+			ws, ok := RegisteredWorkspaceIntegration.FindWorkspaceForIssue(id)
+			if !ok {
+				return ""
+			}
+			if ws.Residency == "MOUNTED" {
+				return fmt.Sprintf("  [📂 MOUNTED (%s): %s]", ws.Slot, ws.SymlinkPath)
+			}
+			return fmt.Sprintf("  [💤 PARKED: branch %s]", ws.Branch)
+		}
+
 		out := cmd.OutOrStdout()
 		fmt.Fprintf(out, "Issues assigned to you (%s):\n", email)
 		if len(assignedResp.Issues) == 0 {
 			fmt.Fprintln(out, "  None")
 		} else {
 			for _, iss := range assignedResp.Issues {
-				fmt.Fprintf(out, "  b/%-9d  %-4s  %s\n", iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title))
+				fmt.Fprintf(out, "  b/%-9d  %-4s  %s%s\n",
+					iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title), formatWS(int64(iss.IssueID)))
 			}
 		}
 
@@ -452,7 +483,8 @@ var issueStatusCmd = &cobra.Command{
 			fmt.Fprintln(out, "  None")
 		} else {
 			for _, iss := range reportedResp.Issues {
-				fmt.Fprintf(out, "  b/%-9d  %-4s  %s\n", iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title))
+				fmt.Fprintf(out, "  b/%-9d  %-4s  %s%s\n",
+					iss.IssueID, iss.State.Priority, SanitizeUntrustedText(iss.State.Title), formatWS(int64(iss.IssueID)))
 			}
 		}
 		return nil
@@ -824,13 +856,15 @@ var issueCommentCmd = &cobra.Command{
 }
 
 var (
-	issueDevelopBase string
-	issueDevelopName string
+	issueDevelopBase     string
+	issueDevelopName     string
+	issueDevelopWorktree bool
+	issueDevelopJSON     bool
 )
 
 var issueDevelopCmd = &cobra.Command{
 	Use:   "develop [<number> | <url>]",
-	Short: "Create and check out a development branch for a Buganizer issue",
+	Short: "Create and check out a development branch (or warm worktree slot) for a Buganizer issue",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -859,6 +893,41 @@ var issueDevelopCmd = &cobra.Command{
 			cfg = &Config{Host: HostFlag, Git: DefaultGitRunner}
 		}
 
+		useWorktree := issueDevelopWorktree
+		if !useWorktree {
+			if autoWT, cfgErr := cfg.GitClient().ConfigGet(ctx, "ghish.worktree.auto"); cfgErr == nil && strings.EqualFold(strings.TrimSpace(autoWT), "true") {
+				useWorktree = true
+			}
+		}
+
+		if useWorktree {
+			if RegisteredWorkspaceIntegration == nil {
+				return fmt.Errorf("worktree integration is not available in this build")
+			}
+			symlinkPath, slotName, wtErr := RegisteredWorkspaceIntegration.DevelopIssueInWorktree(ctx, issueID, issue.State.Title, branchName)
+			if wtErr != nil {
+				return wtErr
+			}
+			if issueDevelopJSON {
+				payload := map[string]any{
+					"issue_id":     issue.IssueID,
+					"branch":       branchName,
+					"slot":         slotName,
+					"symlink_path": symlinkPath,
+				}
+				data, jsonErr := json.MarshalIndent(payload, "", "  ")
+				if jsonErr != nil {
+					return jsonErr
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), string(data))
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "✓ Mounted issue b/%d (%s) in warm worktree slot %s\n",
+				issue.IssueID, SanitizeUntrustedText(issue.State.Title), slotName)
+			fmt.Fprintf(cmd.OutOrStdout(), "  Directory: %s\n  Branch:    %s\n", symlinkPath, branchName)
+			return nil
+		}
+
 		gitArgs := []string{"checkout", "-b", branchName}
 		if issueDevelopBase != "" {
 			gitArgs = append(gitArgs, issueDevelopBase)
@@ -869,7 +938,11 @@ var issueDevelopCmd = &cobra.Command{
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "✓ Checked out new branch %q for issue b/%d (%s)\n",
-			branchName, issue.IssueID, issue.State.Title)
+			branchName, issue.IssueID, SanitizeUntrustedText(issue.State.Title))
+		if RegisteredWorkspaceIntegration != nil && RegisteredWorkspaceIntegration.IsEnabled() {
+			fmt.Fprintf(cmd.ErrOrStderr(), "💡 Tip: Run './gh issue develop %d --worktree' (or './gh wt use --issue %d') to open issues in isolated warm worktree slots.\n",
+				issue.IssueID, issue.IssueID)
+		}
 		return nil
 	},
 }
@@ -922,6 +995,8 @@ func init() {
 
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopBase, "base", "b", "", "Base branch to branch from")
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopName, "name", "n", "", "Custom branch name")
+	issueDevelopCmd.Flags().BoolVarP(&issueDevelopWorktree, "worktree", "w", false, "Allocate or mount an isolated warm worktree slot via gh wt")
+	issueDevelopCmd.Flags().BoolVar(&issueDevelopJSON, "json", false, "Output allocated worktree metadata as JSON")
 
 	IssueCmd.AddCommand(issueViewCmd)
 	IssueCmd.AddCommand(issueListCmd)

@@ -1,0 +1,70 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "worktree",
+    srcs = [
+        "build_driver.go",
+        "cmd.go",
+        "gerrit_status.go",
+        "git.go",
+        "ide_driver.go",
+        "issue_integration.go",
+        "manager.go",
+        "register.go",
+        "safe_fs.go",
+        "state.go",
+    ],
+    importpath = "pigweed.dev/pw_ghish/worktree",
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "//pw_ghish",
+        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
+        "@com_github_spf13_cobra//:cobra",
+    ],
+)
+
+go_test(
+    name = "worktree_test",
+    srcs = [
+        "audit_fixes_test.go",
+        "bazel_driver_test.go",
+        "cmd_test.go",
+        "ide_driver_test.go",
+        "integration_test.go",
+        "issue_integration_test.go",
+        "manager_test.go",
+        "register_test.go",
+        "state_test.go",
+    ],
+    embed = [":worktree"],
+    tags = [
+        # Pure Go test target: Clang C/C++ sanitizers do not instrument Go
+        # code (Go uses its native -race detector instead).
+        "noasan",
+        "nomsan",
+        "notsan",
+        "noubsan",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        "//pw_ghish",
+        "@com_github_andygrunwald_go_gerrit//:go-gerrit",
+    ],
+)
