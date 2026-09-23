@@ -16,6 +16,7 @@ load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:args_list.bzl", "cc_args_list")
 load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
 load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
+load("//pw_build:pigweed_is_root.bzl", "pigweed_is_root")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -80,6 +81,22 @@ cc_args_list(
         ":strict_warnings",
         ":clang_strict_warnings",
         ":extra_strict_warnings",
+    ] + ([":link_strict_warnings"] if pigweed_is_root() else []),
+)
+
+# Fail link actions on linker driver warnings (such as
+# -Wunused-command-line-argument) so unused or invalid toolchain link flags are
+# caught during C/C++ link actions as well.
+cc_args(
+    name = "link_strict_warnings",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = [
+        "-Werror",
+    ],
+    requires_any_of = [
+        ":not_rust",
     ],
 )
 
@@ -624,8 +641,32 @@ cc_feature_constraint(
     name = "not_rust_and_not_go",
     all_of = [
         ":rules_go_unsupported_feature",
-        ":rules_rust_unsupported_feature",
+        ":not_rust",
     ],
-    # Find a better home for this.
-    visibility = ["//visibility:public"],
+)
+
+# Satisfied for all actions except Rust actions, which rules_rust performs with
+# the rules_rust_unsupported_feature disabled.
+cc_feature_constraint(
+    name = "not_rust",
+    all_of = [":rules_rust_unsupported_feature"],
+)
+
+# Satisfied only for Rust actions. See :not_rust.
+cc_feature_constraint(
+    name = "rust_only",
+    none_of = [":rules_rust_unsupported_feature"],
+)
+
+# When linking a static, non-PIC executable through a C compiler driver, rustc
+# unconditionally passes `-no-pie`. Clang's bare-metal driver does not consume
+# this flag and emits -Wunused-command-line-argument, which rustc surfaces as an
+# error through the linker_messages lint. Bare-metal toolchains should include
+# this to ignore unused arguments in Rust link actions only; C/C++ link actions
+# continue to enforce -Wunused-command-line-argument via :link_strict_warnings.
+cc_args(
+    name = "rust_link_ignore_unused_arguments",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = ["-Wno-unused-command-line-argument"],
+    requires_any_of = [":rust_only"],
 )

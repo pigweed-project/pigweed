@@ -174,17 +174,6 @@ cc_args(
     ],
 )
 
-cc_args(
-    name = "cortex_a35_linkopts",
-    actions = [
-        "@rules_cc//cc/toolchains/actions:link_actions",
-    ],
-    args = [
-        "-nostartfiles",
-        "-unwindlib=none",
-    ],
-)
-
 # Additional arm_clang specific warning flags
 cc_args(
     name = "warnings",
@@ -290,6 +279,7 @@ cc_toolchain(
         "//pw_toolchain/cc/args:common_warnings",
         "//pw_toolchain/cc/args:color_diagnostics",
         "//pw_toolchain/cc/args:warning_suppression_allowlist",
+        "//pw_toolchain/cc/args:rust_link_ignore_unused_arguments",
     ] + select({
         "//pw_build/constraints/arm:cortex-m0": [
             ":cortex-m0",
@@ -422,11 +412,11 @@ cc_toolchain(
         "//pw_toolchain/cc/args:common_warnings",
         "//pw_toolchain/cc/args:color_diagnostics",
         "//pw_toolchain/cc/args:warning_suppression_allowlist",
+        "//pw_toolchain/cc/args:rust_link_ignore_unused_arguments",
     ] + select({
         "//pw_build/constraints/arm:cortex-a35": [
             ":cortex-a35",
             ":aarch64-none-elf",
-            ":cortex_a35_linkopts",
         ],
         "//pw_build/constraints/arm:none": [],
     }),

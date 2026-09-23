@@ -629,7 +629,7 @@
     },
     "//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
-        "bzlTransitiveDigest": "GJTxCn//5wg3RxXGVSXy0buVOhE/3tFzfxF+FdY1T4c=",
+        "bzlTransitiveDigest": "Jp9Qih1UnyHgkb8VcZwWb1BLFmJ0jvWM908sMmHY+ns=",
         "usagesDigest": "MjHJC7uUqz7GW77TeAkWN9TWmAxSafcBv/dE0Gicn38=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -792,7 +792,7 @@
             "attributes": {
               "hosts": "[{\"cipd_arch\":\"arm64\",\"cpu\":\"aarch64\",\"dylib_ext\":\".so\",\"os\":\"linux\",\"triple\":\"aarch64-unknown-linux-gnu\"},{\"cipd_arch\":\"amd64\",\"cpu\":\"x86_64\",\"dylib_ext\":\".so\",\"os\":\"linux\",\"triple\":\"x86_64-unknown-linux-gnu\"},{\"cipd_arch\":\"arm64\",\"cpu\":\"aarch64\",\"dylib_ext\":\".dylib\",\"os\":\"macos\",\"triple\":\"aarch64-apple-darwin\"},{\"cipd_arch\":\"amd64\",\"cpu\":\"x86_64\",\"dylib_ext\":\".dylib\",\"os\":\"macos\",\"triple\":\"x86_64-apple-darwin\"}]",
               "extra_targets": "[{\"cpu\":\"armv6-m\",\"triple\":\"thumbv6m-none-eabi\"},{\"cpu\":\"armv7-m\",\"triple\":\"thumbv7m-none-eabi\"},{\"cpu\":\"armv7e-m\",\"triple\":\"thumbv7m-none-eabi\"},{\"build_std\":true,\"cpu\":\"armv8-m\",\"triple\":\"thumbv8m.main-none-eabihf\"},{\"build_std\":true,\"cpu\":\"aarch64\",\"triple\":\"aarch64-unknown-none\"},{\"build_std\":true,\"constraints\":[\"@pigweed//pw_build/constraints/riscv/extensions:I\",\"@pigweed//pw_build/constraints/riscv/extensions:M\",\"@pigweed//pw_build/constraints/riscv/extensions:C\",\"@pigweed//pw_build/constraints/riscv/extensions:A.not\"],\"cpu\":\"riscv32\",\"triple\":\"riscv32imc-unknown-none-elf\"},{\"build_std\":true,\"constraints\":[\"@pigweed//pw_build/constraints/riscv/extensions:I\",\"@pigweed//pw_build/constraints/riscv/extensions:M\",\"@pigweed//pw_build/constraints/riscv/extensions:C\",\"@pigweed//pw_build/constraints/riscv/extensions:A\"],\"cpu\":\"riscv32\",\"triple\":\"riscv32imac-unknown-none-elf\"}]",
-              "channels": "[{\"extra_rustc_flags\":[\"-Dwarnings\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"nightly\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:nightly\"]},{\"extra_rustc_flags\":[\"-Dwarnings\",\"-Zallow-features=core_intrinsics,error_generic_member_access,proc_macro_span,rustc_attrs\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"stable\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:stable\"]}]"
+              "channels": "[{\"extra_rustc_flags\":[\"-Dlinker-messages\",\"-Dwarnings\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"nightly\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:nightly\"]},{\"extra_rustc_flags\":[\"-Dlinker-messages\",\"-Dwarnings\",\"-Zallow-features=core_intrinsics,error_generic_member_access,proc_macro_span,rustc_attrs\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"stable\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:stable\"]}]"
             }
           }
         }

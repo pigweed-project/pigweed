@@ -70,5 +70,7 @@ cc_feature_set(
         ":compiler_is_gcc",
         ":linker_is_clang",
         ":linker_is_gcc",
+        "//pw_toolchain/cc/feature:rules_go_unsupported_feature",
+        "//pw_toolchain/cc/feature:rules_rust_unsupported_feature",
     ],
 )

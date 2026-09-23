@@ -441,3 +441,19 @@ these flags in ``.bazelrc`` or per-platform in ``platform(flags = {...})``:
 * **To unconditional satisfaction:** Redirect to
   ``//pw_toolchain/cc/args:always_true`` if the toolchain is known to be Clang
   and does not require capability gating.
+
+Rust link actions
+=================
+``rules_rust`` links Rust binaries with the C/C++ toolchain's linker, but with
+the ``rules_rust_unsupported_feature`` disabled. Two constraints in
+``//pw_toolchain/cc/args`` use this feature to tailor link flags for Rust:
+
+* ``//pw_toolchain/cc/args:not_rust``: Satisfied for all actions except Rust
+  actions. Use this for C/C++ default-library flags (such as ``-pthread``,
+  ``--unwindlib=``, or ``-nostdlib++``) that ``rustc`` renders unused by linking
+  with ``-nodefaultlibs``.
+* ``//pw_toolchain/cc/args:rust_only``: Satisfied only for Rust actions.
+  Bare-metal toolchains include
+  ``//pw_toolchain/cc/args:rust_link_ignore_unused_arguments`` (gated on
+  ``:rust_only``) to ignore ``rustc``'s unconditional ``-no-pie`` flag, which
+  Clang's bare-metal driver does not consume.

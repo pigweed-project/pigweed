@@ -23,10 +23,9 @@
 #
 # Downstream projects shouldn't ever have any reason to reference this.
 visibility([
-    # The host toolchain has Pigweed-only warnings that give us the
-    # freedom to enforce new warnings without having to fix downstream projects
-    # first.
-    "//pw_toolchain/host_clang/...",
+    # Toolchains have Pigweed-only warnings that give us the freedom to enforce
+    # new warnings without having to fix downstream projects first.
+    "//pw_toolchain/...",
 ])
 
 def pigweed_is_root():

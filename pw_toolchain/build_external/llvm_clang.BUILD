@@ -18,7 +18,7 @@ load("@bazel_skylib//rules/directory:directory.bzl", "directory")
 load("@bazel_skylib//rules/directory:subdirectory.bzl", "subdirectory")
 load("@pigweed//pw_build:glob_dirs.bzl", "match_dir")
 load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
-load("@pigweed//pw_build/constraints/arm:lists.bzl", "ALL_CORTEX_M_CPUS")
+load("@pigweed//pw_build/constraints/arm:lists.bzl", "ALL_CORTEX_A_CPUS", "ALL_CORTEX_M_CPUS")
 load("@pigweed//pw_build/constraints/riscv:lists.bzl", "ALL_RISCV_CPUS")
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 load("@rules_cc//cc/toolchains:args_list.bzl", "cc_args_list")
@@ -319,6 +319,10 @@ directory(
 filegroup(
     name = "llvm-libc_files",
     srcs = selects.with_or({
+        ALL_CORTEX_A_CPUS: [
+            ":llvm-libc_aarch64-none-elf_compile_files",
+            ":llvm-libc_aarch64-none-elf_link_files",
+        ],
         ALL_CORTEX_M_CPUS: [
             ":llvm-libc_arm-none-eabi_compile_files",
             ":llvm-libc_arm-none-eabi_link_files",
@@ -343,6 +347,23 @@ config_setting(
 #####################
 #     llvm-libc     #
 #####################
+
+filegroup(
+    name = "llvm-libc_aarch64-none-elf_compile_files",
+    srcs = glob([
+        "include/aarch64-unknown-none-elf/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "llvm-libc_aarch64-none-elf_link_files",
+    srcs = glob([
+        "lib/aarch64-unknown-none-elf/**",
+        "lib/clang/*/lib/aarch64-unknown-none-elf/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
 
 filegroup(
     name = "llvm-libc_arm-none-eabi_compile_files",
@@ -381,24 +402,13 @@ filegroup(
 cc_args(
     name = "llvm-libc_link_args",
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
-    args = selects.with_or({
-        ALL_CORTEX_M_CPUS: [
-            "-nostdlib++",
-            "-nostartfiles",
-            "-unwindlib=none",
-            "-Wl,-lc++",
-            "-Wl,-lm",
-        ],
-        ALL_RISCV_CPUS: [
-            "-nostdlib++",
-            "-nostartfiles",
-            "-unwindlib=none",
-            "-Wl,-lc++",
-            "-Wl,-lm",
-        ],
-        "//conditions:default": [],
-    }),
+    args = [
+        "-nostartfiles",
+    ],
     data = selects.with_or({
+        ALL_CORTEX_A_CPUS: [
+            ":llvm-libc_aarch64-none-elf_link_files",
+        ],
         ALL_CORTEX_M_CPUS: [
             ":llvm-libc_arm-none-eabi_link_files",
         ],
@@ -411,14 +421,35 @@ cc_args(
 )
 
 cc_args(
+    name = "llvm-libc_default_link_libs",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-nostdlib++",
+        "-Wl,-lc++",
+        "-Wl,-lm",
+    ] + selects.with_or({
+        ALL_CORTEX_A_CPUS + ALL_CORTEX_M_CPUS: [
+            "-unwindlib=none",
+        ],
+        "//conditions:default": [],
+    }),
+    requires_any_of = ["@pigweed//pw_toolchain/cc/args:not_rust"],
+    visibility = ["//visibility:private"],
+)
+
+cc_args(
     name = "llvm-libc_compile_args",
     actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
     args = selects.with_or({
+        ALL_CORTEX_A_CPUS: [],
         ALL_CORTEX_M_CPUS: [],
         ALL_RISCV_CPUS: [],
         "//conditions:default": [],
     }),
     data = selects.with_or({
+        ALL_CORTEX_A_CPUS: [
+            ":llvm-libc_aarch64-none-elf_compile_files",
+        ],
         ALL_CORTEX_M_CPUS: [
             ":llvm-libc_arm-none-eabi_compile_files",
         ],
@@ -435,5 +466,6 @@ cc_args_list(
     args = [
         ":llvm-libc_compile_args",
         ":llvm-libc_link_args",
+        ":llvm-libc_default_link_libs",
     ],
 )

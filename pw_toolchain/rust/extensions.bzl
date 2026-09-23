@@ -306,7 +306,7 @@ pw_rust = module_extension(
         # Configure the stable channel
         pw_rust.channel(
             name = "stable",
-            extra_rustc_flags = ["-Dwarnings", "-Zemit-stack-sizes", "-Zmacro-backtrace"],
+            extra_rustc_flags = ["-Dlinker-messages", "-Dwarnings", "-Zemit-stack-sizes", "-Zmacro-backtrace"],
             target_settings = ["@rules_rust//rust/toolchain/channel:stable"],
         )
 

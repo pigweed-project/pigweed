@@ -52,11 +52,20 @@ cc_args(
     name = "linux_link_libs",
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
     args = [
-        "-pthread",
         "-stdlib=libc++",
         "--rtlib=compiler-rt",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+cc_args(
+    name = "linux_default_link_libs",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-pthread",
         "--unwindlib=libunwind",
     ],
+    requires_any_of = ["//pw_toolchain/cc/args:not_rust"],
     target_compatible_with = ["@platforms//os:linux"],
 )
 
@@ -370,6 +379,7 @@ cc_toolchain(
     args = select({
         "@platforms//os:linux": [
             ":linux_link_libs",
+            ":linux_default_link_libs",
             "@linux_sysroot//:sysroot",
         ],
         "@platforms//os:macos": [

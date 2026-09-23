@@ -1035,7 +1035,7 @@
     "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "8ANRjMkuiXHMgW6VBkHehB4PcxmW7HeHkU6VIG1r0d0=",
-        "usagesDigest": "WXs9NNUE6j/rwQgRuduoROGS4zlVtgtsBGW7DJbiggU=",
+        "usagesDigest": "Xj5WOH3PY1pfa5sAg3cSUwGDXrbbX2ZUzawRCULd6Zk=",
         "recordedInputs": [
           "REPO_MAPPING:pigweed+,bazel_tools bazel_tools"
         ],
@@ -1053,7 +1053,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/build_external:llvm_clang.BUILD",
               "path": "fuchsia/third_party/clang/${os}-${arch}",
-              "tag": "git_revision:5e63f2ce42db2c42f1d0012a3b5fa9c6113f750a"
+              "tag": "git_revision:3493720eca95cf844a8d7e58fdd12e0e5644e7d0"
             }
           },
           "zephyr_toolchain": {
@@ -1077,8 +1077,8 @@
     },
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
-        "bzlTransitiveDigest": "GJTxCn//5wg3RxXGVSXy0buVOhE/3tFzfxF+FdY1T4c=",
-        "usagesDigest": "EzHo2+3mgrmTOYmhLOkLdHTJpVApzvNXw+POpZr0vPw=",
+        "bzlTransitiveDigest": "Jp9Qih1UnyHgkb8VcZwWb1BLFmJ0jvWM908sMmHY+ns=",
+        "usagesDigest": "0s4MeTJCEvP4mc6bfzY1LnRTIF5/8qcN1RkM++bFiS4=",
         "recordedInputs": [
           "REPO_MAPPING:pigweed+,bazel_tools bazel_tools"
         ],
@@ -1104,7 +1104,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-arm64",
-              "tag": "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb"
+              "tag": "git_revision:e29c5c8f544add214a5ddbac10a44e02b16aa814"
             }
           },
           "rust_bindgen_linux_aarch64": {
@@ -1136,7 +1136,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-amd64",
-              "tag": "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb"
+              "tag": "git_revision:e29c5c8f544add214a5ddbac10a44e02b16aa814"
             }
           },
           "rust_bindgen_linux_x86_64": {
@@ -1168,7 +1168,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-arm64",
-              "tag": "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb"
+              "tag": "git_revision:e29c5c8f544add214a5ddbac10a44e02b16aa814"
             }
           },
           "rust_bindgen_macos_aarch64": {
@@ -1200,7 +1200,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-amd64",
-              "tag": "git_revision:69d0e262cc12e4cac32a23b127c1537c71ad9beb"
+              "tag": "git_revision:e29c5c8f544add214a5ddbac10a44e02b16aa814"
             }
           },
           "rust_bindgen_macos_x86_64": {
@@ -1240,7 +1240,7 @@
             "attributes": {
               "hosts": "[{\"cipd_arch\":\"arm64\",\"cpu\":\"aarch64\",\"dylib_ext\":\".so\",\"os\":\"linux\",\"triple\":\"aarch64-unknown-linux-gnu\"},{\"cipd_arch\":\"amd64\",\"cpu\":\"x86_64\",\"dylib_ext\":\".so\",\"os\":\"linux\",\"triple\":\"x86_64-unknown-linux-gnu\"},{\"cipd_arch\":\"arm64\",\"cpu\":\"aarch64\",\"dylib_ext\":\".dylib\",\"os\":\"macos\",\"triple\":\"aarch64-apple-darwin\"},{\"cipd_arch\":\"amd64\",\"cpu\":\"x86_64\",\"dylib_ext\":\".dylib\",\"os\":\"macos\",\"triple\":\"x86_64-apple-darwin\"}]",
               "extra_targets": "[{\"cpu\":\"armv6-m\",\"triple\":\"thumbv6m-none-eabi\"},{\"cpu\":\"armv7-m\",\"triple\":\"thumbv7m-none-eabi\"},{\"cpu\":\"armv7e-m\",\"triple\":\"thumbv7m-none-eabi\"},{\"build_std\":true,\"cpu\":\"armv8-m\",\"triple\":\"thumbv8m.main-none-eabihf\"},{\"build_std\":true,\"cpu\":\"aarch64\",\"triple\":\"aarch64-unknown-none\"},{\"build_std\":true,\"constraints\":[\"@pigweed//pw_build/constraints/riscv/extensions:I\",\"@pigweed//pw_build/constraints/riscv/extensions:M\",\"@pigweed//pw_build/constraints/riscv/extensions:C\",\"@pigweed//pw_build/constraints/riscv/extensions:A.not\"],\"cpu\":\"riscv32\",\"triple\":\"riscv32imc-unknown-none-elf\"},{\"build_std\":true,\"constraints\":[\"@pigweed//pw_build/constraints/riscv/extensions:I\",\"@pigweed//pw_build/constraints/riscv/extensions:M\",\"@pigweed//pw_build/constraints/riscv/extensions:C\",\"@pigweed//pw_build/constraints/riscv/extensions:A\"],\"cpu\":\"riscv32\",\"triple\":\"riscv32imac-unknown-none-elf\"}]",
-              "channels": "[{\"extra_rustc_flags\":[\"-Dwarnings\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"nightly\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:nightly\"]},{\"extra_rustc_flags\":[\"-Dwarnings\",\"-Zallow-features=core_intrinsics,error_generic_member_access,proc_macro_span,rustc_attrs\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"stable\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:stable\"]}]"
+              "channels": "[{\"extra_rustc_flags\":[\"-Dlinker-messages\",\"-Dwarnings\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"nightly\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:nightly\"]},{\"extra_rustc_flags\":[\"-Dlinker-messages\",\"-Dwarnings\",\"-Zallow-features=core_intrinsics,error_generic_member_access,proc_macro_span,rustc_attrs\",\"-Zemit-stack-sizes\",\"-Zmacro-backtrace\"],\"name\":\"stable\",\"target_settings\":[\"@rules_rust//rust/toolchain/channel:stable\"]}]"
             }
           }
         }

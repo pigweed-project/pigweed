@@ -222,6 +222,8 @@ cc_toolchain(
         "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
         "//pw_toolchain/cc/capability:compiler_is_clang",
         "//pw_toolchain/cc/capability:linker_is_clang",
+        "//pw_toolchain/cc/feature:rules_go_unsupported_feature",
+        "//pw_toolchain/cc/feature:rules_rust_unsupported_feature",
     ] + select({
         "//pw_toolchain/cc:c++17_enabled": ["//pw_toolchain/cc/args:c++17_feature"],
         "//conditions:default": [],

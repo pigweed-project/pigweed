@@ -11,7 +11,12 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""A programatic list of all known Cortex-M CPUs."""
+"""A programatic list of all known Cortex-A and Cortex-M CPUs."""
+
+ALL_CORTEX_A_CPUS = (
+    "@pigweed//pw_build/constraints/arm:cortex-a32",
+    "@pigweed//pw_build/constraints/arm:cortex-a35",
+)
 
 ALL_CORTEX_M_CPUS = (
     "@platforms//cpu:armv6-m",
