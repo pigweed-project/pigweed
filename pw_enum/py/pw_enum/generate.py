@@ -126,7 +126,7 @@ def _write_generated_header(
 
     with (
         input_path.open(encoding="utf-8") as infile,
-        output_path.open("w", encoding="utf-8") as outfile,
+        output_path.open("w", encoding="utf-8", newline="\n") as outfile,
     ):
         for line_num, line in enumerate(infile, 1):
             if line_num in enum_lines:

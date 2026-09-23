@@ -225,6 +225,73 @@ class TestEnumGeneration(unittest.TestCase):
                 ],
             )
 
+    def test_resolve_gn_escaped_quotes_in_defines(self) -> None:
+        """Test that shell-escaped quotes survive on either platform."""
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            toolchain_file = temp_dir / "toolchain.ninja"
+            target_file = temp_dir / "target.ninja"
+
+            toolchain_file.write_text(
+                "rule cxx\n  command = clang++ $defines -c $in -o $out\n"
+            )
+            target_file.write_text('defines = -DNAME=\\"value\\"\n')
+
+            for windows in (False, True):
+                _, raw_flags = _resolve_gn_compiler_and_flags(
+                    toolchain_file,
+                    target_file,
+                    Path("my_target.base.cc"),
+                    windows=windows,
+                )
+                self.assertEqual(
+                    raw_flags[0], '-DNAME="value"', msg=f"{windows=}"
+                )
+
+    def test_resolve_gn_windows_paths(self) -> None:
+        """Test parsing backslash paths from ninja files written on Windows."""
+        with tempfile.TemporaryDirectory() as td:
+            temp_dir = Path(td)
+            toolchain_file = temp_dir / "toolchain.ninja"
+            target_file = temp_dir / "target.ninja"
+
+            toolchain_file.write_text(
+                "rule cxx\n"
+                "  command = ..\\..\\environment\\cipd\\packages\\arm\\bin\\"
+                "arm-none-eabi-g++ $defines $include_dirs $cflags "
+                "-c $in -o $out\n"
+            )
+            # The trailing separator on the second include dir must not escape
+            # the space that follows it.
+            target_file.write_text(
+                "defines = -DNAME=VALUE\n"
+                "include_dirs = -I..\\..\\path\\to\\include -Igen\\include\\\n"
+                "cflags = -O2\n"
+            )
+            win_base_cc = Path(
+                r"pw_strict_host_gcc_debug\gen\my_target\my_target.base.cc"
+            )
+            compiler, raw_flags = _resolve_gn_compiler_and_flags(
+                toolchain_file, target_file, win_base_cc, windows=True
+            )
+            self.assertEqual(
+                compiler,
+                "../../environment/cipd/packages/arm/bin/arm-none-eabi-g++",
+            )
+            self.assertEqual(
+                raw_flags,
+                [
+                    "-DNAME=VALUE",
+                    "-I../../path/to/include",
+                    "-Igen/include/",
+                    "-O2",
+                    "-c",
+                    "pw_strict_host_gcc_debug/gen/my_target/my_target.base.cc",
+                    "-o",
+                    "pw_strict_host_gcc_debug/gen/my_target/my_target.base.o",
+                ],
+            )
+
     def test_write_generated_header(self) -> None:
         """Test line replacement behavior of _write_generated_header."""
         enums = [

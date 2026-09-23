@@ -13,16 +13,22 @@
 # the License.
 """Tests for PW_ENUM() parsing."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from pw_enum.parse import (
     ParseError,
     EnumValue,
     EnumDescriptor,
+    _filter_flags,
+    _find_line_and_file_for_offset,
     _parse_preprocessed_header,
     _parse_evaluation_output,
+    _resolve_compiler,
+    _same_file,
     camel_to_upper_snake,
     _default_display_name,
 )
@@ -417,6 +423,145 @@ class TestEnumHParser(unittest.TestCase):
             "Invalid enumerator name",
         ):
             _parse_preprocessed_header(text, test_file)
+
+    def test_windows_escaped_line_markers(self) -> None:
+        test_file = Path(self.test_dir.name) / "test_enum.h"
+        test_file.write_text("")
+        # GCC on Windows escapes backslashes in preprocessor # line directives,
+        # e.g. `# 1 "C:\\dir\\test_enum.h"`. Convert to POSIX first so `/` is
+        # always the separator before replacing with `\\` on both Windows and
+        # POSIX hosts.
+        escaped_path = test_file.resolve().as_posix().replace("/", "\\\\")
+        self.assertIn("\\\\", escaped_path)
+        self.assertNotIn("/", escaped_path)
+        text = (
+            f'# 1 "{escaped_path}"\n'
+            '_PW_ENUM_MUST_BE_COMPILED_BY_pw_cc_enum( '
+            '"my::ns::MyEnum", "kValueA", "kValueB" ) _PW_ENUM_MACRO_END;'
+        )
+        self.assertEqual(
+            _find_line_and_file_for_offset(text, len(text))[1],
+            test_file.resolve(),
+        )
+        enums = _parse_preprocessed_header(text, test_file)
+        self.assertEqual(len(enums), 1)
+        self.assertEqual(enums[0].name, "MyEnum")
+        self.assertEqual(enums[0].values[0], ("kValueA", "VALUE_A"))
+
+    def test_find_line_and_file_windows_literal_paths(self) -> None:
+        # Verify both escaped (double) and unescaped (single) backslash paths in
+        # # line directives using literal Windows strings.
+        for raw_marker_path in (
+            r"C:\\Users\\pw\\dir\\my_enum.h",
+            r"C:\Users\pw\dir\my_enum.h",
+        ):
+            source = f'# 42 "{raw_marker_path}"\nint x;\nint y;\n'
+            line, file_path = _find_line_and_file_for_offset(
+                source, len(source)
+            )
+            self.assertEqual(line, 44, msg=raw_marker_path)
+            self.assertEqual(
+                file_path.as_posix(),
+                "C:/Users/pw/dir/my_enum.h",
+                msg=raw_marker_path,
+            )
+
+
+class TestSameFile(unittest.TestCase):
+    """Test path comparison across OS path quirks."""
+
+    def setUp(self) -> None:
+        self.test_dir = (
+            tempfile.TemporaryDirectory()  # pylint: disable=consider-using-with
+        )
+        self.addCleanup(self.test_dir.cleanup)
+        self.base = Path(self.test_dir.name)
+        (self.base / "sub").mkdir()
+
+    def test_existing_file_reached_by_different_paths(self) -> None:
+        test_file = self.base / "test_enum.h"
+        test_file.write_text("")
+        indirect = self.base / "sub" / ".." / "test_enum.h"
+        self.assertTrue(_same_file(test_file, indirect))
+
+    def test_different_existing_files(self) -> None:
+        first = self.base / "a.h"
+        second = self.base / "b.h"
+        first.write_text("")
+        second.write_text("")
+        self.assertFalse(_same_file(first, second))
+
+    def test_missing_files_are_compared_by_path(self) -> None:
+        indirect = self.base / "sub" / ".." / "no.h"
+        self.assertTrue(_same_file(self.base / "no.h", indirect))
+        self.assertFalse(_same_file(self.base / "no.h", self.base / "other.h"))
+
+    def test_pseudo_file_line_markers(self) -> None:
+        # GCC names pseudo-files in line markers, e.g. `# 1 "<built-in>"`.
+        # These cannot be stat()ed, and are not even legal Windows file names.
+        test_file = self.base / "test_enum.h"
+        test_file.write_text("")
+        self.assertFalse(_same_file(Path("<built-in>"), test_file))
+        self.assertTrue(_same_file(Path("<built-in>"), Path("<built-in>")))
+
+    def test_case_is_folded_on_windows_only(self) -> None:
+        self.assertEqual(
+            _same_file(self.base / "no.h", self.base / "NO.h"),
+            os.name == "nt",
+        )
+
+
+class TestResolveCompiler(unittest.TestCase):
+    """Test Windows compiler executable resolution."""
+
+    def test_not_windows_is_a_no_op(self) -> None:
+        with mock.patch("pw_enum.parse.shutil.which") as which:
+            self.assertEqual(
+                _resolve_compiler("../bin/clang++", windows=False),
+                "../bin/clang++",
+            )
+        which.assert_not_called()
+
+    def test_bare_name_is_not_resolved(self) -> None:
+        # Windows appends PATHEXT extensions to bare names on its own.
+        with mock.patch("pw_enum.parse.shutil.which") as which:
+            self.assertEqual(
+                _resolve_compiler("clang++", windows=True), "clang++"
+            )
+        which.assert_not_called()
+
+    def test_path_is_resolved_to_executable(self) -> None:
+        with mock.patch(
+            "pw_enum.parse.shutil.which", return_value="../bin/clang++.exe"
+        ):
+            self.assertEqual(
+                _resolve_compiler("../bin/clang++", windows=True),
+                "../bin/clang++.exe",
+            )
+
+    def test_unresolvable_path_is_returned_unmodified(self) -> None:
+        with mock.patch("pw_enum.parse.shutil.which", return_value=None):
+            self.assertEqual(
+                _resolve_compiler("../bin/clang++", windows=True),
+                "../bin/clang++",
+            )
+
+
+class TestFilterFlags(unittest.TestCase):
+    """Test compiler flag filtering."""
+
+    def test_filter_flags_windows_paths(self) -> None:
+        flags = [
+            "-Ifoo/bar",
+            "-c",
+            r"pw_strict_host_gcc_debug\gen\my_enum\my_enum.base.cc",
+            "-o",
+            r"pw_strict_host_gcc_debug\gen\my_enum\my_enum.base.o",
+            "-DDEBUG",
+        ]
+        base_cc = "pw_strict_host_gcc_debug/gen/my_enum/my_enum.base.cc"
+        filtered = list(_filter_flags(flags, base_cc))
+        self.assertEqual(filtered, ["-Ifoo/bar", "-DDEBUG"])
 
 
 class TestDefaultDisplayName(unittest.TestCase):

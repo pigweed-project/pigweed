@@ -21,8 +21,10 @@ from typing import Generic, TypeVar
 import ast
 import codecs
 import hashlib
+import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 
@@ -92,6 +94,26 @@ def _raise_error(msg: str, line: int, path: Path) -> None:
     raise ParseError(formatted_msg)
 
 
+_HOST_IS_WINDOWS = os.name == "nt"
+
+
+def _paths_match(a: str, b: str) -> bool:
+    """Compares two paths for equality, ignoring slash direction."""
+    return a.replace('\\', '/') == b.replace('\\', '/')
+
+
+def _resolve_compiler(compiler: str, windows: bool = _HOST_IS_WINDOWS) -> str:
+    """Resolves compiler executable on Windows if it has path separators.
+
+    Windows appends the PATHEXT extensions (e.g. .exe) only when searching for
+    a bare executable name. Paths with separators are used verbatim, so an
+    extensionless compiler path from the build system must be resolved here.
+    """
+    if windows and ("/" in compiler or "\\" in compiler):
+        return shutil.which(compiler) or compiler
+    return compiler
+
+
 def _filter_flags(flags: Sequence[str], base_cc: str) -> Iterator[str]:
     """Filters compiler flags to prepare for running the preprocessor only."""
     iterator = iter(flags)
@@ -104,7 +126,7 @@ def _filter_flags(flags: Sequence[str], base_cc: str) -> Iterator[str]:
             continue
         if flag in ("-c", "-S", "-g", "-MD", "-MMD", "-MP"):
             continue
-        if flag == base_cc:
+        if _paths_match(flag, base_cc):
             continue
         yield flag
 
@@ -119,11 +141,18 @@ def _preprocess_header(
         compiler,
         "-E",
         "-xc++",
-        str(path),
+        path.as_posix(),
         *_filter_flags(flags, base_cc),
         "-w",  # Disable warnings here; they will be surfaced during compilation
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if res.returncode != 0:
         raise ParseError(f"Preprocessing failed:\n{res.stderr}")
     return res.stdout
@@ -233,7 +262,10 @@ def _find_line_and_file_for_offset(
     last_marker_end = 0
     for m in _LINE_MARKER.finditer(text_before):
         current_line = int(m.group(1))
-        current_file = Path(m.group(2))
+        # GCC escapes backslashes in line markers; undo that, then normalize
+        # the Windows separators that remain to forward slashes.
+        file_path_str = m.group(2).replace('\\\\', '\\').replace('\\', '/')
+        current_file = Path(file_path_str)
         last_marker_end = m.end()
 
     newlines_since_marker = text_before[last_marker_end:].count("\n")
@@ -258,6 +290,19 @@ def _parse_macro_args(args_str: str, line: int, path: Path) -> tuple[str, ...]:
     return val
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Checks if two paths refer to the same file, ignoring path formatting.
+
+    realpath() is used instead of Path.samefile(), which raises for paths that
+    cannot be stat()ed, including the pseudo-files GCC names in its line
+    markers (e.g. `# 1 "<built-in>"`). normcase() folds case and slash
+    direction, which only differ on Windows.
+    """
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(
+        os.path.realpath(b)
+    )
+
+
 def _parse_preprocessed_header(source: str, path: Path) -> _ParsedEnums:
     """Parses the preprocessed output to identify enum macros and lines."""
     enums: _ParsedEnums = []
@@ -265,7 +310,7 @@ def _parse_preprocessed_header(source: str, path: Path) -> _ParsedEnums:
     for match in _ENUM_MARKER.finditer(source):
         line, file = _find_line_and_file_for_offset(source, match.start())
 
-        if file.resolve() != path.resolve():
+        if not _same_file(file, path):
             continue
 
         args = _parse_macro_args(match.group(1).strip(), line, file)
@@ -348,15 +393,27 @@ def _compile_and_evaluate(
 
     with tempfile.TemporaryDirectory() as td:
         cc_file = Path(td, "extract.cc")
-        with cc_file.open("w", encoding="utf-8") as f:
+        with cc_file.open("w", encoding="utf-8", newline="\n") as f:
             for line in _generate_extractor_file(path, enums):
                 f.write(line)
                 f.write("\n")
 
         cmd = [compiler, "-D_PW_ENUM_GENERATING"]
-        cmd.extend([str(cc_file) if f == base_cc else f for f in flags])
-        cmd.extend(["-iquote", str(path.parent)])
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        cmd.extend(
+            [
+                cc_file.as_posix() if _paths_match(f, base_cc) else f
+                for f in flags
+            ]
+        )
+        cmd.extend(["-iquote", path.parent.as_posix()])
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
 
     flattened_enumerators = [val for enum in enums for val in enum.values]
     return _parse_evaluation_output(proc.stderr, flattened_enumerators)
@@ -369,7 +426,8 @@ def parse_enums(
     base_cc: Path,
 ) -> Iterator[EnumDescriptor]:
     """Parses enums from C++ header file, yielding evaluated EnumDescriptors."""
-    base_cc_str = str(base_cc)
+    compiler = _resolve_compiler(compiler)
+    base_cc_str = base_cc.as_posix()
     preprocessed = _preprocess_header(path, flags, compiler, base_cc_str)
     parsed_enums = _parse_preprocessed_header(preprocessed, path)
     all_values = _compile_and_evaluate(

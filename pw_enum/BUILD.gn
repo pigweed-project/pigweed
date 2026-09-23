@@ -101,7 +101,6 @@ pw_test("enum_test") {
     "$dir_pw_tokenizer",
     "$dir_pw_unit_test:constexpr",
   ]
-  enable_if = host_os != "win"
 }
 
 pw_test_group("tests") {

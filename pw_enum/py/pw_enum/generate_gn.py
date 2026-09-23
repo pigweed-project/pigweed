@@ -19,6 +19,7 @@ use. PW_NC_TESTs also rely on parsed ninja files for GN.
 """
 
 import argparse
+import os
 from pathlib import Path
 import re
 import shlex
@@ -42,12 +43,19 @@ _EXPECTED_GN_VARS = (
     'include_dirs',
 )
 
+# Windows only treats a backslash as an escape character when it precedes a
+# quote; everywhere else it is a path separator. Matches those separators so
+# they can be converted to forward slashes, which compilers also accept.
+_WINDOWS_PATH_SEPARATOR = re.compile(r'\\(?!")')
+
+_HOST_IS_WINDOWS = os.name == 'nt'
+
 
 def _find_cc_rule(toolchain_ninja_file: Path) -> str | None:
     """Searches the toolchain.ninja file for the cc rule."""
     cmd_prefix = '  command = '
     found_rule = False
-    with toolchain_ninja_file.open() as fd:
+    with toolchain_ninja_file.open(encoding="utf-8") as fd:
         for line in fd:
             if found_rule:
                 if line.startswith(cmd_prefix):
@@ -64,7 +72,7 @@ def _find_cc_rule(toolchain_ninja_file: Path) -> str | None:
 
 def _parse_ninja_variables(target_ninja_file: Path) -> dict[str, str]:
     variables: dict[str, str] = {}
-    with target_ninja_file.open() as fd:
+    with target_ninja_file.open(encoding="utf-8") as fd:
         for line in fd:
             match = _NINJA_VARIABLE.match(line)
             if match:
@@ -76,6 +84,7 @@ def _resolve_gn_compiler_and_flags(
     toolchain_ninja: Path,
     target_ninja: Path,
     base_cc: Path,
+    windows: bool = _HOST_IS_WINDOWS,
 ) -> tuple[str, list[str]]:
     """Resolves compiler path and flags from GN ninja files."""
     command_template = _find_cc_rule(toolchain_ninja)
@@ -87,11 +96,17 @@ def _resolve_gn_compiler_and_flags(
     variables = {key: '' for key in _EXPECTED_GN_VARS}
     variables.update(_parse_ninja_variables(target_ninja))
 
-    # Set standard Ninja variables to the base_cc path
-    variables['in'] = str(base_cc)
-    variables['out'] = str(base_cc.with_suffix('.o'))
+    # Set standard Ninja variables to the base_cc path using forward slashes.
+    variables['in'] = base_cc.as_posix()
+    variables['out'] = base_cc.with_suffix('.o').as_posix()
 
     resolved_command = string.Template(command_template).substitute(variables)
+    if windows:
+        # shlex.split() applies POSIX rules, under which Windows path
+        # separators would be consumed as escape characters. Convert them to
+        # forward slashes first. Escaped quotes (\") are left intact, since
+        # those are escapes on Windows as well.
+        resolved_command = _WINDOWS_PATH_SEPARATOR.sub('/', resolved_command)
     split_cmd = shlex.split(resolved_command)
     if not split_cmd:
         raise RuntimeError("Resolved empty compiler command")
@@ -131,7 +146,7 @@ def main(
     # Create a temporary file to store compilation flags, as generate_main
     # expects a flags file path
     with tempfile.NamedTemporaryFile(
-        mode="w", delete=False, encoding="utf-8"
+        mode="w", delete=False, encoding="utf-8", newline="\n"
     ) as f:
         flags_file = Path(f.name)
         f.write("\n".join(raw_flags))
