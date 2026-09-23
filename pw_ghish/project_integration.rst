@@ -113,28 +113,28 @@ Built-in profiles
 
    * - Profile
      - Gerrit Host Match
-     - Auto-Submit
      - Commit-Queue
      - Code-Review
      - Try Bucket
    * - **pigweed**
      - ``pigweed-review.googlesource.com``
-     - ``Pigweed-Auto-Submit+1``
      - ``Commit-Queue+2``
      - ``Code-Review+2``
      - ``pigweed/try``
    * - **fuchsia**
      - ``fuchsia-review.googlesource.com``
-     - *(triggers CQ)*
      - ``Commit-Queue+2``
      - ``Code-Review+2``
      - ``fuchsia/try``
    * - **generic**
      - *(fallback)*
      - *(none)*
-     - *(none)*
      - ``Code-Review+2``
      - *(custom)*
+
+Auto-submit labels (such as ``Pigweed-Auto-Submit`` or ``Auto-Submit``) do not
+need to be configured in a profile: ``--auto`` queries Gerrit for the change's
+or project's labels and votes the matching auto-submit label automatically.
 
 Automatic profile detection
 ===========================

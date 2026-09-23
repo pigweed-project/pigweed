@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -42,8 +43,16 @@ func TestPushIntegration(t *testing.T) {
 }
 
 func TestPush_RichOptions(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("main")
 	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Code-Review"},
+		{"name": "Commit-Queue"},
+		{"name": "Pigweed-Auto-Submit"},
+	})
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
 
 	_, err := executeCommand(RootCmd, "pr", "push",
 		"--reviewer", "alice@google.com",
@@ -229,6 +238,123 @@ func TestPush_ExplicitBaseOverridesGerritBranchMemory(t *testing.T) {
 	}
 	if !strings.Contains(output, "Pushing patchset for branch custom-branch...") {
 		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+// A host whose auto-submit label is plain "Auto-Submit" must be voted under
+// that name even when the profile in effect spells it Pigweed-Auto-Submit;
+// Gerrit rejects a push that votes a label the project does not define.
+func TestPush_AutoSubmitUsesLabelFromChange(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{
+		{
+			"id":        "myproj~main~I0000000000000000000000000000000000000001",
+			"branch":    "main",
+			"change_id": "I0000000000000000000000000000000000000001",
+			"labels": map[string]any{
+				"Code-Review": map[string]any{},
+				"Auto-Submit": map[string]any{},
+			},
+		},
+	})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	if _, err := executeCommand(RootCmd, "pr", "push", "--auto"); err != nil {
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !mockGit.HasCall("l=Auto-Submit+1") {
+		t.Errorf("Expected push to vote the host's Auto-Submit label, calls: %v", mockGit.Calls)
+	}
+	if mockGit.HasCall("l=Pigweed-Auto-Submit+1") {
+		t.Errorf("Expected push not to vote the profile's label when the change names its own, calls: %v", mockGit.Calls)
+	}
+}
+
+// With no change to read and no remote to identify the project, there is no
+// way to learn what the label is called. The profile used to answer this; it
+// no longer does, because its answer was only ever right on its own host.
+func TestPush_AutoSubmitWithoutAnyLabelSourceFails(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+
+	_, err := executeCommand(RootCmd, "pr", "push", "--auto")
+	if err == nil {
+		t.Fatal("Expected an error when the auto-submit label cannot be determined")
+	}
+	if mockGit.HasCall("l=Pigweed-Auto-Submit+1") {
+		t.Errorf("Expected no guessed label vote, calls: %v", mockGit.Calls)
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected no push when --auto cannot be honored, calls: %v", mockGit.Calls)
+	}
+}
+
+// Pushing a commit Gerrit has never seen creates the change, so there are no
+// labels on it yet; the project knows what they will be called.
+func TestPush_AutoSubmitUsesProjectLabelForNewChange(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Code-Review"},
+		{"name": "Auto-Submit"},
+	})
+
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://example-review.googlesource.com/example/project\n")
+
+	if _, err := executeCommand(RootCmd, "pr", "push", "--auto"); err != nil {
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !mockGit.HasCall("l=Auto-Submit+1") {
+		t.Errorf("Expected push to vote the project's Auto-Submit label, calls: %v", mockGit.Calls)
+	}
+	if mockGit.HasCall("l=Pigweed-Auto-Submit+1") {
+		t.Errorf("Expected push not to vote the profile's label when the project names its own, calls: %v", mockGit.Calls)
+	}
+}
+
+// When runPush resolves a Commit-Queue+1 dry run ahead of git push and git
+// then rejects with "no new changes", the REST fallback must still know the
+// vote was only a dry run and not claim auto-submit was enabled.
+func TestPush_NoNewChanges_AutoSubmitNoLabelDryRunsAndFails(t *testing.T) {
+	SetTestProfile(t, "fuchsia")
+	changeID := "I0000000000000000000000000000000000000001"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Commit-Queue"))
+	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main")
+	mockGit.RunFn = func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+		if len(args) > 0 && args[0] == "push" {
+			stderr.Write([]byte(" ! [remote rejected] HEAD -> refs/for/main%l=Commit-Queue+1 (no new changes)\n"))
+			return fmt.Errorf("exit status 1")
+		}
+		return nil
+	}
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--auto")
+	if err == nil {
+		t.Fatalf("Expected an error for a host with no auto-submit label.\nOutput: %s", output)
+	}
+	if !strings.Contains(err.Error(), "has no auto-submit label") {
+		t.Errorf("Expected error to explain the missing auto-submit label, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "failed to apply metadata updates") {
+		t.Errorf("Expected error not to claim metadata updates failed when Commit-Queue+1 succeeded, got: %v", err)
+	}
+	if strings.Contains(output, "Auto-submit enabled") {
+		t.Errorf("Output claims auto-submit was enabled when it was not: %s", output)
+	}
+	if !strings.Contains(output, "Commit-Queue+1 set.") {
+		t.Errorf("Expected output to report Commit-Queue+1 set, got: %s", output)
 	}
 }
 

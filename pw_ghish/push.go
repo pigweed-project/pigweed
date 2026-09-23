@@ -39,6 +39,24 @@ func runPush(cmd *cobra.Command, args []string) error {
 		branch = resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
 	}
 
+	// Pushing %l=<label> for a label the host does not define is rejected
+	// outright, taking the whole patchset with it, so the name is looked up
+	// rather than assumed. An existing change lists its own labels; a commit
+	// Gerrit has never seen has to ask the project.
+	var autoSubmit AutoSubmitDecision
+	if flags.PushOptions.AutoSubmit {
+		if state.ExistingChange != nil {
+			autoSubmit, err = DecideAutoSubmit(state.ExistingChange.Labels, fmt.Sprintf("change %d", state.ExistingChange.Number))
+		} else {
+			autoSubmit, err = decideProjectAutoSubmit(ctx, cmd, cfg)
+		}
+		if err != nil {
+			return err
+		}
+		flags.PushOptions.AutoSubmitLabel = autoSubmit.Vote
+		flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
+	}
+
 	if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "push"); err != nil {
 		return err
 	}
@@ -46,11 +64,16 @@ func runPush(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(cmd.OutOrStdout(), "Pushing patchset for branch %s...\n", branch)
 
 	if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
+		if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
+			return err
+		}
 		return fmt.Errorf("error pushing patchset: %w", err)
 	}
 
 	fmt.Fprintln(cmd.OutOrStdout(), "\nPatchset pushed successfully.")
-	return nil
+	// The patchset is up, so this is reported last: the push is not the part
+	// that failed, the promise that something would submit it is.
+	return autoSubmit.Unsupported
 }
 
 func newPushCommand() *cobra.Command {

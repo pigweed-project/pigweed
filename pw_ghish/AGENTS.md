@@ -5,7 +5,7 @@
 `pw_ghish` (`./gh`) provides GitHub CLI (`gh pr`) ergonomics for projects across the **Gerrit and LUCI ecosystem** (including Pigweed, Fuchsia, Chromium, and others).
 
 * **Decoupled Policy**: Avoid baking project-specific assumptions directly into core commands. High-level commands (`pr view`, `diff`, `comment`, `checks`, `checks log`, `checks rerun`, `push`, `create`) rely on standard Gerrit REST, git push `refs/for/*`, and Buildbucket / LogDog APIs.
-* **Project Profiles**: Project-specific policies (such as auto-submit labels, try bucket locations, and rerun command syntax) belong strictly in `ProjectProfile` implementations in [`profile.go`](file:///usr/local/google/home/keir/wrk/pw-ghish/pw_ghish/profile.go), rather than hardcoded in the core CLI handlers.
+* **Project Profiles**: Project-specific policies (such as commit-queue labels, try bucket locations, and rerun command syntax) belong strictly in `ProjectProfile` implementations in [`profile.go`](file:///usr/local/google/home/keir/wrk/pw-ghish/pw_ghish/profile.go), rather than hardcoded in the core CLI handlers.
 
 ---
 

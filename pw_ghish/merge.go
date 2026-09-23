@@ -37,9 +37,10 @@ func newMergeCmd() *cobra.Command {
 		Short: "Merge (submit) a change",
 		Long: `Merge (submit) a Gerrit change, or enable auto-submit / Commit-Queue.
 
-When --auto is passed, pw_ghish applies the active project's auto-submit label:
-  - Pigweed: Pigweed-Auto-Submit+1
-  - Fuchsia: Commit-Queue+2
+When --auto is passed, pw_ghish detects the host's auto-submit label from the
+change (e.g. Pigweed-Auto-Submit+1 or Auto-Submit+1) and votes it. If the host
+has no auto-submit label, pw_ghish starts a Commit-Queue+1 dry run (when
+available) and returns an error; use --cq to submit via Commit-Queue+2.
 
 When --cq is passed, pw_ghish applies the Commit-Queue+2 label directly.
 
@@ -63,32 +64,33 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 			}
 
 			if isAuto || opts.cq {
-				profile, err := chCtx.ResolveProfile()
-				if err != nil {
-					return err
-				}
-
-				var labelName string
-				var labelValue int
+				var label LabelVote
+				// Set when the host cannot auto-submit; reported once the
+				// vote that *could* be cast has been.
+				var unsupported error
 
 				if opts.cq {
-					if cqLabel, ok := profile.CQLabel(); ok {
-						labelName = cqLabel.Name
-						labelValue = cqLabel.Value
-					} else {
+					profile, err := chCtx.ResolveProfile()
+					if err != nil {
+						return err
+					}
+					cqLabel, ok := profile.CQLabel()
+					if !ok {
 						return fmt.Errorf("profile %q does not support Commit-Queue", profile.Name())
 					}
+					label = cqLabel
 				} else {
-					if asLabel, ok := profile.AutoSubmitLabel(); ok {
-						labelName = asLabel.Name
-						labelValue = asLabel.Value
-					} else if cqLabel, ok := profile.CQLabel(); ok {
-						labelName = cqLabel.Name
-						labelValue = cqLabel.Value
-					} else {
-						return fmt.Errorf("profile %q does not support auto-submit. To submit immediately, run without --auto", profile.Name())
+					// Ask the host what its auto-submit label is called rather
+					// than assuming the profile's spelling. Hosts disagree
+					// (Pigweed-Auto-Submit, Fuchsia-Auto-Submit, Auto-Submit),
+					// and voting a name the host does not have is rejected.
+					decision, err := chCtx.DecideAutoSubmit()
+					if err != nil {
+						return err
 					}
+					label, unsupported = decision.Vote, decision.Unsupported
 				}
+				labelName, labelValue := label.Name, label.Value
 
 				reviewInput := &gerrit.ReviewInput{
 					Message: opts.message,
@@ -103,6 +105,13 @@ Gerrit rejects immediate submission. Use --auto or --cq for automated landing.`,
 						actionName = "Commit-Queue"
 					}
 					return fmt.Errorf("error enabling %s for change %s: %w", actionName, chCtx.ChangeID, err)
+				}
+
+				// The vote landed, but it was a consolation prize: say so
+				// instead of reporting auto-submit that is not happening.
+				if unsupported != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s%+d set for change %s.\n", labelName, labelValue, chCtx.ChangeID)
+					return unsupported
 				}
 
 				targetDesc := "Auto-submit"

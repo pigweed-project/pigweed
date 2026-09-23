@@ -310,9 +310,10 @@ The Workflow
       $ ./gh pr merge --auto
 
 2. **LUCI Commit-Queue takes over**:
-   ``pw_ghish`` votes ``Pigweed-Auto-Submit+1`` on Gerrit. As soon as all
-   required tryjob builders pass and approvals are registered, the LUCI CV bot
-   automatically rebases the commit onto ``origin/main`` and submits it.
+   ``pw_ghish`` votes the change's auto-submit label (e.g.
+   ``Pigweed-Auto-Submit+1``). As soon as all required tryjob builders pass and
+   approvals are registered, the LUCI CV bot automatically rebases the commit
+   onto ``origin/main`` and submits it.
 
 3. **Immediate offramp on failure**:
    If submit requirements cannot be met (for instance, missing a mandatory

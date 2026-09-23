@@ -555,6 +555,18 @@ func WithProjectName(project string) func(map[string]any) {
 	return func(ch map[string]any) { ch["project"] = project }
 }
 
+// WithLabels declares the labels a mock change reports, as Gerrit does for the
+// LABELS / DETAILED_LABELS options.
+func WithLabels(names ...string) func(map[string]any) {
+	return func(ch map[string]any) {
+		labels := map[string]any{}
+		for _, name := range names {
+			labels[name] = map[string]any{}
+		}
+		ch["labels"] = labels
+	}
+}
+
 // WithChangeID sets the change_id and id on a mock change.
 func WithChangeID(changeID string) func(map[string]any) {
 	return func(ch map[string]any) {

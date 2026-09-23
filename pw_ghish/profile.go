@@ -39,17 +39,26 @@ type LabelVote struct {
 
 // PushOptions represents options when creating or pushing a patchset to Gerrit.
 type PushOptions struct {
-	Reviewers    []string
-	CC           []string
-	Draft        bool
-	AutoSubmit   bool
-	Wip          bool
-	Ready        bool
-	CQ           int
-	Publish      bool
-	Topic        string
-	Hashtags     []string
-	ExtraOptions []string
+	Reviewers  []string
+	CC         []string
+	Draft      bool
+	AutoSubmit bool
+	// AutoSubmitLabel names the label to vote when AutoSubmit is set. It is
+	// resolved from the labels the host reports (the change's, or the
+	// project's for a change that does not exist yet) before the push runs.
+	// There is no compiled-in default: a host that names no auto-submit label
+	// cannot auto-submit, and is reported rather than guessed at.
+	AutoSubmitLabel LabelVote
+	// AutoSubmitUnsupported is non-nil when AutoSubmitLabel is a Commit-Queue
+	// dry run settled for because the host has no auto-submit label.
+	AutoSubmitUnsupported error
+	Wip                   bool
+	Ready                 bool
+	CQ                    int
+	Publish               bool
+	Topic                 string
+	Hashtags              []string
+	ExtraOptions          []string
 }
 
 // ProjectProfile defines project-specific Gerrit and CI conventions.
@@ -60,12 +69,11 @@ type ProjectProfile interface {
 	// DefaultGerritHost returns the default review host (e.g., "https://pigweed-review.googlesource.com/a").
 	DefaultGerritHost() string
 
-	// AutoSubmitLabel returns the label used to request automated submission once checks pass.
-	// For Pigweed, this is LabelVote{"Pigweed-Auto-Submit", 1}, true.
-	// If the project does not support an auto-submit label, ok is false.
-	AutoSubmitLabel() (LabelVote, bool)
-
 	// CQLabel returns the commit-queue label for the project (e.g., "Commit-Queue", 2).
+	//
+	// There is deliberately no AutoSubmitLabel counterpart: auto-submit labels
+	// are named inconsistently across hosts, so the name is read from the host
+	// (see DecideAutoSubmit) rather than compiled in per profile.
 	CQLabel() (LabelVote, bool)
 
 	// ReviewLabel returns the approval label for human code review (e.g., "Code-Review", 2).
@@ -114,8 +122,17 @@ func defaultFormatPushRef(branch string, opts PushOptions, extraOptions ...strin
 	if opts.Publish {
 		options = append(options, "publish-comments")
 	}
+	cqLabelName := "Commit-Queue"
 	if opts.CQ > 0 {
-		options = append(options, fmt.Sprintf("l=Commit-Queue+%d", opts.CQ))
+		options = append(options, fmt.Sprintf("l=%s+%d", cqLabelName, opts.CQ))
+	}
+	// The name was resolved from the host before the push; an empty one means
+	// there was nothing to vote. --cq is an explicit request for a specific
+	// score, so it outranks the dry run --auto settles for on a host with no
+	// auto-submit label.
+	if opts.AutoSubmit && opts.AutoSubmitLabel.Name != "" &&
+		!(opts.CQ > 0 && strings.EqualFold(opts.AutoSubmitLabel.Name, cqLabelName)) {
+		options = append(options, fmt.Sprintf("l=%s%+d", opts.AutoSubmitLabel.Name, opts.AutoSubmitLabel.Value))
 	}
 	if opts.Topic != "" {
 		options = append(options, "topic="+opts.Topic)
@@ -209,10 +226,6 @@ func (p *pigweedProfile) DefaultGerritHost() string {
 	return "https://pigweed-review.googlesource.com/a"
 }
 
-func (p *pigweedProfile) AutoSubmitLabel() (LabelVote, bool) {
-	return LabelVote{Name: "Pigweed-Auto-Submit", Value: 1}, true
-}
-
 func (p *pigweedProfile) CQLabel() (LabelVote, bool) {
 	return LabelVote{Name: "Commit-Queue", Value: 2}, true
 }
@@ -239,11 +252,7 @@ func (p *pigweedProfile) RerunCheck(ctx context.Context, change GerritChangeRef,
 }
 
 func (p *pigweedProfile) FormatPushRef(branch string, opts PushOptions) string {
-	var extra []string
-	if opts.AutoSubmit {
-		extra = append(extra, "l=Pigweed-Auto-Submit+1")
-	}
-	return defaultFormatPushRef(branch, opts, extra...)
+	return defaultFormatPushRef(branch, opts)
 }
 
 func (p *pigweedProfile) IssueTrackerAPIEndpoint() string {
@@ -269,10 +278,6 @@ func (p *fuchsiaProfile) Name() string {
 
 func (p *fuchsiaProfile) DefaultGerritHost() string {
 	return "https://fuchsia-review.googlesource.com/a"
-}
-
-func (p *fuchsiaProfile) AutoSubmitLabel() (LabelVote, bool) {
-	return LabelVote{}, false
 }
 
 func (p *fuchsiaProfile) CQLabel() (LabelVote, bool) {
@@ -301,11 +306,7 @@ func (p *fuchsiaProfile) RerunCheck(ctx context.Context, change GerritChangeRef,
 }
 
 func (p *fuchsiaProfile) FormatPushRef(branch string, opts PushOptions) string {
-	var extra []string
-	if opts.AutoSubmit && opts.CQ == 0 {
-		extra = append(extra, "l=Commit-Queue+2")
-	}
-	return defaultFormatPushRef(branch, opts, extra...)
+	return defaultFormatPushRef(branch, opts)
 }
 
 func (p *fuchsiaProfile) IssueTrackerAPIEndpoint() string {
@@ -330,10 +331,6 @@ func (p *genericProfile) Name() string {
 
 func (p *genericProfile) DefaultGerritHost() string {
 	return ""
-}
-
-func (p *genericProfile) AutoSubmitLabel() (LabelVote, bool) {
-	return LabelVote{}, false
 }
 
 func (p *genericProfile) CQLabel() (LabelVote, bool) {

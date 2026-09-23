@@ -669,9 +669,12 @@ rebases performed by the LUCI Commit Queue bot, not merge commits.
 
 Submit modes:
 
-* **Auto-submit** (``--auto``): Applies ``Pigweed-Auto-Submit+1``. Once all
-  approvals (``Code-Review+2``) and tryjobs pass, LUCI CV automatically rebases and
-  submits the change.
+* **Auto-submit** (``--auto``): Votes the change's auto-submit label (e.g.
+  ``Pigweed-Auto-Submit+1`` or ``Auto-Submit+1``). Once all approvals
+  (``Code-Review+2``) and tryjobs pass, LUCI CV automatically rebases and
+  submits the change. If the host has no auto-submit label, ``pw_ghish``
+  triggers a ``Commit-Queue+1`` dry run (when available) and returns an error;
+  use ``--cq`` to submit via the Commit Queue instead.
 * **Commit-Queue** (``--cq``): Applies ``Commit-Queue+2`` directly, initiating
   presubmit verification and submitting the change upon success.
 * **Immediate submit**: Calls Gerrit's ``SubmitChange`` API directly. In Pigweed,

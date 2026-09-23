@@ -64,8 +64,7 @@ Commands:
     specified.
   - `-r, --reviewer <email>`: Add reviewer to change.
   - `-c, --cc <email>`: Add CC to change.
-  - `--auto`: Set auto-submit label (+1) (e.g. `Pigweed-Auto-Submit+1` or
-    `Auto-Submit+1` depending on host; auto-submits when reviews & checks pass).
+  - `--auto`: Automatically submit the change when reviews and checks pass.
   - `--cq [1|2]`: Set Commit-Queue vote (`--cq` defaults to dry run / `+1`;
     specify `2` to submit).
   - `-d, --draft`: Mark change as Work-In-Progress (WIP).

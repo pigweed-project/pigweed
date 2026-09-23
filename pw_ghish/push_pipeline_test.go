@@ -222,8 +222,11 @@ func TestExecutePush(t *testing.T) {
 	SetConfig(cmd, cfg)
 
 	pushOpts := PushOptions{
-		Reviewers:  []string{"rev@google.com"},
-		AutoSubmit: true,
+		Reviewers: []string{"rev@google.com"},
+		// The label is resolved from the host by the caller; executePush
+		// votes what it is given and invents nothing.
+		AutoSubmit:      true,
+		AutoSubmitLabel: LabelVote{Name: "Pigweed-Auto-Submit", Value: 1},
 	}
 
 	err := executePush(ctx, cmd, cfg, "main", pushOpts, true)
@@ -370,6 +373,125 @@ func TestExecutePush_NoNewChanges_FallbackREST(t *testing.T) {
 
 	if server.CallCount("POST", "/changes/I1234567890123456789012345678901234567890/revisions/current/review") != 1 {
 		t.Errorf("expected review API to be called on Gerrit server, got calls: %v", server.Requests())
+	}
+}
+
+// --auto with nothing to push still has to land on the label this host names,
+// which means asking the change rather than replaying the profile default.
+func TestExecutePush_NoNewChanges_FallbackREST_AutoSubmit(t *testing.T) {
+	ctx := context.Background()
+	changeID := "I1234567890123456789012345678901234567890"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Auto-Submit"))
+	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	})
+
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			if len(args) > 0 && args[0] == "push" {
+				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
+				return fmt.Errorf("exit status 1")
+			}
+			if len(args) > 0 && args[0] == "log" {
+				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
+				return nil
+			}
+			return nil
+		},
+	}
+	cfg := &Config{
+		Git:     mockGit,
+		Host:    server.URL,
+		Profile: profiles["pigweed"],
+	}
+
+	cmd := &cobra.Command{}
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetContext(ctx)
+	SetConfig(cmd, cfg)
+
+	if err := executePush(ctx, cmd, cfg, "main", PushOptions{AutoSubmit: true}, false); err != nil {
+		t.Fatalf("unexpected error, should have fallen back to REST: %v", err)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	for _, req := range server.Requests() {
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/review") {
+			json.Unmarshal(req.Body, &capturedInput)
+		}
+	}
+	if capturedInput.Labels["Auto-Submit"] != 1 {
+		t.Errorf("Labels got %v, want Auto-Submit=1", capturedInput.Labels)
+	}
+	if _, voted := capturedInput.Labels["Pigweed-Auto-Submit"]; voted {
+		t.Errorf("Labels got %v, want no vote on the profile's label", capturedInput.Labels)
+	}
+	if !strings.Contains(outBuf.String(), "Auto-submit enabled (Auto-Submit+1)") {
+		t.Errorf("expected output to name the label voted, got: %s", outBuf.String())
+	}
+}
+
+// The metadata-only path applies what it can and then says --auto could not be
+// honored, rather than reporting auto-submit that is not going to happen.
+func TestExecutePush_NoNewChanges_FallbackREST_AutoSubmitUnsupported(t *testing.T) {
+	ctx := context.Background()
+	changeID := "I1234567890123456789012345678901234567890"
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(changeID, WithLabels("Code-Review", "Commit-Queue"))
+	server.OnJSON("POST", "/changes/"+changeID+"/revisions/current/review", http.StatusOK, map[string]any{})
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+		return gerrit.NewClient(ctx, server.URL, http.DefaultClient)
+	})
+
+	mockGit := &MockGitRunner{
+		RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+			if len(args) > 0 && args[0] == "push" {
+				stderr.Write([]byte("To sso://pigweed/pigweed\n ! [remote rejected] HEAD -> refs/for/main (no new changes)\nerror: failed to push some refs\n"))
+				return fmt.Errorf("exit status 1")
+			}
+			if len(args) > 0 && args[0] == "log" {
+				stdout.Write([]byte("Commit subject\n\nChange-Id: " + changeID + "\n"))
+				return nil
+			}
+			return nil
+		},
+	}
+	cfg := &Config{
+		Git:     mockGit,
+		Host:    server.URL,
+		Profile: profiles["pigweed"],
+	}
+
+	cmd := &cobra.Command{}
+	var outBuf, errBuf bytes.Buffer
+	cmd.SetOut(&outBuf)
+	cmd.SetErr(&errBuf)
+	cmd.SetContext(ctx)
+	SetConfig(cmd, cfg)
+
+	err := executePush(ctx, cmd, cfg, "main", PushOptions{AutoSubmit: true}, false)
+	if err == nil {
+		t.Fatal("expected an error for a host with no auto-submit label")
+	}
+	if !strings.Contains(err.Error(), "has no auto-submit label") {
+		t.Errorf("expected the error to name the problem, got: %v", err)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	for _, req := range server.Requests() {
+		if req.Method == "POST" && strings.HasSuffix(req.Path, "/review") {
+			json.Unmarshal(req.Body, &capturedInput)
+		}
+	}
+	if capturedInput.Labels["Commit-Queue"] != 1 {
+		t.Errorf("Labels got %v, want the Commit-Queue dry run", capturedInput.Labels)
+	}
+	if strings.Contains(outBuf.String(), "Auto-submit enabled") {
+		t.Errorf("output claims auto-submit was enabled when it was not: %s", outBuf.String())
 	}
 }
 

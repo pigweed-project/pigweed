@@ -82,6 +82,19 @@ Supports rich push options:
 
 		branch := resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
 
+		// A change that does not exist yet has no labels to read, but the
+		// project it is going to does. Ask, so --auto votes this host's label
+		// rather than whatever the profile happens to be compiled with.
+		var autoSubmit AutoSubmitDecision
+		if flags.PushOptions.AutoSubmit {
+			autoSubmit, err = decideProjectAutoSubmit(ctx, cmd, cfg)
+			if err != nil {
+				return err
+			}
+			flags.PushOptions.AutoSubmitLabel = autoSubmit.Vote
+			flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
+		}
+
 		if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "create"); err != nil {
 			return err
 		}
@@ -89,11 +102,16 @@ Supports rich push options:
 		fmt.Fprintf(cmd.OutOrStdout(), "Creating change for branch %s...\n", branch)
 
 		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {
+			if autoSubmit.Unsupported != nil && err == autoSubmit.Unsupported {
+				return err
+			}
 			return fmt.Errorf("error creating change: %w", err)
 		}
 
 		fmt.Fprintln(cmd.OutOrStdout(), "\nChange created successfully.")
-		return nil
+		// The change exists, so this is reported last: creating it is not the
+		// part that failed, the promise that something would submit it is.
+		return autoSubmit.Unsupported
 	},
 }
 

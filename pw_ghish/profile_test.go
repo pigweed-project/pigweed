@@ -158,14 +158,6 @@ func TestPigweedProfile_Properties(t *testing.T) {
 		t.Fatal("Pigweed profile not registered")
 	}
 
-	asLabel, hasAS := p.AutoSubmitLabel()
-	if !hasAS {
-		t.Error("Pigweed profile expected to support AutoSubmitLabel")
-	}
-	if asLabel.Name != "Pigweed-Auto-Submit" || asLabel.Value != 1 {
-		t.Errorf("AutoSubmitLabel() = %+v, want Pigweed-Auto-Submit=1", asLabel)
-	}
-
 	cqLabel, hasCQ := p.CQLabel()
 	if !hasCQ {
 		t.Error("Pigweed profile expected to support CQLabel")
@@ -195,8 +187,9 @@ func TestPigweedProfile_Properties(t *testing.T) {
 
 	// Test FormatPushRef with AutoSubmit
 	ref := p.FormatPushRef("main", PushOptions{
-		Reviewers:  []string{"reviewer@google.com"},
-		AutoSubmit: true,
+		Reviewers:       []string{"reviewer@google.com"},
+		AutoSubmit:      true,
+		AutoSubmitLabel: LabelVote{Name: "Pigweed-Auto-Submit", Value: 1},
 	})
 	if !strings.HasPrefix(ref, "refs/for/main%") {
 		t.Errorf("FormatPushRef prefix invalid: %q", ref)
@@ -224,15 +217,79 @@ func TestPigweedProfile_Properties(t *testing.T) {
 	}
 }
 
+// The label is resolved from the host before the push, and no profile adds one
+// of its own: voting a second, compiled-in name would fail on the name the host
+// does not define.
+func TestFormatPushRef_VotesOnlyTheResolvedAutoSubmitLabel(t *testing.T) {
+	for _, tt := range []struct {
+		profile string
+		absent  string
+	}{
+		{profile: "pigweed", absent: "l=Pigweed-Auto-Submit+1"},
+		{profile: "fuchsia", absent: "l=Commit-Queue+2"},
+		{profile: "generic", absent: ""},
+	} {
+		t.Run(tt.profile, func(t *testing.T) {
+			p, ok := GetProfile(tt.profile)
+			if !ok {
+				t.Fatalf("%s profile not registered", tt.profile)
+			}
+			ref := p.FormatPushRef("main", PushOptions{
+				AutoSubmit:      true,
+				AutoSubmitLabel: LabelVote{Name: "Auto-Submit", Value: 1},
+			})
+			if !strings.Contains(ref, "l=Auto-Submit+1") {
+				t.Errorf("FormatPushRef() = %q, want it to vote the resolved label", ref)
+			}
+			if tt.absent != "" && strings.Contains(ref, tt.absent) {
+				t.Errorf("FormatPushRef() = %q, want no %q once a label was resolved", ref, tt.absent)
+			}
+		})
+	}
+}
+
+// Nothing resolved means the host named no auto-submit label. The commands
+// refuse before they get here, so emitting a guess would only ever vote a
+// label that does not exist.
+func TestFormatPushRef_UnresolvedAutoSubmitVotesNothing(t *testing.T) {
+	for _, name := range []string{"pigweed", "fuchsia", "generic"} {
+		t.Run(name, func(t *testing.T) {
+			p, ok := GetProfile(name)
+			if !ok {
+				t.Fatalf("%s profile not registered", name)
+			}
+			ref := p.FormatPushRef("main", PushOptions{AutoSubmit: true})
+			if strings.Contains(ref, "l=") {
+				t.Errorf("FormatPushRef() = %q, want no label vote", ref)
+			}
+		})
+	}
+}
+
+// --cq names a score outright. The dry run --auto settles for on a host with
+// no auto-submit label must not quietly vote the same label a second time.
+func TestFormatPushRef_ExplicitCQOutranksTheAutoSubmitDryRun(t *testing.T) {
+	p, ok := GetProfile("generic")
+	if !ok {
+		t.Fatal("generic profile not registered")
+	}
+	ref := p.FormatPushRef("main", PushOptions{
+		CQ:              2,
+		AutoSubmit:      true,
+		AutoSubmitLabel: LabelVote{Name: "Commit-Queue", Value: 1},
+	})
+	if !strings.Contains(ref, "l=Commit-Queue+2") {
+		t.Errorf("FormatPushRef() = %q, want the explicit --cq vote", ref)
+	}
+	if strings.Contains(ref, "l=Commit-Queue+1") {
+		t.Errorf("FormatPushRef() = %q, want no duplicate Commit-Queue vote", ref)
+	}
+}
+
 func TestFuchsiaProfile_Properties(t *testing.T) {
 	p, ok := GetProfile("fuchsia")
 	if !ok {
 		t.Fatal("Fuchsia profile not registered")
-	}
-
-	_, hasAS := p.AutoSubmitLabel()
-	if hasAS {
-		t.Error("Fuchsia profile should not have standalone AutoSubmitLabel")
 	}
 
 	cqLabel, hasCQ := p.CQLabel()
@@ -254,15 +311,17 @@ func TestFuchsiaProfile_Properties(t *testing.T) {
 		t.Errorf("IssueWebURL(98765) = %q, want https://issues.fuchsia.dev/issues/98765", gotURL)
 	}
 
-	// Test FormatPushRef with AutoSubmit (which maps to CQ+2 for Fuchsia)
+	// Fuchsia no longer treats Commit-Queue+2 as an auto-submit label of its
+	// own; whatever --auto settles on is resolved from the host and passed in.
 	ref := p.FormatPushRef("main", PushOptions{
-		AutoSubmit: true,
+		AutoSubmit:      true,
+		AutoSubmitLabel: LabelVote{Name: "Commit-Queue", Value: 1},
 	})
-	if ref != "refs/for/main%l=Commit-Queue+2" {
-		t.Errorf("FormatPushRef() = %q, want \"refs/for/main%%l=Commit-Queue+2\"", ref)
+	if ref != "refs/for/main%l=Commit-Queue+1" {
+		t.Errorf("FormatPushRef() = %q, want \"refs/for/main%%l=Commit-Queue+1\"", ref)
 	}
 
-	// Explicit CQ=1 should take precedence over AutoSubmit defaulting to CQ+2
+	// Explicit CQ=1 is the only Commit-Queue vote when nothing was resolved.
 	refCQ1 := p.FormatPushRef("main", PushOptions{
 		AutoSubmit: true,
 		CQ:         1,
@@ -276,11 +335,6 @@ func TestGenericProfile_Properties(t *testing.T) {
 	p, ok := GetProfile("generic")
 	if !ok {
 		t.Fatal("Generic profile not registered")
-	}
-
-	_, hasAS := p.AutoSubmitLabel()
-	if hasAS {
-		t.Error("Generic profile should not have AutoSubmitLabel")
 	}
 
 	_, hasCQ := p.CQLabel()

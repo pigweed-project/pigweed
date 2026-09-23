@@ -24,6 +24,7 @@ go_library(
     srcs = [
         "account.go",
         "auth.go",
+        "auto_submit.go",
         "bug_links.go",
         "bug_normalizer.go",
         "change_context.go",
@@ -114,6 +115,7 @@ go_test(
     srcs = [
         "account_test.go",
         "auth_test.go",
+        "auto_submit_test.go",
         "bug_links_test.go",
         "bug_normalizer_test.go",
         "change_context_test.go",

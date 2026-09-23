@@ -92,8 +92,16 @@ func TestCreateStandardWorkspaceWithTitleAndBody(t *testing.T) {
 }
 
 func TestCreate_RichPushOptions_Pigweed(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("main")
 	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Code-Review"},
+		{"name": "Commit-Queue"},
+		{"name": "Pigweed-Auto-Submit"},
+	})
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
 
 	_, err := executeCommand(RootCmd, "pr", "create",
 		"--reviewer", "alice@google.com",
@@ -141,13 +149,26 @@ func TestCreate_RichPushOptions_Pigweed(t *testing.T) {
 	}
 }
 
-func TestCreate_AutoSubmit_Fuchsia(t *testing.T) {
-	mockGit := NewMockGit(t).WithBranch("main")
+// A project with a Commit Queue but no auto-submit label cannot auto-submit.
+// The change is still pushed and verified, and the error says so rather than
+// letting the user believe it is on its way in.
+func TestCreate_AutoSubmit_NoLabelDryRunsAndFails(t *testing.T) {
 	SetTestProfile(t, "fuchsia")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Code-Review"},
+		{"name": "Commit-Queue", "values": map[string]string{" 0": "no", "+1": "dry run", "+2": "submit"}},
+	})
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://fuchsia.googlesource.com/fuchsia\n")
 
-	_, err := executeCommand(RootCmd, "pr", "create", "--auto")
-	if err != nil {
-		t.Fatalf("Command failed: %v", err)
+	output, err := executeCommand(RootCmd, "pr", "create", "--auto")
+	if err == nil {
+		t.Fatalf("Expected an error for a project with no auto-submit label.\nOutput: %s", output)
+	}
+	if !strings.Contains(err.Error(), "has no auto-submit label") {
+		t.Errorf("Expected the error to name the problem, got: %v", err)
 	}
 
 	var pushCall string
@@ -157,9 +178,67 @@ func TestCreate_AutoSubmit_Fuchsia(t *testing.T) {
 			break
 		}
 	}
+	// The change is worth creating and verifying even though nothing will
+	// submit it, so the push still happens.
+	if !strings.Contains(pushCall, "l=Commit-Queue+1") {
+		t.Errorf("Expected the push to request a Commit-Queue dry run, got %q", pushCall)
+	}
+	if strings.Contains(pushCall, "l=Commit-Queue+2") {
+		t.Errorf("Expected no submitting vote, got %q", pushCall)
+	}
+}
 
-	if !strings.Contains(pushCall, "l=Commit-Queue+2") {
-		t.Errorf("Expected Fuchsia auto-submit push ref to contain Commit-Queue+2, got %q", pushCall)
+// A change being created has no labels to read, but the project it is going to
+// does, and its spelling wins over whatever the profile was compiled with.
+func TestCreate_AutoSubmitUsesProjectLabel(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Code-Review", "values": map[string]string{"-2": "no", "+2": "yes"}},
+		{"name": "Auto-Submit", "values": map[string]string{" 0": "no", "+1": "yes"}},
+	})
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://example-review.googlesource.com/example/project\n")
+
+	if _, err := executeCommand(RootCmd, "pr", "create", "--auto"); err != nil {
+		t.Fatalf("Command failed: %v", err)
+	}
+
+	if !mockGit.HasCall("l=Auto-Submit+1") {
+		t.Errorf("Expected push to vote the project's Auto-Submit label, calls: %v", mockGit.Calls)
+	}
+	if mockGit.HasCall("l=Pigweed-Auto-Submit+1") {
+		t.Errorf("Expected push not to vote the profile's label when the project names its own, calls: %v", mockGit.Calls)
+	}
+}
+
+// Two plausible labels mean voting one of them would leave the change looking
+// handed off while nothing submits it, so the push is refused instead.
+func TestCreate_AutoSubmitAmbiguousProjectLabelsIsAnError(t *testing.T) {
+	SetTestProfile(t, "pigweed")
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
+		{"name": "Auto-Submit"},
+		{"name": "Owners-Auto-Submit"},
+	})
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main").
+		OnCommand("config --get remote.origin.url", "https://example-review.googlesource.com/example/project\n")
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--auto")
+	if err == nil {
+		t.Fatal("Expected an error when the project defines two auto-submit labels")
+	}
+	for _, want := range []string{"Auto-Submit", "Owners-Auto-Submit", "--add-label"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Error %q does not mention %q", err, want)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected no push when the label is ambiguous, calls: %v", mockGit.Calls)
 	}
 }
 

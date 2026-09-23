@@ -187,7 +187,7 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 		if strings.Contains(errStr, "no new changes") {
 			if hasMetadataUpdates(pushOpts) {
 				if restErr := applyPushOptionsViaREST(ctx, cmd, cfg, pushOpts); restErr != nil {
-					return fmt.Errorf("no new commits to push, and failed to apply metadata updates via Gerrit API: %w", restErr)
+					return restErr
 				}
 				return nil
 			}
@@ -208,30 +208,67 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 }
 
 func hasMetadataUpdates(opts PushOptions) bool {
-	return opts.CQ > 0 || opts.Topic != "" || len(opts.Hashtags) > 0 ||
+	return opts.CQ > 0 || opts.AutoSubmit || opts.Topic != "" || len(opts.Hashtags) > 0 ||
 		opts.Draft || opts.Wip || opts.Ready || opts.Publish ||
 		len(opts.Reviewers) > 0 || len(opts.CC) > 0
 }
 
-func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Config, pushOpts PushOptions) error {
+func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Config, pushOpts PushOptions) (retErr error) {
 	if cmd == nil {
 		return fmt.Errorf("internal error: cmd is uninitialized in applyPushOptionsViaREST")
 	}
 	if cfg == nil {
 		return fmt.Errorf("internal error: cfg is uninitialized in applyPushOptionsViaREST")
 	}
+	var applied bool
+	defer func() {
+		if retErr != nil && !applied {
+			retErr = fmt.Errorf("no new commits to push, and failed to apply metadata updates via Gerrit API: %w", retErr)
+		}
+	}()
+
 	chCtx, err := ResolveChangeContext(cmd, nil)
 	if err != nil {
 		return err
 	}
 	changeID := chCtx.ChangeID
 
-	if pushOpts.CQ > 0 || pushOpts.Publish {
-		input := &gerrit.ReviewInput{}
-		if pushOpts.CQ > 0 {
-			input.Labels = map[string]int{
-				"Commit-Queue": pushOpts.CQ,
+	var autoSubmit AutoSubmitDecision
+	if pushOpts.AutoSubmit {
+		if pushOpts.AutoSubmitLabel.Name != "" {
+			// The push already resolved the label; do not pay for a second
+			// round trip to learn the same thing.
+			autoSubmit = AutoSubmitDecision{
+				Vote:        pushOpts.AutoSubmitLabel,
+				Unsupported: pushOpts.AutoSubmitUnsupported,
 			}
+		} else {
+			// The push never got far enough to look the label up (e.g. --base
+			// was given, so no change lookup happened). Ask now rather than
+			// guess.
+			autoSubmit, err = chCtx.DecideAutoSubmit()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	autoSubmitLabel := autoSubmit.Vote
+
+	if pushOpts.CQ > 0 || pushOpts.Publish || pushOpts.AutoSubmit {
+		input := &gerrit.ReviewInput{}
+		labels := map[string]int{}
+		if pushOpts.CQ > 0 {
+			labels["Commit-Queue"] = pushOpts.CQ
+		}
+		if pushOpts.AutoSubmit && autoSubmitLabel.Name != "" {
+			// --cq is an explicit request for a specific score; the score
+			// --auto settled on must not quietly replace it.
+			if _, taken := labels[autoSubmitLabel.Name]; !taken {
+				labels[autoSubmitLabel.Name] = autoSubmitLabel.Value
+			}
+		}
+		if len(labels) > 0 {
+			input.Labels = labels
 		}
 		if pushOpts.Publish {
 			input.Drafts = "PUBLISH_ALL_REVISIONS"
@@ -240,8 +277,10 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 			action := "updating review on"
 			if pushOpts.CQ > 0 && !pushOpts.Publish {
 				action = "setting Commit-Queue on"
-			} else if pushOpts.Publish && pushOpts.CQ == 0 {
+			} else if pushOpts.Publish && pushOpts.CQ == 0 && !pushOpts.AutoSubmit {
 				action = "publishing drafts on"
+			} else if pushOpts.AutoSubmit && pushOpts.CQ == 0 && !pushOpts.Publish {
+				action = "setting auto-submit on"
 			}
 			return chCtx.FormatError(err, action)
 		}
@@ -281,14 +320,22 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 		}
 	}
 
+	applied = true
 	fmt.Fprintf(cmd.OutOrStdout(), "No new commits to push; applied metadata updates to Change %s via Gerrit API.\n", changeID)
 	if pushOpts.CQ > 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "Commit-Queue+%d set successfully.\n", pushOpts.CQ)
 	}
+	if pushOpts.AutoSubmit && autoSubmitLabel.Name != "" {
+		if autoSubmit.Unsupported != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s%+d set.\n", autoSubmitLabel.Name, autoSubmitLabel.Value)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Auto-submit enabled (%s%+d).\n", autoSubmitLabel.Name, autoSubmitLabel.Value)
+		}
+	}
 	if pushOpts.Publish {
 		fmt.Fprintln(cmd.OutOrStdout(), "Draft comments published successfully.")
 	}
-	return nil
+	return autoSubmit.Unsupported
 }
 
 // VerifiedPushState holds verified pre-flight commit information for create and push.
@@ -320,6 +367,9 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 		if client, err := NewGerritClient(ctx, cmd); err == nil {
 			opt := &gerrit.QueryChangeOptions{}
 			opt.Query = []string{changeID}
+			// DETAILED_LABELS so callers can see which labels this host
+			// actually defines (and their ranges) instead of guessing names.
+			opt.AdditionalFields = []string{"DETAILED_LABELS"}
 			if changes, _, err := client.Changes.QueryChanges(ctx, opt); err == nil && len(*changes) > 0 {
 				existing = &(*changes)[0]
 			}

@@ -141,7 +141,9 @@ specifically to avoid namespace collisions with future GitHub CLI features:
      - Triggers LUCI Commit-Queue validation (1 = dry run, 2 = submit).
    * - ``pr push`` / ``merge``
      - ``--auto-submit``
-     - Sets the project auto-submit label (e.g. ``Pigweed-Auto-Submit+1``).
+     - Votes the auto-submit label the host reports (e.g.
+       ``Pigweed-Auto-Submit+1``, ``Auto-Submit+1``). Errors on a host that
+       names none, or more than one.
    * - ``pr push`` / ``create``
      - ``-r, --reviewer``
      - Adds reviewers to the change.
