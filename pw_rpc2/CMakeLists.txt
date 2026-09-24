@@ -43,3 +43,50 @@ pw_add_test(pw_rpc2.packet_test
     modules
     pw_rpc2
 )
+
+pw_add_library(pw_rpc2.serialize INTERFACE
+  HEADERS
+    public/pw_rpc2/serialize.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_assert.check
+    pw_buf
+    pw_bytes
+    pw_result
+    pw_status
+)
+
+pw_add_library(pw_rpc2.pwpb_serialize INTERFACE
+  HEADERS
+    public/pw_rpc2/pwpb_serialize.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_buf
+    pw_bytes
+    pw_containers.vector
+    pw_protobuf
+    pw_result
+    pw_rpc2.serialize
+    pw_span
+    pw_status
+    pw_stream
+    pw_string.string
+    pw_varint
+)
+
+pw_add_test(pw_rpc2.pwpb_serialize_test
+  SOURCES
+    pwpb_serialize_test.cc
+  PRIVATE_DEPS
+    pw_buf
+    pw_protobuf
+    pw_rpc2.pwpb_serialize
+    pw_span
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)

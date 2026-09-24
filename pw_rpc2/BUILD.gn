@@ -48,6 +48,51 @@ pw_test("packet_test") {
   sources = [ "packet_test.cc" ]
 }
 
+pw_source_set("serialize") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc2/serialize.h" ]
+  public_deps = [
+    "$dir_pw_assert:check",
+    dir_pw_allocator,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+}
+
+pw_source_set("pwpb_serialize") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc2/pwpb_serialize.h" ]
+  public_deps = [
+    ":serialize",
+    "$dir_pw_containers:vector",
+    "$dir_pw_string:string",
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_protobuf,
+    dir_pw_result,
+    dir_pw_span,
+    dir_pw_status,
+    dir_pw_stream,
+    dir_pw_varint,
+  ]
+}
+
+pw_test("pwpb_serialize_test") {
+  deps = [
+    ":pwpb_serialize",
+    dir_pw_buf,
+    dir_pw_protobuf,
+    dir_pw_span,
+    dir_pw_status,
+  ]
+  sources = [ "pwpb_serialize_test.cc" ]
+}
+
 pw_test_group("tests") {
-  tests = [ ":packet_test" ]
+  tests = [
+    ":packet_test",
+    ":pwpb_serialize_test",
+  ]
 }

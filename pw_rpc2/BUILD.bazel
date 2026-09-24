@@ -50,6 +50,54 @@ pw_cc_test(
     ],
 )
 
+cc_library(
+    name = "serialize",
+    hdrs = ["public/pw_rpc2/serialize.h"],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_allocator",
+        "//pw_assert:check",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_status",
+    ],
+)
+
+cc_library(
+    name = "pwpb_serialize",
+    hdrs = [
+        "public/pw_rpc2/pwpb_serialize.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":serialize",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_containers:vector",
+        "//pw_protobuf",
+        "//pw_result",
+        "//pw_span",
+        "//pw_status",
+        "//pw_stream",
+        "//pw_string:string",
+        "//pw_varint",
+    ],
+)
+
+pw_cc_test(
+    name = "pwpb_serialize_test",
+    srcs = ["pwpb_serialize_test.cc"],
+    deps = [
+        ":pwpb_serialize",
+        "//pw_buf",
+        "//pw_protobuf",
+        "//pw_span",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
