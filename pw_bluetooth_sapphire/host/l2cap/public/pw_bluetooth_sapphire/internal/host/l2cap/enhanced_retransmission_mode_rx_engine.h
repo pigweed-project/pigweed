@@ -16,6 +16,7 @@
 #include <variant>
 
 #include "pw_bluetooth_sapphire/internal/host/common/byte_buffer.h"
+#include "pw_bluetooth_sapphire/internal/host/common/weak_self.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/frame_headers.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/rx_engine.h"
 
@@ -117,7 +118,6 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
 
   // Invoked when the connection encounters a fatal error.
   const ConnectionFailureCallback connection_failure_callback_;
-
   // TODO(fxbug.dev/42129869): Refactor these delegates into a single interface
   // for TxEngine to implement.
   ReceiveSeqNumCallback receive_seq_num_callback_;
@@ -126,6 +126,8 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
   RemoteBusyChangedCallback remote_busy_cleared_callback_;
   RangeRetransmitSetCallback range_retransmit_set_callback_;
   SingleRetransmitSetCallback single_retransmit_set_callback_;
+
+  WeakSelf<EnhancedRetransmissionModeRxEngine> weak_factory_;  // Keep last.
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(EnhancedRetransmissionModeRxEngine);
 };

@@ -816,5 +816,37 @@ TEST_F(
   EXPECT_EQ(6, tx_count);
 }
 
+TEST_F(
+    EnhancedRetransmissionModeEnginesTest,
+    ProcessSupervisoryFrameWithBothPollAndFinalBitsSetSynchronouslyDestroysEngines) {
+  std::unique_ptr<RxEngine> rx_engine;
+  std::unique_ptr<TxEngine> tx_engine;
+
+  auto failure_cb = [&] {
+    rx_engine.reset();
+    tx_engine.reset();
+  };
+
+  std::tie(rx_engine, tx_engine) =
+      MakeLinkedEnhancedRetransmissionModeEngines(kTestChannelId,
+                                                  kDefaultMTU,
+                                                  kMaxTransmissions,
+                                                  kTxWindow,
+                                                  channel(),
+                                                  std::move(failure_cb),
+                                                  dispatcher());
+  ASSERT_TRUE(rx_engine);
+  ASSERT_TRUE(tx_engine);
+
+  // Supervisory frame (bit 0 = 1), function = RR (00), P = 1 (bit 4), F = 1
+  // (bit 7). Raw byte value: 0b10010001 = 0x91. Second byte: 0x00 (ReqSeq = 0).
+  StaticByteBuffer receiver_ready_poll_and_final(0x91, 0x00);
+
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        receiver_ready_poll_and_final,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

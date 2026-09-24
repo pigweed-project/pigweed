@@ -4987,6 +4987,53 @@ TEST_F(ChannelManagerMockAclChannelTest,
   EXPECT_EQ(lease_provider().lease_count(), 0u);
 }
 
+TEST_F(
+    ChannelManagerMockAclChannelTest,
+    ProcessSupervisoryFrameWithInvalidReqSeqOnErtmChannelSynchronouslyDestroysChannel) {
+  // 1. Setup ACL connection with ERTM support.
+  const auto cmd_ids = QueueRegisterACL(
+      kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  ReceiveL2capInformationResponses(cmd_ids.extended_features_id,
+                                   cmd_ids.fixed_channels_supported_id,
+                                   kExtendedFeaturesBitEnhancedRetransmission,
+                                   kFixedChannelsSupportedBitSignaling);
+  RunUntilIdle();
+
+  // 2. Open and activate an outbound ERTM channel.
+  Channel::WeakPtr channel;
+  auto channel_cb = [&](l2cap::Channel::WeakPtr activated_chan) {
+    channel = std::move(activated_chan);
+  };
+  ActivateOutboundErtmChannel(std::move(channel_cb));
+  RunUntilIdle();
+  ASSERT_TRUE(channel.is_alive());
+
+  // Expect an outbound Disconnection Request because the channel fails.
+  EXPECT_ACL_PACKET_OUT_(OutboundDisconnectionRequest(NextCommandId()),
+                         kHighPriority);
+
+  // 3. Inbound S-frame with invalid ReqSeq (RR with ReqSeq = 1, P = 0, F = 0).
+  // S-frame RR (0x01), ReqSeq = 1 (0x01). Payload bytes: 0x01, 0x01.
+  const ChannelId local_cid = channel->id();
+  StaticByteBuffer invalid_reqseq_frame(
+      // ACL data header (handle: 0x0001, length: 6 bytes)
+      0x01,
+      0x00,
+      0x06,
+      0x00,
+      // L2CAP B-frame header (length: 2 bytes, channel-id)
+      0x02,
+      0x00,
+      LowerBits(local_cid),
+      UpperBits(local_cid),
+      // Payload
+      0x01,
+      0x01);
+
+  ReceiveAclDataPacket(invalid_reqseq_frame);
+  RunUntilIdle();
+}
+
 // Verify that the ChannelImpl::Send() cap is not bypassed when the peer sends
 // an RNR S-frame.
 TEST_F(FakeDispatcherChannelManagerMockControllerTest,

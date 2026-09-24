@@ -490,7 +490,14 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
 
   PW_CHECK(rx_engine_);
 
+  // ProcessPdu may invoke failure callbacks that indirectly destroy the channel
+  // synchronously. Get a weak pointer to this instance for tracking liveness.
+  auto self = GetWeakPtr();
   ByteBufferPtr sdu = rx_engine_->ProcessPdu(std::move(pdu));
+  if (!self.is_alive()) {
+    // ProcessPdu invoked a failure callback which destroyed the channel.
+    return;
+  }
   if (!sdu) {
     // The PDU may have been invalid, out-of-sequence, part of a segmented
     // SDU, or a signaling PDU.
@@ -508,27 +515,27 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
   }
 
   // Buffer the packets if the channel hasn't been activated.
-  if (!active_) {
-    if (pending_rx_sdus_.size() >= kMaxPendingRxSdus) {
-      dropped_packets_ += 1;
-      if (dropped_packets_ % 100 == 1) {
+  if (!self->active_) {
+    if (self->pending_rx_sdus_.size() >= kMaxPendingRxSdus) {
+      self->dropped_packets_ += 1;
+      if (self->dropped_packets_ % 100 == 1) {
         bt_log(DEBUG,
                "l2cap",
                "pending rx queue full (%zu) on channel %#.4x (handle: %#.4x), "
                "dropping SDU",
-               pending_rx_sdus_.size(),
-               id(),
-               link_.is_alive() ? link_->handle() : 0);
+               self->pending_rx_sdus_.size(),
+               self->id(),
+               self->link_.is_alive() ? self->link_->handle() : 0);
       }
-      inspect_.dropped_packets.Set(dropped_packets_);
+      self->inspect_.dropped_packets.Set(self->dropped_packets_);
       return;
     }
-    pending_rx_sdus_.emplace(std::move(sdu));
+    self->pending_rx_sdus_.emplace(std::move(sdu));
     // Tracing: we assume pending_rx_sdus_ is only filled once and use the
     // length of queue for trace ids.
     TRACE_FLOW_BEGIN("bluetooth",
                      "ChannelImpl::HandleRxPdu queued",
-                     pending_rx_sdus_.size());
+                     self->pending_rx_sdus_.size());
 
     // While waiting for a channel to be activated, acquire a wake lease so the
     // system does not suspend while higher layers process channel activation
@@ -540,8 +547,8 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
     // fallback). If we acquired a wake lease for unactivated fixed channels
     // when packets arrive, pending_rx_sdus_ would never be drained, pinning
     // the wake lease indefinitely.
-    if (!wake_lease_ && id() >= kFirstDynamicChannelId) {
-      TryAcquireWakeLease();
+    if (!self->wake_lease_ && self->id() >= kFirstDynamicChannelId) {
+      self->TryAcquireWakeLease();
     }
 
     return;
@@ -549,14 +556,14 @@ void ChannelImpl::HandleRxPdu(PDU&& pdu) {
 
   // The PDU may have been the last segment of an SDU, in which case an RxEngine
   // queue may have been emptied.
-  if (AreQueuesEmpty()) {
-    wake_lease_.reset();
+  if (self->AreQueuesEmpty()) {
+    self->wake_lease_.reset();
   }
 
-  PW_CHECK(rx_cb_);
+  PW_CHECK(self->rx_cb_);
   {
     TRACE_DURATION("bluetooth", "ChannelImpl::HandleRxPdu callback");
-    rx_cb_(std::move(sdu));
+    self->rx_cb_(std::move(sdu));
   }
 }
 

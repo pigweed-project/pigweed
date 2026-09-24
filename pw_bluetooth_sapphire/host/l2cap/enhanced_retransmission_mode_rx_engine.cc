@@ -87,7 +87,8 @@ Engine::EnhancedRetransmissionModeRxEngine(
     : next_seqnum_(0),
       remote_is_busy_(false),
       send_frame_callback_(std::move(send_frame_callback)),
-      connection_failure_callback_(std::move(connection_failure_callback)) {}
+      connection_failure_callback_(std::move(connection_failure_callback)),
+      weak_factory_(this) {}
 
 ByteBufferPtr Engine::ProcessPdu(PDU pdu) {
   // A note on validation (see Vol 3, Part A, 3.3.7):
@@ -112,25 +113,30 @@ ByteBufferPtr Engine::ProcessPdu(PDU pdu) {
   }
 
   auto frame_header = GetFrameHeaderFromPdu(pdu);
-  auto frame_processor =
-      [this, pdu_to_process = std::move(pdu)](auto header) mutable {
-        // Run ProcessFrame first so it can perform the highest-priority actions
-        // like assigning RemoteBusy (Core Spec v5.0, Vol 3, Part A,
-        // Sec 8.6.5.9).
-        auto sdu = ProcessFrame(header, std::move(pdu_to_process));
+  auto frame_processor = [self = weak_factory_.GetWeakPtr(),
+                          pdu_to_process =
+                              std::move(pdu)](auto header) mutable {
+    PW_CHECK(self.is_alive());
+    // Run ProcessFrame first so it can perform the highest-priority actions
+    // like assigning RemoteBusy (Core Spec v5.0, Vol 3, Part A,
+    // Sec 8.6.5.9).
+    auto sdu = self->ProcessFrame(header, std::move(pdu_to_process));
 
-        // This implements the PassToTx action ("Pass the ReqSeq and F-bit
-        // value") per Core Spec v5.0, Vol 3, Part A, 8.6.5.6 and must come
-        // after updates to the RemoteBusy variable in order to avoid
-        // transmitting frames when the peer can't accept them.
-        if constexpr (kContainsEnhancedControlField<decltype(header)>) {
-          if (receive_seq_num_callback_) {
-            receive_seq_num_callback_(header.receive_seq_num(),
-                                      header.is_poll_response());
-          }
+    // This implements the PassToTx action ("Pass the ReqSeq and F-bit
+    // value") per Core Spec v5.0, Vol 3, Part A, 8.6.5.6 and must come
+    // after updates to the RemoteBusy variable in order to avoid
+    // transmitting frames when the peer can't accept them.
+    if constexpr (kContainsEnhancedControlField<decltype(header)>) {
+      if (self.is_alive() && self->receive_seq_num_callback_) {
+        auto cb = std::move(self->receive_seq_num_callback_);
+        cb(header.receive_seq_num(), header.is_poll_response());
+        if (self.is_alive()) {
+          self->receive_seq_num_callback_ = std::move(cb);
         }
-        return sdu;
-      };
+      }
+    }
+    return sdu;
+  };
   return std::visit(std::move(frame_processor), frame_header);
 }
 

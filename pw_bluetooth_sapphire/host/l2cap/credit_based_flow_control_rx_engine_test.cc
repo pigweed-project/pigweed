@@ -166,8 +166,6 @@ TEST_F(CreditBasedFlowControlRxEngineTest, InitialFrameMissingSduSize) {
   EXPECT_EQ(1u, failure_callback_count());
 }
 
-// FOOOOOOOOOOOOOOOOOOOOOO
-
 TEST(CreditBasedFlowControlRxEngineStandaloneTest,
      FailureCallbackSynchronouslyDestroysEngine) {
   std::unique_ptr<CreditBasedFlowControlRxEngine> rx_engine;
