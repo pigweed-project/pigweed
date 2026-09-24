@@ -61,6 +61,8 @@ void BrEdrSignalingChannel::DecodeRxUnit(ByteBufferPtr sdu,
     return;
   }
 
+  WeakPtr<SignalingChannel> self = GetWeakPtr();
+
   size_t sdu_offset = 0;
   while (sdu_offset + sizeof(CommandHeader) <= sdu->size()) {
     const auto header_data = sdu->view(sdu_offset, sizeof(CommandHeader));
@@ -84,6 +86,10 @@ void BrEdrSignalingChannel::DecodeRxUnit(ByteBufferPtr sdu,
     const auto packet_data =
         sdu->view(sdu_offset, sizeof(CommandHeader) + expected_payload_length);
     cb(SignalingPacket(&packet_data, expected_payload_length));
+
+    if (!self.is_alive()) {
+      return;
+    }
 
     sdu_offset += packet_data.size();
   }

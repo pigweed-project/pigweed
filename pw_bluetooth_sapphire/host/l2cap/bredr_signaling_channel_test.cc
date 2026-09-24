@@ -52,6 +52,8 @@ class BrEdrSignalingChannelTest : public testing::MockChannelTest {
 
   BrEdrSignalingChannel* sig() const { return sig_.get(); }
 
+  void DestroySig() { sig_ = nullptr; }
+
  private:
   pw::bluetooth_sapphire::testing::FakeLeaseProvider lease_provider_;
   testing::FakeChannel::WeakPtr fake_chan_;
@@ -258,6 +260,41 @@ TEST_F(BrEdrSignalingChannelTest, SendAndReceiveEcho) {
   // request (this is allowed).
   fake_chan()->Receive(expected_rsp);
   EXPECT_TRUE(rx_success);
+}
+
+TEST_F(BrEdrSignalingChannelTest, MultipleCommandsFirstDestroysChannel) {
+  constexpr uint8_t kTestId0 = 14;
+  constexpr uint8_t kTestId1 = 15;
+
+  StaticByteBuffer cmd(
+      // Command header (Echo Request)
+      0x08,
+      kTestId0,
+      0x04,
+      0x00,
+
+      // Payload data
+      'L',
+      'O',
+      'L',
+      'Z',
+
+      // Command header (Echo Request)
+      0x08,
+      kTestId1,
+      0x00,
+      0x00);
+
+  sig()->ServeRequest(kEchoRequest,
+                      [this](const ByteBuffer&, SignalingChannel::Responder*) {
+                        // Synchronously destroy signaling channel
+                        DestroySig();
+                      });
+
+  // We shouldn't crash when we receive the packet.
+  fake_chan()->Receive(cmd);
+  RunUntilIdle();
+  EXPECT_EQ(sig(), nullptr);
 }
 
 }  // namespace

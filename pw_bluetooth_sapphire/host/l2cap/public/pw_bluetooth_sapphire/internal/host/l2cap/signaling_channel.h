@@ -192,6 +192,8 @@ class SignalingChannel : public SignalingChannelInterface {
   // Returns the logical link that signaling channel is operating on.
   pw::bluetooth::emboss::ConnectionRole role() const { return role_; }
 
+  WeakPtr<SignalingChannel> GetWeakPtr() { return weak_self_.GetWeakPtr(); }
+
   // Generates a command identifier in sequential order that is never
   // kInvalidId. The caller is responsible for bookkeeping when reusing command
   // IDs to prevent collisions with pending commands.
