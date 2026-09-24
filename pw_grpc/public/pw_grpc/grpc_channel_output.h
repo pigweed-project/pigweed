@@ -68,8 +68,10 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
         // RESPONSE packet for both server streaming responses and unary
         // responses. In gRPC it's allowed to close the server streaming
         // response without any payload, in which case we shouldn't send a DATA
-        // frame.
-        if (packet.payload().size() || method_type == rpc::MethodType::kUnary) {
+        // frame. Unary and client streaming methods always have a response
+        // message, which must be sent even when it encodes to zero bytes.
+        if (packet.payload().size() || method_type == rpc::MethodType::kUnary ||
+            method_type == rpc::MethodType::kClientStreaming) {
           PW_TRY(connection_->get().SendResponseMessage(packet.call_id(),
                                                         packet.payload()));
         }

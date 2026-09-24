@@ -258,6 +258,37 @@ func TestClientStreamingEcho(t *testing.T) {
 	})
 }
 
+func TestClientStreamingEchoEmptyResponse(t *testing.T) {
+	// A response message that encodes to zero bytes must still be sent as a DATA
+	// frame. Otherwise the server closes the call with a Trailers-Only response
+	// and the client never receives a message.
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := echo_client.ClientStreamingEcho(ctx)
+	if err != nil {
+		t.Fatalf("Failed to call ClientStreamingEcho %v", err)
+	}
+	if err := client.Send(&pb.EchoRequest{Message: "empty"}); err != nil {
+		t.Fatalf("Send failed with error: %v", err)
+	}
+	resp, err := client.CloseAndRecv()
+	if err != nil {
+		t.Fatalf("CloseAndRecv failed with error: %v", err)
+	}
+	if resp.Message != "" {
+		t.Fatalf("Unexpected response %v", resp)
+	}
+}
+
 func TestBidirectionalStreamingEcho(t *testing.T) {
 	setupTest(t, 1)
 

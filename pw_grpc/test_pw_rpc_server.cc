@@ -193,11 +193,17 @@ class EchoService
         [this](
             const ::grpc::examples::echo::pwpb::EchoRequest::Message& request) {
           quiet_ = request.message.compare("quiet") == 0;
+          empty_response_ = request.message.compare("empty") == 0;
           PW_LOG_INFO("ClientStreaming message %s", request.message.c_str());
         });
 
     last_reader_.set_on_completion_requested([this]() {
       if (quiet_) {
+        return;
+      }
+      if (empty_response_) {
+        // This response message encodes to zero bytes.
+        last_reader_.Finish({}, pw::OkStatus()).IgnoreError();
         return;
       }
       last_reader_.Finish({.message = "done"}).IgnoreError();
@@ -239,6 +245,7 @@ class EchoService
                      ::grpc::examples::echo::pwpb::EchoResponse::Message>
       last_reader_writer_{};
   bool quiet_ = false;
+  bool empty_response_ = false;
 };
 
 class ConnectionThread : public pw::grpc::Connection,
