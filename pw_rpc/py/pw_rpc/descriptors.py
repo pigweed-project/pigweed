@@ -206,6 +206,7 @@ def _is_repeated(field: Any) -> bool:
 def _field_type_annotation(field: FieldDescriptor):
     """Creates a field type annotation to use in the help message only."""
     if field.type == FieldDescriptor.TYPE_MESSAGE:
+        assert field.message_type is not None
         annotation = message_factory.GetMessageClass(field.message_type)
     else:
         annotation = _PROTO_FIELD_TYPES.get(field.type, Parameter.empty)

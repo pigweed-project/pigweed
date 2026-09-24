@@ -14,9 +14,8 @@
 """Utilities for working with tokenized fields in protobufs."""
 
 import re
-from typing import Iterator
+from typing import Any, Iterator
 
-from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.message import Message
 
 from pw_tokenizer_proto import options_pb2
@@ -39,7 +38,12 @@ _CSI_ESCAPE = re.compile(
 )
 
 
-def _tokenized_fields(proto: Message) -> Iterator[FieldDescriptor]:
+# The return type is Iterator[Any] because in types-protobuf 7.34+,
+# proto.DESCRIPTOR.fields yields either
+# google.protobuf.descriptor.FieldDescriptor or the internal
+# google._upb._message.FieldDescriptor. Any is used to avoid referencing
+# private implementation modules.
+def _tokenized_fields(proto: Message) -> Iterator[Any]:
     for field in proto.DESCRIPTOR.fields:
         extensions = field.GetOptions().Extensions
         if (

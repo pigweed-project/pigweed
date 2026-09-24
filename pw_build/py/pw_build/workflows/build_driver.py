@@ -53,7 +53,7 @@ class BuildDriver(abc.ABC):
     def generate_jobs_from_json(
         self, json_msg: str
     ) -> build_driver_pb2.BuildDriverResponse:
-        json_msg = json.loads(json_msg)
+        parsed_json = json.loads(json_msg)
         msg = build_driver_pb2.BuildDriverRequest()
 
         # Load Any proto message:
@@ -63,7 +63,7 @@ class BuildDriver(abc.ABC):
             desc.CopyToProto(extension)
             pool.Add(extension)
 
-        json_format.ParseDict(json_msg, msg, descriptor_pool=pool)
+        json_format.ParseDict(parsed_json, msg, descriptor_pool=pool)
         return self.generate_jobs(msg)
 
     @staticmethod
