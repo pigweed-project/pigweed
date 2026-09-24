@@ -15,6 +15,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains:args_list.bzl", "cc_args_list")
 load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
 load("@rules_cc//cc/toolchains:feature_constraint.bzl", "cc_feature_constraint")
 load("@rules_cc//cc/toolchains:feature_set.bzl", "cc_feature_set")
@@ -49,7 +50,7 @@ cc_args(
 )
 
 cc_args(
-    name = "linux_link_libs",
+    name = "linux_common_link_libs",
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
     args = [
         "-stdlib=libc++",
@@ -66,6 +67,15 @@ cc_args(
         "--unwindlib=libunwind",
     ],
     requires_any_of = ["//pw_toolchain/cc/args:not_rust"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+cc_args_list(
+    name = "linux_link_libs",
+    args = [
+        ":linux_common_link_libs",
+        ":linux_default_link_libs",
+    ],
     target_compatible_with = ["@platforms//os:linux"],
 )
 
@@ -379,7 +389,6 @@ cc_toolchain(
     args = select({
         "@platforms//os:linux": [
             ":linux_link_libs",
-            ":linux_default_link_libs",
             "@linux_sysroot//:sysroot",
         ],
         "@platforms//os:macos": [
