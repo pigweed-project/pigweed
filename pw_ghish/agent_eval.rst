@@ -1,8 +1,8 @@
 .. _module-pw_ghish-agent-eval:
 
-========================
-Agent Evaluation Runbook
-========================
+================
+Agent evaluation
+================
 .. pigweed-module-subpage::
    :name: pw_ghish
 
@@ -59,8 +59,8 @@ What the Live Suite Automatically Verifies
   ``pigweed-review.googlesource.com`` and queries change metadata via ``pr view``.
 * **Live CI Failure Triage**: Queries LUCI Buildbucket via pRPC for a known
   failing build, pulls step-level details, and verifies that ``ExtractFailureReport``
-  successfully retrieves the failing step and log stream from LogDog without
-  browser navigation.
+  successfully retrieves the failing step and log stream without browser
+  navigation.
 * **Draft Comment Round-Trip**: Posts an inline review comment as a private draft
   using ``--draft``, verifies via the Gerrit REST API that the draft is created
   privately, and immediately cleans it up using ``DeleteDraft`` (backed by a
@@ -68,7 +68,7 @@ What the Live Suite Automatically Verifies
 * **Check Rerun Command Resolution**: Verifies that ``run rerun --dry-run``
   correctly constructs the project-specific ``bb add -cl ...`` command with exact
   change and builder coordinates.
-* **Live Buganizer Issue Lifecycle (``TestLive_IssueLifecycle``)**: Exercises the
+* **Live Buganizer Issue Lifecycle** (``TestLive_IssueLifecycle``): Exercises the
   end-to-end ``./gh issue`` lifecycle against live Buganizer: creates a test
   issue in the Pigweed Scratch component (``1455250``), inspects it via
   ``issue view --json``, posts a comment via ``issue comment``, updates priority/title
@@ -125,7 +125,7 @@ Scenario 2: CI failure diagnosis and CL handoff
     identify the failed builder (``pigweed-lintformat``).
   * **PASS**: Agent runs ``./gh run view 467905 --log-failed`` (or
     ``./gh pr checks 467905 --log-failed``) to pull down the failing step and
-    LogDog diff snippet directly.
+    step log diff snippet directly.
   * **PASS**: Agent checks out the change branch via ``./gh pr checkout 467905``
     (or cherry-picks onto a clean branch).
   * **PASS**: Agent identifies the exact formatting/code issue without asking

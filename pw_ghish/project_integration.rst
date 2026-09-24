@@ -1,8 +1,8 @@
 .. _module-pw_ghish-project-integration:
 
-======================
-Project Adoption Guide
-======================
+================
+Project adoption
+================
 .. pigweed-module-subpage::
    :name: pw_ghish
 
@@ -254,33 +254,39 @@ rather than silently falling back to anonymous access.
 -----------------------------------
 LUCI CI and Buildbucket Integration
 -----------------------------------
-Projects using LUCI (such as Chromium, Fuchsia, Pigweed, and Android) benefit
-from direct Buildbucket and LogDog integration:
+Projects using LUCI (such as Chromium, Fuchsia, Pigweed, and Android) can use
+Buildbucket integration for check inspection and reruns:
 
 pRPC checks querying
 ====================
-``pw_ghish pr checks`` sends lightweight pRPC queries directly to
-``cr-buildbucket.appspot.com`` to fetch builder statuses, run times, and direct
-Milo build URLs. It operates without web scraping or headless browser overhead.
+``pw_ghish pr checks`` queries ``cr-buildbucket.appspot.com`` via pRPC to fetch
+builder statuses, durations, and build URLs.
 
 Terminal log inspection
 =======================
-``pw_ghish pr checks log`` queries LogDog streams to retrieve the tail of failed
-build steps, providing immediate terminal diagnostics for broken tests and lints
-without opening a web browser.
+``gh-ish run view --log-failed`` queries Buildbucket step summaries and step
+log URLs to retrieve the tail of failed build steps in the terminal:
+
+.. code-block:: console
+
+   # Inspect step execution tree for a specific builder:
+   $ gh-ish run view -j myproject-linux-dbg
+
+   # Print failure summaries and step log snippets for failed builders:
+   $ gh-ish run view --log-failed
 
 Builder reruns
 ==============
-``pw_ghish pr checks rerun`` automatically constructs and executes ``bb add``
-commands targeting your profile's try bucket:
+``gh-ish run rerun`` automatically constructs and executes ``bb add`` commands
+targeting your profile's try bucket:
 
 .. code-block:: console
 
    # Rerun all failed builders on the current change:
-   $ gh-ish pr checks rerun --failed
+   $ gh-ish run rerun --failed
 
    # Rerun a specific builder:
-   $ gh-ish pr checks rerun myproject-linux-dbg
+   $ gh-ish run rerun -j myproject-linux-dbg
 
    # Preview the generated bb command without executing:
-   $ gh-ish pr checks rerun --failed --dry-run
+   $ gh-ish run rerun --failed --dry-run

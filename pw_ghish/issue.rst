@@ -1,8 +1,8 @@
 .. _module-pw_ghish-issue:
 
-=========================
-Issue Tracking (gh issue)
-=========================
+=================
+Issues (gh issue)
+=================
 .. pigweed-module-subpage::
    :name: pw_ghish
 
@@ -13,17 +13,17 @@ Issue Tracking (gh issue)
    and Buganizer API mappings may evolve based on developer and AI agent
    feedback.
 
-``pw_ghish`` provides GitHub CLI (``gh issue``) ergonomics on top of Google
-Issue Tracker (Buganizer).
+``./gh issue`` maps GitHub CLI issue workflows (``gh issue``) to **Google Issue
+Tracker (Buganizer)**.
 
 Instead of switching between a browser, Git commit messages, and Gerrit
 reviews, you can triage bugs, branch for development, link issues to commits,
 post updates, and close issues directly from your terminal using standard
 ``gh issue`` commands.
 
---------
-Overview
---------
+---------------
+Quick reference
+---------------
 Run ``./gh issue`` subcommands from anywhere in your Pigweed checkout:
 
 .. code-block:: console
@@ -59,7 +59,7 @@ assigned to you and open issues reported by you:
 
    $ ./gh issue status
 
-If you use :ref:`module-pw_ghish-worktrees` to manage parallel tasks,
+If you use :ref:`module-pw_ghish-worktree` to manage parallel tasks,
 ``./gh issue status`` automatically annotates issues that have an active
 worktree project with their residency badge (such as ``[📂 MOUNTED: pw-01]`` or
 ``[💤 PARKED]``), showing which bugs are currently checked out on disk.
@@ -121,7 +121,7 @@ a local feature branch for that issue:
    $ ./gh issue develop 315378787 --worktree
 
 When you pass ``--worktree`` (``-w``), ``./gh issue develop`` delegates to
-:ref:`module-pw_ghish-worktrees` (``./gh wt use --issue <id>``) to allocate a
+:ref:`module-pw_ghish-worktree` (``./gh wt use --issue <id>``) to allocate a
 warm physical slot and symlink in ``~/wrk/projects/``, leaving your primary Git
 checkout untouched.
 
@@ -165,7 +165,7 @@ fallback chain:
    as ``b-315378787-fix-rpc``, ``issue-315378787``, or ``315378787-fix``),
    allowing issue commands to work immediately on a newly created branch before
    your first commit.
-3. **Worktree metadata**: Queries your active :ref:`module-pw_ghish-worktrees`
+3. **Worktree metadata**: Queries your active :ref:`module-pw_ghish-worktree`
    project state if the worktree was initialized with ``--issue <id>``.
 
 .. code-block:: console
@@ -300,7 +300,8 @@ formats interchangeably:
   metadata.
 * **Numeric ID**: ``315378787``
 * **Buganizer shorthand**: ``b/315378787``
-* **Issue tracker URLs**: ``https://issues.chromium.org/issues/315378787`` or
+* **Issue tracker URLs**: ``https://issues.pigweed.dev/issues/315378787``,
+  ``https://issues.chromium.org/issues/315378787``, or
   ``https://issuetracker.google.com/issues/315378787``
 
 Structured JSON output
@@ -317,6 +318,46 @@ Supported JSON fields: ``id``, ``number``, ``title``, ``body``, ``state``,
 ``status``, ``priority``, ``severity``, ``type``, ``assignee``, ``reporter``,
 ``componentId``, ``hotlistIds``, ``url``, ``createdAt``, ``updatedAt``, and
 ``comments``.
+
+-------------------------------------
+Comparison with GitHub CLI (gh issue)
+-------------------------------------
+While ``./gh issue`` adopts standard ``gh issue`` commands and flags, Google
+Issue Tracker (Buganizer) has a structured data model and integrates with
+Gerrit through Git commit trailers rather than pull request prose:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - Feature / Command
+     - Upstream ``gh issue``
+     - ``./gh issue`` (Buganizer)
+   * - **Issue labels** (``-l, --label``)
+     - Free-form text strings (e.g. ``bug``, ``good first issue``).
+     - Structured key-value prefixes mapped to Buganizer fields:
+       ``priority:P0..P4``, ``severity:S0..S4``, ``type:BUG|FEATURE|TASK``,
+       ``component:<id>``, and ``hotlist:<id>``.
+   * - **Linking commits / PRs**
+     - Prose keywords in PR description (``Fixes #123``).
+     - Git commit trailers (``Bug: b/<id>`` and ``Fixed: b/<id>``). Supported
+       directly via ``issue create --amend``, ``issue create --commit``, and
+       ``pr edit --bug`` / ``--fixed``.
+   * - **Omitted issue ID**
+     - Requires an explicit issue number on ``view``, ``comment``, ``edit``,
+       and ``close``.
+     - **Zero-argument resolution**: Automatically infers the active issue from
+       ``HEAD`` commit trailers, branch naming (``b-315378787-...``), or
+       active :ref:`module-pw_ghish-worktree` metadata.
+   * - **Close reasons** (``--reason``)
+     - ``completed`` or ``not_planned``.
+     - Supports ``completed``/``fixed`` and ``not_planned``/``wontfix``, plus
+       Buganizer-specific resolutions: ``intended_behavior``,
+       ``not_reproducible``, and ``duplicate --duplicate-of <id>``.
+   * - ``issue develop``
+     - Creates a Git branch linked to a GitHub issue.
+     - Creates branch ``b-<id>-<slug>`` or, with ``-w, --worktree``, allocates
+       an isolated warm slot via ``./gh wt use --issue <id>``.
 
 --------------
 Authentication

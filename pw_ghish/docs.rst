@@ -6,162 +6,178 @@ pw_ghish
 .. pigweed-module::
    :name: pw_ghish
 
-   * **Familiar GitHub CLI interface**: Seamlessly interact with Gerrit code
-     reviews and LUCI CI checks using standard ``gh pr`` command syntax.
-   * **Unlocks parametric agent knowledge**: AI coding agents pre-trained on
-     the GitHub CLI can review, comment, push, and submit changes without
-     custom prompting.
-   * **Autonomous CI driving & agentic polling**: Eliminates human context
-     switching by enabling AI agents to watch, poll, extract step failure logs,
-     and drive changes to ground without human intervention.
-   * **Zero-setup repository wrapper**: Instant execution via ``./gh`` with
-     automatic per-commit compilation and caching.
-   * **Pigweed CI & review integration**: First-class support for Pigweed
-     auto-submit, Commit-Queue, and LUCI tryjobs.
-   * **Buganizer issue integration**: Triage, branch, create, and resolve issues
-     using standard ``gh issue`` commands linked directly to Git commits.
-   * **Multi-project support**: Pluggable profiles and standalone binary
-     distribution for Fuchsia and generic Gerrit projects.
+   * **GitHub CLI syntax for Gerrit, LUCI, and Buganizer**: Interact with
+     Gerrit code reviews (``gh pr``), LUCI Buildbucket tryjobs (``gh run``),
+     and Buganizer issues (``gh issue``) using standard ``gh`` commands.
+   * **Built for humans and coding agents**: Developers and AI agents already
+     familiar with the GitHub CLI can create changes, reply to review threads,
+     inspect CI logs, and manage bugs without custom REST scripts.
+   * **Worktree and Bazel cache pooling**: Manage isolated Git worktrees backed
+     by a shared pool of warm Bazel output bases and IDE workspace
+     synchronization via ``./gh wt``.
+   * **Repository wrapper**: Run ``./gh`` from the repository root with
+     automatic per-commit compilation and local binary caching in ``out/gh/``.
 
 ``pw_ghish`` (invoked via the ``./gh`` wrapper at the repository root) provides
-GitHub CLI (``gh pr`` and ``gh issue``) ergonomics on top of Gerrit code review,
-Google Issue Tracker (Buganizer), and LUCI CI infrastructure.
+GitHub CLI commands on top of **Gerrit Code Review**, **LUCI Buildbucket**,
+**Google Issue Tracker (Buganizer)**, and **local Git/Bazel worktree pools**.
 
 .. warning::
 
-   ``pw_ghish`` is currently validated and production-ready only for **upstream
-   Pigweed**. While foundational profile infrastructure for other projects
-   exists, multi-project decoupling and non-Pigweed CI workflows are under
-   active development. See the :ref:`module-pw_ghish-roadmap` page for current
-   status, feature availability, and upcoming milestones.
+   **EXPERIMENTAL**: ``pw_ghish`` is **experimental for upstream Pigweed** and
+   is **not ready for other projects yet**. Despite its broad functionality,
+   the tool is still very fresh and under active iteration—commands, flags, and
+   workflows may change. See :ref:`module-pw_ghish-roadmap` for current status
+   and upcoming milestones.
 
 ---------------
-Quick reference
+Getting started
 ---------------
 Run the ``./gh`` repository wrapper from anywhere in your Pigweed checkout:
 
 .. code-block:: console
 
-   # View review dashboard for active branch & your open CLs:
+   # View review status for the active branch and your open CLs:
    $ ./gh pr status
 
-   # Check open Buganizer issues assigned to or reported by you:
-   $ ./gh issue status
+   # Push a new patchset on the current branch to Gerrit:
+   $ ./gh pr push --cq
 
-   # File a new bug and automatically add 'Bug: b/<id>' to your HEAD commit:
+   # Watch LUCI tryjob builders and print step failure logs on failure:
+   $ ./gh pr checks --watch --fail-fast
+
+   # Inspect step execution trees or rerun failed builders via LUCI:
+   $ ./gh run view -j pigweed-lintformat
+   $ ./gh run rerun --failed
+
+   # File a Buganizer issue and add 'Bug: b/<id>' to your HEAD commit:
    $ ./gh issue create --title "pw_foo: Fix bar overflow" --body "..." --amend
 
-   # Push a new patchset on the current branch to Gerrit:
-   $ ./gh pr push
-
-   # Check live status and duration of LUCI tryjob builders:
-   $ ./gh pr checks
-
-   # View failure summaries and step log snippets in the terminal:
-   $ ./gh run view --log-failed
-
-   # Reply to an inline comment thread and mark as resolved:
-   $ ./gh pr comment --path <file> --line <line> -m "Done." --resolved
+   # Allocate an isolated warm worktree slot for an issue or feature:
+   $ ./gh wt use --issue 315378787
 
    # Enable automated submission once review and CI checks pass:
    $ ./gh pr merge --auto
+
+The ``./gh`` wrapper compiles and caches the ``//pw_ghish:gh-ish`` binary in
+``out/gh/`` keyed by Git commit hash, reusing the cached binary when ``HEAD``
+has not changed.
+
+Root-level aliases and global flags
+===================================
+For common commands, ``./gh`` provides top-level aliases and global flags:
+
+* **Root aliases**: ``./gh push`` (``pr push``), ``./gh status``
+  (``pr status``), ``./gh view`` (``pr view``), ``./gh diff`` (``pr diff``),
+  ``./gh checks`` (``pr checks``), and ``./gh worktree`` (``wt``).
+* **Global flags**: ``--host <domain>`` (override Gerrit host),
+  ``--profile <name>`` (force ``pigweed``, ``fuchsia``, or ``generic`` profile),
+  and ``-v, --verbose`` (enable debug logging).
 
 -------------
 Documentation
 -------------
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`terminal` CLI User Guide (gh pr)
-      :link: module-pw_ghish-cli
+   .. grid-item-card:: :octicon:`rocket` Life of a PR
+      :link: module-pw_ghish-life-of-a-pr
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Subcommand reference and examples for viewing, pushing, reviewing,
-      commenting, inspecting CI, and merging Gerrit changes.
+      Step-by-step walkthrough of creating a CL, running LUCI presubmits,
+      addressing review comments, and landing via Commit-Queue or Auto-Submit.
 
-   .. grid-item-card:: :octicon:`issue-opened` Issue Tracking (gh issue)
+   .. grid-item-card:: :octicon:`git-pull-request` Code review (gh pr)
+      :link: module-pw_ghish-pr
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      Gerrit code review commands: creating and pushing patchsets, editing
+      commit trailers, replying to inline threads, and merging changes.
+
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`check-circle` CI & tryjobs (gh run)
+      :link: module-pw_ghish-run
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      LUCI Buildbucket commands: watching ``pr checks``, inspecting recipe
+      step trees, reading failure logs, and rerunning builders.
+
+   .. grid-item-card:: :octicon:`issue-opened` Issues (gh issue)
       :link: module-pw_ghish-issue
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      End-to-end user journey for triaging, branching, filing bugs with commit
-      trailers, commenting, and resolving Buganizer issues.
+      Buganizer issue workflows: triaging queues, branching, filing bugs with
+      commit trailers, updating structured labels, and closing issues.
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`cpu` AI Workflows
+   .. grid-item-card:: :octicon:`repo-forked` Worktrees (gh wt)
+      :link: module-pw_ghish-worktree
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Manage warm Git worktree slots, project symlinks, shared Bazel caches,
+      and Antigravity (Jetski) IDE workspace synchronization.
+
+   .. grid-item-card:: :octicon:`cpu` AI workflows
       :link: module-pw_ghish-ai-workflows
       :link-type: ref
-      :class-item: sales-pitch-cta-primary
+      :class-item: sales-pitch-cta-secondary
 
       Workflows for AI pair programming: private draft steering, staged review
-      replies, CL handoffs, and CI failure triage.
+      replies, CL handoffs, CI failure repair, and parallel agents.
 
-   .. grid-item-card:: :octicon:`table` GitHub CLI Comparison
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`table` GitHub CLI comparison
       :link: module-pw_ghish-cli-comparison
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Command comparison with GitHub CLI (``gh``), flag mapping, and
-      architectural differences in Gerrit.
+      Ecosystem mapping matrix, flag differences from upstream ``gh``, and the
+      three-tier flag compatibility policy.
 
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`milestone` Status & Roadmap
-      :link: module-pw_ghish-roadmap
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Operational status, upstream Pigweed focus, and roadmap for multi-project
-      decoupling, SCM exploration, setup automation, and hooks.
-
-   .. grid-item-card:: :octicon:`gear` Project Adoption Guide
+   .. grid-item-card:: :octicon:`gear` Project adoption
       :link: module-pw_ghish-project-integration
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Installing standalone binaries, setting up repository wrappers,
-      configuring project profiles, and authentication.
+      Building standalone binaries, setting up repository wrappers, configuring
+      project profiles, and workstation/bot authentication.
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`sliders` Flag Compatibility Policy
-      :link: module-pw_ghish-flag-compatibility
+   .. grid-item-card:: :octicon:`milestone` Status & roadmap
+      :link: module-pw_ghish-roadmap
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Compatibility principles with upstream GitHub CLI, compatibility tiers,
-      and ghish-only flag designations.
+      Operational status, capability matrix, and roadmap for declarative
+      profiles, setup automation, and alternative SCMs.
 
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`repo-forked` Worktrees & Caches
-      :link: module-pw_ghish-worktrees
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Manage warm worktree slots, project symlinks, shared Bazel caches, and
-      IDE workspace synchronization across Antigravity (Jetski) and standard
-      environments.
-
-   .. grid-item-card:: :octicon:`checklist` Agent Evaluation Runbook
+   .. grid-item-card:: :octicon:`checklist` Agent evaluation
       :link: module-pw_ghish-agent-eval
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
       Verification runbook for coding agents, behavioral rubric, and live
-      integration test suite.
+      integration test suite (``live_test.go``).
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   cli
+   life_of_a_pr
+   pr
+   run
    issue
+   worktree
    ai_workflows
-   worktrees
    cli_comparison
-   flag_compatibility
-   roadmap
    project_integration
+   roadmap
    agent_eval

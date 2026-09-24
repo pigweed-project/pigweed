@@ -24,12 +24,14 @@ pw_doc_group("docs") {
   sources = [
     "agent_eval.rst",
     "ai_workflows.rst",
-    "cli.rst",
     "cli_comparison.rst",
     "docs.rst",
-    "flag_compatibility.rst",
+    "issue.rst",
+    "life_of_a_pr.rst",
+    "pr.rst",
     "project_integration.rst",
     "roadmap.rst",
-    "worktrees.rst",
+    "run.rst",
+    "worktree.rst",
   ]
 }

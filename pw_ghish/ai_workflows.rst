@@ -1,7 +1,7 @@
 .. _module-pw_ghish-ai-workflows:
 
 ============
-AI Workflows
+AI workflows
 ============
 .. pigweed-module-subpage::
    :name: pw_ghish
@@ -174,39 +174,29 @@ The Workflow
 
       $ ./gh pr push
 
--------------------------------------------------
-CUJ 4: Autonomous CI driving and failure repair
--------------------------------------------------
-In traditional Gerrit workflows, verifying changes through presubmit imposes a
-heavy context-switching penalty on engineers:
-
-1. The engineer uploads a CL with Commit-Queue (``CQ+1``).
-2. Presubmit tryjobs run across dozens of builders for 20 to 30 minutes.
-3. The engineer is forced to context-switch away to another task.
-4. Half an hour later, the engineer must break focus, check the Gerrit web UI,
-   sift through Buildbucket builder lists, click through nested step hierarchies
-   to inspect LogDog logs, diagnose what failed, and context-switch back to code.
-
-``pw_ghish`` eliminates this round-trip tax by allowing AI agents to autonomously
-poll, watch, diagnose, and drive changes to ground.
+-----------------------------------------
+CUJ 4: Watching CI and repairing failures
+-----------------------------------------
+In Gerrit workflows, presubmit tryjobs often run across dozens of builders for
+15 to 30 minutes. Rather than manually polling the Gerrit or Milo web UI and
+clicking through nested recipe steps to inspect failure logs, an agent can
+monitor tryjobs and retrieve step failure snippets from the terminal.
 
 The Workflow
 ============
-1. **Agent pushes change and begins autonomous CI watch**:
-   The agent uploads the patchset with Commit-Queue enabled and monitors the run:
+1. **Agent pushes change and watches checks**:
+   The agent uploads the patchset with Commit-Queue enabled and watches the run:
 
    .. code-block:: console
 
       $ ./gh pr push --cq
       $ ./gh pr checks --watch --fail-fast
 
-   ``pw_ghish`` watches Buildbucket in the background, polling at a configurable
-   interval (default: 15s) without requiring human supervision.
+   ``pw_ghish`` polls Buildbucket at a configurable interval (default: 15s).
 
-2. **Instant fail-fast and failure triage**:
-   If any blocking builder fails, ``--fail-fast`` halts immediately. With
-   automatic failure diagnostics enabled (the default), ``pw_ghish`` queries
-   LogDog and dumps the failing step and error log snippet straight into stdout:
+2. **Fail-fast exit and failure log retrieval**:
+   If any blocking builder fails, ``--fail-fast`` exits immediately and prints
+   the failing step summary and log snippet to stdout:
 
    .. code-block:: console
 
@@ -218,19 +208,18 @@ The Workflow
         Failing Step: "ninja"
         Summary: Sphinx documentation build failed: undefined label 'module-pw_foo'
 
-        --- LogDog Output Snippet: "ninja" ---
+        --- Log Snippet (stdout) ---
         pw_foo/docs.rst:14: WARNING: undefined label: 'module-pw_foo'
 
    .. tip::
 
-      Agents can also inspect failure reports anytime with
-      ``./gh run view --log-failed``, drill down into step trees with
-      ``./gh run view -j <builder>``, or retry failed builders with
-      ``./gh run rerun --failed``.
+      You can also inspect failure reports with ``./gh run view --log-failed``,
+      view step execution trees with ``./gh run view -j <builder>``, or retry
+      failed builders with ``./gh run rerun --failed``.
 
-3. **Autonomous repair loop**:
-   The agent ingests the error snippet directly in context, edits the source
-   file, tests the fix locally, and pushes the updated patchset:
+3. **Repair and re-upload**:
+   The agent reads the error output, edits the source file, tests the fix
+   locally, and uploads an updated patchset:
 
    .. code-block:: console
 
@@ -238,9 +227,8 @@ The Workflow
       $ ./gh pr push --cq
       $ ./gh pr checks --watch --fail-fast
 
-4. **Green completion and auto-submit**:
-   Once all checks pass, the agent completes the loop or enables automated
-   submission:
+4. **Enable auto-submit**:
+   Once checks pass, the agent or engineer enables automated submission:
 
    .. code-block:: console
 
@@ -249,14 +237,11 @@ The Workflow
 Key benefits
 ============
 
-* **Eliminates human context switching**: Developers stay in flow on primary
-  design and coding tasks while the agent drives presubmits to completion.
+* **Reduced context switching**: The agent polls presubmits and surfaces step
+  failures without manual browser navigation.
 
-* **Terminal-native failure triage**: No sifting through web browser consoles or
-  nested step logs—error snippets are delivered directly to the terminal.
-
-* **Autonomous convergence**: The agent iterates on failures independently
-  until all required builders are green.
+* **Terminal log snippets**: Step failure summaries and log excerpts are printed
+  directly to stdout.
 
 ------------------------------
 CUJ 5: Dependent change stacks
@@ -319,3 +304,55 @@ The Workflow
    If submit requirements cannot be met (for instance, missing a mandatory
    ``Code-Review+2`` approval), ``pr merge`` immediately reports the missing
    labels and hints at the required voting flags rather than silently hanging.
+
+-------------------------------------------------
+CUJ 7: Parallel multi-agent issue-to-CL workflows
+-------------------------------------------------
+When running multiple AI coding agents concurrently across different bugs or
+features, sharing a single Git checkout causes index collisions, while creating
+fresh ``git worktree`` directories triggers cold Bazel builds from scratch.
+
+By combining :ref:`module-pw_ghish-issue` and :ref:`module-pw_ghish-worktree`,
+engineers can dispatch parallel agents in isolated, warm Bazel build slots.
+
+The Workflow
+============
+1. **Allocate a warm worktree slot for a Buganizer issue**:
+   The engineer or agent spins up a dedicated project slot directly from a
+   Buganizer issue ID:
+
+   .. code-block:: console
+
+      $ ./gh issue develop 315378787 --worktree
+      ✓ Project "b-315378787-fix-channel-framing" mounted in slot pw-01
+
+   This mounts physical slot ``pw-01``, creates symlink
+   ``~/wrk/projects/b-315378787-fix-channel-framing``, and registers the
+   workspace in the Antigravity (Jetski) IDE sidebar.
+
+2. **Agent reads issue context with zero arguments**:
+   Inside the mounted project directory, the agent inspects the bug description
+   and discussion history without needing the issue number repeated:
+
+   .. code-block:: console
+
+      $ ./gh issue view --comments
+
+3. **Agent implements fix, uploads CL, and drives CI**:
+   The agent writes the fix, runs incremental Bazel tests using the slot's warm
+   output base, and uploads a Gerrit CL linked to the bug:
+
+   .. code-block:: console
+
+      $ bazelisk test //pw_rpc/...
+      $ ./gh pr create --cq
+      $ ./gh pr checks --watch --fail-fast
+
+4. **Park the project while awaiting human review**:
+   Once tryjobs are green and the CL is waiting on reviewer approval, the slot
+   can be freed for the next task while keeping the branch and CL tracked in
+   ``./gh wt list``:
+
+   .. code-block:: console
+
+      $ ./gh wt park b-315378787-fix-channel-framing

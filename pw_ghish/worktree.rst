@@ -1,10 +1,22 @@
+.. _module-pw_ghish-worktree:
 .. _module-pw_ghish-worktrees:
 
-=======================================
-Worktree & Multi-Agent Cache Management
-=======================================
+=================
+Worktrees (gh wt)
+=================
 .. pigweed-module-subpage::
    :name: pw_ghish
+
+.. warning::
+
+   **VERY EXPERIMENTAL**: Worktree management (``./gh wt`` / ``./gh worktree``)
+   is **very experimental** and under active development. Slot pooling,
+   directory layouts, Bazel cache rules, and IDE workspace synchronization may
+   change significantly based on usage and feedback.
+
+``./gh wt`` (also available as ``./gh worktree``) is a ``pw_ghish`` extension
+that automates **Git worktree pooling, shared Bazel caches, and IDE workspace
+synchronization** for humans and parallel AI coding agents.
 
 When you work with multiple AI coding agents or juggle several Gerrit changes in
 parallel, managing Git checkouts in a large Bazel repository quickly becomes
@@ -18,10 +30,9 @@ tedious:
 * Manually creating, configuring, and cleaning up IDE workspaces for each task
   adds friction to every context switch.
 
-``./gh wt`` automates Git worktree and Bazel cache management for AI agents and
-humans. You can spin up isolated project directories in seconds, run fast
-incremental builds backed by a shared pool of warm build slots, and synchronize
-workspaces automatically with your IDE.
+With ``./gh wt``, you can spin up isolated project directories in seconds, run
+fast incremental builds backed by a shared pool of warm build slots, and
+synchronize workspaces automatically with your IDE.
 
 .. mermaid::
 
@@ -152,7 +163,8 @@ next CL in the same area, rebase the slot onto ``origin/main`` in place:
 --------------
 CLI User Guide
 --------------
-The ``./gh wt`` command tree manages the lifecycle of slots and projects.
+The ``./gh wt`` (or ``./gh worktree``) command tree manages the lifecycle of
+slots and projects.
 
 Initializing and Inspecting the Environment
 ===========================================
@@ -351,6 +363,44 @@ agent harnesses.
   no-op. If you prefer to manage IDE workspaces manually on an Antigravity host,
   you can disable IDE synchronization explicitly by setting the environment
   variable ``GH_ISH_IDE_SYNC=0``.
+
+-----------------------------------------
+Comparison with GitHub CLI & git worktree
+-----------------------------------------
+Unlike ``gh pr``, ``gh run``, and ``gh issue``, ``./gh wt`` (``./gh worktree``)
+has **no upstream GitHub CLI equivalent**—it is a purpose-built ``pw_ghish``
+extension designed for multi-agent C++/Bazel repositories.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 25 25
+
+   * - Capability
+     - ``gh pr checkout``
+     - Raw ``git worktree add``
+     - ``./gh wt`` (``./gh worktree``)
+   * - **Parallel agent isolation**
+     - Mutates current checkout in place; clobbers index if shared.
+     - Creates isolated directory per branch.
+     - Creates isolated logical symlink ``~/wrk/projects/<name>`` backed by a
+       warm physical slot.
+   * - **Bazel build cache behavior**
+     - Reuses single output base, but blocks concurrent builds.
+     - **Cold output base per path** (Bazel hashes ``realpath()`` via MD5),
+       costing tens of GBs and minutes per worktree.
+     - **Warm output base pool**: Fixed physical slots (``pw-01..N``) keep Bazel
+       analysis servers warm and share a 80 GB disk/repo cache.
+   * - **Capacity & disk management**
+     - Single directory.
+     - Unbounded directories; orphaned Bazel output bases accumulate in
+       ``~/.cache/bazel/``.
+     - Bounded slot pool with automatic LRU ``PARKED`` eviction and
+       ``./gh wt gc`` output-base garbage collection.
+   * - **Gerrit & Buganizer awareness**
+     - Checks out patchset commit only.
+     - Unaware of Gerrit CLs or Buganizer issues.
+     - Live ``./gh wt list`` status badges, ``--issue``/``--cl`` mounting, and
+       zero-arg issue context resolution.
 
 ---------------------------
 Architecture & How It Works
