@@ -585,8 +585,9 @@ void LogicalLink::SignalError() {
         link_error_cb_();
       };
 
+  auto self = GetWeakPtr();
   for (auto channel_iter = channels_.begin();
-       channel_iter != channels_.end();) {
+       self.is_alive() && channel_iter != channels_.end();) {
     auto& [id, channel] = *channel_iter++;
 
     // Do not close the signaling channel, as it is used to close the dynamic
@@ -596,11 +597,18 @@ void LogicalLink::SignalError() {
     }
 
     // Signal the channel, as it did not request the closure.
+    auto chan_weak = channel->GetWeakPtr();
     channel->OnClosed();
+
+    if (!self.is_alive()) {
+      return;
+    }
 
     // This erases from |channel_| and invalidates any iterator pointing to
     // |channel|.
-    RemoveChannel(channel.get(), channel_removed_cb.share());
+    if (chan_weak.is_alive()) {
+      RemoveChannel(channel.get(), channel_removed_cb.share());
+    }
   }
 }
 

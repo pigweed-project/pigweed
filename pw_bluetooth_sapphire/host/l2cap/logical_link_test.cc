@@ -711,6 +711,29 @@ TEST_F(LogicalLinkTest, SniffSuppression) {
   RunUntilIdle();
 }
 
+TEST_F(LogicalLinkTest, SignalErrorSynchronouslyDestroysLogicalLink) {
+  Channel::WeakPtr att_chan = link()->OpenFixedChannel(kATTChannelId);
+  ASSERT_TRUE(att_chan.is_alive());
+  bool activated = att_chan->Activate([](auto) {}, []() {});
+  ASSERT_TRUE(activated);
+
+  bool error_called = false;
+  link()->set_error_callback([this, &error_called]() {
+    error_called = true;
+    link()->Close();
+    DeleteLink();
+  });
+
+  // Trigger SignalError via the activated channel.
+  // Since there is only 1 channel to close (excluding signaling), this will
+  // immediately call the error callback and destroy the LogicalLink.
+  // Without the fix, this would crash/UAF after SignalLinkError returns.
+  att_chan->SignalLinkError();
+
+  EXPECT_TRUE(error_called);
+  EXPECT_EQ(nullptr, link());
+}
+
 TEST_F(LogicalLinkTest, AutosniffModeChangeUndersizedEvent) {
   ResetAndCreateNewLogicalLink(LinkType::kACL);
   ASSERT_TRUE(link()->AutosniffEnabled());
