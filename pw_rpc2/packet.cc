@@ -66,11 +66,23 @@ Result<Buf> HandshakePacket::Encode(Buf buffer) const {
   return buffer;
 }
 
-// State PacketType value assumptions used in Decode to validate the type byte.
-static_assert(PacketType::kRequest <= PacketType::kMessage);
-static_assert(PacketType::kMessage <= PacketType::kStreamEnd);
-static_assert(PacketType::kStreamEnd <= PacketType::kError);
-static_assert(PacketType::kError <= PacketType::kResponse);
+// State PacketType value assumptions used to validate and classify the type
+// byte.
+static_assert(static_cast<uint8_t>(PacketType::kRequest) % 2 == 0);
+static_assert(static_cast<uint8_t>(PacketType::kResponse) ==
+              static_cast<uint8_t>(PacketType::kRequest) + 1);
+static_assert(static_cast<uint8_t>(PacketType::kClientMessage) ==
+              static_cast<uint8_t>(PacketType::kRequest) + 2);
+static_assert(static_cast<uint8_t>(PacketType::kServerMessage) ==
+              static_cast<uint8_t>(PacketType::kClientMessage) + 1);
+static_assert(static_cast<uint8_t>(PacketType::kClientStreamEnd) ==
+              static_cast<uint8_t>(PacketType::kClientMessage) + 2);
+static_assert(static_cast<uint8_t>(PacketType::kServerStreamEnd) ==
+              static_cast<uint8_t>(PacketType::kClientStreamEnd) + 1);
+static_assert(static_cast<uint8_t>(PacketType::kClientError) ==
+              static_cast<uint8_t>(PacketType::kClientStreamEnd) + 2);
+static_assert(static_cast<uint8_t>(PacketType::kServerError) ==
+              static_cast<uint8_t>(PacketType::kClientError) + 1);
 
 Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
   if (buffer.size() < sizeof(PacketHeader)) {
@@ -79,7 +91,7 @@ Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
 
   const auto type =
       static_cast<PacketType>(buffer[offsetof(PacketHeader, type)]);
-  if (type < PacketType::kRequest || type > PacketType::kResponse) {
+  if (!IsValidPacketType(type)) {
     return Status::InvalidArgument();
   }
   if (buffer.size() < PacketSizeWithoutPayload(type)) {
@@ -103,29 +115,16 @@ Result<size_t> OutboundPacket::EncodeHeader(ByteSpan buffer,
   WriteUint32(buffer, offsetof(PacketHeader, call_id), call_id_);
   buffer[offsetof(PacketHeader, type)] = static_cast<std::byte>(type_);
 
-  switch (type_) {
-    case PacketType::kRequest: {
-      WriteUint32(buffer,
-                  offsetof(RequestWireFormat, service_id),
-                  fields_.request.service_id);
-      WriteUint32(buffer,
-                  offsetof(RequestWireFormat, method_id),
-                  fields_.request.method_id);
-      break;
-    }
-
-    case PacketType::kMessage:
-    case PacketType::kResponse:
-    case PacketType::kStreamEnd: {
-      // These packet types carry no header fields beyond the common header.
-      break;
-    }
-
-    case PacketType::kError: {
-      WriteUint32(
-          buffer, offsetof(ErrorWireFormat, status_code), status().code());
-      break;
-    }
+  if (type_ == PacketType::kRequest) {
+    WriteUint32(buffer,
+                offsetof(RequestWireFormat, service_id),
+                fields_.request.service_id);
+    WriteUint32(buffer,
+                offsetof(RequestWireFormat, method_id),
+                fields_.request.method_id);
+  } else if (IsError(type_)) {
+    WriteUint32(
+        buffer, offsetof(ErrorWireFormat, status_code), status().code());
   }
 
   return offset + payload_len;
@@ -145,7 +144,7 @@ Result<Buf> OutboundPacket::Encode(Buf buffer, size_t payload_len) const {
 
 Result<Buf> OutboundPacket::Encode(Buf buffer) const {
   size_t payload_len = 0;
-  if (type_ != PacketType::kStreamEnd && type_ != PacketType::kError) {
+  if (HasPayload(type_)) {
     const size_t offset = payload_offset();
     if (buffer.size() > offset) {
       payload_len = buffer.size() - offset;

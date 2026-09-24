@@ -28,27 +28,75 @@
 
 namespace pw::rpc2::internal {
 
+/// Identifies the role of an RPC endpoint on a connection.
+enum class EndpointRole : uint8_t {
+  kClient = 0,  // Sends even PacketTypes (bit 0 == 0), expects odd (1).
+  kServer = 1,  // Sends odd PacketTypes (bit 0 == 1), expects even (0).
+};
+
 /// Identifies the role and wire format of a regular protocol packet in pw_rpc2.
 ///
 /// These packets are exchanged after the initial handshake is established.
 /// Encoded in the packet header to indicate how the packet is framed,
 /// decoded, and processed.
+///
+/// Client-to-server packets use even values (`bit 0 == 0`) and server-to-client
+/// packets use odd values (`bit 0 == 1`). Values are paired so that clearing
+/// bit 0 maps a server packet to its client counterpart, and ordered so that
+/// payload-carrying packets (`< kClientStreamEnd`) precede payload-free control
+/// packets (`>= kClientStreamEnd`).
 enum class PacketType : uint8_t {
   /// Initiates an RPC invocation from client to server.
-  kRequest = 0x01,
+  kRequest = 0x02,
 
-  /// Carries streaming payload data for an in-flight RPC.
-  kMessage = 0x02,
+  /// Completes a unary or client-streaming RPC from server to client and
+  /// delivers a response payload.
+  kResponse = 0x03,
 
-  /// Signals the completion of a client or server stream.
-  kStreamEnd = 0x03,
+  /// Carries streaming payload data from client to server.
+  kClientMessage = 0x04,
 
-  /// Terminates an RPC with an error status.
-  kError = 0x04,
+  /// Carries streaming payload data from server to client.
+  kServerMessage = 0x05,
 
-  /// Completes the RPC and delivers a response payload.
-  kResponse = 0x05,
+  /// Signals the completion of a client stream.
+  kClientStreamEnd = 0x06,
+
+  /// Signals the completion of a server stream.
+  kServerStreamEnd = 0x07,
+
+  /// Terminates an RPC from the client with an error status.
+  kClientError = 0x08,
+
+  /// Terminates an RPC from the server with an error status.
+  kServerError = 0x09,
 };
+
+/// True if `type` is a recognized `PacketType`.
+constexpr bool IsValidPacketType(PacketType type) {
+  return type >= PacketType::kRequest && type <= PacketType::kServerError;
+}
+
+/// True if `type` is a valid packet type addressed to `destination`.
+constexpr bool IsPacketFor(PacketType type, EndpointRole destination) {
+  // Rebase so valid types are 0-7, then keep bit 0 (direction) and bits 3+
+  // (out of range, including values below kRequest, which wrap around). The
+  // result matches only for in-range types sent by the opposite role.
+  const uint8_t offset =
+      static_cast<uint8_t>(type) - static_cast<uint8_t>(PacketType::kRequest);
+  return (offset & ~uint8_t{0x06}) == (static_cast<uint8_t>(destination) ^ 1u);
+}
+
+/// True if `type` is `kClientError` or `kServerError`.
+constexpr bool IsError(PacketType type) {
+  return type == PacketType::kClientError || type == PacketType::kServerError;
+}
+
+/// True if `type` carries trailing payload bytes (`kRequest`, `kResponse`,
+/// `kClientMessage`, `kServerMessage`).
+constexpr bool HasPayload(PacketType type) {
+  return type < PacketType::kClientStreamEnd;
+}
 
 /// Common prefix of every regular protocol packet (following the handshake).
 PW_PACKED(struct) PacketHeader {
@@ -103,20 +151,14 @@ static_assert(sizeof(HandshakeWireFormat) == 8);
 /// Returns the wire format size for `type` excluding any trailing payload
 /// bytes.
 constexpr size_t PacketSizeWithoutPayload(PacketType type) {
-  switch (type) {
-    case PacketType::kRequest:
-      return sizeof(RequestWireFormat);
-    case PacketType::kMessage:
-      return sizeof(MessageWireFormat);
-    case PacketType::kResponse:
-      return sizeof(ResponseWireFormat);
-    case PacketType::kStreamEnd:
-      return sizeof(StreamEndWireFormat);
-    case PacketType::kError:
-      return sizeof(ErrorWireFormat);
+  PW_DASSERT(IsValidPacketType(type));
+  if (type == PacketType::kRequest) {
+    return sizeof(RequestWireFormat);
   }
-  PW_DASSERT(false);
-  return 0;
+  if (IsError(type)) {
+    return sizeof(ErrorWireFormat);
+  }
+  return sizeof(PacketHeader);
 }
 
 class HandshakePacket {
@@ -160,24 +202,56 @@ class OutboundPacket {
         PacketType::kRequest, call_id, Fields(service_id, method_id));
   }
 
-  static constexpr OutboundPacket Message(uint32_t call_id) {
-    return OutboundPacket(PacketType::kMessage, call_id, Fields());
+  static constexpr OutboundPacket Message(EndpointRole sender,
+                                          uint32_t call_id) {
+    return OutboundPacket(sender == EndpointRole::kClient
+                              ? PacketType::kClientMessage
+                              : PacketType::kServerMessage,
+                          call_id,
+                          Fields());
+  }
+
+  static constexpr OutboundPacket ClientMessage(uint32_t call_id) {
+    return Message(EndpointRole::kClient, call_id);
+  }
+
+  static constexpr OutboundPacket ServerMessage(uint32_t call_id) {
+    return Message(EndpointRole::kServer, call_id);
   }
 
   static constexpr OutboundPacket Response(uint32_t call_id) {
     return OutboundPacket(PacketType::kResponse, call_id, Fields());
   }
 
-  static constexpr OutboundPacket StreamEnd(uint32_t call_id) {
-    return OutboundPacket(PacketType::kStreamEnd, call_id, Fields());
+  static constexpr OutboundPacket StreamEnd(EndpointRole sender,
+                                            uint32_t call_id) {
+    return OutboundPacket(sender == EndpointRole::kClient
+                              ? PacketType::kClientStreamEnd
+                              : PacketType::kServerStreamEnd,
+                          call_id,
+                          Fields());
   }
 
-  static constexpr OutboundPacket Error(uint32_t call_id, Status status) {
-    return OutboundPacket(PacketType::kError, call_id, Fields(status));
+  static constexpr OutboundPacket ClientStreamEnd(uint32_t call_id) {
+    return StreamEnd(EndpointRole::kClient, call_id);
+  }
+
+  static constexpr OutboundPacket ServerStreamEnd(uint32_t call_id) {
+    return StreamEnd(EndpointRole::kServer, call_id);
+  }
+
+  static constexpr OutboundPacket Error(EndpointRole sender,
+                                        uint32_t call_id,
+                                        Status status) {
+    return OutboundPacket(sender == EndpointRole::kClient
+                              ? PacketType::kClientError
+                              : PacketType::kServerError,
+                          call_id,
+                          Fields(status));
   }
 
   constexpr OutboundPacket()
-      : OutboundPacket(PacketType::kMessage, 0, Fields()) {}
+      : OutboundPacket(PacketType::kClientMessage, 0, Fields()) {}
 
   OutboundPacket(const OutboundPacket&) = default;
   OutboundPacket& operator=(const OutboundPacket&) = default;
@@ -198,7 +272,7 @@ class OutboundPacket {
   }
 
   Status status() const {
-    PW_DASSERT(type_ == PacketType::kError);
+    PW_DASSERT(IsError(type_));
     return fields_.status;
   }
 
@@ -300,7 +374,7 @@ class InboundPacket {
   }
 
   Status status() const {
-    PW_DASSERT(type() == PacketType::kError);
+    PW_DASSERT(IsError(type()));
     uint32_t status_code = ReadUint32(offsetof(ErrorWireFormat, status_code));
     return Status(static_cast<Status::Code>(status_code));
   }

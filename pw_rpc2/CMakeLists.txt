@@ -39,6 +39,7 @@ pw_add_test(pw_rpc2.packet_test
     pw_assert.check
     pw_bytes
     pw_rpc2._packet
+    pw_status
   GROUPS
     modules
     pw_rpc2

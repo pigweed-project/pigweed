@@ -46,6 +46,7 @@ pw_cc_test(
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_bytes",
+        "//pw_status",
         "//pw_unit_test",
     ],
 )
