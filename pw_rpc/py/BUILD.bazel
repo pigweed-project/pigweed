@@ -53,11 +53,11 @@ pw_py_binary(
     python_version = "PY3",
     deps = [
         ":pw_rpc",
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
         "//pw_status/py:pw_status",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 
@@ -69,11 +69,11 @@ pw_py_binary(
     python_version = "PY3",
     deps = [
         ":pw_rpc",
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
         "//pw_status/py:pw_status",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 
@@ -85,11 +85,11 @@ pw_py_binary(
     python_version = "PY3",
     deps = [
         ":pw_rpc",
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf/py:plugin_library",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
         "//pw_status/py:pw_status",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 
@@ -105,12 +105,12 @@ pw_py_library(
     ],
     imports = ["."],
     deps = [
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf/py:pw_protobuf",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc:internal_packet_proto_pb2",
         "//pw_status/py:pw_status",
         "//pw_stream/py:pw_stream",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 
@@ -209,8 +209,8 @@ pw_py_test(
     tags = ["noubsan"],
     deps = [
         ":pw_rpc",
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf_compiler:pw_protobuf_compiler_protos_py_pb2",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 

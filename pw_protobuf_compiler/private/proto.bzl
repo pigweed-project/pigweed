@@ -230,8 +230,14 @@ def _proto_compiler_aspect_impl(target, ctx):
     args.add("--custom_out={}".format(out_path))
     args.add_all(proto_info.direct_sources)
 
+    proto_toolchain = ctx.toolchains["@com_google_protobuf//bazel/private:proto_toolchain_type"]
+    if proto_toolchain and hasattr(proto_toolchain, "proto"):
+        protoc = proto_toolchain.proto.proto_compiler
+    else:
+        protoc = ctx.executable._protoc
+
     all_tools = [
-        ctx.executable._protoc,
+        protoc,
         ctx.executable._protoc_plugin,
     ]
 
@@ -246,7 +252,7 @@ def _proto_compiler_aspect_impl(target, ctx):
         mnemonic = "PwProtoCompile",
         tools = all_tools,
         outputs = srcs + hdrs,
-        executable = ctx.executable._protoc,
+        executable = protoc,
         arguments = [args],
         env = {
             # This effectively pre-adopts
@@ -312,6 +318,12 @@ def proto_compiler_aspect(extensions, protoc_plugin, plugin_options = [], exclud
                 cfg = "exec",
             ),
         },
+        toolchains = [
+            config_common.toolchain_type(
+                "@com_google_protobuf//bazel/private:proto_toolchain_type",
+                mandatory = False,
+            ),
+        ],
         implementation = _proto_compiler_aspect_impl,
         provides = [PwProtoInfo],
     )

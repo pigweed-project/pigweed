@@ -42,9 +42,9 @@ pw_py_library(
         "..",
     ],
     deps = [
+        "//pw_build:python_protobuf_runtime",
         "//pw_protobuf:codegen_protos_pb2",
         "//pw_protobuf:field_options_proto_pb2",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
 
@@ -56,7 +56,7 @@ pw_py_binary(
     python_version = "PY3",
     deps = [
         ":plugin_library",
-        "@com_google_protobuf//:protobuf_python",
+        "//pw_build:python_protobuf_runtime",
     ],
 )
 
@@ -65,9 +65,9 @@ pw_py_library(
     srcs = [":pw_protobuf_common_sources"],
     imports = ["."],
     deps = [
+        "//pw_build:python_protobuf_runtime",
         "//pw_cli/py:pw_cli",
         "//pw_protobuf:codegen_protos_pb2",
         "//pw_protobuf:field_options_proto_pb2",
-        "@com_google_protobuf//:protobuf_python",
     ],
 )
