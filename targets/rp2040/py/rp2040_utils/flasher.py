@@ -47,6 +47,8 @@ except ImportError:
     _PROBE_RS_COMMAND = 'probe-rs'
     _PICOTOOL_COMMAND = 'picotool'
 
+_ELF_MAGIC = b'\x7fELF'
+
 
 def flash(board_info: PicoBoardInfo, chip: str, binary: Path) -> bool:
     """Load `binary` onto `board_info` and wait for the device to become
@@ -72,6 +74,17 @@ def flash(board_info: PicoBoardInfo, chip: str, binary: Path) -> bool:
     return True
 
 
+def _is_elf(file: Path) -> bool:
+    """Checks if the given file has the ELF magic header."""
+    if not file.is_file():
+        return False
+    try:
+        with file.open('rb') as f:
+            return f.read(4) == _ELF_MAGIC
+    except OSError:
+        return False
+
+
 def find_elf(binary: Path) -> Path | None:
     """Attempt to find and return the path to an ELF file for a binary.
 
@@ -80,15 +93,16 @@ def find_elf(binary: Path) -> Path | None:
 
     Returns the path to the associated ELF file, or None if none was found.
     """
-    if binary.suffix == '.elf' or not binary.suffix:
+    if _is_elf(binary):
         return binary
+
     choices = (
         binary.parent / f'{binary.stem}.elf',
         binary.parent / 'bin' / f'{binary.stem}.elf',
         binary.parent / 'test' / f'{binary.stem}.elf',
     )
     for choice in choices:
-        if choice.is_file():
+        if _is_elf(choice):
             return choice
 
     _LOG.error(
@@ -109,9 +123,9 @@ def _load_picotool_binary(board_info: PicoBoardInfo, binary: Path) -> bool:
         str(binary.absolute()),
     ]
 
-    # If the binary has not file extension, assume that it is ELF and
-    # explicitly tell `picotool` that.
-    if not binary.suffix:
+    # If the binary is an elf file, tell picotool explicitly. Many files do
+    # not use the .elf suffix.
+    if _is_elf(binary):
         cmd += ['-t', 'elf']
 
     cmd += [
@@ -173,7 +187,7 @@ def _wait_for_serial_port(board_info: PicoBoardInfo) -> bool:
             try:
                 with open(board_info.serial_port, 'r+b', buffering=0):
                     return True
-            except (OSError, IOError):
+            except OSError:
                 _LOG.debug(
                     'Unable to connect to %s, retrying', board_info.serial_port
                 )

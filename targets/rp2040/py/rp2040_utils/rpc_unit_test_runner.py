@@ -16,8 +16,9 @@
 
 import argparse
 import logging
-import sys
+import os
 from pathlib import Path
+import sys
 
 import serial  # type: ignore
 
@@ -71,6 +72,17 @@ def run_test_on_board(
 
     Returns whether it succeeded.
     """
+    if not binary.is_absolute():
+        working_dir = os.environ.get('BUILD_WORKING_DIRECTORY')
+        if working_dir:
+            _LOG.debug(
+                'Binary path is not absolute: %s. '
+                'Appending BUILD_WORKING_DIRECTORY: %s',
+                binary,
+                working_dir,
+            )
+            binary = Path(working_dir) / binary
+
     if not flash(board, chip, binary):
         return False
     serial_device = serial.Serial(board.serial_port, baud_rate, timeout=0.1)

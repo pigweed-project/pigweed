@@ -73,6 +73,28 @@ module.
    "SPI", ":ref:`module-pw_spi_rp2040`"
    "Basic I/O for bringup and debugging", ":ref:`module-pw_sys_io_rp2040`"
 
+----------------
+Unit test runner
+----------------
+A unit test runner utility is provided to manually run unit tests on device. It
+can be invoked using:
+
+.. code-block:: shell
+
+   bazelisk run //targets/rp2040/py:rpc_unit_test_runner -- --chip RP2350 path/to/unit-test-binary
+
+Because using `bazel run` changes the working directory to the bazel runfiles
+location, if the path given for the binary is relative, the script will
+automatically append `BUILD_WORKING_DIRECTORY` to relative binary paths. If
+`BUILD_WORKING_DIRECTORY` is not set (the script is not invoked with
+`bazel run`) the path will not be modified.
+
+This allows using syntax such as:
+
+.. code-block:: shell
+
+   bazelisk run //targets/rp2040/py:rpc_unit_test_runner -- --chip RP2350 ./bazel-out/rp2350-fastbuild/bin/pw_containers/vector_test.cc_test
+
 .. toctree::
    :maxdepth: 1
    :hidden:
