@@ -711,7 +711,7 @@ TEST_F(LogicalLinkTest, SniffSuppression) {
   RunUntilIdle();
 }
 
-TEST_F(LogicalLinkTest, SignalErrorSynchronouslyDestroysLogicalLink) {
+TEST_F(LogicalLinkTest, SignalErrorDestroysLogicalLink) {
   Channel::WeakPtr att_chan = link()->OpenFixedChannel(kATTChannelId);
   ASSERT_TRUE(att_chan.is_alive());
   bool activated = att_chan->Activate([](auto) {}, []() {});
@@ -725,10 +725,14 @@ TEST_F(LogicalLinkTest, SignalErrorSynchronouslyDestroysLogicalLink) {
   });
 
   // Trigger SignalError via the activated channel.
-  // Since there is only 1 channel to close (excluding signaling), this will
-  // immediately call the error callback and destroy the LogicalLink.
-  // Without the fix, this would crash/UAF after SignalLinkError returns.
   att_chan->SignalLinkError();
+
+  // The error callback is posted asynchronously, so it shouldn't have run yet.
+  EXPECT_FALSE(error_called);
+  EXPECT_NE(nullptr, link());
+
+  // Run the loop to execute the error callback.
+  RunUntilIdle();
 
   EXPECT_TRUE(error_called);
   EXPECT_EQ(nullptr, link());

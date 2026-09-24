@@ -103,6 +103,7 @@ pw_source_set("l2cap") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     ":definitions",
+    "$dir_pw_async:heap_dispatcher",
     "$dir_pw_bluetooth:emboss_hci_android",
     "$dir_pw_bluetooth_sapphire:lease",
     "$dir_pw_bluetooth_sapphire/host/common",

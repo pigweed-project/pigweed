@@ -108,6 +108,7 @@ LogicalLink::LogicalLink(
     pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider)
     : wake_lease_provider_(wake_lease_provider),
       pw_dispatcher_(dispatcher),
+      heap_dispatcher_(dispatcher),
       handle_(handle),
       type_(type),
       role_(role),
@@ -566,7 +567,7 @@ void LogicalLink::SignalError() {
   }
 
   if (num_channels_to_close == 0) {
-    link_error_cb_();
+    NotifyError();
     return;
   }
 
@@ -581,8 +582,7 @@ void LogicalLink::SignalError() {
                "l2cap",
                "Channels on link %#.4x closed; passing error to lower layer",
                handle());
-        // Invoking error callback may destroy this LogicalLink.
-        link_error_cb_();
+        NotifyError();
       };
 
   auto self = GetWeakPtr();
@@ -610,6 +610,21 @@ void LogicalLink::SignalError() {
       RemoveChannel(channel.get(), channel_removed_cb.share());
     }
   }
+}
+
+void LogicalLink::NotifyError() {
+  bt_log(DEBUG, "l2cap", "Posting link error task (handle: %#.4x)", handle_);
+  pw::Status post_status = heap_dispatcher_.Post(
+      [self = GetWeakPtr()](pw::async::Context, pw::Status status) {
+        if (status.ok() && self.is_alive()) {
+          bt_log(INFO,
+                 "l2cap",
+                 "Link error callback executing (handle: %#.4x)",
+                 self->handle());
+          self->link_error_cb_();
+        }
+      });
+  PW_CHECK(post_status.ok(), "Failed to post link error task");
 }
 
 void LogicalLink::SignalCreditsAvailable(ChannelId channel, uint16_t credits) {

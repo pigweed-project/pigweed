@@ -126,6 +126,7 @@ cc_library(
     }),
     deps = [
         ":definitions",
+        "//pw_async:heap_dispatcher",
         "//pw_bluetooth",
         "//pw_bluetooth:emboss_hci_android",
         "//pw_bluetooth_sapphire:lease",

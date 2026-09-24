@@ -14,6 +14,7 @@
 
 #pragma once
 #include <lib/fit/function.h>
+#include <pw_async/heap_dispatcher.h>
 
 #include <list>
 #include <memory>
@@ -234,6 +235,9 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   // disconnection). Has no effect if the link is closed.
   void SignalError();
 
+  // Helper to notify GAP of a link error asynchronously to avoid UAF.
+  void NotifyError();
+
   // If the service identified by |psm| can be opened, return a function to
   // complete the channel open for a newly-opened DynamicChannel. Otherwise,
   // return nullptr.
@@ -303,6 +307,7 @@ class LogicalLink : public hci::AclDataChannel::ConnectionInterface {
   pw::bluetooth_sapphire::LeaseProvider& wake_lease_provider_;
 
   pw::async::Dispatcher& pw_dispatcher_;
+  pw::async::HeapDispatcher heap_dispatcher_;
 
   sm::SecurityProperties security_;
 
