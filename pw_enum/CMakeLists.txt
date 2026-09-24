@@ -18,6 +18,7 @@ include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 pw_add_library(pw_enum INTERFACE
   HEADERS
     public/pw_enum/to_string.h
+    public/pw_enum/traits.h
   PUBLIC_INCLUDES
     public
 )
@@ -28,6 +29,7 @@ pw_add_library(pw_enum._generate_internal_do_not_use INTERFACE
   PUBLIC_INCLUDES
     public_generate
   PUBLIC_DEPS
+    pw_enum
     pw_preprocessor
 )
 

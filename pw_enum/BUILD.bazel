@@ -22,7 +22,10 @@ package(default_visibility = ["//visibility:private"])
 
 cc_library(
     name = "pw_enum",
-    hdrs = ["public/pw_enum/to_string.h"],
+    hdrs = [
+        "public/pw_enum/to_string.h",
+        "public/pw_enum/traits.h",
+    ],
     strip_include_prefix = "public",
     visibility = ["//visibility:public"],
 )
@@ -32,7 +35,10 @@ cc_library(
     hdrs = ["public_generate/pw_enum/generate.h"],
     strip_include_prefix = "public_generate",
     visibility = ["//visibility:public"],
-    deps = ["//pw_preprocessor"],
+    deps = [
+        ":pw_enum",
+        "//pw_preprocessor",
+    ],
 )
 
 pw_cc_test(
@@ -109,7 +115,9 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_enum/to_string.h",
+        "public/pw_enum/traits.h",
         "public_generate/pw_enum/generate.h",
+        "//pw_enum/examples:docs_sources",
     ],
     visibility = ["//visibility:public"],
 )

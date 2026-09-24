@@ -47,9 +47,105 @@ class TestEnumGeneration(unittest.TestCase):
             '#define MY_NS_MY_ENUM_DOMAIN "::my::ns::_pw_enum_', footer
         )
         self.assertIn('PW_LOG_TOKEN_FMT("::my::ns::_pw_enum_', footer)
+        self.assertIn("struct EnumTraits<::my::ns::MyEnum>", footer)
+        # pw::has_enum_traits_v detects this tag, so every specialization must
+        # carry it.
+        self.assertIn(
+            "static constexpr bool _pw_enum_internal_tag_do_not_use = true;",
+            footer,
+        )
+        self.assertIn(
+            'static constexpr std::string_view kName = "MyEnum";', footer
+        )
+        self.assertIn(
+            "static constexpr std::string_view kFullyQualifiedName = "
+            '"::my::ns::MyEnum";',
+            footer,
+        )
+        self.assertIn(
+            "static constexpr std::string_view kTokenDomain = "
+            '"::my::ns::_pw_enum_',
+            footer,
+        )
+        self.assertIn(
+            "static constexpr size_t kDistinctValueCount = 2;", footer
+        )
+        self.assertIn("static constexpr bool kIsContiguous = true;", footer)
+        self.assertIn(
+            "static constexpr enum_type kMin = ::my::ns::MyEnum::kMyValue;",
+            footer,
+        )
+        self.assertIn(
+            "static constexpr enum_type kMax = ::my::ns::MyEnum::kB;", footer
+        )
+        self.assertIn(
+            "static constexpr std::array<enum_type, kDistinctValueCount> "
+            "kValues = {{",
+            footer,
+        )
+        self.assertIn("static constexpr bool IsValid(enum_type value)", footer)
+        # Contiguous enums are validated with a range check, not a switch.
+        self.assertIn("return value >= kMin && value <= kMax;", footer)
+        self.assertNotIn("switch (value)", footer)
         self.assertIn("_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyEnum,", footer)
         self.assertIn('(kMyValue, "MY_VALUE")', footer)
         self.assertIn('(kB, "B")', footer)
+
+    def test_traits_single_value(self) -> None:
+        """Test that a single-valued enum is validated with an equality."""
+        enums = [
+            EnumDescriptor(
+                name="OnlyOne",
+                scopes=("test",),
+                cc_full_name="::test::OnlyOne",
+                line=0,
+                values=(EnumValue(cc_name="kOnly", value=7, name="ONLY"),),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn(
+            "static constexpr size_t kDistinctValueCount = 1;", footer
+        )
+        self.assertIn("static constexpr bool kIsContiguous = true;", footer)
+        self.assertIn("return value == kMin;", footer)
+
+    def test_traits_non_contiguous_with_aliases(self) -> None:
+        """Test traits generation for non-contiguous enums with aliases."""
+        enums = [
+            EnumDescriptor(
+                name="SparseEnum",
+                scopes=("test",),
+                cc_full_name="::test::SparseEnum",
+                line=0,
+                values=(
+                    EnumValue(cc_name="kA", value=1, name="A"),
+                    EnumValue(cc_name="kAliasA", value=1, name="ALIAS_A"),
+                    EnumValue(cc_name="kB", value=5, name="B"),
+                ),
+            )
+        ]
+        footer = "\n".join(generate_footer(enums)) + "\n"
+        self.assertIn("struct EnumTraits<::test::SparseEnum>", footer)
+        # Aliases count as a single distinct value.
+        self.assertIn(
+            "static constexpr size_t kDistinctValueCount = 2;", footer
+        )
+        self.assertIn("static constexpr bool kIsContiguous = false;", footer)
+        self.assertIn(
+            "static constexpr enum_type kMin = ::test::SparseEnum::kA;", footer
+        )
+        self.assertIn(
+            "static constexpr enum_type kMax = ::test::SparseEnum::kB;", footer
+        )
+        # kValues contains only kA and kB; the alias is omitted.
+        self.assertIn("::test::SparseEnum::kA,", footer)
+        self.assertIn("::test::SparseEnum::kB,", footer)
+        self.assertNotIn("::test::SparseEnum::kAliasA,", footer)
+        # Non-contiguous enums fall back to a switch.
+        self.assertIn("switch (value)", footer)
+        self.assertIn("case ::test::SparseEnum::kA:", footer)
+        self.assertIn("case ::test::SparseEnum::kB:", footer)
+        self.assertNotIn("case ::test::SparseEnum::kAliasA:", footer)
 
     def test_duplicate_values_grouped(self) -> None:
         """Test that duplicate enum values are grouped alphabetically."""

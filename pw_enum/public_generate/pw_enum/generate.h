@@ -13,6 +13,8 @@
 // the License.
 #pragma once
 
+// Generated pw_enum footers specialize pw::EnumTraits for each enum.
+#include "pw_enum/traits.h"
 #include "pw_preprocessor/apply.h"
 
 /// @module{pw_enum}

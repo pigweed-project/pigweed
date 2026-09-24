@@ -209,6 +209,41 @@ If you don't use the build-time generation targets, you can manually use :cc:`PW
 in :cs:`pw_tokenizer/enum.h <pw_tokenizer/public/pw_tokenizer/enum.h>` to
 tokenize the enum and implement ``PwEnumToString``.
 
+--------------------------
+Enum traits and validation
+--------------------------
+Enums registered with ``PW_ENUM`` automatically specialize :cc:`pw::EnumTraits`
+(defined in :cs:`pw_enum/traits.h <pw_enum/public/pw_enum/traits.h>`).
+``pw::EnumTraits<EnumType>`` provides compile-time metadata about the enum,
+including its names, values, and an ``IsValid`` function.  See
+:cc:`pw::EnumTraits` for the full list of members.
+
+.. literalinclude:: examples/traits.cc
+   :language: cpp
+   :start-after: [pw_enum-examples-traits]
+   :end-before: [pw_enum-examples-traits]
+
+Use :cc:`pw::has_enum_traits_v` to detect whether an enum has traits, and
+:cc:`pw::IsValidEnum` to validate a value:
+
+.. literalinclude:: examples/traits.cc
+   :language: cpp
+   :start-after: [pw_enum-examples-traits-validate]
+   :end-before: [pw_enum-examples-traits-validate]
+
+.. note::
+
+   Do not specialize :cc:`pw::EnumTraits` by hand. Specializations are
+   identified by an internal tag that only the code generator emits, so a
+   hand-written one is not recognized by :cc:`pw::has_enum_traits_v` and is
+   rejected by :cc:`pw::IsValidEnum`. Register the enum with ``PW_ENUM``
+   instead.
+
+``IsValid`` accepts an enumerator or an integer of any type, but deliberately
+rejects ``bool``, since nearly everything converts implicitly to ``bool`` and
+would silently validate as ``0`` or ``1``. This is unrelated to the enum's
+underlying type: an ``enum class E : bool`` is supported like any other enum.
+
 -----------------
 Enum domain names
 -----------------
@@ -417,6 +452,10 @@ After parsing, the versioned enum target runs a Python script
 3. **Tokenization**: The generated footer includes a call to
    :cc:`PW_TOKENIZE_ENUM_CUSTOM` from :ref:`module-pw_tokenizer`, which
    registers the enum values and their string representations in the database.
+4. **Enum traits**: The generated footer defines a specialization of
+   :cc:`pw::EnumTraits` providing compile-time metadata and validation for the
+   enum. Enumerators that share a value (aliases) count as a single *distinct
+   value*. See `Enum traits and validation`_.
 
 Build system integration
 ========================

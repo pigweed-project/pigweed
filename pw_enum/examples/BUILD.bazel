@@ -65,6 +65,17 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "traits_test",
+    srcs = ["traits.cc"],
+    deps = [
+        ":basic_enum",
+        "//pw_enum",
+        "//pw_result",
+        "//pw_status",
+    ],
+)
+
 filegroup(
     name = "docs_sources",
     srcs = [
@@ -74,6 +85,7 @@ filegroup(
         "enum_example/references_other_enum.h",
         "private/enum_example/basic_enum.h",
         "private/enum_example/other_enum.h",
+        "traits.cc",
     ],
     visibility = ["//pw_enum:__subpackages__"],
 )

@@ -60,6 +60,13 @@ enum class EnumWithPartialAliases {
   kB = 1,
 };
 
+// `bool` is a legal fixed underlying type, which makes it the narrowest
+// possible enum. It is a useful edge case for the generated traits.
+enum class BoolEnum : bool {
+  kFalse = false,
+  kTrue = true,
+};
+
 }  // namespace pw::testing
 
 PW_ENUM(pw::testing::TestEnum, kFirst, kSecond, kFromH);
@@ -87,3 +94,4 @@ PW_ENUM(pw::testing::EnumWithCustomAliases,
         kE,
         kF = "custom_f");
 PW_ENUM(pw::testing::EnumWithPartialAliases, kA);
+PW_ENUM(pw::testing::BoolEnum, kFalse, kTrue);
