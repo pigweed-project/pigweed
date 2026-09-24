@@ -21,6 +21,7 @@
 #include <cinttypes>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/common/trace.h"
@@ -585,29 +586,39 @@ void LogicalLink::SignalError() {
         NotifyError();
       };
 
-  auto self = GetWeakPtr();
-  for (auto channel_iter = channels_.begin();
-       self.is_alive() && channel_iter != channels_.end();) {
-    auto& [id, channel] = *channel_iter++;
-
+  // Copy weak pointers to the channels to close to avoid iterator invalidation
+  // if channels_ is mutated during iteration.
+  std::vector<ChannelImpl::WeakPtr> channels_to_close;
+  for (auto& [id, channel] : channels_) {
     // Do not close the signaling channel, as it is used to close the dynamic
     // channels.
     if (id == kSignalingChannelId || id == kLESignalingChannelId) {
       continue;
     }
 
-    // Signal the channel, as it did not request the closure.
-    auto chan_weak = channel->GetWeakPtr();
-    channel->OnClosed();
+    channels_to_close.push_back(channel->GetWeakPtr());
+  }
+
+  auto self = GetWeakPtr();
+  for (auto& channel_weak : channels_to_close) {
+    if (!self.is_alive()) {
+      break;
+    }
+
+    if (!channel_weak.is_alive()) {
+      continue;
+    }
+
+    channel_weak->OnClosed();
 
     if (!self.is_alive()) {
-      return;
+      break;
     }
 
     // This erases from |channel_| and invalidates any iterator pointing to
     // |channel|.
-    if (chan_weak.is_alive()) {
-      RemoveChannel(channel.get(), channel_removed_cb.share());
+    if (channel_weak.is_alive()) {
+      RemoveChannel(&channel_weak.get(), channel_removed_cb.share());
     }
   }
 }

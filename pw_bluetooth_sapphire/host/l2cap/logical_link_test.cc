@@ -738,31 +738,33 @@ TEST_F(LogicalLinkTest, SignalErrorDestroysLogicalLink) {
   EXPECT_EQ(nullptr, link());
 }
 
-TEST_F(LogicalLinkTest, AutosniffModeChangeUndersizedEvent) {
-  ResetAndCreateNewLogicalLink(LinkType::kACL);
-  ASSERT_TRUE(link()->AutosniffEnabled());
+TEST_F(LogicalLinkTest, SignalErrorSynchronousDestructionLEFixedChannelOnly) {
+  // Set up LE link
+  ResetAndCreateNewLogicalLink(LinkType::kLE);
 
-  QueueAclConnectionRetVal cmd_ids;
-  cmd_ids.extended_features_id = 1;
-  cmd_ids.fixed_channels_supported_id = 2;
-  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
-      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
-  EXPECT_ACL_PACKET_OUT(test_device(),
-                        l2cap::testing::AclExtFeaturesInfoReq(
-                            cmd_ids.extended_features_id, kConnHandle),
-                        &kExtFeaturesRsp);
-  EXPECT_ACL_PACKET_OUT(test_device(),
-                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
-                            cmd_ids.fixed_channels_supported_id, kConnHandle));
+  // Open a fixed channel (ATT)
+  Channel::WeakPtr att_chan = link()->OpenFixedChannel(kATTChannelId);
+  ASSERT_TRUE(att_chan.is_alive());
 
-  // Construct an undersized Mode Change event.
-  StaticByteBuffer undersized_event(hci_spec::kModeChangeEventCode,
-                                    0x01,  // parameter_total_size
-                                    0x00   // placeholder parameter
-  );
-  // This packet should be dropped without causing a crash.
-  test_device()->SendCommandChannelPacket(undersized_event);
-  RunUntilIdle();
+  // Activate channel with a closed callback that synchronously destroys the
+  // link.
+  bool closed_called = false;
+  bool activated = att_chan->Activate([](auto) {},
+                                      [this, &closed_called]() {
+                                        closed_called = true;
+                                        link()->Close();
+                                        DeleteLink();
+                                      });
+  ASSERT_TRUE(activated);
+
+  // Trigger SignalError via the activated channel.
+  // This will call SignalError() which will call OnClosed() on att_chan,
+  // triggering the closed callback and destroying the link synchronously.
+  att_chan->SignalLinkError();
+
+  // The link should be synchronously destroyed without crashing/UAF.
+  EXPECT_TRUE(closed_called);
+  EXPECT_EQ(nullptr, link());
 }
 
 TEST_F(LogicalLinkTest, ConnectionlessChannelNotSupported) {
@@ -919,6 +921,33 @@ TEST_F(LogicalLinkTest, SMPChannelStallTriggersSignalError) {
 
   EXPECT_TRUE(error_called);
   EXPECT_EQ(nullptr, link());
+}
+
+TEST_F(LogicalLinkTest, AutosniffModeChangeUndersizedEvent) {
+  ResetAndCreateNewLogicalLink(LinkType::kACL);
+  ASSERT_TRUE(link()->AutosniffEnabled());
+
+  QueueAclConnectionRetVal cmd_ids;
+  cmd_ids.extended_features_id = 1;
+  cmd_ids.fixed_channels_supported_id = 2;
+  const auto kExtFeaturesRsp = l2cap::testing::AclExtFeaturesInfoRsp(
+      cmd_ids.extended_features_id, kConnHandle, kExtendedFeatures);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclExtFeaturesInfoReq(
+                            cmd_ids.extended_features_id, kConnHandle),
+                        &kExtFeaturesRsp);
+  EXPECT_ACL_PACKET_OUT(test_device(),
+                        l2cap::testing::AclFixedChannelsSupportedInfoReq(
+                            cmd_ids.fixed_channels_supported_id, kConnHandle));
+
+  // Construct an undersized Mode Change event.
+  StaticByteBuffer undersized_event(hci_spec::kModeChangeEventCode,
+                                    0x01,  // parameter_total_size
+                                    0x00   // placeholder parameter
+  );
+  // This packet should be dropped without causing a crash.
+  test_device()->SendCommandChannelPacket(undersized_event);
+  RunUntilIdle();
 }
 
 }  // namespace
