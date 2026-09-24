@@ -28,6 +28,10 @@ void WriteUint32(ByteSpan buffer, size_t offset, uint32_t value) {
   bytes::CopyInOrder<uint32_t>(endian::little, value, buffer.data() + offset);
 }
 
+void WriteUint16(ByteSpan buffer, size_t offset, uint16_t value) {
+  bytes::CopyInOrder<uint16_t>(endian::little, value, buffer.data() + offset);
+}
+
 }  // namespace
 
 Result<HandshakePacket> HandshakePacket::Decode(ConstByteSpan bytes) {
@@ -84,6 +88,25 @@ static_assert(static_cast<uint8_t>(PacketType::kClientError) ==
 static_assert(static_cast<uint8_t>(PacketType::kServerError) ==
               static_cast<uint8_t>(PacketType::kClientError) + 1);
 
+// DecodeErrorCode returns these codes for both ServerError and ClientError.
+static_assert(static_cast<uint16_t>(ServerError::kInternal) ==
+              static_cast<uint16_t>(ClientError::kInternal));
+static_assert(static_cast<uint16_t>(ServerError::kUnknown) ==
+              static_cast<uint16_t>(ClientError::kUnknown));
+
+uint16_t InboundPacket::DecodeErrorCode(uint16_t max_code) const {
+  PW_DASSERT(IsError(type()));
+  const uint16_t code = bytes::ReadInOrder<uint16_t>(
+      endian::little, buffer_.data() + offsetof(ErrorWireFormat, error));
+  if (code == 0) {
+    return static_cast<uint16_t>(ServerError::kInternal);
+  }
+  if (code > max_code) {
+    return static_cast<uint16_t>(ServerError::kUnknown);
+  }
+  return code;
+}
+
 Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
   if (buffer.size() < sizeof(PacketHeader)) {
     return Status::DataLoss();  // Too short for header
@@ -123,8 +146,7 @@ Result<size_t> OutboundPacket::EncodeHeader(ByteSpan buffer,
                 offsetof(RequestWireFormat, method_id),
                 fields_.request.method_id);
   } else if (IsError(type_)) {
-    WriteUint32(
-        buffer, offsetof(ErrorWireFormat, status_code), status().code());
+    WriteUint16(buffer, offsetof(ErrorWireFormat, error), fields_.raw_error);
   }
 
   return offset + payload_len;

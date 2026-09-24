@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_enum/pw_cc_enum_source_set.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -22,15 +23,24 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
+pw_cc_enum_source_set("protocol_status") {
+  enum_headers = [ "public/pw_rpc2/internal/protocol_status.h" ]
+  include_dirs = [ "public" ]
+  public_deps = [ dir_pw_status ]
+  visibility = [ "$dir_pw_rpc2/*" ]
+}
+
 pw_source_set("packet") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_rpc2/internal/packet.h" ]
   sources = [ "packet.cc" ]
   public_deps = [
+    ":protocol_status",
     "$dir_pw_assert:assert",
     "$dir_pw_assert:check",
     dir_pw_buf,
     dir_pw_bytes,
+    dir_pw_enum,
     dir_pw_preprocessor,
     dir_pw_result,
     dir_pw_status,
@@ -41,9 +51,11 @@ pw_source_set("packet") {
 pw_test("packet_test") {
   deps = [
     ":packet",
+    ":protocol_status",
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     dir_pw_bytes,
+    dir_pw_enum,
     dir_pw_status,
   ]
   sources = [ "packet_test.cc" ]

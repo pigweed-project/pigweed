@@ -24,6 +24,9 @@
 #include "pw_assert/check.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/span.h"
+#include "pw_enum/to_string.h"
+#include "pw_enum/traits.h"
+#include "pw_rpc2/internal/protocol_status.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
@@ -146,17 +149,11 @@ TEST(PacketTest, EncodeDecodeError) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   size_t total_size = sizeof(internal::ErrorWireFormat);
 
-  for (auto [sender, expected_type] :
-       {std::pair{internal::EndpointRole::kClient,
-                  internal::PacketType::kClientError},
-        std::pair{internal::EndpointRole::kServer,
-                  internal::PacketType::kServerError}}) {
+  {
     auto buf = pw::Buf::Allocate(allocator, total_size);
-
-    auto encode_result =
-        internal::OutboundPacket::Error(
-            sender, 0x12345678, pw::Status::FailedPrecondition())
-            .Encode(std::move(buf));
+    auto encode_result = internal::OutboundPacket::Error(
+                             0x12345678, internal::ClientError::kCancelled)
+                             .Encode(std::move(buf));
     ASSERT_EQ(encode_result.status(), pw::OkStatus());
     pw::Buf encoded_buf = std::move(encode_result.value());
     EXPECT_EQ(encoded_buf.size(), total_size);
@@ -166,10 +163,30 @@ TEST(PacketTest, EncodeDecodeError) {
     ASSERT_EQ(decode_result.status(), pw::OkStatus());
 
     internal::InboundPacket decoded = std::move(decode_result.value());
-    EXPECT_EQ(decoded.type(), expected_type);
+    EXPECT_EQ(decoded.type(), internal::PacketType::kClientError);
     EXPECT_TRUE(internal::IsError(decoded.type()));
     EXPECT_EQ(decoded.call_id(), 0x12345678u);
-    EXPECT_EQ(decoded.status(), pw::Status::FailedPrecondition());
+    EXPECT_EQ(decoded.client_error(), internal::ClientError::kCancelled);
+  }
+
+  {
+    auto buf = pw::Buf::Allocate(allocator, total_size);
+    auto encode_result = internal::OutboundPacket::Error(
+                             0x12345678, internal::ServerError::kUnknownMethod)
+                             .Encode(std::move(buf));
+    ASSERT_EQ(encode_result.status(), pw::OkStatus());
+    pw::Buf encoded_buf = std::move(encode_result.value());
+    EXPECT_EQ(encoded_buf.size(), total_size);
+
+    auto decode_result =
+        internal::InboundPacket::Decode(pw::ConstBuf(std::move(encoded_buf)));
+    ASSERT_EQ(decode_result.status(), pw::OkStatus());
+
+    internal::InboundPacket decoded = std::move(decode_result.value());
+    EXPECT_EQ(decoded.type(), internal::PacketType::kServerError);
+    EXPECT_TRUE(internal::IsError(decoded.type()));
+    EXPECT_EQ(decoded.call_id(), 0x12345678u);
+    EXPECT_EQ(decoded.server_error(), internal::ServerError::kUnknownMethod);
   }
 }
 
@@ -318,11 +335,9 @@ TEST(PacketTest, EncodeStreamEndTruncatesExtraBuffer) {
 TEST(PacketTest, EncodeErrorTruncatesExtraBuffer) {
   pw::allocator::test::AllocatorForTest<256> allocator;
   auto buf = pw::Buf::Allocate(allocator, 64);
-  auto encode_result =
-      internal::OutboundPacket::Error(internal::EndpointRole::kServer,
-                                      0x12345678,
-                                      pw::Status::FailedPrecondition())
-          .Encode(std::move(buf));
+  auto encode_result = internal::OutboundPacket::Error(
+                           0x12345678, internal::ServerError::kUnknownMethod)
+                           .Encode(std::move(buf));
   ASSERT_EQ(encode_result.status(), pw::OkStatus());
   EXPECT_EQ(encode_result->size(), sizeof(internal::ErrorWireFormat));
 }
@@ -357,6 +372,83 @@ TEST(PacketTest, EncodeRejectsEmptyBuffer) {
       pw::Status::FailedPrecondition());
 }
 
+TEST(PacketTest, ServerErrorToStatusAndToString) {
+  using internal::ServerError;
+
+  EXPECT_EQ(ToStatus(ServerError::kUnknown), pw::Status::Unknown());
+  EXPECT_EQ(ToStatus(ServerError::kInternal), pw::Status::Internal());
+  EXPECT_EQ(ToStatus(ServerError::kCancelled), pw::Status::Cancelled());
+  EXPECT_EQ(ToStatus(ServerError::kReceivedPacketForClient),
+            pw::Status::Unimplemented());
+  EXPECT_EQ(ToStatus(ServerError::kDroppedWithoutResponse),
+            pw::Status::Cancelled());
+  EXPECT_EQ(ToStatus(ServerError::kServiceUnregistered),
+            pw::Status::Cancelled());
+  EXPECT_EQ(ToStatus(ServerError::kUnknownService), pw::Status::NotFound());
+  EXPECT_EQ(ToStatus(ServerError::kUnknownMethod), pw::Status::NotFound());
+  EXPECT_EQ(ToStatus(ServerError::kInvalidRequestPayload),
+            pw::Status::DataLoss());
+  EXPECT_EQ(ToStatus(ServerError::kFailedToAllocateCall),
+            pw::Status::ResourceExhausted());
+  EXPECT_EQ(ToStatus(ServerError::kFailedToAllocateCallResourcesWhileRunning),
+            pw::Status::ResourceExhausted());
+  EXPECT_EQ(ToStatus(ServerError::kOk), pw::Status::Internal());
+  EXPECT_EQ(ToStatus(static_cast<ServerError>(0xff)), pw::Status::Unknown());
+
+  EXPECT_STREQ(pw::EnumToString(ServerError::kOk), "OK");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kUnknown), "UNKNOWN");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kInternal), "INTERNAL");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kCancelled), "CANCELLED");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kReceivedPacketForClient),
+               "RECEIVED_PACKET_FOR_CLIENT");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kDroppedWithoutResponse),
+               "DROPPED_WITHOUT_RESPONSE");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kServiceUnregistered),
+               "SERVICE_UNREGISTERED");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kUnknownService),
+               "UNKNOWN_SERVICE");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kUnknownMethod), "UNKNOWN_METHOD");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kInvalidRequestPayload),
+               "INVALID_REQUEST_PAYLOAD");
+  EXPECT_STREQ(pw::EnumToString(ServerError::kFailedToAllocateCall),
+               "FAILED_TO_ALLOCATE_CALL");
+  EXPECT_STREQ(
+      pw::EnumToString(ServerError::kFailedToAllocateCallResourcesWhileRunning),
+      "FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING");
+}
+
+TEST(PacketTest, ClientErrorToStatusAndToString) {
+  using internal::ClientError;
+
+  EXPECT_EQ(ToStatus(ClientError::kUnknown), pw::Status::Unknown());
+  EXPECT_EQ(ToStatus(ClientError::kInternal), pw::Status::Internal());
+  EXPECT_EQ(ToStatus(ClientError::kCancelled), pw::Status::Cancelled());
+  EXPECT_EQ(ToStatus(ClientError::kReceivedPacketForServer),
+            pw::Status::Unimplemented());
+  EXPECT_EQ(ToStatus(ClientError::kOk), pw::Status::Internal());
+  EXPECT_EQ(ToStatus(static_cast<ClientError>(0xff)), pw::Status::Unknown());
+
+  EXPECT_STREQ(pw::EnumToString(ClientError::kOk), "OK");
+  EXPECT_STREQ(pw::EnumToString(ClientError::kUnknown), "UNKNOWN");
+  EXPECT_STREQ(pw::EnumToString(ClientError::kInternal), "INTERNAL");
+  EXPECT_STREQ(pw::EnumToString(ClientError::kCancelled), "CANCELLED");
+  EXPECT_STREQ(pw::EnumToString(ClientError::kReceivedPacketForServer),
+               "RECEIVED_PACKET_FOR_SERVER");
+}
+
+// Codes with equivalent meanings share the same value.
+static_assert(static_cast<uint8_t>(internal::ServerError::kOk) ==
+              static_cast<uint8_t>(internal::ClientError::kOk));
+static_assert(static_cast<uint8_t>(internal::ServerError::kUnknown) ==
+              static_cast<uint8_t>(internal::ClientError::kUnknown));
+static_assert(static_cast<uint8_t>(internal::ServerError::kInternal) ==
+              static_cast<uint8_t>(internal::ClientError::kInternal));
+static_assert(static_cast<uint8_t>(internal::ServerError::kCancelled) ==
+              static_cast<uint8_t>(internal::ClientError::kCancelled));
+static_assert(
+    static_cast<uint8_t>(internal::ServerError::kReceivedPacketForClient) ==
+    static_cast<uint8_t>(internal::ClientError::kReceivedPacketForServer));
+
 static_assert(
     internal::PacketSizeWithoutPayload(internal::PacketType::kRequest) == 13u);
 static_assert(
@@ -370,9 +462,9 @@ static_assert(internal::PacketSizeWithoutPayload(
 static_assert(internal::PacketSizeWithoutPayload(
                   internal::PacketType::kServerStreamEnd) == 5u);
 static_assert(internal::PacketSizeWithoutPayload(
-                  internal::PacketType::kClientError) == 9u);
+                  internal::PacketType::kClientError) == 7u);
 static_assert(internal::PacketSizeWithoutPayload(
-                  internal::PacketType::kServerError) == 9u);
+                  internal::PacketType::kServerError) == 7u);
 
 static_assert(internal::OutboundPacket::Request(1, 2, 3).payload_offset() ==
               13u);
@@ -385,14 +477,12 @@ static_assert(internal::OutboundPacket::ClientStreamEnd(1).payload_offset() ==
               5u);
 static_assert(internal::OutboundPacket::ServerStreamEnd(1).payload_offset() ==
               5u);
-static_assert(internal::OutboundPacket::Error(internal::EndpointRole::kClient,
-                                              1,
-                                              pw::Status::Internal())
-                  .payload_offset() == 9u);
-static_assert(internal::OutboundPacket::Error(internal::EndpointRole::kServer,
-                                              1,
-                                              pw::Status::Internal())
-                  .payload_offset() == 9u);
+static_assert(internal::OutboundPacket::Error(1,
+                                              internal::ClientError::kCancelled)
+                  .payload_offset() == 7u);
+static_assert(internal::OutboundPacket::Error(1,
+                                              internal::ServerError::kCancelled)
+                  .payload_offset() == 7u);
 
 static_assert(internal::IsError(internal::PacketType::kClientError));
 static_assert(internal::IsError(internal::PacketType::kServerError));
@@ -481,18 +571,77 @@ TEST(PacketTest, EncodedRequestHeaderLayout) {
 TEST(PacketTest, EncodedErrorHeaderLayout) {
   std::array<std::byte, sizeof(internal::ErrorWireFormat)> buffer = {};
 
-  auto result =
-      internal::OutboundPacket::Error(internal::EndpointRole::kServer,
-                                      0x12345678,
-                                      pw::Status::FailedPrecondition())
-          .EncodeHeader(buffer);
+  auto result = internal::OutboundPacket::Error(
+                    0x12345678, internal::ServerError::kUnknownMethod)
+                    .EncodeHeader(buffer);
   ASSERT_EQ(result.status(), pw::OkStatus());
   EXPECT_EQ(*result, buffer.size());
 
-  // 4-byte call_id (LE), 1-byte type (0x09), 4-byte status code (LE).
+  // 4-byte call_id (LE), 1-byte type (0x09), 2-byte error (LE).
   constexpr auto expected =
-      pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x09, 0x09, 0x00, 0x00, 0x00>();
+      pw::bytes::Array<0x78,
+                       0x56,
+                       0x34,
+                       0x12,
+                       0x09,
+                       static_cast<uint8_t>(
+                           internal::ServerError::kUnknownMethod),
+                       0x00>();
   EXPECT_EQ(buffer, expected);
+
+  auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->server_error(), internal::ServerError::kUnknownMethod);
+}
+
+TEST(PacketTest, DecodeErrorZeroMapsToInternal) {
+  // A wire error of 0 (kOk) is never valid in an error packet.
+  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x09, 0x00, 0x00>();
+
+  auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->server_error(), internal::ServerError::kInternal);
+  EXPECT_EQ(internal::ToStatus(decoded->server_error()),
+            pw::Status::Internal());
+
+  buffer[4] = static_cast<std::byte>(internal::PacketType::kClientError);
+  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->client_error(), internal::ClientError::kInternal);
+  EXPECT_EQ(internal::ToStatus(decoded->client_error()),
+            pw::Status::Internal());
+}
+
+TEST(PacketTest, DecodeErrorOutOfRangeMapsToUnknown) {
+  auto buffer = pw::bytes::Array<0x78, 0x56, 0x34, 0x12, 0x09, 0x00, 0x01>();
+
+  // 0x0100 is beyond the largest known code.
+  auto decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->server_error(), internal::ServerError::kUnknown);
+  EXPECT_EQ(internal::ToStatus(decoded->server_error()), pw::Status::Unknown());
+
+  buffer[4] = static_cast<std::byte>(internal::PacketType::kClientError);
+  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->client_error(), internal::ClientError::kUnknown);
+  EXPECT_EQ(internal::ToStatus(decoded->client_error()), pw::Status::Unknown());
+
+  // One past the maximum.
+  buffer[4] = static_cast<std::byte>(internal::PacketType::kServerError);
+  buffer[5] = static_cast<std::byte>(
+      static_cast<uint8_t>(pw::EnumTraits<internal::ServerError>::kMax) + 1);
+  buffer[6] = std::byte{0x00};
+  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->server_error(), internal::ServerError::kUnknown);
+
+  buffer[4] = static_cast<std::byte>(internal::PacketType::kClientError);
+  buffer[5] = static_cast<std::byte>(
+      static_cast<uint8_t>(pw::EnumTraits<internal::ClientError>::kMax) + 1);
+  decoded = internal::InboundPacket::Decode(pw::ConstBuf::Unowned(buffer));
+  ASSERT_EQ(decoded.status(), pw::OkStatus());
+  EXPECT_EQ(decoded->client_error(), internal::ClientError::kUnknown);
 }
 
 TEST(PacketTest, EncodeHeaderReportsTotalSizeWithoutWritingPayloadLength) {

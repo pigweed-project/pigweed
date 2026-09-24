@@ -22,8 +22,10 @@
 #include "pw_buf/buf.h"
 #include "pw_bytes/endian.h"
 #include "pw_bytes/span.h"
+#include "pw_enum/traits.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
+#include "pw_rpc2/internal/protocol_status.h"
 #include "pw_status/status.h"
 
 namespace pw::rpc2::internal {
@@ -65,10 +67,10 @@ enum class PacketType : uint8_t {
   /// Signals the completion of a server stream.
   kServerStreamEnd = 0x07,
 
-  /// Terminates an RPC from the client with an error status.
+  /// Terminates an RPC from the client with a `ClientError`.
   kClientError = 0x08,
 
-  /// Terminates an RPC from the server with an error status.
+  /// Terminates an RPC from the server with a `ServerError`.
   kServerError = 0x09,
 };
 
@@ -121,10 +123,10 @@ PW_PACKED(struct) ResponseWireFormat { PacketHeader header; };
 /// Signals the end of a stream in one direction without an error.
 PW_PACKED(struct) StreamEndWireFormat { PacketHeader header; };
 
-/// Signals that an RPC has terminated abnormally with an error status code.
+/// Signals that an RPC has terminated abnormally with a protocol error.
 PW_PACKED(struct) ErrorWireFormat {
   PacketHeader header;
-  uint32_t status_code;
+  uint16_t error;
 };
 
 /// Connection handshake packet for protocol negotiation and compatibility
@@ -145,7 +147,7 @@ static_assert(sizeof(RequestWireFormat) == 13);
 static_assert(sizeof(MessageWireFormat) == 5);
 static_assert(sizeof(ResponseWireFormat) == 5);
 static_assert(sizeof(StreamEndWireFormat) == 5);
-static_assert(sizeof(ErrorWireFormat) == 9);
+static_assert(sizeof(ErrorWireFormat) == 7);
 static_assert(sizeof(HandshakeWireFormat) == 8);
 
 /// Returns the wire format size for `type` excluding any trailing payload
@@ -240,14 +242,18 @@ class OutboundPacket {
     return StreamEnd(EndpointRole::kServer, call_id);
   }
 
-  static constexpr OutboundPacket Error(EndpointRole sender,
-                                        uint32_t call_id,
-                                        Status status) {
-    return OutboundPacket(sender == EndpointRole::kClient
-                              ? PacketType::kClientError
-                              : PacketType::kServerError,
+  static constexpr OutboundPacket Error(uint32_t call_id, ClientError error) {
+    PW_DASSERT(error != ClientError::kOk);
+    return OutboundPacket(PacketType::kClientError,
                           call_id,
-                          Fields(status));
+                          Fields(static_cast<uint16_t>(error)));
+  }
+
+  static constexpr OutboundPacket Error(uint32_t call_id, ServerError error) {
+    PW_DASSERT(error != ServerError::kOk);
+    return OutboundPacket(PacketType::kServerError,
+                          call_id,
+                          Fields(static_cast<uint16_t>(error)));
   }
 
   constexpr OutboundPacket()
@@ -269,11 +275,6 @@ class OutboundPacket {
   uint32_t method_id() const {
     PW_DASSERT(type_ == PacketType::kRequest);
     return fields_.request.method_id;
-  }
-
-  Status status() const {
-    PW_DASSERT(IsError(type_));
-    return fields_.status;
   }
 
   constexpr size_t payload_offset() const {
@@ -304,10 +305,11 @@ class OutboundPacket {
     constexpr Fields() : request{0, 0} {}
     constexpr Fields(uint32_t service_id, uint32_t method_id)
         : request{service_id, method_id} {}
-    constexpr explicit Fields(Status error_status) : status(error_status) {}
+    constexpr explicit Fields(uint16_t protocol_error)
+        : raw_error(protocol_error) {}
 
     RequestIds request;
-    Status status;
+    uint16_t raw_error;
   };
 
   constexpr OutboundPacket(PacketType type, uint32_t call_id, Fields fields)
@@ -373,10 +375,18 @@ class InboundPacket {
     return ReadUint32(offsetof(RequestWireFormat, method_id));
   }
 
-  Status status() const {
-    PW_DASSERT(IsError(type()));
-    uint32_t status_code = ReadUint32(offsetof(ErrorWireFormat, status_code));
-    return Status(static_cast<Status::Code>(status_code));
+  /// Returns the server error carried by a `kServerError` packet.
+  ServerError server_error() const {
+    PW_DASSERT(type() == PacketType::kServerError);
+    return static_cast<ServerError>(
+        DecodeErrorCode(MaxErrorCode<ServerError>()));
+  }
+
+  /// Returns the client error carried by a `kClientError` packet.
+  ClientError client_error() const {
+    PW_DASSERT(type() == PacketType::kClientError);
+    return static_cast<ClientError>(
+        DecodeErrorCode(MaxErrorCode<ClientError>()));
   }
 
   size_t payload_offset() const { return PacketSizeWithoutPayload(type()); }
@@ -396,6 +406,20 @@ class InboundPacket {
   uint32_t ReadUint32(size_t offset) const {
     return bytes::ReadInOrder<uint32_t>(endian::little,
                                         buffer_.data() + offset);
+  }
+
+  // Reads the wire error code. A zero code (never valid on the wire) maps to
+  // kInternal, and codes above `max_code` map to kUnknown. Shared by both
+  // error enums to avoid duplicating the decoding logic.
+  uint16_t DecodeErrorCode(uint16_t max_code) const;
+
+  // Largest valid wire code for `ErrorEnum`. `DecodeErrorCode` accepts every
+  // code from 1 to this value, so the enum must be contiguous from `kOk` (0).
+  template <typename ErrorEnum>
+  static constexpr uint16_t MaxErrorCode() {
+    static_assert(EnumTraits<ErrorEnum>::kIsContiguous);
+    static_assert(static_cast<uint16_t>(EnumTraits<ErrorEnum>::kMin) == 0u);
+    return static_cast<uint16_t>(EnumTraits<ErrorEnum>::kMax);
   }
 
   ConstBuf buffer_;

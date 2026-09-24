@@ -15,11 +15,20 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
+
+pw_cc_enum_library(
+    name = "protocol_status",
+    enum_headers = ["public/pw_rpc2/internal/protocol_status.h"],
+    strip_include_prefix = "public",
+    visibility = ["//pw_rpc2:__subpackages__"],
+    deps = ["//pw_status"],
+)
 
 cc_library(
     name = "packet",
@@ -28,10 +37,12 @@ cc_library(
     strip_include_prefix = "public",
     visibility = ["//pw_rpc2:__subpackages__"],
     deps = [
+        ":protocol_status",
         "//pw_assert:assert",
         "//pw_assert:check",
         "//pw_buf",
         "//pw_bytes",
+        "//pw_enum",
         "//pw_preprocessor",
         "//pw_result",
         "//pw_status",
@@ -43,9 +54,11 @@ pw_cc_test(
     srcs = ["packet_test.cc"],
     deps = [
         ":packet",
+        ":protocol_status",
         "//pw_allocator:testing",
         "//pw_assert:check",
         "//pw_bytes",
+        "//pw_enum",
         "//pw_status",
         "//pw_unit_test",
     ],
