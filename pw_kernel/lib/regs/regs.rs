@@ -171,13 +171,20 @@ macro_rules! rw_masked_field {
 
 #[macro_export]
 macro_rules! ro_reg {
-    ($name:ident, $val_type:ident, $ty:ty, $addr:literal, $doc:literal) => {
+    ($name:ident, $val_type:ident, $ty:ty, $addr:expr, $doc:literal) => {
         #[doc = $doc]
         pub struct $name;
         impl $name {
+            const ADDR: usize = $addr;
+            const _ASSERT_ALIGNED: () = assert!(
+                Self::ADDR.is_multiple_of(core::mem::align_of::<$ty>()),
+                "Register address must be aligned to register type size"
+            );
+
             #[inline]
             pub fn read(&self) -> $val_type {
-                $val_type(unsafe { $crate::__private::raw_read::<$ty>($addr) })
+                let () = Self::_ASSERT_ALIGNED;
+                $val_type(unsafe { $crate::__private::raw_read::<$ty>(Self::ADDR) })
             }
         }
     };
@@ -185,18 +192,26 @@ macro_rules! ro_reg {
 
 #[macro_export]
 macro_rules! rw_reg {
-    ($name:ident, $val_type:ident, $ty:ty, $addr:literal, $doc:literal) => {
+    ($name:ident, $val_type:ident, $ty:ty, $addr:expr, $doc:literal) => {
         #[doc = $doc]
         pub struct $name;
         impl $name {
+            const ADDR: usize = $addr;
+            const _ASSERT_ALIGNED: () = assert!(
+                Self::ADDR.is_multiple_of(core::mem::align_of::<$ty>()),
+                "Register address must be aligned to register type size"
+            );
+
             #[inline]
             pub fn read(&self) -> $val_type {
-                $val_type(unsafe { $crate::__private::raw_read::<$ty>($addr) })
+                let () = Self::_ASSERT_ALIGNED;
+                $val_type(unsafe { $crate::__private::raw_read::<$ty>(Self::ADDR) })
             }
 
             #[inline]
             pub fn write(&mut self, val: $val_type) {
-                unsafe { $crate::__private::raw_write::<$ty>($addr, val.0) }
+                let () = Self::_ASSERT_ALIGNED;
+                unsafe { $crate::__private::raw_write::<$ty>(Self::ADDR, val.0) }
             }
         }
     };
@@ -204,14 +219,21 @@ macro_rules! rw_reg {
 
 #[macro_export]
 macro_rules! ro_block_reg {
-    ($name:ident, $val_type:ident, $ty:ty, $addr_trait:path, $offset:literal, $doc:literal) => {
+    ($name:ident, $val_type:ident, $ty:ty, $addr_trait:path, $offset:expr, $doc:literal) => {
         #[doc = $doc]
         pub struct $name;
         impl $name {
+            const OFFSET: usize = $offset;
+            const _ASSERT_OFFSET_ALIGNED: () = assert!(
+                Self::OFFSET.is_multiple_of(core::mem::align_of::<$ty>()),
+                "Register offset must be aligned to register type size"
+            );
+
             #[inline]
             pub fn read<A: $addr_trait>(&self, addr: &A) -> $val_type {
+                let () = Self::_ASSERT_OFFSET_ALIGNED;
                 $val_type(unsafe {
-                    $crate::__private::raw_read::<$ty>(addr.base_address() + $offset)
+                    $crate::__private::raw_read::<$ty>(addr.base_address() + Self::OFFSET)
                 })
             }
         }
@@ -220,20 +242,30 @@ macro_rules! ro_block_reg {
 
 #[macro_export]
 macro_rules! rw_block_reg {
-    ($name:ident, $val_type:ident, $ty:ty, $addr_trait:path, $offset:literal, $doc:literal) => {
+    ($name:ident, $val_type:ident, $ty:ty, $addr_trait:path, $offset:expr, $doc:literal) => {
         #[doc = $doc]
         pub struct $name;
         impl $name {
+            const OFFSET: usize = $offset;
+            const _ASSERT_OFFSET_ALIGNED: () = assert!(
+                Self::OFFSET.is_multiple_of(core::mem::align_of::<$ty>()),
+                "Register offset must be aligned to register type size"
+            );
+
             #[inline]
             pub fn read<A: $addr_trait>(&self, addr: &A) -> $val_type {
+                let () = Self::_ASSERT_OFFSET_ALIGNED;
                 $val_type(unsafe {
-                    $crate::__private::raw_read::<$ty>(addr.base_address() + $offset)
+                    $crate::__private::raw_read::<$ty>(addr.base_address() + Self::OFFSET)
                 })
             }
 
             #[inline]
             pub fn write<A: $addr_trait>(&mut self, addr: &A, val: $val_type) {
-                unsafe { $crate::__private::raw_write::<$ty>(addr.base_address() + $offset, val.0) }
+                let () = Self::_ASSERT_OFFSET_ALIGNED;
+                unsafe {
+                    $crate::__private::raw_write::<$ty>(addr.base_address() + Self::OFFSET, val.0)
+                }
             }
         }
     };
