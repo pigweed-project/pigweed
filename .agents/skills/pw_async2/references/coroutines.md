@@ -47,19 +47,19 @@ pw::async2::Coro<pw::Result<int>> ReadSensorDouble(
 
 ---
 
-## 3. Running coroutines (`CoroTask` and `FallibleCoroTask`)
+## 3. Running coroutines (`FutureTask` and `FallibleCoroTask`)
 
 Coroutines are executed inside tasks posted to a `Dispatcher`.
 
-### Infallible task (`CoroTask`)
+### Standard task (`FutureTask`)
 
-`CoroTask` wraps a `Coro<T>`. If coroutine frame allocation fails, pending a
-`CoroTask` causes a `PW_CRASH`.
+`Coro<T>` implements the `Future` concept, so it can be executed inside a `FutureTask`.
+If coroutine frame allocation fails, pending a `FutureTask` with an invalid `Coro` causes a `PW_CRASH`.
 
 ```cpp
-#include "pw_async2/coro_task.h"
+#include "pw_async2/future_task.h"
 
-pw::async2::CoroTask task = ReadAndProcess(allocator, sensor);
+pw::async2::FutureTask task(ReadAndProcess(allocator, sensor));
 dispatcher.Post(task);
 ```
 
@@ -113,7 +113,7 @@ pw::async2::Coro<pw::Status> ConsumeCount(
 
 1. **Coroutine Frame**: The compiler constructs a coroutine frame on the
    allocator passed via `CoroContext`.
-2. **Implicit Allocation**: Even if `CoroTask` is stack-allocated, the
+2. **Implicit Allocation**: Even if `FutureTask` is stack-allocated, the
    underlying coroutine frame requires allocation via `CoroContext`.
 3. **Allocation Verification**: Check `coro.ok()` to verify whether coroutine
    frame allocation succeeded.

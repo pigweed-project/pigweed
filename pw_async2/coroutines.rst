@@ -48,8 +48,8 @@ return from a coroutine, use ``co_return <expression>`` instead of the usual
 Run a coroutine
 ===============
 Run a coroutine as a ``pw_async2`` :cc:`task <pw::async2::Task>` using
-:cc:`Dispatcher::Post`. The following posts a coroutine as a :cc:`CoroTask
-<pw::async2::CoroTask>`:
+:cc:`Dispatcher::Post`. The following posts a coroutine as a :cc:`FutureTask
+<pw::async2::FutureTask>`:
 
 .. literalinclude:: examples/basic_coro.cc
    :language: cpp
@@ -64,7 +64,7 @@ this requires listing the allocator twice:
    :start-after: [pw_async2-examples-basic-allocated-explicit]
    :end-before: [pw_async2-examples-basic-allocated-explicit]
 
-The previous examples use :cc:`CoroTask <pw::async2::CoroTask>`, which crashes
+The previous examples use :cc:`FutureTask <pw::async2::FutureTask>`, which crashes
 if coroutine stack allocation fails. To handle allocation failures gracefully
 with :cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>`, pass an allocation
 error handler function after the coroutine:
@@ -74,7 +74,7 @@ error handler function after the coroutine:
    :start-after: [pw_async2-examples-basic-allocated-fallible]
    :end-before: [pw_async2-examples-basic-allocated-fallible]
 
-:cc:`CoroTask <pw::async2::CoroTask>` or :cc:`FallibleCoroTask
+:cc:`FutureTask <pw::async2::FutureTask>` or :cc:`FallibleCoroTask
 <pw::async2::FallibleCoroTask>` can be stack or statically allocated instead of
 dynamically allocated with :cc:`Dispatcher::Post`. This is not recommended, as
 it is more complex and does not eliminate all allocations. Coroutines always
@@ -82,8 +82,8 @@ dynamically allocate their stacks.
 
 .. literalinclude:: examples/basic_coro.cc
    :language: cpp
-   :start-after: [pw_async2-examples-basic-coro-task]
-   :end-before: [pw_async2-examples-basic-coro-task]
+   :start-after: [pw_async2-examples-basic-future-task]
+   :end-before: [pw_async2-examples-basic-future-task]
 
 For a more details about Pigweed's coroutine support, see :cc:`Coro
 <pw::async2::Coro>`.
@@ -105,9 +105,10 @@ implicitly constructible from an ``Allocator&``.
 
 If allocation fails, the resulting ``Coro`` object is invalid. Coroutine
 execution halts, and what happens next depends on the task executing the
-coroutine. :cc:`CoroTask <pw::async2::CoroTask>` crashes with ``PW_CRASH`` on
-allocation failure. :cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>`
-invokes an error handler function instead.
+coroutine. Pending the coroutine in a :cc:`FutureTask
+<pw::async2::FutureTask>` crashes with ``PW_CRASH`` on allocation failure.
+:cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>` invokes an error handler
+function instead.
 
 .. _module-pw_async2-coro-passing-data:
 

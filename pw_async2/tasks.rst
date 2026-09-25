@@ -119,14 +119,13 @@ can optionally be stored in the task.
 is ready. This can be used to bridge between async and non-async code. and See
 :ref:`module-pw_async2-tasks-callbacks` for details.
 
-``CoroTask``: Execute a coroutine
-=================================
-:cc:`CoroTask <pw::async2::CoroTask>` delegates to a provided coroutine. See
-:ref:`module-pw_async2-coro` for information about coroutines.
-
-:cc:`CoroTask <pw::async2::CoroTask>` crashes if coroutine allocation fails. Use
-:cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>` to handle allocation
-failure gracefully.
+``FallibleCoroTask``: Execute a coroutine with allocation error handling
+========================================================================
+:cc:`FallibleCoroTask <pw::async2::FallibleCoroTask>` delegates to a provided
+coroutine, invoking an error handler function if coroutine allocation fails.
+Coroutines that do not need allocation error handling can be run directly with
+:cc:`FutureTask <pw::async2::FutureTask>`. See :ref:`module-pw_async2-coro` for
+information about coroutines.
 
 .. _module-pw_async2-tasks-callbacks:
 

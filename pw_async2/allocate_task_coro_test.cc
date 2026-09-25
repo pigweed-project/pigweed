@@ -16,6 +16,7 @@
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/fallible_coro_task.h"
+#include "pw_async2/future_task.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -23,9 +24,9 @@ namespace {
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroTask;
 using ::pw::async2::DispatcherForTest;
 using ::pw::async2::FallibleCoroTask;
+using ::pw::async2::FutureTask;
 
 Coro<int> SimpleCoro(CoroContext, int value) { co_return value; }
 
@@ -75,7 +76,7 @@ TEST_F(AllocateTaskCoroTest, AllocationFailure) {
 }
 
 TEST_F(AllocateTaskCoroTest, AllocateAsSharedPtr) {
-  auto task = alloc_.MakeShared<CoroTask<int>>(SimpleCoro(alloc_, 42));
+  auto task = alloc_.MakeShared<FutureTask<Coro<int>>>(SimpleCoro(alloc_, 42));
   ASSERT_NE(task, nullptr);
 
   dispatcher_.PostShared(task);

@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <type_traits>
+#include <utility>
+
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
@@ -30,16 +33,26 @@ class FutureTaskBase : public Task {
 ///
 /// `FutureTask` can be initialized in a few ways:
 ///
-/// - Move a future: `FutureTask task(std::move(future))
+/// - Move a future: `FutureTask task(std::move(future))`
 /// - Construct a future in place: `FutureTask<MyFuture> task(arg1, arg2)`
 /// - Refer to an existing future: `FutureTask<MyFuture&> task(future)`
+///
+/// The future's return value is stored and can be accessed through `value()`
+/// after joining, or by calling `Wait()`. For futures returning `void`, the
+/// return value is discarded by default (`ReturnValuePolicy::kDiscard`). To
+/// discard the return value futures returning non-`void`, specify
+/// `ReturnValuePolicy::kDiscard`.
 ///
 /// @warning `FutureTask` is intended for test and occasional production use. A
 /// `FutureTask` does not contain logic, and relying too much on `FutureTasks`
 /// could push logic out of async tasks, which nullifies the benefits of
 /// `pw_async2`. Creating a task for each future is also less efficient than
 /// having one task work with multiple futures.
-template <typename T>
+template <typename T,
+          ReturnValuePolicy policy =
+              std::is_void_v<typename std::remove_reference_t<T>::value_type>
+                  ? ReturnValuePolicy::kDiscard
+                  : ReturnValuePolicy::kKeep>
 class FutureTask final : public FutureTaskBase {
  public:
   /// The type of the future that is pended by this task.
@@ -60,7 +73,16 @@ class FutureTask final : public FutureTaskBase {
         future_(std::forward<Arg>(arg), std::forward<Args>(args)...),
         output_(Pending()) {}
 
+  FutureTask(const FutureTask&) = delete;
+  FutureTask& operator=(const FutureTask&) = delete;
+  FutureTask(FutureTask&&) = delete;
+  FutureTask& operator=(FutureTask&&) = delete;
+
   ~FutureTask() override { Deregister(); }
+
+  /// Returns whether the task ran and set that `value` to the future's return
+  /// value.
+  bool has_value() const { return output_.IsReady(); }
 
   /// Takes the `Poll` result from the most recent task run. This function is
   /// NOT thread safe. It cannot be called when the task may run on another
@@ -97,6 +119,45 @@ class FutureTask final : public FutureTaskBase {
 
   T future_;
   Poll<value_type> output_;
+};
+
+/// Specialization of `FutureTask` that discards the return value of the future.
+template <typename T>
+class FutureTask<T, ReturnValuePolicy::kDiscard> final : public FutureTaskBase {
+ public:
+  /// The type of the future that is pended by this task.
+  using future_type = std::remove_reference_t<T>;
+
+  /// The type produced by this tasks's future when it completes.
+  using value_type = typename future_type::value_type;
+
+  /// Constructs a `FutureTask`. Forwards arguments to the future's constructor
+  /// for `FutureTask`s that own their future. Reference `FutureTask`s take a
+  /// mutable reference to their future.
+  ///
+  /// Requires at least one argument. Default constructed futures are not
+  /// permitted since since they cannot be pended.
+  template <typename Arg, typename... Args>
+  explicit constexpr FutureTask(Arg&& arg, Args&&... args)
+      : FutureTaskBase(),
+        future_(std::forward<Arg>(arg), std::forward<Args>(args)...) {}
+
+  FutureTask(const FutureTask&) = delete;
+  FutureTask& operator=(const FutureTask&) = delete;
+  FutureTask(FutureTask&&) = delete;
+  FutureTask& operator=(FutureTask&&) = delete;
+
+  ~FutureTask() override { Deregister(); }
+
+ private:
+  static_assert(Future<future_type>);
+
+  Poll<> DoPend(Context& cx) override {
+    Poll<value_type> poll = future_.Pend(cx);
+    return poll.Readiness();
+  }
+
+  T future_;
 };
 
 template <typename T>

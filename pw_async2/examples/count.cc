@@ -19,7 +19,6 @@
 #include "pw_assert/check.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/system_time_provider.h"
 #include "pw_chrono/system_clock.h"

@@ -18,8 +18,11 @@
 
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
-#include "pw_async2/coro_task.h"
+#include "pw_async2/await.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/func_task.h"
+#include "pw_async2/future.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/internal/coro_test_util.h"
 #include "pw_async2/value_future.h"
 #include "pw_compilation_testing/negative_compilation.h"
@@ -37,12 +40,15 @@ using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroTask;
 using ::pw::async2::DispatcherForTest;
+using ::pw::async2::FuncTask;
+using ::pw::async2::Future;
+using ::pw::async2::FutureTask;
 using ::pw::async2::Generator;
 using ::pw::async2::OptionalValueProvider;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
+using ::pw::async2::Ready;
 using ::pw::async2::Waker;
 using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
@@ -74,7 +80,7 @@ class CoroTest : public ::testing::Test {
 TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
   int output = 0;
   {
-    CoroTask task = StoresFiveThenReturns(alloc_, output);
+    FutureTask task(StoresFiveThenReturns(alloc_, output));
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
@@ -114,11 +120,24 @@ TEST_F(CoroTest, NoAllocationFailureProducesValidCoro) {
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
+TEST_F(CoroTest, InvalidTaskIfAllocationFails) {
+  alloc_.Exhaust();
+  auto coro =
+      EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc_)));
+  EXPECT_FALSE(coro.ok());
+
+  DispatcherForTest dispatcher;
+  FutureTask task(std::move(coro));
+  dispatcher.Post(task);
+  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(),
+                            "Attempted to run a Coro that failed to allocate");
+}
+
 TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
   ObjectWithCoroMethod obj(4);
   int out = 22;
   {
-    CoroTask task = obj.CoroMethodStoresField(alloc_, out);
+    FutureTask task(obj.CoroMethodStoresField(alloc_, out));
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
@@ -172,7 +191,7 @@ TEST_F(CoroTest, AwaitMultipleAndAwakenRuns) {
   FakeFuture b;
   int output = 0;
   {
-    CoroTask task = AddTwoThenStore(alloc_, a, b, output);
+    FutureTask task(AddTwoThenStore(alloc_, a, b, output));
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
 
@@ -219,7 +238,7 @@ Coro<Counter> ReturnsAValue(CoroContext cx, int add) {
 
 TEST_F(CoroTest, ReturnsInt) {
   {
-    CoroTask task(NumberNine(alloc_));
+    FutureTask task(NumberNine(alloc_));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -232,7 +251,7 @@ TEST_F(CoroTest, ReturnsInt) {
 
 TEST_F(CoroTest, Memory) {
   {
-    CoroTask task(ReturnsAValue(alloc_, 5));
+    FutureTask task(ReturnsAValue(alloc_, 5));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -256,7 +275,7 @@ TEST_F(CoroTest, AwaitVoidCoro) {
   FakeFuture fut;
   {
     CoroContext cx(alloc_);
-    CoroTask task(WaitUntilFive(cx, fut));
+    FutureTask task(WaitUntilFive(cx, fut));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -276,7 +295,7 @@ TEST_F(CoroTest, AwaitVoidCoro) {
 TEST_F(CoroTest, AwaitVoidCoroInsideAnotherCoroutine) {
   FakeFuture fut;
   {
-    CoroTask task(AwaitVoidCoroWrapper(alloc_, fut));
+    FutureTask task(AwaitVoidCoroWrapper(alloc_, fut));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -349,7 +368,8 @@ Coro<int> ThisShouldBeACompilationErrorDoNotDoThis(SomeClass&, CoroContext) {
 TEST_F(CoroTest, FreeFunctionThatLooksLikeAMember) {
   SomeClass some_class;
   {
-    CoroTask task(ThisShouldBeACompilationErrorDoNotDoThis(some_class, alloc_));
+    FutureTask task(
+        ThisShouldBeACompilationErrorDoNotDoThis(some_class, alloc_));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -378,7 +398,7 @@ Coro<int> SumGenerator(CoroContext cx, Generator<int>& gen) {
 TEST_F(CoroTest, GeneratorYieldsValues) {
   {
     Generator<int> gen = CountToFive(alloc_);
-    CoroTask task(SumGenerator(alloc_, gen));
+    FutureTask task(SumGenerator(alloc_, gen));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -404,7 +424,7 @@ TEST_F(CoroTest, GeneratorAwaitsAndYields) {
   OptionalValueProvider<int> provider;
   {
     Generator<int> gen = AwaitAndYieldGenerator(alloc_, provider);
-    CoroTask task(SumGenerator(alloc_, gen));
+    FutureTask task(SumGenerator(alloc_, gen));
 
     DispatcherForTest dispatcher;
     dispatcher.Post(task);
@@ -421,6 +441,164 @@ TEST_F(CoroTest, GeneratorAwaitsAndYields) {
     dispatcher.RunToCompletion();
 
     EXPECT_EQ(task.Wait(), 30);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+Coro<void> ReturnsVoid(CoroContext) { co_return; }
+
+Coro<int> ReturnsInt(CoroContext, int val) { co_return val; }
+
+Coro<int> AwaitsProvider(CoroContext, OptionalValueProvider<int>& provider) {
+  std::optional<int> val = co_await provider.Get();
+  co_return val.value_or(-1);
+}
+
+TEST(Coro, SatisfiesFutureConcept) {
+  static_assert(Future<Coro<void>>);
+  static_assert(Future<Coro<int>>);
+  static_assert(Future<Coro<Status>>);
+}
+
+TEST(Coro, DefaultConstructedIsInvalidFuture) {
+  Coro<int> empty;
+  EXPECT_FALSE(empty.is_pendable());
+  EXPECT_FALSE(empty.is_complete());
+  EXPECT_FALSE(empty.ok());
+
+  Coro<void> empty_void;
+  EXPECT_FALSE(empty_void.is_pendable());
+  EXPECT_FALSE(empty_void.is_complete());
+  EXPECT_FALSE(empty_void.ok());
+}
+
+TEST(Coro, AllocationFailureFutureState) {
+  Coro<Result<int>> coro = ImmediatelyReturnsFive(GetNullAllocator());
+  EXPECT_FALSE(coro.ok());
+  EXPECT_FALSE(coro.is_pendable());
+  EXPECT_FALSE(coro.is_complete());
+}
+
+TEST_F(CoroTest, MoveTransfersFutureState) {
+  Coro<int> coro1 = ReturnsInt(alloc_, 42);
+  EXPECT_TRUE(coro1.is_pendable());
+  EXPECT_FALSE(coro1.is_complete());
+  EXPECT_TRUE(coro1.ok());
+
+  Coro<int> coro2 = std::move(coro1);
+  EXPECT_FALSE(coro1.is_pendable());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(coro1.is_complete());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(coro1.ok());           // NOLINT(bugprone-use-after-move)
+
+  EXPECT_TRUE(coro2.is_pendable());
+  EXPECT_FALSE(coro2.is_complete());
+  EXPECT_TRUE(coro2.ok());
+}
+
+TEST_F(CoroTest, PendCompletesAndUpdatesFutureState) {
+  {
+    Coro<int> coro = ReturnsInt(alloc_, 5);
+    EXPECT_TRUE(coro.is_pendable());
+    EXPECT_FALSE(coro.is_complete());
+    EXPECT_TRUE(coro.ok());
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(coro);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_EQ(result.value(), 5);
+    EXPECT_FALSE(coro.is_pendable());
+    EXPECT_TRUE(coro.is_complete());
+    EXPECT_FALSE(coro.ok());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, PendVoidCompletesAndUpdatesFutureState) {
+  {
+    Coro<void> coro = ReturnsVoid(alloc_);
+    EXPECT_TRUE(coro.is_pendable());
+    EXPECT_FALSE(coro.is_complete());
+    EXPECT_TRUE(coro.ok());
+
+    DispatcherForTest dispatcher;
+    Poll<void> result = dispatcher.RunInTaskUntilStalled(coro);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_FALSE(coro.is_pendable());
+    EXPECT_TRUE(coro.is_complete());
+    EXPECT_FALSE(coro.ok());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, PendSuspendedCoroRemainsPendableUntilCompletion) {
+  OptionalValueProvider<int> provider;
+  {
+    Coro<int> coro = AwaitsProvider(alloc_, provider);
+    EXPECT_TRUE(coro.is_pendable());
+    EXPECT_FALSE(coro.is_complete());
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(coro);
+    EXPECT_TRUE(result.IsPending());
+    EXPECT_TRUE(coro.is_pendable());
+    EXPECT_FALSE(coro.is_complete());
+
+    provider.Resolve(42);
+    result = dispatcher.RunInTaskUntilStalled(coro);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_EQ(result.value(), 42);
+    EXPECT_FALSE(coro.is_pendable());
+    EXPECT_TRUE(coro.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, AwaitCoroInsideFuncTask) {
+  {
+    Coro<int> coro = ReturnsInt(alloc_, 5);
+    int result = 0;
+    FuncTask task([&](Context& cx) -> Poll<> {
+      PW_AWAIT(result, coro, cx);
+      return Ready();
+    });
+
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
+    EXPECT_EQ(result, 5);
+    EXPECT_FALSE(coro.is_pendable());
+    EXPECT_TRUE(coro.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, AwaitVoidCoroInsideFuncTask) {
+  {
+    Coro<void> coro = ReturnsVoid(alloc_);
+    bool finished = false;
+    FuncTask task([&](Context& cx) -> Poll<> {
+      PW_AWAIT(coro, cx);
+      finished = true;
+      return Ready();
+    });
+
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
+    EXPECT_TRUE(finished);
+    EXPECT_FALSE(coro.is_pendable());
+    EXPECT_TRUE(coro.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, FutureTaskRunsCoro) {
+  {
+    FutureTask task(ReturnsInt(alloc_, 42));
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
+    EXPECT_EQ(task.Wait(), 42);
   }
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }

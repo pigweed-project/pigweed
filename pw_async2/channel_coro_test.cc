@@ -15,8 +15,8 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/channel.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/try.h"
 #include "pw_containers/vector.h"
 #include "pw_unit_test/framework.h"
@@ -26,9 +26,9 @@ namespace {
 using pw::async2::ChannelStorage;
 using pw::async2::Coro;
 using pw::async2::CoroContext;
-using pw::async2::CoroTask;
 using pw::async2::CreateMpscChannel;
 using pw::async2::CreateSpscChannel;
+using pw::async2::FutureTask;
 using pw::async2::Receiver;
 using pw::async2::Sender;
 
@@ -78,8 +78,8 @@ TEST(DynamicChannel, SingleProducerSingleConsumer) {
 
   pw::Vector<int, 10> out;
 
-  auto producer = CoroTask(Producer(alloc, std::move(sender), 1, 6));
-  auto consumer = CoroTask(Consumer(alloc, std::move(receiver), out));
+  auto producer = FutureTask(Producer(alloc, std::move(sender), 1, 6));
+  auto consumer = FutureTask(Consumer(alloc, std::move(receiver), out));
 
   dispatcher.Post(producer);
   dispatcher.Post(consumer);
@@ -105,9 +105,9 @@ TEST(DynamicChannel, MultiProducerSingleConsumer) {
 
   pw::Vector<int, 10> out;
 
-  auto producer_1 = CoroTask(Producer(alloc, channel.CreateSender(), 1, 3));
-  auto producer_2 = CoroTask(Producer(alloc, channel.CreateSender(), 4, 6));
-  auto consumer = CoroTask(Consumer(alloc, std::move(receiver), out));
+  auto producer_1 = FutureTask(Producer(alloc, channel.CreateSender(), 1, 3));
+  auto producer_2 = FutureTask(Producer(alloc, channel.CreateSender(), 4, 6));
+  auto consumer = FutureTask(Consumer(alloc, std::move(receiver), out));
 
   channel.Release();
 
@@ -133,9 +133,9 @@ TEST(DynamicChannel, ReceiverDisconnects) {
   auto&& [channel, sender, receiver] = *result;
   channel.Release();
 
-  auto producer = CoroTask(Producer(alloc, std::move(sender), 1, 10));
+  auto producer = FutureTask(Producer(alloc, std::move(sender), 1, 10));
   auto consumer =
-      CoroTask(DisconnectingConsumer(alloc, std::move(receiver), 3));
+      FutureTask(DisconnectingConsumer(alloc, std::move(receiver), 3));
 
   dispatcher.Post(producer);
   dispatcher.Post(consumer);
@@ -154,8 +154,8 @@ TEST(StaticChannel, SingleProducerSingleConsumer) {
   channel.Release();
   pw::Vector<int, 10> out;
 
-  auto producer = CoroTask(Producer(alloc, std::move(sender), 1, 6));
-  auto consumer = CoroTask(Consumer(alloc, std::move(receiver), out));
+  auto producer = FutureTask(Producer(alloc, std::move(sender), 1, 6));
+  auto consumer = FutureTask(Consumer(alloc, std::move(receiver), out));
 
   dispatcher.Post(producer);
   dispatcher.Post(consumer);

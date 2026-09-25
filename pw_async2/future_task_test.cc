@@ -29,6 +29,7 @@ using pw::async2::FutureTask;
 using pw::async2::Pending;
 using pw::async2::Poll;
 using pw::async2::Ready;
+using pw::async2::ReturnValuePolicy;
 using pw::async2::ValueFuture;
 using pw::async2::ValueProvider;
 using pw::async2::VoidFuture;
@@ -157,6 +158,59 @@ TEST(FutureTask, ReferenceTakePoll) {
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(task.TakePoll(), Ready(500));
+}
+
+TEST(FutureTask, DiscardReturnValue) {
+  DispatcherForTest dispatcher;
+
+  ValueProvider<int> provider;
+  FutureTask<ValueFuture<int>, ReturnValuePolicy::kDiscard> task(
+      provider.Get());
+
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_TRUE(task.IsRegistered());
+
+  provider.Resolve(123);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_FALSE(task.IsRegistered());
+}
+
+TEST(FutureTask, HasValue) {
+  DispatcherForTest dispatcher;
+
+  ValueProvider<int> provider;
+  FutureTask task(provider.Get());
+
+  EXPECT_FALSE(task.has_value());
+
+  dispatcher.Post(task);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_FALSE(task.has_value());
+
+  provider.Resolve(42);
+  dispatcher.RunUntilStalled();
+
+  EXPECT_TRUE(task.has_value());
+  EXPECT_EQ(task.value(), 42);
+}
+
+TEST(FutureTask, VoidFutureKeepPolicy) {
+  DispatcherForTest dispatcher;
+
+  ValueProvider<void> provider;
+  FutureTask<VoidFuture, ReturnValuePolicy::kKeep> task(provider.Get());
+
+  EXPECT_EQ(task.TakePoll(), Pending());
+
+  dispatcher.Post(task);
+  provider.Resolve();
+  dispatcher.RunUntilStalled();
+
+  EXPECT_EQ(task.TakePoll(), Ready());
 }
 
 }  // namespace

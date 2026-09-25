@@ -16,7 +16,7 @@
 #include <concepts>
 
 #include "pw_async2/coro.h"
-#include "pw_async2/func_task.h"
+#include "pw_async2/task.h"
 #include "pw_function/function.h"
 
 namespace pw::async2 {
@@ -84,7 +84,7 @@ class FallibleCoroTask final : public Task {
       return Ready();
     }
 
-    auto result = coro_.Pend(cx);
+    auto result = coro_.PendCoro(cx);
     switch (result.state()) {
       case internal::CoroPollState::kPending:
         return Pending();
@@ -132,7 +132,7 @@ class FallibleCoroTask<T, AllocationErrorHandler, ReturnValuePolicy::kDiscard>
       error_handler_();
       return Ready();
     }
-    switch (coro_.Pend(cx).state()) {
+    switch (coro_.PendCoro(cx).state()) {
       case internal::CoroPollState::kPending:
         return Pending();
       case internal::CoroPollState::kAborted:

@@ -111,9 +111,16 @@ class OwningCoroutineHandle final {
   // Return whether or not this value contains a `promise_handle`.
   //
   // This will return `false` if this `OwningCoroutineHandle` was
-  // `nullptr`-initialized, moved from, or if `Release` was invoked.
+  // `nullptr`-initialized, moved from, or if `Release` or `MarkComplete` was
+  // invoked.
   [[nodiscard]] bool IsValid() const {
-    return promise_handle_.address() != nullptr;
+    return promise_handle_.address() != nullptr &&
+           promise_handle_.address() != &kCompletedSentinel;
+  }
+
+  // Return whether the underlying coroutine has completed.
+  [[nodiscard]] bool is_complete() const {
+    return promise_handle_.address() == &kCompletedSentinel;
   }
 
   // Return a reference to the underlying `PromiseType`.
@@ -137,14 +144,23 @@ class OwningCoroutineHandle final {
   // Invokes `destroy()` on the underlying promise.
   void Release() {
     // DOCSTAG: [pw_async2-coro-release]
-    if (promise_handle_.address() != nullptr) {
+    if (IsValid()) {
       promise_handle_.destroy();
-      promise_handle_ = nullptr;
     }
+    promise_handle_ = nullptr;
     // DOCSTAG: [pw_async2-coro-release]
   }
 
+  // Destroys the coroutine and marks this handle as completed.
+  void MarkComplete() {
+    Release();
+    promise_handle_ = std::coroutine_handle<PromiseType>::from_address(
+        const_cast<bool*>(&kCompletedSentinel));
+  }
+
  private:
+  static constexpr const bool kCompletedSentinel = {};
+
   std::coroutine_handle<PromiseType> promise_handle_;
 };
 
@@ -492,7 +508,7 @@ class Awaitable final {
   // In the process, this method attempts to complete the inner `await_type`
   // before suspending this coroutine.
   bool await_suspend(std::coroutine_handle<PromiseType> promise)
-    requires Future<await_type>
+    requires(Future<await_type> && !IsCoro<await_type>)
   {
     Context& cx = promise.promise().cx();
     if (Advance(cx) == CoroPollState::kPending) {
@@ -541,7 +557,7 @@ class Awaitable final {
   // resumed, as otherwise the return value will not be available when
   // `await_resume` is called to produce the result of `co_await`.
   CoroPollState Advance(Context& cx)
-    requires Future<await_type>
+    requires(Future<await_type> && !IsCoro<await_type>)
   {
     Poll<value_type> poll_res(get().Pend(cx));
     if (poll_res.IsPending()) {
@@ -559,7 +575,7 @@ class Awaitable final {
     if (!get().ok()) {
       return CoroPollState::kAborted;
     }
-    auto result = get().Pend(cx);
+    auto result = get().PendCoro(cx);
     if (result.state() == CoroPollState::kReady) {
       state_.coro_or_future.~CoroOrFuture();
       if constexpr (std::is_void_v<value_type>) {
@@ -639,35 +655,76 @@ class Coro final {
   using value_type = T;
 
   /// Creates an empty, invalid coroutine object.
-  static Coro Empty() {
-    return Coro(internal::OwningCoroutineHandle<promise_type>(nullptr));
-  }
+  constexpr Coro() : promise_handle_(nullptr) {}
+
+  /// Creates an empty, invalid coroutine object.
+  static constexpr Coro Empty() { return Coro(); }
+
+  Coro(const Coro&) = delete;
+  Coro& operator=(const Coro&) = delete;
+
+  Coro(Coro&& other) noexcept = default;
+  Coro& operator=(Coro&& other) noexcept = default;
+
+  ~Coro() = default;
 
   /// Whether or not this `Coro<T>` is a valid coroutine.
   ///
-  /// This will return `false` if coroutine state allocation failed or if
+  /// This will return `false` if coroutine state allocation failed, if the
+  /// coroutine was default-constructed or moved-from, or if
   /// this `Coro<T>::Pend` method previously returned a `Ready` value.
   [[nodiscard]] bool ok() const { return promise_handle_.IsValid(); }
+
+  /// Returns whether `Pend()` can be called.
+  ///
+  /// A default-constructed coroutine, an unallocated coroutine, or a completed
+  /// coroutine is not pendable.
+  [[nodiscard]] bool is_pendable() const { return promise_handle_.IsValid(); }
+
+  /// Returns whether the coroutine has completed.
+  [[nodiscard]] bool is_complete() const {
+    return promise_handle_.is_complete();
+  }
+
+  /// Attempt to complete this coroutine, returning the result if complete.
+  ///
+  /// Crashes if `is_pendable()` is false, which occurs when coroutine state
+  /// allocation fails, if the coroutine was uninitialized, or if `Pend`
+  /// previously returned `Ready`.
+  Poll<T> Pend(Context& cx) {
+    if (!is_pendable()) {
+      internal::CrashDueToCoroutineAllocationFailure();
+    }
+    internal::CoroPoll<T> return_value = PendCoro(cx);
+    switch (return_value.state()) {
+      case internal::CoroPollState::kPending:
+        return Pending();
+      case internal::CoroPollState::kAborted:
+        internal::CrashDueToCoroutineAllocationFailure();
+      case internal::CoroPollState::kReady:
+        if constexpr (std::is_void_v<T>) {
+          return Ready();
+        } else {
+          return Ready(std::move(*return_value));
+        }
+    }
+    PW_UNREACHABLE;
+  }
 
  private:
   // Allow get_return_object() and get_return_object_on_allocation_failure() to
   // use the private constructor below.
   friend internal::TypedCoroPromise<T, promise_type>;
 
-  // Only allow Awaitable and Coro task wrappers to call Pend.
+  // Allow Awaitable and FallibleCoroTask to call PendCoro to handle allocation
+  // failures.
   template <typename, typename>
   friend class internal::Awaitable;
-  template <typename, ReturnValuePolicy>
-  friend class CoroTask;
   template <typename, typename E, ReturnValuePolicy>
     requires std::invocable<E>
   friend class FallibleCoroTask;
 
-  /// Attempt to complete this coroutine, returning the result if complete.
-  ///
-  /// Crashes if `ok()` is false, which occurs when coroutine state allocation
-  /// fails.
-  internal::CoroPoll<T> Pend(Context& cx) {
+  internal::CoroPoll<T> PendCoro(Context& cx) {
     using enum internal::CoroPollState;
 
     if (!ok()) {
@@ -700,9 +757,9 @@ class Coro final {
 
         // `return_value` now reflects the results of the operation. Unless it's
         // still pending, free the coroutine's memory.
-        if (return_value.state() != kPending) {
-          // Destroy the coroutine state: it has completed or aborted, and
-          // further calls to `resume` would result in undefined behavior.
+        if (return_value.state() == kReady) {
+          promise_handle_.MarkComplete();
+        } else if (return_value.state() == kAborted) {
           promise_handle_.Release();
         }
         break;
@@ -722,6 +779,11 @@ class Coro final {
 template <typename Promise>
 Coro(internal::OwningCoroutineHandle<Promise>&&)
     -> Coro<typename Promise::value_type>;
+
+static_assert(sizeof(Coro<void>) == sizeof(void*));
+static_assert(sizeof(Coro<int>) == sizeof(void*));
+static_assert(Future<Coro<void>>);
+static_assert(Future<Coro<int>>);
 
 /// An asynchronous generator that yields values of type `T`.
 ///

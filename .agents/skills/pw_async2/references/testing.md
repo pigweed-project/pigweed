@@ -152,15 +152,15 @@ class TestSensorTask : public pw::async2::Task {
 };
 ```
 
-### C. Coroutines (`CoroTask` / `FallibleCoroTask`)
+### C. Coroutines (`FutureTask` / `FallibleCoroTask`)
 
 To test C++20 coroutines (`Coro<T>`), pass `CoroContext` with an allocator (such
-as `AllocatorForTest`) and post a `CoroTask`:
+as `AllocatorForTest`) and post a `FutureTask`:
 
 ```cpp
 TEST(CoroTest, ExecutesCoroToCompletion) {
   pw::allocator::test::AllocatorForTest<2048> alloc;
-  pw::async2::CoroTask task = MyCoroFunction(alloc, arg1, arg2);
+  pw::async2::FutureTask task(MyCoroFunction(alloc, arg1, arg2));
 
   pw::async2::DispatcherForTest dispatcher;
   dispatcher.Post(task);

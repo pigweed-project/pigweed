@@ -25,15 +25,15 @@ namespace pw::async2 {
 /// @submodule{pw_async2,coroutines}
 
 /// @deprecated Use `FallibleCoroTask` instead.
-class [[deprecated("Use CoroTask or FallibleCoroTask instead")]]
+class [[deprecated("Use FutureTask or FallibleCoroTask instead")]]
 CoroOrElseTask final : public Task {
  public:
   /// Create a new ``Task`` which runs ``coro``, invoking ``or_else`` on
   /// any non-OK status.
   CoroOrElseTask(Coro<Status>&& coro, pw::Function<void(Status)>&& or_else)
-      : coro_task_(std::in_place,
-                   std::move(coro),
-                   [this] { or_else_(Status::Internal()); }),
+      : task_(std::in_place,
+              std::move(coro),
+              [this] { or_else_(Status::Internal()); }),
         or_else_(std::move(or_else)) {}
 
   ~CoroOrElseTask() override { Deregister(); }
@@ -43,8 +43,7 @@ CoroOrElseTask final : public Task {
   /// The task must not be `Post`ed when `coro` is changed.
   void SetCoro(Coro<Status>&& coro) {
     PW_ASSERT(!IsRegistered());
-    coro_task_.emplace(std::move(coro),
-                       [this] { or_else_(Status::Internal()); });
+    task_.emplace(std::move(coro), [this] { or_else_(Status::Internal()); });
   }
 
   /// *Non-atomically* sets `or_else`.
@@ -56,9 +55,9 @@ CoroOrElseTask final : public Task {
   }
 
  private:
-  Poll<> DoPend(Context& cx) final { return coro_task_->Pend(cx); }
+  Poll<> DoPend(Context& cx) final { return task_->Pend(cx); }
 
-  std::optional<FallibleCoroTask<Status>> coro_task_;
+  std::optional<FallibleCoroTask<Status>> task_;
   pw::Function<void(Status)> or_else_;
 };
 

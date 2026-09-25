@@ -17,7 +17,7 @@ Pigweed's pw_async2 cooperative asynchronous framework.
 Structure pw_async2 systems using a strict 3-tier execution graph:
 
 1. **Top level: Tasks (posted to dispatcher)**
-   - Inherits from `pw::async2::Task` or uses `CoroTask`/`FuncTask`.
+   - Inherits from `pw::async2::Task` or uses `FutureTask`/`FuncTask`.
    - Registered with `Dispatcher`; holds task lifecycle state.
 2. **Middle level: Composite futures and async helper functions**
    - Pure C++ value objects returned directly on the stack.

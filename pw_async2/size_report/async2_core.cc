@@ -22,7 +22,7 @@
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
+#include "pw_async2/future_task.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
 namespace pw::async2::size_report {
@@ -88,9 +88,9 @@ int Measure() {
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
   int output = 0;
-  CoroTask coro_task =
-      StoresFiveThenReturns(CoroContext(GetAllocator()), output);
-  dispatcher.Post(coro_task);
+  FutureTask future_task(
+      StoresFiveThenReturns(CoroContext(GetAllocator()), output));
+  dispatcher.Post(future_task);
   PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
 
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE

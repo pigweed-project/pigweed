@@ -27,8 +27,8 @@
 #include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/func_task.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/future_timeout.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/select.h"
@@ -56,8 +56,8 @@ using ::pw::async2::BasicDispatcher;
 using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
-using ::pw::async2::CoroTask;
 using ::pw::async2::FuncTask;
+using ::pw::async2::FutureTask;
 using ::pw::async2::GetSystemTimeProvider;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
@@ -251,7 +251,7 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(alloc, result));
+    auto task = FutureTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     PW_CHECK(task.Wait().IsDeadlineExceeded());
@@ -278,7 +278,7 @@ int main() {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(alloc, result));
+    auto task = FutureTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     PW_CHECK_OK(task.Wait());
@@ -318,7 +318,7 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(alloc, result));
+    auto task = FutureTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     ASSERT_TRUE(task.Wait().IsDeadlineExceeded());
@@ -344,7 +344,7 @@ TEST(ExampleTests, Timeout) {
 
   {
     Result<Vector<float, 10>> result;
-    auto task = CoroTask(SampleVoltageCoro(alloc, result));
+    auto task = FutureTask(SampleVoltageCoro(alloc, result));
     dispatcher.Post(task);
     dispatcher.RunToCompletion();
     ASSERT_TRUE(task.Wait().ok());

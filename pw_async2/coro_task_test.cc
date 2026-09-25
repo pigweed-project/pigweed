@@ -12,13 +12,12 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_async2/coro_task.h"
-
 #include <concepts>
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/internal/coro_test_util.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
@@ -29,9 +28,9 @@ using ::pw::async2::test::EnsureNotStackAllocated;
 
 using namespace pw::async2;
 
-class CoroTaskTest : public ::testing::Test {
+class FutureTaskCoroTest : public ::testing::Test {
  protected:
-  CoroTaskTest() : coro_cx_(alloc_) {}
+  FutureTaskCoroTest() : coro_cx_(alloc_) {}
 
   pw::allocator::test::AllocatorForTest<2048> alloc_;
   CoroContext coro_cx_;
@@ -43,10 +42,10 @@ Coro<T> DoubleIt(CoroContext, T value) {
   co_return value * 2;
 }
 
-TEST_F(CoroTaskTest, RunOnce) {
+TEST_F(FutureTaskCoroTest, RunOnce) {
   DispatcherForTest dispatcher;
 
-  CoroTask task(DoubleIt(coro_cx_, 2.5f));
+  FutureTask task(DoubleIt(coro_cx_, 2.5f));
   dispatcher.Post(task);
 
   dispatcher.RunToCompletion();
@@ -56,10 +55,11 @@ TEST_F(CoroTaskTest, RunOnce) {
   EXPECT_EQ(task.Wait(), 5.f);
 }
 
-TEST_F(CoroTaskTest, RunOnceDiscard) {
+TEST_F(FutureTaskCoroTest, RunOnceDiscard) {
   DispatcherForTest dispatcher;
 
-  CoroTask<int, ReturnValuePolicy::kDiscard> task(DoubleIt(coro_cx_, 1));
+  FutureTask<Coro<int>, ReturnValuePolicy::kDiscard> task(
+      DoubleIt(coro_cx_, 1));
   dispatcher.Post(task);
 
   dispatcher.RunToCompletion();
@@ -67,10 +67,10 @@ TEST_F(CoroTaskTest, RunOnceDiscard) {
 
 Coro<pw::Result<int>> ReturnInt(CoroContext, int val) { co_return val; }
 
-TEST_F(CoroTaskTest, RunOnceInt) {
+TEST_F(FutureTaskCoroTest, RunOnceInt) {
   DispatcherForTest dispatcher;
 
-  CoroTask task(ReturnInt(coro_cx_, 42));
+  FutureTask task(ReturnInt(coro_cx_, 42));
   dispatcher.Post(task);
 
   dispatcher.RunToCompletion();
@@ -80,26 +80,33 @@ TEST_F(CoroTaskTest, RunOnceInt) {
   EXPECT_EQ(task.value().value(), 42);
 }
 
-TEST_F(CoroTaskTest, InvalidTaskIfAllocationFails) {
+TEST_F(FutureTaskCoroTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
-  CoroTask task = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
-  EXPECT_FALSE(task.ok());
+  Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+  EXPECT_FALSE(coro.ok());
+
+  DispatcherForTest dispatcher;
+  FutureTask task(std::move(coro));
+  dispatcher.Post(task);
+  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(),
+                            "Attempted to run a Coro that failed to allocate");
 }
 
-TEST_F(CoroTaskTest, ValidTaskIfAllocationSucceeds) {
+TEST_F(FutureTaskCoroTest, ValidTaskIfAllocationSucceeds) {
   {
-    CoroTask task = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
-    EXPECT_TRUE(task.ok());
+    Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+    EXPECT_TRUE(coro.ok());
+    FutureTask task(std::move(coro));
   }
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
 Coro<void> ReturnVoid(CoroContext) { co_return; }
 
-TEST_F(CoroTaskTest, RunOnceVoid) {
+TEST_F(FutureTaskCoroTest, RunOnceVoid) {
   DispatcherForTest dispatcher;
 
-  CoroTask task(ReturnVoid(coro_cx_));
+  FutureTask task(ReturnVoid(coro_cx_));
   dispatcher.Post(task);
 
   dispatcher.RunToCompletion();

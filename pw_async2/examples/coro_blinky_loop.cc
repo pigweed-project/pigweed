@@ -13,7 +13,6 @@
 // the License.
 
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/simulated_time_provider.h"
 #include "pw_chrono/system_clock.h"

@@ -17,8 +17,8 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_containers/vector.h"
 #include "pw_unit_test/framework.h"
 
@@ -159,10 +159,11 @@ TEST(Channel, Coro) {
   auto [channel, sender, receiver] = CreateSpscChannel<int>(storage);
   channel.Release();
 
-  auto producer = pw::async2::CoroTask(CoroProducer(alloc, std::move(sender)));
+  auto producer =
+      pw::async2::FutureTask(CoroProducer(alloc, std::move(sender)));
   pw::Vector<int, 3> values;
   auto consumer =
-      pw::async2::CoroTask(CoroConsumer(alloc, std::move(receiver), values));
+      pw::async2::FutureTask(CoroConsumer(alloc, std::move(receiver), values));
 
   dispatcher.Post(producer);
   dispatcher.Post(consumer);

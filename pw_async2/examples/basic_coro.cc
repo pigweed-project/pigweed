@@ -55,16 +55,16 @@ Coro<Status> ForwardingCoro(CoroContext,
 // DOCSTAG: [pw_async2-examples-basic-coro]
 
 #include "pw_allocator/testing.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 
 namespace {
 
 using ::pw::SharedPtr;
 using ::pw::allocator::test::AllocatorForTest;
 using ::pw::async2::ChannelStorage;
-using ::pw::async2::CoroTask;
 using ::pw::async2::CreateSpscChannel;
+using ::pw::async2::FutureTask;
 
 class CoroExample : public ::testing::Test {
  protected:
@@ -95,7 +95,7 @@ class CoroExample : public ::testing::Test {
 
 TEST_F(CoroExample, ImplicitCoro) {
   // DOCSTAG: [pw_async2-examples-basic-allocated]
-  SharedPtr<CoroTask<Status>> task = dispatcher.Post<ForwardingCoro>(
+  SharedPtr<FutureTask<Coro<Status>>> task = dispatcher.Post<ForwardingCoro>(
       allocator, std::move(receiver1_), std::move(sender2_));
 
   // The task is automatically posted when allocated.
@@ -107,7 +107,7 @@ TEST_F(CoroExample, ImplicitCoro) {
 
 TEST_F(CoroExample, ExplicitCoro) {
   // DOCSTAG: [pw_async2-examples-basic-allocated-explicit]
-  SharedPtr<CoroTask<Status>> task = dispatcher.Post(
+  SharedPtr<FutureTask<Coro<Status>>> task = dispatcher.Post(
       allocator,
       ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)));
 
@@ -132,16 +132,16 @@ TEST_F(CoroExample, FallibleCoroTask) {
   EXPECT_EQ(receiver2_.TryReceive().value(), 42);
 }
 
-TEST_F(CoroExample, CoroTask) {
-  // DOCSTAG: [pw_async2-examples-basic-coro-task]
-  // NOT RECOMMENDED: Manually declare a CoroTask to wrap a Coro. The coroutine
-  // itself still requires dynamic allocation.
-  pw::async2::CoroTask task(
+TEST_F(CoroExample, FutureTask) {
+  // DOCSTAG: [pw_async2-examples-basic-future-task]
+  // NOT RECOMMENDED: Manually declare a FutureTask to wrap a Coro. The
+  // coroutine itself still requires dynamic allocation.
+  pw::async2::FutureTask task(
       ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)));
 
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
-  // DOCSTAG: [pw_async2-examples-basic-coro-task]
+  // DOCSTAG: [pw_async2-examples-basic-future-task]
 
   EXPECT_EQ(receiver2_.TryReceive().value(), 42);
 }

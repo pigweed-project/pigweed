@@ -58,9 +58,6 @@ class FuncTask final : public Task {
 template <typename Func>
 FuncTask(Func&&) -> FuncTask<std::decay_t<Func>>;
 
-/// Whether to store or discard the function's return value in `RunOnceTask`.
-enum class ReturnValuePolicy : bool { kKeep, kDiscard };
-
 /// Runs a function once in a task. The task calls the function then returns
 /// `Ready`. The task may be posted again after it is joined.
 ///

@@ -53,7 +53,7 @@ class DispatcherForTestFacade final : public RunnableDispatcher {
   /// Runs a future in a `FutureTask` until no progress can be made.
   template <typename T>
   auto RunInTaskUntilStalled(T& future) PW_LOCKS_EXCLUDED(internal::lock()) {
-    FutureTask<T&> task(future);
+    FutureTask<T&, ReturnValuePolicy::kKeep> task(future);
     native().Post(task);
     native().RunUntilStalled();
 

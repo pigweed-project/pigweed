@@ -33,7 +33,6 @@
 #include <functional>  // std::invoke
 
 #include "pw_async2/coro.h"
-#include "pw_async2/coro_task.h"
 #include "pw_async2/fallible_coro_task.h"
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
@@ -185,21 +184,21 @@ class Dispatcher {
   }
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
-  /// Allocates and posts a `CoroTask` that runs the provided coroutine to
+  /// Allocates and posts a `FutureTask` that runs the provided coroutine to
   /// completion.
   ///
-  /// Returns `nullptr` if the coroutine or `CoroTask` failed to allocate.
+  /// Returns `nullptr` if the coroutine or `FutureTask` failed to allocate.
   /// Crashes if subsequent coroutine allocations fail.
   ///
   /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
   ///     null `SharedPtr` if allocation failed.
   template <typename T>
-  [[nodiscard]] SharedPtr<CoroTask<T>> Post(Allocator& allocator,
-                                            Coro<T>&& coro) {
+  [[nodiscard]] SharedPtr<FutureTask<Coro<T>>> Post(Allocator& allocator,
+                                                    Coro<T>&& coro) {
     if (!coro.ok()) {
       return nullptr;
     }
-    return Post<CoroTask<T>>(allocator, std::move(coro));
+    return Post<FutureTask<Coro<T>>>(allocator, std::move(coro));
   }
 
   /// Allocates and posts a `FallibleCoroTask` that runs the provided coroutine
@@ -226,13 +225,13 @@ class Dispatcher {
         allocator, std::move(coro), std::forward<Arg>(error_handler));
   }
 
-  /// Allocates and posts a `CoroTask` for the provided coroutine function.
+  /// Allocates and posts a `FutureTask` for the provided coroutine function.
   ///
   /// The coroutine function is invoked with the provided arguments. The
   /// allocator from the `CoroContext` (the first argument) is used to allocate
   /// the task.
   ///
-  /// Returns `nullptr` if the coroutine or `CoroTask` failed to allocate.
+  /// Returns `nullptr` if the coroutine or `FutureTask` failed to allocate.
   /// Crashes if subsequent coroutine allocations fail.
   ///
   /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
