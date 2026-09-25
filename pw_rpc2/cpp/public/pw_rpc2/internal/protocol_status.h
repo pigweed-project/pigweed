@@ -21,6 +21,8 @@
 
 namespace pw::rpc2::internal {
 
+// LINT.IfChange(cpp_rpc2_error_codes)
+
 /// Wire-level protocol status codes sent by a `pw_rpc2` server
 /// (`PacketType::kServerError`).
 ///
@@ -90,6 +92,8 @@ enum class ClientError : uint8_t {
   /// a server.
   kReceivedPacketForServer = 4,
 };
+
+// LINT.ThenChange(//pw_rpc2/protocol.rst:rpc2_error_codes)
 
 /// Translates a wire `ServerError` into its equivalent `pw::Status` for public
 /// call completion APIs on the client.

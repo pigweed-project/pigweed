@@ -9,3 +9,9 @@ pw_rpc2
 .. attention::
 
    ``pw_rpc2`` is under construction and is not yet ready for use.
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   Wire protocol <protocol>
