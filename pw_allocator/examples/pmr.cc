@@ -14,6 +14,7 @@
 
 // DOCSTAG: [pw_allocator-examples-pmr]
 #include <map>
+#include <string>
 #include <string_view>
 
 #include "pw_allocator/allocator.h"

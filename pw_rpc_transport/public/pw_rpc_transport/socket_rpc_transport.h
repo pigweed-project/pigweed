@@ -17,6 +17,8 @@
 
 #include <atomic>
 #include <mutex>
+#include <string>
+#include <string_view>
 
 #include "pw_assert/assert.h"
 #include "pw_chrono/system_clock.h"
