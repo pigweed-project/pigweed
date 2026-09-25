@@ -14,8 +14,11 @@
 
 use regs::*;
 
+#[cfg(feature = "timer_clint")]
+pub mod clint;
 #[cfg(feature = "epmp")]
 pub mod epmp;
+pub mod mtime;
 pub mod pmp;
 pub mod veer;
 
