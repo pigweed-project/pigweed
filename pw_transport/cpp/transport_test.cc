@@ -35,7 +35,6 @@ namespace {
 class MockTransport : public ReliableDatagramListener,
                       public ReliableDatagramConnector {
  public:
-  using ReliableDatagramListener::WrapSocket;
   ~MockTransport() override {
     accept_provider_.Resolve(Status::FailedPrecondition());
     connect_provider_.Resolve(Status::FailedPrecondition());
@@ -66,12 +65,12 @@ class MockSocket : public ReliableDatagramSocketImpl {
   // Only exposed for unit testing.
   using ReliableDatagramSocketImpl::Adopt;
   using ReliableDatagramSocketImpl::AdoptLocked;
+  using ReliableDatagramSocketImpl::WrapSocket;
 
   static ReliableDatagramSocket Allocated(Allocator& allocator,
                                           bool* destructed = nullptr) {
     auto* ptr = allocator.New<MockSocket>(allocator, allocator, destructed);
-    return ptr != nullptr ? MockTransport::WrapSocket(*ptr)
-                          : ReliableDatagramSocket();
+    return ptr != nullptr ? ptr->WrapSocket() : ReliableDatagramSocket();
   }
 
   MockSocket(Allocator& connection_allocator,
@@ -216,6 +215,8 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
   static constexpr size_t kOverhead = kHeaderSize + kFooterSize;
   static constexpr uint32_t kCrcMagic = 0xDEADBEEF;
 
+  using ReliableDatagramSocketImpl::WrapSocket;
+
   static ReliableDatagramSocket Allocated(
       Allocator& allocator,
       ReliableDatagramSocket lower_connection,
@@ -223,8 +224,7 @@ class MockLayeredSocket : public ReliableDatagramSocketImpl {
       bool* destructed = nullptr) {
     auto* ptr = allocator.New<MockLayeredSocket>(
         allocator, std::move(lower_connection), lower_mock, destructed);
-    return ptr != nullptr ? MockTransport::WrapSocket(*ptr)
-                          : ReliableDatagramSocket();
+    return ptr != nullptr ? ptr->WrapSocket() : ReliableDatagramSocket();
   }
 
   MockLayeredSocket(Allocator& connection_allocator,
@@ -626,7 +626,7 @@ TEST(TransportTest, ReadClosed) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   MockSocket* connection = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket conn = MockTransport::WrapSocket(*connection);
+  ReliableDatagramSocket conn = connection->WrapSocket();
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
@@ -648,7 +648,7 @@ TEST(TransportTest, WriteClosed) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   MockSocket* connection = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket conn = MockTransport::WrapSocket(*connection);
+  ReliableDatagramSocket conn = connection->WrapSocket();
   connection->SetBlockWrites(true);
 
   async2::DispatcherForTest dispatcher;
@@ -890,7 +890,7 @@ TEST(TransportTest, ZeroSizeBufferHandling) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   MockSocket* mock = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket conn = MockTransport::WrapSocket(*mock);
+  ReliableDatagramSocket conn = mock->WrapSocket();
 
   // Synchronous 0-byte reservation returns a valid reservation with 0 size.
   auto res_sync = conn.TryReserveWrite(0);
@@ -1038,11 +1038,10 @@ TEST(TransportTest, LayeredConnectionWriteAndRead) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* lower_impl = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket lower_conn = MockTransport::WrapSocket(*lower_impl);
+  ReliableDatagramSocket lower_conn = lower_impl->WrapSocket();
   auto* layered_impl =
       allocator.New<MockLayeredSocket>(allocator, lower_conn, lower_impl);
-  ReliableDatagramSocket layered_conn =
-      MockTransport::WrapSocket(*layered_impl);
+  ReliableDatagramSocket layered_conn = layered_impl->WrapSocket();
 
   // Test Read path
   {
@@ -1099,11 +1098,10 @@ TEST(TransportTest, LayeredConnectionTaskInteraction) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* lower_impl = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket lower_conn = MockTransport::WrapSocket(*lower_impl);
+  ReliableDatagramSocket lower_conn = lower_impl->WrapSocket();
   auto* layered_impl =
       allocator.New<MockLayeredSocket>(allocator, lower_conn, lower_impl);
-  ReliableDatagramSocket layered_conn =
-      MockTransport::WrapSocket(*layered_impl);
+  ReliableDatagramSocket layered_conn = layered_impl->WrapSocket();
 
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
@@ -1134,12 +1132,10 @@ TEST(TransportTest, LayeredConnectionTaskInteraction) {
   EXPECT_EQ(crc, MockLayeredSocket::kCrcMagic);
 
   auto* lower_recv_impl = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket lower_recv_conn =
-      MockTransport::WrapSocket(*lower_recv_impl);
+  ReliableDatagramSocket lower_recv_conn = lower_recv_impl->WrapSocket();
   auto* layered_recv_impl = allocator.New<MockLayeredSocket>(
       allocator, lower_recv_conn, lower_recv_impl);
-  ReliableDatagramSocket layered_recv_conn =
-      MockTransport::WrapSocket(*layered_recv_impl);
+  ReliableDatagramSocket layered_recv_conn = layered_recv_impl->WrapSocket();
 
   layered_recv_impl->EnqueueForRead(std::move(raw_packet));
 
@@ -1207,11 +1203,10 @@ TEST(TransportTest, LayeredConnectionCorruptPacketRejected) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* lower_impl = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket lower_conn = MockTransport::WrapSocket(*lower_impl);
+  ReliableDatagramSocket lower_conn = lower_impl->WrapSocket();
   auto* layered_impl =
       allocator.New<MockLayeredSocket>(allocator, lower_conn, lower_impl);
-  ReliableDatagramSocket layered_conn =
-      MockTransport::WrapSocket(*layered_impl);
+  ReliableDatagramSocket layered_conn = layered_impl->WrapSocket();
 
   auto corrupt_packet = allocator.MakeUnique<std::byte[]>(13);
   uint32_t len = 5;
@@ -1239,8 +1234,8 @@ TEST(TransportTest, AdoptTrimmingOutOfBoundsAsserts) {
   auto* conn1 = allocator.New<MockSocket>(allocator, allocator);
   auto* conn2 = allocator.New<MockSocket>(allocator, allocator);
 
-  ReliableDatagramSocket c1 = MockTransport::WrapSocket(*conn1);
-  ReliableDatagramSocket c2 = MockTransport::WrapSocket(*conn2);
+  ReliableDatagramSocket c1 = conn1->WrapSocket();
+  ReliableDatagramSocket c2 = conn2->WrapSocket();
   {
     std::optional<WriteReservation> res = c1.TryReserveWrite(10);
     ASSERT_TRUE(res.has_value());
@@ -1264,8 +1259,8 @@ TEST(TransportTest, AdoptTrimmingEntireBufferSucceeds) {
   auto* conn1 = allocator.New<MockSocket>(allocator, allocator);
   auto* conn2 = allocator.New<MockSocket>(allocator, allocator);
 
-  ReliableDatagramSocket c1 = MockTransport::WrapSocket(*conn1);
-  ReliableDatagramSocket c2 = MockTransport::WrapSocket(*conn2);
+  ReliableDatagramSocket c1 = conn1->WrapSocket();
+  ReliableDatagramSocket c2 = conn2->WrapSocket();
   std::optional<WriteReservation> res = c1.TryReserveWrite(10);
   ASSERT_TRUE(res.has_value());
   EXPECT_EQ(res->size(), 10u);
@@ -1283,6 +1278,8 @@ TEST(TransportTest, CloseAndWhenClosedShareFuture) {
 
   class AsyncCloseReliableDatagramSocket : public ReliableDatagramSocketImpl {
    public:
+    using ReliableDatagramSocketImpl::WrapSocket;
+
     AsyncCloseReliableDatagramSocket(Allocator& alloc)
         : ReliableDatagramSocketImpl(alloc, 1500) {}
     async2::Poll<pw::ConstBuf> DoRead() override
@@ -1340,7 +1337,7 @@ TEST(TransportTest, CloseAndWhenClosedShareFuture) {
   };
 
   auto* impl = allocator.New<AsyncCloseReliableDatagramSocket>(allocator);
-  ReliableDatagramSocket conn = MockTransport::WrapSocket(*impl);
+  ReliableDatagramSocket conn = impl->WrapSocket();
 
   VoidFutureTask when_closed_task1(conn.WhenClosed());
   VoidFutureTask when_closed_task2(conn.WhenClosed());
@@ -1383,7 +1380,7 @@ TEST(TransportTest, SingleReadFutureInvariant) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* conn = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+  ReliableDatagramSocket c = conn->WrapSocket();
 
   // Creating multiple unpolled ReadFutures succeeds (lazy registration).
   ReadFuture rf1 = c.Read();
@@ -1443,7 +1440,7 @@ TEST(TransportTest, MultipleConcurrentReserveWriteFutures) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* conn = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+  ReliableDatagramSocket c = conn->WrapSocket();
   async2::DispatcherForTest dispatcher;
 
   conn->SetBlockWrites(true);
@@ -1475,7 +1472,7 @@ TEST(TransportTest, ResolveFirstMatchingSizeRequest) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* conn = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+  ReliableDatagramSocket c = conn->WrapSocket();
   async2::DispatcherForTest dispatcher;
 
   // Set available bytes to 0 so futures remain queued in write_futures_.
@@ -1544,7 +1541,7 @@ TEST(TransportTest, FutureKeepsConnectionAlive) {
   auto* conn = allocator.New<MockSocket>(allocator, allocator, &destructed);
 
   {
-    ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+    ReliableDatagramSocket c = conn->WrapSocket();
     std::optional<ReadFuture> rf = c.Read();
     c = nullptr;
     EXPECT_FALSE(destructed);
@@ -1555,7 +1552,7 @@ TEST(TransportTest, FutureKeepsConnectionAlive) {
   destructed = false;
   conn = allocator.New<MockSocket>(allocator, allocator, &destructed);
   {
-    ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+    ReliableDatagramSocket c = conn->WrapSocket();
     std::optional<ReserveWriteFuture> rwf = c.ReserveWrite(10);
     c = nullptr;
     EXPECT_FALSE(destructed);
@@ -1568,7 +1565,7 @@ TEST(TransportTest, CancelReservationUnblocksPendingWriter) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* conn = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+  ReliableDatagramSocket c = conn->WrapSocket();
   async2::DispatcherForTest dispatcher;
 
   conn->SetAvailableBytes(50);
@@ -1594,7 +1591,7 @@ TEST(TransportTest, MovePendingReserveWriteFuture) {
   const size_t kCapacity = 4096;
   pw::allocator::test::AllocatorForTest<kCapacity> allocator;
   auto* conn = allocator.New<MockSocket>(allocator, allocator);
-  ReliableDatagramSocket c = MockTransport::WrapSocket(*conn);
+  ReliableDatagramSocket c = conn->WrapSocket();
   async2::DispatcherForTest dispatcher;
 
   conn->SetAvailableBytes(0);

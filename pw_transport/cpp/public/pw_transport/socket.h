@@ -186,6 +186,11 @@ class ReliableDatagramSocket {
   ///
   /// Only one `Read` operation may be pended at a time. Pending a second
   /// `ReadFuture` while one is active will assert.
+  ///
+  /// @warning The returned `ConstBuf` is a view into memory provided by the
+  /// transport and should be processed and destroyed as quickly as reasonably
+  /// possible to avoid potential head-of-line blocking or exhaustion of
+  /// transport buffers.
   ReadFuture Read() const;
 
   /// Requests to write a datagram of size at least `min_size_bytes`, waiting
@@ -194,16 +199,31 @@ class ReliableDatagramSocket {
   /// Resolves to a `std::optional<WriteReservation>` that allows writing to
   /// that buffer, or `std::nullopt` if the socket has closed.
   ///
+  ///
   /// Multiple reservations or reservation requests can be outstanding at once.
   /// If multiple pending requests exist, the order in which they are resolved
   /// is not specified.
   ///
+  /// @warning Active reservations and pending requests consume transport
+  /// resources. They should be committed, or canceled as quickly as possible
+  /// to avoid buffer starvation and transmission stalls.
+  ///
+  /// An empty datagram can be sent by requesting a size of 0.
   /// Requesting larger than `max_write_message_size_bytes` will assert.
   ReserveWriteFuture ReserveWrite(size_t min_size_bytes) const;
 
   /// Synchronously attempts to reserve space for writing a datagram of at least
-  /// `min_size_bytes`. Returns `std::nullopt` if space is not immediately
-  /// available or if the socket is closed.
+  /// `min_size_bytes`.
+  ///
+  /// Returns `std::nullopt` if space is not immediately available or if the
+  /// socket is closed.
+  ///
+  /// @warning Active reservations and pending requests consume transport
+  /// resources. They should be committed, or canceled as quickly as possible
+  /// to avoid buffer starvation and transmission stalls.
+  ///
+  /// An empty datagram can be sent by requesting a size of 0.
+  /// Requesting larger than `max_write_message_size_bytes` will assert.
   [[nodiscard]] std::optional<WriteReservation> TryReserveWrite(
       size_t min_size_bytes) const;
 
@@ -543,6 +563,8 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
       : ReliableDatagramSocketImpl(
             allocator, max_message_size_bytes, max_message_size_bytes) {}
 
+  ReliableDatagramSocket WrapSocket() { return ReliableDatagramSocket(*this); }
+
   /// Marks the socket as closed, resolving any pending `Close()` or
   /// `WhenClosed()` futures.
   void MarkClosed() PW_EXCLUSIVE_LOCKS_REQUIRED(*this);
@@ -610,7 +632,7 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
   ///
   /// Implementers are required to call `MarkClosed` once teardown is completed.
   ///
-  /// WARNING: Because DoClose() is invoked with `*this` locked, implementations
+  /// @warning Because DoClose() is invoked with `*this` locked, implementations
   /// that interact with peer sockets or lower layers must take care to
   /// avoid cross-socket AB-BA deadlocks if both sockets close
   /// concurrently from different threads.
@@ -618,7 +640,7 @@ class PW_LOCKABLE("pw::transport::ReliableDatagramSocketImpl")
 
   /// Commits `buffer` for transmission. Called with `*this` locked.
   ///
-  /// WARNING: Because DoCommitWrite() is invoked with `*this` locked,
+  /// @warning Because DoCommitWrite() is invoked with `*this` locked,
   /// forwarding data to other sockets (e.g. in layered transports, bridges,
   /// or paired peer sockets) creates an AB-BA deadlock hazard if the target
   /// socket attempts to transmit back or synchronize in reverse order.
