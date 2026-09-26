@@ -705,8 +705,8 @@ void LegacyPairingState::EnableEncryption() {
         handle(),
         bt_str(peer_id_),
         ToString(state_));
-    status_callback_(link_->handle(), ToResult(HostError::kFailed));
     state_ = State::kFailed;
+    status_callback_(link_->handle(), ToResult(HostError::kFailed));
     return;
   }
   state_ = State::kWaitEncryption;

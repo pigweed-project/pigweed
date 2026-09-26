@@ -1283,6 +1283,69 @@ TEST_F(LegacyPairingStateTest,
   EXPECT_EQ(ToResult(HostError::kNotReady), *status_handler.status());
 }
 
+class StartEncryptionFailsConnection : public hci::BrEdrConnection {
+ public:
+  StartEncryptionFailsConnection(hci_spec::ConnectionHandle handle,
+                                 const DeviceAddress& local_address,
+                                 const DeviceAddress& peer_address,
+                                 pw::bluetooth::emboss::ConnectionRole role,
+                                 const hci::Transport::WeakPtr& hci,
+                                 pw::async::Dispatcher& dispatcher)
+      : BrEdrConnection(
+            handle, local_address, peer_address, role, hci, dispatcher) {}
+  bool StartEncryption() override { return false; }
+};
+
+// This test was failing with ASAN (see b/512561259).
+TEST_F(LegacyPairingStateTest, EnableEncryptionFailureMayDestroyPairingState) {
+  FakePairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  pairing_delegate.SetRequestPasskeyCallback([this](PeerId peer_id, auto cb) {
+    EXPECT_EQ(peer()->identifier(), peer_id);
+    ASSERT_TRUE(cb);
+    cb(kTestRandomPinCode);
+  });
+
+  auto fail_connection = std::make_unique<StartEncryptionFailsConnection>(
+      kTestHandle,
+      kLocalAddress,
+      kPeerAddress,
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+      transport()->GetWeakPtr(),
+      dispatcher());
+
+  std::unique_ptr<LegacyPairingState> pairing_state;
+  bool cb_called = false;
+  auto status_cb = [&pairing_state, &cb_called](hci_spec::ConnectionHandle,
+                                                hci::Result<> status) {
+    EXPECT_TRUE(status.is_error());
+    cb_called = true;
+
+    // Note that this lambda is owned by the LegacyPairingState so its
+    // captures are invalid after this.
+    pairing_state = nullptr;
+  };
+
+  pairing_state =
+      std::make_unique<LegacyPairingState>(peer()->GetWeakPtr(),
+                                           pairing_delegate.GetWeakPtr(),
+                                           fail_connection->GetWeakPtr(),
+                                           /*outgoing_connection=*/false,
+                                           &dispatcher(),
+                                           MakeAuthRequestCallback(),
+                                           status_cb);
+
+  // Advance state machine as pairing responder.
+  pairing_state->OnPinCodeRequest(NoOpUserPinCodeCallback);
+
+  // Failure to enable encryption during link key notification should make
+  // status callback get called with an error.
+  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
+                                       kTestLegacyLinkKeyType);
+
+  EXPECT_TRUE(cb_called);
+}
+
 TEST_F(LegacyPairingStateTest, TransactionCollision) {
   FakePairingDelegate pairing_delegate(kTestLocalIoCap);
   pairing_delegate.SetDisplayPasskeyCallback(

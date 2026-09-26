@@ -367,6 +367,71 @@ TEST_F(PairingStateTest, InitiatorCallbackMayDestroyPairingState) {
   EXPECT_TRUE(cb_called);
 }
 
+class StartEncryptionFailsConnection : public hci::BrEdrConnection {
+ public:
+  StartEncryptionFailsConnection(hci_spec::ConnectionHandle handle,
+                                 const DeviceAddress& local_address,
+                                 const DeviceAddress& peer_address,
+                                 pw::bluetooth::emboss::ConnectionRole role,
+                                 const hci::Transport::WeakPtr& hci,
+                                 pw::async::Dispatcher& dispatcher)
+      : BrEdrConnection(
+            handle, local_address, peer_address, role, hci, dispatcher) {}
+  bool StartEncryption() override { return false; }
+};
+
+// This test was failing with ASAN (see b/512561259).
+TEST_F(PairingStateTest, EnableEncryptionFailureMayDestroyPairingState) {
+  NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
+
+  auto fail_connection = std::make_unique<StartEncryptionFailsConnection>(
+      kTestHandle,
+      kLocalAddress,
+      kPeerAddress,
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL,
+      transport()->GetWeakPtr(),
+      dispatcher());
+
+  std::unique_ptr<SecureSimplePairingState> pairing_state;
+  bool cb_called = false;
+  auto status_cb = [&pairing_state, &cb_called](hci_spec::ConnectionHandle,
+                                                hci::Result<> status) {
+    EXPECT_TRUE(status.is_error());
+    cb_called = true;
+
+    // Note that this lambda is owned by the SecureSimplePairingState so its
+    // captures are invalid after this.
+    pairing_state = nullptr;
+  };
+
+  pairing_state = std::make_unique<SecureSimplePairingState>(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      fail_connection->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_cb,
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Advance state machine as pairing responder.
+  pairing_state->OnIoCapabilityResponse(kTestPeerIoCap);
+  static_cast<void>(pairing_state->OnIoCapabilityRequest());
+  pairing_state->OnUserConfirmationRequest(kTestPasskey,
+                                           NoOpUserConfirmationCallback);
+  pairing_state->OnSimplePairingComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  // Failure to enable encryption during link key notification should make
+  // status callback get called with an error.
+  pairing_state->OnLinkKeyNotification(kTestLinkKeyValue,
+                                       kTestUnauthenticatedLinkKeyType192);
+
+  EXPECT_TRUE(cb_called);
+}
+
 // Test helper to inspect StatusCallback invocations.
 class TestStatusHandler final {
  public:
