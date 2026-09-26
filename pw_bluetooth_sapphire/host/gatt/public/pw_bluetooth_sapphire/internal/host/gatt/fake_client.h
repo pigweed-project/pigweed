@@ -78,6 +78,16 @@ class FakeClient final : public Client {
     discover_services_callback_ = std::move(callback);
   }
 
+  // Sets a callback which will run when DiscoverDescriptors gets called.
+  using DiscoverDescriptorsCallback =
+      fit::function<void(att::Handle range_start,
+                         att::Handle range_end,
+                         DescriptorCallback desc_callback,
+                         att::ResultFunction<> status_callback)>;
+  void set_discover_descriptors_callback(DiscoverDescriptorsCallback callback) {
+    discover_descriptors_callback_ = std::move(callback);
+  }
+
   // Sets a callback which will run when ReadRequest gets called.
   using ReadRequestCallback = fit::function<void(att::Handle, ReadCallback)>;
   void set_read_request_callback(ReadRequestCallback callback) {
@@ -240,6 +250,7 @@ class FakeClient final : public Client {
   size_t desc_discovery_count_ = 0;
 
   DiscoverServicesCallback discover_services_callback_;
+  DiscoverDescriptorsCallback discover_descriptors_callback_;
   ReadRequestCallback read_request_callback_;
   ReadByTypeRequestCallback read_by_type_request_callback_;
   ReadBlobRequestCallback read_blob_request_callback_;

@@ -502,6 +502,10 @@ void RemoteService::StartDescriptorDiscovery() {
 
     PW_DCHECK(client_.is_alive());
     iter->second.DiscoverDescriptors(end_handle, desc_done_callback);
+
+    if (!self.is_alive() || self->characteristics_.empty()) {
+      return;
+    }
   }
 }
 

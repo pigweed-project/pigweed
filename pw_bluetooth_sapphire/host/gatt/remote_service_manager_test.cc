@@ -1228,6 +1228,77 @@ TEST_F(RemoteServiceManagerTest,
   (*deferred_read_cb)(fit::ok(), ext_prop_value, /*maybe_truncated=*/false);
 }
 
+// Test that if RemoteService is destroyed synchronously inside the
+// DiscoverCharacteristics callback (because descriptor discovery completed
+// synchronously), we don't crash due to UAF in the loop.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSynchronousCompleteDestructionUaf) {
+  // We set range_end to be equal to the characteristic's value handle
+  // (kCharValue). This triggers the synchronous complete inside
+  // RemoteCharacteristic::DiscoverDescriptors: "if (info().value_handle ==
+  // range_end) { discover_callback(fit::ok()); return; }"
+  ServiceData data(ServiceKind::PRIMARY, kStart, kCharValue, kTestServiceUuid1);
+
+  // Set up the service and the characteristic.
+  RemoteService::WeakPtr service = SetUpFakeService(data);
+  ASSERT_TRUE(service.is_alive());
+
+  CharacteristicData fake_chrc(
+      0, std::nullopt, kCharDecl, kCharValue, kTestUuid3);
+  fake_client()->set_characteristics({{fake_chrc}});
+
+  bool callback_called = false;
+  service->DiscoverCharacteristics([&](att::Result<> status, const auto&) {
+    callback_called = true;
+    EXPECT_EQ(fit::ok(), status);
+
+    // Destroy the RemoteServiceManager which in turn destroys the
+    // RemoteService.
+    DestroyServiceManager();
+  });
+
+  // This will run the characteristic discovery, which then runs descriptor
+  // discovery. Descriptor discovery will complete synchronously and trigger the
+  // callback.
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  EXPECT_FALSE(service.is_alive());
+}
+
+// Test that if descriptor discovery fails synchronously for an early
+// characteristic in a multi-characteristic service, clearing characteristics_,
+// we do not crash due to UAF on subsequent loop iterations.
+TEST_F(RemoteServiceManagerTest,
+       DiscoverDescriptorsSynchronousErrorClearsCharacteristicsUaf) {
+  CharacteristicData fake_char1(0, std::nullopt, 2, 3, kTestUuid3);
+  DescriptorData fake_desc1(4, kTestUuid4);
+  CharacteristicData fake_char2(0, std::nullopt, 5, 6, kTestUuid3);
+  DescriptorData fake_desc2(7, kTestUuid4);
+
+  ServiceData data(ServiceKind::PRIMARY, 1, 7, kTestServiceUuid1);
+  auto service = SetUpFakeService(data);
+  fake_client()->set_characteristics({{fake_char1, fake_char2}});
+  fake_client()->set_descriptors({{fake_desc1, fake_desc2}});
+
+  fake_client()->set_discover_descriptors_callback(
+      [&](att::Handle, att::Handle, auto, auto status_callback) {
+        status_callback(ToResult(HostError::kNotSupported));
+      });
+
+  bool callback_called = false;
+  service->DiscoverCharacteristics(
+      [&](att::Result<> status, const auto& chrcs) {
+        callback_called = true;
+        EXPECT_EQ(ToResult(HostError::kNotSupported), status);
+        EXPECT_TRUE(chrcs.empty());
+      });
+
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+}
+
 constexpr CharacteristicHandle kDefaultCharacteristic(3);
 constexpr CharacteristicHandle kSecondCharacteristic(6);
 constexpr CharacteristicHandle kInvalidCharacteristic(1);

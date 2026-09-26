@@ -155,6 +155,14 @@ void FakeClient::DiscoverDescriptors(att::Handle range_start,
                                      att::Handle range_end,
                                      DescriptorCallback desc_callback,
                                      att::ResultFunction<> status_callback) {
+  if (discover_descriptors_callback_) {
+    discover_descriptors_callback_(range_start,
+                                   range_end,
+                                   std::move(desc_callback),
+                                   std::move(status_callback));
+    return;
+  }
+
   last_desc_discovery_start_handle_ = range_start;
   last_desc_discovery_end_handle_ = range_end;
   desc_discovery_count_++;
