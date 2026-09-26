@@ -5832,6 +5832,138 @@ TEST_F(BrEdrConnectionManagerTest,
   QueueDisconnection(kConnectionHandle);
 }
 
+TEST_F(BrEdrConnectionManagerTest, RemoteDisconnectDuringPairing) {
+  auto* peer = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  EXPECT_TRUE(peer->temporary());
+
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  ASSERT_TRUE(IsInitializing(peer));
+
+  bool pairing_callback_called = false;
+  hci::Result<> pairing_status = ToResult(HostError::kFailed);
+  auto pairing_callback = [&](hci::Result<> status) {
+    pairing_callback_called = true;
+    pairing_status = status;
+  };
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAuthenticationRequested, &kAuthenticationRequestedStatus);
+  connmgr()->Pair(
+      peer->identifier(), kAuthSecurityRequirements, pairing_callback);
+
+  RunUntilIdle();
+  EXPECT_FALSE(pairing_callback_called);
+
+  test_device()->SendCommandChannelPacket(kDisconnectionComplete);
+
+  RunUntilIdle();
+
+  EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
+
+  EXPECT_TRUE(pairing_callback_called);
+  EXPECT_TRUE(pairing_status.is_error());
+}
+
+TEST_F(BrEdrConnectionManagerTest, RemoteDisconnectDuringCtkd) {
+  auto* peer = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  EXPECT_TRUE(peer->temporary());
+
+  QueueSuccessfulIncomingConn(kTestDevAddr,
+                              kConnectionHandle,
+                              pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  ASSERT_TRUE(IsInitializing(peer));
+
+  sm::testing::TestSecurityManager::WeakPtr security_manager =
+      security_manager_factory()->GetTestSm(kConnectionHandle);
+  ASSERT_TRUE(security_manager.is_alive());
+
+  security_manager->set_delay_ctkd(true);
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+  pairing_delegate.SetConfirmPairingCallback(
+      [](PeerId, PairingDelegate::ConfirmCallback confirm) { confirm(true); });
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  bool pairing_callback_called = false;
+  auto pairing_callback = [&]([[maybe_unused]] hci::Result<> status) {
+    pairing_callback_called = true;
+  };
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kAuthenticationRequested, &kAuthenticationRequestedStatus);
+  connmgr()->Pair(
+      peer->identifier(), kAuthSecurityRequirements, pairing_callback);
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp);
+  test_device()->SendCommandChannelPacket(kLinkKeyRequest);
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      MakeIoCapabilityRequestReply(IoCapability::NO_INPUT_NO_OUTPUT,
+                                   AuthenticationRequirements::GENERAL_BONDING),
+      &kIoCapabilityRequestReplyRsp);
+  test_device()->SendCommandChannelPacket(kIoCapabilityRequest);
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(
+      MakeIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT,
+                               AuthenticationRequirements::NO_BONDING));
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kUserConfirmationRequestReply,
+                        &kUserConfirmationRequestReplyRsp);
+  test_device()->SendCommandChannelPacket(
+      MakeUserConfirmationRequest(kPasskey));
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(kSimplePairingCompleteSuccess);
+  RunUntilIdle();
+
+  const auto kLinkKeyNotificationSc = MakeLinkKeyNotification(
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  test_device()->SendCommandChannelPacket(kLinkKeyNotificationSc);
+  RunUntilIdle();
+
+  const StaticByteBuffer kAuthCompleteEvent(
+      hci_spec::kAuthenticationCompleteEventCode,
+      3,
+      0x00,
+      LowerBits(kConnectionHandle),
+      UpperBits(kConnectionHandle));
+  const StaticByteBuffer kEncryptionChangeEventSc(
+      hci_spec::kEncryptionChangeEventCode,
+      4,
+      0x00,
+      LowerBits(kConnectionHandle),
+      UpperBits(kConnectionHandle),
+      0x02);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kSetConnectionEncryption,
+                        &kSetConnectionEncryptionRsp,
+                        &kEncryptionChangeEventSc);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRsp);
+
+  test_device()->SendCommandChannelPacket(kAuthCompleteEvent);
+  RunUntilIdle();
+
+  test_device()->SendCommandChannelPacket(kDisconnectionComplete);
+  RunUntilIdle();
+
+  EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
+}
+
 #undef COMMAND_COMPLETE_RSP
 #undef COMMAND_STATUS_RSP
 

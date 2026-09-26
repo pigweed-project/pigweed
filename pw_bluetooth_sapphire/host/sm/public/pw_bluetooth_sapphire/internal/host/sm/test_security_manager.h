@@ -37,7 +37,7 @@ namespace bt::sm::testing {
 // implementations for others.
 class TestSecurityManager final : public SecurityManager {
  public:
-  ~TestSecurityManager() override = default;
+  ~TestSecurityManager() override;
 
   // SecurityManager overrides:
   void UpgradeSecurity(SecurityLevel level, PairingCallback callback) override;
@@ -64,6 +64,14 @@ class TestSecurityManager final : public SecurityManager {
 
   void TriggerPairingComplete(sm::PairingData data);
 
+  void set_delay_ctkd(bool delay) { delay_ctkd_ = delay; }
+  void trigger_ctkd_callback(sm::Result<> status) {
+    if (ctkd_callback_) {
+      auto cb = std::move(ctkd_callback_);
+      cb(status);
+    }
+  }
+
   using WeakPtr = WeakSelf<TestSecurityManager>::WeakPtr;
   WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
@@ -84,6 +92,10 @@ class TestSecurityManager final : public SecurityManager {
   std::optional<sm::IdentityInfo> last_identity_info_;
   std::optional<sm::PairingData> pairing_data_;
   gap::Peer::WeakPtr peer_;
+
+  bool delay_ctkd_ = false;
+  CrossTransportKeyDerivationResultCallback ctkd_callback_;
+  l2cap::Channel::WeakPtr smp_;
   WeakSelf<TestSecurityManager> weak_self_;
 };
 

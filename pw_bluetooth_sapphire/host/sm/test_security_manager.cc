@@ -43,7 +43,7 @@ Role RoleFromLinks(hci::LowEnergyConnection::WeakPtr link,
 TestSecurityManager::TestSecurityManager(
     hci::LowEnergyConnection::WeakPtr link,
     hci::BrEdrConnection::WeakPtr bredr_link,
-    l2cap::Channel::WeakPtr,
+    l2cap::Channel::WeakPtr smp,
     IOCapability,
     Delegate::WeakPtr delegate,
     BondableMode bondable_mode,
@@ -53,7 +53,17 @@ TestSecurityManager::TestSecurityManager(
       role_(RoleFromLinks(link, bredr_link)),
       delegate_(std::move(delegate)),
       peer_(std::move(peer)),
+      smp_(std::move(smp)),
       weak_self_(this) {
+  if (smp_.is_alive()) {
+    smp_->Activate([](auto) {},
+                   [self = GetWeakPtr()] {
+                     if (self.is_alive() && self->ctkd_callback_) {
+                       auto cb = std::move(self->ctkd_callback_);
+                       cb(fit::error(Error(HostError::kLinkDisconnected)));
+                     }
+                   });
+  }
   if (link.is_alive()) {
     if (peer_->le() && peer_->le()->bond_data()) {
       current_ltk_ =
@@ -69,6 +79,12 @@ TestSecurityManager::TestSecurityManager(
   }
 }
 
+TestSecurityManager::~TestSecurityManager() {
+  if (ctkd_callback_) {
+    ctkd_callback_(fit::error(Error(HostError::kLinkDisconnected)));
+  }
+}
+
 void TestSecurityManager::UpgradeSecurity(SecurityLevel level,
                                           PairingCallback callback) {
   last_requested_upgrade_ = level;
@@ -79,6 +95,10 @@ void TestSecurityManager::UpgradeSecurity(SecurityLevel level,
 
 void TestSecurityManager::InitiateBrEdrCrossTransportKeyDerivation(
     CrossTransportKeyDerivationResultCallback callback) {
+  if (delay_ctkd_) {
+    ctkd_callback_ = std::move(callback);
+    return;
+  }
   if (!pairing_data_) {
     callback(ToResult(HostError::kFailed));
     return;

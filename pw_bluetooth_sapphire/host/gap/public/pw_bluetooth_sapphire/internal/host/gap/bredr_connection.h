@@ -60,7 +60,11 @@ class BrEdrConnection final {
 
   ~BrEdrConnection();
 
-  BrEdrConnection(BrEdrConnection&&) = default;
+  BrEdrConnection(const BrEdrConnection&) = delete;
+  BrEdrConnection& operator=(const BrEdrConnection&) = delete;
+
+  BrEdrConnection(BrEdrConnection&&) = delete;
+  BrEdrConnection& operator=(BrEdrConnection&&) = delete;
 
   void Interrogate(BrEdrInterrogator::ResultCallback callback);
 
@@ -170,8 +174,6 @@ class BrEdrConnection final {
   Peer::ConnectionToken peer_conn_token_;
 
   pw::async::Dispatcher& dispatcher_;
-
-  BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(BrEdrConnection);
 };
 
 }  // namespace bt::gap

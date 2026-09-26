@@ -321,10 +321,10 @@ class BrEdrConnectionManager final {
 
   // Clean up |conn| after it has been deliberately disconnected or after its
   // link closed. Unregisters the connection from the data domain and marks the
-  // peer's BR/EDR cache state as disconnected. Takes ownership of |conn| and
-  // destroys it.
+  // peer's BR/EDR cache state as disconnected. The caller must ensure |conn|
+  // remains valid for the duration of this call and is destroyed afterwards.
   void CleanUpConnection(hci_spec::ConnectionHandle handle,
-                         BrEdrConnection conn,
+                         BrEdrConnection& conn,
                          DisconnectReason reason);
 
   // Helpers for sending commands on the command channel for this controller.

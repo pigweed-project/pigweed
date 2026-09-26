@@ -552,8 +552,7 @@ bool BrEdrConnectionManager::Disconnect(PeerId peer_id,
         peer_addr, dispatcher_.now() + kLocalDisconnectCooldownDuration);
   }
 
-  CleanUpConnection(
-      handle, std::move(connections_.extract(handle).mapped()), reason);
+  CleanUpConnection(handle, connections_.extract(handle).mapped(), reason);
   return true;
 }
 
@@ -1359,25 +1358,24 @@ void BrEdrConnectionManager::OnPeerDisconnect(
     return;
   }
 
-  auto conn = std::move(it->second);
-  connections_.erase(it);
+  auto node = connections_.extract(it);
 
   bt_log(INFO,
          "gap-bredr",
          "peer disconnected (peer: %s, %s)",
-         bt_str(conn.peer_id()),
+         bt_str(node.mapped().peer_id()),
          bt_str(*connection));
 
   CleanUpConnection(
-      handle, std::move(conn), DisconnectReason::kPeerDisconnection);
+      handle, node.mapped(), DisconnectReason::kPeerDisconnection);
 }
 void BrEdrConnectionManager::CleanUpConnection(
     hci_spec::ConnectionHandle handle,
-    BrEdrConnection conn,
+    BrEdrConnection& conn,
     DisconnectReason reason) {
   l2cap_->RemoveConnection(handle);
   RecordDisconnectInspect(conn, reason);
-  // |conn| is destroyed when it goes out of scope.
+  // |conn| is destroyed when the owner (e.g. node handle) goes out of scope.
 }
 
 hci::CommandChannel::EventCallbackResult
