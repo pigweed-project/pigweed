@@ -5281,6 +5281,81 @@ TEST_F(InitiatorPairingTest, ResetClearsRepeatedAttemptsBackoff) {
   EXPECT_EQ(IOCapability::kDisplayYesNo, params.io_capability);
 }
 
+TEST_F(InitiatorPairingTest, ClearsLtkDuringPairingAndRestoresOnFailure) {
+  // 1. Store an existing unauthenticated bond
+  SecurityProperties sec_props(
+      SecurityLevel::kEncrypted, 16, /*secure_connections=*/false);
+  const LTK kOriginalLtk(sec_props, hci_spec::LinkKey({1}, 2, 3));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kOriginalLtk;
+  bond_data.local_ltk = kOriginalLtk;
+  peer().MutLe().SetBondData(bond_data);
+
+  // Re-create SM as Initiator so it loads the bond data.
+  SetUpSecurityManager(IOCapability::kDisplayOnly, BondableMode::Bondable);
+  RunUntilIdle();
+
+  // The initiator will immediately start encryption using the existing LTK.
+  EXPECT_EQ(1, fake_link()->start_encryption_count());
+  fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
+  RunUntilIdle();
+
+  // The link should have the original LTK initially.
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+  EXPECT_EQ(kOriginalLtk.key(), *fake_link()->ltk());
+
+  // 2. Initiate pairing (Upgrade security to Authenticated, which triggers
+  // Phase 1)
+  UpgradeSecurity(SecurityLevel::kAuthenticated);
+  RunUntilIdle();
+
+  // Pairing has started (Phase 1). The link LTK must be cleared!
+  EXPECT_FALSE(fake_link()->ltk().has_value());
+
+  // 3. Fail the pairing (simulate timeout or explicit abort)
+  pairing()->Abort();
+  RunUntilIdle();
+
+  // Pairing failed. The original LTK should be restored!
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+  EXPECT_EQ(kOriginalLtk.key(), *fake_link()->ltk());
+}
+
+TEST_F(ResponderPairingTest, ClearsLtkDuringPairingAndRestoresOnFailure) {
+  // 1. Store an existing unauthenticated bond
+  SecurityProperties sec_props(
+      SecurityLevel::kEncrypted, 16, /*secure_connections=*/false);
+  const LTK kOriginalLtk(sec_props, hci_spec::LinkKey({1}, 2, 3));
+  sm::PairingData bond_data;
+  bond_data.peer_ltk = kOriginalLtk;
+  bond_data.local_ltk = kOriginalLtk;
+  peer().MutLe().SetBondData(bond_data);
+
+  // Re-create SM as Responder so it loads the bond data.
+  SetUpSecurityManager(IOCapability::kDisplayOnly, BondableMode::Bondable);
+  RunUntilIdle();
+
+  // The link should have the original LTK initially.
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+  EXPECT_EQ(kOriginalLtk.key(), *fake_link()->ltk());
+
+  // 2. Initiate pairing (peer sends Pairing Request, negotiate Just Works to
+  // avoid IO capability issues)
+  ReceivePairingRequest();
+  RunUntilIdle();
+
+  // Pairing has started (Phase 1). The link LTK must be cleared!
+  EXPECT_FALSE(fake_link()->ltk().has_value());
+
+  // 3. Fail the pairing (simulate timeout or explicit abort)
+  pairing()->Abort();
+  RunUntilIdle();
+
+  // Pairing failed. The original LTK should be restored!
+  ASSERT_TRUE(fake_link()->ltk().has_value());
+  EXPECT_EQ(kOriginalLtk.key(), *fake_link()->ltk());
+}
+
 }  // namespace
 }  // namespace bt::sm
 // inclusive-language: enable

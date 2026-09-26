@@ -618,6 +618,12 @@ void SecurityManagerImpl::OnPairingRequest(
   // Request command, the Security Manager Timer shall be reset and started."
   StartNewTimer();
 
+  // prevent an attacker from bypassing authentication using a previously known
+  // unauthenticated LTK. The connection LTK is restored if pairing fails.
+  if (low_energy_link_.is_alive()) {
+    low_energy_link_->reset_ltk();
+  }
+
   current_phase_ = Phase1::CreatePhase1Responder(
       sm_chan_->GetWeakPtr(),
       weak_listener_.GetWeakPtr(),
@@ -724,6 +730,9 @@ fit::result<ErrorCode> SecurityManagerImpl::RequestSecurityUpgrade(
   }
 
   if (role() == Role::kInitiator) {
+    if (low_energy_link_.is_alive()) {
+      low_energy_link_->reset_ltk();
+    }
     current_phase_ = Phase1::CreatePhase1Initiator(
         sm_chan_->GetWeakPtr(),
         weak_listener_.GetWeakPtr(),
@@ -1376,7 +1385,11 @@ void SecurityManagerImpl::OnPairingFailed(Error error) {
 
   if (SecurityUpgradeInProgress() && !bredr_link_.is_alive()) {
     PW_CHECK(low_energy_link_.is_alive());
-    low_energy_link_->reset_ltk();
+    if (ltk_.has_value()) {
+      low_energy_link_->set_ltk(ltk_->key());
+    } else {
+      low_energy_link_->reset_ltk();
+    }
   }
 
   if (bredr_cross_transport_key_derivation_callback_) {
