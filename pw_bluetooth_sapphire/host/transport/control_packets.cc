@@ -17,6 +17,8 @@
 #include <pw_assert/check.h>
 #include <pw_bluetooth/hci_android.emb.h>
 
+#include <limits>
+
 #include "pw_allocator/allocator.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
 
@@ -35,9 +37,11 @@ CommandPacket::CommandPacket(pw::bluetooth::emboss::OpCode opcode,
       "command packet size must be at least 3 bytes to accommodate header");
   auto header = view<pw::bluetooth::emboss::CommandHeaderWriter>();
   header.opcode().Write(opcode);
-  header.parameter_total_size().Write(
+  size_t parameter_total_size =
       packet_size -
-      pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes());
+      pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes();
+  PW_CHECK(parameter_total_size <= std::numeric_limits<uint8_t>::max());
+  header.parameter_total_size().Write(parameter_total_size);
 }
 
 CommandPacket::CommandPacket(hci_spec::OpCode opcode,
@@ -49,9 +53,11 @@ CommandPacket::CommandPacket(hci_spec::OpCode opcode,
            "command packet size must be at least 3 bytes to accomodate header");
   auto header = view<pw::bluetooth::emboss::CommandHeaderWriter>();
   header.opcode_bits().BackingStorage().WriteUInt(opcode);
-  header.parameter_total_size().Write(
+  size_t parameter_total_size =
       packet_size -
-      pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes());
+      pw::bluetooth::emboss::CommandHeader::IntrinsicSizeInBytes();
+  PW_CHECK(parameter_total_size <= std::numeric_limits<uint8_t>::max());
+  header.parameter_total_size().Write(parameter_total_size);
 }
 
 hci_spec::OpCode CommandPacket::opcode() const {

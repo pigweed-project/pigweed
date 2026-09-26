@@ -218,8 +218,8 @@ class AdvertisingPacketFilter {
   std::vector<CommandPacket> BuildSetServiceDataUUIDCommands(
       FilterIndex filter_index, const std::vector<UUID>& uuids) const;
 
-  CommandPacket BuildSetLocalNameCommand(FilterIndex filter_index,
-                                         const std::string& local_name) const;
+  std::optional<CommandPacket> BuildSetLocalNameCommand(
+      FilterIndex filter_index, const std::string& local_name) const;
 
   CommandPacket BuildSetManufacturerCodeCommand(
       FilterIndex filter_index, uint16_t manufacturer_code) const;

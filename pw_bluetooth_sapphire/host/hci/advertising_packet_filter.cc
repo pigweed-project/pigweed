@@ -14,6 +14,8 @@
 
 #include "pw_bluetooth_sapphire/internal/host/hci/advertising_packet_filter.h"
 
+#include <limits>
+
 #include "pw_bluetooth/hci_android.emb.h"
 #include "pw_bluetooth_sapphire/internal/host/common/uint128.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/vendor_protocol.h"
@@ -232,20 +234,19 @@ bool AdvertisingPacketFilter::QueueOffloadFilterCommands(
   if (!filter.name_substring().empty()) {
     std::optional<CommandPacket> packet =
         BuildSetLocalNameCommand(filter_index, filter.name_substring());
-    if (packet) {
-      hci_cmd_runner_->QueueCommand(
-          packet.value(), [this](const EventPacket& event) {
-            hci::Result<> result = event.ToResult();
-            if (bt_is_error(
-                    result, WARN, "hci-le", "failed offloading filter")) {
-              return;
-            }
-            auto view =
-                event.view<android_emb::LEApcfCommandCompleteEventView>();
-            uint8_t available_spaces = view.available_spaces().Read();
-            open_slots_[OffloadedFilterType::kLocalName] = available_spaces;
-          });
+    if (!packet.has_value()) {
+      return false;
     }
+    hci_cmd_runner_->QueueCommand(
+        packet.value(), [this](const EventPacket& event) {
+          hci::Result<> result = event.ToResult();
+          if (bt_is_error(result, WARN, "hci-le", "failed offloading filter")) {
+            return;
+          }
+          auto view = event.view<android_emb::LEApcfCommandCompleteEventView>();
+          uint8_t available_spaces = view.available_spaces().Read();
+          open_slots_[OffloadedFilterType::kLocalName] = available_spaces;
+        });
   }
 
   if (filter.manufacturer_code().has_value()) {
@@ -425,6 +426,7 @@ CommandPacket AdvertisingPacketFilter::BuildEnableCommand(bool enabled) const {
     view.enabled().Write(hci_spec::GenericEnableParam::DISABLE);
   }
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -495,6 +497,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetParametersCommand(
   // when, the delivery mode is ON_FOUND. We aren't using that delivery mode
   // so we don't set those fields.
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -523,6 +526,7 @@ CommandPacket AdvertisingPacketFilter::BuildUnsetParametersCommand(
   view.action().Write(android_emb::ApcfAction::DELETE);
   view.filter_index().Write(filter_index);
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -548,6 +552,7 @@ AdvertisingPacketFilter::BuildSetServiceUUID16Command(FilterIndex filter_index,
   view.uuid_mask().BackingStorage().WriteLittleEndianUInt<16>(
       std::numeric_limits<uint16_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -573,6 +578,7 @@ AdvertisingPacketFilter::BuildSetServiceUUID32Command(FilterIndex filter_index,
   view.uuid_mask().BackingStorage().WriteLittleEndianUInt<32>(
       std::numeric_limits<uint32_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -595,6 +601,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceUUID128Command(
   mask.fill(std::numeric_limits<uint8_t>::max());
   std::copy(mask.begin(), mask.end(), view.uuid_mask().BackingStorage().data());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -652,6 +659,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUID16Command(
   view.uuid_mask().BackingStorage().WriteLittleEndianUInt<16>(
       std::numeric_limits<uint16_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -676,6 +684,7 @@ AdvertisingPacketFilter::BuildSetSolicitationUUID32Command(
   view.uuid_mask().BackingStorage().WriteLittleEndianUInt<32>(
       std::numeric_limits<uint32_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -698,6 +707,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetSolicitationUUID128Command(
   mask.fill(std::numeric_limits<uint8_t>::max());
   std::copy(mask.begin(), mask.end(), view.uuid_mask().BackingStorage().data());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -759,6 +769,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID16Command(
   view.service_data_mask().BackingStorage().WriteLittleEndianUInt<16>(
       std::numeric_limits<uint16_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -786,6 +797,7 @@ AdvertisingPacketFilter::BuildSetServiceDataUUID32Command(
   view.service_data_mask().BackingStorage().WriteLittleEndianUInt<32>(
       std::numeric_limits<uint32_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -813,6 +825,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetServiceDataUUID128Command(
             mask.end(),
             view.service_data_mask().BackingStorage().data());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 
@@ -850,10 +863,20 @@ AdvertisingPacketFilter::BuildSetServiceDataUUIDCommands(
   return packets;
 }
 
-CommandPacket AdvertisingPacketFilter::BuildSetLocalNameCommand(
+std::optional<CommandPacket> AdvertisingPacketFilter::BuildSetLocalNameCommand(
     FilterIndex filter_index, const std::string& local_name) const {
   size_t packet_size =
       android_emb::LEApcfLocalNameCommand::MinSizeInBytes() + local_name.size();
+  if (local_name.size() >
+      android_emb::LEApcfLocalNameCommand::max_local_name_size()) {
+    bt_log(WARN,
+           "hci",
+           "Invalid advertising filter local name (%zuB) would overflow the "
+           "maximum allowed local name (%dB) ",
+           local_name.size(),
+           android_emb::LEApcfLocalNameCommand::max_local_name_size());
+    return std::nullopt;
+  }
   auto packet =
       hci::CommandPacket::New<android_emb::LEApcfLocalNameCommandWriter>(
           android_hci::kLEApcf, packet_size);
@@ -862,6 +885,8 @@ CommandPacket AdvertisingPacketFilter::BuildSetLocalNameCommand(
   view.vendor_command().sub_opcode().Write(
       android_hci::kLEApcfLocalNameSubopcode);
   view.filter_index().Write(filter_index);
+
+  PW_CHECK(view.Ok());
 
   std::copy(local_name.begin(),
             local_name.end(),
@@ -889,6 +914,7 @@ CommandPacket AdvertisingPacketFilter::BuildSetManufacturerCodeCommand(
   view.manufacturer_data_mask().BackingStorage().WriteLittleEndianUInt<16>(
       std::numeric_limits<uint16_t>::max());
 
+  PW_CHECK(view.Ok());
   return packet;
 }
 

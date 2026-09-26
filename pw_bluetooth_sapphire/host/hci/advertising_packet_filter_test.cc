@@ -807,4 +807,22 @@ TEST_F(AdvertisingPacketFilterTest,
   EXPECT_TRUE(second_cb_called);
   EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
 }
+
+TEST_F(AdvertisingPacketFilterTest, NameSubstringOverflow) {
+  AdvertisingPacketFilter packet_filter(
+      {/*offloading_supported=*/true,
+       /*max_filters=*/1,
+       /*peer_delivery_mode=*/
+       AdvertisingPacketFilter::Config::DeliveryMode::kImmediate},
+      transport()->GetWeakPtr());
+
+  DiscoveryFilter filter;
+  std::string long_name(50, 'A');
+  filter.set_name_substring(long_name);
+  packet_filter.SetPacketFilters(0, {filter});
+  RunUntilIdle();
+
+  EXPECT_FALSE(packet_filter.IsUsingOffloadedFiltering());
+}
+
 }  // namespace bt::hci

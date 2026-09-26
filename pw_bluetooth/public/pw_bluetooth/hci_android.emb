@@ -1029,6 +1029,7 @@ struct LEApcfSolicitationUUID128Command:
 
 struct LEApcfLocalNameCommand(size: UInt:8):
   [requires: 0 <= size <= 29]
+  let max_local_name_size = 29
 
   let vendor_size = AndroidCommandHeader.$size_in_bytes
 
