@@ -772,22 +772,21 @@ void SecureSimplePairingState::OnEncryptionChange(hci::Result<bool> result) {
   inspect_properties_.encryption_status.Set(
       EncryptionStatusToString(encryption_status));
 
-  if (state() != State::kWaitEncryption) {
-    // Ignore encryption changes for the pairing state machine when not
-    // expecting them.
-    bt_log(TRACE,
-           "gap-bredr",
-           "%#.4x (id: %s): %s(%s, %s) in state \"%s\"; taking no action",
-           handle(),
-           bt_str(peer_id()),
-           __func__,
-           bt_str(result),
-           result.is_ok() ? (result.value() ? "true" : "false") : "?",
-           ToString(state()));
-    return;
-  }
-
   if (result.is_ok() && !result.value()) {
+    if (state() != State::kWaitEncryption) {
+      bt_log(WARN,
+             "gap-bredr",
+             "Encryption disabled on link %#.4x (id: %s)",
+             handle(),
+             bt_str(peer_id()));
+      // Update security properties to reflect that the link is no longer
+      // encrypted.
+      bredr_security_ = sm::SecurityProperties();
+      state_ = State::kFailed;
+      SignalStatus(ToResult(HostError::kFailed), __func__);
+      return;
+    }
+
     // With Secure Connections, encryption should never be disabled (v5.0 Vol 2,
     // Part E, Sec 7.1.16) at all.
     bt_log(WARN,
@@ -796,6 +795,22 @@ void SecureSimplePairingState::OnEncryptionChange(hci::Result<bool> result) {
            handle(),
            bt_str(peer_id()));
     result = fit::error(Error(HostError::kFailed));
+  }
+
+  if (state() != State::kWaitEncryption) {
+    // Ignore encryption changes for the pairing state machine when not
+    // expecting them.
+    bt_log(TRACE,
+           "gap-bredr",
+           "%#.4x (id: %s): %s(%s, %s) in state \"%s\"; taking no action for "
+           "state machine",
+           handle(),
+           bt_str(peer_id()),
+           __func__,
+           bt_str(result),
+           result.is_ok() ? (result.value() ? "true" : "false") : "?",
+           ToString(state()));
+    return;
   }
 
   if (result.is_error()) {

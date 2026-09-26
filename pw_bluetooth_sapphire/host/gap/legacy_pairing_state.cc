@@ -590,6 +590,20 @@ LegacyPairingState::ActionOnError LegacyPairingState::GetActionOnError(
 void LegacyPairingState::OnEncryptionChange(hci::Result<bool> result) {
   PW_CHECK(link_.is_alive());
 
+  if (result.is_ok() && !result.value()) {
+    bt_log(WARN,
+           "gap-bredr",
+           "Encryption disabled on link %#.4x (id: %s)",
+           handle(),
+           bt_str(peer_id_));
+    // Update security properties to reflect that the link is no longer
+    // encrypted.
+    bredr_security_ = sm::SecurityProperties();
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kFailed), __func__);
+    return;
+  }
+
   if (state_ != State::kWaitEncryption) {
     // Ignore encryption changes when not expecting them because they may be
     // triggered by the peer at any time (Core Spec v5.4, Vol 2, Part F, 4.4)

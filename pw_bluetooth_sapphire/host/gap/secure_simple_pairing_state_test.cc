@@ -881,6 +881,7 @@ TEST_F(PairingStateTest, UnresolvedPairingCallbackIsCalledOnDestruction) {
 TEST_F(PairingStateTest,
        InitiatorPairingStateRejectsIoCapReqWithoutPairingDelegate) {
   TestStatusHandler owner_status_handler;
+  TestStatusHandler initiator_status_handler;
   SecureSimplePairingState pairing_state(
       peer()->GetWeakPtr(),
       PairingDelegate::WeakPtr(),
@@ -893,7 +894,6 @@ TEST_F(PairingStateTest,
       sm_factory_func(),
       dispatcher());
 
-  TestStatusHandler initiator_status_handler;
   // Advance state machine to Initiator Waiting IOCap Request
   pairing_state.InitiatePairing(kNoSecurityRequirements,
                                 initiator_status_handler.MakeStatusCallback());
@@ -2556,6 +2556,7 @@ TEST_F(PairingStateTest, SkipPairingIfExistingKeyMeetsSecurityRequirements) {
   NoOpPairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
 
   TestStatusHandler status_handler;
+  TestStatusHandler initiator_status_handler;
 
   SecureSimplePairingState pairing_state(
       peer()->GetWeakPtr(),
@@ -2574,7 +2575,6 @@ TEST_F(PairingStateTest, SkipPairingIfExistingKeyMeetsSecurityRequirements) {
 
   constexpr BrEdrSecurityRequirements kSecurityRequirements{
       .authentication = true, .secure_connections = false};
-  TestStatusHandler initiator_status_handler;
   pairing_state.InitiatePairing(kSecurityRequirements,
                                 initiator_status_handler.MakeStatusCallback());
   EXPECT_EQ(0u, auth_request_count());
@@ -2613,6 +2613,53 @@ TEST_F(PairingStateTest, DoNotSkipPairingIfExistingKeyIsWeak) {
   EXPECT_EQ(1u, auth_request_count());
   EXPECT_TRUE(pairing_state.initiator());
   EXPECT_EQ(0, initiator_status_handler.call_count());
+}
+
+TEST_F(PairingStateTest, EncryptionDisableUpdatesSecurityProperties) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  // Set some initial secure properties.
+  pairing_state.security_properties() = sm::SecurityProperties(
+      /*encrypted=*/true,
+      /*authenticated=*/true,
+      /*secure_connections=*/true,
+      sm::kMaxEncryptionKeySize);
+
+  ASSERT_TRUE(pairing_state.security_properties().encrypted());
+
+  // Simulate autonomous encryption disable.
+  pairing_state.OnEncryptionChange(fit::ok(false));
+
+  // Verify that security properties are now unencrypted.
+  EXPECT_FALSE(pairing_state.security_properties().encrypted());
+  EXPECT_EQ(pairing_state.security_properties().level(),
+            sm::SecurityLevel::kNoSecurity);
+
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kFailed), *status_handler.status());
+
+  // Verify that the state machine transitioned to Failed by attempting to
+  // initiate pairing, which should immediately fail with kCanceled.
+  TestStatusHandler initiate_status_handler;
+  pairing_state.InitiatePairing(kNoSecurityRequirements,
+                                initiate_status_handler.MakeStatusCallback());
+  EXPECT_EQ(1, initiate_status_handler.call_count());
+  ASSERT_TRUE(initiate_status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *initiate_status_handler.status());
 }
 
 TEST_F(
@@ -3238,6 +3285,8 @@ TEST_F(
   FakePairingDelegate pairing_delegate(kTestLocalIoCap);
 
   TestStatusHandler status_handler;
+  TestStatusHandler initiator_status_handler_0;
+  TestStatusHandler initiator_status_handler_1;
 
   SecureSimplePairingState pairing_state(
       peer()->GetWeakPtr(),
@@ -3256,12 +3305,10 @@ TEST_F(
                                      sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
-  TestStatusHandler initiator_status_handler_0;
   pairing_state.InitiatePairing(
       kNoSecurityRequirements, initiator_status_handler_0.MakeStatusCallback());
   EXPECT_EQ(1u, auth_request_count());
 
-  TestStatusHandler initiator_status_handler_1;
   constexpr BrEdrSecurityRequirements kSecurityRequirements{
       .authentication = true, .secure_connections = false};
   pairing_state.InitiatePairing(

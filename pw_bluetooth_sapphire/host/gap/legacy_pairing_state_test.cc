@@ -1845,6 +1845,48 @@ TEST_F(LegacyPairingStateTest, CompletePairingRequestsUpdatesKeySize) {
   EXPECT_EQ(7u, pairing_state.security_properties().enc_key_size());
 }
 
+TEST_F(LegacyPairingStateTest, EncryptionDisableUpdatesSecurityProperties) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+  TestStatusHandler status_handler;
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   status_handler.MakeStatusCallback());
+
+  // Set some initial secure properties.
+  pairing_state.security_properties() = sm::SecurityProperties(
+      /*encrypted=*/true,
+      /*authenticated=*/true,
+      /*secure_connections=*/false,
+      sm::kMaxEncryptionKeySize);
+
+  ASSERT_TRUE(pairing_state.security_properties().encrypted());
+
+  // Simulate autonomous encryption disable.
+  pairing_state.OnEncryptionChange(fit::ok(false));
+
+  // Verify that security properties are now unencrypted.
+  EXPECT_FALSE(pairing_state.security_properties().encrypted());
+  EXPECT_EQ(pairing_state.security_properties().level(),
+            sm::SecurityLevel::kNoSecurity);
+
+  EXPECT_EQ(1, status_handler.call_count());
+  ASSERT_TRUE(status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kFailed), *status_handler.status());
+
+  // Verify that the state machine transitioned to Failed by attempting to
+  // initiate pairing, which should immediately fail with kCanceled.
+  TestStatusHandler initiate_status_handler;
+  pairing_state.InitiatePairing(initiate_status_handler.MakeStatusCallback());
+  EXPECT_EQ(1, initiate_status_handler.call_count());
+  ASSERT_TRUE(initiate_status_handler.status());
+  EXPECT_EQ(ToResult(HostError::kCanceled), *initiate_status_handler.status());
+}
+
 #ifndef NINSPECT
 TEST_F(LegacyPairingStateTest, Inspect) {
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
