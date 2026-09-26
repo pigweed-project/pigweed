@@ -155,7 +155,6 @@ LegacyLowEnergyScanner::ParseAdvertisingReports(const EventPacket& event) {
   while (!remaining_data.empty()) {
     constexpr size_t min_size =
         pw::bluetooth::emboss::LEAdvertisingReportData::MinSizeInBytes();
-
     if (remaining_data.size() < min_size) {
       bt_log(WARN,
              "hci-le",

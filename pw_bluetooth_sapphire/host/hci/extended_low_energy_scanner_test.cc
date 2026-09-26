@@ -438,6 +438,45 @@ TEST_F(ExtendedLowEnergyScannerTest, IncompleteTruncatedNonScannable) {
 }
 
 TEST_F(ExtendedLowEnergyScannerTest,
+       ParseAdvertisingReportsResidualBytesLessThanMinSize) {
+  size_t data_size = peer(1)->advertising_data().size();
+  size_t reports_size = report_prefix_size + data_size;
+  size_t packet_size = event_prefix_size + reports_size;
+
+  // Create event with packet_size + 1 bytes to include 1 extra trailing byte
+  auto event = hci::EventPacket::New<LEExtendedAdvertisingReportSubeventWriter>(
+      hci_spec::kLEMetaEventCode, packet_size + 1);
+  auto packet = event.view_t();
+  packet.le_meta_event().subevent_code().Write(
+      hci_spec::kLEExtendedAdvertisingReportSubeventCode);
+  packet.num_reports().Write(2);
+
+  LEExtendedAdvertisingReportDataWriter report(
+      packet.reports().BackingStorage().begin(), reports_size);
+  peer(1)->FillExtendedAdvertisingReport(report,
+                                         peer(1)->advertising_data(),
+                                         /*is_fragmented=*/false,
+                                         /*is_scan_response=*/false);
+
+  // We write 0x00 to the extra trailing byte at the end of the reports backing
+  // storage.
+  packet.reports().BackingStorage().begin()[reports_size] = 0x00;
+
+  test_device()->SendCommandChannelPacket(event.data());
+
+  // We should still successfully parse the first report, but gracefully ignore
+  // the remaining 1 byte.
+  bool peer_found_callback_called = false;
+  set_peer_found_callback([&](const LowEnergyScanResult& result) {
+    peer_found_callback_called = true;
+    EXPECT_EQ(peer(1)->address(), result.address());
+  });
+
+  RunUntilIdle();
+  EXPECT_TRUE(peer_found_callback_called);
+}
+
+TEST_F(ExtendedLowEnergyScannerTest,
        ParseAdvertisingReportsInvalidAddressType) {
   size_t data_size = peer(1)->advertising_data().size();
   size_t reports_size = report_prefix_size + data_size;

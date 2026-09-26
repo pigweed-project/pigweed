@@ -226,6 +226,51 @@ TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsNotEnoughData) {
   RunUntilIdle();
 }
 
+TEST_F(LegacyLowEnergyScannerTest,
+       ParseAdvertisingReportsResidualBytesLessThanMinSize) {
+  {
+    auto peer = std::make_unique<FakePeer>(kPublicAddr,
+                                           dispatcher(),
+                                           /*connectable=*/false,
+                                           /*scannable=*/false,
+                                           /*send_advertising_report=*/false);
+    peer->set_advertising_data(kPlainAdvDataBytes);
+    test_device()->AddPeer(std::move(peer));
+  }
+
+  ASSERT_TRUE(StartScan(true));
+  RunUntilIdle();
+
+  auto peer = test_device()->FindPeer(kPublicAddr);
+  DynamicByteBuffer buffer = peer->BuildLegacyAdvertisingReportEvent(false);
+
+  // The buffer currently has 1 report. Let's expand it to have 1 extra byte,
+  // but claim num_reports = 2.
+  size_t original_size = buffer.size();
+  DynamicByteBuffer expanded_buffer(original_size + 1);
+  expanded_buffer.Write(buffer);
+  expanded_buffer[original_size] = 0x00;  // extra trailing byte
+  expanded_buffer[1] =
+      expanded_buffer[1] + 1;  // update parameter total length in event header
+
+  auto params = pw::bluetooth::emboss::LEAdvertisingReportSubeventWriter(
+      expanded_buffer.mutable_data(), expanded_buffer.size());
+  params.num_reports().Write(2);
+
+  test_device()->SendCommandChannelPacket(expanded_buffer);
+
+  // We should still successfully parse the first report, but gracefully ignore
+  // the remaining 1 byte.
+  bool peer_found_callback_called = false;
+  set_peer_found_callback([&](const LowEnergyScanResult& result) {
+    peer_found_callback_called = true;
+    EXPECT_EQ(peer->address(), result.address());
+  });
+
+  RunUntilIdle();
+  EXPECT_TRUE(peer_found_callback_called);
+}
+
 TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsInvalidAddressType) {
   {
     auto peer = std::make_unique<FakePeer>(kPublicAddr,
