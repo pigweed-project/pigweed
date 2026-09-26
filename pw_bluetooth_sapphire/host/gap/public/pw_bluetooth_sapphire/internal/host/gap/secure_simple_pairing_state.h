@@ -373,7 +373,7 @@ class SecureSimplePairingState final {
         pw::async::Dispatcher& dispatcher);
     static std::unique_ptr<Pairing> MakeResponder(
         pw::bluetooth::emboss::IoCapability peer_iocap,
-        bool outgoing_connection,
+        bool allow_automatic,
         Peer::PairingToken&& token,
         pw::async::Dispatcher& dispatcher);
     // Make a responder for a peer that has initiated a pairing (asked for our

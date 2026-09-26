@@ -241,17 +241,25 @@ void SecureSimplePairingState::OnIoCapabilityResponse(IoCapability peer_iocap) {
   // If we previously provided a key for peer to pair, but that didn't work,
   // they may try to re-pair.  Cancel the previous pairing if they try to
   // restart.
+  bool re_pairing_bonded_peer = false;
   if (state() == State::kWaitEncryption) {
     PW_CHECK(is_pairing());
     current_pairing_ = nullptr;
     state_ = State::kIdle;
+    // We reached kWaitEncryption by handing out a stored bonded link key. The
+    // peer rejecting that key and restarting SSP is the same semantic event as
+    // OnAuthenticationComplete(PIN_OR_KEY_MISSING): force user consent for the
+    // new pairing so an RF spoofer of a bonded BD_ADDR cannot silently re-pair
+    // on an outgoing link.
+    re_pairing_bonded_peer = true;
   }
   if (state() == State::kIdle ||
       state() == State::kInitiatorWaitLEPairingComplete) {
     PW_CHECK(!is_pairing());
+    bool allow_automatic = outgoing_connection_ && !re_pairing_bonded_peer;
     current_pairing_ =
         Pairing::MakeResponder(peer_iocap,
-                               outgoing_connection_,
+                               allow_automatic,
                                peer_->MutBrEdr().RegisterPairing(),
                                dispatcher_);
 
@@ -883,12 +891,12 @@ SecureSimplePairingState::Pairing::MakeInitiator(
 std::unique_ptr<SecureSimplePairingState::Pairing>
 SecureSimplePairingState::Pairing::MakeResponder(
     pw::bluetooth::emboss::IoCapability peer_iocap,
-    bool outgoing_connection,
+    bool allow_automatic,
     Peer::PairingToken&& token,
     pw::async::Dispatcher& dispatcher) {
   // Private constructor is inaccessible to std::make_unique.
   std::unique_ptr<Pairing> pairing(
-      new Pairing(outgoing_connection, std::move(token), dispatcher));
+      new Pairing(allow_automatic, std::move(token), dispatcher));
   pairing->initiator = false;
   pairing->peer_iocap = peer_iocap;
   // Don't try to upgrade security as responder.
