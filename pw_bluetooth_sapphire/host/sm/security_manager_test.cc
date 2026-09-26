@@ -4674,6 +4674,80 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorPeerDoesNotWantToDoCtkd) {
             ErrorCode::kCrossTransportKeyDerivationNotAllowed);
 }
 
+TEST_F(SecurityManagerTest, BrEdrInitiatorSpoofedIdentityAddressNotStored) {
+  NewBrEdrSecurityManager(Role::kInitiator);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
+
+  IdentityInfo local_id_info;
+  local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
+  local_id_info.address = kLocalAddr;
+  set_local_id_info(local_id_info);
+
+  // Phase 1
+  std::optional<Result<>> ctkd_result;
+  auto ctkd_cb = [&ctkd_result](Result<> result) { ctkd_result = result; };
+  pairing()->InitiateBrEdrCrossTransportKeyDerivation(std::move(ctkd_cb));
+  EXPECT_TRUE(peer().MutBrEdr().is_pairing());
+  RunUntilIdle();
+
+  const auto kRequest = StaticByteBuffer(
+      0x01,  // code: Pairing Request
+      0x00,  // IO cap.: display only
+      0x00,  // OOB: not present
+      AuthReq::kCT2,
+      0x10,  // encr. key size: 16 (default max)
+      KeyDistGen::kEncKey | KeyDistGen::kIdKey,  // initiator keys
+      KeyDistGen::kEncKey | KeyDistGen::kIdKey   // responder keys
+  );
+  EXPECT_EQ(1, pairing_request_count());
+  EXPECT_EQ(local_pairing_cmd(), kRequest);
+
+  PairingRequestParams preq;
+  preq.io_capability = IOCapability::kNoInputNoOutput;
+  preq.oob_data_flag = OOBDataFlag::kNotPresent;
+  preq.auth_req = AuthReq::kCT2;
+  preq.max_encryption_key_size = kMaxEncryptionKeySize;
+  preq.initiator_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  preq.responder_key_dist_gen = KeyDistGen::kEncKey | KeyDistGen::kIdKey;
+  ReceivePairingFeatures(preq, /*peer_initiator=*/false);
+  RunUntilIdle();
+  EXPECT_TRUE(peer().MutBrEdr().is_pairing());
+  ASSERT_FALSE(ctkd_result.has_value());
+
+  // Phase 3
+  const UInt128 kIrk =
+      UInt128{{2, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
+  const DeviceAddress kSpoofedIdentityAddr(
+      DeviceAddress::Type::kLEPublic, {0xD6, 0xD5, 0xD4, 0xD3, 0xD2, 0xD1});
+  ReceiveIdentityResolvingKey(kIrk);
+  ReceiveIdentityAddress(kSpoofedIdentityAddr);
+  RunUntilIdle();
+
+  // Local SM should have sent ID and address messages in phase 3.
+  EXPECT_EQ(1, id_info_count());
+  EXPECT_EQ(1, id_addr_info_count());
+
+  EXPECT_EQ(0, pairing_failed_count());
+  EXPECT_EQ(1, pairing_complete_count());
+  ASSERT_TRUE(ctkd_result.has_value());
+  EXPECT_TRUE(ctkd_result.value().is_ok());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+  EXPECT_EQ(1, pairing_data_callback_count());
+  ASSERT_TRUE(pairing_data().local_ltk.has_value());
+  EXPECT_EQ(pairing_data().local_ltk->key().value(), kExpectedLtkBytesH7);
+  EXPECT_EQ(pairing_data().local_ltk->security().GetLinkKeyType(),
+            hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+
+  // Spoofed identity address and IRK should not be stored.
+  EXPECT_FALSE(pairing_data().irk.has_value());
+  EXPECT_FALSE(pairing_data().identity_address.has_value());
+}
+
 TEST_F(ResponderPairingTest,
        BrEdrPairingInProgressErrorInResponseToPairingRequest) {
   InitializePeer(kPeerPublicAddr);

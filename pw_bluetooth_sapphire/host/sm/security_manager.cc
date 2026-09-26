@@ -1116,6 +1116,23 @@ void SecurityManagerImpl::OnBrEdrPairingComplete(PairingData pairing_data) {
   ResetRepeatedAttemptsBackoff();
   delegate_->OnPairingComplete(fit::ok());
 
+  // If the LE identity address provided by the peer doesn't match its existing
+  // BR/EDR address, drop its address and IRK. This prevents a BR/EDR connection
+  // from claiming a different LE address and overwriting another peer's LE
+  // bonding data.
+  if (pairing_data.identity_address.has_value() &&
+      pairing_data.identity_address->value() !=
+          bredr_link_->peer_address().value()) {
+    bt_log(WARN,
+           "sm",
+           "dropping mismatched LE identity %s (expected %s)",
+           bt_str(*pairing_data.identity_address),
+           bt_str(bredr_link_->peer_address()));
+    pairing_data.identity_address.reset();
+    pairing_data.irk.reset();
+    pairing_data.csrk.reset();
+  }
+
   std::optional<UInt128> ct_key_value = util::BrEdrLinkKeyToLeLtk(
       bredr_link_->ltk()->value(), features_->generate_ct_key.value());
   if (ct_key_value) {
