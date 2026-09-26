@@ -129,9 +129,9 @@ bool BrEdrConnection::StartEncryption() {
 }
 
 void BrEdrConnection::HandleEncryptionStatus(Result<bool> result,
-                                             bool key_refreshed) {
-  bool enabled = result.is_ok() && result.value() && !key_refreshed;
-  if (enabled) {
+                                             bool /*key_refreshed*/) {
+  bool should_reverify = result.is_ok() && result.value();
+  if (should_reverify) {
     ValidateEncryptionKeySize([self = GetWeakPtr()](Result<> key_valid_status) {
       if (self.is_alive()) {
         self->HandleEncryptionStatusValidated(

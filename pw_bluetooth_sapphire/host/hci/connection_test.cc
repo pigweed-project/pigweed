@@ -1030,6 +1030,44 @@ TEST_F(ConnectionTest, AclEncryptionEnableKeySizeOneByteClosesLink) {
   EXPECT_EQ(1, callback_count);
 }
 
+TEST_F(ConnectionTest, AclEncryptionKeyRefreshKeySizeOneByteClosesLink) {
+  StaticByteBuffer kKeySizeComplete(0x0E,  // event code: Command Complete
+                                    0x07,  // parameters total size
+                                    0xFF,  // num command packets allowed (255)
+                                    0x08,
+                                    0x14,  // original opcode
+
+                                    // return parameters
+                                    0x00,  // status (success)
+                                    0x01,
+                                    0x00,  // connection handle: 0x0001
+                                    0x01   // encryption key size: 1
+  );
+
+  StaticByteBuffer kEncryptionKeyRefresh(
+      0x30,  // HCI Encryption Key Refresh Complete event
+      3,     // parameter total size
+      0x00,  // status
+      0x01,
+      0x00  // connection handle: 1
+  );
+
+  int callback_count = 0;
+  auto conn = NewACLConnection();
+  conn->set_encryption_change_callback([&callback_count](Result<bool> result) {
+    callback_count++;
+    EXPECT_TRUE(result.is_error());
+  });
+
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySizeCommand, &kKeySizeComplete);
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
+  test_device()->SendCommandChannelPacket(kEncryptionKeyRefresh);
+  RunUntilIdle();
+
+  EXPECT_EQ(1, callback_count);
+}
+
 TEST_F(ConnectionTest, SecureConnectionsSucceedsWithAESEncryptionAlgorithm) {
   StaticByteBuffer kKeySizeComplete(0x0E,  // event code: Command Complete
                                     0x07,  // parameters total size
@@ -1115,6 +1153,17 @@ TEST_P(LinkTypeConnectionTest, EncryptionKeyRefreshEvents) {
     0x06,       // status: Pin or Key missing
     0x01, 0x00  // connection handle: 1
   );
+  StaticByteBuffer kKeySizeComplete(
+    0x0E,        // event code: Command Complete
+    0x07,        // parameters total size
+    0xFF,        // num command packets allowed (255)
+    0x08, 0x14,  // original opcode
+
+    // return parameters
+    0x00,        // status (success)
+    0x01, 0x00,  // connection handle: 0x0001
+    0x10         // encryption key size: 16
+  );
   // clang-format on
 
   int callback_count = 0;
@@ -1125,6 +1174,12 @@ TEST_P(LinkTypeConnectionTest, EncryptionKeyRefreshEvents) {
     callback_count++;
     result = cb_result;
   });
+
+  if (GetParam() == bt::LinkType::kACL) {
+    // The host tries to validate the size of key used to encrypt ACL links.
+    EXPECT_CMD_PACKET_OUT(
+        test_device(), kReadEncryptionKeySizeCommand, &kKeySizeComplete);
+  }
 
   test_device()->SendCommandChannelPacket(kEncryptionKeyRefresh);
   RunUntilIdle();
