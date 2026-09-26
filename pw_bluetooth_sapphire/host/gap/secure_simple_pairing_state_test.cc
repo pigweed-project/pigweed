@@ -3024,6 +3024,50 @@ TEST_F(PairingStateTest,
   EXPECT_FALSE(*confirmation);
 }
 
+TEST_F(PairingStateTest, IoCapResponseRePairFromIdleMustNotAutoConfirm) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+
+  TestStatusHandler status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/true,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  auto existing_link_key =
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey);
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(existing_link_key));
+
+  pairing_state.OnIoCapabilityResponse(IoCapability::NO_INPUT_NO_OUTPUT);
+  EXPECT_FALSE(pairing_state.initiator());
+  EXPECT_EQ(0, status_handler.call_count());
+
+  ASSERT_EQ(IoCapability::NO_INPUT_NO_OUTPUT,
+            *pairing_state.OnIoCapabilityRequest());
+
+  bool delegate_consulted = false;
+  pairing_delegate.SetConfirmPairingCallback([&](PeerId, auto cb) {
+    delegate_consulted = true;
+    cb(false);
+  });
+
+  std::optional<bool> confirmation;
+  pairing_state.OnUserConfirmationRequest(
+      kTestPasskey, [&](bool confirm) { confirmation = confirm; });
+  EXPECT_TRUE(delegate_consulted);
+  ASSERT_TRUE(confirmation.has_value());
+  EXPECT_FALSE(*confirmation);
+}
+
 TEST_F(PairingStateTest, ResponderSignalsCompletionOfPairing) {
   NoOpPairingDelegate pairing_delegate(kTestLocalIoCap);
 

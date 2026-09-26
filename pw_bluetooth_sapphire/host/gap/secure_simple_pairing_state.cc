@@ -256,7 +256,9 @@ void SecureSimplePairingState::OnIoCapabilityResponse(IoCapability peer_iocap) {
   if (state() == State::kIdle ||
       state() == State::kInitiatorWaitLEPairingComplete) {
     PW_CHECK(!is_pairing());
-    bool allow_automatic = outgoing_connection_ && !re_pairing_bonded_peer;
+    bool peer_bonded = peer_->bredr() && peer_->bredr()->bonded();
+    bool allow_automatic =
+        outgoing_connection_ && !re_pairing_bonded_peer && !peer_bonded;
     current_pairing_ =
         Pairing::MakeResponder(peer_iocap,
                                allow_automatic,
