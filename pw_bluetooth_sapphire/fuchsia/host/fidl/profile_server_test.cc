@@ -3702,6 +3702,202 @@ TEST_F(ProfileServerTestFakeAdapter, FullUuidSearchResultRelayedToFidlClient) {
             std::string("https://foobar.dev"));
 }
 
+TEST_F(ProfileServerTestFakeAdapter,
+       SearchResultWithTooLongStringAttributeClampsAndDoesNotCrash) {
+  fidlbredr::SearchResultsHandle search_results_handle;
+  FakeSearchResults search_results(search_results_handle.NewRequest(),
+                                   dispatcher());
+
+  fidlbredr::ServiceClassProfileIdentifier search_uuid =
+      fidlbredr::ServiceClassProfileIdentifier::AUDIO_SINK;
+
+  // FIDL client registers a service search.
+  fidlbredr::ProfileSearchRequest request;
+  request.set_service_uuid(search_uuid);
+  request.set_attr_ids({});
+  request.set_results(std::move(search_results_handle));
+  client()->Search(std::move(request));
+  RunLoopUntilIdle();
+
+  // Trigger a match on the service search with some data.
+  bt::PeerId peer_id = bt::PeerId{10};
+  bt::UUID uuid(static_cast<uint32_t>(search_uuid));
+
+  bt::sdp::AttributeId attr_id = 50;  // Random Attribute ID
+  bt::sdp::DataElement elem = bt::sdp::DataElement();
+
+  // Set a string that exceeds MAX_STRING_LENGTH
+  std::string long_string(fidlbredr::MAX_STRING_LENGTH + 1, 'a');
+  elem.Set(long_string);
+
+  auto attributes = std::map<bt::sdp::AttributeId, bt::sdp::DataElement>();
+  attributes.emplace(attr_id, std::move(elem));
+  adapter()->fake_bredr()->TriggerServiceFound(
+      peer_id, uuid, std::move(attributes));
+
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(search_results.closed());
+  EXPECT_EQ(search_results.service_found_count(), 1u);
+  EXPECT_EQ(search_results.peer_id().value().value, peer_id.value());
+  EXPECT_EQ(search_results.attributes().value().size(), 1u);
+  EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id);
+
+  // The string should be truncated to MAX_STRING_LENGTH bytes.
+  std::vector<uint8_t> expected_data(
+      long_string.begin(), long_string.begin() + fidlbredr::MAX_STRING_LENGTH);
+  EXPECT_EQ(search_results.attributes().value()[0].element().str(),
+            expected_data);
+}
+
+TEST_F(ProfileServerTestFakeAdapter,
+       SearchResultWithTooLongUrlAttributeClampsAndDoesNotCrash) {
+  fidlbredr::SearchResultsHandle search_results_handle;
+  FakeSearchResults search_results(search_results_handle.NewRequest(),
+                                   dispatcher());
+
+  fidlbredr::ServiceClassProfileIdentifier search_uuid =
+      fidlbredr::ServiceClassProfileIdentifier::AUDIO_SINK;
+
+  fidlbredr::ProfileSearchRequest request;
+  request.set_service_uuid(search_uuid);
+  request.set_attr_ids({});
+  request.set_results(std::move(search_results_handle));
+  client()->Search(std::move(request));
+  RunLoopUntilIdle();
+
+  bt::PeerId peer_id = bt::PeerId{10};
+  bt::UUID uuid(static_cast<uint32_t>(search_uuid));
+
+  bt::sdp::AttributeId attr_id = 50;
+  bt::sdp::DataElement elem = bt::sdp::DataElement();
+
+  // Set a URL that exceeds MAX_URL_LENGTH (4096)
+  std::string long_url =
+      "http://" + std::string(fuchsia::url::MAX_URL_LENGTH, 'a') + ".com";
+  elem.SetUrl(long_url);
+
+  auto attributes = std::map<bt::sdp::AttributeId, bt::sdp::DataElement>();
+  attributes.emplace(attr_id, std::move(elem));
+  adapter()->fake_bredr()->TriggerServiceFound(
+      peer_id, uuid, std::move(attributes));
+
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(search_results.closed());
+  EXPECT_EQ(search_results.service_found_count(), 1u);
+  EXPECT_EQ(search_results.peer_id().value().value, peer_id.value());
+  EXPECT_EQ(search_results.attributes().value().size(), 1u);
+  EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id);
+
+  // The URL should be truncated to MAX_URL_LENGTH bytes.
+  std::string expected_url = long_url.substr(0, fuchsia::url::MAX_URL_LENGTH);
+  EXPECT_EQ(search_results.attributes().value()[0].element().url(),
+            expected_url);
+}
+
+TEST_F(ProfileServerTestFakeAdapter,
+       SearchResultWithTooLongSequenceAttributeClampsAndDoesNotCrash) {
+  fidlbredr::SearchResultsHandle search_results_handle;
+  FakeSearchResults search_results(search_results_handle.NewRequest(),
+                                   dispatcher());
+
+  fidlbredr::ServiceClassProfileIdentifier search_uuid =
+      fidlbredr::ServiceClassProfileIdentifier::AUDIO_SINK;
+
+  fidlbredr::ProfileSearchRequest request;
+  request.set_service_uuid(search_uuid);
+  request.set_attr_ids({});
+  request.set_results(std::move(search_results_handle));
+  client()->Search(std::move(request));
+  RunLoopUntilIdle();
+
+  bt::PeerId peer_id = bt::PeerId{10};
+  bt::UUID uuid(static_cast<uint32_t>(search_uuid));
+
+  bt::sdp::AttributeId attr_id = 50;
+
+  // Create a sequence with elements exceeding MAX_SEQUENCE_LENGTH
+  std::vector<bt::sdp::DataElement> seq_elems;
+  for (size_t i = 0; i < fidlbredr::MAX_SEQUENCE_LENGTH + 1; ++i) {
+    seq_elems.emplace_back(uint16_t(i));
+  }
+  bt::sdp::DataElement elem(std::move(seq_elems));
+
+  auto attributes = std::map<bt::sdp::AttributeId, bt::sdp::DataElement>();
+  attributes.emplace(attr_id, std::move(elem));
+  adapter()->fake_bredr()->TriggerServiceFound(
+      peer_id, uuid, std::move(attributes));
+
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(search_results.closed());
+  EXPECT_EQ(search_results.service_found_count(), 1u);
+  EXPECT_EQ(search_results.peer_id().value().value, peer_id.value());
+  EXPECT_EQ(search_results.attributes().value().size(), 1u);
+  EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id);
+
+  const auto& returned_elem = search_results.attributes().value()[0].element();
+  ASSERT_TRUE(returned_elem.is_sequence());
+  EXPECT_EQ(returned_elem.sequence().size(), fidlbredr::MAX_SEQUENCE_LENGTH);
+  EXPECT_EQ(returned_elem.sequence()[0]->uint16(), 0u);
+  EXPECT_EQ(
+      returned_elem.sequence()[fidlbredr::MAX_SEQUENCE_LENGTH - 1]->uint16(),
+      fidlbredr::MAX_SEQUENCE_LENGTH - 1);
+}
+
+TEST_F(ProfileServerTestFakeAdapter,
+       SearchResultWithTooLongAlternativeAttributeClampsAndDoesNotCrash) {
+  fidlbredr::SearchResultsHandle search_results_handle;
+  FakeSearchResults search_results(search_results_handle.NewRequest(),
+                                   dispatcher());
+
+  fidlbredr::ServiceClassProfileIdentifier search_uuid =
+      fidlbredr::ServiceClassProfileIdentifier::AUDIO_SINK;
+
+  fidlbredr::ProfileSearchRequest request;
+  request.set_service_uuid(search_uuid);
+  request.set_attr_ids({});
+  request.set_results(std::move(search_results_handle));
+  client()->Search(std::move(request));
+  RunLoopUntilIdle();
+
+  bt::PeerId peer_id = bt::PeerId{10};
+  bt::UUID uuid(static_cast<uint32_t>(search_uuid));
+
+  bt::sdp::AttributeId attr_id = 50;
+
+  // Create an alternative with elements exceeding MAX_SEQUENCE_LENGTH
+  std::vector<bt::sdp::DataElement> alt_elems;
+  for (size_t i = 0; i < fidlbredr::MAX_SEQUENCE_LENGTH + 1; ++i) {
+    alt_elems.emplace_back(uint16_t(i));
+  }
+  bt::sdp::DataElement elem;
+  elem.SetAlternative(std::move(alt_elems));
+
+  auto attributes = std::map<bt::sdp::AttributeId, bt::sdp::DataElement>();
+  attributes.emplace(attr_id, std::move(elem));
+  adapter()->fake_bredr()->TriggerServiceFound(
+      peer_id, uuid, std::move(attributes));
+
+  RunLoopUntilIdle();
+
+  EXPECT_FALSE(search_results.closed());
+  EXPECT_EQ(search_results.service_found_count(), 1u);
+  EXPECT_EQ(search_results.peer_id().value().value, peer_id.value());
+  EXPECT_EQ(search_results.attributes().value().size(), 1u);
+  EXPECT_EQ(search_results.attributes().value()[0].id(), attr_id);
+
+  const auto& returned_elem = search_results.attributes().value()[0].element();
+  ASSERT_TRUE(returned_elem.is_alternatives());
+  EXPECT_EQ(returned_elem.alternatives().size(),
+            fidlbredr::MAX_SEQUENCE_LENGTH);
+  EXPECT_EQ(returned_elem.alternatives()[0]->uint16(), 0u);
+  EXPECT_EQ(returned_elem.alternatives()[fidlbredr::MAX_SEQUENCE_LENGTH - 1]
+                ->uint16(),
+            fidlbredr::MAX_SEQUENCE_LENGTH - 1);
+}
+
 TEST_F(ProfileServerTestFakeAdapter, SearchResultsFlowControl) {
   fidlbredr::SearchResultsHandle search_results_handle;
   FakeSearchResults search_results(search_results_handle.NewRequest(),

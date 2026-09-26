@@ -155,7 +155,10 @@ fidlbredr::DataElementPtr DataElementToFidl(const bt::sdp::DataElement* in) {
     case bt::sdp::DataElement::Type::kString: {
       auto bytes = in->Get<bt::DynamicByteBuffer>();
       PW_DCHECK(bytes);
-      std::vector<uint8_t> data(bytes->cbegin(), bytes->cend());
+      size_t clamped_size = std::min(
+          bytes->size(), static_cast<size_t>(fidlbredr::MAX_STRING_LENGTH));
+      std::vector<uint8_t> data(bytes->cbegin(),
+                                bytes->cbegin() + clamped_size);
       elem->set_str(data);
       return elem;
     }
@@ -167,6 +170,13 @@ fidlbredr::DataElementPtr DataElementToFidl(const bt::sdp::DataElement* in) {
       std::vector<fidlbredr::DataElementPtr> elems;
       const bt::sdp::DataElement* it;
       for (size_t idx = 0; (it = in->At(idx)); ++idx) {
+        if (elems.size() >= fidlbredr::MAX_SEQUENCE_LENGTH) {
+          bt_log(WARN,
+                 "fidl",
+                 "DataElementToFidl: truncation of sequence elements to %d",
+                 fidlbredr::MAX_SEQUENCE_LENGTH);
+          break;
+        }
         elems.emplace_back(DataElementToFidl(it));
       }
       elem->set_sequence(std::move(elems));
@@ -176,13 +186,28 @@ fidlbredr::DataElementPtr DataElementToFidl(const bt::sdp::DataElement* in) {
       std::vector<fidlbredr::DataElementPtr> elems;
       const bt::sdp::DataElement* it;
       for (size_t idx = 0; (it = in->At(idx)); ++idx) {
+        if (elems.size() >= fidlbredr::MAX_SEQUENCE_LENGTH) {
+          bt_log(WARN,
+                 "fidl",
+                 "DataElementToFidl: truncation of alternatives to %d",
+                 fidlbredr::MAX_SEQUENCE_LENGTH);
+          break;
+        }
         elems.emplace_back(DataElementToFidl(it));
       }
       elem->set_alternatives(std::move(elems));
       return elem;
     }
     case bt::sdp::DataElement::Type::kUrl: {
-      elem->set_url(*in->GetUrl());
+      std::string url = *in->GetUrl();
+      if (url.size() > fuchsia::url::MAX_URL_LENGTH) {
+        bt_log(WARN,
+               "fidl",
+               "DataElementToFidl: truncation of URL to %u",
+               fuchsia::url::MAX_URL_LENGTH);
+        url.resize(fuchsia::url::MAX_URL_LENGTH);
+      }
+      elem->set_url(url);
       return elem;
     }
     case bt::sdp::DataElement::Type::kNull: {
