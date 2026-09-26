@@ -1527,15 +1527,24 @@ bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() {
   // Do not derive LE LTK if existing LE LTK is stronger than current
   // BR/EDR link key.
   SecurityProperties bredr_security_props(bredr_link_->ltk_type().value());
-  bool has_le_ltk = peer_->le() && peer_->le()->bond_data() &&
-                    peer_->le()->bond_data()->local_ltk;
-  if (has_le_ltk && !bredr_security_props.IsAsSecureAs(
-                        peer_->le()->bond_data()->local_ltk->security())) {
-    bt_log(DEBUG,
-           "sm",
-           "%s: LE LTK stronger than current BR/EDR link key",
-           __FUNCTION__);
-    return false;
+  if (peer_->le() && peer_->le()->bond_data()) {
+    const auto& bond_data = peer_->le()->bond_data().value();
+    if (bond_data.local_ltk &&
+        !bredr_security_props.IsAsSecureAs(bond_data.local_ltk->security())) {
+      bt_log(INFO,
+             "sm",
+             "%s: local LE LTK stronger than current BR/EDR link key",
+             __FUNCTION__);
+      return false;
+    }
+    if (bond_data.peer_ltk &&
+        !bredr_security_props.IsAsSecureAs(bond_data.peer_ltk->security())) {
+      bt_log(INFO,
+             "sm",
+             "%s: peer LE LTK stronger than current BR/EDR link key",
+             __FUNCTION__);
+      return false;
+    }
   }
 
   // TODO(fxbug.dev/388607971): check for LE pairing in progress

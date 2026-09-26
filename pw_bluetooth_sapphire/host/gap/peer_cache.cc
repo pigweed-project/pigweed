@@ -103,7 +103,13 @@ bool PeerCache::AddBondedPeer(BondingData bd) {
   if (bond_le) {
     PW_CHECK(bd.le_pairing_data.irk.has_value() ==
              bd.le_pairing_data.identity_address.has_value());
-    peer->MutLe().SetBondData(bd.le_pairing_data);
+    if (!peer->MutLe().SetBondData(bd.le_pairing_data)) {
+      bt_log(ERROR,
+             "gap-le",
+             "failed to restore LE bond data (id: %s)",
+             bt_str(bd.identifier));
+      return false;
+    }
     PW_CHECK(peer->le()->bonded());
 
     // Add the peer to the resolving list if it has an IRK.
@@ -187,9 +193,9 @@ bool PeerCache::StoreLowEnergyBond(PeerId identifier,
     // maps to this peer.
   }
 
-  // TODO(fxbug.dev/42072204): Check that we're not downgrading the security
-  // level before overwriting the bond.
-  peer->MutLe().SetBondData(bond_data);
+  if (!peer->MutLe().SetBondData(bond_data)) {
+    return false;
+  }
   PW_DCHECK(!peer->temporary());
   PW_DCHECK(peer->le()->bonded());
 

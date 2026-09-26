@@ -680,6 +680,42 @@ TEST_F(PeerCacheTestBondingTest, AddLowEnergyBondedPeerSuccess) {
   EXPECT_FALSE(bonded_callback_called());
 }
 
+TEST_F(PeerCacheTestBondingTest, AddBondedPeerFailsWithLowerSecurityBond) {
+  sm::PairingData secure_data;
+  secure_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/true,
+                                     /*secure_connections=*/true,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{1}, 2, 3));
+  secure_data.local_ltk = secure_data.peer_ltk;
+
+  sm::PairingData weak_data;
+  weak_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/false,
+                                     /*secure_connections=*/false,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{4}, 5, 6));
+  weak_data.local_ltk = weak_data.peer_ltk;
+
+  EXPECT_TRUE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                 .address = kAddrLeRandom,
+                                                 .name = {},
+                                                 .device_class = {},
+                                                 .le_pairing_data = secure_data,
+                                                 .bredr_link_key = {},
+                                                 .bredr_services = {}}));
+
+  EXPECT_FALSE(cache()->AddBondedPeer(BondingData{.identifier = kId,
+                                                  .address = kAddrLeRandom,
+                                                  .name = {},
+                                                  .device_class = {},
+                                                  .le_pairing_data = weak_data,
+                                                  .bredr_link_key = {},
+                                                  .bredr_services = {}}));
+}
+
 TEST_F(PeerCacheTestBondingTest, AddBrEdrBondedPeerSuccess) {
   sm::PairingData data;
 
@@ -807,6 +843,30 @@ TEST_F(PeerCacheTestBondingTest, StoreLowEnergyBondWithCsrk) {
   EXPECT_TRUE(peer()->le()->bonded());
   EXPECT_TRUE(peer()->le()->bond_data());
   EXPECT_EQ(data, *peer()->le()->bond_data());
+}
+
+TEST_F(PeerCacheTestBondingTest, StoreLowEnergyBondFailsWithLowerSecurityBond) {
+  sm::PairingData secure_data;
+  secure_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/true,
+                                     /*secure_connections=*/true,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{1}, 2, 3));
+  secure_data.local_ltk = secure_data.peer_ltk;
+
+  EXPECT_TRUE(cache()->StoreLowEnergyBond(peer()->identifier(), secure_data));
+
+  sm::PairingData weak_data;
+  weak_data.peer_ltk =
+      sm::LTK(sm::SecurityProperties(/*encrypted=*/true,
+                                     /*authenticated=*/false,
+                                     /*secure_connections=*/false,
+                                     sm::kMaxEncryptionKeySize),
+              hci_spec::LinkKey(UInt128{4}, 5, 6));
+  weak_data.local_ltk = weak_data.peer_ltk;
+
+  EXPECT_FALSE(cache()->StoreLowEnergyBond(peer()->identifier(), weak_data));
 }
 
 // StoreLowEnergyBond fails if it contains the address of a different,

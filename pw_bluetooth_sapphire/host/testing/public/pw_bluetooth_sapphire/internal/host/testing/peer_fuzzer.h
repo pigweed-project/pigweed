@@ -146,7 +146,7 @@ class PeerFuzzer final {
     do_if_fdp([&] { data.cross_transport_key = MakeLtk(); });
     do_if_fdp([&] { data.irk = MakeKey(); });
     do_if_fdp([&] { data.csrk = MakeKey(); });
-    peer_.MutLe().SetBondData(data);
+    (void)peer_.MutLe().SetBondData(data);
   }
 
   void LEDataClearBondData() {

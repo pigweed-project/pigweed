@@ -330,8 +330,10 @@ class Peer final {
 
     // Stores LE bonding data and makes this "bonded."
     // Marks as non-temporary if necessary.
+    // Returns false and DOES NOT set the bond data if doing so would downgrade
+    // the security of an existing key.
     // This should only be called by PeerCache.
-    void SetBondData(const sm::PairingData& bond_data);
+    [[nodiscard]] bool SetBondData(const sm::PairingData& bond_data);
 
     // Removes any stored keys. Does not make the peer temporary, even if it
     // is disconnected. Does not notify listeners.

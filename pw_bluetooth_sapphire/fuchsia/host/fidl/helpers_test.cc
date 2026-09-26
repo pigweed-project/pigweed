@@ -1816,7 +1816,7 @@ TEST_F(HelpersAdapterTest,
 TEST_F(HelpersAdapterTest, PeerToFidlBondingData_EmptyLeData) {
   auto* peer =
       adapter()->peer_cache()->NewPeer(kTestPeerAddr, /*connectable=*/true);
-  peer->MutLe().SetBondData(bt::sm::PairingData());
+  EXPECT_TRUE(peer->MutLe().SetBondData(bt::sm::PairingData()));
 
   fsys::BondingData data = PeerToFidlBondingData(adapter().get(), *peer);
   EXPECT_FALSE(data.has_bredr_bond());
@@ -1830,12 +1830,12 @@ TEST_F(HelpersAdapterTest, PeerToFidlBondingData_EmptyLeData) {
 TEST_F(HelpersAdapterTest, PeerToFidlBondingData_LeData) {
   auto* peer =
       adapter()->peer_cache()->NewPeer(kTestPeerAddr, /*connectable=*/true);
-  peer->MutLe().SetBondData(bt::sm::PairingData{
+  EXPECT_TRUE(peer->MutLe().SetBondData(bt::sm::PairingData{
       .local_ltk = {kTestLtk},
       .peer_ltk = {kTestLtk},
       .irk = {kTestKey},
       .csrk = {kTestKey},
-  });
+  }));
 
   fsys::BondingData data = PeerToFidlBondingData(adapter().get(), *peer);
   EXPECT_FALSE(data.has_bredr_bond());

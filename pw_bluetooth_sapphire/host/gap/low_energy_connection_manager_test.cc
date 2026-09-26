@@ -3795,7 +3795,7 @@ TEST_F(LowEnergyConnectionManagerTest,
     conn_mgr()->Connect(peer->identifier(), success_cb, kConnectionOptions);
     RunUntilIdle();
     // Peer needs to be bonded to set auto connect
-    peer->MutLe().SetBondData(sm::PairingData{});
+    EXPECT_TRUE(peer->MutLe().SetBondData(sm::PairingData{}));
 
     EXPECT_EQ(1u, connected_peers().count(kAddressI));
     ASSERT_TRUE(conn_handle);
@@ -3902,7 +3902,7 @@ TEST_F(LowEnergyConnectionManagerTest,
 
   conn_mgr()->Connect(peer->identifier(), success_cb, kConnectionOptions);
   RunUntilIdle();
-  peer->MutLe().SetBondData(sm::PairingData{});
+  EXPECT_TRUE(peer->MutLe().SetBondData(sm::PairingData{}));
 
   EXPECT_EQ(1u, connected_peers().count(kAddress0));
   ASSERT_TRUE(conn_handle);

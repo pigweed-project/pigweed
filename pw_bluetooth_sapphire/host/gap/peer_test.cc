@@ -643,7 +643,7 @@ TEST_F(PeerTest, SettingLowEnergyBondDataUpdatesLastUpdated) {
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  peer().MutLe().SetBondData(data);
+  EXPECT_TRUE(peer().MutLe().SetBondData(data));
   EXPECT_EQ(peer().last_updated(),
             pw::chrono::SystemClock::time_point(std::chrono::nanoseconds(2)));
   EXPECT_GE(notify_count, 1);
@@ -1540,7 +1540,7 @@ TEST_F(PeerTest, SettingLeAdvertisingDataOfBondedPeerDoesNotUpdateName) {
   sm::PairingData data;
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
-  peer().MutLe().SetBondData(data);
+  EXPECT_TRUE(peer().MutLe().SetBondData(data));
 
   const StaticByteBuffer kBondedAdvData(0x08,  // Length
                                         0x09,  // AD type: Complete Local Name
@@ -1710,7 +1710,7 @@ TEST_F(PeerTest, ClearBondDataDoesNotSetIdentityKnownToFalseIfAddressIsLEPublic)
   data.peer_ltk = kLTK;
   data.local_ltk = kLTK;
   data.irk = sm::Key(sm::SecurityProperties(), UInt128{4});
-  peer().MutLe().SetBondData(data);
+  EXPECT_TRUE(peer().MutLe().SetBondData(data));
   EXPECT_TRUE(peer().identity_known());
   peer().MutLe().ClearBondData();
   EXPECT_TRUE(peer().identity_known());
@@ -1814,5 +1814,38 @@ TEST_F(PeerEirServicesTest, ServicesSetIsCappedAcrossRepeatedEirReceptions) {
   // Expiry was refreshed on every reception, defeating the 60 s cache timeout.
   EXPECT_GE(update_expiry_count(), static_cast<int>(kRounds));
 }
+TEST_F(PeerTest, DowngradingLowEnergyBondFails) {
+  sm::PairingData secure_data;
+  secure_data.peer_ltk = sm::LTK(
+      sm::SecurityProperties(/*encrypted=*/true,
+                             /*authenticated=*/true,
+                             /*secure_connections=*/true,
+                             sm::kMaxEncryptionKeySize),
+      hci_spec::LinkKey(UInt128{1}, 2, 3));
+
+  sm::PairingData weak_data;
+  weak_data.peer_ltk = sm::LTK(
+      sm::SecurityProperties(/*encrypted=*/true,
+                             /*authenticated=*/false,
+                             /*secure_connections=*/false,
+                             sm::kMaxEncryptionKeySize),
+      hci_spec::LinkKey(UInt128{4}, 5, 6));
+
+  EXPECT_TRUE(peer().MutLe().SetBondData(secure_data));
+  ASSERT_TRUE(peer().le()->bond_data().has_value());
+  EXPECT_EQ(peer().le()->bond_data()->peer_ltk->key().value(),
+            secure_data.peer_ltk->key().value());
+
+  // Attempt downgrade
+  EXPECT_FALSE(peer().MutLe().SetBondData(weak_data));
+
+  // Verify it was NOT downgraded
+  ASSERT_TRUE(peer().le()->bond_data().has_value());
+  ASSERT_TRUE(peer().le()->bond_data()->peer_ltk.has_value());
+  EXPECT_TRUE(peer().le()->bond_data()->peer_ltk->security().authenticated());
+  EXPECT_EQ(peer().le()->bond_data()->peer_ltk->key().value(),
+            secure_data.peer_ltk->key().value());
+}
+
 }  // namespace
 }  // namespace bt::gap

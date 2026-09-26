@@ -260,12 +260,34 @@ bool Peer::LowEnergyData::StoreBond(const sm::PairingData& bond_data) {
   return peer_->store_le_bond_callback_(bond_data);
 }
 
-void Peer::LowEnergyData::SetBondData(const sm::PairingData& bond_data) {
+bool Peer::LowEnergyData::SetBondData(const sm::PairingData& bond_data) {
   PW_DCHECK(peer_->connectable());
   PW_DCHECK(peer_->address().type() != DeviceAddress::Type::kLEAnonymous);
 
-  // TODO(fxbug.dev/42072204): Do not overwrite an existing key that has
-  // greater strength or authentication.
+  // BLURtooth mitigation: Do not overwrite an existing key that has greater
+  // strength or authentication. (b/510066514)
+  // See https://nvd.nist.gov/vuln/detail/cve-2020-15802.
+  if (bond_data_->has_value()) {
+    const auto& existing = bond_data_->value();
+    if (existing.peer_ltk.has_value() && bond_data.peer_ltk.has_value()) {
+      if (!bond_data.peer_ltk->security().IsAsSecureAs(
+              existing.peer_ltk->security())) {
+        bt_log(WARN,
+               "gap-le",
+               "rejecting LE bond data with reduced security (peer_ltk)");
+        return false;
+      }
+    }
+    if (existing.local_ltk.has_value() && bond_data.local_ltk.has_value()) {
+      if (!bond_data.local_ltk->security().IsAsSecureAs(
+              existing.local_ltk->security())) {
+        bt_log(WARN,
+               "gap-le",
+               "rejecting LE bond data with reduced security (local_ltk)");
+        return false;
+      }
+    }
+  }
 
   // Make sure the peer is non-temporary.
   peer_->TryMakeNonTemporary();
@@ -281,6 +303,7 @@ void Peer::LowEnergyData::SetBondData(const sm::PairingData& bond_data) {
 
   // PeerCache notifies listeners of new bonds, so no need to request that here.
   peer_->UpdatePeerAndNotifyListeners(NotifyListenersChange::kBondNotUpdated);
+  return true;
 }
 
 void Peer::LowEnergyData::ClearBondData() {
