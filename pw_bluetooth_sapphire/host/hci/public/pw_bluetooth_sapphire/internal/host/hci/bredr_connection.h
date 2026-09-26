@@ -13,6 +13,9 @@
 // the License.
 
 #pragma once
+#include <cstdint>
+#include <optional>
+
 #include "pw_async/dispatcher.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/link_key.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/acl_connection.h"
@@ -48,6 +51,12 @@ class BrEdrConnection : public AclConnection, public WeakSelf<BrEdrConnection> {
 
   const std::optional<hci_spec::LinkKeyType>& ltk_type() { return ltk_type_; }
 
+  std::optional<uint8_t> encryption_key_size() const {
+    return encryption_key_size_;
+  }
+
+  void set_encryption_key_size(uint8_t size) { encryption_key_size_ = size; }
+
  private:
   void HandleEncryptionStatus(Result<bool /*enabled*/> result,
                               bool key_refreshed) override;
@@ -58,6 +67,9 @@ class BrEdrConnection : public AclConnection, public WeakSelf<BrEdrConnection> {
 
   // BR/EDR-specific type of the assigned link key.
   std::optional<hci_spec::LinkKeyType> ltk_type_;
+
+  // Actual negotiated encryption key size (in bytes).
+  std::optional<uint8_t> encryption_key_size_;
 };
 
 }  // namespace bt::hci

@@ -208,8 +208,9 @@ TEST_F(LegacyPairingStateTest, BuildEstablishedLink) {
   // |pairing_state|'s temporary |link_key_| is empty
   EXPECT_FALSE(pairing_state.link_key().has_value());
 
-  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestLegacyLinkKeyType), kTestLinkKey)));
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(sm::LTK(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMaxEncryptionKeySize),
+      kTestLinkKey)));
 
   std::optional<hci_spec::LinkKey> reply_key = pairing_state.OnLinkKeyRequest();
   ASSERT_TRUE(reply_key.has_value());
@@ -331,8 +332,9 @@ TEST_F(
                                    &dispatcher());
   EXPECT_FALSE(pairing_state.initiator());
 
-  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestLegacyLinkKeyType), kTestLinkKey)));
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(sm::LTK(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMaxEncryptionKeySize),
+      kTestLinkKey)));
   EXPECT_FALSE(connection()->ltk().has_value());
 
   std::optional<hci_spec::LinkKey> reply_key = pairing_state.OnLinkKeyRequest();
@@ -361,8 +363,9 @@ TEST_F(
                                    NoOpStatusCallback);
   EXPECT_FALSE(pairing_state.initiator());
 
-  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestLegacyLinkKeyType), kTestLinkKey)));
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(sm::LTK(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMaxEncryptionKeySize),
+      kTestLinkKey)));
   EXPECT_FALSE(connection()->ltk().has_value());
 
   std::optional<hci_spec::LinkKey> reply_key = pairing_state.OnLinkKeyRequest();
@@ -389,8 +392,9 @@ TEST_F(
                                    NoOpStatusCallback);
   EXPECT_FALSE(pairing_state.initiator());
 
-  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestLegacyLinkKeyType), kTestLinkKey)));
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(sm::LTK(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMaxEncryptionKeySize),
+      kTestLinkKey)));
   EXPECT_FALSE(connection()->ltk().has_value());
 
   pairing_state.InitiatePairing(NoOpStatusCallback);
@@ -1380,10 +1384,10 @@ TEST_F(LegacyPairingStateTest, TransactionCollision) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
-  pairing_state.OnEncryptionChange(result);
+  connection()->TriggerEncryptionChangeCallback(result);
 
   EXPECT_FALSE(cb_called);
-  pairing_state.OnEncryptionChange(fit::ok(true));
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 }
 
@@ -1422,14 +1426,14 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsCentral) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
-  pairing_state.OnEncryptionChange(result);
+  connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
   // Ensure we don't retry as a Central
   RunFor(LegacyPairingState::kDelayRetryEnableEncryption);
   ASSERT_EQ(1, connection()->start_encryption_count());
 
-  pairing_state.OnEncryptionChange(fit::ok(true));
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 }
 
@@ -1468,14 +1472,14 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsPeripheral) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
-  pairing_state.OnEncryptionChange(result);
+  connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
   // Ensure we retry after kDelayRetryEnableEncryption amount of time
   RunFor(LegacyPairingState::kDelayRetryEnableEncryption);
   ASSERT_EQ(2, connection()->start_encryption_count());
 
-  pairing_state.OnEncryptionChange(fit::ok(true));
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 }
 
@@ -1515,10 +1519,10 @@ TEST_F(LegacyPairingStateTest,
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
-  pairing_state.OnEncryptionChange(result);
+  connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
-  pairing_state.OnEncryptionChange(fit::ok(true));
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 
   // Ensure we don't retry if we succeeded in enabling encryption before the
@@ -1673,8 +1677,9 @@ TEST_P(HandlesLegacyEvent, InWaitLinkKeyState) {
 }
 
 TEST_P(HandlesLegacyEvent, InInitiatorWaitAuthCompleteSkippingLegacyPairing) {
-  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestLegacyLinkKeyType), kTestLinkKey)));
+  EXPECT_TRUE(peer()->MutBrEdr().SetBondData(sm::LTK(
+      sm::SecurityProperties(kTestLegacyLinkKeyType, sm::kMaxEncryptionKeySize),
+      kTestLinkKey)));
 
   // Advance state machine
   pairing_state().InitiatePairing(NoOpStatusCallback);
@@ -1794,6 +1799,50 @@ TEST_P(HandlesLegacyEvent, InFailedStateAfterAuthenticationFailed) {
   EXPECT_EQ(2, status_handler().call_count());
   ASSERT_TRUE(status_handler().status());
   EXPECT_EQ(ToResult(HostError::kFailed), status_handler().status());
+}
+TEST_F(LegacyPairingStateTest, CompletePairingRequestsUpdatesKeySize) {
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayOnly);
+
+  TestStatusHandler status_handler;
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   status_handler.MakeStatusCallback());
+
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, PairingDelegate::DisplayMethod, auto cb) {
+        cb(/*confirm=*/true);
+      });
+
+  pairing_state.InitiatePairing(NoOpStatusCallback);
+  EXPECT_TRUE(pairing_state.initiator());
+
+  EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
+
+  std::optional<uint16_t> pin_code;
+  auto pin_code_cb = [&pin_code](std::optional<uint16_t> pin) {
+    pin_code = pin;
+  };
+  pairing_state.OnPinCodeRequest(std::move(pin_code_cb));
+  ASSERT_TRUE(pin_code.has_value());
+
+  connection()->set_encryption_key_size(7);
+
+  pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                      kTestLegacyLinkKeyType);
+
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+
+  EXPECT_EQ(7u, pairing_state.security_properties().enc_key_size());
 }
 
 #ifndef NINSPECT

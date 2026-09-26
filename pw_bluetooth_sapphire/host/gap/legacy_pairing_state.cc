@@ -164,7 +164,8 @@ void LegacyPairingState::InitiatePairing(StatusCallback status_cb) {
     // pairing and report success.
     if (link_->ltk_type() &&
         SecurityPropertiesMeetRequirements(
-            sm::SecurityProperties(link_->ltk_type().value()),
+            sm::SecurityProperties(link_->ltk_type().value(),
+                                   /*enc_key_size=*/std::nullopt),
             kNoSecurityRequirements)) {
       status_cb(handle(), fit::ok());
       return;
@@ -433,7 +434,8 @@ void LegacyPairingState::OnLinkKeyNotification(const UInt128& link_key,
   // The resulting link security properties are computed by both the Link
   // Manager (Controller) and the Host subsystem, so check that they agree.
   PW_CHECK(is_pairing());
-  sm::SecurityProperties sec_props = sm::SecurityProperties(key_type);
+  sm::SecurityProperties sec_props =
+      sm::SecurityProperties(key_type, /*enc_key_size=*/std::nullopt);
   current_pairing_->security_properties = sec_props;
 
   // Set security properties for this BR/EDR connection
@@ -791,6 +793,17 @@ std::vector<fit::closure> LegacyPairingState::CompletePairingRequests(
     return callbacks_to_signal;
   }
 
+  if (status.is_ok()) {
+    if (!link_.is_alive()) {
+      status = ToResult(HostError::kLinkDisconnected);
+    } else if (!link_->encryption_key_size().has_value()) {
+      bt_log(ERROR,
+             "gap",
+             "encryption key size unknown in CompletePairingRequests");
+      status = ToResult(HostError::kInsufficientSecurity);
+    }
+  }
+
   if (status.is_error()) {
     // On pairing failure, signal all requests
     for (auto& request : request_queue_) {
@@ -806,8 +819,12 @@ std::vector<fit::closure> LegacyPairingState::CompletePairingRequests(
 
   PW_CHECK(state_ == State::kIdle);
 
-  sm::SecurityProperties security_properties =
-      sm::SecurityProperties(hci_spec::LinkKeyType::kCombination);
+  sm::SecurityProperties security_properties(
+      hci_spec::LinkKeyType::kCombination,
+      link_->encryption_key_size().value());
+
+  // Update the stored security properties for the connection.
+  bredr_security_ = security_properties;
 
   // If a new link key was received, notify all callbacks because we always
   // negotiate the best security possible. Even though pairing succeeded,

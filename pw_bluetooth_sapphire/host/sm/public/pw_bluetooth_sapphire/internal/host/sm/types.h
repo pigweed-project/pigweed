@@ -156,7 +156,8 @@ class SecurityProperties final {
   // that they originate from a controller in pairing debug mode, a potential
   // hazard. Care should be taken at the controller interface to enforce
   // particular policies regarding debug keys.
-  explicit SecurityProperties(hci_spec::LinkKeyType lk_type);
+  explicit SecurityProperties(hci_spec::LinkKeyType lk_type,
+                              std::optional<size_t> enc_key_size);
 
   ~SecurityProperties() = default;
 

@@ -622,6 +622,20 @@ void Peer::BrEdrData::ClearBondData() {
   link_key_ = std::nullopt;
 }
 
+bool Peer::BrEdrData::UpdateBondSecurityProperties(
+    const sm::SecurityProperties& security) {
+  if (link_key_.has_value()) {
+    if (security.level() >= link_key_->security().level()) {
+      link_key_ = sm::LTK(security, link_key_->key());
+      link_key_.value().AttachInspect(node_, BrEdrData::kInspectLinkKeyName);
+      return true;
+    } else {
+      bt_log(ERROR, "gap", "ignoring security property downgrade attempt");
+    }
+  }
+  return false;
+}
+
 void Peer::BrEdrData::AddService(UUID uuid) {
   auto [_, inserted] = services_.Mutable()->insert(uuid);
   if (inserted) {

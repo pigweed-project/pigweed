@@ -552,6 +552,11 @@ class Peer final {
     // it is disconnected. Does not notify listeners.
     void ClearBondData();
 
+    // Updates the security properties of an existing bond.
+    // This bypasses the check in SetBondData which rejects smaller key sizes.
+    [[nodiscard]] bool UpdateBondSecurityProperties(
+        const sm::SecurityProperties& security);
+
     // Adds a service discovered on the peer, identified by |uuid|, then
     // notifies listeners. No-op if already present.
     void AddService(UUID uuid);

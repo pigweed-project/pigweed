@@ -98,11 +98,15 @@ void SecureSimplePairingState::InitiatePairing(
 
     // If the current link key already meets the security requirements, skip
     // pairing and report success.
-    if (link_->ltk_type() && SecurityPropertiesMeetRequirements(
-                                 sm::SecurityProperties(*link_->ltk_type()),
-                                 security_requirements)) {
-      status_cb(handle(), fit::ok());
-      return;
+    if (link_.is_alive() && link_->ltk_type().has_value()) {
+      std::optional<uint8_t> key_size = link_->encryption_key_size();
+      if (key_size.has_value()) {
+        sm::SecurityProperties props(*link_->ltk_type(), key_size.value());
+        if (SecurityPropertiesMeetRequirements(props, security_requirements)) {
+          status_cb(handle(), fit::ok());
+          return;
+        }
+      }
     }
     // TODO(fxbug.dev/42118593): If there is no pairing delegate set AND the
     // current peer does not have a bonded link key, there is no way to upgrade
@@ -557,7 +561,8 @@ void SecureSimplePairingState::OnLinkKeyNotification(
   // by both the Link Manager (controller) and the host subsystem, so check that
   // they agree.
   PW_CHECK(is_pairing());
-  sm::SecurityProperties sec_props = sm::SecurityProperties(key_type);
+  // Construct provisional properties without assuming encryption key size.
+  sm::SecurityProperties sec_props(key_type, /*enc_key_size=*/std::nullopt);
   current_pairing_->received_link_key_security_properties = sec_props;
 
   // Link keys resulting from legacy pairing are assigned lowest security level
@@ -595,14 +600,14 @@ void SecureSimplePairingState::OnLinkKeyNotification(
     return;
   }
 
-  // Set Security Properties for this BR/EDR connection
-  bredr_security_ = sec_props;
-
+  // inclusive-language: disable
   // TODO(fxbug.dev/42082735): When in SC Only mode, all services require
-  // security mode 4, level 4
+  // security mode 4, level 4. At this stage before encryption enablement,
+  // verify that the link key type supports Secure Connections and MITM
+  // protection.
+  // inclusive-language: enable
   if (security_mode_ == BrEdrSecurityMode::SecureConnectionsOnly &&
-      security_properties().level() !=
-          sm::SecurityLevel::kSecureAuthenticated) {
+      (!sec_props.secure_connections() || !sec_props.authenticated())) {
     bt_log(WARN,
            "gap-bredr",
            "BR/EDR link key has insufficient security for Secure Connections "
@@ -622,7 +627,7 @@ void SecureSimplePairingState::OnLinkKeyNotification(
   // Secure_Connections_Host_Support parameter.
   if (IsPeerSecureConnectionsSupported() &&
       local_secure_connections_supported) {
-    if (!security_properties().secure_connections()) {
+    if (!sec_props.secure_connections()) {
       bt_log(WARN,
              "gap-bredr",
              "Link Key Type must be a Secure Connections key type;"
@@ -753,6 +758,14 @@ SecureSimplePairingState::GetActionOnError(
 }
 
 void SecureSimplePairingState::OnEncryptionChange(hci::Result<bool> result) {
+  if (!link_.is_alive()) {
+    bt_log(
+        ERROR, "gap-bredr", "OnEncryptionChange called but link is not alive");
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kLinkDisconnected), __func__);
+    return;
+  }
+
   // Update inspect properties
   pw::bluetooth::emboss::EncryptionStatus encryption_status =
       link_->encryption_status();
@@ -760,8 +773,8 @@ void SecureSimplePairingState::OnEncryptionChange(hci::Result<bool> result) {
       EncryptionStatusToString(encryption_status));
 
   if (state() != State::kWaitEncryption) {
-    // Ignore encryption changes when not expecting them because they may be
-    // triggered by the peer at any time (v5.0 Vol 2, Part F, Sec 4.4).
+    // Ignore encryption changes for the pairing state machine when not
+    // expecting them.
     bt_log(TRACE,
            "gap-bredr",
            "%#.4x (id: %s): %s(%s, %s) in state \"%s\"; taking no action",
@@ -989,6 +1002,26 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
     hci::Result<> status) {
   std::vector<fit::closure> callbacks_to_signal;
 
+  if (status.is_ok() && is_pairing()) {
+    if (!link_.is_alive()) {
+      status = ToResult(HostError::kLinkDisconnected);
+    } else if (!link_->encryption_key_size().has_value()) {
+      bt_log(ERROR,
+             "gap",
+             "encryption key size unknown in CompletePairingRequests");
+      status = ToResult(HostError::kInsufficientSecurity);
+    } else if (security_mode_ == BrEdrSecurityMode::SecureConnectionsOnly &&
+               link_->encryption_key_size().value() !=
+                   sm::kMaxEncryptionKeySize) {
+      bt_log(WARN,
+             "gap",
+             "negotiated encryption key size (%hhu) insufficient for Secure "
+             "Connections Only mode",
+             link_->encryption_key_size().value());
+      status = ToResult(HostError::kInsufficientSecurity);
+    }
+  }
+
   if (!is_pairing() || status.is_error()) {
     // On pairing failure, or if request_queue_ is non-empty while not pairing
     // (e.g. from kInitiatorWaitLEPairingComplete when an unexpected event
@@ -1005,9 +1038,21 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
   }
 
   PW_CHECK(state_ == State::kIdle);
-  PW_CHECK(link_->ltk_type().has_value());
+  if (link_->ltk_type().has_value()) {
+    sm::SecurityProperties security_properties(
+        link_->ltk_type().value(), link_->encryption_key_size().value());
 
-  auto security_properties = sm::SecurityProperties(link_->ltk_type().value());
+    // Update the stored security properties for the connection.
+    bredr_security_ = security_properties;
+
+    // Update the peer cache with the corrected security properties.
+    if (peer_.is_alive()) {
+      if (!peer_->MutBrEdr().UpdateBondSecurityProperties(
+              security_properties)) {
+        bt_log(ERROR, "gap", "Failed to update bond security properties");
+      }
+    }
+  }
 
   // If a new link key was received, notify all callbacks because we always
   // negotiate the best security possible. Even though pairing succeeded, send
@@ -1021,7 +1066,7 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
   if (link_key_received) {
     for (auto& request : request_queue_) {
       auto sec_props_satisfied = SecurityPropertiesMeetRequirements(
-          security_properties, request.security_requirements);
+          bredr_security_, request.security_requirements);
       auto request_status = sec_props_satisfied
                                 ? status
                                 : ToResult(HostError::kInsufficientSecurity);
@@ -1041,7 +1086,7 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
     // requests are satisfied by the existing key, notify them.
     auto it = request_queue_.begin();
     while (it != request_queue_.end()) {
-      if (!SecurityPropertiesMeetRequirements(security_properties,
+      if (!SecurityPropertiesMeetRequirements(bredr_security_,
                                               it->security_requirements)) {
         it++;
         continue;

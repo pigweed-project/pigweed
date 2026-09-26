@@ -18,10 +18,21 @@ namespace bt::gap {
 
 bool SecurityPropertiesMeetRequirements(
     sm::SecurityProperties properties, BrEdrSecurityRequirements requirements) {
+  // Enforce encryption if any requirements are specified!
+  if ((requirements.authentication || requirements.secure_connections) &&
+      !properties.encrypted()) {
+    return false;
+  }
+
   bool auth_ok = !requirements.authentication || properties.authenticated();
   bool sc_ok =
       !requirements.secure_connections || properties.secure_connections();
-  return auth_ok && sc_ok;
+
+  // Enforce key size if SC is required (Mapping to Security Mode 4 Level 4).
+  bool key_size_ok = !requirements.secure_connections ||
+                     properties.enc_key_size() == sm::kMaxEncryptionKeySize;
+
+  return auth_ok && sc_ok && key_size_ok;
 }
 
 }  // namespace bt::gap

@@ -28,53 +28,61 @@ namespace {
 using namespace inspect::testing;
 
 TEST(TypesTest, LinkKeyTypeToSecurityProperties) {
-  SecurityProperties props(hci_spec::LinkKeyType::kCombination);
+  SecurityProperties props(hci_spec::LinkKeyType::kCombination,
+                           kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kNoSecurity, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kLocalUnit);
+  props = SecurityProperties(hci_spec::LinkKeyType::kLocalUnit,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kNoSecurity, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kRemoteUnit);
+  props = SecurityProperties(hci_spec::LinkKeyType::kRemoteUnit,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kNoSecurity, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kDebugCombination);
+  props = SecurityProperties(hci_spec::LinkKeyType::kDebugCombination,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination192);
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination192,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192);
+      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kAuthenticated, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(true, props.authenticated());
   EXPECT_EQ(false, props.secure_connections());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kEncrypted, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(false, props.authenticated());
   EXPECT_EQ(true, props.secure_connections());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination256);
+      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(SecurityLevel::kSecureAuthenticated, props.level());
   EXPECT_EQ(16UL, props.enc_key_size());
   EXPECT_EQ(true, props.authenticated());
@@ -82,36 +90,44 @@ TEST(TypesTest, LinkKeyTypeToSecurityProperties) {
 }
 
 TEST(TypesTest, SecurityPropertiesToLinkKeyType) {
-  SecurityProperties props(hci_spec::LinkKeyType::kCombination);
+  SecurityProperties props(hci_spec::LinkKeyType::kCombination,
+                           kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kCombination, props.GetLinkKeyType());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kLocalUnit);
+  props = SecurityProperties(hci_spec::LinkKeyType::kLocalUnit,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kCombination, props.GetLinkKeyType());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kRemoteUnit);
+  props = SecurityProperties(hci_spec::LinkKeyType::kRemoteUnit,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kCombination, props.GetLinkKeyType());
 
-  props = SecurityProperties(hci_spec::LinkKeyType::kDebugCombination);
+  props = SecurityProperties(hci_spec::LinkKeyType::kDebugCombination,
+                             kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kUnauthenticatedCombination192,
             props.GetLinkKeyType());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination192);
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination192,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kUnauthenticatedCombination192,
             props.GetLinkKeyType());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192);
+      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination192,
             props.GetLinkKeyType());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+      SecurityProperties(hci_spec::LinkKeyType::kUnauthenticatedCombination256,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kUnauthenticatedCombination256,
             props.GetLinkKeyType());
 
   props =
-      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination256);
+      SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination256,
+                         kMaxEncryptionKeySize);
   EXPECT_EQ(hci_spec::LinkKeyType::kAuthenticatedCombination256,
             props.GetLinkKeyType());
 }

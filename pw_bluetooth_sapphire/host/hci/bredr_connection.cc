@@ -195,6 +195,8 @@ void BrEdrConnection::ValidateEncryptionKeySize(
              self->handle(),
              key_size);
 
+      self->encryption_key_size_ = key_size;
+
       if (key_size < hci_spec::kMinEncryptionKeySize) {
         bt_log(WARN,
                "hci",

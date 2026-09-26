@@ -1847,5 +1847,33 @@ TEST_F(PeerTest, DowngradingLowEnergyBondFails) {
             secure_data.peer_ltk->key().value());
 }
 
+TEST_F(PeerTest, UpdateBondSecurityPropertiesPreventsDowngrade) {
+  // Initialize BrEdrData and set strong bond data.
+  EXPECT_TRUE(peer().MutBrEdr().SetBondData(kSecureBrEdrKey));
+  ASSERT_TRUE(peer().bredr()->bonded());
+  ASSERT_TRUE(peer().bredr()->link_key().has_value());
+  EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
+
+  // Try to update with weaker security properties.
+  EXPECT_FALSE(peer().MutBrEdr().UpdateBondSecurityProperties(kLessSecureBrEdrKey.security()));
+
+  // Verify that security properties were NOT downgraded.
+  EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
+}
+
+TEST_F(PeerTest, UpdateBondSecurityPropertiesSucceeds) {
+  // Initialize BrEdrData and set weak bond data.
+  EXPECT_TRUE(peer().MutBrEdr().SetBondData(kLessSecureBrEdrKey));
+  ASSERT_TRUE(peer().bredr()->bonded());
+  ASSERT_TRUE(peer().bredr()->link_key().has_value());
+  EXPECT_FALSE(peer().bredr()->link_key()->security().secure_connections());
+
+  // Try to update with stronger security properties.
+  EXPECT_TRUE(peer().MutBrEdr().UpdateBondSecurityProperties(kSecureBrEdrKey.security()));
+
+  // Verify that security properties WERE updated.
+  EXPECT_TRUE(peer().bredr()->link_key()->security().secure_connections());
+}
+
 }  // namespace
 }  // namespace bt::gap

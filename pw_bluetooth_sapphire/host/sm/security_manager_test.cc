@@ -4165,6 +4165,7 @@ TEST_F(SecurityManagerTest, BrEdrResponderCtkdH7NoKeysToDistributeSuccess) {
   bredr_link()->set_link_key(
       hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
       hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(7);
 
   PairingRequestParams preq;
   preq.io_capability = IOCapability::kNoInputNoOutput;
@@ -4195,6 +4196,7 @@ TEST_F(SecurityManagerTest, BrEdrResponderCtkdH7NoKeysToDistributeSuccess) {
   EXPECT_EQ(pairing_data().local_ltk->key().value(), kExpectedLtkBytesH7);
   EXPECT_EQ(pairing_data().local_ltk->security().GetLinkKeyType(),
             hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  EXPECT_EQ(pairing_data().local_ltk->security().enc_key_size(), 7u);
   EXPECT_FALSE(peer().MutBrEdr().is_pairing());
 }
 
@@ -4205,6 +4207,7 @@ TEST_F(SecurityManagerTest, BrEdrResponderCtkdH7DistributeIdKeysSuccess) {
   bredr_link()->set_link_key(
       hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
       hci_spec::LinkKeyType::kAuthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
 
   IdentityInfo local_id_info;
   local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
@@ -4267,6 +4270,7 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorCtkdH7NoKeysToDistributeSuccess) {
   bredr_link()->set_link_key(
       hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
       hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
 
   // Phase 1
   std::optional<Result<>> ctkd_result;
@@ -4315,6 +4319,7 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorCtkdH7DistributeIdKeysSuccess) {
   bredr_link()->set_link_key(
       hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
       hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
 
   IdentityInfo local_id_info;
   local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
@@ -4576,6 +4581,39 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorLELtkStrongerThanLinkKeyFailure) {
   EXPECT_TRUE(ctkd_result->error_value().is(HostError::kInsufficientSecurity));
 }
 
+TEST_F(SecurityManagerTest, BrEdrInitiatorLinkKeyWeakKeySizeFailure) {
+  NewBrEdrSecurityManager(Role::kInitiator);
+  bredr_link()->StartEncryption(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+
+  // The BR/EDR link key is authenticated and secure connections (256).
+  bredr_link()->set_link_key(
+      hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
+      hci_spec::LinkKeyType::kAuthenticatedCombination256);
+
+  // But we set a weak key size on the link...
+  bredr_link()->set_encryption_key_size(kMaxEncryptionKeySize - 1);
+
+  sm::PairingData pairing_data;
+  // The LE LTK has full key size (16).
+  pairing_data.local_ltk = kAuthenticatedSecureKey;
+  pairing_data.peer_ltk = kAuthenticatedSecureKey;
+  EXPECT_TRUE(peer().MutLe().SetBondData(pairing_data));
+
+  std::optional<Result<>> ctkd_result;
+  auto ctkd_cb = [&ctkd_result](Result<> result) { ctkd_result = result; };
+  pairing()->InitiateBrEdrCrossTransportKeyDerivation(std::move(ctkd_cb));
+  RunUntilIdle();
+
+  // It should fail because the BR/EDR link is not as secure as the LE link
+  // (due to key size).
+  EXPECT_EQ(0, pairing_request_count());
+  EXPECT_FALSE(peer().MutBrEdr().is_pairing());
+  ASSERT_TRUE(ctkd_result.has_value());
+  ASSERT_TRUE(ctkd_result->is_error());
+  EXPECT_TRUE(ctkd_result->error_value().is(HostError::kInsufficientSecurity));
+}
+
 TEST_F(SecurityManagerTest, BrEdrInitiatorSecurityRequestNotSupported) {
   NewBrEdrSecurityManager(Role::kInitiator);
   ReceiveSecurityRequest();
@@ -4591,6 +4629,7 @@ TEST_F(SecurityManagerTest, BrEdrInitiatorPeerDoesNotWantToDoCtkd) {
   bredr_link()->set_link_key(
       hci_spec::LinkKey(kLinkKeyBytes, 0, 0),
       hci_spec::LinkKeyType::kUnauthenticatedCombination256);
+  bredr_link()->set_encryption_key_size(16);
 
   IdentityInfo local_id_info;
   local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};

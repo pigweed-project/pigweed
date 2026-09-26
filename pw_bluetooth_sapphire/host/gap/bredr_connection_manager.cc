@@ -1593,8 +1593,11 @@ BrEdrConnectionManager::OnLinkKeyNotification(const hci::EventPacket& event) {
     key_type =
         static_cast<pw::bluetooth::emboss::KeyType>(sec_props.GetLinkKeyType());
   } else {
+    // Initialize SecurityProperties with a key length of 0 as the key length
+    // is not provided in the Link Key Notification event. The key length will
+    // be updated when the key is stored in the cache.
     sec_props =
-        sm::SecurityProperties(static_cast<hci_spec::LinkKeyType>(key_type));
+        sm::SecurityProperties(static_cast<hci_spec::LinkKeyType>(key_type), 0);
   }
 
   auto peer_id = peer->identifier();

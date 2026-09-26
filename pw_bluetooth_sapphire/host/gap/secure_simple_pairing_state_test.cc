@@ -1856,7 +1856,8 @@ TEST_P(HandlesEvent, InInitiatorWaitIoCapRequest) {
 
 TEST_P(HandlesEvent, InInitiatorWaitAuthCompleteSkippingSimplePairing) {
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   // Advance state machine.
@@ -2169,8 +2170,10 @@ TEST_P(HandlesEvent, InWaitEncryptionStateAsResponder) {
 
 TEST_P(HandlesEvent, InWaitEncryptionStateAsResponderForBonded) {
   // We are previously bonded.
-  auto existing_link_key = sm::LTK(
-      sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192), kTestLinkKey);
+  auto existing_link_key =
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey);
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(existing_link_key));
 
   // Advance state machine.
@@ -2567,6 +2570,7 @@ TEST_F(PairingStateTest, SkipPairingIfExistingKeyMeetsSecurityRequirements) {
       dispatcher());
 
   connection()->set_link_key(kTestLinkKey, kTestAuthenticatedLinkKeyType192);
+  connection()->set_encryption_key_size(16);
 
   constexpr BrEdrSecurityRequirements kSecurityRequirements{
       .authentication = true, .secure_connections = false};
@@ -2578,6 +2582,37 @@ TEST_F(PairingStateTest, SkipPairingIfExistingKeyMeetsSecurityRequirements) {
   EXPECT_EQ(0, status_handler.call_count());
   ASSERT_EQ(1, initiator_status_handler.call_count());
   EXPECT_EQ(fit::ok(), *initiator_status_handler.status());
+}
+
+TEST_F(PairingStateTest, DoNotSkipPairingIfExistingKeyIsWeak) {
+  NoOpPairingDelegate pairing_delegate(sm::IOCapability::kNoInputNoOutput);
+
+  TestStatusHandler status_handler;
+  TestStatusHandler initiator_status_handler;
+
+  SecureSimplePairingState pairing_state(
+      peer()->GetWeakPtr(),
+      pairing_delegate.GetWeakPtr(),
+      connection()->GetWeakPtr(),
+      /*outgoing_connection=*/false,
+      MakeAuthRequestCallback(),
+      status_handler.MakeStatusCallback(),
+      /*low_energy_address_delegate=*/this,
+      /*controller_remote_public_key_validation_supported=*/true,
+      sm_factory_func(),
+      dispatcher());
+
+  connection()->set_link_key(
+      kTestLinkKey, hci_spec::LinkKeyType::kAuthenticatedCombination256);
+  connection()->set_encryption_key_size(7);
+
+  constexpr BrEdrSecurityRequirements kSecurityRequirements{
+      .authentication = false, .secure_connections = true};
+  pairing_state.InitiatePairing(kSecurityRequirements,
+                                initiator_status_handler.MakeStatusCallback());
+  EXPECT_EQ(1u, auth_request_count());
+  EXPECT_TRUE(pairing_state.initiator());
+  EXPECT_EQ(0, initiator_status_handler.call_count());
 }
 
 TEST_F(
@@ -2604,7 +2639,8 @@ TEST_F(
   pairing_state.InitiatePairing(security, status_handler.MakeStatusCallback());
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   EXPECT_EQ(std::nullopt, pairing_state.OnLinkKeyRequest());
@@ -2633,7 +2669,8 @@ TEST_F(
   pairing_state.InitiatePairing(kNoSecurityRequirements, NoOpStatusCallback);
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
   EXPECT_FALSE(connection()->ltk().has_value());
 
@@ -2688,7 +2725,8 @@ TEST_F(PairingStateTest,
       dispatcher());
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
   EXPECT_FALSE(connection()->ltk().has_value());
 
@@ -2829,8 +2867,10 @@ TEST_F(
       sm_factory_func(),
       dispatcher());
 
-  auto existing_link_key = sm::LTK(
-      sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192), kTestLinkKey);
+  auto existing_link_key =
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey);
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(existing_link_key));
   EXPECT_FALSE(connection()->ltk().has_value());
@@ -2906,8 +2946,10 @@ TEST_F(PairingStateTest, ResponderSignalsCompletionOfPairing) {
   EXPECT_FALSE(pairing_state.initiator());
   EXPECT_FALSE(peer()->MutBrEdr().is_pairing());
 
-  auto existing_link_key = sm::LTK(
-      sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192), kTestLinkKey);
+  auto existing_link_key =
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey);
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(existing_link_key));
   EXPECT_FALSE(connection()->ltk().has_value());
@@ -2960,8 +3002,10 @@ TEST_F(
       sm_factory_func(),
       dispatcher());
 
-  auto existing_link_key = sm::LTK(
-      sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192), kTestLinkKey);
+  auto existing_link_key =
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
+              kTestLinkKey);
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(existing_link_key));
   EXPECT_FALSE(connection()->ltk().has_value());
@@ -3208,7 +3252,8 @@ TEST_F(
       dispatcher());
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   TestStatusHandler initiator_status_handler_0;
@@ -3382,7 +3427,8 @@ TEST_F(PairingStateTest,
   ASSERT_EQ(connection()->role(),
             pw::bluetooth::emboss::ConnectionRole::CENTRAL);
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType256),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType256,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   EXPECT_FALSE(peer()->le());
@@ -3631,7 +3677,8 @@ TEST_F(PairingStateTest,
   EXPECT_EQ(auth_request_count(), 0u);
 
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   static_cast<void>(pairing_state.OnLinkKeyRequest());
@@ -3709,7 +3756,8 @@ TEST_F(PairingStateTest, TransactionCollision) {
                                 status_handler.MakeStatusCallback());
   RunUntilIdle();
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   static_cast<void>(pairing_state.OnLinkKeyRequest());
@@ -3750,7 +3798,8 @@ TEST_F(PairingStateTest, DifferentTransactionCollisionAsCentral) {
                                 status_handler.MakeStatusCallback());
   RunUntilIdle();
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   static_cast<void>(pairing_state.OnLinkKeyRequest());
@@ -3796,7 +3845,8 @@ TEST_F(PairingStateTest, DifferentTransactionCollisionAsPeripheral) {
                                 status_handler.MakeStatusCallback());
   RunUntilIdle();
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   static_cast<void>(pairing_state.OnLinkKeyRequest());
@@ -3843,7 +3893,8 @@ TEST_F(PairingStateTest,
                                 status_handler.MakeStatusCallback());
   RunUntilIdle();
   EXPECT_TRUE(peer()->MutBrEdr().SetBondData(
-      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192),
+      sm::LTK(sm::SecurityProperties(kTestUnauthenticatedLinkKeyType192,
+                                     sm::kMaxEncryptionKeySize),
               kTestLinkKey)));
 
   static_cast<void>(pairing_state.OnLinkKeyRequest());

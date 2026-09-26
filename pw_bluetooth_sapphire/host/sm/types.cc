@@ -100,11 +100,12 @@ SecurityProperties::SecurityProperties(SecurityLevel level,
 // All BR/EDR link keys, even those from legacy pairing or based on 192-bit EC
 // points, are stored in 128 bits, according to Core Spec v5.0, Vol 2, Part H
 // Section 3.1 "Key Types."
-SecurityProperties::SecurityProperties(hci_spec::LinkKeyType lk_type)
+SecurityProperties::SecurityProperties(hci_spec::LinkKeyType lk_type,
+                                       std::optional<size_t> enc_key_size)
     : SecurityProperties(IsEncryptedKey(lk_type),
                          IsAuthenticatedKey(lk_type),
                          IsSecureConnectionsKey(lk_type),
-                         kMaxEncryptionKeySize) {
+                         enc_key_size.value_or(0)) {
   PW_DCHECK(lk_type != hci_spec::LinkKeyType::kChangedCombination,
             "Can't infer security information from a Changed Combination Key");
 }

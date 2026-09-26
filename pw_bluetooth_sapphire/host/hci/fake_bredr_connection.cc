@@ -16,7 +16,11 @@
 
 #include <pw_assert/check.h>
 
+#include <cstdint>
+
 namespace bt::hci::testing {
+
+constexpr uint8_t kMaxEncryptionKeySize = 16;
 
 FakeBrEdrConnection::FakeBrEdrConnection(
     hci_spec::ConnectionHandle handle,
@@ -31,6 +35,9 @@ FakeBrEdrConnection::FakeBrEdrConnection(
 void FakeBrEdrConnection::TriggerEncryptionChangeCallback(
     hci::Result<bool> result) {
   PW_CHECK(encryption_change_callback());
+  if (result.is_ok() && result.value() && !encryption_key_size().has_value()) {
+    set_encryption_key_size(kMaxEncryptionKeySize);
+  }
   encryption_change_callback()(result);
 }
 

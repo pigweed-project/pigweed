@@ -777,8 +777,14 @@ void SecurityManagerImpl::OnFeatureExchange(PairingFeatures features,
     // We checked the ltk before Phase1.
     PW_CHECK(bredr_link_->ltk().has_value());
     // Phase3 needs to know the security properties.
+    std::optional<uint8_t> key_size = bredr_link_->encryption_key_size();
+    if (!key_size.has_value()) {
+      bt_log(ERROR, "sm", "encryption key size unknown in OnFeatureExchange");
+      Abort(ErrorCode::kUnspecifiedReason);
+      return;
+    }
     SecurityProperties bredr_security_properties(
-        bredr_link_->ltk_type().value());
+        bredr_link_->ltk_type().value(), key_size.value());
 
     current_phase_.emplace<Phase3>(
         sm_chan_->GetWeakPtr(),
@@ -1114,7 +1120,19 @@ void SecurityManagerImpl::OnBrEdrPairingComplete(PairingData pairing_data) {
       bredr_link_->ltk()->value(), features_->generate_ct_key.value());
   if (ct_key_value) {
     // The LE LTK will have the same security properties as the BR/EDR key.
-    SecurityProperties bredr_properties(bredr_link_->ltk_type().value());
+    std::optional<uint8_t> key_size = bredr_link_->encryption_key_size();
+    if (!key_size.has_value()) {
+      bt_log(
+          ERROR, "sm", "encryption key size unknown in OnBrEdrPairingComplete");
+      if (bredr_cross_transport_key_derivation_callback_) {
+        bredr_cross_transport_key_derivation_callback_(
+            ToResult(HostError::kFailed));
+      }
+      ResetState();
+      return;
+    }
+    SecurityProperties bredr_properties(bredr_link_->ltk_type().value(),
+                                        key_size.value());
     sm::LTK le_ltk =
         sm::LTK(bredr_properties, hci_spec::LinkKey(*ct_key_value, 0, 0));
     pairing_data.local_ltk = le_ltk;
@@ -1526,7 +1544,13 @@ bool SecurityManagerImpl::IsBrEdrCrossTransportKeyDerivationAllowed() {
 
   // Do not derive LE LTK if existing LE LTK is stronger than current
   // BR/EDR link key.
-  SecurityProperties bredr_security_props(bredr_link_->ltk_type().value());
+  std::optional<uint8_t> key_size = bredr_link_->encryption_key_size();
+  if (!key_size.has_value()) {
+    bt_log(DEBUG, "sm", "%s: encryption key size unknown", __FUNCTION__);
+    return false;
+  }
+  SecurityProperties bredr_security_props(bredr_link_->ltk_type().value(),
+                                          key_size.value());
   if (peer_->le() && peer_->le()->bond_data()) {
     const auto& bond_data = peer_->le()->bond_data().value();
     if (bond_data.local_ltk &&

@@ -115,7 +115,8 @@ const hci_spec::LinkKey kLegacyKey({0x41,
                                    0,
                                    0);
 const sm::LTK kLinkKey(
-    sm::SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192),
+    sm::SecurityProperties(hci_spec::LinkKeyType::kAuthenticatedCombination192,
+                           sm::kMaxEncryptionKeySize),
     kRawKey);
 const bt::sm::LTK kLELtk(sm::SecurityProperties(/*encrypted=*/true,
                                                 /*authenticated=*/true,
@@ -5962,6 +5963,108 @@ TEST_F(BrEdrConnectionManagerTest, RemoteDisconnectDuringCtkd) {
   RunUntilIdle();
 
   EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
+}
+
+// Active connections that do not meet the requirements for Secure
+// Connections Only mode due to small encryption key size are disconnected
+// when the security mode is changed to SC Only.
+TEST_F(BrEdrConnectionManagerTest, SecureConnectionsOnlyRejectsWeakKeySize) {
+  QueueSuccessfulIncomingConn();
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+  EXPECT_EQ(kIncomingConnTransactions, transaction_count());
+  auto* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bonded());
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  // Approve pairing requests.
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, auto, auto confirm_cb) {
+        ASSERT_TRUE(confirm_cb);
+        confirm_cb(true);
+      });
+
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  // Custom QueueSuccessfulPairing with small key size response.
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kAuthenticationRequested,
+                        &kAuthenticationRequestedStatus,
+                        &kLinkKeyRequest);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kLinkKeyRequestNegativeReply,
+                        &kLinkKeyRequestNegativeReplyRsp,
+                        &kIoCapabilityRequest);
+  const auto kIoCapabilityResponse = MakeIoCapabilityResponse(
+      IoCapability::DISPLAY_YES_NO,
+      AuthenticationRequirements::MITM_GENERAL_BONDING);
+  const auto kUserConfirmationRequest = MakeUserConfirmationRequest(kPasskey);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        MakeIoCapabilityRequestReply(
+                            IoCapability::DISPLAY_YES_NO,
+                            AuthenticationRequirements::MITM_GENERAL_BONDING),
+                        &kIoCapabilityRequestReplyRsp,
+                        &kIoCapabilityResponse,
+                        &kUserConfirmationRequest);
+  const auto kLinkKeyNotificationWithKeyType = MakeLinkKeyNotification(
+      hci_spec::LinkKeyType::kAuthenticatedCombination256);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kUserConfirmationRequestReply,
+                        &kUserConfirmationRequestReplyRsp,
+                        &kSimplePairingCompleteSuccess,
+                        &kLinkKeyNotificationWithKeyType,
+                        &kAuthenticationComplete);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        kSetConnectionEncryption,
+                        &kSetConnectionEncryptionRsp,
+                        &kEncryptionChangeEvent);
+
+  // Mock key size 8 response.
+  const StaticByteBuffer kReadEncryptionKeySizeRspSmall(
+      hci_spec::kCommandCompleteEventCode,
+      0x07,  // parameters total size
+      0xFF,  // num command packets allowed (255)
+      LowerBits(hci_spec::kReadEncryptionKeySize),
+      UpperBits(hci_spec::kReadEncryptionKeySize),
+      pw::bluetooth::emboss::StatusCode::SUCCESS,  // status
+      0xAA,
+      0x0B,  // connection handle
+      0x08   // encryption key size: 8
+  );
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySize, &kReadEncryptionKeySizeRspSmall);
+
+  // Initialize as error to verify that |pairing_complete_cb| assigns success.
+  hci::Result<> pairing_status = ToResult(HostError::kInsufficientSecurity);
+  auto pairing_complete_cb = [&pairing_status](hci::Result<> status) {
+    ASSERT_EQ(fit::ok(), status);
+    pairing_status = status;
+  };
+
+  connmgr()->Pair(
+      peer->identifier(), kNoSecurityRequirements, pairing_complete_cb);
+  ASSERT_TRUE(IsInitializing(peer));
+  ASSERT_FALSE(peer->bonded());
+  RunUntilIdle();
+
+  ASSERT_EQ(fit::ok(), pairing_status);
+  ASSERT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(peer->bonded());
+
+  // Setting Secure Connections Only mode causes connections not allowed under
+  // this mode to be disconnected. In this case, |peer| is encrypted,
+  // authenticated, and SC-generated, BUT has a weak key size (8).
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnect);
+  connmgr()->SetSecurityMode(BrEdrSecurityMode::SecureConnectionsOnly);
+  RunUntilIdle();
+  EXPECT_EQ(BrEdrSecurityMode::SecureConnectionsOnly,
+            connmgr()->security_mode());
+  ASSERT_TRUE(IsNotConnected(peer));
 }
 
 #undef COMMAND_COMPLETE_RSP
