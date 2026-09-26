@@ -680,5 +680,90 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
   EXPECT_TRUE(connection_failed);
 }
 
+TEST(EnhancedRetransmissionModeRxEngineTest, DestructEngineInAckCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto tx_callback = [](auto) {};
+  auto ack_callback = [&](uint8_t) { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(tx_callback, NoOpFailureCallback);
+  rx_engine->set_ack_seq_num_callback(ack_callback);
+
+  // Send an I-frame to trigger ack_seq_num_callback.
+  const StaticByteBuffer info_frame(0, 0, 'h', 'e', 'l', 'l', 'o');
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        info_frame,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInRemoteBusySetCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto remote_busy_set_callback = [&] { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine->set_remote_busy_set_callback(remote_busy_set_callback);
+
+  // Send RNR S-frame to trigger remote_busy_set_callback.
+  const StaticByteBuffer receiver_not_ready(
+      0b1 | kExtendedControlReceiverNotReadyBits, 0);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        receiver_not_ready,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInRemoteBusyClearedCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto remote_busy_cleared_callback = [&] { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine->set_remote_busy_cleared_callback(remote_busy_cleared_callback);
+
+  // First set remote busy.
+  const StaticByteBuffer receiver_not_ready(
+      0b1 | kExtendedControlReceiverNotReadyBits, 0);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        receiver_not_ready,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+
+  // Now clear it with RR.
+  const StaticByteBuffer receiver_ready(0b1, 0);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        receiver_ready,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInRangeRetransmitSetCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto range_retransmit_set_callback = [&](bool) { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine->set_range_retransmit_set_callback(range_retransmit_set_callback);
+
+  // Send REJ S-frame to trigger range_retransmit_set_callback.
+  auto rej_frame = StaticByteBuffer(0b1 | kExtendedControlRejectBits, 3);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        rej_frame,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInSingleRetransmitSetCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto single_retransmit_set_callback = [&](bool) { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(NoOpTxCallback, NoOpFailureCallback);
+  rx_engine->set_single_retransmit_set_callback(single_retransmit_set_callback);
+
+  // Send SREJ S-frame to trigger single_retransmit_set_callback.
+  auto srej_frame =
+      StaticByteBuffer(0b1 | kExtendedControlSelectiveRejectBits, 3);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        srej_frame,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

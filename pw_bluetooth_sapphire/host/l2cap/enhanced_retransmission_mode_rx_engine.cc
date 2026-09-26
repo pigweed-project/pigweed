@@ -157,16 +157,26 @@ ByteBufferPtr Engine::ProcessFrame(const SimpleInformationFrameHeader header,
     return nullptr;
   }
 
+  auto self = weak_factory_.GetWeakPtr();
+
   AdvanceSeqNum();
 
   if (ack_seq_num_callback_) {
     ack_seq_num_callback_(next_seqnum_);
   }
 
+  if (!self.is_alive()) {
+    return nullptr;
+  }
+
   SimpleReceiverReadyFrame ack_frame;
   ack_frame.set_receive_seq_num(next_seqnum_);
   send_frame_callback_(std::make_unique<DynamicByteBuffer>(
       BufferView(&ack_frame, sizeof(ack_frame))));
+
+  if (!self.is_alive()) {
+    return nullptr;
+  }
 
   const auto header_len = sizeof(header);
   const auto footer_len = sizeof(FrameCheckSequence);
@@ -192,6 +202,8 @@ ByteBufferPtr Engine::ProcessFrame(const SimpleSupervisoryFrame sframe, PDU) {
     return nullptr;
   }
 
+  auto self = weak_factory_.GetWeakPtr();
+
   // Signal changes to our RemoteBusy variable per Core Spec v5.0, Vol 3, Part
   // A, Sec 8.6.5.6.
   const bool remote_is_busy =
@@ -205,6 +217,11 @@ ByteBufferPtr Engine::ProcessFrame(const SimpleSupervisoryFrame sframe, PDU) {
       remote_busy_cleared_callback_();
     }
   }
+
+  if (!self.is_alive()) {
+    return nullptr;
+  }
+
   remote_is_busy_ = remote_is_busy;
 
   // Implements the "Send RRorRNR (F=1)" action of Core Spec, v5, Vol 3, Part A,
@@ -240,6 +257,10 @@ ByteBufferPtr Engine::ProcessFrame(const SimpleSupervisoryFrame sframe, PDU) {
     if (range_retransmit_set_callback_) {
       range_retransmit_set_callback_(sframe.is_poll_request());
     }
+  }
+
+  if (!self.is_alive()) {
+    return nullptr;
   }
 
   // SREJ S-Frames will still result in forwarding the acknowledgment via
