@@ -198,7 +198,10 @@ ByteBufferPtr Engine::ProcessFrame(const SimpleSupervisoryFrame sframe, PDU) {
   // Core Spec v5, Vol 3, Part A, Sec 8.6.1.5: "S-Frames shall not be
   // transmitted with both the F-bit and the P-bit set to 1 at the same time."
   if (sframe.is_poll_request() && sframe.is_poll_response()) {
-    connection_failure_callback_();
+    if (connection_failure_callback_) {
+      auto cb = std::move(connection_failure_callback_);
+      cb();
+    }
     return nullptr;
   }
 

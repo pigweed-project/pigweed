@@ -117,7 +117,7 @@ class EnhancedRetransmissionModeRxEngine final : public RxEngine {
   SendFrameCallback send_frame_callback_;
 
   // Invoked when the connection encounters a fatal error.
-  const ConnectionFailureCallback connection_failure_callback_;
+  ConnectionFailureCallback connection_failure_callback_;
   // TODO(fxbug.dev/42129869): Refactor these delegates into a single interface
   // for TxEngine to implement.
   ReceiveSeqNumCallback receive_seq_num_callback_;

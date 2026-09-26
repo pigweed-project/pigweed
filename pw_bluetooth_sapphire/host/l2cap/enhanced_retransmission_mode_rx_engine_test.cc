@@ -765,5 +765,20 @@ TEST(EnhancedRetransmissionModeRxEngineTest,
                                         FrameCheckSequenceOption::kIncludeFcs));
 }
 
+TEST(EnhancedRetransmissionModeRxEngineTest,
+     DestructEngineInConnectionFailureCallback) {
+  std::unique_ptr<Engine> rx_engine;
+  auto connection_failure_cb = [&] { rx_engine.reset(); };
+  rx_engine = std::make_unique<Engine>(NoOpTxCallback, connection_failure_cb);
+
+  // Send an S-frame with both poll request and response bits set.
+  auto rr_frame = StaticByteBuffer(
+      0b1 | kExtendedControlFBitMask | kExtendedControlPBitMask, 0);
+  rx_engine->ProcessPdu(Fragmenter(kTestHandle)
+                            .BuildFrame(kTestChannelId,
+                                        rr_frame,
+                                        FrameCheckSequenceOption::kIncludeFcs));
+}
+
 }  // namespace
 }  // namespace bt::l2cap::internal

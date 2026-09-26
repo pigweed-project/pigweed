@@ -214,7 +214,7 @@ class EnhancedRetransmissionModeTxEngine final : public TxEngine {
   const uint8_t n_frames_in_tx_window_;
 
   // Invoked when the connection encounters a fatal error.
-  const ConnectionFailureCallback connection_failure_callback_;
+  ConnectionFailureCallback connection_failure_callback_;
 
   // The sequence number we expect in the next acknowledgement from our peer.
   //

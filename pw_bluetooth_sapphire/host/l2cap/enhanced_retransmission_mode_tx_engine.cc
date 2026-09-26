@@ -77,7 +77,10 @@ Engine::EnhancedRetransmissionModeTxEngine(
           SendReceiverReadyPoll();
           StartMonitorTimer();
         } else {
-          connection_failure_callback_();  // May invalidate |self|.
+          if (connection_failure_callback_) {
+            auto cb = std::move(connection_failure_callback_);
+            cb();
+          }
         }
       });
 }
@@ -150,7 +153,10 @@ void Engine::UpdateAckSeq(uint8_t new_seq, bool is_poll_response) {
            "pending",
            n_frames_acked,
            NumUnackedFrames());
-    connection_failure_callback_();  // May invalidate |self|.
+    if (connection_failure_callback_) {
+      auto cb = std::move(connection_failure_callback_);
+      cb();
+    }
     return;
   }
 
@@ -438,7 +444,10 @@ bool Engine::RetransmitUnackedData(std::optional<uint8_t> only_with_seq,
                "%hhu != %hhu",
                cur_frame->tx_count,
                max_transmissions_);
-      connection_failure_callback_();
+      if (connection_failure_callback_) {
+        auto cb = std::move(connection_failure_callback_);
+        cb();
+      }
       return false;
     }
 
