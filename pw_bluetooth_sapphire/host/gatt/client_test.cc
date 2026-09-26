@@ -105,6 +105,7 @@ class ClientTest : public l2cap::testing::MockChannelTest {
 
   att::Bearer* att() const { return att_.get(); }
   Client* client() const { return client_.get(); }
+  void DestroyClient() { client_ = nullptr; }
 
  private:
   std::unique_ptr<att::Bearer> att_;
@@ -3283,6 +3284,100 @@ TEST_F(ClientTest, ExecutePrepareWritesReliableOffsetMismatchError) {
   EXPECT_PACKET_OUT(kExpectedExec, &kExecResponse);
   RunUntilIdle();
   EXPECT_EQ(ToResult(HostError::kNotReliable), status);
+  EXPECT_FALSE(fake_chan()->link_error());
+}
+
+TEST_F(ClientTest, ExecutePrepareWritesDestroyClientInCallback) {
+  const auto kHandle = 0x0001;
+  const auto kOffset = 0;
+  const StaticByteBuffer kValue1('f', 'o', 'o');
+
+  const StaticByteBuffer kExpectedPrep1(0x16,  // prepare write request
+                                        0x01,
+                                        0x00,  // handle
+                                        0x00,
+                                        0x00,  // offset
+                                        'f',
+                                        'o',
+                                        'o');
+  const auto kResponse1 = StaticByteBuffer(0x17,  // prepare write response
+                                           0x01,
+                                           0x00,  // handle
+                                           0x00,
+                                           0x00,  // offset
+                                           'f',
+                                           'o',
+                                           'o');
+  const StaticByteBuffer kExpectedExec(0x18,  // execute write request
+                                       0x01   // flag: write pending
+  );
+  const StaticByteBuffer kExecResponse(0x19);  // execute write response
+
+  bool cb_called = false;
+  auto cb = [&](att::Result<> cb_status) {
+    cb_called = true;
+    EXPECT_EQ(fit::ok(), cb_status);
+    DestroyClient();
+  };
+
+  att::PrepareWriteQueue prep_write_queue;
+  prep_write_queue.push(att::QueuedWrite(kHandle, kOffset, kValue1));
+
+  EXPECT_PACKET_OUT(kExpectedPrep1, &kResponse1);
+  EXPECT_PACKET_OUT(kExpectedExec, &kExecResponse);
+
+  client()->ExecutePrepareWrites(
+      std::move(prep_write_queue), ReliableMode::kDisabled, std::move(cb));
+
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(fake_chan()->link_error());
+}
+
+TEST_F(ClientTest, ExecutePrepareWritesErrorFailureDestroyClientInCallback) {
+  const auto kHandle = 0x0001;
+  const auto kOffset = 0;
+  const StaticByteBuffer kValue1('f', 'o', 'o');
+
+  const StaticByteBuffer kExpectedPrep1(0x16,  // prepare write request
+                                        0x01,
+                                        0x00,  // handle
+                                        0x00,
+                                        0x00,  // offset
+                                        'f',
+                                        'o',
+                                        'o');
+  const auto kResponse1 = StaticByteBuffer(0x01,  // error response
+                                           0x16,  // request: prepare write
+                                           0x01,
+                                           0x00,  // handle
+                                           0x06  // error: Request Not Supported
+  );
+  const StaticByteBuffer kExpectedExec(0x18,  // execute write request
+                                       0x00   // flag: kCancelAll
+  );
+  const StaticByteBuffer kExecResponse(0x19);  // execute write response
+
+  bool cb_called = false;
+  auto cb = [&](att::Result<> cb_status) {
+    cb_called = true;
+    EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), cb_status);
+    DestroyClient();
+  };
+
+  att::PrepareWriteQueue prep_write_queue;
+  prep_write_queue.push(att::QueuedWrite(kHandle, kOffset, kValue1));
+
+  EXPECT_PACKET_OUT(kExpectedPrep1, &kResponse1);
+  EXPECT_PACKET_OUT(kExpectedExec, &kExecResponse);
+
+  client()->ExecutePrepareWrites(
+      std::move(prep_write_queue), ReliableMode::kDisabled, std::move(cb));
+
+  RunUntilIdle();
+  EXPECT_TRUE(cb_called);
+  EXPECT_TRUE(AllExpectedPacketsSent());
   EXPECT_FALSE(fake_chan()->link_error());
 }
 

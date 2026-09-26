@@ -1110,12 +1110,16 @@ class Impl final : public Client {
 
         if (status.is_error()) {
           auto exec_write_cb = [this,
+                                self = weak_self_.GetWeakPtr(),
                                 callback = std::move(prep_write.callback),
                                 prep_write_status =
                                     status](att::Result<>) mutable {
             // In this case return the original failure status. This
             // effectively overrides the ExecuteWrite status.
             callback(prep_write_status);
+            if (!self.is_alive()) {
+              return;
+            }
             // Now that this request is complete, remove it from the overall
             // queue.
             PW_DCHECK(!long_write_queue_.empty());
@@ -1143,9 +1147,13 @@ class Impl final : public Client {
     // End of this write, send and prepare for next item in overall write queue
     else {
       auto exec_write_cb = [this,
+                            self = weak_self_.GetWeakPtr(),
                             callback = std::move(prepared_write.callback)](
                                att::Result<> status) mutable {
         callback(status);
+        if (!self.is_alive()) {
+          return;
+        }
         // Now that this request is complete, remove it from the overall
         // queue.
         PW_DCHECK(!long_write_queue_.empty());
