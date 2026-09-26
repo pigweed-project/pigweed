@@ -2069,6 +2069,8 @@ void AdapterImpl::CleanUp() {
   le_address_manager_ = nullptr;
 
   l2cap_ = nullptr;
+  bredr_connection_manager_ = nullptr;
+  periodic_advertising_sync_manager_.reset();
 
   hci_.reset();
 }

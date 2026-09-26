@@ -372,6 +372,36 @@ TEST_F(AdapterTest, ShutDownDuringInitialize) {
   RunUntilIdle();
 }
 
+// Tests that receiving a command complete packet after shutdown doesn't
+// actually get delivered to BR/EDR connection manager.
+TEST_F(AdapterTest, BredrCallbackAfterShutDown) {
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  ASSERT_TRUE(EnsureInitialized());
+  ASSERT_TRUE(adapter()->bredr());
+
+  auto fake_peer =
+      std::make_unique<FakePeer>(kTestAddrBrEdr, dispatcher(), true, true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  adapter()->ShutDown();
+  // Any events should not get delivered to the BR/EDR connection manager
+
+  test_device()->SetDefaultCommandStatus(
+      hci_spec::kAcceptConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  test_device()->SendConnectionRequest(kTestAddrBrEdr,
+                                       pw::bluetooth::emboss::LinkType::ACL);
+  RunUntilIdle();
+
+  DynamicByteBuffer conn_complete = testing::ConnectionCompletePacket(
+      kTestAddrBrEdr, 0x0001, pw::bluetooth::emboss::StatusCode::SUCCESS);
+  test_device()->SendCommandChannelPacket(conn_complete);
+  RunUntilIdle();
+}
+
 TEST_F(AdapterTest, SetNameError) {
   std::string kNewName = "something";
 
