@@ -76,7 +76,9 @@ class GattTest : public pw::async::test::FakeDispatcherFixture {
   void TearDown() override {
     // Clear any previous expectations that are based on the ATT Write Request,
     // so that write requests sent during RemoteService::ShutDown() are ignored.
-    fake_client()->set_write_request_callback({});
+    if (fake_client_weak_.is_alive()) {
+      fake_client()->set_write_request_callback({});
+    }
     gatt_.reset();
   }
 
@@ -797,6 +799,68 @@ TEST_F(GattIndicateMultipleConnectedPeersTest,
   // again with success.
   indication_ack_cb_1_(fit::ok());
   EXPECT_EQ(ToResult(att::ErrorCode::kRequestNotSupported), res);
+}
+
+TEST_F(GattTest, RemoveConnectionInsideValueCallback) {
+  const att::Handle kSvcStart = 1;
+  const att::Handle kChrDecl = 2;
+  const att::Handle kChrValue = 3;
+  const att::Handle kSvcEnd = 3;
+  const CharacteristicHandle kChrHandle(kChrValue);
+  const UUID kPocSvcUuid(uint16_t{0xdead});
+  const UUID kPocChrUuid(uint16_t{0xbeef});
+
+  ServiceData svc(ServiceKind::PRIMARY, kSvcStart, kSvcEnd, kPocSvcUuid);
+  CharacteristicData chr(
+      Property::kNotify, std::nullopt, kChrDecl, kChrValue, kPocChrUuid);
+  fake_client()->set_services({svc});
+  fake_client()->set_characteristics({chr});
+
+  RemoteService::WeakPtr remote_svc;
+  gatt()->RegisterRemoteServiceWatcherForPeer(
+      kPeerId, [&](auto /*removed*/, ServiceList added, auto /*modified*/) {
+        for (auto& s : added) {
+          if (s->uuid() == kPocSvcUuid) {
+            remote_svc = s;
+          }
+        }
+      });
+
+  gatt()->AddConnection(kPeerId, take_client(), CreateMockServer);
+  gatt()->InitializeClient(kPeerId, /*services_to_discover=*/{});
+  RunUntilIdle();
+  ASSERT_TRUE(remote_svc.is_alive());
+
+  remote_svc->DiscoverCharacteristics([](auto, const auto&) {});
+  RunUntilIdle();
+
+  bool first_cb_ran = false;
+  remote_svc->EnableNotifications(
+      kChrHandle,
+      [this, &first_cb_ran](const ByteBuffer& /*value*/,
+                            bool /*maybe_truncated*/) {
+        first_cb_ran = true;
+        gatt()->RemoveConnection(kPeerId);
+      },
+      [](att::Result<> status, IdType) { ASSERT_EQ(fit::ok(), status); });
+  RunUntilIdle();
+
+  bool second_cb_ran = false;
+  remote_svc->EnableNotifications(
+      kChrHandle,
+      [&second_cb_ran](const ByteBuffer&, bool) { second_cb_ran = true; },
+      [](att::Result<> status, IdType) { ASSERT_EQ(fit::ok(), status); });
+  RunUntilIdle();
+
+  StaticByteBuffer payload(0x01, 0x02);
+  fake_client()->SendNotification(/*indicate=*/false,
+                                  kChrValue,
+                                  payload,
+                                  /*maybe_truncated=*/false);
+
+  EXPECT_TRUE(first_cb_ran);
+  EXPECT_FALSE(remote_svc.is_alive());
+  (void)second_cb_ran;
 }
 
 }  // namespace

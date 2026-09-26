@@ -329,10 +329,18 @@ void RemoteCharacteristic::HandleNotification(const ByteBuffer& value,
                                               bool maybe_truncated) {
   PW_DCHECK(client_.is_alive());
 
+  // A handler may synchronously destroy this object (e.g. by calling
+  // GATT::RemoveConnection). Guard against use-after-free by checking a
+  // weak self reference after each handler invocation.
+  auto self = weak_self_.GetWeakPtr();
+
   notifying_handlers_ = true;
   for (auto& iter : notify_handlers_) {
     auto& handler = iter.second;
     handler(value, maybe_truncated);
+    if (!self.is_alive()) {
+      return;
+    }
   }
   notifying_handlers_ = false;
 
