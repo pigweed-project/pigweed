@@ -797,6 +797,49 @@ TEST_F(BearerTest, SendWithoutResponseMany) {
   EXPECT_EQ(kExpectedCount, chan_cb_count);
 }
 
+TEST_F(BearerTest, UpgradeSecuritySynchronousFailureIsHandledGracefully) {
+  // Set up the security callback to fail synchronously.
+  // This emulates a situation where our device itself can't handle the security
+  // request (e.g. a device with no input or output capabilities)
+  bool security_cb_called = false;
+  fake_att_chan()->SetSecurityCallback(
+      [&security_cb_called](hci_spec::ConnectionHandle /*handle*/,
+                            sm::SecurityLevel /*level*/,
+                            sm::ResultFunction<> callback) {
+        security_cb_called = true;
+        // Fail synchronously with a non-fatal error
+        callback(fit::error(HostError::kFailed));
+      },
+      dispatcher());
+  fake_att_chan()->set_run_upgrade_security_cb_synchronously(true);
+
+  bool err_cb_called = false;
+
+  StaticByteBuffer kErrorResponseInsuffAuth(
+      kErrorResponse,
+      kTestRequest,  // request opcode
+      0x01,
+      0x00,  // handle
+      ErrorCode::kInsufficientAuthentication);
+
+  auto cb = [this, &err_cb_called](Bearer::TransactionResult result) {
+    err_cb_called = true;
+    EXPECT_TRUE(result.is_error());
+    // Delete the bearer in the callback akin to what LEConnectionManager might
+    // do if security upgrade failed.
+    DeleteBearer();
+  };
+
+  StaticByteBuffer kExpectedReq(kTestRequest);
+  EXPECT_PACKET_OUT(kExpectedReq);
+  bearer()->StartTransaction(NewBuffer(kTestRequest), cb);
+
+  // Simulate receiving the error response.
+  fake_att_chan()->Receive(kErrorResponseInsuffAuth);
+  EXPECT_TRUE(err_cb_called);
+  EXPECT_TRUE(security_cb_called);
+}
+
 TEST_F(BearerTest, RegisterHandlerErrorClosed) {
   bearer()->ShutDown();
   EXPECT_FALSE(bearer()->is_open());

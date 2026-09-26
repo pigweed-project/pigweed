@@ -100,6 +100,10 @@ class FakeChannel : public Channel {
 
   A2dpOffloadStatus a2dp_offload_status() { return audio_offloading_status_; }
 
+  void set_run_upgrade_security_cb_synchronously(bool value) {
+    run_upgrade_security_cb_synchronously_ = value;
+  }
+
   // Channel overrides:
   const sm::SecurityProperties security() override { return security_; }
   bool Activate(RxCallback rx_callback,
@@ -146,6 +150,13 @@ class FakeChannel : public Channel {
   A2dpOffloadStatus audio_offloading_status_ = A2dpOffloadStatus::kStopped;
 
   std::optional<HostError> a2dp_offload_error_;
+
+  // When true, the UpgradeSecurity call will run its callback synchronously
+  //
+  // In production code, this would happen if the security manager can deduce
+  // that the requested security conditions can't be met due to the limitations
+  // of the platform itself.
+  bool run_upgrade_security_cb_synchronously_ = false;
 
   // The pending SDUs on this channel. Received PDUs are buffered if |rx_cb_| is
   // currently not set.

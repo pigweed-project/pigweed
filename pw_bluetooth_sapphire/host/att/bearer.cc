@@ -653,9 +653,18 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
          "level: %s",
          bt_str(error->first),
          sm::LevelToString(security_requirement));
+  // NOTE: UpgradeSecurity can fail synchronously which will cascade into
+  // LEConnectionManager synchronously closing the connection. We have to be
+  // very careful after this call since `self` could have been destroyed.
+  //
+  // NOTE^2: The above may technically be UB since the lifetime of Bearer is
+  // ended when its destructor is called but we still continue execution of one
+  // of its member functions. However, this is probably fine in practice if we
+  // are careful to not use the `this` pointer.
+  auto self = weak_self_.GetWeakPtr();
   chan_->UpgradeSecurity(
       security_requirement,
-      [self = weak_self_.GetWeakPtr(),
+      [self,
        err = *std::move(error),
        security_requirement,
        t = std::move(transaction)](sm::Result<> status) mutable {
@@ -679,8 +688,10 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
         self->TryStartNextTransaction(&self->request_queue_);
       });
 
-  // Move on to the next queued transaction.
-  TryStartNextTransaction(tq);
+  if (self.is_alive()) {
+    // Move on to the next queued transaction.
+    self->TryStartNextTransaction(tq);
+  }
 }
 
 Bearer::HandlerId Bearer::NextHandlerId() {

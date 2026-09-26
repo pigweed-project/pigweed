@@ -147,6 +147,12 @@ bool FakeChannel::Send(ByteBufferPtr sdu) {
 
 void FakeChannel::UpgradeSecurity(sm::SecurityLevel level,
                                   sm::ResultFunction<> callback) {
+  if (run_upgrade_security_cb_synchronously_) {
+    if (security_cb_) {
+      security_cb_(handle_, level, std::move(callback));
+    }
+    return;
+  }
   PW_CHECK(security_dispatcher_);
   (void)security_dispatcher_->Post(
       [cb = std::move(callback),
