@@ -986,6 +986,63 @@ TYPED_TEST(LowEnergyScannerTest, CachedScanResultsBounded) {
   EXPECT_EQ(1u, cached_addresses.count(last_addr));
 }
 
+// This test verifies that synchronously stopping a scan from the peer found
+// callback during NotifyCachedPeers is safe. It ensures that clearing the cache
+// from within the callback does not cause iterator invalidation or dangling
+// references to scan results.
+TYPED_TEST(LowEnergyScannerTest, NotifyCachedPeersReentrancyStopScan) {
+  EXPECT_TRUE(this->StartScan(true));
+
+  // Add multiple peers to populate cached_scan_results_.
+  for (const DeviceAddress& addr :
+       {kRandomAddress1, kRandomAddress2, kRandomAddress3}) {
+    auto fake_peer =
+        std::make_unique<FakePeer>(addr, this->dispatcher(), true, true);
+    fake_peer->set_advertising_data(kPlainAdvDataBytes);
+    this->test_device()->AddPeer(std::move(fake_peer));
+  }
+  this->RunUntilIdle();
+
+  // The callback synchronously calls StopScan(), which will clear the cache.
+  int call_count = 0;
+  bool stopped = false;
+  this->set_peer_found_callback([&](const std::unordered_set<uint16_t>&,
+                                    const LowEnergyScanResult& result) {
+    ++call_count;
+    // Touch the result to trigger ASan if it is already destroyed.
+    (void)result.data();
+    if (!stopped) {
+      stopped = true;
+      // This will clear the cache while we are iterating it in
+      // NotifyCachedPeers.
+      EXPECT_TRUE(this->scanner()->StopScan());
+    }
+  });
+
+  // Call NotifyCachedPeers. Since the first callback clears the cache, the
+  // iterator will be invalidated if not handled properly.
+  this->scanner()->NotifyCachedPeers(0);
+
+  EXPECT_TRUE(stopped);
+  // We should only receive at most one callback (the one that triggered
+  // StopScan). Receiving more means we iterated past the cleared cache.
+  EXPECT_LE(call_count, 1);
+  this->RunUntilIdle();
+}
+
+TYPED_TEST(LowEnergyScannerTest, NotifyCachedPeersWhenNotScanningIsNoOp) {
+  EXPECT_FALSE(this->scanner()->IsScanning());
+
+  int call_count = 0;
+  this->set_peer_found_callback(
+      [&](const std::unordered_set<uint16_t>&, const LowEnergyScanResult&) {
+        ++call_count;
+      });
+
+  this->scanner()->NotifyCachedPeers(0);
+  EXPECT_EQ(call_count, 0);
+}
+
 TEST(LowEnergyScanResultTest, AssignmentOperator) {
   constexpr int8_t kRSSI = -18;
   constexpr uint8_t kAdvertisingSid = 0x0d;

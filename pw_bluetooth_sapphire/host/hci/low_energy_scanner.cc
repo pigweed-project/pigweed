@@ -149,7 +149,19 @@ void LowEnergyScanner::ClearPacketFilters(ResultFunction<> callback) {
 }
 
 void LowEnergyScanner::NotifyCachedPeers(uint16_t scan_id) {
-  for (const auto& result : cached_scan_results_) {
+  if (!IsScanning()) {
+    return;
+  }
+
+  // Iterate over a copy of the cached results. OnPeerFound can synchronously
+  // result in a call to StopScan(), which clears cached_scan_results_ and
+  // invalidates iterators.
+  std::vector<LowEnergyScanResult> results_copy(cached_scan_results_.begin(),
+                                                cached_scan_results_.end());
+  for (const LowEnergyScanResult& result : results_copy) {
+    if (!IsScanning()) {
+      break;
+    }
     AdvertisingData::ParseResult ad = AdvertisingData::FromBytes(result.data());
     bool connectable = result.connectable();
     int8_t rssi = result.rssi();
