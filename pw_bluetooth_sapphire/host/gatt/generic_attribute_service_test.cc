@@ -226,5 +226,24 @@ TEST_F(GenericAttributeServiceTest, PersistIndicate) {
   WriteServiceChangedCcc(kTestPeerId, kEnableInd, &status);
   EXPECT_EQ(persist_callback_count, 1);
 }
+
+// Tests that destroying a GenericAttributeService clears its registered
+// callback in the LocalServiceManager to prevent a Use-After-Free crash when
+// subsequent services are registered.
+TEST_F(GenericAttributeServiceTest, UAFOnServiceChanged) {
+  {
+    GenericAttributeService gatt_service(mgr.GetWeakPtr(), NopSendIndication);
+
+    // Enable Service Changed indications for the test client.
+    fit::result<att::ErrorCode> status = fit::ok();
+    WriteServiceChangedCcc(kTestPeerId, kEnableInd, &status);
+    EXPECT_TRUE(status.is_ok());
+  }
+
+  constexpr UUID kTestSvcType(uint32_t{0xdeadbeef});
+  auto service = std::make_unique<Service>(/*primary=*/false, kTestSvcType);
+  mgr.RegisterService(
+      std::move(service), NopReadHandler, NopWriteHandler, NopCCCallback);
+}
 }  // namespace
 }  // namespace bt::gatt

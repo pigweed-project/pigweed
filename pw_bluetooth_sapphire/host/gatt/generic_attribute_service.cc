@@ -34,8 +34,11 @@ GenericAttributeService::GenericAttributeService(
 }
 
 GenericAttributeService::~GenericAttributeService() {
-  if (local_service_manager_.is_alive() && service_id_ != kInvalidId) {
-    local_service_manager_->UnregisterService(service_id_);
+  if (local_service_manager_.is_alive()) {
+    local_service_manager_->set_service_changed_callback(nullptr);
+    if (service_id_ != kInvalidId) {
+      local_service_manager_->UnregisterService(service_id_);
+    }
   }
 }
 

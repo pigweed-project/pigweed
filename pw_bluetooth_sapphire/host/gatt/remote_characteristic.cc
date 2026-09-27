@@ -307,14 +307,21 @@ void RemoteCharacteristic::DisableNotificationsInternal() {
 }
 
 void RemoteCharacteristic::ResolvePendingNotifyRequests(att::Result<> status) {
-  // Don't iterate requests as callbacks can add new requests.
-  while (!pending_notify_reqs_.empty()) {
-    auto req = std::move(pending_notify_reqs_.front());
-    pending_notify_reqs_.pop();
+  // Move the queue to a local variable to prevent callbacks from modifying the
+  // queue while we are iterating over it.
+  auto pending = std::move(pending_notify_reqs_);
+  pending_notify_reqs_ = {};
+  auto self = weak_self_.GetWeakPtr();
+
+  while (!pending.empty()) {
+    auto req = std::move(pending.front());
+    pending.pop();
 
     IdType id = kInvalidId;
 
-    if (status.is_ok()) {
+    // Ensure this RemoteCharacteristic was not destroyed by a callback in a
+    // previous loop iteration.
+    if (status.is_ok() && self.is_alive()) {
       id = next_notify_handler_id_++;
       // Add handler to map before calling status callback in case callback
       // removes the handler.
