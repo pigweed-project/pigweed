@@ -139,6 +139,9 @@ LowEnergyConnection::LowEnergyConnection(
 }
 
 LowEnergyConnection::~LowEnergyConnection() {
+  weak_delegate_.InvalidatePtrs();
+  weak_self_.InvalidatePtrs();
+
   cmd_->RemoveEventHandler(conn_update_cmpl_handler_id_);
 
   // Unregister this link from the GATT profile and the L2CAP plane. This

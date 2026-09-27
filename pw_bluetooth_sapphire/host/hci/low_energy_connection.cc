@@ -111,7 +111,12 @@ void LowEnergyConnection::HandleEncryptionStatus(Result<bool> result,
   // "On an authentication failure, the connection shall be automatically
   // disconnected by the Link Layer." (HCI_LE_Start_Encryption, Vol 2, Part E,
   // 7.8.24). We make sure of this by telling the controller to disconnect.
-  if (result.is_error()) {
+  // We also disconnect if a peer successfully disables encryption
+  // (!result.value()) on an established LE link: upper layers (L2CAP, GAP) do
+  // not re-evaluate channel security on encryption change, so allowing the link
+  // to continue would expose previously-authorized channels over plaintext.
+  if (state() == Connection::State::kConnected &&
+      (result.is_error() || !result.value())) {
     Disconnect(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
   }
 

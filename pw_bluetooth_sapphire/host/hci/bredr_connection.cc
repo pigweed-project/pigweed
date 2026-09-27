@@ -148,8 +148,14 @@ void BrEdrConnection::HandleEncryptionStatusValidated(Result<bool> result) {
   // Core Spec Vol 3, Part C, 5.2.2.1.1 and 5.2.2.2.1 mention disconnecting the
   // link after pairing failures (supported by TS GAP/SEC/SEM/BV-10-C), but do
   // not specify actions to take after encryption failures. We'll choose to
-  // disconnect ACL links after encryption failure.
-  if (result.is_error()) {
+  // disconnect ACL links after encryption failure. Also disconnect if a peer
+  // successfully *disables* encryption on an established BR/EDR link: upper
+  // layers (L2CAP, GAP) do not re-evaluate channel security on encryption
+  // change, so allowing the link to continue would expose previously-authorised
+  // channels over plaintext.
+
+  if (state() == Connection::State::kConnected &&
+      (result.is_error() || !result.value())) {
     Disconnect(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
   }
 

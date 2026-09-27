@@ -150,7 +150,38 @@ ChannelManager::LEFixedChannels FakeL2cap::AddLEConnection(
 }
 
 void FakeL2cap::RemoveConnection(hci_spec::ConnectionHandle handle) {
-  links_.erase(handle);
+  // Prevent reentrant calls to RemoveConnection() for the same handle. When
+  // closing channels below, synchronous client channel close callbacks may
+  // re-enter RemoveConnection() for this exact link handle. Without this guard,
+  // re-entry would mutate data members while the outer loop is still iterating,
+  // leading to potential double-closes and use-after-free crashes.
+  if (removing_connections_.count(handle) > 0) {
+    return;
+  }
+
+  auto it = links_.find(handle);
+  if (it != links_.end()) {
+    removing_connections_.insert(handle);
+    it->second.link_error_signaled = true;
+
+    // Move channels to a local container to prevent iterator invalidation if
+    // synchronous callbacks fire during Close() and modify channels_.
+    auto channels = std::move(it->second.channels_);
+    for (auto& [id, chan] : channels) {
+      chan->Close();
+    }
+
+    // Re-lookup handle instead of reusing the original iterator. Synchronous
+    // callbacks fired during Close() above may have added or removed other
+    // connection links, which can cause a rehash and invalidate the original
+    // iterator.
+    auto it_again = links_.find(handle);
+    if (it_again != links_.end()) {
+      links_.erase(it_again);
+    }
+
+    removing_connections_.erase(handle);
+  }
 }
 
 void FakeL2cap::AssignLinkSecurityProperties(hci_spec::ConnectionHandle,

@@ -13,6 +13,8 @@
 // the License.
 
 #pragma once
+#include <unordered_set>
+
 #include "pw_bluetooth_sapphire/internal/host/l2cap/autosniff.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/channel_manager.h"
@@ -199,6 +201,7 @@ class FakeL2cap final : public ChannelManager {
   LinkData& ConnectedLinkData(hci_spec::ConnectionHandle handle);
 
   std::unordered_map<hci_spec::ConnectionHandle, LinkData> links_;
+  std::unordered_set<hci_spec::ConnectionHandle> removing_connections_;
   FakeChannelCallback chan_cb_;
   bool simulate_open_channel_failure_ = false;
 

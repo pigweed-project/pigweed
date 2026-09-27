@@ -857,6 +857,8 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeIgnoredEvents) {
                         bt::testing::DisconnectPacket(kTestHandle));
 }
 
+// Tests that encryption change events (enabled, disabled, or failed) notify the
+// callback and appropriately disconnect the link on failure or disablement.
 TEST_P(LinkTypeConnectionTest, EncryptionChangeEvents) {
   // clang-format off
   StaticByteBuffer kEncryptionChangeEventDisabled(
@@ -913,6 +915,10 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeEvents) {
   EXPECT_EQ(fit::ok(), result);
   EXPECT_TRUE(result.value_or(false));
 
+  const auto disconnect_status_rsp =
+      bt::testing::DisconnectStatusResponsePacket();
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kDisconnectCommandAuthFailure, &disconnect_status_rsp);
   test_device()->SendCommandChannelPacket(kEncryptionChangeEventDisabled);
   RunUntilIdle();
 
@@ -920,12 +926,22 @@ TEST_P(LinkTypeConnectionTest, EncryptionChangeEvents) {
   EXPECT_EQ(fit::ok(), result);
   EXPECT_FALSE(result.value_or(true));
 
-  // The host should disconnect the link if encryption fails.
+  // The link was already disconnected by the encryption disable event. We test
+  // the encryption failure case on a new connection.
+  conn.reset();
+
+  conn = NewConnection();
+  callback_count = 0;
+  conn->set_encryption_change_callback([&](Result<bool> cb_result) {
+    callback_count++;
+    result = cb_result;
+  });
+
   EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
   test_device()->SendCommandChannelPacket(kEncryptionChangeEventFailed);
   RunUntilIdle();
 
-  EXPECT_EQ(3, callback_count);
+  EXPECT_EQ(1, callback_count);
   EXPECT_EQ(ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING)
                 .error_value(),
             result);

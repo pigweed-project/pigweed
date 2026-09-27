@@ -4706,6 +4706,70 @@ TEST_F(BrEdrConnectionManagerTest,
   EXPECT_TRUE(IsNotConnected(peer));
 }
 
+// Tests that a peer-initiated encryption disable event on an established
+// BR/EDR link causes the host to disconnect the link to prevent an encryption
+// downgrade.
+TEST_F(BrEdrConnectionManagerTest,
+       PeerInitiatedEncryptionDisableDisconnectsLink) {
+  QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RunUntilIdle();
+
+  auto* peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  ASSERT_EQ(peer->identifier(), connmgr()->GetPeerId(kConnectionHandle));
+
+  FakePairingDelegate pairing_delegate(sm::IOCapability::kDisplayYesNo);
+  connmgr()->SetPairingDelegate(pairing_delegate.GetWeakPtr());
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, auto, auto confirm_cb) { confirm_cb(true); });
+  pairing_delegate.SetCompletePairingCallback(
+      [](PeerId, sm::Result<> status) { EXPECT_EQ(fit::ok(), status); });
+
+  // SSP pairing with kAuthenticatedCombination192 (E0, NOT Secure Connections):
+  // peer's page-2 features lack kSecureConnectionsControllerSupport, so
+  // use_secure_connections_ stays FALSE -> the AES guard in
+  // acl_connection.cc will be skipped on encryption change.
+  QueueSuccessfulPairing(hci_spec::LinkKeyType::kAuthenticatedCombination192);
+
+  l2cap()->ExpectOutboundL2capChannel(
+      kConnectionHandle, l2cap::kAVDTP, 0x40, 0x41, kChannelParams);
+
+  std::optional<l2cap::Channel::WeakPtr> connected_chan;
+  bool chan_closed = false;
+  auto chan_cb = [&](l2cap::Channel::WeakPtr chan) {
+    connected_chan = std::move(chan);
+  };
+  connmgr()->OpenL2capChannel(peer->identifier(),
+                              l2cap::kAVDTP,
+                              kNoSecurityRequirements,
+                              kChannelParams,
+                              chan_cb);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(IsConnected(peer));
+  ASSERT_TRUE(connected_chan.has_value());
+  ASSERT_TRUE(connected_chan.value().is_alive());
+  ASSERT_TRUE(l2cap()->IsLinkConnected(kConnectionHandle));
+  connected_chan.value()->Activate([](auto) {}, [&] { chan_closed = true; });
+
+  // Simulate the peer turning encryption off to trigger a disconnection.
+  QueueDisconnection(kConnectionHandle,
+                     pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
+
+  test_device()->SendCommandChannelPacket(testing::EncryptionChangeEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kConnectionHandle,
+      hci_spec::EncryptionStatus::kOff));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  // Verify that the link is disconnected and open L2CAP channels are closed.
+  EXPECT_FALSE(IsConnected(peer));
+  EXPECT_FALSE(l2cap()->IsLinkConnected(kConnectionHandle));
+  EXPECT_FALSE(connected_chan.value().is_alive());
+  EXPECT_TRUE(chan_closed);
+}
+
 TEST_F(BrEdrConnectionManagerTest, OpenL2capChannelUpgradesLinkKey) {
   QueueSuccessfulIncomingConn(kTestDevAddr, kConnectionHandle);
   test_device()->SendCommandChannelPacket(kConnectionRequest);
