@@ -5304,5 +5304,78 @@ TEST_F(LowEnergyConnectionManagerTest, GenericAccessClientServiceDestroyed) {
   EXPECT_TRUE(read_params_called);
 }
 
+// Test that destroying LowEnergyConnectionManager during a pending
+// remote-initiated connection interrogation does not trigger a re-entrant crash
+// (UAF/double-free) when clearing remote_connectors_.
+TEST_F(LowEnergyConnectionManagerTest,
+       DestroyDuringPendingRemoteInitiatedInterrogation) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Stall interrogation indefinitely so the inbound LowEnergyConnector remains
+  // in State::kInterrogating when LECM is destroyed. A malicious controller can
+  // do this by withholding the HCI_LE_Read_Remote_Features_Complete event.
+  fit::closure send_read_remote_features_response;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures, [&](fit::closure unpause) {
+        send_read_remote_features_response = std::move(unpause);
+      });
+
+  test_device()->ConnectLowEnergy(kAddress0);
+  RunUntilIdle();
+  auto link = MoveLastRemoteInitiated();
+  ASSERT_TRUE(link);
+
+  // Register the link to start inbound interrogation.
+  std::optional<HostError> error;
+  conn_mgr()->RegisterRemoteInitiatedLink(
+      std::move(link), BondableMode::Bondable, [&](auto result) {
+        ASSERT_TRUE(result.is_error());
+        error = result.error_value();
+      });
+  RunUntilIdle();
+  ASSERT_FALSE(error.has_value());  // still kInterrogating
+
+  // Destroying the connection manager should safely cancel the pending
+  // connection and notify the callback without crashing.
+  DeleteConnMgr();
+  ASSERT_TRUE(error.has_value());
+  EXPECT_EQ(error.value(), HostError::kCanceled);
+}
+
+// Test that destroying LowEnergyConnectionManager during a pending
+// local-initiated connection interrogation does not trigger a re-entrant crash
+// (UAF/double-free) when clearing current_request_.
+TEST_F(LowEnergyConnectionManagerTest,
+       DestroyDuringPendingLocalInitiatedInterrogation) {
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+
+  // Stall interrogation indefinitely so the outbound LowEnergyConnector remains
+  // in State::kInterrogating when LECM is destroyed. A malicious controller can
+  // do this by withholding the HCI_LE_Read_Remote_Features_Complete event.
+  fit::closure send_read_remote_features_response;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures, [&](fit::closure unpause) {
+        send_read_remote_features_response = std::move(unpause);
+      });
+
+  std::optional<HostError> error;
+  conn_mgr()->Connect(peer->identifier(),
+                      /*callback=*/
+                      [&](auto result) {
+                        ASSERT_TRUE(result.is_error());
+                        error = result.error_value();
+                      },
+                      /*connection_options=*/{});
+  RunUntilIdle();
+  ASSERT_FALSE(error.has_value());  // still kInterrogating in current_request_
+
+  // Destroying the connection manager should safely cancel the pending
+  // local-initiated connection and notify the callback without crashing.
+  DeleteConnMgr();
+  ASSERT_TRUE(error.has_value());
+  EXPECT_EQ(error.value(), HostError::kCanceled);
+}
+
 }  // namespace
 }  // namespace bt::gap

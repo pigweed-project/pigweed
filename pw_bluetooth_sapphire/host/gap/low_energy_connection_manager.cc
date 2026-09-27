@@ -213,15 +213,25 @@ LowEnergyConnectionManager::~LowEnergyConnectionManager() {
 
   weak_self_.InvalidatePtrs();
 
-  // Clear |pending_requests_| and notify failure.
-  for (auto& iter : pending_requests_) {
-    iter.second.NotifyCallbacks(fit::error(HostError::kFailed));
-  }
-  pending_requests_.clear();
-
-  current_request_.reset();
-
+  // Notify remote connectors of failure.
+  auto remote_connectors = std::move(remote_connectors_);
   remote_connectors_.clear();
+  for (auto& [peer_id, req_conn] : remote_connectors) {
+    req_conn.request.NotifyCallbacks(fit::error(HostError::kCanceled));
+  }
+
+  if (current_request_) {
+    auto current_request = std::move(*current_request_);
+    current_request_.reset();
+    current_request.request.NotifyCallbacks(fit::error(HostError::kCanceled));
+  }
+
+  // Clear |pending_requests_| and notify failure.
+  auto pending_requests = std::move(pending_requests_);
+  pending_requests_.clear();
+  for (auto& [peer_id, request] : pending_requests) {
+    request.NotifyCallbacks(fit::error(HostError::kCanceled));
+  }
 
   // Clean up all connections.
   for (auto& iter : connections_) {
@@ -516,11 +526,15 @@ void LowEnergyConnectionManager::RegisterRemoteInitiatedLink(
       peer_id, RequestAndConnector{std::move(request), std::move(connector)});
   // Wait until the connector is in the map to start in case the result callback
   // is called synchronously.
-  auto result_cb = [this, peer_id](auto&& PH1) {
-    OnRemoteInitiatedConnectResult(peer_id, std::forward<decltype(PH1)>(PH1));
+  auto self = weak_self_.GetWeakPtr();
+  auto result_callback = [self, peer_id](auto&& result) {
+    if (self.is_alive()) {
+      self->OnRemoteInitiatedConnectResult(
+          peer_id, std::forward<decltype(result)>(result));
+    }
   };
   conn_iter->second.connector->StartInbound(std::move(link),
-                                            std::move(result_cb));
+                                            std::move(result_callback));
 }
 
 void LowEnergyConnectionManager::SetPairingDelegate(
@@ -707,9 +721,12 @@ void LowEnergyConnectionManager::TryCreateNextConnection() {
           request_timeout_,
           hci_connector_,
           discovery_manager_,
-          fit::bind_member<
-              &LowEnergyConnectionManager::OnLocalInitiatedConnectResult>(
-              this));
+          [self = weak_self_.GetWeakPtr()](auto&& result) {
+            if (self.is_alive()) {
+              self->OnLocalInitiatedConnectResult(
+                  std::forward<decltype(result)>(result));
+            }
+          });
       return;
     }
 
@@ -848,8 +865,8 @@ bool LowEnergyConnectionManager::InitializeConnection(
       inspect_connections_node_,
       inspect_connections_node_.UniqueName(kInspectConnectionNodePrefix));
   connection->set_peer_disconnect_callback(
-      [this, capture0 = connection->link()](auto&& PH1) {
-        OnPeerDisconnect(capture0, std::forward<decltype(PH1)>(PH1));
+      [this, link = connection->link()](auto&& reason) {
+        OnPeerDisconnect(link, std::forward<decltype(reason)>(reason));
       });
   connection->set_error_callback([this, peer_id]() {
     Disconnect(peer_id, LowEnergyDisconnectReason::kError);
