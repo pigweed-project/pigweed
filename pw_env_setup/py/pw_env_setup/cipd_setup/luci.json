@@ -10,7 +10,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:0014f9f80c1083ffa01d7787d8571a8f689aa5e7"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/bb.cipd_version"
     },
@@ -24,7 +24,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:0014f9f80c1083ffa01d7787d8571a8f689aa5e7"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/luci-auth.cipd_version"
     },
@@ -38,7 +38,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:0014f9f80c1083ffa01d7787d8571a8f689aa5e7"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/gerrit.cipd_version"
     },
@@ -52,7 +52,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:0014f9f80c1083ffa01d7787d8571a8f689aa5e7"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/gitiles.cipd_version"
     },
@@ -66,7 +66,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:00d484f7e6876a2454a633b0afcb18186cd3f3ef"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/cas.cipd_version"
     },
@@ -94,7 +94,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:2f3bde27292bd2267fd4e7dd54cd6d661b865be5"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/swarming.cipd_version"
     },
@@ -121,7 +121,7 @@
         "windows-amd64"
       ],
       "tags": [
-        "git_revision:0014f9f80c1083ffa01d7787d8571a8f689aa5e7"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/prpc.cipd_version"
     },
@@ -146,7 +146,7 @@
         "mac-arm64"
       ],
       "tags": [
-        "git_revision:1e8a86e7a2aab9090d884944ab04db3cb717a23a"
+        "git_revision:02a30d67fcd3a29d7f300e1c23693bf25dc630af"
       ],
       "version_file": ".versions/luci-cv.cipd_version"
     }
