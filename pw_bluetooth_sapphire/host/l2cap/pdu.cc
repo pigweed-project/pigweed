@@ -16,6 +16,8 @@
 
 #include <pw_assert/check.h>
 
+#include <utility>
+
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/acl_data_packet.h"
 
@@ -23,12 +25,15 @@ namespace bt::l2cap {
 
 // NOTE: The order in which these are initialized matters, as
 // other.ReleaseFragments() resets |other.fragment_count_|.
-PDU::PDU(PDU&& other) : fragments_(other.ReleaseFragments()) {}
+PDU::PDU(PDU&& other)
+    : fragments_(other.ReleaseFragments()),
+      trace_id_(std::exchange(other.trace_id_, 0)) {}
 
 PDU& PDU::operator=(PDU&& other) {
   // NOTE: The order in which these are initialized matters, as
   // other.ReleaseFragments() resets |other.fragment_count_|.
   fragments_ = other.ReleaseFragments();
+  trace_id_ = std::exchange(other.trace_id_, 0);
   return *this;
 }
 

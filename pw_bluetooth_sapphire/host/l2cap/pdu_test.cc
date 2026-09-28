@@ -308,5 +308,35 @@ TEST(PduTest, ReadMultipleFragments) {
   EXPECT_EQ("is a tesXXXXXXX", pdu_data.AsString());
 }
 
+TEST(PduTest, MovePreservesTraceId) {
+  pw::bluetooth_sapphire::NullLeaseProvider lease_provider;
+  Recombiner recombiner(0x0001, lease_provider);
+
+  auto packet = PacketFromBytes(
+    // ACL data header
+    0x01, 0x00, 0x08, 0x00,
+
+    // Basic l2cap header
+    0x04, 0x00, 0xFF, 0xFF, 'T', 'e', 's', 't'
+  );
+
+  auto result = recombiner.ConsumeFragment(std::move(packet));
+  ASSERT_TRUE(result.pdu);
+
+  PDU pdu = std::move(*result.pdu);
+  pdu.set_trace_id(42);
+
+  PDU move_cted(std::move(pdu));
+  EXPECT_EQ(42u, move_cted.trace_id());
+  EXPECT_EQ(0u, pdu.trace_id());
+
+  PDU move_assigned;
+  move_assigned = std::move(move_cted);
+  EXPECT_EQ(42u, move_assigned.trace_id());
+  EXPECT_EQ(0u, move_cted.trace_id());
+}
+
+
 }  // namespace
 }  // namespace bt::l2cap
+

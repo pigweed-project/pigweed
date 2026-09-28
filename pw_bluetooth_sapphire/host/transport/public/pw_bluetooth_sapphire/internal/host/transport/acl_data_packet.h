@@ -70,7 +70,7 @@ class Packet<hci_spec::ACLDataHeader>
                    hci_spec::ACLPacketBoundaryFlag packet_boundary_flag,
                    hci_spec::ACLBroadcastFlag broadcast_flag);
 
-  trace_flow_id_t async_id_;
+  trace_flow_id_t async_id_ = 0;
 };
 
 }  // namespace bt::hci

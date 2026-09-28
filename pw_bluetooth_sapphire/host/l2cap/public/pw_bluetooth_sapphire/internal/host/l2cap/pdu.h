@@ -118,7 +118,7 @@ class PDU final {
   // is equal to the length of the frame (i.e. length() + sizeof(BasicHeader)).
   FragmentList fragments_;
 
-  trace_flow_id_t trace_id_;
+  trace_flow_id_t trace_id_ = 0;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(PDU);
 };
