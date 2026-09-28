@@ -143,7 +143,7 @@ def root(repo_path: Path | str = '.') -> Path:
 def within_repo(repo_path: Path | str = '.') -> Path | None:
     """Similar to root(repo_path), returns None if the path is not in a repo."""
     try:
-        return root(repo_path)
+        return find_git_repo(Path(repo_path)).root()
     except git_repo.GitError:
         return None
 
@@ -159,7 +159,11 @@ def path(
     repo: Path | str = '.',
 ) -> Path:
     """Returns a path relative to a Git repository's root."""
-    return root(repo).joinpath(repo_path, *additional_repo_paths)
+    return (
+        find_git_repo(Path(repo))
+        .root()
+        .joinpath(repo_path, *additional_repo_paths)
+    )
 
 
 @deprecated('Use GitRepo.commit_message().')

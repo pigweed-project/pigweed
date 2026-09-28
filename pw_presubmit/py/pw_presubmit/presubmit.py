@@ -343,7 +343,7 @@ def run(  # pylint: disable=too-many-arguments,too-many-locals
     for repo in repos:
         if list(repo.iterdir()):
             non_empty_repos.append(repo)
-            if git_repo.root(repo) != repo:
+            if git_repo.find_git_repo(repo).root() != repo:
                 raise ValueError(
                     f'{repo} is not the root of a Git repo; '
                     'presubmit checks must be run from a Git repo'

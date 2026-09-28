@@ -281,7 +281,7 @@ def run(  # pylint: disable=too-many-arguments
         os.chdir(directory)
 
     if root is None:
-        root = git_repo.root()
+        root = git_repo.find_git_repo(Path.cwd()).root()
 
     if not repositories:
         repositories = [root]

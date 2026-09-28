@@ -377,11 +377,13 @@ class TestOwnersChecks(unittest.TestCase):
             # During test make the test file directory the "git root"
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir_path = Path(temp_dir).resolve()
+                mock_repo = mock.MagicMock()
+                mock_repo.root.return_value = temp_dir_path
                 with (
                     self.subTest(i=file_under_test),
                     mock.patch(
-                        "pw_presubmit.owners_checks.git_repo.root",
-                        return_value=temp_dir_path,
+                        "pw_presubmit.owners_checks.git_repo.find_git_repo",
+                        return_value=mock_repo,
                     ),
                 ):
                     primary_file = (file_under_test, globals()[file_under_test])
@@ -413,11 +415,13 @@ class TestOwnersChecks(unittest.TestCase):
             # During test make the test file directory the "git root"
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_dir_path = Path(temp_dir).resolve()
+                mock_repo = mock.MagicMock()
+                mock_repo.root.return_value = temp_dir_path
                 with (
                     self.subTest(i=file_under_test),
                     mock.patch(
-                        "pw_presubmit.owners_checks.git_repo.root",
-                        return_value=temp_dir_path,
+                        "pw_presubmit.owners_checks.git_repo.find_git_repo",
+                        return_value=mock_repo,
                     ),
                 ):
                     owners_file_path = (

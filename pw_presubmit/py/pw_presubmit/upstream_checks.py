@@ -105,14 +105,16 @@ def _valid_capitalization(word: str) -> bool:
 
 def commit_message_format(ctx: PresubmitContext):
     """Checks that the top commit's message is correctly formatted."""
-    author = git_repo.commit_author()
+    repo = git_repo.LoggingGitRepo(Path.cwd())
+    author = repo.commit_author()
     if author.endswith('gserviceaccount.com'):
         return
 
     if author.split('@', 1)[1].startswith('pigweed.infra.roller.'):
         return
 
-    lines = git_repo.commit_message().splitlines()
+    commit_msg = repo.commit_message()
+    lines = commit_msg.splitlines()
 
     # Ignore fixup/squash commits, but only if running locally.
     if not ctx.luci and lines[0].startswith(('fixup!', 'squash!')):
@@ -128,7 +130,6 @@ def commit_message_format(ctx: PresubmitContext):
         raise PresubmitFailure
 
     # Ignore merges.
-    repo = git_repo.LoggingGitRepo(Path.cwd())
     parents = repo.commit_parents()
     _LOG.debug('parents: %r', parents)
     if len(parents) > 1:
@@ -138,8 +139,8 @@ def commit_message_format(ctx: PresubmitContext):
     # Ignore Gerrit-generated reverts.
     if (
         'Revert' in lines[0]
-        and 'This reverts commit ' in git_repo.commit_message()
-        and 'Reason for revert:' in git_repo.commit_message()
+        and 'This reverts commit ' in commit_msg
+        and 'Reason for revert:' in commit_msg
     ):
         _LOG.warning('Ignoring apparent Gerrit-generated revert')
         return
@@ -147,8 +148,8 @@ def commit_message_format(ctx: PresubmitContext):
     # Ignore Gerrit-generated relands
     if (
         'Reland' in lines[0]
-        and 'This is a reland of ' in git_repo.commit_message()
-        and "Original change's description:" in git_repo.commit_message()
+        and 'This is a reland of ' in commit_msg
+        and "Original change's description:" in commit_msg
     ):
         _LOG.warning('Ignoring apparent Gerrit-generated reland')
         return
@@ -214,8 +215,7 @@ def commit_message_format(ctx: PresubmitContext):
     # Ignore the line length check for Copybara imports so they can include the
     # commit hash and description for imported commits.
     if not errors and (
-        'Copybara import' in lines[0]
-        and 'GitOrigin-RevId:' in git_repo.commit_message()
+        'Copybara import' in lines[0] and 'GitOrigin-RevId:' in commit_msg
     ):
         _LOG.warning('Ignoring Copybara import')
         return

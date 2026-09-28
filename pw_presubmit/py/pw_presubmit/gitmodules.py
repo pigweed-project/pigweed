@@ -16,14 +16,16 @@
 import dataclasses
 import logging
 from pathlib import Path
+import subprocess
 from typing import Callable, Sequence
 import urllib.parse
 
 from pw_cli.plural import plural
+from pw_presubmit import presubmit_context
 from pw_presubmit.presubmit import filter_paths
 from pw_presubmit.presubmit_context import PresubmitContext
 from pw_presubmit.private.result import PresubmitFailure
-from pw_presubmit import git_repo, presubmit_context
+from pw_presubmit.tools import PresubmitToolRunner
 
 
 _LOG: logging.Logger = logging.getLogger(__name__)
@@ -62,8 +64,16 @@ class Config:
 
 
 def _parse_gitmodules(path: Path) -> dict[str, dict[str, str]]:
-    raw_submodules: str = git_repo.git_stdout(
-        'config', '--file', path, '--list'
+    raw_submodules: str = (
+        PresubmitToolRunner()(
+            'git',
+            ['config', '--file', str(path), '--list'],
+            stderr=subprocess.DEVNULL,
+            check=True,
+            pw_presubmit_ignore_dry_run=True,
+        )
+        .stdout.decode()
+        .strip()
     )
     submodules: dict[str, dict[str, str]] = {}
     for line in raw_submodules.splitlines():

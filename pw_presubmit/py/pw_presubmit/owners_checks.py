@@ -48,7 +48,7 @@ class OwnersWalker(OwnersFile):
         """Always return absolute path."""
         # Absolute paths start with the git/project root
         if sub_owners_file_path.startswith("/"):
-            root = git_repo.root(self.path)
+            root = git_repo.find_git_repo(self.path).root()
             full_path = root / sub_owners_file_path[1:]
         else:
             # Relative paths start with owners file dir

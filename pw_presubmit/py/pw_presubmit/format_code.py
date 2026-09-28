@@ -776,7 +776,7 @@ def format_paths_in_repo(
     if directory:
         os.chdir(directory)
 
-    repo = git_repo.root() if git_repo.is_repo() else None
+    repo = git_repo.within_repo()
 
     files = collect_files_in_current_repo(
         paths,
@@ -805,14 +805,10 @@ def format_files(
 ) -> int:
     """Checks or fixes formatting for the specified files."""
 
-    root: Path | None = None
-
-    if git_repo.is_repo():
-        root = git_repo.root()
-    elif paths:
+    root: Path | None = git_repo.within_repo()
+    if root is None and paths:
         parent = Path(next(iter(paths))).parent
-        if git_repo.is_repo(parent):
-            root = git_repo.root(parent)
+        root = git_repo.within_repo(parent)
 
     formatter = CodeFormatter(
         files=(Path(p) for p in paths),

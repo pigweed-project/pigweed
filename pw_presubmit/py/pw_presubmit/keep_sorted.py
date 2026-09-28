@@ -459,7 +459,7 @@ def keep_sorted_in_repo(
     """Checks or fixes keep-sorted blocks for files in a Git repo."""
 
     project_root = pw_cli.env.project_root()
-    repo = git_repo.root() if git_repo.is_repo() else None
+    repo = git_repo.within_repo()
 
     files = collect_files_in_current_repo(
         paths,

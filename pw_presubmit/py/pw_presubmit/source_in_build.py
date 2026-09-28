@@ -102,8 +102,8 @@ def gn(  # pylint: disable=invalid-name
         missing = build.check_gn_build_for_files(
             files_and_extensions_to_check,
             ctx.paths,
-            gn_build_files=git_repo.list_files(
-                pathspecs=['BUILD.gn', '*BUILD.gn'], repo_path=ctx.root
+            gn_build_files=git_repo.find_git_repo(ctx.root).list_files(
+                pathspecs=['BUILD.gn', '*BUILD.gn']
             ),
         )
 
@@ -196,8 +196,8 @@ def soong(  # pylint: disable=invalid-name
         missing = build.check_soong_build_for_files(
             files_and_extensions_to_check,
             relevant_paths,
-            soong_build_files=git_repo.list_files(
-                pathspecs=['Android.bp', '*Android.bp'], repo_path=ctx.root
+            soong_build_files=git_repo.find_git_repo(ctx.root).list_files(
+                pathspecs=['Android.bp', '*Android.bp']
             ),
         )
 
