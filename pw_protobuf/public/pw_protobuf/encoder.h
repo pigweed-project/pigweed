@@ -30,6 +30,7 @@
 #include "pw_protobuf/config.h"
 #include "pw_protobuf/internal/codegen.h"
 #include "pw_protobuf/wire_format.h"
+#include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
@@ -785,42 +786,41 @@ class StreamEncoder {
 
   struct NestedCountingEncoderTag {};
 
+  // Constructor for MemoryEncoder.
+  constexpr explicit StreamEncoder(ByteSpan dest)
+      : status_(OkStatus()),
+        write_when_empty_(true),
+        parent_(nullptr),
+        nested_field_number_(0),
+        memory_writer_(dest),
+        counting_stream_(nullptr),
+        writer_(&memory_writer_) {}
+
+  // If this encoder was spawned from a failed encoder, it also starts in a
+  // failed state.
   constexpr StreamEncoder(StreamEncoder& parent,
                           ByteSpan scratch_buffer,
                           bool write_when_empty = true)
-      : status_(OkStatus()),
+      : status_(parent.status_),
         write_when_empty_(write_when_empty),
         parent_(&parent),
         nested_field_number_(0),
         memory_writer_(scratch_buffer),
         counting_stream_(nullptr),
-        writer_(&memory_writer_) {
-    // If this encoder was spawned from a failed encoder, it should also start
-    // in a failed state.
-    if (&parent != this) {
-      status_.Update(parent.status_);
-    }
-    if (scratch_buffer.empty()) {
-      status_.Update(Status::ResourceExhausted());
-    }
-  }
+        writer_(&memory_writer_) {}
 
   // Constructor for creating nested zero-scratch counting encoders.
   StreamEncoder(StreamEncoder& parent,
                 bool write_when_empty,
                 NestedCountingEncoderTag)
-      : status_(OkStatus()),
+      : status_(parent.status_),
         write_when_empty_(write_when_empty),
         parent_(&parent),
         nested_field_number_(0),
         memory_writer_({}),
         counting_stream_(parent.counting_stream_),
         counting_start_offset_(parent.counting_stream_->bytes_written()),
-        writer_(parent.writer_) {
-    if (&parent != this) {
-      status_.Update(parent.status_);
-    }
-  }
+        writer_(parent.writer_) {}
 
   // True if counting_stream_ is valid for this encoder.
   constexpr bool counting_mode() const { return counting_stream_ != nullptr; }
@@ -837,7 +837,7 @@ class StreamEncoder {
   // encoder destructor.
   void CloseNestedMessage(StreamEncoder& nested);
 
-  ByteSpan GetNestedScratchBuffer(uint32_t field_number);
+  Result<ByteSpan> GetNestedScratchBuffer(uint32_t field_number);
 
   // Implementation for encoding all varint field types.
   Status WriteVarintField(uint32_t field_number, uint64_t value);
@@ -999,9 +999,6 @@ class StreamEncoder {
   bool write_when_empty_;
 
   // If this is a nested encoder, this points to the encoder that created it.
-  // For user-created MemoryEncoders, parent_ points to this object as an
-  // optimization for the MemoryEncoder and nested encoders to use the same
-  // underlying buffer.
   StreamEncoder* parent_;
 
   // If an encoder has a child encoder open, this is the field number of that
@@ -1058,7 +1055,7 @@ class MemoryEncoder : public StreamEncoder {
   /// Constructs a `MemoryEncoder` targeting the `dest` buffer.
   ///
   /// @param[in] dest The destination buffer for serialized protobuf data.
-  constexpr MemoryEncoder(ByteSpan dest) : StreamEncoder(*this, dest) {}
+  constexpr MemoryEncoder(ByteSpan dest) : StreamEncoder(dest) {}
 
   /// @pre Encoder has no active child encoder.
   /// @post If this encoder is a nested one, the parent encoder is unlocked and

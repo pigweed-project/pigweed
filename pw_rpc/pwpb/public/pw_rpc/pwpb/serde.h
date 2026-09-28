@@ -49,9 +49,7 @@ class PwpbSerde {
     StreamEncoder encoder(output);
     const Status result = encoder.Write(as_bytes(span(&message, 1)), *table_);
 
-    // TODO: b/269633514 - Add 16 to the encoded size because pw_protobuf
-    //     sometimes fails to encode to buffers that exactly fit the output.
-    return StatusWithSize(result, output.bytes_written() + 16);
+    return StatusWithSize(result, output.bytes_written());
   }
 
   // Decodes a serialized protobuf into a pw_protobuf message struct.

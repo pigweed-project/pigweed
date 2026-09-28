@@ -26,6 +26,7 @@
 #include "pw_protobuf/serialized_size.h"
 #include "pw_protobuf/stream_decoder.h"
 #include "pw_protobuf/wire_format.h"
+#include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
@@ -67,7 +68,7 @@ Status StreamEncoder::WriteNestedMessage(
     return status_;
   }
 
-  ByteSpan scratch = GetNestedScratchBuffer(field_number);
+  Result<ByteSpan> scratch = GetNestedScratchBuffer(field_number);
 
   // First pass: we simply count the number of bytes encoded by the fields in
   // the submessage.
@@ -100,7 +101,7 @@ Status StreamEncoder::WriteNestedMessage(
     // Ensure the caller cannot write more bytes in the second pass than they
     // did in the first.
     stream::LimitedStreamWriter write_stream(*writer_, num_bytes);
-    StreamEncoder write_encoder(write_stream, scratch);
+    StreamEncoder write_encoder(write_stream, scratch.value_or(ByteSpan()));
 
     // Second pass: Actually write the fields to the stream.
     status_ = write_message(write_encoder);
@@ -116,30 +117,34 @@ Status StreamEncoder::WriteNestedMessage(
   return OkStatus();
 }
 
-ByteSpan StreamEncoder::GetNestedScratchBuffer(uint32_t field_number) {
+Result<ByteSpan> StreamEncoder::GetNestedScratchBuffer(uint32_t field_number) {
   // Pass the unused space of the scratch buffer to the nested encoder to use
   // as their scratch buffer.
-  size_t key_size =
+  const size_t key_size =
       varint::EncodedSize(FieldKey(field_number, WireType::kDelimited));
-  size_t reserved_size = key_size + config::kMaxVarintSize;
   size_t max_size = std::min(memory_writer_.ConservativeWriteLimit(),
                              writer_->ConservativeWriteLimit());
   // Cap based on max varint size.
   max_size = std::min(varint::MaxValueInBytes(config::kMaxVarintSize),
                       static_cast<uint64_t>(max_size));
 
-  // Account for reserved bytes.
-  max_size = max_size > reserved_size ? max_size - reserved_size : 0;
-
-  ByteSpan nested_buffer;
-  if (max_size > 0) {
-    nested_buffer = ByteSpan(
-        memory_writer_.data() + reserved_size + memory_writer_.bytes_written(),
-        max_size);
-  } else {
-    nested_buffer = ByteSpan();
+  // Reserve space for the field key and the maximum possible length varint that
+  // could fit in the remaining buffer.
+  size_t varint_size = 1;
+  while (varint_size < config::kMaxVarintSize &&
+         max_size >
+             key_size + varint_size + varint::MaxValueInBytes(varint_size)) {
+    ++varint_size;
   }
-  return nested_buffer;
+  const size_t reserved_size = key_size + varint_size;
+
+  if (max_size < reserved_size) {
+    return Status::ResourceExhausted();
+  }
+
+  return ByteSpan(
+      memory_writer_.data() + reserved_size + memory_writer_.bytes_written(),
+      max_size - reserved_size);
 }
 
 StreamEncoder StreamEncoder::GetNestedEncoder(uint32_t field_number,
@@ -156,8 +161,12 @@ StreamEncoder StreamEncoder::GetNestedEncoder(uint32_t field_number,
     return StreamEncoder(*this, write_when_empty, NestedCountingEncoderTag{});
   }
 
-  ByteSpan nested_buffer = GetNestedScratchBuffer(field_number);
-  return StreamEncoder(*this, nested_buffer, write_when_empty);
+  Result<ByteSpan> nested_buffer = GetNestedScratchBuffer(field_number);
+  if (!nested_buffer.ok() && write_when_empty) {
+    status_.Update(nested_buffer.status());
+  }
+  return StreamEncoder(
+      *this, nested_buffer.value_or(ByteSpan()), write_when_empty);
 }
 
 void StreamEncoder::CloseEncoder() {
@@ -240,8 +249,10 @@ Status StreamEncoder::WriteLengthDelimitedField(uint32_t field_number,
   status_.Update(WriteLengthDelimitedKeyAndLengthPrefix(
       field_number, data.size(), *writer_));
   PW_TRY(status_);
-  if (Status status = writer_->Write(data); !status.ok()) {
-    status_ = status;
+  if (!data.empty()) {
+    if (Status status = writer_->Write(data); !status.ok()) {
+      status_ = status;
+    }
   }
   return status_;
 }

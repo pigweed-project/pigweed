@@ -36,6 +36,30 @@ TEST(PwpbSerde, Encode) {
   EXPECT_EQ(buffer[1], std::byte{3});
 }
 
+TEST(PwpbSerde, Encode_ExactSizeBuffer) {
+  StatusWithSize size = kTestRequest.EncodedSizeBytes(kProto);
+  PW_TEST_ASSERT_OK(size.status());
+  ASSERT_EQ(size.size(), 2u);
+
+  std::byte buffer[2] = {};
+  StatusWithSize result = kTestRequest.Encode(kProto, buffer);
+  PW_TEST_EXPECT_OK(result.status());
+  EXPECT_EQ(result.size(), 2u);
+  EXPECT_EQ(buffer[0], std::byte{1} << 3);
+  EXPECT_EQ(buffer[1], std::byte{3});
+}
+
+TEST(PwpbSerde, Encode_EmptyMessageInEmptyBuffer) {
+  constexpr TestRequest::Message kEmptyProto{};
+  StatusWithSize size = kTestRequest.EncodedSizeBytes(kEmptyProto);
+  PW_TEST_ASSERT_OK(size.status());
+  ASSERT_EQ(size.size(), 0u);
+
+  StatusWithSize result = kTestRequest.Encode(kEmptyProto, ByteSpan());
+  PW_TEST_EXPECT_OK(result.status());
+  EXPECT_EQ(result.size(), 0u);
+}
+
 TEST(PwpbSerde, Encode_TooSmall) {
   std::byte buffer[1] = {};
   EXPECT_EQ(Status::ResourceExhausted(),

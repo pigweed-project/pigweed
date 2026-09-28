@@ -2271,5 +2271,67 @@ TEST(CodegenMessage, OneOf_Decode_UnsetDecoderIsIgnored) {
   EXPECT_EQ(stream_decoder.Read(message), OkStatus());
 }
 
+TEST(CodegenMessage, WriteEmptyMessageToEmptyBuffer) {
+  Pigweed::Message message{};
+  Pigweed::MemoryEncoder pigweed((ByteSpan()));
+  PW_TEST_ASSERT_OK(pigweed.Write(message));
+  EXPECT_EQ(pigweed.size(), 0u);
+}
+
+TEST(CodegenMessage, WriteNestedToExactSizeBuffer) {
+  Pigweed::Message message{};
+  message.magic_number = 0x49u;
+  message.pigweed.status = Bool::FILE_NOT_FOUND;
+  message.ziggy = -111;
+
+  // clang-format off
+  constexpr uint8_t expected_proto[] = {
+    // pigweed.magic_number
+    0x08, 0x49,
+    // pigweed.ziggy
+    0x10, 0xdd, 0x01,
+    // pigweed.pigweed
+    0x3a, 0x02,
+    // pigweed.pigweed.status
+    0x08, 0x02,
+  };
+  // clang-format on
+
+  std::byte encode_buffer[sizeof(expected_proto)];
+  Pigweed::MemoryEncoder pigweed(encode_buffer);
+
+  PW_TEST_ASSERT_OK(pigweed.Write(message));
+  ASSERT_EQ(pigweed.size(), sizeof(expected_proto));
+  EXPECT_EQ(std::memcmp(pigweed.data(), expected_proto, sizeof(expected_proto)),
+            0);
+}
+
+TEST(CodegenMessage, WriteNestedImportedToExactSizeBuffer) {
+  Period::Message message{};
+  message.start.seconds = 1517949900u;
+  message.end.seconds = 1517950378u;
+
+  // clang-format off
+  constexpr uint8_t expected_proto[] = {
+    // period.start
+    0x0a, 0x06,
+    // period.start.seconds v=1517949900
+    0x08, 0xcc, 0xa7, 0xe8, 0xd3, 0x05,
+    // period.end
+    0x12, 0x06,
+    // period.end.seconds, v=1517950378
+    0x08, 0xaa, 0xab, 0xe8, 0xd3, 0x05,
+  };
+  // clang-format on
+
+  std::byte encode_buffer[sizeof(expected_proto)];
+  Period::MemoryEncoder period(encode_buffer);
+
+  PW_TEST_ASSERT_OK(period.Write(message));
+  ASSERT_EQ(period.size(), sizeof(expected_proto));
+  EXPECT_EQ(std::memcmp(period.data(), expected_proto, sizeof(expected_proto)),
+            0);
+}
+
 }  // namespace
 }  // namespace pw::protobuf

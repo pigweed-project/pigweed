@@ -1003,5 +1003,113 @@ TEST(StreamEncoder, ExplicitCountingEncoderWriteNoLimit) {
   EXPECT_GT(counting_stream.bytes_written(), 0u);
 }
 
+TEST(StreamEncoder, EmptyBuffer) {
+  MemoryEncoder encoder((ByteSpan()));
+  PW_TEST_EXPECT_OK(encoder.status());
+  EXPECT_EQ(encoder.size(), 0u);
+
+  span<const uint32_t> empty_values;
+  PW_TEST_EXPECT_OK(encoder.WritePackedUint32(1, empty_values));
+
+  {
+    StreamEncoder child = encoder.GetNestedEncoder(
+        kTestProtoNestedField,
+        StreamEncoder::EmptyEncoderBehavior::kWriteNothing);
+    PW_TEST_EXPECT_OK(child.status());
+  }
+  PW_TEST_EXPECT_OK(encoder.status());
+  EXPECT_EQ(encoder.size(), 0u);
+
+  encoder.CloseEncoder();
+  PW_TEST_EXPECT_OK(encoder.status());
+}
+
+TEST(StreamEncoder, EmptyBufferNestedWriteFails) {
+  MemoryEncoder encoder((ByteSpan()));
+  {
+    StreamEncoder child = encoder.GetNestedEncoder(
+        kTestProtoNestedField,
+        StreamEncoder::EmptyEncoderBehavior::kWriteNothing);
+    PW_TEST_EXPECT_OK(child.status());
+    EXPECT_EQ(child.WriteUint32(kNestedProtoIdField, 1),
+              Status::ResourceExhausted());
+  }
+  EXPECT_EQ(encoder.status(), Status::ResourceExhausted());
+}
+
+TEST(StreamEncoder, ExactBufferEmptyDelimitedField) {
+  std::byte encode_buffer[2];
+  MemoryEncoder encoder(encode_buffer);
+  PW_TEST_ASSERT_OK(encoder.WriteString(kTestProtoErrorMessageField, ""));
+  PW_TEST_ASSERT_OK(encoder.status());
+  EXPECT_EQ(encoder.size(), 2u);
+}
+
+TEST(StreamEncoder, ExactBufferEmptyChildWrites) {
+  std::byte encode_buffer[2];
+  MemoryEncoder parent(encode_buffer);
+  {
+    StreamEncoder child = parent.GetNestedEncoder(kTestProtoNestedField);
+    PW_TEST_EXPECT_OK(child.status());
+  }
+  PW_TEST_ASSERT_OK(parent.status());
+  EXPECT_EQ(parent.size(), 2u);
+}
+
+TEST(StreamEncoder, ExactBufferEmptyChildWriteFails) {
+  std::byte encode_buffer[2];
+  MemoryEncoder parent(encode_buffer);
+  {
+    StreamEncoder child = parent.GetNestedEncoder(kTestProtoNestedField);
+    PW_TEST_EXPECT_OK(child.status());
+    EXPECT_EQ(child.WriteUint32(kNestedProtoIdField, 1),
+              Status::ResourceExhausted());
+  }
+  EXPECT_EQ(parent.status(), Status::ResourceExhausted());
+}
+
+TEST(StreamEncoder, NestedExactBufferSize) {
+  std::byte encode_buffer[kExpectedDoubleNestedEncodedProto.size()];
+  MemoryEncoder encoder(encode_buffer);
+
+  PW_TEST_EXPECT_OK(encoder.WriteUint32(kTestProtoMagicNumberField, 42));
+
+  {
+    StreamEncoder nested_proto =
+        encoder.GetNestedEncoder(kTestProtoNestedField);
+    PW_TEST_EXPECT_OK(
+        nested_proto.WriteString(kNestedProtoHelloField, "world"));
+
+    {
+      StreamEncoder double_nested_proto =
+          nested_proto.GetNestedEncoder(kNestedProtoPairField);
+      PW_TEST_EXPECT_OK(double_nested_proto.WriteString(
+          kDoubleNestedProtoKeyField, "version"));
+      PW_TEST_EXPECT_OK(double_nested_proto.WriteString(
+          kDoubleNestedProtoValueField, "2.9.1"));
+    }
+
+    PW_TEST_EXPECT_OK(nested_proto.WriteUint32(kNestedProtoIdField, 999));
+
+    {
+      StreamEncoder double_nested_proto =
+          nested_proto.GetNestedEncoder(kNestedProtoPairField);
+      PW_TEST_EXPECT_OK(double_nested_proto.WriteString(
+          kDoubleNestedProtoKeyField, "device"));
+      PW_TEST_EXPECT_OK(double_nested_proto.WriteString(
+          kDoubleNestedProtoValueField, "left-soc"));
+    }
+  }
+
+  PW_TEST_EXPECT_OK(encoder.WriteSint32(kTestProtoZiggyField, -13));
+
+  PW_TEST_ASSERT_OK(encoder.status());
+  EXPECT_EQ(encoder.size(), kExpectedDoubleNestedEncodedProto.size());
+  EXPECT_TRUE(std::equal(encoder.begin(),
+                         encoder.end(),
+                         kExpectedDoubleNestedEncodedProto.begin(),
+                         kExpectedDoubleNestedEncodedProto.end()));
+}
+
 }  // namespace
 }  // namespace pw::protobuf
