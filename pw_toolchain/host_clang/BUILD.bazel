@@ -384,6 +384,11 @@ alias(
     }),
 )
 
+alias(
+    name = "all_tools",
+    actual = "@llvm_toolchain//:all_tools",
+)
+
 cc_toolchain(
     name = "host_toolchain",
     args = select({
