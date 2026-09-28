@@ -656,13 +656,28 @@ void CommandChannel::UpdateTransaction(std::unique_ptr<EventPacket> event) {
 
   if (event->event_code() == hci_spec::kCommandCompleteEventCode) {
     auto command_complete_view =
-        event->view<pw::bluetooth::emboss::CommandCompleteEventView>();
+        event
+            ->unchecked_view<pw::bluetooth::emboss::CommandCompleteEventView>();
+    if (!command_complete_view.IsComplete()) {
+      bt_log(ERROR,
+             "hci",
+             "malformed CommandComplete event packet (size: %zu)",
+             event->size());
+      return;
+    }
     matching_opcode = command_complete_view.command_opcode_uint().Read();
     allowed_command_packets_.Set(
         command_complete_view.num_hci_command_packets().Read());
   } else {  //  hci_spec::kCommandStatusEventCode
     auto command_status_view =
-        event->view<pw::bluetooth::emboss::CommandStatusEventView>();
+        event->unchecked_view<pw::bluetooth::emboss::CommandStatusEventView>();
+    if (!command_status_view.IsComplete()) {
+      bt_log(ERROR,
+             "hci",
+             "malformed CommandStatus event packet (size: %zu)",
+             event->size());
+      return;
+    }
     matching_opcode = command_status_view.command_opcode_uint().Read();
     allowed_command_packets_.Set(
         command_status_view.num_hci_command_packets().Read());

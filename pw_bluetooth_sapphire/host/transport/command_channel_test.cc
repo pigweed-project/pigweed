@@ -2231,6 +2231,101 @@ TEST_F(
   EXPECT_NE(0u, id3);
 }
 
+TEST_F(CommandChannelTest, ShortCommandCompleteEventIgnored) {
+  auto req = StaticByteBuffer(
+      LowerBits(hci_spec::kReset), UpperBits(hci_spec::kReset), 0x00);
+  EXPECT_CMD_PACKET_OUT(test_device(), req);
+
+  bool called = false;
+  auto cb = [&called](auto, const hci::EventPacket&) { called = true; };
+  auto packet =
+      hci::CommandPacket::New<pw::bluetooth::emboss::ResetCommandWriter>(
+          hci_spec::kReset);
+  auto id = cmd_channel()->SendCommand(std::move(packet), cb);
+  ASSERT_TRUE(id.ok());
+
+  auto short_event =
+      StaticByteBuffer(hci_spec::kCommandCompleteEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(short_event);
+  RunUntilIdle();
+  EXPECT_FALSE(called);
+}
+
+TEST_F(CommandChannelTest, ShortCommandStatusEventIgnored) {
+  constexpr hci_spec::OpCode kOpCode = hci_spec::kLEReadRemoteFeatures;
+  constexpr hci_spec::EventCode kSubeventCode =
+      hci_spec::kLEReadRemoteFeaturesCompleteSubeventCode;
+
+  auto cmd = StaticByteBuffer(LowerBits(kOpCode), UpperBits(kOpCode), 0x00);
+  EXPECT_CMD_PACKET_OUT(test_device(), cmd);
+
+  bool called = false;
+  auto event_cb = [&called](auto, const EventPacket&) { called = true; };
+  auto cmd_packet =
+      CommandPacket::New<pw::bluetooth::emboss::CommandHeaderView>(kOpCode);
+  auto id = cmd_channel()->SendLeAsyncCommand(
+      std::move(cmd_packet), std::move(event_cb), kSubeventCode);
+  ASSERT_TRUE(id.ok());
+
+  auto short_event = StaticByteBuffer(hci_spec::kCommandStatusEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(short_event);
+  RunUntilIdle();
+  EXPECT_FALSE(called);
+}
+
+TEST_F(CommandChannelTest, ShortLEMetaEventIgnored) {
+  constexpr hci_spec::OpCode kOpCode = hci_spec::kLEReadRemoteFeatures;
+  constexpr hci_spec::EventCode kSubeventCode =
+      hci_spec::kLEReadRemoteFeaturesCompleteSubeventCode;
+
+  auto cmd = StaticByteBuffer(LowerBits(kOpCode), UpperBits(kOpCode), 0x00);
+  auto cmd_status_event =
+      StaticByteBuffer(hci_spec::kCommandStatusEventCode,
+                       0x04,
+                       pw::bluetooth::emboss::StatusCode::SUCCESS,
+                       0xFA,
+                       LowerBits(kOpCode),
+                       UpperBits(kOpCode));
+
+  EXPECT_CMD_PACKET_OUT(test_device(), cmd, &cmd_status_event);
+
+  int event_count = 0;
+  auto event_cb = [&event_count](auto, const EventPacket&) { event_count++; };
+  auto cmd_packet =
+      CommandPacket::New<pw::bluetooth::emboss::CommandHeaderView>(kOpCode);
+  auto id = cmd_channel()->SendLeAsyncCommand(
+      std::move(cmd_packet), std::move(event_cb), kSubeventCode);
+  ASSERT_TRUE(id.ok());
+
+  RunUntilIdle();
+  EXPECT_EQ(1, event_count);  // Status received
+
+  auto short_event = StaticByteBuffer(hci_spec::kLEMetaEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(short_event);
+  RunUntilIdle();
+  EXPECT_EQ(1, event_count);  // Should NOT increment
+}
+
+TEST_F(CommandChannelTest, ShortVendorDebugEventIgnored) {
+  auto req = StaticByteBuffer(
+      LowerBits(hci_spec::kReset), UpperBits(hci_spec::kReset), 0x00);
+  EXPECT_CMD_PACKET_OUT(test_device(), req);
+
+  bool called = false;
+  auto cb = [&called](auto, const hci::EventPacket&) { called = true; };
+  auto packet =
+      hci::CommandPacket::New<pw::bluetooth::emboss::ResetCommandWriter>(
+          hci_spec::kReset);
+  auto id = cmd_channel()->SendCommand(
+      std::move(packet), cb, hci_spec::kVendorDebugEventCode);
+  ASSERT_TRUE(id.ok());
+
+  auto short_event = StaticByteBuffer(hci_spec::kVendorDebugEventCode, 0x00);
+  test_device()->SendCommandChannelPacket(short_event);
+  RunUntilIdle();
+  EXPECT_FALSE(called);
+}
+
 #ifndef NINSPECT
 TEST_F(CommandChannelTest, InspectHierarchy) {
   cmd_channel()->AttachInspect(inspector_.GetRoot(), "command_channel");
