@@ -91,7 +91,7 @@ class LowEnergyConnectorTest : public TestingBase,
     params.connection_handle().Write(conn_handle);
     params.role().Write(pw::bluetooth::emboss::ConnectionRole::PERIPHERAL);
     params.peer_address_type().Write(
-        pw::bluetooth::emboss::LEAddressType::PUBLIC);
+        DeviceAddress::DeviceAddrToLeAddr(peer_address.type()).value());
     params.peer_address().CopyFrom(peer_address.value().view());
     params.connection_interval().Write(
         hci_spec::defaults::kLEConnectionIntervalMin);
@@ -447,6 +447,65 @@ TEST_P(LowEnergyConnectorTest, IncomingConnect) {
 
 TEST_P(LowEnergyConnectorTest, IncomingConnectDuringConnectionRequest) {
   const DeviceAddress kIncomingAddress(DeviceAddress::Type::kLEPublic, {2});
+
+  EXPECT_TRUE(in_connections().empty());
+  EXPECT_FALSE(connector()->request_pending());
+
+  auto fake_peer = std::make_unique<FakePeer>(kTestAddress, dispatcher());
+  test_device()->AddPeer(std::move(fake_peer));
+
+  Result<> status = fit::ok();
+  std::unique_ptr<LowEnergyConnection> conn;
+  unsigned int callback_count = 0;
+
+  auto callback = [&](auto cb_status, auto cb_conn) {
+    status = cb_status;
+    callback_count++;
+    conn = std::move(cb_conn);
+  };
+
+  connector()->CreateConnection(
+      /*use_accept_list=*/false,
+      kTestAddress,
+      hci_spec::defaults::kLEScanInterval,
+      hci_spec::defaults::kLEScanWindow,
+      kTestParams,
+      callback,
+      kPwConnectTimeout);
+
+  (void)heap_dispatcher().Post(
+      [kIncomingAddress, this](pw::async::Context /*ctx*/, pw::Status status) {
+        if (!status.ok()) {
+          return;
+        }
+
+        EventPacket packet =
+            CreateConnectionCompleteSubevent(2, kIncomingAddress);
+        test_device()->SendCommandChannelPacket(packet.data());
+      });
+
+  RunUntilIdle();
+
+  EXPECT_EQ(fit::ok(), status);
+  EXPECT_EQ(1u, callback_count);
+  ASSERT_EQ(1u, in_connections().size());
+
+  const auto& in_conn = in_connections().front();
+
+  EXPECT_EQ(1u, conn->handle());
+  EXPECT_EQ(2u, in_conn->handle());
+  EXPECT_EQ(kTestAddress, conn->peer_address());
+  EXPECT_EQ(kIncomingAddress, in_conn->peer_address());
+
+  conn->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+  in_conn->Disconnect(
+      pw::bluetooth::emboss::StatusCode::REMOTE_USER_TERMINATED_CONNECTION);
+}
+
+TEST_P(LowEnergyConnectorTest,
+       IncomingConnectDuringConnectionRequestAddressTypeMismatch) {
+  const DeviceAddress kIncomingAddress(DeviceAddress::Type::kLERandom, {1});
 
   EXPECT_TRUE(in_connections().empty());
   EXPECT_FALSE(connector()->request_pending());

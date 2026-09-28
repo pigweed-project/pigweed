@@ -422,7 +422,7 @@ void LowEnergyConnector::OnConnectionCompleteEvent(const EventPacket& event) {
   // responding to a request we never sent.
   const bool matches_pending_request =
       pending_request_ && pending_request_->initiating &&
-      (pending_request_->peer_address.value() == peer_address.value());
+      (pending_request_->peer_address == peer_address);
 
   if (Result<> result = event.ToResult(); result.is_error()) {
     if (!matches_pending_request) {
