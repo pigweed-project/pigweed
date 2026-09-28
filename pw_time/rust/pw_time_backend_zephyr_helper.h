@@ -11,26 +11,6 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-#![no_std]
+#pragma once
 
-use pw_time_core::{Clock, Instant};
-
-mod pw_time_backend_zephyr_bindgen;
-
-pub struct SystemClock;
-
-extern "C" {
-    fn sys_clock_tick_get() -> i64;
-}
-
-impl Clock for SystemClock {
-    const TICKS_PER_SEC: u64 =
-        pw_time_backend_zephyr_bindgen::CONFIG_SYS_CLOCK_TICKS_PER_SEC as u64;
-
-    fn now() -> Instant<Self> {
-        // SAFETY: `sys_clock_tick_get` is a read-only kernel query with no parameters
-        // and is always safe to invoke from any context.
-        let ticks = unsafe { sys_clock_tick_get() };
-        Instant::from_ticks(ticks as u64)
-    }
-}
+#include <zephyr/autoconf.h>
