@@ -50,9 +50,9 @@ Example module structure
      cpp/public/pw_foo/internal/bar.h
      cpp/public/pw_foo/internal/qux.h
 
-     # Public override headers must go in cpp/public_overrides/
-     cpp/public_overrides/gtest/gtest.h
-     cpp/public_overrides/string.h
+     # Public override headers must go in cpp/public_overrides/<build_target_name>/
+     cpp/public_overrides/gtest/gtest/gtest.h
+     cpp/public_overrides/libc_string/string.h
 
      # Private headers go into cpp/private/<module>_*/
      cpp/private/pw_foo_internal/zap.h
@@ -169,35 +169,35 @@ the public interface, but are not intended for use), place the headers in a
 
 C++ public override headers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Located ``{pw_module_dir}/public_overrides/<module>``. In general, the Pigweed
-philosophy is to avoid having "things hiding under rocks", and having header
-files with the same name that can override each other is considered a rock
-where surprising things can hide. Additionally, a design goal of the Pigweed
-module structure is to make it so there is ideally exactly one obvious place
-to find a header based on an ``#include``.
+Located ``{pw_module_dir}/public_overrides/<build_target_name>/<path>/*.h``. In
+general, the Pigweed philosophy is to avoid having "things hiding under rocks",
+and having header files with the same name that can override each other is
+considered a rock where surprising things can hide. Additionally, a design goal
+of the Pigweed module structure is to make it so there is ideally exactly one
+obvious place to find a header based on an ``#include``.
 
 However, in some cases header overrides are necessary to enable flexibly
 combining modules. To make this as explicit as possible, headers that override
-other headers must go in
+other headers must go in:
 
-``{pw_module_dir}/public_overrides/...```
+``{pw_module_dir}/public_overrides/<build_target_name>/<path>/*.h``
 
-For example, the ``pw_unit_test`` module provides a header override for
-``gtest/gtest.h``. The structure of the module is (omitting some files):
+For example, :cs:`pw_sync_freertos/public_overrides/` provides header overrides
+for ``pw_sync`` facades. The structure of the module is (omitting some files):
 
 .. code-block::
 
-   pw_unit_test/...
+   pw_sync_freertos/...
 
-     light_public_overrides/pw_unit_test/framework_backend.h
-     googletest_public_overrides/pw_unit_test/framework_backend.h
+     public_overrides/binary_semaphore/pw_sync_backend/binary_semaphore_inline.h
+     public_overrides/binary_semaphore/pw_sync_backend/binary_semaphore_native.h
+     public_overrides/mutex/pw_sync_backend/mutex_inline.h
+     public_overrides/mutex/pw_sync_backend/mutex_native.h
 
-     public_overrides/gtest
-     public_overrides/gtest/gtest.h
-
-     public/pw_unit_test
-     public/pw_unit_test/simple_printing_event_handler.h
-     public/pw_unit_test/event_handler.h
+     public/pw_sync_freertos/binary_semaphore_inline.h
+     public/pw_sync_freertos/binary_semaphore_native.h
+     public/pw_sync_freertos/mutex_inline.h
+     public/pw_sync_freertos/mutex_native.h
 
 Note that the overrides are in a separate directory ``public_overrides``.
 
@@ -550,8 +550,9 @@ facades.
 Multiple Facades
 ~~~~~~~~~~~~~~~~
 A module may contain multiple facades. Each facade's public override headers
-must be contained in separate folders in the backend implementation, so that
-it's possible to use multiple backends for a module.
+must be contained in separate ``public_overrides/<build_target_name>/`` folders
+in the backend implementation, so that it's possible to use multiple backends
+for a module.
 
 .. code-block::
 
@@ -566,8 +567,8 @@ it's possible to use multiple backends for a module.
    pw_foo_backend/...
 
      # Public override headers for facade1 and facade2 go in separate folders
-     foo_public_overrides/pw_foo_backend/foo.h
-     bar_public_overrides/pw_foo_backend/bar.h
+     public_overrides/foo/pw_foo_backend/foo.h
+     public_overrides/bar/pw_foo_backend/bar.h
 
 Documentation
 -------------
