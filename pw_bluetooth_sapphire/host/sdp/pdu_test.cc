@@ -649,6 +649,12 @@ TEST(PDUTest, ServiceSearchResponsePDU_MaxSize) {
   EXPECT_TRUE(ContainersEqual(kExpectedRest, *pdu));
 }
 
+TEST(PDUTest, ServiceSearchResponsePDURecordsCountIncludesProperOverhead) {
+  ServiceSearchResponse resp;
+  resp.set_service_record_handle_list({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
+  resp.GetPDU(0x00FF, 0x0110, 50, BufferView());
+}
+
 TEST(PDUTest, ServiceAttributeRequestValidity) {
   ServiceAttributeRequest req;
 

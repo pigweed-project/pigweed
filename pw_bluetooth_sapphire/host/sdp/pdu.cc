@@ -483,7 +483,8 @@ MutableByteBufferPtr ServiceSearchResponse::GetPDU(
 
   // The most records we can send in a packet of max_size (including a
   // continuation and Header)
-  const uint16_t max_records = (max_size - min_size) / sizeof(ServiceHandle);
+  const uint16_t max_records =
+      (max_size - min_size - sizeof(uint16_t)) / sizeof(ServiceHandle);
 
   uint8_t info_length = 0;
   if (max_records < current_record_count) {
