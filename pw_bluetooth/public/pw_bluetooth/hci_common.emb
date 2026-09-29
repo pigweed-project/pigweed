@@ -1410,6 +1410,9 @@ struct CommandHeader:
 
   $next [+1]  UInt        parameter_total_size
 
+  let max_parameter_total_size = $upper_bound(parameter_total_size)
+  let max_command_packet_size = $size_in_bytes + max_parameter_total_size
+
 
 struct EventHeader:
   -- HCI Event packet header.

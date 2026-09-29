@@ -392,6 +392,37 @@ TEST_F(IsoStreamTest, SetupDataPathWithCodecConfig) {
       SetupDataPathError::kSuccess);
 }
 
+TEST_F(IsoStreamTest,
+       SetupDataPathWithOversizedCodecConfigFailsWithInvalidArgs) {
+  EstablishCis(pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  // The fixed parameters of LE_Setup_ISO_Data_Path total 13 bytes.
+  // Since the maximum command parameter payload is 255 bytes, the maximum valid
+  // codec_configuration size is 255 - 13 = 242 bytes.
+  // Since codec_configuration_length is an 8-bit field, the maximum
+  // representable configuration size is 255 bytes. Thus, the invalid sizes are
+  // exactly the finite range [243, 255]. We cover all 13 failure cases
+  // exhaustively.
+  for (size_t invalid_size = 243; invalid_size <= 255; ++invalid_size) {
+    std::vector<uint8_t> oversized_config(invalid_size, 0);
+    SetupDataPath(pw::bluetooth::emboss::DataPathDirection::OUTPUT,
+                  oversized_config,
+                  /*cmd_complete_status=*/std::nullopt,
+                  iso::IsoStream::SetupDataPathError::kInvalidArgs);
+  }
+}
+
+TEST_F(IsoStreamTest, SetupDataPathWithMaxValidCodecConfigSucceeds) {
+  EstablishCis(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  // The maximum valid codec_configuration size is exactly 242 bytes.
+  std::vector<uint8_t> max_valid_config(242, 0);
+  SetupDataPath(
+      pw::bluetooth::emboss::DataPathDirection::OUTPUT,
+      max_valid_config,
+      /*cmd_complete_status=*/pw::bluetooth::emboss::StatusCode::SUCCESS,
+      iso::IsoStream::SetupDataPathError::kSuccess);
+}
+
 // If the connection ID doesn't match in the command complete packet, fail
 TEST_F(IsoStreamTest, SetupDataPathHandleMismatch) {
   EstablishCis(pw::bluetooth::emboss::StatusCode::SUCCESS);

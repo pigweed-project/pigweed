@@ -3102,7 +3102,11 @@ struct LESetupISODataPathCommand:
     [requires: 0x000000 <= this <= 0x3D0900]
 
   $next [+1]                           UInt                                codec_configuration_length
-    -- Length of codec configuration
+    -- Length of codec configuration.
+    -- While this is an 8-bit field, the maximum command parameter payload size
+    -- is 255 bytes. The other parameters in this command total 13 bytes,
+    -- leaving a maximum of 242 bytes for the codec configuration.
+    [requires: 0 <= this <= 242]
 
   $next [+codec_configuration_length]  UInt:8[codec_configuration_length]  codec_configuration
     -- Codec-specific configuration data

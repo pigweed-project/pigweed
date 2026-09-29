@@ -688,6 +688,10 @@ inline constexpr size_t kMaxNameLength = bt::kMaxNameLength;
 // header. See Core Spec v5.0 Vol 2, Part E, 5.4.1, paragraph 2.
 inline constexpr size_t kMaxCommandPacketPayloadSize = 255;
 
+// The maximum number of bytes in a HCI Command Packet, including the header.
+inline constexpr size_t kMaxCommandPacketSize =
+    pw::bluetooth::emboss::CommandHeader::max_command_packet_size();
+
 // The maximum number of bytes in a HCI event Packet payload, excluding the
 // header. See Core Spec v5.0 Vol 2, Part E, 5.4.4, paragraph 1.
 inline constexpr size_t kMaxEventPacketPayloadSize = 255;

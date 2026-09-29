@@ -16,8 +16,11 @@
 
 #include <pw_assert/check.h>
 
+#include <limits>
+
 #include "pw_bluetooth/hci_data.emb.h"
 #include "pw_bluetooth_sapphire/internal/host/common/log.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/util.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/sequential_command_runner.h"
@@ -382,6 +385,14 @@ void IsoStreamImpl::SetupDataPath(
   size_t packet_size =
       pw::bluetooth::emboss::LESetupISODataPathCommand::MinSizeInBytes() +
       (codec_configuration.has_value() ? codec_configuration->size() : 0);
+  if (packet_size > hci_spec::kMaxCommandPacketSize) {
+    bt_log(WARN,
+           "iso",
+           "codec_configuration too large for HCI command packet (%zu)",
+           codec_configuration->size());
+    on_complete_cb(SetupDataPathError::kInvalidArgs);
+    return;
+  }
   auto cmd_packet = hci::CommandPacket::New<
       pw::bluetooth::emboss::LESetupISODataPathCommandWriter>(
       hci_spec::kLESetupISODataPath, packet_size);
