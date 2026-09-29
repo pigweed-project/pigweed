@@ -114,6 +114,7 @@ declare_args() {
   dir_pw_fuzzer = get_path_info("../pw_fuzzer", "abspath")
   dir_pw_ghish = get_path_info("../pw_ghish", "abspath")
   dir_pw_grpc = get_path_info("../pw_grpc", "abspath")
+  dir_pw_hal = get_path_info("../pw_hal", "abspath")
   dir_pw_hdlc = get_path_info("../pw_hdlc", "abspath")
   dir_pw_hex_dump = get_path_info("../pw_hex_dump", "abspath")
   dir_pw_i2c = get_path_info("../pw_i2c", "abspath")
@@ -322,6 +323,7 @@ declare_args() {
     dir_pw_fuzzer,
     dir_pw_ghish,
     dir_pw_grpc,
+    dir_pw_hal,
     dir_pw_hdlc,
     dir_pw_hex_dump,
     dir_pw_i2c,
@@ -519,6 +521,7 @@ declare_args() {
     "$dir_pw_fuzzer:tests",
     "$dir_pw_ghish:tests",
     "$dir_pw_grpc:tests",
+    "$dir_pw_hal:tests",
     "$dir_pw_hdlc:tests",
     "$dir_pw_hex_dump:tests",
     "$dir_pw_i2c:tests",

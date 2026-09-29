@@ -401,19 +401,19 @@
       "C++"
     ]
   },
-  "pw_enum": {
-    "tagline": "Rich enum support",
-    "status": "unstable",
-    "languages": [
-      "C++"
-    ]
-  },
   "pw_emu": {
     "tagline": "Flexible emulators frontend",
     "status": "experimental",
     "languages": [
       "Python",
       "CLI"
+    ]
+  },
+  "pw_enum": {
+    "tagline": "Rich enum support",
+    "status": "unstable",
+    "languages": [
+      "C++"
     ]
   },
   "pw_env_setup": {
@@ -471,6 +471,10 @@
     "languages": [
       "C++"
     ]
+  },
+  "pw_hal": {
+    "status": "experimental",
+    "languages": []
   },
   "pw_hdlc": {
     "tagline": "Simple, robust, and efficient serial communication",

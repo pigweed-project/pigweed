@@ -78,6 +78,7 @@ pw_function
 pw_fuzzer
 pw_ghish
 pw_grpc
+pw_hal
 pw_hdlc
 pw_hex_dump
 pw_i2c
