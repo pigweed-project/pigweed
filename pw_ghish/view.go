@@ -16,7 +16,6 @@ package pw_ghish
 
 import (
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -168,8 +167,12 @@ var viewCmd = &cobra.Command{
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if builds, err := queryBuildbucket(ctx, bbHost, gHost, change.Project, change.Number, patchset, http.DefaultClient); err == nil && builds != nil {
+				luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient(ctx, bbHost))
+				builds, err := luciClient.SearchBuilds(ctx, gHost, change.Project, change.Number, patchset)
+				if err == nil && builds != nil {
 					checksSummary = formatCheckSummary(builds)
+				} else if ExitCodeFor(err) == ExitCodeAuth {
+					checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 				}
 			}()
 		}

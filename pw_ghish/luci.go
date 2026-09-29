@@ -128,6 +128,8 @@ func (b *bbBuild) IsExperimental() bool {
 type bbSearchBuildsRequest struct {
 	Predicate bbPredicate `json:"predicate"`
 	Mask      bbBuildMask `json:"mask,omitempty"`
+	PageSize  int         `json:"pageSize,omitempty"`
+	PageToken string      `json:"pageToken,omitempty"`
 }
 
 type bbPredicate struct {
@@ -142,7 +144,8 @@ type bbGerritChange struct {
 }
 
 type bbSearchBuildsResponse struct {
-	Builds []bbBuild `json:"builds"`
+	Builds        []bbBuild `json:"builds"`
+	NextPageToken string    `json:"nextPageToken,omitempty"`
 }
 
 type bbBuildMask struct {
@@ -170,6 +173,16 @@ func NewLUCIClient(host string, httpClient *http.Client) *LUCIClient {
 		Host:       host,
 		HTTPClient: httpClient,
 	}
+}
+
+func newLUCIHTTPAuthError(target string, statusCode int, body []byte) error {
+	return NewExitCodeError(ExitCodeAuth,
+		"%s returned HTTP %d: %s\n\n"+
+			"To authenticate with LUCI:\n"+
+			"  1. Run: luci-auth login\n"+
+			"  2. Or set an OAuth token: export GHISH_LUCI_TOKEN=\"<token>\"\n"+
+			"  3. Check auth status: gh auth status",
+		target, statusCode, strings.TrimSpace(string(body)))
 }
 
 // CallPRPC makes a pRPC POST request to the specified service and method on the LUCI client's host.
@@ -229,6 +242,9 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
+		if httpResp.StatusCode == http.StatusUnauthorized || httpResp.StatusCode == http.StatusForbidden {
+			return newLUCIHTTPAuthError(fmt.Sprintf("Buildbucket %s/%s", service, method), httpResp.StatusCode, bodyBytes)
+		}
 		return fmt.Errorf("Buildbucket %s/%s returned HTTP %d: %s", service, method, httpResp.StatusCode, string(bodyBytes))
 	}
 
@@ -262,28 +278,42 @@ func (c *LUCIClient) SearchBuilds(ctx context.Context, gerritHost, project strin
 		return nil, fmt.Errorf("patchsetNum must be greater than 0")
 	}
 
-	reqPayload := bbSearchBuildsRequest{
-		Predicate: bbPredicate{
-			GerritChanges: []bbGerritChange{
-				{
-					Host:     gerritHost,
-					Project:  project,
-					Change:   changeNum,
-					Patchset: patchsetNum,
+	var allBuilds []bbBuild
+	pageToken := ""
+	for {
+		reqPayload := bbSearchBuildsRequest{
+			Predicate: bbPredicate{
+				GerritChanges: []bbGerritChange{
+					{
+						Host:     gerritHost,
+						Project:  project,
+						Change:   changeNum,
+						Patchset: patchsetNum,
+					},
 				},
 			},
-		},
-		Mask: bbBuildMask{
-			Fields: "id,builder,status,create_time,start_time,end_time,summary_markdown,critical,input.experiments,tags",
-		},
+			Mask: bbBuildMask{
+				Fields: "id,builder,status,create_time,start_time,end_time,summary_markdown,critical,input.experiments,tags",
+			},
+			PageSize:  1000,
+			PageToken: pageToken,
+		}
+
+		var searchResp bbSearchBuildsResponse
+		if err := c.CallPRPC(ctx, "buildbucket.v2.Builds", "SearchBuilds", reqPayload, &searchResp); err != nil {
+			return nil, err
+		}
+		if searchResp.Builds != nil && allBuilds == nil {
+			allBuilds = []bbBuild{}
+		}
+		allBuilds = append(allBuilds, searchResp.Builds...)
+		if searchResp.NextPageToken == "" {
+			break
+		}
+		pageToken = searchResp.NextPageToken
 	}
 
-	var searchResp bbSearchBuildsResponse
-	if err := c.CallPRPC(ctx, "buildbucket.v2.Builds", "SearchBuilds", reqPayload, &searchResp); err != nil {
-		return nil, err
-	}
-
-	return searchResp.Builds, nil
+	return allBuilds, nil
 }
 
 // GetBuildDetails fetches step-level details for a build from Buildbucket.
@@ -345,6 +375,9 @@ func (c *LUCIClient) FetchLogStream(ctx context.Context, viewURL string, maxLine
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return "", newLUCIHTTPAuthError("LogDog", resp.StatusCode, body)
+		}
 		return "", fmt.Errorf("LogDog returned HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

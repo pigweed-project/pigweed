@@ -366,6 +366,12 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	}
 	t.Cleanup(func() { NewGerritClient = origClient })
 
+	origLUCIClient := getLUCIHTTPClient
+	getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
+		return s.Server.Client()
+	}
+	t.Cleanup(func() { getLUCIHTTPClient = origLUCIClient })
+
 	return s
 }
 

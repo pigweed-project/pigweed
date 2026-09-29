@@ -32,10 +32,25 @@ fi
 
 export BAZELISK_SKIP_WRAPPER=1
 
+_COMMON_GIT_DIR=$(git -C "$_PW_SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+_MAIN_REPO_DIR=""
+if [ -n "$_COMMON_GIT_DIR" ]; then
+  _MAIN_REPO_DIR=$(dirname "$_COMMON_GIT_DIR")
+fi
+
 if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk" ]; then
   export PATH="${_PW_SCRIPT_DIR}/environment/cipd/packages/bazelisk:${PATH}"
+elif [ -n "$_MAIN_REPO_DIR" ] && [ -d "${_MAIN_REPO_DIR}/environment/cipd/packages/bazelisk" ]; then
+  export PATH="${_MAIN_REPO_DIR}/environment/cipd/packages/bazelisk:${PATH}"
 elif [ -d "$HOME/bin" ]; then
   export PATH="$HOME/bin:${PATH}"
+fi
+if [ -d "${_PW_SCRIPT_DIR}/environment/cipd/packages/luci" ]; then
+  export PATH="${_PW_SCRIPT_DIR}/environment/cipd/packages/luci:${PATH}"
+elif [ -n "$_MAIN_REPO_DIR" ] && [ -d "${_MAIN_REPO_DIR}/environment/cipd/packages/luci" ]; then
+  export PATH="${_MAIN_REPO_DIR}/environment/cipd/packages/luci:${PATH}"
+elif [ -n "${PW_ENVIRONMENT_ROOT:-}" ] && [ -d "${PW_ENVIRONMENT_ROOT}/cipd/packages/luci" ]; then
+  export PATH="${PW_ENVIRONMENT_ROOT}/cipd/packages/luci:${PATH}"
 fi
 
 # Prebuilt cache directory (defaults to out/gh, which is .gitignored in Pigweed).

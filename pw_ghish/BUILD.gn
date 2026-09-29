@@ -24,6 +24,7 @@ pw_doc_group("docs") {
   sources = [
     "agent_eval.rst",
     "ai_workflows.rst",
+    "auth.rst",
     "cli_comparison.rst",
     "docs.rst",
     "issue.rst",

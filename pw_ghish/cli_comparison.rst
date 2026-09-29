@@ -112,7 +112,7 @@ Unbound shorthands and out-of-scope commands
     ``--milestone`` and ``--merge``)
 
 * **Not implemented**: ``--jq``/``-q`` as an output filter, ``gh api``,
-  ``gh auth status``, ``-R/--repo``, ``gh release``, ``gh gist``, and
+  ``-R/--repo``, ``gh release``, ``gh gist``, and
   ``pr merge --squash/--rebase/--delete-branch`` (Gerrit submits a whole
   change, and the merge strategy is a repository setting rather than a
   per-change choice).

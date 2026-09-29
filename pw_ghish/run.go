@@ -53,10 +53,13 @@ func isBuildbucketID(s string) bool {
 }
 
 // parseRunTargetArgs resolves target arguments for 'run view' and 'run rerun'.
-// It handles 0, 1, or 2 positional arguments where a single argument may be a
-// Buildbucket build ID (if allowBuildID is true), a Gerrit change identifier,
+// It handles 0, 1, or 2 positional arguments where a single argument (or -j flag)
+// may be a Buildbucket build ID (if allowBuildID is true), a Gerrit change identifier,
 // or a builder name.
 func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allowBuildID bool) (rawID, targetBuilder, directBuildID string, err error) {
+	if allowBuildID && isBuildbucketID(jobFlag) {
+		return "", "", jobFlag, nil
+	}
 	if len(args) == 0 {
 		id, err := ResolveTargetChangeID(cmd.Context(), cmd, nil)
 		if err != nil {
@@ -86,6 +89,9 @@ func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allow
 	targetBuilder = args[1]
 	if jobFlag != "" {
 		targetBuilder = jobFlag
+	}
+	if allowBuildID && isBuildbucketID(targetBuilder) {
+		return "", "", targetBuilder, nil
 	}
 	return rawID, targetBuilder, "", nil
 }
@@ -234,7 +240,7 @@ var runViewCmd = &cobra.Command{
 			} else if targetBuilder != "" {
 				var matching []bbBuild
 				for _, b := range res.Builds {
-					if strings.EqualFold(b.Builder.Builder, targetBuilder) {
+					if strings.EqualFold(b.Builder.Builder, targetBuilder) || b.ID == targetBuilder {
 						matching = append(matching, b)
 					}
 				}

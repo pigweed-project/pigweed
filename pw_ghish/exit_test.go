@@ -138,6 +138,9 @@ func TestExitCodesMatchGitHubCLI(t *testing.T) {
 	if ExitCodeFailure != 1 {
 		t.Errorf("ExitCodeFailure = %d, want 1", ExitCodeFailure)
 	}
+	if ExitCodeAuth != 4 {
+		t.Errorf("ExitCodeAuth = %d, want 4 (gh uses 4 for authentication errors)", ExitCodeAuth)
+	}
 	if ExitCodePending != 8 {
 		t.Errorf("ExitCodePending = %d, want 8 (gh pr checks uses 8 for pending)", ExitCodePending)
 	}

@@ -154,6 +154,8 @@ CORE COMMAND CHEAT-SHEET
      $ %[1]s pr list [--limit 30] [--state open|closed|merged|all] [--base <branch>] [--label <label>]
    - Check your overall review status:
      $ %[1]s pr status
+   - Check authentication status across Gerrit, LUCI, and Buganizer:
+     $ %[1]s auth status
 
 2. VIEWING DETAILS & COMMENTS
    - View change metadata and file modifications:
@@ -259,7 +261,7 @@ Long form only, because 'gh' gives the shorthand another meaning: --auto
 and --merge).
 
 Not implemented, and loud about it: --jq/-q as an output filter, 'gh api',
-'gh auth status', -R/--repo, and 'pr merge --squash/--rebase/--delete-branch'
+-R/--repo, and 'pr merge --squash/--rebase/--delete-branch'
 (Gerrit submits a whole change; the strategy is a project setting).
 `
 
@@ -273,6 +275,11 @@ var RootCmd = &cobra.Command{
 		if ProfileFlag != "" {
 			if _, ok := GetProfile(ProfileFlag); !ok {
 				return fmt.Errorf("unknown profile: %q", ProfileFlag)
+			}
+		}
+		if AuthModeFlag != "" {
+			if _, _, err := ResolveAuthMode(cmd.Context(), nil); err != nil {
+				return err
 			}
 		}
 		cwd, err := os.Getwd()
@@ -339,10 +346,12 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
 	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
+	RootCmd.PersistentFlags().StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 
 	flag.StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	flag.BoolVar(&VerboseFlag, "verbose", false, "Enable verbose (debug) logging")
 	flag.StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
+	flag.StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 }
 
 // getRPCClient returns an HTTP client configured with authenticated transport.

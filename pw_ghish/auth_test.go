@@ -506,3 +506,278 @@ func TestFindGitCookieFile_WithContext(t *testing.T) {
 		t.Errorf("got %q, want %q", pathActive, "/tmp/custom_cookiefile")
 	}
 }
+
+func TestResolveAuthMode(t *testing.T) {
+	ctx := context.Background()
+
+	origFlag := AuthModeFlag
+	defer func() { AuthModeFlag = origFlag }()
+	origLookPath := LookPathFn
+	defer func() { LookPathFn = origLookPath }()
+
+	t.Run("explicit flag googler", func(t *testing.T) {
+		AuthModeFlag = "googler"
+		mode, reason, err := ResolveAuthMode(ctx, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeGoogler || !strings.Contains(reason, "--auth-mode=googler") {
+			t.Errorf("got (%q, %q), want (googler, --auth-mode=googler)", mode, reason)
+		}
+	})
+
+	t.Run("explicit flag invalid", func(t *testing.T) {
+		AuthModeFlag = "bogus"
+		_, _, err := ResolveAuthMode(ctx, nil)
+		if err == nil {
+			t.Fatal("expected error for invalid auth mode")
+		}
+		if ExitCodeFor(err) != ExitCodeAuth {
+			t.Errorf("exit code = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+		}
+	})
+
+	t.Run("env var community", func(t *testing.T) {
+		AuthModeFlag = ""
+		t.Setenv("GH_ISH_AUTH_MODE", "community")
+		mode, reason, err := ResolveAuthMode(ctx, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeCommunity || !strings.Contains(reason, "GH_ISH_AUTH_MODE=community") {
+			t.Errorf("got (%q, %q), want (community, GH_ISH_AUTH_MODE=community)", mode, reason)
+		}
+	})
+
+	t.Run("auto detects googler via gob-curl on PATH", func(t *testing.T) {
+		AuthModeFlag = ""
+		t.Setenv("GH_ISH_AUTH_MODE", "")
+		LookPathFn = func(file string) (string, error) {
+			if file == "gob-curl" {
+				return "/usr/bin/gob-curl", nil
+			}
+			return "", os.ErrNotExist
+		}
+		mode, reason, err := ResolveAuthMode(ctx, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeGoogler || !strings.Contains(reason, "gob-curl") {
+			t.Errorf("got (%q, %q), want (googler, gob-curl)", mode, reason)
+		}
+	})
+
+	t.Run("auto detects googler via @google.com git email", func(t *testing.T) {
+		AuthModeFlag = ""
+		t.Setenv("GH_ISH_AUTH_MODE", "")
+		LookPathFn = func(file string) (string, error) {
+			return "", os.ErrNotExist
+		}
+		mockGit := &MockGitRunner{}
+		mockGit.OnCommand("config --get user.email", "keir@google.com\n")
+		cfg := &Config{Git: mockGit}
+
+		mode, reason, err := ResolveAuthMode(ctx, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeGoogler || !strings.Contains(reason, "keir@google.com") {
+			t.Errorf("got (%q, %q), want (googler, keir@google.com)", mode, reason)
+		}
+	})
+
+	t.Run("auto detects community when no corp signals", func(t *testing.T) {
+		AuthModeFlag = ""
+		t.Setenv("GH_ISH_AUTH_MODE", "")
+		LookPathFn = func(file string) (string, error) {
+			return "", os.ErrNotExist
+		}
+		mockGit := &MockGitRunner{}
+		mockGit.OnCommand("config --get user.email", "contributor@example.com\n")
+		cfg := &Config{Git: mockGit}
+
+		mode, _, err := ResolveAuthMode(ctx, cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeCommunity {
+			t.Errorf("got %q, want community", mode)
+		}
+	})
+}
+
+func TestNewAuthTransportContext_GooglerModeRefusesSilentAnonFallback(t *testing.T) {
+	ctx := context.Background()
+	origFlag := AuthModeFlag
+	AuthModeFlag = "googler"
+	defer func() { AuthModeFlag = origFlag }()
+
+	origLookPath := LookPathFn
+	LookPathFn = func(file string) (string, error) {
+		return "", os.ErrNotExist
+	}
+	defer func() { LookPathFn = origLookPath }()
+
+	t.Setenv("GH_ISH_AUTH_METHOD", "auto")
+	t.Setenv("GERRIT_TOKEN", "")
+	t.Setenv("HOME", t.TempDir())
+
+	mockGit := &MockGitRunner{}
+	SetMockGit(t, mockGit)
+
+	_, err := NewAuthTransportContext(ctx, "https://pigweed-review.googlesource.com")
+	if err == nil {
+		t.Fatal("expected error in googler mode when no credentials exist, got nil")
+	}
+	if ExitCodeFor(err) != ExitCodeAuth {
+		t.Errorf("exit code = %d, want %d (%v)", ExitCodeFor(err), ExitCodeAuth, err)
+	}
+	if !strings.Contains(err.Error(), "gcert") || !strings.Contains(err.Error(), "gh auth status") {
+		t.Errorf("expected error to contain gcert and gh auth status remediation, got:\n%v", err)
+	}
+}
+
+func TestFallbackTransport_DisallowAnonFallbackInGooglerMode(t *testing.T) {
+	requests := 0
+	mockBase := &mockTransport{
+		roundTrip: func(req *http.Request) (*http.Response, error) {
+			requests++
+			return &http.Response{
+				StatusCode: http.StatusUnauthorized,
+				Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		},
+	}
+
+	fb := &fallbackTransport{
+		base:                 mockBase,
+		disallowAnonFallback: true,
+	}
+
+	req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/changes/123", nil)
+	resp, err := fb.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want 401 (no downgrade)", resp.StatusCode)
+	}
+	if requests != 1 {
+		t.Errorf("expected exactly 1 request (no retry on unauthenticated path), got %d", requests)
+	}
+}
+
+func TestGobCurlTransport_FailureReturnsExitCodeAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	mockScript := filepath.Join(tmpDir, "mock-gob-curl-fail.sh")
+	scriptContent := "#!/bin/sh\nprintf 'LOAS certificate expired\\n' >&2\nexit 1\n"
+	if err := os.WriteFile(mockScript, []byte(scriptContent), 0755); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	tr := &GobCurlTransport{Path: mockScript}
+	req, _ := http.NewRequest("GET", "https://pigweed-review.googlesource.com/a/accounts/self", nil)
+	_, err := tr.RoundTrip(req)
+	if err == nil {
+		t.Fatal("expected error when gob-curl fails")
+	}
+	if ExitCodeFor(err) != ExitCodeAuth {
+		t.Errorf("ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+	}
+	if !strings.Contains(err.Error(), "gcert") {
+		t.Errorf("expected gcert remediation in error, got: %v", err)
+	}
+}
+
+func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
+	origLookPath := LookPathFn
+	defer func() { LookPathFn = origLookPath }()
+
+	t.Setenv("PW_ENVIRONMENT_ROOT", "")
+	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
+
+	mainRepoRoot := filepath.Join(t.TempDir(), "pigweed")
+	expectedLuciAuth := filepath.Join(mainRepoRoot, "environment", "cipd", "packages", "luci", "luci-auth")
+
+	LookPathFn = func(file string) (string, error) {
+		if file == expectedLuciAuth {
+			return expectedLuciAuth, nil
+		}
+		return "", os.ErrNotExist
+	}
+
+	mockGit := &MockGitRunner{}
+	mockGit.OnCommand("rev-parse --git-common-dir", filepath.Join(mainRepoRoot, ".git")+"\n")
+	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+
+	got := findLuciAuthBinary(ctx)
+	if got != expectedLuciAuth {
+		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
+	}
+}
+
+func TestLUCIAuthTransport(t *testing.T) {
+	origResolver := LUCITokenResolver
+	defer func() { LUCITokenResolver = origResolver }()
+	origFlag := AuthModeFlag
+	defer func() { AuthModeFlag = origFlag }()
+
+	t.Run("attaches Bearer token when available", func(t *testing.T) {
+		AuthModeFlag = "googler"
+		LUCITokenResolver = func(ctx context.Context) (string, string, error) {
+			return "luci-secret-token", "luci-auth token", nil
+		}
+		rec := &mockTransportRecorder{}
+		tr := &LUCIAuthTransport{Base: rec}
+
+		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
+		_, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip failed: %v", err)
+		}
+		if got := rec.lastReq.Header.Get("Authorization"); got != "Bearer luci-secret-token" {
+			t.Errorf("Authorization = %q, want 'Bearer luci-secret-token'", got)
+		}
+	})
+
+	t.Run("fails with ExitCodeAuth in googler mode when token missing", func(t *testing.T) {
+		AuthModeFlag = "googler"
+		LUCITokenResolver = func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("interactive login required")
+		}
+		rec := &mockTransportRecorder{}
+		tr := &LUCIAuthTransport{Base: rec}
+
+		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
+		_, err := tr.RoundTrip(req)
+		if err == nil {
+			t.Fatal("expected error in googler mode when LUCI token is missing")
+		}
+		if ExitCodeFor(err) != ExitCodeAuth {
+			t.Errorf("ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+		}
+		if rec.lastReq != nil {
+			t.Errorf("expected no HTTP request to be sent when googler LUCI check fails")
+		}
+	})
+
+	t.Run("proceeds unauthenticated in community mode when token missing", func(t *testing.T) {
+		AuthModeFlag = "community"
+		LUCITokenResolver = func(ctx context.Context) (string, string, error) {
+			return "", "", fmt.Errorf("luci-auth not installed")
+		}
+		rec := &mockTransportRecorder{}
+		tr := &LUCIAuthTransport{Base: rec}
+
+		req, _ := http.NewRequest("POST", "https://cr-buildbucket.appspot.com/prpc/buildbucket.v2.Builds/SearchBuilds", nil)
+		_, err := tr.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("expected community mode to proceed unauthenticated, got error: %v", err)
+		}
+		if got := rec.lastReq.Header.Get("Authorization"); got != "" {
+			t.Errorf("expected empty Authorization header in community mode without token, got %q", got)
+		}
+	})
+}

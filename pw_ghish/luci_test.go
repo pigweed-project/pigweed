@@ -1192,3 +1192,65 @@ func TestCleanStepSummary(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchBuilds_Pagination(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		var req bbSearchBuildsRequest
+		_ = json.Unmarshal(body, &req)
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			if req.PageToken != "" {
+				t.Errorf("expected empty PageToken on page 1, got %q", req.PageToken)
+			}
+			w.Write([]byte(")]}'\n" + `{"builds":[{"id":"101","status":"SUCCESS","builder":{"builder":"b1"}}],"nextPageToken":"page2"}`))
+			return
+		}
+		if req.PageToken != "page2" {
+			t.Errorf("expected PageToken 'page2' on page 2, got %q", req.PageToken)
+		}
+		w.Write([]byte(")]}'\n" + `{"builds":[{"id":"102","status":"FAILURE","builder":{"builder":"b2"}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewLUCIClient(server.URL, server.Client())
+	builds, err := client.SearchBuilds(ctx, "pigweed-review.googlesource.com", "pigweed/pigweed", 485509, 2)
+	if err != nil {
+		t.Fatalf("SearchBuilds failed: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 paginated calls, got %d", calls)
+	}
+	if len(builds) != 2 || builds[0].ID != "101" || builds[1].ID != "102" {
+		t.Errorf("unexpected aggregated builds: %+v", builds)
+	}
+}
+
+func TestCallPRPC_And_FetchLogStream_AuthErrorsReturnExitCode4(t *testing.T) {
+	ctx := context.Background()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("permission denied"))
+	}))
+	defer server.Close()
+
+	client := NewLUCIClient(server.URL, server.Client())
+	_, err := client.GetBuildDetails(ctx, "8669386795582920881")
+	if err == nil {
+		t.Fatal("expected error on HTTP 403 from GetBuildDetails")
+	}
+	if ExitCodeFor(err) != ExitCodeAuth {
+		t.Errorf("GetBuildDetails ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+	}
+
+	_, err = client.FetchLogStream(ctx, server.URL+"/logs/stdout", 10)
+	if err == nil {
+		t.Fatal("expected error on HTTP 403 from FetchLogStream")
+	}
+	if ExitCodeFor(err) != ExitCodeAuth {
+		t.Errorf("FetchLogStream ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
+	}
+}

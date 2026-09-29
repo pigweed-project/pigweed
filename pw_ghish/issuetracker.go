@@ -25,7 +25,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -341,18 +340,9 @@ var (
 // resources and does not alter Buganizer user permissions.
 const DefaultPigweedQuotaProject = "pigweed-gce"
 
-// DefaultIssueTrackerQuotaProject resolves a GCP project ID for X-Goog-User-Project.
-//
-// Resolution Cascade (strictly READ-ONLY; never mutates GCP services or IAM):
-//  1. Explicit overrides: `GHISH_QUOTA_PROJECT` or `GOOGLE_CLOUD_QUOTA_PROJECT` env vars.
-//  2. Cached repository/global setting: `git config ghish.quotaproject`.
-//  3. Explicit gcloud billing quota setting: `gcloud config get-value billing/quota_project`.
-//  4. Shared 1P team default: `DefaultPigweedQuotaProject` ("pigweed-gce"),
-//     verified via a fast read-only Service Usage state check.
-//  5. Active gcloud default project: `gcloud config get-value project`.
-//  6. Read-only scan of existing active GCP projects (`GET /v1/projects`) where
-//     the Issue Tracker API is already enabled.
-func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
+// ConfiguredIssueTrackerQuotaProject returns a locally configured GCP project ID for
+// X-Goog-User-Project without making network requests or mutating git config.
+func ConfiguredIssueTrackerQuotaProject(ctx context.Context, _ string) string {
 	for _, envVar := range []string{"GHISH_QUOTA_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT"} {
 		if v := strings.TrimSpace(os.Getenv(envVar)); v != "" {
 			return v
@@ -367,13 +357,39 @@ func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
 	}
 	quotaProjectMu.Unlock()
 
-	if out, err := exec.CommandContext(ctx, "git", "config", "--get", "ghish.quotaproject").Output(); err == nil {
-		if v := strings.TrimSpace(string(out)); v != "" {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var runner GitRunner = DefaultGitRunner
+	if cfg, ok := ctx.Value(configKey).(*Config); ok && cfg != nil && cfg.Git != nil {
+		runner = cfg.Git
+	}
+	if v, err := NewGitClient(runner).ConfigGet(ctx, "ghish.quotaproject"); err == nil {
+		if v = strings.TrimSpace(v); v != "" {
 			quotaProjectMu.Lock()
 			cachedQuotaProject = v
 			quotaProjectMu.Unlock()
 			return v
 		}
+	}
+
+	return ""
+}
+
+// DefaultIssueTrackerQuotaProject resolves a GCP project ID for X-Goog-User-Project.
+//
+// Resolution Cascade (strictly READ-ONLY; never mutates GCP services or IAM):
+//  1. Explicit overrides: `GHISH_QUOTA_PROJECT` or `GOOGLE_CLOUD_QUOTA_PROJECT` env vars.
+//  2. Cached repository/global setting: `git config ghish.quotaproject`.
+//  3. Explicit gcloud billing quota setting: `gcloud config get-value billing/quota_project`.
+//  4. Shared 1P team default: `DefaultPigweedQuotaProject` ("pigweed-gce"),
+//     verified via a fast read-only Service Usage state check.
+//  5. Active gcloud default project: `gcloud config get-value project`.
+//  6. Read-only scan of existing active GCP projects (`GET /v1/projects`) where
+//     the Issue Tracker API is already enabled.
+func DefaultIssueTrackerQuotaProject(ctx context.Context, token string) string {
+	if configured := ConfiguredIssueTrackerQuotaProject(ctx, token); configured != "" {
+		return configured
 	}
 
 	if token == "" {
@@ -499,108 +515,61 @@ func probeQuotaProject(ctx context.Context, token, projID string) bool {
 	return svc.State == "ENABLED"
 }
 
-func findLuciAuthBinary(ctx context.Context) string {
-	if path, err := LookPathFn("luci-auth"); err == nil && path != "" {
-		return path
-	}
-	var candidates []string
-	if envRoot := strings.TrimSpace(os.Getenv("PW_ENVIRONMENT_ROOT")); envRoot != "" {
-		candidates = append(candidates,
-			filepath.Join(envRoot, "cipd", "packages", "luci", "luci-auth"),
-			filepath.Join(envRoot, "cipd", "packages", "pigweed", "bin", "luci-auth"),
-		)
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(cwd, "environment", "cipd", "packages", "luci", "luci-auth"),
-			filepath.Join(cwd, ".environment", "cipd", "packages", "luci", "luci-auth"),
-		)
-	}
-	if out, err := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir").Output(); err == nil {
-		commonGitDir := strings.TrimSpace(string(out))
-		if commonGitDir != "" {
-			if abs, err := filepath.Abs(commonGitDir); err == nil {
-				repoRoot := filepath.Dir(abs)
-				candidates = append(candidates,
-					filepath.Join(repoRoot, "environment", "cipd", "packages", "luci", "luci-auth"),
-					filepath.Join(repoRoot, ".environment", "cipd", "packages", "luci", "luci-auth"),
-				)
-			}
-		}
-	}
-	for _, cand := range candidates {
-		if path, err := LookPathFn(cand); err == nil && path != "" {
-			return path
-		}
-	}
-	return ""
-}
-
 var (
 	issueTokenMu           sync.Mutex
 	cachedIssueToken       string
+	cachedIssueTokenSource string
 	cachedIssueTokenExpiry time.Time
 )
 
-// DefaultIssueTrackerToken resolves an OAuth2 access token with Buganizer scope.
-func DefaultIssueTrackerToken(ctx context.Context) (string, error) {
+// ResolveIssueTrackerTokenWithSource resolves an OAuth2 access token with Buganizer scope and returns its source.
+func ResolveIssueTrackerTokenWithSource(ctx context.Context) (string, string, error) {
 	if tok := strings.TrimSpace(os.Getenv("GHISH_ISSUE_TOKEN")); tok != "" {
-		return tok, nil
+		return tok, "GHISH_ISSUE_TOKEN", nil
 	}
 	if tok := strings.TrimSpace(os.Getenv("BUGANIZER_TOKEN")); tok != "" {
-		return tok, nil
+		return tok, "BUGANIZER_TOKEN", nil
 	}
 
 	issueTokenMu.Lock()
 	if cachedIssueToken != "" && time.Now().Before(cachedIssueTokenExpiry) {
-		tok := cachedIssueToken
+		tok, src := cachedIssueToken, cachedIssueTokenSource
 		issueTokenMu.Unlock()
-		return tok, nil
+		return tok, src, nil
 	}
 	issueTokenMu.Unlock()
 
-	cacheToken := func(tok string) (string, error) {
+	if tok, src, err := resolveOAuthTokenFromCLI(ctx, []string{DefaultBuganizerScopes}); err == nil && tok != "" {
 		issueTokenMu.Lock()
 		cachedIssueToken = tok
+		cachedIssueTokenSource = src
 		cachedIssueTokenExpiry = time.Now().Add(5 * time.Minute)
 		issueTokenMu.Unlock()
-		return tok, nil
+		return tok, src, nil
 	}
 
-	// Priority 1: luci-auth with buganizer scope (including Pigweed CIPD & git worktree discovery)
-	if luciAuthBin := findLuciAuthBinary(ctx); luciAuthBin != "" {
-		cmd := exec.CommandContext(ctx, luciAuthBin, "token", "-scopes", "https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform")
-		if out, err := cmd.Output(); err == nil {
-			if tok := strings.TrimSpace(string(out)); tok != "" {
-				return cacheToken(tok)
-			}
-		}
-	}
+	return "", "", NewExitCodeError(ExitCodeAuth,
+		"failed to authenticate with Google Issue Tracker: no OAuth2 token found.\n\n"+
+			"Cause: Neither GHISH_ISSUE_TOKEN, luci-auth, nor gcloud returned an active access token.\n\n"+
+			"Remediation:\n"+
+			"  1. Authenticate via LUCI Auth (recommended for Pigweed/Fuchsia developers):\n"+
+			"     luci-auth login -scopes \"https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform\"\n"+
+			"  2. Or authenticate via Google Cloud SDK:\n"+
+			"     gcloud auth application-default login --scopes=\"https://www.googleapis.com/auth/buganizer,https://www.googleapis.com/auth/cloud-platform\"\n"+
+			"  3. Or provide a token explicitly:\n"+
+			"     export GHISH_ISSUE_TOKEN=\"<token>\"\n"+
+			"  4. Check authentication status:\n"+
+			"     gh auth status")
+}
 
-	// Priority 2: gcloud application-default or active account token
-	if _, err := LookPathFn("gcloud"); err == nil {
-		for _, args := range [][]string{
-			{"auth", "application-default", "print-access-token"},
-			{"auth", "print-access-token"},
-		} {
-			cmd := exec.CommandContext(ctx, "gcloud", args...)
-			if out, err := cmd.Output(); err == nil {
-				if tok := strings.TrimSpace(string(out)); tok != "" {
-					return cacheToken(tok)
-				}
-			}
-		}
-	}
+// IssueTrackerTokenResolver resolves an Issue Tracker OAuth2 token and its source.
+// It can be overridden in tests.
+var IssueTrackerTokenResolver = ResolveIssueTrackerTokenWithSource
 
-	return "", fmt.Errorf("failed to authenticate with Google Issue Tracker: no OAuth2 token found.\n\n" +
-		"Cause: Neither GHISH_ISSUE_TOKEN, luci-auth, nor gcloud returned an active access token.\n\n" +
-		"Remediation:\n" +
-		"  1. Authenticate via LUCI Auth (recommended for Pigweed/Fuchsia developers):\n" +
-		"     luci-auth login -scopes \"https://www.googleapis.com/auth/buganizer https://www.googleapis.com/auth/cloud-platform\"\n" +
-		"  2. Or authenticate via Google Cloud SDK:\n" +
-		"     gcloud auth application-default login --scopes=\"https://www.googleapis.com/auth/buganizer,https://www.googleapis.com/auth/cloud-platform\"\n" +
-		"  3. Or provide a token explicitly:\n" +
-		"     export GHISH_ISSUE_TOKEN=\"<token>\"")
+// DefaultIssueTrackerToken resolves an OAuth2 access token with Buganizer scope.
+func DefaultIssueTrackerToken(ctx context.Context) (string, error) {
+	tok, _, err := IssueTrackerTokenResolver(ctx)
+	return tok, err
 }
 
 // NewIssueTrackerClientForCommand creates an IssueTrackerClient for a CLI command using the active profile.
@@ -611,6 +580,18 @@ var NewIssueTrackerClientForCommand = func(ctx context.Context, cmd *cobra.Comma
 			Host: HostFlag,
 			Git:  DefaultGitRunner,
 		}
+	}
+	mode, modeReason, err := ResolveAuthMode(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if mode == AuthModeNone {
+		return nil, NewExitCodeError(ExitCodeAuth,
+			"Google Issue Tracker requires authentication, which is disabled (%s).\n\n"+
+				"Remediation:\n"+
+				"  1. Re-enable authentication by removing --auth-mode=none / GH_ISH_AUTH_MODE=none.\n"+
+				"  2. Check authentication status: gh auth status",
+			modeReason)
 	}
 	profile := cfg.GetProfile(ctx)
 	return NewIssueTrackerClient(profile.IssueTrackerAPIEndpoint(), nil), nil

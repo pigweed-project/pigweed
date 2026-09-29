@@ -113,6 +113,17 @@ Documentation
       Buganizer issue workflows: triaging queues, branching, filing bugs with
       commit trailers, updating structured labels, and closing issues.
 
+.. grid:: 1
+
+   .. grid-item-card:: :octicon:`key` Authentication (gh auth)
+      :link: module-pw_ghish-auth
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Check credentials across Gerrit, LUCI Buildbucket, and Buganizer with
+      ``gh auth status``, and configure ``googler`` or ``community``
+      authentication modes.
+
 .. grid:: 2
 
    .. grid-item-card:: :octicon:`repo-forked` Worktrees (gh wt)
@@ -175,6 +186,7 @@ Documentation
    pr
    run
    issue
+   auth
    worktree
    ai_workflows
    cli_comparison

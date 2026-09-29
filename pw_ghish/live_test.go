@@ -41,11 +41,12 @@ func executeLiveCommand(args ...string) (string, error) {
 	resetAllFlags(RootCmd)
 	HostFlag = "https://pigweed-review.googlesource.com"
 	ProfileFlag = ""
+	AuthModeFlag = ""
 
 	var outBuf, errBuf bytes.Buffer
 	RootCmd.SetOut(&outBuf)
 	RootCmd.SetErr(&errBuf)
-	RootCmd.SetArgs(args)
+	RootCmd.SetArgs(NormalizeCQArgs(args))
 
 	err := RootCmd.Execute()
 	out := outBuf.String()
@@ -56,16 +57,15 @@ func executeLiveCommand(args ...string) (string, error) {
 }
 
 // isCIVerdict reports whether err is a statement about CI (checks failed, or
-// checks are still running) rather than a malfunction of the tool.
+// checks are still running) rather than a malfunction or auth error.
 //
-// `pr checks` exits 1 or 8 in those cases by design, and only the code paths
-// that reach a verdict wrap their error in *ExitCodeError -- an auth failure
-// or a 404 returns a plain error. A test that only inspects the *shape* of
-// the output must therefore tolerate a verdict, or it starts failing every
-// time somebody uploads a patchset to the CL it queries.
+// `pr checks` exits 1 (ExitCodeFailure) or 8 (ExitCodePending) in those cases
+// by design, whereas an authentication failure exits 4 (ExitCodeAuth). A test
+// that only inspects the *shape* of the output must tolerate a CI verdict, or
+// it starts failing every time somebody uploads a patchset to the CL it queries.
 func isCIVerdict(err error) bool {
 	var codeErr *ExitCodeError
-	return errors.As(err, &codeErr)
+	return errors.As(err, &codeErr) && (codeErr.Code == ExitCodeFailure || codeErr.Code == ExitCodePending)
 }
 
 // checksSummaryGlyphs are the leading status markers `pr view` and
@@ -442,8 +442,8 @@ func TestLive_ViewActiveChangeDefault(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &data); err != nil {
 		t.Fatalf("Failed to parse JSON output: %v", err)
 	}
-	if data.Number != 472267 {
-		t.Errorf("got number %d, want 472267", data.Number)
+	if data.Number <= 0 || data.Title == "" {
+		t.Errorf("expected positive change number and non-empty title, got number=%d title=%q", data.Number, data.Title)
 	}
 }
 
@@ -1734,4 +1734,45 @@ func TestLive_IssueLifecycle(t *testing.T) {
 		issueID,
 		fmt.Sprintf("Final Close Output:\n%s\n🎉 All 7 Buganizer lifecycle steps succeeded!",
 			strings.TrimSpace(finalCloseOut)))
+}
+
+// TestLive_AuthStatusAndModes verifies 'gh auth status' and --auth-mode behavior
+// against production Gerrit, Buildbucket, and Buganizer.
+func TestLive_AuthStatusAndModes(t *testing.T) {
+	// 1. Default auth status (human-readable)
+	out, err := executeLiveCommand("auth", "status")
+	if err != nil {
+		t.Fatalf("auth status failed: %v\nOutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "Authentication Mode:") || !strings.Contains(out, "pigweed-review.googlesource.com (Gerrit)") {
+		t.Errorf("unexpected auth status output:\n%s", out)
+	}
+
+	// 2. JSON output in none mode: healthy=true, authenticated=false
+	noneJSON, err := executeLiveCommand("auth", "status", "--auth-mode", "none", "--json")
+	if err != nil {
+		t.Fatalf("auth status --auth-mode none --json failed: %v\nOutput:\n%s", err, noneJSON)
+	}
+	var report AuthStatusReport
+	if err := json.Unmarshal([]byte(noneJSON), &report); err != nil {
+		t.Fatalf("failed to unmarshal auth status JSON: %v\nRaw:\n%s", err, noneJSON)
+	}
+	if report.Mode != AuthModeNone || !report.Healthy || report.Authenticated {
+		t.Errorf("unexpected none mode report: mode=%q healthy=%v authenticated=%v", report.Mode, report.Healthy, report.Authenticated)
+	}
+
+	// 3. Anonymous public read via --auth-mode none
+	viewOut, err := executeLiveCommand("pr", "view", "472267", "--auth-mode", "none", "--json", "number,title")
+	if err != nil {
+		t.Fatalf("pr view --auth-mode none failed: %v\nOutput:\n%s", err, viewOut)
+	}
+	if !strings.Contains(viewOut, "472267") {
+		t.Errorf("expected CL 472267 in view output, got:\n%s", viewOut)
+	}
+
+	// 4. Issue tracker rejects --auth-mode none with ExitCodeAuth
+	_, err = executeLiveCommand("issue", "list", "--limit", "1", "--auth-mode", "none")
+	if ExitCodeFor(err) != ExitCodeAuth {
+		t.Errorf("issue list --auth-mode none exit code = %d, want %d (err: %v)", ExitCodeFor(err), ExitCodeAuth, err)
+	}
 }

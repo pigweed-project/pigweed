@@ -130,6 +130,10 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	if err == nil {
 		return nil
 	}
+	var exitErr *ExitCodeError
+	if errors.As(err, &exitErr) {
+		return err
+	}
 	errStr := err.Error()
 
 	// 1. Authentication failures (HTTP 401 / 403)
@@ -140,13 +144,14 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 		if cleanHost == "" {
 			cleanHost = "<host>"
 		}
-		return fmt.Errorf("error %s change %s: authentication required (HTTP 401/403).\n\n"+
+		return NewExitCodeError(ExitCodeAuth, "%w", fmt.Errorf("error %s change %s: authentication required (HTTP 401/403).\n\n"+
 			"To authenticate with %s:\n"+
 			"  1. Generate Git cookies/credentials at: https://%s/new-password\n"+
 			"  2. Or set a personal access token: export GERRIT_TOKEN=\"<token>\"\n"+
-			"  3. (Corp users) Run 'gcert' to refresh single sign-on credentials.\n\n"+
+			"  3. (Corp users) Run 'gcert' to refresh single sign-on credentials.\n"+
+			"  4. Check auth status: gh auth status\n\n"+
 			"Underlying error: %w",
-			actionDesc, changeID, cleanHost, cleanHost, err)
+			actionDesc, changeID, cleanHost, cleanHost, err))
 	}
 
 	// 2. Change Not Found (HTTP 404)
@@ -485,7 +490,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		patchsetNum = n
 	}
 	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"CURRENT_REVISION"},
+		AdditionalFields: []string{"CURRENT_REVISION", "DETAILED_LABELS"},
 	})
 	if err != nil {
 		return nil, err

@@ -24,6 +24,7 @@ go_library(
     srcs = [
         "account.go",
         "auth.go",
+        "auth_cmd.go",
         "auto_submit.go",
         "bug_links.go",
         "bug_normalizer.go",
@@ -114,6 +115,7 @@ go_test(
     name = "pw_ghish_test",
     srcs = [
         "account_test.go",
+        "auth_cmd_test.go",
         "auth_test.go",
         "auto_submit_test.go",
         "bug_links_test.go",
@@ -175,6 +177,7 @@ sphinx_docs_library(
     srcs = [
         "agent_eval.rst",
         "ai_workflows.rst",
+        "auth.rst",
         "cli_comparison.rst",
         "docs.rst",
         "issue.rst",

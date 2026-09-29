@@ -29,6 +29,10 @@ const (
 	// request a more specific one.
 	ExitCodeFailure = 1
 
+	// ExitCodeAuth indicates an authentication failure (matching `gh`, which
+	// uses exit code 4 when authentication is missing or rejected).
+	ExitCodeAuth = 4
+
 	// ExitCodePending indicates that CI checks have not finished yet. `gh pr
 	// checks` uses exit code 8 for this so that callers can distinguish "not
 	// done yet" (retry later) from "failed" (stop and investigate). Returning

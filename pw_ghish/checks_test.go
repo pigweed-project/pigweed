@@ -1293,13 +1293,13 @@ func TestRunWatch_InheritsExitCodeContract(t *testing.T) {
 func TestGetLUCIHTTPClient(t *testing.T) {
 	ctx := context.Background()
 
-	// Default client:
+	// Default client uses LUCIAuthTransport:
 	client := getLUCIHTTPClient(ctx, "cr-buildbucket.appspot.com")
 	if client == nil {
 		t.Fatal("expected non-nil client")
 	}
-	if client != http.DefaultClient {
-		t.Errorf("expected http.DefaultClient, got %v", client)
+	if _, ok := client.Transport.(*LUCIAuthTransport); !ok {
+		t.Errorf("expected *LUCIAuthTransport, got %T", client.Transport)
 	}
 
 	// Customizable hook:

@@ -806,12 +806,30 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 //
 // -q is deliberately not handled: it is gh's --jq, so it is not bound here.
 func NormalizeCQArgs(args []string) []string {
+	isAuthCmd := false
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if a == "auth" {
+			isAuthCmd = true
+			break
+		}
+	}
 	result := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--cq" && i+1 < len(args) {
 			next := args[i+1]
 			if next == "0" || next == "1" || next == "2" {
+				result = append(result, arg+"="+next)
+				i++
+				continue
+			}
+		}
+		if isAuthCmd && arg == "--json" && i+1 < len(args) {
+			next := args[i+1]
+			if !strings.HasPrefix(next, "-") {
 				result = append(result, arg+"="+next)
 				i++
 				continue

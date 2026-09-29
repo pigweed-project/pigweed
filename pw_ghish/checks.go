@@ -111,7 +111,9 @@ func FormatOmittedExperimentalNotice(omittedCount int) string {
 // It standardizes where the LUCI HTTP client comes from across checks and run commands,
 // and provides a centralized extension point for authenticated transport in private buckets.
 var getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
-	return http.DefaultClient
+	return &http.Client{
+		Transport: &LUCIAuthTransport{},
+	}
 }
 
 // queryBuildbucket sends a pRPC request to Buildbucket to search for builds.
