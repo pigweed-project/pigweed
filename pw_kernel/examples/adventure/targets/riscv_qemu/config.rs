@@ -16,8 +16,8 @@
 use core::ops::Range;
 
 pub use kernel_config::{
-    ClintTimerConfigInterface, ExceptionMode, KernelConfigInterface, PlicConfigInterface,
-    RiscVKernelConfigInterface,
+    ClintConfigInterface, ClintTimerConfigInterface, ExceptionMode, KernelConfigInterface,
+    PlicConfigInterface, RiscVKernelConfigInterface,
 };
 use memory_config::{MemoryRegion, MemoryRegionType};
 
@@ -56,9 +56,10 @@ impl PlicConfigInterface for PlicConfig {
 
 pub struct TimerConfig;
 
-const TIMER_BASE: usize = 0x200_0000;
+const TIMER_BASE: usize = 0x0200_0000;
 
-impl ClintTimerConfigInterface for TimerConfig {
+impl ClintConfigInterface for TimerConfig {
+    const MSIP_REGISTER: usize = TIMER_BASE;
     const MTIME_REGISTER: usize = TIMER_BASE + 0xbff8;
     const MTIMECMP_REGISTER: usize = TIMER_BASE + 0x4000;
 }

@@ -124,14 +124,20 @@ pub trait VeerPicConfigInterface {
     const MEIVT_BASE_ADDRESS: usize;
 }
 
-/// CLINT timer config.
-pub trait ClintTimerConfigInterface {
-    /// Address of mtime register.
+/// CLINT configuration.
+pub trait ClintConfigInterface {
+    /// Base address of the 32-bit per-hart `msip` register array.
+    const MSIP_REGISTER: usize = 0;
+
+    /// Address of the shared 64-bit `mtime` register.
     const MTIME_REGISTER: usize;
 
-    /// Address of mtime compare register.
+    /// Base address of the 64-bit per-hart `mtimecmp` register array (Hart 0's `mtimecmp`).
     const MTIMECMP_REGISTER: usize;
 }
+
+/// Deprecated alias for backwards compatibility.
+pub use ClintConfigInterface as ClintTimerConfigInterface;
 
 /// mtime timer config.
 pub trait MTimeTimerConfigInterface {
