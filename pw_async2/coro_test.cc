@@ -41,6 +41,7 @@ using ::pw::async2::Context;
 using ::pw::async2::Coro;
 using ::pw::async2::CoroContext;
 using ::pw::async2::DispatcherForTest;
+using ::pw::async2::FallibleCoro;
 using ::pw::async2::FuncTask;
 using ::pw::async2::Future;
 using ::pw::async2::FutureTask;
@@ -49,6 +50,7 @@ using ::pw::async2::OptionalValueProvider;
 using ::pw::async2::Pending;
 using ::pw::async2::Poll;
 using ::pw::async2::Ready;
+using ::pw::async2::ValueProvider;
 using ::pw::async2::Waker;
 using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
@@ -92,14 +94,14 @@ TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
 
 bool CreateWithoutRunningImmediatelyReturnsFive(pw::Allocator& alloc) {
   return EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc)))
-      .ok();
+      .is_pendable();
 }
 
 bool CreateWithoutRunningStoresFiveThenReturns(pw::Allocator& alloc) {
   int output = 0;
   return EnsureNotStackAllocated(
              StoresFiveThenReturns(CoroContext(alloc), output))
-      .ok();
+      .is_pendable();
 }
 
 TEST(Coro, AllocationFailureProducesInvalidCoro) {
@@ -124,13 +126,12 @@ TEST_F(CoroTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
   auto coro =
       EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc_)));
-  EXPECT_FALSE(coro.ok());
+  EXPECT_FALSE(coro.is_pendable());
 
   DispatcherForTest dispatcher;
   FutureTask task(std::move(coro));
   dispatcher.Post(task);
-  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(),
-                            "Attempted to run a Coro that failed to allocate");
+  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(), "");
 }
 
 TEST_F(CoroTest, ObjectWithCoroMethodIsCallable) {
@@ -351,6 +352,22 @@ PW_NC_EXPECT("must have exactly one CoroContext argument");
 [[maybe_unused]] Coro<void> TwoContexts(CoroContext, int, CoroContext&) {
   co_return;
 }
+#elif PW_NC_TEST(MakeFallibleVoidCoroNonVoidHandler)
+PW_NC_EXPECT("no matching member function for call to 'MakeFallible'");
+[[maybe_unused]] Coro<void> VoidCoro(CoroContext) { co_return; }
+[[maybe_unused]] void BadHandler() {
+  (void)VoidCoro(pw::allocator::GetNullAllocator()).MakeFallible([] {
+    return 42;
+  });
+}
+#elif PW_NC_TEST(MakeFallibleIncompatibleHandlerReturnType)
+PW_NC_EXPECT("no matching member function for call to 'MakeFallible'");
+[[maybe_unused]] Coro<int> IntCoro(CoroContext) { co_return 1; }
+[[maybe_unused]] void BadHandler() {
+  (void)IntCoro(pw::allocator::GetNullAllocator()).MakeFallible([] {
+    return pw::OkStatus();
+  });
+}
 #endif  // PW_NC_TEST
         //
 
@@ -464,17 +481,14 @@ TEST(Coro, DefaultConstructedIsInvalidFuture) {
   Coro<int> empty;
   EXPECT_FALSE(empty.is_pendable());
   EXPECT_FALSE(empty.is_complete());
-  EXPECT_FALSE(empty.ok());
 
   Coro<void> empty_void;
   EXPECT_FALSE(empty_void.is_pendable());
   EXPECT_FALSE(empty_void.is_complete());
-  EXPECT_FALSE(empty_void.ok());
 }
 
 TEST(Coro, AllocationFailureFutureState) {
   Coro<Result<int>> coro = ImmediatelyReturnsFive(GetNullAllocator());
-  EXPECT_FALSE(coro.ok());
   EXPECT_FALSE(coro.is_pendable());
   EXPECT_FALSE(coro.is_complete());
 }
@@ -483,16 +497,13 @@ TEST_F(CoroTest, MoveTransfersFutureState) {
   Coro<int> coro1 = ReturnsInt(alloc_, 42);
   EXPECT_TRUE(coro1.is_pendable());
   EXPECT_FALSE(coro1.is_complete());
-  EXPECT_TRUE(coro1.ok());
 
   Coro<int> coro2 = std::move(coro1);
   EXPECT_FALSE(coro1.is_pendable());  // NOLINT(bugprone-use-after-move)
   EXPECT_FALSE(coro1.is_complete());  // NOLINT(bugprone-use-after-move)
-  EXPECT_FALSE(coro1.ok());           // NOLINT(bugprone-use-after-move)
 
   EXPECT_TRUE(coro2.is_pendable());
   EXPECT_FALSE(coro2.is_complete());
-  EXPECT_TRUE(coro2.ok());
 }
 
 TEST_F(CoroTest, PendCompletesAndUpdatesFutureState) {
@@ -500,7 +511,6 @@ TEST_F(CoroTest, PendCompletesAndUpdatesFutureState) {
     Coro<int> coro = ReturnsInt(alloc_, 5);
     EXPECT_TRUE(coro.is_pendable());
     EXPECT_FALSE(coro.is_complete());
-    EXPECT_TRUE(coro.ok());
 
     DispatcherForTest dispatcher;
     Poll<int> result = dispatcher.RunInTaskUntilStalled(coro);
@@ -508,7 +518,6 @@ TEST_F(CoroTest, PendCompletesAndUpdatesFutureState) {
     EXPECT_EQ(result.value(), 5);
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
-    EXPECT_FALSE(coro.ok());
   }
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
@@ -518,14 +527,12 @@ TEST_F(CoroTest, PendVoidCompletesAndUpdatesFutureState) {
     Coro<void> coro = ReturnsVoid(alloc_);
     EXPECT_TRUE(coro.is_pendable());
     EXPECT_FALSE(coro.is_complete());
-    EXPECT_TRUE(coro.ok());
 
     DispatcherForTest dispatcher;
     Poll<void> result = dispatcher.RunInTaskUntilStalled(coro);
     EXPECT_TRUE(result.IsReady());
     EXPECT_FALSE(coro.is_pendable());
     EXPECT_TRUE(coro.is_complete());
-    EXPECT_FALSE(coro.ok());
   }
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
@@ -600,6 +607,476 @@ TEST_F(CoroTest, FutureTaskRunsCoro) {
     dispatcher.RunToCompletion();
     EXPECT_EQ(task.Wait(), 42);
   }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST(FallibleCoro, DefaultConstructedIsInvalidFuture) {
+  FallibleCoro<int> empty;
+  EXPECT_FALSE(empty.is_pendable());
+  EXPECT_FALSE(empty.is_complete());
+
+  FallibleCoro<void> empty_void;
+  EXPECT_FALSE(empty_void.is_pendable());
+  EXPECT_FALSE(empty_void.is_complete());
+
+  DispatcherForTest dispatcher;
+  EXPECT_DEATH_IF_SUPPORTED(
+      dispatcher.RunInTaskUntilStalled(empty).IgnorePoll(), "");
+}
+
+TEST_F(CoroTest, FallibleCoroDefaultTemplateParameter) {
+  alloc_.Exhaust();
+
+  bool handler_called = false;
+  FallibleCoro<int> fut =
+      ReturnsInt(alloc_, 42).MakeFallible([&] { handler_called = true; });
+  EXPECT_TRUE(fut.is_pendable());
+
+  DispatcherForTest dispatcher;
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(fut),
+            Ready(std::optional<int>(std::nullopt)));
+  EXPECT_TRUE(handler_called);
+
+  FallibleCoro<int> fut_no_handler(ReturnsInt(alloc_, 42));
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(fut_no_handler),
+            Ready(std::optional<int>(std::nullopt)));
+}
+
+TEST_F(CoroTest, FallibleCoroConstructWithHandlerAndAssignCoro) {
+  int handler_calls = 0;
+  FallibleCoro<int> fut([&] { ++handler_calls; });
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  // Assign a valid Coro<int>.
+  fut = ReturnsInt(alloc_, 42);
+  EXPECT_TRUE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  DispatcherForTest dispatcher;
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(fut),
+            Ready(std::optional<int>(42)));
+  EXPECT_EQ(handler_calls, 0);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+
+  // Assign a Coro<int> that fails to allocate; the original handler is
+  // preserved and invoked.
+  alloc_.Exhaust();
+  fut = ReturnsInt(alloc_, 99);
+  EXPECT_TRUE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(fut),
+            Ready(std::optional<int>(std::nullopt)));
+  EXPECT_EQ(handler_calls, 1);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+
+  // Assign again; handler is still preserved.
+  fut = ReturnsInt(alloc_, 100);
+  EXPECT_EQ(dispatcher.RunInTaskUntilStalled(fut),
+            Ready(std::optional<int>(std::nullopt)));
+  EXPECT_EQ(handler_calls, 2);
+}
+
+TEST_F(CoroTest, FallibleCoroMoveConstructAndAssign) {
+  {
+    auto fut1 = ReturnsInt(alloc_, 42).MakeFallible(-1);
+    static_assert(Future<decltype(fut1)>);
+    EXPECT_TRUE(fut1.is_pendable());
+    EXPECT_FALSE(fut1.is_complete());
+
+    auto fut2 = std::move(fut1);
+    EXPECT_FALSE(fut1.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(fut1.is_complete());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(fut2.is_pendable());
+    EXPECT_FALSE(fut2.is_complete());
+
+    decltype(fut2) fut3;
+    EXPECT_FALSE(fut3.is_pendable());
+    EXPECT_FALSE(fut3.is_complete());
+
+    fut3 = std::move(fut2);
+    EXPECT_FALSE(fut2.is_pendable());  // NOLINT(bugprone-use-after-move)
+    EXPECT_FALSE(fut2.is_complete());  // NOLINT(bugprone-use-after-move)
+    EXPECT_TRUE(fut3.is_pendable());
+    EXPECT_FALSE(fut3.is_complete());
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(fut3);
+    EXPECT_EQ(result, Ready(42));
+    EXPECT_FALSE(fut3.is_pendable());
+    EXPECT_TRUE(fut3.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, FallibleCoroMoveWhenInitialAllocFailed) {
+  alloc_.Exhaust();
+  auto fut1 = ReturnsInt(alloc_, 42).MakeFallible(-1);
+  EXPECT_TRUE(fut1.is_pendable());
+  EXPECT_FALSE(fut1.is_complete());
+
+  auto fut2 = std::move(fut1);
+  EXPECT_FALSE(fut1.is_pendable());  // NOLINT(bugprone-use-after-move)
+  EXPECT_FALSE(fut1.is_complete());  // NOLINT(bugprone-use-after-move)
+  EXPECT_TRUE(fut2.is_pendable());
+  EXPECT_FALSE(fut2.is_complete());
+
+  DispatcherForTest dispatcher;
+  Poll<int> result = dispatcher.RunInTaskUntilStalled(fut2);
+  EXPECT_EQ(result, Ready(-1));
+  EXPECT_FALSE(fut2.is_pendable());
+  EXPECT_TRUE(fut2.is_complete());
+}
+
+TEST_F(CoroTest, FallibleCoroSuspendedRemainsPendableUntilCompletion) {
+  OptionalValueProvider<int> provider;
+  {
+    auto fut = AwaitsProvider(alloc_, provider).MakeFallible(-99);
+    EXPECT_TRUE(fut.is_pendable());
+    EXPECT_FALSE(fut.is_complete());
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_TRUE(result.IsPending());
+    EXPECT_TRUE(fut.is_pendable());
+    EXPECT_FALSE(fut.is_complete());
+
+    provider.Resolve(42);
+    result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_EQ(result, Ready(42));
+    EXPECT_FALSE(fut.is_pendable());
+    EXPECT_TRUE(fut.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleDefaultNoArgsSuccess) {
+  {
+    auto fut = ReturnsInt(alloc_, 42).MakeFallible();
+    static_assert(
+        std::is_same_v<decltype(fut)::value_type, std::optional<int>>);
+    EXPECT_TRUE(fut.is_pendable());
+    EXPECT_FALSE(fut.is_complete());
+
+    DispatcherForTest dispatcher;
+    Poll<std::optional<int>> result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_EQ(result, Ready(std::optional<int>(42)));
+    EXPECT_FALSE(fut.is_pendable());
+    EXPECT_TRUE(fut.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleDefaultNoArgsFailure) {
+  alloc_.Exhaust();
+  auto fut = ReturnsInt(alloc_, 42).MakeFallible();
+  static_assert(std::is_same_v<decltype(fut)::value_type, std::optional<int>>);
+  EXPECT_TRUE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  DispatcherForTest dispatcher;
+  Poll<std::optional<int>> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_EQ(result, Ready(std::optional<int>(std::nullopt)));
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+TEST_F(CoroTest, MakeFallibleDefaultNoArgsVoidFailure) {
+  alloc_.Exhaust();
+  auto fut = ReturnsVoid(alloc_).MakeFallible();
+  static_assert(std::is_same_v<decltype(fut)::value_type, void>);
+  EXPECT_TRUE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  DispatcherForTest dispatcher;
+  Poll<void> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+TEST_F(CoroTest, MakeFallibleSuccessReturnsOptional) {
+  {
+    bool handler_called = false;
+    auto fut =
+        ReturnsInt(alloc_, 42).MakeFallible([&] { handler_called = true; });
+    EXPECT_TRUE(fut.is_pendable());
+    EXPECT_FALSE(fut.is_complete());
+
+    DispatcherForTest dispatcher;
+    Poll<std::optional<int>> result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_EQ(*result, 42);
+    EXPECT_FALSE(handler_called);
+    EXPECT_FALSE(fut.is_pendable());
+    EXPECT_TRUE(fut.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleSuccessReturnsFallbackType) {
+  {
+    bool handler_called = false;
+    auto fut = ReturnsInt(alloc_, 42).MakeFallible([&] {
+      handler_called = true;
+      return -1;
+    });
+    EXPECT_TRUE(fut.is_pendable());
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_EQ(*result, 42);
+    EXPECT_FALSE(handler_called);
+    EXPECT_TRUE(fut.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleSuccessVoid) {
+  {
+    bool handler_called = false;
+    auto fut = ReturnsVoid(alloc_).MakeFallible([&] { handler_called = true; });
+    EXPECT_TRUE(fut.is_pendable());
+
+    DispatcherForTest dispatcher;
+    Poll<void> result = dispatcher.RunInTaskUntilStalled(fut);
+    EXPECT_TRUE(result.IsReady());
+    EXPECT_FALSE(handler_called);
+    EXPECT_TRUE(fut.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleInitialAllocFailureCallsHandler) {
+  alloc_.Exhaust();
+  bool handler_called = false;
+  auto fut =
+      ReturnsInt(alloc_, 42).MakeFallible([&] { handler_called = true; });
+  EXPECT_TRUE(fut.is_pendable());
+  EXPECT_FALSE(fut.is_complete());
+
+  DispatcherForTest dispatcher;
+  Poll<std::optional<int>> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(*result, std::nullopt);
+  EXPECT_TRUE(handler_called);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+TEST_F(CoroTest, MakeFallibleInitialAllocFailureReturnsFallback) {
+  alloc_.Exhaust();
+  bool handler_called = false;
+  auto fut = ReturnsInt(alloc_, 42).MakeFallible([&] {
+    handler_called = true;
+    return -1;
+  });
+
+  DispatcherForTest dispatcher;
+  Poll<int> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(*result, -1);
+  EXPECT_TRUE(handler_called);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+TEST_F(CoroTest, MakeFallibleInitialAllocFailureVoid) {
+  alloc_.Exhaust();
+  bool handler_called = false;
+  auto fut = ReturnsVoid(alloc_).MakeFallible([&] { handler_called = true; });
+
+  DispatcherForTest dispatcher;
+  Poll<void> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_TRUE(handler_called);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+Coro<Status> InnerCoro(CoroContext) { co_return OkStatus(); }
+
+Coro<Status> OuterCoroAwaitingInner(CoroContext cx) {
+  co_await InnerCoro(cx);
+  co_return OkStatus();
+}
+
+TEST_F(CoroTest, MakeFallibleNestedAllocFailureRecovers) {
+  auto coro = OuterCoroAwaitingInner(alloc_);
+  alloc_.Exhaust();  // Prevent InnerCoro from allocating.
+
+  bool handler_called = false;
+  auto fut = std::move(coro).MakeFallible([&] {
+    handler_called = true;
+    return Status::ResourceExhausted();
+  });
+
+  DispatcherForTest dispatcher;
+  Poll<Status> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(*result, Status::ResourceExhausted());
+  EXPECT_TRUE(handler_called);
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+Coro<int> OuterRecoveringFromInnerAllocFailure(CoroContext cx) {
+  std::optional<int> inner = co_await ReturnsInt(cx, 10).MakeFallible();
+  co_return inner.value_or(99);
+}
+
+TEST_F(CoroTest, CoAwaitFallibleCoroRecoversLocallyInOuterCoro) {
+  {
+    Coro<int> outer = OuterRecoveringFromInnerAllocFailure(alloc_);
+    ASSERT_TRUE(outer.is_pendable());
+    alloc_.Exhaust();  // Prevent ReturnsInt from allocating when resumed.
+
+    DispatcherForTest dispatcher;
+    Poll<int> result = dispatcher.RunInTaskUntilStalled(outer);
+    EXPECT_EQ(result, Ready(99));
+    EXPECT_FALSE(outer.is_pendable());
+    EXPECT_TRUE(outer.is_complete());
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleInFutureTask) {
+  {
+    FutureTask task(ReturnsInt(alloc_, 99).MakeFallible([] { return -1; }));
+    DispatcherForTest dispatcher;
+    dispatcher.Post(task);
+    dispatcher.RunToCompletion();
+    EXPECT_EQ(task.Wait(), 99);
+  }
+  EXPECT_EQ(alloc_.GetAllocated(), 0u);
+}
+
+TEST_F(CoroTest, MakeFallibleStatusFallbackDirectValue) {
+  alloc_.Exhaust();
+  // Pass Status directly without wrapping in a lambda:
+  auto fut =
+      OuterCoroAwaitingInner(alloc_).MakeFallible(Status::ResourceExhausted());
+
+  static_assert(std::is_same_v<decltype(fut)::value_type, Status>);
+
+  DispatcherForTest dispatcher;
+  Poll<Status> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(*result, Status::ResourceExhausted());
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+TEST_F(CoroTest, MakeFallibleResultFallbackDirectStatus) {
+  alloc_.Exhaust();
+  // Pass Status to Coro<Result<int>>:
+  auto fut =
+      ImmediatelyReturnsFive(alloc_).MakeFallible(Status::ResourceExhausted());
+
+  static_assert(std::is_same_v<decltype(fut)::value_type, Result<int>>);
+
+  DispatcherForTest dispatcher;
+  Poll<Result<int>> result = dispatcher.RunInTaskUntilStalled(fut);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(result->status(), Status::ResourceExhausted());
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+enum class ObjectState {
+  kUninitialized,
+  kConstructed,
+  kDestroyed,
+};
+
+class TrackedObject {
+ public:
+  explicit TrackedObject(ObjectState& state) : state_(state) {
+    state_ = ObjectState::kConstructed;
+  }
+
+  ~TrackedObject() { state_ = ObjectState::kDestroyed; }
+
+ private:
+  ObjectState& state_;
+};
+
+Coro<Status> OuterWithTrackedObjects(CoroContext cx,
+                                     std::optional<Status>& returned_status,
+                                     TrackedObject argument,
+                                     ObjectState& before_inner,
+                                     ObjectState& after_inner) {
+  TrackedObject before(before_inner);
+
+  returned_status = co_await InnerCoro(cx);
+
+  TrackedObject after(after_inner);
+  co_return OkStatus();
+}
+
+TEST_F(CoroTest, NestedAllocFailureDestroysObjectsAndInvokesHandler) {
+  std::optional<Status> returned_status;
+
+  ObjectState argument = ObjectState::kUninitialized;
+  ObjectState before = ObjectState::kUninitialized;
+  ObjectState after = ObjectState::kUninitialized;
+
+  Coro<Status> outer_coro = OuterWithTrackedObjects(
+      alloc_, returned_status, TrackedObject(argument), before, after);
+  ASSERT_TRUE(outer_coro.is_pendable());
+
+  alloc_.Exhaust();  // Prevent allocation of InnerCoro.
+
+  bool error_handler_ran = false;
+  auto fut = std::move(outer_coro).MakeFallible([&] {
+    error_handler_ran = true;
+    return Status::ResourceExhausted();
+  });
+
+  DispatcherForTest dispatcher;
+  Poll<Status> result = dispatcher.RunInTaskUntilStalled(fut);
+
+  EXPECT_FALSE(returned_status.has_value());
+  EXPECT_EQ(argument, ObjectState::kDestroyed);
+  EXPECT_EQ(before, ObjectState::kDestroyed);
+  EXPECT_EQ(after, ObjectState::kUninitialized);
+  EXPECT_TRUE(error_handler_ran);
+  EXPECT_TRUE(result.IsReady());
+  EXPECT_EQ(*result, Status::ResourceExhausted());
+  EXPECT_FALSE(fut.is_pendable());
+  EXPECT_TRUE(fut.is_complete());
+}
+
+Coro<int> DoubleValue(CoroContext, int val) { co_return val * 2; }
+
+Coro<int> NestedWithSuspend(CoroContext cx, ValueProvider<int>& provider) {
+  int a = co_await provider.Get();
+  co_return a + co_await DoubleValue(cx, a);
+}
+
+TEST_F(CoroTest, AllocFailureAfterSuspend) {
+  ValueProvider<int> provider;
+  bool handler_ran = false;
+  auto fut = NestedWithSuspend(alloc_, provider).MakeFallible([&] {
+    handler_ran = true;
+    return -1;
+  });
+
+  DispatcherForTest dispatcher;
+  FutureTask task(std::move(fut));
+  dispatcher.Post(task);
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+
+  alloc_.Exhaust();
+  provider.Resolve(5);
+  dispatcher.RunToCompletion();
+
+  EXPECT_TRUE(handler_ran);
+  EXPECT_EQ(task.Wait(), -1);
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 

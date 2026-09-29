@@ -118,18 +118,51 @@ TEST_F(CoroExample, ExplicitCoro) {
   EXPECT_EQ(receiver2_.TryReceive().value(), 42);
 }
 
-TEST_F(CoroExample, FallibleCoroTask) {
+TEST_F(CoroExample, FallibleCoro) {
   // DOCSTAG: [pw_async2-examples-basic-allocated-fallible]
   auto task = dispatcher.Post(
       allocator,
-      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_)),
-      [] { PW_LOG_ERROR("coroutine allocation failed! Aborting..."); });
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_))
+          .MakeFallible([] {
+            PW_LOG_ERROR("coroutine allocation failed! Aborting...");
+            return Status::ResourceExhausted();
+          }));
 
   // The task is automatically posted when allocated.
   dispatcher.RunToCompletion();
   // DOCSTAG: [pw_async2-examples-basic-allocated-fallible]
 
   EXPECT_EQ(receiver2_.TryReceive().value(), 42);
+}
+
+TEST_F(CoroExample, FallibleCoroDirectFallback) {
+  // DOCSTAG: [pw_async2-examples-basic-allocated-fallible-direct]
+  auto task = dispatcher.Post(
+      allocator,
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_))
+          .MakeFallible(Status::ResourceExhausted()));
+
+  dispatcher.RunToCompletion();
+  // DOCSTAG: [pw_async2-examples-basic-allocated-fallible-direct]
+
+  EXPECT_EQ(receiver2_.TryReceive().value(), 42);
+}
+
+TEST_F(CoroExample, FallibleCoroAllocationFailure) {
+  AllocatorForTest<512> task_allocator;
+  allocator.Exhaust();
+  bool handler_ran = false;
+  auto task = dispatcher.Post(
+      task_allocator,
+      ForwardingCoro(allocator, std::move(receiver1_), std::move(sender2_))
+          .MakeFallible([&handler_ran] {
+            handler_ran = true;
+            return Status::ResourceExhausted();
+          }));
+  ASSERT_NE(task, nullptr);
+  dispatcher.RunToCompletion();
+  EXPECT_TRUE(handler_ran);
+  EXPECT_EQ(task->value(), Status::ResourceExhausted());
 }
 
 TEST_F(CoroExample, FutureTask) {

@@ -33,7 +33,6 @@
 #include <functional>  // std::invoke
 
 #include "pw_async2/coro.h"
-#include "pw_async2/fallible_coro_task.h"
 #endif  // defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
 
 namespace pw::async2 {
@@ -195,34 +194,29 @@ class Dispatcher {
   template <typename T>
   [[nodiscard]] SharedPtr<FutureTask<Coro<T>>> Post(Allocator& allocator,
                                                     Coro<T>&& coro) {
-    if (!coro.ok()) {
+    if (!coro.is_pendable()) {
       return nullptr;
     }
     return Post<FutureTask<Coro<T>>>(allocator, std::move(coro));
   }
 
-  /// Allocates and posts a `FallibleCoroTask` that runs the provided coroutine
-  /// to completion.
+  /// Allocates and posts a `FutureTask` that runs the provided fallible
+  /// coroutine to completion.
   ///
-  /// Returns `nullptr` if the coroutine or `FallibleCoroTask` failed to
-  /// allocate. Invokes `error_handler` if subsequent coroutine allocations
-  /// fail.
+  /// Returns `nullptr` if the `FutureTask` failed to allocate. If coroutine
+  /// allocation fails, the `FallibleCoro`'s error handler is invoked when the
+  /// task runs.
   ///
   /// @returns A `SharedPtr` to the posted task if allocation succeeded, or a
   ///     null `SharedPtr` if allocation failed.
-  template <typename T,
-            typename E = void,
-            int&... kExplicitGuard,
-            typename Arg,
-            typename ErrorHandler =
-                std::conditional_t<std::is_void_v<E>, std::decay_t<Arg>, E>>
-  [[nodiscard]] SharedPtr<FallibleCoroTask<T, ErrorHandler>> Post(
-      Allocator& allocator, Coro<T>&& coro, Arg&& error_handler) {
-    if (!coro.ok()) {
+  template <typename T, typename Handler>
+  [[nodiscard]] SharedPtr<FutureTask<FallibleCoro<T, Handler>>> Post(
+      Allocator& allocator, FallibleCoro<T, Handler>&& coro) {
+    if (!coro.is_pendable()) {
       return nullptr;
     }
-    return Post<FallibleCoroTask<T, ErrorHandler>>(
-        allocator, std::move(coro), std::forward<Arg>(error_handler));
+    return Post<FutureTask<FallibleCoro<T, Handler>>>(allocator,
+                                                      std::move(coro));
   }
 
   /// Allocates and posts a `FutureTask` for the provided coroutine function.

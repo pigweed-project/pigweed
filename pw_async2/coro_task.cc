@@ -21,7 +21,7 @@ void CrashDueToCoroutineAllocationFailure() {
   PW_CRASH(
       "Attempted to run a Coro that failed to allocate or was never "
       "initialized. Use a pw::Allocator with a larger capacity, or use "
-      "pw::async2::FallibleCoroTask to gracefully handle allocation failure.");
+      "Coro::MakeFallible to gracefully handle allocation failure.");
 }
 
 }  // namespace pw::async2::internal

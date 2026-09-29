@@ -61,7 +61,7 @@ using ::pw::async2::DispatcherForTest;
 using ::pw::async2::SimulatedTimeProvider;
 
 TEST(CoroExample, ReturnsOk) {
-  AllocatorForTest<512> alloc;
+  AllocatorForTest<1024> alloc;
   SimulatedTimeProvider<SystemClock> time;
   Led led;
   DispatcherForTest dispatcher;

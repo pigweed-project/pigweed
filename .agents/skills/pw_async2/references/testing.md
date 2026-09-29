@@ -152,7 +152,7 @@ class TestSensorTask : public pw::async2::Task {
 };
 ```
 
-### C. Coroutines (`FutureTask` / `FallibleCoroTask`)
+### C. Coroutines (`FutureTask`)
 
 To test C++20 coroutines (`Coro<T>`), pass `CoroContext` with an allocator (such
 as `AllocatorForTest`) and post a `FutureTask`:

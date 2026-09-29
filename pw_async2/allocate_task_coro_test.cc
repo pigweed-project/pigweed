@@ -85,6 +85,28 @@ TEST_F(AllocateTaskCoroTest, AllocateAsSharedPtr) {
   EXPECT_EQ(task->value(), 42);
 }
 
+TEST_F(AllocateTaskCoroTest, AllocateMakeFallibleAsSharedPtr) {
+  auto future = SimpleCoro(alloc_, 42).MakeFallible([] { FAIL(); });
+  auto task =
+      alloc_.MakeShared<FutureTask<decltype(future)>>(std::move(future));
+  ASSERT_NE(task, nullptr);
+
+  dispatcher_.PostShared(task);
+  dispatcher_.RunToCompletion();
+
+  EXPECT_EQ(task->value(), 42);
+}
+
+TEST_F(AllocateTaskCoroTest, PostMakeFallible) {
+  auto task = dispatcher_.Post(
+      alloc_, SimpleCoro(alloc_, 42).MakeFallible([] { FAIL(); }));
+  ASSERT_NE(task, nullptr);
+
+  dispatcher_.RunToCompletion();
+
+  EXPECT_EQ(task->value(), 42);
+}
+
 TEST_F(AllocateTaskCoroTest, AllocateFallibleAsSharedPtr) {
   auto task = alloc_.MakeShared<FallibleCoroTask<int>>(SimpleCoro(alloc_, 42),
                                                        [] { FAIL(); });
@@ -121,20 +143,25 @@ TEST_F(AllocateTaskCoroTest, AllocatesFallibleWithCoroRvalueAndErrorHandler) {
 
   static_assert(
       std::is_same_v<
-          decltype(dispatcher_.Post(
-              alloc_, NestedCoroutineInvocations(alloc_, 2), fail_if_called)),
-          pw::SharedPtr<FallibleCoroTask<int, FailIfCalled>>>,
+          decltype(dispatcher_.Post(alloc_,
+                                    NestedCoroutineInvocations(alloc_, 2)
+                                        .MakeFallible(fail_if_called))),
+          pw::SharedPtr<
+              FutureTask<pw::async2::FallibleCoro<int, FailIfCalled>>>>,
       "Error handler should be decayed unless explicitly specified");
 
   static_assert(
-      std::is_same_v<
-          decltype(dispatcher_.Post<int, FailIfCalled&>(
-              alloc_, NestedCoroutineInvocations(alloc_, 3), fail_if_called)),
-          pw::SharedPtr<FallibleCoroTask<int, FailIfCalled&>>>,
+      std::is_same_v<decltype(dispatcher_.Post(
+                         alloc_,
+                         NestedCoroutineInvocations(alloc_, 3)
+                             .MakeFallible<FailIfCalled&>(fail_if_called))),
+                     pw::SharedPtr<FutureTask<
+                         pw::async2::FallibleCoro<int, FailIfCalled&>>>>,
       "Error handler should not be decayed when explicitly specified");
 
   auto task = dispatcher_.Post(
-      alloc_, NestedCoroutineInvocations(alloc_, 3), fail_if_called);
+      alloc_,
+      NestedCoroutineInvocations(alloc_, 3).MakeFallible(fail_if_called));
   ASSERT_NE(task, nullptr);
 
   dispatcher_.RunToCompletion();
@@ -144,9 +171,10 @@ TEST_F(AllocateTaskCoroTest, AllocatesFallibleWithCoroRvalueAndErrorHandler) {
 
 TEST_F(AllocateTaskCoroTest, FallibleCoroTaskNestedCoroutineAllocationFailure) {
   bool handler_ran = false;
-  auto task = dispatcher_.Post(alloc_,
-                               NestedCoroutineInvocations(alloc_, 42),
-                               [&handler_ran] { handler_ran = true; });
+  auto task = dispatcher_.Post<FallibleCoroTask<int>>(
+      alloc_, NestedCoroutineInvocations(alloc_, 42), [&handler_ran] {
+        handler_ran = true;
+      });
   ASSERT_NE(task, nullptr);
 
   alloc_.Exhaust();
@@ -154,6 +182,23 @@ TEST_F(AllocateTaskCoroTest, FallibleCoroTaskNestedCoroutineAllocationFailure) {
 
   EXPECT_TRUE(handler_ran);
   EXPECT_FALSE(task->has_value());
+}
+
+TEST_F(AllocateTaskCoroTest, NestedCoroutineAllocationFailure) {
+  bool handler_ran = false;
+  auto task = dispatcher_.Post(
+      alloc_,
+      NestedCoroutineInvocations(alloc_, 42).MakeFallible([&handler_ran] {
+        handler_ran = true;
+        return -1;
+      }));
+  ASSERT_NE(task, nullptr);
+
+  alloc_.Exhaust();
+  dispatcher_.RunToCompletion();
+
+  EXPECT_TRUE(handler_ran);
+  EXPECT_EQ(task->value(), -1);
 }
 
 struct MemberCoroClass {

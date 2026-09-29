@@ -16,7 +16,9 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <cstdint>
 #include <new>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -24,13 +26,17 @@
 #include "pw_allocator/layout.h"
 #include "pw_assert/assert.h"
 #include "pw_async2/future.h"
-#include "pw_async2/task.h"
 #include "pw_containers/internal/optional.h"
+#include "pw_function/function.h"
 
 namespace pw::async2 {
 namespace internal {
 
 [[noreturn]] void CrashDueToCoroutineAllocationFailure();
+
+struct NoOpAllocFailureHandler {
+  void operator()() const noexcept {}
+};
 
 }  // namespace internal
 
@@ -42,7 +48,8 @@ class Coro;
 template <typename T>
 class Generator;
 
-enum class ReturnValuePolicy : bool;
+template <typename T, typename Handler>
+class FallibleCoro;
 
 /// @submodule{pw_async2,coroutines}
 
@@ -85,23 +92,29 @@ class OwningCoroutineHandle final {
   // Construct a null (`!IsValid()`) handle.
   constexpr OwningCoroutineHandle(std::nullptr_t) : promise_handle_(nullptr) {}
 
-  /// Take ownership of `promise_handle`.
-  OwningCoroutineHandle(std::coroutine_handle<PromiseType>&& promise_handle)
-      : promise_handle_(std::move(promise_handle)) {}
-
-  // Empty out `other` and transfers ownership of its `promise_handle`
-  // to `this`.
-  OwningCoroutineHandle(OwningCoroutineHandle&& other)
-      : promise_handle_(std::move(other.promise_handle_)) {
-    other.promise_handle_ = nullptr;
+  static constexpr OwningCoroutineHandle AllocationFailed() {
+    return OwningCoroutineHandle(State::kAllocationFailed);
   }
 
+  /// Take ownership of `promise_handle`.
+  OwningCoroutineHandle(std::coroutine_handle<PromiseType>&& promise_handle)
+      : promise_handle_(std::move(promise_handle)),
+        state_(promise_handle_ != nullptr ? State::kValid : State::kEmpty) {}
+
   // Empty out `other` and transfers ownership of its `promise_handle`
   // to `this`.
-  OwningCoroutineHandle& operator=(OwningCoroutineHandle&& other) {
-    Release();
-    promise_handle_ = std::move(other.promise_handle_);
-    other.promise_handle_ = nullptr;
+  OwningCoroutineHandle(OwningCoroutineHandle&& other) noexcept
+      : promise_handle_(std::exchange(other.promise_handle_, nullptr)),
+        state_(std::exchange(other.state_, State::kEmpty)) {}
+
+  // Empty out `other` and transfers ownership of its `promise_handle`
+  // to `this`.
+  OwningCoroutineHandle& operator=(OwningCoroutineHandle&& other) noexcept {
+    if (this != &other) {
+      Release();
+      promise_handle_ = std::exchange(other.promise_handle_, nullptr);
+      state_ = std::exchange(other.state_, State::kEmpty);
+    }
     return *this;
   }
 
@@ -113,14 +126,14 @@ class OwningCoroutineHandle final {
   // This will return `false` if this `OwningCoroutineHandle` was
   // `nullptr`-initialized, moved from, or if `Release` or `MarkComplete` was
   // invoked.
-  [[nodiscard]] bool IsValid() const {
-    return promise_handle_.address() != nullptr &&
-           promise_handle_.address() != &kCompletedSentinel;
-  }
+  [[nodiscard]] bool IsValid() const { return state_ == State::kValid; }
 
   // Return whether the underlying coroutine has completed.
-  [[nodiscard]] bool is_complete() const {
-    return promise_handle_.address() == &kCompletedSentinel;
+  [[nodiscard]] bool is_complete() const { return state_ == State::kCompleted; }
+
+  // Return whether initial coroutine frame allocation failed.
+  [[nodiscard]] bool allocation_failed() const {
+    return state_ == State::kAllocationFailed;
   }
 
   // Return a reference to the underlying `PromiseType`.
@@ -148,20 +161,29 @@ class OwningCoroutineHandle final {
       promise_handle_.destroy();
     }
     promise_handle_ = nullptr;
+    state_ = State::kEmpty;
     // DOCSTAG: [pw_async2-coro-release]
   }
 
   // Destroys the coroutine and marks this handle as completed.
   void MarkComplete() {
     Release();
-    promise_handle_ = std::coroutine_handle<PromiseType>::from_address(
-        const_cast<bool*>(&kCompletedSentinel));
+    state_ = State::kCompleted;
   }
 
  private:
-  static constexpr const bool kCompletedSentinel = {};
+  enum class State : uint8_t {
+    kEmpty,
+    kValid,
+    kAllocationFailed,
+    kCompleted,
+  };
+
+  constexpr explicit OwningCoroutineHandle(State state)
+      : promise_handle_(nullptr), state_(state) {}
 
   std::coroutine_handle<PromiseType> promise_handle_;
+  State state_ = State::kEmpty;
 };
 
 // Forward-declare the wrapper type for values passed to `co_await`.
@@ -177,6 +199,15 @@ struct is_coro<Coro<T>> : std::true_type {};
 template <typename T>
 concept IsCoro = is_coro<T>::value;
 
+template <typename T>
+struct is_fallible_coro : std::false_type {};
+
+template <typename T, typename Handler>
+struct is_fallible_coro<FallibleCoro<T, Handler>> : std::true_type {};
+
+template <typename T>
+concept IsFallibleCoro = is_fallible_coro<T>::value;
+
 enum class CoroPollState : uint8_t {
   kPending,
   kAborted,
@@ -185,6 +216,39 @@ enum class CoroPollState : uint8_t {
 
 template <typename T>
 using CoroPoll = ::pw::containers::internal::Optional<T, CoroPollState::kReady>;
+
+template <typename T>
+class ReturnValueHandler {
+ public:
+  constexpr ReturnValueHandler() : value_() {}
+
+  template <typename U>
+    requires(!std::is_same_v<std::remove_cvref_t<U>, ReturnValueHandler> &&
+             std::constructible_from<T, U>)
+  constexpr explicit ReturnValueHandler(U&& value)
+      : value_(std::forward<U>(value)) {}
+
+  constexpr T operator()() { return std::move(value_); }
+
+ private:
+  T value_;
+};
+
+template <typename Handler, typename T>
+concept AllocFailureHandler =
+    std::invocable<Handler> &&
+    (std::is_void_v<std::invoke_result_t<Handler>> ||
+     (!std::is_void_v<T> &&
+      std::convertible_to<std::invoke_result_t<Handler>, T>));
+
+template <typename T, typename Handler>
+struct AllocFailureFutureValueType {
+  using HandlerResult = std::invoke_result_t<Handler>;
+  using type = std::conditional_t<
+      !std::is_void_v<T> && std::is_convertible_v<HandlerResult, T>,
+      T,
+      std::conditional_t<std::is_void_v<T>, void, std::optional<T>>>;
+};
 
 /// The `promise_type` of `Coro<T>`. This is an internal implementation detail,
 /// and not part of the public `pw_async2` API.
@@ -572,7 +636,7 @@ class Awaitable final {
   CoroPollState Advance(Context& cx)
     requires IsCoro<await_type>
   {
-    if (!get().ok()) {
+    if (!get().is_pendable()) {
       return CoroPollState::kAborted;
     }
     auto result = get().PendCoro(cx);
@@ -625,11 +689,29 @@ class Awaitable final {
 /// # Allocation
 /// Pigweed's `Coro<T>` API supports checked, fallible allocations with
 /// `pw::Allocator`. The first argument to any coroutine function must be a
-/// `CoroContext&`. This allows the coroutine to allocate space for
+/// `CoroContext` passed by value (`CoroContext` is implicitly constructible
+/// from `pw::Allocator&`). This allows the coroutine to allocate space for
 /// asynchronously-held stack variables using the `CoroContext`'s allocator.
 ///
-/// Failure to allocate coroutine "stack" space will result in the `Coro<T>`
-/// returning `Status::Invalid()`.
+/// If initial coroutine frame allocation fails, the returned `Coro<T>` is
+/// invalid (`!coro.is_pendable()`). If a nested coroutine invoked via
+/// `co_await` fails to allocate while the coroutine is running, the coroutine
+/// aborts and unwinds its active coroutine frames.
+///
+/// Pending a `Coro<T>` directly when initial or nested allocation fails will
+/// crash with `PW_CRASH` (note that `Dispatcher::Post` checks `is_pendable()`
+/// for the initial allocation and returns `nullptr` on failure).
+///
+/// Use `coro.MakeFallible(...)` to wrap a `Coro<T>` in a
+/// `FallibleCoroFuture` that handles initial and nested allocation failures
+/// gracefully instead of crashing:
+/// - `coro.MakeFallible()`: yields `std::optional<T>` (`std::nullopt` on
+///   allocation failure) or `void` (if `T` is `void`).
+/// - `coro.MakeFallible(fallback_value)`: yields `T`, returning
+///   `fallback_value` on allocation failure.
+/// - `coro.MakeFallible(handler)`: invokes `handler()` on allocation
+///   failure, yielding `T` if `handler()` returns a value convertible to `T`,
+///   or `std::optional<T>` / `void` if `handler()` returns `void`.
 ///
 /// # Creating a coroutine function
 /// To create a coroutine, a function must:
@@ -638,7 +720,7 @@ class Awaitable final {
 /// - Use `co_return <value>` rather than `return <value>` for any
 ///   `return` statements. For `pw::Status` or `pw::Result`, use `PW_CO_TRY` and
 ///   `PW_CO_TRY_ASSIGN` rather than `PW_TRY` and `PW_TRY_ASSIGN`.
-/// - Accept a `CoroContext` as its first argument. The `CoroContext`'s
+/// - Accept a `CoroContext` by value as its first argument. The `CoroContext`'s
 ///   allocator is used to allocate storage for coroutine stack variables held
 ///   across a `co_await` point.
 ///
@@ -648,17 +730,11 @@ class Awaitable final {
 template <typename T>
 class Coro final {
  public:
-  /// Used by the compiler to create a `Coro<T>` from a coroutine function.
-  using promise_type = ::pw::async2::internal::CoroPromise<T>;
-
   /// The type this coroutine returns from a `co_return` expression.
   using value_type = T;
 
   /// Creates an empty, invalid coroutine object.
   constexpr Coro() : promise_handle_(nullptr) {}
-
-  /// Creates an empty, invalid coroutine object.
-  static constexpr Coro Empty() { return Coro(); }
 
   Coro(const Coro&) = delete;
   Coro& operator=(const Coro&) = delete;
@@ -667,13 +743,6 @@ class Coro final {
   Coro& operator=(Coro&& other) noexcept = default;
 
   ~Coro() = default;
-
-  /// Whether or not this `Coro<T>` is a valid coroutine.
-  ///
-  /// This will return `false` if coroutine state allocation failed, if the
-  /// coroutine was default-constructed or moved-from, or if
-  /// this `Coro<T>::Pend` method previously returned a `Ready` value.
-  [[nodiscard]] bool ok() const { return promise_handle_.IsValid(); }
 
   /// Returns whether `Pend()` can be called.
   ///
@@ -688,13 +757,10 @@ class Coro final {
 
   /// Attempt to complete this coroutine, returning the result if complete.
   ///
-  /// Crashes if `is_pendable()` is false, which occurs when coroutine state
+  /// Crashes if `is_pendable()` is false (which occurs when coroutine state
   /// allocation fails, if the coroutine was uninitialized, or if `Pend`
-  /// previously returned `Ready`.
+  /// previously returned `Ready`) or if a nested coroutine fails to allocate.
   Poll<T> Pend(Context& cx) {
-    if (!is_pendable()) {
-      internal::CrashDueToCoroutineAllocationFailure();
-    }
     internal::CoroPoll<T> return_value = PendCoro(cx);
     switch (return_value.state()) {
       case internal::CoroPollState::kPending:
@@ -711,23 +777,59 @@ class Coro final {
     PW_UNREACHABLE;
   }
 
+  /// Returns a `FallibleCoro` that runs this coroutine and handles
+  /// allocation failures using `handler`.
+  ///
+  /// If coroutine frame allocation fails (either for this coroutine or for a
+  /// nested coroutine invoked with `co_await`), the returned future executes
+  /// `handler` instead of crashing.
+  ///
+  /// If `handler` returns a value convertible to `T`, the future's `value_type`
+  /// is `T`. If `handler` returns `void`, the future's `value_type` is `void`
+  /// (if `T` is `void`) or `std::optional<T>` (yielding `std::nullopt` on
+  /// failure).
+  template <typename Handler = void,
+            int&... kExplicitGuard,
+            typename Arg = internal::NoOpAllocFailureHandler,
+            typename ActualHandler = std::conditional_t<std::is_void_v<Handler>,
+                                                        std::decay_t<Arg>,
+                                                        Handler>>
+    requires internal::AllocFailureHandler<ActualHandler, T>
+  [[nodiscard]] FallibleCoro<T, ActualHandler> MakeFallible(
+      Arg&& handler = {}) {
+    return FallibleCoro<T, ActualHandler>(std::move(*this),
+                                          std::forward<Arg>(handler));
+  }
+
+  /// Returns a `FallibleCoro` that runs this coroutine and yields
+  /// `fallback_value` if coroutine allocation fails.
+  template <std::convertible_to<T> Value>
+    requires(!std::invocable<Value>)
+  [[nodiscard]] FallibleCoro<T,
+                             internal::ReturnValueHandler<std::decay_t<Value>>>
+  MakeFallible(Value&& fallback_value) {
+    return MakeFallible(internal::ReturnValueHandler<std::decay_t<Value>>(
+        std::forward<Value>(fallback_value)));
+  }
+
  private:
+  using promise_type = ::pw::async2::internal::CoroPromise<T>;
+
   // Allow get_return_object() and get_return_object_on_allocation_failure() to
   // use the private constructor below.
   friend internal::TypedCoroPromise<T, promise_type>;
 
-  // Allow Awaitable and FallibleCoroTask to call PendCoro to handle allocation
-  // failures.
+  // Allow Awaitable and FallibleCoro to call PendCoro to handle
+  // allocation failures.
   template <typename, typename>
   friend class internal::Awaitable;
-  template <typename, typename E, ReturnValuePolicy>
-    requires std::invocable<E>
-  friend class FallibleCoroTask;
+  template <typename, typename>
+  friend class FallibleCoro;
 
   internal::CoroPoll<T> PendCoro(Context& cx) {
     using enum internal::CoroPollState;
 
-    if (!ok()) {
+    if (!is_pendable()) {
       internal::CrashDueToCoroutineAllocationFailure();
     }
 
@@ -746,7 +848,7 @@ class Coro final {
         break;
       case kAborted:
         return_value.reset(kAborted);
-        promise_handle_.Release();
+        promise_handle_.MarkComplete();
         break;
       case kReady:
         // Resume the coroutine, triggering `Awaitable::await_resume()` and the
@@ -756,11 +858,9 @@ class Coro final {
         promise_handle_.resume();
 
         // `return_value` now reflects the results of the operation. Unless it's
-        // still pending, free the coroutine's memory.
-        if (return_value.state() == kReady) {
+        // still pending, free the coroutine's memory and mark it complete.
+        if (return_value.state() != kPending) {
           promise_handle_.MarkComplete();
-        } else if (return_value.state() == kAborted) {
-          promise_handle_.Release();
         }
         break;
     }
@@ -780,10 +880,151 @@ template <typename Promise>
 Coro(internal::OwningCoroutineHandle<Promise>&&)
     -> Coro<typename Promise::value_type>;
 
-static_assert(sizeof(Coro<void>) == sizeof(void*));
-static_assert(sizeof(Coro<int>) == sizeof(void*));
 static_assert(Future<Coro<void>>);
 static_assert(Future<Coro<int>>);
+
+/// A `Future` that runs a coroutine and handles allocation failure gracefully.
+///
+/// Created by calling `coro.MakeFallible(...)`.
+template <typename T, typename Handler = Function<void()>>
+class [[nodiscard]] FallibleCoro final {
+ public:
+  using value_type =
+      typename internal::AllocFailureFutureValueType<T, Handler>::type;
+
+  // Not `= default` so specializations with non-default-constructible handlers
+  // (such as capturing lambdas) still satisfy `std::default_initializable` in
+  // the `Future` concept.
+  constexpr FallibleCoro() {}
+
+  /// Creates an empty `FallibleCoro` (`is_pendable()` is `false`) configured
+  /// with an allocation failure handler.
+  ///
+  /// A `Coro<T>` must be assigned before `Pend()` is called, or `Pend()` will
+  /// crash.
+  template <typename H = Handler>
+    requires(!internal::IsFallibleCoro<std::remove_cvref_t<H>> &&
+             !internal::IsCoro<std::remove_cvref_t<H>> &&
+             internal::AllocFailureHandler<Handler, T> &&
+             std::constructible_from<Handler, H>)
+  constexpr explicit FallibleCoro(H&& handler)
+      : coro_(), handler_(std::forward<H>(handler)) {}
+
+  template <typename H = Handler>
+    requires internal::AllocFailureHandler<Handler, T> &&
+                 std::constructible_from<Handler, H>
+  constexpr explicit FallibleCoro(Coro<T>&& coro, H&& handler = {})
+      : coro_(std::move(coro)), handler_(std::forward<H>(handler)) {}
+
+  FallibleCoro(const FallibleCoro&) = delete;
+  FallibleCoro& operator=(const FallibleCoro&) = delete;
+
+  constexpr FallibleCoro(FallibleCoro&& other) noexcept
+      : coro_(std::move(other.coro_)),
+        handler_(std::forward<Handler>(other.handler_)) {}
+
+  template <typename OtherHandler>
+    requires(!std::is_same_v<Handler, OtherHandler> &&
+             internal::AllocFailureHandler<Handler, T> &&
+             std::constructible_from<Handler, OtherHandler>)
+  constexpr FallibleCoro(FallibleCoro<T, OtherHandler>&& other) noexcept
+      : coro_(std::move(other.coro_)),
+        handler_(std::forward<OtherHandler>(other.handler_)) {}
+
+  constexpr FallibleCoro& operator=(FallibleCoro&& other) noexcept {
+    if (this != &other) {
+      coro_ = std::move(other.coro_);
+      handler_ = std::move(other.handler_);
+    }
+    return *this;
+  }
+
+  template <typename OtherHandler>
+    requires(!std::is_same_v<Handler, OtherHandler> &&
+             !std::is_reference_v<Handler> &&
+             internal::AllocFailureHandler<Handler, T> &&
+             std::assignable_from<Handler&, OtherHandler>)
+  constexpr FallibleCoro& operator=(
+      FallibleCoro<T, OtherHandler>&& other) noexcept {
+    coro_ = std::move(other.coro_);
+    handler_ = std::forward<OtherHandler>(other.handler_);
+    return *this;
+  }
+
+  /// Replaces the inner coroutine while preserving the configured allocation
+  /// failure handler.
+  constexpr FallibleCoro& operator=(Coro<T>&& coro) noexcept {
+    coro_ = std::move(coro);
+    return *this;
+  }
+
+  ~FallibleCoro() = default;
+
+  [[nodiscard]] bool is_pendable() const {
+    return coro_.is_pendable() || coro_.promise_handle_.allocation_failed();
+  }
+  [[nodiscard]] bool is_complete() const { return coro_.is_complete(); }
+
+  Poll<value_type> Pend(Context& cx) {
+    if (coro_.promise_handle_.allocation_failed()) {
+      coro_.promise_handle_.MarkComplete();
+      return CompleteWithFailure();
+    }
+    internal::CoroPoll<T> result = coro_.PendCoro(cx);
+    switch (result.state()) {
+      case internal::CoroPollState::kPending:
+        return Pending();
+      case internal::CoroPollState::kAborted:
+        return CompleteWithFailure();
+      case internal::CoroPollState::kReady:
+        if constexpr (std::is_void_v<value_type>) {
+          return Ready();
+        } else {
+          return std::move(*result);
+        }
+    }
+    PW_UNREACHABLE;
+  }
+
+ private:
+  template <typename, typename>
+  friend class FallibleCoro;
+
+  Poll<value_type> CompleteWithFailure() {
+    if constexpr (!std::is_void_v<T> &&
+                  std::is_convertible_v<std::invoke_result_t<Handler>, T>) {
+      return handler_();
+    } else if constexpr (std::is_void_v<value_type>) {
+      InvokeVoidHandler();
+      return Ready();
+    } else {
+      InvokeVoidHandler();
+      return std::nullopt;
+    }
+  }
+
+  void InvokeVoidHandler() {
+    if constexpr (std::is_constructible_v<bool, const Handler&>) {
+      if (handler_) {
+        handler_();
+      }
+    } else {
+      handler_();
+    }
+  }
+
+  Coro<T> coro_;
+  Handler handler_;
+};
+
+template <typename T, typename Handler = internal::NoOpAllocFailureHandler>
+FallibleCoro(Coro<T>&&, Handler&& = {})
+    -> FallibleCoro<T, std::decay_t<Handler>>;
+
+static_assert(Future<FallibleCoro<void>>);
+static_assert(Future<FallibleCoro<int>>);
+static_assert(Future<FallibleCoro<int, int (*)()>>);
+static_assert(Future<FallibleCoro<int, internal::ReturnValueHandler<int>>>);
 
 /// An asynchronous generator that yields values of type `T`.
 ///
@@ -887,7 +1128,7 @@ Coro<T> TypedCoroPromise<T, Derived>::get_return_object() {
 template <typename T, typename Derived>
 Coro<T>
 TypedCoroPromise<T, Derived>::get_return_object_on_allocation_failure() {
-  return Coro<T>(internal::OwningCoroutineHandle<Derived>(nullptr));
+  return Coro<T>(internal::OwningCoroutineHandle<Derived>::AllocationFailed());
 }
 
 template <typename T>
@@ -931,7 +1172,7 @@ namespace std {
 
 template <typename T, typename... Args>
 struct coroutine_traits<pw::async2::Coro<T>, Args...> {
-  using promise_type = typename pw::async2::Coro<T>::promise_type;
+  using promise_type = ::pw::async2::internal::CoroPromise<T>;
 
   static_assert(
       pw::async2::internal::CoroContextIsPassedByValue<Args...>::value,

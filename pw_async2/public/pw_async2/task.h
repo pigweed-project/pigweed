@@ -35,7 +35,7 @@ namespace pw::async2 {
 class Dispatcher;
 
 /// Whether to store or discard a task's return value in task wrappers such as
-/// `FutureTask`, `RunOnceTask`, or `FallibleCoroTask`.
+/// `FutureTask` or `RunOnceTask`.
 enum class ReturnValuePolicy : bool { kKeep, kDiscard };
 
 /// @endsubmodule

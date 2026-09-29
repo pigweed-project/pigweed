@@ -13,11 +13,11 @@
 // the License.
 #pragma once
 
-#include <optional>
+#include <utility>
 
 #include "pw_async2/coro.h"
-#include "pw_async2/fallible_coro_task.h"
 #include "pw_async2/task.h"
+#include "pw_async2/try.h"
 #include "pw_function/function.h"
 
 namespace pw::async2 {
@@ -31,9 +31,7 @@ CoroOrElseTask final : public Task {
   /// Create a new ``Task`` which runs ``coro``, invoking ``or_else`` on
   /// any non-OK status.
   CoroOrElseTask(Coro<Status>&& coro, pw::Function<void(Status)>&& or_else)
-      : task_(std::in_place,
-              std::move(coro),
-              [this] { or_else_(Status::Internal()); }),
+      : future_(std::move(coro).MakeFallible(Status::Internal())),
         or_else_(std::move(or_else)) {}
 
   ~CoroOrElseTask() override { Deregister(); }
@@ -43,7 +41,7 @@ CoroOrElseTask final : public Task {
   /// The task must not be `Post`ed when `coro` is changed.
   void SetCoro(Coro<Status>&& coro) {
     PW_ASSERT(!IsRegistered());
-    task_.emplace(std::move(coro), [this] { or_else_(Status::Internal()); });
+    future_ = std::move(coro).MakeFallible(Status::Internal());
   }
 
   /// *Non-atomically* sets `or_else`.
@@ -55,9 +53,18 @@ CoroOrElseTask final : public Task {
   }
 
  private:
-  Poll<> DoPend(Context& cx) final { return task_->Pend(cx); }
+  Poll<> DoPend(Context& cx) final {
+    if (!future_.is_pendable()) {
+      return Ready();
+    }
+    PW_TRY_READY_ASSIGN(const Status result, future_.Pend(cx));
+    if (!result.ok()) {
+      or_else_(result);
+    }
+    return Ready();
+  }
 
-  std::optional<FallibleCoroTask<Status>> task_;
+  FallibleCoro<Status, internal::ReturnValueHandler<Status>> future_;
   pw::Function<void(Status)> or_else_;
 };
 

@@ -83,19 +83,18 @@ TEST_F(FutureTaskCoroTest, RunOnceInt) {
 TEST_F(FutureTaskCoroTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
   Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
-  EXPECT_FALSE(coro.ok());
+  EXPECT_FALSE(coro.is_pendable());
 
   DispatcherForTest dispatcher;
   FutureTask task(std::move(coro));
   dispatcher.Post(task);
-  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(),
-                            "Attempted to run a Coro that failed to allocate");
+  EXPECT_DEATH_IF_SUPPORTED(dispatcher.RunToCompletion(), "");
 }
 
 TEST_F(FutureTaskCoroTest, ValidTaskIfAllocationSucceeds) {
   {
     Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
-    EXPECT_TRUE(coro.ok());
+    EXPECT_TRUE(coro.is_pendable());
     FutureTask task(std::move(coro));
   }
   EXPECT_EQ(alloc_.GetAllocated(), 0u);

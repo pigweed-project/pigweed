@@ -47,11 +47,11 @@ pw::async2::Coro<pw::Result<int>> ReadSensorDouble(
 
 ---
 
-## 3. Running coroutines (`FutureTask` and `FallibleCoroTask`)
+## 3. Running coroutines (`FutureTask`)
 
 Coroutines are executed inside tasks posted to a `Dispatcher`.
 
-### Standard task (`FutureTask`)
+### Standard execution (`FutureTask`)
 
 `Coro<T>` implements the `Future` concept, so it can be executed inside a `FutureTask`.
 If coroutine frame allocation fails, pending a `FutureTask` with an invalid `Coro` causes a `PW_CRASH`.
@@ -63,18 +63,30 @@ pw::async2::FutureTask task(ReadAndProcess(allocator, sensor));
 dispatcher.Post(task);
 ```
 
-### Fallible task (`FallibleCoroTask`)
+### Handling allocation failures (`MakeFallible`)
 
-`FallibleCoroTask` handles coroutine frame allocation failures by calling an
-error handler closure instead of crashing.
+To handle coroutine frame allocation failures gracefully (both initial allocation and nested coroutines invoked with `co_await`), use `coro.MakeFallible(...)`.
 
 ```cpp
-#include "pw_async2/fallible_coro_task.h"
-
-pw::async2::FallibleCoroTask task(
-    ReadAndProcess(allocator, sensor),
-    [] { PW_LOG_ERROR("Coroutine frame allocation failed"); });
+// Handler returning a fallback value (yields T):
+pw::async2::FutureTask task(
+    ReadAndProcess(allocator, sensor)
+        .MakeFallible([] {
+          PW_LOG_ERROR("Coroutine frame allocation failed");
+          return pw::Status::ResourceExhausted();
+        }));
 dispatcher.Post(task);
+
+// Or passing a fallback value directly:
+auto task = dispatcher.Post(
+    allocator,
+    ReadAndProcess(allocator, sensor)
+        .MakeFallible(pw::Status::ResourceExhausted()));
+
+// Or without arguments (yields std::optional<T>):
+auto task = dispatcher.Post(
+    allocator,
+    ReadAndProcess(allocator, sensor).MakeFallible());
 ```
 
 ---
@@ -115,6 +127,6 @@ pw::async2::Coro<pw::Status> ConsumeCount(
    allocator passed via `CoroContext`.
 2. **Implicit Allocation**: Even if `FutureTask` is stack-allocated, the
    underlying coroutine frame requires allocation via `CoroContext`.
-3. **Allocation Verification**: Check `coro.ok()` to verify whether coroutine
-   frame allocation succeeded.
+3. **Allocation Verification**: Check `coro.is_pendable()` to verify whether
+   coroutine frame allocation succeeded.
 

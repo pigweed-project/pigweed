@@ -14,9 +14,13 @@
 #pragma once
 
 #include <concepts>
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 #include "pw_async2/coro.h"
 #include "pw_async2/task.h"
+#include "pw_async2/try.h"
 #include "pw_function/function.h"
 
 namespace pw::async2 {
@@ -35,13 +39,13 @@ class FallibleCoroTask final : public Task {
  public:
   using value_type = std::conditional_t<std::is_void_v<T>, ReadyType, T>;
 
-  /// Create a new `Task` that runs `coro`, invoking `or_else` if allocation
-  /// fails.
+  /// Create a new `Task` that runs `coro`, invoking `error_handler` if
+  /// allocation fails.
   template <typename ErrorHandler>
   FallibleCoroTask(Coro<T>&& coro, ErrorHandler&& error_handler)
       : Task(PW_ASYNC_TASK_NAME("FallibleCoroTask<T>")),
-        coro_(std::move(coro)),
-        error_handler_(std::forward<ErrorHandler>(error_handler)) {}
+        future_(std::move(coro).template MakeFallible<AllocationErrorHandler>(
+            std::forward<ErrorHandler>(error_handler))) {}
 
   FallibleCoroTask(const FallibleCoroTask&) = delete;
   FallibleCoroTask& operator=(const FallibleCoroTask&) = delete;
@@ -49,12 +53,6 @@ class FallibleCoroTask final : public Task {
   FallibleCoroTask& operator=(FallibleCoroTask&&) = delete;
 
   ~FallibleCoroTask() override { Deregister(); }
-
-  /// Returns whether this `FallibleCoroTask` wraps a valid `Coro` and can be
-  /// pended. Pending a `!ok()` `FallibleCoroTask` calls the error handler.
-  ///
-  /// This will be `false` if `Coro` allocation failed.
-  [[nodiscard]] bool ok() const { return coro_.ok(); }
 
   /// Returns whether the task ran and set that `value` to the function's return
   /// value.
@@ -79,26 +77,11 @@ class FallibleCoroTask final : public Task {
 
  private:
   Poll<> DoPend(Context& cx) final {
-    if (!coro_.ok()) {
-      error_handler_();
-      return Ready();
-    }
-
-    auto result = coro_.PendCoro(cx);
-    switch (result.state()) {
-      case internal::CoroPollState::kPending:
-        return Pending();
-      case internal::CoroPollState::kAborted:
-        error_handler_();
-        return Ready();
-      case internal::CoroPollState::kReady:
-        return_value_ = std::move(*result);
-        return Ready();
-    }
+    PW_TRY_READY_ASSIGN(return_value_, future_.Pend(cx));
+    return Ready();
   }
 
-  Coro<T> coro_;
-  AllocationErrorHandler error_handler_;
+  FallibleCoro<T, AllocationErrorHandler> future_;
   std::optional<T> return_value_;
 };
 
@@ -108,10 +91,11 @@ template <typename T, typename AllocationErrorHandler>
 class FallibleCoroTask<T, AllocationErrorHandler, ReturnValuePolicy::kDiscard>
     final : public Task {
  public:
-  FallibleCoroTask(Coro<T>&& coro, AllocationErrorHandler&& error_handler)
+  template <typename ErrorHandler>
+  FallibleCoroTask(Coro<T>&& coro, ErrorHandler&& error_handler)
       : Task(PW_ASYNC_TASK_NAME("FallibleCoroTask")),
-        coro_(std::move(coro)),
-        error_handler_(std::move(error_handler)) {}
+        future_(std::move(coro).template MakeFallible<AllocationErrorHandler>(
+            std::forward<ErrorHandler>(error_handler))) {}
 
   FallibleCoroTask(const FallibleCoroTask&) = delete;
   FallibleCoroTask& operator=(const FallibleCoroTask&) = delete;
@@ -120,31 +104,10 @@ class FallibleCoroTask<T, AllocationErrorHandler, ReturnValuePolicy::kDiscard>
 
   ~FallibleCoroTask() override { Deregister(); }
 
-  /// Returns whether this `FallibleCoroTask` wraps a valid `Coro` and can be
-  /// pended. Pending a `!ok()` `FallibleCoroTask` calls the error handler.
-  ///
-  /// This will be `false` if `Coro` allocation failed.
-  [[nodiscard]] bool ok() const { return coro_.ok(); }
-
  private:
-  Poll<> DoPend(Context& cx) final {
-    if (!coro_.ok()) {
-      error_handler_();
-      return Ready();
-    }
-    switch (coro_.PendCoro(cx).state()) {
-      case internal::CoroPollState::kPending:
-        return Pending();
-      case internal::CoroPollState::kAborted:
-        error_handler_();
-        return Ready();
-      case internal::CoroPollState::kReady:
-        return Ready();
-    }
-  }
+  Poll<> DoPend(Context& cx) final { return future_.Pend(cx).Readiness(); }
 
-  Coro<T> coro_;
-  AllocationErrorHandler error_handler_;
+  FallibleCoro<T, AllocationErrorHandler> future_;
 };
 
 template <typename T, typename AllocationErrorHandler>
