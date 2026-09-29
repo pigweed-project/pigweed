@@ -15,7 +15,7 @@
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 
-pw_add_enum_library(pw_rpc2.cpp.protocol_status
+pw_add_enum_library(pw_rpc2.cpp._protocol_status
   ENUM_HEADERS
     public/pw_rpc2/internal/protocol_status.h
   PUBLIC_INCLUDES
@@ -24,7 +24,7 @@ pw_add_enum_library(pw_rpc2.cpp.protocol_status
     pw_status
 )
 
-pw_add_library(pw_rpc2.cpp.packet STATIC
+pw_add_library(pw_rpc2.cpp._packet STATIC
   HEADERS
     public/pw_rpc2/internal/packet.h
   PUBLIC_INCLUDES
@@ -37,7 +37,7 @@ pw_add_library(pw_rpc2.cpp.packet STATIC
     pw_enum
     pw_preprocessor
     pw_result
-    pw_rpc2.cpp.protocol_status
+    pw_rpc2.cpp._protocol_status
     pw_status
   SOURCES
     packet.cc
@@ -51,45 +51,56 @@ pw_add_test(pw_rpc2.cpp.packet_test
     pw_assert.check
     pw_bytes
     pw_enum
-    pw_rpc2.cpp.packet
-    pw_rpc2.cpp.protocol_status
+    pw_rpc2.cpp._packet
+    pw_rpc2.cpp._protocol_status
     pw_status
   GROUPS
     modules
     pw_rpc2
 )
 
-pw_add_library(pw_rpc2.cpp.serialize INTERFACE
+pw_add_library(pw_rpc2.cpp._serialize INTERFACE
   HEADERS
-    public/pw_rpc2/serialize.h
+    public/pw_rpc2/internal/serialize.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_allocator
-    pw_assert.check
     pw_buf
     pw_bytes
     pw_result
     pw_status
 )
 
-pw_add_library(pw_rpc2.cpp.pwpb_serialize INTERFACE
+pw_add_test(pw_rpc2.cpp.serialize_test
+  SOURCES
+    serialize_test.cc
+  PRIVATE_DEPS
+    pw_buf
+    pw_bytes
+    pw_result
+    pw_rpc2.cpp._serialize
+    pw_status
+  GROUPS
+    modules
+    pw_rpc2
+)
+
+pw_add_library(pw_rpc2.cpp._pwpb_serialize STATIC
   HEADERS
-    public/pw_rpc2/pwpb_serialize.h
+    public/pw_rpc2/internal/pwpb_serialize.h
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
-    pw_buf
     pw_bytes
-    pw_containers.vector
     pw_protobuf
     pw_result
-    pw_rpc2.cpp.serialize
+    pw_rpc2.cpp._serialize
     pw_span
     pw_status
+  PRIVATE_DEPS
     pw_stream
-    pw_string.string
-    pw_varint
+  SOURCES
+    pwpb_serialize.cc
 )
 
 pw_add_test(pw_rpc2.cpp.pwpb_serialize_test
@@ -97,11 +108,20 @@ pw_add_test(pw_rpc2.cpp.pwpb_serialize_test
     pwpb_serialize_test.cc
   PRIVATE_DEPS
     pw_buf
+    pw_compilation_testing._pigweed_only_negative_compilation
     pw_protobuf
-    pw_rpc2.cpp.pwpb_serialize
+    pw_rpc2.cpp._pwpb_serialize
     pw_span
     pw_status
   GROUPS
     modules
     pw_rpc2
+)
+
+pw_add_library(pw_rpc2.cpp._method INTERFACE
+  HEADERS
+    public/pw_rpc2/internal/method_info.h
+    public/pw_rpc2/method_type.h
+  PUBLIC_INCLUDES
+    public
 )

@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_rpc2/pwpb_serialize.h"
+#include "pw_rpc2/internal/pwpb_serialize.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "pw_buf/buf.h"
+#include "pw_compilation_testing/negative_compilation.h"
 #include "pw_protobuf/encoder.h"
 #include "pw_protobuf/internal/codegen.h"
 #include "pw_protobuf/serialized_size.h"
@@ -29,8 +30,19 @@
 #include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"
 
-namespace pw::rpc2 {
 namespace {
+
+namespace internal = ::pw::rpc2::internal;
+namespace protobuf = ::pw::protobuf;
+
+using ::pw::Buf;
+using ::pw::ConstBuf;
+using ::pw::OkStatus;
+using ::pw::span;
+using ::pw::Status;
+using ::pw::StatusWithSize;
+using ::pw::rpc2::internal::PwpbSerde;
+using ::pw::rpc2::internal::PwpbSerializer;
 
 namespace TestRequest {
 
@@ -199,10 +211,31 @@ TEST(PwpbSerialize, SerializeAndDeserializeWithConstBuf) {
   ASSERT_EQ(OkStatus(), decoded.status());
   EXPECT_EQ(42, decoded->integer);
   EXPECT_EQ(0u, decoded->status_code);
+}
 
-  auto raw_decoded = Deserialize<ConstBuf>(std::move(const_buf));
-  ASSERT_EQ(OkStatus(), raw_decoded.status());
-  EXPECT_EQ(result.size(), raw_decoded->size());
+TEST(PwpbSerialize, SerializeExactSizeBuffer) {
+  StatusWithSize size = TestRequestSerde::EncodedSizeBytes(kProto);
+  PW_TEST_ASSERT_OK(size.status());
+  ASSERT_EQ(size.size(), 2u);
+
+  std::byte buffer[2] = {};
+  StatusWithSize result = TestRequestSerde::Serialize(kProto, buffer);
+  PW_TEST_EXPECT_OK(result.status());
+  EXPECT_EQ(result.size(), 2u);
+  EXPECT_EQ(buffer[0], std::byte{1} << 3);
+  EXPECT_EQ(buffer[1], std::byte{42});
+}
+
+TEST(PwpbSerialize, SerializeEmptyMessageInEmptyBuffer) {
+  constexpr TestRequest::Message kEmptyProto{};
+  StatusWithSize size = TestRequestSerde::EncodedSizeBytes(kEmptyProto);
+  PW_TEST_ASSERT_OK(size.status());
+  ASSERT_EQ(size.size(), 0u);
+
+  StatusWithSize result =
+      TestRequestSerde::Serialize(kEmptyProto, span<std::byte>());
+  PW_TEST_EXPECT_OK(result.status());
+  EXPECT_EQ(result.size(), 0u);
 }
 
 TEST(PwpbSerialize, BufferTooSmall) {
@@ -213,13 +246,13 @@ TEST(PwpbSerialize, BufferTooSmall) {
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeStaticForBoundedFields) {
-  static_assert(internal::HasNoCallbacks(&TestRequest::kMessageFields));
+  static_assert(!internal::HasDecodeCallbacks(&TestRequest::kMessageFields));
   constexpr size_t kSize = TestRequestSerializer::MaxEncodedSize(kProto);
   EXPECT_EQ(kSize, TestRequest::kMaxEncodedSizeBytesWithoutValues);
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeDynamicForCallbackField) {
-  static_assert(!internal::HasNoCallbacks(&CallbackMessage::kMessageFields));
+  static_assert(internal::HasDecodeCallbacks(&CallbackMessage::kMessageFields));
 
   static constexpr std::string_view kPayload =
       "hello from a callback field that exceeds "
@@ -230,20 +263,20 @@ TEST(PwpbSerialize, MaxEncodedSizeDynamicForCallbackField) {
   });
 
   const size_t max_size = CallbackMessageSerializer::MaxEncodedSize(msg);
-  EXPECT_GT(max_size, kPayload.size());
+  EXPECT_EQ(max_size, 2u + kPayload.size());
   EXPECT_GT(max_size, CallbackMessage::kMaxEncodedSizeBytesWithoutValues);
 
   std::byte backing_buffer[128] = {};
   ASSERT_LE(max_size, sizeof(backing_buffer));
   StatusWithSize encoded =
       CallbackMessageSerializer::Serialize(msg, span(backing_buffer, max_size));
-  EXPECT_EQ(OkStatus(), encoded.status());
-  EXPECT_EQ(encoded.size(), 2u + kPayload.size());
+  PW_TEST_EXPECT_OK(encoded.status());
+  EXPECT_EQ(encoded.size(), max_size);
 }
 
 TEST(PwpbSerialize, MaxEncodedSizeDynamicForNestedCallbackField) {
   static_assert(
-      !internal::HasNoCallbacks(&ParentWithCallbackChild::kMessageFields));
+      internal::HasDecodeCallbacks(&ParentWithCallbackChild::kMessageFields));
 
   static constexpr std::string_view kPayload =
       "nested submessage callback payload";
@@ -255,7 +288,7 @@ TEST(PwpbSerialize, MaxEncodedSizeDynamicForNestedCallbackField) {
 
   const size_t max_size =
       ParentWithCallbackChildSerializer::MaxEncodedSize(msg);
-  EXPECT_GT(max_size, kPayload.size());
+  EXPECT_EQ(max_size, 2u + 2u + 2u + kPayload.size());
   EXPECT_GT(max_size,
             ParentWithCallbackChild::kMaxEncodedSizeBytesWithoutValues);
 
@@ -263,8 +296,46 @@ TEST(PwpbSerialize, MaxEncodedSizeDynamicForNestedCallbackField) {
   ASSERT_LE(max_size, sizeof(backing_buffer));
   StatusWithSize encoded = ParentWithCallbackChildSerializer::Serialize(
       msg, span(backing_buffer, max_size));
-  EXPECT_EQ(OkStatus(), encoded.status());
+  PW_TEST_EXPECT_OK(encoded.status());
+  EXPECT_EQ(encoded.size(), max_size);
 }
 
+TEST(PwpbSerialize, SerializeEmptyNestedSubmessageInExactSizeBuffer) {
+  ParentWithCallbackChild::Message msg{};
+  msg.id = 7;
+  msg.child.name.SetEncoder(
+      [](CallbackMessage::StreamEncoder&) { return OkStatus(); });
+
+  const size_t max_size =
+      ParentWithCallbackChildSerializer::MaxEncodedSize(msg);
+  ASSERT_EQ(max_size, 2u);
+
+  std::byte buffer[2] = {};
+  StatusWithSize encoded =
+      ParentWithCallbackChildSerializer::Serialize(msg, buffer);
+  PW_TEST_EXPECT_OK(encoded.status());
+  EXPECT_EQ(encoded.size(), 2u);
+}
+
+TEST(PwpbSerialize, DeserializeMalformedInputFails) {
+  // Field 1 (varint) whose value is truncated mid-varint.
+  constexpr std::byte kTruncated[] = {std::byte{0x08}, std::byte{0x80}};
+  auto decoded =
+      TestRequestSerde::Deserialize<TestRequest::Message>(kTruncated);
+  EXPECT_FALSE(decoded.ok());
+}
+
+#if PW_NC_TEST(MessageDoesNotMatchTable)
+PW_NC_EXPECT("does not match the PWPB descriptor table");
+
+struct TooSmall {
+  uint8_t value;
+};
+
+[[maybe_unused]] void SerializeWithMismatchedTable() {
+  std::byte buffer[32] = {};
+  static_cast<void>(TestRequestSerde::Serialize(TooSmall{}, buffer));
+}
+#endif  // PW_NC_TEST
+
 }  // namespace
-}  // namespace pw::rpc2

@@ -15,16 +15,14 @@
 
 #include <cstring>
 #include <type_traits>
-#include <utility>
 
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"
-#include "pw_status/try.h"
 
-namespace pw::rpc2 {
+namespace pw::rpc2::internal {
 
 /// Primary template for Serializer deduction.
 ///
@@ -75,36 +73,6 @@ inline StatusWithSize Serialize(const T& value, span<std::byte> destination) {
   return SerializerFor<T>::type::Serialize(value, destination);
 }
 
-namespace internal {
-
-template <typename Serializer, typename T, typename = void>
-struct HasDeserializeInto : std::false_type {};
-
-template <typename Serializer, typename T>
-struct HasDeserializeInto<
-    Serializer,
-    T,
-    std::void_t<decltype(Serializer::DeserializeInto(
-        std::declval<span<const std::byte>>(), std::declval<T&>()))>>
-    : std::true_type {};
-
-}  // namespace internal
-
-/// Generic helper to deserialize a message in-place from a borrowed byte span.
-template <typename T>
-inline Status DeserializeInto(span<const std::byte> source, T& out) {
-  static_assert(!std::is_same_v<T, ConstBuf>,
-                "Cannot deserialize a ConstBuf from a borrowed span.");
-  using Serializer = typename SerializerFor<T>::type;
-  if constexpr (internal::HasDeserializeInto<Serializer, T>::value) {
-    return Serializer::DeserializeInto(source, out);
-  } else {
-    PW_TRY_ASSIGN(auto res, Serializer::template Deserialize<T>(source));
-    out = std::move(*res);
-    return OkStatus();
-  }
-}
-
 /// Generic helper to deserialize a message from a borrowed byte span.
 ///
 /// Not available for `ConstBuf`: a borrowed span cannot become an owning
@@ -118,17 +86,4 @@ inline Result<T> Deserialize(span<const std::byte> source) {
   return SerializerFor<T>::type::template Deserialize<T>(source);
 }
 
-/// Generic helper to deserialize a message from a buffer.
-///
-/// Deserializing a `ConstBuf` is the identity operation, so raw and typed
-/// call paths can share one code path.
-template <typename T>
-inline Result<T> Deserialize(ConstBuf&& source) {
-  if constexpr (std::is_same_v<T, ConstBuf>) {
-    return std::move(source);
-  } else {
-    return SerializerFor<T>::type::template Deserialize<T>(source);
-  }
-}
-
-}  // namespace pw::rpc2
+}  // namespace pw::rpc2::internal

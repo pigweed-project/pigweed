@@ -16,7 +16,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load("//pw_unit_test:pw_cc_test.bzl", "pw_cc_test")
 
-package(default_visibility = ["//visibility:public"])
+# Private while in development.
+package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
 
@@ -24,7 +25,6 @@ pw_cc_enum_library(
     name = "protocol_status",
     enum_headers = ["public/pw_rpc2/internal/protocol_status.h"],
     strip_include_prefix = "public",
-    visibility = ["//pw_rpc2:__subpackages__"],
     deps = ["//pw_status"],
 )
 
@@ -33,7 +33,6 @@ cc_library(
     srcs = ["packet.cc"],
     hdrs = ["public/pw_rpc2/internal/packet.h"],
     strip_include_prefix = "public",
-    visibility = ["//pw_rpc2:__subpackages__"],
     deps = [
         ":protocol_status",
         "//pw_assert:assert",
@@ -64,11 +63,9 @@ pw_cc_test(
 
 cc_library(
     name = "serialize",
-    hdrs = ["public/pw_rpc2/serialize.h"],
+    hdrs = ["public/pw_rpc2/internal/serialize.h"],
     strip_include_prefix = "public",
     deps = [
-        "//pw_allocator",
-        "//pw_assert:check",
         "//pw_buf",
         "//pw_bytes",
         "//pw_result",
@@ -76,30 +73,41 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "pwpb_serialize",
-    hdrs = [
-        "public/pw_rpc2/pwpb_serialize.h",
-    ],
-    strip_include_prefix = "public",
+pw_cc_test(
+    name = "serialize_test",
+    srcs = ["serialize_test.cc"],
     deps = [
         ":serialize",
         "//pw_buf",
         "//pw_bytes",
-        "//pw_containers:vector",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
+cc_library(
+    name = "pwpb_serialize",
+    srcs = ["pwpb_serialize.cc"],
+    hdrs = [
+        "public/pw_rpc2/internal/pwpb_serialize.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":serialize",
+        "//pw_bytes",
         "//pw_protobuf",
         "//pw_result",
         "//pw_span",
         "//pw_status",
         "//pw_stream",
-        "//pw_string:string",
-        "//pw_varint",
     ],
 )
 
 pw_cc_test(
     name = "pwpb_serialize_test",
     srcs = ["pwpb_serialize_test.cc"],
+    has_nc_test = True,
     deps = [
         ":pwpb_serialize",
         "//pw_buf",
@@ -108,4 +116,13 @@ pw_cc_test(
         "//pw_status",
         "//pw_unit_test",
     ],
+)
+
+cc_library(
+    name = "method",
+    hdrs = [
+        "public/pw_rpc2/internal/method_info.h",
+        "public/pw_rpc2/method_type.h",
+    ],
+    strip_include_prefix = "public",
 )

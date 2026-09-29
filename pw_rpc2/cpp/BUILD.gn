@@ -23,11 +23,14 @@ config("public_include_path") {
   visibility = [ ":*" ]
 }
 
+# Private while in development.
+_default_visibility = [ "$dir_pw_rpc2/*" ]
+
 pw_cc_enum_source_set("protocol_status") {
   enum_headers = [ "public/pw_rpc2/internal/protocol_status.h" ]
   include_dirs = [ "public" ]
   public_deps = [ dir_pw_status ]
-  visibility = [ "$dir_pw_rpc2/*" ]
+  visibility = _default_visibility
 }
 
 pw_source_set("packet") {
@@ -45,7 +48,7 @@ pw_source_set("packet") {
     dir_pw_result,
     dir_pw_status,
   ]
-  visibility = [ "$dir_pw_rpc2/*" ]
+  visibility = _default_visibility
 }
 
 pw_test("packet_test") {
@@ -63,33 +66,41 @@ pw_test("packet_test") {
 
 pw_source_set("serialize") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_rpc2/serialize.h" ]
+  public = [ "public/pw_rpc2/internal/serialize.h" ]
   public_deps = [
-    "$dir_pw_assert:check",
-    dir_pw_allocator,
     dir_pw_buf,
     dir_pw_bytes,
     dir_pw_result,
     dir_pw_status,
   ]
+  visibility = _default_visibility
+}
+
+pw_test("serialize_test") {
+  deps = [
+    ":serialize",
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  sources = [ "serialize_test.cc" ]
 }
 
 pw_source_set("pwpb_serialize") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_rpc2/pwpb_serialize.h" ]
+  public = [ "public/pw_rpc2/internal/pwpb_serialize.h" ]
+  sources = [ "pwpb_serialize.cc" ]
   public_deps = [
     ":serialize",
-    "$dir_pw_containers:vector",
-    "$dir_pw_string:string",
-    dir_pw_buf,
     dir_pw_bytes,
     dir_pw_protobuf,
     dir_pw_result,
     dir_pw_span,
     dir_pw_status,
-    dir_pw_stream,
-    dir_pw_varint,
   ]
+  deps = [ dir_pw_stream ]
+  visibility = _default_visibility
 }
 
 pw_test("pwpb_serialize_test") {
@@ -101,11 +112,22 @@ pw_test("pwpb_serialize_test") {
     dir_pw_status,
   ]
   sources = [ "pwpb_serialize_test.cc" ]
+  negative_compilation_tests = true
+}
+
+pw_source_set("method") {
+  public_configs = [ ":public_include_path" ]
+  public = [
+    "public/pw_rpc2/internal/method_info.h",
+    "public/pw_rpc2/method_type.h",
+  ]
+  visibility = _default_visibility
 }
 
 pw_test_group("tests") {
   tests = [
     ":packet_test",
     ":pwpb_serialize_test",
+    ":serialize_test",
   ]
 }

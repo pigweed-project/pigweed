@@ -15,7 +15,8 @@
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
-package(default_visibility = ["//visibility:public"])
+# Private while in development.
+package(default_visibility = ["//pw_rpc2:__subpackages__"])
 
 licenses(["notice"])
 
@@ -27,4 +28,5 @@ sphinx_docs_library(
     ],
     prefix = "pw_rpc2/",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )
