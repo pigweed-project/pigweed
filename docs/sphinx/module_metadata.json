@@ -493,6 +493,10 @@
       "C++"
     ]
   },
+  "pw_hil": {
+    "status": "experimental",
+    "languages": []
+  },
   "pw_i2c": {
     "tagline": "Cross-platform I2C API with interactive debugging",
     "status": "stable",

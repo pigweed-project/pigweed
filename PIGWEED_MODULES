@@ -81,6 +81,7 @@ pw_grpc
 pw_hal
 pw_hdlc
 pw_hex_dump
+pw_hil
 pw_i2c
 pw_i2c_linux
 pw_i2c_mcuxpresso

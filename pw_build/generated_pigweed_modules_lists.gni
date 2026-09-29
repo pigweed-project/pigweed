@@ -117,6 +117,7 @@ declare_args() {
   dir_pw_hal = get_path_info("../pw_hal", "abspath")
   dir_pw_hdlc = get_path_info("../pw_hdlc", "abspath")
   dir_pw_hex_dump = get_path_info("../pw_hex_dump", "abspath")
+  dir_pw_hil = get_path_info("../pw_hil", "abspath")
   dir_pw_i2c = get_path_info("../pw_i2c", "abspath")
   dir_pw_i2c_linux = get_path_info("../pw_i2c_linux", "abspath")
   dir_pw_i2c_mcuxpresso = get_path_info("../pw_i2c_mcuxpresso", "abspath")
@@ -326,6 +327,7 @@ declare_args() {
     dir_pw_hal,
     dir_pw_hdlc,
     dir_pw_hex_dump,
+    dir_pw_hil,
     dir_pw_i2c,
     dir_pw_i2c_linux,
     dir_pw_i2c_mcuxpresso,
@@ -524,6 +526,7 @@ declare_args() {
     "$dir_pw_hal:tests",
     "$dir_pw_hdlc:tests",
     "$dir_pw_hex_dump:tests",
+    "$dir_pw_hil:tests",
     "$dir_pw_i2c:tests",
     "$dir_pw_i2c_linux:tests",
     "$dir_pw_i2c_mcuxpresso:tests",

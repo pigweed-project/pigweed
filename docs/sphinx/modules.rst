@@ -73,6 +73,7 @@ Modules
    pw_hal/docs
    pw_hdlc/docs
    pw_hex_dump/docs
+   pw_hil/docs
    pw_i2c/docs
    pw_ide/docs
    pw_interrupt/docs
