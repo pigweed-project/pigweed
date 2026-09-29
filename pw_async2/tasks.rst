@@ -93,6 +93,40 @@ or use a reference to a future:
    benefits of ``pw_async2``. Creating a task for each future is also less
    efficient than having one task work with multiple futures.
 
+Default construction and reuse
+------------------------------
+A ``FutureTask`` that owns its future may be default constructed. This is
+useful when the ``FutureTask`` is a class member, but the future is not
+available until later. A default-constructed ``FutureTask`` holds an empty
+future and must not be posted to a dispatcher until a future is assigned.
+
+When a ``FutureTask`` is not :cc:`registered <pw::async2::Task::IsRegistered>`
+with a dispatcher, it can be given a new future, which also clears any stored
+result from a previous run. This allows one ``FutureTask`` to be reused for a
+sequence of futures, such as :ref:`coroutines <module-pw_async2-coro>`.
+
+* Assign a future: ``task = std::move(future);``
+* Construct a future in place: :cc:`task.emplace_future(args...)
+  <pw::async2::FutureTask::emplace_future>`
+* Reset to an empty future: :cc:`task.reset() <pw::async2::FutureTask::reset>`
+
+Assigning to a ``FutureTask`` that is registered with a dispatcher is a fatal
+error. Wait for the task to complete or :cc:`deregister
+<pw::async2::Task::Deregister>` it first.
+
+.. literalinclude:: examples/task_helpers.cc
+   :language: cpp
+   :start-after: // DOCSTAG: [pw_async2-examples-future-task-reuse]
+   :end-before: // DOCSTAG: [pw_async2-examples-future-task-reuse]
+
+:cc:`is_pendable() <pw::async2::FutureTask::is_pendable>` and
+:cc:`is_complete() <pw::async2::FutureTask::is_complete>` report the state of
+the task's future. An empty (default-constructed or reset) future is neither
+pendable nor complete.
+
+Default construction and assignment are not supported for ``FutureTask``\s that
+refer to an existing future (``FutureTask<MyFuture&>``).
+
 ``RunOnceTask``: Run an arbitrary function in a task
 ====================================================
 :cc:`RunOnceTask <pw::async2::RunOnceTask>` is a task that invokes a function

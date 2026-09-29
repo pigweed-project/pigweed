@@ -111,4 +111,69 @@ TEST_F(FutureTaskCoroTest, RunOnceVoid) {
   dispatcher.RunToCompletion();
 }
 
+TEST_F(FutureTaskCoroTest, DefaultConstructAndAssignCoro) {
+  DispatcherForTest dispatcher;
+
+  FutureTask<Coro<int>> task;
+  EXPECT_FALSE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+
+  task = DoubleIt(coro_cx_, 10);
+  EXPECT_TRUE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_FALSE(task.is_pendable());
+  EXPECT_TRUE(task.is_complete());
+  EXPECT_EQ(task.Wait(), 20);
+
+  task.emplace_future(DoubleIt(coro_cx_, 21));
+  EXPECT_TRUE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+  EXPECT_FALSE(task.has_value());
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_TRUE(task.is_complete());
+  EXPECT_EQ(task.Wait(), 42);
+
+  task.reset();
+  EXPECT_FALSE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+  EXPECT_FALSE(task.has_value());
+}
+
+TEST_F(FutureTaskCoroTest, DefaultConstructAndAssignFallibleCoro) {
+  DispatcherForTest dispatcher;
+
+  FutureTask<FallibleCoro<int>> task;
+  EXPECT_FALSE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+
+  bool error_handler_ran = false;
+  task = DoubleIt(coro_cx_, 15).MakeFallible([&] { error_handler_ran = true; });
+  EXPECT_TRUE(task.is_pendable());
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_FALSE(error_handler_ran);
+  EXPECT_EQ(task.Wait(), 30);
+
+  // emplace_future with Coro and error handler directly.
+  alloc_.Exhaust();
+  task.emplace_future(EnsureNotStackAllocated(DoubleIt(coro_cx_, 15)),
+                      [&] { error_handler_ran = true; });
+  EXPECT_TRUE(task.is_pendable());
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_TRUE(error_handler_ran);
+  EXPECT_EQ(task.Wait(), std::nullopt);
+}
+
 }  // namespace

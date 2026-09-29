@@ -61,6 +61,33 @@ int FutureTaskReferencesTheFuture(pw::async2::Dispatcher& dispatcher,
 }
 // DOCSTAG: [pw_async2-examples-future-task-ref]
 
+// DOCSTAG: [pw_async2-examples-future-task-reuse]
+// Reads values from an async API, reusing one FutureTask for every read.
+class ValueReader {
+ public:
+  ValueReader(pw::async2::Dispatcher& dispatcher,
+              pw::async2::ValueProvider<int>& provider)
+      : dispatcher_(dispatcher), provider_(provider) {}
+
+  // Starts an async read. Must only be called once; crashes if called multiple
+  // times before WaitForValue().
+  void StartRead() {
+    read_task_ = provider_.Get();  // Assign a new future to the task.
+    dispatcher_.Post(read_task_);
+  }
+
+  // Blocks until the current read completes and returns its value.
+  int WaitForValue() { return read_task_.Wait(); }
+
+ private:
+  pw::async2::Dispatcher& dispatcher_;
+  pw::async2::ValueProvider<int>& provider_;
+
+  // Default constructed; a future is assigned each time a read starts.
+  pw::async2::FutureTask<pw::async2::ValueFuture<int>> read_task_;
+};
+// DOCSTAG: [pw_async2-examples-future-task-reuse]
+
 }  // namespace
 
 class TaskHelpersExampleTest : public ::testing::Test {
@@ -138,6 +165,19 @@ TEST_F(TaskHelpersExampleTest, FutureTaskOwnsTheFuture) {
 TEST_F(TaskHelpersExampleTest, FutureTaskReferencesTheFuture) {
   auto future = pw::async2::ValueFuture<int>::Resolved(1234);
   EXPECT_EQ(FutureTaskReferencesTheFuture(dispatcher_, future), 1234);
+}
+
+TEST_F(TaskHelpersExampleTest, FutureTaskReuse) {
+  pw::async2::ValueProvider<int> provider;
+  ValueReader reader(dispatcher_, provider);
+
+  reader.StartRead();
+  provider.Resolve(1);
+  EXPECT_EQ(reader.WaitForValue(), 1);
+
+  reader.StartRead();  // The task can be reused.
+  provider.Resolve(2);
+  EXPECT_EQ(reader.WaitForValue(), 2);
 }
 
 TEST_F(TaskHelpersExampleTest, RunOnceTask) {

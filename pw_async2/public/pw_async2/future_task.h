@@ -16,26 +16,38 @@
 #include <type_traits>
 #include <utility>
 
+#include "pw_assert/assert.h"
 #include "pw_async2/future.h"
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 
 namespace pw::async2 {
-
-/// @submodule{pw_async2,tasks}
+namespace internal {
 
 class FutureTaskBase : public Task {
  protected:
   FutureTaskBase() : Task(PW_ASYNC_TASK_NAME("FutureTask")) {}
 };
 
+}  // namespace internal
+
+/// @submodule{pw_async2,tasks}
+
 /// Creates a task that pends a future until it completes.
 ///
 /// `FutureTask` can be initialized in a few ways:
 ///
+/// - Default construct: `FutureTask<MyFuture> task`
 /// - Move a future: `FutureTask task(std::move(future))`
 /// - Construct a future in place: `FutureTask<MyFuture> task(arg1, arg2)`
 /// - Refer to an existing future: `FutureTask<MyFuture&> task(future)`
+///
+/// A `FutureTask` that owns its future can be assigned a new future when the
+/// task is not registered with a `Dispatcher`:
+///
+/// - Assign a future: `task = std::move(future)`
+/// - Construct a future in place: `task.emplace_future(arg1, arg2)`
+/// - Reset to an empty future: `task.reset()`
 ///
 /// The future's return value is stored and can be accessed through `value()`
 /// after joining, or by calling `Wait()`. For futures returning `void`, the
@@ -53,7 +65,7 @@ template <typename T,
               std::is_void_v<typename std::remove_reference_t<T>::value_type>
                   ? ReturnValuePolicy::kDiscard
                   : ReturnValuePolicy::kKeep>
-class FutureTask final : public FutureTaskBase {
+class FutureTask final : public internal::FutureTaskBase {
  public:
   /// The type of the future that is pended by this task.
   using future_type = std::remove_reference_t<T>;
@@ -61,13 +73,24 @@ class FutureTask final : public FutureTaskBase {
   /// The type produced by this tasks's future when it completes.
   using value_type = typename future_type::value_type;
 
+  /// Creates a `FutureTask` with a default-constructed future.
+  ///
+  /// A default-constructed future is empty and cannot be pended
+  /// (`is_pendable()` is `false`). A valid future must be assigned before this
+  /// task is run by a `Dispatcher`, or `Pend` will crash.
+  template <typename U = T,
+            typename = std::enable_if_t<!std::is_reference_v<U>>>
+  constexpr FutureTask() : FutureTaskBase(), future_(), output_(Pending()) {}
+
   /// Constructs a `FutureTask`. Forwards arguments to the future's constructor
   /// for `FutureTask`s that own their future. Reference `FutureTask`s take a
   /// mutable reference to their future.
-  ///
-  /// Requires at least one argument. Default constructed futures are not
-  /// permitted since since they cannot be pended.
-  template <typename Arg, typename... Args>
+  template <typename Arg = T,
+            typename... Args,
+            typename = std::enable_if_t<
+                !std::is_same_v<std::remove_cv_t<std::remove_reference_t<Arg>>,
+                                FutureTask> &&
+                std::is_constructible_v<T, Arg, Args...>>>
   explicit constexpr FutureTask(Arg&& arg, Args&&... args)
       : FutureTaskBase(),
         future_(std::forward<Arg>(arg), std::forward<Args>(args)...),
@@ -78,11 +101,63 @@ class FutureTask final : public FutureTaskBase {
   FutureTask(FutureTask&&) = delete;
   FutureTask& operator=(FutureTask&&) = delete;
 
+  /// Assigns a new future to be pended by this task, resetting any previous
+  /// `Poll` result to `Pending`.
+  ///
+  /// @pre The task MUST NOT be registered with a `Dispatcher`
+  /// (`!IsRegistered()`).
+  template <typename U = T,
+            typename = std::enable_if_t<
+                !std::is_same_v<std::remove_cv_t<std::remove_reference_t<U>>,
+                                FutureTask> &&
+                !std::is_reference_v<T> && std::is_assignable_v<T&, U>>>
+  FutureTask& operator=(U&& future) {
+    PW_ASSERT(!IsRegistered());
+    future_ = std::forward<U>(future);
+    output_ = Pending();
+    return *this;
+  }
+
   ~FutureTask() override { Deregister(); }
 
-  /// Returns whether the task ran and set that `value` to the future's return
+  /// Constructs a new future in place to be pended by this task, resetting any
+  /// previous `Poll` result to `Pending`.
+  ///
+  /// @pre The task MUST NOT be registered with a `Dispatcher`
+  /// (`!IsRegistered()`).
+  template <typename... Args,
+            typename = std::enable_if_t<!std::is_reference_v<T> &&
+                                        std::is_constructible_v<T, Args...>>>
+  void emplace_future(Args&&... args) {
+    *this = T(std::forward<Args>(args)...);
+  }
+
+  /// Resets the inner future to a default-constructed state and clears any
+  /// previous `Poll` result.
+  ///
+  /// @pre The task MUST NOT be registered with a `Dispatcher`
+  /// (`!IsRegistered()`).
+  template <typename U = T,
+            typename = std::enable_if_t<!std::is_reference_v<U>>>
+  void reset() {
+    *this = T();
+  }
+
+  /// Returns whether the inner future is pendable.
+  ///
+  /// A default-constructed future or a completed future is not pendable.
+  [[nodiscard]] constexpr bool is_pendable() const {
+    return future_.is_pendable();
+  }
+
+  /// Returns whether the inner future has completed.
+  [[nodiscard]] constexpr bool is_complete() const {
+    return future_.is_complete();
+  }
+
+  /// Returns whether the task ran and set `value()` to the future's return
   /// value.
-  bool has_value() const { return output_.IsReady(); }
+  [[nodiscard]] constexpr bool has_value() const { return output_.IsReady(); }
 
   /// Takes the `Poll` result from the most recent task run. This function is
   /// NOT thread safe. It cannot be called when the task may run on another
@@ -123,7 +198,8 @@ class FutureTask final : public FutureTaskBase {
 
 /// Specialization of `FutureTask` that discards the return value of the future.
 template <typename T>
-class FutureTask<T, ReturnValuePolicy::kDiscard> final : public FutureTaskBase {
+class FutureTask<T, ReturnValuePolicy::kDiscard> final
+    : public internal::FutureTaskBase {
  public:
   /// The type of the future that is pended by this task.
   using future_type = std::remove_reference_t<T>;
@@ -131,13 +207,20 @@ class FutureTask<T, ReturnValuePolicy::kDiscard> final : public FutureTaskBase {
   /// The type produced by this tasks's future when it completes.
   using value_type = typename future_type::value_type;
 
+  /// @copydoc FutureTask::FutureTask()
+  template <typename U = T,
+            typename = std::enable_if_t<!std::is_reference_v<U>>>
+  constexpr FutureTask() : FutureTaskBase(), future_() {}
+
   /// Constructs a `FutureTask`. Forwards arguments to the future's constructor
   /// for `FutureTask`s that own their future. Reference `FutureTask`s take a
   /// mutable reference to their future.
-  ///
-  /// Requires at least one argument. Default constructed futures are not
-  /// permitted since since they cannot be pended.
-  template <typename Arg, typename... Args>
+  template <typename Arg = T,
+            typename... Args,
+            typename = std::enable_if_t<
+                !std::is_same_v<std::remove_cv_t<std::remove_reference_t<Arg>>,
+                                FutureTask> &&
+                std::is_constructible_v<T, Arg, Args...>>>
   explicit constexpr FutureTask(Arg&& arg, Args&&... args)
       : FutureTaskBase(),
         future_(std::forward<Arg>(arg), std::forward<Args>(args)...) {}
@@ -147,7 +230,44 @@ class FutureTask<T, ReturnValuePolicy::kDiscard> final : public FutureTaskBase {
   FutureTask(FutureTask&&) = delete;
   FutureTask& operator=(FutureTask&&) = delete;
 
+  /// @copydoc FutureTask::operator=(U&&)
+  template <typename U = T,
+            typename = std::enable_if_t<
+                !std::is_same_v<std::remove_cv_t<std::remove_reference_t<U>>,
+                                FutureTask> &&
+                !std::is_reference_v<T> && std::is_assignable_v<T&, U>>>
+  FutureTask& operator=(U&& future) {
+    PW_ASSERT(!IsRegistered());
+    future_ = std::forward<U>(future);
+    return *this;
+  }
+
   ~FutureTask() override { Deregister(); }
+
+  /// @copydoc FutureTask::emplace_future
+  template <typename... Args,
+            typename = std::enable_if_t<!std::is_reference_v<T> &&
+                                        std::is_constructible_v<T, Args...>>>
+  void emplace_future(Args&&... args) {
+    *this = T(std::forward<Args>(args)...);
+  }
+
+  /// @copydoc FutureTask::reset
+  template <typename U = T,
+            typename = std::enable_if_t<!std::is_reference_v<U>>>
+  void reset() {
+    *this = T();
+  }
+
+  /// @copydoc FutureTask::is_pendable
+  [[nodiscard]] constexpr bool is_pendable() const {
+    return future_.is_pendable();
+  }
+
+  /// @copydoc FutureTask::is_complete
+  [[nodiscard]] constexpr bool is_complete() const {
+    return future_.is_complete();
+  }
 
  private:
   static_assert(Future<future_type>);
