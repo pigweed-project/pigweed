@@ -207,7 +207,7 @@ CORE COMMAND CHEAT-SHEET
 7. WORKTREES & MULTI-AGENT SLOTS
    - Inspect/configure warm worktree pool, hooks, and shared Bazel caches:
      $ %[1]s wt init [--check] [--slots 10]
-   - Allocate or resume a project in a warm slot (zero-click Antigravity/Jetski sidebar sync):
+   - Allocate or resume a project in a warm slot (automatic Antigravity/Jetski sidebar sync):
      $ %[1]s wt use <project> [--branch <branch>] [--cl <change_id>] [--json]
    - View live dashboard of mounted and parked projects with Gerrit statuses:
      $ %[1]s wt list

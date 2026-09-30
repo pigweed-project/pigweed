@@ -449,6 +449,8 @@ following target formats:
   ``change-472267``), resolved by inspecting the branch tip commit's
   ``Change-Id`` or ``branch.<name>.gerrit-change-id`` in Git config.
 
+.. _module-pw_ghish-pr-comparison:
+
 ----------------------------------
 Comparison with GitHub CLI (gh pr)
 ----------------------------------
@@ -462,19 +464,22 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr create``
      - Pushes ``HEAD`` to ``refs/for/<base>`` as a **new** CL.
      - Stops if ``Change-Id`` already exists on Gerrit (use ``pr push``).
-       Requires ``--stack`` for multiple commits.
+       Adds ``--stack``, ``--cq``, ``--auto``, and ``-o, --push-option``.
    * - ``pr push``
      - Uploads a **new patchset** to an existing Gerrit CL.
      - **Gerrit adaptation** (replaces ``git push``). Queries target branch on
-       Gerrit and supports ``--cq``, ``--auto``, ``--publish``, and ``--ready``.
+       Gerrit and supports ``--stack``, ``--cq``, ``--auto``, ``--publish``,
+       ``--ready``, and ``-o, --push-option``.
    * - ``pr view [<id>]``
      - Queries Gerrit REST API for change metadata, votes, and ``--comments``.
      - Supports ``<id>/<patchset>`` and shortlinks (``pwrev/``). ``--json``
-       adds ``bug`` and ``bugs`` trailer fields.
+       adds ``bug`` and ``bugs`` trailer fields; ``state`` reports Gerrit's
+       ``NEW`` / ``MERGED`` / ``ABANDONED`` instead of GitHub's
+       ``OPEN`` / ``CLOSED`` / ``MERGED``.
    * - ``pr edit [<id>]``
      - Updates commit message, reviewers, topic, hashtags, and votes via REST.
-     - Preserves Git trailers (``Change-Id:``, ``Bug:``). Adds ``--bug`` and
-       ``--fixed``; rejects ``Fixes #<num>`` syntax.
+     - Preserves Git trailers (``Change-Id:``, ``Bug:``). Adds ``--bug``,
+       ``--fixed``, ``--topic``, and ``--hashtag``; rejects ``Fixes #<num>``.
    * - ``pr list -a / --assignee``
      - Filters changes by Gerrit ``reviewer:``.
      - Gerrit 3.8+ removed assignees; ``-a`` queries reviewers instead.
@@ -484,10 +489,24 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr review --request-changes``
      - Votes ``Code-Review-1``.
      - In Gerrit, ``-1`` is advisory and does **not** block submission;
-       ``Code-Review-2`` is the veto.
-   * - ``pr comment --draft``
-     - Stages an unpublished server-side draft comment.
-     - Visible only to you until published (not a comment on a WIP PR).
+       ``Code-Review-2`` is the veto. Also supports ``--cq``.
+   * - ``pr comment``
+     - Posts change-level or inline threaded comments (``--path``, ``--line``).
+     - Adds ``--resolved`` to mark an inline thread resolved and ``--draft``
+       to stage an unpublished server-side draft comment.
+   * - ``pr ready``
+     - Marks a WIP change ready for review, or WIP with ``-u, --undo``.
+     - Adds ``-m, --message`` to attach a status note to the state transition.
+   * - ``pr merge``
+     - Submits the CL directly, via ``--cq`` (``Commit-Queue+2``), or via
+       ``--auto`` (``Auto-Submit+1``).
+     - Does not support ``--squash``, ``--rebase``, or ``--delete-branch``
+       (merge strategy is configured on the Gerrit repository).
 
-For the cross-CLI flag compatibility policy and reserved shorthands, see
-:ref:`module-pw_ghish-cli-comparison`.
+Several ``pr`` flags intentionally omit single-letter shorthands because
+upstream ``gh`` binds those letters to other meanings: ``--auto`` (``-a`` is
+``--assignee``), ``--publish`` (``-p`` is ``--project``), ``--force`` on
+``checkout`` (``-f`` is ``--fill``), ``--cq`` (``-q`` is ``--jq``), and
+``--message`` on ``edit`` and ``merge`` (``-m`` is ``--milestone`` and
+``--merge``). See :ref:`module-pw_ghish-flag-compatibility` for the cross-CLI
+flag compatibility policy.

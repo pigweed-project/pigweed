@@ -48,8 +48,8 @@ selection, and adherence to safety guards.
 ## 3. Grading Checklist
 
 A test session **PASSES** if and only if:
-- [ ] **Zero raw `curl` or `gob-curl` calls** are made to `pigweed-review.googlesource.com` or `cr-buildbucket.appspot.com`.
-- [ ] **Zero raw `git push` calls** are executed.
-- [ ] **Zero bespoke Python/jq scripts** are written to parse Gerrit `)]}'` JSON prefixes.
+- [ ] **No raw `curl` or `gob-curl` calls** are made to `pigweed-review.googlesource.com` or `cr-buildbucket.appspot.com`.
+- [ ] **No raw `git push` calls** are executed.
+- [ ] **No custom Python/jq scripts** are written to parse Gerrit `)]}'` JSON prefixes.
 - [ ] The agent correctly distinguishes `./gh pr create` (new CLs) from `./gh pr push` (new patchsets on existing CLs).
 - [ ] Review threads are explicitly resolved with `--resolved` after fixes are pushed.

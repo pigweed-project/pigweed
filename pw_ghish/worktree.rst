@@ -233,7 +233,7 @@ Status Badges
      - Condition
      - Recommended Action
    * - ``✨ CLEAN_SYNCED``
-     - Clean working tree with zero commits ahead of ``origin/main``.
+     - Clean working tree with no commits ahead of ``origin/main``.
      - Ready for new work.
    * - ``✎ LOCAL_WIP``
      - Uncommitted edits or local commits not yet uploaded to Gerrit.
@@ -262,7 +262,7 @@ slots with Buganizer issues:
   Buganizer, derives a clean slug for both the project symlink and Git branch
   (such as ``b-315378787-fix-channel-framing``), mounts a warm slot, and
   persists the issue ID in the worktree metadata.
-* **Zero-commit context resolution**: Inside a mounted worktree project,
+* **Branch-based issue resolution**: Inside a mounted worktree project,
   commands such as ``./gh issue view``, ``./gh issue comment``, and
   ``./gh issue close`` automatically infer the target issue ID from the branch
   name or worktree metadata even before any Git commits or ``Bug:`` trailers
@@ -364,6 +364,8 @@ agent harnesses.
   you can disable IDE synchronization explicitly by setting the environment
   variable ``GH_ISH_IDE_SYNC=0``.
 
+.. _module-pw_ghish-worktree-comparison:
+
 -----------------------------------------
 Comparison with GitHub CLI & git worktree
 -----------------------------------------
@@ -400,7 +402,7 @@ extension designed for multi-agent C++/Bazel repositories.
      - Checks out patchset commit only.
      - Unaware of Gerrit CLs or Buganizer issues.
      - Live ``./gh wt list`` status badges, ``--issue``/``--cl`` mounting, and
-       zero-arg issue context resolution.
+       branch-based issue resolution.
 
 ---------------------------
 Architecture & How It Works
@@ -443,7 +445,7 @@ A project managed by ``./gh wt`` is always in one of two residency states:
    * - ``PARKED``
      - None (0 slots used)
      - ``~/wrk/projects/<name>.parked`` marker
-     - Shelved in Git and Gerrit. Consumes zero slot capacity while remaining
+     - Shelved in Git and Gerrit. Uses no physical slot while remaining
        tracked in ``./gh wt list``.
 
 Managing More Projects Than Physical Slots

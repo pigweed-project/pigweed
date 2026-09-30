@@ -35,7 +35,7 @@ func NewCommand(mgr *Manager) *cobra.Command {
 		Short:   "Manage warm worktree slots, project symlinks, Bazel caches, and Jetski IDE sync",
 		Long: `Manage a bounded pool of warm Git worktree slots (~/wrk/slots/pw-01..N) paired with
 logical project symlinks (~/wrk/projects/<name>), shared Bazel disk/repo caches,
-and zero-click Jetski IDE left-sidebar project synchronization.`,
+and automatic Jetski IDE left-sidebar project synchronization.`,
 	}
 
 	wtCmd.AddCommand(

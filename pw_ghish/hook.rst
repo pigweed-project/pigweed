@@ -105,3 +105,14 @@ When opted in via ``./gh hook install --block-raw-push`` (which sets ``git
 config ghish.blockrawpush true``), blocks direct ``git push`` invocations at
 the Git layer unless invoked via ``./gh`` (``GH_ISH_ACTIVE=1``) or explicitly
 bypassed for manual recovery via ``GH_ISH_ALLOW_RAW_PUSH=1``.
+
+.. _module-pw_ghish-hook-comparison:
+
+--------------------------
+Comparison with GitHub CLI
+--------------------------
+Unlike ``gh pr``, ``gh run``, ``gh issue``, and ``gh auth``, ``./gh hook``
+(``./gh agent``) has no upstream GitHub CLI equivalent. It is a ``pw_ghish``
+extension for managing coding agent ``PreToolUse`` guards and Gerrit
+``commit-msg`` / ``pre-push`` Git hooks. See
+:ref:`module-pw_ghish-subcommands` for the command family overview.

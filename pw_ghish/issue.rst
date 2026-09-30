@@ -319,6 +319,8 @@ Supported JSON fields: ``id``, ``number``, ``title``, ``body``, ``state``,
 ``componentId``, ``hotlistIds``, ``url``, ``createdAt``, ``updatedAt``, and
 ``comments``.
 
+.. _module-pw_ghish-issue-comparison:
+
 -------------------------------------
 Comparison with GitHub CLI (gh issue)
 -------------------------------------
@@ -346,9 +348,9 @@ Gerrit through Git commit trailers rather than pull request prose:
    * - **Omitted issue ID**
      - Requires an explicit issue number on ``view``, ``comment``, ``edit``,
        and ``close``.
-     - **Zero-argument resolution**: Automatically infers the active issue from
-       ``HEAD`` commit trailers, branch naming (``b-315378787-...``), or
-       active :ref:`module-pw_ghish-worktree` metadata.
+     - **Automatic issue resolution**: Infers the active issue from ``HEAD``
+       commit trailers, branch naming (``b-315378787-...``), or active
+       :ref:`module-pw_ghish-worktree` metadata.
    * - **Close reasons** (``--reason``)
      - ``completed`` or ``not_planned``.
      - Supports ``completed``/``fixed`` and ``not_planned``/``wontfix``, plus
@@ -358,6 +360,13 @@ Gerrit through Git commit trailers rather than pull request prose:
      - Creates a Git branch linked to a GitHub issue.
      - Creates branch ``b-<id>-<slug>`` or, with ``-w, --worktree``, allocates
        an isolated warm slot via ``./gh wt use --issue <id>``.
+   * - ``--json state``
+     - ``OPEN`` or ``CLOSED``.
+     - Reports the Buganizer issue status (e.g. ``NEW``, ``ASSIGNED``,
+       ``ACCEPTED``, ``FIXED``, ``VERIFIED``).
+
+For the flag compatibility policy across all subcommands, see
+:ref:`module-pw_ghish-flag-compatibility`.
 
 --------------
 Authentication

@@ -2,18 +2,18 @@
 
 ## Architectural Scope: Gerrit / LUCI Ecosystem
 
-`pw_ghish` (`./gh`) provides GitHub CLI (`gh pr`) ergonomics for projects across the **Gerrit and LUCI ecosystem** (including Pigweed, Fuchsia, Chromium, and others).
+`pw_ghish` (`./gh`) provides GitHub CLI (`gh pr`) commands for projects across the **Gerrit and LUCI ecosystem** (including Pigweed, Fuchsia, Chromium, and others).
 
 * **Decoupled Policy**: Avoid baking project-specific assumptions directly into core commands. High-level commands (`pr view`, `diff`, `comment`, `checks`, `run view`, `run rerun`, `issue`, `push`, `create`) rely on standard Gerrit REST, git push `refs/for/*`, Buildbucket / LogDog, and Buganizer APIs.
 * **Project Profiles**: Project-specific policies (such as commit-queue labels, try bucket locations, and rerun command syntax) belong strictly in `ProjectProfile` implementations in [`profile.go`](profile.go), rather than hardcoded in the core CLI handlers.
 
 ---
 
-## STRICT ENGINEERING DISCIPLINE: ZERO SILENT FAILURES, NO DEFENSIVE MASKING, NO DRIFT
+## STRICT ENGINEERING DISCIPLINE: NO SILENT FAILURES, NO DEFENSIVE MASKING, NO DRIFT
 
 AI agents modifying `pw_ghish` MUST adhere strictly to these non-negotiable engineering invariants. Regressing into silent failures, swallowed errors, defensive masking, or hacking without tests is STRICTLY PROHIBITED.
 
-### 1. ABSOLUTELY ZERO SILENT FAILURES (`RunE` EVERYWHERE)
+### 1. NO SILENT FAILURES (`RunE` EVERYWHERE)
 * **MANDATORY**: Every Cobra subcommand MUST use `RunE: func(cmd *cobra.Command, args []string) error`.
 * **STRICTLY PROHIBITED**: NEVER use void-returning `Run`. NEVER return `nil` when an underlying operation, RPC, or subprocess failed.
 * **WHY**: Returning `nil` or using `Run` exits with status code 0, silently masking failures from users, scripts, and CI runners.
@@ -40,7 +40,7 @@ AI agents modifying `pw_ghish` MUST adhere strictly to these non-negotiable engi
 ### 6. NO DIRECT `os.Exit(1)` IN SUBCOMMANDS OR LIBRARIES
 * **MANDATORY**: `os.Exit(1)` is reserved exclusively for `cmd/main.go`. All subcommands, runners, and library functions MUST propagate `error` up the call stack to allow `defer` cleanups and hermetic unit testing.
 
-### 7. ZERO DATA DESTRUCTION (COMMIT TRAILERS & BRANCH MEMORY)
+### 7. NO DATA DESTRUCTION (COMMIT TRAILERS & BRANCH MEMORY)
 * **MANDATORY**: Operations that edit commit messages or metadata (such as `pr edit`) MUST NEVER wipe out commit bodies or Git trailers (`Change-Id:`, `Bug:`, `Fixed:`, `Reviewed-on:`). Always parse, validate, and preserve trailers using `ExtractTrailers` and `MergeTrailers`. Reject empty replacement messages before invoking Git.
 * **MANDATORY**: Multi-commit stack safety: pushing multiple commits without `--stack` must halt immediately to prevent accidental multi-CL creation on the remote server.
 * **MANDATORY**: Branch memory: when updating existing changes (`pr push`), target the branch recorded on Gerrit unless explicitly overridden by `--base`.

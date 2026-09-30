@@ -128,7 +128,7 @@ The contract holds on every invocation, with or without ``--watch``,
 
    $ ./gh pr checks --watch && ./gh pr merge --cq
 
-The command fails closed: a change with no reported checks exits ``1``, because
+A change with no reported checks exits ``1``, because
 CI that was never scheduled is not CI that passed. Experimental (non-blocking)
 builders never affect the exit code, even with ``--experimental``, since the
 Commit Queue does not gate on them; ``--experimental`` only controls what is
@@ -283,6 +283,8 @@ Poll checks until all blocking builds complete:
    $ ./gh run watch
    $ ./gh run watch 472267 --interval 30s
 
+.. _module-pw_ghish-run-comparison:
+
 --------------------------------------------------
 Comparison with GitHub CLI (gh run & gh pr checks)
 --------------------------------------------------
@@ -325,6 +327,9 @@ Key behavioral and flag differences
   across unrelated changes, ``pw_ghish`` scopes ``run list``, ``run view``,
   ``run watch``, and ``run rerun`` by default to the **active Gerrit CL on your
   current branch**.
+* **Fast failure logs on watch** (``pr checks --watch --fail-fast``): Exits
+  ``--watch`` as soon as any blocking builder fails and automatically fetches
+  the failing step logs.
 * **Experimental builders** (``-e, --experimental``): LUCI distinguishes
   blocking Commit-Queue builders from ``cq_experimental`` builders. Experimental
   builders are hidden by default and do not cause a non-zero exit code in
@@ -335,4 +340,4 @@ Key behavioral and flag differences
   comma-separated field list).
 
 For the flag compatibility policy across all subcommands, see
-:ref:`module-pw_ghish-cli-comparison`.
+:ref:`module-pw_ghish-flag-compatibility`.

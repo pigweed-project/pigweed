@@ -6,9 +6,9 @@ description: >-
   pushing changes using GitHub CLI syntax.
 ---
 
-# `gh-ish` (`./gh`): Gerrit, Buildbucket & Buganizer with GitHub CLI Ergonomics
+# `gh-ish` (`./gh`): Gerrit, Buildbucket & Buganizer CLI
 
-Pigweed provides `./gh` (a zero-overhead cached repository wrapper around
+Pigweed provides `./gh` (a cached repository wrapper around
 `//pw_ghish:gh-ish`), exposing Gerrit code reviews (`./gh pr`), LUCI Buildbucket
 CI checks (`./gh pr checks`, `./gh run`), Google Issue Tracker / Buganizer
 (`./gh issue`), and worktree pools (`./gh wt`) through standard GitHub CLI

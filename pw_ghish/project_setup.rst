@@ -1,24 +1,30 @@
+.. _module-pw_ghish-project-setup:
 .. _module-pw_ghish-project-integration:
 
-================
-Project adoption
-================
+=============
+Project setup
+=============
 .. pigweed-module-subpage::
    :name: pw_ghish
 
-While ``pw_ghish`` provides the ``./gh`` CLI for Pigweed contributors, its
-underlying engine (``gh-ish``) can be used with any project hosted on Gerrit
-and LUCI.
+.. warning::
 
-This guide explains how repository maintainers can integrate ``gh-ish`` into a
-project, build and distribute the binary, configure project profiles, set up
-authentication, and inspect CI builds.
+   **NOT READY FOR EXTERNAL PROJECTS**: ``pw_ghish`` is currently
+   **experimental for upstream Pigweed** and is **not ready for adoption
+   outside Pigweed yet**. Several Pigweed-specific assumptions still exist in
+   the codebase while multi-project abstractions are being completed. See
+   :ref:`module-pw_ghish-roadmap` for current status and planned work to
+   decouple project policies.
+
+This page documents the build targets, repository wrapper pattern, and
+``ProjectProfile`` architecture used to configure ``gh-ish`` for Gerrit and
+LUCI repositories.
 
 .. note::
 
    Looking to configure your personal AI coding assistant (Antigravity/Jetski,
    Claude Code, Codex, Cursor, or OpenCode) or install local pre-run tool
-   hooks? See :ref:`module-pw_ghish-agent-integration`.
+   hooks? See :ref:`module-pw_ghish-agent-setup`.
 
 --------------------------------
 Building and distributing gh-ish
@@ -60,22 +66,20 @@ host toolchains so developers and CI bots have it pre-installed on their
 Creating a repository wrapper
 -----------------------------
 Rather than requiring every developer and AI coding agent to manually install
-and update a global binary, we strongly recommend placing a lightweight wrapper
-script named ``gh`` at the root of your repository (e.g. ``./gh``).
+and update a global binary, we recommend placing a wrapper script named ``gh``
+at the root of your repository (e.g. ``./gh``).
 
 Why use a repository wrapper?
 =============================
-1. **Zero-setup onboarding**: New contributors and AI agents can immediately run
-   ``./gh pr list`` or ``./gh pr status`` without prior installation steps.
-2. **Commit-pinned consistency**: The wrapper automatically builds or downloads
-   the exact version of the tool tied to the repository's current commit,
-   eliminating "works on my machine" version skew.
-3. **Transparent caching**: The wrapper can build the binary once per commit and
-   cache it in a local output directory (e.g. ``out/gh/``), providing instant
-   sub-second execution on subsequent runs.
-4. **Agent muscle memory**: AI coding agents frequently check for a ``./gh``
-   executable or default to GitHub CLI commands. Providing ``./gh`` allows
-   agents to interact with the repository without custom instructions.
+1. **No global installation step**: Contributors and coding agents can run
+   ``./gh pr list`` or ``./gh pr status`` directly from a fresh checkout.
+2. **Commit-pinned consistency**: The wrapper builds or downloads the version
+   of the tool matching the repository's current commit.
+3. **Local binary caching**: The wrapper builds the binary once per commit and
+   caches it in a local output directory (e.g. ``out/gh/``) for subsequent
+   runs.
+4. **Standard CLI entry point**: Coding agents can invoke ``./gh`` from the
+   checkout root using standard GitHub CLI subcommands.
 
 Example wrapper implementation
 ==============================
@@ -199,63 +203,14 @@ Add a test case in ``pw_ghish/profile_test.go`` verifying detection and behavior
 -----------------------------------
 Authentication and Credential Setup
 -----------------------------------
-``pw_ghish`` supports multiple authentication strategies, from standard open-source
-cookie and token files to automated CI bot credentials and Google-internal
-developer workstations.
+``./gh auth status`` checks credentials across Gerrit, LUCI Buildbucket, and
+Google Issue Tracker (Buganizer), supporting both ``googler`` (internal +
+public builders required) and ``community`` (public builders + ``.gitcookies``
+or anonymous reads) authentication modes.
 
-Credential discovery order
-==========================
-When communicating with Gerrit REST APIs, ``pw_ghish`` searches for credentials in
-the following order:
-
-1. **Explicit Environment Token**:
-   Reads bearer or personal access tokens from the ``GERRIT_TOKEN`` environment
-   variable. Recommended for automated CI pipelines and bots.
-
-   .. code-block:: console
-
-      $ export GERRIT_TOKEN="your-http-access-token"
-
-2. **Git Cookies** (``.gitcookies``):
-   Parses Netscape-formatted cookie jars at ``~/.gitcookies`` or the path
-   specified by ``git config http.cookiefile``. This is the standard mechanism
-   used by Git-on-Borg and Google Open Source Gerrit hosts.
-
-   To generate cookies for a Google-hosted Gerrit server:
-   * Visit the Gerrit web UI (e.g. ``https://your-host-review.googlesource.com``).
-   * Click your user avatar and select **Settings** -> **HTTP Credentials**.
-   * Click **Generate Password** and copy the provided command into your terminal.
-
-3. **Netrc** (``.netrc``):
-   Parses machine entries in ``~/.netrc`` matching the target Gerrit hostname.
-
-4. **Internal Workstation Transport**:
-   When running on Google-internal developer workstations, ``pw_ghish``
-   automatically integrates with local authentication helpers without requiring
-   manual configuration.
-
-5. **Anonymous Read Fallback**:
-   If no credentials are found, public read operations (such as ``pr view``,
-   ``pr list``, ``pr diff``, and ``pr checks``) fall back to unauthenticated
-   access on public Gerrit hosts. Write operations (such as ``pr push``,
-   ``pr comment``, or ``pr merge``) report an actionable authentication error.
-
-Forcing authentication method
-=============================
-In automated environments or debugging sessions, you can strictly enforce a
-specific authentication backend using the ``GH_ISH_AUTH_METHOD`` environment
-variable:
-
-.. code-block:: console
-
-   $ export GH_ISH_AUTH_METHOD=cookies    # Strictly require .gitcookies
-   $ export GH_ISH_AUTH_METHOD=token      # Strictly require GERRIT_TOKEN
-   $ export GH_ISH_AUTH_METHOD=none       # Force anonymous access
-   $ export GH_ISH_AUTH_METHOD=gob-curl   # Force workstation helper transport
-
-If the requested authentication method cannot be satisfied (e.g. missing cookie
-file or missing token), ``pw_ghish`` immediately halts with a descriptive error
-rather than silently falling back to anonymous access.
+For full details on authentication modes, credential lookup order, and
+environment variables (``GH_ISH_AUTH_MODE``, ``GH_ISH_AUTH_METHOD``,
+``GERRIT_TOKEN``, ``LUCI_TOKEN``), see :ref:`module-pw_ghish-auth`.
 
 -----------------------------------
 LUCI CI and Buildbucket Integration

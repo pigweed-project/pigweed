@@ -87,129 +87,57 @@ Documentation
       Step-by-step walkthrough of creating a CL, running LUCI presubmits,
       addressing review comments, and landing via Commit-Queue or Auto-Submit.
 
-   .. grid-item-card:: :octicon:`git-pull-request` Code review (gh pr)
-      :link: module-pw_ghish-pr
+   .. grid-item-card:: :octicon:`terminal` Subcommands
+      :link: module-pw_ghish-subcommands
       :link-type: ref
       :class-item: sales-pitch-cta-primary
 
-      Gerrit code review commands: creating and pushing patchsets, editing
-      commit trailers, replying to inline threads, and merging changes.
+      Reference for ``gh pr``, ``gh run``, ``gh issue``, ``gh auth``,
+      ``gh hook``, and ``gh wt``, including comparisons with upstream ``gh``.
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`check-circle` CI & tryjobs (gh run)
-      :link: module-pw_ghish-run
-      :link-type: ref
-      :class-item: sales-pitch-cta-primary
-
-      LUCI Buildbucket commands: watching ``pr checks``, inspecting recipe
-      step trees, reading failure logs, and rerunning builders.
-
-   .. grid-item-card:: :octicon:`issue-opened` Issues (gh issue)
-      :link: module-pw_ghish-issue
-      :link-type: ref
-      :class-item: sales-pitch-cta-primary
-
-      Buganizer issue workflows: triaging queues, branching, filing bugs with
-      commit trailers, updating structured labels, and closing issues.
-
-.. grid:: 1
-
-   .. grid-item-card:: :octicon:`key` Authentication (gh auth)
-      :link: module-pw_ghish-auth
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Check credentials across Gerrit, LUCI Buildbucket, and Buganizer with
-      ``gh auth status``, and configure ``googler`` or ``community``
-      authentication modes.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`repo-forked` Worktrees (gh wt)
-      :link: module-pw_ghish-worktree
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Manage warm Git worktree slots, project symlinks, shared Bazel caches,
-      and Antigravity (Jetski) IDE workspace synchronization.
-
-   .. grid-item-card:: :octicon:`cpu` AI workflows
-      :link: module-pw_ghish-ai-workflows
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Workflows for AI pair programming: private draft steering, staged review
-      replies, CL handoffs, CI failure repair, and parallel agents.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`table` GitHub CLI comparison
-      :link: module-pw_ghish-cli-comparison
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Ecosystem mapping matrix, flag differences from upstream ``gh``, and the
-      three-tier flag compatibility policy.
-
-   .. grid-item-card:: :octicon:`gear` Project adoption
-      :link: module-pw_ghish-project-integration
-      :link-type: ref
-      :class-item: sales-pitch-cta-secondary
-
-      Building standalone binaries, setting up repository wrappers, configuring
-      project profiles, and workstation/bot authentication.
-
-.. grid:: 2
-
-   .. grid-item-card:: :octicon:`plug` Agent integration
-      :link: module-pw_ghish-agent-integration
+   .. grid-item-card:: :octicon:`plug` Agent setup
+      :link: module-pw_ghish-agent-setup
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
       Multi-harness rules/skills discovery (Antigravity/Jetski, Claude Code,
       Codex, Cursor, OpenCode) and optional local ``PreToolUse`` hook setup.
 
-   .. grid-item-card:: :octicon:`shield-check` Hooks (gh hook)
-      :link: module-pw_ghish-hook
+   .. grid-item-card:: :octicon:`cpu` Agent workflows
+      :link: module-pw_ghish-agent-workflows
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Manage and execute AI agent ``PreToolUse`` guards and Git repository
-      hooks (``commit-msg``, ``pre-push``) in pure Go.
+      Workflows for agent pair programming: private draft steering, staged
+      review replies, CL handoffs, CI failure repair, and parallel agents.
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`milestone` Status & roadmap
-      :link: module-pw_ghish-roadmap
+   .. grid-item-card:: :octicon:`gear` Project setup
+      :link: module-pw_ghish-project-setup
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Operational status, capability matrix, and roadmap for declarative
-      profiles, setup automation, and alternative SCMs.
+      Building standalone binaries, setting up repository wrappers, and
+      configuring project profiles.
 
-   .. grid-item-card:: :octicon:`checklist` Agent evaluation
-      :link: module-pw_ghish-agent-eval
+   .. grid-item-card:: :octicon:`tools` Developing
+      :link: module-pw_ghish-developing
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Verification runbook for coding agents, behavioral rubric, and live
-      integration test suite (``live_test.go``).
+      Building and testing ``pw_ghish``, flag compatibility policy, agent
+      evaluation runbook, and status & roadmap.
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
    life_of_a_pr
-   pr
-   run
-   issue
-   auth
-   worktree
-   hook
-   ai_workflows
-   agent_integration
-   cli_comparison
-   project_integration
-   roadmap
-   agent_eval
+   project_setup
+   agent_setup
+   agent_workflows
+   subcommands
+   developing

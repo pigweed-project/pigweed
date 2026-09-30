@@ -1,6 +1,6 @@
 ---
 name: Multi-Agent Worktree & Bazel Cache Management
-description: Instructions for managing warm Git worktree slots, logical project symlinks (~/wrk/projects/<project>), shared Bazel caches, and zero-click Jetski IDE projects using `./gh wt`.
+description: Instructions for managing warm Git worktree slots, logical project symlinks (~/wrk/projects/<project>), shared Bazel caches, and Jetski IDE workspace synchronization using `./gh wt`.
 ---
 
 # Multi-Agent Worktree & Bazel Cache Management (`./gh wt`)

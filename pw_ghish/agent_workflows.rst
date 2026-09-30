@@ -1,8 +1,9 @@
+.. _module-pw_ghish-agent-workflows:
 .. _module-pw_ghish-ai-workflows:
 
-============
-AI workflows
-============
+===============
+Agent workflows
+===============
 .. pigweed-module-subpage::
    :name: pw_ghish
 
@@ -330,7 +331,7 @@ The Workflow
    ``~/wrk/projects/b-315378787-fix-channel-framing``, and registers the
    workspace in the Antigravity (Jetski) IDE sidebar.
 
-2. **Agent reads issue context with zero arguments**:
+2. **Agent reads issue context from the active branch**:
    Inside the mounted project directory, the agent inspects the bug description
    and discussion history without needing the issue number repeated:
 

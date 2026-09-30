@@ -23,18 +23,20 @@ pw_test_group("tests") {
 pw_doc_group("docs") {
   sources = [
     "agent_eval.rst",
-    "agent_integration.rst",
-    "ai_workflows.rst",
+    "agent_setup.rst",
+    "agent_workflows.rst",
     "auth.rst",
-    "cli_comparison.rst",
+    "developing.rst",
     "docs.rst",
+    "flag_compatibility.rst",
     "hook.rst",
     "issue.rst",
     "life_of_a_pr.rst",
     "pr.rst",
-    "project_integration.rst",
+    "project_setup.rst",
     "roadmap.rst",
     "run.rst",
+    "subcommands.rst",
     "worktree.rst",
   ]
 }

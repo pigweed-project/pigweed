@@ -1,8 +1,9 @@
+.. _module-pw_ghish-agent-setup:
 .. _module-pw_ghish-agent-integration:
 
-=================
-Agent integration
-=================
+===========
+Agent setup
+===========
 .. pigweed-module-subpage::
    :name: pw_ghish
 
@@ -11,23 +12,23 @@ Agent integration
 **OpenCode**—without locking developers into a single agent harness or operating
 system.
 
-* **Agent integration (this page)**: The levers ``pw_ghish`` provides for AI
+* **Agent setup (this page)**: The levers ``pw_ghish`` provides for AI
   coding assistants and how to enable optional tool-call enforcement.
 * :ref:`module-pw_ghish-hook`: Reference for the ``./gh hook`` subcommand
   (``install``, ``uninstall``, ``status``, ``pre-tool-use``, ``commit-msg``,
   and ``pre-push``).
-* :ref:`module-pw_ghish-project-integration`: For repository maintainers
+* :ref:`module-pw_ghish-project-setup`: For repository maintainers
   adopting ``gh-ish`` and configuring ``ProjectProfile`` in a Gerrit/LUCI repo.
-* :ref:`module-pw_ghish-ai-workflows`: Day-to-day pair-programming workflows
+* :ref:`module-pw_ghish-agent-workflows`: Day-to-day pair-programming workflows
   (private draft steering, staged review replies, and automated CI triage).
 
 ------------------------------------
 The four levers of agent integration
 ------------------------------------
-``pw_ghish`` layers its agent support from zero-setup defaults to opt-in
+``pw_ghish`` layers its agent support from default CLI behavior to opt-in
 execution guards:
 
-1. **The ./gh CLI (//pw_ghish:gh-ish) — Zero-shot ergonomics**:
+1. **The ./gh CLI (//pw_ghish:gh-ish) — GitHub CLI syntax**:
    Exposes Gerrit (``./gh pr``), LUCI Buildbucket (``./gh pr checks``,
    ``./gh run``), Buganizer (``./gh issue``), and worktrees (``./gh wt``) using
    GitHub CLI (``gh``) syntax that models already know from pre-training, paired

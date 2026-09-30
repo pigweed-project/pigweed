@@ -330,13 +330,13 @@ var (
 //     solely for per-project QPS rate-limit accounting because CLI tools
 //     (`luci-auth` and `gcloud`) share generic public OAuth client IDs.
 //
-// To provide a zero-setup experience for 1P developers, `pigweed-gce` can be
+// So internal developers do not need manual setup, `pigweed-gce` can be
 // configured in Gong (`project.pigweed-gce/apis.yaml` and `iam_policy.yaml`)
 // with `issuetracker.corp.googleapis.com` and `issuetracker.googleapis.com`
 // enabled and `roles/serviceusage.serviceUsageConsumer` granted to internal
 // developers (`domain:google.com` or team groups). When enabled, `probeQuotaProject`
 // succeeds in ~40ms and caches `pigweed-gce` in `git config ghish.quotaproject`.
-// Notice that `serviceUsageConsumer` grants zero access to GCP compute/storage
+// Note that `serviceUsageConsumer` grants no access to GCP compute/storage
 // resources and does not alter Buganizer user permissions.
 const DefaultPigweedQuotaProject = "pigweed-gce"
 

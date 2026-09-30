@@ -64,7 +64,7 @@ What the Live Suite Automatically Verifies
 * **Draft Comment Round-Trip**: Posts an inline review comment as a private draft
   using ``--draft``, verifies via the Gerrit REST API that the draft is created
   privately, and immediately cleans it up using ``DeleteDraft`` (backed by a
-  ``t.Cleanup`` guard) so zero orphaned drafts remain in Gerrit.
+  ``t.Cleanup`` guard) so no orphaned drafts remain in Gerrit.
 * **Check Rerun Command Resolution**: Verifies that ``run rerun --dry-run``
   correctly constructs the project-specific ``bb add -cl ...`` command with exact
   change and builder coordinates.

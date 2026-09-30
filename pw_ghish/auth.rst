@@ -151,3 +151,38 @@ Google Issue Tracker (Buganizer)
 When ``sso_client`` is on ``PATH``, requests use
 ``https://issuetracker.corp.googleapis.com/v1`` to access both public and
 internal Buganizer components.
+
+.. _module-pw_ghish-auth-comparison:
+
+------------------------------------
+Comparison with GitHub CLI (gh auth)
+------------------------------------
+.. list-table::
+   :header-rows: 1
+   :widths: 26 34 40
+
+   * - Feature / Flag
+     - Upstream ``gh auth``
+     - ``./gh auth`` in ``pw_ghish``
+   * - ``auth status``
+     - Checks authentication against a single GitHub host (``github.com`` or
+       GitHub Enterprise).
+     - Checks credentials across three distinct backends: **Gerrit**, **LUCI
+       Buildbucket**, and **Google Issue Tracker (Buganizer)**.
+   * - ``auth status --json``
+     - Outputs ``hosts`` status fields for ``github.com``.
+     - Outputs ``mode``, ``modeReason``, ``authenticated``, ``gerrit``,
+       ``luci``, and ``buganizer`` status objects.
+   * - ``--auth-mode``
+     - *(n/a)* (``gh auth status`` binds ``-a`` to ``--active``).
+     - Global **ghish-only** flag (``auto``, ``googler``, ``community``,
+       ``none``). Leaves ``-a`` unbound to avoid colliding with ``--active``.
+   * - ``auth login`` / ``logout``
+     - Interactive OAuth flow managed directly by ``gh``.
+     - Delegated to each backend's native credential tool (``gob-curl`` /
+       ``.gitcookies``, ``luci-auth login``, and ``gcloud auth``);
+       ``./gh auth status`` prints the exact login command when a service is
+       unauthenticated.
+
+For the flag compatibility policy across all subcommands, see
+:ref:`module-pw_ghish-flag-compatibility`.
