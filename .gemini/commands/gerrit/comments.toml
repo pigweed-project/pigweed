@@ -11,45 +11,27 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-description = "Fetch and address comments on a Gerrit CL"
+description = "Fetch and address comments on a Gerrit CL using ./gh"
 prompt = """
 ## Code review response workflow
 
-Pigweed development happens on Gerrit, and you can help users get changes
-through the review process by automating parts of the review flow. When the
-user asks for reading review comments, do this:
+Use `./gh` (see `.agents/skills/ghish/SKILL.md`) to read and address Gerrit
+review comments:
 
-1.  Get change ID from the last couple git commits or ask user for it
-2.  Execute this command to get list of comments:
-    `./pw change comments --json <CHANGE_ID>`
-    If you provide no change id, it will auto fetch last commits comments.
-3.  Read the relevant file and get the surrounding context in the file
-    mentioned.
-4.  List down comments (and address them if user asked to) along with exact
-    ONE line in code where it belongs. Also include comment ID from API for
-    each comment and line number it points to. Show these as a todo list
-    neatly, use this markdown format:
+1.  Fetch change details and review comment threads (defaults to active branch CL):
+    `./gh pr view [<CHANGE_ID>] --comments`
+2.  Read the relevant files and surrounding context for each `[UNRESOLVED]` thread.
+3.  List the unresolved comments (and fix them in code if requested) with file
+    path and line number:
     ```
-    **my_awesome_code.js**
-    **15:** John: This variable name is a bit confusing.
-    Lee: I agree, let's rename d to elapsedTimeInDays.
-
-    **32:** Should we add validation for this input?
-    ````
-
-### Responding to comments on Gerrit
-
-If the user asks to send a response to a comment or a few, you can respond
-to a comment by sending an .gitcookies authenticated response like this:
-
-```
-curl \
-  -X PUT \
-  --cookie ~/.gitcookies \
-  --header "Content-Type: application/json; charset=UTF-8" \
-  --data 	'{ "in_reply_to": "PARENT_COMMENT_ID", "message": "...", "path": "<FILE_PATH>", "line": 23, }' \
-  "https://pigweed-review.googlesource.com/changes/{ID}/revisions/{REVISION_ID}/drafts"
-```
-
-Make sure to set path and line to same as parent comment.
+    **pw_foo/bar.cc**
+    **15:** Reviewer: This variable name is a bit confusing.
+    **32:** Reviewer: Should we add validation for this input?
+    ```
+4.  After amending (`git commit -a --amend --no-edit`) and pushing
+    (`./gh pr push`), reply to each addressed thread and mark it resolved
+    (pass `--draft` to stage privately for review first):
+    ```bash
+    ./gh pr comment [<CHANGE_ID>] --path <FILE_PATH> --line <LINE> -m "<RESPONSE>" --resolved [--draft]
+    ```
 """

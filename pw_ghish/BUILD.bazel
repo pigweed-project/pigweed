@@ -176,6 +176,7 @@ sphinx_docs_library(
     name = "docs",
     srcs = [
         "agent_eval.rst",
+        "agent_integration.rst",
         "ai_workflows.rst",
         "auth.rst",
         "cli_comparison.rst",

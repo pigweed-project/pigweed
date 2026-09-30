@@ -5,52 +5,37 @@ description: Comprehensive workflow for reviewing Git patches and Gerrit Change 
 
 # Overview
 
-You are a highly experienced code reviewer specializing in Git patches. Your
-task is to analyze the Git patch and provide comprehensive feedback.  Focus on
-identifying potential bugs, inconsistencies, security vulnerabilities, and areas
-for improvement in code style and readability.  Your response should be detailed
-and constructive, offering specific suggestions for remediation where
-applicable. Prioritize clarity and conciseness in your feedback.
+Analyze Git commits or Gerrit Change Lists (CLs) and provide constructive,
+concise feedback focused on bugs, edge cases, security vulnerabilities, API
+consistency, and Pigweed style.
 
-# Core Principles
+# Review Criteria
 
-For every review, analyze the patch for:
-* **Testing:** Sufficient tests to cover changes?
-* **Functionality:** Works as intended? Bugs or unexpected behavior?
-* **Security:** Vulnerabilities introduced?
-* **Style:** Adheres to project coding style? Readable/maintainable?
-* **Consistency:** Consistent with existing patterns?
-* **Commit Message:** Conforms to [Pigweed Style](../../../docs/sphinx/style/commit_message.rst)?
+Evaluate every change against:
+* **Testing:** Sufficient unit and negative-compilation tests covering edge cases?
+* **Functionality:** Works as intended without regressions or subtle bugs?
+* **Security:** Buffer overflows, integer overflows, or resource leaks?
+* **Style & Consistency:** Adheres to Pigweed coding style (see root `AGENTS.md`) and surrounding module patterns?
+* **Commit Message:** Conforms to [Pigweed commit message style](../../../docs/sphinx/style/commit_message.rst)?
 
-# Artifact Procedures
+# Workflow
 
-All review artifacts (tasks, patches, reports) MUST follow these rules:
-1. **Location:** Use the absolute path to the conversation's artifacts directory (found in conversational metadata).
-2. **Tooling:** Use `write_to_file` with `IsArtifact: true` and appropriate `ArtifactMetadata`.
-
-# Workflows
-
-## 1. Reviewing Local Commit (at HEAD)
-
-1. Get git diff: `git --no-pager show HEAD`.
-2. **Setup Discovery:** Create a `tasks.md` artifact (Procedure #1 & #2). List the Core Principles as checkboxes.
-3. **Save Patch:** Save the diff as `patch_HEAD.diff` (Procedure #1 & #2).
-4. **Perform Review:** Analyze the patch, checking off items in `tasks.md`.
-5. **Final Output:** Provide LGTM status and absolute paths to artifacts.
-
-### 2. Reviewing Gerrit Change Lists
-
-When a user provides a Gerrit URL or `pwrev/ID`:
-
-1. **Parse ID:** `pwrev/1234` → ID: `1234`.
-2. **Setup Discovery:** Create `tasks.md` (Procedure #1 & #2). List the Core Principles as checkboxes.
-3. **Fetch Patch:** `curl -L https://pigweed-review.googlesource.com/changes/<ID>/revisions/current/patch?raw > patch_CL_<ID>.diff`.
-4. **Perform Review:** Analyze the patch, checking off items in `tasks.md`.
-5. **Final Output:** Provide LGTM status and absolute paths to artifacts.
-
-# Feedback Format
-
-- **Tone:** Constructive and professional.
-- **LGTM Status:** Start with **LGTM: [✓]** or **LGTM: [x]**.
-- **Nits:** Use `nit: {comment}`.
-- **Save & Link:** Save the review as `review_HEAD.md` or `review_CL_<ID>.md` (Procedure #1 & #2). Provide ONLY the LGTM status and absolute artifact paths in your final response.
+1. **Fetch the Patch:**
+   - **Local commit (`HEAD`):** `git --no-pager show HEAD > patch_HEAD.diff`
+   - **Gerrit CL (`<id>` or current branch):**
+     ```bash
+     ./gh pr view [<id>] --comments
+     ./gh pr diff [<id>] > patch_CL_<ID>.diff
+     ```
+2. **Track & Analyze (`tasks.md`):**
+   - Create a `tasks.md` artifact in the conversation's artifacts directory (`write_to_file` with `ArtifactMetadata`) listing the Review Criteria as checkboxes, and check each item off as you analyze the diff.
+3. **Record or Stage Findings:**
+   - Save the review report to `review_HEAD.md` or `review_CL_<ID>.md` in the artifacts directory, starting with **LGTM: [✓]** or **LGTM: [x]**. Prefix minor or optional suggestions with `nit:`.
+   - When asked to post comments on Gerrit (see [`.agents/skills/ghish/SKILL.md`](../ghish/SKILL.md)), stage inline comments with `--draft` unless instructed to publish immediately:
+     ```bash
+     # Substantive issue:
+     ./gh pr comment [<id>] --path <file> --line <line> -m "Check for empty span before indexing." --draft
+     # Minor style or readability nit:
+     ./gh pr comment [<id>] --path <file> --line <line> -m "nit: Prefer pw::Status over int return code." --draft
+     ```
+4. **Final Output:** Provide the LGTM status and absolute paths to the generated artifacts.

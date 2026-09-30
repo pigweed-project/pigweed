@@ -162,13 +162,13 @@ Documentation
 
 .. grid:: 2
 
-   .. grid-item-card:: :octicon:`milestone` Status & roadmap
-      :link: module-pw_ghish-roadmap
+   .. grid-item-card:: :octicon:`plug` Agent integration
+      :link: module-pw_ghish-agent-integration
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Operational status, capability matrix, and roadmap for declarative
-      profiles, setup automation, and alternative SCMs.
+      Multi-harness rules/skills discovery (Antigravity/Jetski, Claude Code,
+      Codex, Cursor, OpenCode) and optional local ``PreToolUse`` hook setup.
 
    .. grid-item-card:: :octicon:`checklist` Agent evaluation
       :link: module-pw_ghish-agent-eval
@@ -177,6 +177,16 @@ Documentation
 
       Verification runbook for coding agents, behavioral rubric, and live
       integration test suite (``live_test.go``).
+
+.. grid:: 1
+
+   .. grid-item-card:: :octicon:`milestone` Status & roadmap
+      :link: module-pw_ghish-roadmap
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Operational status, capability matrix, and roadmap for declarative
+      profiles, setup automation, and alternative SCMs.
 
 .. toctree::
    :maxdepth: 1
@@ -189,6 +199,7 @@ Documentation
    auth
    worktree
    ai_workflows
+   agent_integration
    cli_comparison
    project_integration
    roadmap

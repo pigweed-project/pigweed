@@ -26,9 +26,11 @@ Pigweed developers and AI agents use `./gh wt` (`pw_ghish/worktree`) to juggle m
 When the user instructs you to work on a specific project (e.g., *"Project rpc-fix: investigate the buffer overflow"* or *"Switch to project sensor-driver"*):
 
 1. **Allocate or Resume the Project Slot:**
-   Run `./gh wt use <project> --json`:
+   Run `./gh wt use <project> --json` (or allocate directly from a Buganizer issue via `./gh wt use --issue <id> --json` / `./gh issue develop <id> --worktree`):
    ```bash
    ./gh wt use <project> --json
+   # Or from a Buganizer issue ID:
+   ./gh wt use --issue 315378787 --json
    ```
    Example JSON output:
    ```json
@@ -51,50 +53,12 @@ When the user instructs you to work on a specific project (e.g., *"Project rpc-f
 
 ## Common CLI Workflows
 
-### 1. Check Environment Health & Initialize Pool
 ```bash
-# Read-only health check of slots, hooks, Bazel caches, and IDE sync:
-./gh wt init --check
-
-# Idempotently create/repair slots and configure shared Bazel caches:
-./gh wt init --slots 10
-```
-
-### 2. Dashboard of Active & Parked Workstreams
-```bash
-# View live dashboard with Gerrit review/CI badges (🔥 NEEDS_ATTENTION, 🚀 READY_TO_LAND, etc.):
-./gh wt list
-
-# Machine-readable JSON dashboard:
-./gh wt list --json
-```
-
-### 3. Persistent Project Next-CL Workflow (`CL_MERGED` -> `CLEAN_SYNCED`)
-When a CL merges on a long-lived project (e.g. `bluetooth` or `bazel`), do **not** close the project if you intend to start another CL in the same area:
-```bash
-# Fetches origin and rebases the mounted slot onto origin/main in-place:
-./gh wt next <project>
-```
-
-### 4. Shelving Idle Workstreams (`MOUNTED` -> `PARKED`)
-To free up a physical slot while waiting on code review without losing any state:
-```bash
-./gh wt park <project>
-```
-*(Note: Dirty working trees with uncommitted edits are protected and cannot be parked without `--force`.)*
-
-### 5. Permanently Closing Completed Workstreams
-When a one-off bugfix or feature is completely done:
-```bash
-./gh wt close <project>
-```
-
-### 6. Cleaning Up Orphaned Bazel Output Bases
-If old manual worktrees were deleted outside `./gh wt`:
-```bash
-# Dry-run inspection:
-./gh wt gc --dry-run
-
-# Remove orphaned output bases in ~/.cache/bazel/_bazel_$USER:
-./gh wt gc
+./gh wt init --check         # Read-only health check of slots, hooks, Bazel caches, and IDE sync
+./gh wt init --slots 10      # Idempotently create/repair slots and configure shared Bazel caches
+./gh wt list [--json]        # Live dashboard with Gerrit review/CI badges (🔥 NEEDS_ATTENTION, 🚀 READY_TO_LAND)
+./gh wt next <project>       # After a CL merges: fetch origin & rebase mounted slot onto origin/main in-place
+./gh wt park <project>       # Shelve clean mounted slot to PARKED (0 disk slots; dirty trees require --force)
+./gh wt close <project>      # Permanently close a completed workstream
+./gh wt gc [--dry-run]       # Remove orphaned Bazel output bases in ~/.cache/bazel/_bazel_$USER
 ```

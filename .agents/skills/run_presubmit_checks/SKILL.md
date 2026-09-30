@@ -64,3 +64,15 @@ When the script fails on a commit:
     $ ./pw presubmit --resume /tmp/pw_presubmit_auto_XXXXXX/resume.json
     ```
     Replace `/tmp/pw_presubmit_auto_XXXXXX/resume.json` with the path provided in the failure message.
+
+### Uploading the Verified Stack to Gerrit (`./gh`)
+
+Once `./pw presubmit --mode auto` succeeds across all commits in the stack, upload the stack to Gerrit using `./gh`:
+
+```console
+# Update existing Gerrit CLs in the stack:
+$ ./gh pr push --stack --cq
+
+# Create new Gerrit CLs for the stack:
+$ ./gh pr create --stack --cq
+```

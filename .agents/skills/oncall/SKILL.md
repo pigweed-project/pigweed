@@ -32,9 +32,9 @@ prompt:
 
 | Subskill / Command | Description | Runbook / Tool |
 | :--- | :--- | :--- |
-| **`/roll-cipd`** | Update pinned CIPD version, create `pw_env_setup: Roll cipd` commit, and submit to Gerrit ([b/315378787](https://pwbug.dev/315378787)) | [roll_cipd.md](file:///Users/hoangmle/pigweed/.agents/skills/oncall/resources/roll_cipd.md) / [roll_cipd.py](file:///Users/hoangmle/pigweed/.agents/skills/oncall/scripts/roll_cipd.py) |
-| **`/oncall presubmit`** | Run presubmit checks across commit stacks | [Run Presubmit Checks](file:///Users/hoangmle/pigweed/.agents/skills/run_presubmit_checks/SKILL.md) |
-| **`/oncall review`** | Review incoming and ongoing Git/Gerrit patches | [Code Review](file:///Users/hoangmle/pigweed/.agents/skills/code_review/SKILL.md) |
+| **`/roll-cipd`** | Update pinned CIPD version, create `pw_env_setup: Roll cipd` commit, and submit to Gerrit ([b/315378787](https://pwbug.dev/315378787)) | [roll_cipd.md](./resources/roll_cipd.md) / [roll_cipd.py](./scripts/roll_cipd.py) |
+| **`/oncall presubmit`** | Run presubmit checks across commit stacks | [Run Presubmit Checks](../run_presubmit_checks/SKILL.md) |
+| **`/oncall review`** | Review incoming and ongoing Git/Gerrit patches | [Code Review](../code_review/SKILL.md) |
 
 ---
 
@@ -110,8 +110,8 @@ EOF
    ```
 6. Submit to Gerrit:
    ```bash
-   git push origin HEAD:refs/for/main%ready
+   ./gh pr create --cq
    ```
 
 For full details and troubleshooting, see the
-[roll_cipd.md](file:///Users/hoangmle/pigweed/.agents/skills/oncall/resources/roll_cipd.md) runbook.
+[roll_cipd.md](./resources/roll_cipd.md) runbook.

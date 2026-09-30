@@ -4,8 +4,8 @@
 
 `pw_ghish` (`./gh`) provides GitHub CLI (`gh pr`) ergonomics for projects across the **Gerrit and LUCI ecosystem** (including Pigweed, Fuchsia, Chromium, and others).
 
-* **Decoupled Policy**: Avoid baking project-specific assumptions directly into core commands. High-level commands (`pr view`, `diff`, `comment`, `checks`, `checks log`, `checks rerun`, `push`, `create`) rely on standard Gerrit REST, git push `refs/for/*`, and Buildbucket / LogDog APIs.
-* **Project Profiles**: Project-specific policies (such as commit-queue labels, try bucket locations, and rerun command syntax) belong strictly in `ProjectProfile` implementations in [`profile.go`](file:///usr/local/google/home/keir/wrk/pw-ghish/pw_ghish/profile.go), rather than hardcoded in the core CLI handlers.
+* **Decoupled Policy**: Avoid baking project-specific assumptions directly into core commands. High-level commands (`pr view`, `diff`, `comment`, `checks`, `run view`, `run rerun`, `issue`, `push`, `create`) rely on standard Gerrit REST, git push `refs/for/*`, Buildbucket / LogDog, and Buganizer APIs.
+* **Project Profiles**: Project-specific policies (such as commit-queue labels, try bucket locations, and rerun command syntax) belong strictly in `ProjectProfile` implementations in [`profile.go`](profile.go), rather than hardcoded in the core CLI handlers.
 
 ---
 
@@ -65,7 +65,7 @@ AI agents modifying `pw_ghish` MUST adhere strictly to these non-negotiable engi
   * **Validation & Enum Guards**:
     * **Missing required action flags** (e.g. bare `pr review` or empty `pr edit`): Reject immediately with concrete, high-frequency command examples.
     * **Invalid parameter values / enums** (e.g. `--state bogus` or invalid label format): Enumerate all valid choices (`'open', 'closed', 'merged', 'all'`) and show correct syntax.
-    * **Unmatched query targets** (e.g. `checks log <builder>` or `checks rerun`): Query and list the available or failed builders present on the change rather than failing with an empty diagnostic.
+    * **Unmatched query targets** (e.g. `run view -j <builder>` or `run rerun`): Query and list the available or failed builders present on the change rather than failing with an empty diagnostic.
 
 ---
 
@@ -106,4 +106,3 @@ Testing `pw_ghish` spans hermetic unit tests, live corp-authenticated infrastruc
 * **Agent Skill Definition**: [`.agents/skills/ghish/SKILL.md`](../.agents/skills/ghish/SKILL.md)
 * **Live Test Suite**: [`live_test.go`](live_test.go)
 * **Agent Evaluation Rubric**: [`agent_eval.rst`](agent_eval.rst)
-

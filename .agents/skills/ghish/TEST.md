@@ -1,225 +1,55 @@
 # Testing `ghish` Skill
 
-This document provides instructions on how to verify that the `ghish` (`./gh`) skill functions correctly and interacts reliably with live Gerrit, LUCI Buildbucket, and Google Issue Tracker (Buganizer) instances.
+This document provides the evaluation plan, test prompts, and verification
+criteria for testing the `ghish` (`./gh`) agent skill.
 
-## Setup & Prerequisites
-
-1. Run from the repository root:
-   ```bash
-   cd <pigweed_repo_root>
-   ```
-2. Verify the `./gh` wrapper script is executable and cached:
-   ```bash
-   ./gh --help
-   ```
-   *Verify:* The first run compiles and installs `gh-ish` to `out/gh/gh-ish`; subsequent runs execute immediately without Bazel startup overhead.
+For the comprehensive agent behavioral evaluation rubric and anti-pattern
+specifications, see [`pw_ghish/agent_eval.rst`](../../../pw_ghish/agent_eval.rst).
 
 ---
 
-## Live Instance Test Cases
+## 1. Automated Verification (Pre-Flight Checks)
 
-These test cases run against live Pigweed Gerrit change [CL 472267](https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267) or any active change.
-
-### 1. Unified Diff Inspection (`pr diff`)
-
-```bash
-./gh pr diff 472267 | head -n 25
-```
-
-**Verify:**
-- Fetches and displays the unified git patch from Gerrit without requiring raw `curl` commands.
-- Includes commit headers, modified files (`MODULE.bazel`, `BUILD.bazel`, etc.), and diff hunks.
-
-### 2. Change Metadata & JSON Output (`pr view`)
+Before running interactive agent prompts, verify that the `gh-ish` tool and skill
+definitions are healthy:
 
 ```bash
-./gh pr view 472267 --json number,title,status,author
-```
+# 1. Verify skill file exists and contains valid frontmatter
+head -n 10 .agents/skills/ghish/SKILL.md
 
-**Verify:**
-- Returns valid JSON with change number `472267`, title `pw_ghish: Gerrit utility for AI`, status `NEW`, and author info.
-- Authenticates cleanly without authentication errors.
+# 2. Run hermetic unit tests across pw_ghish
+bazelisk test --noshow_progress --noshow_loading_progress //pw_ghish/...
 
-### 3. Threaded Review Comments (`pr view --comments`)
-
-```bash
-./gh pr view 472267 --comments
-```
-
-**Verify:**
-- Outputs the change overview followed by all review comment threads.
-- Accurately reports file path, line number, author, resolution status (`[RESOLVED]` or `[UNRESOLVED]`), and nested reply indentation.
-
-### 4. LUCI Buildbucket Checks Query (`pr checks`)
-
-```bash
-./gh pr checks 472267
-```
-
-**Verify:**
-- Connects to LUCI Buildbucket via pRPC (`cr-buildbucket.appspot.com`).
-- Displays current patchset builders (e.g. `static-checks-pigweed`, `docs-builder-newpatchset`).
-- Shows status symbols (`✓`, `✕`, `*`, `?`), run durations, and clickable build URLs.
-
-### 5. Inspecting Check Failure Logs (`pr checks log`)
-
-```bash
-# View failure summaries and log snippets for failing checks
-./gh pr checks log 467905/22
-# Or structured JSON:
-./gh pr checks log 467905/22 --json
-```
-
-**Verify:**
-- Identifies failed builders (e.g. `pigweed-lintformat`) and failing step (`python_format|failure summary`).
-- Fetches and displays the raw LogDog log snippet showing the exact diff/error.
-- Provides direct log URL and status without manual browser navigation.
-
-### 6. Rerunning CI Checks Without URL Bashing (`pr checks rerun`)
-
-```bash
-# Preview targeted rerun of a single builder:
-./gh pr checks rerun 472267 pigweed-mac-arm-vscode --dry-run
-# Preview rerun of all failed builders:
-./gh pr checks rerun 467905/22 --failed --dry-run
-```
-
-**Verify:**
-- Constructs the project-appropriate `bb add` command (e.g. `bb add -cl https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/3 pigweed/pigweed.try/pigweed-mac-arm-vscode`).
-- Requires zero URL bashing from developers or AI agents.
-- Reruns via the system `bb` CLI if `--dry-run` is omitted.
-
-### 7. Listing Open Changes (`pr list`)
-
-```bash
-./gh pr list --limit 5
-```
-
-**Verify:**
-- Lists the 5 most recent open changes on `pigweed-review.googlesource.com`.
-- Displays columns: number, title, branch, and status.
-
-### 8. Safe Draft Commenting (`pr comment --draft`)
-
-To verify comment creation without spamming reviewers or publishing publicly:
-
-```bash
-./gh pr comment 472267 --path pw_ghish/docs.rst --line 10 -m "Verification test draft comment from ghish test suite." --draft
-```
-
-**Verify:**
-- Command succeeds and reports draft comment created.
-- The comment is saved as an unpublished draft in Gerrit (visible only to the authenticated author in the Gerrit web UI).
-
-### 9. Triggering Full CQ Dry Run on Existing Change (`pr edit --add-label`)
-
-```bash
-./gh pr edit 472267 --add-label Commit-Queue=1
-```
-
-**Verify:**
-- Sends a `SetReview` request with `{"labels": {"Commit-Queue": 1}}` via Gerrit REST API.
-- Sets the `Commit-Queue` label to `+1` without needing `curl -sb ~/.gitcookies`.
-
-### 10. Strict Input Validation & Fail-Fast Error Reporting
-
-Verify that invalid user inputs fail fast with exit code 1 and actionable stderr diagnostics:
-
-```bash
-# 1. Unknown --json field:
-./gh pr view 472267 --json invalid_field
-# Verify: exits with code 1; stderr shows "unknown JSON field(s): [invalid_field]"
-
-# 2. Unknown --profile:
-./gh pr list --profile non_existent
-# Verify: exits with code 1; stderr shows "unknown profile: non_existent"
-
-# 3. --resolved without --path and --line:
-./gh pr comment 472267 -m "Resolved without thread" --resolved
-# Verify: exits with code 1; stderr explains --resolved requires both --path and --line
-
-# 4. pr merge on explicit patchset:
-./gh pr merge 472267/1
-# Verify: exits with code 1; stderr explains patchsets cannot be merged individually
-```
-
-### 11. Live Issue Tracker (Buganizer) Queries (`issue list`, `issue status`)
-
-```bash
-# List recent open issues in Pigweed component:
-./gh issue list --limit 5
-
-# View dashboard of issues assigned to or reported by you:
-./gh issue status
-```
-
-**Verify:**
-- Authenticates automatically (via `luci-auth` or `gcloud` credentials).
-- Displays formatted tables with issue IDs, titles, priorities (`P0`–`P4`), and statuses.
-
-### 12. Automated Live Issue Lifecycle Test (`TestLive_IssueLifecycle`)
-
-To run the full end-to-end Buganizer issue lifecycle test (create in Scratch component `1455250`, view, comment, edit, close, reopen, and mark `OBSOLETE`):
-
-```bash
-# Interactive supervisor mode (pauses after each step with https://issues.pigweed.dev/<ID> links):
-go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
-
-# Non-interactive automated mode:
-GHISH_INTERACTIVE=0 go test -v -tags=live ./pw_ghish -run TestLive_IssueLifecycle
+# 3. Verify wrapper script and help output
+./gh --help
+./gh pr --help
 ```
 
 ---
 
-## Agent Behavior & Prompt Triggers
+## 2. Interactive Agent Test Scenarios
 
-Validate that AI agents correctly select and invoke `./gh` when presented with common review prompts:
+Run these prompts in fresh agent sessions to verify skill discovery, tool
+selection, and adherence to safety guards.
 
-### Prompt A: Review a Gerrit CL
-> *"Can you review CL 472267? Check if the change follows Pigweed style and has adequate tests."*
+| # | Scenario | User Prompt | Expected `./gh` Commands | Prohibited Anti-Patterns |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | **Triage Review Comments** | *"Check the review comments on CL 385134 and tell me what needs to be addressed."* | `./gh pr view 385134 --comments` | `curl`/`gob-curl` to `pigweed-review`, `.gitcookies`, Python parsers |
+| **2** | **Perform Code Review** | *"Please review pwrev/385134 and leave draft comments for any issues you find."* | `./gh pr view 385134`, `./gh pr diff 385134`, `./gh pr comment 385134 --path <file> --line <line> -m "..." --draft` | Posting live comments without `--draft` when asked for drafts |
+| **3** | **Address Feedback & Resolve** | *"Fix the review comments on the current branch, push a new patchset, and resolve the threads."* | `./pw presubmit --mode auto --base origin/main`, `git commit --amend`, `./gh pr push`, `./gh pr comment --path <file> --line <line> -m "..." --resolved` | `git push origin HEAD:refs/for/...`, `./gh pr create` on an existing CL |
+| **4** | **CI Triage & Targeted Rerun** | *"Check why CI failed on CL 385134 and rerun the failed builders."* | `./gh pr checks 385134`, `./gh run view 385134 --log-failed` (or `-j <builder>`), `./gh run rerun 385134 --failed` | `search_builds.py`, manual `bb add`, polling `./gh pr checks` in a loop |
+| **5** | **Create New CL & Dry Run** | *"Create a new CL from my local commit, add keir@google.com as reviewer, and start a CQ dry run."* | `./gh pr create -r keir@google.com --cq` | Raw `git push`, `./gh pr push` on uncreated CL |
+| **6** | **Multi-Commit Stack Guard** | *(2 local commits ahead of `origin/main`)* *"Push my changes to Gerrit."* | Runs `./gh pr create` or `./gh pr push`, hits stack guard, asks user whether to pass `--stack` or squash | Blindly passing `--stack` without asking, or bypassing via raw `git push` |
+| **7** | **Target Branch Memory** | *(CL targets `sandbox/experiment`)* *"Amend the commit and push a new patchset."* | `./gh pr push` (auto-routes to `refs/for/sandbox/experiment`) | Pushing to `refs/for/main` |
+| **8** | **Buganizer Integration** | *"File a Buganizer issue for this fix, link it to the commit, and push."* | `./gh issue create -t "..." -b "..." --amend` (or `./gh pr edit --bug b/<id>`), `./gh pr push` | Writing GitHub `Fixes #123` instead of `Bug: b/<id>` |
 
-**Expected Agent Behavior:**
-- Agent loads `ghish/SKILL.md`.
-- Runs `./gh pr diff 472267` and `./gh pr view 472267`.
-- Evaluates code against Pigweed principles (testing, style, safety).
-- Posts review via `./gh pr review 472267 --approve -m "..."` or adds comments via `./gh pr comment 472267 ...`.
+---
 
-### Prompt B: Address Review Feedback
-> *"Check the review comments on CL 472267 and reply to the reviewer on comment.go line 62."*
+## 3. Grading Checklist
 
-**Expected Agent Behavior:**
-- Agent runs `./gh pr view 472267 --comments`.
-- Identifies the unresolved comment thread on `pw_ghish/comment.go:62`.
-- After verifying/fixing code, runs `./gh pr comment 472267 --path pw_ghish/comment.go --line 62 -m "Fixed" --resolved`.
-
-### Prompt C: Query Status & Checks
-> *"What is the status and CI check results for CL 472267?"*
-
-**Expected Agent Behavior:**
-- Runs `./gh pr view 472267` and `./gh pr checks 472267`.
-- Summarizes the patchset, review labels, and passing/failing builders with links.
-
-### Prompt D: Uploading with Presubmit Dry Run
-> *"Upload my commit to Gerrit and start a dry run."*
-
-**Expected Agent Behavior:**
-- Runs `./gh pr create -q 1` (setting `Commit-Queue+1`).
-- Confirms new change/patchset URL from output.
-
-### Prompt E: Diagnose & Rerun Failing Checks
-> *"Pigweed CL 467905 is failing checks, can you figure it out and rerun the failed checks?"*
-
-**Expected Agent Behavior:**
-- Runs `./gh pr checks 467905` to identify failed builders.
-- Runs `./gh pr checks log 467905` to extract the exact failure summary and log snippet without browser context switching.
-- Diagnoses the root cause from the error snippet.
-- Runs `./gh pr checks rerun 467905 --failed` (or targeted builder name) without manual URL bashing.
-
-### Prompt F: Error Diagnostics & Input Correction
-> *"Inspect CL 472267 with --json commit_hash,author."*
-
-**Expected Agent Behavior:**
-- Runs `./gh pr view 472267 --json commit_hash,author`.
-- Observes non-zero exit code (1) and reads stderr diagnostic: `unknown JSON field(s): [commit_hash]. Valid fields are: ...`.
-- Corrects input to valid fields (e.g. `./gh pr view 472267 --json number,title,author`) rather than ignoring the failure or hallucinating a response.
-
+A test session **PASSES** if and only if:
+- [ ] **Zero raw `curl` or `gob-curl` calls** are made to `pigweed-review.googlesource.com` or `cr-buildbucket.appspot.com`.
+- [ ] **Zero raw `git push` calls** are executed.
+- [ ] **Zero bespoke Python/jq scripts** are written to parse Gerrit `)]}'` JSON prefixes.
+- [ ] The agent correctly distinguishes `./gh pr create` (new CLs) from `./gh pr push` (new patchsets on existing CLs).
+- [ ] Review threads are explicitly resolved with `--resolved` after fixes are pushed.

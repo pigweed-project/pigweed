@@ -10,9 +10,15 @@ While ``pw_ghish`` provides the ``./gh`` CLI for Pigweed contributors, its
 underlying engine (``gh-ish``) can be used with any project hosted on Gerrit
 and LUCI.
 
-This guide explains how to integrate ``gh-ish`` into a repository, build and
-distribute the binary, configure project profiles, set up authentication, and
-inspect CI builds.
+This guide explains how repository maintainers can integrate ``gh-ish`` into a
+project, build and distribute the binary, configure project profiles, set up
+authentication, and inspect CI builds.
+
+.. note::
+
+   Looking to configure your personal AI coding assistant (Antigravity/Jetski,
+   Claude Code, Codex, Cursor, or OpenCode) or install local pre-run tool
+   hooks? See :ref:`module-pw_ghish-agent-integration`.
 
 --------------------------------
 Building and distributing gh-ish

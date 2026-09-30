@@ -130,5 +130,5 @@ EOF
 
 6. **Submit to Gerrit**:
    ```bash
-   git push origin HEAD:refs/for/main%ready
+   ./gh pr create --cq
    ```
