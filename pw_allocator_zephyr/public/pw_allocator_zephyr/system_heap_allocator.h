@@ -36,6 +36,18 @@ class SystemHeapAllocator final : public pw::allocator::AbstractAllocator {
   SystemHeapAllocator(SystemHeapAllocator&&) = delete;
   SystemHeapAllocator& operator=(SystemHeapAllocator&&) = delete;
 
+  // Disallow dynamic heap allocation of the allocator instance itself.
+  static void* operator new(size_t) = delete;
+
+  // Provide a no-op class-specific operator delete to satisfy the compiler's
+  // deleting destructor vtable slot (required because AbstractAllocator has a
+  // virtual destructor). On bare-metal targets without a C library heap (such
+  // as picolibc without CONFIG_COMMON_LIBC_MALLOC), calling global ::operator
+  // delete would pull in libstdc++'s default del_ops -> free() -> sbrk, leading
+  // to undefined reference errors for __heap_start and __heap_end.
+  static void operator delete(void*) noexcept {}
+  static void operator delete(void*, size_t) noexcept {}
+
  private:
   SystemHeapAllocator();
   ~SystemHeapAllocator();

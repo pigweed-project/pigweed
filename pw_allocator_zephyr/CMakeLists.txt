@@ -47,6 +47,15 @@ if(CONFIG_PIGWEED_ALLOCATOR)
   zephyr_append_cmake_library(pw_allocator_zephyr.system_heap_allocator)
 endif()
 
+if(TARGET zephyr_generated_headers)
+  if(TARGET pw_allocator_zephyr.synchronized_heap_allocator)
+    add_dependencies(pw_allocator_zephyr.synchronized_heap_allocator zephyr_generated_headers)
+  endif()
+  if(TARGET pw_allocator_zephyr.system_heap_allocator)
+    add_dependencies(pw_allocator_zephyr.system_heap_allocator zephyr_generated_headers)
+  endif()
+endif()
+
 pw_add_test(pw_allocator_zephyr.heap_allocator_test
   SOURCES
     heap_allocator_test.cc
