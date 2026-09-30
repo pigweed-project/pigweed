@@ -501,3 +501,85 @@ func TestPush_RejectsGitHubIssueSyntaxInHeadCommit(t *testing.T) {
 		t.Errorf("A push happened despite the rejection: %v", mockGit.Calls)
 	}
 }
+
+func TestCreate_Stack_ValidBaseUpdatesAndTopNewSucceeds(t *testing.T) {
+	id1 := "I1111111111111111111111111111111111111111"
+	id2 := "I2222222222222222222222222222222222222222"
+
+	server := NewMockGerritServer(t)
+	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if q == id1 {
+			server.RespondJSON(w, http.StatusOK, []map[string]any{
+				DefaultMockChange(488549, WithChangeID(id1)),
+			})
+			return
+		}
+		server.RespondJSON(w, http.StatusOK, []map[string]any{})
+	})
+
+	stackLog := fmt.Sprintf(
+		"aaa1111\x00pw_ghish: Base commit\x00pw_ghish: Base commit\n\nChange-Id: %s\n\x1e"+
+			"bbb2222\x00pw_ghish: Top commit\x00pw_ghish: Top commit\n\nChange-Id: %s\n\x1e",
+		id1, id2,
+	)
+	mockGit := NewMockGit(t).WithBranch("main").
+		WithCommit("pw_ghish: Top commit\n\nChange-Id: "+id2+"\n").
+		OnCommand("rev-list --count origin/main..HEAD", "2\n").
+		OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+
+	output, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+	if err != nil {
+		t.Fatalf("Expected create --stack to succeed, got: %v", err)
+	}
+	for _, want := range []string{"Stack plan (2 commits -> main):", "[UPDATE #488549]", "[NEW CL]"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Expected output to contain %q, got:\n%s", want, output)
+		}
+	}
+	if !mockGit.HasCall("push") {
+		t.Errorf("Expected git push to be called, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestCreate_Stack_NewCommitBelowExistingChangeFails(t *testing.T) {
+	id1 := "I1111111111111111111111111111111111111111"
+	id2 := "I2222222222222222222222222222222222222222"
+	id3 := "I3333333333333333333333333333333333333333"
+
+	server := NewMockGerritServer(t)
+	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if q == id2 {
+			server.RespondJSON(w, http.StatusOK, []map[string]any{
+				DefaultMockChange(488409, WithChangeID(id2)),
+			})
+			return
+		}
+		server.RespondJSON(w, http.StatusOK, []map[string]any{})
+	})
+
+	stackLog := fmt.Sprintf(
+		"aaa1111\x00pw_ghish: Wiped Change-Id commit\x00pw_ghish: Wiped Change-Id commit\n\nChange-Id: %s\n\x1e"+
+			"bbb2222\x00pw_ghish: Existing middle commit\x00pw_ghish: Existing middle commit\n\nChange-Id: %s\n\x1e"+
+			"ccc3333\x00pw_ghish: New top commit\x00pw_ghish: New top commit\n\nChange-Id: %s\n\x1e",
+		id1, id2, id3,
+	)
+	mockGit := NewMockGit(t).WithBranch("main").
+		WithCommit("pw_ghish: New top commit\n\nChange-Id: "+id3+"\n").
+		OnCommand("rev-list --count origin/main..HEAD", "3\n").
+		OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+	if err == nil {
+		t.Fatal("Expected error when a [NEW CL] commit sits below an [UPDATE] commit in the stack")
+	}
+	for _, want := range []string{"stack order error", "aaa1111", "#488409", "bbb2222"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to mention %q, got: %v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected no git push when stack order error is detected, calls: %v", mockGit.Calls)
+	}
+}

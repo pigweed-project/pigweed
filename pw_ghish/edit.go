@@ -131,107 +131,27 @@ var editCmd = &cobra.Command{
 		}
 
 		if hasMsgEdit {
-			// Every path below needs the current message: to keep the title,
-			// to preserve trailers, to rescue the Change-Id, or to edit a
-			// single trailer in place.
-			commitInfo, _, err := client.Changes.GetCommit(ctx, changeID, "current", nil)
-			if err != nil {
-				return fmt.Errorf("error fetching current commit message for change %s: %w", changeID, err)
-			}
-			origMessage := commitInfo.Message
-			newMessage := origMessage
-
-			if editTitle != "" || cmd.Flags().Changed("body") {
-				var origTitle, origBody string
-				lines := strings.Split(origMessage, "\n")
-				origTitle = lines[0]
-				if len(lines) > 1 {
-					origBody = strings.TrimPrefix(strings.Join(lines[1:], "\n"), "\n")
-				}
-
-				targetTitle := origTitle
-				if editTitle != "" {
-					targetTitle = editTitle
-				}
-
-				targetBody := origBody
-				if cmd.Flags().Changed("body") {
-					origTrailers := ExtractTrailers(origMessage)
-					targetBody = MergeTrailers(editBody, origTrailers)
-				}
-
-				if strings.TrimSpace(targetBody) != "" {
-					newMessage = strings.TrimSpace(targetTitle) + "\n\n" + strings.TrimLeft(targetBody, "\r\n")
-				} else {
-					newMessage = strings.TrimSpace(targetTitle) + "\n"
-				}
-			} else if editMessage != "" {
-				origID := ExtractChangeID(origMessage)
-				providedID := ExtractChangeID(editMessage)
-
-				if origID != "" && providedID != "" && origID != providedID {
-					return fmt.Errorf("cannot change Gerrit Change-Id from %s to %s", origID, providedID)
-				}
-
-				// --message replaces the whole message, so anything the new
-				// text leaves out is gone and Gerrit keeps no copy. Silently
-				// re-appending the missing trailers would override a
-				// deliberate deletion, so refuse instead and let the user say
-				// which they meant.
-				if !editDropTrailers {
-					var dropped []string
-					for _, trailer := range DroppedTrailers(origMessage, editMessage) {
-						// Change-Id identifies the change itself rather than
-						// anything the author wrote. It is restored below, so
-						// it is never a casualty.
-						if key, ok := trailerKey(trailer); ok && strings.EqualFold(key, "Change-Id") {
-							continue
-						}
-						dropped = append(dropped, trailer)
-					}
-					if len(dropped) > 0 {
-						return fmt.Errorf(
-							"--message would delete %d trailer(s) from change %s:\n\n  %s\n\n"+
-								"--message replaces the entire commit message, and Gerrit keeps no copy of the\n"+
-								"previous one. Pick one:\n\n"+
-								"  1. Carry them forward by appending them to your --message text.\n"+
-								"  2. Edit only the prose and keep trailers automatically:\n"+
-								"       gh pr edit %s --body \"...\"\n"+
-								"  3. Confirm you really want them gone:\n"+
-								"       gh pr edit %s --drop-trailers -m \"...\"\n\n"+
-								"To review the current message: gh pr view %s",
-							len(dropped), changeID, strings.Join(dropped, "\n  "),
-							changeID, changeID, changeID)
-					}
-				}
-
-				newMessage = editMessage
-				if providedID == "" && origID != "" {
-					newMessage = strings.TrimRight(editMessage, "\r\n") + "\n\nChange-Id: " + origID + "\n"
-				}
-			}
-
-			// Trailer flags apply last so that they win over whatever the
-			// message construction above produced, and so that --bug works on
-			// its own without touching the rest of the message.
-			for _, tf := range trailerFlags {
-				if !cmd.Flags().Changed(tf.flag) {
-					continue
-				}
-				newMessage, err = UpsertTrailer(newMessage, NormalizeTrailer(tf.key+": "+tf.value))
-				if err != nil {
-					return fmt.Errorf("error setting the %s: trailer on change %s: %w", tf.key, changeID, err)
-				}
-			}
-
-			input := &gerrit.CommitMessageInput{
-				Message: newMessage,
-			}
-			_, err = client.Changes.SetCommitMessage(ctx, changeID, input)
-			if err != nil {
-				return fmt.Errorf("error setting commit message for change %s: %w", changeID, err)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Commit message updated successfully.")
+			// TODO(b/567763970): Re-enable commit-message editing once safe
+			// local/remote synchronization is implemented. Keep
+			// buildUpdatedCommitMessage referenced so its implementation stays
+			// compiled while disabled.
+			_ = buildUpdatedCommitMessage
+			return fmt.Errorf(
+				"editing commit messages via 'gh pr edit' (--title, --body, --message, --bug, --fixed) is currently disabled (see b/567763970).\n\n" +
+					"Why: In Gerrit, a CL's description is stored in the Git commit message rather than\n" +
+					"a separate database record. Editing it on the Gerrit server creates a remote patchset\n" +
+					"that diverges from your local Git branch and gets overwritten on the next 'gh pr push'.\n\n" +
+					"To update a commit message locally:\n" +
+					"  1. For the current HEAD commit (surgical file edit, preserving Change-Id:):\n" +
+					"       git log -1 --format=%%B HEAD > \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n" +
+					"       # Edit COMMIT_EDITMSG_TMP surgically (keep the Change-Id: footer!)\n" +
+					"       git commit --amend --only -F \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n" +
+					"       ./gh pr push\n" +
+					"  2. For an earlier commit in a stack:\n" +
+					"       Use 'git rebase' to update the commit message (retaining each commit's\n" +
+					"       Change-Id: footer, or only the earliest commit's Change-Id when squashing),\n" +
+					"       then run './gh pr push --stack'.",
+			)
 		}
 
 		for _, reviewer := range editAddReviewer {
@@ -346,6 +266,96 @@ var editCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+func buildUpdatedCommitMessage(origMessage, changeID string, cmd *cobra.Command, trailerFlags []struct{ flag, key, value string }) (string, error) {
+	newMessage := origMessage
+
+	if editTitle != "" || cmd.Flags().Changed("body") {
+		var origTitle, origBody string
+		lines := strings.Split(origMessage, "\n")
+		origTitle = lines[0]
+		if len(lines) > 1 {
+			origBody = strings.TrimPrefix(strings.Join(lines[1:], "\n"), "\n")
+		}
+
+		targetTitle := origTitle
+		if editTitle != "" {
+			targetTitle = editTitle
+		}
+
+		targetBody := origBody
+		if cmd.Flags().Changed("body") {
+			origTrailers := ExtractTrailers(origMessage)
+			targetBody = MergeTrailers(editBody, origTrailers)
+		}
+
+		if strings.TrimSpace(targetBody) != "" {
+			newMessage = strings.TrimSpace(targetTitle) + "\n\n" + strings.TrimLeft(targetBody, "\r\n")
+		} else {
+			newMessage = strings.TrimSpace(targetTitle) + "\n"
+		}
+	} else if editMessage != "" {
+		origID := ExtractChangeID(origMessage)
+		providedID := ExtractChangeID(editMessage)
+
+		if origID != "" && providedID != "" && origID != providedID {
+			return "", fmt.Errorf("cannot change Gerrit Change-Id from %s to %s", origID, providedID)
+		}
+
+		// --message replaces the whole message, so anything the new
+		// text leaves out is gone and Gerrit keeps no copy. Silently
+		// re-appending the missing trailers would override a
+		// deliberate deletion, so refuse instead and let the user say
+		// which they meant.
+		if !editDropTrailers {
+			var dropped []string
+			for _, trailer := range DroppedTrailers(origMessage, editMessage) {
+				// Change-Id identifies the change itself rather than
+				// anything the author wrote. It is restored below, so
+				// it is never a casualty.
+				if key, ok := trailerKey(trailer); ok && strings.EqualFold(key, "Change-Id") {
+					continue
+				}
+				dropped = append(dropped, trailer)
+			}
+			if len(dropped) > 0 {
+				return "", fmt.Errorf(
+					"--message would delete %d trailer(s) from change %s:\n\n  %s\n\n"+
+						"--message replaces the entire commit message, and Gerrit keeps no copy of the\n"+
+						"previous one. Pick one:\n\n"+
+						"  1. Carry them forward by appending them to your --message text.\n"+
+						"  2. Edit only the prose and keep trailers automatically:\n"+
+						"       gh pr edit %s --body \"...\"\n"+
+						"  3. Confirm you really want them gone:\n"+
+						"       gh pr edit %s --drop-trailers -m \"...\"\n\n"+
+						"To review the current message: gh pr view %s",
+					len(dropped), changeID, strings.Join(dropped, "\n  "),
+					changeID, changeID, changeID)
+			}
+		}
+
+		newMessage = editMessage
+		if providedID == "" && origID != "" {
+			newMessage = strings.TrimRight(editMessage, "\r\n") + "\n\nChange-Id: " + origID + "\n"
+		}
+	}
+
+	// Trailer flags apply last so that they win over whatever the
+	// message construction above produced, and so that --bug works on
+	// its own without touching the rest of the message.
+	for _, tf := range trailerFlags {
+		if !cmd.Flags().Changed(tf.flag) {
+			continue
+		}
+		var err error
+		newMessage, err = UpsertTrailer(newMessage, NormalizeTrailer(tf.key+": "+tf.value))
+		if err != nil {
+			return "", fmt.Errorf("error setting the %s: trailer on change %s: %w", tf.key, changeID, err)
+		}
+	}
+
+	return newMessage, nil
 }
 
 func init() {

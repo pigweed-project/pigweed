@@ -75,7 +75,13 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 			host = HostFlag
 		}
 		if host == "" {
-			host = "https://fuchsia-review.googlesource.com"
+			return gerrit.NewClient(ctx, "https://fuchsia-review.googlesource.com", &http.Client{
+				Transport: &mockTransport{
+					roundTrip: func(req *http.Request) (*http.Response, error) {
+						return nil, fmt.Errorf("no mock Gerrit server configured for %s", req.URL)
+					},
+				},
+			})
 		}
 		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 			host = "https://" + host

@@ -99,6 +99,12 @@ Supports rich push options:
 			return err
 		}
 
+		if flags.Stack && !force {
+			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "create"); err != nil {
+				return err
+			}
+		}
+
 		fmt.Fprintf(cmd.OutOrStdout(), "Creating change for branch %s...\n", branch)
 
 		if err := executePush(ctx, cmd, cfg, branch, flags.PushOptions, flags.NoVerify); err != nil {

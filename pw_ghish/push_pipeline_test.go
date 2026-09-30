@@ -199,6 +199,96 @@ func TestValidateCommitStack(t *testing.T) {
 			t.Fatal("expected error for canceled context, got nil")
 		}
 	})
+
+	t.Run("rejects unsquashed fixup commit in stack", func(t *testing.T) {
+		id1 := "I1111111111111111111111111111111111111111"
+		stackLog := fmt.Sprintf("aaa1111\x00fixup! pw_ghish: Base\x00fixup! pw_ghish: Base\n\nChange-Id: %s\n\x1e", id1)
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
+					stdout.Write([]byte("1\n"))
+				}
+				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
+					stdout.Write([]byte(stackLog))
+				}
+				return nil
+			},
+		}
+		client := NewGitClient(mockGit)
+		err := ValidateCommitStack(ctx, client, "main", true, "push")
+		if err == nil || !strings.Contains(err.Error(), "unsquashed fixup/squash commit") {
+			t.Fatalf("expected unsquashed fixup error, got: %v", err)
+		}
+	})
+
+	t.Run("rejects duplicate Change-Id in stack", func(t *testing.T) {
+		id1 := "I1111111111111111111111111111111111111111"
+		stackLog := fmt.Sprintf(
+			"aaa1111\x00pw_ghish: First\x00pw_ghish: First\n\nChange-Id: %s\n\x1e"+
+				"bbb2222\x00pw_ghish: Second\x00pw_ghish: Second\n\nChange-Id: %s\n\x1e",
+			id1, id1,
+		)
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
+					stdout.Write([]byte("2\n"))
+				}
+				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
+					stdout.Write([]byte(stackLog))
+				}
+				return nil
+			},
+		}
+		client := NewGitClient(mockGit)
+		err := ValidateCommitStack(ctx, client, "main", true, "push")
+		if err == nil || !strings.Contains(err.Error(), "share the same Change-Id") {
+			t.Fatalf("expected duplicate Change-Id error, got: %v", err)
+		}
+	})
+
+	t.Run("rejects commit with multiple Change-Id footers in stack", func(t *testing.T) {
+		id1 := "I1111111111111111111111111111111111111111"
+		id2 := "I2222222222222222222222222222222222222222"
+		stackLog := fmt.Sprintf(
+			"aaa1111\x00pw_ghish: Squashed\x00pw_ghish: Squashed\n\nChange-Id: %s\nChange-Id: %s\n\x1e",
+			id1, id2,
+		)
+		mockGit := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				if len(args) >= 2 && args[0] == "rev-list" && args[1] == "--count" {
+					stdout.Write([]byte("1\n"))
+				}
+				if len(args) >= 2 && args[0] == "log" && args[1] == "--reverse" {
+					stdout.Write([]byte(stackLog))
+				}
+				return nil
+			},
+		}
+		client := NewGitClient(mockGit)
+		err := ValidateCommitStack(ctx, client, "main", true, "push")
+		if err == nil || !strings.Contains(err.Error(), "multiple Change-Id footers") {
+			t.Fatalf("expected multiple Change-Id footers error, got: %v", err)
+		}
+	})
+}
+
+func TestCheckCommitMessageWarnings(t *testing.T) {
+	cleanMsg := "pw_ghish: Short subject\n\nWrapped body line within 72 characters.\n\n  Indented code line that is intentionally much longer than seventy-two characters for an example.\n\nBug: https://issues.pigweed.dev/issues/123456789012345678901234567890\nChange-Id: I1111111111111111111111111111111111111111\n"
+	if warnings := CheckCommitMessageWarnings(cleanMsg, "HEAD commit"); len(warnings) != 0 {
+		t.Errorf("expected 0 warnings for clean message, got: %v", warnings)
+	}
+
+	longMsg := "pw_ghish: This subject line is intentionally much longer than seventy-two characters in length\n\nThis prose body line is also intentionally much longer than seventy-two characters without wrapping.\n\nChange-Id: I1111111111111111111111111111111111111111\n"
+	warnings := CheckCommitMessageWarnings(longMsg, "HEAD commit")
+	if len(warnings) != 2 {
+		t.Fatalf("expected 2 warnings (subject + body), got %d: %v", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[0], "preserving Change-Id:") {
+		t.Errorf("expected subject warning to mention preserving Change-Id:, got: %q", warnings[0])
+	}
+	if !strings.Contains(warnings[1], "preserving Change-Id:") {
+		t.Errorf("expected body warning to mention preserving Change-Id:, got: %q", warnings[1])
+	}
 }
 
 func TestExecutePush(t *testing.T) {

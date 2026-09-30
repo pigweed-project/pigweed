@@ -22,6 +22,14 @@ import (
 	"strings"
 )
 
+// StackCommit represents a single commit in a local stack ahead of a target branch.
+type StackCommit struct {
+	Hash     string
+	Subject  string
+	Body     string
+	ChangeID string
+}
+
 // GitClient defines high-level Git queries and operations on top of GitRunner.
 type GitClient interface {
 	GitRunner
@@ -33,6 +41,7 @@ type GitClient interface {
 	VerifyRef(ctx context.Context, ref string) (bool, error)
 	GitDir(ctx context.Context) (string, error)
 	CountCommitsAhead(ctx context.Context, branch string) (int, error)
+	StackCommits(ctx context.Context, branch string) ([]StackCommit, error)
 	Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error
 	Checkout(ctx context.Context, ref string, stdout, stderr io.Writer) error
 	CherryPick(ctx context.Context, ref string, stdout, stderr io.Writer) error
@@ -206,6 +215,47 @@ func (c *defaultGitClient) CountCommitsAhead(ctx context.Context, branch string)
 		return 0, fmt.Errorf("cannot count commits ahead: branch name is empty")
 	}
 	return CountCommitsAhead(ctx, c, branch)
+}
+
+func (c *defaultGitClient) StackCommits(ctx context.Context, branch string) ([]StackCommit, error) {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil, fmt.Errorf("cannot list stack commits: branch name is empty")
+	}
+	rangeSpec := fmt.Sprintf("origin/%s..HEAD", branch)
+	var outBuf, errBuf bytes.Buffer
+	if err := c.Run(ctx, &outBuf, &errBuf, "log", "--reverse", "--format=%h%x00%s%x00%B%x1e", rangeSpec); err != nil {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, fmt.Errorf("git log %s failed: %w", rangeSpec, err)
+	}
+	raw := outBuf.String()
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	records := strings.Split(raw, "\x1e")
+	var commits []StackCommit
+	for _, rec := range records {
+		rec = strings.TrimLeft(rec, "\r\n")
+		if strings.TrimSpace(rec) == "" {
+			continue
+		}
+		parts := strings.SplitN(rec, "\x00", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		hash := strings.TrimSpace(parts[0])
+		subj := strings.TrimSpace(parts[1])
+		body := parts[2]
+		commits = append(commits, StackCommit{
+			Hash:     hash,
+			Subject:  subj,
+			Body:     body,
+			ChangeID: ExtractChangeID(body),
+		})
+	}
+	return commits, nil
 }
 
 func (c *defaultGitClient) Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error {

@@ -125,6 +125,8 @@ Supported flags
   Gerrit, votes are applied via the Gerrit REST API without re-pushing.
 * ``--publish``: Publish pending draft comments on upload.
 * ``--stack``: Allow pushing multiple commits as a stack of Gerrit changes.
+* ``--force``: Force upload even if no change with this ``Change-Id`` exists on
+  Gerrit.
 * ``-o, --push-option <opt>``: Pass Gerrit push options (e.g.
   ``-o topic=my-feature``).
 * ``--no-verify``: Bypass local pre-push Git hooks.
@@ -135,76 +137,78 @@ When updating an existing change, ``pr push`` queries Gerrit by the commit's
 ``Change-Id`` to determine the target branch recorded on the server (for
 example, ``sandbox/my-experiment``) and pushes to
 ``refs/for/<recorded-branch>``. Use ``-B, --base <branch>`` to override the
-target branch explicitly. Like ``pr create``, ``pr push`` requires ``--stack``
-when uploading multiple unpushed commits.
+target branch explicitly. If no change matching ``HEAD``'s ``Change-Id`` exists
+on Gerrit (for example, if ``git commit --amend -m`` replaced the original
+``Change-Id``), ``pr push`` inspects ``HEAD@{1}`` in the local Git reflog,
+reports the exact clobbered ``Change-Id`` and CL number if ``HEAD@{1}`` matched
+an existing change on Gerrit, and directs you to restore the original
+``Change-Id`` or run ``pr create`` (pass ``--force`` to bypass).
 
-----------------------------------------
-Editing metadata & linking bugs: pr edit
-----------------------------------------
-Updates the commit message, bug trailers, reviewers, topic, hashtags, and votes
-of an existing change through the Gerrit REST API without pushing a new
-patchset:
+Like ``pr create``, ``pr push`` requires ``--stack`` when uploading multiple
+unpushed commits. With ``--stack``, both commands verify every commit in the
+stack for missing, multiple, or duplicate ``Change-Id`` trailers, unsquashed
+``fixup!``/``squash!`` commits, and stack ``Change-Id`` continuity.
+
+-------------------------
+Editing metadata: pr edit
+-------------------------
+Updates reviewers, assignees, topic, hashtags, and votes of an existing change
+through the Gerrit REST API without pushing a new patchset:
 
 .. code-block:: console
-
-   # Link a Buganizer issue without touching the rest of the commit message:
-   $ ./gh pr edit 413992 --bug b/123456
-
-   # Rewrite the description body while preserving the subject line and trailers:
-   $ ./gh pr edit 413992 --body "A clearer explanation of the change."
 
    # Add a reviewer and trigger a CQ dry run:
    $ ./gh pr edit 413992 --add-reviewer colleague@google.com --cq
 
+   # Set a Gerrit topic and add hashtags:
+   $ ./gh pr edit 413992 --topic my-feature --add-hashtag triage
+
 Supported flags
 ===============
-* ``--bug <id>``: Set or update the ``Bug: b/<id>`` trailer (or ``--bug none``).
-* ``--fixed <id>``: Set or update the ``Fixed: b/<id>`` trailer (closes the bug
-  when the CL is submitted).
-* ``-t, --title <str>``: Update the commit subject line, preserving the body
-  and all commit trailers.
-* ``-b, --body <str>``: Update the commit body paragraphs, preserving the
-  subject line and all commit trailers.
-* ``--message <str>``: Replace the entire commit message (requires
-  ``--drop-trailers`` if existing trailers would be removed).
 * ``--add-reviewer <email>`` / ``--remove-reviewer <email>``: Add or remove
   reviewers.
+* ``--add-assignee <email>`` / ``--remove-assignee <email>``: Add or remove
+  assignees.
 * ``--add-label <Label=Value>``: Apply a Gerrit label vote (e.g.
   ``--add-label Commit-Queue=1``).
-* ``--cq [1|2]``: Vote on ``Commit-Queue`` (default ``1``).
-* ``--topic <str>`` / ``--hashtag <str>``: Set the Gerrit topic or add a
-  hashtag.
+* ``--cq [0|1|2]``: Vote on ``Commit-Queue`` (default ``1``; ``0`` removes vote).
+* ``--topic <str>`` / ``--remove-topic``: Set or remove the Gerrit topic.
+* ``--add-hashtag <str>`` / ``--remove-hashtag <str>``: Add or remove Gerrit
+  hashtags.
 
-Linking bugs: ``--bug`` and ``--fixed``
-=======================================
-``--bug`` and ``--fixed`` canonicalize bare numbers (``123456``), ``b/123456``,
-or issue tracker URLs (``https://issues.pigweed.dev/issues/123456``) to
-``b/<id>`` and update the trailer block in place:
+Editing commit messages and bug trailers
+========================================
+Unlike GitHub (where pull request titles and descriptions live in the server
+database independently of Git commits), Gerrit stores the CL description inside
+the Git commit message of each patchset. Editing the commit message remotely on
+Gerrit without updating your local Git commit causes the next ``./gh pr push``
+or ``git rebase`` to overwrite the remote edit.
+
+For this reason, commit-message flags on ``pr edit`` (``--title``, ``--body``,
+``--message``, ``--bug``, and ``--fixed``) are currently disabled
+(`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_) and print
+instructions for editing the local Git commit message surgically:
 
 .. code-block:: console
 
-   # Link a bug:
-   $ ./gh pr edit 413992 --bug b/123456
+   # 1. Dump the current commit message to a temporary file:
+   $ git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"
 
-   # Link a bug and close it when the change is submitted:
-   $ ./gh pr edit 413992 --fixed 123456
+   # 2. Edit "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" surgically (keeping the existing Change-Id: line intact),
+   #    then apply the updated message and upload a new patchset:
+   $ git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"
+   $ ./gh pr push
 
-   # Record that no bug applies:
-   $ ./gh pr edit 413992 --bug none
+For an earlier commit in a multi-CL stack, use ``git rebase -i`` while
+preserving every commit's ``Change-Id:`` footer, then run
+``./gh pr push --stack``.
 
-For managing Buganizer issues directly, see :ref:`module-pw_ghish-issue`.
-
-Trailer preservation and GitHub ``#123`` syntax guard
-=====================================================
-* **Preserving commit trailers**: ``--title`` and ``--body`` preserve all
-  existing Gerrit commit trailers (``Change-Id:``, ``Bug:``, ``Fixed:``,
-  ``Cq-Include-Trybots:``). Full-message replacement via ``--message`` always
-  retains ``Change-Id:`` and prompts for ``--drop-trailers`` if any other
-  trailer would be deleted.
-* **Rejecting GitHub closing keywords**: Gerrit ignores GitHub prose keywords
-  like ``Fixes #456``. If ``pr create``, ``pr push``, or ``pr edit`` detects
-  ``close``/``fix``/``resolve #<number>``, it stops and prints the ``--bug`` or
-  ``--fixed`` trailer flag to use instead.
+GitHub ``#123`` closing keyword guard
+=====================================
+Gerrit ignores GitHub prose keywords like ``Fixes #456``. If ``pr create`` or
+``pr push`` detects ``close``/``fix``/``resolve #<number>`` in a commit
+message, it stops and directs you to use ``Bug: b/<id>`` or ``Fixed: b/<id>``
+trailers instead.
 
 -----------------------------
 Inspecting changes and status
@@ -477,9 +481,11 @@ Comparison with GitHub CLI (gh pr)
        ``NEW`` / ``MERGED`` / ``ABANDONED`` instead of GitHub's
        ``OPEN`` / ``CLOSED`` / ``MERGED``.
    * - ``pr edit [<id>]``
-     - Updates commit message, reviewers, topic, hashtags, and votes via REST.
-     - Preserves Git trailers (``Change-Id:``, ``Bug:``). Adds ``--bug``,
-       ``--fixed``, ``--topic``, and ``--hashtag``; rejects ``Fixes #<num>``.
+     - Updates reviewers, assignees, topic, hashtags, and votes via REST.
+     - Adds ``--cq``, ``--topic``, ``--remove-topic``, ``--add-hashtag``, and
+       ``--remove-hashtag``. Commit-message flags (``--title``, ``--body``,
+       ``--message``, ``--bug``, ``--fixed``) redirect to local Git commit
+       editing (`b/567763970 <https://issues.pigweed.dev/issues/567763970>`_).
    * - ``pr list -a / --assignee``
      - Filters changes by Gerrit ``reviewer:``.
      - Gerrit 3.8+ removed assignees; ``-a`` queries reviewers instead.

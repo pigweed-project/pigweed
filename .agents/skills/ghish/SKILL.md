@@ -75,18 +75,21 @@ Commands:
   - *Smart Fallback*: If pushed with `--cq` or metadata on an already
     up-to-date commit, `pr push` automatically applies updates via the Gerrit
     API instead of failing.
-- **`./gh pr edit [<id>]`**: Edit an existing change:
+- **`./gh pr edit [<id>]`**: Edit Gerrit CL metadata:
   - Trigger CQ dry run: `./gh pr edit --cq` (or `--cq 2` to submit, `--cq 0` to
     remove vote; also supports `--add-label <Name>=<Score>`).
-  - Rewrite prose while keeping trailers: `./gh pr edit --body "new description"`
-    or `--title "new title"`.
-  - Update reviewers: `./gh pr edit --add-reviewer user@google.com`.
-  - Link a bug: `./gh pr edit --bug b/123456` (or `--fixed b/123456` to also
-    close it on submit; accepts `123456`, `b/123456`, issue URL, or `none`).
-  - *Data Safety*: `--body` and `--title` always preserve every Git trailer
-    (`Change-Id:`, `Bug:`, `Fixed:`, `Co-authored-by:`, `Cq-Include-Trybots:`).
-    `--message` replaces the **entire** message and errors if any trailer is
-    dropped unless `--drop-trailers` is passed.
+  - Update reviewers/assignees: `./gh pr edit --add-reviewer user@google.com`
+    (`--remove-reviewer`, `--add-assignee`, `--remove-assignee`).
+  - Set or remove topic/hashtags: `./gh pr edit --topic <name>`
+    (`--remove-topic`, `--add-hashtag`, `--remove-hashtag`).
+  - *Commit-Message Edits (`b/567763970`)*: Unlike GitHub (where PR titles and
+    descriptions live in the server database), Gerrit stores the CL description
+    inside the Git commit message of each patchset. Commit-message flags
+    (`--title`, `--body`, `--message`, `--bug`, `--fixed`) are disabled in
+    `gh pr edit` and redirect to local surgical commit-message editing:
+    1. `git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`
+    2. Surgically edit `"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"` (preserving `Change-Id:`)
+    3. `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" && ./gh pr push`
 
 ### 3. Review & Comment
 - **`./gh pr comment [<id>] --path <file> --line <line> -m <msg>`**: Post an
@@ -145,7 +148,7 @@ Commands:
 ### 7. Where `gh` Habits Break
 Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 `--project`), `--force` (`-f` is `--fill`), `--cq` (`-q` is `--jq`), and
-`--message` on `pr edit`/`pr merge` (`-m` is `--milestone`/`--merge`).
+`--message` on `pr merge` (`-m` is `--merge`).
 
 | You type | Real `gh` | Here |
 |---|---|---|
@@ -192,13 +195,17 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
    `gob-curl`; `./gh` handles corp (`gob-curl`) and `.gitcookies` auth automatically.
 5. **Never Ignore Command Failures or Exit Codes**: Invalid inputs fail fast
    with non-zero exit codes. Always inspect stderr and address reported errors.
-6. **Preserve Commit Trailers**: Prefer `./gh pr edit --body` / `--title` when
-   reworking a description; they keep every trailer (`Change-Id:`, `Bug:`,
-   `Fixed:`, `Reviewed-on:`, `Co-authored-by:`) automatically. Never pass
-   `--drop-trailers` to bypass trailer protection on `--message`.
+6. **Preserve `Change-Id` and Commit Trailers**: Preserve `Change-Id` footers
+   when editing, amending, squashing, or rebasing commits. Gerrit uses these to
+   link git commits to Change Lists. If multiple commits are combined, ensure
+   ONLY the `Change-Id` from the earliest commit in the series is retained in
+   the final commit message. To edit a commit message, dump it to a file
+   (`git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`), edit the file
+   surgically while keeping `Change-Id:` intact, and apply with
+   `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`.
 7. **Link Bugs With Trailers, Never `Fixes #N`**: GitHub's `Fixes #456` does
-   **nothing** on Gerrit. Use `Bug: b/456` or `Fixed: b/456` trailers, or
-   `./gh pr edit <id> --fixed b/456`, and verify with
+   **nothing** on Gerrit. Use `Bug: b/456` or `Fixed: b/456` trailers in the
+   commit message (or `./gh issue create --amend`), and verify with
    `./gh pr view <id> --json bug,bugs`.
 8. **Submit Changes, Not Patchsets**: Use `./gh pr merge <id> --cq` (or
    `--auto`) without `/<patchset>` suffixes.

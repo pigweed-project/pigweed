@@ -65,6 +65,40 @@ func ExtractChangeID(commitMsg string) string {
 	return ""
 }
 
+// ExtractAllChangeIDs returns all distinct Gerrit Change-Id values present in
+// commitMsg in order of appearance.
+func ExtractAllChangeIDs(commitMsg string) []string {
+	matches := changeIDCaptureRegex.FindAllStringSubmatch(commitMsg, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	var ids []string
+	seen := make(map[string]bool, len(matches))
+	for _, m := range matches {
+		if len(m) > 1 && !seen[m[1]] {
+			seen[m[1]] = true
+			ids = append(ids, m[1])
+		}
+	}
+	return ids
+}
+
+// CheckMultipleChangeIDs returns an error if commitMsg contains more than one
+// distinct Gerrit Change-Id footer (which happens when squashing or combining
+// commits without removing the later commit's Change-Id).
+func CheckMultipleChangeIDs(commitMsg string, label string) error {
+	ids := ExtractAllChangeIDs(commitMsg)
+	if len(ids) <= 1 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s contains multiple Change-Id footers (%s).\n\n"+
+			"When squashing or combining commits, retain ONLY the Change-Id from the earliest commit in the series (%s) "+
+			"and remove the others before pushing",
+		label, strings.Join(ids, ", "), ids[0],
+	)
+}
+
 // cherryPickFooterRegex matches the provenance line that Gerrit and
 // `git cherry-pick -x` append inside the trailer block. It is not a `key:
 // value` trailer, but it belongs to the block and must not disqualify it.

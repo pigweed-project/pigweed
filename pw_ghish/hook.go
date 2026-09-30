@@ -184,11 +184,16 @@ func init() {
 }
 
 // CheckAgentCommand inspects a proposed shell command and returns a non-empty
-// remediation string if the command should use ./gh instead.
+// remediation string if the command should use ./gh instead or would clobber a
+// Gerrit Change-Id trailer.
 func CheckAgentCommand(command string) string {
 	trimmed := strings.TrimSpace(command)
 	if trimmed == "" {
 		return ""
+	}
+
+	if reason := detectChangeIDClobberingCommand(command); reason != "" {
+		return reason
 	}
 
 	if gitPushCmdRegex.MatchString(command) && !gitPushHelpRegex.MatchString(command) {
@@ -221,6 +226,394 @@ func CheckAgentCommand(command string) string {
 	}
 
 	return ""
+}
+
+func formatChangeIDClobberBlockMessage(detail string) string {
+	return fmt.Sprintf(
+		"Blocked %s: overwriting or dropping an existing 'Change-Id:' trailer causes Gerrit to create a duplicate CL or reject the push.\n"+
+			"  • Amend staged files without changing the message:\n"+
+			"      git commit --amend --no-edit\n"+
+			"  • Surgically edit the commit message via a file (preferred over re-typing -m):\n"+
+			"      1. Dump current message: git log -1 --format=%%B HEAD > \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n"+
+			"      2. Edit COMMIT_EDITMSG_TMP surgically (keep the original 'Change-Id: I...' footer intact;\n"+
+			"         if combining multiple commits, keep ONLY the earliest commit's Change-Id)\n"+
+			"      3. Apply edited message: git commit --amend --only -F \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n"+
+			"  • Or explicitly include the existing Change-Id in -m:\n"+
+			"      git commit --amend -m \"<subject>\" -m \"<body>\" -m \"Change-Id: I...\"",
+		detail,
+	)
+}
+
+// detectChangeIDClobberingCommand inspects a shell command for git operations
+// that overwrite, drop, or duplicate Gerrit Change-Id footers:
+//   - git commit --amend -m / --message without a Change-Id: trailer
+//   - git commit --amend -F - / --file=- without a Change-Id: trailer in the command
+//   - git commit --amend -F <file> when <file> already exists on disk and lacks Change-Id:
+//   - git commit --amend -C / -c / --reuse-message=<rev> with a non-HEAD revision
+//   - Chained git reset (soft/mixed) or git merge --squash followed by git commit -m without Change-Id:
+//   - Any git commit message or -F file containing multiple distinct Change-Id: trailers
+//   - git filter-branch
+func detectChangeIDClobberingCommand(command string) string {
+	segments := splitShellSegments(command)
+	sawHistoryResetOrSquash := false
+	var priorSegments strings.Builder
+
+	for idx, seg := range segments {
+		if idx > 0 {
+			priorSegments.WriteString(" ; ")
+			priorSegments.WriteString(segments[idx-1])
+		}
+		tokens := tokenizeShellArgs(seg)
+		subcmd, rest, ok := parseGitSubcommandTokens(tokens)
+		if !ok {
+			continue
+		}
+
+		switch subcmd {
+		case "filter-branch":
+			return formatChangeIDClobberBlockMessage("'git filter-branch' (rewrites commit history without preserving Gerrit Change-Id trailers)")
+
+		case "reset":
+			if isCommitRewindingReset(rest) {
+				sawHistoryResetOrSquash = true
+			}
+
+		case "merge":
+			for _, t := range rest {
+				if t == "--squash" {
+					sawHistoryResetOrSquash = true
+					break
+				}
+			}
+
+		case "commit":
+			if reason := checkGitCommitTokens(rest, command, priorSegments.String(), sawHistoryResetOrSquash); reason != "" {
+				return reason
+			}
+		}
+	}
+	return ""
+}
+
+func parseGitSubcommandTokens(tokens []string) (string, []string, bool) {
+	i := 0
+	for i < len(tokens) {
+		t := tokens[i]
+		if t == "sudo" || t == "env" || t == "command" || (strings.Contains(t, "=") && !strings.HasPrefix(t, "-")) {
+			i++
+			continue
+		}
+		break
+	}
+	if i >= len(tokens) {
+		return "", nil, false
+	}
+	exe := tokens[i]
+	if exe != "git" && !strings.HasSuffix(exe, "/git") {
+		return "", nil, false
+	}
+	i++
+
+	// Skip global git flags before the subcommand.
+	for i < len(tokens) {
+		t := tokens[i]
+		if !strings.HasPrefix(t, "-") {
+			break
+		}
+		if t == "-C" || t == "-c" || t == "--git-dir" || t == "--work-tree" || t == "--namespace" {
+			i += 2
+			continue
+		}
+		i++
+	}
+	if i >= len(tokens) {
+		return "", nil, false
+	}
+	return tokens[i], tokens[i+1:], true
+}
+
+var gitHashRegex = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+
+func isCommitRewindingReset(rest []string) bool {
+	hasHard := false
+	hasSoftOrMixed := false
+	hasRevArg := false
+	for _, t := range rest {
+		if t == "--" {
+			break
+		}
+		if t == "--hard" || t == "--keep" || t == "--merge" {
+			hasHard = true
+		}
+		if t == "--soft" || t == "--mixed" {
+			hasSoftOrMixed = true
+		}
+		if !strings.HasPrefix(t, "-") {
+			if strings.Contains(t, "~") || strings.Contains(t, "^") || strings.Contains(t, "@") || t == "ORIG_HEAD" || strings.HasPrefix(t, "origin/") || gitHashRegex.MatchString(t) {
+				hasRevArg = true
+			}
+		}
+	}
+	if hasHard {
+		return false
+	}
+	return hasSoftOrMixed || hasRevArg
+}
+
+func checkGitCommitTokens(rest []string, fullCommand, priorSegments string, sawHistoryResetOrSquash bool) string {
+	hasAmend := false
+	hasMsg := false
+	var msgParts []string
+	hasFile := false
+	var filePath string
+	hasReuse := false
+	var reuseRev string
+
+	i := 0
+	for i < len(rest) {
+		t := rest[i]
+		if t == "--" {
+			break
+		}
+		if t == "--amend" {
+			hasAmend = true
+			i++
+			continue
+		}
+		if t == "-m" || t == "--message" {
+			hasMsg = true
+			if i+1 < len(rest) {
+				msgParts = append(msgParts, rest[i+1])
+				i += 2
+				continue
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(t, "--message=") {
+			hasMsg = true
+			msgParts = append(msgParts, strings.TrimPrefix(t, "--message="))
+			i++
+			continue
+		}
+		if t == "-F" || t == "--file" {
+			hasFile = true
+			if i+1 < len(rest) {
+				filePath = rest[i+1]
+				i += 2
+				continue
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(t, "--file=") {
+			hasFile = true
+			filePath = strings.TrimPrefix(t, "--file=")
+			i++
+			continue
+		}
+		if t == "-C" || t == "--reuse-message" || t == "-c" || t == "--reedit-message" {
+			hasReuse = true
+			if i+1 < len(rest) {
+				reuseRev = rest[i+1]
+				i += 2
+				continue
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(t, "--reuse-message=") {
+			hasReuse = true
+			reuseRev = strings.TrimPrefix(t, "--reuse-message=")
+			i++
+			continue
+		}
+		if strings.HasPrefix(t, "--reedit-message=") {
+			hasReuse = true
+			reuseRev = strings.TrimPrefix(t, "--reedit-message=")
+			i++
+			continue
+		}
+		if t == "--author" || t == "--date" || t == "-t" || t == "--template" || t == "--cleanup" {
+			i += 2
+			continue
+		}
+		if strings.HasPrefix(t, "-") && !strings.HasPrefix(t, "--") {
+			cluster := t[1:]
+			if mIdx := strings.IndexByte(cluster, 'm'); mIdx >= 0 {
+				hasMsg = true
+				afterM := cluster[mIdx+1:]
+				if afterM != "" {
+					msgParts = append(msgParts, afterM)
+					i++
+					continue
+				}
+				if i+1 < len(rest) {
+					msgParts = append(msgParts, rest[i+1])
+					i += 2
+					continue
+				}
+			}
+			if fIdx := strings.IndexByte(cluster, 'F'); fIdx >= 0 {
+				hasFile = true
+				afterF := cluster[fIdx+1:]
+				if afterF != "" {
+					filePath = afterF
+					i++
+					continue
+				}
+				if i+1 < len(rest) {
+					filePath = rest[i+1]
+					i += 2
+					continue
+				}
+			}
+		}
+		i++
+	}
+
+	if hasMsg {
+		combined := strings.ReplaceAll(strings.Join(msgParts, "\n\n"), `\n`, "\n")
+		if err := CheckMultipleChangeIDs(combined, "commit message"); err != nil {
+			return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit' with multiple Change-Id trailers (%v)", err))
+		}
+		if hasAmend && !changeIDLineRegex.MatchString(combined) {
+			return formatChangeIDClobberBlockMessage("'git commit --amend -m' without a 'Change-Id:' trailer")
+		}
+		if sawHistoryResetOrSquash && !changeIDLineRegex.MatchString(combined) {
+			return formatChangeIDClobberBlockMessage("'git reset / merge --squash' followed by 'git commit -m' without preserving the original 'Change-Id:' trailer")
+		}
+	}
+
+	if hasFile {
+		if filePath == "-" {
+			normalizedCmd := strings.ReplaceAll(fullCommand, `\n`, "\n")
+			if err := CheckMultipleChangeIDs(normalizedCmd, "stdin commit message"); err != nil {
+				return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit -F -' with multiple Change-Id trailers (%v)", err))
+			}
+			if (hasAmend || sawHistoryResetOrSquash) && !changeIDLineRegex.MatchString(normalizedCmd) {
+				return formatChangeIDClobberBlockMessage("'git commit --amend -F -' without a 'Change-Id:' trailer in stdin")
+			}
+		} else if filePath != "" && !strings.Contains(priorSegments, filePath) {
+			if data, err := os.ReadFile(filePath); err == nil {
+				content := string(data)
+				if mErr := CheckMultipleChangeIDs(content, filePath); mErr != nil {
+					return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit -F %s' with multiple Change-Id trailers (%v)", filePath, mErr))
+				}
+				if (hasAmend || sawHistoryResetOrSquash) && !changeIDLineRegex.MatchString(content) {
+					return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit --amend -F %s' because %s does not contain a 'Change-Id:' trailer", filePath, filePath))
+				}
+			}
+		}
+	}
+
+	if hasAmend && hasReuse {
+		trimmedRev := strings.TrimSpace(reuseRev)
+		if trimmedRev != "" && trimmedRev != "HEAD" && trimmedRev != "@" {
+			return formatChangeIDClobberBlockMessage(fmt.Sprintf("'git commit --amend -C %s' (replaces HEAD's Change-Id with %s's message)", trimmedRev, trimmedRev))
+		}
+	}
+
+	return ""
+}
+
+func splitShellSegments(s string) []string {
+	var segments []string
+	var cur strings.Builder
+	var quote byte
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if escaped {
+			cur.WriteByte(ch)
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			cur.WriteByte(ch)
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			cur.WriteByte(ch)
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			cur.WriteByte(ch)
+			continue
+		}
+		if ch == ';' || ch == '|' || ch == '&' || ch == '\n' {
+			if seg := strings.TrimSpace(cur.String()); seg != "" {
+				segments = append(segments, seg)
+			}
+			cur.Reset()
+			continue
+		}
+		cur.WriteByte(ch)
+	}
+	if seg := strings.TrimSpace(cur.String()); seg != "" {
+		segments = append(segments, seg)
+	}
+	return segments
+}
+
+func tokenizeShellArgs(seg string) []string {
+	var tokens []string
+	var cur strings.Builder
+	inToken := false
+	var quote byte
+	escaped := false
+
+	for i := 0; i < len(seg); i++ {
+		ch := seg[i]
+		if escaped {
+			if quote == '"' && ch != '"' && ch != '\\' && ch != '$' && ch != '`' {
+				cur.WriteByte('\\')
+			}
+			cur.WriteByte(ch)
+			inToken = true
+			escaped = false
+			continue
+		}
+		if ch == '\\' && quote != '\'' {
+			escaped = true
+			inToken = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			} else {
+				cur.WriteByte(ch)
+			}
+			inToken = true
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			inToken = true
+			continue
+		}
+		if ch == ' ' || ch == '\t' || ch == '\r' {
+			if inToken {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+				inToken = false
+			}
+			continue
+		}
+		cur.WriteByte(ch)
+		inToken = true
+	}
+	if inToken {
+		tokens = append(tokens, cur.String())
+	}
+	return tokens
 }
 
 // ExtractAgentCommandAndHarness extracts the command string and harness identifier

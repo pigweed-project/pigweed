@@ -69,6 +69,14 @@ execution:
 
    * - Intercepted Command Pattern
      - Action & Remediation Returned to Agent
+   * - ``git commit --amend -m`` / ``-F`` without ``Change-Id:``,
+       ``--amend -C <rev>``, chained ``git reset`` / ``merge --squash`` +
+       ``git commit -m`` without ``Change-Id:``, multiple ``Change-Id:``
+       footers, or ``git filter-branch``
+     - **Blocked**: Prevents overwriting, dropping, or duplicating Gerrit
+       ``Change-Id:`` footers; directs the agent to ``git commit --amend
+       --no-edit`` or surgical file editing via ``"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`` and
+       ``git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"``.
    * - Raw ``git push`` (except ``--help``)
      - **Blocked**: Directs the agent to ``./gh pr create`` (new CL),
        ``./gh pr push`` (new patchset), or ``--stack``.

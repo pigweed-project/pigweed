@@ -37,6 +37,7 @@ func getSentCommitMessage(server *MockGerritServer) string {
 }
 
 func TestEditIntegration(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
 		"subject": "Old Title",
@@ -73,6 +74,7 @@ func TestEditIntegration(t *testing.T) {
 }
 
 func TestEdit_PreservesTitleAndChangeIDWhenUpdatingBody(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/commit", http.StatusOK, map[string]any{
 		"subject": "Original Title",
@@ -233,6 +235,7 @@ func TestEditAddAssignee(t *testing.T) {
 }
 
 func TestEdit_PreservesAllTrailersWhenUpdatingBody(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\nReviewed-on: https://pigweed-review.googlesource.com/12345\n"
 
 	server := NewMockGerritServer(t)
@@ -266,6 +269,7 @@ func TestEdit_PreservesAllTrailersWhenUpdatingBody(t *testing.T) {
 }
 
 func TestEdit_OverridingSpecificTrailerPreservesOthers(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\nReviewed-on: https://pigweed-review.googlesource.com/12345\n"
 
 	server := NewMockGerritServer(t)
@@ -304,6 +308,7 @@ func TestEdit_OverridingSpecificTrailerPreservesOthers(t *testing.T) {
 // (Co-authored-by, Cq-Include-Trybots, the cherry-pick provenance footer) was
 // silently deleted. Verified RED against the previous implementation.
 func TestEdit_PreservesTrailersWhenMessageEndsInProse(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := strings.Join([]string{
 		"pw_foo: Original Subject",
 		"",
@@ -351,6 +356,7 @@ func TestEdit_PreservesTrailersWhenMessageEndsInProse(t *testing.T) {
 // widening the trailer scan to every paragraph must not turn ordinary prose
 // that happens to contain a colon into a trailer that survives a body rewrite.
 func TestEdit_DoesNotPromoteProseIntoTrailers(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := strings.Join([]string{
 		"pw_foo: Original Subject",
 		"",
@@ -382,6 +388,7 @@ func TestEdit_DoesNotPromoteProseIntoTrailers(t *testing.T) {
 }
 
 func TestEdit_RawMessagePreservesChangeID(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body line.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
 
 	server := NewMockGerritServer(t)
@@ -408,6 +415,7 @@ func TestEdit_RawMessagePreservesChangeID(t *testing.T) {
 // Deleting them by accident is far more common than deleting them on purpose,
 // so the tool refuses and says exactly what it would have destroyed.
 func TestEdit_RawMessageRefusesToDropTrailers(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := strings.Join([]string{
 		"pw_foo: Original Subject",
 		"",
@@ -453,6 +461,7 @@ func TestEdit_RawMessageRefusesToDropTrailers(t *testing.T) {
 }
 
 func TestEdit_RawMessageDropTrailersFlagAllowsTheDrop(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
 
 	server := NewMockGerritServer(t)
@@ -481,6 +490,7 @@ func TestEdit_RawMessageDropTrailersFlagAllowsTheDrop(t *testing.T) {
 // refusal is warranted. A rewritten value counts as carried forward -- the
 // check is per key, not per line, or editing a bug number would be impossible.
 func TestEdit_RawMessageCarryingTrailersForwardSucceeds(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nBug: b/12345\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
 
 	server := NewMockGerritServer(t)
@@ -505,6 +515,7 @@ func TestEdit_RawMessageCarryingTrailersForwardSucceeds(t *testing.T) {
 // footer line, which has no key to compare on and so needs whole-line
 // matching. It records where the commit came from; losing it is unrecoverable.
 func TestEdit_RawMessageRefusesToDropCherryPickProvenance(t *testing.T) {
+	t.Skip("TODO(b/567763970): Re-enable when safe commit-message editing is supported in gh pr edit")
 	const provenance = "(cherry picked from commit deadbeefdeadbeefdeadbeefdeadbeefdeadbeef)"
 	origCommitMsg := "pw_foo: Original Subject\n\nBody.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n" + provenance + "\n"
 
@@ -567,6 +578,7 @@ const editOrigMsg = "pw_foo: Original Subject\n\nOriginal body line.\n\n" +
 	"Change-Id: I0123456789abcdef0123456789abcdef01234567\n"
 
 func TestEdit_BugFlag(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	tests := []struct {
 		name string
 		orig string
@@ -638,6 +650,7 @@ func TestEdit_BugFlag(t *testing.T) {
 // TestEdit_BugFlagLeavesEverythingElseAlone checks that a trailer-only edit is
 // exactly that: no title change, no body change, no collateral trailer loss.
 func TestEdit_BugFlagLeavesEverythingElseAlone(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	server := editServer(t, editOrigMsg)
 	if _, err := executeCommand(RootCmd, "pr", "edit", "12345", "--bug", "b/42"); err != nil {
 		t.Fatalf("Command failed: %v", err)
@@ -657,6 +670,7 @@ func TestEdit_BugFlagLeavesEverythingElseAlone(t *testing.T) {
 }
 
 func TestEdit_BugFlagCombinesWithBody(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	server := editServer(t, editOrigMsg)
 	if _, err := executeCommand(RootCmd, "pr", "edit", "12345",
 		"--body", "A new description.", "--bug", "b/42"); err != nil {
@@ -736,6 +750,7 @@ func TestEdit_RejectsGitHubIssueSyntax(t *testing.T) {
 // TestEdit_AcceptsGerritBugTrailers is the false-positive guard: the correct
 // spelling must sail straight through.
 func TestEdit_AcceptsGerritBugTrailers(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	server := editServer(t, editOrigMsg)
 	if _, err := executeCommand(RootCmd, "pr", "edit", "12345",
 		"--body", "Rework the retry loop.\n\nFixed: b/456"); err != nil {
@@ -747,6 +762,7 @@ func TestEdit_AcceptsGerritBugTrailers(t *testing.T) {
 }
 
 func TestEdit_ErrorWhenGetCommitFailsOnRawMessage(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	server := NewMockGerritServer(t)
 	server.OnStatus(http.StatusInternalServerError)
 
@@ -760,6 +776,7 @@ func TestEdit_ErrorWhenGetCommitFailsOnRawMessage(t *testing.T) {
 }
 
 func TestEdit_ErrorWhenMismatchedChangeIDProvided(t *testing.T) {
+	t.Skip("TODO(b/567763970): Commit-message editing via gh pr edit is temporarily disabled")
 	origCommitMsg := "pw_foo: Original Subject\n\nOriginal body.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"
 
 	server := NewMockGerritServer(t)
@@ -914,5 +931,42 @@ func TestEdit_CQ_Remove(t *testing.T) {
 	}
 	if payload.Labels["Commit-Queue"] != 0 {
 		t.Errorf("got Commit-Queue = %d, want 0", payload.Labels["Commit-Queue"])
+	}
+}
+
+func TestEdit_CommitMessageFlagsDisabledRedirectsToLocalGit(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"title flag", []string{"pr", "edit", "12345", "--title", "pw_foo: New Title"}},
+		{"body flag", []string{"pr", "edit", "12345", "--body", "New description body."}},
+		{"message flag", []string{"pr", "edit", "12345", "--message", "pw_foo: New Title\n\nBody."}},
+		{"bug flag", []string{"pr", "edit", "12345", "--bug", "b/123456"}},
+		{"fixed flag", []string{"pr", "edit", "12345", "--fixed", "b/123456"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := editServer(t, editOrigMsg)
+			_, err := executeCommand(RootCmd, tt.args...)
+			if err == nil {
+				t.Fatalf("Expected error when using commit-message edit flags (%v), got nil", tt.args)
+			}
+			for _, want := range []string{
+				"b/567763970",
+				"COMMIT_EDITMSG_TMP",
+				"git commit --amend --only -F",
+				"Change-Id:",
+				"git rebase",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Expected error to contain %q, got:\n%v", want, err)
+				}
+			}
+			if n := server.CallCount("", "/changes/12345/message"); n != 0 {
+				t.Errorf("Expected no SetCommitMessage API call, got %d", n)
+			}
+		})
 	}
 }

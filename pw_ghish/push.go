@@ -25,8 +25,9 @@ func runPush(cmd *cobra.Command, args []string) error {
 	cfg := GetConfig(cmd)
 
 	flags := ParseCommonPushFlags(cmd)
+	force, _ := cmd.Flags().GetBool("force")
 
-	state, err := VerifyHeadForPush(ctx, cmd, cfg, flags.Base == "")
+	state, err := VerifyHeadForPush(ctx, cmd, cfg, !force)
 	if err != nil {
 		return err
 	}
@@ -37,6 +38,21 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 	if branch == "" {
 		branch = resolvePushBranch(ctx, cfg, flags.Base, cmd.ErrOrStderr())
+	}
+
+	if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "push"); err != nil {
+		return err
+	}
+
+	if !force {
+		if flags.Stack {
+			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "push"); err != nil {
+				return err
+			}
+		}
+		if state.GerritQueried && state.ExistingChange == nil {
+			return FormatMissingChangePushError(ctx, cmd, cfg, state, flags.Stack)
+		}
 	}
 
 	// Pushing %l=<label> for a label the host does not define is rejected
@@ -55,10 +71,6 @@ func runPush(cmd *cobra.Command, args []string) error {
 		}
 		flags.PushOptions.AutoSubmitLabel = autoSubmit.Vote
 		flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
-	}
-
-	if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "push"); err != nil {
-		return err
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Pushing patchset for branch %s...\n", branch)
@@ -82,6 +94,10 @@ func newPushCommand() *cobra.Command {
 		Aliases: []string{"upload"},
 		Short:   "Push current HEAD commit to Gerrit as a patchset",
 		Long: `Push the current HEAD commit to Gerrit to upload a new patchset.
+
+If no change with HEAD's Change-Id exists on Gerrit, this command will error
+and suggest using 'gh pr create' (or restoring an overwritten Change-Id). Use --force to bypass this check.
+
 Supports rich push options:
   - Reviewers and CCs: --reviewer, --cc
   - Auto-submit: --auto (alias --auto-submit)
@@ -96,6 +112,7 @@ Supports rich push options:
 
 	AddCommonPushFlags(cmd)
 	cmd.Flags().Bool("ready", false, "Mark as ready for review (removes WIP)")
+	cmd.Flags().Bool("force", false, "Force push even if no change with this Change-Id exists on Gerrit")
 
 	return cmd
 }

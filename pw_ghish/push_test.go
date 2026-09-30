@@ -45,12 +45,7 @@ func TestPushIntegration(t *testing.T) {
 func TestPush_RichOptions(t *testing.T) {
 	SetTestProfile(t, "pigweed")
 	server := NewMockGerritServer(t)
-	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
-	server.OnJSON("GET", "/projects/*", http.StatusOK, []map[string]any{
-		{"name": "Code-Review"},
-		{"name": "Commit-Queue"},
-		{"name": "Pigweed-Auto-Submit"},
-	})
+	server.OnDefaultChange(472267, WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit"))
 	mockGit := NewMockGit(t).WithBranch("main").
 		OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/pigweed\n")
 
@@ -283,7 +278,7 @@ func TestPush_AutoSubmitWithoutAnyLabelSourceFails(t *testing.T) {
 
 	mockGit := NewMockGit(t).WithBranch("main")
 
-	_, err := executeCommand(RootCmd, "pr", "push", "--auto")
+	_, err := executeCommand(RootCmd, "pr", "push", "--auto", "--force")
 	if err == nil {
 		t.Fatal("Expected an error when the auto-submit label cannot be determined")
 	}
@@ -295,8 +290,8 @@ func TestPush_AutoSubmitWithoutAnyLabelSourceFails(t *testing.T) {
 	}
 }
 
-// Pushing a commit Gerrit has never seen creates the change, so there are no
-// labels on it yet; the project knows what they will be called.
+// Pushing a commit Gerrit has never seen (with --force) creates the change, so
+// there are no labels on it yet; the project knows what they will be called.
 func TestPush_AutoSubmitUsesProjectLabelForNewChange(t *testing.T) {
 	SetTestProfile(t, "pigweed")
 	server := NewMockGerritServer(t)
@@ -309,7 +304,7 @@ func TestPush_AutoSubmitUsesProjectLabelForNewChange(t *testing.T) {
 	mockGit := NewMockGit(t).WithBranch("main").
 		OnCommand("config --get remote.origin.url", "https://example-review.googlesource.com/example/project\n")
 
-	if _, err := executeCommand(RootCmd, "pr", "push", "--auto"); err != nil {
+	if _, err := executeCommand(RootCmd, "pr", "push", "--auto", "--force"); err != nil {
 		t.Fatalf("Command failed: %v", err)
 	}
 
@@ -318,6 +313,130 @@ func TestPush_AutoSubmitUsesProjectLabelForNewChange(t *testing.T) {
 	}
 	if mockGit.HasCall("l=Pigweed-Auto-Submit+1") {
 		t.Errorf("Expected push not to vote the profile's label when the project names its own, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestPush_NewChangeWithoutForceError(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("pw_ghish: Tighten docs\n\nChange-Id: If37a935da438c64782b46a95dea392d18d405c6b\n")
+
+	_, err := executeCommand(RootCmd, "pr", "push")
+	if err == nil {
+		t.Fatal("Expected error when pushing a commit whose Change-Id does not exist on Gerrit")
+	}
+	for _, want := range []string{
+		"no existing Gerrit change found",
+		"If37a935da438c64782b46a95dea392d18d405c6b",
+		"git commit --amend -m",
+		"gh pr create",
+		"--force",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got: %v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected git push not to be called when Change-Id is missing on Gerrit, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestPush_ClobberedChangeIDDetectedFromReflog(t *testing.T) {
+	newChangeID := "Ie8e44c008972d0001ce6e5df1a67db460765ea37"
+	oldChangeID := "If37a935da438c64782b46a95dea392d18d405c6b"
+
+	server := NewMockGerritServer(t)
+	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if q == oldChangeID {
+			server.RespondJSON(w, http.StatusOK, []map[string]any{
+				DefaultMockChange(488949, WithChangeID(oldChangeID)),
+			})
+			return
+		}
+		server.RespondJSON(w, http.StatusOK, []map[string]any{})
+	})
+
+	mockGit := NewMockGit(t).WithBranch("main").
+		WithCommit("pw_ghish: Tighten docs\n\nChange-Id: "+newChangeID+"\n").
+		OnCommand("log -1 --format=%B HEAD@{1}", "pw_ghish: Tighten docs\n\nChange-Id: "+oldChangeID+"\n")
+
+	_, err := executeCommand(RootCmd, "pr", "push")
+	if err == nil {
+		t.Fatal("Expected error when HEAD's Change-Id was clobbered")
+	}
+	for _, want := range []string{
+		"no existing Gerrit change found",
+		newChangeID,
+		"HEAD@{1}",
+		oldChangeID,
+		"#488949",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to contain %q, got:\n%v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected git push not to be called when Change-Id was clobbered, calls: %v", mockGit.Calls)
+	}
+}
+
+func TestPush_NewChangeWithForceSucceeds(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/*", http.StatusOK, []map[string]any{})
+
+	mockGit := NewMockGit(t).WithBranch("main").WithCommit("pw_ghish: Tighten docs\n\nChange-Id: If37a935da438c64782b46a95dea392d18d405c6b\n")
+
+	output, err := executeCommand(RootCmd, "pr", "push", "--force")
+	if err != nil {
+		t.Fatalf("Expected --force to succeed, got: %v", err)
+	}
+	if !mockGit.HasCall("push") {
+		t.Errorf("Expected git push to be called with --force, calls: %v", mockGit.Calls)
+	}
+	if !strings.Contains(output, "Patchset pushed successfully.") {
+		t.Errorf("Unexpected output: %s", output)
+	}
+}
+
+func TestPush_Stack_MissingChangeInMiddleFails(t *testing.T) {
+	id1 := "I1111111111111111111111111111111111111111"
+	id2 := "I2222222222222222222222222222222222222222"
+
+	server := NewMockGerritServer(t)
+	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if q == id2 {
+			server.RespondJSON(w, http.StatusOK, []map[string]any{
+				DefaultMockChange(488949, WithChangeID(id2)),
+			})
+			return
+		}
+		server.RespondJSON(w, http.StatusOK, []map[string]any{})
+	})
+
+	stackLog := fmt.Sprintf(
+		"aaa1111\x00pw_ghish: First commit\x00pw_ghish: First commit\n\nChange-Id: %s\n\x1e"+
+			"bbb2222\x00pw_ghish: Second commit\x00pw_ghish: Second commit\n\nChange-Id: %s\n\x1e",
+		id1, id2,
+	)
+	mockGit := NewMockGit(t).WithBranch("main").
+		WithCommit("pw_ghish: Second commit\n\nChange-Id: "+id2+"\n").
+		OnCommand("rev-list --count origin/main..HEAD", "2\n").
+		OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+
+	_, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack")
+	if err == nil {
+		t.Fatal("Expected error when an earlier commit in the stack does not match any Gerrit change")
+	}
+	for _, want := range []string{"aaa1111", id1, "gh pr create --stack"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Expected error to mention %q, got: %v", want, err)
+		}
+	}
+	if mockGit.HasCall("push") {
+		t.Errorf("Expected no git push when stack verification fails, calls: %v", mockGit.Calls)
 	}
 }
 
@@ -386,6 +505,19 @@ func TestVerifyHeadForPush(t *testing.T) {
 		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false)
 		if err == nil || !strings.Contains(err.Error(), "#123") {
 			t.Errorf("expected GitHub issue syntax error, got: %v", err)
+		}
+	})
+
+	t.Run("rejects multiple Change-Id footers", func(t *testing.T) {
+		mockGit := NewMockGit(t).WithBranch("main").WithCommit(
+			"Subject\n\nChange-Id: I1111111111111111111111111111111111111111\nChange-Id: I2222222222222222222222222222222222222222\n",
+		)
+
+		cfg := &Config{Git: mockGit}
+		SetConfig(RootCmd, cfg)
+		_, err := VerifyHeadForPush(context.Background(), RootCmd, cfg, false)
+		if err == nil || !strings.Contains(err.Error(), "multiple Change-Id footers") {
+			t.Errorf("expected multiple Change-Id footers error, got: %v", err)
 		}
 	})
 }

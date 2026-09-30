@@ -26,6 +26,20 @@ import (
 )
 
 func TestCheckAgentCommand(t *testing.T) {
+	tmpDir := t.TempDir()
+	validMsgFile := filepath.Join(tmpDir, "valid_msg.txt")
+	if err := os.WriteFile(validMsgFile, []byte("pw_ghish: Title\n\nBody.\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	missingChangeIDFile := filepath.Join(tmpDir, "missing_changeid.txt")
+	if err := os.WriteFile(missingChangeIDFile, []byte("pw_ghish: Title without Change-Id\n\nBody.\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	multiChangeIDFile := filepath.Join(tmpDir, "multi_changeid.txt")
+	if err := os.WriteFile(multiChangeIDFile, []byte("pw_ghish: Squashed\n\nChange-Id: I1111111111111111111111111111111111111111\nChange-Id: I2222222222222222222222222222222222222222\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
 	allowed := []string{
 		"./gh pr create --cq",
 		"./gh pr push",
@@ -39,6 +53,15 @@ func TestCheckAgentCommand(t *testing.T) {
 		"git status",
 		"git commit -a --amend --no-edit",
 		`git commit -m "Replace raw git push and bb add with ./gh"`,
+		`git commit -m "pw_ghish: Block git commit --amend -m without Change-Id"`,
+		`git commit --amend -m "pw_ghish: Title" -m "Change-Id: I0123456789abcdef0123456789abcdef01234567"`,
+		`git commit --amend -m "pw_ghish: Title\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567"`,
+		`printf "pw_ghish: Title\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567\n" | git commit --amend -F -`,
+		"git commit --amend --only -F " + validMsgFile,
+		"git log -1 --format=%B HEAD > .git/COMMIT_EDITMSG_TMP && git commit --amend --only -F .git/COMMIT_EDITMSG_TMP",
+		"git commit --amend -C HEAD",
+		"git reset HEAD file.go && git commit -m 'pw_ghish: New commit'",
+		`git reset --soft HEAD~1 && git commit -m "pw_ghish: Squashed\n\nChange-Id: I0123456789abcdef0123456789abcdef01234567"`,
 		"git fetch origin && git rebase origin/main",
 		"git push --help",
 		"bazelisk test //pw_ghish/...",
@@ -46,6 +69,31 @@ func TestCheckAgentCommand(t *testing.T) {
 	for _, cmd := range allowed {
 		if reason := CheckAgentCommand(cmd); reason != "" {
 			t.Errorf("expected CheckAgentCommand(%q) to be allowed, got reason: %s", cmd, reason)
+		}
+	}
+
+	blockedChangeIDClobber := []string{
+		`git commit --amend -m "pw_ghish: Tighten docs"`,
+		`git checkout HEAD~1 -- MODULE.bazel.lock && git commit --amend -m "pw_ghish: Tighten docs" -m "Body" && ./gh pr push --stack --cq`,
+		`git commit --amend -am "pw_ghish: Quick fix"`,
+		`git commit --amend --message="pw_ghish: Quick fix"`,
+		`printf "pw_ghish: No Change-Id\n" | git commit --amend -F -`,
+		"git commit --amend --only -F " + missingChangeIDFile,
+		"git commit --amend --only -F " + multiChangeIDFile,
+		`git commit -m "pw_ghish: Bad squash" -m "Change-Id: I1111111111111111111111111111111111111111" -m "Change-Id: I2222222222222222222222222222222222222222"`,
+		"git commit --amend -C HEAD~1",
+		"git commit --amend --reuse-message=origin/main",
+		`git reset --soft HEAD~1 && git commit -m "pw_ghish: Re-commit without Change-Id"`,
+		`git reset HEAD~1 && git add -A && git commit -m "pw_ghish: Re-commit without Change-Id"`,
+		`git reset HEAD@{1} && git commit -m "pw_ghish: Re-commit without Change-Id"`,
+		`git reset a1b2c3d4 && git commit -m "pw_ghish: Re-commit without Change-Id"`,
+		`git merge --squash feature && git commit -m "pw_ghish: Squashed without Change-Id"`,
+		`git filter-branch --msg-filter 'sed s/foo/bar/' HEAD~2..HEAD`,
+	}
+	for _, cmd := range blockedChangeIDClobber {
+		reason := CheckAgentCommand(cmd)
+		if !strings.Contains(reason, "Change-Id") || !strings.Contains(reason, "COMMIT_EDITMSG_TMP") {
+			t.Errorf("expected CheckAgentCommand(%q) to block Change-Id clobbering with surgical file-edit instructions, got: %q", cmd, reason)
 		}
 	}
 

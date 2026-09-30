@@ -129,7 +129,8 @@ func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr
 	return defaultBranch(ctx, cfg, stderr)
 }
 
-// ValidateCommitStack checks if pushing HEAD would push multiple commits ahead of the target branch.
+// ValidateCommitStack checks if pushing HEAD would push multiple commits ahead of the target branch,
+// and validates commit messages and Change-Ids across all commits in the stack when available.
 // Returns an actionable error if count > 1 and stack is false.
 func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stack bool, commandName string) error {
 	count, countErr := git.CountCommitsAhead(ctx, branch)
@@ -152,6 +153,35 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 			return fmt.Errorf("pushing HEAD would create %d separate Gerrit changes targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr create --base <branch>\n\nTo create a stack of %d changes, pass --stack", count, branch, count)
 		}
 		return fmt.Errorf("pushing HEAD would push %d commits targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr push --base <branch>\n\nTo push a stack of %d changes, pass --stack", count, branch, count)
+	}
+
+	commits, err := git.StackCommits(ctx, branch)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return nil
+	}
+	seenChangeIDs := make(map[string]StackCommit, len(commits))
+	for _, c := range commits {
+		lowerSubj := strings.ToLower(strings.TrimSpace(c.Subject))
+		if strings.HasPrefix(lowerSubj, "fixup!") || strings.HasPrefix(lowerSubj, "squash!") || strings.HasPrefix(lowerSubj, "amend!") {
+			return fmt.Errorf("commit %s (%q) is an unsquashed fixup/squash commit.\n\nRun 'git rebase -i --autosquash origin/%s' before pushing", c.Hash, c.Subject, branch)
+		}
+		commitLabel := fmt.Sprintf("commit %s (%q)", c.Hash, c.Subject)
+		if err := CheckGitHubIssueSyntax(c.Body, commitLabel); err != nil {
+			return err
+		}
+		if err := CheckMultipleChangeIDs(c.Body, commitLabel); err != nil {
+			return err
+		}
+		if c.ChangeID == "" {
+			return fmt.Errorf("commit %s (%q) in stack is missing a Gerrit Change-Id footer", c.Hash, c.Subject)
+		}
+		if prev, dup := seenChangeIDs[c.ChangeID]; dup {
+			return fmt.Errorf("commits %s (%q) and %s (%q) in the stack share the same Change-Id %s.\n\nEach commit in a Gerrit stack must have a unique Change-Id", prev.Hash, prev.Subject, c.Hash, c.Subject, c.ChangeID)
+		}
+		seenChangeIDs[c.ChangeID] = c
 	}
 	return nil
 }
@@ -343,11 +373,141 @@ type VerifiedPushState struct {
 	CommitMsg      string
 	ChangeID       string
 	ExistingChange *gerrit.ChangeInfo
+	GerritQueried  bool
+}
+
+// queryExistingChangeByID queries Gerrit for the first change matching changeID.
+// Returns (change, true) if Gerrit responded without error (change is nil if 0 matches),
+// or (nil, false) if Gerrit could not be queried.
+func queryExistingChangeByID(ctx context.Context, client *gerrit.Client, changeID string, additionalFields ...string) (*gerrit.ChangeInfo, bool) {
+	if client == nil || changeID == "" {
+		return nil, false
+	}
+	opt := &gerrit.QueryChangeOptions{}
+	opt.Query = []string{changeID}
+	opt.AdditionalFields = additionalFields
+	changes, _, err := client.Changes.QueryChanges(ctx, opt)
+	if err != nil || changes == nil {
+		return nil, false
+	}
+	if len(*changes) > 0 {
+		return &(*changes)[0], true
+	}
+	return nil, true
+}
+
+// DetectClobberedChangeID inspects HEAD@{1} in the local Git reflog when
+// HEAD's Change-Id is not found on Gerrit. If HEAD@{1} carried a different
+// Change-Id that does exist on Gerrit, it returns that Change-Id and ChangeInfo.
+func DetectClobberedChangeID(ctx context.Context, cmd *cobra.Command, cfg *Config, currentChangeID string) (string, *gerrit.ChangeInfo) {
+	if cfg == nil {
+		return "", nil
+	}
+	prevMsg, err := cfg.GitClient().CommitMessage(ctx, "HEAD@{1}")
+	if err != nil {
+		return "", nil
+	}
+	prevChangeID := ExtractChangeID(prevMsg)
+	if prevChangeID == "" || prevChangeID == currentChangeID {
+		return "", nil
+	}
+	client, err := NewGerritClient(ctx, cmd)
+	if err != nil {
+		return "", nil
+	}
+	ch, ok := queryExistingChangeByID(ctx, client, prevChangeID)
+	if !ok || ch == nil {
+		return "", nil
+	}
+	return prevChangeID, ch
+}
+
+// FormatMissingChangePushError builds the error returned by 'gh pr push' when
+// HEAD's Change-Id does not exist on Gerrit, checking HEAD@{1} in the local
+// Git reflog to report the exact Change-Id and CL number if it was just clobbered.
+func FormatMissingChangePushError(ctx context.Context, cmd *cobra.Command, cfg *Config, state *VerifiedPushState, stack bool) error {
+	subject := strings.TrimSpace(strings.SplitN(state.CommitMsg, "\n", 2)[0])
+	createCmdStr := "gh pr create"
+	if stack {
+		createCmdStr = "gh pr create --stack"
+	}
+
+	var clobberHint string
+	if prevID, prevChange := DetectClobberedChangeID(ctx, cmd, cfg, state.ChangeID); prevChange != nil {
+		clobberHint = fmt.Sprintf(
+			"\nClobbered Change-Id detected in HEAD@{1}:\n"+
+				"  HEAD@{1} had Change-Id: %s (CL #%d: %q)\n"+
+				"  Restore 'Change-Id: %s' in HEAD before running 'gh pr push'.\n",
+			prevID, prevChange.Number, prevChange.Subject, prevID,
+		)
+	}
+
+	return fmt.Errorf(
+		"no existing Gerrit change found for HEAD's Change-Id %s (%q).\n%s\n"+
+			"'gh pr push' updates an existing CL, but no change with this Change-Id exists on Gerrit.\n"+
+			"  • If you recently ran 'git commit --amend -m' or rebased, the original Change-Id was replaced.\n"+
+			"    Restore the original Change-Id trailer in HEAD before pushing:\n"+
+			"      git log -1 --format=%%B HEAD > \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n"+
+			"      # Edit COMMIT_EDITMSG_TMP to restore the original Change-Id: footer\n"+
+			"      git commit --amend --only -F \"$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP\"\n"+
+			"  • To create a brand-new CL instead, run:\n"+
+			"      %s\n"+
+			"  • To bypass this check, pass --force",
+		state.ChangeID, subject, clobberHint, createCmdStr,
+	)
+}
+
+// CheckCommitMessageWarnings inspects a commit message for subject (>72 chars)
+// and prose body (>72 chars) line-length violations and returns warning strings.
+func CheckCommitMessageWarnings(msg string, label string) []string {
+	normalized := strings.ReplaceAll(strings.TrimRight(msg, "\r\n"), "\r\n", "\n")
+	if normalized == "" {
+		return nil
+	}
+	lines := strings.Split(normalized, "\n")
+	var warnings []string
+
+	subject := strings.TrimSpace(lines[0])
+	if len(subject) > 72 {
+		warnings = append(warnings, fmt.Sprintf(
+			"Warning: %s subject is %d characters (exceeds 72-character limit); amend the commit message (preserving Change-Id:) to shorten it.",
+			label, len(subject),
+		))
+	}
+
+	hasLongBodyLine := false
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		// Skip indented code blocks, trailers, and lines containing URLs.
+		if strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		if trailerRegex.MatchString(trimmed) || cherryPickFooterRegex.MatchString(trimmed) {
+			continue
+		}
+		if strings.Contains(line, "://") {
+			continue
+		}
+		if len(line) > 72 {
+			hasLongBodyLine = true
+			break
+		}
+	}
+	if hasLongBodyLine {
+		warnings = append(warnings, fmt.Sprintf(
+			"Warning: %s has body line(s) longer than 72 characters; amend the commit message (preserving Change-Id:) to wrap them.",
+			label,
+		))
+	}
+	return warnings
 }
 
 // VerifyHeadForPush ensures the HEAD commit has a valid Change-Id, checks that
-// the commit message contains no GitHub issue syntax, and optionally queries
-// Gerrit for an existing change matching the Change-Id.
+// the commit message contains no GitHub issue syntax or duplicate Change-Ids,
+// and optionally queries Gerrit for an existing change matching the Change-Id.
 func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, queryExisting bool) (*VerifiedPushState, error) {
 	if err := EnsureChangeID(ctx, cfg, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
@@ -360,19 +520,22 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 	if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
 		return nil, err
 	}
+	if err := CheckMultipleChangeIDs(logMsg, "the HEAD commit message"); err != nil {
+		return nil, err
+	}
+
+	for _, w := range CheckCommitMessageWarnings(logMsg, "HEAD commit") {
+		fmt.Fprintln(cmd.ErrOrStderr(), w)
+	}
 
 	changeID := ExtractChangeID(logMsg)
 	var existing *gerrit.ChangeInfo
+	var queried bool
 	if queryExisting && changeID != "" {
 		if client, err := NewGerritClient(ctx, cmd); err == nil {
-			opt := &gerrit.QueryChangeOptions{}
-			opt.Query = []string{changeID}
 			// DETAILED_LABELS so callers can see which labels this host
 			// actually defines (and their ranges) instead of guessing names.
-			opt.AdditionalFields = []string{"DETAILED_LABELS"}
-			if changes, _, err := client.Changes.QueryChanges(ctx, opt); err == nil && len(*changes) > 0 {
-				existing = &(*changes)[0]
-			}
+			existing, queried = queryExistingChangeByID(ctx, client, changeID, "DETAILED_LABELS")
 		}
 	}
 
@@ -380,5 +543,103 @@ func VerifyHeadForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, que
 		CommitMsg:      logMsg,
 		ChangeID:       changeID,
 		ExistingChange: existing,
+		GerritQueried:  queried,
 	}, nil
+}
+
+// VerifyStackChanges inspects all commits in origin/<branch>..HEAD when --stack
+// is enabled, emits formatting warnings across the stack, queries Gerrit for each
+// commit's Change-Id, prints the stack push plan, and enforces Change-Id continuity:
+//   - For 'push', every commit in the stack must match an existing Gerrit change.
+//   - For 'create', no [NEW CL] commit may sit below an [UPDATE] commit in the stack.
+func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, headState *VerifiedPushState, commandName string) error {
+	commits, err := cfg.GitClient().StackCommits(ctx, branch)
+	if err != nil || len(commits) == 0 {
+		return nil
+	}
+
+	for i, c := range commits {
+		if i == len(commits)-1 {
+			continue // HEAD warnings were already emitted by VerifyHeadForPush.
+		}
+		for _, w := range CheckCommitMessageWarnings(c.Body, fmt.Sprintf("commit %s (%q)", c.Hash, c.Subject)) {
+			fmt.Fprintln(cmd.ErrOrStderr(), w)
+		}
+	}
+
+	if headState == nil || !headState.GerritQueried {
+		return nil
+	}
+
+	client, err := NewGerritClient(ctx, cmd)
+	if err != nil {
+		return nil
+	}
+
+	existingByIdx := make([]*gerrit.ChangeInfo, len(commits))
+	for i, c := range commits {
+		if c.ChangeID == headState.ChangeID {
+			existingByIdx[i] = headState.ExistingChange
+			continue
+		}
+		ch, ok := queryExistingChangeByID(ctx, client, c.ChangeID)
+		if !ok {
+			return nil
+		}
+		existingByIdx[i] = ch
+	}
+
+	if len(commits) > 1 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Stack plan (%d commits -> %s):\n", len(commits), branch)
+		for i, c := range commits {
+			status := "[NEW CL]"
+			if existingByIdx[i] != nil {
+				status = fmt.Sprintf("[UPDATE #%d]", existingByIdx[i].Number)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "  %d. %s %-16s %s\n", i+1, c.Hash, status, c.Subject)
+		}
+	}
+
+	if commandName == "push" {
+		for i, c := range commits {
+			if existingByIdx[i] == nil {
+				if i == len(commits)-1 && c.ChangeID == headState.ChangeID {
+					return FormatMissingChangePushError(ctx, cmd, cfg, headState, true)
+				}
+				return fmt.Errorf(
+					"cannot push stack with 'gh pr push --stack': commit %s (%q) with Change-Id %s does not match any existing change on Gerrit.\n\n"+
+						"  • If a commit's Change-Id was overwritten during 'git commit --amend -m' or 'git rebase',\n"+
+						"    restore its original Change-Id trailer before pushing.\n"+
+						"  • If you added a new commit to the stack and want to create a new CL for it, run:\n"+
+						"      gh pr create --stack\n"+
+						"  • To bypass this check, pass --force",
+					c.Hash, c.Subject, c.ChangeID,
+				)
+			}
+		}
+	}
+
+	if commandName == "create" {
+		firstNewIdx := -1
+		for i, ex := range existingByIdx {
+			if ex == nil && firstNewIdx < 0 {
+				firstNewIdx = i
+			} else if ex != nil && firstNewIdx >= 0 {
+				newC := commits[firstNewIdx]
+				laterC := commits[i]
+				return fmt.Errorf(
+					"stack order error: commit %s (%q, Change-Id %s) has no matching change on Gerrit, "+
+						"but sits below existing change #%d (%s %q) in the stack.\n\n"+
+						"This usually happens when an earlier commit in the stack lost its Change-Id during a rebase or amend.\n"+
+						"  • Restore the original Change-Id on commit %s, or\n"+
+						"  • Pass --force if you intentionally inserted a new commit in the middle of an existing stack",
+					newC.Hash, newC.Subject, newC.ChangeID,
+					ex.Number, laterC.Hash, laterC.Subject,
+					newC.Hash,
+				)
+			}
+		}
+	}
+
+	return nil
 }

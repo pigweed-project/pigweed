@@ -139,6 +139,13 @@ be concise and descriptive.
 
     Bug: b/123456789 ```
 
+- **Change-Ids:**
+
+  - Preserve `Change-Id` footers when editing, amending, squashing, or rebasing
+    commits. Gerrit uses these to link git commits to Change Lists. If multiple
+    commits are combined, ensure ONLY the `Change-Id` from the earliest commit
+    in the series is retained in the final commit message.
+
 ## Gerrit, CI, Buganizer Issues, and Worktrees (`./gh`)
 
 Pigweed provides `./gh` (`//pw_ghish:gh-ish`), which exposes Gerrit code
@@ -163,6 +170,12 @@ For full workflows and flag references, load the
 4. **NEVER poll CI in a loop**: To wait on tryjobs, run
    `./gh pr checks --watch --fail-fast` as a background command and stop
    calling tools until notified.
+5. **NEVER clobber `Change-Id` footers**: Never run `git commit --amend -m`
+   without the existing `Change-Id:`. To amend code without changing the
+   message, use `git commit --amend --no-edit`. To edit a commit message, dump
+   it to a file (`git log -1 --format=%B HEAD > "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`), edit
+   the file surgically while keeping the original `Change-Id:` intact, and
+   apply it with `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP"`.
 
 ### Quick Command Reference
 
@@ -172,9 +185,9 @@ For full workflows and flag references, load the
   - Check out a CL locally: `./gh pr checkout <id>`
 - **Create, push, or edit a CL**:
   - Create new CL: `./gh pr create [--cq] [--draft] [-r <email>]`
-  - Upload new patchset: `./gh pr push [--cq]`
-  - Edit description or link bug (preserving Git trailers):
-    `./gh pr edit [<id>] --body "<text>" --bug b/<id>`
+  - Upload new patchset: `./gh pr push [--cq] [--stack]`
+  - Edit CL metadata (CQ, reviewers, topic, hashtags):
+    `./gh pr edit [<id>] [--cq] [--add-reviewer <email>] [--topic <name>]`
 - **Respond to or post review comments**:
   - Reply to inline thread & mark resolved (use `--draft` to stage privately):
     `./gh pr comment [<id>] --path <file> --line <line> -m "<msg>" --resolved [--draft]`
@@ -190,5 +203,3 @@ For full workflows and flag references, load the
 - **Warm Git/Bazel worktrees (`./gh wt`)**:
   - Allocate or switch project slot: `./gh wt use <project> --json`
   - View active & parked workstreams: `./gh wt list`
-
-
