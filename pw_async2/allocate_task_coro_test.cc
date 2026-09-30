@@ -14,8 +14,8 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/fallible_coro_task.h"
 #include "pw_async2/future_task.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
@@ -28,6 +28,7 @@ using ::pw::async2::CoroContext;
 using ::pw::async2::DispatcherForTest;
 using ::pw::async2::FallibleCoroTask;
 using ::pw::async2::FutureTask;
+using ::pw::async2::ReturnValuePolicy;
 
 // Use PW_NO_INLINE to prevent the compiler from optimizing the coroutine onto
 // the stack, ensuring dynamic allocation so allocation failure can be tested.
@@ -118,11 +119,12 @@ TEST_F(AllocateTaskCoroTest, AllocateFallibleAsSharedPtr) {
   dispatcher_.PostShared(task);
   dispatcher_.RunToCompletion();
 
-  EXPECT_EQ(task->value(), 42);
+  EXPECT_TRUE(task->is_complete());
 }
 
 TEST_F(AllocateTaskCoroTest, AllocateFallibleCoroTaskAsTask) {
-  auto task = dispatcher_.Post<FallibleCoroTask<int>>(
+  auto task = dispatcher_.Post<
+      FallibleCoroTask<int, pw::Function<void()>, ReturnValuePolicy::kKeep>>(
       alloc_, SimpleCoro(alloc_, 42), [] { FAIL(); });
   ASSERT_NE(task, nullptr);
 
@@ -184,7 +186,7 @@ TEST_F(AllocateTaskCoroTest, FallibleCoroTaskNestedCoroutineAllocationFailure) {
   dispatcher_.RunToCompletion();
 
   EXPECT_TRUE(handler_ran);
-  EXPECT_FALSE(task->has_value());
+  EXPECT_TRUE(task->is_complete());
 }
 
 TEST_F(AllocateTaskCoroTest, NestedCoroutineAllocationFailure) {

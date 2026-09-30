@@ -459,7 +459,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     public = [
       "public/pw_async2/coro.h",
       "public/pw_async2/coro_task.h",
-      "public/pw_async2/fallible_coro_task.h",
     ]
     public_deps = [
       ":internal",
@@ -476,7 +475,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     ]
     sources = [
       "coro.cc",
-      "coro_task.cc",
       "public/pw_async2/coro_or_else_task.h",
     ]
     allow_circular_includes_from = [ ":pw_async2" ]

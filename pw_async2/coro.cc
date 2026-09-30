@@ -24,6 +24,7 @@
 
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/layout.h"
+#include "pw_assert/check.h"
 #include "pw_async2/coro.h"
 #include "pw_bytes/alignment.h"
 #include "pw_log/log.h"
@@ -111,6 +112,13 @@ void CoroPromiseBase::SharedDelete(
 
   std::destroy_at<CoroAllocationHeader>(header);
   allocator->Deallocate(outer_alloc);
+}
+
+void CrashDueToCoroutineAllocationFailure() {
+  PW_CRASH(
+      "Attempted to run a Coro that failed to allocate or was never "
+      "initialized. Use a pw::Allocator with a larger capacity, or use "
+      "Coro::MakeFallible to gracefully handle allocation failure.");
 }
 
 }  // namespace pw::async2::internal

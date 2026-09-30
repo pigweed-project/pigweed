@@ -12,11 +12,10 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-#include "pw_async2/fallible_coro_task.h"
-
 #include "pw_allocator/null_allocator.h"
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
+#include "pw_async2/coro_task.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/value_future.h"
 #include "pw_containers/internal/test_helpers.h"
@@ -81,7 +80,7 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureProducesInvalidCoro) {
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
   EXPECT_TRUE(error_handler_ran);
-  EXPECT_FALSE(task.has_value());
+  EXPECT_FALSE(task.value().has_value());
 }
 
 enum class ObjectState {
@@ -144,7 +143,7 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
   EXPECT_EQ(before, ObjectState::kDestroyed);
   EXPECT_EQ(after, ObjectState::kUninitialized);
   EXPECT_TRUE(error_handler_ran);
-  EXPECT_FALSE(task.has_value());
+  EXPECT_FALSE(task.value().has_value());
 }
 
 PW_NO_INLINE Coro<Counter> GetAndDouble(CoroContext cx,
@@ -275,6 +274,80 @@ TEST(FallibleCoroTaskTestWithBigAllocator, AwaitNestedCoroutineAbortedCrashes) {
   dispatcher.RunToCompletion();
 
   EXPECT_TRUE(error_handler_ran);
+}
+
+PW_NO_INLINE Coro<Status> IncrementStatusCoro(CoroContext, int& counter) {
+  ++counter;
+  co_return OkStatus();
+}
+
+TEST_F(FallibleCoroTaskTest, ConfigureHandlerOnceAndAssignCoro) {
+  DispatcherForTest dispatcher;
+
+  int counter = 0;
+  int error_count = 0;
+  auto handler = [&] { ++error_count; };
+  FallibleCoroTask task(Coro<Status>(), handler);
+  static_assert(std::is_same_v<decltype(task),
+                               FallibleCoroTask<Status,
+                                                decltype(handler),
+                                                ReturnValuePolicy::kKeep>>);
+  EXPECT_FALSE(task.is_pendable());
+  EXPECT_FALSE(task.is_complete());
+
+  // First run: succeeds.
+  task = IncrementStatusCoro(alloc_, counter);
+  EXPECT_TRUE(task.is_pendable());
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(counter, 1);
+  EXPECT_EQ(error_count, 0);
+  EXPECT_TRUE(task.is_complete());
+
+  // Second run: succeeds.
+  task = IncrementStatusCoro(alloc_, counter);
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(counter, 2);
+  EXPECT_EQ(error_count, 0);
+
+  // Third run: allocation fails, configured handler runs.
+  alloc_.Exhaust();
+  task = IncrementStatusCoro(alloc_, counter);
+  EXPECT_TRUE(task.is_pendable());
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(counter, 2);
+  EXPECT_EQ(error_count, 1);
+  EXPECT_TRUE(task.is_complete());
+}
+
+TEST_F(FallibleCoroTaskTest, CtadWithFallbackValueHandler) {
+  DispatcherForTest dispatcher;
+
+  int counter = 0;
+  int error_count = 0;
+  auto handler = [&] {
+    ++error_count;
+    return Status::ResourceExhausted();
+  };
+  FallibleCoroTask task(handler);
+  static_assert(std::is_same_v<decltype(task),
+                               FallibleCoroTask<Status,
+                                                decltype(handler),
+                                                ReturnValuePolicy::kKeep>>);
+  EXPECT_FALSE(task.is_pendable());
+
+  alloc_.Exhaust();
+  task = IncrementStatusCoro(alloc_, counter);
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(error_count, 1);
+  EXPECT_EQ(task.Wait(), Status::ResourceExhausted());
 }
 
 }  // namespace

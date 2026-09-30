@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include "pw_async2/coro_task.h"
+
 #include <concepts>
 
 #include "pw_allocator/testing.h"
@@ -58,8 +60,7 @@ TEST_F(FutureTaskCoroTest, RunOnce) {
 TEST_F(FutureTaskCoroTest, RunOnceDiscard) {
   DispatcherForTest dispatcher;
 
-  FutureTask<Coro<int>, ReturnValuePolicy::kDiscard> task(
-      DoubleIt(coro_cx_, 1));
+  CoroTask<int> task(DoubleIt(coro_cx_, 1));
   dispatcher.Post(task);
 
   dispatcher.RunToCompletion();
@@ -174,6 +175,38 @@ TEST_F(FutureTaskCoroTest, DefaultConstructAndAssignFallibleCoro) {
 
   EXPECT_TRUE(error_handler_ran);
   EXPECT_EQ(task.Wait(), std::nullopt);
+}
+
+Coro<pw::Status> IncrementStatusCoro(CoroContext, int& counter) {
+  ++counter;
+  co_return pw::OkStatus();
+}
+
+TEST_F(FutureTaskCoroTest, CoroTaskDefaultDiscard) {
+  DispatcherForTest dispatcher;
+
+  int counter = 0;
+  CoroTask<pw::Status> task;
+  EXPECT_FALSE(task.is_pendable());
+
+  task = IncrementStatusCoro(coro_cx_, counter);
+  EXPECT_TRUE(task.is_pendable());
+
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(counter, 1);
+  EXPECT_TRUE(task.is_complete());
+}
+
+TEST_F(FutureTaskCoroTest, CoroTaskCtad) {
+  DispatcherForTest dispatcher;
+
+  CoroTask task(DoubleIt(coro_cx_, 21));
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+
+  EXPECT_EQ(task.Wait(), 42);
 }
 
 }  // namespace

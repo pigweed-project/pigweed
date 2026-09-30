@@ -13,26 +13,52 @@
 // the License.
 #pragma once
 
+#include <concepts>
 #include <type_traits>
 
 #include "pw_async2/coro.h"
 #include "pw_async2/future_task.h"
+#include "pw_function/function.h"
 
 namespace pw::async2 {
 
 /// @submodule{pw_async2,coroutines}
 
-/// A `Task` that delegates to a provided `Coro<T>`.
+/// A `Task` that runs a `Coro<T>` to completion and discards its return value
+/// by default.
 ///
-/// `CoroTask` is an alias of `FutureTask<Coro<T>, policy>`.
+/// `CoroTask` is an alias of `FutureTask<Coro<T>, kPolicy>`. Pass
+/// `ReturnValuePolicy::kKeep` (or use `FutureTask<Coro<T>>` directly) to store
+/// the coroutine's return value for use with `Wait()` or `value()`.
 ///
-/// @deprecated Use `FutureTask` instead.
-template <typename T = void,
-          ReturnValuePolicy policy = std::is_void_v<T>
-                                         ? ReturnValuePolicy::kDiscard
-                                         : ReturnValuePolicy::kKeep>
-using CoroTask [[deprecated("Use FutureTask instead")]] =
-    FutureTask<Coro<T>, policy>;
+/// Crashes if coroutine frame allocation fails. Use `FallibleCoroTask` to
+/// handle allocation failures gracefully.
+template <typename T, ReturnValuePolicy kPolicy = ReturnValuePolicy::kDiscard>
+using CoroTask = FutureTask<Coro<T>, kPolicy>;
+
+/// A `Task` that runs a `Coro<T>` to completion, discards its return value by
+/// default, and invokes a handler if coroutine allocation fails.
+///
+/// `FallibleCoroTask` is an alias of
+/// `FutureTask<FallibleCoro<T, Handler>, kPolicy>`. Pass
+/// `ReturnValuePolicy::kKeep` (or use `FutureTask<FallibleCoro<T, Handler>>`
+/// directly) to store the coroutine's return value.
+template <typename T,
+          typename Handler = Function<void()>,
+          ReturnValuePolicy kPolicy = ReturnValuePolicy::kDiscard>
+using FallibleCoroTask = FutureTask<FallibleCoro<T, Handler>, kPolicy>;
+
+template <typename T, typename Handler>
+FutureTask(Coro<T>&&, Handler&&)
+    -> FutureTask<FallibleCoro<T, std::decay_t<Handler>>>;
+
+template <typename Handler>
+  requires(!Future<std::decay_t<Handler>> &&
+           std::invocable<std::decay_t<Handler>> &&
+           !std::is_void_v<std::invoke_result_t<std::decay_t<Handler>>>)
+FutureTask(Handler&&)
+    -> FutureTask<FallibleCoro<std::invoke_result_t<std::decay_t<Handler>>,
+                               std::decay_t<Handler>>>;
 
 /// @endsubmodule
 

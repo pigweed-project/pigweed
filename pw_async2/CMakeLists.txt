@@ -411,10 +411,8 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     HEADERS
       public/pw_async2/coro.h
       public/pw_async2/coro_task.h
-      public/pw_async2/fallible_coro_task.h
     SOURCES
       coro.cc
-      coro_task.cc
     PRIVATE_DEPS
       pw_assert.check
       pw_bytes.alignment

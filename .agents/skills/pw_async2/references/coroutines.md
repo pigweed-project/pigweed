@@ -87,6 +87,15 @@ auto task = dispatcher.Post(
 auto task = dispatcher.Post(
     allocator,
     ReadAndProcess(allocator, sensor).MakeFallible());
+
+// For class members that discard the coroutine's return value and may be
+// restarted across multiple runs, use CoroTask or FallibleCoroTask from
+// "pw_async2/coro_task.h":
+pw::async2::FallibleCoroTask<pw::Status> member_task_([] {
+  PW_LOG_ERROR("Coroutine frame allocation failed");
+});
+member_task_ = ReadAndProcess(allocator, sensor);
+dispatcher.Post(member_task_);
 ```
 
 ---

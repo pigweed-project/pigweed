@@ -566,12 +566,10 @@ cc_library(
     name = "coro",
     srcs = [
         "coro.cc",
-        "coro_task.cc",
     ],
     hdrs = [
         "public/pw_async2/coro.h",
         "public/pw_async2/coro_task.h",
-        "public/pw_async2/fallible_coro_task.h",
     ],
     implementation_deps = [
         "//pw_assert:check",
@@ -946,7 +944,6 @@ filegroup(
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/dispatcher_for_test.h",
         "public/pw_async2/epoll_dispatcher.h",
-        "public/pw_async2/fallible_coro_task.h",
         "public/pw_async2/func_task.h",
         "public/pw_async2/future.h",
         "public/pw_async2/future_or_value.h",

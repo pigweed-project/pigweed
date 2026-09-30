@@ -108,9 +108,12 @@ crashing:
 handle a child coroutine's allocation failure locally without aborting the
 calling coroutine.
 
-:cc:`FutureTask <pw::async2::FutureTask>` can also be stack or statically
-allocated instead of dynamically allocated with :cc:`Dispatcher::Post`. This is
-not recommended, as it is more complex and does not eliminate all allocations.
+:cc:`FutureTask <pw::async2::FutureTask>` (or the :cc:`CoroTask
+<pw::async2::CoroTask>` and :cc:`FallibleCoroTask
+<pw::async2::FallibleCoroTask>` aliases in ``pw_async2/coro_task.h``, which
+discard the coroutine's return value) can also be stack or statically allocated
+instead of dynamically allocated with :cc:`Dispatcher::Post`. This is not
+recommended, as it is more complex and does not eliminate all allocations.
 Coroutines always dynamically allocate their frames.
 
 .. literalinclude:: examples/basic_coro.cc
