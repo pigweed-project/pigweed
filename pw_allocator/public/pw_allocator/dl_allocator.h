@@ -21,6 +21,7 @@
 #include "pw_allocator/bucket/fast_sorted.h"
 #include "pw_allocator/bucket/unordered.h"
 #include "pw_allocator/config.h"
+#include "pw_allocator/internal/bit.h"
 
 namespace pw::allocator {
 

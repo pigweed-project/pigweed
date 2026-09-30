@@ -114,8 +114,8 @@ class ForwardingAllocator : public pw::Allocator {
   }
 
   /// @copydoc Allocator::DoBeforeReallocate
-  void DoBeforeReallocate(void* ptr, Layout new_layout) override {
-    BeforeReallocate(allocator(), ptr, new_layout);
+  [[nodiscard]] bool DoBeforeReallocate(void* ptr, Layout new_layout) override {
+    return BeforeReallocate(allocator(), ptr, new_layout);
   }
 
   /// @copydoc Allocator::DoAfterReallocateCopy

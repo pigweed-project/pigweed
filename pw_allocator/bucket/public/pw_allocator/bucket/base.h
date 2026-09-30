@@ -180,24 +180,6 @@ class BucketBase {
   size_t max_inner_size_ = std::numeric_limits<size_t>::max();
 };
 
-/// Like cpp20:countr_zero, but returns an unsigned type.
-///
-/// Useful for managing the bitmaps that several allocators use to track empty
-/// buckets.
-template <typename T, typename U = size_t>
-constexpr U CountRZero(T t) {
-  return static_cast<U>(cpp20::countr_zero(t));
-}
-
-/// Like cpp20:countl_zero, but returns an unsigned type.
-///
-/// Useful for managing the bitmaps that several allocators use to track empty
-/// buckets.
-template <typename T, typename U = size_t>
-constexpr U CountLZero(T t) {
-  return static_cast<U>(cpp20::countl_zero(t));
-}
-
 /// @}
 
 // Template method implementations.

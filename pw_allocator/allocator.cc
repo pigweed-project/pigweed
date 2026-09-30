@@ -24,7 +24,9 @@ namespace pw {
 using ::pw::allocator::Layout;
 
 void* Allocator::DoReallocate(void* ptr, Layout new_layout) {
-  DoBeforeReallocate(ptr, new_layout);
+  if (!DoBeforeReallocate(ptr, new_layout)) {
+    return nullptr;
+  }
 
   // Can the reallocation be achieved by simply resizing?
   if (IsAlignedAs(ptr, new_layout.alignment()) &&

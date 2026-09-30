@@ -46,6 +46,9 @@ class BackgroundThreadCore : public ::pw::thread::ThreadCore {
   /// Blocks until the background thread stops.
   void Await();
 
+  /// Resets this object after a call to `Stop` or `Await`.
+  void Reset();
+
  private:
   void Run() override;
 

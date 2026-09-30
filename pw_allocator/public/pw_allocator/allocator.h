@@ -315,26 +315,35 @@ class Allocator : public Deallocator {
   /// `DoAllocate`, `DoDeallocate` and `DoResize` will be used for the
   /// reallocation. This is especially important for allocators such as
   /// `ForwardingAllocator` that use composition instead of inheritance.
+  ///
+  /// The most common case where this method must be overridden is when one lock
+  /// must be held across the calls to `DoResize`, `DoDeallocate` and
+  /// `DoAllocate`, such as in `SynchronizedAllocator`. In this case, the
+  /// implementation should typically just invoke the default implementation
+  /// while holding the lock.
   virtual void* DoReallocate(void* ptr, Layout new_layout);
 
   /// Static version of `DoBeforeReallocate` that allows forwarding allocators
   /// to call it on wrapped allocators.
-  static void BeforeReallocate(Allocator& allocator,
-                               void* ptr,
-                               Layout new_layout) {
-    allocator.DoBeforeReallocate(ptr, new_layout);
+  [[nodiscard]] static bool BeforeReallocate(Allocator& allocator,
+                                             void* ptr,
+                                             Layout new_layout) {
+    return allocator.DoBeforeReallocate(ptr, new_layout);
   }
 
   /// Called at the start of the default implementation of `DoReallocate`.
   ///
-  /// By default, does nothing. Derived types may implement this method to add
-  /// additional behavior. If they do, they must call `DoBeforeReallocate` on
-  /// their base type just before returning.
+  /// By default, returns true. Derived types may implement this method to add
+  /// additional behavior. If they do, they must return false or the value
+  /// returned by `DoBeforeReallocate`. If false is returned, the reallocation
+  /// fails and returns null.
   ///
   /// `ptr` is guaranteed to be non-null, and `new_layout.size()` is guaranteed
   /// to be non-zero.
-  virtual void DoBeforeReallocate([[maybe_unused]] void* ptr,
-                                  [[maybe_unused]] Layout new_layout) {}
+  [[nodiscard]] virtual bool DoBeforeReallocate(
+      [[maybe_unused]] void* ptr, [[maybe_unused]] Layout new_layout) {
+    return true;
+  }
 
   /// Static version of `DoAfterReallocateCopy` that allows forwarding
   /// allocators to call it on wrapped allocators.

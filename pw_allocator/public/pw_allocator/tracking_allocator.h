@@ -95,7 +95,7 @@ class TrackingAllocator : public ForwardingAllocator {
   bool DoResize(void* ptr, size_t new_size) override;
 
   /// @copydoc Allocator::DoBeforeReallocate
-  void DoBeforeReallocate(void* ptr, Layout new_layout) override;
+  bool DoBeforeReallocate(void* ptr, Layout new_layout) override;
 
   /// @copydoc Allocator::DoAfterReallocateDone
   void DoAfterReallocateDone(Layout new_layout, void* new_ptr) override;
@@ -157,10 +157,10 @@ bool TrackingAllocator<MetricsType>::DoResize(void* ptr, size_t new_size) {
 }
 
 template <typename MetricsType>
-void TrackingAllocator<MetricsType>::DoBeforeReallocate(void* ptr,
-                                                        Layout new_layout) {
+[[nodiscard]] bool TrackingAllocator<MetricsType>::DoBeforeReallocate(
+    void* ptr, Layout new_layout) {
   metrics_.set_reallocating(true);
-  Base::DoBeforeReallocate(ptr, new_layout);
+  return Base::DoBeforeReallocate(ptr, new_layout);
 }
 
 template <typename MetricsType>

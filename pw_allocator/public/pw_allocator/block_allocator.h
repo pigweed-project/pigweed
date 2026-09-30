@@ -443,7 +443,9 @@ Result<Layout> BlockAllocator<BlockType>::DoGetInfo(InfoType info_type,
     return Layout(capacity_);
   }
   // Get a block from the given pointer.
-  if (ptr < first_->UsableSpace() || last_->UsableSpace() < ptr) {
+  PW_ASSERT(first_ != nullptr && last_ != nullptr);
+  if (ptr < first_->UsableSpace() || last_->UsableSpace() < ptr ||
+      !IsAlignedAs(ptr, BlockType::kAlignment)) {
     return Status::NotFound();
   }
   const auto* block = BlockType::FromUsableSpace(ptr);

@@ -21,6 +21,7 @@ pw_add_library(pw_allocator STATIC
     public/pw_allocator/allocator.h
     public/pw_allocator/capability.h
     public/pw_allocator/deallocator.h
+    public/pw_allocator/internal/bit.h
     public/pw_allocator/internal/control_block.h
     public/pw_allocator/internal/managed_ptr.h
     public/pw_allocator/layout.h
@@ -176,6 +177,7 @@ pw_add_library(pw_allocator.buddy_allocator STATIC
     pw_containers.vector
     pw_status
   PRIVATE_DEPS
+    pw_allocator
     pw_assert.check
     pw_third_party.fuchsia.stdcompat
   SOURCES
@@ -301,6 +303,7 @@ pw_add_library(pw_allocator.framing_allocator STATIC
     pw_assert.assert
     pw_bytes.alignment
     pw_preprocessor
+    pw_status
   PRIVATE_DEPS
     pw_assert.check
   SOURCES
@@ -334,6 +337,7 @@ pw_add_library(pw_allocator.guarded_allocator STATIC
     public
   PUBLIC_DEPS
     pw_allocator
+    pw_allocator.framing_allocator
     pw_allocator.synchronized_allocator
     pw_result
     pw_sync.borrow

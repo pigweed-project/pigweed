@@ -19,6 +19,7 @@
 
 #include "lib/stdcompat/bit.h"
 #include "pw_allocator/hardening.h"
+#include "pw_allocator/internal/bit.h"
 #include "pw_assert/check.h"
 #include "pw_bytes/alignment.h"
 

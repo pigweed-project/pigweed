@@ -29,6 +29,7 @@ pw_source_set("pw_allocator") {
     "public/pw_allocator/allocator.h",
     "public/pw_allocator/capability.h",
     "public/pw_allocator/deallocator.h",
+    "public/pw_allocator/internal/bit.h",
     "public/pw_allocator/internal/control_block.h",
     "public/pw_allocator/internal/managed_ptr.h",
     "public/pw_allocator/layout.h",
@@ -205,6 +206,7 @@ pw_source_set("buddy_allocator") {
     dir_pw_status,
   ]
   deps = [
+    ":pw_allocator",
     "$dir_pw_assert:check",
     "$dir_pw_bytes:alignment",
     "$pw_external_fuchsia:stdcompat",
@@ -316,6 +318,7 @@ pw_source_set("framing_allocator") {
     "$dir_pw_assert:assert",
     "$dir_pw_bytes:alignment",
     dir_pw_preprocessor,
+    dir_pw_status,
   ]
   sources = [ "framing_allocator.cc" ]
   deps = [ "$dir_pw_assert:check" ]
@@ -339,6 +342,7 @@ pw_source_set("guarded_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/guarded_allocator.h" ]
   public_deps = [
+    ":framing_allocator",
     ":pw_allocator",
     ":synchronized_allocator",
     "$dir_pw_sync:borrow",

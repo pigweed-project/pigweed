@@ -73,7 +73,14 @@ class Layout {
   constexpr size_t alignment() const { return alignment_; }
 
   /// Creates a Layout for the given type.
-  template <typename T, std::enable_if_t<!std::is_array_v<T>, int> = 0>
+  template <typename T, std::enable_if_t<std::is_same_v<T, void>, int> = 0>
+  static constexpr Layout Of() {
+    return Layout(0, 1);
+  }
+
+  template <typename T,
+            std::enable_if_t<!std::is_same_v<T, void> && !std::is_array_v<T>,
+                             int> = 0>
   static constexpr Layout Of() {
     return Layout(sizeof(T), alignof(T));
   }

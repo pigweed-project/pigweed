@@ -35,6 +35,7 @@ cc_library(
         "public/pw_allocator/allocator.h",
         "public/pw_allocator/capability.h",
         "public/pw_allocator/deallocator.h",
+        "public/pw_allocator/internal/bit.h",
         "public/pw_allocator/internal/control_block.h",
         "public/pw_allocator/internal/managed_ptr.h",
         "public/pw_allocator/layout.h",
@@ -188,6 +189,7 @@ cc_library(
     srcs = ["buddy_allocator.cc"],
     hdrs = ["public/pw_allocator/buddy_allocator.h"],
     implementation_deps = [
+        ":pw_allocator",
         "//pw_assert:check",
         "//pw_bytes:alignment",
         "//third_party/fuchsia:stdcompat",
@@ -321,6 +323,7 @@ cc_library(
         "//pw_assert:assert",
         "//pw_bytes:alignment",
         "//pw_preprocessor",
+        "//pw_status",
     ],
 )
 
@@ -355,6 +358,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_allocator",
+        "//pw_allocator:framing_allocator",
         "//pw_allocator:synchronized_allocator",
         "//pw_result",
         "//pw_sync:borrow",

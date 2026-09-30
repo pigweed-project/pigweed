@@ -1594,13 +1594,17 @@ TEST(ForwardListTest, TryOperationsReturnFalseOnExhaustion) {
   ExpectElements(list, {1});
 }
 
-class FailingAllocator : public pw::Allocator {
+class FailingAllocator : public ::pw::allocator::ForwardingAllocator {
+ private:
+  using Base = ::pw::allocator::ForwardingAllocator;
+
  public:
   explicit FailingAllocator(pw::Allocator& delegate,
                             size_t successful_allocations)
-      : Allocator(delegate.capabilities()),
-        delegate_(delegate),
-        remaining_allocations_(successful_allocations) {}
+      : Base(delegate.capabilities()),
+        remaining_allocations_(successful_allocations) {
+    Base::Init(delegate);
+  }
 
   void set_remaining_allocations(size_t n) { remaining_allocations_ = n; }
 
@@ -1610,16 +1614,9 @@ class FailingAllocator : public pw::Allocator {
       return nullptr;
     }
     --remaining_allocations_;
-    return delegate_.Allocate(layout);
+    return Base::DoAllocate(layout);
   }
 
-  void DoDeallocate(void* ptr) override { delegate_.Deallocate(ptr); }
-
-  bool DoResize(void* ptr, size_t new_size) override {
-    return delegate_.Resize(ptr, new_size);
-  }
-
-  pw::Allocator& delegate_;
   size_t remaining_allocations_;
 };
 

@@ -84,6 +84,8 @@ void BackgroundThreadCore::Run() {
   semaphore_.release();
 }
 
+void BackgroundThreadCore::Reset() { std::ignore = semaphore_.try_acquire(); }
+
 // Background methods.
 
 Background::Background(BackgroundThreadCore& core) : core_(core) {
@@ -93,6 +95,7 @@ Background::Background(BackgroundThreadCore& core) : core_(core) {
 Background::~Background() {
   core_.Stop();
   Await();
+  core_.Reset();
 }
 
 void Background::Await() {
@@ -144,6 +147,9 @@ void SyncAllocatorTest::TestResize() {
   while (!allocations.full()) {
     Layout layout(kSize, kAlignment);
     void* ptr = allocator.Allocate(layout);
+    if (ptr == nullptr) {
+      break;
+    }
     Allocation allocation{ptr, layout};
     allocation.Paint();
     allocations.push_back(allocation);
@@ -188,6 +194,9 @@ void SyncAllocatorTest::TestReallocate() {
   while (!allocations.full()) {
     Layout layout(kSize, kAlignment);
     void* ptr = allocator.Allocate(layout);
+    if (ptr == nullptr) {
+      break;
+    }
     Allocation allocation{ptr, layout};
     allocation.Paint();
     allocations.push_back(allocation);

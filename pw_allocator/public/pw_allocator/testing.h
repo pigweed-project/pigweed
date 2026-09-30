@@ -207,11 +207,11 @@ class AllocatorForTest : public ForwardingAllocator {
   }
 
   /// @copydoc Allocator::DoBeforeReallocate
-  void DoBeforeReallocate(void* ptr, Layout new_layout) override {
+  [[nodiscard]] bool DoBeforeReallocate(void* ptr, Layout new_layout) override {
     reallocate_ptr_ = ptr;
     reallocate_old_layout_ = Layout::Unwrap(GetRequestedLayout(ptr));
     reallocate_new_layout_ = new_layout;
-    Base::DoBeforeReallocate(ptr, new_layout);
+    return Base::DoBeforeReallocate(ptr, new_layout);
   }
 
   alignas(BlockType::kAlignment) std::array<std::byte, kBufferSize> buffer_{};

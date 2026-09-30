@@ -16,94 +16,80 @@
 
 #include "pw_assert/check.h"
 
-namespace pw::allocator {
-namespace internal {
+namespace pw::allocator::internal {
 
-bool BaseFramingAllocator::CrashOnUnalignedIfStrict(bool strict,
-                                                    const void* data) {
-  if (strict) {
-    PW_CRASH("data pointer %p is not properly aligned to a %zu byte boundary",
-             data,
-             alignof(size_t));
-  }
-  return false;
-}
-
-bool BaseFramingAllocator::CrashOnBadDataIfStrict(bool strict,
-                                                  const void* data) {
-  if (strict) {
-    PW_CRASH("data pointer %p cannot be converted to a frame", data);
-  }
-  return false;
-}
-
-bool BaseFramingAllocator::CrashOnBadPrefixOffsetIfStrict(bool strict,
-                                                          const void* data,
-                                                          size_t prefix_offset,
-                                                          size_t min_size) {
-  if (strict) {
-    if (min_size == 0) {
+void DefaultFrameErrorHandler::HandleError(FrameError error,
+                                           const void* ptr1,
+                                           size_t val1,
+                                           const void* ptr2,
+                                           size_t val2) {
+  switch (error.value()) {
+    case FrameError::kDataNotAligned:
       PW_CRASH(
-          "data pointer %p has a prefix offset of %zu which appears corrupted: "
-          "should be aligned to %zu bytes",
-          data,
-          prefix_offset,
-          alignof(size_t));
-    } else {
+          "data pointer %p is not aligned to a %zu byte boundary", ptr1, val1);
+      break;
+    case FrameError::kDataTooSmall:
+      PW_CRASH("data pointer %p is too low to get prefix offset", ptr1);
+      break;
+    case FrameError::kDataTooSmallForPrefix:
+      PW_CRASH("data pointer %p is too low for prefix offset %zu", ptr1, val1);
+      break;
+    case FrameError::kFrameNull:
+      PW_CRASH("frame pointer is null");
+      break;
+    case FrameError::kFrameNotAligned:
       PW_CRASH(
-          "data pointer %p has a prefix offset of %zu which appears corrupted: "
-          "should be at least %zu bytes and aligned to %zu bytes",
-          data,
-          prefix_offset,
-          min_size,
-          alignof(size_t));
-    }
+          "frame pointer %p is not aligned to a %zu byte boundary", ptr1, val1);
+      break;
+    case FrameError::kFrameTooSmall:
+      PW_CRASH(
+          "frame pointer %p has a size of %zu that is too small to get a frame "
+          "offset",
+          ptr1,
+          val1);
+      break;
+    case FrameError::kFrameOffsetTooSmall:
+      PW_CRASH(
+          "frame pointer %p has a size of %zu that is smaller than its frame "
+          "offset of %zu",
+          ptr1,
+          val1,
+          val2);
+      break;
+    case FrameError::kSuffixNotAligned:
+      PW_CRASH("suffix pointer 0x%zx is not aligned to a %zu byte boundary",
+               val1,
+               val2);
+      break;
+    case FrameError::kDataTooSmallForSuffix:
+      PW_CRASH(
+          "data pointer %p has a size of %zu that is too small for a suffix "
+          "offset of %zu",
+          ptr1,
+          val1,
+          val2);
+      break;
+    case FrameError::kUnrecognizedFrame:
+      PW_CRASH("frame pointer %p not recognized by allocator", ptr1);
+      break;
+    case FrameError::kFramePointerMismatch:
+      PW_CRASH(
+          "frame pointer %p does not match GetFrame(GetData(%p)), which is %p",
+          ptr1,
+          ptr1,
+          ptr2);
+      break;
+    case FrameError::kDataPointerMismatch:
+      PW_CRASH(
+          "data pointer %p does not match GetData(GetFrame(%p)), which is %p",
+          ptr1,
+          ptr1,
+          ptr2);
+      break;
+    case FrameError::kMaxValue:
+      // No-op; handled by chained error handlers.
+      break;
   }
-  return false;
 }
 
-bool BaseFramingAllocator::CrashOnWrongPrefixOffsetIfStrict(
-    bool strict,
-    const void* data,
-    size_t data_prefix_offset,
-    const void* frame,
-    size_t frame_prefix_offset) {
-  if (strict) {
-    PW_CRASH(
-        "data pointer %p has a prefix offset of %zu which does not match the "
-        "prefix offset of frame pointer %p, which is %zu",
-        data,
-        data_prefix_offset,
-        frame,
-        frame_prefix_offset);
-  }
-  return false;
-}
-
-bool BaseFramingAllocator::CrashOnBadSuffixOffsetIfStrict(bool strict,
-                                                          const void* data,
-                                                          size_t suffix_offset,
-                                                          size_t usable_size) {
-  if (strict) {
-    PW_CRASH(
-        "data pointer %p has a suffix offset of %zu which appears corrupted: "
-        "exceeds usable memory of %zu bytes",
-        data,
-        suffix_offset,
-        usable_size);
-  }
-  return false;
-}
-
-bool BaseFramingAllocator::CrashOnUnrecognized(bool strict, const void* frame) {
-  if (strict) {
-    PW_CRASH(
-        "frame pointer %p is not recognized as an allocation from the "
-        "underlying allocator",
-        frame);
-  }
-  return false;
-}
-
-}  // namespace internal
-}  // namespace pw::allocator
+}  // namespace pw::allocator::internal

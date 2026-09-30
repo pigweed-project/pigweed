@@ -39,9 +39,10 @@ class SynchronizedAllocator final : public ForwardingAllocator {
  private:
   using Base = ForwardingAllocator;
   using Borrowable = sync::Borrowable<pw::Allocator, LockType>;
-  using BorrowedPointer = sync::BorrowedPointer<pw::Allocator, LockType>;
 
  public:
+  using BorrowedPointer = sync::BorrowedPointer<pw::Allocator, LockType>;
+
   constexpr SynchronizedAllocator(const Capabilities& capabilities) noexcept
       : Base(capabilities) {}
 

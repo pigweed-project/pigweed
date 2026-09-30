@@ -16,8 +16,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <mutex>
+#include <optional>
 
 #include "pw_allocator/first_fit.h"
 #include "pw_allocator/sync_allocator_testing.h"
@@ -36,6 +38,8 @@ namespace {
 static constexpr size_t kCapacity = 8192;
 
 using ::pw::allocator::GuardedAllocator;
+using ::pw::allocator::Layout;
+using ::pw::allocator::internal::GuardError;
 using ::pw::allocator::test::Background;
 using ::pw::allocator::test::BackgroundThreadCore;
 using ::pw::allocator::test::SyncAllocatorTest;
@@ -47,10 +51,30 @@ enum class Mode {
   kValidateAll,
 };
 
+// An "error handler" that records the first error encountered, allowing
+// failures to be detected and inspected without crashing.
+struct GuardErrorRecorder {
+  static inline std::optional<GuardError> error = std::nullopt;
+
+  static void Reset() { error.reset(); }
+
+  static void HandleError(GuardError err,
+                          const void* = nullptr,
+                          size_t = 0,
+                          const void* = nullptr,
+                          size_t = 0) {
+    if (!error.has_value()) {
+      error = err;
+    }
+  }
+};
+
 /// Thread body that validates a guarded allocator's blocks in the background.
 template <typename GuardedAllocatorType>
 class GuardedAllocatorTestThreadCore : public BackgroundThreadCore {
  public:
+  using BlockType = typename GuardedAllocatorType::BlockType;
+
   GuardedAllocatorTestThreadCore(GuardedAllocatorType& allocator)
       : allocator_(allocator) {}
 
@@ -59,20 +83,20 @@ class GuardedAllocatorTestThreadCore : public BackgroundThreadCore {
     mode_ = mode;
   }
 
-  void* GetInvalid() const PW_LOCKS_EXCLUDED(mutex_) {
+  BlockType* GetInvalid() const PW_LOCKS_EXCLUDED(mutex_) {
     std::lock_guard lock(mutex_);
     return invalid_;
   }
 
-  /// Clobbers the byte at the given location and returns the original byte.
+  /// Clobbers the byte at the given location and saves the original byte.
   ///
   /// This is done in a thread-safe manner to allow the allocator to detect the
   /// corruption without TSAN flagging it first.
-  void Corrupt(uint8_t* ptr) PW_LOCKS_EXCLUDED(mutex_) {
+  void Corrupt(uint8_t* ptr, size_t pattern = 0xFF) PW_LOCKS_EXCLUDED(mutex_) {
     std::lock_guard lock(mutex_);
     original_ = *ptr;
     corrupted_ = ptr;
-    *corrupted_ ^= 0xFF;
+    *corrupted_ ^= static_cast<uint8_t>(pattern & 0xFF);
   }
 
   /// Restores a corrupted byte to its original value.
@@ -98,7 +122,7 @@ class GuardedAllocatorTestThreadCore : public BackgroundThreadCore {
  private:
   mutable ::pw::sync::Mutex mutex_;
   Mode mode_ = Mode::kValidateOne;
-  void* invalid_ PW_GUARDED_BY(mutex_) = nullptr;
+  BlockType* invalid_ PW_GUARDED_BY(mutex_) = nullptr;
   uint8_t* corrupted_ PW_GUARDED_BY(mutex_) = nullptr;
   uint8_t original_ PW_GUARDED_BY(mutex_) = 0;
   GuardedAllocatorType& allocator_;
@@ -111,16 +135,26 @@ class GuardedAllocatorTestThreadCore : public BackgroundThreadCore {
 template <typename LockType>
 class GuardedAllocatorTestBase : public SyncAllocatorTest {
  protected:
-  using GuardedAllocatorType = GuardedAllocator<BlockAllocator, LockType>;
+  using GuardedAllocatorType =
+      GuardedAllocator<BlockAllocator, LockType, GuardErrorRecorder>;
   using BlockType = BlockAllocator::BlockType;
 
   // This necessarily violates the encapsulation of GuardedAllocator in order
-  // to precisely simulate overflows of a single byte. Keep it in sync with the
-  // constant of the same name in guarded_allocator.cc
-  static constexpr size_t kMinPrefixSize = sizeof(size_t) * 2;
+  // to precisely simulate overflows of a single byte. This should match
+  // `sizeof(suffix_offset)` and `sizeof(Suffix)` for the `FramingAllocator`,
+  // which for `GuardedAllocator` are both `size_t`.
+  static constexpr size_t kGuardValueSize = sizeof(size_t);
 
-  GuardedAllocatorTestBase() : guarded_(allocator_), core_(guarded_) {
-    allocator_.Init(buffer_);
+  GuardedAllocatorTestBase()
+      : buffer_{}, allocator_(buffer_), guarded_(allocator_), core_(guarded_) {
+    GuardErrorRecorder::Reset();
+  }
+
+  // Another encapsulation violation. This gets the block from the data pointer.
+  const BlockType* GetBlock(const void* data) {
+    auto addr = reinterpret_cast<uintptr_t>(data) - (sizeof(size_t) * 2);
+    const auto* frame = reinterpret_cast<const void*>(addr);
+    return BlockType::FromUsableSpace(frame);
   }
 
   void SetMode(Mode mode) { core_.SetMode(mode); }
@@ -140,8 +174,7 @@ class GuardedAllocatorTestBase : public SyncAllocatorTest {
   }
 
   void TestValidateAllAfterAllocation() {
-    pw::UniquePtr<uint8_t[]> bytes =
-        guarded_.template MakeUnique<uint8_t[]>(64);
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(64);
     ASSERT_NE(bytes, nullptr);
 
     core_.SetMode(Mode::kValidateAll);
@@ -149,52 +182,189 @@ class GuardedAllocatorTestBase : public SyncAllocatorTest {
     CheckValid();
   }
 
-  void TestDetectHeapUnderrun() {
-    Background background(core_);
+  void TestDetectHeapUnderrunOnDeallocate() {
+    constexpr size_t kDataSize = 64;
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
 
-    pw::UniquePtr<uint8_t[]> bytes =
-        guarded_.template MakeUnique<uint8_t[]>(64);
-    ASSERT_NE(bytes, nullptr);
+    // Modify each bit of each byte of the suffix offset.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+        guarded_.Deallocate(data);
+        EXPECT_TRUE(GuardErrorRecorder::error.has_value());
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
 
-    // Modify the last byte of the prefix.
-    core_.Corrupt(bytes.get() - 1);
-
-    core_.Await();
-    EXPECT_GE(core_.GetInvalid(), bytes.get() - kMinPrefixSize);
-    EXPECT_LE(core_.GetInvalid(), bytes.get());
-    core_.Restore();
+    GuardErrorRecorder::Reset();
+    bytes.Reset();
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
   }
 
-  void TestDetectHeapOverrunFromPrev() {
-    Background background(core_);
+  void TestDetectHeapOverrunOnDeallocate() {
+    constexpr size_t kDataSize = 64;
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
 
-    pw::UniquePtr<uint8_t[]> bytes =
-        guarded_.template MakeUnique<uint8_t[]>(64);
-    ASSERT_NE(bytes, nullptr);
+    // Modify each bit of each byte of the suffix.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+        guarded_.Deallocate(data);
+        EXPECT_EQ(GuardErrorRecorder::error, GuardError(GuardError::kBadMagic));
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
 
-    // Modify the first byte of the prefix.
-    core_.Corrupt(bytes.get() - kMinPrefixSize);
+    GuardErrorRecorder::Reset();
+    bytes.Reset();
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
+  }
 
-    core_.Await();
-    EXPECT_GE(core_.GetInvalid(), bytes.get() - kMinPrefixSize);
-    EXPECT_LE(core_.GetInvalid(), bytes.get());
-    core_.Restore();
+  void TestDetectHeapUnderrunOnResize() {
+    constexpr size_t kDataSize = 64;
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
+
+    // Modify each bit of each byte of the suffix offset.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+        EXPECT_FALSE(guarded_.Resize(data, kDataSize * 2));
+        EXPECT_TRUE(GuardErrorRecorder::error.has_value());
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
+
+    GuardErrorRecorder::Reset();
+    EXPECT_TRUE(guarded_.Resize(data, kDataSize * 2));
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
+  }
+
+  void TestDetectHeapOverrunOnResize() {
+    constexpr size_t kDataSize = 64;
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
+
+    // Modify each bit of each byte of the suffix.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+        EXPECT_FALSE(guarded_.Resize(data, kDataSize * 2));
+        EXPECT_EQ(GuardErrorRecorder::error, GuardError(GuardError::kBadMagic));
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
+
+    GuardErrorRecorder::Reset();
+    EXPECT_TRUE(guarded_.Resize(data, kDataSize * 2));
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
+  }
+
+  void TestDetectHeapUnderrunOnReallocate() {
+    constexpr size_t kDataSize = 64;
+    constexpr Layout kNewLayout(kDataSize * 2, 1);
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
+
+    // Modify each bit of each byte of the suffix offset.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+        EXPECT_EQ(guarded_.Reallocate(data, kNewLayout), nullptr);
+        EXPECT_TRUE(GuardErrorRecorder::error.has_value());
+        *(data - (i + 1)) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
+
+    GuardErrorRecorder::Reset();
+    void* new_data = guarded_.Reallocate(bytes.Release(), kNewLayout);
+    EXPECT_NE(new_data, nullptr);
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
+    guarded_.Deallocate(new_data);
+  }
+
+  void TestDetectHeapOverrunOnReallocate() {
+    constexpr size_t kDataSize = 64;
+    constexpr Layout kNewLayout(kDataSize * 2, 1);
+    auto bytes = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes.get();
+    ASSERT_NE(data, nullptr);
+
+    // Modify each bit of each byte of the suffix.
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        GuardErrorRecorder::Reset();
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+        EXPECT_EQ(guarded_.Reallocate(data, kNewLayout), nullptr);
+        EXPECT_EQ(GuardErrorRecorder::error, GuardError(GuardError::kBadMagic));
+        *(data + kDataSize + i) ^= static_cast<uint8_t>(1 << j);
+      }
+    }
+
+    GuardErrorRecorder::Reset();
+    void* new_data = guarded_.Reallocate(bytes.Release(), kNewLayout);
+    EXPECT_NE(new_data, nullptr);
+    EXPECT_FALSE(GuardErrorRecorder::error.has_value());
+    guarded_.Deallocate(new_data);
+  }
+
+  void TestDetectHeapUnderrun() {
+    constexpr size_t kDataSize = 64;
+    auto bytes1 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    auto bytes2 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    auto bytes3 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes2.get();
+    ASSERT_NE(data, nullptr);
+
+    // Modify each bit of each byte of the suffix offset.
+    const BlockType* block = GetBlock(data);
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        Background background(core_);
+
+        // Modify a bit of the suffix offset.
+        core_.Corrupt(data - (i + 1), 1 << j);
+
+        core_.Await();
+        EXPECT_EQ(core_.GetInvalid(), block);
+        core_.Restore();
+      }
+    }
   }
 
   void TestDetectHeapOverrun() {
-    Background background(core_);
+    constexpr size_t kDataSize = 64;
+    auto bytes1 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    auto bytes2 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    auto bytes3 = guarded_.template MakeUnique<uint8_t[]>(kDataSize);
+    uint8_t* data = bytes2.get();
+    ASSERT_NE(data, nullptr);
 
-    pw::UniquePtr<uint8_t[]> bytes =
-        guarded_.template MakeUnique<uint8_t[]>(64);
-    ASSERT_NE(bytes, nullptr);
+    // Modify each bit of each byte of the suffix.
+    const BlockType* block = GetBlock(data);
+    for (size_t i = 0; i < kGuardValueSize; ++i) {
+      for (size_t j = 0; j < 8; ++j) {
+        Background background(core_);
 
-    // Modify the first byte of the suffix.
-    core_.Corrupt(bytes.get() + 64);
+        core_.Corrupt(data + kDataSize + i, 1 << j);
 
-    core_.Await();
-    EXPECT_GE(core_.GetInvalid(), bytes.get() - kMinPrefixSize);
-    EXPECT_LE(core_.GetInvalid(), bytes.get());
-    core_.Restore();
+        core_.Await();
+        EXPECT_EQ(core_.GetInvalid(), block);
+        core_.Restore();
+      }
+    }
   }
 
  private:
@@ -207,6 +377,7 @@ class GuardedAllocatorTestBase : public SyncAllocatorTest {
 using GuardedAllocatorInterruptSpinLockTest =
     GuardedAllocatorTestBase<::pw::sync::InterruptSpinLock>;
 using GuardedAllocatorMutexTest = GuardedAllocatorTestBase<::pw::sync::Mutex>;
+using GuardedAllocatorNoLockTest = GuardedAllocatorTestBase<::pw::sync::NoLock>;
 
 // Unit tests.
 
@@ -230,6 +401,14 @@ TEST_F(GuardedAllocatorMutexTest, AllocateDeallocate) {
   CheckValid();
 }
 
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapUnderrun_Deallocate) {
+  TestDetectHeapUnderrunOnDeallocate();
+}
+
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapOverrun_Deallocate) {
+  TestDetectHeapOverrunOnDeallocate();
+}
+
 TEST_F(GuardedAllocatorInterruptSpinLockTest, Resize) {
   TestResize();
   CheckValid();
@@ -238,6 +417,14 @@ TEST_F(GuardedAllocatorInterruptSpinLockTest, Resize) {
 TEST_F(GuardedAllocatorMutexTest, Resize) {
   TestResize();
   CheckValid();
+}
+
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapUnderrun_Resize) {
+  TestDetectHeapUnderrunOnResize();
+}
+
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapOverrun_Resize) {
+  TestDetectHeapOverrunOnResize();
 }
 
 TEST_F(GuardedAllocatorInterruptSpinLockTest, Reallocate) {
@@ -250,23 +437,28 @@ TEST_F(GuardedAllocatorMutexTest, Reallocate) {
   CheckValid();
 }
 
-TEST_F(GuardedAllocatorInterruptSpinLockTest, ValidateAllAfterInit) {
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapUnderrun_Reallocate) {
+  TestDetectHeapUnderrunOnReallocate();
+}
+
+TEST_F(GuardedAllocatorNoLockTest, DetectHeapOverrun_Reallocate) {
+  TestDetectHeapOverrunOnReallocate();
+}
+
+TEST_F(GuardedAllocatorNoLockTest, ValidateAllAfterInit) {
   TestValidateAllAfterInit();
 }
 
-TEST_F(GuardedAllocatorMutexTest, ValidateAllAfterInit) {
-  TestValidateAllAfterInit();
-}
-
-TEST_F(GuardedAllocatorInterruptSpinLockTest, ValidateAllAfterAllocation) {
-  TestValidateAllAfterAllocation();
-}
-
-TEST_F(GuardedAllocatorMutexTest, ValidateAllAfterAllocation) {
+TEST_F(GuardedAllocatorNoLockTest, ValidateAllAfterAllocation) {
   TestValidateAllAfterAllocation();
 }
 
 TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapUnderrun_ValidateOne) {
+  SetMode(Mode::kValidateOne);
+  TestDetectHeapUnderrun();
+}
+
+TEST_F(GuardedAllocatorMutexTest, DetectHeapUnderrun_ValidateOne) {
   SetMode(Mode::kValidateOne);
   TestDetectHeapUnderrun();
 }
@@ -276,36 +468,9 @@ TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapUnderrun_ValidateAll) {
   TestDetectHeapUnderrun();
 }
 
-TEST_F(GuardedAllocatorMutexTest, DetectHeapUnderrun_ValidateOne) {
-  SetMode(Mode::kValidateOne);
-  TestDetectHeapUnderrun();
-}
-
 TEST_F(GuardedAllocatorMutexTest, DetectHeapUnderrun_ValidateAll) {
   SetMode(Mode::kValidateAll);
   TestDetectHeapUnderrun();
-}
-
-TEST_F(GuardedAllocatorInterruptSpinLockTest,
-       DetectHeapOverrunFromPrev_ValidateOne) {
-  SetMode(Mode::kValidateOne);
-  TestDetectHeapOverrunFromPrev();
-}
-
-TEST_F(GuardedAllocatorInterruptSpinLockTest,
-       DetectHeapOverrunFromPrev_ValidateAll) {
-  SetMode(Mode::kValidateAll);
-  TestDetectHeapOverrunFromPrev();
-}
-
-TEST_F(GuardedAllocatorMutexTest, DetectHeapOverrunFromPrev_ValidateOne) {
-  SetMode(Mode::kValidateOne);
-  TestDetectHeapOverrunFromPrev();
-}
-
-TEST_F(GuardedAllocatorMutexTest, DetectHeapOverrunFromPrev_ValidateAll) {
-  SetMode(Mode::kValidateAll);
-  TestDetectHeapOverrunFromPrev();
 }
 
 TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapOverrun_ValidateOne) {
@@ -313,13 +478,13 @@ TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapOverrun_ValidateOne) {
   TestDetectHeapOverrun();
 }
 
-TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapOverrun_ValidateAll) {
-  SetMode(Mode::kValidateAll);
+TEST_F(GuardedAllocatorMutexTest, DetectHeapOverrun_ValidateOne) {
+  SetMode(Mode::kValidateOne);
   TestDetectHeapOverrun();
 }
 
-TEST_F(GuardedAllocatorMutexTest, DetectHeapOverrun_ValidateOne) {
-  SetMode(Mode::kValidateOne);
+TEST_F(GuardedAllocatorInterruptSpinLockTest, DetectHeapOverrun_ValidateAll) {
+  SetMode(Mode::kValidateAll);
   TestDetectHeapOverrun();
 }
 

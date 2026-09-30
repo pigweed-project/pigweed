@@ -24,56 +24,201 @@
 #include "pw_assert/assert.h"
 #include "pw_bytes/alignment.h"
 #include "pw_preprocessor/compiler.h"
+#include "pw_status/try.h"
 
 namespace pw::allocator {
 namespace internal {
 
-/// Base type that simply provides better assertion messages.
+/// Extensible wrapper for frame validation errors.
+///
+/// This type can be extended with additional errors; for an example see
+/// pw::allocator::internal::GuardError.
+class FrameError {
+ public:
+  enum Value : uint32_t {
+    /// The provided data pointer is not aligned correctly.
+    kDataNotAligned,
+
+    /// The provided data pointer is to an address too low to have a prefix
+    /// offset, e.g. a data pointer of 0x00000004.
+    kDataTooSmall,
+
+    /// The provided data pointer has a prefix offset that's too large, e.g. a
+    /// data pointer of 0x0010000 has an offset of 0xffffffff.
+    kDataTooSmallForPrefix,
+
+    /// The provided frame pointer is null.
+    kFrameNull,
+
+    /// The provided frame pointer is not aligned correctly.
+    kFrameNotAligned,
+
+    /// The provided data pointer is to an address too small to have a prefix
+    /// offset, e.g. a frame pointer of 0x00000004.
+    kFrameTooSmall,
+
+    /// The provided frame pointer has a prefix offset that's too large, e.g. a
+    /// frame pointer of 0x0010000 has an offset of 0xffffffff.
+    kFrameOffsetTooSmall,
+
+    /// The suffix located from the provided data pointer is not aligned
+    /// correctly.
+    kSuffixNotAligned,
+
+    /// The suffix located from the provided data pointer is conflicts with the
+    /// usable memory region.
+    kDataTooSmallForSuffix,
+
+    /// The underlying allocator does not recognize the frame pointer.
+    kUnrecognizedFrame,
+
+    /// Deriving a frame pointer from a data pointer that is derived from a
+    /// provided frame pointer yields a different frame pointer than provided.
+    kFramePointerMismatch,
+
+    /// Deriving a data pointer from a frame pointer that is derived from a
+    /// provided data pointer yields a different data pointer than provided.
+    kDataPointerMismatch,
+
+    /// Can be used to dispatch to chained error types, e.g.
+    /// pw::allocator::internal::GuardError.
+    kMaxValue,
+  };
+
+  constexpr FrameError(Value v) : value_(static_cast<uint32_t>(v)) {}
+  constexpr uint32_t value() const { return value_; }
+
+  constexpr bool operator==(FrameError other) const {
+    return value_ == other.value_;
+  }
+  constexpr bool operator!=(FrameError other) const {
+    return value_ != other.value_;
+  }
+
+ protected:
+  constexpr explicit FrameError(uint32_t v) : value_(v) {}
+  uint32_t value_;
+};
+
+/// Handles detected errors by calling PW_CRASH with a diagnostic message.
+struct DefaultFrameErrorHandler final {
+  static void HandleError(FrameError error,
+                          const void* ptr1 = nullptr,
+                          size_t val1 = 0,
+                          const void* ptr2 = nullptr,
+                          size_t val2 = 0);
+};
+
+/// Provides generic framing logic for type-erased prefixes and suffixes.
+///
+/// @tparam   ErrorHandler  Invoked when a frame error is encountered.
+template <typename ErrorHandler>
 class BaseFramingAllocator : public ForwardingAllocator {
  protected:
   constexpr explicit BaseFramingAllocator(Allocator& allocator)
       : ForwardingAllocator(allocator) {}
 
-  /// Triggers an assertion indicating that the given data pointer is not
-  /// properly aligned if ``strict`` is true; otherwise returns ``false``.
-  [[nodiscard]] static bool CrashOnUnalignedIfStrict(bool strict,
-                                                     const void* data);
+  /// Returns the distance between two pointers in bytes.
+  static constexpr size_t Distance(const void* start, const void* end);
 
-  /// Triggers an assertion indicating that the given data pointer cannot be
-  /// converted to a frame if ``strict`` is true; otherwise returns ``false``.
-  [[nodiscard]] static bool CrashOnBadDataIfStrict(bool strict,
-                                                   const void* data);
+  /// Updates the frame-relative and data-relative prefix offsets, and the
+  /// suffix offset as needed for the given pointers to locations in the frame.
+  ///
+  /// @param  frame       Pointer to the underlying allocation.
+  /// @param  data        Pointer to the usable memory.
+  /// @param  suffix      Pointer to the type-erased suffix, or null.
+  static void UpdateOffsets(void* frame, void* data, void* suffix);
 
-  /// Triggers an assertion indicating that the given prefix offset appears
-  /// corrupted if ``strict`` is true; otherwise returns ``false``.
-  [[nodiscard]] static bool CrashOnBadPrefixOffsetIfStrict(bool strict,
-                                                           const void* data,
-                                                           size_t prefix_offset,
-                                                           size_t min_size = 0);
+  /// Allocates a frame that can hold the requested data framed by a prefix
+  /// and/or suffix, and returns it as a span of bytes.
+  ///
+  /// @param  prefix      Layout of the type-erased prefix.
+  /// @param  data        Requested layout.
+  /// @param  suffix      Layout of the type-erased suffix.
+  ByteSpan AllocateFrame(Layout prefix, Layout data, Layout suffix);
 
-  /// Triggers an assertion indicating that the prefix offsets do not match if
-  /// ``strict`` is true; otherwise returns ``false``.
-  [[nodiscard]] static bool CrashOnWrongPrefixOffsetIfStrict(
-      bool strict,
-      const void* data,
-      size_t data_prefix_offset,
-      const void* frame,
-      size_t frame_prefix_offset);
+  /// Resizes a frame that holds the provided data to be at least the new size
+  /// while keeping the (type-erased) prefix and/or suffix.
+  ///
+  /// @returns Whether the frame was successfully resized.
+  /// @param  data        Pointer to usable memory.
+  /// @param  new_size    Requested new size of the usable memory.
+  /// @param  suffix      Layout of the type-erased suffix, or a default layout.
+  /// @param  tmp_suffix  Pointer to a temporary suffix, or null.
+  bool ResizeFrame(void* data,
+                   size_t new_size,
+                   Layout suffix,
+                   void* tmp_suffix);
 
-  /// Triggers an assertion indicating that the given prefix offset appears
-  /// corrupted if ``strict`` is true; otherwise returns ``false``.
-  [[nodiscard]] static bool CrashOnBadSuffixOffsetIfStrict(bool strict,
-                                                           const void* data,
-                                                           size_t suffix_offset,
-                                                           size_t usable_size);
+  /// Returns info like `Deallocator::GetInfo`.
+  ///
+  /// @param  info_type   See `Deallocator::InfoType`.
+  /// @param  data        Pointer to usable memory.
+  /// @param  suffix      Layout of the type-erased suffix, or a default layout.
+  Result<Layout> GetFrameInfo(InfoType info_type,
+                              const void* data,
+                              Layout suffix) const;
 
-  /// Triggers an assertion indicating that the given frame pointer is not
-  /// recognized by the underlying allocator if ``strict`` is true; otherwise
-  /// returns ``false``.
-  [[nodiscard]] static bool CrashOnUnrecognized(bool strict, const void* frame);
+  /// Returns a frame pointer from a data pointer.
+  ///
+  /// Unlike many of the other pointer conversion methods, this method includes
+  /// a `checked` parameter that can be set to `false` to avoid calling the
+  /// error handler. This is useful when the returned frame pointer is intended
+  /// to be passed to a method that accepts any pointer, e.g. a Deallocator
+  /// method that returns `pw::Status::NotFound()` for invalid pointers.
+  ///
+  /// @param  data        Pointer to usable memory.
+  /// @param  has_suffix  Used to locate the data-relative prefix offset.
+  /// @param  checked     If false, the ErrorHandler is never called.
+  /// @{
+  static void* GetFrame(void* data, bool has_suffix, bool checked = true);
+  static const void* GetFrame(const void* data,
+                              bool has_suffix,
+                              bool checked = true) {
+    return GetFrame(const_cast<void*>(data), has_suffix, checked);
+  }
+  /// @}
+
+  /// Returns the usable size of an underlying allocation.
+  ///
+  /// @returns @Result{size of the frame}
+  /// * @OK: Returns the size of the frame in bytes.
+  /// * @NOT_FOUND: Frame is not recognized by the underlying allocator.
+  /// * @UNIMPLEMENTED: The underlying allocator cannot get usable sizes.
+  Result<size_t> GetFrameSize(const void* frame) const;
+
+  /// Returns a data pointer from a frame pointer.
+  ///
+  /// @param  frame       Pointer to an underlying allocation.
+  /// @param  frame_size  Size of the frame.
+  /// @param  prefix      Layout of the type-erased prefix, or a default layout.
+  /// @{
+  static void* GetData(void* frame, Result<size_t> frame_size, Layout prefix);
+  static const void* GetData(const void* frame,
+                             Result<size_t> frame_size,
+                             Layout prefix) {
+    return GetData(const_cast<void*>(frame), frame_size, prefix);
+  }
+  /// @}
+
+  /// Returns a frame pointer from a data pointer.
+  /// @param  data        Pointer to usable memory.
+  /// @param  data_size   Size of the memory from `data` to the end of the
+  ///                     frame, **including** the suffix.
+  /// @param  suffix      Layout of the type-erased suffix, or a default layout.
+  /// @{
+  static void* GetSuffix(void* data, size_t data_size, Layout suffix);
+  static const void* GetSuffix(const void* data,
+                               size_t data_size,
+                               Layout suffix) {
+    return GetSuffix(const_cast<void*>(data), data_size, suffix);
+  }
+  /// @}
 };
 
 }  // namespace internal
+
+/// @submodule{pw_allocator,forwarding}
 
 /// An allocator that can "frame" its allocation with a leading prefix type, a
 /// trailing suffix type, or both.
@@ -159,11 +304,11 @@ class BaseFramingAllocator : public ForwardingAllocator {
 /// |         | (uint32_t)  |                    | GetFrame(data)           |
 /// |         |             |                    | GetPrefix(data)          |
 /// +---------+-------------+--------------------+--------------------------+
-/// | 0x...10 | size_t      | frame_offset =0x10 | GetFrameOffsetPtr(frame) |
+/// | 0x...10 | size_t      | frame_offset =0x14 | GetFrameOffsetPtr(frame) |
 /// +---------+-------------+--------------------+--------------------------+
 /// | 0x...14 | N/A         | 8 bytes of padding | N/A                      |
 /// +---------+-------------+--------------------+--------------------------+
-/// | 0x...1C | size_t      | data_offset  =0x10 | GetDataOffsetPtr(data)   |
+/// | 0x...1C | size_t      | data_offset  =0x14 | GetDataOffsetPtr(data)   |
 /// +---------+-------------+--------------------+--------------------------+
 /// | 0x...20 | std::byte[] | usable space       | data                     |
 /// |         |             |                    | GetData(frame)           |
@@ -200,29 +345,30 @@ class BaseFramingAllocator : public ForwardingAllocator {
 /// When possible, keep alignment requirements low. Ideally, `Suffix` and the
 /// allocated data both have an alignment of `alignof(size_t)` or less.
 ///
-/// @tparam   Prefix  A default constructible and trivially copyable type to
-///                   place before each allocation, or `void`. `alignof(Prefix)`
-///                   must be at most `alignof(size_t)`.
-/// @tparam   Suffix  A default constructible and trivially copyable type to
-///                   place after each allocation, or `void`.
-template <typename Prefix, typename Suffix = void>
-class FramingAllocator : public internal::BaseFramingAllocator {
- private:
-  using Base = internal::BaseFramingAllocator;
+/// @tparam   Prefix        A default constructible and trivially copyable type
+///                         to place before each allocation, or `void`.
+///                         `alignof(Prefix)` must be at most `alignof(size_t)`.
+/// @tparam   Suffix        A default constructible and trivially copyable type
+///                         to place after each allocation, or `void`.
+/// @tparam   ErrorHandler  Used to report frame validation errors.
+template <typename Prefix,
+          typename Suffix = void,
+          typename ErrorHandler = internal::DefaultFrameErrorHandler>
+class FramingAllocator : public internal::BaseFramingAllocator<ErrorHandler> {
+ protected:
+  using Base = internal::BaseFramingAllocator<ErrorHandler>;
 
   static_assert(!std::is_same_v<Prefix, void> || !std::is_same_v<Suffix, void>,
                 "prefix and suffix types cannot both be null");
 
- protected:
-  /// Returns the result of framing the given layout with a prefix and suffix.
-  ///
-  /// This is conservative and pessimistic; the returned layout is always large
-  /// enough for framing to succeed. Methods like `DoAllocate`will free extra
-  /// memory that isn't needed.
-  static constexpr Layout GetFrameLayout(Layout layout);
-
-  constexpr explicit FramingAllocator(Allocator& allocator)
-      : internal::BaseFramingAllocator(allocator) {}
+  constexpr explicit FramingAllocator(pw::Allocator& allocator)
+      : Base(allocator) {
+    if constexpr (!std::is_same_v<Suffix, void>) {
+      // GetUsableLayout is required to validate suffix offsets.
+      PW_ASSERT(Base::GetUsableLayout(allocator, nullptr).status() !=
+                Status::Unimplemented());
+    }
+  }
 
   /// @copydoc Allocator::Allocate
   void* DoAllocate(Layout layout) override;
@@ -234,7 +380,7 @@ class FramingAllocator : public internal::BaseFramingAllocator {
   bool DoResize(void* ptr, size_t new_size) override;
 
   /// @copydoc Allocator::DoBeforeReallocate
-  void DoBeforeReallocate(void* ptr, Layout new_layout) override;
+  [[nodiscard]] bool DoBeforeReallocate(void* ptr, Layout new_layout) override;
 
   /// @copydoc Allocator::DoAfterReallocateCopy
   void DoAfterReallocateCopy(void* ptr,
@@ -242,29 +388,48 @@ class FramingAllocator : public internal::BaseFramingAllocator {
                              void* new_ptr) override;
 
   /// @copydoc Deallocator::GetInfo
-  Result<Layout> DoGetInfo(InfoType info_type, const void* ptr) const override;
-
-  /// Returns whether the given data pointer correspond to a valid frame from
-  /// this allocator. If ``strict`` is true, does not return when invalid and
-  [[nodiscard]] bool IsValid(const void* data) const;
+  Result<Layout> DoGetInfo(Deallocator::InfoType info_type,
+                           const void* ptr) const override {
+    return Base::GetFrameInfo(info_type, ptr, Layout::Of<Suffix>());
+  }
 
   /// Returns the frame pointer from a data pointer, that is, return a pointer
   /// to memory holding the prefix, usable memory, and suffix from a pointer to
   /// the usable memory.
-  void* GetFrame(const void* data) const;
+  /// @{
+  void* GetFrame(void* data) const;
+  const void* GetFrame(const void* data) const {
+    return GetFrame(const_cast<void*>(data));
+  }
+  /// @}
 
   /// Returns a pointer to prefix.
   ///
   /// It is an error to call this method if the prefix type is ``void``.
+  /// @{
   Prefix* GetPrefix(void* data) const;
+  const Prefix* GetPrefix(const void* data) const {
+    return GetPrefix(const_cast<void*>(data));
+  }
+  /// @}
 
   /// Returns a data pointer from a frame pointer.
-  static void* GetData(void* frame);
+  /// @{
+  void* GetData(void* frame) const;
+  const void* GetData(const void* data) const {
+    return GetData(const_cast<void*>(data));
+  }
+  /// @}
 
   /// Returns a pointer to the suffix.
   ///
   /// It is an error to call this method if the suffix type is ``void``.
-  static Suffix* GetSuffix(void* data);
+  /// @{
+  Suffix* GetSuffix(void* data) const;
+  const Suffix* GetSuffix(const void* data) const {
+    return GetSuffix(const_cast<void*>(data));
+  }
+  /// @}
 
  private:
   static_assert(std::is_same_v<Prefix, void> ||
@@ -281,87 +446,287 @@ class FramingAllocator : public internal::BaseFramingAllocator {
                     std::is_trivially_copyable_v<Suffix>,
                 "suffix type must be void or trivially copyable");
 
-  /// Triggers an assertion if the given data pointer does not correspond to a
-  /// valid frame from this allocator.
-  void CheckFrame(const void* data) const;
-
-  /// Returns whether the given data pointer correspond to a valid frame from
-  /// this allocator.
-  bool ValidateFrame(const void* data, bool strict) const;
-
-  /// Returns the location of the frame offset for the given frame pointer.
-  static size_t* GetFrameOffsetPtr(const void* frame);
-
-  /// Returns the frame offset for the given frame pointer.
-  static size_t GetFrameOffset(const void* frame) {
-    return *(GetFrameOffsetPtr(frame));
-  }
-
-  /// Returns the location of the data offset for the given data pointer.
-  static size_t* GetDataOffsetPtr(const void* data);
-
-  /// Returns the data offset for the given data pointer.
-  static size_t GetDataOffset(const void* data) {
-    return *(GetDataOffsetPtr(data));
-  }
-
-  /// Returns the location of the suffix offset for the given data pointer.
-  static size_t* GetSuffixOffsetPtr(const void* data);
-
-  /// Returns the suffix offset for the given data pointer.
-  ///
-  /// It is an error to call this method if the suffix type is ``void``.
-  static size_t GetSuffixOffset(const void* data) {
-    return *(GetSuffixOffsetPtr(data));
-  }
+  // If Suffix is not void; this must always be true. If Suffix is void, it may
+  // be true depending on whether the underlying allocator supports getting the
+  // usable size of an allocation. When false, this allocator will not be able
+  // to validate
+  bool can_get_frame_size_;
 };
+
+/// @}
 
 // Template method implementations.
 
-template <typename Prefix, typename Suffix>
-constexpr Layout FramingAllocator<Prefix, Suffix>::GetFrameLayout(
-    Layout layout) {
-  // Overestimate and determine a minimum layout that will always succeed.
-  // The excess memory can be returned by, e.g., `DoAllocate`.
-  // The frame always includes a frame offset. Also include an extra alignment
-  // to ensure the data can be aligned within the frame.
-  size_t size = sizeof(size_t) + layout.size() + layout.alignment();
+// BaseFramingAllocator methods ////////////////////////////////////////////////
 
-  // When a prefix is present, a data offset may also be needed.
-  if constexpr (!std::is_same_v<Prefix, void>) {
-    static_assert(alignof(Prefix) <= alignof(size_t),
-                  "alignof(Prefix) cannot exceed alignof(size_t)");
-    size += AlignUp(sizeof(Prefix), alignof(size_t)) + sizeof(size_t);
-  }
+namespace internal {
 
-  // When a suffix is present, the frame includes a suffix offset and may also
-  // need extra padding to align the suffix.
-  if constexpr (!std::is_same_v<Suffix, void>) {
-    size += sizeof(size_t) + alignof(Suffix) + sizeof(Suffix);
-  }
-
-  return Layout{size, alignof(size_t)};
+template <typename ErrorHandler>
+constexpr size_t BaseFramingAllocator<ErrorHandler>::Distance(const void* start,
+                                                              const void* end) {
+  auto* first = cpp20::bit_cast<const std::byte*>(start);
+  auto* last = cpp20::bit_cast<const std::byte*>(end);
+  return static_cast<size_t>(std::distance(first, last));
 }
 
-template <typename Prefix, typename Suffix>
-void* FramingAllocator<Prefix, Suffix>::DoAllocate(Layout layout) {
+template <typename ErrorHandler>
+ByteSpan BaseFramingAllocator<ErrorHandler>::AllocateFrame(Layout prefix,
+                                                           Layout data,
+                                                           Layout suffix) {
   // The maximum amount of memory needed includes space for the prefix, the
   // offsets, padding to align the data, the data itself, padding to align the
   // suffix, and the suffix itself. Allocate this maximum amount and use it to
   // set up a BumpAllocator that can infallibly allocate the substructures.
-  Layout frame_layout = GetFrameLayout(layout);
-  auto* frame = static_cast<std::byte*>(allocator().Allocate(frame_layout));
+  //
+  // The frame always includes a frame offset. Also include an extra alignment
+  // to ensure the data can be aligned within the frame.
+  size_t size = sizeof(size_t) + data.size() + data.alignment();
+
+  // When a prefix is present, a data offset may also be needed.
+  if (prefix.size() != 0) {
+    size += AlignUp(prefix.size(), alignof(size_t)) + sizeof(size_t);
+  }
+
+  // When a suffix is present, the frame includes a suffix offset and may also
+  // need extra padding to align the suffix.
+  if (suffix.size() != 0) {
+    size += sizeof(size_t) + suffix.alignment() + suffix.size();
+  }
+
+  Layout frame_layout{size, std::max(prefix.alignment(), alignof(size_t))};
+  void* ptr = allocator().Allocate(frame_layout);
+  if (ptr == nullptr) {
+    return ByteSpan();
+  }
+  return ByteSpan(static_cast<std::byte*>(ptr), frame_layout.size());
+}
+
+template <typename ErrorHandler>
+void BaseFramingAllocator<ErrorHandler>::UpdateOffsets(void* frame,
+                                                       void* data,
+                                                       void* suffix) {
+  size_t prefix_offset = Distance(frame, data);
+  auto* data_ptr = cpp20::bit_cast<size_t*>(data);
+  if (suffix == nullptr) {
+    *(data_ptr - 1) = prefix_offset;
+  } else {
+    size_t suffix_offset = Distance(data, suffix);
+    *(data_ptr - 1) = suffix_offset;
+    *(data_ptr - 2) = prefix_offset;
+  }
+}
+
+template <typename ErrorHandler>
+bool BaseFramingAllocator<ErrorHandler>::ResizeFrame(void* data,
+                                                     size_t new_size,
+                                                     Layout suffix,
+                                                     void* tmp_suffix) {
+  void* frame = GetFrame(data, tmp_suffix != nullptr);
+  size_t prefix_offset = Distance(frame, data);
+  if (suffix.size() == 0) {
+    return CheckedIncrement(new_size, prefix_offset) &&
+           allocator().Resize(frame, new_size);
+  }
+
+  auto data_addr = cpp20::bit_cast<uintptr_t>(data);
+  uintptr_t new_suffix_addr = data_addr;
+  if (!CheckedIncrement(new_suffix_addr, new_size)) {
+    return false;
+  }
+  new_suffix_addr = AlignUp(new_suffix_addr, suffix.alignment());
+
+  size_t new_suffix_offset = new_suffix_addr - data_addr;
+  new_size = new_suffix_offset;
+
+  // Cache the suffix, and don't write it until the `Resize` succeeds.
+  Result<size_t> frame_size = GetFrameSize(frame);
+  if (!frame_size.ok()) {
+    return false;
+  }
+  size_t data_size = *frame_size - Distance(frame, data);
+  void* suffix_ptr = GetSuffix(data, data_size, suffix);
+  if (suffix_ptr == nullptr) {
+    return false;
+  }
+  std::memcpy(tmp_suffix, suffix_ptr, suffix.size());
+
+  if (!CheckedIncrement(new_size, prefix_offset) ||
+      !CheckedIncrement(new_size, suffix.size()) ||
+      !allocator().Resize(frame, new_size)) {
+    return false;
+  }
+
+  auto* suffix_offset_ptr = cpp20::bit_cast<size_t*>(data) - 1;
+  *suffix_offset_ptr = new_suffix_offset;
+
+  auto* new_suffix_ptr = cpp20::bit_cast<void*>(new_suffix_addr);
+  std::memcpy(new_suffix_ptr, tmp_suffix, suffix.size());
+  return true;
+}
+template <typename ErrorHandler>
+Result<Layout> BaseFramingAllocator<ErrorHandler>::GetFrameInfo(
+    InfoType info_type, const void* data, Layout suffix) const {
+  if (info_type == InfoType::kCapacity) {
+    return GetInfo(allocator(), InfoType::kCapacity, nullptr);
+  }
+  if (info_type == InfoType::kRequestedLayoutOf) {
+    return Status::Unimplemented();
+  }
+
+  const void* frame = GetFrame(data, suffix.size() != 0, /*checked=*/false);
   if (frame == nullptr) {
+    return Status::NotFound();
+  }
+
+  PW_TRY_ASSIGN(Layout layout, GetInfo(allocator(), info_type, frame));
+  if (info_type != InfoType::kUsableLayoutOf) {
+    return layout;
+  }
+
+  size_t data_size = layout.size() - Distance(frame, data);
+  if (suffix.size() != 0) {
+    data_size = Distance(data, GetSuffix(data, data_size, suffix));
+  }
+
+  // The frame alignment may be greater than the data alignment. The largest
+  // power of 2 dividing both the layout alignment and data address is the
+  // rightmost bit set in those values combined.
+  auto data_addr = cpp20::bit_cast<uintptr_t>(data);
+  uintptr_t combined = data_addr | layout.alignment();
+  return Layout(data_size, combined & (~combined + 1));
+}
+
+template <typename ErrorHandler>
+void* BaseFramingAllocator<ErrorHandler>::GetFrame(void* data,
+                                                   bool has_suffix,
+                                                   bool checked) {
+  auto data_addr = cpp20::bit_cast<uintptr_t>(data);
+  if ((data_addr % alignof(size_t)) != 0) {
+    if (checked) {
+      ErrorHandler::HandleError(
+          FrameError::kDataNotAligned, data, alignof(size_t));
+    }
     return nullptr;
   }
-  uintptr_t frame_addr = reinterpret_cast<uintptr_t>(frame);
-  BumpAllocator bump_allocator({frame, frame_layout.size()});
+
+  uintptr_t data_offset_addr = data_addr;
+  size_t offset = has_suffix ? sizeof(size_t) * 2 : sizeof(size_t);
+  if (!CheckedDecrement(data_offset_addr, offset)) {
+    if (checked) {
+      ErrorHandler::HandleError(FrameError::kDataTooSmall, data);
+    }
+    return nullptr;
+  }
+
+  uintptr_t frame_addr = data_addr;
+  size_t data_offset = *(cpp20::bit_cast<const size_t*>(data_offset_addr));
+  if (!CheckedDecrement(frame_addr, data_offset)) {
+    if (checked) {
+      ErrorHandler::HandleError(
+          FrameError::kDataTooSmallForPrefix, data, data_offset);
+    }
+    return nullptr;
+  }
+
+  return cpp20::bit_cast<void*>(frame_addr);
+}
+
+template <typename ErrorHandler>
+void* BaseFramingAllocator<ErrorHandler>::GetData(void* frame,
+                                                  Result<size_t> frame_size,
+                                                  Layout prefix) {
+  if (frame == nullptr || frame_size.status() == Status::NotFound()) {
+    ErrorHandler::HandleError(FrameError::kFrameNull);
+    return nullptr;
+  }
+
+  auto frame_addr = cpp20::bit_cast<uintptr_t>(frame);
+  if ((frame_addr % prefix.alignment()) != 0) {
+    ErrorHandler::HandleError(
+        FrameError::kFrameNotAligned, frame, prefix.alignment());
+    return nullptr;
+  }
+
+  size_t offset = AlignUp(prefix.size(), alignof(size_t));
+  if (frame_size.ok() && offset >= *frame_size) {
+    ErrorHandler::HandleError(FrameError::kFrameTooSmall, frame, *frame_size);
+    return nullptr;
+  }
+
+  size_t frame_offset = *(cpp20::bit_cast<const size_t*>(frame_addr + offset));
+  if (frame_size.ok() && frame_offset >= *frame_size) {
+    ErrorHandler::HandleError(FrameError::kFrameOffsetTooSmall,
+                              frame,
+                              *frame_size,
+                              nullptr,
+                              frame_offset);
+    return nullptr;
+  }
+  return cpp20::bit_cast<void*>(frame_addr + frame_offset);
+}
+
+template <typename ErrorHandler>
+void* BaseFramingAllocator<ErrorHandler>::GetSuffix(void* data,
+                                                    size_t data_size,
+                                                    Layout suffix) {
+  auto data_addr = cpp20::bit_cast<uintptr_t>(data);
+
+  // To provide both `data` and `data_size`, the caller had to call either
+  // `GetData(frame)` or `GetFrame(data)`, both of which ensure this is safe.
+  size_t suffix_offset = *(cpp20::bit_cast<const size_t*>(data_addr) - 1);
+  if (data_size < suffix.size() || suffix_offset > data_size - suffix.size()) {
+    ErrorHandler::HandleError(FrameError::kDataTooSmallForSuffix,
+                              data,
+                              data_size,
+                              nullptr,
+                              suffix_offset);
+    return nullptr;
+  }
+
+  uintptr_t suffix_addr = data_addr + suffix_offset;
+  if ((suffix_addr % suffix.alignment()) != 0) {
+    ErrorHandler::HandleError(FrameError::kSuffixNotAligned,
+                              nullptr,
+                              static_cast<size_t>(suffix_addr),
+                              nullptr,
+                              suffix.alignment());
+    return nullptr;
+  }
+  return cpp20::bit_cast<void*>(suffix_addr);
+}
+
+template <typename ErrorHandler>
+Result<size_t> BaseFramingAllocator<ErrorHandler>::GetFrameSize(
+    const void* frame) const {
+  auto result = GetUsableLayout(allocator(), frame);
+  if (!result.ok()) {
+    if (result.status() == Status::NotFound()) {
+      ErrorHandler::HandleError(FrameError::kUnrecognizedFrame, frame);
+    }
+    return result.status();
+  }
+  return result->size();
+}
+
+}  // namespace internal
+
+// FramingAllocator methods ////////////////////////////////////////////////////
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+void* FramingAllocator<Prefix, Suffix, ErrorHandler>::DoAllocate(
+    Layout layout) {
+  ByteSpan frame =
+      Base::AllocateFrame(Layout::Of<Prefix>(), layout, Layout::Of<Suffix>());
+  if (frame.empty()) {
+    return nullptr;
+  }
+  BumpAllocator bump_allocator(frame);
 
   // Allocate the prefix, and the frame-relative prefix offset.
   if constexpr (!std::is_same_v<Prefix, void>) {
     std::ignore = bump_allocator.New<Prefix>();
   }
-  size_t* frame_offset_ptr = bump_allocator.New<size_t>();
+  auto* frame_offset_ptr = bump_allocator.New<size_t>();
 
   // Allocate a suffix offset. Note that this may not be the memory that ends up
   // being used for the suffix offset, depending on how much padding is needed
@@ -371,224 +736,125 @@ void* FramingAllocator<Prefix, Suffix>::DoAllocate(Layout layout) {
     std::ignore = bump_allocator.New<size_t>();
   }
 
+  // Allocate the data itself.
   auto* data = bump_allocator.Allocate(layout);
-  uintptr_t data_addr = reinterpret_cast<uintptr_t>(data);
-  auto prefix_offset = static_cast<size_t>(data_addr - frame_addr);
+  *frame_offset_ptr = Base::Distance(frame.data(), data);
 
-  // Now, update the frame-relative prefix offset. Also, determine where the
-  // data-relative prefix offset is. It may line up with the frame-relative
-  // prefix offset. If if does not, due to data alignment, store the prefix
-  // offset there as well.
-  *frame_offset_ptr = prefix_offset;
-  auto* data_offset_ptr = GetDataOffsetPtr(data);
-  if (data_offset_ptr != frame_offset_ptr) {
-    *data_offset_ptr = prefix_offset;
-  }
-
-  // Allocate the suffix, and store the data-relative suffix offset.
+  // Allocate the suffix.
+  void* suffix = nullptr;
   if constexpr (!std::is_same_v<Suffix, void>) {
-    auto* suffix = bump_allocator.New<Suffix>();
-    uintptr_t suffix_addr = reinterpret_cast<uintptr_t>(suffix);
-    auto suffix_offset = static_cast<size_t>(suffix_addr - data_addr);
-
-    auto* suffix_offset_ptr = GetSuffixOffsetPtr(data);
-    *suffix_offset_ptr = suffix_offset;
+    suffix = bump_allocator.New<Suffix>();
   }
+
+  // Store the data-relative and suffix offsets.
+  Base::UpdateOffsets(frame.data(), data, suffix);
 
   // Trim and return any excess memory.
-  size_t used = frame_layout.size() - bump_allocator.remaining();
-  std::ignore = allocator().Resize(frame, used);
+  size_t used = frame.size() - bump_allocator.remaining();
+  std::ignore = Base::allocator().Resize(frame.data(), used);
   return data;
 }
 
-template <typename Prefix, typename Suffix>
-void FramingAllocator<Prefix, Suffix>::DoDeallocate(void* ptr) {
-  if constexpr (!std::is_same_v<Prefix, void>) {
-    allocator().Destroy(GetPrefix(ptr), 1);
-  }
-  if constexpr (!std::is_same_v<Suffix, void>) {
-    allocator().Destroy(GetSuffix(ptr), 1);
-  }
-  allocator().Deallocate(GetFrame(ptr));
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+void FramingAllocator<Prefix, Suffix, ErrorHandler>::DoDeallocate(void* ptr) {
+  // Prefix and Suffix are void or trivially copyable, which implies they are
+  // also trivially destructible. As a result, there is no need to Destroy them.
+  Base::allocator().Deallocate(GetFrame(ptr));
 }
 
-template <typename Prefix, typename Suffix>
-bool FramingAllocator<Prefix, Suffix>::DoResize(void* ptr, size_t new_size) {
-  void* frame = GetFrame(ptr);
-  size_t data_offset = GetDataOffset(ptr);
-  new_size += data_offset;
-
-  if constexpr (!std::is_same_v<Suffix, void>) {
-    // Cache the suffix, and don't write it until the `Resize` succeeds.
-    Suffix tmp_suffix;
-    std::memcpy(&tmp_suffix, GetSuffix(ptr), sizeof(Suffix));
-
-    new_size = AlignUp(new_size, alignof(Suffix));
-    auto* suffix_offset_ptr = GetSuffixOffsetPtr(ptr);
-    size_t new_suffix_offset = new_size - data_offset;
-    new_size += sizeof(Suffix);
-
-    if (!allocator().Resize(frame, new_size)) {
-      return false;
-    }
-    *suffix_offset_ptr = new_suffix_offset;
-    std::memcpy(GetSuffix(ptr), &tmp_suffix, sizeof(Suffix));
-    return true;
-
-  } else {
-    return allocator().Resize(frame, new_size);
-  }
-}
-
-template <typename Prefix, typename Suffix>
-void FramingAllocator<Prefix, Suffix>::DoBeforeReallocate(void* ptr,
-                                                          Layout new_layout) {
-  Base::DoBeforeReallocate(GetFrame(ptr), new_layout);
-}
-
-template <typename Prefix, typename Suffix>
-void FramingAllocator<Prefix, Suffix>::DoAfterReallocateCopy(void* ptr,
-                                                             Layout new_layout,
-                                                             void* new_ptr) {
-  Base::DoAfterReallocateCopy(GetFrame(ptr), new_layout, GetFrame(new_ptr));
-  if constexpr (!std::is_same_v<Prefix, void>) {
-    std::memcpy(GetPrefix(new_ptr), GetPrefix(ptr), sizeof(Prefix));
-  }
-  if constexpr (!std::is_same_v<Suffix, void>) {
-    std::memcpy(GetSuffix(new_ptr), GetSuffix(ptr), sizeof(Suffix));
-  }
-}
-
-template <typename Prefix, typename Suffix>
-Result<Layout> FramingAllocator<Prefix, Suffix>::DoGetInfo(
-    InfoType info_type, const void* ptr) const {
-  if (info_type != InfoType::kCapacity) {
-    ptr = GetFrame(ptr);
-  }
-  return GetInfo(allocator(), info_type, ptr);
-}
-
-template <typename Prefix, typename Suffix>
-bool FramingAllocator<Prefix, Suffix>::IsValid(const void* data) const {
-  return ValidateFrame(data, /*strict=*/false);
-}
-
-template <typename Prefix, typename Suffix>
-auto FramingAllocator<Prefix, Suffix>::GetFrame(const void* data) const
-    -> void* {
-  if constexpr (Hardening::kIncludesDebugChecks) {
-    CheckFrame(data);
-  }
-  uintptr_t addr = reinterpret_cast<uintptr_t>(data);
-  PW_ASSERT(CheckedDecrement(addr, GetDataOffset(data)));
-  return reinterpret_cast<void*>(addr);
-}
-
-template <typename Prefix, typename Suffix>
-auto FramingAllocator<Prefix, Suffix>::GetPrefix(void* data) const -> Prefix* {
-  static_assert(!std::is_same_v<Prefix, void>, "prefix type is void");
-  return reinterpret_cast<Prefix*>(GetFrame(data));
-}
-
-template <typename Prefix, typename Suffix>
-void* FramingAllocator<Prefix, Suffix>::GetData(void* frame) {
-  auto addr = reinterpret_cast<uintptr_t>(frame);
-  PW_ASSERT(CheckedIncrement(addr, GetFrameOffset(frame)));
-  return reinterpret_cast<void*>(addr);
-}
-
-template <typename Prefix, typename Suffix>
-auto FramingAllocator<Prefix, Suffix>::GetSuffix(void* data) -> Suffix* {
-  static_assert(!std::is_same_v<Suffix, void>, "suffix type is void");
-  uintptr_t addr = reinterpret_cast<uintptr_t>(data);
-  PW_ASSERT(CheckedIncrement(addr, GetSuffixOffset(data)));
-  return reinterpret_cast<Suffix*>(addr);
-}
-
-template <typename Prefix, typename Suffix>
-void FramingAllocator<Prefix, Suffix>::CheckFrame(const void* data) const {
-  std::ignore = ValidateFrame(data, /*strict=*/true);
-}
-
-template <typename Prefix, typename Suffix>
-bool FramingAllocator<Prefix, Suffix>::ValidateFrame(const void* data,
-                                                     bool strict) const {
-  if (!IsAlignedAs<size_t>(data)) {
-    return CrashOnUnalignedIfStrict(strict, data);
-  }
-
-  size_t offset =
-      std::is_same_v<Suffix, void> ? sizeof(size_t) : sizeof(size_t) * 2;
-  if (reinterpret_cast<uintptr_t>(data) < offset) {
-    return CrashOnBadDataIfStrict(strict, data);
-  }
-
-  size_t data_offset = GetDataOffset(data);
-  if (data_offset % alignof(size_t) != 0) {
-    return CrashOnBadPrefixOffsetIfStrict(strict, data, data_offset);
-  }
-
-  uintptr_t addr = reinterpret_cast<uintptr_t>(data);
-  if (!CheckedDecrement(addr, data_offset)) {
-    return CrashOnBadPrefixOffsetIfStrict(strict, data, data_offset);
-  }
-  void* frame = reinterpret_cast<void*>(addr);
-  if (allocator().HasCapability(kImplementsRecognizes) &&
-      !Recognizes(allocator(), frame)) {
-    return CrashOnUnrecognized(strict, frame);
-  }
-  size_t frame_offset = GetFrameOffset(frame);
-  if (data_offset != frame_offset) {
-    return CrashOnWrongPrefixOffsetIfStrict(
-        strict, data, data_offset, frame, frame_offset);
-  }
-
-  if constexpr (!std::is_same_v<Prefix, void>) {
-    if (data_offset < sizeof(Prefix)) {
-      return CrashOnBadPrefixOffsetIfStrict(
-          strict, data, data_offset, sizeof(Prefix));
-    }
-  }
-
-  if constexpr (!std::is_same_v<Suffix, void>) {
-    size_t suffix_offset = GetSuffixOffset(data);
-    auto result = GetUsableLayout(allocator(), frame);
-    if (result.ok() && (result->size() < sizeof(Suffix) ||
-                        result->size() - sizeof(Suffix) < suffix_offset)) {
-      return CrashOnBadSuffixOffsetIfStrict(
-          strict, data, suffix_offset, result->size());
-    }
-  }
-
-  return true;
-}
-
-template <typename Prefix, typename Suffix>
-size_t* FramingAllocator<Prefix, Suffix>::GetFrameOffsetPtr(const void* frame) {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(frame);
-  if constexpr (!std::is_same_v<Prefix, void>) {
-    PW_ASSERT(CheckedIncrement(addr, AlignUp(sizeof(Prefix), alignof(size_t))));
-  }
-  return reinterpret_cast<size_t*>(addr);
-}
-
-template <typename Prefix, typename Suffix>
-size_t* FramingAllocator<Prefix, Suffix>::GetDataOffsetPtr(const void* data) {
-  size_t offset;
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+bool FramingAllocator<Prefix, Suffix, ErrorHandler>::DoResize(void* ptr,
+                                                              size_t new_size) {
   if constexpr (std::is_same_v<Suffix, void>) {
-    offset = sizeof(size_t);
+    return Base::ResizeFrame(ptr, new_size, Layout(), nullptr);
+
   } else {
-    offset = sizeof(size_t) * 2;
+    Suffix tmp;
+    return Base::ResizeFrame(ptr, new_size, Layout::Of<Suffix>(), &tmp);
   }
-  auto addr = reinterpret_cast<uintptr_t>(data);
-  PW_ASSERT(CheckedDecrement(addr, offset));
-  return reinterpret_cast<size_t*>(addr);
 }
 
-template <typename Prefix, typename Suffix>
-size_t* FramingAllocator<Prefix, Suffix>::GetSuffixOffsetPtr(const void* data) {
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+bool FramingAllocator<Prefix, Suffix, ErrorHandler>::DoBeforeReallocate(
+    void* ptr, Layout new_layout) {
+  void* frame = GetFrame(ptr);
+  if (frame == nullptr) {
+    return false;
+  }
+  return Base::DoBeforeReallocate(frame, new_layout);
+}
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+void FramingAllocator<Prefix, Suffix, ErrorHandler>::DoAfterReallocateCopy(
+    void* ptr, Layout new_layout, void* new_ptr) {
+  void* frame = Base::GetFrame(ptr, !std::is_same_v<Suffix, void>);
+  if (ptr == new_ptr) {
+    // Prefix unchanged, ResizeFrame already moved the Suffix.
+    Base::DoAfterReallocateCopy(frame, new_layout, frame);
+    return;
+  }
+
+  void* new_frame = Base::GetFrame(new_ptr, !std::is_same_v<Suffix, void>);
+  Base::DoAfterReallocateCopy(frame, new_layout, new_frame);
+
+  if constexpr (!std::is_same_v<Prefix, void>) {
+    std::memcpy(new_frame, frame, sizeof(Prefix));
+  }
+  if constexpr (!std::is_same_v<Suffix, void>) {
+    Result<size_t> frame_size = Base::GetFrameSize(frame);
+    PW_ASSERT(frame_size.ok());
+    size_t data_size = *frame_size - Base::Distance(frame, ptr);
+    void* suffix = Base::GetSuffix(ptr, data_size, Layout::Of<Suffix>());
+
+    Result<size_t> new_frame_size = Base::GetFrameSize(new_frame);
+    PW_ASSERT(new_frame_size.ok());
+    size_t new_data_size = *new_frame_size - Base::Distance(new_frame, new_ptr);
+    void* new_suffix =
+        Base::GetSuffix(new_ptr, new_data_size, Layout::Of<Suffix>());
+
+    std::memcpy(new_suffix, suffix, sizeof(Suffix));
+  }
+}
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+void* FramingAllocator<Prefix, Suffix, ErrorHandler>::GetFrame(
+    void* data) const {
+  void* frame = Base::GetFrame(data, !std::is_same_v<Suffix, void>);
+  if (frame == nullptr) {
+    return nullptr;
+  }
+  Result<size_t> frame_size = Base::GetFrameSize(frame);
+  if (frame_size.status() == Status::NotFound()) {
+    return nullptr;
+  }
+  return frame;
+}
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+void* FramingAllocator<Prefix, Suffix, ErrorHandler>::GetData(
+    void* frame) const {
+  return Base::GetData(frame, Base::GetFrameSize(frame), Layout::Of<Prefix>());
+}
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+auto FramingAllocator<Prefix, Suffix, ErrorHandler>::GetPrefix(void* data) const
+    -> Prefix* {
+  static_assert(!std::is_same_v<Prefix, void>, "prefix type is void");
+  return cpp20::bit_cast<Prefix*>(GetFrame(data));
+}
+
+template <typename Prefix, typename Suffix, typename ErrorHandler>
+auto FramingAllocator<Prefix, Suffix, ErrorHandler>::GetSuffix(void* data) const
+    -> Suffix* {
   static_assert(!std::is_same_v<Suffix, void>, "suffix type is void");
-  return reinterpret_cast<size_t*>(const_cast<void*>(data)) - 1;
+  void* frame = Base::GetFrame(data, true);
+  Result<size_t> frame_size = Base::GetFrameSize(frame);
+  if (!frame_size.ok()) {
+    return nullptr;
+  }
+  size_t data_size = *frame_size - Base::Distance(frame, data);
+  void* suffix = Base::GetSuffix(data, data_size, Layout::Of<Suffix>());
+  return cpp20::bit_cast<Suffix*>(suffix);
 }
 
 }  // namespace pw::allocator
