@@ -303,6 +303,9 @@ Consult the :cc:`API reference <pw_allocator>` for additional details.
 - :cc:`SynchronizedAllocator <pw::allocator::SynchronizedAllocator>`:
   Synchronizes access to another allocator, allowing it to be used by multiple
   threads.
+- :cc:`TaggingAllocator <pw::allocator::TaggingAllocator>`: Wraps another
+  allocator and stores a :cc:`Token <pw_tokenizer_Token>` with each allocation
+  to aid in attribution.
 - :cc:`TrackingAllocator <pw::allocator::TrackingAllocator>`: Wraps
   another allocator and records its usage.
 

@@ -419,6 +419,16 @@ pw_source_set("synchronized_allocator") {
   ]
 }
 
+pw_source_set("tagging_allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/tagging_allocator.h" ]
+  sources = [ "tagging_allocator.cc" ]
+  public_deps = [
+    ":framing_allocator",
+    "$dir_pw_tokenizer",
+  ]
+}
+
 pw_source_set("tlsf_allocator") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/tlsf_allocator.h" ]
@@ -803,6 +813,15 @@ pw_test("synchronized_allocator_test") {
   sources = [ "synchronized_allocator_test.cc" ]
 }
 
+pw_test("tagging_allocator_test") {
+  deps = [
+    ":tagging_allocator",
+    ":testing",
+    "$dir_pw_tokenizer",
+  ]
+  sources = [ "tagging_allocator_test.cc" ]
+}
+
 pw_test("tlsf_allocator_test") {
   deps = [
     ":block_allocator_testing",
@@ -886,6 +905,7 @@ pw_test_group("tests") {
     ":pmr_allocator_test",
     ":shared_ptr_test",
     ":synchronized_allocator_test",
+    ":tagging_allocator_test",
     ":tlsf_allocator_test",
     ":tracking_allocator_test",
     ":typed_pool_test",

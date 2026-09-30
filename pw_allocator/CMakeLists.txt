@@ -422,6 +422,18 @@ pw_add_library(pw_allocator.synchronized_allocator INTERFACE
     pw_sync.no_lock
 )
 
+pw_add_library(pw_allocator.tagging_allocator STATIC
+  HEADERS
+    public/pw_allocator/tagging_allocator.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator.framing_allocator
+    pw_tokenizer
+  SOURCES
+    tagging_allocator.cc
+)
+
 pw_add_library(pw_allocator.tlsf_allocator INTERFACE
   HEADERS
     public/pw_allocator/tlsf_allocator.h
@@ -880,6 +892,18 @@ pw_add_test(pw_allocator.synchronized_allocator_test
     pw_allocator.sync_allocator_testing
     pw_sync.interrupt_spin_lock
     pw_sync.mutex
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.tagging_allocator_test
+  SOURCES
+    tagging_allocator_test.cc
+  PRIVATE_DEPS
+    pw_allocator.tagging_allocator
+    pw_allocator.testing
+    pw_tokenizer
   GROUPS
     modules
     pw_allocator

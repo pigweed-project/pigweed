@@ -434,6 +434,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tagging_allocator",
+    srcs = ["tagging_allocator.cc"],
+    hdrs = ["public/pw_allocator/tagging_allocator.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":framing_allocator",
+        "//pw_tokenizer",
+    ],
+)
+
+cc_library(
     name = "tlsf_allocator",
     hdrs = ["public/pw_allocator/tlsf_allocator.h"],
     strip_include_prefix = "public",
@@ -864,6 +875,16 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "tagging_allocator_test",
+    srcs = ["tagging_allocator_test.cc"],
+    deps = [
+        ":tagging_allocator",
+        ":testing",
+        "//pw_tokenizer",
+    ],
+)
+
+pw_cc_test(
     name = "tlsf_allocator_test",
     srcs = ["tlsf_allocator_test.cc"],
     deps = [
@@ -964,6 +985,7 @@ filegroup(
         "public/pw_allocator/pool.h",
         "public/pw_allocator/shared_ptr.h",
         "public/pw_allocator/synchronized_allocator.h",
+        "public/pw_allocator/tagging_allocator.h",
         "public/pw_allocator/test_harness.h",
         "public/pw_allocator/testing.h",
         "public/pw_allocator/tlsf_allocator.h",
