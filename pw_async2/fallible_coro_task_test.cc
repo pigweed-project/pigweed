@@ -18,9 +18,9 @@
 #include "pw_allocator/testing.h"
 #include "pw_async2/coro.h"
 #include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/internal/coro_test_util.h"
 #include "pw_async2/value_future.h"
 #include "pw_containers/internal/test_helpers.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
 
@@ -37,12 +37,15 @@ using ::pw::async2::DispatcherForTest;
 using ::pw::async2::FallibleCoroTask;
 using ::pw::async2::ReturnValuePolicy;
 using ::pw::async2::ValueProvider;
-using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
 
-Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
+// Use PW_NO_INLINE to prevent the compiler from optimizing the coroutine onto
+// the stack, ensuring dynamic allocation so allocation failure can be tested.
+PW_NO_INLINE Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) {
+  co_return 5;
+}
 
-Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
+PW_NO_INLINE Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
   PW_CO_TRY_ASSIGN(out, co_await ImmediatelyReturnsFive(coro_cx));
   co_return OkStatus();
 }
@@ -67,9 +70,8 @@ TEST_F(FallibleCoroTaskTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 TEST_F(FallibleCoroTaskTest, AllocationFailureProducesInvalidCoro) {
-  EXPECT_FALSE(EnsureNotStackAllocated(
-                   ImmediatelyReturnsFive(CoroContext(GetNullAllocator())))
-                   .is_pendable());
+  EXPECT_FALSE(
+      ImmediatelyReturnsFive(CoroContext(GetNullAllocator())).is_pendable());
   bool error_handler_ran = false;
   int output = 0;
   FallibleCoroTask task(
@@ -100,7 +102,7 @@ class TrackedObject {
   ObjectState& state_;
 };
 
-Coro<Status> Inner(CoroContext) { co_return OkStatus(); }
+PW_NO_INLINE Coro<Status> Inner(CoroContext) { co_return OkStatus(); }
 
 Coro<Status> Outer(CoroContext cx,
                    std::optional<Status>& returned_status,
@@ -145,13 +147,14 @@ TEST_F(FallibleCoroTaskTest, AllocationFailureInNestedCoroAborts) {
   EXPECT_FALSE(task.has_value());
 }
 
-Coro<Counter> GetAndDouble(CoroContext cx, ValueProvider<Counter>& provider) {
+PW_NO_INLINE Coro<Counter> GetAndDouble(CoroContext cx,
+                                        ValueProvider<Counter>& provider) {
   Counter value = co_await provider.Get();
   co_return Counter(value.value * 2);
 }
 
-Coro<Counter> GetTwoAndDouble(CoroContext cx,
-                              ValueProvider<Counter>& provider) {
+PW_NO_INLINE Coro<Counter> GetTwoAndDouble(CoroContext cx,
+                                           ValueProvider<Counter>& provider) {
   Counter one = co_await GetAndDouble(cx, provider);
   Counter two = co_await provider.Get();
   co_return Counter(one.value + two.value * 2);

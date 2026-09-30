@@ -17,6 +17,7 @@
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/fallible_coro_task.h"
 #include "pw_async2/future_task.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -28,7 +29,9 @@ using ::pw::async2::DispatcherForTest;
 using ::pw::async2::FallibleCoroTask;
 using ::pw::async2::FutureTask;
 
-Coro<int> SimpleCoro(CoroContext, int value) { co_return value; }
+// Use PW_NO_INLINE to prevent the compiler from optimizing the coroutine onto
+// the stack, ensuring dynamic allocation so allocation failure can be tested.
+PW_NO_INLINE Coro<int> SimpleCoro(CoroContext, int value) { co_return value; }
 
 class AllocateTaskCoroTest : public ::testing::Test {
  protected:
@@ -128,7 +131,7 @@ TEST_F(AllocateTaskCoroTest, AllocateFallibleCoroTaskAsTask) {
   EXPECT_EQ(task->value(), 42);
 }
 
-Coro<int> NestedCoroutineInvocations(CoroContext cx, int value) {
+PW_NO_INLINE Coro<int> NestedCoroutineInvocations(CoroContext cx, int value) {
   if (value == 0) {
     co_return 0;
   }

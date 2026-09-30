@@ -439,6 +439,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_async2.testing
       pw_async2.value_future
       pw_containers._test_helpers
+      pw_preprocessor
       pw_status
       pw_compilation_testing._pigweed_only_negative_compilation
   )
@@ -454,6 +455,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_async2.testing
       pw_async2.value_future
       pw_containers._test_helpers
+      pw_preprocessor
       pw_status
   )
 
@@ -465,6 +467,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_async2
       pw_async2.testing
       pw_allocator.testing
+      pw_preprocessor
       pw_status
   )
 
@@ -476,6 +479,7 @@ if("cxx_std_20" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
       pw_async2
       pw_async2.testing
       pw_allocator.testing
+      pw_preprocessor
   )
 endif()
 

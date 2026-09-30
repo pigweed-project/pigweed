@@ -184,13 +184,6 @@ pw_source_set("channel_testing_internal") {
   visibility = [ ":*" ]
 }
 
-pw_source_set("coro_testing_internal") {
-  public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_async2/internal/coro_test_util.h" ]
-  testonly = pw_unit_test_TESTONLY
-  visibility = [ ":*" ]
-}
-
 config("basic_dispatcher_for_test_public_overrides") {
   include_dirs = [ "dispatcher_for_test_public_overrides" ]
   visibility = [ ":*" ]
@@ -493,7 +486,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
     deps = [
       ":coro",
-      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       ":value_future",
@@ -501,6 +493,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_allocator:testing",
       "$dir_pw_containers:test_helpers",
       "$dir_pw_status",
+      dir_pw_preprocessor,
     ]
     sources = [ "coro_test.cc" ]
     negative_compilation_tests = true
@@ -511,7 +504,6 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     sources = [ "fallible_coro_task_test.cc" ]
     deps = [
       ":coro",
-      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       ":value_future",
@@ -519,6 +511,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_allocator:testing",
       "$dir_pw_containers:test_helpers",
       "$dir_pw_status",
+      dir_pw_preprocessor,
     ]
   }
 
@@ -527,11 +520,11 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
     sources = [ "coro_task_test.cc" ]
     deps = [
       ":coro",
-      ":coro_testing_internal",
       ":pw_async2",
       ":testing",
       "$dir_pw_allocator:testing",
       "$dir_pw_status",
+      dir_pw_preprocessor,
     ]
   }
 
@@ -543,6 +536,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       ":pw_async2",
       ":testing",
       "$dir_pw_allocator:testing",
+      dir_pw_preprocessor,
     ]
   }
 }

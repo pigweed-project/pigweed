@@ -18,13 +18,11 @@
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future_task.h"
-#include "pw_async2/internal/coro_test_util.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_status/status.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
-
-using ::pw::async2::test::EnsureNotStackAllocated;
 
 using namespace pw::async2;
 
@@ -36,9 +34,11 @@ class FutureTaskCoroTest : public ::testing::Test {
   CoroContext coro_cx_;
 };
 
+// Use PW_NO_INLINE to prevent the compiler from optimizing the coroutine onto
+// the stack, ensuring dynamic allocation so allocation failure can be tested.
 template <typename T>
   requires std::integral<T> || std::floating_point<T>
-Coro<T> DoubleIt(CoroContext, T value) {
+PW_NO_INLINE Coro<T> DoubleIt(CoroContext, T value) {
   co_return value * 2;
 }
 
@@ -82,7 +82,7 @@ TEST_F(FutureTaskCoroTest, RunOnceInt) {
 
 TEST_F(FutureTaskCoroTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
-  Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+  Coro<int> coro = DoubleIt(coro_cx_, 100);
   EXPECT_FALSE(coro.is_pendable());
 
   DispatcherForTest dispatcher;
@@ -93,7 +93,7 @@ TEST_F(FutureTaskCoroTest, InvalidTaskIfAllocationFails) {
 
 TEST_F(FutureTaskCoroTest, ValidTaskIfAllocationSucceeds) {
   {
-    Coro<int> coro = EnsureNotStackAllocated(DoubleIt(coro_cx_, 100));
+    Coro<int> coro = DoubleIt(coro_cx_, 100);
     EXPECT_TRUE(coro.is_pendable());
     FutureTask task(std::move(coro));
   }
@@ -165,7 +165,7 @@ TEST_F(FutureTaskCoroTest, DefaultConstructAndAssignFallibleCoro) {
 
   // emplace_future with Coro and error handler directly.
   alloc_.Exhaust();
-  task.emplace_future(EnsureNotStackAllocated(DoubleIt(coro_cx_, 15)),
+  task.emplace_future(DoubleIt(coro_cx_, 15),
                       [&] { error_handler_ran = true; });
   EXPECT_TRUE(task.is_pendable());
 

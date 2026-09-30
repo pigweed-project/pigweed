@@ -23,10 +23,10 @@
 #include "pw_async2/func_task.h"
 #include "pw_async2/future.h"
 #include "pw_async2/future_task.h"
-#include "pw_async2/internal/coro_test_util.h"
 #include "pw_async2/value_future.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
+#include "pw_preprocessor/compiler.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
 
@@ -52,12 +52,15 @@ using ::pw::async2::Poll;
 using ::pw::async2::Ready;
 using ::pw::async2::ValueProvider;
 using ::pw::async2::Waker;
-using ::pw::async2::test::EnsureNotStackAllocated;
 using ::pw::containers::test::Counter;
 
-Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
+// Use PW_NO_INLINE to prevent the compiler from optimizing the coroutine onto
+// the stack, ensuring dynamic allocation so allocation failure can be tested.
+PW_NO_INLINE Coro<Result<int>> ImmediatelyReturnsFive(CoroContext) {
+  co_return 5;
+}
 
-Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
+PW_NO_INLINE Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
   PW_CO_TRY_ASSIGN(out, co_await ImmediatelyReturnsFive(coro_cx));
   co_return OkStatus();
 }
@@ -93,15 +96,12 @@ TEST_F(CoroTest, BasicFunctionsWithoutYieldingRun) {
 }
 
 bool CreateWithoutRunningImmediatelyReturnsFive(pw::Allocator& alloc) {
-  return EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc)))
-      .is_pendable();
+  return ImmediatelyReturnsFive(CoroContext(alloc)).is_pendable();
 }
 
 bool CreateWithoutRunningStoresFiveThenReturns(pw::Allocator& alloc) {
   int output = 0;
-  return EnsureNotStackAllocated(
-             StoresFiveThenReturns(CoroContext(alloc), output))
-      .is_pendable();
+  return StoresFiveThenReturns(CoroContext(alloc), output).is_pendable();
 }
 
 TEST(Coro, AllocationFailureProducesInvalidCoro) {
@@ -124,8 +124,7 @@ TEST_F(CoroTest, NoAllocationFailureProducesValidCoro) {
 
 TEST_F(CoroTest, InvalidTaskIfAllocationFails) {
   alloc_.Exhaust();
-  auto coro =
-      EnsureNotStackAllocated(ImmediatelyReturnsFive(CoroContext(alloc_)));
+  auto coro = ImmediatelyReturnsFive(CoroContext(alloc_));
   EXPECT_FALSE(coro.is_pendable());
 
   DispatcherForTest dispatcher;
@@ -462,9 +461,9 @@ TEST_F(CoroTest, GeneratorAwaitsAndYields) {
   EXPECT_EQ(alloc_.GetAllocated(), 0u);
 }
 
-Coro<void> ReturnsVoid(CoroContext) { co_return; }
+PW_NO_INLINE Coro<void> ReturnsVoid(CoroContext) { co_return; }
 
-Coro<int> ReturnsInt(CoroContext, int val) { co_return val; }
+PW_NO_INLINE Coro<int> ReturnsInt(CoroContext, int val) { co_return val; }
 
 Coro<int> AwaitsProvider(CoroContext, OptionalValueProvider<int>& provider) {
   std::optional<int> val = co_await provider.Get();
@@ -898,9 +897,9 @@ TEST_F(CoroTest, MakeFallibleInitialAllocFailureVoid) {
   EXPECT_TRUE(fut.is_complete());
 }
 
-Coro<Status> InnerCoro(CoroContext) { co_return OkStatus(); }
+PW_NO_INLINE Coro<Status> InnerCoro(CoroContext) { co_return OkStatus(); }
 
-Coro<Status> OuterCoroAwaitingInner(CoroContext cx) {
+PW_NO_INLINE Coro<Status> OuterCoroAwaitingInner(CoroContext cx) {
   co_await InnerCoro(cx);
   co_return OkStatus();
 }
@@ -1051,7 +1050,7 @@ TEST_F(CoroTest, NestedAllocFailureDestroysObjectsAndInvokesHandler) {
   EXPECT_TRUE(fut.is_complete());
 }
 
-Coro<int> DoubleValue(CoroContext, int val) { co_return val * 2; }
+PW_NO_INLINE Coro<int> DoubleValue(CoroContext, int val) { co_return val * 2; }
 
 Coro<int> NestedWithSuspend(CoroContext cx, ValueProvider<int>& provider) {
   int a = co_await provider.Get();
