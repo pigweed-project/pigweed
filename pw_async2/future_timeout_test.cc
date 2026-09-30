@@ -249,6 +249,8 @@ TEST(FutureTimeout, SendFutureTimeoutOrClosedResolvesToClosedOnTimeout) {
   handle.Release();
 
   SendFutureWithTimeoutOrClosed<int> send_future;
+  static_assert(
+      std::is_same_v<typename decltype(send_future)::value_type, bool>);
   int send_count = 0;
   FuncTask send_task([&](Context& cx) -> Poll<> {
     while (true) {

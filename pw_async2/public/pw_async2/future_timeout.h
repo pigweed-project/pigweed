@@ -392,7 +392,7 @@ template <typename T, typename Clock>
 auto TimeoutOrClosed(SendFuture<T>&& future,
                      TimeProvider<Clock>& time_provider,
                      typename Clock::duration delay) {
-  return CreateFutureWithTimeout<T>(
+  return CreateFutureWithTimeout<bool>(
       std::move(future),
       time_provider.WaitFor(delay),
       ReadyConstantValueResolution<bool, std::false_type>());
