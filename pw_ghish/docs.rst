@@ -170,15 +170,15 @@ Documentation
       Multi-harness rules/skills discovery (Antigravity/Jetski, Claude Code,
       Codex, Cursor, OpenCode) and optional local ``PreToolUse`` hook setup.
 
-   .. grid-item-card:: :octicon:`checklist` Agent evaluation
-      :link: module-pw_ghish-agent-eval
+   .. grid-item-card:: :octicon:`shield-check` Hooks (gh hook)
+      :link: module-pw_ghish-hook
       :link-type: ref
       :class-item: sales-pitch-cta-secondary
 
-      Verification runbook for coding agents, behavioral rubric, and live
-      integration test suite (``live_test.go``).
+      Manage and execute AI agent ``PreToolUse`` guards and Git repository
+      hooks (``commit-msg``, ``pre-push``) in pure Go.
 
-.. grid:: 1
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`milestone` Status & roadmap
       :link: module-pw_ghish-roadmap
@@ -187,6 +187,14 @@ Documentation
 
       Operational status, capability matrix, and roadmap for declarative
       profiles, setup automation, and alternative SCMs.
+
+   .. grid-item-card:: :octicon:`checklist` Agent evaluation
+      :link: module-pw_ghish-agent-eval
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Verification runbook for coding agents, behavioral rubric, and live
+      integration test suite (``live_test.go``).
 
 .. toctree::
    :maxdepth: 1
@@ -198,6 +206,7 @@ Documentation
    issue
    auth
    worktree
+   hook
    ai_workflows
    agent_integration
    cli_comparison

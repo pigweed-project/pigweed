@@ -28,6 +28,7 @@ pw_doc_group("docs") {
     "auth.rst",
     "cli_comparison.rst",
     "docs.rst",
+    "hook.rst",
     "issue.rst",
     "life_of_a_pr.rst",
     "pr.rst",

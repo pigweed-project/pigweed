@@ -56,6 +56,7 @@ func (r *RealGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, args 
 	if r != nil && r.Dir != "" {
 		cmd.Dir = r.Dir
 	}
+	cmd.Env = append(os.Environ(), "GH_ISH_ACTIVE=1")
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
