@@ -146,7 +146,6 @@ cc_library(
     target_compatible_with = ["//pw_build/constraints/rtos:zephyr"],
     deps = [
         "@zephyr",
-        "@zephyr//:board_deps",
     ],
 )
 
