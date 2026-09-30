@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/andygrunwald/go-gerrit"
 	"github.com/spf13/cobra"
@@ -24,9 +25,11 @@ import (
 type reviewOptions struct {
 	message        string
 	body           string
+	bodyFile       string
 	approve        bool
 	requestChanges bool
 	comment        bool
+	publish        bool
 	cq             int
 }
 
@@ -35,13 +38,16 @@ func newReviewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "review [<id>]",
 		Short: "Review a change",
-		Long: `Review a Gerrit change by adding a message, approving, requesting changes, or voting on Commit-Queue.
+		Long: `Review a Gerrit change by adding a message, approving, requesting changes, publishing draft comments, or voting on Commit-Queue.
 
 If no change ID is specified, the active change for the current branch is reviewed.
 
 Examples:
 # Trigger Commit-Queue dry run on the active change
 gh-ish pr review --cq
+
+# Publish all staged draft comments on the active change
+gh-ish pr review --publish
 
 # Approve the active change on the current branch
 gh-ish pr review --approve -m "Looks good to me"
@@ -59,11 +65,9 @@ gh-ish pr review 12345 --request-changes -m "Please fix the typo"
 gh-ish pr review 12345 --comment -m "Just a question"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if opts.body != "" {
-				if opts.message != "" {
-					return fmt.Errorf("cannot specify both --message and --body")
-				}
-				opts.message = opts.body
+			msg, err := resolveCommentMessage(opts.message, opts.body, opts.bodyFile, false)
+			if err != nil {
+				return err
 			}
 
 			count := 0
@@ -81,12 +85,12 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				return fmt.Errorf("cannot specify more than one of --approve, --request-changes, and --comment")
 			}
 
-			if opts.comment && opts.message == "" {
-				return fmt.Errorf("--comment requires a message (specify -m \"...\" or --body \"...\")")
+			if opts.comment && msg == "" {
+				return fmt.Errorf("--comment requires a message (specify -m \"...\", -b \"...\", or -F <file>)")
 			}
 
 			hasCQ := cmd.Flags().Changed("cq")
-			if !opts.approve && !opts.requestChanges && !opts.comment && opts.message == "" && !hasCQ {
+			if !opts.approve && !opts.requestChanges && !opts.comment && msg == "" && !hasCQ && !opts.publish {
 				targetID := "<id>"
 				if len(args) > 0 {
 					targetID = args[0]
@@ -94,13 +98,14 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 				return fmt.Errorf("no review action or message specified.\n\n"+
 					"Specify at least one review action or message:\n"+
 					"  gh pr review %s --cq                             # Trigger CQ dry run\n"+
+					"  gh pr review %s --publish                        # Publish staged draft comments\n"+
 					"  gh pr review %s --approve                        # Vote Code-Review+2\n"+
 					"  gh pr review %s --approve --cq                   # Approve and trigger CQ dry run\n"+
 					"  gh pr review %s --approve -m \"Looks great!\"       # Approve with a message\n"+
 					"  gh pr review %s --request-changes -m \"See typo\"   # Vote Code-Review-1\n"+
 					"  gh pr review %s --comment -m \"Just a question\"    # Leave comment without voting\n"+
 					"  gh pr review %s -m \"Review message\"               # Leave message without voting",
-					targetID, targetID, targetID, targetID, targetID, targetID, targetID)
+					targetID, targetID, targetID, targetID, targetID, targetID, targetID, targetID)
 			}
 
 			chCtx, err := ResolveChangeContext(cmd, args)
@@ -109,34 +114,58 @@ gh-ish pr review 12345 --comment -m "Just a question"`,
 			}
 
 			input := &gerrit.ReviewInput{
-				Message: opts.message,
+				Message: msg,
 				Labels:  make(map[string]int),
+				Drafts:  "KEEP",
+			}
+			if opts.publish {
+				input.Drafts = "PUBLISH_ALL_REVISIONS"
 			}
 
+			var actions []string
 			if opts.approve {
 				input.Labels["Code-Review"] = 2
+				actions = append(actions, "Code-Review+2")
 			} else if opts.requestChanges {
 				input.Labels["Code-Review"] = -1
+				actions = append(actions, "Code-Review-1")
 			}
 			if hasCQ {
 				input.Labels["Commit-Queue"] = opts.cq
+				if opts.cq == 0 {
+					actions = append(actions, "Commit-Queue=0")
+				} else {
+					actions = append(actions, fmt.Sprintf("Commit-Queue+%d", opts.cq))
+				}
+			}
+			if opts.publish {
+				actions = append(actions, "published pending drafts")
+			}
+			if msg != "" {
+				actions = append(actions, "message")
 			}
 
 			if err := chCtx.SetReview(input); err != nil {
 				return err
 			}
 
-			fmt.Fprintln(cmd.OutOrStdout(), "Review submitted successfully.")
+			if len(actions) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "Review submitted successfully (%s).\n", strings.Join(actions, ", "))
+			} else {
+				fmt.Fprintln(cmd.OutOrStdout(), "Review submitted successfully.")
+			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&opts.message, "message", "m", "", "Review message")
-	cmd.Flags().StringVar(&opts.body, "body", "", "Review message (alias for --message)")
+	cmd.Flags().StringVarP(&opts.body, "body", "b", "", "Review message (alias for --message)")
+	cmd.Flags().StringVarP(&opts.bodyFile, "body-file", "F", "", "Read review message from file")
 	cmd.Flags().BoolVarP(&opts.approve, "approve", "a", false, "Approve change (Code-Review+2)")
-	cmd.Flags().BoolVar(&opts.requestChanges, "request-changes", false, "Request changes (Code-Review-1)")
+	cmd.Flags().BoolVarP(&opts.requestChanges, "request-changes", "r", false, "Request changes (Code-Review-1)")
 	cmd.Flags().BoolVarP(&opts.comment, "comment", "c", false, "Comment on change without voting")
-	cmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove)")
+	cmd.Flags().BoolVar(&opts.publish, "publish", false, "Publish all pending draft comments (ghish-only)")
+	cmd.Flags().IntVar(&opts.cq, "cq", -1, "Set Commit-Queue vote (default 1: 1 = dry run, 2 = submit, 0 = remove) (ghish-only)")
 	cmd.Flags().Lookup("cq").NoOptDefVal = "1"
 
 	return cmd

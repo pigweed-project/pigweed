@@ -221,7 +221,9 @@ Displays a summary of:
 1. **Current branch**: Shows the active change number, title, target branch,
    patchset number, submittability, label votes (e.g. ``Code-Review``,
    ``Presubmit-Verified``, ``Lint``), tryjob check status, and a summary of
-   unresolved comment threads and unpublished drafts.
+   unresolved comment threads and unpublished drafts (previewing up to two
+   unresolved threads and standalone ``[DRAFT]`` comments inline with
+   ``[PS<N>]`` tags and message snippets).
 2. **Created by you**: Lists open changes you authored (scoped to the last 30
    days by default).
 3. **Requesting a code review from you**: Lists changes awaiting your review
@@ -257,11 +259,15 @@ the active change for your current branch:
    # View active change on current branch:
    $ ./gh pr view
 
-   # Include inline comment threads grouped by file and line number:
+   # Include inline comment threads and unpublished drafts grouped by file and line:
    $ ./gh pr view 413992 --comments
 
-   # Output JSON (strictly validated against supported fields):
-   $ ./gh pr view 413992 --json number,title,state,author,files,bug,bugs
+   # Output JSON (strictly validated against supported fields, including comments and drafts):
+   $ ./gh pr view 413992 --json number,title,state,author,files,bug,bugs,comments,drafts
+
+``pr view --comments`` renders each thread with its ``[PS<N>]`` patchset tag,
+``[DRAFT]`` indicator, and ``[resolved]`` / ``[unresolved]`` status (or
+``Comments: None`` when no comments or drafts exist).
 
 ``pr view --json bug,bugs`` parses commit message trailers on the patchset:
 ``bug`` returns a comma-separated string, while ``bugs`` returns objects with
@@ -299,7 +305,8 @@ Reviewing, commenting, and landing
 
 Reviewing changes: ``pr review``
 ================================
-Submits review scores or Commit-Queue votes on a Gerrit CL:
+Submits review scores, Commit-Queue votes, or staged draft comments on a Gerrit
+CL:
 
 .. code-block:: console
 
@@ -315,11 +322,16 @@ Submits review scores or Commit-Queue votes on a Gerrit CL:
    # Vote Code-Review-1 with a comment:
    $ ./gh pr review 413992 --request-changes -m "Please address formatting."
 
+   # Publish all staged draft comments on the change without uploading a patchset:
+   $ ./gh pr review 413992 --publish
+
 Posting inline comments: ``pr comment``
 =======================================
-Posts change-level or inline review comments. When ``--path`` and ``--line``
-are provided, ``pw_ghish`` checks for an existing thread on that line across
-all patchsets and appends your comment as a reply:
+Posts change-level, file-level, or inline review comments (via ``-m, --message``
+or ``-b, --body``). When ``--path`` (and optionally ``--line``) is provided,
+``pw_ghish`` checks for an existing thread at that target across patchsets and
+appends your comment as a reply while keeping any unrelated drafts private
+(``Drafts: KEEP``):
 
 .. code-block:: console
 
@@ -327,15 +339,24 @@ all patchsets and appends your comment as a reply:
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
        -m "Fixed, using pw::Status." --resolved
 
-   # Save an inline comment as a private draft without publishing:
+   # Save or update an inline comment as a private draft without publishing:
    $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 \
        -m "Consider std::string_view" --draft
 
-   # Explicitly target a specific patchset:
+   # Delete an unpublished draft comment on a file and line:
+   $ ./gh pr comment 413992 --path pw_string/string.cc --line 42 --delete-draft
+
+   # Explicitly target or disambiguate a specific patchset:
    $ ./gh pr comment 413992/1 --path pw_string/string.cc --line 42 -m "Ack."
 
-``--resolved`` requires both ``--path`` and ``--line`` so a change-level
-comment cannot accidentally resolve a thread.
+When ``--draft`` is used on a thread or line that already has an unpublished
+draft from you, ``pw_ghish`` updates that draft in place (preserving ``Side``
+and character ``Range``) rather than creating a duplicate draft. If multiple
+unpublished drafts exist at the same location across different patchsets,
+``pr comment`` refuses to guess and prompts you to disambiguate with
+``--patchset <N>`` or ``<id>/<N>``. ``--resolved`` requires ``--path`` (and
+``--line`` for inline threads) so a change-level comment cannot accidentally
+resolve a thread.
 
 Lifecycle transitions: ``pr ready``, ``pr close``, and ``pr reopen``
 ====================================================================
@@ -495,11 +516,12 @@ Comparison with GitHub CLI (gh pr)
    * - ``pr review --request-changes``
      - Votes ``Code-Review-1``.
      - In Gerrit, ``-1`` is advisory and does **not** block submission;
-       ``Code-Review-2`` is the veto. Also supports ``--cq``.
+       ``Code-Review-2`` is the veto. Also supports ``--cq`` and ``--publish``.
    * - ``pr comment``
      - Posts change-level or inline threaded comments (``--path``, ``--line``).
-     - Adds ``--resolved`` to mark an inline thread resolved and ``--draft``
-       to stage an unpublished server-side draft comment.
+     - Adds ``--resolved`` to mark an inline thread resolved, ``--draft`` to
+       create or update an unpublished server-side draft comment, and
+       ``--delete-draft`` to delete an unpublished draft.
    * - ``pr ready``
      - Marks a WIP change ready for review, or WIP with ``-u, --undo``.
      - Adds ``-m, --message`` to attach a status note to the state transition.

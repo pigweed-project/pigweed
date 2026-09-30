@@ -471,6 +471,9 @@ func TestStatus_CurrentBranch_CommentsFailureGraceful(t *testing.T) {
 	if !strings.Contains(out, "Active Feature Subject") {
 		t.Errorf("Expected active feature subject in output despite comments failure, got:\n%s", out)
 	}
+	if !strings.Contains(out, "✖ Failed to load comments") {
+		t.Errorf("Expected status output to surface '✖ Failed to load comments' instead of silently claiming None, got:\n%s", out)
+	}
 }
 
 func TestStatus_CurrentBranch_ChecksSummary_Passing(t *testing.T) {

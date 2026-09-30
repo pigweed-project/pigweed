@@ -840,3 +840,216 @@ func TestView_NonexistentRevisionError(t *testing.T) {
 		t.Errorf("expected error mentioning 'revision 99 not found', got: %v", err)
 	}
 }
+
+func TestView_CommentsAndDrafts(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{
+		"pw_ring_buffer/ring_buffer.cc": []map[string]any{
+			{
+				"id":         "pub_1",
+				"line":       42,
+				"patch_set":  2,
+				"unresolved": true,
+				"author":     map[string]any{"name": "Ben Lawson"},
+				"message":    "Why was this file deleted?",
+			},
+		},
+	})
+	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{
+		"pw_ring_buffer/ring_buffer.cc": []map[string]any{
+			{
+				"id":          "draft_1",
+				"in_reply_to": "pub_1",
+				"line":        42,
+				"patch_set":   2,
+				"unresolved":  false,
+				"message":     "Reverted.",
+			},
+		},
+		"pw_ring_buffer/ring_buffer.h": []map[string]any{
+			{
+				"id":         "draft_2",
+				"line":       84,
+				"patch_set":  2,
+				"unresolved": true,
+				"message":    "FOR GEMINI: Please use pw::Result here.",
+			},
+		},
+	})
+	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
+		"project":          "pigweed/pigweed",
+		"_number":          12345,
+		"subject":          "Drafts View Test",
+		"status":           "NEW",
+		"current_revision": "rev1",
+		"revisions": map[string]any{
+			"rev1": map[string]any{
+				"_number": 2,
+				"commit":  map[string]any{"message": "pw_ring_buffer: Test\n\nChange-Id: I1234\n"},
+			},
+		},
+	})
+
+	t.Run("terminal output renders published comments and drafts", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+		if err != nil {
+			t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+		}
+		for _, want := range []string{
+			"Comments:",
+			"File: pw_ring_buffer/ring_buffer.cc",
+			"Line 42 [PS2]: Ben Lawson [unresolved]",
+			"Why was this file deleted?",
+			"-> [DRAFT, resolved]: Reverted.",
+			"File: pw_ring_buffer/ring_buffer.h",
+			"Line 84 [PS2]: [DRAFT] [unresolved]",
+			"FOR GEMINI: Please use pw::Result here.",
+		} {
+			if !strings.Contains(output, want) {
+				t.Errorf("output missing %q.\nGot:\n%s", want, output)
+			}
+		}
+	})
+
+	t.Run("json output exposes comments and drafts without mutating author", func(t *testing.T) {
+		output, err := executeCommand(RootCmd, "pr", "view", "12345", "--json", "comments,drafts")
+		if err != nil {
+			t.Fatalf("pr view --json comments,drafts failed: %v\nOutput: %s", err, output)
+		}
+		var got struct {
+			Comments map[string][]gerrit.CommentInfo `json:"comments"`
+			Drafts   map[string][]gerrit.CommentInfo `json:"drafts"`
+		}
+		if err := json.Unmarshal([]byte(output), &got); err != nil {
+			t.Fatalf("failed to parse JSON: %v\nOutput: %s", err, output)
+		}
+		if len(got.Comments["pw_ring_buffer/ring_buffer.cc"]) != 1 {
+			t.Fatalf("expected 1 published comment on ring_buffer.cc, got %+v", got.Comments)
+		}
+		if len(got.Drafts["pw_ring_buffer/ring_buffer.cc"]) != 1 {
+			t.Fatalf("expected 1 draft on ring_buffer.cc, got %+v", got.Drafts)
+		}
+		if got.Drafts["pw_ring_buffer/ring_buffer.cc"][0].Author.Name != "" {
+			t.Errorf("expected draft Author.Name to remain unmodified empty string in JSON, got %q",
+				got.Drafts["pw_ring_buffer/ring_buffer.cc"][0].Author.Name)
+		}
+		if len(got.Drafts["pw_ring_buffer/ring_buffer.h"]) != 1 {
+			t.Fatalf("expected 1 standalone draft on ring_buffer.h, got %+v", got.Drafts)
+		}
+	})
+}
+
+func TestView_EmptyCommentsShowsNone(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
+		"project":          "pigweed/pigweed",
+		"_number":          12345,
+		"subject":          "No Comments Test",
+		"status":           "NEW",
+		"current_revision": "rev1",
+		"revisions": map[string]any{
+			"rev1": map[string]any{"_number": 1},
+		},
+	})
+
+	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+	if err != nil {
+		t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "Comments: None") {
+		t.Errorf("expected 'Comments: None' when --comments is passed and there are no comments or drafts, got:\n%s", output)
+	}
+}
+
+func TestView_OnlyDrafts_RendersCommentsSection(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
+	server.OnJSON("GET", "/changes/12345/drafts", http.StatusOK, map[string]any{
+		"foo.cc": []map[string]any{
+			{
+				"id":         "draft_only",
+				"line":       10,
+				"patch_set":  1,
+				"unresolved": true,
+				"message":    "Private steering note",
+			},
+		},
+	})
+	server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
+		"project":          "pigweed/pigweed",
+		"_number":          12345,
+		"subject":          "Only Drafts Test",
+		"status":           "NEW",
+		"current_revision": "rev1",
+		"revisions": map[string]any{
+			"rev1": map[string]any{"_number": 1},
+		},
+	})
+
+	output, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+	if err != nil {
+		t.Fatalf("pr view --comments failed: %v\nOutput: %s", err, output)
+	}
+	if !strings.Contains(output, "Comments:") || !strings.Contains(output, "Private steering note") {
+		t.Errorf("expected Comments section with standalone draft even when published comments are empty, got:\n%s", output)
+	}
+}
+
+func TestView_ErrorWhenDraftsOrFilesFail(t *testing.T) {
+	t.Run("fails when ListChangeDrafts fails during --comments", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{})
+		server.OnJSON("GET", "/changes/12345/comments", http.StatusOK, map[string]any{})
+		server.On("GET", "/changes/12345/drafts", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Drafts DB error", http.StatusInternalServerError)
+		})
+		server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
+			"project":          "pigweed/pigweed",
+			"_number":          12345,
+			"subject":          "Drafts Error Test",
+			"status":           "NEW",
+			"current_revision": "rev1",
+			"revisions": map[string]any{
+				"rev1": map[string]any{"_number": 1},
+			},
+		})
+
+		_, err := executeCommand(RootCmd, "pr", "view", "12345", "--comments")
+		if err == nil {
+			t.Fatal("expected error when ListChangeDrafts fails during --comments, got nil")
+		}
+		if !strings.Contains(err.Error(), "error listing draft comments for change 12345") {
+			t.Errorf("expected error mentioning draft comments failure, got: %v", err)
+		}
+	})
+
+	t.Run("fails when ListFiles fails during --json files", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/12345/revisions/current/files*", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "Files DB error", http.StatusInternalServerError)
+		})
+		server.OnJSON("GET", "/changes/12345*", http.StatusOK, map[string]any{
+			"project":          "pigweed/pigweed",
+			"_number":          12345,
+			"subject":          "Files Error Test",
+			"status":           "NEW",
+			"current_revision": "rev1",
+			"revisions": map[string]any{
+				"rev1": map[string]any{"_number": 1},
+			},
+		})
+
+		_, err := executeCommand(RootCmd, "pr", "view", "12345", "--json", "files")
+		if err == nil {
+			t.Fatal("expected error when ListFiles fails during --json files, got nil")
+		}
+		if !strings.Contains(err.Error(), "error listing files for change 12345") {
+			t.Errorf("expected error mentioning list files failure, got: %v", err)
+		}
+	})
+}

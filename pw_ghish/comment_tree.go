@@ -25,6 +25,7 @@ import (
 // CommentNode represents a single node within a threaded comment hierarchy.
 type CommentNode struct {
 	Comment  gerrit.CommentInfo
+	IsDraft  bool
 	Children []*CommentNode
 }
 
@@ -39,22 +40,58 @@ type CommentThread struct {
 	HasDraftReply bool
 }
 
+// isNewerComment reports whether candidate is more recent than current based on
+// Updated timestamp, falling back to PatchSet number and ID.
+func isNewerComment(candidate, current *gerrit.CommentInfo) bool {
+	if current == nil {
+		return true
+	}
+	if (current.Updated == nil) != (candidate.Updated == nil) {
+		return candidate.Updated != nil
+	}
+	if current.Updated != nil && candidate.Updated != nil && !candidate.Updated.Time.Equal(current.Updated.Time) {
+		return candidate.Updated.Time.After(current.Updated.Time)
+	}
+	if candidate.PatchSet != current.PatchSet {
+		return candidate.PatchSet > current.PatchSet
+	}
+	return false
+}
+
 // BuildCommentForest organizes a flat list of comments on a single file into a
 // forest (slice of root trees), resolving InReplyTo parentage, detecting cycles,
 // promoting orphaned replies to roots, and sorting threads by line and timestamp.
 func BuildCommentForest(comments []gerrit.CommentInfo) []*CommentNode {
-	if len(comments) == 0 {
+	return BuildCommentForestWithDrafts(comments, nil)
+}
+
+// BuildCommentForestWithDrafts organizes published comments and unpublished drafts
+// on a single file into a unified threaded forest. Draft replies attach to their
+// parent published or draft comment via InReplyTo, while standalone drafts become
+// root nodes marked with IsDraft.
+func BuildCommentForestWithDrafts(published, drafts []gerrit.CommentInfo) []*CommentNode {
+	total := len(published) + len(drafts)
+	if total == 0 {
 		return nil
 	}
 
-	nodes := make(map[string]*CommentNode, len(comments))
-	for _, c := range comments {
-		nodes[c.ID] = &CommentNode{Comment: c}
+	nodes := make(map[string]*CommentNode, total)
+	ordered := make([]*CommentNode, 0, total)
+
+	for _, c := range published {
+		n := &CommentNode{Comment: c, IsDraft: false}
+		nodes[c.ID] = n
+		ordered = append(ordered, n)
+	}
+	for _, d := range drafts {
+		n := &CommentNode{Comment: d, IsDraft: true}
+		nodes[d.ID] = n
+		ordered = append(ordered, n)
 	}
 
 	var roots []*CommentNode
-	for _, c := range comments {
-		node := nodes[c.ID]
+	for _, node := range ordered {
+		c := node.Comment
 
 		// Disallow self-parenting
 		if c.InReplyTo != "" && c.InReplyTo != c.ID {
@@ -70,37 +107,42 @@ func BuildCommentForest(comments []gerrit.CommentInfo) []*CommentNode {
 		roots = append(roots, node)
 	}
 
-	// Sort each node's children chronologically
+	// Sort each node's children chronologically (drafts sort after published at identical timestamps)
 	for _, node := range nodes {
 		if len(node.Children) > 1 {
 			sort.Slice(node.Children, func(i, j int) bool {
-				ci := node.Children[i].Comment
-				cj := node.Children[j].Comment
-				if ci.Updated != nil && cj.Updated != nil && !ci.Updated.Time.Equal(cj.Updated.Time) {
-					return ci.Updated.Time.Before(cj.Updated.Time)
-				}
-				if ci.PatchSet != cj.PatchSet {
-					return ci.PatchSet < cj.PatchSet
-				}
-				return ci.ID < cj.ID
+				return compareCommentNodesChronologically(node.Children[i], node.Children[j])
 			})
 		}
 	}
 
-	// Sort root threads by line number ascending, then by updated timestamp / ID
+	// Sort root threads by line number ascending, then chronologically
 	sort.Slice(roots, func(i, j int) bool {
 		if roots[i].Comment.Line != roots[j].Comment.Line {
 			return roots[i].Comment.Line < roots[j].Comment.Line
 		}
-		ri := roots[i].Comment
-		rj := roots[j].Comment
-		if ri.Updated != nil && rj.Updated != nil && !ri.Updated.Time.Equal(rj.Updated.Time) {
-			return ri.Updated.Time.Before(rj.Updated.Time)
-		}
-		return ri.ID < rj.ID
+		return compareCommentNodesChronologically(roots[i], roots[j])
 	})
 
 	return roots
+}
+
+func compareCommentNodesChronologically(a, b *CommentNode) bool {
+	ca := a.Comment
+	cb := b.Comment
+	if (ca.Updated == nil) != (cb.Updated == nil) {
+		return ca.Updated == nil
+	}
+	if ca.Updated != nil && cb.Updated != nil && !ca.Updated.Time.Equal(cb.Updated.Time) {
+		return ca.Updated.Time.Before(cb.Updated.Time)
+	}
+	if ca.PatchSet != cb.PatchSet {
+		return ca.PatchSet < cb.PatchSet
+	}
+	if a.IsDraft != b.IsDraft {
+		return !a.IsDraft
+	}
+	return ca.ID < cb.ID
 }
 
 func createsCycle(child *CommentNode, parent *CommentNode, nodes map[string]*CommentNode) bool {
@@ -119,6 +161,62 @@ func createsCycle(child *CommentNode, parent *CommentNode, nodes map[string]*Com
 	return false
 }
 
+func collectThreadNodes(root *CommentNode) []*CommentNode {
+	var nodes []*CommentNode
+	var collect func(n *CommentNode)
+	collect = func(n *CommentNode) {
+		if n == nil {
+			return
+		}
+		nodes = append(nodes, n)
+		for _, ch := range n.Children {
+			collect(ch)
+		}
+	}
+	collect(root)
+	return nodes
+}
+
+// isOlderOrEarlierInThread reports whether an earlier-visited node a is older
+// than a later-visited node b by Updated timestamp, PatchSet, or IsDraft
+// status, falling back to tree traversal order when those fields are equal.
+func isOlderOrEarlierInThread(a, b *CommentNode) bool {
+	ca := a.Comment
+	cb := b.Comment
+	if (ca.Updated == nil) != (cb.Updated == nil) {
+		return ca.Updated == nil
+	}
+	if ca.Updated != nil && cb.Updated != nil && !ca.Updated.Time.Equal(cb.Updated.Time) {
+		return ca.Updated.Time.Before(cb.Updated.Time)
+	}
+	if ca.PatchSet != cb.PatchSet {
+		return ca.PatchSet < cb.PatchSet
+	}
+	if a.IsDraft != b.IsDraft {
+		return !a.IsDraft
+	}
+	return true
+}
+
+// resolveThreadUnresolved finds the chronologically latest explicit Unresolved
+// setting across all nodes in a thread. When includeDrafts is false, draft
+// nodes are skipped.
+func resolveThreadUnresolved(nodes []*CommentNode, includeDrafts bool) *bool {
+	var latest *CommentNode
+	for _, n := range nodes {
+		if n == nil || (!includeDrafts && n.IsDraft) || n.Comment.Unresolved == nil {
+			continue
+		}
+		if latest == nil || isOlderOrEarlierInThread(latest, n) {
+			latest = n
+		}
+	}
+	if latest == nil {
+		return nil
+	}
+	return latest.Comment.Unresolved
+}
+
 // BuildCommentThreads builds structured CommentThread instances for a file,
 // computing resolution status, draft reply flags, and latest active comment.
 func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftReplies map[string]bool) []*CommentThread {
@@ -129,15 +227,11 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 
 	threads := make([]*CommentThread, 0, len(roots))
 	for _, root := range roots {
-		var inThread []gerrit.CommentInfo
-		var collect func(n *CommentNode)
-		collect = func(n *CommentNode) {
-			inThread = append(inThread, n.Comment)
-			for _, ch := range n.Children {
-				collect(ch)
-			}
+		nodes := collectThreadNodes(root)
+		inThread := make([]gerrit.CommentInfo, len(nodes))
+		for i, n := range nodes {
+			inThread[i] = n.Comment
 		}
-		collect(root)
 
 		hasDraftReply := false
 		if draftReplies != nil {
@@ -151,32 +245,15 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 
 		// Find latest comment in thread
 		latest := root.Comment
-		for _, c := range inThread {
-			if latest.Updated == nil && c.Updated != nil {
-				latest = c
-			} else if latest.Updated != nil && c.Updated != nil {
-				if c.Updated.Time.After(latest.Updated.Time) {
-					latest = c
-				}
-			} else if c.PatchSet > latest.PatchSet {
-				latest = c
+		for i := range inThread {
+			if isNewerComment(&inThread[i], &latest) {
+				latest = inThread[i]
 			}
 		}
 
-		// Thread resolution status:
-		// Walk backwards from latest comment to find the most recent explicit Unresolved setting.
-		// If none found in thread, default to root's Unresolved if present, else false.
 		isUnresolved := false
-		foundExplicit := false
-		for i := len(inThread) - 1; i >= 0; i-- {
-			if inThread[i].Unresolved != nil {
-				isUnresolved = *inThread[i].Unresolved
-				foundExplicit = true
-				break
-			}
-		}
-		if !foundExplicit && root.Comment.Unresolved != nil {
-			isUnresolved = *root.Comment.Unresolved
+		if u := resolveThreadUnresolved(nodes, true); u != nil {
+			isUnresolved = *u
 		}
 
 		lineNum := root.Comment.Line
@@ -201,58 +278,218 @@ func BuildCommentThreads(path string, fileComments []gerrit.CommentInfo, draftRe
 // FindLatestCommentAtLine searches a slice of comments on a file for the most recent
 // comment located at the specified line number.
 func FindLatestCommentAtLine(fileComments []gerrit.CommentInfo, line int) *gerrit.CommentInfo {
+	return FindLatestCommentAtLineForPatchSet(fileComments, line, 0)
+}
+
+// FindLatestCommentAtLineForPatchSet searches a slice of comments on a file for the
+// most recent comment at line, optionally restricted to patchSet (when patchSet > 0).
+func FindLatestCommentAtLineForPatchSet(fileComments []gerrit.CommentInfo, line int, patchSet int) *gerrit.CommentInfo {
 	var latest *gerrit.CommentInfo
 	for i := range fileComments {
 		c := &fileComments[i]
 		if c.Line != line {
 			continue
 		}
-		if latest == nil {
-			latest = c
+		if patchSet > 0 && c.PatchSet != 0 && c.PatchSet != patchSet {
 			continue
 		}
-		if latest.Updated == nil && c.Updated != nil {
-			latest = c
-		} else if latest.Updated != nil && c.Updated != nil {
-			if c.Updated.Time.After(latest.Updated.Time) {
-				latest = c
-			}
-		} else if c.PatchSet > latest.PatchSet {
+		if isNewerComment(c, latest) {
 			latest = c
 		}
 	}
 	return latest
 }
 
+// FindMatchingDraftsAtTarget returns all draft comments in fileDrafts that match
+// the target location.
+//
+//   - If patchSet > 0, only drafts with PatchSet == patchSet (or PatchSet == 0) are matched.
+//   - If inReplyTo != "", only draft replies with d.InReplyTo == inReplyTo are matched;
+//     standalone drafts (InReplyTo == "") and draft replies on other threads on the same
+//     line are never matched so unrelated drafts are never clobbered.
+//   - If inReplyTo == "", all drafts at line are matched.
+func FindMatchingDraftsAtTarget(fileDrafts []gerrit.CommentInfo, line int, inReplyTo string, patchSet int) []gerrit.CommentInfo {
+	if len(fileDrafts) == 0 {
+		return nil
+	}
+	matchesPatchSet := func(d gerrit.CommentInfo) bool {
+		return patchSet <= 0 || d.PatchSet == 0 || d.PatchSet == patchSet
+	}
+
+	if inReplyTo != "" {
+		var exactReplies []gerrit.CommentInfo
+		for _, d := range fileDrafts {
+			if !matchesPatchSet(d) {
+				continue
+			}
+			if d.InReplyTo == inReplyTo {
+				exactReplies = append(exactReplies, d)
+			}
+		}
+		return exactReplies
+	}
+
+	var matches []gerrit.CommentInfo
+	for _, d := range fileDrafts {
+		if !matchesPatchSet(d) {
+			continue
+		}
+		if d.Line == line {
+			matches = append(matches, d)
+		}
+	}
+	return matches
+}
+
+// FindDraftAtTarget searches a slice of draft comments on a file for an existing
+// draft to update or delete. When inReplyTo is non-empty, only draft replies are
+// considered so standalone drafts on the same line are not clobbered.
+func FindDraftAtTarget(fileDrafts []gerrit.CommentInfo, line int, inReplyTo string) *gerrit.CommentInfo {
+	matches := FindMatchingDraftsAtTarget(fileDrafts, line, inReplyTo, 0)
+	var latest *gerrit.CommentInfo
+	for i := range matches {
+		if isNewerComment(&matches[i], latest) {
+			latest = &matches[i]
+		}
+	}
+	return latest
+}
+
+// isPatchsetLevelPath reports whether path refers to Gerrit's top-level
+// patchset comment pseudo-path.
+func isPatchsetLevelPath(path string) bool {
+	return path == "" || path == "/PATCHSET_LEVEL"
+}
+
+// formatPatchSetTag returns " [PS<N>]" when patchSet > 0, or "" otherwise.
+func formatPatchSetTag(patchSet int) string {
+	if patchSet > 0 {
+		return fmt.Sprintf(" [PS%d]", patchSet)
+	}
+	return ""
+}
+
+// formatShortCommentTarget formats a file/line target for human-readable output.
+func formatShortCommentTarget(path string, line int) string {
+	if isPatchsetLevelPath(path) {
+		return "Change comment"
+	}
+	if line > 0 {
+		return fmt.Sprintf("%s:%d", path, line)
+	}
+	return path
+}
+
+// formatCommentTargetWithPatchSet formats a file/line target and optional [PS<N>] tag.
+func formatCommentTargetWithPatchSet(path string, line int, patchSet int) string {
+	return formatShortCommentTarget(path, line) + formatPatchSetTag(patchSet)
+}
+
+func formatCommentNodeAuthor(n *CommentNode, depth int) string {
+	author := FormatAccount(n.Comment.Author)
+	if !n.IsDraft {
+		if author == "" {
+			return "Unknown"
+		}
+		return author
+	}
+
+	badge := "[DRAFT]"
+	if depth > 0 && n.Comment.Unresolved != nil {
+		if *n.Comment.Unresolved {
+			badge = "[DRAFT, unresolved]"
+		} else {
+			badge = "[DRAFT, resolved]"
+		}
+	}
+	if author == "" {
+		return badge
+	}
+	return author + " " + badge
+}
+
+func formatThreadResolutionTag(path string, root *CommentNode) string {
+	nodes := collectThreadNodes(root)
+	unresolved := resolveThreadUnresolved(nodes, false)
+	if unresolved == nil {
+		unresolved = resolveThreadUnresolved(nodes, true)
+	}
+	if unresolved == nil {
+		return ""
+	}
+	if *unresolved {
+		return " [unresolved]"
+	}
+	// Single-node change-level (/PATCHSET_LEVEL) comments default to
+	// Unresolved=false in Gerrit even when they are plain non-threaded
+	// comments or drafts; omit the noisy [resolved] tag unless it is a
+	// multi-comment thread.
+	if isPatchsetLevelPath(path) && len(nodes) == 1 {
+		return ""
+	}
+	return " [resolved]"
+}
+
 // FormatCommentForest renders a nested, human-readable terminal tree of comments
 // grouped by file in alphabetical order.
 func FormatCommentForest(comments map[string][]gerrit.CommentInfo) string {
-	if len(comments) == 0 {
+	return FormatCommentForestWithDrafts(comments, nil)
+}
+
+// FormatCommentForestWithDrafts renders a nested, human-readable terminal tree
+// combining published comments and unpublished drafts grouped by file in
+// alphabetical order.
+func FormatCommentForestWithDrafts(published, drafts map[string][]gerrit.CommentInfo) string {
+	if len(published) == 0 && len(drafts) == 0 {
 		return ""
 	}
 
-	var b strings.Builder
-	var paths []string
-	for path := range comments {
+	pathSet := make(map[string]bool)
+	for path, list := range published {
+		if len(list) > 0 {
+			pathSet[path] = true
+		}
+	}
+	for path, list := range drafts {
+		if len(list) > 0 {
+			pathSet[path] = true
+		}
+	}
+	if len(pathSet) == 0 {
+		return ""
+	}
+
+	paths := make([]string, 0, len(pathSet))
+	for path := range pathSet {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 
+	var b strings.Builder
 	for _, path := range paths {
-		fileComments := comments[path]
-		if len(fileComments) == 0 {
+		var filePublished []gerrit.CommentInfo
+		if published != nil {
+			filePublished = published[path]
+		}
+		var fileDrafts []gerrit.CommentInfo
+		if drafts != nil {
+			fileDrafts = drafts[path]
+		}
+
+		roots := BuildCommentForestWithDrafts(filePublished, fileDrafts)
+		if len(roots) == 0 {
 			continue
 		}
 
-		fmt.Fprintf(&b, "File: %s\n", path)
-		roots := BuildCommentForest(fileComments)
+		if isPatchsetLevelPath(path) {
+			fmt.Fprintf(&b, "File: /PATCHSET_LEVEL (Change comment)\n")
+		} else {
+			fmt.Fprintf(&b, "File: %s\n", path)
+		}
 
-		var printNode func(*CommentNode, int)
-		printNode = func(n *CommentNode, depth int) {
-			author := FormatAccount(n.Comment.Author)
-			if author == "" {
-				author = "Unknown"
-			}
+		var printNode func(*CommentNode, int, int)
+		printNode = func(n *CommentNode, depth int, parentPatchSet int) {
+			author := formatCommentNodeAuthor(n, depth)
 			message := strings.TrimSpace(n.Comment.Message)
 
 			indent := strings.Repeat("  ", depth)
@@ -261,19 +498,25 @@ func FormatCommentForest(comments map[string][]gerrit.CommentInfo) string {
 				if n.Comment.Line != 0 {
 					line = fmt.Sprintf("%d", n.Comment.Line)
 				}
-				fmt.Fprintf(&b, "  Line %s: %s\n    %s\n", line, author, message)
+				psTag := formatPatchSetTag(n.Comment.PatchSet)
+				statusTag := formatThreadResolutionTag(path, n)
+				fmt.Fprintf(&b, "  Line %s%s: %s%s\n    %s\n", line, psTag, author, statusTag, message)
 			} else {
+				psTag := ""
+				if n.Comment.PatchSet > 0 && n.Comment.PatchSet != parentPatchSet {
+					psTag = formatPatchSetTag(n.Comment.PatchSet)
+				}
 				indentedMsg := strings.ReplaceAll(message, "\n", "\n"+indent+"       ")
-				fmt.Fprintf(&b, "%s  -> %s: %s\n", indent, author, indentedMsg)
+				fmt.Fprintf(&b, "%s  -> %s%s: %s\n", indent, author, psTag, indentedMsg)
 			}
 
 			for _, child := range n.Children {
-				printNode(child, depth+1)
+				printNode(child, depth+1, n.Comment.PatchSet)
 			}
 		}
 
 		for _, r := range roots {
-			printNode(r, 0)
+			printNode(r, 0, 0)
 		}
 		fmt.Fprintln(&b)
 	}

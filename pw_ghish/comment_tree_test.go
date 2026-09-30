@@ -290,4 +290,219 @@ func TestFormatCommentForest(t *testing.T) {
 			t.Errorf("expected indented reply formatting, got:\n%s", got)
 		}
 	})
+
+	t.Run("formats published comments and drafts with resolution and draft indicators", func(t *testing.T) {
+		published := map[string][]gerrit.CommentInfo{
+			"ring_buffer.cc": {
+				{
+					ID:         "c1",
+					Line:       42,
+					Author:     gerrit.AccountInfo{Name: "Alice"},
+					Unresolved: boolPtr(true),
+					Message:    "Why was this file deleted?",
+				},
+				{
+					ID:         "c2",
+					Line:       100,
+					Author:     gerrit.AccountInfo{Name: "Bob"},
+					Unresolved: boolPtr(false),
+					Message:    "Looks good.",
+				},
+			},
+		}
+		drafts := map[string][]gerrit.CommentInfo{
+			"ring_buffer.cc": {
+				{
+					ID:         "d1",
+					InReplyTo:  "c1",
+					Line:       42,
+					Unresolved: boolPtr(false),
+					Message:    "Reverted.",
+				},
+			},
+			"standalone_draft.cc": {
+				{
+					ID:         "d2",
+					Line:       84,
+					Unresolved: boolPtr(true),
+					Message:    "FOR GEMINI: Please switch to pw::Result.",
+				},
+			},
+		}
+
+		got := FormatCommentForestWithDrafts(published, drafts)
+
+		if !strings.Contains(got, "Line 42: Alice [unresolved]\n    Why was this file deleted?") {
+			t.Errorf("expected unresolved tag on root c1, got:\n%s", got)
+		}
+		if !strings.Contains(got, "-> [DRAFT, resolved]: Reverted.") {
+			t.Errorf("expected draft reply with resolved indicator under c1, got:\n%s", got)
+		}
+		if !strings.Contains(got, "Line 100: Bob [resolved]\n    Looks good.") {
+			t.Errorf("expected resolved tag on root c2, got:\n%s", got)
+		}
+		if !strings.Contains(got, "File: standalone_draft.cc\n  Line 84: [DRAFT] [unresolved]\n    FOR GEMINI: Please switch to pw::Result.") {
+			t.Errorf("expected standalone draft file and root formatting, got:\n%s", got)
+		}
+	})
+
+	t.Run("includes patchset tags on roots, cross-patchset replies, and cleans up /PATCHSET_LEVEL", func(t *testing.T) {
+		published := map[string][]gerrit.CommentInfo{
+			"ring_buffer.cc": {
+				{
+					ID:         "c1",
+					Line:       42,
+					PatchSet:   1,
+					Author:     gerrit.AccountInfo{Name: "Alice"},
+					Unresolved: boolPtr(true),
+					Message:    "Comment on PS1",
+				},
+				{
+					ID:         "c2",
+					InReplyTo:  "c1",
+					Line:       42,
+					PatchSet:   2,
+					Author:     gerrit.AccountInfo{Name: "Bob"},
+					Unresolved: boolPtr(false),
+					Message:    "Fixed in PS2",
+				},
+			},
+		}
+		drafts := map[string][]gerrit.CommentInfo{
+			"/PATCHSET_LEVEL": {
+				{
+					ID:         "d_top",
+					PatchSet:   2,
+					Unresolved: boolPtr(false),
+					Message:    "Overall review draft",
+				},
+			},
+		}
+
+		got := FormatCommentForestWithDrafts(published, drafts)
+
+		for _, want := range []string{
+			"File: /PATCHSET_LEVEL (Change comment)",
+			"Line - [PS2]: [DRAFT]\n    Overall review draft",
+			"File: ring_buffer.cc",
+			"Line 42 [PS1]: Alice [resolved]\n    Comment on PS1",
+			"-> Bob [PS2]: Fixed in PS2",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("expected %q in formatted forest, got:\n%s", want, got)
+			}
+		}
+		if strings.Contains(got, "Line - [PS2]: [DRAFT] [resolved]") {
+			t.Errorf("did not expect spurious [resolved] tag on single-node /PATCHSET_LEVEL draft, got:\n%s", got)
+		}
+	})
+}
+
+func TestFindDraftAtTarget(t *testing.T) {
+	t1 := time.Now()
+	t2 := t1.Add(time.Minute)
+
+	drafts := []gerrit.CommentInfo{
+		{ID: "d_line_old", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1), Message: "Old standalone draft"},
+		{ID: "d_line_new", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "New standalone draft"},
+		{ID: "d_reply", Line: 10, PatchSet: 2, InReplyTo: "parent_1", Updated: timeTimestamp(t1), Message: "Reply draft"},
+	}
+
+	t.Run("prefers exact InReplyTo match over newer line match", func(t *testing.T) {
+		got := FindDraftAtTarget(drafts, 10, "parent_1")
+		if got == nil || got.ID != "d_reply" {
+			t.Fatalf("expected d_reply, got %+v", got)
+		}
+	})
+
+	t.Run("does NOT clobber draft reply belonging to a different thread on the same line", func(t *testing.T) {
+		if got := FindDraftAtTarget(drafts, 10, "unrelated_thread_id"); got != nil {
+			t.Fatalf("expected nil so draft reply on another thread is not clobbered, got %+v", got)
+		}
+	})
+
+	t.Run("does NOT clobber standalone draft when replying to published comment thread", func(t *testing.T) {
+		standaloneOnly := []gerrit.CommentInfo{
+			{ID: "d_standalone", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "Standalone draft"},
+		}
+		if got := FindDraftAtTarget(standaloneOnly, 10, "published_parent_id"); got != nil {
+			t.Fatalf("expected nil so standalone draft is not clobbered by thread reply, got %+v", got)
+		}
+	})
+
+	t.Run("matches latest standalone draft when no published thread exists", func(t *testing.T) {
+		got := FindDraftAtTarget(drafts, 10, "")
+		if got == nil || got.ID != "d_line_new" {
+			t.Fatalf("expected d_line_new, got %+v", got)
+		}
+	})
+
+	t.Run("returns nil when no draft matches", func(t *testing.T) {
+		if got := FindDraftAtTarget(drafts, 99, ""); got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+}
+
+func TestBranchedThreadChronologicalResolution(t *testing.T) {
+	t1 := time.Now()
+	t2 := t1.Add(1 * time.Minute)
+	t3 := t1.Add(2 * time.Minute)
+	t4 := t1.Add(3 * time.Minute)
+
+	// Root has two child branches:
+	//   Branch A: root -> branchA (t2, unresolved=true) -> leafA (t4, unresolved=false)
+	//   Branch B: root -> branchB (t3, unresolved=true)
+	// Depth-first traversal visits Branch B last, but leafA (t4) is chronologically newer than branchB (t3).
+	comments := []gerrit.CommentInfo{
+		{ID: "root", Line: 10, Updated: timeTimestamp(t1), Unresolved: boolPtr(true), Message: "Root"},
+		{ID: "branchA", InReplyTo: "root", Line: 10, Updated: timeTimestamp(t2), Unresolved: boolPtr(true), Message: "Branch A"},
+		{ID: "branchB", InReplyTo: "root", Line: 10, Updated: timeTimestamp(t3), Unresolved: boolPtr(true), Message: "Branch B"},
+		{ID: "leafA", InReplyTo: "branchA", Line: 10, Updated: timeTimestamp(t4), Unresolved: boolPtr(false), Message: "Leaf A resolves thread"},
+	}
+
+	threads := BuildCommentThreads("foo.cc", comments, nil)
+	if len(threads) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(threads))
+	}
+	if threads[0].Unresolved {
+		t.Errorf("expected branched thread to be resolved based on newest node leafA (t4), got Unresolved=true")
+	}
+}
+
+func TestFindMatchingDraftsAtTarget_PatchSetFilter(t *testing.T) {
+	t1 := time.Now()
+	t2 := t1.Add(time.Minute)
+
+	drafts := []gerrit.CommentInfo{
+		{ID: "d_ps1", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1), Message: "PS1 draft"},
+		{ID: "d_ps2", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2), Message: "PS2 draft"},
+	}
+
+	all := FindMatchingDraftsAtTarget(drafts, 10, "", 0)
+	if len(all) != 2 {
+		t.Fatalf("expected 2 drafts when patchSet=0, got %d", len(all))
+	}
+
+	ps1Only := FindMatchingDraftsAtTarget(drafts, 10, "", 1)
+	if len(ps1Only) != 1 || ps1Only[0].ID != "d_ps1" {
+		t.Fatalf("expected [d_ps1] when patchSet=1, got %+v", ps1Only)
+	}
+}
+
+func TestFindLatestCommentAtLineForPatchSet(t *testing.T) {
+	t1 := time.Now()
+	t2 := t1.Add(time.Minute)
+
+	comments := []gerrit.CommentInfo{
+		{ID: "c_ps1", Line: 10, PatchSet: 1, Updated: timeTimestamp(t1)},
+		{ID: "c_ps2", Line: 10, PatchSet: 2, Updated: timeTimestamp(t2)},
+	}
+
+	if got := FindLatestCommentAtLineForPatchSet(comments, 10, 1); got == nil || got.ID != "c_ps1" {
+		t.Errorf("expected c_ps1 for patchSet=1, got %+v", got)
+	}
+	if got := FindLatestCommentAtLineForPatchSet(comments, 10, 0); got == nil || got.ID != "c_ps2" {
+		t.Errorf("expected c_ps2 for patchSet=0, got %+v", got)
+	}
 }

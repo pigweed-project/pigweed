@@ -48,8 +48,8 @@ to your commit in one step:
        --body "Peek() drops the final byte when buffer is full." \
        --amend
 
-Or, if an issue already exists, include ``Bug: b/<id>`` in your commit message
-(or add it later with ``./gh pr edit --bug b/123456``).
+Or, if an issue already exists, include ``Bug: b/<id>`` or ``Fixed: b/<id>`` in
+your commit message.
 
 --------------------------------------------
 Step 2: Create the CL and start a CQ dry run
@@ -115,13 +115,15 @@ active CL:
    $ ./gh pr view --comments
 
 ``./gh pr view --comments`` prints each review thread with its file path, line
-number, and resolution state.
+number, ``[PS<N>]`` patchset number, ``[DRAFT]`` indicator, and resolution
+state.
 
 As you address each comment:
 
 1. **Stage inline replies and mark threads resolved**:
    Pass ``--path`` and ``--line`` to reply directly inside the existing thread.
-   Use ``--draft`` to stage replies privately while you work:
+   Use ``--draft`` to stage replies privately while you work (re-running with
+   ``--draft`` updates an existing draft in place; ``--delete-draft`` deletes it):
 
    .. code-block:: console
 
@@ -130,7 +132,8 @@ As you address each comment:
 
 2. **Amend your commit and push the new patchset**:
    Pass ``--publish`` to publish all your staged draft replies together with
-   the new patchset, and ``--cq`` to start a fresh dry run:
+   the new patchset (or run ``./gh pr review --publish`` at any time to publish
+   drafts without pushing code), and ``--cq`` to start a fresh dry run:
 
    .. code-block:: console
 

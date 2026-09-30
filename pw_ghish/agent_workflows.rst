@@ -44,22 +44,28 @@ The Workflow
 
 3. **Agent pulls down private drafts and addresses feedback**:
    The engineer simply tells the agent: *"Please address my draft comments."*
-   The agent inspects the change with ``pr view --comments``:
+   The agent inspects the change with ``pr view --comments`` (or ``pr status``,
+   which previews up to two unpublished ``[DRAFT]`` comments inline):
 
    .. code-block:: console
 
       $ ./gh pr view --comments
 
    ``pw_ghish`` displays the draft comments clearly marked with file paths, line
-   numbers, and draft indicators.
+   numbers, ``[PS<N>]`` patchset tags, and ``[DRAFT]`` indicators.
 
-4. **Agent updates the code**:
-   The agent implements the requested fixes, runs local unit tests, and uploads
-   a new patchset:
+4. **Agent updates the code and updates or removes the steering drafts**:
+   The agent implements the requested fixes, runs local unit tests, uploads a
+   new patchset, and either updates the draft in place with its status note or
+   deletes the temporary steering draft:
 
    .. code-block:: console
 
       $ ./gh pr push
+      $ ./gh pr comment --path pw_ring_buffer/ring_buffer.cc --line 42 \
+          -m "Done: switched to pw::Result." --resolved --draft
+      # Or delete the private steering draft once addressed:
+      $ ./gh pr comment --path pw_ring_buffer/ring_buffer.cc --line 42 --delete-draft
 
 Key benefits
 ============
@@ -68,7 +74,7 @@ Key benefits
   to direct the agent to specific lines and code contexts.
 
 * **Privacy**: Work-in-progress review notes remain private between the engineer
-  and the agent until published.
+  and the agent until published or deleted.
 
 ------------------------------
 CUJ 2: Staged review responses
@@ -122,9 +128,10 @@ The Workflow
 
    * Compares the new patchset against the previous patchset in the Gerrit diff viewer.
    * Sees the agent's drafted inline replies positioned right beside each change.
-   * If satisfied, the engineer clicks **Send** in Gerrit to publish both the code
-     and the explanations. If adjustments are needed, the engineer edits the draft
-     replies before publishing.
+   * If satisfied, the engineer clicks **Send** in Gerrit (or runs
+     ``./gh pr review --publish`` from the terminal) to publish all staged draft
+     replies. If adjustments are needed, the engineer or agent edits the draft
+     replies in place before publishing.
 
 Key benefits
 ============

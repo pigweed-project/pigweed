@@ -43,16 +43,47 @@ func TestAnalyzeComments_Empty(t *testing.T) {
 func TestAnalyzeComments_OnlyDrafts(t *testing.T) {
 	drafts := map[string][]gerrit.CommentInfo{
 		"pw_ghish/main.go": {
-			{ID: "d1", Line: 10, Message: "Draft 1"},
-			{ID: "d2", Line: 20, Message: "Draft 2"},
+			{ID: "d1", Line: 10, PatchSet: 2, Message: "Draft 1"},
+			{ID: "d2", Line: 20, PatchSet: 2, Message: "Draft 2"},
 		},
 	}
 	summary := AnalyzeComments(nil, drafts)
-	if summary.TotalThreads != 0 || summary.DraftsCount != 2 {
+	if summary.TotalThreads != 0 || summary.DraftsCount != 2 || len(summary.Drafts) != 2 {
 		t.Errorf("Expected 0 threads, 2 drafts; got %+v", summary)
 	}
-	if summary.FormattedText != "    None (2 unpublished drafts)" {
-		t.Errorf("Expected '    None (2 unpublished drafts)', got %q", summary.FormattedText)
+	for _, want := range []string{
+		"    None (2 unpublished drafts):",
+		"• pw_ghish/main.go:10 [PS2] [DRAFT]:\n          \"Draft 1\"",
+		"• pw_ghish/main.go:20 [PS2] [DRAFT]:\n          \"Draft 2\"",
+	} {
+		if !strings.Contains(summary.FormattedText, want) {
+			t.Errorf("Expected FormattedText to contain %q, got:\n%s", want, summary.FormattedText)
+		}
+	}
+}
+
+func TestAnalyzeComments_ThreeDrafts_Hysteresis(t *testing.T) {
+	drafts := map[string][]gerrit.CommentInfo{
+		"a.go": {{ID: "d1", Line: 10, PatchSet: 1, Message: "Draft 1"}},
+		"b.go": {{ID: "d2", Line: 20, PatchSet: 1, Message: "Draft 2"}},
+		"c.go": {{ID: "d3", Line: 30, PatchSet: 1, Message: "Draft 3"}},
+	}
+	summary := AnalyzeComments(nil, drafts)
+	if summary.DraftsCount != 3 || len(summary.Drafts) != 3 {
+		t.Fatalf("Expected 3 drafts, got %+v", summary)
+	}
+	for _, want := range []string{
+		"None (3 unpublished drafts; use 'gh pr view --comments' to view all):",
+		"a.go:10 [PS1] [DRAFT]:",
+		"b.go:20 [PS1] [DRAFT]:",
+		"... and 1 more unpublished draft",
+	} {
+		if !strings.Contains(summary.FormattedText, want) {
+			t.Errorf("Expected FormattedText to contain %q, got:\n%s", want, summary.FormattedText)
+		}
+	}
+	if strings.Contains(summary.FormattedText, "c.go:30") {
+		t.Errorf("Did not expect 3rd draft c.go:30 inline, got:\n%s", summary.FormattedText)
 	}
 }
 
@@ -119,8 +150,13 @@ func TestAnalyzeComments_AllResolved_WithDrafts(t *testing.T) {
 	if summary.TotalThreads != 2 || summary.ResolvedThreads != 2 || summary.DraftsCount != 1 {
 		t.Errorf("Expected 2 resolved threads, 1 draft; got %+v", summary)
 	}
-	if summary.FormattedText != "    All resolved (2 threads, 1 unpublished draft)" {
-		t.Errorf("Expected '    All resolved (2 threads, 1 unpublished draft)', got %q", summary.FormattedText)
+	for _, want := range []string{
+		"    All resolved (2 threads, 1 unpublished draft):",
+		"• pw_ghish/other.go [DRAFT]:\n          \"Unpublished thought\"",
+	} {
+		if !strings.Contains(summary.FormattedText, want) {
+			t.Errorf("Expected FormattedText to contain %q, got:\n%s", want, summary.FormattedText)
+		}
 	}
 }
 

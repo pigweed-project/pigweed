@@ -229,6 +229,8 @@ var statusCmd = &cobra.Command{
 				subWg             sync.WaitGroup
 				publishedComments map[string][]gerrit.CommentInfo
 				draftComments     map[string][]gerrit.CommentInfo
+				commentsErr       error
+				draftsErr         error
 			)
 
 			if patchsetNum > 0 && activeChange.Project != "" && gHost != "" {
@@ -248,7 +250,9 @@ var statusCmd = &cobra.Command{
 			subWg.Add(1)
 			go func() {
 				defer subWg.Done()
-				if cMap, _, err := client.Changes.ListChangeComments(ctx, activeID); err == nil && cMap != nil {
+				var cMap *map[string][]gerrit.CommentInfo
+				cMap, _, commentsErr = client.Changes.ListChangeComments(ctx, activeID)
+				if commentsErr == nil && cMap != nil {
 					publishedComments = *cMap
 				}
 			}()
@@ -256,7 +260,9 @@ var statusCmd = &cobra.Command{
 			subWg.Add(1)
 			go func() {
 				defer subWg.Done()
-				if dMap, _, err := client.Changes.ListChangeDrafts(ctx, activeID); err == nil && dMap != nil {
+				var dMap *map[string][]gerrit.CommentInfo
+				dMap, _, draftsErr = client.Changes.ListChangeDrafts(ctx, activeID)
+				if draftsErr == nil && dMap != nil {
 					draftComments = *dMap
 				}
 			}()
@@ -264,6 +270,11 @@ var statusCmd = &cobra.Command{
 			subWg.Wait()
 
 			commentsSummary := AnalyzeComments(publishedComments, draftComments)
+			if commentsErr != nil {
+				commentsSummary.FormattedText = "    ✖ Failed to load comments"
+			} else if draftsErr != nil {
+				commentsSummary.FormattedText += " (✖ failed to load drafts)"
+			}
 
 			currentBranchData = map[string]any{
 				"number":           activeChange.Number,

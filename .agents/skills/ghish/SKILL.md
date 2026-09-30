@@ -39,17 +39,20 @@ Subcommands accepting `[<id>]` support:
 Commands:
 - **`./gh pr view [<id>]`**: View change metadata (patchset, owner, reviewers,
   attention set, status, labels). Defaults to active change on current branch.
-  - `-c, --comments`: Display all file and inline comment threads indented by
-    file and line number.
+  - `-c, --comments`: Display all file and inline comment threads (including
+    your unpublished `[DRAFT]` comments, `[PS<N>]` patchset numbers, and
+    `[resolved]` / `[unresolved]` thread states) indented by file and line
+    number, or `Comments: None` when empty.
   - `--json <fields>`: Output structured JSON
-    (e.g. `number,title,state,author,files,reviewers`). Unknown fields are
-    strictly rejected.
+    (e.g. `number,title,state,author,files,reviewers,comments,drafts`). Unknown
+    fields are strictly rejected.
   - `--json bug,bugs`: Read back the linked bugs — the Gerrit counterpart to
     GitHub's `closingIssuesReferences`. `bug` is a flat `"b/123456, b/789"`
     string; `bugs` is `[{"id": "b/123456", "closes": true}]`, where `closes`
     distinguishes a `Fixed:` trailer (closes the bug on submit) from a `Bug:`
-    trailer (links only). Use this to verify a `./gh pr edit --bug` actually
-    took, and to check whether a bug is already linked before adding one.
+    trailer (links only). Use this to verify a `./gh issue create --amend` or
+    `Bug:`/`Fixed:` commit trailer update, and to check whether a bug is
+    already linked before adding one.
 - **`./gh pr diff [<id>[/<patchset>]]`**: View unified patch diff.
 - **`./gh pr checkout [<id>[/<patchset>]]`**: Fetch and check out change branch
   or specific patchset locally at `FETCH_HEAD`.
@@ -92,16 +95,26 @@ Commands:
     3. `git commit --amend --only -F "$(git rev-parse --git-dir)/COMMIT_EDITMSG_TMP" && ./gh pr push`
 
 ### 3. Review & Comment
-- **`./gh pr comment [<id>] --path <file> --line <line> -m <msg>`**: Post an
-  inline comment (auto-threads onto any existing thread on `<file>:<line>`).
-  - `--resolved`: Mark thread as resolved (requires both `--path` and `--line`).
-  - `--draft`: Save comment as a private unpublished draft visible only to you.
-- **`./gh pr comment [<id>] -m <msg>`**: Post a change-level comment
-  (`-F <file>` reads from file).
-- **`./gh pr review [<id>] [--approve | --request-changes] [--cq [1|2]] [-m <msg>]`**:
+- **`./gh pr comment [<id>] --path <file> [--line <line>] -m <msg>`** (or `-b <msg>`):
+  Post a file-level or inline comment (auto-threads onto any existing thread at
+  `<file>` or `<file>:<line>` across patchsets, keeping unrelated drafts private
+  via `Drafts: KEEP`).
+  - `--resolved`: Mark thread as resolved (requires `--path`, and `--line` for
+    inline threads).
+  - `--draft`: Create or update an unpublished draft comment visible only to you.
+    If an unpublished draft already exists at that target, `--draft` updates it
+    in place (preserving `Side` and character `Range`). If multiple drafts exist
+    at the same location across different patchsets, disambiguate with
+    `--patchset <N>` or `<id>/<N>`.
+  - `--delete-draft`: Delete an unpublished draft comment at `--path <file>
+    [--line <line>]` (or omit `--path` for a change-level draft).
+- **`./gh pr comment [<id>] -m <msg> [--draft]`**: Post or stage a change-level
+  comment (`-F <file>` reads from file).
+- **`./gh pr review [<id>] [--approve | --request-changes] [--cq [1|2]] [--publish] [-m <msg>]`**:
   Submit review (`--approve` votes `Code-Review+2`; `--request-changes` votes
-  `Code-Review-1`). For full review criteria, see
-  [`.agents/skills/code_review/SKILL.md`](../code_review/SKILL.md).
+  `Code-Review-1`; `--publish` batch-publishes all staged draft comments across
+  revisions; without `--publish`, pending drafts are kept private). For full
+  review criteria, see [`.agents/skills/code_review/SKILL.md`](../code_review/SKILL.md).
 
 ### 4. Monitor & Rerun CI / Buildbucket Checks
 - **`./gh pr checks [<id>[/<patchset>]]`**: Query remote LUCI Buildbucket checks
@@ -131,8 +144,10 @@ Commands:
 - **`./gh pr merge [<id>] [--auto] [--cq]`**: Submit change to target branch.
   Prefer `--auto` (auto-submit upon approval) or `--cq` (`Commit-Queue+2`) over
   bare `pr merge`.
-- **`./gh pr status [--all]`**: Focused dashboard of current branch, CLs created
-  by you, and incoming reviews (scoped to last 30 days unless `--all` is passed).
+- **`./gh pr status [--all]`**: Focused dashboard of current branch (including
+  inline `[PS<N>]` previews for up to 2 unresolved threads and standalone
+  `[DRAFT]` comments), CLs created by you, and incoming reviews (scoped to last
+  30 days unless `--all` is passed).
 
 ### 6. Buganizer Issue Management (`./gh issue`)
 - **`./gh issue status`** & **`./gh issue list [--assignee @me|<email>] [--state open|closed|all] [--label priority:P1|type:BUG|component:<id>|hotlist:<id>] [--search "<q>"]`**.
@@ -164,12 +179,13 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 
 ## Key Agent Workflows
 
-### Workflow 1: Addressing Review Feedback
-1. **Fetch & review comments**: `./gh pr view <id> --comments`
+### Workflow 1: Addressing Review Feedback & Drafts
+1. **Fetch & review comments and drafts**: `./gh pr view <id> --comments` (or `./gh pr status`)
 2. **Apply fixes & verify locally**: `./pw presubmit --mode auto --base origin/main`
 3. **Upload updated patchset**: `git commit -a --amend --no-edit && ./gh pr push`
-4. **Reply & resolve threads**:
-   `./gh pr comment <id> --path <file> --line <line> -m "Fixed." --resolved`
+4. **Reply & resolve threads** (add `--draft` to stage privately for human review, or `--delete-draft` to remove a private steering draft):
+   `./gh pr comment <id> --path <file> --line <line> -m "Fixed." --resolved [--draft]`
+5. **Publish staged drafts (when ready)**: `./gh pr review <id> --publish` (or `./gh pr push --publish`)
 
 ### Workflow 2: CI Triage & Targeted Retry
 1. **Check or watch status**: `./gh pr checks <id>` or run
@@ -190,7 +206,7 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 2. **Use `--draft` for Private Notes**: Intermediate or preparatory review
    comments should use `--draft` so they remain private to you until ready.
 3. **Resolve Threads Explicitly**: When fixing an issue raised by a reviewer,
-   always reply with `--resolved --path <file> --line <line>`.
+   always reply with `--resolved --path <file> [--line <line>]`.
 4. **Authentication is Automatic**: Never use manual `curl -sb ~/.gitcookies` or
    `gob-curl`; `./gh` handles corp (`gob-curl`) and `.gitcookies` auth automatically.
 5. **Never Ignore Command Failures or Exit Codes**: Invalid inputs fail fast

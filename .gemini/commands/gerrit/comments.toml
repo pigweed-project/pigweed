@@ -18,9 +18,9 @@ prompt = """
 Use `./gh` (see `.agents/skills/ghish/SKILL.md`) to read and address Gerrit
 review comments:
 
-1.  Fetch change details and review comment threads (defaults to active branch CL):
+1.  Fetch change details, review comment threads, and unpublished drafts (defaults to active branch CL):
     `./gh pr view [<CHANGE_ID>] --comments`
-2.  Read the relevant files and surrounding context for each `[UNRESOLVED]` thread.
+2.  Read the relevant files and surrounding context for each `[unresolved]` or `[DRAFT]` thread.
 3.  List the unresolved comments (and fix them in code if requested) with file
     path and line number:
     ```
@@ -30,7 +30,9 @@ review comments:
     ```
 4.  After amending (`git commit -a --amend --no-edit`) and pushing
     (`./gh pr push`), reply to each addressed thread and mark it resolved
-    (pass `--draft` to stage privately for review first):
+    (pass `--draft` to stage privately or update an existing draft in place,
+    `--delete-draft` to delete a private steering draft, and
+    `./gh pr review [<CHANGE_ID>] --publish` to batch-publish staged drafts):
     ```bash
     ./gh pr comment [<CHANGE_ID>] --path <FILE_PATH> --line <LINE> -m "<RESPONSE>" --resolved [--draft]
     ```

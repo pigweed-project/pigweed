@@ -56,7 +56,8 @@ rather than performing an unintended operation:
 
   * ``--auto`` on ``pr`` (in ``gh``, ``-a`` is ``--assignee``)
   * ``--auth-mode`` (in ``gh auth status``, ``-a`` is ``--active``)
-  * ``--publish`` on ``pr push`` (in ``gh``, ``-p`` is ``--project``)
+  * ``--publish`` on ``pr create``, ``pr push``, and ``pr review`` (in ``gh``,
+    ``-p`` is ``--project``)
   * ``--force`` on ``pr checkout`` (in ``gh``, ``-f`` is ``--fill``)
   * ``--cq`` on ``pr`` (in ``gh``, ``-q`` is ``--jq``)
   * ``--message`` on ``pr edit`` and ``pr merge`` (in ``gh``, ``-m`` is

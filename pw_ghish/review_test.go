@@ -295,3 +295,54 @@ func TestReviewCmd_CQ_Explicit(t *testing.T) {
 		t.Errorf("got Commit-Queue = %d, want 2", capturedInput.Labels["Commit-Queue"])
 	}
 }
+
+func TestReviewCmd_PublishDrafts(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	var out strings.Builder
+	cmd := newReviewCmd()
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"123", "--publish"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Review submitted successfully (published pending drafts).") {
+		t.Errorf("expected publish confirmation in output, got: %q", out.String())
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Drafts != "PUBLISH_ALL_REVISIONS" {
+		t.Errorf("got Drafts = %q, want PUBLISH_ALL_REVISIONS", capturedInput.Drafts)
+	}
+}
+
+func TestReviewCmd_DefaultKeepsDraftsAndSupportsUpstreamFlags(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("POST", "/changes/123/revisions/current/review", http.StatusOK, map[string]any{})
+
+	cmd := newReviewCmd()
+	cmd.SetContext(context.Background())
+	cmd.SetArgs([]string{"123", "-r", "-b", "Please add a unit test"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("cmd.Execute failed: %v", err)
+	}
+
+	var capturedInput gerrit.ReviewInput
+	if req := server.LastRequest(); req != nil {
+		json.Unmarshal(req.Body, &capturedInput)
+	}
+	if capturedInput.Labels["Code-Review"] != -1 {
+		t.Errorf("got Code-Review = %d, want -1", capturedInput.Labels["Code-Review"])
+	}
+	if capturedInput.Message != "Please add a unit test" {
+		t.Errorf("got Message = %q, want %q", capturedInput.Message, "Please add a unit test")
+	}
+	if capturedInput.Drafts != "KEEP" {
+		t.Errorf("got Drafts = %q, want KEEP", capturedInput.Drafts)
+	}
+}

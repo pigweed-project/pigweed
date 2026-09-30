@@ -51,8 +51,9 @@ Labels:
 {{end}}{{end}}{{end}}{{if .body}}
 {{.body}}
 {{end}}
-{{if .comments}}Comments:
+{{if or .comments .drafts}}Comments:
 {{printComments .comments}}
+{{else if .show_comments}}Comments: None
 {{end}}`
 
 var viewCmd = &cobra.Command{
@@ -131,10 +132,20 @@ var viewCmd = &cobra.Command{
 			bbHost = "cr-buildbucket.appspot.com"
 		}
 
+		wantCommentsJSON := requestsAnyJSONField(jsonOutputFields, "comments")
+		wantDraftsJSON := requestsAnyJSONField(jsonOutputFields, "drafts")
+		wantFilesJSON := requestsAnyJSONField(jsonOutputFields, "files")
+		needComments := showComments || wantCommentsJSON
+		needDrafts := showComments || wantDraftsJSON
+
 		var (
 			wg            sync.WaitGroup
 			fileList      []map[string]any
+			filesErr      error
 			comments      map[string][]gerrit.CommentInfo
+			drafts        map[string][]gerrit.CommentInfo
+			commentsErr   error
+			draftsErr     error
 			checksSummary string
 		)
 
@@ -142,7 +153,11 @@ var viewCmd = &cobra.Command{
 		go func() {
 			defer wg.Done()
 			files, _, err := client.Changes.ListFiles(ctx, changeID, revisionToFetch, nil)
-			if err == nil && files != nil {
+			if err != nil {
+				filesErr = err
+				return
+			}
+			if files != nil {
 				for path, info := range files {
 					fileList = append(fileList, map[string]any{
 						"path":      path,
@@ -153,12 +168,32 @@ var viewCmd = &cobra.Command{
 			}
 		}()
 
-		if showComments {
+		if needComments {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if cMap, _, err := client.Changes.ListChangeComments(ctx, changeID); err == nil && cMap != nil {
+				cMap, _, err := client.Changes.ListChangeComments(ctx, changeID)
+				if err != nil {
+					commentsErr = err
+					return
+				}
+				if cMap != nil {
 					comments = *cMap
+				}
+			}()
+		}
+
+		if needDrafts {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				dMap, _, err := client.Changes.ListChangeDrafts(ctx, changeID)
+				if err != nil {
+					draftsErr = err
+					return
+				}
+				if dMap != nil {
+					drafts = *dMap
 				}
 			}()
 		}
@@ -179,6 +214,23 @@ var viewCmd = &cobra.Command{
 
 		wg.Wait()
 
+		if filesErr != nil && wantFilesJSON {
+			return chCtx.FormatError(filesErr, "listing files for")
+		}
+		if commentsErr != nil && needComments {
+			return chCtx.FormatError(commentsErr, "listing comments for")
+		}
+		if draftsErr != nil && needDrafts {
+			return chCtx.FormatError(draftsErr, "listing draft comments for")
+		}
+
+		if comments == nil {
+			comments = map[string][]gerrit.CommentInfo{}
+		}
+		if drafts == nil {
+			drafts = map[string][]gerrit.CommentInfo{}
+		}
+
 		data := map[string]any{
 			"number":         change.Number,
 			"patchset":       patchset,
@@ -198,10 +250,9 @@ var viewCmd = &cobra.Command{
 			"commit_message": commitMessage,
 			"files":          fileList,
 			"checks":         checksSummary,
-		}
-
-		if comments != nil {
-			data["comments"] = comments
+			"comments":       comments,
+			"drafts":         drafts,
+			"show_comments":  showComments,
 		}
 
 		// The bug link is a `Bug:` or `Fixed:` trailer in the commit message,
@@ -227,7 +278,9 @@ var viewCmd = &cobra.Command{
 				"getLabelSummary": getLabelSummary,
 				"hasScore":        hasScore,
 				"hasAnyScore":     hasAnyScore,
-				"printComments":   printComments,
+				"printComments": func(c map[string][]gerrit.CommentInfo) string {
+					return FormatCommentForestWithDrafts(c, drafts)
+				},
 			},
 		}
 
@@ -236,6 +289,17 @@ var viewCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func requestsAnyJSONField(jsonSpec string, names ...string) bool {
+	for _, requested := range SplitJSONFields(jsonSpec) {
+		for _, name := range names {
+			if requested == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // bugJSONFields are the pr view fields derived from the commit message
@@ -384,8 +448,4 @@ func init() {
 	viewCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	viewCmd.Flags().MarkHidden("buildbucket-host")
 	PrCmd.AddCommand(viewCmd)
-}
-
-func printComments(comments map[string][]gerrit.CommentInfo) string {
-	return FormatCommentForest(comments)
 }
