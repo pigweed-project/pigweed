@@ -915,7 +915,6 @@
       "description": "Most common host builds/configurations",
       "builds": [
         "all_host",
-        "docs",
         "jni"
       ]
     },
