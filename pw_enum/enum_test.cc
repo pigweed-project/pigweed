@@ -525,7 +525,23 @@ TEST(EnumTraitsTest, HasEnumTraits) {
 
   static_assert(!::pw::has_enum_traits_v<HandwrittenTestEnum>);
   static_assert(!::pw::has_enum_traits_v<int>);
+
+  static_assert(::pw::has_enum_to_string_v<::pw::testing::TestEnum>);
+  static_assert(
+      ::pw::has_enum_to_string_v<::pw::testing::OuterStruct::NestedEnum>);
+  static_assert(!::pw::has_enum_to_string_v<HandwrittenTestEnum>);
+  static_assert(!::pw::has_enum_to_string_v<int>);
 }
+
+PW_CONSTEXPR_TEST(EnumTraitsTest, ToString, {
+  PW_TEST_EXPECT_STREQ(TestTraits::ToString(::pw::testing::TestEnum::kFirst),
+                       "FIRST");
+  PW_TEST_EXPECT_STREQ(TestTraits::ToString(::pw::testing::TestEnum::kSecond),
+                       "SECOND");
+  PW_TEST_EXPECT_STREQ(
+      TestTraits::ToString(static_cast<::pw::testing::TestEnum>(99)),
+      "Unknown ::pw::testing::TestEnum value");
+});
 
 }  // namespace
 
@@ -567,6 +583,8 @@ struct EnumTraits<UntaggedTraitsEnum> {
   static constexpr bool IsValid(Integer value) {
     return internal::IsValidInteger<enum_type>(value);
   }
+
+  static constexpr const char* ToString(enum_type) { return "VALUE"; }
 };
 
 }  // namespace pw
@@ -577,6 +595,7 @@ TEST(EnumTraitsTest, RejectsHandWrittenSpecializations) {
   // Only specializations tagged by the code generator are recognized, even if
   // they otherwise provide the entire API.
   static_assert(!::pw::has_enum_traits_v<UntaggedTraitsEnum>);
+  static_assert(!::pw::has_enum_to_string_v<UntaggedTraitsEnum>);
 }
 
 }  // namespace

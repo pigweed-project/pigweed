@@ -83,10 +83,25 @@ class TestEnumGeneration(unittest.TestCase):
             "kValues = {{",
             footer,
         )
-        self.assertIn("static constexpr bool IsValid(enum_type value)", footer)
-        # Contiguous enums are validated with a range check, not a switch.
-        self.assertIn("return value >= kMin && value <= kMax;", footer)
-        self.assertNotIn("switch (value)", footer)
+        self.assertIn(
+            "  [[nodiscard]] static constexpr bool IsValid(enum_type value) {\n"
+            "    return value >= kMin && value <= kMax;\n"
+            "  }",
+            footer,
+        )
+        self.assertIn(
+            "  [[nodiscard]] static constexpr const char* ToString("
+            "enum_type value) {\n"
+            "    switch (value) {\n"
+            "      case ::my::ns::MyEnum::kMyValue:\n"
+            '        return "MY_VALUE";\n'
+            "      case ::my::ns::MyEnum::kB:\n"
+            '        return "B";\n'
+            "    }\n"
+            '    return "Unknown ::my::ns::MyEnum value";\n'
+            "  }",
+            footer,
+        )
         self.assertIn("_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyEnum,", footer)
         self.assertIn('(kMyValue, "MY_VALUE")', footer)
         self.assertIn('(kB, "B")', footer)
@@ -141,10 +156,19 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertIn("::test::SparseEnum::kA,", footer)
         self.assertIn("::test::SparseEnum::kB,", footer)
         self.assertNotIn("::test::SparseEnum::kAliasA,", footer)
-        # Non-contiguous enums fall back to a switch.
-        self.assertIn("switch (value)", footer)
-        self.assertIn("case ::test::SparseEnum::kA:", footer)
-        self.assertIn("case ::test::SparseEnum::kB:", footer)
+        # Non-contiguous enums fall back to a switch in IsValid.
+        self.assertIn(
+            "  [[nodiscard]] static constexpr bool IsValid(enum_type value) {\n"
+            "    switch (value) {\n"
+            "      case ::test::SparseEnum::kA:\n"
+            "      case ::test::SparseEnum::kB:\n"
+            "        return true;\n"
+            "      default:\n"
+            "        return false;\n"
+            "    }\n"
+            "  }",
+            footer,
+        )
         self.assertNotIn("case ::test::SparseEnum::kAliasA:", footer)
 
     def test_duplicate_values_grouped(self) -> None:

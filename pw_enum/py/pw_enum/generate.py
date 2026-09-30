@@ -133,9 +133,30 @@ def _generate_is_valid(
     yield "  }"
 
 
+def _generate_to_string(
+    enum_desc: EnumDescriptor,
+    value_groups: list[list[EnumValue]],
+) -> Iterator[str]:
+    """Generates the ToString method for an EnumTraits specialization."""
+    yield (
+        "  [[nodiscard]] static constexpr const char* ToString("
+        "enum_type value) {"
+    )
+    yield "    switch (value) {"
+    for group in value_groups:
+        label = group[0].cc_name
+        name = "|".join(dict.fromkeys(v.name for v in group))
+        yield f"      case {enum_desc.cc_full_name}::{label}:"
+        yield f'        return "{_escape_cc(name)}";'
+    yield "    }"
+    yield f'    return "Unknown {enum_desc.cc_full_name} value";'
+    yield "  }"
+
+
 def _generate_enum_traits(
     enum_desc: EnumDescriptor,
     distinct_values: list[EnumValue],
+    value_groups: list[list[EnumValue]],
 ) -> Iterator[str]:
     """Generates a pw::EnumTraits specialization for one enum."""
     cc_name = enum_desc.cc_full_name
@@ -189,6 +210,8 @@ def _generate_enum_traits(
     yield "  }};"
     yield ""
     yield from _generate_is_valid(enum_desc, distinct_values, is_contiguous)
+    yield ""
+    yield from _generate_to_string(enum_desc, value_groups)
     yield "};"
     yield "}  // namespace pw"
 
@@ -215,7 +238,7 @@ def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
 
     yield from _generate_macro_defs(enum_desc)
     yield ""
-    yield from _generate_enum_traits(enum_desc, distinct_values)
+    yield from _generate_enum_traits(enum_desc, distinct_values, value_groups)
     yield ""
     yield from _generate_tokenization(enum_desc, value_groups)
 

@@ -88,59 +88,28 @@ constexpr bool ValidEnumerator(T) {
 #define _PW_ENUM_TOKENIZE_VALUE_EXPAND(index, name, domain, ...) \
   _PW_ENUM_TOKENIZE_VALUE_IMPL(index, name, domain, __VA_ARGS__)
 
-// Helper macros to generate a switch case for EnumToString with domain.
-#define _PW_ENUM_TOKENIZE_CASE_EXTRACT(index, name, arg) \
-  _PW_ENUM_TOKENIZE_CASE_EXPAND(index, name, _PW_CUSTOM_ENUMERATOR arg)
-
-#define _PW_ENUM_TOKENIZE_CASE_EXPAND(index, name, ...) \
-  _PW_TOKENIZE_TO_STRING_CASE_IMPL(index, name, __VA_ARGS__)
-
 // Tokenizes a custom string for each given values within an enumerator, using
 // a custom tokenization domain name.
-// This macro can be used in the global namespace (unlike
-// PW_TOKENIZE_ENUM_CUSTOM) because it specializes pw::EnumToString directly
-// instead of relying on ADL.
 //
 // This macro is used by PW_ENUM, which needs to support versioning enums nested
 // within a class definition. The standard macros would require adding a
 // namespace for versioning purposes, which is not possible with nested enums.
 // This macro allows PW_ENUM to version the domain directly.
-#define _PW_TOKENIZE_ENUM_DOMAIN(fully_qualified_name, domain_name, ...)    \
-  PW_APPLY(_PW_ENUM_TOKENIZE_VALUE_EXTRACT,                                 \
-           _PW_SEMICOLON,                                                   \
-           (fully_qualified_name, domain_name),                             \
-           __VA_ARGS__);                                                    \
-  PW_TOKENIZER_DEFINE_TOKEN(                                                \
-      ::pw::tokenizer::Hash(domain_name), "enum_domain", domain_name);      \
-  namespace pw::tokenizer {                                                 \
-  template <>                                                               \
-  constexpr uint32_t PwEnumDomainToken<fully_qualified_name>() {            \
-    constexpr uint32_t kToken = ::pw::tokenizer::Hash(domain_name);         \
-    return kToken;                                                          \
-  }                                                                         \
-  }                                                                         \
-  namespace pw {                                                            \
-  template <>                                                               \
-  constexpr const char* EnumToString(fully_qualified_name _pw_enum_value) { \
-    switch (_pw_enum_value) {                                               \
-      PW_APPLY(_PW_ENUM_TOKENIZE_CASE_EXTRACT,                              \
-               _PW_SEMICOLON,                                               \
-               fully_qualified_name,                                        \
-               __VA_ARGS__);                                                \
-    }                                                                       \
-    return "Unknown " #fully_qualified_name " value";                       \
-  }                                                                         \
-  }                                                                         \
+#define _PW_TOKENIZE_ENUM_DOMAIN(fully_qualified_name, domain_name, ...) \
+  PW_APPLY(_PW_ENUM_TOKENIZE_VALUE_EXTRACT,                              \
+           _PW_SEMICOLON,                                                \
+           (fully_qualified_name, domain_name),                          \
+           __VA_ARGS__);                                                 \
+  PW_TOKENIZER_DEFINE_TOKEN(                                             \
+      ::pw::tokenizer::Hash(domain_name), "enum_domain", domain_name);   \
+  namespace pw::tokenizer {                                              \
+  template <>                                                            \
+  constexpr uint32_t PwEnumDomainToken<fully_qualified_name>() {         \
+    constexpr uint32_t kToken = ::pw::tokenizer::Hash(domain_name);      \
+    return kToken;                                                       \
+  }                                                                      \
+  }                                                                      \
   static_assert(true)
-
-// Forward declaration of pw::EnumToString from pw_enum/to_string.h to allow
-// specialization by the _PW_TOKENIZE_ENUM_DOMAIN macro.
-namespace pw {
-
-template <typename T>
-constexpr const char* EnumToString(T value);
-
-}  // namespace pw
 
 // Forward declaration of pw::tokenizer::PwEnumDomainToken to allow
 // specialization by the _PW_TOKENIZE_ENUM_DOMAIN macro.

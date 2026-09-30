@@ -37,7 +37,13 @@ constexpr const char* PwEnumToString(MyEnum value) {
 
 namespace {
 
+enum class UnregisteredEnum { kA };
+
 TEST(ToString, ManualImplementation) {
+  static_assert(pw::has_enum_to_string_v<my_namespace::MyEnum>);
+  static_assert(!pw::has_enum_to_string_v<UnregisteredEnum>);
+  static_assert(!pw::has_enum_to_string_v<int>);
+
   EXPECT_STREQ(pw::EnumToString(my_namespace::MyEnum::kValue1), "Value1");
   EXPECT_STREQ(pw::EnumToString(my_namespace::MyEnum::kValue2), "Value2");
 }

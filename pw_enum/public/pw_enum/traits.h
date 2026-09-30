@@ -48,6 +48,8 @@ namespace pw {
 ///   values in ascending order.
 /// - `IsValid(value)` --- returns whether an enumerator or integer value is a
 ///   valid enumerator; see `pw::IsValidEnum`.
+/// - `ToString(value)` --- returns the string representation of `value`; see
+///   `pw::EnumToString`.
 ///
 /// @example{pw_enum/examples/traits.cc,pw_enum-examples-traits}
 ///
