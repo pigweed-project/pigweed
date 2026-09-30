@@ -23,8 +23,10 @@ licenses(["notice"])
 sphinx_docs_library(
     name = "docs",
     srcs = [
+        "comparison.rst",
         "docs.rst",
         "protocol.rst",
+        "why.rst",
     ],
     prefix = "pw_rpc2/",
     target_compatible_with = incompatible_with_mcu(),

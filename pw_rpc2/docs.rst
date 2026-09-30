@@ -15,3 +15,5 @@ pw_rpc2
    :hidden:
 
    Wire protocol <protocol>
+   Why RPC2? <why>
+   Comparison to RPC1 <comparison>

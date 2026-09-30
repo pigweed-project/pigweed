@@ -6,7 +6,7 @@ Wire protocol
 .. pigweed-module-subpage::
    :name: pw_rpc2
 
-Pigweed RPC 2 uses a binary-framed wire protocol designed for low processing
+Pigweed RPC2 uses a binary-framed wire protocol designed for low processing
 overhead. Each packet consists of a fixed-size header (dependent on the packet
 type) sharing a common prefix followed by type-specific fields. In packets with
 payloads, the payload is located immediately following the header.
@@ -16,11 +16,11 @@ All multi-byte numeric fields are encoded in **little-endian** byte order.
 ----------------------------------
 Connection state and establishment
 ----------------------------------
-As RPC 2 runs over a generic ``Socket`` interface, a newly established
-connection must first identify that the peer is a compatible RPC endpoint
-before regular data flow can begin.
+As RPC2 runs over a generic ``Socket`` interface, a newly established connection
+must first identify that the peer is a compatible RPC endpoint before regular
+data flow can begin.
 
-To achieve this, RPC 2 uses two distinct categories of packets:
+To achieve this, RPC2 uses two distinct categories of packets:
 
 - **Handshake packets** are used during the initial establishment phase. They
   contain magic numbers which identify the sender as an RPC endpoint.
@@ -270,8 +270,8 @@ The fields of each RPC packet are listed below.
 
 .. admonition:: Payload framing
 
-   RPC 2 runs over a datagram socket, so each packet from the peer is received
-   in full. There is no length field in the protocol itself. Transport
+   RPC2 runs over a datagram socket, so each packet from the peer is received in
+   full. There is no length field in the protocol itself. Transport
    implementations used with RPC must ensure that buffers read from the peer
    over an RPC connection contain only, and exactly, the bytes of a single
    packet without any padding.
