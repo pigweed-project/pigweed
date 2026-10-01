@@ -387,6 +387,18 @@ pw_source_set("null_allocator") {
   sources = [ "null_allocator.cc" ]
 }
 
+pw_source_set("origin_allocator") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_allocator/origin_allocator.h" ]
+  sources = [ "origin_allocator.cc" ]
+  public_deps = [
+    ":framing_allocator",
+    ":pw_allocator",
+    "$dir_pw_tokenizer",
+  ]
+  deps = [ "$dir_pw_assert:check" ]
+}
+
 pw_source_set("metrics") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_allocator/metrics.h" ]
@@ -770,6 +782,16 @@ pw_test("null_allocator_test") {
   sources = [ "null_allocator_test.cc" ]
 }
 
+pw_test("origin_allocator_test") {
+  deps = [
+    ":origin_allocator",
+    ":pw_allocator",
+    ":testing",
+    "$dir_pw_tokenizer",
+  ]
+  sources = [ "origin_allocator_test.cc" ]
+}
+
 pw_test("pmr_allocator_test") {
   deps = [
     ":pmr_allocator",
@@ -902,6 +924,7 @@ pw_test_group("tests") {
     ":metrics_test",
     ":maybe_shared_ptr_test",
     ":null_allocator_test",
+    ":origin_allocator_test",
     ":pmr_allocator_test",
     ":shared_ptr_test",
     ":synchronized_allocator_test",

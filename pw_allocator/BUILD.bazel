@@ -399,6 +399,20 @@ cc_library(
 )
 
 cc_library(
+    name = "origin_allocator",
+    srcs = ["origin_allocator.cc"],
+    hdrs = ["public/pw_allocator/origin_allocator.h"],
+    implementation_deps = ["//pw_assert:check"],
+    strip_include_prefix = "public",
+    deps = [
+        ":config",
+        ":framing_allocator",
+        ":pw_allocator",
+        "//pw_tokenizer",
+    ],
+)
+
+cc_library(
     name = "metrics",
     hdrs = ["public/pw_allocator/metrics.h"],
     strip_include_prefix = "public",
@@ -826,6 +840,17 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "origin_allocator_test",
+    srcs = ["origin_allocator_test.cc"],
+    deps = [
+        ":origin_allocator",
+        ":pw_allocator",
+        ":testing",
+        "//pw_tokenizer",
+    ],
+)
+
+pw_cc_test(
     name = "pmr_allocator_test",
     srcs = ["pmr_allocator_test.cc"],
     deps = [
@@ -981,6 +1006,7 @@ filegroup(
         "public/pw_allocator/maybe_shared_ptr.h",
         "public/pw_allocator/metrics.h",
         "public/pw_allocator/null_allocator.h",
+        "public/pw_allocator/origin_allocator.h",
         "public/pw_allocator/pmr_allocator.h",
         "public/pw_allocator/pool.h",
         "public/pw_allocator/shared_ptr.h",

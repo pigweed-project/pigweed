@@ -297,6 +297,11 @@ Consult the :cc:`API reference <pw_allocator>` for additional details.
 - :cc:`GuardedAllocator <pw::allocator::GuardedAllocator>`: Inserts guard
   values before and after allocations, and provides a thread-safe way to check
   them in order to detect heap overflows.
+- :cc:`OriginAllocator <pw::allocator::OriginAllocator>`: Wraps another
+  allocator and reserves space for source location information with each
+  allocation to aid in debugging. Store the source location information by
+  using the ``PW_ALLOCATOR_SET_ORIGIN`` macro or using
+  :cc:`OriginAllocator::SetOrigin <pw::allocator::OriginAllocator::SetOrigin>`.
 - :cc:`PmrAllocator <pw::allocator::PmrAllocator>`: Adapts an allocator to
   be a ``std::pmr::polymorphic_allocator``, which can be used with standard
   library containers that `use allocators`_, such as ``std::pmr::vector<T>``.

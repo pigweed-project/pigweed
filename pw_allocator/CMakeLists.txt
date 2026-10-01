@@ -385,6 +385,21 @@ pw_add_library(pw_allocator.null_allocator STATIC
     pw_allocator.abstract_allocator
 )
 
+pw_add_library(pw_allocator.origin_allocator STATIC
+  HEADERS
+    public/pw_allocator/origin_allocator.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_allocator
+    pw_allocator.framing_allocator
+    pw_tokenizer
+  SOURCES
+    origin_allocator.cc
+  PRIVATE_DEPS
+    pw_assert.check
+)
+
 pw_add_library(pw_allocator.metrics INTERFACE
   HEADERS
     public/pw_allocator/metrics.h
@@ -841,6 +856,19 @@ pw_add_test(pw_allocator.null_allocator_test
     pw_allocator.null_allocator
     pw_allocator.testing
     pw_unit_test
+  GROUPS
+    modules
+    pw_allocator
+)
+
+pw_add_test(pw_allocator.origin_allocator_test
+  SOURCES
+    origin_allocator_test.cc
+  PRIVATE_DEPS
+    pw_allocator.origin_allocator
+    pw_allocator
+    pw_allocator.testing
+    pw_tokenizer
   GROUPS
     modules
     pw_allocator

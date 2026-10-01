@@ -69,6 +69,7 @@ cc_library {
         "managed_ptr.cc",
         "null_allocator.cc",
         "pmr_allocator.cc",
+        "origin_allocator.cc",
         "tagging_allocator.cc",
     ],
     static_libs: [
