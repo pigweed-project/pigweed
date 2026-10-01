@@ -16,14 +16,13 @@
 #ifdef __cplusplus
 
 // Avoid including heavy C++ standard library headers (such as <string_view>,
-// <algorithm>, or <string>) here to prevent circular include failures when
-// <assert.h> is intercepted by pw_assert backends using pw_tokenizer inside C
-// library headers like Newlib's <stdlib.h> or <wchar.h>.
+// <algorithm>, <iterator>, <memory>, or <string>) or headers that transitively
+// include them (such as pw_bytes/endian.h) here to prevent circular include
+// failures when <assert.h> is intercepted by pw_assert backends using
+// pw_tokenizer inside C library headers like Newlib's <stdlib.h> or <wchar.h>.
 #include <array>
 #include <cstddef>
 #include <cstdint>
-
-#include "pw_bytes/endian.h"
 
 #else
 
@@ -395,7 +394,12 @@ inline constexpr const char* kDefaultDomain = PW_TOKENIZER_DEFAULT_DOMAIN;
 /// TOKENIZATION_OPTIONAL proto field.
 constexpr std::array<std::byte, 4> TokenBytes(Token token) {
   // Tokens in 'bytes' fields are always encoded in little-endian order.
-  return bytes::CopyInOrder(endian::little, token);
+  return {{
+      static_cast<std::byte>((token >> 0) & 0xffu),
+      static_cast<std::byte>((token >> 8) & 0xffu),
+      static_cast<std::byte>((token >> 16) & 0xffu),
+      static_cast<std::byte>((token >> 24) & 0xffu),
+  }};
 }
 
 namespace internal {
