@@ -1109,8 +1109,7 @@ class Impl final : public Client {
         }
 
         if (status.is_error()) {
-          auto exec_write_cb = [this,
-                                self = weak_self_.GetWeakPtr(),
+          auto exec_write_cb = [self = weak_self_.GetWeakPtr(),
                                 callback = std::move(prep_write.callback),
                                 prep_write_status =
                                     status](att::Result<>) mutable {
@@ -1122,11 +1121,12 @@ class Impl final : public Client {
             }
             // Now that this request is complete, remove it from the overall
             // queue.
-            PW_DCHECK(!long_write_queue_.empty());
-            long_write_queue_.pop();
+            PW_DCHECK(!self->long_write_queue_.empty());
+            self->long_write_queue_.pop();
 
-            if (long_write_queue_.size() > 0) {
-              ProcessWriteQueue(std::move(long_write_queue_.front()));
+            if (self->long_write_queue_.size() > 0) {
+              self->ProcessWriteQueue(
+                  std::move(self->long_write_queue_.front()));
             }
           };
 
@@ -1146,8 +1146,7 @@ class Impl final : public Client {
     }
     // End of this write, send and prepare for next item in overall write queue
     else {
-      auto exec_write_cb = [this,
-                            self = weak_self_.GetWeakPtr(),
+      auto exec_write_cb = [self = weak_self_.GetWeakPtr(),
                             callback = std::move(prepared_write.callback)](
                                att::Result<> status) mutable {
         callback(status);
@@ -1156,13 +1155,13 @@ class Impl final : public Client {
         }
         // Now that this request is complete, remove it from the overall
         // queue.
-        PW_DCHECK(!long_write_queue_.empty());
-        long_write_queue_.pop();
+        PW_DCHECK(!self->long_write_queue_.empty());
+        self->long_write_queue_.pop();
 
         // If the super queue still has any long writes left to execute,
         // initiate them
-        if (long_write_queue_.size() > 0) {
-          ProcessWriteQueue(std::move(long_write_queue_.front()));
+        if (self->long_write_queue_.size() > 0) {
+          self->ProcessWriteQueue(std::move(self->long_write_queue_.front()));
         }
       };
 
@@ -1322,7 +1321,7 @@ class Impl final : public Client {
   // Following the processing of each queue, the client will automatically
   // process the next queue in the |long_write_queue_|.
   std::queue<PreparedWrite> long_write_queue_;
-  WeakSelf<Client> weak_self_;
+  WeakSelf<Impl> weak_self_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(Impl);
 };
