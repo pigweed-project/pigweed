@@ -87,6 +87,7 @@ SOURCE_FILES_FILTER_GN_EXCLUDE = FileFilter(
         r'\bpw_bluetooth_sapphire/fuchsia/',
         r'\bpw_ide/bazel/',
         r'\bpw_kernel/',
+        r'\bpw_tokenizer/performance_test/',
         r'\bsize_report/',
         r'\btargets/pw_rp2350/',
         # keep-sorted: end
