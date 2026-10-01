@@ -94,5 +94,5 @@ CMake
    bazel/index
    gn/index
    cmake/index
-   Toolchain <../toolchain>
+   Toolchain <../toolchain/index>
    ../size_optimizations
