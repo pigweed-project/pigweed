@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -872,11 +873,21 @@ func TestBuilderList(t *testing.T) {
 			builds: build("i", "h", "g", "f", "e", "d", "c", "b", "a"),
 			want:   "a, b, c, d, e and 4 more",
 		},
+		{
+			name: "builds from an earlier patchset are annotated",
+			builds: func() []bbBuild {
+				bs := build("beta", "alpha", "gamma")
+				bs[0].Patchset = 8
+				bs[1].Patchset = 10
+				return bs
+			}(),
+			want: "alpha, beta (from patchset 8), gamma",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := builderList(tt.builds); got != tt.want {
+			if got := builderList(tt.builds, 10); got != tt.want {
 				t.Errorf("builderList() = %q, want %q", got, tt.want)
 			}
 		})
@@ -1361,5 +1372,307 @@ func TestFormatOmittedExperimentalNotice(t *testing.T) {
 	}
 	if got := FormatOmittedExperimentalNotice(3); !strings.Contains(got, "3 non-blocking experimental builders omitted") {
 		t.Errorf("unexpected plural notice: %q", got)
+	}
+}
+
+func TestChecks_EquivalentPatchsets(t *testing.T) {
+	// Patchset 10 is TRIVIAL_REBASE (no builds yet),
+	// Patchset 9 is NO_CODE_CHANGE (reran static-checks-pigweed and passed),
+	// Patchset 8 is REWORK (ran pigweed-linux=SUCCESS and static-checks-pigweed=FAILURE),
+	// Patchset 7 is REWORK (had a failing build that must NOT be included).
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "pw_ghish: Test equivalent patchsets",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev10",
+		"revisions": map[string]any{
+			"rev7":  map[string]any{"_number": 7, "kind": "REWORK"},
+			"rev8":  map[string]any{"_number": 8, "kind": "REWORK"},
+			"rev9":  map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
+			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+		},
+	})
+
+	var mu sync.Mutex
+	var queriedPatchsets []int
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode SearchBuilds request: %v", err)
+		}
+		if len(req.Predicate.GerritChanges) != 1 {
+			t.Fatalf("expected 1 GerritChange in predicate, got %d", len(req.Predicate.GerritChanges))
+		}
+		ps := req.Predicate.GerritChanges[0].Patchset
+		mu.Lock()
+		queriedPatchsets = append(queriedPatchsets, ps)
+		mu.Unlock()
+
+		var builds []bbBuild
+		switch ps {
+		case 10:
+			// No builds scheduled on the trivial rebase patchset 10
+		case 9:
+			// Commit-message-only change fixed static-checks-pigweed
+			builds = []bbBuild{
+				FakeBuild("901", "static-checks-pigweed", "SUCCESS"),
+			}
+		case 8:
+			// Full CQ run on patchset 8 had pigweed-linux pass and static-checks-pigweed fail
+			builds = []bbBuild{
+				FakeBuild("801", "pigweed-linux", "SUCCESS"),
+				FakeBuild("802", "static-checks-pigweed", "FAILURE"),
+			}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+
+	out, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if err != nil {
+		t.Fatalf("expected pr checks 12345 to pass across equivalent patchsets [10, 9, 8], got error: %v\nOutput:\n%s", err, out)
+	}
+
+	// The patchsets are queried concurrently, so only the set is fixed.
+	mu.Lock()
+	queried := append([]int(nil), queriedPatchsets...)
+	mu.Unlock()
+	sort.Sort(sort.Reverse(sort.IntSlice(queried)))
+	if want := "[10 9 8]"; fmt.Sprint(queried) != want {
+		t.Errorf("queried patchsets = %v, want %s", queried, want)
+	}
+
+	if !strings.Contains(out, "Checks for Change 12345 (Patchset 10)") {
+		t.Errorf("expected header for Patchset 10, got:\n%s", out)
+	}
+	if !strings.Contains(out, "static-checks-pigweed") || !strings.Contains(out, "https://ci.chromium.org/b/901") {
+		t.Errorf("expected static-checks-pigweed build 901 from patchset 9, got:\n%s", out)
+	}
+	if !strings.Contains(out, "pigweed-linux") || !strings.Contains(out, "https://ci.chromium.org/b/801") {
+		t.Errorf("expected pigweed-linux build 801 from patchset 8, got:\n%s", out)
+	}
+
+	// Each reused build is labeled with the patchset it actually ran on.
+	wantNotes := map[string]string{
+		"https://ci.chromium.org/b/901": "(from patchset 9)",
+		"https://ci.chromium.org/b/801": "(from patchset 8)",
+	}
+	for _, line := range strings.Split(out, "\n") {
+		for url, note := range wantNotes {
+			if strings.Contains(line, url) && !strings.Contains(line, note) {
+				t.Errorf("expected row for %s to contain %q, got: %q", url, note, line)
+			}
+		}
+	}
+
+	jsonOut, err := executeCommand(RootCmd, "pr", "checks", "12345", "--json", "checks,equivalentPatchsets")
+	if err != nil {
+		t.Fatalf("pr checks --json failed: %v\nOutput:\n%s", err, jsonOut)
+	}
+	var got struct {
+		Checks []struct {
+			ID       string `json:"id"`
+			Patchset int    `json:"patchset"`
+		} `json:"checks"`
+		EquivalentPatchsets []int `json:"equivalentPatchsets"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &got); err != nil {
+		t.Fatalf("failed to parse --json output: %v\nOutput:\n%s", err, jsonOut)
+	}
+	wantPS := map[string]int{"901": 9, "801": 8}
+	if len(got.Checks) != len(wantPS) {
+		t.Errorf("got %d checks in JSON, want %d:\n%s", len(got.Checks), len(wantPS), jsonOut)
+	}
+	for _, c := range got.Checks {
+		if want, ok := wantPS[c.ID]; !ok || c.Patchset != want {
+			t.Errorf("check %s: patchset = %d, want %d", c.ID, c.Patchset, want)
+		}
+	}
+	if fmt.Sprint(got.EquivalentPatchsets) != "[10 9 8]" {
+		t.Errorf("equivalentPatchsets = %v, want [10 9 8]", got.EquivalentPatchsets)
+	}
+}
+
+func TestDeduplicateLatestBuilds(t *testing.T) {
+	build := func(id, builder, status string) bbBuild {
+		return FakeBuild(id, builder, status)
+	}
+	tests := []struct {
+		name   string
+		builds []bbBuild
+		want   []string // IDs, in output order
+	}{
+		{
+			name:   "newest build wins",
+			builds: []bbBuild{build("3", "a", "FAILURE"), build("2", "a", "SUCCESS"), build("1", "b", "SUCCESS")},
+			want:   []string{"3", "1"},
+		},
+		{
+			name:   "older success replaces newer cancellation",
+			builds: []bbBuild{build("3", "a", "CANCELED"), build("2", "b", "SUCCESS"), build("1", "a", "SUCCESS")},
+			want:   []string{"1", "2"},
+		},
+		{
+			name:   "older failure does not replace newer cancellation",
+			builds: []bbBuild{build("2", "a", "CANCELED"), build("1", "a", "FAILURE")},
+			want:   []string{"2"},
+		},
+		{
+			name:   "newest success is kept over older successes",
+			builds: []bbBuild{build("3", "a", "CANCELED"), build("2", "a", "SUCCESS"), build("1", "a", "SUCCESS")},
+			want:   []string{"2"},
+		},
+		{
+			name:   "running build is not replaced by older success",
+			builds: []bbBuild{build("2", "a", "STARTED"), build("1", "a", "SUCCESS")},
+			want:   []string{"2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, b := range deduplicateLatestBuilds(tt.builds) {
+				got = append(got, b.ID)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("deduplicateLatestBuilds() IDs = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestChecks_EquivalentPatchsets_SuccessBeatsNewerCancel covers a builder that
+// passed on patchset 9 and was then canceled on the code-equivalent patchset
+// 10. LUCI CV counts the patchset 9 success, so pr checks must too.
+func TestChecks_EquivalentPatchsets_SuccessBeatsNewerCancel(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "pw_ghish: Test canceled on equivalent patchset",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev10",
+		"revisions": map[string]any{
+			"rev9":  map[string]any{"_number": 9, "kind": "REWORK"},
+			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+		},
+	})
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		var builds []bbBuild
+		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
+		case 10:
+			builds = []bbBuild{FakeBuild("1001", "pigweed-linux", "CANCELED")}
+		case 9:
+			builds = []bbBuild{FakeBuild("901", "pigweed-linux", "SUCCESS")}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+
+	out, err := executeCommand(RootCmd, "pr", "checks", "12345")
+	if err != nil {
+		t.Fatalf("expected pr checks to pass using the patchset 9 success, got error: %v\nOutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "https://ci.chromium.org/b/901") {
+		t.Errorf("expected successful build 901 from patchset 9, got:\n%s", out)
+	}
+	if strings.Contains(out, "1001") {
+		t.Errorf("canceled build 1001 should be superseded by the older success, got:\n%s", out)
+	}
+}
+
+// TestChecks_Watch_SkipsSettledEquivalentPatchsets verifies that --watch only
+// re-queries older equivalent patchsets while they still have builds running.
+func TestChecks_Watch_SkipsSettledEquivalentPatchsets(t *testing.T) {
+	// Patchset 10 (current, TRIVIAL_REBASE): pigweed-linux runs for two polls,
+	//   then passes.
+	// Patchset 9 (NO_CODE_CHANGE): static-checks-pigweed is still running at
+	//   first, then passes on the next query.
+	// Patchset 8 (REWORK): docs already passed.
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "pw_ghish: Test watch caching",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev10",
+		"revisions": map[string]any{
+			"rev8":  map[string]any{"_number": 8, "kind": "REWORK"},
+			"rev9":  map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
+			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+		},
+	})
+
+	var mu sync.Mutex
+	queries := make(map[int]int)
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		ps := req.Predicate.GerritChanges[0].Patchset
+		mu.Lock()
+		queries[ps]++
+		n := queries[ps]
+		mu.Unlock()
+
+		var builds []bbBuild
+		switch ps {
+		case 10:
+			status := "STARTED"
+			if n >= 3 {
+				status = "SUCCESS"
+			}
+			builds = []bbBuild{FakeBuild("1001", "pigweed-linux", status)}
+		case 9:
+			status := "STARTED"
+			if n >= 2 {
+				status = "SUCCESS"
+			}
+			builds = []bbBuild{FakeBuild("901", "static-checks-pigweed", status)}
+		case 8:
+			builds = []bbBuild{FakeBuild("801", "docs", "SUCCESS")}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+
+	out, err := executeCommand(RootCmd, "pr", "checks", "12345", "--watch", "--interval", "5ms", "--buildbucket-host", server.URL)
+	if err != nil {
+		t.Fatalf("pr checks --watch failed: %v\nOutput:\n%s", err, out)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Patchset 10 is queried on every poll until pigweed-linux passes.
+	// Patchset 9 is queried until static-checks-pigweed finishes, and
+	// patchset 8 only once, since its builds had already finished.
+	want := map[int]int{10: 3, 9: 2, 8: 1}
+	for ps, n := range want {
+		if queries[ps] != n {
+			t.Errorf("patchset %d queried %d times, want %d (all queries: %v)", ps, queries[ps], n, queries)
+		}
 	}
 }

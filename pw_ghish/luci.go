@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // LUCILog represents a single log stream inside a LUCI build step.
@@ -70,6 +72,9 @@ type FailureReport struct {
 	LogName     string `json:"logName,omitempty"`
 	LogSnippet  string `json:"logSnippet,omitempty"`
 	FullLogURL  string `json:"fullLogUrl,omitempty"`
+	// Patchset is set only when the build ran on an earlier code-equivalent
+	// patchset rather than the one requested.
+	Patchset int `json:"patchset,omitempty"`
 }
 
 type bbBuilder struct {
@@ -98,6 +103,12 @@ type bbBuild struct {
 	CreateTime      string    `json:"createTime"`
 	StartTime       string    `json:"startTime"`
 	EndTime         string    `json:"endTime"`
+
+	// Patchset is the Gerrit patchset the build ran against. It is not part
+	// of the Buildbucket response; SearchBuilds fills it in from the query,
+	// so callers can tell builds reused from an earlier code-equivalent
+	// patchset apart from builds on the requested one.
+	Patchset int `json:"-"`
 }
 
 // IsExperimental reports whether the build is non-blocking / experimental.
@@ -313,7 +324,87 @@ func (c *LUCIClient) SearchBuilds(ctx context.Context, gerritHost, project strin
 		pageToken = searchResp.NextPageToken
 	}
 
+	for i := range allBuilds {
+		allBuilds[i].Patchset = patchsetNum
+	}
 	return allBuilds, nil
+}
+
+// maxConcurrentBuildSearches caps the number of SearchBuilds requests in
+// flight at once when querying several equivalent patchsets.
+const maxConcurrentBuildSearches = 8
+
+// SearchBuildsForPatchsets queries Buildbucket for builds across one or more
+// equivalent patchsets (ordered newest patchset first) and returns the
+// concatenated builds in that order so newer patchset builds take precedence
+// when deduplicating by builder name.
+func (c *LUCIClient) SearchBuildsForPatchsets(ctx context.Context, gerritHost, project string, changeNum int, patchsets []int) ([]bbBuild, error) {
+	perPatchset, err := c.SearchBuildsByPatchset(ctx, gerritHost, project, changeNum, patchsets)
+	if err != nil {
+		return nil, err
+	}
+	var allBuilds []bbBuild
+	for _, builds := range perPatchset {
+		allBuilds = append(allBuilds, builds...)
+	}
+	return allBuilds, nil
+}
+
+// SearchBuildsByPatchset queries Buildbucket for the builds on each of the
+// given patchsets. The queries run concurrently. The result is aligned with
+// patchsets: result[i] holds the builds for patchsets[i]. If any query fails,
+// the error for the earliest failing patchset in the list is returned.
+func (c *LUCIClient) SearchBuildsByPatchset(ctx context.Context, gerritHost, project string, changeNum int, patchsets []int) ([][]bbBuild, error) {
+	if c == nil {
+		return nil, fmt.Errorf("LUCIClient is nil")
+	}
+	if len(patchsets) == 0 {
+		return nil, fmt.Errorf("patchsets cannot be empty")
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([][]bbBuild, len(patchsets))
+	errs := make([]error, len(patchsets))
+	sem := make(chan struct{}, maxConcurrentBuildSearches)
+	var wg sync.WaitGroup
+	for i, ps := range patchsets {
+		wg.Add(1)
+		go func(i, ps int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			results[i], errs[i] = c.SearchBuilds(ctx, gerritHost, project, changeNum, ps)
+			if errs[i] != nil {
+				// No point waiting on the rest; the whole search fails.
+				cancel()
+			}
+		}(i, ps)
+	}
+	wg.Wait()
+
+	// Canceling the siblings makes them fail with context errors, so report
+	// the first error that isn't one of those, falling back to the first.
+	// If multiple searches fail with distinct non-cancellation errors, only the
+	// error from the earliest patchset in the input slice is reported, which
+	// keeps the failure message deterministic without dumping redundant errors.
+	failed := -1
+	for i, err := range errs {
+		if err == nil {
+			continue
+		}
+		if failed < 0 || (errors.Is(errs[failed], context.Canceled) && !errors.Is(err, context.Canceled)) {
+			failed = i
+		}
+	}
+	if failed < 0 {
+		return results, nil
+	}
+	if len(patchsets) == 1 {
+		return nil, errs[failed]
+	}
+	return nil, fmt.Errorf("patchset %d: %w", patchsets[failed], errs[failed])
 }
 
 // GetBuildDetails fetches step-level details for a build from Buildbucket.
@@ -813,7 +904,11 @@ func FormatFailureReports(reports []FailureReport) string {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("================================================================================\n")
-		fmt.Fprintf(&sb, "FAILURE: %s (Build %s)\n", r.Builder, r.BuildID)
+		if r.Patchset > 0 {
+			fmt.Fprintf(&sb, "FAILURE: %s (Build %s, from patchset %d)\n", r.Builder, r.BuildID, r.Patchset)
+		} else {
+			fmt.Fprintf(&sb, "FAILURE: %s (Build %s)\n", r.Builder, r.BuildID)
+		}
 		fmt.Fprintf(&sb, "Status: %s | URL: %s\n", r.Status, r.BuildURL)
 		if r.FailedStep != "" {
 			fmt.Fprintf(&sb, "Step: %s\n", r.FailedStep)

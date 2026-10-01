@@ -168,7 +168,7 @@ var runListCmd = &cobra.Command{
 			sym := getStatusSymbol(b.Status)
 			dur := formatDuration(b.StartTime, b.EndTime)
 			urlStr := fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sym, b.Builder.Builder, dur, b.ID, urlStr, patchsetNote(b.Patchset, res.PatchsetNum))
 		}
 		w.Flush()
 
@@ -208,7 +208,7 @@ var runViewCmd = &cobra.Command{
 			if directBuildID != "" {
 				targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", directBuildID)
 			} else if targetBuilder != "" {
-				for _, b := range res.Builds {
+				for _, b := range deduplicateLatestBuilds(res.Builds) {
 					if strings.EqualFold(b.Builder.Builder, targetBuilder) {
 						targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
 						break
@@ -238,21 +238,15 @@ var runViewCmd = &cobra.Command{
 					Status:  details.Status,
 				})
 			} else if targetBuilder != "" {
-				var matching []bbBuild
-				for _, b := range res.Builds {
+				// Report on the newest build of the builder, the same build
+				// `gh pr checks` reports. res.Builds can span several
+				// code-equivalent patchsets plus retries, so preferring any
+				// failure would surface one that a later build superseded.
+				for _, b := range deduplicateLatestBuilds(res.Builds) {
 					if strings.EqualFold(b.Builder.Builder, targetBuilder) || b.ID == targetBuilder {
-						matching = append(matching, b)
+						targetBuilds = append(targetBuilds, b)
+						break
 					}
-				}
-				if len(matching) > 0 {
-					chosen := matching[0]
-					for _, b := range matching {
-						if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
-							chosen = b
-							break
-						}
-					}
-					targetBuilds = append(targetBuilds, chosen)
 				}
 			} else {
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
@@ -311,6 +305,9 @@ var runViewCmd = &cobra.Command{
 				}
 				rep := luciClient.ExtractFailureReport(ctx, details, maxLines)
 				if rep != nil {
+					if res != nil && b.Patchset > 0 && b.Patchset != res.PatchsetNum {
+						rep.Patchset = b.Patchset
+					}
 					reports = append(reports, *rep)
 				}
 			}
@@ -323,12 +320,16 @@ var runViewCmd = &cobra.Command{
 
 			if len(reports) == 0 {
 				for _, b := range targetBuilds {
+					note := ""
+					if res != nil {
+						note = patchsetNote(b.Patchset, res.PatchsetNum)
+					}
 					if b.Status == "STARTED" || b.Status == "SCHEDULED" {
-						fmt.Fprintf(cmd.OutOrStdout(), "Check %q is currently running (status: %s).\nTo monitor progress, run:\n  gh run view -j %s -v\n", b.Builder.Builder, b.Status, b.Builder.Builder)
+						fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s is currently running (status: %s).\nTo monitor progress, run:\n  gh run view -j %s -v\n", b.Builder.Builder, note, b.Status, b.Builder.Builder)
 						continue
 					}
 					dur := formatDuration(b.StartTime, b.EndTime)
-					fmt.Fprintf(cmd.OutOrStdout(), "Check %q has status %s (%s).\nBuild details: https://ci.chromium.org/b/%s\n", b.Builder.Builder, b.Status, dur, b.ID)
+					fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s has status %s (%s).\nBuild details: https://ci.chromium.org/b/%s\n", b.Builder.Builder, note, b.Status, dur, b.ID)
 				}
 				return nil
 			}
@@ -344,7 +345,7 @@ var runViewCmd = &cobra.Command{
 			if directBuildID != "" {
 				bID = directBuildID
 			} else if targetBuilder != "" {
-				for _, b := range res.Builds {
+				for _, b := range deduplicateLatestBuilds(res.Builds) {
 					if strings.EqualFold(b.Builder.Builder, targetBuilder) {
 						bID = b.ID
 						bName = b.Builder.Builder
@@ -365,17 +366,19 @@ var runViewCmd = &cobra.Command{
 					return fmt.Errorf("check %q not found on change %s%s", targetBuilder, rawID, sortMsg)
 				}
 			} else {
-				// Pick first build or failed build
-				for _, b := range res.Builds {
+				// Pick the first failed build, or else the first build, among
+				// the builds `gh pr checks` reports.
+				latest := deduplicateLatestBuilds(res.Builds)
+				for _, b := range latest {
 					if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 						bID = b.ID
 						bName = b.Builder.Builder
 						break
 					}
 				}
-				if bID == "" && len(res.Builds) > 0 {
-					bID = res.Builds[0].ID
-					bName = res.Builds[0].Builder.Builder
+				if bID == "" && len(latest) > 0 {
+					bID = latest[0].ID
+					bName = latest[0].Builder.Builder
 				}
 				if bID == "" {
 					return fmt.Errorf("no checks found on change %s", rawID)
@@ -442,16 +445,17 @@ var runViewCmd = &cobra.Command{
 		if runViewJSON {
 			checkItems := BuildCheckItems(relevant)
 			summary := map[string]any{
-				"change":   res.Change.Number,
-				"patchset": res.PatchsetNum,
-				"subject":  res.Change.Subject,
-				"branch":   res.Change.Branch,
-				"status":   overallStatus,
-				"url":      changeURL,
-				"total":    len(relevant),
-				"passed":   passedCount,
-				"failed":   failedCount,
-				"jobs":     checkItems,
+				"change":              res.Change.Number,
+				"patchset":            res.PatchsetNum,
+				"equivalentPatchsets": res.EquivalentPatchsets,
+				"subject":             res.Change.Subject,
+				"branch":              res.Change.Branch,
+				"status":              overallStatus,
+				"url":                 changeURL,
+				"total":               len(relevant),
+				"passed":              passedCount,
+				"failed":              failedCount,
+				"jobs":                checkItems,
 			}
 			data, err := json.MarshalIndent(summary, "", "  ")
 			if err != nil {
@@ -472,7 +476,7 @@ var runViewCmd = &cobra.Command{
 		for _, b := range relevant {
 			sym := getStatusSymbol(b.Status)
 			dur := formatDuration(b.StartTime, b.EndTime)
-			fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)\n", sym, b.Builder.Builder, dur, b.ID)
+			fmt.Fprintf(w, "%s\t%s\tin %s\t(ID %s)%s\n", sym, b.Builder.Builder, dur, b.ID, patchsetNote(b.Patchset, res.PatchsetNum))
 		}
 		w.Flush()
 
@@ -510,7 +514,7 @@ var runRerunCmd = &cobra.Command{
 		var buildersToRerun []string
 		if targetBuilder != "" {
 			found := false
-			for _, b := range res.Builds {
+			for _, b := range deduplicateLatestBuilds(res.Builds) {
 				if strings.EqualFold(b.Builder.Builder, targetBuilder) {
 					found = true
 					buildersToRerun = append(buildersToRerun, b.Builder.Builder)

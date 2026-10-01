@@ -241,14 +241,14 @@ func TestPrViewIntegration(t *testing.T) {
 
 	server := NewMockGerritServer(t)
 	server.On("GET", "/changes/12345", func(w http.ResponseWriter, r *http.Request) {
-		wantOpts := []string{"DETAILED_LABELS", "CURRENT_REVISION", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
+		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
 		if diff := cmp.Diff(wantOpts, r.URL.Query()["o"]); diff != "" {
 			t.Errorf("options mismatch (-want +got):\n%s", diff)
 		}
 		server.RespondJSON(w, http.StatusOK, mockChange)
 	})
 	server.On("GET", "/changes/67890", func(w http.ResponseWriter, r *http.Request) {
-		wantOpts := []string{"DETAILED_LABELS", "CURRENT_REVISION", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
+		wantOpts := []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
 		if diff := cmp.Diff(wantOpts, r.URL.Query()["o"]); diff != "" {
 			t.Errorf("options mismatch (-want +got):\n%s", diff)
 		}

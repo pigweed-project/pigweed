@@ -463,15 +463,90 @@ func (c *ChangeContext) ResolveProfile(project ...string) (ProjectProfile, error
 	return ResolveProfile(c.Context, c.Config, gHost, proj)
 }
 
+// IsEquivalentRevisionKind reports whether a Gerrit RevisionInfo.Kind
+// indicates that a patchset's code is equivalent to its predecessor,
+// allowing tryjob builds from the earlier patchset to remain valid.
+//
+// Per Gerrit's REST API documentation
+// (https://gerrit-review.googlesource.com/Documentation/rest-api-changes.html#revision-info
+// and https://gerrit-review.googlesource.com/Documentation/config-labels.html#changekind),
+// valid values of kind are:
+//   - REWORK (code changed; prior patchset builds are not valid)
+//   - TRIVIAL_REBASE
+//   - TRIVIAL_REBASE_WITH_MESSAGE_UPDATE
+//   - NO_CODE_CHANGE (commit-message-only change)
+//   - NO_CHANGE
+//   - MERGE_FIRST_PARENT_UPDATE
+func IsEquivalentRevisionKind(kind string) bool {
+	switch strings.ToUpper(strings.TrimSpace(kind)) {
+	case "TRIVIAL_REBASE",
+		"TRIVIAL_REBASE_WITH_MESSAGE_UPDATE",
+		"NO_CODE_CHANGE",
+		"NO_CHANGE",
+		"MERGE_FIRST_PARENT_UPDATE":
+		return true
+	default:
+		return false
+	}
+}
+
+// EquivalentPatchsets returns the target patchset and any preceding patchsets
+// whose tryjob builds remain valid for targetPatchset, ordered from newest
+// to oldest (e.g. [10, 9, 8]).
+//
+// Walking backwards from targetPatchset, if patchset N has a revision kind
+// where code did not change relative to patchset N-1 (such as TRIVIAL_REBASE
+// or NO_CODE_CHANGE), patchset N-1 is included and the walk continues until
+// a REWORK (or the earliest patchset) is reached.
+func EquivalentPatchsets(change *gerrit.ChangeInfo, targetPatchset int) []int {
+	if targetPatchset <= 0 {
+		return nil
+	}
+	if change == nil || len(change.Revisions) == 0 {
+		return []int{targetPatchset}
+	}
+
+	revs := make([]gerrit.RevisionInfo, 0, len(change.Revisions))
+	for _, rev := range change.Revisions {
+		if rev.Number > 0 {
+			revs = append(revs, rev)
+		}
+	}
+	sort.Slice(revs, func(i, j int) bool {
+		return revs[i].Number < revs[j].Number
+	})
+
+	targetIdx := -1
+	for i, rev := range revs {
+		if rev.Number == targetPatchset {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		return []int{targetPatchset}
+	}
+
+	result := []int{revs[targetIdx].Number}
+	for i := targetIdx; i > 0; i-- {
+		if !IsEquivalentRevisionKind(string(revs[i].Kind)) {
+			break
+		}
+		result = append(result, revs[i-1].Number)
+	}
+	return result
+}
+
 // CIContext encapsulates the resolved Gerrit change, patchset number, profile,
 // host, and Buildbucket builds for CI/CD commands (checks, run).
 type CIContext struct {
 	*ChangeContext
-	Change      *gerrit.ChangeInfo
-	PatchsetNum int
-	GerritHost  string
-	Profile     ProjectProfile
-	Builds      []bbBuild
+	Change              *gerrit.ChangeInfo
+	PatchsetNum         int
+	EquivalentPatchsets []int
+	GerritHost          string
+	Profile             ProjectProfile
+	Builds              []bbBuild
 }
 
 // ResolveCIContext resolves the change context, fetches Gerrit change metadata,
@@ -490,7 +565,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		patchsetNum = n
 	}
 	change, err := chCtx.GetChange(&gerrit.ChangeOptions{
-		AdditionalFields: []string{"CURRENT_REVISION", "DETAILED_LABELS"},
+		AdditionalFields: []string{"ALL_REVISIONS", "DETAILED_LABELS"},
 	})
 	if err != nil {
 		return nil, err
@@ -500,6 +575,7 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 			patchsetNum = rev.Number
 		}
 	}
+	equivalentPatchsets := EquivalentPatchsets(change, patchsetNum)
 	profile, err := chCtx.ResolveProfile(change.Project)
 	if err != nil {
 		return nil, err
@@ -509,17 +585,18 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 		gerritHost = CleanGerritHost(profile.DefaultGerritHost())
 	}
 	luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(chCtx.Context, buildbucketHost))
-	builds, err := luciClient.SearchBuilds(chCtx.Context, gerritHost, change.Project, change.Number, patchsetNum)
+	builds, err := luciClient.SearchBuildsForPatchsets(chCtx.Context, gerritHost, change.Project, change.Number, equivalentPatchsets)
 	if err != nil {
 		return nil, fmt.Errorf("error querying Buildbucket: %w", err)
 	}
 	return &CIContext{
-		ChangeContext: chCtx,
-		Change:        change,
-		PatchsetNum:   patchsetNum,
-		GerritHost:    gerritHost,
-		Profile:       profile,
-		Builds:        builds,
+		ChangeContext:       chCtx,
+		Change:              change,
+		PatchsetNum:         patchsetNum,
+		EquivalentPatchsets: equivalentPatchsets,
+		GerritHost:          gerritHost,
+		Profile:             profile,
+		Builds:              builds,
 	}, nil
 }
 

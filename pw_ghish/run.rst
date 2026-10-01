@@ -151,6 +151,27 @@ in flight on the previous one:
    To query the current patchset instead:
      gh pr checks 472267
 
+Reused builds from equivalent earlier patchsets
+-----------------------------------------------
+When a new patchset is uploaded without changing code—such as a trivial rebase
+(``TRIVIAL_REBASE`` or ``TRIVIAL_REBASE_WITH_MESSAGE_UPDATE``), a commit-message
+edit (``NO_CODE_CHANGE``), ``NO_CHANGE``, or ``MERGE_FIRST_PARENT_UPDATE``—LUCI
+CV keeps tryjob results from the earlier patchset instead of rerunning every
+builder.
+
+``pr checks``, ``pr view``, ``pr status``, and ``gh run`` walk backwards across
+these code-equivalent patchsets (stopping at the most recent ``REWORK``) and
+include their builds:
+
+* Builds reused from an earlier patchset are annotated with
+  ``(from patchset <N>)`` in ``pr checks``, ``run list``, ``run view``, and
+  failure reports, and carry a ``patchset`` field in ``--json`` output
+  (alongside ``equivalentPatchsets`` on ``pr checks --json`` and
+  ``run view --json``).
+* When multiple equivalent patchsets have builds for the same builder, the
+  newest build is shown—except when the newest build was ``CANCELED`` and an
+  earlier equivalent build succeeded, in which case the passing build is kept.
+
 ---------------------------------------
 Inspecting and rerunning builds: gh run
 ---------------------------------------
@@ -334,6 +355,10 @@ Key behavioral and flag differences
   blocking Commit-Queue builders from ``cq_experimental`` builders. Experimental
   builders are hidden by default and do not cause a non-zero exit code in
   ``pr checks``.
+* **Equivalent patchset reuse**: Tryjobs from earlier patchsets with no code
+  changes (e.g. ``TRIVIAL_REBASE``, ``NO_CODE_CHANGE``) are automatically
+  included and annotated with ``(from patchset <N>)``, matching LUCI CV's build
+  reuse rules.
 * ``--json`` **flag**: On ``run list`` and ``run view``, ``--json``
   is a boolean flag that emits the structured run or failure report (unlike
   ``pr view --json <fields>`` and ``issue view --json <fields>``, which take a

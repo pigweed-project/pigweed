@@ -155,7 +155,7 @@ var statusCmd = &cobra.Command{
 			}
 
 			opt := &gerrit.ChangeOptions{
-				AdditionalFields: []string{"DETAILED_LABELS", "CURRENT_REVISION", "DETAILED_ACCOUNTS", "SUBMITTABLE"},
+				AdditionalFields: []string{"DETAILED_LABELS", "ALL_REVISIONS", "DETAILED_ACCOUNTS", "SUBMITTABLE"},
 			}
 			activeChange, _, cErr := client.Changes.GetChange(ctx, activeID, opt)
 			if cErr != nil || activeChange == nil {
@@ -234,13 +234,15 @@ var statusCmd = &cobra.Command{
 			)
 
 			if patchsetNum > 0 && activeChange.Project != "" && gHost != "" {
+				patchsets := EquivalentPatchsets(activeChange, patchsetNum)
 				subWg.Add(1)
 				go func() {
 					defer subWg.Done()
-					builds, bErr := queryBuildbucket(ctx, bbHost, gHost, activeChange.Project, activeChange.Number, patchsetNum, getLUCIHTTPClient(ctx, bbHost))
+					builds, bErr := queryBuildbucketPatchsets(ctx, bbHost, gHost, activeChange.Project, activeChange.Number, patchsets, getLUCIHTTPClient(ctx, bbHost))
 					if bErr == nil && builds != nil {
-						checksSummary = formatCheckSummary(builds)
-						checks = BuildCheckItems(builds)
+						deduped := deduplicateLatestBuilds(builds)
+						checksSummary = formatCheckSummary(deduped)
+						checks = BuildCheckItems(deduped)
 					} else if ExitCodeFor(bErr) == ExitCodeAuth {
 						checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 					}

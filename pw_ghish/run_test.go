@@ -17,6 +17,8 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -473,5 +475,260 @@ func TestCollectFailedBuilders(t *testing.T) {
 	gotExp := collectFailedBuilders(builds, true)
 	if len(gotExp) != 3 || gotExp[2] != "builder-exp-fail" {
 		t.Errorf("collectFailedBuilders(includeExperimental=true) = %v, want 3 items including builder-exp-fail", gotExp)
+	}
+}
+
+// TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure verifies that
+// `run view -j <builder> --log-failed` reports the newest build of the
+// builder -- the one `pr checks` reports -- rather than a failure on an older
+// code-equivalent patchset that a later build already superseded.
+func TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure(t *testing.T) {
+	// Patchset 9 is a commit-message-only change of patchset 8, so builds from
+	// both are valid for patchset 9.
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "Superseded failure",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev9",
+		"revisions": map[string]any{
+			"rev8": map[string]any{"_number": 8, "kind": "REWORK"},
+			"rev9": map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
+		},
+	})
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		var builds []bbBuild
+		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
+		case 9:
+			builds = []bbBuild{FakeBuild("901", "static-checks-pigweed", "SUCCESS")}
+		case 8:
+			builds = []bbBuild{FakeBuild("802", "static-checks-pigweed", "FAILURE")}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+	server.OnGetBuild(FakeBuildDetails("901", "static-checks-pigweed", "SUCCESS"))
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "static-checks-pigweed", "--log-failed")
+	if err != nil {
+		t.Fatalf("run view -j --log-failed failed: %v\nOutput: %s", err, output)
+	}
+
+	if strings.Contains(output, "802") {
+		t.Errorf("reported superseded patchset 8 failure (build 802), got:\n%s", output)
+	}
+	if !strings.Contains(output, "901") {
+		t.Errorf("expected newest build 901 from patchset 9, got:\n%s", output)
+	}
+}
+
+// newReusedBuildServer serves Change 12345 where patchset 9 is a
+// commit-message-only change of patchset 8. static-checks-pigweed ran on
+// patchset 9 (build 901, SUCCESS) and pigweed-linux only ran on patchset 8
+// (build 801, FAILURE), so build 801 is reused for patchset 9.
+func newReusedBuildServer(t *testing.T) *MockGerritServer {
+	t.Helper()
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "Reused build",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev9",
+		"revisions": map[string]any{
+			"rev8": map[string]any{"_number": 8, "kind": "REWORK"},
+			"rev9": map[string]any{"_number": 9, "kind": "NO_CODE_CHANGE"},
+		},
+	})
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		var builds []bbBuild
+		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
+		case 9:
+			builds = []bbBuild{FakeBuild("901", "static-checks-pigweed", "SUCCESS")}
+		case 8:
+			builds = []bbBuild{FakeBuild("801", "pigweed-linux", "FAILURE")}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+	return server
+}
+
+// checkReusedBuildNotes verifies that the line mentioning build 801 is labeled
+// with patchset 8 and the line mentioning build 901 carries no label.
+func checkReusedBuildNotes(t *testing.T, output string) {
+	t.Helper()
+	var saw801, saw901 bool
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, "801") {
+			saw801 = true
+			if !strings.Contains(line, "(from patchset 8)") {
+				t.Errorf("expected build 801 line to contain %q, got: %q", "(from patchset 8)", line)
+			}
+		}
+		if strings.Contains(line, "901") {
+			saw901 = true
+			if strings.Contains(line, "from patchset") {
+				t.Errorf("build 901 ran on the current patchset and should not be labeled, got: %q", line)
+			}
+		}
+	}
+	if !saw801 || !saw901 {
+		t.Errorf("expected both builds 801 and 901 in output, got:\n%s", output)
+	}
+}
+
+func TestRunList_LabelsReusedBuilds(t *testing.T) {
+	newReusedBuildServer(t)
+	output, err := executeCommand(RootCmd, "run", "list", "12345")
+	if err != nil {
+		t.Fatalf("run list failed: %v\nOutput: %s", err, output)
+	}
+	checkReusedBuildNotes(t, output)
+}
+
+func TestRunView_Summary_LabelsReusedBuilds(t *testing.T) {
+	newReusedBuildServer(t)
+	output, err := executeCommand(RootCmd, "run", "view", "12345")
+	if err != nil {
+		t.Fatalf("run view failed: %v\nOutput: %s", err, output)
+	}
+	checkReusedBuildNotes(t, output)
+}
+
+func TestRunView_LogFailed_LabelsReusedBuild(t *testing.T) {
+	server := newReusedBuildServer(t)
+	server.OnGetBuild(FakeBuildDetails("801", "pigweed-linux", "FAILURE"))
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "--log-failed")
+	if err != nil {
+		t.Fatalf("run view --log-failed failed: %v\nOutput: %s", err, output)
+	}
+	if want := "FAILURE: pigweed-linux (Build 801, from patchset 8)"; !strings.Contains(output, want) {
+		t.Errorf("expected failure header %q, got:\n%s", want, output)
+	}
+}
+
+// newCanceledOverSuccessServer serves Change 12345 where patchset 10 is a
+// trivial rebase of patchset 9:
+//   - pigweed-linux passed on patchset 9 (901) and was canceled on 10 (1001).
+//   - static-checks-pigweed failed on patchset 9 (902) and passed on 10 (1002).
+//
+// pr checks reports builds 901 and 1002. It returns a pointer to the list of
+// build IDs requested through GetBuild.
+func newCanceledOverSuccessServer(t *testing.T) (*MockGerritServer, *[]string) {
+	t.Helper()
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "pigweed%2Fpigweed~main~I12345",
+		"project":          "pigweed/pigweed",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "Canceled over success",
+		"status":           "NEW",
+		"_number":          12345,
+		"current_revision": "rev10",
+		"revisions": map[string]any{
+			"rev9":  map[string]any{"_number": 9, "kind": "REWORK"},
+			"rev10": map[string]any{"_number": 10, "kind": "TRIVIAL_REBASE"},
+		},
+	})
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		var builds []bbBuild
+		switch ps := req.Predicate.GerritChanges[0].Patchset; ps {
+		case 10:
+			builds = []bbBuild{
+				FakeBuild("1001", "pigweed-linux", "CANCELED"),
+				FakeBuild("1002", "static-checks-pigweed", "SUCCESS"),
+			}
+		case 9:
+			builds = []bbBuild{
+				FakeBuild("901", "pigweed-linux", "SUCCESS"),
+				FakeBuild("902", "static-checks-pigweed", "FAILURE"),
+			}
+		default:
+			t.Errorf("unexpected SearchBuilds call for patchset %d", ps)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": builds})
+	})
+	var fetched []string
+	server.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
+		var req bbGetBuildRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("failed to decode GetBuild request: %v", err)
+			server.RespondJSON(w, http.StatusBadRequest, map[string]any{})
+			return
+		}
+		fetched = append(fetched, req.ID)
+		server.RespondJSON(w, http.StatusOK, FakeBuildDetails(req.ID, "pigweed-linux", "SUCCESS"))
+	})
+	return server, &fetched
+}
+
+func TestRunView_JobFlag_StepTree_PrefersOlderSuccessOverCancel(t *testing.T) {
+	_, fetched := newCanceledOverSuccessServer(t)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-linux")
+	if err != nil {
+		t.Fatalf("run view -j failed: %v\nOutput: %s", err, output)
+	}
+	if fmt.Sprint(*fetched) != "[901]" {
+		t.Errorf("fetched builds %v, want [901] (the success pr checks reports, not canceled 1001)", *fetched)
+	}
+}
+
+func TestRunView_Web_JobFlag_PrefersOlderSuccessOverCancel(t *testing.T) {
+	newCanceledOverSuccessServer(t)
+	var opened string
+	origOpen := OpenBrowserFn
+	defer func() { OpenBrowserFn = origOpen }()
+	OpenBrowserFn = func(urlStr string) error {
+		opened = urlStr
+		return nil
+	}
+
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-j", "pigweed-linux", "-w")
+	if err != nil {
+		t.Fatalf("run view -j -w failed: %v\nOutput: %s", err, output)
+	}
+	if want := "https://ci.chromium.org/b/901"; opened != want {
+		t.Errorf("opened %q, want %q", opened, want)
+	}
+}
+
+func TestRunView_Verbose_IgnoresSupersededFailure(t *testing.T) {
+	_, fetched := newCanceledOverSuccessServer(t)
+	output, err := executeCommand(RootCmd, "run", "view", "12345", "-v")
+	if err != nil {
+		t.Fatalf("run view -v failed: %v\nOutput: %s", err, output)
+	}
+	if len(*fetched) != 1 || (*fetched)[0] == "902" || (*fetched)[0] == "1001" {
+		t.Errorf("fetched builds %v; want one build that pr checks reports (901 or 1002), not superseded 902 or canceled 1001", *fetched)
 	}
 }

@@ -38,7 +38,7 @@ var (
 )
 
 const defaultChecksTemplate = `Checks for Change {{.number}} (Patchset {{.patchset}})
-{{range .checks}}  {{.StatusSymbol}}  {{printf "%-40s" .Name}}  {{printf "%-8s" .Duration}}  {{.URL}}
+{{range .checks}}  {{.StatusSymbol}}  {{printf "%-40s" .Name}}  {{printf "%-8s" .Duration}}  {{.URL}}{{if and .Patchset (ne .Patchset $.patchset)}} (from patchset {{.Patchset}}){{end}}
 {{end}}{{if gt .omittedExperimental 0}}
 ({{ .omittedExperimental }} non-blocking experimental builder{{if ne .omittedExperimental 1}}s{{end}} omitted; add --experimental to see them)
 {{end}}`
@@ -53,6 +53,10 @@ type CheckItem struct {
 	URL          string `json:"url"`
 	Summary      string `json:"summary,omitempty"`
 	Experimental bool   `json:"experimental"`
+	// Patchset is the patchset the build ran on. It can be earlier than the
+	// requested patchset when the build is reused from a code-equivalent
+	// patchset (see EquivalentPatchsets).
+	Patchset int `json:"patchset,omitempty"`
 }
 
 // NewCheckItem creates a CheckItem from a Buildbucket build.
@@ -67,7 +71,18 @@ func NewCheckItem(b bbBuild) CheckItem {
 		URL:          fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID),
 		Summary:      b.SummaryMarkdown,
 		Experimental: b.IsExperimental(),
+		Patchset:     b.Patchset,
 	}
+}
+
+// patchsetNote returns a short annotation such as " (from patchset 8)" when a
+// build ran on a patchset other than the one being reported on, and "" when
+// it ran on that patchset or its patchset is unknown.
+func patchsetNote(buildPatchset, currentPatchset int) string {
+	if buildPatchset <= 0 || buildPatchset == currentPatchset {
+		return ""
+	}
+	return fmt.Sprintf(" (from patchset %d)", buildPatchset)
 }
 
 // BuildCheckItems converts a slice of Buildbucket builds into CheckItems.
@@ -119,6 +134,86 @@ var getLUCIHTTPClient = func(ctx context.Context, bbHost string) *http.Client {
 // queryBuildbucket sends a pRPC request to Buildbucket to search for builds.
 func queryBuildbucket(ctx context.Context, bbHost string, gerritHost, project string, changeNum, patchsetNum int, httpClient *http.Client) ([]bbBuild, error) {
 	return NewLUCIClient(bbHost, httpClient).SearchBuilds(ctx, gerritHost, project, changeNum, patchsetNum)
+}
+
+// queryBuildbucketPatchsets sends pRPC requests to Buildbucket to search for builds across equivalent patchsets.
+func queryBuildbucketPatchsets(ctx context.Context, bbHost string, gerritHost, project string, changeNum int, patchsets []int, httpClient *http.Client) ([]bbBuild, error) {
+	return NewLUCIClient(bbHost, httpClient).SearchBuildsForPatchsets(ctx, gerritHost, project, changeNum, patchsets)
+}
+
+// buildsSettled reports whether every build in builds has finished. An empty
+// list counts as settled.
+func buildsSettled(builds []bbBuild) bool {
+	for _, b := range builds {
+		switch b.Status {
+		case "SUCCESS", "FAILURE", "INFRA_FAILURE", "CANCELED":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// equivalentBuildCache remembers the builds on older equivalent patchsets once
+// they have all finished, so `pr checks --watch` doesn't query them again on
+// every poll. LUCI CV only starts tryjobs on the latest patchset, so a settled
+// older patchset won't gain new builds. The current patchset is never cached.
+type equivalentBuildCache struct {
+	current int
+	settled map[int][]bbBuild
+}
+
+// newEquivalentBuildCache seeds a cache from builds already fetched for
+// patchsets, such as CIContext.Builds.
+func newEquivalentBuildCache(current int, patchsets []int, builds []bbBuild) *equivalentBuildCache {
+	c := &equivalentBuildCache{current: current, settled: make(map[int][]bbBuild)}
+	byPatchset := make(map[int][]bbBuild)
+	for _, b := range builds {
+		byPatchset[b.Patchset] = append(byPatchset[b.Patchset], b)
+	}
+	for _, ps := range patchsets {
+		c.record(ps, byPatchset[ps])
+	}
+	return c
+}
+
+func (c *equivalentBuildCache) record(patchset int, builds []bbBuild) {
+	if patchset != c.current && buildsSettled(builds) {
+		c.settled[patchset] = builds
+	}
+}
+
+// refresh queries Buildbucket for every patchset that isn't settled and
+// returns the builds across all patchsets, in patchsets order.
+func (c *equivalentBuildCache) refresh(ctx context.Context, client *LUCIClient, gerritHost, project string, changeNum int, patchsets []int) ([]bbBuild, error) {
+	var toQuery []int
+	for _, ps := range patchsets {
+		if _, ok := c.settled[ps]; !ok {
+			toQuery = append(toQuery, ps)
+		}
+	}
+
+	fresh := make(map[int][]bbBuild)
+	if len(toQuery) > 0 {
+		results, err := client.SearchBuildsByPatchset(ctx, gerritHost, project, changeNum, toQuery)
+		if err != nil {
+			return nil, err
+		}
+		for i, ps := range toQuery {
+			fresh[ps] = results[i]
+			c.record(ps, results[i])
+		}
+	}
+
+	var all []bbBuild
+	for _, ps := range patchsets {
+		if builds, ok := fresh[ps]; ok {
+			all = append(all, builds...)
+		} else {
+			all = append(all, c.settled[ps]...)
+		}
+	}
+	return all, nil
 }
 
 func getStatusSymbol(status string) string {
@@ -207,14 +302,25 @@ func formatChecksStatusBreakdown(passed, running, failed, other int) string {
 
 // deduplicateLatestBuilds filters a list of builds returned by Buildbucket
 // (which are sorted newest-first) to include only the most recent build attempt
-// per builder name.
+// per builder name, while preferring an older success over a newer cancellation
+// among equivalent patchsets.
+//
+// builds can span several code-equivalent patchsets (see EquivalentPatchsets),
+// and LUCI CV still counts a success from an equivalent patchset even if a
+// later run of the same builder was canceled, so reporting the cancellation
+// would make a passing change look broken.
 func deduplicateLatestBuilds(builds []bbBuild) []bbBuild {
-	var deduped []bbBuild
-	seen := make(map[string]bool)
+	deduped := make([]bbBuild, 0, len(builds))
+	index := make(map[string]int, len(builds))
 	for _, b := range builds {
-		if !seen[b.Builder.Builder] {
-			seen[b.Builder.Builder] = true
+		i, seen := index[b.Builder.Builder]
+		if !seen {
+			index[b.Builder.Builder] = len(deduped)
 			deduped = append(deduped, b)
+			continue
+		}
+		if deduped[i].Status == "CANCELED" && b.Status == "SUCCESS" {
+			deduped[i] = b
 		}
 	}
 	return deduped
@@ -269,6 +375,11 @@ Use --web (-w) to open checks in the browser.`,
 			}
 
 			out := cmd.OutOrStdout()
+			patchsetsToQuery := res.EquivalentPatchsets
+			if len(patchsetsToQuery) == 0 && res.PatchsetNum > 0 {
+				patchsetsToQuery = []int{res.PatchsetNum}
+			}
+			buildCache := newEquivalentBuildCache(res.PatchsetNum, patchsetsToQuery, res.Builds)
 			watchStart := time.Now()
 			lastHeartbeat := time.Now()
 			heartbeatInterval := 4 * interval
@@ -334,19 +445,20 @@ Use --web (-w) to open checks in the browser.`,
 
 				for _, b := range relevant {
 					bName := b.Builder.Builder
+					note := patchsetNote(b.Patchset, res.PatchsetNum)
 					if b.Status == "SUCCESS" {
 						if !completed[bName] {
 							completed[bName] = true
 							anyNewlyCompleted = true
 							dur := formatDuration(b.StartTime, b.EndTime)
-							fmt.Fprintf(out, "✓  %s passed (%s) [%d/%d]\n", bName, dur, len(completed), totalCount)
+							fmt.Fprintf(out, "✓  %s passed (%s)%s [%d/%d]\n", bName, dur, note, len(completed), totalCount)
 						}
 					} else if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 						if !completed[bName] {
 							completed[bName] = true
 							anyNewlyCompleted = true
 							dur := formatDuration(b.StartTime, b.EndTime)
-							fmt.Fprintf(out, "✗  %s failed (%s) [%d/%d]\n", bName, dur, len(completed), totalCount)
+							fmt.Fprintf(out, "✗  %s failed (%s)%s [%d/%d]\n", bName, dur, note, len(completed), totalCount)
 						}
 					}
 				}
@@ -377,7 +489,7 @@ Use --web (-w) to open checks in the browser.`,
 				case <-time.After(interval):
 				}
 
-				newBuilds, err := luciClient.SearchBuilds(ctx, res.GerritHost, res.Change.Project, res.Change.Number, res.PatchsetNum)
+				newBuilds, err := buildCache.refresh(ctx, luciClient, res.GerritHost, res.Change.Project, res.Change.Number, patchsetsToQuery)
 				if err != nil {
 					select {
 					case <-ctx.Done():
@@ -426,6 +538,7 @@ Use --web (-w) to open checks in the browser.`,
 		data := map[string]any{
 			"number":              res.Change.Number,
 			"patchset":            res.PatchsetNum,
+			"equivalentPatchsets": res.EquivalentPatchsets,
 			"checks":              checks,
 			"omittedExperimental": omittedCount,
 		}
@@ -450,6 +563,9 @@ Use --web (-w) to open checks in the browser.`,
 				}
 				rep := luciClient.ExtractFailureReport(ctx, details, 100)
 				if rep != nil {
+					if fb.Patchset != res.PatchsetNum {
+						rep.Patchset = fb.Patchset
+					}
 					reports = append(reports, *rep)
 				}
 			}
@@ -501,10 +617,11 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 	if len(t.failed) > 0 {
 		var summary string
 		if len(t.failed) == 1 {
-			summary = fmt.Sprintf("check %q failed on %s", t.failed[0].Builder.Builder, location)
+			b := t.failed[0]
+			summary = fmt.Sprintf("check %q%s failed on %s", b.Builder.Builder, patchsetNote(b.Patchset, patchset), location)
 		} else {
 			summary = fmt.Sprintf("%d of %d checks failed on %s: %s",
-				len(t.failed), t.blocking, location, builderList(t.failed))
+				len(t.failed), t.blocking, location, builderList(t.failed, patchset))
 		}
 		return NewExitCodeError(ExitCodeFailure,
 			"%s.\n\n"+
@@ -522,10 +639,11 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 	if len(t.canceled) > 0 {
 		var summary string
 		if len(t.canceled) == 1 {
-			summary = fmt.Sprintf("check %q was canceled on %s", t.canceled[0].Builder.Builder, location)
+			b := t.canceled[0]
+			summary = fmt.Sprintf("check %q%s was canceled on %s", b.Builder.Builder, patchsetNote(b.Patchset, patchset), location)
 		} else {
 			summary = fmt.Sprintf("%d of %d checks were canceled on %s: %s",
-				len(t.canceled), t.blocking, location, builderList(t.canceled))
+				len(t.canceled), t.blocking, location, builderList(t.canceled, patchset))
 		}
 		return NewExitCodeError(ExitCodeFailure,
 			"%s.\n\n"+
@@ -545,7 +663,7 @@ func checksExitStatus(changeNum, patchset int, t checkTally) error {
 				"  gh pr checks %d --watch\n"+
 				"To stop as soon as any check fails:\n"+
 				"  gh pr checks %d --watch --fail-fast",
-			len(t.pending), t.blocking, location, builderList(t.pending),
+			len(t.pending), t.blocking, location, builderList(t.pending, patchset),
 			ExitCodePending, changeNum, changeNum)
 	}
 
@@ -579,11 +697,12 @@ const maxNamedBuilders = 5
 // builderList renders the builder names for a set of builds as a sorted,
 // comma-separated list, truncated to maxNamedBuilders with a count of the
 // remainder. Sorting keeps the message deterministic regardless of the order
-// Buildbucket happens to return builds in.
-func builderList(builds []bbBuild) string {
+// Buildbucket happens to return builds in. Builds that ran on a patchset other
+// than currentPatchset are annotated with the patchset they ran on.
+func builderList(builds []bbBuild, currentPatchset int) string {
 	names := make([]string, 0, len(builds))
 	for _, b := range builds {
-		names = append(names, b.Builder.Builder)
+		names = append(names, b.Builder.Builder+patchsetNote(b.Patchset, currentPatchset))
 	}
 	sort.Strings(names)
 

@@ -898,3 +898,80 @@ func TestChangeContext_Mutations(t *testing.T) {
 		t.Errorf("AddCC failed: %v", err)
 	}
 }
+
+func TestIsEquivalentRevisionKind(t *testing.T) {
+	tests := []struct {
+		kind string
+		want bool
+	}{
+		{"REWORK", false},
+		{"", false},
+		{"UNKNOWN", false},
+		{"TRIVIAL_REBASE", true},
+		{"TRIVIAL_REBASE_WITH_MESSAGE_UPDATE", true},
+		{"NO_CODE_CHANGE", true},
+		{"NO_CHANGE", true},
+		{"MERGE_FIRST_PARENT_UPDATE", true},
+		{"  trivial_rebase  ", true},
+	}
+	for _, tc := range tests {
+		if got := IsEquivalentRevisionKind(tc.kind); got != tc.want {
+			t.Errorf("IsEquivalentRevisionKind(%q) = %v, want %v", tc.kind, got, tc.want)
+		}
+	}
+}
+
+func TestEquivalentPatchsets(t *testing.T) {
+	// Patchset 10 is a trivial rebase, patchset 9 is a commit-message-only change (NO_CODE_CHANGE),
+	// patchset 8 is a rework, and patchset 7 is a rework.
+	change := &gerrit.ChangeInfo{
+		CurrentRevision: "rev10",
+		Revisions: map[string]gerrit.RevisionInfo{
+			"rev7":  {Number: 7, Kind: "REWORK"},
+			"rev8":  {Number: 8, Kind: "REWORK"},
+			"rev9":  {Number: 9, Kind: "NO_CODE_CHANGE"},
+			"rev10": {Number: 10, Kind: "TRIVIAL_REBASE"},
+		},
+	}
+
+	assertIntsEqual := func(t *testing.T, got, want []int) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	}
+
+	// Patchset 10 includes 10, 9 (NO_CODE_CHANGE), and 8 (REWORK), stopping before 7.
+	assertIntsEqual(t, EquivalentPatchsets(change, 10), []int{10, 9, 8})
+
+	// Patchset 9 includes 9 and 8, stopping before 7.
+	assertIntsEqual(t, EquivalentPatchsets(change, 9), []int{9, 8})
+
+	// Patchset 8 is a REWORK, so only patchset 8 is valid.
+	assertIntsEqual(t, EquivalentPatchsets(change, 8), []int{8})
+
+	// All non-rework kinds chain back to the preceding REWORK.
+	allKindsChange := &gerrit.ChangeInfo{
+		Revisions: map[string]gerrit.RevisionInfo{
+			"r1": {Number: 1, Kind: "REWORK"},
+			"r2": {Number: 2, Kind: "NO_CHANGE"},
+			"r3": {Number: 3, Kind: "NO_CODE_CHANGE"},
+			"r4": {Number: 4, Kind: "MERGE_FIRST_PARENT_UPDATE"},
+			"r5": {Number: 5, Kind: "TRIVIAL_REBASE_WITH_MESSAGE_UPDATE"},
+			"r6": {Number: 6, Kind: "TRIVIAL_REBASE"},
+		},
+	}
+	assertIntsEqual(t, EquivalentPatchsets(allKindsChange, 6), []int{6, 5, 4, 3, 2, 1})
+
+	// Edge cases
+	if got := EquivalentPatchsets(change, 0); got != nil {
+		t.Errorf("expected nil for targetPatchset 0, got %v", got)
+	}
+	assertIntsEqual(t, EquivalentPatchsets(nil, 5), []int{5})
+	assertIntsEqual(t, EquivalentPatchsets(change, 99), []int{99})
+}

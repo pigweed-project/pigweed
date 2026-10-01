@@ -74,7 +74,7 @@ var viewCmd = &cobra.Command{
 		if reqRev != "" && reqRev != "current" {
 			additionalFields = []string{"DETAILED_LABELS", "ALL_REVISIONS", "ALL_COMMITS", "DETAILED_ACCOUNTS"}
 		} else {
-			additionalFields = []string{"DETAILED_LABELS", "CURRENT_REVISION", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
+			additionalFields = []string{"DETAILED_LABELS", "ALL_REVISIONS", "CURRENT_COMMIT", "DETAILED_ACCOUNTS"}
 		}
 		opt := &gerrit.ChangeOptions{
 			AdditionalFields: additionalFields,
@@ -199,13 +199,13 @@ var viewCmd = &cobra.Command{
 		}
 
 		if patchset > 0 && change.Project != "" && gHost != "" {
+			patchsets := EquivalentPatchsets(change, patchset)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient(ctx, bbHost))
-				builds, err := luciClient.SearchBuilds(ctx, gHost, change.Project, change.Number, patchset)
+				builds, err := queryBuildbucketPatchsets(ctx, bbHost, gHost, change.Project, change.Number, patchsets, getLUCIHTTPClient(ctx, bbHost))
 				if err == nil && builds != nil {
-					checksSummary = formatCheckSummary(builds)
+					checksSummary = formatCheckSummary(deduplicateLatestBuilds(builds))
 				} else if ExitCodeFor(err) == ExitCodeAuth {
 					checksSummary = "✖ LUCI authentication required (run 'luci-auth login' or 'gh auth status')"
 				}

@@ -17,11 +17,14 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func newLogServer(t *testing.T, status int, content string) *httptest.Server {
@@ -1192,7 +1195,6 @@ func TestCleanStepSummary(t *testing.T) {
 		})
 	}
 }
-
 func TestSearchBuilds_Pagination(t *testing.T) {
 	ctx := context.Background()
 	calls := 0
@@ -1253,4 +1255,123 @@ func TestCallPRPC_And_FetchLogStream_AuthErrorsReturnExitCode4(t *testing.T) {
 	if ExitCodeFor(err) != ExitCodeAuth {
 		t.Errorf("FetchLogStream ExitCodeFor(err) = %d, want %d", ExitCodeFor(err), ExitCodeAuth)
 	}
+}
+
+func TestSearchBuildsForPatchsets(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("validation errors", func(t *testing.T) {
+		var nilClient *LUCIClient
+		if _, err := nilClient.SearchBuildsForPatchsets(ctx, "host", "proj", 1, []int{1}); err == nil {
+			t.Error("expected error for nil LUCIClient")
+		}
+		client := NewLUCIClient("https://example.com", nil)
+		if _, err := client.SearchBuildsForPatchsets(ctx, "host", "proj", 1, nil); err == nil {
+			t.Error("expected error for empty patchsets slice")
+		}
+	})
+
+	t.Run("multiple patchsets concatenated in order", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req bbSearchBuildsRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("failed to decode request: %v", err)
+			}
+			ps := req.Predicate.GerritChanges[0].Patchset
+			w.WriteHeader(http.StatusOK)
+			switch ps {
+			case 10:
+				w.Write([]byte(")]}'\n{\"builds\": []}"))
+			case 9:
+				w.Write([]byte(")]}'\n{\"builds\": [{\"id\": \"901\", \"builder\": {\"builder\": \"b1\"}, \"status\": \"SUCCESS\"}]}"))
+			case 8:
+				w.Write([]byte(")]}'\n{\"builds\": [{\"id\": \"801\", \"builder\": {\"builder\": \"b1\"}, \"status\": \"FAILURE\"}, {\"id\": \"802\", \"builder\": {\"builder\": \"b2\"}, \"status\": \"SUCCESS\"}]}"))
+			default:
+				t.Fatalf("unexpected patchset %d", ps)
+			}
+		}))
+		defer server.Close()
+
+		client := NewLUCIClient(server.URL, server.Client())
+		builds, err := client.SearchBuildsForPatchsets(ctx, "gerrit.googlesource.com", "pigweed/pigweed", 123, []int{10, 9, 8})
+		if err != nil {
+			t.Fatalf("SearchBuildsForPatchsets failed: %v", err)
+		}
+		if len(builds) != 3 {
+			t.Fatalf("expected 3 builds, got %d: %+v", len(builds), builds)
+		}
+		if builds[0].ID != "901" || builds[1].ID != "801" || builds[2].ID != "802" {
+			t.Errorf("unexpected build order: %+v", builds)
+		}
+	})
+}
+
+func TestSearchBuildsByPatchset(t *testing.T) {
+	ctx := context.Background()
+	patchsetOf := func(r *http.Request) int {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Predicate.GerritChanges) != 1 {
+			t.Errorf("unexpected SearchBuilds request (err = %v): %+v", err, req)
+			return 0
+		}
+		return req.Predicate.GerritChanges[0].Patchset
+	}
+
+	t.Run("queries run concurrently and results stay aligned", func(t *testing.T) {
+		// Every request blocks until all three have arrived, so this only
+		// passes if the queries are in flight at the same time.
+		var arrived sync.WaitGroup
+		arrived.Add(3)
+		allArrived := make(chan struct{})
+		go func() {
+			arrived.Wait()
+			close(allArrived)
+		}()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ps := patchsetOf(r)
+			arrived.Done()
+			select {
+			case <-allArrived:
+			case <-time.After(5 * time.Second):
+				http.Error(w, "requests were not concurrent", http.StatusInternalServerError)
+				return
+			}
+			fmt.Fprintf(w, ")]}'\n{\"builds\": [{\"id\": \"%d01\", \"builder\": {\"builder\": \"b\"}, \"status\": \"SUCCESS\"}]}", ps)
+		}))
+		defer server.Close()
+
+		client := NewLUCIClient(server.URL, server.Client())
+		results, err := client.SearchBuildsByPatchset(ctx, "gerrit.googlesource.com", "pigweed/pigweed", 123, []int{10, 9, 8})
+		if err != nil {
+			t.Fatalf("SearchBuildsByPatchset failed: %v", err)
+		}
+		if len(results) != 3 {
+			t.Fatalf("got %d results, want 3", len(results))
+		}
+		for i, ps := range []int{10, 9, 8} {
+			if len(results[i]) != 1 || results[i][0].ID != fmt.Sprintf("%d01", ps) || results[i][0].Patchset != ps {
+				t.Errorf("results[%d] = %+v, want one build %d01 on patchset %d", i, results[i], ps, ps)
+			}
+		}
+	})
+
+	t.Run("error names the failing patchset", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if patchsetOf(r) == 9 {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			w.Write([]byte(")]}'\n{\"builds\": []}"))
+		}))
+		defer server.Close()
+
+		client := NewLUCIClient(server.URL, server.Client())
+		_, err := client.SearchBuildsByPatchset(ctx, "gerrit.googlesource.com", "pigweed/pigweed", 123, []int{10, 9, 8})
+		if err == nil {
+			t.Fatal("expected an error when patchset 9 fails")
+		}
+		if !strings.Contains(err.Error(), "patchset 9:") || !strings.Contains(err.Error(), "HTTP 500") {
+			t.Errorf("error = %q, want it to name patchset 9 and the HTTP 500", err)
+		}
+	})
 }
