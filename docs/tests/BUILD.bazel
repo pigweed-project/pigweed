@@ -95,3 +95,16 @@ pw_py_test(
         requirement("pyee"),
     ],
 )
+
+pw_py_test(
+    name = "content_test",
+    srcs = ["content_test.py"],
+    data = [":chromium_files"],
+    tags = ["local"],
+    deps = [
+        ":helpers",
+        requirement("greenlet"),
+        requirement("playwright"),
+        requirement("pyee"),
+    ],
+)

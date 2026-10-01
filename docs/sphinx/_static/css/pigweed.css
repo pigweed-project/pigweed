@@ -38,7 +38,8 @@
   --font-stack-monospace: var(--pw-font-code);
 }
 
-a.external::after {
+nav.bd-links li > a.reference.external::after {
+  /* Hide "external link" icon in "Section Navigation" */
   content: none !important;
 }
 

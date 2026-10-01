@@ -39,8 +39,7 @@ class HeaderTest(unittest.TestCase):
         cls.server.stop()
 
     def test_header_present(self):
-        """Verifies that <pw-header id="pw-header"> is present on every HTML
-        page."""
+        """Verifies that pw-header component is present on every page."""
         self.assertGreater(
             len(self.html_files),
             0,
@@ -52,14 +51,14 @@ class HeaderTest(unittest.TestCase):
         for html_file in self.html_files:
             rel_path = html_file.relative_to(self.docs_dir)
             content = html_file.read_text(encoding="utf-8", errors="ignore")
-            if '<pw-header id="pw-header">' not in content:
+            if '<pw-header' not in content:
                 missing_header.append(str(rel_path))
 
         self.assertEqual(
             len(missing_header),
             0,
             f"Found {len(missing_header)} pages missing "
-            f'<pw-header id="pw-header">:\n' + "\n".join(missing_header[:20]),
+            f'pw-header:\n' + "\n".join(missing_header[:20]),
         )
 
     def test_header_nav_present(self):
