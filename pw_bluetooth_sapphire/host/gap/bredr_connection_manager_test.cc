@@ -1022,6 +1022,49 @@ class BrEdrConnectionManagerLegacyPairingTest
   int transaction_count_ = 0;
 };
 
+TEST_F(BrEdrConnectionManagerTest,
+       IncomingConnectionNonSspPeerWithLegacyPairingDisabledDisconnects) {
+  QueueSuccessfulAccept(kTestDevAddr, kConnectionHandle);
+  QueueSuccessfulInterrogationNoSsp(kTestDevAddr, kConnectionHandle);
+  QueueDisconnection(kConnectionHandle);
+
+  test_device()->SendCommandChannelPacket(kConnectionRequest);
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  Peer* const peer = peer_cache()->FindByAddress(kTestDevAddr);
+  ASSERT_TRUE(peer);
+  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_FALSE(l2cap()->IsLinkConnected(kConnectionHandle));
+  EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
+}
+
+TEST_F(BrEdrConnectionManagerTest,
+       OutgoingConnectionNonSspPeerWithLegacyPairingDisabledDisconnects) {
+  Peer* const peer = peer_cache()->NewPeer(kTestDevAddr, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulCreateConnection(peer, kConnectionHandle);
+  QueueSuccessfulInterrogationNoSsp(kTestDevAddr, kConnectionHandle);
+  QueueDisconnection(kConnectionHandle);
+
+  std::optional<hci::Result<>> status;
+  BrEdrConnection* conn_ref = nullptr;
+  auto callback = [&status, &conn_ref](auto cb_status, auto cb_conn_ref) {
+    status = cb_status;
+    conn_ref = cb_conn_ref;
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer->identifier(), callback));
+  RETURN_IF_FATAL(RunUntilIdle());
+
+  ASSERT_TRUE(status.has_value());
+  EXPECT_EQ(ToResult(HostError::kNotSupported), *status);
+  EXPECT_EQ(nullptr, conn_ref);
+  EXPECT_TRUE(IsNotConnected(peer));
+  EXPECT_FALSE(l2cap()->IsLinkConnected(kConnectionHandle));
+  EXPECT_EQ(kInvalidPeerId, connmgr()->GetPeerId(kConnectionHandle));
+}
+
 // Legacy pairing requires a PIN code to be displayed for the peer to enter, so
 // this cannot happen when we do not have any display output capabilities.
 TEST_F(BrEdrConnectionManagerLegacyPairingTest,

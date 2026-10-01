@@ -927,6 +927,7 @@ void BrEdrConnectionManager::CompleteConnectionSetup(
              "Peer %s does not support SSP but legacy pairing is not enabled "
              "so pairing cannot occur",
              bt_str(peer_id));
+      Disconnect(peer_id, DisconnectReason::kPairingFailed);
       return;
     }
     pairing_type = PairingStateType::kLegacyPairing;
