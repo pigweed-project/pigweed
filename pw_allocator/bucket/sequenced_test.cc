@@ -60,6 +60,8 @@ TEST_F(SequencedBucketTest, FailsToRemoveByExcessiveSize) {
   FailsToRemoveByExcessiveSize();
 }
 
+TEST_F(SequencedBucketTest, CanIterate) { CanIterate(); }
+
 TEST_F(SequencedBucketTest, CanAddAndRemoveWithThreshold) {
   SequencedBucket<BlockType>& bucket = this->bucket();
   bucket.set_threshold(kLayout2.size());

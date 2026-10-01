@@ -67,16 +67,24 @@ class FastSortedBucket final
   using Base = internal::BucketBase<FastSortedBucket<BlockType>,
                                     BlockType,
                                     FastSortedItem<BlockType>>;
+  using Compare = Function<bool(size_t, size_t)>;
+  using Container = IntrusiveMultiMap<size_t, FastSortedItem<BlockType>>;
+
   friend Base;
 
   template <typename>
   friend class ReverseFastSortedBucket;
 
-  using Compare = Function<bool(size_t, size_t)>;
-
  public:
+  using const_iterator = typename Container::const_iterator;
+
   constexpr FastSortedBucket() = default;
   ~FastSortedBucket();
+
+  const_iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const { return items_.cbegin(); }
+  const_iterator end() const { return cend(); }
+  const_iterator cend() const { return items_.cend(); }
 
  private:
   // Constructor used by `ReverseFastSortedBucket`.
@@ -101,7 +109,7 @@ class FastSortedBucket final
   template <typename Iterator>
   BlockType* RemoveImpl(Iterator iter, Layout layout);
 
-  IntrusiveMultiMap<size_t, FastSortedItem<BlockType>> items_;
+  Container items_;
 };
 
 /// Like `FastSortedBucket`, but ordered largest to smallest.
@@ -117,10 +125,18 @@ class ReverseFastSortedBucket final
                                     BlockType,
                                     FastSortedItem<BlockType>>;
   friend Base;
+  using Container = typename FastSortedBucket<BlockType>::Container;
 
  public:
+  using const_iterator = typename Container::const_iterator;
+
   constexpr ReverseFastSortedBucket()
       : impl_(std::greater<>()), items_(impl_.items_) {}
+
+  const_iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const { return items_.cbegin(); }
+  const_iterator end() const { return cend(); }
+  const_iterator cend() const { return items_.cend(); }
 
  private:
   /// @copydoc internal::BucketBase::Add
@@ -141,7 +157,7 @@ class ReverseFastSortedBucket final
   }
 
   FastSortedBucket<BlockType> impl_;
-  IntrusiveMultiMap<size_t, FastSortedItem<BlockType>>& items_;
+  Container& items_;
 };
 
 /// @}

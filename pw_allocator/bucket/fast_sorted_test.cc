@@ -61,6 +61,8 @@ TEST_F(FastSortedBucketTest, FailsToRemoveByExcessiveSize) {
   FailsToRemoveByExcessiveSize();
 }
 
+TEST_F(FastSortedBucketTest, CanIterate) { CanIterate(); }
+
 TEST_F(FastSortedBucketTest, RemovesBlocksInOrderOfIncreasingSize) {
   FastSortedBucket<BlockType>& bucket = this->bucket();
 
@@ -92,6 +94,8 @@ TEST_F(ReverseFastSortedBucketTest, FindsLargestWhenEmpty) {
 TEST_F(ReverseFastSortedBucketTest, FindsLargestWithBlocks) {
   FindsLargestWithBlocks();
 }
+
+TEST_F(ReverseFastSortedBucketTest, CanIterate) { CanIterate(); }
 
 TEST_F(ReverseFastSortedBucketTest, RemovesByLayout) { RemovesByLayout(); }
 

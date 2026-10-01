@@ -77,6 +77,7 @@ class BucketTest : public ::testing::Test {
   void RemovesUnspecifiedBlock();
   void RemovesByLayout();
   void FailsToRemoveByExcessiveSize();
+  void CanIterate();
 
  private:
   BucketType bucket_;
@@ -228,6 +229,35 @@ void BucketTest<BucketType>::FailsToRemoveByExcessiveSize() {
   std::ignore = CreateBlockAndAddToBucket(kLayout2);
   EXPECT_EQ(bucket_.RemoveCompatible(kLayout3), nullptr);
   EXPECT_FALSE(bucket_.empty());
+  bucket_.Clear();
+}
+
+template <typename BucketType>
+void BucketTest<BucketType>::CanIterate() {
+  BlockType& block1 = CreateBlockAndAddToBucket(kLayout1);
+  BlockType& block2 = CreateBlockAndAddToBucket(kLayout2);
+  BlockType& block3 = CreateBlockAndAddToBucket(kLayout3);
+
+  size_t count = 0;
+  bool found1 = false;
+  bool found2 = false;
+  bool found3 = false;
+  for (const auto& item : bucket_) {
+    count++;
+    const BlockType* block = BlockType::FromUsableSpace(&item);
+    if (block == &block1) {
+      found1 = true;
+    } else if (block == &block2) {
+      found2 = true;
+    } else if (block == &block3) {
+      found3 = true;
+    }
+  }
+  EXPECT_EQ(count, 3U);
+  EXPECT_TRUE(found1);
+  EXPECT_TRUE(found2);
+  EXPECT_TRUE(found3);
+
   bucket_.Clear();
 }
 

@@ -45,10 +45,19 @@ class UnorderedBucket final
  private:
   using Base = internal::
       BucketBase<UnorderedBucket<BlockType>, BlockType, UnorderedItem>;
+  using Container = IntrusiveForwardList<UnorderedItem>;
+
   friend Base;
 
  public:
+  using const_iterator = Container::const_iterator;
+
   ~UnorderedBucket() { Base::Clear(); }
+
+  const_iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const { return items_.cbegin(); }
+  const_iterator end() const { return cend(); }
+  const_iterator cend() const { return items_.cend(); }
 
  private:
   /// @copydoc internal::BucketBase::Add
@@ -68,7 +77,7 @@ class UnorderedBucket final
   /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
-  IntrusiveForwardList<UnorderedItem> items_;
+  Container items_;
 };
 
 /// @}

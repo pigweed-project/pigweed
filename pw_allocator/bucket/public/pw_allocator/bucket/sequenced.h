@@ -47,10 +47,19 @@ class SequencedBucket final
  private:
   using Base = internal::
       BucketBase<SequencedBucket<BlockType>, BlockType, SequencedItem>;
+  using Container = containers::future::IntrusiveList<SequencedItem>;
+
   friend Base;
 
  public:
+  using const_iterator = Container::const_iterator;
+
   ~SequencedBucket();
+
+  const_iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const { return items_.cbegin(); }
+  const_iterator end() const { return cend(); }
+  const_iterator cend() const { return items_.cend(); }
 
   constexpr size_t threshold() const { return threshold_; }
 
@@ -78,7 +87,7 @@ class SequencedBucket final
   /// @copydoc internal::BucketBase::RemoveCompatible
   BlockType* DoRemoveCompatible(Layout layout);
 
-  containers::future::IntrusiveList<SequencedItem> items_;
+  Container items_;
   size_t threshold_ = 0;
 };
 

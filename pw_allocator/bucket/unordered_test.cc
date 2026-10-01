@@ -60,4 +60,6 @@ TEST_F(UnorderedBucketTest, FailsToRemoveByExcessiveSize) {
   FailsToRemoveByExcessiveSize();
 }
 
+TEST_F(UnorderedBucketTest, CanIterate) { CanIterate(); }
+
 }  // namespace

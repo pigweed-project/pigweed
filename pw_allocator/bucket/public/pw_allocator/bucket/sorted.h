@@ -53,16 +53,26 @@ namespace internal {
 /// that indicates where each item should be inserted in the list.
 template <typename Derived, typename BlockType>
 class SortedBucketBase : public BucketBase<Derived, BlockType, SortedItem> {
- public:
-  ~SortedBucketBase() { Base::Clear(); }
-
  protected:
   using Base = BucketBase<Derived, BlockType, SortedItem>;
+  using Container = IntrusiveForwardList<SortedItem>;
+
   friend Base;
 
+ public:
+  using const_iterator = Container::const_iterator;
+
+  ~SortedBucketBase() { Base::Clear(); }
+
+  const_iterator begin() const { return cbegin(); }
+  const_iterator cbegin() const { return items_.cbegin(); }
+  const_iterator end() const { return cend(); }
+  const_iterator cend() const { return items_.cend(); }
+
+ protected:
   constexpr SortedBucketBase() = default;
 
-  const IntrusiveForwardList<SortedItem>& items() const { return items_; }
+  const Container& items() const { return items_; }
 
   /// @copydoc ::BucketBase::Add
   void DoAdd(BlockType& block);
@@ -79,7 +89,7 @@ class SortedBucketBase : public BucketBase<Derived, BlockType, SortedItem> {
   BlockType* DoRemoveCompatible(Layout layout);
 
  private:
-  IntrusiveForwardList<SortedItem> items_;
+  Container items_;
 };
 
 }  // namespace internal
