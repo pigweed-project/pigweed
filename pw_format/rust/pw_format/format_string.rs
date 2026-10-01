@@ -59,7 +59,7 @@ pub enum Style {
     /// Upper case hexadecimal rendering (i.e. "%X" or "{:X}").
     UpperHex,
 
-    /// Exponential rendering (i.e. "%e" or "{:e}".
+    /// Exponential rendering (i.e. "%e" or "{:e}").
     Exponential,
 
     /// Upper case exponential rendering (i.e. "%E" or "{:E}".
@@ -106,7 +106,7 @@ impl ToTokens for Style {
 }
 
 /// A printf flag (the '+' in %+d).
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Flag {
     /// `-`
     LeftJustify,
@@ -130,7 +130,7 @@ pub enum MinFieldWidth {
     /// No field width specified.
     None,
 
-    /// Fixed field with.
+    /// Fixed field width.
     Fixed(u32),
 
     /// Variable field width passed as an argument (i.e. %*d).
@@ -503,7 +503,7 @@ impl FormatString {
 
     /// Creates a `FormatString` from a slice of fragments.
     ///
-    /// This primary responsibility of this function is to merge literal
+    /// The primary responsibility of this function is to merge literal
     /// fragments.  Adjacent literal fragments occur when a parser parses
     /// escape sequences.  Merging them here allows a
     /// [`macros::FormatMacroGenerator`] to not worry about the escape codes.

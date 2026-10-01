@@ -84,6 +84,16 @@ fn length(input: &str) -> IResult<&str, Option<Length>> {
     .parse(input)
 }
 
+// Note on lenient parsing of flags and modifiers:
+// The printf parser intentionally accepts syntactically valid flags, widths,
+// precisions, and length modifiers even when semantically inapplicable to the
+// conversion specifier (such as %+c, %#s, %0s, or %.4c).
+//
+// This permissiveness is intentional for log detokenization and format string
+// translation: malformed or redundant flags in source strings should not cause
+// the entire format string or log entry to fail parsing. Downstream formatters
+// and code generators ignore inapplicable modifiers rather than rejecting the
+// format string during parse (see https://pwbug.dev/281750433).
 fn conversion_spec(input: &str) -> IResult<&str, ConversionSpec> {
     let (input, _) = tag("%").parse(input)?;
     let (input, flags) = flags(input)?;

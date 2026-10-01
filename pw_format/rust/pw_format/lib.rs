@@ -12,13 +12,14 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-//! The `pw_format` crate is a parser used to implement proc macros that:
-//! * Understand format string argument types at compile time.
-//! * Syntax check format strings.
+//! The `pw_format` crate provides format string parsing and formatting utilities to:
+//! * Parse and syntax-check format strings (`printf` and `core::fmt`).
+//! * Understand format string argument types at compile time in proc macros.
+//! * Format dynamic values according to format strings at runtime.
 //!
 //! `pw_format` is written against `std` and is not intended to be
-//! used in an embedded context.  Some efficiency and memory is traded for a
-//! more expressive interface that exposes the format string's "syntax tree"
+//! used in an embedded on-device context. Some efficiency and memory is traded for a
+//! more expressive interface that exposes the format string's syntax tree
 //! to the API client.
 //!
 //! # Proc Macros
@@ -26,7 +27,7 @@
 //! The `macros` module provides infrastructure for implementing proc macros
 //! that take format strings as arguments.
 //!
-//! # Example
+//! # Parsing Example
 //!
 //! ```
 //! use pw_format::{
@@ -68,6 +69,46 @@
 //!       FormatFragment::Literal("%.".to_string()),
 //!   ]
 //! });
+//! ```
+//!
+//! # Runtime Formatting Example
+//!
+//! ```
+//! use pw_format::{Arg, FormatString, FormatStyle};
+//!
+//! let fmt = FormatString::parse_printf("Hello %s, code: 0x%04x!").unwrap();
+//! let output = fmt.format(
+//!     &[Arg::Str("world".to_string()), Arg::Uint(42)],
+//!     FormatStyle::Printf,
+//! );
+//! assert_eq!(output, "Hello world, code: 0x002a!");
+//! ```
+//!
+//! # Error Formatting Example
+//!
+//! When formatting strings with missing or mismatched arguments, custom error formatters
+//! implementing [`FormatError`] can be supplied:
+//!
+//! ```
+//! use pw_format::{Arg, ConversionSpec, FormatError, FormatString, FormatStyle};
+//!
+//! struct MyErrorFormatter;
+//! impl FormatError for MyErrorFormatter {
+//!     type Error = ();
+//!     fn format_error(&self, spec: &ConversionSpec, _error: &()) -> String {
+//!         format!("<[{} ERROR]>", spec.to_printf())
+//!     }
+//!     fn format_missing(&self, spec: &ConversionSpec) -> String {
+//!         format!("<[{} MISSING]>", spec.to_printf())
+//!     }
+//!     fn format_type_error(&self, spec: &ConversionSpec, _arg: &Arg) -> String {
+//!         format!("<[{} TYPE_ERROR]>", spec.to_printf())
+//!     }
+//! }
+//!
+//! let fmt = FormatString::parse_printf("Value: %d").unwrap();
+//! let output = fmt.format_with_errors(&[], FormatStyle::Printf, &MyErrorFormatter);
+//! assert_eq!(output, "Value: <[%d MISSING]>");
 //! ```
 #![deny(missing_docs)]
 

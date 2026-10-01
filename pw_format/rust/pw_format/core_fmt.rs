@@ -42,7 +42,7 @@ fn named_argument(input: &str) -> IResult<&str, Argument> {
     Ok((input, Argument::Named(ident.to_string())))
 }
 
-/// The decimal value a `{0}` format string.  Matches a decimal value.
+/// The decimal value in a `{0}` format string.  Matches a decimal value.
 fn positional_argument(input: &str) -> IResult<&str, Argument> {
     let (input, index) = map_res(digit1, |val: &str| val.parse::<usize>()).parse(input)?;
 
@@ -58,14 +58,14 @@ fn none_argument(input: &str) -> IResult<&str, Argument> {
 
 /// An optional named or positional argument.
 ///
-/// ie. `{name:...}` or `{0:...}` of `{:...}
+/// i.e. `{name:...}` or `{0:...}` or `{:...}`
 fn argument(input: &str) -> IResult<&str, Argument> {
     alt((named_argument, positional_argument, none_argument)).parse(input)
 }
 
 /// An explicit formatting type
 ///
-/// i.e. the `x?` in `{:x?}
+/// i.e. the `x?` in `{:x?}`
 fn explicit_type(input: &str) -> IResult<&str, Style> {
     alt((
         value(Style::Debug, tag("?")),
@@ -84,7 +84,7 @@ fn explicit_type(input: &str) -> IResult<&str, Style> {
 
 /// An optional explicit formatting type
 ///
-/// i.e. the `x?` in `{:x?} or no type as in `{:}`
+/// i.e. the `x?` in `{:x?}` or no type as in `{:}`
 fn style(input: &str) -> IResult<&str, Style> {
     let (input, spec) = explicit_type(input).unwrap_or((input, Style::None));
 
@@ -146,7 +146,7 @@ fn alignment(input: &str) -> IResult<&str, (char, Alignment)> {
         return Ok((input, (' ', alignment)));
     }
 
-    // Of all else false return none alignment with ' ' fill character.
+    // If all else fails, return none alignment with ' ' fill character.
     Ok((input, (' ', Alignment::None)))
 }
 
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn flags_prase_correctly() {
+    fn flags_parse_correctly() {
         assert_eq!(
             flags("0"),
             Ok(("", vec![Flag::LeadingZeros].into_iter().collect()))

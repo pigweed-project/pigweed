@@ -60,7 +60,7 @@ rust_test(
     crate = ":pw_tokenizer_core",
     crate_features = select({
         "//pw_build/constraints/rust:std": ["std"],
-        "//conditions:default": [],
+        "//conditions:default": [""],
     }),
     edition = "2021",
     # TODO: b/343726867 - support on-device rust tests

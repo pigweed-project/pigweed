@@ -13,7 +13,7 @@
 // the License.
 
 //! The `macro` module provides helpers that simplify writing proc macros
-//! that take format strings and arguments.  This is accomplish with three
+//! that take format strings and arguments.  This is accomplished with three
 //! main constructs:
 //! * [`FormatAndArgsFlavor`]: A struct that implements [syn::parse::Parse] to
 //!   parse a format string and its following arguments.
@@ -57,7 +57,7 @@ type TokenStream2 = proc_macro2::TokenStream;
 /// An error occurring during proc macro evaluation.
 ///
 /// In order to stay as flexible as possible to implementors of
-/// [`FormatMacroGenerator`], the error is simply represent by a
+/// [`FormatMacroGenerator`], the error is simply represented by a
 /// string.
 #[derive(Debug)]
 pub struct Error {
@@ -251,7 +251,7 @@ pub trait FormatMacroGenerator {
 /// be an [`Arg::Expr`].
 #[derive(Clone, Debug)]
 pub enum Arg {
-    /// An argument that is an type cast expression.
+    /// An argument that is a type cast expression.
     ExprCast(ExprCast),
     /// An argument that is an expression.
     Expr(Expr),
@@ -262,7 +262,7 @@ impl Arg {
         match expr.clone() {
             Expr::Cast(cast) => Ok(Self::ExprCast(cast)),
 
-            // Expr::Casts maybe be wrapped in an Expr::Group or in unexplained
+            // Expr::Casts may be wrapped in an Expr::Group or in unexplained
             // cases where macro expansion in the rust-analyzer VSCode plugin
             // may cause them to be wrapped in an Expr::Paren instead.
             Expr::Paren(paren) => Self::parse_expr(*paren.expr),
@@ -294,7 +294,7 @@ pub trait FormatStringParser {
     fn parse_format_string(format_string: &str) -> core::result::Result<FormatString, String>;
 }
 
-/// An implementation of [`FormatStringParser`] that parsers `printf` style format strings.
+/// An implementation of [`FormatStringParser`] that parses `printf` style format strings.
 #[derive(Debug)]
 pub struct PrintfFormatStringParser;
 impl FormatStringParser for PrintfFormatStringParser {
@@ -303,7 +303,7 @@ impl FormatStringParser for PrintfFormatStringParser {
     }
 }
 
-/// An implementation of [`FormatStringParser`] that parsers `core::fmt` style format strings.
+/// An implementation of [`FormatStringParser`] that parses `core::fmt` style format strings.
 #[derive(Debug)]
 pub struct CoreFmtFormatStringParser;
 impl FormatStringParser for CoreFmtFormatStringParser {
@@ -312,7 +312,7 @@ impl FormatStringParser for CoreFmtFormatStringParser {
     }
 }
 
-/// A parsed format string and it's arguments.
+/// A parsed format string and its arguments.
 ///
 /// To parse a `FormatAndArgs`, use the [`FormatAndArgsFlavor`] variant which
 /// is generic over [`FormatStringParser`] to allow parsing either `printf` or
@@ -333,7 +333,7 @@ pub struct FormatAndArgs {
 
 /// A variant of [`FormatAndArgs`] that is generic over format string flavor.
 ///
-/// `FormatAndArgsFlavor` implements [`syn::parse::Parse`] for it's specified
+/// `FormatAndArgsFlavor` implements [`syn::parse::Parse`] for its specified
 /// format string flavor.  Instantiate `FormatAndArgsFlavor` with either
 /// [`PrintfFormatStringParser`] or [`CoreFmtFormatStringParser`] to specify
 /// which format string flavor should be used.
@@ -403,7 +403,7 @@ fn next_arg(spec: &ConversionSpec, args: &mut VecDeque<Arg>) -> Result<Arg> {
 // Handle a single format conversion specifier (i.e. `%08x`).  Grabs the
 // necessary arguments for the specifier from `args` and generates code
 // to marshal the arguments into the buffer declared in `_tokenize_to_buffer`.
-// Returns an error if args is too short of if a format specifier is unsupported.
+// Returns an error if args is too short or if a format specifier is unsupported.
 fn handle_conversion(
     generator: &mut dyn FormatMacroGenerator,
     spec: &ConversionSpec,
@@ -527,7 +527,7 @@ pub fn generate(
 /// A specialized generator for proc macros that produce `printf` style format strings.
 ///
 /// For proc macros that need to translate a `pw_format` invocation into a
-/// `printf` style format string, `PrintfFormatMacroGenerator` offer a
+/// `printf` style format string, `PrintfFormatMacroGenerator` offers a
 /// specialized form of [`FormatMacroGenerator`] that builds the format string
 /// and provides it as an argument to
 /// [`finalize`](PrintfFormatMacroGenerator::finalize).
@@ -552,7 +552,7 @@ pub trait PrintfFormatMacroGenerator {
     /// Process a string fragment.
     ///
     /// **NOTE**: This string may contain unescaped `%` characters.
-    /// However, most implementations of this train can simply ignore string
+    /// However, most implementations of this trait can simply ignore string
     /// fragments as they will be included (with properly escaped `%`
     /// characters) as part of the format string passed to
     /// [`PrintfFormatMacroGenerator::finalize`].
@@ -582,7 +582,7 @@ pub trait PrintfFormatMacroGenerator {
     /// default.
     fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>>;
 
-    /// Process and untyped conversion.
+    /// Process an untyped conversion.
     fn untyped_conversion(&mut self, _expression: Arg) -> Result<()> {
         Err(Error::new("untyped conversion not supported"))
     }
@@ -618,13 +618,13 @@ pub enum PrintfFormatStringFragment {
     /// A fragment that is a string.
     String(String),
 
-    /// An expressions that can be converted to a `const &str`.
+    /// An expression that can be converted to a `const &str`.
     Expr {
         /// Argument to convert.
         arg: Arg,
-        /// Trait to used for getting the format specifier for the argument.
+        /// Trait used for getting the format specifier for the argument.
         ///
-        /// One of `PrintfFormatter`, `PrintfHexFormatter`, `PrintfUpperHexFormatter
+        /// One of `PrintfFormatter`, `PrintfHexFormatter`, `PrintfUpperHexFormatter`
         format_trait: Ident,
     },
 }
@@ -803,13 +803,13 @@ pub fn generate_printf(
 /// A specialized generator for proc macros that produce [`core::fmt`] style format strings.
 ///
 /// For proc macros that need to translate a `pw_format` invocation into a
-/// [`core::fmt`] style format string, `CoreFmtFormatMacroGenerator` offer a
+/// [`core::fmt`] style format string, `CoreFmtFormatMacroGenerator` offers a
 /// specialized form of [`FormatMacroGenerator`] that builds the format string
 /// and provides it as an argument to
 /// [`finalize`](CoreFmtFormatMacroGenerator::finalize).
 ///
 /// In cases where a generator needs to override the conversion specifier (i.e.
-/// `{}`, it can return it from its appropriate conversion method.
+/// `{}`), it can return it from its appropriate conversion method.
 pub trait CoreFmtFormatMacroGenerator {
     /// Called by [`generate_core_fmt`] at the end of code generation.
     ///
@@ -820,7 +820,7 @@ pub trait CoreFmtFormatMacroGenerator {
     /// Process a string fragment.
     ///
     /// **NOTE**: This string may contain unescaped `{` and `}` characters.
-    /// However, most implementations of this train can simply ignore string
+    /// However, most implementations of this trait can simply ignore string
     /// fragments as they will be included (with properly escaped `{` and `}`
     /// characters) as part of the format string passed to
     /// [`CoreFmtFormatMacroGenerator::finalize`].
@@ -858,7 +858,7 @@ impl<GENERATOR: CoreFmtFormatMacroGenerator> FormatMacroGenerator for CoreFmtGen
     }
 
     fn string_fragment(&mut self, string: &str) -> Result<()> {
-        // Escape '{' and '} characters.
+        // Escape '{' and '}' characters.
         let format_string = string.replace('{', "{{").replace('}', "}}");
 
         self.format_string.push_str(&format_string);

@@ -971,25 +971,33 @@ fn test_char_with_minus() {
 
 #[test]
 fn test_char_with_plus() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %c are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%+c").unwrap();
 }
 
 #[test]
 fn test_char_with_blank_space() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %c are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("% c").unwrap();
 }
 
 #[test]
 fn test_char_with_hash() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %c are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%#c").unwrap();
 }
 
 #[test]
 fn test_char_with_zero() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %c are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%0c").unwrap();
 }
 
@@ -1196,19 +1204,25 @@ fn test_char_with_star_width() {
 
 #[test]
 fn test_char_with_precision() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable precision on %c is accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%.4c").unwrap();
 }
 
 #[test]
 fn test_long_char_with_hash() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %lc are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%#lc").unwrap();
 }
 
 #[test]
 fn test_long_char_with_zero() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %lc are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%0lc").unwrap();
 }
 
@@ -1254,25 +1268,33 @@ fn test_string_with_minus() {
 
 #[test]
 fn test_string_with_plus() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %s are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%+s").unwrap();
 }
 
 #[test]
 fn test_string_with_blank_space() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %s are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("% s").unwrap();
 }
 
 #[test]
 fn test_string_with_hash() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %s are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%#s").unwrap();
 }
 
 #[test]
 fn test_string_with_zero() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %s are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%0s").unwrap();
 }
 
@@ -1559,12 +1581,16 @@ fn test_string_with_star_width_and_star_precision() {
 
 #[test]
 fn test_long_string_with_hash() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %ls are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%#ls").unwrap();
 }
 
 #[test]
 fn test_long_string_with_zero() {
-    // TODO: b/281750433 - This test should fail.
+    // Inapplicable flags on %ls are accepted by the parser for resilience
+    // during log detokenization and ignored during formatting (see
+    // https://pwbug.dev/281750433).
     FormatString::parse_printf("%0ls").unwrap();
 }
