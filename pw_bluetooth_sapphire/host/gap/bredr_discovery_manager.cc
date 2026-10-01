@@ -464,6 +464,14 @@ void BrEdrDiscoveryManager::RequestPeerName(PeerId id) {
     bt_log(TRACE, "gap-bredr", "already requesting name for %s", bt_str(id));
     return;
   }
+  if (requesting_names_.size() >= kMaxPendingNameRequests) {
+    bt_log(DEBUG,
+           "gap-bredr",
+           "name-request backlog full (%zu); dropping request for %s",
+           requesting_names_.size(),
+           bt_str(id));
+    return;
+  }
   Peer* peer = cache_->FindById(id);
   if (!peer) {
     bt_log(

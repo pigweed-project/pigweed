@@ -94,6 +94,10 @@ inline constexpr uint16_t kInquiryScanWindow = 0x0012;    // 11.25 ms
 // legitimately advertises. Used to cap memory usage when processing EIR data.
 inline constexpr size_t kMaxPeerEirServices = 64;
 
+// Upper bound on the number of concurrent BR/EDR Remote_Name_Request commands
+// that may be queued or in-flight during discovery.
+inline constexpr size_t kMaxPendingNameRequests = 64;
+
 // Constants used in Low Energy (see Core Spec v5.0, Vol 3, Part C, Appendix A).
 
 inline constexpr pw::chrono::SystemClock::duration kLEGeneralDiscoveryScanMin =

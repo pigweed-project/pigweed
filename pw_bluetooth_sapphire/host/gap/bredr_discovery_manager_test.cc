@@ -1307,5 +1307,164 @@ TEST_F(BrEdrDiscoveryManagerTest, Inspect) {
 }
 #endif  // NINSPECT
 
+TEST_F(BrEdrDiscoveryManagerTest, InquiryResultFloodCapsPendingNameRequests) {
+  constexpr size_t kFloodCount = 500;
+  static_assert(kFloodCount > kMaxPendingNameRequests);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp);
+
+  std::unique_ptr<BrEdrDiscoverySession> session;
+  size_t peers_found = 0u;
+  discovery_manager()->RequestDiscovery(
+      [&session, &peers_found](auto status, auto cb_session) {
+        EXPECT_EQ(fit::ok(), status);
+        cb_session->set_result_callback(
+            [&peers_found](const auto&) { peers_found++; });
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  ASSERT_TRUE(session);
+
+  const uint16_t baseline_leases = lease_provider().lease_count();
+  const size_t baseline_peers = peer_cache()->count();
+
+  for (size_t i = 0; i < kFloodCount; i++) {
+    const StaticByteBuffer inquiry_result(
+        hci_spec::kInquiryResultEventCode,
+        0x0F,  // parameter_total_size (15 bytes)
+        0x01,  // num_responses
+        static_cast<uint8_t>(i & 0xFF),
+        static_cast<uint8_t>((i >> 8) & 0xFF),
+        0xDE,
+        0xAD,
+        0xBE,
+        0xEF,
+        0x00,  // page_scan_repetition_mode (R0)
+        0x00,  // reserved
+        0x00,  // reserved
+        0x00,  // class_of_device (unspecified)
+        0x1F,
+        0x00,
+        0x00,  // clock_offset
+        0x00);
+    test_device()->SendCommandChannelPacket(inquiry_result);
+    RunUntilIdle();
+  }
+
+  const size_t flood_peers = peer_cache()->count() - baseline_peers;
+  const size_t flood_leases =
+      static_cast<size_t>(lease_provider().lease_count()) - baseline_leases;
+
+  EXPECT_EQ(kFloodCount, flood_peers);
+  EXPECT_EQ(kFloodCount, peers_found);
+  EXPECT_EQ(kMaxPendingNameRequests, flood_leases);
+}
+
+TEST_F(BrEdrDiscoveryManagerTest, PendingNameRequestsResumeAfterCompletion) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp);
+
+  std::unique_ptr<BrEdrDiscoverySession> session;
+  discovery_manager()->RequestDiscovery(
+      [&session](auto status, auto cb_session) {
+        EXPECT_EQ(fit::ok(), status);
+        session = std::move(cb_session);
+      });
+  RunUntilIdle();
+  ASSERT_TRUE(session);
+
+  const uint16_t baseline_leases = lease_provider().lease_count();
+
+  auto make_inquiry_result = [](size_t index) {
+    return StaticByteBuffer(hci_spec::kInquiryResultEventCode,
+                            0x0F,  // parameter_total_size (15 bytes)
+                            0x01,  // num_responses
+                            static_cast<uint8_t>(index & 0xFF),
+                            static_cast<uint8_t>((index >> 8) & 0xFF),
+                            0xDE,
+                            0xAD,
+                            0xBE,
+                            0xEF,
+                            0x00,  // page_scan_repetition_mode (R0)
+                            0x00,  // reserved
+                            0x00,  // reserved
+                            0x00,  // class_of_device (unspecified)
+                            0x1F,
+                            0x00,
+                            0x00,  // clock_offset
+                            0x00);
+  };
+
+  // Send kMaxPendingNameRequests + 1 unique inquiry results so the last one is
+  // dropped due to the cap.
+  for (size_t i = 0; i <= kMaxPendingNameRequests; i++) {
+    test_device()->SendCommandChannelPacket(make_inquiry_result(i));
+    RunUntilIdle();
+  }
+
+  EXPECT_EQ(
+      kMaxPendingNameRequests,
+      static_cast<size_t>(lease_provider().lease_count()) - baseline_leases);
+
+  // Drop the session and complete Inquiry so the first queued
+  // Remote_Name_Request is sent and completes, freeing one slot while the
+  // second Remote_Name_Request remains in flight awaiting CommandStatus.
+  session = nullptr;
+  const DeviceAddress peer0_addr(DeviceAddress::Type::kBREDR,
+                                 {0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF});
+  const StaticByteBuffer rnr0(LowerBits(hci_spec::kRemoteNameRequest),
+                              UpperBits(hci_spec::kRemoteNameRequest),
+                              0x0a,
+                              0x00,
+                              0x00,
+                              0xDE,
+                              0xAD,
+                              0xBE,
+                              0xEF,
+                              0x00,
+                              0x00,
+                              0x00,
+                              0x80);
+  const StaticByteBuffer rnr1(LowerBits(hci_spec::kRemoteNameRequest),
+                              UpperBits(hci_spec::kRemoteNameRequest),
+                              0x0a,
+                              0x01,
+                              0x00,
+                              0xDE,
+                              0xAD,
+                              0xBE,
+                              0xEF,
+                              0x00,
+                              0x00,
+                              0x00,
+                              0x80);
+  const auto rnr0_complete =
+      testing::RemoteNameRequestCompletePacket(peer0_addr, "Peer0");
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), rnr0, &kRemoteNameRequestRsp, &rnr0_complete);
+  EXPECT_CMD_PACKET_OUT(test_device(), rnr1, );
+
+  test_device()->SendCommandChannelPacket(kInquiryComplete);
+  RunUntilIdle();
+
+  Peer* peer0 = peer_cache()->FindByAddress(peer0_addr);
+  ASSERT_TRUE(peer0);
+  ASSERT_TRUE(peer0->name());
+  EXPECT_EQ("Peer0", *peer0->name());
+
+  // Inquiry's lease and rnr0's lease have both been released; kMax - 1 name
+  // requests remain active/queued.
+  EXPECT_EQ(kMaxPendingNameRequests - 1,
+            static_cast<size_t>(lease_provider().lease_count()));
+
+  // Re-sending the inquiry result for the previously dropped peer should now
+  // enqueue a Remote_Name_Request.
+  test_device()->SendCommandChannelPacket(
+      make_inquiry_result(kMaxPendingNameRequests));
+  RunUntilIdle();
+
+  EXPECT_EQ(kMaxPendingNameRequests,
+            static_cast<size_t>(lease_provider().lease_count()));
+}
+
 }  // namespace
 }  // namespace bt::gap
