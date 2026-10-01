@@ -73,6 +73,7 @@ rust_doc(
     name = "pw_format_doc",
     crate = ":pw_format",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )
 
 rust_proc_macro(

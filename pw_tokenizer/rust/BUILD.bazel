@@ -82,6 +82,7 @@ rust_doc(
     name = "pw_tokenizer_core_doc",
     crate = ":pw_tokenizer_core",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )
 
 rust_library(
@@ -147,6 +148,7 @@ rust_doc(
     name = "pw_tokenizer_doc",
     crate = ":pw_tokenizer",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )
 
 run_binary(

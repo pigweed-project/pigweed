@@ -30,7 +30,7 @@
 //!
 //! - **[`RawMutex`]**: Uses [`std::sync::Mutex<()>`] and stores the active
 //!   [`std::sync::MutexGuard`] inside an
-//!   [`UnsafeCell`][core::cell::UnsafeCell], dropping it on
+//!   [`UnsafeCell`][`core::cell::UnsafeCell`], dropping it on
 //!   [`unlock`](RawMutexTrait::unlock) to demonstrate wrapping an underlying
 //!   primitive that lacks an explicit manual unlock API.
 //! - **[`RawTimedMutex`]**: Uses a combination of [`std::sync::Mutex<bool>`]

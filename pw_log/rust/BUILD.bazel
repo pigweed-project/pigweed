@@ -98,7 +98,7 @@ rust_proc_macro(
 
 # Declare two targets.  One named `pw_log_backend_printf` which uses the
 # crate name `pw_log_backend` for use with `pw_log`'s facade pattern.  The
-# second named `pw_log_backend_printf_docs` with the crate name
+# second named `pw_log_backend_printf_doc` with the crate name
 # `pw_log_backend_printf` used for generating docs for the crate.
 rust_library(
     name = "pw_log_backend_printf",
@@ -120,7 +120,7 @@ rust_library(
 )
 
 rust_library(
-    name = "pw_log_backend_printf_docs",
+    name = "pw_log_backend_printf_doc",
     srcs = [
         "pw_log_backend_printf/lib.rs",
         "pw_log_backend_printf/varargs.rs",
@@ -142,7 +142,7 @@ rust_library(
 # name.
 rust_test(
     name = "pw_log_backend_printf_test",
-    crate = ":pw_log_backend_printf_docs",
+    crate = ":pw_log_backend_printf_doc",
     edition = "2021",
     # TODO: b/343726867 - support on-device rust tests
     target_compatible_with = incompatible_with_mcu(),
@@ -150,7 +150,7 @@ rust_test(
 
 rust_doc_test(
     name = "pw_log_backend_printf_doc_test",
-    crate = ":pw_log_backend_printf_docs",
+    crate = ":pw_log_backend_printf_doc",
     target_compatible_with = incompatible_with_mcu(),
 )
 

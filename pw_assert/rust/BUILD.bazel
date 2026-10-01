@@ -138,7 +138,7 @@ rust_test(
 # Duplicate library for 'pw_assert_backend_pw_log' which is only used
 # to generate rustdocs.
 rust_library(
-    name = "pw_assert_backend_pw_log_docs",
+    name = "pw_assert_backend_pw_log_doc",
     srcs = [
         "pw_assert_backend_pw_log.rs",
     ],
@@ -186,7 +186,7 @@ rust_test(
 # Duplicate library for 'pw_assert_backend_std' which is only used
 # to generate rustdocs.
 rust_library(
-    name = "pw_assert_backend_std_docs",
+    name = "pw_assert_backend_std_doc",
     srcs = [
         "pw_assert_backend_std.rs",
     ],
@@ -219,30 +219,30 @@ rust_doc(
     target_compatible_with = incompatible_with_mcu(),
 )
 
-# Use the _docs target for rust_test and rust_doc_tests so they get
+# Use the _doc target for rust_test and rust_doc_tests so they get
 # unique crate names.
 rust_test(
     name = "pw_assert_backend_pw_log_test",
-    crate = ":pw_assert_backend_pw_log_docs",
+    crate = ":pw_assert_backend_pw_log_doc",
     edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_doc_test(
-    name = "pw_assert_backend_pw_log_docs_test",
-    crate = ":pw_assert_backend_pw_log_docs",
+    name = "pw_assert_backend_pw_log_doc_test",
+    crate = ":pw_assert_backend_pw_log_doc",
     target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_test(
     name = "pw_assert_backend_std_test",
-    crate = ":pw_assert_backend_std_docs",
+    crate = ":pw_assert_backend_std_doc",
     edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
 )
 
 rust_doc_test(
-    name = "pw_assert_backend_std_docs_test",
-    crate = ":pw_assert_backend_std_docs",
+    name = "pw_assert_backend_std_doc_test",
+    crate = ":pw_assert_backend_std_doc",
     target_compatible_with = incompatible_with_mcu(),
 )

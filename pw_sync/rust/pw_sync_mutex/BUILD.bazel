@@ -30,7 +30,7 @@ rust_library(
 )
 
 rust_doc(
-    name = "pw_sync_mutex_core_docs",
+    name = "pw_sync_mutex_core_doc",
     crate = ":pw_sync_mutex_core",
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -57,7 +57,7 @@ rust_library(
 )
 
 rust_doc(
-    name = "pw_sync_mutex_docs",
+    name = "pw_sync_mutex_doc",
     crate = ":pw_sync_mutex",
     target_compatible_with = incompatible_with_mcu(),
 )
@@ -74,6 +74,23 @@ rust_library(
         "pw_sync_mutex_backend_std.rs",
     ],
     crate_name = "pw_sync_mutex_backend",
+    edition = "2021",
+    target_compatible_with = incompatible_with_mcu(),
+    deps = [
+        ":pw_sync_mutex_core",
+        "//pw_assert/rust:pw_assert",
+        "//pw_time/rust:pw_time",
+    ],
+)
+
+# Duplicate library for 'pw_sync_mutex_backend_std' which is only used
+# to generate rustdocs.
+rust_library(
+    name = "pw_sync_mutex_backend_std_doc",
+    srcs = [
+        "pw_sync_mutex_backend_std.rs",
+    ],
+    crate_name = "pw_sync_mutex_backend_std",
     edition = "2021",
     target_compatible_with = incompatible_with_mcu(),
     deps = [

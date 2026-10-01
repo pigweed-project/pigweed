@@ -56,4 +56,5 @@ rust_doc(
     name = "pw_stream_doc",
     crate = ":pw_stream",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )

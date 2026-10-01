@@ -114,8 +114,8 @@ pw_rust_docs(
     # TODO: b/295227522 - Add support to `rust_docs` to automatically processs
     # crates in topological order.
     crates = [
-        "//pw_status/rust:pw_status",
-        "//pw_assert/rust:pw_assert",
+        "//pw_status/rust:pw_status_doc",
+        "//pw_assert/rust:pw_assert_doc",
         "//pw_kernel/lib/foreign_box",
         "//pw_kernel/lib/list",
         "//pw_kernel/lib/circular_buffer",
@@ -123,7 +123,7 @@ pw_rust_docs(
         "//pw_kernel/lib/pw_cast",
         "//pw_kernel/lib/pw_kernel_tracing",
         "//pw_kernel/lib/regs",
-        "//pw_time/rust:pw_time_core",
+        "//pw_time/rust:pw_time_core_doc",
         "//pw_kernel/lib/unittest",
         "//pw_kernel/syscall:syscall_defs",
         "//pw_kernel/syscall:syscall_user",

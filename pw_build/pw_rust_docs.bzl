@@ -29,8 +29,40 @@ load("@rules_rust//rust/private:rustdoc.bzl", "rustdoc_compile_action")
 # buildifier: disable=bzl-visibility
 load("@rules_rust//rust/private:utils.bzl", "dedent", "find_toolchain")
 
+_RustDocInfo = provider(
+    doc = "Provider for extracting CrateInfo and flags from rust_library or rust_doc targets.",
+    fields = {
+        "crate_features": "List[str]: List of features enabled for documenting this crate.",
+        "crate_info": "CrateInfo: The CrateInfo provider of the crate.",
+        "rustdoc_flags": "List[str]: Additional flags to pass to rustdoc.",
+    },
+)
+
+def _pw_rust_doc_aspect_impl(target, ctx):
+    if rust_common.crate_info in target:
+        return [
+            _RustDocInfo(
+                crate_info = target[rust_common.crate_info],
+                crate_features = getattr(ctx.rule.attr, "crate_features", []),
+                rustdoc_flags = [],
+            ),
+        ]
+    if hasattr(ctx.rule.attr, "crate") and rust_common.crate_info in ctx.rule.attr.crate:
+        return [
+            _RustDocInfo(
+                crate_info = ctx.rule.attr.crate[rust_common.crate_info],
+                crate_features = getattr(ctx.rule.attr, "crate_features", []),
+                rustdoc_flags = getattr(ctx.rule.attr, "rustdoc_flags", []),
+            ),
+        ]
+    fail("Target {} must be a rust_library or rust_doc target.".format(target.label))
+
+_pw_rust_doc_aspect = aspect(
+    implementation = _pw_rust_doc_aspect_impl,
+)
+
 def _pw_rust_docs_impl(ctx):
-    """The implementation of the `rust_doc` rule
+    """The implementation of the `pw_rust_docs` rule
 
     Args:
         ctx (ctx): The rule's context object
@@ -42,13 +74,18 @@ def _pw_rust_docs_impl(ctx):
     rustdoc_inputs = []
 
     for crate in ctx.attr.crates:
-        crate_info = crate[rust_common.crate_info]
+        doc_info = crate[_RustDocInfo]
+        crate_info = doc_info.crate_info
 
         # Add the current crate as an extern for the compile action
         rustdoc_flags = [
             "--extern",
             "{}={}".format(crate_info.name, crate_info.output.path),
         ]
+        for feature in doc_info.crate_features:
+            if feature:
+                rustdoc_flags.extend(["--cfg", 'feature="{}"'.format(feature)])
+        rustdoc_flags.extend(doc_info.rustdoc_flags)
         rustdoc_flags.extend(ctx.attr.rustdoc_flags)
         if getattr(ctx.file, "html_before_content", None):
             rustdoc_flags.extend([
@@ -167,12 +204,12 @@ pw_rust_docs = rule(
     attrs = {
         "crates": attr.label_list(
             doc = (
-                "A list of lablesThe label of the target to generate code documentation for.\n" +
+                "A list of labels of targets to generate code documentation for.\n" +
                 "\n" +
-                "`rust_doc` can generate HTML code documentation for the source files of " +
-                "`rust_library` or `rust_binary` targets."
+                "`pw_rust_docs` can generate HTML code documentation for the source files of " +
+                "`rust_library`, `rust_binary`, or `rust_doc` targets."
             ),
-            providers = [rust_common.crate_info],
+            aspects = [_pw_rust_doc_aspect],
             mandatory = True,
         ),
         "html_after_content": attr.label(

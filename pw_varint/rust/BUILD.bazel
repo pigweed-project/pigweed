@@ -49,4 +49,5 @@ rust_doc(
     name = "pw_varint_doc",
     crate = ":pw_varint",
     target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
 )

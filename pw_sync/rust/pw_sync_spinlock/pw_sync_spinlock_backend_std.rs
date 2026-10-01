@@ -24,7 +24,9 @@ pub struct RawInterruptSpinLock {
     is_locked: AtomicBool,
 }
 
-/// RAII guard returned by [`RawInterruptSpinLock::lock`] or [`RawInterruptSpinLock::try_lock`].
+/// RAII guard returned by
+/// [`RawInterruptSpinLock::lock`][`pw_sync_spinlock_core::RawInterruptSpinLock::lock`]
+/// or [`RawInterruptSpinLock::try_lock`][`pw_sync_spinlock_core::RawInterruptSpinLock::try_lock`].
 pub struct RawInterruptSpinLockGuard<'a> {
     lock: &'a RawInterruptSpinLock,
 
