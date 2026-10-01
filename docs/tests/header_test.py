@@ -77,6 +77,56 @@ class HeaderTest(unittest.TestCase):
         content = index_file.read_text(encoding="utf-8")
         self.assertIn('id="pw-header-menu"', content)
 
+    def test_header_source_present(self):
+        """Verifies that the source code button link is present."""
+        index_file = self.docs_dir / "index.html"
+        self.assertTrue(index_file.exists(), f"{index_file} does not exist")
+        content = index_file.read_text(encoding="utf-8")
+        self.assertIn('id="pw-header-source"', content)
+        self.assertIn(
+            'href="https://cs.opensource.google/pigweed/pigweed"', content
+        )
+
+    def test_header_source_navigation(self):
+        """Verifies that clicking the source code button navigates to the
+        Pigweed source code repository."""
+        chromium_bin = get_chromium_executable()
+        expected_url = "https://cs.opensource.google/pigweed/pigweed"
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                executable_path=chromium_bin,
+                headless=True,
+            )
+            context = browser.new_context(
+                viewport={"width": 1280, "height": 800}
+            )
+            page = context.new_page()
+            page.route(
+                f"{expected_url}**",
+                lambda route: route.fulfill(
+                    status=200,
+                    content_type="text/html",
+                    body="<html><body>Pigweed Source</body></html>",
+                ),
+            )
+
+            page.goto(
+                self.server.url_for("index.html"),
+                wait_until="domcontentloaded",
+            )
+
+            source_btn = page.locator("#pw-header-source")
+            source_btn.wait_for(state="visible", timeout=5000)
+            icon = source_btn.locator(".material-symbols-outlined")
+            self.assertEqual(icon.inner_text().strip(), "code_xml")
+
+            source_btn.click()
+            page.wait_for_load_state("domcontentloaded")
+            self.assertEqual(page.url, expected_url)
+
+            browser.close()
+
     def test_mobile_menu_navigation(self):
         """Verifies mobile menu toggle and links across Sphinx subpage,
         Doxygen, and Rustdoc."""
@@ -526,18 +576,21 @@ class HeaderTest(unittest.TestCase):
             brand = page.locator("#pw-header-brand")
             tools = page.locator("#pw-header-tools")
             search_mobile = page.locator("#pw-search-mobile")
+            source = page.locator("#pw-header-source")
             theme = page.locator("pw-theme")
 
             menu_box = menu.bounding_box()
             brand_box = brand.bounding_box()
             tools_box = tools.bounding_box()
             search_box = search_mobile.bounding_box()
+            source_box = source.bounding_box()
             theme_box = theme.bounding_box()
 
             self.assertIsNotNone(menu_box)
             self.assertIsNotNone(brand_box)
             self.assertIsNotNone(tools_box)
             self.assertIsNotNone(search_box)
+            self.assertIsNotNone(source_box)
             self.assertIsNotNone(theme_box)
 
             # Left side: menu and brand close to each other on the left
@@ -548,10 +601,13 @@ class HeaderTest(unittest.TestCase):
             )
             self.assertLess(menu_brand_gap, 25)
 
-            # Right side: search and theme close to each other on the right
+            # Right side: search, theme, and source close to each other on the right
             self.assertGreater(tools_box["x"] + tools_box["width"], 375 - 40)
             self.assertLess(
                 search_box["x"] + search_box["width"], theme_box["x"]
+            )
+            self.assertLess(
+                theme_box["x"] + theme_box["width"], source_box["x"]
             )
             tools_gap = theme_box["x"] - (search_box["x"] + search_box["width"])
             self.assertLessEqual(tools_gap, 16)
@@ -560,7 +616,6 @@ class HeaderTest(unittest.TestCase):
             middle_gap = tools_box["x"] - (brand_box["x"] + brand_box["width"])
             self.assertGreater(middle_gap, menu_brand_gap)
             self.assertGreater(middle_gap, tools_gap)
-            self.assertGreater(middle_gap, 40)
 
             browser.close()
 

@@ -441,7 +441,8 @@ pagefind-modal-trigger .pf-trigger-icon {
   }
 }
 
-/* Tools container: action buttons such as search and the theme selector.
+/* Tools container: action buttons such as search, source code link, and the
+ * theme selector.
  * On mobile (<840px), margin-left: auto pushes tools to the far right edge,
  * ensuring the largest gap is in the middle between the brand and tools.
  * On desktop (>=840px), nav already has margin-left: auto, so tools margin-left is 0. */
@@ -455,6 +456,45 @@ pagefind-modal-trigger .pf-trigger-icon {
 
   @media (min-width: 840px) {
     margin-left: 0;
+  }
+}
+
+#pw-header-source,
+#pw-header-source:visited {
+  background-color: var(--pw-color-background-primary);
+  border: 1px solid var(--pf-border);
+  color: var(--pw-color-foreground-primary) !important;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  text-decoration: none !important;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+
+  &:hover,
+  &:active {
+    background-color: var(--pf-hover);
+    color: var(--pw-color-foreground-primary) !important;
+    text-decoration: none !important;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--pf-outline-focus);
+  }
+
+  .material-symbols-outlined {
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+    user-select: none;
   }
 }
 
