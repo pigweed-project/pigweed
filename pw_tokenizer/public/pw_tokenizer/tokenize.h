@@ -15,10 +15,13 @@
 
 #ifdef __cplusplus
 
+// Avoid including heavy C++ standard library headers (such as <string_view>,
+// <algorithm>, or <string>) here to prevent circular include failures when
+// <assert.h> is intercepted by pw_assert backends using pw_tokenizer inside C
+// library headers like Newlib's <stdlib.h> or <wchar.h>.
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <string_view>
 
 #include "pw_bytes/endian.h"
 
@@ -398,8 +401,25 @@ constexpr std::array<std::byte, 4> TokenBytes(Token token) {
 namespace internal {
 
 constexpr bool Contains(const char* haystack, const char* needle) {
-  std::string_view haystack_view(haystack);
-  return haystack_view.find(needle) != std::string_view::npos;
+  if (haystack == nullptr || needle == nullptr) {
+    return false;
+  }
+  if (needle[0] == '\0') {
+    return true;
+  }
+  for (size_t i = 0; haystack[i] != '\0'; ++i) {
+    bool match = true;
+    for (size_t j = 0; needle[j] != '\0'; ++j) {
+      if (haystack[i + j] == '\0' || haystack[i + j] != needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) {
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace internal

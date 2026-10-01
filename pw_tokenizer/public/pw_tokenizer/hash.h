@@ -25,12 +25,9 @@
 
 #include "pw_preprocessor/compiler.h"
 #include "pw_tokenizer/config.h"
+#include "pw_tokenizer/internal/hash.h"
 
 namespace pw::tokenizer {
-
-// The constant to use when generating the hash. Changing this changes the value
-// of all hashes, so do not change it randomly.
-inline constexpr uint32_t k65599HashConstant = 65599u;
 
 // Calculates the hash of a string. This function calculates hashes at either
 // runtime or compile time in C++ code.
@@ -54,19 +51,7 @@ inline constexpr uint32_t k65599HashConstant = 65599u;
 //
 constexpr uint32_t Hash(std::string_view string)
     PW_NO_SANITIZE("unsigned-integer-overflow") {
-  // The length is hashed as if it were the first character.
-  uint32_t hash = static_cast<uint32_t>(string.size());
-  uint32_t coefficient = k65599HashConstant;
-
-  // Hash all of the characters in the string as unsigned ints.
-  // The coefficient calculation is done modulo 0x100000000, so the unsigned
-  // integer overflows are intentional.
-  for (char ch : string) {
-    hash += coefficient * static_cast<uint8_t>(ch);
-    coefficient *= k65599HashConstant;
-  }
-
-  return hash;
+  return internal::Hash(string.data(), string.size());
 }
 
 // Take the string as an array to support either literals or character arrays,
@@ -74,7 +59,7 @@ constexpr uint32_t Hash(std::string_view string)
 template <size_t kSize>
 constexpr uint32_t Hash(const char (&string)[kSize]) {
   static_assert(kSize > 0);
-  return Hash(std::string_view(string, kSize - 1));
+  return internal::Hash(string);
 }
 
 // This hash function is equivalent to the C hashing macros. It hashses a string
@@ -83,15 +68,8 @@ constexpr uint32_t PwTokenizer65599FixedLengthHash(
     std::string_view string,
     size_t hash_length = PW_TOKENIZER_CFG_C_HASH_LENGTH)
     PW_NO_SANITIZE("unsigned-integer-overflow") {
-  uint32_t hash = static_cast<uint32_t>(string.size());
-  uint32_t coefficient = k65599HashConstant;
-
-  for (char ch : string.substr(0, hash_length)) {
-    hash += coefficient * static_cast<uint8_t>(ch);
-    coefficient *= k65599HashConstant;
-  }
-
-  return hash;
+  return internal::PwTokenizer65599FixedLengthHash(
+      string.data(), string.size(), hash_length);
 }
 
 // Character array version of PwTokenizer65599FixedLengthHash.
@@ -100,8 +78,8 @@ constexpr uint32_t PwTokenizer65599FixedLengthHash(
     const char (&string)[kSize],
     size_t hash_length = PW_TOKENIZER_CFG_C_HASH_LENGTH) {
   static_assert(kSize > 0);
-  return PwTokenizer65599FixedLengthHash(std::string_view(string, kSize - 1),
-                                         hash_length);
+  return internal::PwTokenizer65599FixedLengthHash(
+      string, kSize - 1, hash_length);
 }
 
 }  // namespace pw::tokenizer

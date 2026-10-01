@@ -141,9 +141,10 @@ constexpr Entry<kDomainSize, kStringSize> MakeEntry(
 #if defined(__cpp_constexpr) && __cpp_constexpr >= 201304L && \
     defined(__cpp_inline_variables)
 
-#include "pw_tokenizer/hash.h"
+#include "pw_tokenizer/internal/hash.h"
 
-#define PW_TOKENIZER_STRING_TOKEN(format) ::pw::tokenizer::Hash(format)
+#define PW_TOKENIZER_STRING_TOKEN(format) \
+  ::pw::tokenizer::internal::Hash(format)
 
 #else  // In C or older C++ code, use the hashing macro.
 
