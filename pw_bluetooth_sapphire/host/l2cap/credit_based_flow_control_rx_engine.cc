@@ -121,8 +121,10 @@ void CreditBasedFlowControlRxEngine::AcknowledgeRead() {
   const uint16_t credits_to_return = unacked_read_credits_.front();
   peer_credits_ += credits_to_return;
   unacked_read_credits_.pop_front();
-  auto cb = return_credits_callback_.share();
-  cb(credits_to_return);
+  if (return_credits_callback_) {
+    auto cb = return_credits_callback_.share();
+    cb(credits_to_return);
+  }
 }
 
 void CreditBasedFlowControlRxEngine::OnFailure() {

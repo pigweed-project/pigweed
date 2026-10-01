@@ -216,6 +216,51 @@ TEST(CreditBasedFlowControlRxEngineStandaloneTest,
   // Calling AcknowledgeRead invokes return_credits_cb, which synchronously
   // resets rx_engine.
   rx_engine->AcknowledgeRead();
+  EXPECT_FALSE(rx_engine);
+}
+
+TEST(CreditBasedFlowControlRxEngineStandaloneTest,
+     SecondAcknowledgeReadSynchronouslyDestroysEngine) {
+  std::unique_ptr<CreditBasedFlowControlRxEngine> rx_engine;
+  uint16_t total_credits = 0;
+
+  auto failure_cb = [] {};
+
+  auto return_credits_cb =
+      [&, owned_state = std::make_unique<uint16_t>(0)](uint16_t credits) {
+        if (*owned_state > 0) {
+          rx_engine.reset();
+        }
+        // Access callback-owned state after rx_engine.reset() to ensure the
+        // callback target remains alive on the stack across multiple share()
+        // calls.
+        *owned_state += credits;
+        total_credits = *owned_state;
+      };
+
+  rx_engine = std::make_unique<CreditBasedFlowControlRxEngine>(
+      /*max_mtu=*/1000,
+      /*max_mps=*/1000,
+      /*initial_credits=*/10,
+      std::move(failure_cb),
+      std::move(return_credits_cb));
+
+  StaticByteBuffer payload(4, 0, 't', 'e', 's', 't');
+  PDU pdu1 = Fragmenter(0x0001).BuildFrame(
+      0x0001, payload, FrameCheckSequenceOption::kNoFcs);
+  PDU pdu2 = Fragmenter(0x0001).BuildFrame(
+      0x0001, payload, FrameCheckSequenceOption::kNoFcs);
+
+  ASSERT_TRUE(rx_engine->ProcessPdu(std::move(pdu1)));
+  ASSERT_TRUE(rx_engine->ProcessPdu(std::move(pdu2)));
+
+  rx_engine->AcknowledgeRead();
+  ASSERT_TRUE(rx_engine);
+  EXPECT_EQ(1u, total_credits);
+
+  rx_engine->AcknowledgeRead();
+  EXPECT_FALSE(rx_engine);
+  EXPECT_EQ(2u, total_credits);
 }
 
 TEST_F(CreditBasedFlowControlRxEngineTest, SduExceedingMtuFails) {
@@ -263,14 +308,77 @@ TEST_F(CreditBasedFlowControlRxEngineTest, OutOfCreditsFails) {
   EXPECT_FALSE(sdu);
   EXPECT_EQ(1u, failure_callback_count());
 
-  // Acknowledge the first read to return credits.
+  // Acknowledge the first two reads to return credits.
   engine().AcknowledgeRead();
   EXPECT_EQ(1u, total_credits_returned());
+  engine().AcknowledgeRead();
+  EXPECT_EQ(2u, total_credits_returned());
 
   // The peer should now be able to send packets again.
   auto sdu2 = ProcessPayload(payload);
   ASSERT_TRUE(sdu2);
   EXPECT_EQ(1u, failure_callback_count());
+  engine().AcknowledgeRead();
+  EXPECT_EQ(3u, total_credits_returned());
+}
+
+TEST_F(CreditBasedFlowControlRxEngineTest, AcknowledgeReadMultipleSdus) {
+  const StaticByteBuffer unsegmented_payload(4, 0, 't', 'e', 's', 't');
+
+  // First SDU (1 PDU = 1 credit).
+  const ByteBufferPtr sdu1 = ProcessPayload(unsegmented_payload);
+  ASSERT_TRUE(sdu1);
+  EXPECT_TRUE(ContainersEqual(StaticByteBuffer('t', 'e', 's', 't'), *sdu1));
+
+  // Second SDU segmented across 2 PDUs (2 credits).
+  EXPECT_FALSE(ProcessPayload(StaticByteBuffer(8, 0, 'a', 'b', 'c', 'd')));
+  const ByteBufferPtr sdu2 =
+      ProcessPayload(StaticByteBuffer('e', 'f', 'g', 'h'));
+  ASSERT_TRUE(sdu2);
+  EXPECT_TRUE(ContainersEqual(
+      StaticByteBuffer('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'), *sdu2));
+
+  // Third SDU (1 PDU = 1 credit).
+  const ByteBufferPtr sdu3 = ProcessPayload(unsegmented_payload);
+  ASSERT_TRUE(sdu3);
+  EXPECT_TRUE(ContainersEqual(StaticByteBuffer('t', 'e', 's', 't'), *sdu3));
+
+  EXPECT_EQ(0u, failure_callback_count());
+  EXPECT_EQ(0u, total_credits_returned());
+
+  engine().AcknowledgeRead();
+  EXPECT_EQ(1u, total_credits_returned());
+
+  engine().AcknowledgeRead();
+  EXPECT_EQ(3u, total_credits_returned());
+
+  engine().AcknowledgeRead();
+  EXPECT_EQ(4u, total_credits_returned());
+}
+
+TEST(CreditBasedFlowControlRxEngineStandaloneTest,
+     AcknowledgeReadWithNullReturnCreditsCallback) {
+  CreditBasedFlowControlRxEngine rx_engine(
+      /*max_mtu=*/1000,
+      /*max_mps=*/1000,
+      /*initial_credits=*/1,
+      /*failure_callback=*/nullptr,
+      /*return_credits=*/nullptr);
+
+  const StaticByteBuffer payload(4, 0, 't', 'e', 's', 't');
+  PDU pdu1 = Fragmenter(0x0001).BuildFrame(
+      0x0001, payload, FrameCheckSequenceOption::kNoFcs);
+  ByteBufferPtr sdu1 = rx_engine.ProcessPdu(std::move(pdu1));
+  ASSERT_TRUE(sdu1);
+
+  // Replenishes peer_credits_ without crashing when return_credits is nullptr.
+  rx_engine.AcknowledgeRead();
+
+  PDU pdu2 = Fragmenter(0x0001).BuildFrame(
+      0x0001, payload, FrameCheckSequenceOption::kNoFcs);
+  ByteBufferPtr sdu2 = rx_engine.ProcessPdu(std::move(pdu2));
+  ASSERT_TRUE(sdu2);
+  rx_engine.AcknowledgeRead();
 }
 
 }  // namespace
