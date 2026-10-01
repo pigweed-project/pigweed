@@ -1144,6 +1144,87 @@ TEST_F(BearerTest, ReplyWithError) {
   EXPECT_TRUE(response_sent);
 }
 
+TEST_F(BearerTest, ReplyClosed) {
+  bool response_sent = false;
+  fake_chan()->SetSendCallback([&response_sent](auto) { response_sent = true; },
+                               dispatcher());
+
+  Bearer::TransactionId id = Bearer::kInvalidTransactionId;
+  bearer()->RegisterHandler(
+      kTestRequest, [&id](auto cb_id, const PacketReader&) { id = cb_id; });
+  fake_chan()->Receive(StaticByteBuffer(kTestRequest));
+  RunUntilIdle();
+  ASSERT_NE(Bearer::kInvalidTransactionId, id);
+
+  bearer()->ShutDown();
+  ASSERT_FALSE(bearer()->is_open());
+
+  EXPECT_FALSE(bearer()->Reply(id, NewBuffer(kTestResponse)));
+  RunUntilIdle();
+  EXPECT_FALSE(response_sent);
+}
+
+TEST_F(BearerTest, ReplyWithErrorClosed) {
+  bool response_sent = false;
+  fake_chan()->SetSendCallback([&response_sent](auto) { response_sent = true; },
+                               dispatcher());
+
+  Bearer::TransactionId id = Bearer::kInvalidTransactionId;
+  bearer()->RegisterHandler(
+      kTestRequest, [&id](auto cb_id, const PacketReader&) { id = cb_id; });
+  fake_chan()->Receive(StaticByteBuffer(kTestRequest));
+  RunUntilIdle();
+  ASSERT_NE(Bearer::kInvalidTransactionId, id);
+
+  bearer()->ShutDown();
+  ASSERT_FALSE(bearer()->is_open());
+
+  EXPECT_FALSE(bearer()->ReplyWithError(id, 0, ErrorCode::kUnlikelyError));
+  EXPECT_FALSE(bearer()->ReplyWithError(
+      Bearer::kInvalidTransactionId, 0, ErrorCode::kUnlikelyError));
+  RunUntilIdle();
+  EXPECT_FALSE(response_sent);
+}
+
+TEST_F(BearerTest, ReplyWithErrorAfterRemoteTransactionSeqProtocolError) {
+  bool response_sent = false;
+  fake_chan()->SetSendCallback([&response_sent](auto) { response_sent = true; },
+                               dispatcher());
+
+  Bearer::TransactionId id = Bearer::kInvalidTransactionId;
+  int request_count = 0;
+  bearer()->RegisterHandler(
+      kTestRequest, [&id, &request_count](auto cb_id, const PacketReader&) {
+        request_count++;
+        id = cb_id;
+      });
+
+  fake_chan()->Receive(StaticByteBuffer(kTestRequest));
+  RunUntilIdle();
+  ASSERT_EQ(1, request_count);
+  ASSERT_NE(Bearer::kInvalidTransactionId, id);
+  ASSERT_TRUE(bearer()->is_open());
+
+  // Receiving a second overlapping request triggers a sequential protocol
+  // violation and shuts down the bearer while the first request's handler is
+  // still pending.
+  bool closed = false;
+  bearer()->set_closed_callback([&closed] { closed = true; });
+  fake_chan()->Receive(StaticByteBuffer(kTestRequest));
+  RunUntilIdle();
+  EXPECT_TRUE(closed);
+  EXPECT_EQ(1, request_count);
+  EXPECT_FALSE(bearer()->is_open());
+  EXPECT_TRUE(fake_chan()->link_error());
+
+  // Deferred handler completing with an error or response after ShutDown must
+  // return false cleanly without dereferencing the closed channel.
+  EXPECT_FALSE(bearer()->ReplyWithError(id, 0x0001, ErrorCode::kUnlikelyError));
+  EXPECT_FALSE(bearer()->Reply(id, NewBuffer(kTestResponse)));
+  RunUntilIdle();
+  EXPECT_FALSE(response_sent);
+}
+
 // Requests and indications have independent flow control
 TEST_F(BearerTest, RequestAndIndication) {
   Bearer::TransactionId req_id, ind_id;
@@ -1571,6 +1652,35 @@ TEST_F(BearerTestSecurity, NoSecurityUpgradeIfChannelAlreadyEncryptedWithMitm) {
   // sufficiently encrypted.
   EXPECT_EQ(1u, att_request_count());
   EXPECT_EQ(0u, security_request_count());
+  EXPECT_EQ(0u, request_success_count());
+  EXPECT_EQ(1u, request_error_count());
+  EXPECT_EQ(ToResult(ErrorCode::kInsufficientAuthentication),
+            last_request_status());
+}
+
+TEST_F(BearerTestSecurity, SecurityUpgradeSucceedsAfterBearerShutDown) {
+  SetUpErrorResponder(ErrorCode::kInsufficientAuthentication);
+  SendRequest();
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
+  EXPECT_EQ(0u, request_success_count());
+  EXPECT_EQ(0u, request_error_count());
+
+  // Shut down the bearer while the security upgrade request is pending.
+  bearer()->ShutDown();
+  ASSERT_FALSE(bearer()->is_open());
+
+  // Resolving the security upgrade with ok after the bearer is closed should
+  // resolve the transaction with its original error instead of stranding it in
+  // the closed bearer's request queue.
+  SetUpResponder();
+  ResolvePendingSecurityRequest(fit::ok());
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, att_request_count());
+  EXPECT_EQ(1u, security_request_count());
   EXPECT_EQ(0u, request_success_count());
   EXPECT_EQ(1u, request_error_count());
   EXPECT_EQ(ToResult(ErrorCode::kInsufficientAuthentication),

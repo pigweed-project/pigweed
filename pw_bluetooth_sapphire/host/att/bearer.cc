@@ -342,6 +342,8 @@ void Bearer::ShutDownInternal(bool due_to_timeout) {
   // invoked error callbacks.
   TransactionQueue req_queue(std::move(request_queue_));
   TransactionQueue ind_queue(std::move(indication_queue_));
+  remote_request_.reset();
+  remote_indication_.reset();
 
   fit::closure closed_cb = std::move(closed_cb_);
 
@@ -516,6 +518,11 @@ bool Bearer::Reply(TransactionId tid, ByteBufferPtr pdu) {
 bool Bearer::ReplyWithError(TransactionId id,
                             Handle handle,
                             ErrorCode error_code) {
+  if (!is_open()) {
+    bt_log(TRACE, "att", "bearer closed; cannot reply with error");
+    return false;
+  }
+
   RemoteTransaction* pending = FindRemoteTransaction(id);
   if (!pending)
     return false;
@@ -668,9 +675,9 @@ void Bearer::HandleEndTransaction(TransactionQueue* tq,
        err = *std::move(error),
        security_requirement,
        t = std::move(transaction)](sm::Result<> status) mutable {
-        // If the security upgrade failed or the bearer got destroyed, then
-        // resolve the transaction with the original error.
-        if (!self.is_alive() || status.is_error()) {
+        // If the security upgrade failed or the bearer got destroyed or closed,
+        // then resolve the transaction with the original error.
+        if (!self.is_alive() || !self->is_open() || status.is_error()) {
           t->callback(fit::error(std::move(err)));
           return;
         }
