@@ -626,16 +626,6 @@ pw_cc_test(
     ],
 )
 
-cc_library(
-    name = "coro_or_else_task",
-    hdrs = ["public/pw_async2/coro_or_else_task.h"],
-    strip_include_prefix = "public",
-    deps = [
-        ":coro",
-        "//pw_status",
-    ],
-)
-
 pw_cc_test(
     name = "coro_task_test",
     srcs = ["coro_task_test.cc"],
@@ -939,7 +929,6 @@ filegroup(
         "public/pw_async2/channel.h",
         "public/pw_async2/context.h",
         "public/pw_async2/coro.h",
-        "public/pw_async2/coro_or_else_task.h",
         "public/pw_async2/coro_task.h",
         "public/pw_async2/dispatcher.h",
         "public/pw_async2/dispatcher_for_test.h",

@@ -473,10 +473,7 @@ if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
       "$dir_pw_bytes:alignment",
       dir_pw_log,
     ]
-    sources = [
-      "coro.cc",
-      "public/pw_async2/coro_or_else_task.h",
-    ]
+    sources = [ "coro.cc" ]
     allow_circular_includes_from = [ ":pw_async2" ]
   }
 
