@@ -1413,6 +1413,12 @@ struct CommandHeader:
   let max_parameter_total_size = $upper_bound(parameter_total_size)
   let max_command_packet_size = $size_in_bytes + max_parameter_total_size
 
+struct CommandPacket:
+  -- HCI Command packet.
+  let hdr_size = CommandHeader.$size_in_bytes
+  0     [+hdr_size]  CommandHeader  header
+  let length = header.parameter_total_size
+  $next [+length] UInt:8[] payload
 
 struct EventHeader:
   -- HCI Event packet header.
