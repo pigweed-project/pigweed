@@ -62,6 +62,7 @@ void AdvertisingPacketFilter::SetPacketFilters(
     // loaded into the Controller, the Controller will return no result peers.
     filters.emplace_back();
   }
+
   scan_id_to_filters_[scan_id] = filters;
 }
 
@@ -85,6 +86,10 @@ void AdvertisingPacketFilter::ClearPacketFilters(ResultFunction<> callback) {
 
 void AdvertisingPacketFilter::UseOffloadedFiltering(ResultFunction<> callback) {
   ResetFilterState();
+
+  if (filtering_state_ != FilteringState::kOffloadedFiltering) {
+    bt_log(INFO, "hci-le", "using offloaded advertising packet filtering");
+  }
   filtering_state_ = FilteringState::kOffloadedFiltering;
 
   // Cancel any ongoing HCI command sequence. Interrupting an in-flight
@@ -98,7 +103,6 @@ void AdvertisingPacketFilter::UseOffloadedFiltering(ResultFunction<> callback) {
     hci_cmd_runner_->Cancel();
   }
 
-  bt_log(INFO, "hci-le", "using offloaded advertising packet filtering");
   hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
   hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
 
@@ -135,6 +139,10 @@ void AdvertisingPacketFilter::UseOffloadedFiltering(ResultFunction<> callback) {
 
 void AdvertisingPacketFilter::UseHostFiltering(ResultFunction<> callback) {
   ResetFilterState();
+
+  if (filtering_state_ != FilteringState::kHostFiltering) {
+    bt_log(INFO, "hci-le", "using host advertising packet filtering");
+  }
   filtering_state_ = FilteringState::kHostFiltering;
 
   if (!config_.offloading_supported()) {
@@ -148,7 +156,6 @@ void AdvertisingPacketFilter::UseHostFiltering(ResultFunction<> callback) {
     hci_cmd_runner_->Cancel();
   }
 
-  bt_log(INFO, "hci-le", "using host advertising packet filtering");
   FilterIndex filter_index = NextFilterIndex().value();
   hci_cmd_runner_->QueueCommand(BuildEnableCommand(false));
   hci_cmd_runner_->QueueCommand(BuildClearParametersCommand());
