@@ -300,6 +300,31 @@ TEST(PwpbSerialize, MaxEncodedSizeDynamicForNestedCallbackField) {
   EXPECT_EQ(encoded.size(), max_size);
 }
 
+TEST(PwpbSerialize, ReservationSizeUsesTypeMaximumWhenItFits) {
+  constexpr size_t kMax = TestRequest::kMaxEncodedSizeBytesWithoutValues;
+  EXPECT_EQ(TestRequestSerializer::ReservationSize(kProto, kMax), kMax);
+  EXPECT_EQ(TestRequestSerializer::ReservationSize(kProto, kMax + 100), kMax);
+}
+
+// A message type whose maximum size exceeds the link's payload limit can still
+// send values that fit, since only the value's exact size is reserved.
+TEST(PwpbSerialize, ReservationSizeUsesExactSizeWhenMaximumDoesNotFit) {
+  constexpr size_t kMax = TestRequest::kMaxEncodedSizeBytesWithoutValues;
+  static_assert(kMax > 2u);
+  EXPECT_EQ(TestRequestSerializer::ReservationSize(kProto, kMax - 1), 2u);
+  EXPECT_EQ(TestRequestSerializer::ReservationSize(kProto, 0), 2u);
+}
+
+TEST(PwpbSerialize, ReservationSizeForCallbackMessageIsExact) {
+  static constexpr std::string_view kPayload = "abc";
+  CallbackMessage::Message msg{};
+  msg.name.SetEncoder([](CallbackMessage::StreamEncoder& encoder) {
+    return encoder.WriteName(kPayload);
+  });
+  EXPECT_EQ(CallbackMessageSerializer::ReservationSize(msg, 1000),
+            2u + kPayload.size());
+}
+
 TEST(PwpbSerialize, SerializeEmptyNestedSubmessageInExactSizeBuffer) {
   ParentWithCallbackChild::Message msg{};
   msg.id = 7;

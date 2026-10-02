@@ -117,6 +117,29 @@ struct PwpbSerializer {
     }
   }
 
+  /// The payload size to reserve to write `value` into at most
+  /// `payload_limit` bytes. See `internal::ReservationSize()`.
+  ///
+  /// A callback-free message reserves the type's maximum size when that fits,
+  /// which needs no sizing pass. Otherwise it reserves the value's exact
+  /// encoded size, so that a message type sized for a larger link can still
+  /// send values that fit. (A message with callbacks is always sized exactly
+  /// by `MaxEncodedSize()`.)
+  template <typename MessageType>
+  static size_t ReservationSize(const MessageType& value,
+                                size_t payload_limit) {
+    if constexpr (!HasDecodeCallbacks(kTable)) {
+      if (kMaxSizeBytes <= payload_limit) {
+        return kMaxSizeBytes;
+      }
+      const StatusWithSize result = PwpbSerde<kTable>::EncodedSizeBytes(value);
+      return result.ok() ? result.size() : kMaxSizeBytes;
+    } else {
+      static_cast<void>(payload_limit);
+      return MaxEncodedSize(value);
+    }
+  }
+
   template <typename MessageType>
   static StatusWithSize Serialize(const MessageType& value,
                                   span<std::byte> destination) {

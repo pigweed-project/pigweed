@@ -68,7 +68,7 @@ handshake, it should terminate the connection.
        Note over C: Validate response magic and version
        C->>S: ACK (negotiated_version)
        Note over C,S: Connection established, begin RPC phase
-       C->>S: REQUEST (service_id, method_id, call_id)
+       C->>S: START (service_id, method_id, call_id)
 
 Handshake packet
 ================
@@ -107,8 +107,10 @@ Once the handshake is complete, RPC packets are sent over the connection.
 RPC call flows
 ==============
 The diagrams below show the lifecycles of each of the four RPC call types.
-Note that the server may always terminate the RPC early by sending a final
-``RESPONSE`` or ``SERVER_STREAM_END`` packet.
+Packets are labeled with their type flags; see
+:ref:`module-pw_rpc2-protocol-types`. Note that the server may always terminate
+the RPC early by sending an ``OK_TERMINAL`` packet, and either side may abort it
+with an ``ERROR_TERMINAL`` packet.
 
 Unary RPC
 ---------
@@ -120,8 +122,8 @@ Unary RPC
        participant C as Client
        participant S as Server
 
-       C->>S: REQUEST (request payload)
-       S->>C: RESPONSE (response payload)
+       C->>S: START | HAS_PAYLOAD | STREAM_END (request)
+       S->>C: SERVER | HAS_PAYLOAD | OK_TERMINAL (response)
 
 Server streaming RPC
 --------------------
@@ -133,11 +135,11 @@ Server streaming RPC
        participant C as Client
        participant S as Server
 
-       C->>S: REQUEST (request payload)
+       C->>S: START | HAS_PAYLOAD | STREAM_END (request)
        loop Zero or more
-           S->>C: SERVER_MESSAGE (response payload)
+           S->>C: SERVER | HAS_PAYLOAD (response)
        end
-       S->>C: SERVER_STREAM_END
+       S->>C: SERVER | OK_TERMINAL
 
 Client streaming RPC
 --------------------
@@ -149,12 +151,12 @@ Client streaming RPC
        participant C as Client
        participant S as Server
 
-       C->>S: REQUEST (no payload)
+       C->>S: START
        loop Zero or more
-           C->>S: CLIENT_MESSAGE (request payload)
+           C->>S: HAS_PAYLOAD (request)
        end
-       C->>S: CLIENT_STREAM_END
-       S->>C: RESPONSE (response payload)
+       C->>S: STREAM_END
+       S->>C: SERVER | HAS_PAYLOAD | OK_TERMINAL (response)
 
 Bidirectional streaming RPC
 ---------------------------
@@ -166,18 +168,18 @@ Bidirectional streaming RPC
        participant C as Client
        participant S as Server
 
-       C->>S: REQUEST (no payload)
+       C->>S: START
        par Client stream
            loop Zero or more
-               C->>S: CLIENT_MESSAGE (request payload)
+               C->>S: HAS_PAYLOAD (request)
            end
-           C->>S: CLIENT_STREAM_END
+           C->>S: STREAM_END
        and Server stream
            loop Zero or more
-               S->>C: SERVER_MESSAGE (response payload)
+               S->>C: SERVER | HAS_PAYLOAD (response)
            end
        end
-       S->>C: SERVER_STREAM_END
+       S->>C: SERVER | OK_TERMINAL
 
 RPC packet header structure
 ===========================
@@ -205,64 +207,194 @@ Every RPC packet begins with a common 5-byte header:
 
 RPC packet types
 ================
-The protocol defines eight types of RPC packet. In each type, bit 0 indicates
-the direction of the packet; a value of 0 means client-to-server, while 1
-means server-to-client.
+The ``type`` byte of an RPC packet is not an enumeration. It is a bitfield of
+independent properties, and each packet combines them:
+
+.. code-block:: output
+
+   Bit:    7   6   5     4   3        2          1           0
+         +---+---+---+-----------+--------+-------------+---------+
+         | 0 | 0 | 0 | CloseMode | START  | HAS_PAYLOAD | SERVER  |
+         +---+---+---+-----------+--------+-------------+---------+
 
 .. list-table::
-   :widths: 20 10 15 55
+   :widths: 15 10 20 55
    :header-rows: 1
 
-   * - Packet type
-     - Value
-     - Direction
+   * - Bits
+     - Mask
+     - Name
+     - Meaning
+   * - 0
+     - ``00001``
+     - ``SERVER``
+     - ``0``: sent by the client. ``1``: sent by the server.
+   * - 1
+     - ``00010``
+     - ``HAS_PAYLOAD``
+     - The packet carries a message, which may be empty, following its header.
+       A packet without this bit ends with its header.
+   * - 2
+     - ``00100``
+     - ``START``
+     - The packet starts a new call. Its header includes the ``service_id``
+       and ``method_id`` to invoke.
+   * - 4:3
+     - ``11000``
+     - ``CloseMode``
+     - - ``00`` (``OPEN``, ``00000``): The sender's stream stays open.
+       - ``01`` (``STREAM_END``, ``01000``): The sender half-closes its
+         stream.
+       - ``10`` (``OK_TERMINAL``, ``10000``): The RPC completes successfully
+         in both directions.
+       - ``11`` (``ERROR_TERMINAL``, ``11000``): The RPC aborts in both
+         directions with an error code following the header.
+   * - 7:5
+     - ``0xE0``
+     - Reserved
+     - Must be ``0``.
+
+Only the following 14 combinations are valid. A packet of any other type is
+rejected as malformed.
+
+.. list-table::
+   :widths: 10 35 55
+   :header-rows: 1
+
+   * - Value
+     - Combination
      - Description
+   * - ``00010``
+     - ``HAS_PAYLOAD``
+     - Client stream message.
+   * - ``00011``
+     - ``SERVER | HAS_PAYLOAD``
+     - Server stream message.
+   * - ``00100``
+     - ``START``
+     - Opens a client or bidirectional streaming call without a message.
+   * - ``00110``
+     - ``START | HAS_PAYLOAD``
+     - Opens a client or bidirectional streaming call with its first message.
+   * - ``01000``
+     - ``STREAM_END``
+     - Client half-closes its stream.
+   * - ``01001``
+     - ``SERVER | STREAM_END``
+     - Server half-closes its stream. The RPC continues until the server ends it
+       with ``10001``, ``10011``, or ``11001``. See :ref:`below
+       <module-pw_rpc2-protocol-server-half-close>`.
+   * - ``01010``
+     - ``HAS_PAYLOAD | STREAM_END``
+     - Client's final stream message, closing its stream.
+   * - ``01011``
+     - ``SERVER | HAS_PAYLOAD | STREAM_END``
+     - Server's final stream message, half-closing its stream. Like ``01001``,
+       the RPC continues until the server ends it.
+   * - ``01100``
+     - ``START | STREAM_END``
+     - Opens a client or bidirectional streaming call and immediately closes
+       the client's stream without sending a message.
+   * - ``01110``
+     - ``START | HAS_PAYLOAD | STREAM_END``
+     - Starts a unary or server streaming call with its request, which may be
+       empty. Also valid for a client streaming call with a single message.
+   * - ``10001``
+     - ``SERVER | OK_TERMINAL``
+     - Server finishes its stream and completes the RPC.
+   * - ``10011``
+     - ``SERVER | HAS_PAYLOAD | OK_TERMINAL``
+     - Server's response, completing a unary or client streaming RPC.
+   * - ``11000``
+     - ``ERROR_TERMINAL``
+     - Client aborts the RPC. Carries a 16-bit ``ProtocolStatus`` value.
+   * - ``11001``
+     - ``SERVER | ERROR_TERMINAL``
+     - Server aborts the RPC. Carries a 16-bit ``ProtocolStatus`` value.
 
-   * - ``REQUEST``
-     - ``0x02``
-     - Client → server
-     - Client initiates an RPC call. Specifies the target ``service_id``,
-       ``method_id``, and optional initial payload.
+A packet without ``HAS_PAYLOAD`` must end with its header. A receiver rejects
+any packet without ``HAS_PAYLOAD`` that has trailing bytes as malformed.
 
-   * - ``RESPONSE``
-     - ``0x03``
-     - Server → client
-     - The single final response payload from the server in a unary or client
-       streaming RPC.
+When the server ends the RPC with ``10001`` or ``10011``, the client stops
+sending on any stream it still has open.
 
-   * - ``CLIENT_MESSAGE``
-     - ``0x04``
-     - Client → server
-     - A stream data message in a client or bidirectional streaming RPC.
+.. _module-pw_rpc2-protocol-server-half-close:
 
-   * - ``SERVER_MESSAGE``
-     - ``0x05``
-     - Server → client
-     - A stream data message in a server or bidirectional streaming RPC.
+Server half-close
+-----------------
+A server may half-close its stream with ``01001`` or ``01011`` to stop
+sending messages while it continues to read the client's stream. This does not
+end the RPC: the server still sends a terminal packet (``10001``, ``10011``,
+or ``11001``) later, which carries the call's final status.
 
-   * - ``CLIENT_STREAM_END``
-     - ``0x06``
-     - Client → server
-     - Signals normal completion of a client-to-server stream
-       (client streaming, bidirectional). The server may continue transmitting.
+The protocol allows either the client or the server to half-close its stream.
+The C++ server currently always ends the RPC when it closes its stream, for
+consistency with gRPC. Server half-close packets are valid, however, so every
+client must handle them: after a server half-close, a client drops any further
+server messages and waits for the terminal packet before completing the call.
 
-   * - ``SERVER_STREAM_END``
-     - ``0x07``
-     - Server → client
-     - Signals normal completion of a server-to-client stream
-       (server streaming, bidirectional) and finishes the RPC call.
+Method type mismatches
+----------------------
+Because the type byte states what a packet contains, an endpoint does not rely
+on its own view of a method's type to parse a packet. If the client and server
+disagree about a method's type, the endpoint that receives a packet its method
+cannot accept fails the call with ``METHOD_TYPE_MISMATCH`` instead of misreading
+or dropping a message:
 
-   * - ``CLIENT_ERROR``
-     - ``0x08``
-     - Client → server
-     - Signals abnormal call termination or a protocol fault from the client.
-       Carries a 16-bit ``ClientError`` value.
+* A unary or server streaming method takes a single request, so the server
+  accepts only ``01110`` (``START | HAS_PAYLOAD | STREAM_END``) to start it.
+  It rejects any other ``START`` packet with the server error
+  ``METHOD_TYPE_MISMATCH`` without invoking the method.
+* A unary or client streaming call takes a single response, so the client
+  accepts only ``10011`` (``SERVER | HAS_PAYLOAD | OK_TERMINAL``) or an error
+  (``11001``) from the server. For any other packet, it sends the client error
+  ``METHOD_TYPE_MISMATCH``, which aborts the call on the server, before
+  delivering anything from the packet. If the packet already ended the RPC
+  (``10001``), the client sends nothing.
 
-   * - ``SERVER_ERROR``
-     - ``0x09``
-     - Server → client
-     - Signals abnormal call termination or a protocol fault from the server.
-       Carries a 16-bit ``ServerError`` value.
+Either way, the client's call completes with ``FAILED_PRECONDITION``.
+
+A streaming endpoint accepts ``01110`` or ``10011``, which represent a
+stream of a single message. A mismatch that produces only these packets
+completes normally because no message is lost or misread:
+
+.. list-table::
+   :widths: 30 30 40
+   :header-rows: 1
+
+   * - Client's method type
+     - Server's method type
+     - Result
+   * - Unary
+     - Client streaming
+     - Works: the client sends ``01110`` and the server replies ``10011``.
+   * - Unary
+     - Server streaming
+     - Fails, unless the server replies with a single ``10011``.
+   * - Unary
+     - Bidirectional streaming
+     - Fails, unless the server replies with a single ``10011``.
+   * - Server streaming
+     - Unary
+     - Works: the server's ``10011`` is a stream of one message.
+   * - Server streaming
+     - Client streaming
+     - Works, as above.
+   * - Server streaming
+     - Bidirectional streaming
+     - Works: the client sends ``01110`` and reads the server's stream.
+   * - Client streaming
+     - Unary or server streaming
+     - Fails: the server requires ``01110``.
+   * - Client streaming
+     - Bidirectional streaming
+     - Fails, unless the server replies with a single ``10011``.
+   * - Bidirectional streaming
+     - Unary or server streaming
+     - Fails: the server requires ``01110``.
+   * - Bidirectional streaming
+     - Client streaming
+     - Works: the server's ``10011`` is a stream of one message.
 
 Packet structures
 =================
@@ -276,9 +408,9 @@ The fields of each RPC packet are listed below.
    over an RPC connection contain only, and exactly, the bytes of a single
    packet without any padding.
 
-``REQUEST`` packet (type ``0x02``)
-----------------------------------
-Initiated by a client to invoke an RPC. Its header size is **13 bytes**.
+Start packets (``START`` set)
+-----------------------------
+Starts an RPC. Its header size is **13 bytes**.
 
 .. list-table::
    :header-rows: 1
@@ -291,7 +423,7 @@ Initiated by a client to invoke an RPC. Its header size is **13 bytes**.
    * - 0
      - 5
      - Header
-     - Common RPC packet header with ``type`` ``0x02``
+     - Common RPC packet header with ``START`` set
    * - 5
      - 4
      - ``service_id`` (``uint32_t``)
@@ -303,72 +435,10 @@ Initiated by a client to invoke an RPC. Its header size is **13 bytes**.
    * - 13
      - Variable
      - Payload
-     - Remainder of the packet
+     - Remainder of the packet, present only if ``HAS_PAYLOAD`` is set
 
-``RESPONSE`` packet (type ``0x03``)
------------------------------------
-Carries the final response from the server in a unary or client streaming RPC.
-Its header size is **5 bytes**.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 15 20 50
-
-   * - Offset
-     - Size
-     - Name
-     - Description
-   * - 0
-     - 5
-     - Header
-     - Common RPC packet header with ``type`` ``0x03``
-   * - 5
-     - Variable
-     - Payload
-     - Remainder of the packet
-
-``CLIENT_MESSAGE`` and ``SERVER_MESSAGE`` packets (types ``0x04`` and ``0x05``)
--------------------------------------------------------------------------------
-Carries a streamed datagram from client to server (``0x04``) or server to client
-(``0x05``). Its header size is **5 bytes**.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 15 20 50
-
-   * - Offset
-     - Size
-     - Name
-     - Description
-   * - 0
-     - 5
-     - Header
-     - Common RPC packet header with ``type`` ``0x04`` or ``0x05``
-   * - 5
-     - Variable
-     - Payload
-     - Remainder of the packet
-
-``CLIENT_STREAM_END`` and ``SERVER_STREAM_END`` packets (types ``0x06`` and ``0x07``)
--------------------------------------------------------------------------------------
-Signals the normal completion of a stream from client to server (``0x06``) or
-server to client (``0x07``). Its header size is **5 bytes**.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 15 15 20 50
-
-   * - Offset
-     - Size
-     - Name
-     - Description
-   * - 0
-     - 5
-     - Header
-     - Common RPC packet header with ``type`` ``0x06`` or ``0x07``
-
-``CLIENT_ERROR`` and ``SERVER_ERROR`` packets (types ``0x08`` and ``0x09``)
----------------------------------------------------------------------------
+Error packets (``ERROR_TERMINAL`` set)
+--------------------------------------
 Aborts an RPC call immediately. Its header size is **7 bytes**.
 
 .. list-table::
@@ -382,21 +452,36 @@ Aborts an RPC call immediately. Its header size is **7 bytes**.
    * - 0
      - 5
      - Header
-     - Common RPC packet header with ``type`` ``0x08`` or ``0x09``
+     - Common RPC packet header with ``type`` ``11000`` or ``11001``
    * - 5
      - 2
      - ``error`` (``uint16_t``)
-     - ``ClientError`` (``0x08``) or ``ServerError`` (``0x09``) value
+     - ``ProtocolStatus`` value
+
+All other packets
+-----------------
+Every other packet has a **5-byte** header consisting only of the common RPC
+packet header. If ``HAS_PAYLOAD`` is set, the payload is the remainder of the
+packet.
 
 RPC error codes
 ===============
-``CLIENT_ERROR`` and ``SERVER_ERROR`` packets contain one of several error
-codes, whose meanings are listed below.
+Error packets (``11000`` and ``11001``) carry a ``ProtocolStatus`` code. Codes
+are partitioned into decimal ranges so that common and role-specific codes
+remain distinct and can be extended independently:
+
+- **Common codes** (``0``--``99``): Valid in both client (``11000``) and server
+  (``11001``) error packets, except ``OK`` (``0``), which is never sent on the
+  wire.
+- **Server-only codes** (``100``--``199``): Only valid in server error packets
+  (``11001``).
+- **Reserved** (``200``--``255``): Reserved for future use (e.g., client-only
+  error codes).
 
 ..
    # LINT.IfChange(rpc2_error_codes)
 
-.. list-table:: Client error codes
+.. list-table:: Common error codes (0--99)
    :header-rows: 1
    :widths: 10 40 50
 
@@ -414,56 +499,47 @@ codes, whose meanings are listed below.
      - A bug in the RPC implementation.
    * - ``3``
      - ``CANCELLED``
-     - The call was deliberately cancelled by the client-side application code.
+     - The call was deliberately cancelled by application code.
    * - ``4``
-     - ``RECEIVED_PACKET_FOR_SERVER``
-     - The client received a packet type that may only be sent from a client
-       to a server.
-
-.. list-table:: Server error codes
-   :header-rows: 1
-   :widths: 10 40 50
-
-   * - Value
-     - Name
-     - Description
-   * - ``0``
-     - ``OK``
-     - No error. Never sent.
-   * - ``1``
-     - ``UNKNOWN``
-     - Unrecognized error code.
-   * - ``2``
-     - ``INTERNAL``
-     - A bug in the RPC implementation.
-   * - ``3``
-     - ``CANCELLED``
-     - The call was deliberately cancelled by the server-side application code.
-   * - ``4``
-     - ``RECEIVED_PACKET_FOR_CLIENT``
-     - The server received a packet type that may only be sent from a server
-       to a client.
+     - ``RECEIVED_PACKET_FOR_WRONG_ENDPOINT``
+     - The endpoint received a packet type that may only be sent by its own
+       role (a server received a server-to-client packet, or a client received
+       a client-to-server packet).
    * - ``5``
+     - ``METHOD_TYPE_MISMATCH``
+     - A packet does not match the method's type. Unary and server streaming
+       calls must be started with ``START | HAS_PAYLOAD | STREAM_END``
+       (``01110``); unary and client streaming calls must be answered with
+       ``SERVER | HAS_PAYLOAD | OK_TERMINAL`` (``10011``).
+
+.. list-table:: Server-only error codes (100--199)
+   :header-rows: 1
+   :widths: 10 40 50
+
+   * - Value
+     - Name
+     - Description
+   * - ``100``
      - ``DROPPED_WITHOUT_RESPONSE``
      - The server released a unary call without sending a response or
        cancelling it.
-   * - ``6``
+   * - ``101``
      - ``SERVICE_UNREGISTERED``
      - The target service was unregistered from the server while the call was
        running.
-   * - ``7``
+   * - ``102``
      - ``UNKNOWN_SERVICE``
      - The requested service is not registered on the server.
-   * - ``8``
+   * - ``103``
      - ``UNKNOWN_METHOD``
      - The requested method is not registered on the target service.
-   * - ``9``
+   * - ``104``
      - ``INVALID_REQUEST_PAYLOAD``
      - The request payload was invalid.
-   * - ``10``
+   * - ``105``
      - ``FAILED_TO_ALLOCATE_CALL``
      - Failed to allocate call state for an incoming request.
-   * - ``11``
+   * - ``106``
      - ``FAILED_TO_ALLOCATE_CALL_RESOURCES_WHILE_RUNNING``
      - Failed to allocate necessary resources while running the call.
 

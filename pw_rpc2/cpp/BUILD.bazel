@@ -31,7 +31,10 @@ pw_cc_enum_library(
 cc_library(
     name = "packet",
     srcs = ["packet.cc"],
-    hdrs = ["public/pw_rpc2/internal/packet.h"],
+    hdrs = [
+        "public/pw_rpc2/internal/packet.h",
+        "public/pw_rpc2/internal/packet_type.h",
+    ],
     strip_include_prefix = "public",
     deps = [
         ":protocol_status",
@@ -125,4 +128,343 @@ cc_library(
         "public/pw_rpc2/method_type.h",
     ],
     strip_include_prefix = "public",
+)
+
+cc_library(
+    name = "handshake",
+    srcs = ["handshake.cc"],
+    hdrs = ["public/pw_rpc2/internal/handshake.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":packet",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_preprocessor",
+        "//pw_result",
+        "//pw_status",
+        "//pw_transport/cpp:pw_transport",
+    ],
+)
+
+# The connection layer and the handle types it hands to a method. `Call` and
+# `Reader`/`Writer` refer to each other --- `call.cc` defines `ReadFutureBase`,
+# and a handle holds a reference to its call --- so they are one target rather
+# than a layer and a public face of it.
+_CONNECTION_HDRS = [
+    "public/pw_rpc2/internal/call.h",
+    "public/pw_rpc2/internal/call_handle.h",
+    "public/pw_rpc2/internal/client_connection_task.h",
+    "public/pw_rpc2/internal/connection_task.h",
+    "public/pw_rpc2/internal/control_future.h",
+    "public/pw_rpc2/internal/future_base.h",
+    "public/pw_rpc2/reader.h",
+    "public/pw_rpc2/write_reservation.h",
+    "public/pw_rpc2/writer.h",
+]
+
+_CONNECTION_DEPS = [
+    ":handshake",
+    ":method",
+    ":packet",
+    ":protocol_status",
+    ":serialize",
+    "//pw_allocator",
+    "//pw_assert:assert",
+    "//pw_assert:check",
+    "//pw_async2",
+    "//pw_async2:channel",
+    "//pw_async2:future_or_value",
+    "//pw_async2:value_future",
+    "//pw_buf",
+    "//pw_bytes",
+    "//pw_containers:algorithm",
+    "//pw_containers:dynamic_deque",
+    "//pw_containers:intrusive_forward_list",
+    "//pw_intrusive_ptr",
+    "//pw_log",
+    "//pw_polyfill",
+    "//pw_result",
+    "//pw_status",
+    "//pw_sync:interrupt_spin_lock",
+    "//pw_sync:lock_annotations",
+    "//pw_transport/cpp:pw_transport",
+]
+
+cc_library(
+    name = "connection",
+    srcs = [
+        "call.cc",
+        "client_connection_task.cc",
+        "connection_task.cc",
+        "write_reservation.cc",
+    ],
+    hdrs = _CONNECTION_HDRS,
+    strip_include_prefix = "public",
+    deps = _CONNECTION_DEPS,
+)
+
+_CORO_DEPS = select({
+    "//pw_toolchain/cc:c++20_enabled": ["//pw_async2:coro"],
+    "//conditions:default": [],
+})
+
+cc_library(
+    name = "server",
+    srcs = [
+        "server_call.cc",
+        "server_connection_task.cc",
+        "server_task.cc",
+        "service.cc",
+    ],
+    hdrs = [
+        "public/pw_rpc2/internal/method.h",
+        "public/pw_rpc2/internal/method_future.h",
+        "public/pw_rpc2/internal/method_invoker.h",
+        "public/pw_rpc2/internal/method_traits.h",
+        "public/pw_rpc2/internal/server_call.h",
+        "public/pw_rpc2/internal/server_connection_task.h",
+        "public/pw_rpc2/internal/server_task.h",
+        "public/pw_rpc2/server.h",
+        "public/pw_rpc2/service.h",
+    ],
+    strip_include_prefix = "public",
+    deps = _CONNECTION_DEPS + _CORO_DEPS + [
+        ":connection",
+        "//pw_async2:box",
+        "//pw_bytes:alignment",
+        "//pw_containers:forward_list",
+        "//pw_function",
+        "//pw_preprocessor",
+        "//pw_span",
+        "//third_party/fuchsia:stdcompat",
+    ],
+)
+
+cc_library(
+    name = "pw_rpc2",
+    deps = [
+        ":server",
+    ],
+)
+
+alias(
+    name = "cpp",
+    actual = ":pw_rpc2",
+)
+
+cc_library(
+    name = "test_utils",
+    testonly = True,
+    srcs = ["test_utils.cc"],
+    hdrs = [
+        "public/pw_rpc2/internal/packet_testing.h",
+        "public/pw_rpc2/internal/test_utils.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":connection",
+        ":handshake",
+        ":method",
+        ":packet",
+        ":protocol_status",
+        ":serialize",
+        "//pw_allocator",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:value_future",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_containers:inline_deque",
+        "//pw_containers:vector",
+        "//pw_log",
+        "//pw_result",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "handshake_test",
+    srcs = ["handshake_test.cc"],
+    deps = [
+        ":handshake",
+        ":packet",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_bytes",
+        "//pw_status",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "call_test",
+    srcs = ["call_test.cc"],
+    deps = [
+        ":connection",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2:testing",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "rpc_reader_writer_test",
+    srcs = ["rpc_reader_writer_test.cc"],
+    deps = [
+        ":connection",
+        ":packet",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2:testing",
+        "//pw_bytes",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "server_dispatch_test",
+    srcs = ["server_dispatch_test.cc"],
+    deps = [
+        ":connection",
+        ":handshake",
+        ":packet",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_bytes",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "connection_task_test",
+    srcs = ["connection_task_test.cc"],
+    deps = [
+        ":connection",
+        ":handshake",
+        ":packet",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_bytes",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "server_test",
+    srcs = ["server_test.cc"],
+    deps = [
+        ":connection",
+        ":handshake",
+        ":method",
+        ":packet",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_async2:value_future",
+        "//pw_span",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "method_future_test",
+    srcs = ["method_future_test.cc"],
+    deps = [
+        ":server",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "internal_server_call_test",
+    srcs = ["internal_server_call_test.cc"],
+    deps = [
+        ":connection",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "method_test",
+    srcs = ["method_test.cc"],
+    deps = [
+        ":connection",
+        ":method",
+        ":server",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_assert:check",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "method_traits_test",
+    srcs = ["method_traits_test.cc"],
+    deps = [
+        ":connection",
+        ":method",
+        ":server",
+        "//pw_async2:poll",
+        "//pw_buf",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_status",
+        "//pw_unit_test",
+    ],
+)
+
+pw_cc_test(
+    name = "server_call_test",
+    srcs = ["server_call_test.cc"],
+    deps = [
+        ":connection",
+        ":packet",
+        ":test_utils",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_transport/cpp:pw_transport",
+        "//pw_unit_test",
+    ],
 )

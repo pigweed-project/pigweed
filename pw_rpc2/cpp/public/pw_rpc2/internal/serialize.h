@@ -37,34 +37,66 @@ struct SerializerFor<T, std::void_t<typename T::Serializer>> {
 };
 
 template <>
-struct SerializerFor<ConstBuf> {
+struct SerializerFor<ConstByteSpan> {
   struct type {
-    static size_t MaxEncodedSize(const ConstBuf& buf) { return buf.size(); }
-    static StatusWithSize Serialize(const ConstBuf& buf,
+    static size_t MaxEncodedSize(ConstByteSpan bytes) { return bytes.size(); }
+    static StatusWithSize Serialize(ConstByteSpan bytes,
                                     span<std::byte> destination) {
-      if (destination.size() < buf.size()) {
+      if (destination.size() < bytes.size()) {
         return StatusWithSize::ResourceExhausted();
       }
-      std::memcpy(destination.data(), buf.data(), buf.size());
-      return StatusWithSize(OkStatus(), buf.size());
+      if (!bytes.empty()) {
+        std::memcpy(destination.data(), bytes.data(), bytes.size());
+      }
+      return StatusWithSize(OkStatus(), bytes.size());
     }
   };
 };
 
+template <>
+struct SerializerFor<ConstBuf> : SerializerFor<ConstByteSpan> {};
+
 /// Returns an upper bound on the number of bytes `value` serializes to.
 ///
-/// This is the amount of transport buffer that must be reserved to write
-/// `value`.
-///
-/// @warning For protobuf messages this is the maximum encoded size of the
-/// message *type*, not the size of this particular value: pwpb cannot
-/// determine the exact size without encoding. Writing a message therefore
-/// reserves `kMaxEncodedSizeBytes` of transport buffer however sparsely
-/// populated it is, and the reservation is truncated to the real size only
-/// after encoding. Raw (`ConstBuf`) payloads report their exact size.
+/// @warning For protobuf messages without callback fields this is the
+/// maximum encoded size of the message *type*, not the size of this
+/// particular value. For messages with callback fields it is computed by a
+/// sizing pass that runs the encode callbacks, so side-effecting callbacks run
+/// once more when the message is written. Raw (`ConstBuf`) payloads report
+/// their exact size.
 template <typename T>
 inline size_t MaxEncodedSize(const T& value) {
   return SerializerFor<T>::type::MaxEncodedSize(value);
+}
+
+template <typename Serializer, typename T, typename = void>
+inline constexpr bool kHasReservationSize = false;
+
+template <typename Serializer, typename T>
+inline constexpr bool
+    kHasReservationSize<Serializer,
+                        T,
+                        std::void_t<decltype(Serializer::ReservationSize(
+                            std::declval<const T&>(), size_t{}))>> = true;
+
+/// Returns the number of payload bytes to reserve to write `value` in a
+/// packet whose payload can hold at most `payload_limit` bytes.
+///
+/// This is `MaxEncodedSize(value)`, unless that exceeds `payload_limit` and
+/// the serializer can compute a smaller bound for this particular value, which
+/// it does by providing
+/// `static size_t ReservationSize(const T&, size_t payload_limit)`. The pwpb
+/// serializer does: a message type sized for a large link stays usable on a
+/// smaller one as long as each value fits, at the cost of a sizing pass for
+/// values of types whose maximum does not fit.
+template <typename T>
+inline size_t ReservationSize(const T& value, size_t payload_limit) {
+  using Serializer = typename SerializerFor<T>::type;
+  if constexpr (kHasReservationSize<Serializer, T>) {
+    return Serializer::ReservationSize(value, payload_limit);
+  } else {
+    return Serializer::MaxEncodedSize(value);
+  }
 }
 
 /// Generic helper to serialize a message into a byte span.

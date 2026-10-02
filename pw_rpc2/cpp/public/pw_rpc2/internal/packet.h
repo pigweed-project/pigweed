@@ -25,80 +25,11 @@
 #include "pw_enum/traits.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_result/result.h"
+#include "pw_rpc2/internal/packet_type.h"
 #include "pw_rpc2/internal/protocol_status.h"
 #include "pw_status/status.h"
 
 namespace pw::rpc2::internal {
-
-/// Identifies the role of an RPC endpoint on a connection.
-enum class EndpointRole : uint8_t {
-  kClient = 0,  // Sends even PacketTypes (bit 0 == 0), expects odd (1).
-  kServer = 1,  // Sends odd PacketTypes (bit 0 == 1), expects even (0).
-};
-
-/// Identifies the role and wire format of a regular protocol packet in pw_rpc2.
-///
-/// These packets are exchanged after the initial handshake is established.
-/// Encoded in the packet header to indicate how the packet is framed,
-/// decoded, and processed.
-///
-/// Client-to-server packets use even values (`bit 0 == 0`) and server-to-client
-/// packets use odd values (`bit 0 == 1`). Values are paired so that clearing
-/// bit 0 maps a server packet to its client counterpart, and ordered so that
-/// payload-carrying packets (`< kClientStreamEnd`) precede payload-free control
-/// packets (`>= kClientStreamEnd`).
-enum class PacketType : uint8_t {
-  /// Initiates an RPC invocation from client to server.
-  kRequest = 0x02,
-
-  /// Completes a unary or client-streaming RPC from server to client and
-  /// delivers a response payload.
-  kResponse = 0x03,
-
-  /// Carries streaming payload data from client to server.
-  kClientMessage = 0x04,
-
-  /// Carries streaming payload data from server to client.
-  kServerMessage = 0x05,
-
-  /// Signals the completion of a client stream.
-  kClientStreamEnd = 0x06,
-
-  /// Signals the completion of a server stream.
-  kServerStreamEnd = 0x07,
-
-  /// Terminates an RPC from the client with a `ClientError`.
-  kClientError = 0x08,
-
-  /// Terminates an RPC from the server with a `ServerError`.
-  kServerError = 0x09,
-};
-
-/// True if `type` is a recognized `PacketType`.
-constexpr bool IsValidPacketType(PacketType type) {
-  return type >= PacketType::kRequest && type <= PacketType::kServerError;
-}
-
-/// True if `type` is a valid packet type addressed to `destination`.
-constexpr bool IsPacketFor(PacketType type, EndpointRole destination) {
-  // Rebase so valid types are 0-7, then keep bit 0 (direction) and bits 3+
-  // (out of range, including values below kRequest, which wrap around). The
-  // result matches only for in-range types sent by the opposite role.
-  const uint8_t offset =
-      static_cast<uint8_t>(type) - static_cast<uint8_t>(PacketType::kRequest);
-  return (offset & ~uint8_t{0x06}) == (static_cast<uint8_t>(destination) ^ 1u);
-}
-
-/// True if `type` is `kClientError` or `kServerError`.
-constexpr bool IsError(PacketType type) {
-  return type == PacketType::kClientError || type == PacketType::kServerError;
-}
-
-/// True if `type` carries trailing payload bytes (`kRequest`, `kResponse`,
-/// `kClientMessage`, `kServerMessage`).
-constexpr bool HasPayload(PacketType type) {
-  return type < PacketType::kClientStreamEnd;
-}
 
 /// Common prefix of every regular protocol packet (following the handshake).
 PW_PACKED(struct) PacketHeader {
@@ -113,15 +44,6 @@ PW_PACKED(struct) RequestWireFormat {
   uint32_t service_id;
   uint32_t method_id;
 };
-
-/// Carries streaming payload data for an in-flight RPC in either direction.
-PW_PACKED(struct) MessageWireFormat { PacketHeader header; };
-
-/// Completes a unary RPC or delivers a response payload from server to client.
-PW_PACKED(struct) ResponseWireFormat { PacketHeader header; };
-
-/// Signals the end of a stream in one direction without an error.
-PW_PACKED(struct) StreamEndWireFormat { PacketHeader header; };
 
 /// Signals that an RPC has terminated abnormally with a protocol error.
 PW_PACKED(struct) ErrorWireFormat {
@@ -144,25 +66,34 @@ PW_PACKED(struct) HandshakeWireFormat {
 
 static_assert(sizeof(PacketHeader) == 5);
 static_assert(sizeof(RequestWireFormat) == 13);
-static_assert(sizeof(MessageWireFormat) == 5);
-static_assert(sizeof(ResponseWireFormat) == 5);
-static_assert(sizeof(StreamEndWireFormat) == 5);
 static_assert(sizeof(ErrorWireFormat) == 7);
 static_assert(sizeof(HandshakeWireFormat) == 8);
 
 /// Returns the wire format size for `type` excluding any trailing payload
 /// bytes.
+///
+/// A valid type never both starts a call and carries an error code, so at most
+/// one of the optional header extensions is present.
 constexpr size_t PacketSizeWithoutPayload(PacketType type) {
-  PW_DASSERT(IsValidPacketType(type));
-  if (type == PacketType::kRequest) {
+  if (type.is_start()) {
     return sizeof(RequestWireFormat);
   }
-  if (IsError(type)) {
+  if (type.is_error()) {
     return sizeof(ErrorWireFormat);
   }
   return sizeof(PacketHeader);
 }
 
+/// A decoded or to-be-encoded handshake packet.
+///
+/// Each handshake packet carries a protocol version. In a `kSyn` it is the
+/// initiator's highest supported version; in a `kSynAck` and `kAck` it is the
+/// version negotiated for the connection.
+///
+/// For forward compatibility, decoding accepts any non-zero version and
+/// packets longer than `kWireSizeBytes`: trailing bytes and the reserved field
+/// are ignored, so that later protocol versions can extend the handshake
+/// without breaking negotiation with older peers.
 class HandshakePacket {
  public:
   enum class Type : uint8_t {
@@ -171,13 +102,25 @@ class HandshakePacket {
     kAck = 3,
   };
 
+  /// The highest protocol version this implementation supports.
+  static constexpr uint8_t kMaxVersion = 1;
+
+  /// The size of the handshake packets this implementation sends, and the
+  /// minimum size it accepts.
   static constexpr size_t kWireSizeBytes = sizeof(HandshakeWireFormat);
 
+  /// Decodes a handshake packet.
+  ///
+  /// @returns
+  /// * @OK: The packet was decoded. Bytes past `kWireSizeBytes` are ignored.
+  /// * @DATA_LOSS: The packet is shorter than `kWireSizeBytes`, has the wrong
+  ///   magic value, has version 0, or has an unknown type.
   static Result<HandshakePacket> Decode(ConstByteSpan bytes);
 
-  explicit HandshakePacket(Type type) : type_(type) {}
+  explicit constexpr HandshakePacket(Type type, uint8_t version = kMaxVersion)
+      : type_(type), version_(version) {}
 
-  uint8_t version() const { return kVersion; }
+  uint8_t version() const { return version_; }
   Type type() const { return type_; }
 
   Status Encode(ByteSpan buffer) const;
@@ -185,9 +128,9 @@ class HandshakePacket {
 
  private:
   static constexpr uint32_t kMagic = 0x43505250;  // 'PRPC'
-  static constexpr uint8_t kVersion = 1;
 
   Type type_;
+  uint8_t version_;
 };
 
 /// A packet to be written to a connection.
@@ -196,102 +139,14 @@ class HandshakePacket {
 /// bytes are written separately by whoever holds the transport reservation.
 /// Copies of it are stored per pending write, so it is kept compact.
 class OutboundPacket {
- public:
-  static constexpr OutboundPacket Request(uint32_t call_id,
-                                          uint32_t service_id,
-                                          uint32_t method_id) {
-    return OutboundPacket(
-        PacketType::kRequest, call_id, Fields(service_id, method_id));
-  }
-
-  static constexpr OutboundPacket Message(EndpointRole sender,
-                                          uint32_t call_id) {
-    return OutboundPacket(sender == EndpointRole::kClient
-                              ? PacketType::kClientMessage
-                              : PacketType::kServerMessage,
-                          call_id,
-                          Fields());
-  }
-
-  static constexpr OutboundPacket ClientMessage(uint32_t call_id) {
-    return Message(EndpointRole::kClient, call_id);
-  }
-
-  static constexpr OutboundPacket ServerMessage(uint32_t call_id) {
-    return Message(EndpointRole::kServer, call_id);
-  }
-
-  static constexpr OutboundPacket Response(uint32_t call_id) {
-    return OutboundPacket(PacketType::kResponse, call_id, Fields());
-  }
-
-  static constexpr OutboundPacket StreamEnd(EndpointRole sender,
-                                            uint32_t call_id) {
-    return OutboundPacket(sender == EndpointRole::kClient
-                              ? PacketType::kClientStreamEnd
-                              : PacketType::kServerStreamEnd,
-                          call_id,
-                          Fields());
-  }
-
-  static constexpr OutboundPacket ClientStreamEnd(uint32_t call_id) {
-    return StreamEnd(EndpointRole::kClient, call_id);
-  }
-
-  static constexpr OutboundPacket ServerStreamEnd(uint32_t call_id) {
-    return StreamEnd(EndpointRole::kServer, call_id);
-  }
-
-  static constexpr OutboundPacket Error(uint32_t call_id, ClientError error) {
-    PW_DASSERT(error != ClientError::kOk);
-    return OutboundPacket(PacketType::kClientError,
-                          call_id,
-                          Fields(static_cast<uint16_t>(error)));
-  }
-
-  static constexpr OutboundPacket Error(uint32_t call_id, ServerError error) {
-    PW_DASSERT(error != ServerError::kOk);
-    return OutboundPacket(PacketType::kServerError,
-                          call_id,
-                          Fields(static_cast<uint16_t>(error)));
-  }
-
-  constexpr OutboundPacket()
-      : OutboundPacket(PacketType::kClientMessage, 0, Fields()) {}
-
-  OutboundPacket(const OutboundPacket&) = default;
-  OutboundPacket& operator=(const OutboundPacket&) = default;
-  OutboundPacket(OutboundPacket&&) noexcept = default;
-  OutboundPacket& operator=(OutboundPacket&&) noexcept = default;
-
-  constexpr PacketType type() const { return type_; }
-  constexpr uint32_t call_id() const { return call_id_; }
-
-  uint32_t service_id() const {
-    PW_DASSERT(type_ == PacketType::kRequest);
-    return fields_.request.service_id;
-  }
-
-  uint32_t method_id() const {
-    PW_DASSERT(type_ == PacketType::kRequest);
-    return fields_.request.method_id;
-  }
-
-  constexpr size_t payload_offset() const {
-    return PacketSizeWithoutPayload(type_);
-  }
-
-  /// Encodes this packet's header at the start of `buffer`.
-  ///
-  /// `payload_len` is not written to the wire; it is only used to check that
-  /// `buffer` is large enough for the header plus payload, and is included in
-  /// the returned total packet size.
-  Result<size_t> EncodeHeader(ByteSpan buffer, size_t payload_len = 0) const;
-
-  Result<Buf> Encode(Buf buffer, size_t payload_len) const;
-  Result<Buf> Encode(Buf buffer) const;
-
  private:
+  // These are declared before the public factories that use them so that the
+  // factories can be evaluated in constant expressions.
+
+  // Tests frame packets of arbitrary types, including ones the C++ endpoints
+  // never send.
+  friend class PacketFramer;
+
   struct RequestIds {
     uint32_t service_id;
     uint32_t method_id;
@@ -312,6 +167,149 @@ class OutboundPacket {
     uint16_t raw_error;
   };
 
+  // A packet that starts a call, so its header includes the method to invoke.
+  template <flags::Flag... kFlags>
+  static constexpr OutboundPacket Start(uint32_t call_id,
+                                        uint32_t service_id,
+                                        uint32_t method_id) {
+    constexpr PacketType kType = PacketType::Make<kFlags...>();
+    static_assert(kType.is_start());
+    return OutboundPacket(kType, call_id, Fields(service_id, method_id));
+  }
+
+  // A packet for an existing call that carries no error code, so its header is
+  // only the common `PacketHeader`.
+  template <flags::Flag... kFlags>
+  static constexpr OutboundPacket Basic(uint32_t call_id) {
+    constexpr PacketType kType = PacketType::Make<kFlags...>();
+    static_assert(!kType.is_start() && !kType.is_error());
+    return OutboundPacket(kType, call_id, Fields());
+  }
+
+ public:
+  /// Starts a unary or server-streaming call with its only request message,
+  /// closing the client's stream. The message may be empty.
+  static constexpr OutboundPacket StartUnary(uint32_t call_id,
+                                             uint32_t service_id,
+                                             uint32_t method_id) {
+    return Start<flags::kStart, flags::kHasPayload, flags::kStreamEnd>(
+        call_id, service_id, method_id);
+  }
+
+  /// Starts a client-streaming or bidirectional-streaming call without sending
+  /// a message. The client's stream remains open.
+  static constexpr OutboundPacket StartStream(uint32_t call_id,
+                                              uint32_t service_id,
+                                              uint32_t method_id) {
+    return Start<flags::kStart>(call_id, service_id, method_id);
+  }
+
+  static constexpr OutboundPacket Message(EndpointRole sender,
+                                          uint32_t call_id) {
+    return sender == EndpointRole::kServer ? ServerMessage(call_id)
+                                           : ClientMessage(call_id);
+  }
+
+  static constexpr OutboundPacket ClientMessage(uint32_t call_id) {
+    return Basic<flags::kHasPayload>(call_id);
+  }
+
+  static constexpr OutboundPacket ServerMessage(uint32_t call_id) {
+    return Basic<flags::kServer, flags::kHasPayload>(call_id);
+  }
+
+  /// Completes a unary or client-streaming call with its response.
+  static constexpr OutboundPacket Response(uint32_t call_id) {
+    return Basic<flags::kServer, flags::kHasPayload, flags::kOkTerminal>(
+        call_id);
+  }
+
+  /// Finishes `sender`'s outbound stream normally.
+  ///
+  /// A client half-closes its stream (`CloseMode::kStreamEnd`). A server
+  /// always ends the RPC when it finishes its stream
+  /// (`CloseMode::kOkTerminal`), so that a client still streaming requests
+  /// stops immediately instead of writing to a call that is gone.
+  static constexpr OutboundPacket Finish(EndpointRole sender,
+                                         uint32_t call_id) {
+    return sender == EndpointRole::kServer ? ServerFinish(call_id)
+                                           : ClientStreamEnd(call_id);
+  }
+
+  static constexpr OutboundPacket ClientStreamEnd(uint32_t call_id) {
+    return Basic<flags::kStreamEnd>(call_id);
+  }
+
+  static constexpr OutboundPacket ServerFinish(uint32_t call_id) {
+    return Basic<flags::kServer, flags::kOkTerminal>(call_id);
+  }
+
+  static constexpr OutboundPacket Error(EndpointRole sender,
+                                        uint32_t call_id,
+                                        ProtocolStatus error) {
+    return sender == EndpointRole::kServer ? ServerError(call_id, error)
+                                           : ClientError(call_id, error);
+  }
+
+  static constexpr OutboundPacket ClientError(uint32_t call_id,
+                                              ProtocolStatus error) {
+    PW_DASSERT(IsClientError(error));
+    return OutboundPacket(PacketType::Make<flags::kErrorTerminal>(),
+                          call_id,
+                          Fields(static_cast<uint16_t>(error)));
+  }
+
+  static constexpr OutboundPacket ServerError(uint32_t call_id,
+                                              ProtocolStatus error) {
+    PW_DASSERT(IsServerError(error));
+    return OutboundPacket(
+        PacketType::Make<flags::kServer, flags::kErrorTerminal>(),
+        call_id,
+        Fields(static_cast<uint16_t>(error)));
+  }
+
+  constexpr OutboundPacket()
+      : OutboundPacket(PacketType::Make<flags::kHasPayload>(), 0, Fields()) {}
+
+  OutboundPacket(const OutboundPacket&) = default;
+  OutboundPacket& operator=(const OutboundPacket&) = default;
+  OutboundPacket(OutboundPacket&&) noexcept = default;
+  OutboundPacket& operator=(OutboundPacket&&) noexcept = default;
+
+  constexpr PacketType type() const { return type_; }
+  constexpr uint32_t call_id() const { return call_id_; }
+
+  /// True if this packet closes the sender's stream: a client's stream end
+  /// (including a unary request), or a server's end of the RPC.
+  constexpr bool closes_stream() const {
+    return type_.close_mode() != CloseMode::kOpen;
+  }
+
+  uint32_t service_id() const {
+    PW_DASSERT(type_.is_start());
+    return fields_.request.service_id;
+  }
+
+  uint32_t method_id() const {
+    PW_DASSERT(type_.is_start());
+    return fields_.request.method_id;
+  }
+
+  constexpr size_t payload_offset() const {
+    return PacketSizeWithoutPayload(type_);
+  }
+
+  /// Encodes this packet's header at the start of `buffer`.
+  ///
+  /// `payload_len` is not written to the wire; it is only used to check that
+  /// `buffer` is large enough for the header plus payload, and is included in
+  /// the returned total packet size.
+  Result<size_t> EncodeHeader(ByteSpan buffer, size_t payload_len = 0) const;
+
+  Result<Buf> Encode(Buf buffer, size_t payload_len) const;
+  Result<Buf> Encode(Buf buffer) const;
+
+ private:
   constexpr OutboundPacket(PacketType type, uint32_t call_id, Fields fields)
       : type_(type), call_id_(call_id), fields_(fields) {}
 
@@ -358,7 +356,9 @@ class InboundPacket {
   }
 
   PacketType type() const {
-    return static_cast<PacketType>(buffer_[offsetof(PacketHeader, type)]);
+    // `Decode()` validated the type byte.
+    return PacketType::FromValidatedBits(
+        static_cast<uint8_t>(buffer_[offsetof(PacketHeader, type)]));
   }
 
   uint32_t call_id() const {
@@ -366,28 +366,21 @@ class InboundPacket {
   }
 
   uint32_t service_id() const {
-    PW_DASSERT(type() == PacketType::kRequest);
+    PW_DASSERT(type().is_start());
     return ReadUint32(offsetof(RequestWireFormat, service_id));
   }
 
   uint32_t method_id() const {
-    PW_DASSERT(type() == PacketType::kRequest);
+    PW_DASSERT(type().is_start());
     return ReadUint32(offsetof(RequestWireFormat, method_id));
   }
 
-  /// Returns the server error carried by a `kServerError` packet.
-  ServerError server_error() const {
-    PW_DASSERT(type() == PacketType::kServerError);
-    return static_cast<ServerError>(
-        DecodeErrorCode(MaxErrorCode<ServerError>()));
-  }
-
-  /// Returns the client error carried by a `kClientError` packet.
-  ClientError client_error() const {
-    PW_DASSERT(type() == PacketType::kClientError);
-    return static_cast<ClientError>(
-        DecodeErrorCode(MaxErrorCode<ClientError>()));
-  }
+  /// Returns the error code of an error packet.
+  ///
+  /// A zero wire code (never valid in an error packet) maps to
+  /// `ProtocolStatus::kInternal`, and unrecognized or role-mismatched codes
+  /// map to `ProtocolStatus::kUnknown`.
+  ProtocolStatus error() const;
 
   size_t payload_offset() const { return PacketSizeWithoutPayload(type()); }
 
@@ -406,20 +399,6 @@ class InboundPacket {
   uint32_t ReadUint32(size_t offset) const {
     return bytes::ReadInOrder<uint32_t>(endian::little,
                                         buffer_.data() + offset);
-  }
-
-  // Reads the wire error code. A zero code (never valid on the wire) maps to
-  // kInternal, and codes above `max_code` map to kUnknown. Shared by both
-  // error enums to avoid duplicating the decoding logic.
-  uint16_t DecodeErrorCode(uint16_t max_code) const;
-
-  // Largest valid wire code for `ErrorEnum`. `DecodeErrorCode` accepts every
-  // code from 1 to this value, so the enum must be contiguous from `kOk` (0).
-  template <typename ErrorEnum>
-  static constexpr uint16_t MaxErrorCode() {
-    static_assert(EnumTraits<ErrorEnum>::kIsContiguous);
-    static_assert(static_cast<uint16_t>(EnumTraits<ErrorEnum>::kMin) == 0u);
-    return static_cast<uint16_t>(EnumTraits<ErrorEnum>::kMax);
   }
 
   ConstBuf buffer_;

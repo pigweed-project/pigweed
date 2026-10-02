@@ -15,21 +15,33 @@
 #pragma once
 
 #include <cstdint>
+#include <type_traits>
 
 #include "pw_enum/generate.h"
+#include "pw_enum/traits.h"
 #include "pw_status/status.h"
 
 namespace pw::rpc2::internal {
 
 // LINT.IfChange(cpp_rpc2_error_codes)
 
-/// Wire-level protocol status codes sent by a `pw_rpc2` server
-/// (`PacketType::kServerError`).
+/// Wire-level protocol status codes for `pw_rpc2`.
 ///
-/// Each value identifies the specific server condition that terminated a call.
-enum class ServerError : uint8_t {
+/// Each non-zero value identifies the specific condition that terminated a
+/// call in an `ERROR_TERMINAL` packet. Codes are partitioned into decimal
+/// bands so that common and role-specific codes remain distinct and can grow
+/// independently:
+///
+/// - `0`--`99`: Common codes (valid from either client or server, except
+///   `kOk`, which is never sent in an error packet).
+/// - `100`--`199`: Server-only codes (only sent in error packets with
+///   `flags::kServer` set).
+/// - `200`--`255`: Reserved (e.g., for future client-only error codes).
+enum class ProtocolStatus : uint8_t {
+  // --- Common codes (0-99) ---
+
   /// No protocol error occurred. Used as the success return value for internal
-  /// invocation functions; never sent in a `PacketType::kServerError` packet.
+  /// invocation functions; never sent in an error packet.
   kOk = 0,
 
   /// Unrecognized error code.
@@ -38,125 +50,111 @@ enum class ServerError : uint8_t {
   /// An error that indicates a programming bug within pw_rpc2.
   kInternal = 2,
 
-  /// The call was deliberately cancelled by the server-side application code.
+  /// The call was deliberately cancelled by application code.
   kCancelled = 3,
 
-  /// The server received a packet type that may only be sent from a server to
-  /// a client.
-  kReceivedPacketForClient = 4,
+  /// The endpoint received a packet type that may only be sent by its own role
+  /// (a server received a server-to-client packet, or a client received a
+  /// client-to-server packet).
+  kReceivedPacketForWrongEndpoint = 4,
+
+  /// A packet does not match the method's type. On the server, a unary or
+  /// server-streaming call must be started by a packet that carries the
+  /// request message and closes the client's stream. On the client, a unary or
+  /// client-streaming call must be answered by a single packet that carries
+  /// the response message and terminates the RPC.
+  kMethodTypeMismatch = 5,
+
+  // --- Server-only codes (100-199) ---
 
   /// The server released a unary call without sending a response or
   /// cancelling it.
-  kDroppedWithoutResponse = 5,
+  kDroppedWithoutResponse = 100,
 
   /// The target service was unregistered from the server while the call was
   /// running.
-  kServiceUnregistered = 6,
+  kServiceUnregistered = 101,
 
   /// The requested service is not registered on the server.
-  kUnknownService = 7,
+  kUnknownService = 102,
 
   /// The requested method is not registered on the target service.
-  kUnknownMethod = 8,
+  kUnknownMethod = 103,
 
   /// The request payload was invalid.
-  kInvalidRequestPayload = 9,
+  kInvalidRequestPayload = 104,
 
   /// Failed to allocate call state for an incoming request.
-  kFailedToAllocateCall = 10,
+  kFailedToAllocateCall = 105,
 
   /// Failed to allocate necessary resources while running the call.
-  kFailedToAllocateCallResourcesWhileRunning = 11,
-};
+  kFailedToAllocateCallResourcesWhileRunning = 106,
 
-/// Wire-level protocol status codes sent by a `pw_rpc2` client
-/// (`PacketType::kClientError`).
-///
-/// Each value identifies the specific client condition that terminated a call.
-/// Codes with equivalent meanings in `ServerError` share the same value.
-enum class ClientError : uint8_t {
-  /// No protocol error occurred. Never sent in a `PacketType::kClientError`
-  /// packet.
-  kOk = 0,
-
-  /// Unrecognized error code.
-  kUnknown = 1,
-
-  /// An error that indicates a programming bug within pw_rpc2.
-  kInternal = 2,
-
-  /// The call was deliberately cancelled by the client-side application code.
-  kCancelled = 3,
-
-  /// The client received a packet type that may only be sent from a client to
-  /// a server.
-  kReceivedPacketForServer = 4,
+  // --- Reserved (200-255) ---
 };
 
 // LINT.ThenChange(//pw_rpc2/protocol.rst:rpc2_error_codes)
 
-/// Translates a wire `ServerError` into its equivalent `pw::Status` for public
-/// call completion APIs on the client.
-///
-/// Guaranteed never to return `OkStatus()` or `Status::OutOfRange()` (stream
-/// EOF), even if an unrecognized value is received in an error packet from the
-/// wire.
-constexpr Status ToStatus(ServerError code) {
-  switch (code) {
-    case ServerError::kOk:
-      return Status::Internal();
-    case ServerError::kUnknown:
-      return Status::Unknown();
-    case ServerError::kInternal:
-      return Status::Internal();
-    case ServerError::kCancelled:
-    case ServerError::kDroppedWithoutResponse:
-    case ServerError::kServiceUnregistered:
-      return Status::Cancelled();
-    case ServerError::kReceivedPacketForClient:
-      return Status::Unimplemented();
-    case ServerError::kUnknownService:
-    case ServerError::kUnknownMethod:
-      return Status::NotFound();
-    case ServerError::kInvalidRequestPayload:
-      return Status::DataLoss();
-    case ServerError::kFailedToAllocateCall:
-    case ServerError::kFailedToAllocateCallResourcesWhileRunning:
-      return Status::ResourceExhausted();
-  }
-  return Status::Unknown();
+/// True if `code` may be sent in a server error packet (common or server-only,
+/// excluding `kOk`).
+template <typename StatusEnum = ProtocolStatus>
+constexpr bool IsServerError(StatusEnum code) {
+  static_assert(std::is_same_v<StatusEnum, ProtocolStatus>);
+  return code != ProtocolStatus::kOk && IsValidEnum(code);
 }
 
-/// Translates a wire `ClientError` into its equivalent `pw::Status` for public
-/// call completion APIs on the server.
+/// True if `code` may be sent in a client error packet (`1`--`99`, excluding
+/// `kOk`).
+template <typename StatusEnum = ProtocolStatus>
+constexpr bool IsClientError(StatusEnum code) {
+  static_assert(std::is_same_v<StatusEnum, ProtocolStatus>);
+  const auto value = static_cast<uint8_t>(code);
+  return value > 0 && value < 100 && IsValidEnum(code);
+}
+
+/// Translates a wire `ProtocolStatus` into its equivalent `pw::Status` for
+/// public call completion APIs.
 ///
 /// Guaranteed never to return `OkStatus()` or `Status::OutOfRange()` (stream
 /// EOF), even if an unrecognized value is received in an error packet from the
 /// wire.
-constexpr Status ToStatus(ClientError code) {
+constexpr Status ToStatus(ProtocolStatus code) {
   switch (code) {
-    case ClientError::kOk:
+    case ProtocolStatus::kOk:
       return Status::Internal();
-    case ClientError::kUnknown:
+    case ProtocolStatus::kUnknown:
       return Status::Unknown();
-    case ClientError::kInternal:
+    case ProtocolStatus::kInternal:
       return Status::Internal();
-    case ClientError::kCancelled:
+    case ProtocolStatus::kCancelled:
+    case ProtocolStatus::kDroppedWithoutResponse:
+    case ProtocolStatus::kServiceUnregistered:
       return Status::Cancelled();
-    case ClientError::kReceivedPacketForServer:
+    case ProtocolStatus::kReceivedPacketForWrongEndpoint:
       return Status::Unimplemented();
+    case ProtocolStatus::kUnknownService:
+    case ProtocolStatus::kUnknownMethod:
+      return Status::NotFound();
+    case ProtocolStatus::kInvalidRequestPayload:
+      return Status::DataLoss();
+    case ProtocolStatus::kFailedToAllocateCall:
+    case ProtocolStatus::kFailedToAllocateCallResourcesWhileRunning:
+      return Status::ResourceExhausted();
+    case ProtocolStatus::kMethodTypeMismatch:
+      return Status::FailedPrecondition();
   }
   return Status::Unknown();
 }
 
 }  // namespace pw::rpc2::internal
 
-PW_ENUM(pw::rpc2::internal::ServerError,
+PW_ENUM(pw::rpc2::internal::ProtocolStatus,
         kOk,
         kUnknown,
         kInternal,
         kCancelled,
-        kReceivedPacketForClient,
+        kReceivedPacketForWrongEndpoint,
+        kMethodTypeMismatch,
         kDroppedWithoutResponse,
         kServiceUnregistered,
         kUnknownService,
@@ -164,10 +162,3 @@ PW_ENUM(pw::rpc2::internal::ServerError,
         kInvalidRequestPayload,
         kFailedToAllocateCall,
         kFailedToAllocateCallResourcesWhileRunning);
-
-PW_ENUM(pw::rpc2::internal::ClientError,
-        kOk,
-        kUnknown,
-        kInternal,
-        kCancelled,
-        kReceivedPacketForServer);

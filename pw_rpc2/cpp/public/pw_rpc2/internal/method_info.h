@@ -26,7 +26,7 @@
 //
 // APIs which operate on an arbitrary method are parameterized on this struct:
 //
-//   TestMethodContext<pw_rpc2::pwpb::EchoService::Echo, EchoServiceImpl> ctx;
+//   auto call = peer.ExpectInvocation<pw_rpc2::pwpb::EchoService::Echo>();
 //
 // A method info struct is a name, not an object: it is never instantiated.
 

@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <limits>
 
 #include "pw_assert/check.h"
 #include "pw_bytes/endian.h"
@@ -35,7 +36,10 @@ void WriteUint16(ByteSpan buffer, size_t offset, uint16_t value) {
 }  // namespace
 
 Result<HandshakePacket> HandshakePacket::Decode(ConstByteSpan bytes) {
-  if (bytes.size() != sizeof(HandshakeWireFormat)) {
+  // Later protocol versions may extend the handshake packet, so trailing bytes
+  // (and the reserved field) are ignored rather than rejected. This lets a peer
+  // that only knows this version still negotiate with a newer one.
+  if (bytes.size() < sizeof(HandshakeWireFormat)) {
     return Status::DataLoss();
   }
   uint32_t magic = bytes::ReadInOrder<uint32_t>(
@@ -43,11 +47,11 @@ Result<HandshakePacket> HandshakePacket::Decode(ConstByteSpan bytes) {
   uint8_t version =
       static_cast<uint8_t>(bytes[offsetof(HandshakeWireFormat, version)]);
   Type type = static_cast<Type>(bytes[offsetof(HandshakeWireFormat, type)]);
-  if (magic != kMagic || version != kVersion ||
+  if (magic != kMagic || version == 0 ||
       (type != Type::kSyn && type != Type::kSynAck && type != Type::kAck)) {
     return Status::DataLoss();
   }
-  return HandshakePacket(static_cast<Type>(type));
+  return HandshakePacket(type, version);
 }
 
 Status HandshakePacket::Encode(ByteSpan buffer) const {
@@ -57,7 +61,7 @@ Status HandshakePacket::Encode(ByteSpan buffer) const {
   std::memset(buffer.data(), 0, sizeof(HandshakeWireFormat));
   WriteUint32(buffer, offsetof(HandshakeWireFormat, magic), kMagic);
   buffer[offsetof(HandshakeWireFormat, version)] =
-      static_cast<std::byte>(kVersion);
+      static_cast<std::byte>(version_);
   buffer[offsetof(HandshakeWireFormat, type)] = static_cast<std::byte>(type_);
   return OkStatus();
 }
@@ -70,41 +74,21 @@ Result<Buf> HandshakePacket::Encode(Buf buffer) const {
   return buffer;
 }
 
-// State PacketType value assumptions used to validate and classify the type
-// byte.
-static_assert(static_cast<uint8_t>(PacketType::kRequest) % 2 == 0);
-static_assert(static_cast<uint8_t>(PacketType::kResponse) ==
-              static_cast<uint8_t>(PacketType::kRequest) + 1);
-static_assert(static_cast<uint8_t>(PacketType::kClientMessage) ==
-              static_cast<uint8_t>(PacketType::kRequest) + 2);
-static_assert(static_cast<uint8_t>(PacketType::kServerMessage) ==
-              static_cast<uint8_t>(PacketType::kClientMessage) + 1);
-static_assert(static_cast<uint8_t>(PacketType::kClientStreamEnd) ==
-              static_cast<uint8_t>(PacketType::kClientMessage) + 2);
-static_assert(static_cast<uint8_t>(PacketType::kServerStreamEnd) ==
-              static_cast<uint8_t>(PacketType::kClientStreamEnd) + 1);
-static_assert(static_cast<uint8_t>(PacketType::kClientError) ==
-              static_cast<uint8_t>(PacketType::kClientStreamEnd) + 2);
-static_assert(static_cast<uint8_t>(PacketType::kServerError) ==
-              static_cast<uint8_t>(PacketType::kClientError) + 1);
-
-// DecodeErrorCode returns these codes for both ServerError and ClientError.
-static_assert(static_cast<uint16_t>(ServerError::kInternal) ==
-              static_cast<uint16_t>(ClientError::kInternal));
-static_assert(static_cast<uint16_t>(ServerError::kUnknown) ==
-              static_cast<uint16_t>(ClientError::kUnknown));
-
-uint16_t InboundPacket::DecodeErrorCode(uint16_t max_code) const {
-  PW_DASSERT(IsError(type()));
+ProtocolStatus InboundPacket::error() const {
+  PW_DASSERT(type().is_error());
   const uint16_t code = bytes::ReadInOrder<uint16_t>(
       endian::little, buffer_.data() + offsetof(ErrorWireFormat, error));
   if (code == 0) {
-    return static_cast<uint16_t>(ServerError::kInternal);
+    return ProtocolStatus::kInternal;
   }
-  if (code > max_code) {
-    return static_cast<uint16_t>(ServerError::kUnknown);
+  if (code > std::numeric_limits<uint8_t>::max()) {
+    return ProtocolStatus::kUnknown;
   }
-  return code;
+  const auto status = static_cast<ProtocolStatus>(code);
+  if (type().is_server() ? !IsServerError(status) : !IsClientError(status)) {
+    return ProtocolStatus::kUnknown;
+  }
+  return status;
 }
 
 Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
@@ -112,17 +96,22 @@ Result<InboundPacket> InboundPacket::Decode(ConstBuf&& buffer) {
     return Status::DataLoss();  // Too short for header
   }
 
-  const auto type =
-      static_cast<PacketType>(buffer[offsetof(PacketHeader, type)]);
-  if (!IsValidPacketType(type)) {
+  const auto type_bits =
+      static_cast<uint8_t>(buffer[offsetof(PacketHeader, type)]);
+  if (!PacketType::IsValid(type_bits)) {
     return Status::InvalidArgument();
   }
-  if (buffer.size() < PacketSizeWithoutPayload(type)) {
+  const PacketType type = PacketType::FromValidatedBits(type_bits);
+
+  // The payload length is not encoded on the wire. The transport frames the
+  // packet, so the payload is exactly the bytes following the header. A packet
+  // without `kHasPayload` has no payload, so it must end with its header.
+  const size_t header_size = PacketSizeWithoutPayload(type);
+  if (type.has_payload() ? buffer.size() < header_size
+                         : buffer.size() != header_size) {
     return Status::DataLoss();
   }
 
-  // The payload length is not encoded on the wire. The transport frames the
-  // packet, so the payload is exactly the bytes following the header.
   return InboundPacket(std::move(buffer));
 }
 
@@ -136,16 +125,16 @@ Result<size_t> OutboundPacket::EncodeHeader(ByteSpan buffer,
   }
 
   WriteUint32(buffer, offsetof(PacketHeader, call_id), call_id_);
-  buffer[offsetof(PacketHeader, type)] = static_cast<std::byte>(type_);
+  buffer[offsetof(PacketHeader, type)] = static_cast<std::byte>(type_.bits());
 
-  if (type_ == PacketType::kRequest) {
+  if (type_.is_start()) {
     WriteUint32(buffer,
                 offsetof(RequestWireFormat, service_id),
                 fields_.request.service_id);
     WriteUint32(buffer,
                 offsetof(RequestWireFormat, method_id),
                 fields_.request.method_id);
-  } else if (IsError(type_)) {
+  } else if (type_.is_error()) {
     WriteUint16(buffer, offsetof(ErrorWireFormat, error), fields_.raw_error);
   }
 
@@ -166,7 +155,7 @@ Result<Buf> OutboundPacket::Encode(Buf buffer, size_t payload_len) const {
 
 Result<Buf> OutboundPacket::Encode(Buf buffer) const {
   size_t payload_len = 0;
-  if (HasPayload(type_)) {
+  if (type_.has_payload()) {
     const size_t offset = payload_offset();
     if (buffer.size() > offset) {
       payload_len = buffer.size() - offset;

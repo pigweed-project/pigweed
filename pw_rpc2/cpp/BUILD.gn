@@ -14,8 +14,12 @@
 
 import("//build_overrides/pigweed.gni")
 
+import("$dir_pw_async2/backend.gni")
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_enum/pw_cc_enum_source_set.gni")
+import("$dir_pw_sync/backend.gni")
+import("$dir_pw_thread/backend.gni")
+import("$dir_pw_toolchain/traits.gni")
 import("$dir_pw_unit_test/test.gni")
 
 config("public_include_path") {
@@ -35,7 +39,10 @@ pw_cc_enum_source_set("protocol_status") {
 
 pw_source_set("packet") {
   public_configs = [ ":public_include_path" ]
-  public = [ "public/pw_rpc2/internal/packet.h" ]
+  public = [
+    "public/pw_rpc2/internal/packet.h",
+    "public/pw_rpc2/internal/packet_type.h",
+  ]
   sources = [ "packet.cc" ]
   public_deps = [
     ":protocol_status",
@@ -124,10 +131,349 @@ pw_source_set("method") {
   visibility = _default_visibility
 }
 
+pw_source_set("handshake") {
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_rpc2/internal/handshake.h" ]
+  sources = [ "handshake.cc" ]
+  public_deps = [
+    ":packet",
+    "$dir_pw_assert:check",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  deps = [ dir_pw_preprocessor ]
+  visibility = _default_visibility
+}
+
+pw_source_set("connection") {
+  public_configs = [ ":public_include_path" ]
+  public = [
+    "public/pw_rpc2/internal/call.h",
+    "public/pw_rpc2/internal/call_handle.h",
+    "public/pw_rpc2/internal/client_connection_task.h",
+    "public/pw_rpc2/internal/connection_task.h",
+    "public/pw_rpc2/internal/control_future.h",
+    "public/pw_rpc2/internal/future_base.h",
+    "public/pw_rpc2/reader.h",
+    "public/pw_rpc2/write_reservation.h",
+    "public/pw_rpc2/writer.h",
+  ]
+  sources = [
+    "call.cc",
+    "client_connection_task.cc",
+    "connection_task.cc",
+    "write_reservation.cc",
+  ]
+  public_deps = [
+    ":handshake",
+    ":method",
+    ":packet",
+    ":protocol_status",
+    ":serialize",
+    "$dir_pw_assert:assert",
+    "$dir_pw_assert:check",
+    "$dir_pw_async2:channel",
+    "$dir_pw_async2:future_or_value",
+    "$dir_pw_async2:value_future",
+    "$dir_pw_containers:algorithm",
+    "$dir_pw_containers:dynamic_deque",
+    "$dir_pw_containers:intrusive_forward_list",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_allocator,
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_intrusive_ptr,
+    dir_pw_log,
+    dir_pw_polyfill,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  visibility = _default_visibility
+}
+
+_coro_deps = []
+if (pw_toolchain_CXX_STANDARD >= pw_toolchain_STANDARD.CXX20) {
+  _coro_deps = [ "$dir_pw_async2:coro" ]
+}
+
+pw_source_set("server") {
+  public_configs = [ ":public_include_path" ]
+  public = [
+    "public/pw_rpc2/internal/method.h",
+    "public/pw_rpc2/internal/method_future.h",
+    "public/pw_rpc2/internal/method_invoker.h",
+    "public/pw_rpc2/internal/method_traits.h",
+    "public/pw_rpc2/internal/server_call.h",
+    "public/pw_rpc2/internal/server_connection_task.h",
+    "public/pw_rpc2/internal/server_task.h",
+    "public/pw_rpc2/server.h",
+    "public/pw_rpc2/service.h",
+  ]
+  sources = [
+    "server_call.cc",
+    "server_connection_task.cc",
+    "server_task.cc",
+    "service.cc",
+  ]
+  public_deps = [
+                  ":connection",
+                  "$dir_pw_async2:box",
+                  "$dir_pw_bytes:alignment",
+                  "$dir_pw_containers:forward_list",
+                  "$pw_external_fuchsia:stdcompat",
+                  dir_pw_function,
+                  dir_pw_span,
+                ] + _coro_deps
+  deps = [ dir_pw_preprocessor ]
+  visibility = _default_visibility
+}
+
+pw_source_set("pw_rpc2") {
+  public_deps = [ ":server" ]
+  visibility = _default_visibility
+}
+
+pw_source_set("test_utils") {
+  testonly = pw_unit_test_TESTONLY
+  public_configs = [ ":public_include_path" ]
+  public = [
+    "public/pw_rpc2/internal/packet_testing.h",
+    "public/pw_rpc2/internal/test_utils.h",
+  ]
+  sources = [ "test_utils.cc" ]
+  public_deps = [
+    ":connection",
+    ":handshake",
+    ":method",
+    ":packet",
+    ":protocol_status",
+    ":serialize",
+    "$dir_pw_assert:check",
+    "$dir_pw_async2:value_future",
+    "$dir_pw_containers:inline_deque",
+    "$dir_pw_containers:vector",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_allocator,
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_log,
+    dir_pw_result,
+    dir_pw_status,
+    dir_pw_unit_test,
+  ]
+  visibility = _default_visibility
+}
+
+pw_test("handshake_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":handshake",
+    ":packet",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+    dir_pw_bytes,
+    dir_pw_status,
+  ]
+  sources = [ "handshake_test.cc" ]
+}
+
+pw_test("call_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":connection",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+  ]
+  sources = [ "call_test.cc" ]
+}
+
+pw_test("rpc_reader_writer_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":connection",
+    ":packet",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_bytes,
+  ]
+  sources = [ "rpc_reader_writer_test.cc" ]
+}
+
+pw_test("server_dispatch_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":handshake",
+    ":packet",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+    dir_pw_bytes,
+  ]
+  sources = [ "server_dispatch_test.cc" ]
+}
+
+pw_test("connection_task_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":handshake",
+    ":packet",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+    dir_pw_bytes,
+  ]
+  sources = [ "connection_task_test.cc" ]
+}
+
+pw_test("server_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != "" &&
+              pw_thread_THREAD_BACKEND != "" &&
+              pw_thread_TEST_THREAD_CONTEXT_BACKEND != ""
+  deps = [
+    ":handshake",
+    ":packet",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_async2:value_future",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+  ]
+  sources = [ "server_test.cc" ]
+}
+
+pw_test("method_future_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":server",
+           "$dir_pw_allocator:testing",
+           "$dir_pw_async2:testing",
+           dir_pw_async2,
+         ] + _coro_deps
+  sources = [ "method_future_test.cc" ]
+}
+
+pw_test("internal_server_call_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":server",
+           ":test_utils",
+           "$dir_pw_allocator:testing",
+           "$dir_pw_assert:check",
+           "$dir_pw_async2:testing",
+           "$dir_pw_transport/cpp:pw_transport",
+           dir_pw_async2,
+         ] + _coro_deps
+  sources = [ "internal_server_call_test.cc" ]
+}
+
+pw_test("method_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+           ":method",
+           ":server",
+           ":test_utils",
+           "$dir_pw_allocator:testing",
+           "$dir_pw_assert:check",
+           "$dir_pw_async2:testing",
+           "$dir_pw_transport/cpp:pw_transport",
+           dir_pw_async2,
+           dir_pw_buf,
+           dir_pw_bytes,
+         ] + _coro_deps
+  sources = [ "method_test.cc" ]
+}
+
+pw_test("method_traits_test") {
+  enable_if = pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":connection",
+    ":method",
+    ":server",
+    dir_pw_async2,
+    dir_pw_buf,
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  sources = [ "method_traits_test.cc" ]
+}
+
+pw_test("server_call_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_sync_THREAD_NOTIFICATION_BACKEND != ""
+  deps = [
+    ":packet",
+    ":server",
+    ":test_utils",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2:testing",
+    "$dir_pw_transport/cpp:pw_transport",
+    dir_pw_async2,
+  ]
+  sources = [ "server_call_test.cc" ]
+}
+
 pw_test_group("tests") {
   tests = [
+    ":call_test",
+    ":connection_task_test",
+    ":handshake_test",
+    ":internal_server_call_test",
+    ":method_future_test",
+    ":method_test",
+    ":method_traits_test",
     ":packet_test",
     ":pwpb_serialize_test",
+    ":rpc_reader_writer_test",
     ":serialize_test",
+    ":server_call_test",
+    ":server_dispatch_test",
+    ":server_test",
   ]
 }

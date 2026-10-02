@@ -18,11 +18,24 @@
 namespace pw::rpc2 {
 
 /// The type of an RPC method.
+///
+/// Bit 0 is set if the server streams responses, and bit 1 if the client
+/// streams requests.
 enum class MethodType : uint8_t {
   kUnary = 0,
   kServerStreaming = 1,
   kClientStreaming = 2,
   kBidirectionalStreaming = 3,
 };
+
+/// True if the server streams responses: server and bidirectional streaming.
+constexpr bool HasServerStream(MethodType type) {
+  return (static_cast<uint8_t>(type) & 0b01u) != 0u;
+}
+
+/// True if the client streams requests: client and bidirectional streaming.
+constexpr bool HasClientStream(MethodType type) {
+  return (static_cast<uint8_t>(type) & 0b10u) != 0u;
+}
 
 }  // namespace pw::rpc2
