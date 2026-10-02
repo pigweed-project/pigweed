@@ -39,6 +39,44 @@ std::string TypeToString(DeviceAddress::Type type) {
   return "(invalid) ";
 }
 
+constexpr std::size_t kBitsPerByte = 8;
+
+// Mixes a 64-bit integer into a `std::size_t` hash value with full bit
+// avalanche across all 64 bits, ensuring both 64-bit and truncated 32-bit
+// `std::size_t` hashes depend on every input bit.
+//
+// This implements the SplitMix64 mixing function:
+// - 0x9e3779b97f4a7c15 is the 64-bit golden ratio increment
+//   (floor(2^64 / phi)).
+// - The 3-stage xor-shift-multiply finalizer (shifts 30, 27, 31 and
+//   multipliers 0xbf58476d1ce4e5b9, 0x94d049bb133111eb) is David Stafford's
+//   "Mix13" MurmurHash3 64-bit finalizer
+//   (https://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html),
+//   adopted by Guy L. Steele Jr., Doug Lea, and Christine H. Flood, "Fast
+//   Splittable Pseudorandom Number Generators", OOPSLA 2014, and Sebastiano
+//   Vigna's splitmix64 reference implementation
+//   (https://prng.di.unimi.it/splitmix64.c).
+constexpr std::size_t SplitMix64(uint64_t x) {
+  x += 0x9e3779b97f4a7c15ULL;
+  x ^= x >> 30;
+  x *= 0xbf58476d1ce4e5b9ULL;
+  x ^= x >> 27;
+  x *= 0x94d049bb133111ebULL;
+  x ^= x >> 31;
+  return static_cast<std::size_t>(x);
+}
+
+uint64_t PackAddressBytes(const BufferView& bytes) {
+  PW_DCHECK(bytes.size() == kDeviceAddressSize);
+  uint64_t bytes_as_int = 0;
+  std::size_t shift_amount = 0;
+  for (std::size_t i = 0; i < kDeviceAddressSize; ++i) {
+    bytes_as_int |= (static_cast<uint64_t>(bytes[i]) << shift_amount);
+    shift_amount += kBitsPerByte;
+  }
+  return bytes_as_int;
+}
+
 }  // namespace
 
 DeviceAddressBytes::DeviceAddressBytes() { SetToZero(); }
@@ -77,15 +115,7 @@ std::string DeviceAddressBytes::ToString() const {
 void DeviceAddressBytes::SetToZero() { bytes_.fill(0); }
 
 std::size_t DeviceAddressBytes::Hash() const {
-  uint64_t bytes_as_int = 0;
-  int shift_amount = 0;
-  for (const uint8_t& byte : bytes_) {
-    bytes_as_int |= (static_cast<uint64_t>(byte) << shift_amount);
-    shift_amount += 8;
-  }
-
-  std::hash<uint64_t> hash_func;
-  return hash_func(bytes_as_int);
+  return SplitMix64(PackAddressBytes(bytes()));
 }
 
 DeviceAddress::DeviceAddress() : type_(Type::kBREDR) {}
@@ -290,10 +320,12 @@ bool DeviceAddress::IsStaticRandom() const {
 
 std::size_t DeviceAddress::Hash() const {
   const Type type_for_hashing = IsPublic() ? Type::kBREDR : type_;
-  std::size_t const h1(std::hash<Type>{}(type_for_hashing));
-  std::size_t h2 = value_.Hash();
-
-  return h1 ^ (h2 << 1);
+  constexpr std::size_t kTypeShiftBits = kDeviceAddressSize * kBitsPerByte;
+  const uint64_t shifted_type = static_cast<uint64_t>(type_for_hashing)
+                                << kTypeShiftBits;
+  const uint64_t address_with_type =
+      PackAddressBytes(value_.bytes()) | shifted_type;
+  return SplitMix64(address_with_type);
 }
 
 std::string DeviceAddress::ToString() const {

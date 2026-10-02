@@ -14,6 +14,9 @@
 
 #include "pw_bluetooth_sapphire/internal/host/common/device_address.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <map>
 #include <unordered_map>
 
@@ -199,6 +202,164 @@ TEST(DeviceAddressTest, IsPublic) {
   EXPECT_FALSE(kNonResolvable.IsPublic());
   EXPECT_FALSE(kResolvable.IsPublic());
   EXPECT_FALSE(kStatic.IsPublic());
+}
+
+TEST(DeviceAddressTest, HashEqualityAndBitSensitivity) {
+  constexpr std::array<std::array<uint8_t, kDeviceAddressSize>, 3>
+      kBaseBytePatterns = {{
+          {0x79, 0x56, 0x34, 0x12, 0xAA, 0xC0},
+          {0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+          {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
+      }};
+
+  // Default-constructed (all-zero) addresses must not hash to zero.
+  EXPECT_NE(static_cast<uint32_t>(DeviceAddress().Hash()), 0u);
+  EXPECT_NE(static_cast<uint32_t>(DeviceAddressBytes().Hash()), 0u);
+
+  for (const auto& base_bytes : kBaseBytePatterns) {
+    const DeviceAddress bredr(DeviceAddress::Type::kBREDR, base_bytes);
+    const DeviceAddress le_public(DeviceAddress::Type::kLEPublic, base_bytes);
+    const DeviceAddress le_random(DeviceAddress::Type::kLERandom, base_bytes);
+    const DeviceAddress le_anon(DeviceAddress::Type::kLEAnonymous, base_bytes);
+
+    // Public addresses (kBREDR and kLEPublic) compare equal and must hash
+    // equal.
+    EXPECT_EQ(bredr, le_public);
+    EXPECT_EQ(bredr.Hash(), le_public.Hash());
+
+    // Incompatible types with identical bytes must not share a 32-bit or full
+    // hash.
+    EXPECT_NE(static_cast<uint32_t>(bredr.Hash()),
+              static_cast<uint32_t>(le_random.Hash()));
+    EXPECT_NE(static_cast<uint32_t>(le_random.Hash()),
+              static_cast<uint32_t>(le_anon.Hash()));
+    EXPECT_NE(static_cast<uint32_t>(bredr.Hash()),
+              static_cast<uint32_t>(le_anon.Hash()));
+
+    // Flipping any single bit across all 48 bits must change both the lower 32
+    // bits (modeling 32-bit size_t targets) and upper 32 bits (on 64-bit
+    // targets).
+    const std::size_t base_bredr_hash = bredr.Hash();
+    const std::size_t base_random_hash = le_random.Hash();
+    const std::size_t base_bytes_hash = le_random.value().Hash();
+    for (size_t byte_idx = 0; byte_idx < kDeviceAddressSize; ++byte_idx) {
+      for (uint8_t bit = 0; bit < 8; ++bit) {
+        auto mutated_bytes = base_bytes;
+        mutated_bytes[byte_idx] ^= static_cast<uint8_t>(1u << bit);
+        DeviceAddress mutated_bredr(DeviceAddress::Type::kBREDR, mutated_bytes);
+        DeviceAddress mutated_random(DeviceAddress::Type::kLERandom,
+                                     mutated_bytes);
+        EXPECT_NE(static_cast<uint32_t>(base_bredr_hash),
+                  static_cast<uint32_t>(mutated_bredr.Hash()))
+            << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+        EXPECT_NE(static_cast<uint32_t>(base_random_hash),
+                  static_cast<uint32_t>(mutated_random.Hash()))
+            << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+        EXPECT_NE(static_cast<uint32_t>(base_bytes_hash),
+                  static_cast<uint32_t>(mutated_random.value().Hash()))
+            << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+        if constexpr (sizeof(std::size_t) > sizeof(uint32_t)) {
+          EXPECT_NE(static_cast<uint64_t>(base_bredr_hash) >> 32,
+                    static_cast<uint64_t>(mutated_bredr.Hash()) >> 32)
+              << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+          EXPECT_NE(static_cast<uint64_t>(base_random_hash) >> 32,
+                    static_cast<uint64_t>(mutated_random.Hash()) >> 32)
+              << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+          EXPECT_NE(static_cast<uint64_t>(base_bytes_hash) >> 32,
+                    static_cast<uint64_t>(mutated_random.value().Hash()) >> 32)
+              << "byte=" << byte_idx << " bit=" << static_cast<int>(bit);
+        }
+      }
+    }
+  }
+}
+
+TEST(DeviceAddressTest,
+     ThirtyTwoBitTruncatedHashResistsStaticRandomCollisions) {
+  // Generate all 256 * 64 = 16,384 valid LE static-random addresses that share
+  // the same lower 4 bytes (bytes[0..3]) and differ only in the upper 2 bytes
+  // (bytes[4..5]). Static-random addresses must have the two most significant
+  // bits of bytes[5] set to 1 (0xC0..0xFF).
+  constexpr uint8_t kStaticRandomMinByte5 = 0b1100'0000;
+  constexpr size_t kPoolSize = 256 * (0xFF - kStaticRandomMinByte5 + 1);
+  std::unordered_map<uint32_t, size_t> addr_hash32_counts;
+  std::unordered_map<uint32_t, size_t> bytes_hash32_counts;
+  addr_hash32_counts.reserve(kPoolSize);
+  bytes_hash32_counts.reserve(kPoolSize);
+
+  for (uint16_t b4 = 0x00; b4 <= 0xFF; ++b4) {
+    for (uint16_t b5 = kStaticRandomMinByte5; b5 <= 0xFF; ++b5) {
+      const DeviceAddress addr(DeviceAddress::Type::kLERandom,
+                               {0x79,
+                                0x56,
+                                0x34,
+                                0x12,
+                                static_cast<uint8_t>(b4),
+                                static_cast<uint8_t>(b5)});
+      ASSERT_TRUE(addr.IsStaticRandom());
+
+      const uint32_t addr_hash32 =
+          static_cast<uint32_t>(std::hash<DeviceAddress>{}(addr));
+      const uint32_t bytes_hash32 = static_cast<uint32_t>(addr.value().Hash());
+      addr_hash32_counts[addr_hash32]++;
+      bytes_hash32_counts[bytes_hash32]++;
+    }
+  }
+
+  size_t max_addr_collisions = 0;
+  for (const auto& [_, count] : addr_hash32_counts) {
+    max_addr_collisions = std::max(max_addr_collisions, count);
+  }
+
+  size_t max_bytes_collisions = 0;
+  for (const auto& [_, count] : bytes_hash32_counts) {
+    max_bytes_collisions = std::max(max_bytes_collisions, count);
+  }
+
+  EXPECT_GT(addr_hash32_counts.size(), 16350u);
+  EXPECT_LE(max_addr_collisions, 4u);
+  EXPECT_GT(bytes_hash32_counts.size(), 16350u);
+  EXPECT_LE(max_bytes_collisions, 4u);
+}
+
+TEST(DeviceAddressTest,
+     UnorderedMapWith32BitTruncatedHashDistributesBucketsUniformly) {
+  struct TruncatedHasher32 {
+    std::size_t operator()(const DeviceAddress& addr) const {
+      return static_cast<uint32_t>(std::hash<DeviceAddress>{}(addr));
+    }
+  };
+
+  // Insert valid LE static-random addresses that share the same lower 4 bytes
+  // (bytes[0..3]) and differ only in the upper 2 bytes (bytes[4..5]).
+  constexpr uint8_t kStaticRandomMinByte5 = 0b1100'0000;
+  constexpr size_t kNumAddresses = 256 * (0xFF - kStaticRandomMinByte5 + 1);
+  std::unordered_map<DeviceAddress, size_t, TruncatedHasher32> map;
+  map.reserve(kNumAddresses);
+
+  for (uint16_t b4 = 0x00; b4 <= 0xFF; ++b4) {
+    for (uint16_t b5 = kStaticRandomMinByte5; b5 <= 0xFF; ++b5) {
+      const DeviceAddress addr(DeviceAddress::Type::kLERandom,
+                               {0x79,
+                                0x56,
+                                0x34,
+                                0x12,
+                                static_cast<uint8_t>(b4),
+                                static_cast<uint8_t>(b5)});
+      map.emplace(addr, map.size());
+    }
+  }
+
+  ASSERT_EQ(kNumAddresses, map.size());
+
+  size_t max_bucket_size = 0;
+  for (size_t b = 0; b < map.bucket_count(); ++b) {
+    max_bucket_size = std::max(max_bucket_size, map.bucket_size(b));
+  }
+
+  // With a 32-bit uniform hash over 16,384 keys, the maximum bucket size is
+  // bounded by a small constant instead of degenerating to kNumAddresses.
+  EXPECT_LE(max_bucket_size, 16u);
 }
 
 }  // namespace
