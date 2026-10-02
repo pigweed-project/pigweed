@@ -328,12 +328,12 @@ bool IsoStreamImpl::OnCisEstablished(const hci::EventPacket& event) {
   params->flush_timeout = view.ft_p_to_c().Read();
   params->max_pdu_size = view.max_pdu_p_to_c().Read();
 
-  cis_established_cb_(status, GetWeakPtr(), cis_params_);
-
   reference_time_ = dispatcher_.now();
 
   iso_interval_usec_ = cis_params_.iso_interval *
                        CisEstablishedParameters::kIsoIntervalToMicroseconds;
+
+  cis_established_cb_(status, GetWeakPtr(), cis_params_);
 
   // Event handled
   return true;

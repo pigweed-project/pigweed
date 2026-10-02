@@ -84,8 +84,12 @@ class IsoStreamTest : public MockControllerTestBase {
         dispatcher(),
         /*on_established_cb=*/
         [this](pw::bluetooth::emboss::StatusCode status,
-               std::optional<WeakSelf<IsoStream>::WeakPtr>,
+               std::optional<WeakSelf<IsoStream>::WeakPtr> stream,
                const std::optional<CisEstablishedParameters>& parameters) {
+          if (on_established_cb_) {
+            on_established_cb_(status, stream, parameters);
+            return;
+          }
           ASSERT_FALSE(establishment_status_.has_value());
           establishment_status_ = status;
           established_parameters_ = parameters;
@@ -151,6 +155,10 @@ class IsoStreamTest : public MockControllerTestBase {
 
   bool closed() { return closed_; }
 
+  void set_on_established_cb(CisEstablishedCallback cb) {
+    on_established_cb_ = std::move(cb);
+  }
+
   pw::bluetooth_sapphire::testing::FakeLeaseProvider& stream_lease_provider() {
     return stream_lease_provider_;
   }
@@ -207,6 +215,7 @@ class IsoStreamTest : public MockControllerTestBase {
   std::queue<std::vector<std::byte>> complete_incoming_sdus_;
   bool closed_ = false;
   pw::bluetooth_sapphire::testing::FakeLeaseProvider stream_lease_provider_;
+  CisEstablishedCallback on_established_cb_;
 };
 
 static DynamicByteBuffer LECisEstablishedPacketWithDefaultValues(
@@ -316,6 +325,27 @@ TEST_F(IsoStreamTest, CisEstablishmentFailed) {
 TEST_F(IsoStreamTest, ClosedCallsCloseCallback) {
   EXPECT_FALSE(closed());
   iso_stream()->Close();
+  EXPECT_TRUE(closed());
+}
+
+TEST_F(IsoStreamTest, CloseInCisEstablishedCallbackDoesNotCrash) {
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(kCisHandleId));
+  set_on_established_cb([](pw::bluetooth::emboss::StatusCode status,
+                           std::optional<WeakSelf<IsoStream>::WeakPtr> stream,
+                           const std::optional<CisEstablishedParameters>&) {
+    ASSERT_EQ(status, pw::bluetooth::emboss::StatusCode::SUCCESS);
+    ASSERT_TRUE(stream.has_value());
+    ASSERT_TRUE(stream->is_alive());
+    (*stream)->Close();
+  });
+  DynamicByteBuffer le_cis_established_packet =
+      LECisEstablishedPacketWithDefaultValues(
+          pw::bluetooth::emboss::StatusCode::SUCCESS);
+  test_device()->SendCommandChannelPacket(le_cis_established_packet);
+  RunUntilIdle();
+  test_device()->SendCommandChannelPacket(
+      testing::DisconnectionCompletePacket(kCisHandleId));
+  RunUntilIdle();
   EXPECT_TRUE(closed());
 }
 
