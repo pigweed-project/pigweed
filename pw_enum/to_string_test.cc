@@ -35,10 +35,21 @@ constexpr const char* PwEnumToString(MyEnum value) {
 
 }  // namespace my_namespace
 
+// C-style enum in the global namespace, like pw_Status.
+extern "C" {
+typedef enum { kCStyleA, kCStyleB } CStyleEnum;
+}  // extern "C"
+
+constexpr const char* PwEnumToString(CStyleEnum value) {
+  return value == kCStyleA ? "CStyleA" : "CStyleB";
+}
+
 namespace {
 
 enum class UnregisteredEnum { kA };
 
+// GCC 10 fails these tests if the PwEnumToString poison pill in
+// pw_enum/to_string.h is a deleted non-template function.
 TEST(ToString, ManualImplementation) {
   static_assert(pw::has_enum_to_string_v<my_namespace::MyEnum>);
   static_assert(!pw::has_enum_to_string_v<UnregisteredEnum>);
@@ -46,6 +57,14 @@ TEST(ToString, ManualImplementation) {
 
   EXPECT_STREQ(pw::EnumToString(my_namespace::MyEnum::kValue1), "Value1");
   EXPECT_STREQ(pw::EnumToString(my_namespace::MyEnum::kValue2), "Value2");
+}
+
+TEST(ToString, GlobalNamespaceCStyleEnum) {
+  static_assert(pw::has_enum_to_string_v<CStyleEnum>);
+  static_assert(pw::EnumToString(kCStyleA)[6] == 'A');
+
+  EXPECT_STREQ(pw::EnumToString(kCStyleA), "CStyleA");
+  EXPECT_STREQ(pw::EnumToString(kCStyleB), "CStyleB");
 }
 
 }  // namespace

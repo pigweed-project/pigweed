@@ -23,9 +23,17 @@
 namespace pw {
 namespace internal {
 
-// Uncallable overload so unqualified `PwEnumToString` lookup succeeds in Phase
-// 1 and defers to ADL in Phase 2.
-void PwEnumToString() = delete;
+// Poison pill that hides any `PwEnumToString` declared in an enclosing
+// namespace (`pw` or the global namespace) from unqualified lookup, so that
+// `PwEnumToString` is found only through ADL. Without it, an unrelated overload
+// such as `PwEnumToString(int)` could be selected for an unscoped enum.
+//
+// This MUST be a deleted function template that is never viable for a
+// single-argument call. GCC 10 ignores ADL candidates if unqualified lookup
+// finds a deleted non-template function (e.g. `void PwEnumToString() =
+// delete;`), which disables every `PwEnumToString` extension point.
+template <typename T, typename U>
+void PwEnumToString(T, U) = delete;
 
 template <typename T, typename = void>
 inline constexpr bool has_adl_enum_to_string_v = false;
