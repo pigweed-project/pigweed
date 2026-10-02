@@ -130,26 +130,6 @@ class AdvertisingPacketFilter {
   // method returns false.
   bool MemoryAvailable() const;
 
-  // Determine whether the Controller has memory available to offload the given
-  // filter. The |new_slots| map tracks the amount of individual filters that
-  // will be taken up prior to this filter being offloaded. If Controller
-  // offloading isn't enabled, this method returns false.
-  bool MemoryAvailableForFilter(
-      const DiscoveryFilter& filter,
-      std::unordered_map<OffloadedFilterType, uint8_t>& new_slots) const;
-
-  // Determine whether the Controller has memory available to offload all of the
-  // given set of filters. If Controller offloading isn't enabled, this method
-  // returns false.
-  bool MemoryAvailableForFilters(
-      const std::vector<DiscoveryFilter>& filters) const;
-
-  // Determine whether the Controller has memory available to add |slots| more
-  // offloaded filters of the type |filter_type|. If Controller offloading isn't
-  // enabled, this method returns false.
-  bool MemoryAvailableForSlots(OffloadedFilterType filter_type,
-                               uint8_t slots) const;
-
   // Enable Controller based filtering. After the commands this method issues
   // are run, all advertising packet filtering will occur on the Controller
   // before we perform any secondary filtering on the Host.
@@ -163,8 +143,8 @@ class AdvertisingPacketFilter {
   [[nodiscard]] bool QueueOffloadFilterCommands(ScanId scan_id,
                                                 const DiscoveryFilter& filter);
 
-  // Reset all tracked hardware filter parameter slots, active filter index
-  // mappings, and the last allocated filter index to their initial state.
+  // Reset active filter index mappings and the last allocated filter index to
+  // their initial state.
   void ResetFilterState();
 
   // Returns the number of filter indexes currently in use
@@ -179,8 +159,6 @@ class AdvertisingPacketFilter {
                                           const DiscoveryFilter& filter);
 
   CommandPacket BuildClearParametersCommand() const;
-
-  CommandPacket BuildUnsetParametersCommand(FilterIndex filter_index) const;
 
   std::optional<CommandPacket> BuildSetServiceUUID16Command(
       FilterIndex filter_index, const UUID& uuid) const;
@@ -239,11 +217,6 @@ class AdvertisingPacketFilter {
   // Packet filter configuration that controls how this class behaves
   // (e.g. Controller offloading enabled, etc).
   Config config_;
-
-  // Controller memory supports up to a certain amount of filters to be
-  // offloaded per type of filter. Track how many slots are available to use
-  // within the Controller.
-  std::unordered_map<OffloadedFilterType, uint8_t> open_slots_;
 
   // Filters associated with a particular upper layer scan session with a given
   // scan id. These filters may be offloaded to the Controller if Controller
