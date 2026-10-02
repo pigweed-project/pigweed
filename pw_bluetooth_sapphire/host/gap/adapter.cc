@@ -569,14 +569,25 @@ class AdapterImpl final : public Adapter {
         extended);
   }
 
+  bool IsAndroidBatchScanSupported() const {
+    constexpr auto feature =
+        pw::bluetooth::Controller::FeaturesBits::kAndroidVendorExtensions;
+    return state().IsControllerFeatureSupported(feature) &&
+           state().android_vendor_capabilities.has_value() &&
+           state().android_vendor_capabilities->scan_results_storage_bytes() >
+               0;
+  }
+
   std::unique_ptr<hci::LowEnergyScanner> CreateScanner(
       bool extended,
       const hci::AdvertisingPacketFilter::Config& packet_filter_config) const {
+    bt_log(INFO,
+           "gap",
+           "controller support for batched scanning: %s, config enabled: %s",
+           IsAndroidBatchScanSupported() ? "yes" : "no",
+           config_.le_batched_scanning_enabled ? "yes" : "no");
+
     if (state().android_batch_scan_enabled) {
-      bt_log(INFO,
-             "gap",
-             "controller support for batch scanning via android vendor "
-             "extensions: yes");
       return std::make_unique<hci::AndroidBatchLowEnergyScanner>(
           le_address_manager_.get(),
           packet_filter_config,
@@ -1549,20 +1560,7 @@ void AdapterImpl::PerformIsoInitialization() {
 }
 
 void AdapterImpl::QueueAndroidBatchScanEnableCommands() {
-  constexpr auto feature =
-      pw::bluetooth::Controller::FeaturesBits::kAndroidVendorExtensions;
-  bool controller_supported =
-      state().IsControllerFeatureSupported(feature) &&
-      state().android_vendor_capabilities.has_value() &&
-      state().android_vendor_capabilities->scan_results_storage_bytes() > 0;
-
-  bt_log(INFO,
-         "gap",
-         "controller support for batched scanning: %s, config enabled: %s",
-         controller_supported ? "yes" : "no",
-         config_.le_batched_scanning_enabled ? "yes" : "no");
-
-  if (!controller_supported || !config_.le_batched_scanning_enabled) {
+  if (!IsAndroidBatchScanSupported() || !config_.le_batched_scanning_enabled) {
     return;
   }
 
