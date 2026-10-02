@@ -71,6 +71,10 @@ pub trait AtomicZero {
     const ZERO: Self;
 }
 
+pub trait AtomicOne {
+    const ONE: Self;
+}
+
 pub trait Atomic<T>:
     AtomicNew<T> + AtomicLoad<T> + AtomicStore<T> + AtomicCompareExchange<T> + Send + Sync
 {
@@ -78,7 +82,10 @@ pub trait Atomic<T>:
 
 pub trait AtomicBool: Atomic<bool> + AtomicFalse {}
 
-pub trait AtomicUsize: Atomic<usize> + AtomicAdd<usize> + AtomicSub<usize> + AtomicZero {}
+pub trait AtomicUsize:
+    Atomic<usize> + AtomicAdd<usize> + AtomicSub<usize> + AtomicZero + AtomicOne
+{
+}
 
 #[cfg(feature = "builtin_impls")]
 mod builtin_impls {
@@ -137,6 +144,10 @@ mod builtin_impls {
 
             impl AtomicZero for $atomic_type {
                 const ZERO: Self = Self::new(0);
+            }
+
+            impl AtomicOne for $atomic_type {
+                const ONE: Self = Self::new(1);
             }
         };
     }

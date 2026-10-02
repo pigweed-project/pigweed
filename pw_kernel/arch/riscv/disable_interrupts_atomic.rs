@@ -20,8 +20,8 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::Ordering;
 
 use pw_atomic::{
-    Atomic, AtomicAdd, AtomicCompareExchange, AtomicFalse, AtomicLoad, AtomicNew, AtomicStore,
-    AtomicSub, AtomicZero,
+    Atomic, AtomicAdd, AtomicCompareExchange, AtomicFalse, AtomicLoad, AtomicNew, AtomicOne,
+    AtomicStore, AtomicSub, AtomicZero,
 };
 
 use crate::spinlock::InterruptGuard;
@@ -178,6 +178,12 @@ macro_rules! impl_for_numeric {
         impl AtomicZero for $atomic_type {
             const ZERO: Self = Self {
                 value: UnsafeCell::new(0),
+            };
+        }
+
+        impl AtomicOne for $atomic_type {
+            const ONE: Self = Self {
+                value: UnsafeCell::new(1),
             };
         }
     };
