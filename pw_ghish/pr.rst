@@ -239,11 +239,14 @@ Displays a summary of:
 
 Listing open changes: ``pr list``
 =================================
-Lists open changes for the current repository:
+Lists open changes for the current repository (automatically scoped to the
+current Git remote's Gerrit project; pass ``--all-projects`` to query across all
+projects on the Gerrit host):
 
 .. code-block:: console
 
    $ ./gh pr list
+   $ ./gh pr list --all-projects
    $ ./gh pr list --limit 10 --state open
    $ ./gh pr list --author "hepler@google.com" --base main
    $ ./gh pr list --json number,title,state,branch
@@ -468,8 +471,13 @@ following target formats:
 * **Gerrit URL**: Full web or REST URLs (e.g.
   ``https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267`` or
   ``https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/3``).
-* **Shortlink**: Shortlinks such as ``pwrev/472267``, ``pwrev/472267/3``,
-  ``fxrev/472267``, or ``crrev.com/c/472267``.
+  The Gerrit host in the URL is used automatically unless ``--host`` is
+  specified.
+* **Shortlink**: Shortlinks such as ``pwrev/472267``, ``pwrev.dev/i/472267``,
+  ``fxrev/472267``, ``fxr/472267``, ``fxrev.dev/i/472267``, ``ag/472267``,
+  ``aosp/472267``, ``crrev.com/c/472267``, or ``crrev.com/i/472267`` (including
+  ``go/<shortlink>`` and ``goto.google.com/<shortlink>`` forms), which
+  automatically resolve the corresponding Gerrit host.
 * **Branch name**: Local branch names (e.g. ``my-feature``, ``cl/472267``,
   ``change-472267``), resolved by inspecting the branch tip commit's
   ``Change-Id`` or ``branch.<name>.gerrit-change-id`` in Git config.

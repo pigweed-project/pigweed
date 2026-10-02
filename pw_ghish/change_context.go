@@ -45,6 +45,14 @@ type ChangeContext struct {
 	TargetID string
 	ChangeID string
 	Revision string
+	Host     string
+	Project  string
+}
+
+func isLoopbackTestHost(h string) bool {
+	cleaned := CleanGerritHost(h)
+	return cleaned == "localhost" || cleaned == "127.0.0.1" || cleaned == "[::1]" ||
+		strings.HasPrefix(cleaned, "127.0.0.1:") || strings.HasPrefix(cleaned, "[::1]:") || strings.HasPrefix(cleaned, "localhost:")
 }
 
 // ResolveChangeContext resolves the target change ID from args or git branch,
@@ -66,9 +74,21 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 	if err != nil {
 		return nil, err
 	}
-	changeID, revision := ParseChangeAndRevision(targetID)
+	parsed := ParseChangeTarget(targetID)
+	changeID, revision := parsed.ChangeID, parsed.Revision
 	if changeID == "" {
 		return nil, fmt.Errorf("internal error: parsed change ID is empty from %q", targetID)
+	}
+
+	cfg := GetConfig(cmd)
+	if cfg == nil {
+		cfg = &Config{Git: DefaultGitRunner}
+	}
+	hostFlagChanged := isHostFlagChanged(cmd)
+	if parsed.Host != "" && !hostFlagChanged && !isLoopbackTestHost(cfg.Host) {
+		cfg.Host = parsed.Host
+		SetConfig(cmd, cfg)
+		ctx = cmd.Context()
 	}
 
 	client, err := NewGerritClient(ctx, cmd)
@@ -76,7 +96,10 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 		return nil, fmt.Errorf("error creating Gerrit client: %w", err)
 	}
 
-	cfg := GetConfig(cmd)
+	resolvedHost := parsed.Host
+	if hostFlagChanged || resolvedHost == "" {
+		resolvedHost = cfg.GerritHost(ctx)
+	}
 
 	return &ChangeContext{
 		Context:  ctx,
@@ -86,6 +109,8 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 		TargetID: targetID,
 		ChangeID: changeID,
 		Revision: revision,
+		Host:     resolvedHost,
+		Project:  parsed.Project,
 	}, nil
 }
 
@@ -453,12 +478,16 @@ func (c *ChangeContext) ResolveProfile(project ...string) (ProjectProfile, error
 		return DetectProfile("", "", ProfileFlag)
 	}
 	var gHost string
-	if c.Client != nil {
+	if c.Host != "" && !isLoopbackTestHost(c.Host) {
+		gHost = c.Host
+	} else if c.Client != nil {
 		u := c.Client.BaseURL()
-		gHost = CleanGerritHost(u.String())
+		gHost = CanonicalGerritHost(u.String())
 	}
-	if gHost == "" && c.Config != nil {
-		gHost = c.Config.GerritHost(c.Context)
+	if (gHost == "" || isLoopbackTestHost(gHost)) && c.Config != nil {
+		if cfgHost := c.Config.GerritHost(c.Context); cfgHost != "" {
+			gHost = cfgHost
+		}
 	}
 	return ResolveProfile(c.Context, c.Config, gHost, proj)
 }
@@ -580,10 +609,15 @@ func ResolveCIContext(cmd *cobra.Command, rawID string) (*CIContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	gerritHost := chCtx.Config.GerritHost(chCtx.Context)
-	if gerritHost == "" && profile != nil {
-		gerritHost = CleanGerritHost(profile.DefaultGerritHost())
+	gerritHost := chCtx.Host
+	if gerritHost == "" && chCtx.Config != nil {
+		gerritHost = chCtx.Config.GerritHost(chCtx.Context)
 	}
+	if gerritHost == "" && profile != nil {
+		gerritHost = CanonicalGerritHost(profile.DefaultGerritHost())
+	}
+	gerritHost = CanonicalGerritHost(gerritHost)
+
 	luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient(chCtx.Context, buildbucketHost))
 	builds, err := luciClient.SearchBuildsForPatchsets(chCtx.Context, gerritHost, change.Project, change.Number, equivalentPatchsets)
 	if err != nil {

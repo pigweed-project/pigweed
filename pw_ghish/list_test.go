@@ -108,3 +108,48 @@ func TestList_AuthorMeMapsToSelf(t *testing.T) {
 		t.Errorf("Expected query to contain 'owner:self' when --author @me passed, got queries: %v", capturedQuery)
 	}
 }
+
+func TestList_DefaultProjectScopeAndAllProjects(t *testing.T) {
+	mockGit := SetMockGit(t, nil)
+	mockGit.OnCommand("config --get remote.origin.url", "https://pigweed.googlesource.com/pigweed/sense\n")
+
+	server := NewMockGerritServer(t)
+	var capturedQuery string
+	server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = strings.Join(r.URL.Query()["q"], " ")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(")]}'\n[]"))
+	})
+
+	// 1. Default scopes to current git remote's Gerrit project.
+	if out, err := executeCommand(RootCmd, "pr", "list"); err != nil {
+		t.Fatalf("pr list failed: %v\nOutput: %s", err, out)
+	}
+	if !strings.Contains(capturedQuery, "project:pigweed/sense") {
+		t.Errorf("Expected default 'pr list' query to contain 'project:pigweed/sense', got %q", capturedQuery)
+	}
+
+	// 2. --all-projects omits project: filter.
+	if out, err := executeCommand(RootCmd, "pr", "list", "--all-projects"); err != nil {
+		t.Fatalf("pr list --all-projects failed: %v\nOutput: %s", err, out)
+	}
+	if strings.Contains(capturedQuery, "project:") {
+		t.Errorf("Expected 'pr list --all-projects' query to omit 'project:', got %q", capturedQuery)
+	}
+
+	// 3. Explicit project: in --search is not duplicated.
+	if out, err := executeCommand(RootCmd, "pr", "list", "--search", "project:other/repo"); err != nil {
+		t.Fatalf("pr list --search project:other/repo failed: %v\nOutput: %s", err, out)
+	}
+	if strings.Contains(capturedQuery, "project:pigweed/sense") || !strings.Contains(capturedQuery, "project:other/repo") {
+		t.Errorf("Expected 'pr list --search project:other/repo' to use only explicit project filter, got %q", capturedQuery)
+	}
+
+	// 4. --host set to a different host than the git remote disables local project scoping.
+	if out, err := executeCommand(RootCmd, "pr", "list", "--host", "fuchsia-review.googlesource.com"); err != nil {
+		t.Fatalf("pr list --host fuchsia-review.googlesource.com failed: %v\nOutput: %s", err, out)
+	}
+	if strings.Contains(capturedQuery, "project:") {
+		t.Errorf("Expected 'pr list --host fuchsia-review.googlesource.com' query to omit local 'project:', got %q", capturedQuery)
+	}
+}

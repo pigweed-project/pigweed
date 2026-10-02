@@ -195,6 +195,205 @@ func TestParseChangeAndRevision(t *testing.T) {
 	}
 }
 
+func TestParseChangeTarget(t *testing.T) {
+	tests := []struct {
+		input string
+		want  ParsedChangeTarget
+	}{
+		{
+			input: "472267/3",
+			want:  ParsedChangeTarget{ChangeID: "472267", Revision: "3"},
+		},
+		{
+			input: "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267/3",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				Project:  "pigweed/pigweed",
+				ChangeID: "472267",
+				Revision: "3",
+			},
+		},
+		{
+			input: "https://fuchsia-review.googlesource.com/#/c/fuchsia/+/12345/2",
+			want: ParsedChangeTarget{
+				Host:     "fuchsia-review.googlesource.com",
+				Project:  "fuchsia",
+				ChangeID: "12345",
+				Revision: "2",
+			},
+		},
+		{
+			input: "https://foo-internal-review" + gobCorpDomainSuffix + "/c/bar/baz/+/98765/1",
+			want: ParsedChangeTarget{
+				Host:     "foo-internal-review.googlesource.com",
+				Project:  "bar/baz",
+				ChangeID: "98765",
+				Revision: "1",
+			},
+		},
+		{
+			input: "https://pigweed-review.googlesource.com/+/472267/2",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				ChangeID: "472267",
+				Revision: "2",
+			},
+		},
+		{
+			input: "https://pigweed-review.googlesource.com/changes/472267/revisions/4",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				ChangeID: "472267",
+				Revision: "4",
+			},
+		},
+		{
+			input: "pwrev/472267/5",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				ChangeID: "472267",
+				Revision: "5",
+			},
+		},
+		{
+			input: "pwrev.dev/472267",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				ChangeID: "472267",
+				Revision: "current",
+			},
+		},
+		{
+			input: "pwrev.dev/i/472267/2",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-internal-review.googlesource.com",
+				ChangeID: "472267",
+				Revision: "2",
+			},
+		},
+		{
+			input: "fxrev/12345/3",
+			want: ParsedChangeTarget{
+				Host:     "fuchsia-review.googlesource.com",
+				ChangeID: "12345",
+				Revision: "3",
+			},
+		},
+		{
+			input: "fxr/12345",
+			want: ParsedChangeTarget{
+				Host:     "fuchsia-review.googlesource.com",
+				ChangeID: "12345",
+				Revision: "current",
+			},
+		},
+		{
+			input: "fxrev.dev/i/12345/2",
+			want: ParsedChangeTarget{
+				Host:     "turquoise-internal-review.googlesource.com",
+				ChangeID: "12345",
+				Revision: "2",
+			},
+		},
+		{
+			input: "fxr/i/12345",
+			want: ParsedChangeTarget{
+				Host:     "turquoise-internal-review.googlesource.com",
+				ChangeID: "12345",
+				Revision: "current",
+			},
+		},
+		{
+			input: "ag/99999/4",
+			want: ParsedChangeTarget{
+				Host:     "googleplex-android-review.googlesource.com",
+				ChangeID: "99999",
+				Revision: "4",
+			},
+		},
+		{
+			input: "aosp/88888",
+			want: ParsedChangeTarget{
+				Host:     "android-review.googlesource.com",
+				ChangeID: "88888",
+				Revision: "current",
+			},
+		},
+		{
+			input: "crrev.com/c/77777/2",
+			want: ParsedChangeTarget{
+				Host:     "chromium-review.googlesource.com",
+				ChangeID: "77777",
+				Revision: "2",
+			},
+		},
+		{
+			input: "crrev.com/i/66666",
+			want: ParsedChangeTarget{
+				Host:     "chrome-internal-review.googlesource.com",
+				ChangeID: "66666",
+				Revision: "current",
+			},
+		},
+		{
+			input: "go/pwrev/12345/2",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				ChangeID: "12345",
+				Revision: "2",
+			},
+		},
+		{
+			input: "http://go/pwrev/i/99999",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-internal-review.googlesource.com",
+				ChangeID: "99999",
+				Revision: "current",
+			},
+		},
+		{
+			input: "https://goto.google.com/fxr/88888/3",
+			want: ParsedChangeTarget{
+				Host:     "fuchsia-review.googlesource.com",
+				ChangeID: "88888",
+				Revision: "3",
+			},
+		},
+		{
+			input: "https://pigweed-review.googlesource.com/#!/c/pigweed/pigweed/+/12345/4",
+			want: ParsedChangeTarget{
+				Host:     "pigweed-review.googlesource.com",
+				Project:  "pigweed/pigweed",
+				ChangeID: "12345",
+				Revision: "4",
+			},
+		},
+		{
+			input: "go/cl/12345",
+			want: ParsedChangeTarget{
+				ChangeID: "12345",
+				Revision: "current",
+			},
+		},
+		{
+			input: "http://go/cl/12345/2",
+			want: ParsedChangeTarget{
+				ChangeID: "12345",
+				Revision: "2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ParseChangeTarget(tt.input)
+			if got != tt.want {
+				t.Errorf("ParseChangeTarget(%q) = %+v, want %+v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHasChangeID(t *testing.T) {
 	tests := []struct {
 		desc string
@@ -557,6 +756,15 @@ func TestIsChangeIdentifier(t *testing.T) {
 		{"https://pigweed-review.googlesource.com/+/472267/2", true},
 		{"pwrev/472267", true},
 		{"pwrev/472267/3", true},
+		{"pwrev.dev/472267", true},
+		{"pwrev.dev/i/472267/2", true},
+		{"fxrev/12345", true},
+		{"fxr/12345/2", true},
+		{"fxrev.dev/i/12345", true},
+		{"ag/99999", true},
+		{"aosp/88888", true},
+		{"crrev.com/c/77777", true},
+		{"crrev.com/i/66666", true},
 		{"cl/472267", true},
 		{"change-472267", true},
 		{"my-feature", false},

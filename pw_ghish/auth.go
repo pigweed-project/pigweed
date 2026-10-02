@@ -765,6 +765,12 @@ func findLuciAuthBinary(ctx context.Context) string {
 			filepath.Join(wsDir, ".environment", "cipd", "packages", "luci", "luci-auth"),
 		)
 	}
+	if scriptDir := strings.TrimSpace(os.Getenv("PW_GH_SCRIPT_DIR")); scriptDir != "" {
+		candidates = append(candidates,
+			filepath.Join(scriptDir, "environment", "cipd", "packages", "luci", "luci-auth"),
+			filepath.Join(scriptDir, ".environment", "cipd", "packages", "luci", "luci-auth"),
+		)
+	}
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(cwd, "environment", "cipd", "packages", "luci", "luci-auth"),

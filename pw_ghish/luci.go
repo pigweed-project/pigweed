@@ -296,7 +296,7 @@ func (c *LUCIClient) SearchBuilds(ctx context.Context, gerritHost, project strin
 			Predicate: bbPredicate{
 				GerritChanges: []bbGerritChange{
 					{
-						Host:     gerritHost,
+						Host:     CanonicalGerritHost(gerritHost),
 						Project:  project,
 						Change:   changeNum,
 						Patchset: patchsetNum,

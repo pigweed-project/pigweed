@@ -602,4 +602,66 @@ func TestConfigGerritHost(t *testing.T) {
 			t.Errorf("got %q, want fuchsia-review.googlesource.com", got)
 		}
 	})
+
+	t.Run("canonicalizes internal GoB mirror host", func(t *testing.T) {
+		cfg := &Config{Host: "foo-internal-review" + gobCorpDomainSuffix}
+		if got := cfg.GerritHost(ctx); got != "foo-internal-review.googlesource.com" {
+			t.Errorf("got %q, want foo-internal-review.googlesource.com", got)
+		}
+	})
+}
+
+func TestCanonicalGerritHost(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"foo-internal" + gobCorpDomainSuffix, "foo-internal-review.googlesource.com"},
+		{"foo-internal-review" + gobCorpDomainSuffix, "foo-internal-review.googlesource.com"},
+		{"https://foo-internal" + gobCorpDomainSuffix + "/bar/baz", "foo-internal-review.googlesource.com"},
+		{"https://foo-internal-review" + gobCorpDomainSuffix + "/a", "foo-internal-review.googlesource.com"},
+		{"pigweed.googlesource.com", "pigweed-review.googlesource.com"},
+		{"pigweed-review.googlesource.com", "pigweed-review.googlesource.com"},
+		{"sso://foo-internal/bar/baz", "foo-internal-review.googlesource.com"},
+		{"sso://foo-internal-review.googlesource.com/bar/baz", "foo-internal-review.googlesource.com"},
+		{"localhost:8080", "localhost:8080"},
+		{"http://127.0.0.1:12345", "127.0.0.1:12345"},
+		{"", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			if got := CanonicalGerritHost(tc.input); got != tc.want {
+				t.Errorf("CanonicalGerritHost(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGerritURL_GitCorpRemote(t *testing.T) {
+	remotes := []string{
+		"https://foo-internal" + gobCorpDomainSuffix + "/bar/baz",
+		"https://foo-internal" + gobCorpDomainSuffix + "/bar/baz.git",
+		"https://foo-internal-review" + gobCorpDomainSuffix + "/bar/baz",
+		"sso://foo-internal/bar/baz",
+	}
+	for _, remote := range remotes {
+		t.Run(remote, func(t *testing.T) {
+			c := &Config{
+				Git: &MockGitRunner{
+					RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+						stdout.Write([]byte(remote + "\n"))
+						return nil
+					},
+				},
+			}
+			got, err := c.GerritURL(context.Background())
+			if err != nil {
+				t.Fatalf("GerritURL() failed for %q: %v", remote, err)
+			}
+			want := "https://foo-internal-review.googlesource.com/a"
+			if got != want {
+				t.Errorf("GerritURL() for %q = %q, want %q", remote, got, want)
+			}
+		})
+	}
 }

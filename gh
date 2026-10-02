@@ -64,7 +64,7 @@ if [ -z "$_CURRENT_HASH" ] && [ -n "${PW_GH_DEBUG:-}" ]; then
 fi
 
 _STALE=1
-_DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish 2>/dev/null || true)
+_DIRTY=$(git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish ':(exclude)*.md' 2>/dev/null || true)
 if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -f "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ] && [ -n "$_CURRENT_HASH" ]; then
   _SAVED_HASH=$(cat "$_GH_HASH_FILE" 2>/dev/null || true)
   if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ]; then
@@ -108,6 +108,13 @@ if [ $_STALE -eq 1 ]; then
   fi
 fi
 
-export BUILD_WORKSPACE_DIRECTORY="${_PW_SCRIPT_DIR}"
+export PW_GH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
+if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
+  if _CALLER_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$_CALLER_TOPLEVEL" ]; then
+    export BUILD_WORKSPACE_DIRECTORY="$_CALLER_TOPLEVEL"
+  else
+    export BUILD_WORKSPACE_DIRECTORY="$PWD"
+  fi
+fi
 export BUILD_WORKING_DIRECTORY="${PWD}"
 exec "$_GH_BIN" "$@"

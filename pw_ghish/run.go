@@ -96,20 +96,46 @@ func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allow
 	return rawID, targetBuilder, "", nil
 }
 
-// collectFailedBuilders returns deduplicated failed builder names from the latest builds.
-func collectFailedBuilders(builds []bbBuild, includeExperimental bool) []string {
-	var failed []string
+// buildMatchesJob checks whether a Buildbucket build matches a user-supplied
+// job selector, which may be "<builder>", "<bucket>/<builder>", or
+// "<project>/<bucket>/<builder>" (case-insensitive).
+func buildMatchesJob(b bbBuild, job string) bool {
+	if strings.EqualFold(b.Builder.Builder, job) {
+		return true
+	}
+	if b.Builder.Bucket != "" && strings.EqualFold(b.Builder.Bucket+"/"+b.Builder.Builder, job) {
+		return true
+	}
+	if b.Builder.Project != "" && b.Builder.Bucket != "" && strings.EqualFold(b.Builder.Project+"/"+b.Builder.Bucket+"/"+b.Builder.Builder, job) {
+		return true
+	}
+	return false
+}
+
+// collectFailedBuilds returns deduplicated failed builds from the latest builds.
+func collectFailedBuilds(builds []bbBuild, includeExperimental bool) []bbBuild {
+	var failed []bbBuild
 	seen := make(map[string]bool)
 	for _, b := range deduplicateLatestBuilds(builds) {
 		if b.Status == "FAILURE" || b.Status == "INFRA_FAILURE" {
 			if !includeExperimental && b.IsExperimental() {
 				continue
 			}
-			if !seen[b.Builder.Builder] {
-				seen[b.Builder.Builder] = true
-				failed = append(failed, b.Builder.Builder)
+			key := b.Builder.Project + "/" + b.Builder.Bucket + "/" + b.Builder.Builder
+			if !seen[key] {
+				seen[key] = true
+				failed = append(failed, b)
 			}
 		}
+	}
+	return failed
+}
+
+// collectFailedBuilders returns deduplicated failed builder names from the latest builds.
+func collectFailedBuilders(builds []bbBuild, includeExperimental bool) []string {
+	var failed []string
+	for _, b := range collectFailedBuilds(builds, includeExperimental) {
+		failed = append(failed, b.Builder.Builder)
 	}
 	return failed
 }
@@ -209,7 +235,7 @@ var runViewCmd = &cobra.Command{
 				targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", directBuildID)
 			} else if targetBuilder != "" {
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
-					if strings.EqualFold(b.Builder.Builder, targetBuilder) {
+					if buildMatchesJob(b, targetBuilder) {
 						targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", b.ID)
 						break
 					}
@@ -243,7 +269,7 @@ var runViewCmd = &cobra.Command{
 				// code-equivalent patchsets plus retries, so preferring any
 				// failure would surface one that a later build superseded.
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
-					if strings.EqualFold(b.Builder.Builder, targetBuilder) || b.ID == targetBuilder {
+					if buildMatchesJob(b, targetBuilder) || b.ID == targetBuilder {
 						targetBuilds = append(targetBuilds, b)
 						break
 					}
@@ -346,7 +372,7 @@ var runViewCmd = &cobra.Command{
 				bID = directBuildID
 			} else if targetBuilder != "" {
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
-					if strings.EqualFold(b.Builder.Builder, targetBuilder) {
+					if buildMatchesJob(b, targetBuilder) {
 						bID = b.ID
 						bName = b.Builder.Builder
 						break
@@ -511,13 +537,13 @@ var runRerunCmd = &cobra.Command{
 			return fmt.Errorf("failed to load checks for %q: %w", rawID, err)
 		}
 
-		var buildersToRerun []string
+		var buildsToRerun []bbBuild
 		if targetBuilder != "" {
 			found := false
 			for _, b := range deduplicateLatestBuilds(res.Builds) {
-				if strings.EqualFold(b.Builder.Builder, targetBuilder) {
+				if buildMatchesJob(b, targetBuilder) {
 					found = true
-					buildersToRerun = append(buildersToRerun, b.Builder.Builder)
+					buildsToRerun = append(buildsToRerun, b)
 					break
 				}
 			}
@@ -535,8 +561,8 @@ var runRerunCmd = &cobra.Command{
 				return fmt.Errorf("builder %q not found on change %s%s", targetBuilder, rawID, sortMsg)
 			}
 		} else if runRerunFailed {
-			buildersToRerun = collectFailedBuilders(res.Builds, runRerunExperimental)
-			if len(buildersToRerun) == 0 {
+			buildsToRerun = collectFailedBuilds(res.Builds, runRerunExperimental)
+			if len(buildsToRerun) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No failed checks found to rerun.")
 				return nil
 			}
@@ -556,15 +582,20 @@ var runRerunCmd = &cobra.Command{
 		}
 
 		ctx := cmd.Context()
-		for _, bName := range buildersToRerun {
+		for _, b := range buildsToRerun {
+			bName := b.Builder.Builder
+			rerunSpec := bName
+			if b.Builder.Project != "" && b.Builder.Bucket != "" {
+				rerunSpec = fmt.Sprintf("%s/%s/%s", b.Builder.Project, b.Builder.Bucket, bName)
+			}
 			if runRerunDryRun {
-				cmdStr := res.Profile.FormatRerunCommand(chRef, bName)
+				cmdStr := res.Profile.FormatRerunCommand(chRef, rerunSpec)
 				fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] %s\n", cmdStr)
 				continue
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Rerunning check: %s...\n", bName)
-			if err := res.Profile.RerunCheck(ctx, chRef, bName, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			if err := res.Profile.RerunCheck(ctx, chRef, rerunSpec, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 				return fmt.Errorf("failed to rerun %s: %w", bName, err)
 			}
 		}

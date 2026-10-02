@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -35,7 +36,34 @@ var (
 	listMergedBefore string
 	listJSON         string
 	listTemplateStr  string
+	listAllProjects  bool
 )
+
+func resolveDefaultListProject(ctx context.Context, cmd *cobra.Command) string {
+	cfg := GetConfig(cmd)
+	if cfg == nil {
+		return ""
+	}
+	proj, err := cfg.GerritProject(ctx)
+	if err != nil || proj == "" {
+		return ""
+	}
+	targetHost := ""
+	if isHostFlagChanged(cmd) {
+		targetHost = CanonicalGerritHost(HostFlag)
+	} else if cfg.Host != "" && !isLoopbackTestHost(cfg.Host) {
+		targetHost = CanonicalGerritHost(cfg.Host)
+	}
+	if targetHost != "" {
+		if remoteURL, err := cfg.GitClient().ConfigGet(ctx, "remote.origin.url"); err == nil && remoteURL != "" {
+			remoteHost := CanonicalGerritHost(remoteURL)
+			if remoteHost != "" && remoteHost != targetHost {
+				return ""
+			}
+		}
+	}
+	return proj
+}
 
 const defaultListTemplate = `ID         STATUS     SUBJECT                                            OWNER
 ----------------------------------------------------------------------------------------------
@@ -53,6 +81,12 @@ var listCmd = &cobra.Command{
 		}
 
 		var queryParts []string
+
+		if !listAllProjects && !strings.Contains(strings.ToLower(listSearch), "project:") {
+			if proj := resolveDefaultListProject(ctx, cmd); proj != "" {
+				queryParts = append(queryParts, fmt.Sprintf("project:%s", proj))
+			}
+		}
 
 		switch listState {
 		case "open":
@@ -200,5 +234,6 @@ func init() {
 	listCmd.Flags().StringVar(&listMergedBefore, "merged-before", "", "Filter by merged before date")
 	listCmd.Flags().StringVar(&listJSON, "json", "", "Output JSON with specified fields")
 	listCmd.Flags().StringVarP(&listTemplateStr, "template", "t", "", "Format output using a Go template")
+	listCmd.Flags().BoolVar(&listAllProjects, "all-projects", false, "[ghish-only] List changes across all projects on the Gerrit host instead of scoping to the current repository")
 	PrCmd.AddCommand(listCmd)
 }

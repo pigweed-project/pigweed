@@ -30,9 +30,14 @@ Subcommands accepting `[<id>]` support:
 - **Change number**: `472267` or with patchset `472267/3`.
 - **Gerrit URL**:
   `https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267`
-  (or `/+/472267/3`).
+  (or `/+/472267/3`). Automatically routes to the Gerrit host in the URL even
+  when invoked from a different repository.
 - **Shortlink**: `pwrev/472267`, `pwrev.dev/472267`, `pwrev.dev/i/472267`
-  (internal review), `fxrev/472267`, `fxrev.dev/i/472267`, `crrev.com/c/472267`.
+  (internal review), `fxrev/472267`, `fxrev.dev/472267`, `fxr/472267`,
+  `fxrev.dev/i/472267`, `fxr/i/472267`, `ag/472267`, `aosp/472267`,
+  `crrev.com/c/472267`, `crrev.com/i/472267` (and `go/<shortlink>` or
+  `goto.google.com/<shortlink>` forms). Automatically resolves the
+  corresponding Gerrit host.
 - **Branch name**: `my-feature`, `cl/472267`, `change-472267` (resolves via
   branch commit `Change-Id` or `branch.<name>.gerrit-change-id` config).
 
@@ -126,21 +131,25 @@ Commands:
   - **Exit codes**: `0` = all blocking checks passed, `8` = checks still
     running, `1` = blocking check failed, canceled, or no checks reported.
     Branch on the exit code; never scrape the table.
-  - *Rebase Note*: Builds from prior patchsets remain applicable across
-    `TRIVIAL_REBASE`, `TRIVIAL_REBASE_WITH_MESSAGE_UPDATE`, `NO_CODE_CHANGE`,
-    and `NO_CHANGE` patchsets.
+  - *Equivalent Patchsets*: Builds from earlier code-equivalent patchsets
+    (`TRIVIAL_REBASE`, `TRIVIAL_REBASE_WITH_MESSAGE_UPDATE`, `NO_CODE_CHANGE`,
+    `NO_CHANGE`, `MERGE_FIRST_PARENT_UPDATE`) are automatically included and
+    labeled `(from patchset <N>)`.
   - *Gerrit UI Check Count Note*: `./gh pr checks` returns top-level Buildbucket
     builders (e.g. ~72), whereas the Gerrit UI "Checks" tab (~132) also counts
     individual `pw_presubmit` sub-steps and static analyzers (AyeAye, SLSA).
 - **`./gh run view [<id>] [-j|--job <builder|id>] [--log-failed] [--log] [-v] [--json]`**:
   Inspect failed builders, LogDog failure snippets (`--log-failed`), or the
-  hierarchical step tree (`-j <builder>`).
+  hierarchical step tree (`-j [<project>/][<bucket>/]<builder>`).
 - **`./gh run rerun [<id>] [--failed | -j <builder>] [--dry-run]`**: Rerun all
-  failed builders or a specific builder via `bb add`.
+  failed builders or a specific builder via `bb add` (automatically using each
+  build's recorded Buildbucket `<project>/<bucket>/<builder>`).
 - **`./gh run list [<id>]`** & **`./gh run watch [<id>]`**.
 
 ### 5. Listing, Merging & Status
-- **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--json <fields>]`**.
+- **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--all-projects] [--json <fields>]`**:
+  Automatically scopes to `project:<local-repo>` when run inside a Git
+  checkout; pass `--all-projects` to list across all projects on the Gerrit host.
 - **`./gh pr merge [<id>] [--auto] [--cq]`**: Submit change to target branch.
   Prefer `--auto` (auto-submit upon approval) or `--cq` (`Commit-Queue+2`) over
   bare `pr merge`.
@@ -162,8 +171,9 @@ Commands:
 
 ### 7. Where `gh` Habits Break
 Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
-`--project`), `--force` (`-f` is `--fill`), `--cq` (`-q` is `--jq`), and
-`--message` on `pr merge` (`-m` is `--merge`).
+`--project`), `--force` (`-f` is `--fill`), `--cq` (`-q` is `--jq`),
+`--all-projects` on `pr list` (`-a` is `--assignee`), and `--message` on
+`pr merge` (`-m` is `--merge`).
 
 | You type | Real `gh` | Here |
 |---|---|---|

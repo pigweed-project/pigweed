@@ -440,6 +440,183 @@ func MergeTrailers(newBody string, origTrailers []string) string {
 	return newBodyTrimmed + "\n\n" + strings.Join(toAppend, "\n") + "\n"
 }
 
+// ParsedChangeTarget holds the Gerrit host, project, change ID, and revision
+// extracted from a CL identifier, shortlink, or full Gerrit URL.
+type ParsedChangeTarget struct {
+	Host     string
+	Project  string
+	ChangeID string
+	Revision string
+}
+
+var gerritShortlinkPrefixes = []struct {
+	prefix string
+	host   string
+}{
+	{"pwrev.dev/i/", "pigweed-internal-review.googlesource.com"},
+	{"pwrev/i/", "pigweed-internal-review.googlesource.com"},
+	{"pwrev.dev/", "pigweed-review.googlesource.com"},
+	{"pwrev/", "pigweed-review.googlesource.com"},
+	{"fxrev.dev/i/", "turquoise-internal-review.googlesource.com"},
+	{"fxrev/i/", "turquoise-internal-review.googlesource.com"},
+	{"fxr/i/", "turquoise-internal-review.googlesource.com"},
+	{"fxrev.dev/", "fuchsia-review.googlesource.com"},
+	{"fxrev/", "fuchsia-review.googlesource.com"},
+	{"fxr/", "fuchsia-review.googlesource.com"},
+	{"ag/", "googleplex-android-review.googlesource.com"},
+	{"aosp/", "android-review.googlesource.com"},
+	{"crrev.com/c/", "chromium-review.googlesource.com"},
+	{"crrev/c/", "chromium-review.googlesource.com"},
+	{"crrev.com/i/", "chrome-internal-review.googlesource.com"},
+	{"crrev/i/", "chrome-internal-review.googlesource.com"},
+}
+
+func isShortlinkChangeID(s string) bool {
+	if s == "" {
+		return false
+	}
+	if _, err := strconv.Atoi(s); err == nil {
+		return true
+	}
+	return strings.HasPrefix(s, "I") && len(s) == 41
+}
+
+// ParseChangeTarget parses a change identifier, Gerrit URL, or shortlink into
+// its constituent host, project, change ID, and revision components.
+func ParseChangeTarget(arg string) ParsedChangeTarget {
+	trimmed := strings.TrimSpace(arg)
+	if trimmed == "" {
+		return ParsedChangeTarget{Revision: "current"}
+	}
+
+	// Normalize PolyGerrit hash-routing (/#!/ or /#/) before stripping URL fragments.
+	clean := strings.Replace(trimmed, "/#!/", "/", 1)
+	clean = strings.Replace(clean, "/#/", "/", 1)
+	if idx := strings.IndexAny(clean, "?#"); idx != -1 {
+		clean = clean[:idx]
+	}
+	clean = strings.TrimRight(clean, "/")
+
+	noScheme := strings.TrimPrefix(strings.TrimPrefix(clean, "https://"), "http://")
+	if strings.HasPrefix(noScheme, "go/") {
+		noScheme = strings.TrimPrefix(noScheme, "go/")
+	} else if strings.HasPrefix(noScheme, "goto.google.com/") {
+		noScheme = strings.TrimPrefix(noScheme, "goto.google.com/")
+	}
+
+	// 1. Check known Gerrit shortlinks (pwrev, fxrev, fxr, ag, aosp, crrev)
+	// TODO: https://pwbug.dev/485322635 - Support resolving arbitrary
+	// go/<shortlink>/<id> redirects dynamically to discover the target Gerrit
+	// host when not in gerritShortlinkPrefixes.
+	for _, sl := range gerritShortlinkPrefixes {
+		if strings.HasPrefix(noScheme, sl.prefix) {
+			rest := strings.TrimPrefix(noScheme, sl.prefix)
+			ch := rest
+			rev := "current"
+			if idx := strings.IndexByte(rest, '/'); idx != -1 {
+				ch = rest[:idx]
+				if rest[idx+1:] != "" {
+					rev = rest[idx+1:]
+				}
+			}
+			if isShortlinkChangeID(ch) {
+				return ParsedChangeTarget{
+					Host:     sl.host,
+					ChangeID: ch,
+					Revision: rev,
+				}
+			}
+		}
+	}
+
+	// 2. Check /+/ pattern in Gerrit URLs
+	if m := gerritURLPlusRegex.FindStringSubmatch(noScheme); len(m) > 1 {
+		rev := "current"
+		if len(m) > 2 && m[2] != "" {
+			rev = m[2]
+		}
+		var host, project string
+		if plusIdx := strings.Index(noScheme, "/+/"); plusIdx != -1 {
+			beforePlus := noScheme[:plusIdx]
+			if hostPart, pathPart, found := strings.Cut(beforePlus, "/"); found {
+				host = CanonicalGerritHost(hostPart)
+				pathPart = strings.TrimPrefix(pathPart, "a/")
+				pathPart = strings.TrimPrefix(pathPart, "c/")
+				project = strings.Trim(pathPart, "/")
+			} else {
+				host = CanonicalGerritHost(beforePlus)
+			}
+		}
+		return ParsedChangeTarget{
+			Host:     host,
+			Project:  project,
+			ChangeID: m[1],
+			Revision: rev,
+		}
+	}
+
+	// 3. Check /changes/ pattern in Gerrit REST/web URLs
+	if m := gerritChangesURLRegex.FindStringSubmatch(noScheme); len(m) > 1 {
+		rev := "current"
+		if len(m) > 2 && m[2] != "" {
+			rev = m[2]
+		}
+		var host string
+		if idx := strings.Index(noScheme, "/changes/"); idx != -1 {
+			hostPart := strings.TrimSuffix(noScheme[:idx], "/a")
+			host = CanonicalGerritHost(hostPart)
+		}
+		return ParsedChangeTarget{
+			Host:     host,
+			ChangeID: m[1],
+			Revision: rev,
+		}
+	}
+
+	// 4. Check direct URLs (https://<host>/12345 or https://<host>/12345/3)
+	if m := gerritDirectURLRegex.FindStringSubmatch(clean); len(m) > 1 {
+		rev := "current"
+		if len(m) > 2 && m[2] != "" {
+			rev = m[2]
+		}
+		hostPart, _, _ := strings.Cut(noScheme, "/")
+		return ParsedChangeTarget{
+			Host:     CanonicalGerritHost(hostPart),
+			ChangeID: m[1],
+			Revision: rev,
+		}
+	}
+
+	// 5. Check branch-style identifiers (cl/12345, go/cl/12345, change-12345, review/12345)
+	if m := branchChangeNumRegex.FindStringSubmatch(noScheme); len(m) > 1 {
+		rev := "current"
+		if len(m) > 2 && m[2] != "" {
+			rev = m[2]
+		}
+		return ParsedChangeTarget{
+			ChangeID: m[1],
+			Revision: rev,
+		}
+	}
+
+	// 6. Standard format: "12345/3" or "project~branch~I.../2" or "12345"
+	if idx := strings.LastIndex(clean, "/"); idx != -1 {
+		rev := clean[idx+1:]
+		if rev == "" {
+			rev = "current"
+		}
+		return ParsedChangeTarget{
+			ChangeID: clean[:idx],
+			Revision: rev,
+		}
+	}
+
+	return ParsedChangeTarget{
+		ChangeID: clean,
+		Revision: "current",
+	}
+}
+
 // ParseChangeAndRevision parses a change identifier that optionally contains a patchset number,
 // a Gerrit Web/REST URL, a shortlink (e.g. pwrev/12345), or branch-encoded change number.
 // Examples:
@@ -450,73 +627,8 @@ func MergeTrailers(newBody string, origTrailers []string) string {
 //	"pwrev/472267" -> ("472267", "current")
 //	"cl/472267" -> ("472267", "current")
 func ParseChangeAndRevision(arg string) (changeID string, revision string) {
-	trimmed := strings.TrimSpace(arg)
-	if trimmed == "" {
-		return "", "current"
-	}
-
-	// Strip query parameters and URL fragments if present
-	clean := trimmed
-	if idx := strings.IndexAny(clean, "?#"); idx != -1 {
-		clean = clean[:idx]
-	}
-	clean = strings.TrimRight(clean, "/")
-
-	// 1. Check /+/ pattern in Gerrit URLs
-	if m := gerritURLPlusRegex.FindStringSubmatch(clean); len(m) > 1 {
-		rev := "current"
-		if len(m) > 2 && m[2] != "" {
-			rev = m[2]
-		}
-		return m[1], rev
-	}
-
-	// 2. Check /changes/ pattern in Gerrit REST/web URLs
-	if m := gerritChangesURLRegex.FindStringSubmatch(clean); len(m) > 1 {
-		rev := "current"
-		if len(m) > 2 && m[2] != "" {
-			rev = m[2]
-		}
-		return m[1], rev
-	}
-
-	// 3. Check shortlinks (pwrev/12345, fxrev/12345, crrev.com/c/12345, https://pwrev.dev/12345)
-	if m := gerritShortlinkRegex.FindStringSubmatch(clean); len(m) > 1 {
-		rev := "current"
-		if len(m) > 2 && m[2] != "" {
-			rev = m[2]
-		}
-		return m[1], rev
-	}
-
-	// 4. Check direct URLs (https://<host>/12345 or https://<host>/12345/3)
-	if m := gerritDirectURLRegex.FindStringSubmatch(clean); len(m) > 1 {
-		rev := "current"
-		if len(m) > 2 && m[2] != "" {
-			rev = m[2]
-		}
-		return m[1], rev
-	}
-
-	// 5. Check branch-style identifiers (cl/12345, change-12345, review/12345)
-	if m := branchChangeNumRegex.FindStringSubmatch(clean); len(m) > 1 {
-		rev := "current"
-		if len(m) > 2 && m[2] != "" {
-			rev = m[2]
-		}
-		return m[1], rev
-	}
-
-	// 6. Standard format: "12345/3" or "project~branch~I.../2" or "12345"
-	if idx := strings.LastIndex(clean, "/"); idx != -1 {
-		rev := clean[idx+1:]
-		if rev == "" {
-			rev = "current"
-		}
-		return clean[:idx], rev
-	}
-
-	return clean, "current"
+	t := ParseChangeTarget(arg)
+	return t.ChangeID, t.Revision
 }
 
 // HasChangeID returns true if the commit message contains a valid Gerrit Change-Id footer.
@@ -674,16 +786,17 @@ func isChangeIdentifier(arg string) bool {
 	if trimmed == "" {
 		return false
 	}
+	if parsed := ParseChangeTarget(trimmed); parsed.Host != "" && parsed.ChangeID != "" {
+		return true
+	}
 	if strings.HasPrefix(trimmed, "I") && len(trimmed) >= 10 {
 		return true
 	}
 	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
 		return true
 	}
-	if strings.HasPrefix(trimmed, "pwrev/") || strings.HasPrefix(trimmed, "fxrev/") || strings.HasPrefix(trimmed, "crrev") {
-		return true
-	}
-	if branchChangeNumRegex.MatchString(trimmed) {
+	noGo := strings.TrimPrefix(strings.TrimPrefix(trimmed, "go/"), "goto.google.com/")
+	if branchChangeNumRegex.MatchString(noGo) {
 		return true
 	}
 	parts := strings.Split(trimmed, "/")

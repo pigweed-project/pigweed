@@ -253,7 +253,11 @@ as formatting diffs or compiler errors):
         └── ✗  failure summary: formatting diff in 3 files: header.py, nav.py, ...
      ✓  restructuredtext_format
 
-Pass ``-v`` or ``--verbose`` to inspect all unfiltered recipe steps.
+Pass ``-v`` or ``--verbose`` to inspect all unfiltered recipe steps. When a
+project schedules builders across multiple LUCI buckets, ``-j`` accepts either
+the short builder name (``-j <builder>``), bucket-qualified selector
+(``-j <bucket>/<builder>``), or full Buildbucket path
+(``-j <project>/<bucket>/<builder>``).
 
 3. Step failure logs (``--log-failed`` and ``--log``)
 -----------------------------------------------------
@@ -279,7 +283,8 @@ Fetch failure summaries and raw step log snippets in the terminal:
 Rerunning CI checks: ``run rerun``
 ==================================
 Rerun specific or all failed builders on a change (constructs and executes the
-project profile's ``bb add`` invocation):
+``bb add`` invocation using each build's recorded Buildbucket
+``<project>/<bucket>/<builder>`` tuple):
 
 .. code-block:: console
 

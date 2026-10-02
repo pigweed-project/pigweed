@@ -151,13 +151,20 @@ func defaultFormatPushRef(branch string, opts PushOptions, extraOptions ...strin
 }
 
 // DefaultFormatRerunCommand formats a standard 'bb add -cl ...' CLI command
-// for rerunning a Buildbucket builder. If project is empty, it falls back to change.Project.
+// for rerunning a Buildbucket builder. If builder is already qualified as
+// "<project>/<bucket>/<builder>", it is used directly; otherwise project falls
+// back to change.Project when empty.
 func DefaultFormatRerunCommand(project, bucket string, change GerritChangeRef, builder string) string {
-	if project == "" {
-		project = change.Project
-	}
 	clURL := fmt.Sprintf("https://%s/c/%s/+/%d/%d", change.Host, change.Project, change.ChangeID, change.Patchset)
-	builderTarget := fmt.Sprintf("%s/%s/%s", project, bucket, builder)
+	var builderTarget string
+	if strings.Count(builder, "/") >= 2 {
+		builderTarget = builder
+	} else {
+		if project == "" {
+			project = change.Project
+		}
+		builderTarget = fmt.Sprintf("%s/%s/%s", project, bucket, builder)
+	}
 	return fmt.Sprintf("bb add -cl %s %s", clURL, builderTarget)
 }
 

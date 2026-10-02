@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -974,4 +975,123 @@ func TestEquivalentPatchsets(t *testing.T) {
 	}
 	assertIntsEqual(t, EquivalentPatchsets(nil, 5), []int{5})
 	assertIntsEqual(t, EquivalentPatchsets(change, 99), []int{99})
+}
+
+func TestIsLoopbackTestHost(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"localhost", true},
+		{"127.0.0.1", true},
+		{"[::1]", true},
+		{"http://localhost", true},
+		{"http://127.0.0.1:8080", true},
+		{"https://[::1]:9090", true},
+		{"localhost.example.com", false},
+		{"127.0.0.10", false},
+		{"pigweed-review.googlesource.com", false},
+	}
+	for _, tc := range tests {
+		if got := isLoopbackTestHost(tc.host); got != tc.want {
+			t.Errorf("isLoopbackTestHost(%q) = %v, want %v", tc.host, got, tc.want)
+		}
+	}
+}
+
+func TestResolveChangeContext_PreservesTargetHost(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithProjectName("fuchsia"))
+
+	// Even when cfg.Host is already populated from the local checkout, an explicit
+	// URL or shortlink argument should override it when --host was not passed.
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetConfig(cmd, &Config{Host: "pigweed-review.googlesource.com"})
+
+	chCtx, err := ResolveChangeContext(cmd, []string{"https://fuchsia-review.googlesource.com/c/fuchsia/+/12345/2"})
+	if err != nil {
+		t.Fatalf("ResolveChangeContext failed: %v", err)
+	}
+	if chCtx.Host != "fuchsia-review.googlesource.com" {
+		t.Errorf("chCtx.Host = %q, want fuchsia-review.googlesource.com", chCtx.Host)
+	}
+	if chCtx.Project != "fuchsia" {
+		t.Errorf("chCtx.Project = %q, want fuchsia", chCtx.Project)
+	}
+	if gotHost := chCtx.Config.GerritHost(cmd.Context()); gotHost != "fuchsia-review.googlesource.com" {
+		t.Errorf("chCtx.Config.GerritHost() = %q, want fuchsia-review.googlesource.com", gotHost)
+	}
+}
+
+func TestResolveCIContext_CanonicalHostAndEquivalentPatchsets(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
+		"id":               "foo~main~I12345",
+		"project":          "foo",
+		"branch":           "main",
+		"change_id":        "I12345",
+		"subject":          "Merged CL With Trivial Rebase",
+		"status":           "MERGED",
+		"_number":          12345,
+		"current_revision": "rev4",
+		"revisions": map[string]any{
+			"rev3": map[string]any{"_number": 3, "kind": "REWORK"},
+			"rev4": map[string]any{"_number": 4, "kind": "TRIVIAL_REBASE"},
+		},
+	})
+
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Predicate struct {
+				GerritChanges []struct {
+					Host     string `json:"host"`
+					Change   int    `json:"change"`
+					Patchset int    `json:"patchset"`
+				} `json:"gerritChanges"`
+			} `json:"predicate"`
+		}
+		_ = json.Unmarshal(body, &req)
+		ps := 0
+		if len(req.Predicate.GerritChanges) > 0 {
+			if gotHost := req.Predicate.GerritChanges[0].Host; gotHost != "foo-internal-review.googlesource.com" {
+				t.Errorf("SearchBuilds queried non-canonical host %q, want foo-internal-review.googlesource.com", gotHost)
+			}
+			ps = req.Predicate.GerritChanges[0].Patchset
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if ps == 4 {
+			w.Write([]byte(")]}'\n{}\n"))
+			return
+		}
+		if ps == 3 {
+			w.Write([]byte(")]}'\n" + `{"builds":[{"id":"9001","builder":{"project":"pigweed","bucket":"pigweed.try","builder":"pw-presubmit"},"status":"SUCCESS"}]}`))
+			return
+		}
+		w.Write([]byte(")]}'\n{}\n"))
+	})
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	SetConfig(cmd, &Config{Host: "foo-internal-review" + gobCorpDomainSuffix})
+
+	oldBB := buildbucketHost
+	buildbucketHost = server.URL
+	defer func() { buildbucketHost = oldBB }()
+
+	ciCtx, err := ResolveCIContext(cmd, "12345")
+	if err != nil {
+		t.Fatalf("ResolveCIContext failed: %v", err)
+	}
+	if ciCtx.GerritHost != "foo-internal-review.googlesource.com" {
+		t.Errorf("ciCtx.GerritHost = %q, want foo-internal-review.googlesource.com", ciCtx.GerritHost)
+	}
+	if len(ciCtx.EquivalentPatchsets) != 2 || ciCtx.EquivalentPatchsets[0] != 4 || ciCtx.EquivalentPatchsets[1] != 3 {
+		t.Errorf("ciCtx.EquivalentPatchsets = %v, want [4 3]", ciCtx.EquivalentPatchsets)
+	}
+	if len(ciCtx.Builds) != 1 || ciCtx.Builds[0].ID != "9001" || ciCtx.Builds[0].Patchset != 3 {
+		t.Errorf("expected 1 build from patchset 3, got %+v", ciCtx.Builds)
+	}
 }

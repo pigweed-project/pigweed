@@ -478,10 +478,6 @@ func TestCollectFailedBuilders(t *testing.T) {
 	}
 }
 
-// TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure verifies that
-// `run view -j <builder> --log-failed` reports the newest build of the
-// builder -- the one `pr checks` reports -- rather than a failure on an older
-// code-equivalent patchset that a later build already superseded.
 func TestRunView_JobFlag_LogFailed_IgnoresSupersededFailure(t *testing.T) {
 	// Patchset 9 is a commit-message-only change of patchset 8, so builds from
 	// both are valid for patchset 9.
@@ -730,5 +726,47 @@ func TestRunView_Verbose_IgnoresSupersededFailure(t *testing.T) {
 	}
 	if len(*fetched) != 1 || (*fetched)[0] == "902" || (*fetched)[0] == "1001" {
 		t.Errorf("fetched builds %v; want one build that pr checks reports (901 or 1002), not superseded 902 or canceled 1001", *fetched)
+	}
+}
+
+func TestRunRerun_UsesActualBuildProjectAndBucket(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345,
+		WithSubject("Non-Profile Host Rerun"),
+		WithProjectName("bar/baz"),
+	)
+	server.OnSearchBuilds(
+		FakeBuild("777", "bar-bazel-test", "FAILURE",
+			WithBuildProject("foo-ci"),
+			WithBucket("try"),
+		),
+	)
+
+	// Rerun --failed on a host that resolves to DefaultProfile (which has empty Project/Bucket).
+	outFailed, err := executeCommand(RootCmd, "run", "rerun", "https://acme-review.googlesource.com/c/bar/baz/+/12345/1", "--failed", "--dry-run")
+	if err != nil {
+		t.Fatalf("run rerun --failed failed: %v\nOutput: %s", err, outFailed)
+	}
+	wantCmd := "bb add -cl https://acme-review.googlesource.com/c/bar/baz/+/12345/1 foo-ci/try/bar-bazel-test"
+	if !strings.Contains(outFailed, wantCmd) {
+		t.Errorf("Expected dry-run output to contain %q, got:\n%s", wantCmd, outFailed)
+	}
+
+	// Rerun with fully qualified -j <project>/<bucket>/<builder>.
+	outQual, err := executeCommand(RootCmd, "run", "rerun", "https://acme-review.googlesource.com/c/bar/baz/+/12345/1", "-j", "foo-ci/try/bar-bazel-test", "--dry-run")
+	if err != nil {
+		t.Fatalf("run rerun -j foo-ci/try/bar-bazel-test failed: %v\nOutput: %s", err, outQual)
+	}
+	if !strings.Contains(outQual, wantCmd) {
+		t.Errorf("Expected dry-run output to contain %q, got:\n%s", wantCmd, outQual)
+	}
+
+	// Rerun with two-part -j <bucket>/<builder>, matching against existing builds to resolve the project.
+	outBucketBuilder, err := executeCommand(RootCmd, "run", "rerun", "https://acme-review.googlesource.com/c/bar/baz/+/12345/1", "-j", "try/bar-bazel-test", "--dry-run")
+	if err != nil {
+		t.Fatalf("run rerun -j try/bar-bazel-test failed: %v\nOutput: %s", err, outBucketBuilder)
+	}
+	if !strings.Contains(outBucketBuilder, wantCmd) {
+		t.Errorf("Expected dry-run output to contain %q, got:\n%s", wantCmd, outBucketBuilder)
 	}
 }

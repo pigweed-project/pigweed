@@ -697,6 +697,7 @@ func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
 
 	t.Setenv("PW_ENVIRONMENT_ROOT", "")
 	t.Setenv("BUILD_WORKSPACE_DIRECTORY", "")
+	t.Setenv("PW_GH_SCRIPT_DIR", "")
 
 	mainRepoRoot := filepath.Join(t.TempDir(), "pigweed")
 	expectedLuciAuth := filepath.Join(mainRepoRoot, "environment", "cipd", "packages", "luci", "luci-auth")
@@ -710,6 +711,34 @@ func TestFindLuciAuthBinary_WorktreeCommonGitDir(t *testing.T) {
 
 	mockGit := &MockGitRunner{}
 	mockGit.OnCommand("rev-parse --git-common-dir", filepath.Join(mainRepoRoot, ".git")+"\n")
+	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
+
+	got := findLuciAuthBinary(ctx)
+	if got != expectedLuciAuth {
+		t.Errorf("findLuciAuthBinary() = %q, want %q", got, expectedLuciAuth)
+	}
+}
+
+func TestFindLuciAuthBinary_ScriptDirFallback(t *testing.T) {
+	origLookPath := LookPathFn
+	defer func() { LookPathFn = origLookPath }()
+
+	otherRepoDir := filepath.Join(t.TempDir(), "other-repo")
+	pwScriptDir := filepath.Join(t.TempDir(), "pigweed-checkout")
+	expectedLuciAuth := filepath.Join(pwScriptDir, "environment", "cipd", "packages", "luci", "luci-auth")
+
+	t.Setenv("PW_ENVIRONMENT_ROOT", "")
+	t.Setenv("BUILD_WORKSPACE_DIRECTORY", otherRepoDir)
+	t.Setenv("PW_GH_SCRIPT_DIR", pwScriptDir)
+
+	LookPathFn = func(file string) (string, error) {
+		if file == expectedLuciAuth {
+			return expectedLuciAuth, nil
+		}
+		return "", os.ErrNotExist
+	}
+
+	mockGit := &MockGitRunner{}
 	ctx := context.WithValue(context.Background(), configKey, &Config{Git: mockGit})
 
 	got := findLuciAuthBinary(ctx)

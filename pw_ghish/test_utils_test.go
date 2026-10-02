@@ -40,6 +40,19 @@ import (
 func resetAllFlags(cmd *cobra.Command) {
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
 		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
+			f.Changed = false
+			return
+		}
+		if s, ok := f.Value.(pflag.SliceValue); ok {
+			_ = s.Replace(nil)
+		} else {
+			_ = f.Value.Set(f.DefValue)
+		}
+		f.Changed = false
+	})
+	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Name == "host" || f.Name == "profile" || f.Name == "buildbucket-host" {
+			f.Changed = false
 			return
 		}
 		if s, ok := f.Value.(pflag.SliceValue); ok {
@@ -68,8 +81,12 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 	oldStdout := os.Stdout
 	os.Stdout = w
 
+	savedHostFlag := HostFlag
 	oldNewGerritClient := NewGerritClient
 	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*gerrit.Client, error) {
+		if isLoopbackTestHost(savedHostFlag) {
+			return gerrit.NewClient(ctx, savedHostFlag, http.DefaultClient)
+		}
 		host, _ := cmd.Flags().GetString("host")
 		if host == "" {
 			host = HostFlag
@@ -88,7 +105,10 @@ func executeCommand(root *cobra.Command, args ...string) (string, error) {
 		}
 		return gerrit.NewClient(ctx, host, http.DefaultClient)
 	}
-	defer func() { NewGerritClient = oldNewGerritClient }()
+	defer func() {
+		NewGerritClient = oldNewGerritClient
+		HostFlag = savedHostFlag
+	}()
 
 	root.SetOut(w)
 	root.SetErr(w)

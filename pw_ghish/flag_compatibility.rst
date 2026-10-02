@@ -62,6 +62,7 @@ rather than performing an unintended operation:
   * ``--cq`` on ``pr`` (in ``gh``, ``-q`` is ``--jq``)
   * ``--message`` on ``pr edit`` and ``pr merge`` (in ``gh``, ``-m`` is
     ``--milestone`` and ``--merge``)
+  * ``--all-projects`` on ``pr list`` (in ``gh``, ``-a`` is ``--assignee``)
 
 * **Out-of-scope upstream commands and flags**:
 
