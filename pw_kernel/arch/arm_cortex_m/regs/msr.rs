@@ -12,10 +12,9 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-//! CONTROL register definition
-//!
-//! ARMv7-M (DDI 0403E.e §B1.4.4): bits 0-2 only; bits 31:3 reserved RAZ/WI.
-//! ARMv8-M (DDI 0553 §B3.1.4): bits 0-7; adds TrustZone, BTI, and PAC fields.
+//! ARM Cortex-M Special-Purpose Registers (`MRS` / `MSR`).
+
+use core::arch::asm;
 
 use pw_cast::CastFrom as _;
 use regs::*;
@@ -35,25 +34,45 @@ macro_rules! rw_msr_reg {
             #[inline]
             pub fn read() -> $val_type {
                 let mut val: usize;
+                // `nostack` and `preserves_flags` are set because `mrs` does
+                // not push data to the stack or modify condition flags (APSR).
+                // `nomem` is intentionally omitted so the inline assembly acts
+                // as a compiler memory barrier around special register accesses.
                 unsafe {
-                    core::arch::asm!(concat!("mrs {0}, ", stringify!($reg_name)), out(reg) val)
+                    asm!(
+                        concat!("mrs {0}, ", stringify!($reg_name)),
+                        out(reg) val,
+                        options(nostack, preserves_flags),
+                    )
                 };
                 $val_type(u32::cast_from(val))
             }
 
-            #[allow(dead_code)]
             #[inline]
             pub fn write(val: $val_type) {
+                // `nostack` and `preserves_flags` are set because `msr` does
+                // not push data to the stack or modify condition flags (APSR).
+                // `nomem` is intentionally omitted so the inline assembly acts
+                // as a compiler memory barrier, preventing stack or
+                // privilege-sensitive memory operations from being reordered
+                // across writes to registers like `CONTROL`, `MSPLIM`, or
+                // `PSPLIM`.
                 unsafe {
-                    core::arch::asm!(
+                    asm!(
                         concat!("msr ", stringify!($reg_name), ", {0}"),
-                        in(reg) val.0)
+                        in(reg) val.0,
+                        options(nostack, preserves_flags),
+                    )
                 };
             }
         }
     };
 }
 
+/// CONTROL register value.
+///
+/// ARMv7-M (DDI 0403E.e §B1.4.4): bits 0-2 only; bits 31:3 reserved RAZ/WI.
+/// ARMv8-M (DDI 0553 §B3.1.4): bits 0-7; adds TrustZone, BTI, and PAC fields.
 #[derive(Copy, Clone, Default)]
 #[repr(transparent)]
 pub struct ControlVal(pub u32);
@@ -90,3 +109,29 @@ impl ControlVal {
 }
 
 rw_msr_reg!(Control, ControlVal, control, "Control Register");
+
+#[cfg(feature = "armv8m")]
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct MsplimVal(pub u32);
+
+#[cfg(feature = "armv8m")]
+rw_msr_reg!(
+    Msplim,
+    MsplimVal,
+    msplim,
+    "Main Stack Pointer Limit Register"
+);
+
+#[cfg(feature = "armv8m")]
+#[derive(Copy, Clone, Default)]
+#[repr(transparent)]
+pub struct PsplimVal(pub u32);
+
+#[cfg(feature = "armv8m")]
+rw_msr_reg!(
+    Psplim,
+    PsplimVal,
+    psplim,
+    "Process Stack Pointer Limit Register"
+);

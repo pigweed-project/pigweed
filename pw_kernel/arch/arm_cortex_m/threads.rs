@@ -39,6 +39,8 @@ use crate::exceptions::{
 use crate::protection::MemoryConfig;
 use crate::regs::Regs;
 use crate::regs::msr::{ControlVal, Spsel};
+#[cfg(feature = "armv8m")]
+use crate::regs::msr::{Msplim, MsplimVal, Psplim, PsplimVal};
 use crate::spinlock::BareSpinLock;
 use crate::{in_interrupt_handler, nvic};
 
@@ -215,6 +217,16 @@ impl Arch for crate::Arch {
 
     fn early_init(self) {
         info!("Cortex-M early initialization");
+
+        // Disable ARMv8-M stack limit checking in case a bootloader or prior
+        // stage configured MSPLIM/PSPLIM for the boot stack; kernel threads switch
+        // MSP between independently allocated stacks in RAM.
+        #[cfg(feature = "armv8m")]
+        {
+            Msplim::write(MsplimVal(0));
+            Psplim::write(PsplimVal(0));
+        }
+
         // TODO: set up the cpu here:
         //  --interrupt vector table--
         //  irq priority levels
@@ -286,19 +298,6 @@ impl Arch for crate::Arch {
         crate::protection::init();
 
         crate::timer::systick_early_init();
-
-        // TEST: Intentionally trigger a hard fault to make sure the VTOR is working.
-        // use core::arch::asm;
-        // unsafe {
-        //     asm!("bkpt");
-        // }
-
-        // TEST: Intentionally trigger a pendsv
-        // use cortex_m::interrupt;
-        // SCB::set_pendsv();
-        // unsafe {
-        //     interrupt::enable();
-        // }
     }
 
     fn init(self) {
